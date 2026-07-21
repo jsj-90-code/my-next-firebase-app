@@ -33,12 +33,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => auth !== null);
   const configured = auth !== null;
 
   useEffect(() => {
     if (!auth) {
-      setLoading(false);
       return;
     }
 
