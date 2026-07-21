@@ -1,11 +1,34 @@
 import { NextResponse } from "next/server";
 import { getClaudeClient, getClaudeModel, type ChatMessage } from "@/lib/claude";
+import { adminAuth } from "@/lib/firebase-admin";
 
 type ChatRequestBody = {
   messages?: ChatMessage[];
 };
 
+async function getVerifiedUserId(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  if (!token || !adminAuth) {
+    return null;
+  }
+
+  try {
+    const decoded = await adminAuth.verifyIdToken(token);
+    return decoded.uid;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
+  const userId = await getVerifiedUserId(request);
+
+  if (!userId) {
+    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+
   const client = getClaudeClient();
 
   if (!client) {

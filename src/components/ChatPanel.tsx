@@ -2,8 +2,10 @@
 
 import { FormEvent, useState } from "react";
 import type { ChatMessage } from "@/lib/claude";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function ChatPanel() {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
@@ -28,9 +30,14 @@ export function ChatPanel() {
     setMessages(nextMessages);
 
     try {
+      const token = await user?.getIdToken();
+
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ messages: nextMessages }),
       });
 
