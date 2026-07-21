@@ -3,8 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
-import { AuthForm } from "@/components/AuthForm";
+import { AutoAuthGate } from "@/components/seatLayout/AutoAuthGate";
 import { deleteGalleryEntry, listGalleryEntries } from "@/lib/seatLayout/store";
 import type { GalleryEntry } from "@/lib/seatLayout/types";
 
@@ -147,27 +146,9 @@ function GalleryContent() {
 }
 
 export default function GalleryPage() {
-  const { user, loading, configured } = useAuth();
-
-  if (!configured) {
-    return (
-      <div className="mx-auto w-full max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-8 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-        Firebase 설정이 필요합니다.
-      </div>
-    );
-  }
-
-  if (loading) {
-    return <div className="p-8 text-center text-zinc-500">로그인 상태 확인 중...</div>;
-  }
-
-  if (!user) {
-    return (
-      <div className="mx-auto w-full max-w-md px-6 py-16">
-        <AuthForm />
-      </div>
-    );
-  }
-
-  return <GalleryContent />;
+  return (
+    <AutoAuthGate>
+      <GalleryContent />
+    </AutoAuthGate>
+  );
 }

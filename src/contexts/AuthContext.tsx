@@ -12,6 +12,7 @@ import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
@@ -26,6 +27,7 @@ type AuthContextValue = {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  signInAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -63,6 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signInWithGoogle() {
         if (!auth) throw new Error("Firebase is not configured.");
         await signInWithPopup(auth, new GoogleAuthProvider());
+      },
+      async signInAsGuest() {
+        if (!auth) throw new Error("Firebase is not configured.");
+        await signInAnonymously(auth);
       },
       async logout() {
         if (!auth) throw new Error("Firebase is not configured.");

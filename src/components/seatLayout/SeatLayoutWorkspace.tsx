@@ -723,19 +723,21 @@ export function SeatLayoutWorkspace() {
             아이센스 PC방 좌석배치도 작업 툴
           </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {user?.email} 님으로 로그인됨 ·{" "}
+            {user?.isAnonymous ? "사내 공용 접속" : `${user?.email} 님으로 로그인됨`} ·{" "}
             <Link href="/seat-layout/gallery" className="underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300">
               매장 전체보기
             </Link>
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => logout()}
-          className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-        >
-          로그아웃
-        </button>
+        {!user?.isAnonymous && (
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            로그아웃
+          </button>
+        )}
       </header>
 
       <div className="flex gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
