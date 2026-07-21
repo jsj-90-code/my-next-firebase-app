@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AuthPanel } from "@/components/AuthPanel";
 
 export default function Home() {
@@ -16,6 +17,21 @@ export default function Home() {
             Vercel이 자동으로 배포합니다.
           </p>
         </div>
+
+        <Link
+          href="/seat-layout"
+          className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+            사내 도구
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            PC방 좌석배치도 작업 툴 →
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            매장 도면에 존을 그리고, AI로 좌석 수를 인식하고, 발주용 FHD 이미지를 만듭니다.
+          </p>
+        </Link>
 
         <AuthPanel />
       </main>

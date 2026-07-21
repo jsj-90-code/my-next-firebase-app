@@ -1,0 +1,10 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 도면 이미지, 합성 결과 이미지: 로그인한 팀원만 업로드/조회 가능
+    match /seat-layout/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

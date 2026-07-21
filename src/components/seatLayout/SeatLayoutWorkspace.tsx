@@ -1,0 +1,1320 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  DESK_SIZE_OPTIONS,
+  FIELD_SUGGESTIONS,
+  PC_SPEC_FIELDS,
+  PC_TYPE_DEFAULTS,
+  SPEC_FIELDS,
+  TYPE_DEFAULTS,
+  ZONE_TYPES,
+  COMPOSITE_H,
+  COMPOSITE_W,
+  defaultPcDefaults,
+} from "@/lib/seatLayout/constants";
+import { computeBasicPcQty, getContrastText, nextSuffix } from "@/lib/seatLayout/calc";
+import { renderDeskComposite, renderPcComposite } from "@/lib/seatLayout/canvasRender";
+import {
+  deleteProject,
+  listProjects,
+  loadProject,
+  publishToGallery,
+  saveProject,
+  uploadFloorPlanImage,
+} from "@/lib/seatLayout/store";
+import {
+  emptyProject,
+  type DeskSize,
+  type DeskZone,
+  type NormalizedRect,
+  type PcSpecFieldId,
+  type PcSpecValues,
+  type PcZone,
+  type ProjectSummary,
+  type SeatLayoutProject,
+  type SizeBreakdownEntry,
+  type TabKey,
+  type ZoneTypeKey,
+} from "@/lib/seatLayout/types";
+import type { SpecField, SpecFieldId } from "@/lib/seatLayout/constants";
+
+type ActiveZone = DeskZone | PcZone;
+
+const DEFAULT_DRAG_HINT =
+  "먼저 위에서 존 유형을 선택한 뒤, 도면 위를 한 번 클릭(좌상단), 다시 한 번 클릭(우하단)하세요.";
+
+function defaultDeskSpecValues(): Record<SpecFieldId, string> {
+  const out = {} as Record<SpecFieldId, string>;
+  SPEC_FIELDS.forEach((f) => {
+    out[f.id] = f.def;
+  });
+  return out;
+}
+
+function resetDeskSpecDraft(typeKey: ZoneTypeKey): Record<SpecFieldId, string> {
+  const overrides = TYPE_DEFAULTS[typeKey] ?? {};
+  const base = defaultDeskSpecValues();
+  SPEC_FIELDS.forEach((f) => {
+    base[f.id] = overrides[f.id] ?? f.def;
+  });
+  return base;
+}
+
+function resetPcSpecDraft(typeKey: ZoneTypeKey, pcDefaults: PcSpecValues): PcSpecValues {
+  const overrides = PC_TYPE_DEFAULTS[typeKey] ?? {};
+  const out: PcSpecValues = {};
+  PC_SPEC_FIELDS.forEach((f) => {
+    out[f.id] = overrides[f.id] ?? pcDefaults[f.id] ?? f.def;
+  });
+  return out;
+}
+
+function statusToneClass(tone: "info" | "success" | "error") {
+  if (tone === "success") return "text-emerald-600 dark:text-emerald-400";
+  if (tone === "error") return "text-red-600 dark:text-red-400";
+  return "text-zinc-500 dark:text-zinc-400";
+}
+
+export function SeatLayoutWorkspace() {
+  const { user, logout } = useAuth();
+
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [project, setProject] = useState<SeatLayoutProject>(() => ({
+    id: crypto.randomUUID(),
+    ...emptyProject(),
+  }));
+  const [activeTab, setActiveTab] = useState<TabKey>("desk");
+  const [selectedTypeKey, setSelectedTypeKey] = useState<ZoneTypeKey | null>(null);
+  const [curRect, setCurRect] = useState<NormalizedRect | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+
+  const [breakdown, setBreakdown] = useState<SizeBreakdownEntry[]>([]);
+  const [deskSpecDraft, setDeskSpecDraft] = useState<Record<SpecFieldId, string>>(
+    defaultDeskSpecValues(),
+  );
+  const [seatsDraft, setSeatsDraft] = useState("");
+  const [pcSpecDraft, setPcSpecDraft] = useState<PcSpecValues>({});
+  const [etcName, setEtcName] = useState("");
+  const [etcColor, setEtcColor] = useState("#555555");
+
+  const [pcDefaults, setPcDefaults] = useState<PcSpecValues>(defaultPcDefaults());
+  const [pcDefaultsDraft, setPcDefaultsDraft] = useState<PcSpecValues>(defaultPcDefaults());
+  const [pcDefaultsOpen, setPcDefaultsOpen] = useState(false);
+
+  const [aiResultText, setAiResultText] = useState("");
+  const [recognizing, setRecognizing] = useState(false);
+  const [status, setStatus] = useState<{ text: string; tone: "info" | "success" | "error" }>({
+    text: "",
+    tone: "info",
+  });
+  const [busy, setBusy] = useState(false);
+
+  const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const compositeCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingStartRef = useRef<{ px: number; py: number } | null>(null);
+  const [dragHint, setDragHint] = useState(DEFAULT_DRAG_HINT);
+
+  const activeZones = useMemo<ActiveZone[]>(
+    () => (activeTab === "pc" ? project.pcZones : project.zones),
+    [activeTab, project.pcZones, project.zones],
+  );
+
+  function setStatusMsg(text: string, tone: "info" | "success" | "error" = "info") {
+    setStatus({ text, tone });
+  }
+
+  // ---------------- 프로젝트 목록 ----------------
+  async function refreshProjectList() {
+    try {
+      setProjects(await listProjects());
+    } catch (err) {
+      setStatusMsg(
+        `프로젝트 목록을 불러오지 못했습니다: ${err instanceof Error ? err.message : err}`,
+        "error",
+      );
+    }
+  }
+
+  useEffect(() => {
+    // Firestore에서 프로젝트 목록을 최초 1회 비동기로 가져와야 하므로 setState를 피할 수 없다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refreshProjectList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------------- 도면 이미지 로드 ----------------
+  useEffect(() => {
+    if (!project.floorPlanUrl) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setImgEl(null);
+      return;
+    }
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => setImgEl(image);
+    image.onerror = () =>
+      setStatusMsg("도면 이미지를 불러오지 못했습니다.", "error");
+    image.src = project.floorPlanUrl;
+    return () => {
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [project.floorPlanUrl]);
+
+  // ---------------- 캔버스 그리기 ----------------
+  function drawZoneBox(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, z: ActiveZone) {
+    const x = z.x * canvas.width;
+    const y = z.y * canvas.height;
+    const w = z.w * canvas.width;
+    const h = z.h * canvas.height;
+    ctx.strokeStyle = z.color;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+    ctx.font = "bold 12px sans-serif";
+    const textW = ctx.measureText(z.name).width;
+    const tagW = textW + 10;
+    const tagH = 16;
+    const tagX = x;
+    const tagY = Math.max(0, y - tagH - 2);
+    ctx.fillStyle = z.color;
+    ctx.fillRect(tagX, tagY, tagW, tagH);
+    ctx.fillStyle = getContrastText(z.color);
+    ctx.fillText(z.name, tagX + 5, tagY + 12);
+  }
+
+  function drawCanvas() {
+    const canvas = canvasRef.current;
+    if (!canvas || !imgEl?.naturalWidth) return;
+    canvas.width = 900;
+    canvas.height = 900 * (imgEl.naturalHeight / imgEl.naturalWidth);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
+    activeZones.forEach((z) => drawZoneBox(ctx, canvas, z));
+  }
+
+  useEffect(() => {
+    drawCanvas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imgEl, activeZones]);
+
+  function handleCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (editingIndex !== null) {
+      setStatusMsg("스펙 수정 중에는 구역을 다시 지정할 수 없습니다. 취소 후 진행하세요.", "error");
+      return;
+    }
+    if (!imgEl) {
+      setStatusMsg("먼저 도면 이미지를 업로드하세요.", "error");
+      return;
+    }
+    if (!selectedTypeKey) {
+      setStatusMsg("먼저 위에서 존 유형을 선택하세요.", "error");
+      return;
+    }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    if (!pendingStartRef.current) {
+      pendingStartRef.current = { px, py };
+      setDragHint("이제 우하단 지점을 클릭하세요.");
+      drawCanvas();
+      return;
+    }
+
+    const { px: x1, py: y1 } = pendingStartRef.current;
+    const x2 = px;
+    const y2 = py;
+    pendingStartRef.current = null;
+    setDragHint(DEFAULT_DRAG_HINT);
+    const rw = Math.abs(x2 - x1);
+    const rh = Math.abs(y2 - y1);
+    drawCanvas();
+    if (rw < 5 || rh < 5) {
+      setStatusMsg("영역이 너무 작습니다. 다시 지정해주세요.", "error");
+      return;
+    }
+    const rectNorm: NormalizedRect = {
+      x: Math.min(x1, x2) / canvas.width,
+      y: Math.min(y1, y2) / canvas.height,
+      w: rw / canvas.width,
+      h: rh / canvas.height,
+    };
+    setCurRect(rectNorm);
+    openZoneForm(rectNorm);
+  }
+
+  function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!pendingStartRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    drawCanvas();
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.strokeStyle = "#000";
+    ctx.setLineDash([4, 2]);
+    ctx.lineWidth = 1.5;
+    const { px, py } = pendingStartRef.current;
+    ctx.strokeRect(Math.min(px, x), Math.min(py, y), Math.abs(x - px), Math.abs(y - py));
+    ctx.setLineDash([]);
+  }
+
+  // ---------------- 존 유형 선택 ----------------
+  function selectType(key: ZoneTypeKey) {
+    setSelectedTypeKey(key);
+  }
+
+  const selectedType = ZONE_TYPES.find((t) => t.key === selectedTypeKey) ?? null;
+  const nextNamePreview = useMemo(() => {
+    if (!selectedType) return "";
+    if (selectedType.key === "etc") return "(직접 이름 입력)";
+    const count = activeZones.filter((z) => z.typeKey === selectedType.key).length;
+    return selectedType.label + nextSuffix(count);
+  }, [selectedType, activeZones]);
+
+  // ---------------- AI 자동 인식 ----------------
+  function cropZoneImageBase64(rect: NormalizedRect): string {
+    if (!imgEl) throw new Error("이미지가 없습니다.");
+    const sx = rect.x * imgEl.naturalWidth;
+    const sy = rect.y * imgEl.naturalHeight;
+    const sw = rect.w * imgEl.naturalWidth;
+    const sh = rect.h * imgEl.naturalHeight;
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.round(sw));
+    off.height = Math.max(1, Math.round(sh));
+    const ctx = off.getContext("2d");
+    if (!ctx) throw new Error("캔버스를 생성할 수 없습니다.");
+    ctx.drawImage(imgEl, sx, sy, sw, sh, 0, 0, off.width, off.height);
+    return off.toDataURL("image/jpeg", 0.92).split(",")[1];
+  }
+
+  async function runRecognize(rect: NormalizedRect, tab: TabKey) {
+    if (!user) return;
+    setRecognizing(true);
+    setAiResultText("AI가 인식하는 중...");
+    setStatusMsg("AI 인식 중...");
+    try {
+      const base64 = cropZoneImageBase64(rect);
+      const token = await user.getIdToken();
+      const res = await fetch("/api/seat-layout/recognize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ imageBase64: base64, mimeType: "image/jpeg", mode: tab }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
+
+      const seats: number = data.seats ?? 0;
+      const deskSize: DeskSize | null = data.deskSize ?? null;
+
+      if (tab === "desk") {
+        const size = deskSize ?? DESK_SIZE_OPTIONS[0];
+        setBreakdown([{ deskSize: size, qty: seats }]);
+        const sizeMsg = deskSize ? `책상사이즈 ${deskSize}` : "책상사이즈 인식 실패(직접 선택 필요)";
+        setAiResultText(`AI 인식 결과: ${seats}석 / ${sizeMsg} — 사이즈가 섞여있으면 아래에서 줄을 나눠주세요.`);
+      } else {
+        setSeatsDraft(String(seats));
+        setAiResultText(`AI 인식 결과: ${seats}대 (틀리면 아래에서 직접 수정하세요)`);
+      }
+      setStatusMsg("인식 완료 — 이대로 괜찮으면 바로 저장하세요", "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "알 수 없는 오류";
+      setAiResultText(`인식 실패: ${message} — 아래 항목을 직접 입력해주세요.`);
+      setStatusMsg("AI 인식 실패 - 수동 입력 필요", "error");
+      if (tab === "desk") setBreakdown([{ deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }]);
+    } finally {
+      setRecognizing(false);
+    }
+  }
+
+  // ---------------- 존 폼 열기/닫기 ----------------
+  function openZoneForm(rect: NormalizedRect) {
+    if (!selectedTypeKey) return;
+    setEditingIndex(null);
+    setEtcName("");
+    setEtcColor("#555555");
+    setSeatsDraft("");
+    setBreakdown([{ deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }]);
+
+    if (activeTab === "desk") {
+      setDeskSpecDraft(resetDeskSpecDraft(selectedTypeKey));
+    } else {
+      setPcSpecDraft(resetPcSpecDraft(selectedTypeKey, pcDefaults));
+    }
+    setFormOpen(true);
+    void runRecognize(rect, activeTab);
+  }
+
+  function editZone(index: number) {
+    const z = activeZones[index];
+    setEditingIndex(index);
+    setCurRect(null);
+    setFormOpen(true);
+    setAiResultText("");
+
+    if (activeTab === "desk") {
+      const dz = z as DeskZone;
+      setBreakdown(
+        dz.sizeBreakdown?.length
+          ? dz.sizeBreakdown.map((r) => ({ ...r }))
+          : [{ deskSize: (dz.deskSize || DESK_SIZE_OPTIONS[0]) as DeskSize, qty: dz.seats || 0 }],
+      );
+      setDeskSpecDraft({
+        desk: dz.desk,
+        cooler: dz.cooler,
+        partition: dz.partition,
+        monitorArm: dz.monitorArm,
+        chair: dz.chair,
+      });
+    } else {
+      const pz = z as PcZone;
+      setSeatsDraft(String(pz.seats ?? ""));
+      setPcSpecDraft({ ...pcDefaults, ...pz.pcOverrides });
+    }
+    setStatusMsg(`"${z.name}"의 스펙을 수정하는 중입니다. (구역/이름/색상은 변경되지 않습니다)`);
+  }
+
+  function cancelZone() {
+    setFormOpen(false);
+    setCurRect(null);
+    setEditingIndex(null);
+    setBreakdown([]);
+    setSeatsDraft("");
+    pendingStartRef.current = null;
+    drawCanvas();
+  }
+
+  function confirmZone() {
+    if (editingIndex !== null) {
+      if (activeTab === "desk") {
+        const filtered = breakdown.filter((r) => r.qty > 0);
+        setProject((p) => {
+          const zones = [...p.zones];
+          const z = { ...zones[editingIndex] };
+          z.sizeBreakdown = filtered;
+          z.deskSize = filtered.length ? filtered[0].deskSize : "";
+          z.seats = filtered.reduce((s, r) => s + r.qty, 0);
+          z.desk = deskSpecDraft.desk;
+          z.cooler = deskSpecDraft.cooler;
+          z.partition = deskSpecDraft.partition;
+          z.monitorArm = deskSpecDraft.monitorArm;
+          z.chair = deskSpecDraft.chair;
+          zones[editingIndex] = z;
+          return { ...p, zones };
+        });
+      } else {
+        setProject((p) => {
+          const pcZones = [...p.pcZones];
+          const z = { ...pcZones[editingIndex] };
+          z.seats = Number(seatsDraft) || 0;
+          z.pcOverrides = computePcOverrides();
+          pcZones[editingIndex] = z;
+          return { ...p, pcZones };
+        });
+      }
+      setStatusMsg("스펙이 수정되었습니다.", "success");
+      cancelZone();
+      return;
+    }
+
+    if (!curRect || !selectedType) return;
+    const isEtc = selectedType.key === "etc";
+    const name = isEtc ? etcName || "기타존" : nextNamePreview;
+    const color = isEtc ? etcColor : selectedType.color;
+
+    if (activeTab === "desk") {
+      const filtered = breakdown.filter((r) => r.qty > 0);
+      if (!filtered.length) {
+        setStatusMsg("수량이 0입니다. 사이즈별 수량을 확인해주세요.", "error");
+        return;
+      }
+      const zNew: DeskZone = {
+        ...curRect,
+        name,
+        typeKey: selectedType.key,
+        color,
+        sizeBreakdown: filtered,
+        deskSize: filtered[0].deskSize,
+        seats: filtered.reduce((s, r) => s + r.qty, 0),
+        desk: deskSpecDraft.desk,
+        cooler: deskSpecDraft.cooler,
+        partition: deskSpecDraft.partition,
+        monitorArm: deskSpecDraft.monitorArm,
+        chair: deskSpecDraft.chair,
+      };
+      setProject((p) => ({ ...p, zones: [...p.zones, zNew] }));
+    } else {
+      const seats = Number(seatsDraft) || 0;
+      if (seats <= 0) {
+        setStatusMsg("대수가 0입니다. 확인해주세요.", "error");
+        return;
+      }
+      const zNew: PcZone = {
+        ...curRect,
+        name,
+        typeKey: selectedType.key,
+        color,
+        seats,
+        pcOverrides: computePcOverrides(),
+      };
+      setProject((p) => ({ ...p, pcZones: [...p.pcZones, zNew] }));
+    }
+
+    cancelZone();
+  }
+
+  function computePcOverrides(): PcSpecValues {
+    const overrides: PcSpecValues = {};
+    PC_SPEC_FIELDS.forEach((f) => {
+      const v = pcSpecDraft[f.id] ?? "";
+      if (v !== (pcDefaults[f.id] ?? "")) overrides[f.id] = v;
+    });
+    return overrides;
+  }
+
+  function deleteZone(index: number) {
+    if (activeTab === "desk") {
+      setProject((p) => ({ ...p, zones: p.zones.filter((_, i) => i !== index) }));
+    } else {
+      setProject((p) => ({ ...p, pcZones: p.pcZones.filter((_, i) => i !== index) }));
+    }
+  }
+
+  // ---------------- PC 기본사양 ----------------
+  const basicPcQty = computeBasicPcQty(project.zones, project.pcZones);
+
+  function savePcDefaults() {
+    const merged: PcSpecValues = {};
+    PC_SPEC_FIELDS.forEach((f) => {
+      merged[f.id] = pcDefaultsDraft[f.id] || f.def;
+    });
+    setPcDefaults(merged);
+    setStatusMsg("PC 기본사양이 반영되었습니다. (존별로 다르게 지정한 항목만 별도 표시됩니다)", "success");
+  }
+
+  function importDeskZonesToPc() {
+    if (!project.zones.length) {
+      setStatusMsg("책상 발주 도면에 존이 없습니다. 먼저 책상 탭에서 구역을 지정해주세요.", "error");
+      return;
+    }
+    if (project.pcZones.length > 0) {
+      const ok = window.confirm(
+        `이미 PC 존이 ${project.pcZones.length}개 있습니다. 책상 구역으로 덮어쓸까요? (기존 PC 존/사양은 사라집니다)`,
+      );
+      if (!ok) return;
+    }
+    const pcZones: PcZone[] = project.zones
+      .filter((z) => z.typeKey !== "multi")
+      .map((z) => {
+        const typeDef = PC_TYPE_DEFAULTS[z.typeKey] ?? {};
+        const overrides: PcSpecValues = {};
+        (Object.keys(typeDef) as PcSpecFieldId[]).forEach((k) => {
+          if (typeDef[k] !== (pcDefaults[k] ?? "")) overrides[k] = typeDef[k];
+        });
+        return {
+          x: z.x,
+          y: z.y,
+          w: z.w,
+          h: z.h,
+          name: z.name,
+          typeKey: z.typeKey,
+          color: z.color,
+          seats: z.seats,
+          pcOverrides: overrides,
+        };
+      });
+    setProject((p) => ({ ...p, pcZones }));
+    setStatusMsg(`책상 구역 ${pcZones.length}개를 PC 탭으로 불러왔습니다. 사양이 필요한 존만 [수정]으로 바꿔주세요.`, "success");
+  }
+
+  // ---------------- 프로젝트 CRUD ----------------
+  async function handleSelectProject(id: string) {
+    if (!id) return;
+    setBusy(true);
+    setStatusMsg("불러오는 중...");
+    try {
+      const loaded = await loadProject(id);
+      if (!loaded) {
+        setStatusMsg("프로젝트를 찾을 수 없습니다.", "error");
+        return;
+      }
+      setProject(loaded);
+      setActiveTab("desk");
+      setSelectedTypeKey(null);
+      cancelZone();
+      setPcDefaults(loaded.pcDefaults ?? defaultPcDefaults());
+      setPcDefaultsDraft(loaded.pcDefaults ?? defaultPcDefaults());
+      setStatusMsg("불러오기 완료", "success");
+    } catch (err) {
+      setStatusMsg(`불러오기 실패: ${err instanceof Error ? err.message : err}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function newProject() {
+    setProject({ id: crypto.randomUUID(), ...emptyProject() });
+    setPcDefaults(defaultPcDefaults());
+    setPcDefaultsDraft(defaultPcDefaults());
+    setActiveTab("desk");
+    setSelectedTypeKey(null);
+    cancelZone();
+    setStatusMsg("새 프로젝트를 시작합니다.");
+  }
+
+  async function deleteCurrentProject() {
+    if (!project.updatedAt) {
+      setStatusMsg("삭제할 프로젝트가 저장되어 있지 않습니다.", "error");
+      return;
+    }
+    const name = project.name || "(이름없음)";
+    if (!window.confirm(`"${name}" 프로젝트를 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    setBusy(true);
+    setStatusMsg("삭제 중...");
+    try {
+      await deleteProject(project.id);
+      setStatusMsg(`"${name}" 프로젝트를 삭제했습니다.`, "success");
+      newProject();
+      await refreshProjectList();
+    } catch (err) {
+      setStatusMsg(`삭제 실패: ${err instanceof Error ? err.message : err}`, "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function silentSave(): Promise<SeatLayoutProject | null> {
+    if (!user) return null;
+    try {
+      const toSave: SeatLayoutProject = { ...project, name: project.name || "이름없음", pcDefaults };
+      const saved = await saveProject(toSave, user.uid);
+      setProject(saved);
+      await refreshProjectList();
+      return saved;
+    } catch (err) {
+      setStatusMsg(`저장 중 오류: ${err instanceof Error ? err.message : err}`, "error");
+      return null;
+    }
+  }
+
+  async function handleSaveClick() {
+    setBusy(true);
+    setStatusMsg("저장 중...");
+    const saved = await silentSave();
+    if (saved) setStatusMsg("저장되었습니다.", "success");
+    setBusy(false);
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const dataUrl = evt.target?.result as string;
+      const image = new Image();
+      image.onload = () => {
+        setImgEl(image);
+        setProject((p) => ({ ...p, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight }));
+      };
+      image.src = dataUrl;
+
+      setStatusMsg("도면 업로드 중...");
+      try {
+        const { path, url } = await uploadFloorPlanImage(project.id, dataUrl, file.name);
+        setProject((p) => ({ ...p, floorPlanPath: path, floorPlanUrl: url }));
+        setStatusMsg("도면 업로드 완료", "success");
+      } catch (err) {
+        setStatusMsg(`도면 업로드 실패: ${err instanceof Error ? err.message : err}`, "error");
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ---------------- 합성 이미지 (FHD) ----------------
+  function renderComposite(): boolean {
+    const cv = compositeCanvasRef.current;
+    if (!cv || !imgEl) {
+      setStatusMsg("먼저 도면을 업로드하세요.", "error");
+      return false;
+    }
+    cv.width = COMPOSITE_W;
+    cv.height = COMPOSITE_H;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return false;
+
+    if (activeTab === "desk") {
+      renderDeskComposite(ctx, imgEl, project.name, project.zones);
+    } else {
+      renderPcComposite(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
+    }
+    return true;
+  }
+
+  async function handleDownload() {
+    if (!imgEl) {
+      setStatusMsg("먼저 도면을 업로드하세요.", "error");
+      return;
+    }
+    setBusy(true);
+    setStatusMsg("저장 중...");
+    const saved = await silentSave();
+    if (!saved) {
+      setBusy(false);
+      return;
+    }
+    if (renderComposite()) {
+      const cv = compositeCanvasRef.current!;
+      const link = document.createElement("a");
+      link.download = `${project.name || "floorplan"}_${activeTab === "desk" ? "책상발주" : "PC발주"}_FHD.png`;
+      link.href = cv.toDataURL("image/png");
+      link.click();
+      setStatusMsg("FHD 이미지를 다운로드했습니다.", "success");
+    }
+    setBusy(false);
+  }
+
+  async function handlePublishToGallery() {
+    if (!imgEl || !user) {
+      setStatusMsg("먼저 도면을 업로드하세요.", "error");
+      return;
+    }
+    setBusy(true);
+    setStatusMsg("저장 중...");
+    const saved = await silentSave();
+    if (!saved) {
+      setBusy(false);
+      return;
+    }
+    if (renderComposite()) {
+      const cv = compositeCanvasRef.current!;
+      try {
+        setStatusMsg("매장 전체보기 갤러리에 등록 중...");
+        await publishToGallery(saved, activeTab, cv.toDataURL("image/png"), user.uid);
+        setStatusMsg("등록 완료! 매장 전체보기에서 확인할 수 있습니다.", "success");
+      } catch (err) {
+        setStatusMsg(`등록 실패: ${err instanceof Error ? err.message : err}`, "error");
+      }
+    }
+    setBusy(false);
+  }
+
+  // ---------------- 렌더 ----------------
+  return (
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+            ← 홈으로
+          </Link>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+            아이센스 PC방 좌석배치도 작업 툴
+          </h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            {user?.email} 님으로 로그인됨 ·{" "}
+            <Link href="/seat-layout/gallery" className="underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300">
+              매장 전체보기
+            </Link>
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+        >
+          로그아웃
+        </button>
+      </header>
+
+      <div className="flex gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
+        {(["desk", "pc"] as TabKey[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => {
+              setActiveTab(tab);
+              setSelectedTypeKey(null);
+              cancelZone();
+            }}
+            className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === tab
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            }`}
+          >
+            {tab === "desk" ? "책상 발주 도면" : "PC 발주 도면"}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "pc" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">책상 구역 불러오기</p>
+          <p className="mt-1 text-sm text-amber-800/80 dark:text-amber-200/70">
+            책상 발주 도면에서 지정한 구역을 그대로 가져와서 PC 존으로 씁니다. 이름/색상/좌표/대수는 그대로 복사되고,
+            PC 사양은 기본사양으로 시작합니다.
+          </p>
+          <button
+            type="button"
+            onClick={importDeskZonesToPc}
+            className="mt-3 rounded-full bg-amber-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-amber-700"
+          >
+            책상 구역 불러오기
+          </button>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형 선택</h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
+          </p>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {ZONE_TYPES.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => selectType(t.key)}
+              style={{
+                background: t.color,
+                color: getContrastText(t.color),
+                boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
+              }}
+              className="rounded-lg px-3 py-2 text-sm font-semibold transition"
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {selectedType && (
+          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
+            선택됨: <b style={{ color: selectedType.color }}>{selectedType.label}</b> → 다음 존 이름:{" "}
+            <b>{nextNamePreview}</b>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
+        <div className="flex flex-col gap-4">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">불러올 프로젝트 (매장)</label>
+            <select
+              value={project.updatedAt ? project.id : ""}
+              onChange={(e) => handleSelectProject(e.target.value)}
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              <option value="">-- 프로젝트 선택 --</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={newProject}
+                className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                + 새 프로젝트
+              </button>
+              <button
+                type="button"
+                onClick={deleteCurrentProject}
+                className="flex-1 rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
+              >
+                선택한 프로젝트 삭제
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">매장명</label>
+            <input
+              value={project.name}
+              onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
+              placeholder="예: 광주첨단점"
+              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            <label className="mt-3 block text-xs font-medium text-zinc-500 dark:text-zinc-400">도면 이미지 업로드</label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900"
+            />
+            <p className="mt-1 text-xs text-zinc-400">도면은 책상/PC 탭에서 공통으로 사용됩니다.</p>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleSaveClick}
+                className="flex-1 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                프로젝트 저장
+              </button>
+            </div>
+          </section>
+
+          {activeTab === "pc" && (
+            <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+              <button
+                type="button"
+                onClick={() => {
+                  setPcDefaultsOpen((v) => !v);
+                  if (!pcDefaultsOpen) setPcDefaultsDraft(pcDefaults);
+                }}
+                className="flex w-full items-center justify-between text-left"
+              >
+                <span className="font-semibold text-zinc-900 dark:text-zinc-50">PC 기본사양</span>
+                <span className="text-xs font-medium text-zinc-500">{pcDefaultsOpen ? "▾ 접기" : "▸ 펼치기"}</span>
+              </button>
+              <p className="mt-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                PC 기본사양 - {basicPcQty}대 (카운터, 대체PC 포함)
+              </p>
+              {pcDefaultsOpen && (
+                <div className="mt-3 space-y-2">
+                  <p className="text-xs text-zinc-400">
+                    여기 값이 기본값이 되고, 존마다 다르게 지정한 항목만 별도로 표시됩니다.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PC_SPEC_FIELDS.map((f) => (
+                      <PcFieldInput
+                        key={f.id}
+                        field={f}
+                        value={pcDefaultsDraft[f.id] ?? f.def}
+                        onChange={(v) => setPcDefaultsDraft((d) => ({ ...d, [f.id]: v }))}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={savePcDefaults}
+                    className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                  >
+                    기본사양 반영
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            {formOpen ? (
+              <ZoneForm
+                mode={editingIndex !== null ? "edit" : "create"}
+                activeTab={activeTab}
+                title={
+                  editingIndex !== null
+                    ? `스펙 수정 — ${activeZones[editingIndex]?.name ?? ""}`
+                    : selectedType?.key === "etc"
+                      ? "존 정보 입력 (기타)"
+                      : `존 정보 입력 — ${nextNamePreview}`
+                }
+                isEtc={editingIndex === null && selectedType?.key === "etc"}
+                etcName={etcName}
+                onEtcNameChange={setEtcName}
+                etcColor={etcColor}
+                onEtcColorChange={setEtcColor}
+                showAi={editingIndex === null}
+                aiResultText={aiResultText}
+                recognizing={recognizing}
+                onRecognizeAgain={() => curRect && runRecognize(curRect, activeTab)}
+                breakdown={breakdown}
+                onBreakdownChange={setBreakdown}
+                deskSpecDraft={deskSpecDraft}
+                onDeskSpecChange={(id, v) => setDeskSpecDraft((d) => ({ ...d, [id]: v }))}
+                seatsDraft={seatsDraft}
+                onSeatsDraftChange={setSeatsDraft}
+                pcSpecDraft={pcSpecDraft}
+                onPcSpecChange={(id, v) => setPcSpecDraft((d) => ({ ...d, [id]: v }))}
+                onSave={confirmZone}
+                onCancel={cancelZone}
+              />
+            ) : (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
+            <div className="mt-3 space-y-2">
+              {activeZones.length === 0 && (
+                <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
+              )}
+              {activeZones.map((z, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
+                  style={{ borderLeftColor: z.color }}
+                >
+                  <span className="text-zinc-700 dark:text-zinc-200">
+                    {z.name} ({z.seats}
+                    {activeTab === "pc" ? "대" : "개"})
+                  </span>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => editZone(i)}
+                      className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-white dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      수정
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteZone(i)}
+                      className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleDownload}
+                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+              >
+                FHD 미리보기 / 다운로드(PNG)
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handlePublishToGallery}
+                className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+              >
+                매장 전체보기에 등록
+              </button>
+            </div>
+            {status.text && (
+              <p className={`mt-2 text-sm ${statusToneClass(status.tone)}`}>{status.text}</p>
+            )}
+          </section>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            {imgEl ? (
+              <canvas
+                ref={canvasRef}
+                onMouseDown={handleCanvasMouseDown}
+                onMouseMove={handleCanvasMouseMove}
+                className="max-w-full cursor-crosshair rounded-lg border border-zinc-300 bg-white dark:border-zinc-700"
+              />
+            ) : (
+              <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
+                왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
+              </div>
+            )}
+          </div>
+          <canvas ref={compositeCanvasRef} className="hidden" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ==================== 존 정보 입력 폼 ====================
+
+type ZoneFormProps = {
+  mode: "create" | "edit";
+  activeTab: TabKey;
+  title: string;
+  isEtc: boolean;
+  etcName: string;
+  onEtcNameChange: (v: string) => void;
+  etcColor: string;
+  onEtcColorChange: (v: string) => void;
+  showAi: boolean;
+  aiResultText: string;
+  recognizing: boolean;
+  onRecognizeAgain: () => void;
+  breakdown: SizeBreakdownEntry[];
+  onBreakdownChange: (next: SizeBreakdownEntry[]) => void;
+  deskSpecDraft: Record<SpecFieldId, string>;
+  onDeskSpecChange: (id: SpecFieldId, value: string) => void;
+  seatsDraft: string;
+  onSeatsDraftChange: (v: string) => void;
+  pcSpecDraft: PcSpecValues;
+  onPcSpecChange: (id: PcSpecFieldId, value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+};
+
+function ZoneForm(props: ZoneFormProps) {
+  const {
+    activeTab,
+    title,
+    isEtc,
+    etcName,
+    onEtcNameChange,
+    etcColor,
+    onEtcColorChange,
+    showAi,
+    aiResultText,
+    recognizing,
+    onRecognizeAgain,
+    breakdown,
+    onBreakdownChange,
+    deskSpecDraft,
+    onDeskSpecChange,
+    seatsDraft,
+    onSeatsDraftChange,
+    pcSpecDraft,
+    onPcSpecChange,
+    onSave,
+    onCancel,
+  } = props;
+
+  const breakdownTotal = breakdown.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="font-semibold text-zinc-900 dark:text-zinc-50">{title}</p>
+
+      {isEtc && (
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <div>
+            <label className="text-xs font-medium text-zinc-500">존 이름 (직접입력)</label>
+            <input
+              value={etcName}
+              onChange={(e) => onEtcNameChange(e.target.value)}
+              placeholder="예: 카운터존"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-zinc-500">색상</label>
+            <input
+              type="color"
+              value={etcColor}
+              onChange={(e) => onEtcColorChange(e.target.value)}
+              className="mt-1 h-[38px] w-14 rounded-lg border border-zinc-300 dark:border-zinc-700"
+            />
+          </div>
+        </div>
+      )}
+
+      {showAi && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+          <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+            AI 자동인식 {activeTab === "pc" ? "(PC 대수)" : "(좌석 수량 + 책상사이즈)"}
+          </p>
+          <p className="mt-1 text-sm text-amber-800/90 dark:text-amber-200/80">{aiResultText}</p>
+          <button
+            type="button"
+            disabled={recognizing}
+            onClick={onRecognizeAgain}
+            className="mt-2 rounded-full border border-amber-400 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:text-amber-200"
+          >
+            다시 인식
+          </button>
+        </div>
+      )}
+
+      {activeTab === "desk" ? (
+        <>
+          <div>
+            <div className="space-y-2">
+              {breakdown.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  {i === 0 && <span className="w-16 shrink-0 text-xs text-zinc-500">책상사이즈</span>}
+                  <select
+                    value={row.deskSize}
+                    onChange={(e) => {
+                      const next = [...breakdown];
+                      next[i] = { ...next[i], deskSize: e.target.value as DeskSize };
+                      onBreakdownChange(next);
+                    }}
+                    className="rounded-lg border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  >
+                    {DESK_SIZE_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="수량"
+                    value={row.qty || ""}
+                    onChange={(e) => {
+                      const next = [...breakdown];
+                      next[i] = { ...next[i], qty: Number(e.target.value) || 0 };
+                      onBreakdownChange(next);
+                    }}
+                    className="w-20 rounded-lg border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  {i > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onBreakdownChange(breakdown.filter((_, ri) => ri !== i))}
+                      className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                    >
+                      삭제
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => onBreakdownChange([...breakdown, { deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }])}
+              className="mt-2 rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              + 다른 사이즈 추가 (섞여있을 때만)
+            </button>
+            <p className="mt-2 text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+              합계: {breakdownTotal}석{breakdown.length > 1 ? ` (사이즈 ${breakdown.length}종 합산)` : ""}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-800">
+            {SPEC_FIELDS.map((f) => (
+              <SelectOrEtc
+                key={f.id}
+                field={f}
+                value={deskSpecDraft[f.id]}
+                onChange={(v) => onDeskSpecChange(f.id, v)}
+              />
+            ))}
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <label className="text-xs font-medium text-zinc-500">대수</label>
+            <input
+              type="number"
+              value={seatsDraft}
+              onChange={(e) => onSeatsDraftChange(e.target.value)}
+              placeholder="10"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2 border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-800">
+            {PC_SPEC_FIELDS.map((f) => (
+              <PcFieldInput
+                key={f.id}
+                field={f}
+                value={pcSpecDraft[f.id] ?? ""}
+                onChange={(v) => onPcSpecChange(f.id, v)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onSave}
+          className="flex-1 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+        >
+          저장
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        >
+          취소
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// 책상 탭 사양: 정해진 옵션 + "기타(직접입력)"
+function SelectOrEtc({
+  field,
+  value,
+  onChange,
+}: {
+  field: SpecField;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const isKnown = field.options.includes(value);
+  return (
+    <div>
+      <label className="text-xs font-medium text-zinc-500">{field.label}</label>
+      <select
+        value={isKnown ? value : "__etc__"}
+        onChange={(e) => onChange(e.target.value === "__etc__" ? "" : e.target.value)}
+        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        {field.options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+        <option value="__etc__">기타(직접입력)</option>
+      </select>
+      {!isKnown && (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={`${field.label} 직접입력`}
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+      )}
+    </div>
+  );
+}
+
+// PC 탭 사양: 자동완성 후보가 있으면 datalist로 제안 + 자유 입력
+function PcFieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: { id: PcSpecFieldId; label: string; def: string };
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const suggestions = FIELD_SUGGESTIONS[field.id];
+  const listId = `pc-suggest-${field.id}`;
+  return (
+    <div>
+      <label className="text-xs font-medium text-zinc-500">{field.label}</label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        list={suggestions ? listId : undefined}
+        placeholder={field.def}
+        className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      {suggestions && (
+        <datalist id={listId}>
+          {suggestions.map((opt) => (
+            <option key={opt} value={opt} />
+          ))}
+        </datalist>
+      )}
+    </div>
+  );
+}
