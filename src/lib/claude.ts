@@ -17,7 +17,7 @@ export function getClaudeClient() {
 }
 
 export function getClaudeModel() {
-  return process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514";
+  return process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5";
 }
 
 export type ChatMessage = {

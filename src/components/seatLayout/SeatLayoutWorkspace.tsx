@@ -17,14 +17,8 @@ import {
 } from "@/lib/seatLayout/constants";
 import { computeBasicPcQty, getContrastText, nextSuffix } from "@/lib/seatLayout/calc";
 import { renderDeskComposite, renderPcComposite } from "@/lib/seatLayout/canvasRender";
-import {
-  deleteProject,
-  listProjects,
-  loadProject,
-  publishToGallery,
-  saveProject,
-  uploadFloorPlanImage,
-} from "@/lib/seatLayout/store";
+import { compressImageDataUrl } from "@/lib/seatLayout/imageCompress";
+import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
   emptyProject,
   type DeskSize,
@@ -149,24 +143,23 @@ export function SeatLayoutWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------- 도면 이미지 로드 ----------------
+  // ---------------- 도면 이미지 로드 (Firestore에 저장된 데이터 URL) ----------------
   useEffect(() => {
-    if (!project.floorPlanUrl) {
+    if (!project.floorPlanDataUrl) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setImgEl(null);
       return;
     }
     const image = new Image();
-    image.crossOrigin = "anonymous";
     image.onload = () => setImgEl(image);
     image.onerror = () =>
       setStatusMsg("도면 이미지를 불러오지 못했습니다.", "error");
-    image.src = project.floorPlanUrl;
+    image.src = project.floorPlanDataUrl;
     return () => {
       image.onload = null;
       image.onerror = null;
     };
-  }, [project.floorPlanUrl]);
+  }, [project.floorPlanDataUrl]);
 
   // ---------------- 캔버스 그리기 ----------------
   function drawZoneBox(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, z: ActiveZone) {
@@ -624,20 +617,15 @@ export function SeatLayoutWorkspace() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       const dataUrl = evt.target?.result as string;
-      const image = new Image();
-      image.onload = () => {
-        setImgEl(image);
-        setProject((p) => ({ ...p, imageWidth: image.naturalWidth, imageHeight: image.naturalHeight }));
-      };
-      image.src = dataUrl;
-
-      setStatusMsg("도면 업로드 중...");
+      setStatusMsg("도면을 불러오는 중...");
       try {
-        const { path, url } = await uploadFloorPlanImage(project.id, dataUrl, file.name);
-        setProject((p) => ({ ...p, floorPlanPath: path, floorPlanUrl: url }));
-        setStatusMsg("도면 업로드 완료", "success");
+        // Firebase Storage를 쓰지 않으므로, 압축한 도면을 프로젝트 문서(Firestore)에 바로 저장한다.
+        // imgEl은 project.floorPlanDataUrl을 지켜보는 useEffect가 알아서 갱신한다.
+        const { dataUrl: compressed, width, height } = await compressImageDataUrl(dataUrl);
+        setProject((p) => ({ ...p, floorPlanDataUrl: compressed, imageWidth: width, imageHeight: height }));
+        setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
       } catch (err) {
-        setStatusMsg(`도면 업로드 실패: ${err instanceof Error ? err.message : err}`, "error");
+        setStatusMsg(`도면 처리 실패: ${err instanceof Error ? err.message : err}`, "error");
       }
     };
     reader.readAsDataURL(file);
@@ -686,7 +674,7 @@ export function SeatLayoutWorkspace() {
     setBusy(false);
   }
 
-  async function handlePublishToGallery() {
+  async function handlePublishToSlides() {
     if (!imgEl || !user) {
       setStatusMsg("먼저 도면을 업로드하세요.", "error");
       return;
@@ -701,9 +689,21 @@ export function SeatLayoutWorkspace() {
     if (renderComposite()) {
       const cv = compositeCanvasRef.current!;
       try {
-        setStatusMsg("매장 전체보기 갤러리에 등록 중...");
-        await publishToGallery(saved, activeTab, cv.toDataURL("image/png"), user.uid);
-        setStatusMsg("등록 완료! 매장 전체보기에서 확인할 수 있습니다.", "success");
+        setStatusMsg("공유 프레젠테이션에 등록 중... (몇 초 걸릴 수 있습니다)");
+        const token = await user.getIdToken();
+        const res = await fetch("/api/seat-layout/publish-slide", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            slideKey: `${saved.id}_${activeTab}`,
+            projectName: saved.name,
+            imageDataUrl: cv.toDataURL("image/png"),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "등록에 실패했습니다.");
+        setStatusMsg("등록 완료! (프레젠테이션 첫 페이지에 반영됨)", "success");
+        window.open(data.presentationUrl, "_blank");
       } catch (err) {
         setStatusMsg(`등록 실패: ${err instanceof Error ? err.message : err}`, "error");
       }
@@ -723,10 +723,7 @@ export function SeatLayoutWorkspace() {
             아이센스 PC방 좌석배치도 작업 툴
           </h1>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {user?.isAnonymous ? "사내 공용 접속" : `${user?.email} 님으로 로그인됨`} ·{" "}
-            <Link href="/seat-layout/gallery" className="underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300">
-              매장 전체보기
-            </Link>
+            {user?.isAnonymous ? "사내 공용 접속" : `${user?.email} 님으로 로그인됨`}
           </p>
         </div>
         {!user?.isAnonymous && (
@@ -1004,10 +1001,10 @@ export function SeatLayoutWorkspace() {
               <button
                 type="button"
                 disabled={busy}
-                onClick={handlePublishToGallery}
+                onClick={handlePublishToSlides}
                 className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
               >
-                매장 전체보기에 등록
+                공유 프레젠테이션에 등록
               </button>
             </div>
             {status.text && (

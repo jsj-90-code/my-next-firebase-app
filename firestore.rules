@@ -7,10 +7,5 @@ service cloud.firestore {
     match /seatLayoutProjects/{projectId} {
       allow read, write: if request.auth != null;
     }
-
-    // 매장 전체보기(갤러리)에 등록된 최신 발주 이미지 메타데이터
-    match /seatLayoutGallery/{entryId} {
-      allow read, write: if request.auth != null;
-    }
   }
 }

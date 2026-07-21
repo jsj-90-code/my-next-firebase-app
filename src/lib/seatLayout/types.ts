@@ -86,8 +86,9 @@ export type PcZone = NormalizedRect & {
 export type SeatLayoutProject = {
   id: string;
   name: string;
-  floorPlanPath: string | null; // Firebase Storage 경로
-  floorPlanUrl: string | null; // 다운로드 URL (캐시용)
+  // 도면 원본은 Storage에 올리지 않고, 압축한 데이터 URL을 그대로 Firestore 문서에 저장한다
+  // (Firebase Storage는 유료 요금제가 필요해서 이 프로젝트에서는 쓰지 않기로 했다).
+  floorPlanDataUrl: string | null;
   imageWidth: number;
   imageHeight: number;
   zones: DeskZone[];
@@ -100,8 +101,7 @@ export type SeatLayoutProject = {
 export function emptyProject(): Omit<SeatLayoutProject, "id"> {
   return {
     name: "",
-    floorPlanPath: null,
-    floorPlanUrl: null,
+    floorPlanDataUrl: null,
     imageWidth: 0,
     imageHeight: 0,
     zones: [],
@@ -121,16 +121,4 @@ export type ProjectSummary = {
   id: string;
   name: string;
   updatedAt: number | null;
-};
-
-// "매장 전체보기" 갤러리 항목 - 구글 슬라이드 자동 등록 기능을 대체
-export type GalleryEntry = {
-  id: string; // `${projectId}_${tab}`
-  projectId: string;
-  projectName: string;
-  tab: TabKey;
-  imagePath: string;
-  imageUrl: string;
-  updatedAt: number;
-  updatedBy: string | null;
 };
