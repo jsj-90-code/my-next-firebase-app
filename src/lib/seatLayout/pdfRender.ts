@@ -34,47 +34,18 @@ export async function loadPdfDocument(file: File): Promise<PdfJsLib.PDFDocumentP
 // 느려지거나 실패할 수 있어 실질적인 "최대 화질" 상한으로 둔다.
 const MAX_LONG_EDGE = 10000;
 
-// 도면 위의 반경/동선 표시용 점선 원·곡선은 PDF 안에서 실제 "점선(dash pattern)"
-// 선 스타일로 그려져 있다 (AI 인식이 이 점선을 좌석으로 착각하는 문제가 있었음).
-// pdf.js는 내부적으로 표준 Canvas2D API(setLineDash/stroke)를 그대로 호출하므로,
-// 우리가 만든 컨텍스트를 Proxy로 감싸서 "점선이 설정된 상태에서의 stroke"만
-// 건너뛰면 점선만 정확히 지우고 나머지 실선(벽/책상 등)은 그대로 남길 수 있다.
-function createDashSuppressingContext(ctx: CanvasRenderingContext2D): CanvasRenderingContext2D {
-  let dashed = false;
-  return new Proxy(ctx, {
-    get(target, prop) {
-      if (prop === "setLineDash") {
-        return (segments: number[]) => {
-          dashed = Array.isArray(segments) && segments.length > 0;
-          return target.setLineDash(segments);
-        };
-      }
-      if (prop === "stroke") {
-        return (...args: unknown[]) => {
-          if (dashed) return undefined;
-          return (target.stroke as (...a: unknown[]) => void).apply(target, args);
-        };
-      }
-      const value = Reflect.get(target, prop, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-    // 기본 Proxy set 동작은 target[prop] = value를 receiver(=이 Proxy) 기준으로 실행하려고
-    // 해서, pdf.js가 ctx.font / ctx.fillStyle 등을 대입할 때마다 네이티브 접근자가
-    // "Illegal invocation"으로 터진다. target에 직접 대입해서 우회한다.
-    set(target, prop, value) {
-      (target as unknown as Record<string | symbol, unknown>)[prop] = value;
-      return true;
-    },
-  }) as CanvasRenderingContext2D;
-}
+// (참고) 도면 위 반경/동선 표시용 점선을 렌더링 단계에서 지우려고 캔버스 컨텍스트를
+// Proxy로 감싸서 setLineDash 상태일 때 stroke를 건너뛰는 방식을 시도했었다. 그런데 실제
+// 도면 PDF로 계측해보니 stroke가 18,782번 호출되는 동안 dash 상태(setLineDash에 실제
+// 배열이 들어오는 경우)가 단 한 번도 없었다 — 즉 이 도면들의 점선은 PDF의 진짜 점선
+// 속성이 아니라 짧은 실선 조각을 이어붙여 만든 것이라 벡터 단계에서 "점선이다"라고
+// 구분할 방법이 없다. 그래서 이 방식은 제거했다 (효과도 없이 렌더링만 느려짐).
 
 // targetLongEdge: 렌더링 결과의 긴 변 픽셀 수 (썸네일은 작게, 실제 도면용은 크게)
-// removeDashedLines: true면 점선(안내선/반경 표시)을 렌더링 단계에서 지운다.
 export async function renderPdfPageToDataUrl(
   pdf: PdfJsLib.PDFDocumentProxy,
   pageNumber: number,
   targetLongEdge: number,
-  removeDashedLines = false,
 ): Promise<string> {
   const page = await pdf.getPage(pageNumber);
   const baseViewport = page.getViewport({ scale: 1 });
@@ -90,11 +61,6 @@ export async function renderPdfPageToDataUrl(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  if (removeDashedLines) {
-    const renderCtx = createDashSuppressingContext(ctx);
-    await page.render({ canvas: null, canvasContext: renderCtx, viewport }).promise;
-  } else {
-    await page.render({ canvas, viewport }).promise;
-  }
+  await page.render({ canvas, viewport }).promise;
   return canvas.toDataURL("image/png");
 }
