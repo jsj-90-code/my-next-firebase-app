@@ -29,6 +29,11 @@ export async function loadPdfDocument(file: File): Promise<PdfJsLib.PDFDocumentP
   return loadingTask.promise;
 }
 
+// PDF는 벡터라 화질 열화 없이 얼마든지 키울 수 있지만, 캔버스가 처리 가능한
+// 픽셀 수에는 브라우저 메모리상 실질적인 한계가 있다. 이 값 위로는 렌더링이
+// 느려지거나 실패할 수 있어 실질적인 "최대 화질" 상한으로 둔다.
+const MAX_LONG_EDGE = 10000;
+
 // targetLongEdge: 렌더링 결과의 긴 변 픽셀 수 (썸네일은 작게, 실제 도면용은 크게)
 export async function renderPdfPageToDataUrl(
   pdf: PdfJsLib.PDFDocumentProxy,
@@ -37,7 +42,8 @@ export async function renderPdfPageToDataUrl(
 ): Promise<string> {
   const page = await pdf.getPage(pageNumber);
   const baseViewport = page.getViewport({ scale: 1 });
-  const scale = targetLongEdge / Math.max(baseViewport.width, baseViewport.height);
+  const clampedLongEdge = Math.min(targetLongEdge, MAX_LONG_EDGE);
+  const scale = clampedLongEdge / Math.max(baseViewport.width, baseViewport.height);
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement("canvas");

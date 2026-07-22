@@ -373,22 +373,36 @@ export function renderOrderSummaryImage(
 
   const marginX = 44;
   const contentW = COMPOSITE_W - marginX * 2;
-  let y = 42;
-
-  c.fillStyle = "#2A2520";
-  c.font = "bold 34px sans-serif";
-  c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, y);
-  y += 34;
 
   const bezelData = computeBezelTable(zones);
   const summaryData = computeDeskSummary(zones);
   const jangpadRows = computeJangpadTable(zones);
 
+  const mainTitleH = 40;
   const titleFont = "bold 26px sans-serif";
   const titleH = 30;
-  const headerH = 36;
-  const rowH = 32;
-  const sectionGap = 26;
+  const headerH = 32;
+  const rowH = 26;
+  const sectionGap = 30;
+
+  // 존/사이즈 개수가 적을 때 표가 위쪽에 몰리고 아래쪽에 빈 여백만 남는 걸 막기 위해,
+  // 실제로 그려질 표 높이를 미리 계산해서 전체를 캔버스 안에서 수직으로 가운데 정렬한다.
+  const bezelRowCount = Math.max(1, bezelData.leftRows.length, bezelData.rightRows.length);
+  const summaryRowCount = Math.max(1, summaryData.length);
+  const jangpadRowCount = Math.max(1, jangpadRows.length);
+  const totalContentH =
+    mainTitleH +
+    titleH + (headerH + bezelRowCount * rowH) + sectionGap +
+    titleH + (headerH + summaryRowCount * rowH) + sectionGap +
+    titleH + (headerH + jangpadRowCount * rowH);
+  const topOffset = Math.max(20, (COMPOSITE_H - totalContentH) / 2);
+
+  let y = topOffset + 26;
+
+  c.fillStyle = "#2A2520";
+  c.font = "bold 34px sans-serif";
+  c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, y);
+  y += mainTitleH - 6;
 
   function drawSectionTitle(text: string) {
     c.fillStyle = "#2A2520";

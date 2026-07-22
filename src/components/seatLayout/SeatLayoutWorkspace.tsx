@@ -189,6 +189,32 @@ export function SeatLayoutWorkspace() {
   }, [floorPlanSrc]);
 
   // ---------------- 캔버스 그리기 ----------------
+  // 영역(존 지정 / PDF 크롭)을 정확하게 클릭하기 쉽도록 보조 눈금선을 그린다.
+  function drawGridLines(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) {
+    const minorStep = 50;
+    const majorStep = 200;
+    ctx.save();
+    for (let x = 0; x <= canvas.width; x += minorStep) {
+      const isMajor = x % majorStep === 0;
+      ctx.strokeStyle = isMajor ? "rgba(37, 99, 235, 0.35)" : "rgba(120, 120, 120, 0.2)";
+      ctx.lineWidth = isMajor ? 1 : 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, canvas.height);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= canvas.height; y += minorStep) {
+      const isMajor = y % majorStep === 0;
+      ctx.strokeStyle = isMajor ? "rgba(37, 99, 235, 0.35)" : "rgba(120, 120, 120, 0.2)";
+      ctx.lineWidth = isMajor ? 1 : 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(canvas.width, y + 0.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function drawZoneBox(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, z: ActiveZone) {
     const x = z.x * canvas.width;
     const y = z.y * canvas.height;
@@ -218,6 +244,7 @@ export function SeatLayoutWorkspace() {
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
+    drawGridLines(ctx, canvas);
     activeZones.forEach((z) => drawZoneBox(ctx, canvas, z));
   }
 
@@ -701,7 +728,7 @@ export function SeatLayoutWorkspace() {
     setPdfPickerBusy(true);
     setStatusMsg("선택한 페이지를 고해상도로 불러오는 중...");
     try {
-      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 4200);
+      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 8000);
       const probe = new Image();
       await new Promise<void>((resolve, reject) => {
         probe.onload = () => resolve();
@@ -738,6 +765,7 @@ export function SeatLayoutWorkspace() {
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    drawGridLines(ctx, canvas);
     if (cropRect) {
       const x = cropRect.x * canvas.width;
       const y = cropRect.y * canvas.height;
@@ -1508,7 +1536,9 @@ function ZoneForm(props: ZoneFormProps) {
         </>
       )}
 
-      <div className="flex gap-2 pt-1">
+      {/* 스펙 목록이 길어지면 화면 아래로 밀려나 스크롤을 두 번 해야 눌렀던 문제 때문에,
+          뷰포트 하단에 붙여서(sticky) 스크롤 중에도 항상 보이게 한다. */}
+      <div className="sticky bottom-2 z-10 -mx-5 -mb-5 flex gap-2 border-t border-zinc-200 bg-white/95 px-5 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
         <button
           type="button"
           onClick={onSave}
