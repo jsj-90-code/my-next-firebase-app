@@ -33,7 +33,7 @@ export function drawTable(
   c.fillStyle = "#8D7B68";
   c.fillRect(x, y, w, headerH);
   c.fillStyle = "#ffffff";
-  c.font = "bold 13px sans-serif";
+  c.font = "bold 16px sans-serif";
   let cx = x;
   cols.forEach((col) => {
     c.fillText(col.title, cx + 6, y + headerH * 0.68);
@@ -63,7 +63,7 @@ export function drawTable(
   c.stroke();
 
   const rows = rowsData.length ? rowsData : [["-", "-", "-"]];
-  c.font = "12.5px sans-serif";
+  c.font = "15px sans-serif";
   c.fillStyle = "#2A2520";
   rows.forEach((rowVals, ri) => {
     const ry = y + headerH + ri * rowH;
@@ -134,10 +134,10 @@ export function drawZoneOverlaysOnCard(
     c.lineWidth = 5;
     c.strokeRect(zx, zy, zw, zh);
 
-    c.font = "bold 22px sans-serif";
+    c.font = "bold 24px sans-serif";
     const textW = c.measureText(z.name).width;
     const tagW = textW + 18;
-    const tagH = 28;
+    const tagH = 30;
     const tagX = zx;
     const tagY = Math.max(0, zy - tagH - 4);
     c.fillStyle = z.color;
@@ -174,7 +174,7 @@ export function renderDeskFloorplanImage(
   const panelAreaW = 900;
   const panelBottomLimit = 940;
   const gap = 14;
-  const layout = computeCompactLayout(zones.length, panelBottomLimit - panelAreaY, 215, 44, 22, 17);
+  const layout = computeCompactLayout(zones.length, panelBottomLimit - panelAreaY, 225, 48, 25, 19);
   const colW = (panelAreaW - (layout.cols - 1) * gap) / layout.cols;
   const specLabels = ["책상", "책상사이즈", "쿨러", "칸막이", "모니터암", "의자"];
 
@@ -229,7 +229,7 @@ export function renderDeskFloorplanImage(
 
   const totalSeats = zones.reduce((s, z) => s + (Number(z.seats) || 0), 0) + 1;
   c.fillStyle = "#2A2520";
-  c.font = "bold 46px sans-serif";
+  c.font = "bold 48px sans-serif";
   c.fillText(`${projectName || "매장명"}_${totalSeats}석(카운터포함)`, panelAreaX, 1020);
 }
 
@@ -258,13 +258,13 @@ export function renderPcFloorplanImage(
   const basicQty = computeBasicPcQty(deskZones, pcZones);
 
   const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad");
-  const defHeaderH = 30;
-  const defLineH = 22;
+  const defHeaderH = 34;
+  const defLineH = 25;
   const defBoxH = defHeaderH + Math.ceil(DEFAULT_BOX_FIELDS.length / 2) * defLineH + 10;
   c.fillStyle = "#2A2520";
   c.fillRect(panelAreaX, panelAreaY, panelAreaW, defHeaderH);
   c.fillStyle = "#ffffff";
-  c.font = "bold 17px sans-serif";
+  c.font = "bold 19px sans-serif";
   c.fillText(
     `[ PC 기본사양 ] - ${basicQty}대 (카운터, 대체PC 포함)`,
     panelAreaX + 10,
@@ -275,7 +275,7 @@ export function renderPcFloorplanImage(
   c.strokeStyle = "#2A2520";
   c.lineWidth = 1.5;
   c.strokeRect(panelAreaX, panelAreaY, panelAreaW, defBoxH);
-  c.font = "14px sans-serif";
+  c.font = "16px sans-serif";
   c.fillStyle = "#2A2520";
   const colW2 = panelAreaW / 2;
   DEFAULT_BOX_FIELDS.forEach((f, i) => {
@@ -283,11 +283,11 @@ export function renderPcFloorplanImage(
     const row = Math.floor(i / 2);
     const lx = panelAreaX + 12 + col * colW2;
     const ly = panelAreaY + defHeaderH + 8 + row * defLineH;
-    c.font = "bold 14px sans-serif";
-    c.fillText(f.label, lx, ly + 15);
+    c.font = "bold 16px sans-serif";
+    c.fillText(f.label, lx, ly + 16);
     const labelW = c.measureText(f.label).width;
-    c.font = "14px sans-serif";
-    c.fillText(pcDefaults[f.id] || f.def, lx + labelW + 10, ly + 15);
+    c.font = "16px sans-serif";
+    c.fillText(pcDefaults[f.id] || f.def, lx + labelW + 10, ly + 16);
   });
 
   const overrideZones = pcZones
@@ -304,10 +304,10 @@ export function renderPcFloorplanImage(
   const panelTop = panelAreaY + defBoxH + 16;
   const panelBottomLimit = 940;
   const maxLines = overrideZones.reduce((m, item) => Math.max(m, item.lines.length), 1);
-  const idealHeaderH = 44;
-  const LINE_H = 27;
+  const idealHeaderH = 48;
+  const LINE_H = 29;
   const idealRowH = idealHeaderH + maxLines * LINE_H + 10;
-  const layout = computeCompactLayout(overrideZones.length, panelBottomLimit - panelTop, idealRowH, idealHeaderH, 22, 17);
+  const layout = computeCompactLayout(overrideZones.length, panelBottomLimit - panelTop, idealRowH, idealHeaderH, 25, 19);
   const lineShrink = layout.rowH / idealRowH;
   const colW = (panelAreaW - (layout.cols - 1) * 14) / layout.cols;
 
@@ -358,7 +358,7 @@ export function renderPcFloorplanImage(
 
   const totalPc = computePcTotal(deskZones);
   c.fillStyle = "#2A2520";
-  c.font = "bold 46px sans-serif";
+  c.font = "bold 48px sans-serif";
   c.fillText(`${projectName || "매장명"}_PC ${totalPc}대(카운터,대체PC포함)`, panelAreaX, 1020);
 }
 
@@ -371,23 +371,24 @@ export function renderOrderSummaryImage(
 ) {
   fillBackground(c);
 
-  const marginX = 60;
+  const marginX = 44;
   const contentW = COMPOSITE_W - marginX * 2;
-  let y = 50;
+  let y = 42;
 
   c.fillStyle = "#2A2520";
-  c.font = "bold 32px sans-serif";
+  c.font = "bold 34px sans-serif";
   c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, y);
-  y += 40;
+  y += 34;
 
   const bezelData = computeBezelTable(zones);
   const summaryData = computeDeskSummary(zones);
   const jangpadRows = computeJangpadTable(zones);
 
-  const titleFont = "bold 24px sans-serif";
-  const titleH = 34;
-  const headerH = 30;
-  const rowH = 26;
+  const titleFont = "bold 26px sans-serif";
+  const titleH = 30;
+  const headerH = 36;
+  const rowH = 32;
+  const sectionGap = 26;
 
   function drawSectionTitle(text: string) {
     c.fillStyle = "#2A2520";
@@ -415,7 +416,7 @@ export function renderOrderSummaryImage(
     drawTable(c, marginX, y, halfW, headerH, rowH, bezelCols, leftRows),
     drawTable(c, marginX + halfW + gapMid, y, halfW, headerH, rowH, bezelCols, rightRows),
   );
-  y += bezelH + 44;
+  y += bezelH + sectionGap;
 
   // [ 책상 발주 합계 ]
   drawSectionTitle("[ 책상 발주 합계 ]");
@@ -427,7 +428,7 @@ export function renderOrderSummaryImage(
     { title: "존종류", width: contentW * 0.38 },
   ];
   const summaryRows = summaryData.map((s) => [s.desk, s.deskSize, s.partition, `${s.qty} EA`, s.types]);
-  y += drawTable(c, marginX, y, contentW, headerH, rowH, summaryCols, summaryRows) + 44;
+  y += drawTable(c, marginX, y, contentW, headerH, rowH, summaryCols, summaryRows) + sectionGap;
 
   // [ 장패드 수량 ]
   drawSectionTitle("[ 장패드 수량 ]");

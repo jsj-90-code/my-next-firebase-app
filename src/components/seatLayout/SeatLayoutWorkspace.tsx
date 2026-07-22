@@ -701,7 +701,7 @@ export function SeatLayoutWorkspace() {
     setPdfPickerBusy(true);
     setStatusMsg("선택한 페이지를 고해상도로 불러오는 중...");
     try {
-      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 2200);
+      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 4200);
       const probe = new Image();
       await new Promise<void>((resolve, reject) => {
         probe.onload = () => resolve();
