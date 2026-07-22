@@ -152,7 +152,9 @@ function fillBackground(c: CanvasRenderingContext2D) {
   c.fillRect(0, 0, COMPOSITE_W, COMPOSITE_H);
 }
 
-export function renderDeskComposite(
+// 책상 발주 도면: 표(베젤/합계)는 renderOrderSummaryImage로 분리되었으므로,
+// 그만큼 비는 공간을 도면 카드 높이를 늘려서 채운다.
+export function renderDeskFloorplanImage(
   c: CanvasRenderingContext2D,
   img: HTMLImageElement,
   projectName: string,
@@ -160,69 +162,12 @@ export function renderDeskComposite(
 ) {
   fillBackground(c);
 
-  const bezelData = computeBezelTable(zones);
-  const summaryData = computeDeskSummary(zones);
-
-  const bezelHeaderH = 26;
-  const bezelRowH = 22;
-  const bezelRowsMax = Math.max(bezelData.leftRows.length, bezelData.rightRows.length, 1);
-  const bezelTableH = bezelHeaderH + bezelRowsMax * bezelRowH;
-
-  const summaryHeaderH = 26;
-  const summaryRowH = 22;
-  const summaryRowsCount = Math.max(summaryData.length, 1);
-  const summaryTableH = summaryHeaderH + summaryRowsCount * summaryRowH;
-
-  const titleH = 26;
-  const gapBetweenBlocks = 14;
   const cardBottomGap = 14;
   const cardY = 15;
-  const bottomBlockH = titleH + bezelTableH + gapBetweenBlocks + titleH + summaryTableH;
-  let cardH = 1060 - cardY - cardBottomGap - bottomBlockH;
-  if (cardH < 260) cardH = 260;
+  const cardH = 1060 - cardY - cardBottomGap;
 
   const geo = drawFloorPlanCard(c, img, cardY, cardH);
   drawZoneOverlaysOnCard(c, zones, geo);
-
-  const bezelX = 950;
-  const bezelW = 955;
-  const bezelY = cardY + cardH + cardBottomGap;
-  c.fillStyle = "#2A2520";
-  c.font = "bold 20px sans-serif";
-  c.fillText("[ 베젤 사이즈 ]", bezelX, bezelY + 20);
-
-  const tableY = bezelY + 30;
-  const gapMid = 10;
-  const halfW = (bezelW - gapMid) / 2;
-  const leftCols: TableCol[] = [
-    { title: "TYPE", width: halfW * 0.36 },
-    { title: "수량", width: halfW * 0.22 },
-    { title: "비고", width: halfW * 0.42 },
-  ];
-  const leftRows = bezelData.leftRows.map((r) => [`좌베젤 ${r.value}mm`, `${r.qty} EA`, "-"]);
-  const rightCols = leftCols;
-  const rightRows = bezelData.rightRows.map((r) => [
-    `우베젤 ${r.value}mm`,
-    `${r.qty} EA`,
-    r.ambiguous ? `${r.deskSize} 책상용` : "-",
-  ]);
-  drawTable(c, bezelX, tableY, halfW, bezelHeaderH, bezelRowH, leftCols, leftRows);
-  drawTable(c, bezelX + halfW + gapMid, tableY, halfW, bezelHeaderH, bezelRowH, rightCols, rightRows);
-
-  const summaryY = tableY + bezelTableH + gapBetweenBlocks;
-  c.fillStyle = "#2A2520";
-  c.font = "bold 20px sans-serif";
-  c.fillText("[ 책상 발주 합계 ]", bezelX, summaryY + 20);
-  const summaryTableY = summaryY + 30;
-  const summaryCols: TableCol[] = [
-    { title: "책상종류", width: bezelW * 0.16 },
-    { title: "책상사이즈", width: bezelW * 0.14 },
-    { title: "칸막이", width: bezelW * 0.2 },
-    { title: "수량", width: bezelW * 0.12 },
-    { title: "존종류", width: bezelW * 0.38 },
-  ];
-  const summaryRows = summaryData.map((s) => [s.desk, s.deskSize, s.partition, `${s.qty} EA`, s.types]);
-  drawTable(c, bezelX, summaryTableY, bezelW, summaryHeaderH, summaryRowH, summaryCols, summaryRows);
 
   const panelAreaX = 20;
   const panelAreaY = 20;
@@ -288,7 +233,9 @@ export function renderDeskComposite(
   c.fillText(`${projectName || "매장명"}_${totalSeats}석(카운터포함)`, panelAreaX, 1020);
 }
 
-export function renderPcComposite(
+// PC 발주 도면: 장패드 수량 표는 renderOrderSummaryImage로 분리되었으므로,
+// 그만큼 비는 공간을 도면 카드 높이를 늘려서 채운다.
+export function renderPcFloorplanImage(
   c: CanvasRenderingContext2D,
   img: HTMLImageElement,
   projectName: string,
@@ -298,30 +245,12 @@ export function renderPcComposite(
 ) {
   fillBackground(c);
 
-  const jangpadRows = computeJangpadTable(deskZones);
-  const jangpadHeaderH = 26;
-  const jangpadRowH = 22;
-  const jangpadTitleH = 26;
   const cardBottomGap = 14;
-  const jangpadTableH = jangpadHeaderH + jangpadRows.length * jangpadRowH;
   const cardY = 15;
-  let cardH = 1060 - cardY - cardBottomGap - jangpadTitleH - jangpadTableH;
-  if (cardH < 260) cardH = 260;
+  const cardH = 1060 - cardY - cardBottomGap;
 
   const geo = drawFloorPlanCard(c, img, cardY, cardH);
   drawZoneOverlaysOnCard(c, pcZones, geo);
-
-  const jangpadY = cardY + cardH + cardBottomGap;
-  c.fillStyle = "#2A2520";
-  c.font = "bold 20px sans-serif";
-  c.fillText("[ 장패드 수량 ]", 950, jangpadY + 20);
-  const jangpadCols: TableCol[] = [
-    { title: "TYPE", width: 955 * 0.4 },
-    { title: "수량", width: 955 * 0.18 },
-    { title: "비고", width: 955 * 0.42 },
-  ];
-  const jangpadTableRows = jangpadRows.map((r) => [r.name, `${r.total} EA`, `기준 ${r.qty} + 여분 2`]);
-  drawTable(c, 950, jangpadY + 30, 955, jangpadHeaderH, jangpadRowH, jangpadCols, jangpadTableRows);
 
   const panelAreaX = 20;
   const panelAreaY = 20;
@@ -431,4 +360,82 @@ export function renderPcComposite(
   c.fillStyle = "#2A2520";
   c.font = "bold 46px sans-serif";
   c.fillText(`${projectName || "매장명"}_PC ${totalPc}대(카운터,대체PC포함)`, panelAreaX, 1020);
+}
+
+// 발주 요약: 책상 발주 도면의 베젤 사이즈/책상 발주 합계 표 + PC 발주 도면의 장패드 수량 표를
+// 도면 없이 표만 모아서 한 장으로 만든다 (책상/PC 도면 이미지에서 표를 빼낸 대신 별도 이미지로 제공).
+export function renderOrderSummaryImage(
+  c: CanvasRenderingContext2D,
+  projectName: string,
+  zones: DeskZone[],
+) {
+  fillBackground(c);
+
+  const marginX = 60;
+  const contentW = COMPOSITE_W - marginX * 2;
+  let y = 50;
+
+  c.fillStyle = "#2A2520";
+  c.font = "bold 32px sans-serif";
+  c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, y);
+  y += 40;
+
+  const bezelData = computeBezelTable(zones);
+  const summaryData = computeDeskSummary(zones);
+  const jangpadRows = computeJangpadTable(zones);
+
+  const titleFont = "bold 24px sans-serif";
+  const titleH = 34;
+  const headerH = 30;
+  const rowH = 26;
+
+  function drawSectionTitle(text: string) {
+    c.fillStyle = "#2A2520";
+    c.font = titleFont;
+    c.fillText(text, marginX, y + 22);
+    y += titleH;
+  }
+
+  // [ 베젤 사이즈 ]
+  drawSectionTitle("[ 베젤 사이즈 ]");
+  const gapMid = 16;
+  const halfW = (contentW - gapMid) / 2;
+  const bezelCols: TableCol[] = [
+    { title: "TYPE", width: halfW * 0.36 },
+    { title: "수량", width: halfW * 0.22 },
+    { title: "비고", width: halfW * 0.42 },
+  ];
+  const leftRows = bezelData.leftRows.map((r) => [`좌베젤 ${r.value}mm`, `${r.qty} EA`, "-"]);
+  const rightRows = bezelData.rightRows.map((r) => [
+    `우베젤 ${r.value}mm`,
+    `${r.qty} EA`,
+    r.ambiguous ? `${r.deskSize} 책상용` : "-",
+  ]);
+  const bezelH = Math.max(
+    drawTable(c, marginX, y, halfW, headerH, rowH, bezelCols, leftRows),
+    drawTable(c, marginX + halfW + gapMid, y, halfW, headerH, rowH, bezelCols, rightRows),
+  );
+  y += bezelH + 44;
+
+  // [ 책상 발주 합계 ]
+  drawSectionTitle("[ 책상 발주 합계 ]");
+  const summaryCols: TableCol[] = [
+    { title: "책상종류", width: contentW * 0.16 },
+    { title: "책상사이즈", width: contentW * 0.14 },
+    { title: "칸막이", width: contentW * 0.2 },
+    { title: "수량", width: contentW * 0.12 },
+    { title: "존종류", width: contentW * 0.38 },
+  ];
+  const summaryRows = summaryData.map((s) => [s.desk, s.deskSize, s.partition, `${s.qty} EA`, s.types]);
+  y += drawTable(c, marginX, y, contentW, headerH, rowH, summaryCols, summaryRows) + 44;
+
+  // [ 장패드 수량 ]
+  drawSectionTitle("[ 장패드 수량 ]");
+  const jangpadCols: TableCol[] = [
+    { title: "TYPE", width: contentW * 0.4 },
+    { title: "수량", width: contentW * 0.18 },
+    { title: "비고", width: contentW * 0.42 },
+  ];
+  const jangpadTableRows = jangpadRows.map((r) => [r.name, `${r.total} EA`, `기준 ${r.qty} + 여분 2`]);
+  drawTable(c, marginX, y, contentW, headerH, rowH, jangpadCols, jangpadTableRows);
 }

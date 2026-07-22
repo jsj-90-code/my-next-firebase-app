@@ -16,7 +16,11 @@ import {
   defaultPcDefaults,
 } from "@/lib/seatLayout/constants";
 import { computeBasicPcQty, getContrastText, nextSuffix } from "@/lib/seatLayout/calc";
-import { renderDeskComposite, renderPcComposite } from "@/lib/seatLayout/canvasRender";
+import {
+  renderDeskFloorplanImage,
+  renderOrderSummaryImage,
+  renderPcFloorplanImage,
+} from "@/lib/seatLayout/canvasRender";
 import { compressImageDataUrl } from "@/lib/seatLayout/imageCompress";
 import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
@@ -632,23 +636,30 @@ export function SeatLayoutWorkspace() {
   }
 
   // ---------------- 합성 이미지 (FHD) ----------------
-  function renderComposite(): boolean {
+  // 책상 발주 도면 / PC 발주 도면 / 발주 요약표, 이렇게 항상 3장을 만든다 (현재 탭과 무관하게 전체 프로젝트 기준).
+  type ExportItem = { key: string; label: string; dataUrl: string };
+
+  function renderAllOutputs(): ExportItem[] | null {
     const cv = compositeCanvasRef.current;
     if (!cv || !imgEl) {
       setStatusMsg("먼저 도면을 업로드하세요.", "error");
-      return false;
+      return null;
     }
     cv.width = COMPOSITE_W;
     cv.height = COMPOSITE_H;
     const ctx = cv.getContext("2d");
-    if (!ctx) return false;
+    if (!ctx) return null;
 
-    if (activeTab === "desk") {
-      renderDeskComposite(ctx, imgEl, project.name, project.zones);
-    } else {
-      renderPcComposite(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
-    }
-    return true;
+    renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
+    const desk = { key: "desk", label: "책상발주도면", dataUrl: cv.toDataURL("image/png") };
+
+    renderPcFloorplanImage(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
+    const pc = { key: "pc", label: "PC발주도면", dataUrl: cv.toDataURL("image/png") };
+
+    renderOrderSummaryImage(ctx, project.name, project.zones);
+    const summary = { key: "summary", label: "발주요약", dataUrl: cv.toDataURL("image/png") };
+
+    return [desk, pc, summary];
   }
 
   async function handleDownload() {
@@ -663,13 +674,15 @@ export function SeatLayoutWorkspace() {
       setBusy(false);
       return;
     }
-    if (renderComposite()) {
-      const cv = compositeCanvasRef.current!;
-      const link = document.createElement("a");
-      link.download = `${project.name || "floorplan"}_${activeTab === "desk" ? "책상발주" : "PC발주"}_FHD.png`;
-      link.href = cv.toDataURL("image/png");
-      link.click();
-      setStatusMsg("FHD 이미지를 다운로드했습니다.", "success");
+    const outputs = renderAllOutputs();
+    if (outputs) {
+      outputs.forEach((item) => {
+        const link = document.createElement("a");
+        link.download = `${project.name || "floorplan"}_${item.label}_FHD.png`;
+        link.href = item.dataUrl;
+        link.click();
+      });
+      setStatusMsg(`FHD 이미지 ${outputs.length}장을 다운로드했습니다.`, "success");
     }
     setBusy(false);
   }
@@ -686,24 +699,29 @@ export function SeatLayoutWorkspace() {
       setBusy(false);
       return;
     }
-    if (renderComposite()) {
-      const cv = compositeCanvasRef.current!;
+    const outputs = renderAllOutputs();
+    if (outputs) {
       try {
         setStatusMsg("공유 프레젠테이션에 등록 중... (몇 초 걸릴 수 있습니다)");
         const token = await user.getIdToken();
-        const res = await fetch("/api/seat-layout/publish-slide", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            slideKey: `${saved.id}_${activeTab}`,
-            projectName: saved.name,
-            imageDataUrl: cv.toDataURL("image/png"),
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "등록에 실패했습니다.");
-        setStatusMsg("등록 완료! (프레젠테이션 첫 페이지에 반영됨)", "success");
-        window.open(data.presentationUrl, "_blank");
+        let presentationUrl = "";
+        // 맨 앞(0번)에 꽂히는 순서라, 화면에서 desk→pc→summary 순으로 보이도록 역순으로 등록한다.
+        for (const item of [...outputs].reverse()) {
+          const res = await fetch("/api/seat-layout/publish-slide", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              slideKey: `${saved.id}_${item.key}`,
+              projectName: `${saved.name}_${item.label}`,
+              imageDataUrl: item.dataUrl,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(`${item.label}: ${data.error ?? "등록에 실패했습니다."}`);
+          presentationUrl = data.presentationUrl;
+        }
+        setStatusMsg(`등록 완료! (프레젠테이션에 ${outputs.length}장 반영됨)`, "success");
+        if (presentationUrl) window.open(presentationUrl, "_blank");
       } catch (err) {
         setStatusMsg(`등록 실패: ${err instanceof Error ? err.message : err}`, "error");
       }
@@ -793,7 +811,7 @@ export function SeatLayoutWorkspace() {
                 color: getContrastText(t.color),
                 boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
               }}
-              className="rounded-lg px-3 py-2 text-sm font-semibold transition"
+              className="cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold transition duration-150 hover:brightness-90 active:brightness-75"
             >
               {t.label}
             </button>
@@ -856,7 +874,7 @@ export function SeatLayoutWorkspace() {
               type="file"
               accept="image/*"
               onChange={handleFileChange}
-              className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900"
+              className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
             />
             <p className="mt-1 text-xs text-zinc-400">도면은 책상/PC 탭에서 공통으로 사용됩니다.</p>
             <div className="mt-3 flex gap-2">
@@ -989,6 +1007,9 @@ export function SeatLayoutWorkspace() {
           </section>
 
           <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <p className="mb-2 text-xs text-zinc-400">
+              책상 발주 도면 / PC 발주 도면 / 발주 요약표 3장이 한 번에 만들어집니다.
+            </p>
             <div className="flex flex-col gap-2">
               <button
                 type="button"
@@ -996,7 +1017,7 @@ export function SeatLayoutWorkspace() {
                 onClick={handleDownload}
                 className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
               >
-                FHD 미리보기 / 다운로드(PNG)
+                FHD 이미지 3장 다운로드(PNG)
               </button>
               <button
                 type="button"
@@ -1004,7 +1025,7 @@ export function SeatLayoutWorkspace() {
                 onClick={handlePublishToSlides}
                 className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
               >
-                공유 프레젠테이션에 등록
+                공유 프레젠테이션에 등록 (3슬라이드)
               </button>
             </div>
             {status.text && (

@@ -47,19 +47,32 @@ export async function publishCompositeToSlides({
   const slides = google.slides({ version: "v1", auth });
   const presentationId = getSlidesPresentationId();
 
+  // 서비스 계정 자체는 드라이브 저장용량이 없으므로 (Google 정책), 공유 드라이브를 찾아서 그 안에 올린다.
+  // 서비스 계정이 "콘텐츠 관리자" 이상으로 추가된 공유 드라이브가 하나 있어야 한다.
+  const sharedDrives = await drive.drives.list({ pageSize: 1 });
+  const sharedDriveId = sharedDrives.data.drives?.[0]?.id;
+  if (!sharedDriveId) {
+    throw new Error(
+      "서비스 계정이 속한 공유 드라이브(Shared Drive)를 찾을 수 없습니다. " +
+        "구글 드라이브에서 공유 드라이브를 만들고 서비스 계정을 콘텐츠 관리자로 추가해주세요.",
+    );
+  }
+
   // 1) 합성 이미지를 드라이브에 올린다. Slides API는 이미지를 URL로만 가져올 수 있어서
   //    (바이트를 직접 전송하는 방법이 없다) 링크가 있으면 볼 수 있게 공개 설정을 해준다.
   const base64 = imageDataUrl.includes(",") ? imageDataUrl.split(",")[1] : imageDataUrl;
   const buffer = Buffer.from(base64, "base64");
   const uploaded = await drive.files.create({
-    requestBody: { name: `${projectName}_${slideKey}.png` },
+    requestBody: { name: `${projectName}_${slideKey}.png`, parents: [sharedDriveId] },
     media: { mimeType: "image/png", body: Readable.from(buffer) },
     fields: "id",
+    supportsAllDrives: true,
   });
   const fileId = uploaded.data.id;
   if (!fileId) throw new Error("이미지를 구글 드라이브에 업로드하지 못했습니다.");
   await drive.permissions.create({
     fileId,
+    supportsAllDrives: true,
     requestBody: { role: "reader", type: "anyone" },
   });
   const imageUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
