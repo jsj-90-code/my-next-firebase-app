@@ -123,6 +123,15 @@ export function SeatLayoutWorkspace() {
   >(null);
   const [pdfPickerBusy, setPdfPickerBusy] = useState(false);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
+  // PDF 페이지를 고른 다음: 제목 블록/범례 등을 빼고 실제 도면 영역만 잘라내는 단계.
+  const [pdfCropSource, setPdfCropSource] = useState<
+    { dataUrl: string; width: number; height: number } | null
+  >(null);
+  const [cropRect, setCropRect] = useState<NormalizedRect | null>(null);
+  const [cropHint, setCropHint] = useState("");
+  const cropCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cropImgRef = useRef<HTMLImageElement | null>(null);
+  const cropPendingStartRef = useRef<{ px: number; py: number } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const compositeCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -693,10 +702,19 @@ export function SeatLayoutWorkspace() {
     setStatusMsg("선택한 페이지를 고해상도로 불러오는 중...");
     try {
       const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 2200);
-      applyFloorPlanDataUrlFromProbe(dataUrl);
+      const probe = new Image();
+      await new Promise<void>((resolve, reject) => {
+        probe.onload = () => resolve();
+        probe.onerror = () => reject(new Error("페이지 이미지를 불러오지 못했습니다."));
+        probe.src = dataUrl;
+      });
+      cropImgRef.current = probe;
+      setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
+      setCropRect(null);
+      setCropHint("도면 영역의 왼쪽 위를 클릭하세요 (제목 블록/범례 표는 빼고 도면만).");
       setPdfPickerPages(null);
       pdfDocRef.current = null;
-      setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+      setStatusMsg("실제 배치도 영역만 지정해주세요.", "success");
     } catch (err) {
       setStatusMsg(`페이지를 불러오지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
     } finally {
@@ -707,6 +725,94 @@ export function SeatLayoutWorkspace() {
   function cancelPdfPicker() {
     setPdfPickerPages(null);
     pdfDocRef.current = null;
+  }
+
+  // ---------------- PDF 페이지 크롭 (제목 블록/범례 등을 빼고 도면 영역만 선택) ----------------
+  useEffect(() => {
+    const canvas = cropCanvasRef.current;
+    const img = cropImgRef.current;
+    if (!canvas || !img || !pdfCropSource) return;
+    canvas.width = 900;
+    canvas.height = 900 * (img.naturalHeight / img.naturalWidth);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    if (cropRect) {
+      const x = cropRect.x * canvas.width;
+      const y = cropRect.y * canvas.height;
+      const w = cropRect.w * canvas.width;
+      const h = cropRect.h * canvas.height;
+      ctx.strokeStyle = "#F29801";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = "rgba(242, 152, 1, 0.12)";
+      ctx.fillRect(x, y, w, h);
+    }
+  }, [pdfCropSource, cropRect]);
+
+  function handleCropCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = cropCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    if (cropRect) setCropRect(null); // 이미 지정된 게 있으면 새로 다시 지정
+
+    if (!cropPendingStartRef.current) {
+      cropPendingStartRef.current = { px, py };
+      setCropHint("이제 도면 영역의 오른쪽 아래를 클릭하세요.");
+      return;
+    }
+
+    const { px: x1, py: y1 } = cropPendingStartRef.current;
+    cropPendingStartRef.current = null;
+    const rw = Math.abs(px - x1);
+    const rh = Math.abs(py - y1);
+    if (rw < 10 || rh < 10) {
+      setCropHint("영역이 너무 작습니다. 다시 지정해주세요.");
+      return;
+    }
+    setCropRect({
+      x: Math.min(x1, px) / canvas.width,
+      y: Math.min(y1, py) / canvas.height,
+      w: rw / canvas.width,
+      h: rh / canvas.height,
+    });
+    setCropHint("영역이 지정됐습니다. 확인을 누르거나, 다시 클릭해서 새로 지정하세요.");
+  }
+
+  function confirmPdfCrop() {
+    const img = cropImgRef.current;
+    if (!img || !cropRect) return;
+    const sx = cropRect.x * img.naturalWidth;
+    const sy = cropRect.y * img.naturalHeight;
+    const sw = cropRect.w * img.naturalWidth;
+    const sh = cropRect.h * img.naturalHeight;
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.round(sw));
+    off.height = Math.max(1, Math.round(sh));
+    const ctx = off.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, off.width, off.height);
+    applyFloorPlanDataUrl(off.toDataURL("image/png"), off.width, off.height);
+    closePdfCrop();
+    setStatusMsg("도면 영역을 잘라서 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+  }
+
+  function usePdfPageAsIs() {
+    if (!pdfCropSource) return;
+    applyFloorPlanDataUrl(pdfCropSource.dataUrl, pdfCropSource.width, pdfCropSource.height);
+    closePdfCrop();
+    setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+  }
+
+  function closePdfCrop() {
+    setPdfCropSource(null);
+    setCropRect(null);
+    cropPendingStartRef.current = null;
+    cropImgRef.current = null;
   }
 
   // ---------------- 합성 이미지 (FHD) ----------------
@@ -1152,20 +1258,57 @@ export function SeatLayoutWorkspace() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <div className="overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 p-3 dark:border-zinc-800 dark:bg-zinc-900">
-            {imgEl ? (
-              <canvas
-                ref={canvasRef}
-                onMouseDown={handleCanvasMouseDown}
-                onMouseMove={handleCanvasMouseMove}
-                className="max-w-full cursor-crosshair rounded-lg border border-zinc-300 bg-white dark:border-zinc-700"
-              />
-            ) : (
-              <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
-                왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
+          {pdfCropSource ? (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{cropHint}</p>
+              <div className="mt-2 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800">
+                <canvas
+                  ref={cropCanvasRef}
+                  onMouseDown={handleCropCanvasMouseDown}
+                  className="max-w-full cursor-crosshair"
+                />
               </div>
-            )}
-          </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={!cropRect}
+                  onClick={confirmPdfCrop}
+                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                >
+                  이 영역으로 자르기
+                </button>
+                <button
+                  type="button"
+                  onClick={usePdfPageAsIs}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                >
+                  자르지 않고 페이지 전체 사용
+                </button>
+                <button
+                  type="button"
+                  onClick={closePdfCrop}
+                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+              {imgEl ? (
+                <canvas
+                  ref={canvasRef}
+                  onMouseDown={handleCanvasMouseDown}
+                  onMouseMove={handleCanvasMouseMove}
+                  className="max-w-full cursor-crosshair rounded-lg border border-zinc-300 bg-white dark:border-zinc-700"
+                />
+              ) : (
+                <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
+                  왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
+                </div>
+              )}
+            </div>
+          )}
           <canvas ref={compositeCanvasRef} className="hidden" />
         </div>
       </div>
