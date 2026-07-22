@@ -112,6 +112,9 @@ export function SeatLayoutWorkspace() {
   const [busy, setBusy] = useState(false);
 
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
+  // 방금 업로드한 원본 화질 도면 (세션 동안만 메모리에 유지, Firestore에는 저장 안 함).
+  // AI 좌석 인식은 화질이 중요해서, Firestore 저장용으로 압축한 이미지가 아니라 이걸로 잘라낸다.
+  const [rawFloorPlanDataUrl, setRawFloorPlanDataUrl] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const compositeCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -147,9 +150,12 @@ export function SeatLayoutWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------- 도면 이미지 로드 (Firestore에 저장된 데이터 URL) ----------------
+  // ---------------- 도면 이미지 로드 ----------------
+  // 방금 업로드한 원본(rawFloorPlanDataUrl)이 있으면 그걸 우선 쓰고, 없으면(=프로젝트를
+  // 불러오기만 한 경우) Firestore에 저장된 압축본을 쓴다.
+  const floorPlanSrc = rawFloorPlanDataUrl ?? project.floorPlanDataUrl;
   useEffect(() => {
-    if (!project.floorPlanDataUrl) {
+    if (!floorPlanSrc) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setImgEl(null);
       return;
@@ -158,12 +164,12 @@ export function SeatLayoutWorkspace() {
     image.onload = () => setImgEl(image);
     image.onerror = () =>
       setStatusMsg("도면 이미지를 불러오지 못했습니다.", "error");
-    image.src = project.floorPlanDataUrl;
+    image.src = floorPlanSrc;
     return () => {
       image.onload = null;
       image.onerror = null;
     };
-  }, [project.floorPlanDataUrl]);
+  }, [floorPlanSrc]);
 
   // ---------------- 캔버스 그리기 ----------------
   function drawZoneBox(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, z: ActiveZone) {
@@ -549,6 +555,7 @@ export function SeatLayoutWorkspace() {
         return;
       }
       setProject(loaded);
+      setRawFloorPlanDataUrl(null);
       setActiveTab("desk");
       setSelectedTypeKey(null);
       cancelZone();
@@ -564,6 +571,7 @@ export function SeatLayoutWorkspace() {
 
   function newProject() {
     setProject({ id: crypto.randomUUID(), ...emptyProject() });
+    setRawFloorPlanDataUrl(null);
     setPcDefaults(defaultPcDefaults());
     setPcDefaultsDraft(defaultPcDefaults());
     setActiveTab("desk");
@@ -596,7 +604,19 @@ export function SeatLayoutWorkspace() {
   async function silentSave(): Promise<SeatLayoutProject | null> {
     if (!user) return null;
     try {
-      const toSave: SeatLayoutProject = { ...project, name: project.name || "이름없음", pcDefaults };
+      // Firestore 문서 용량 제한 때문에, 저장하는 순간에만 압축한다. 화면/AI 인식은 계속
+      // rawFloorPlanDataUrl(원본 화질)을 쓴다 — 압축본으로 덮어쓰지 않는다.
+      let floorPlanDataUrl = project.floorPlanDataUrl;
+      if (rawFloorPlanDataUrl) {
+        const compressed = await compressImageDataUrl(rawFloorPlanDataUrl);
+        floorPlanDataUrl = compressed.dataUrl;
+      }
+      const toSave: SeatLayoutProject = {
+        ...project,
+        name: project.name || "이름없음",
+        pcDefaults,
+        floorPlanDataUrl,
+      };
       const saved = await saveProject(toSave, user.uid);
       setProject(saved);
       await refreshProjectList();
@@ -619,19 +639,19 @@ export function SeatLayoutWorkspace() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = async (evt) => {
+    reader.onload = (evt) => {
       const dataUrl = evt.target?.result as string;
-      setStatusMsg("도면을 불러오는 중...");
-      try {
-        // Firebase Storage를 쓰지 않으므로, 압축한 도면을 프로젝트 문서(Firestore)에 바로 저장한다.
-        // imgEl은 project.floorPlanDataUrl을 지켜보는 useEffect가 알아서 갱신한다.
-        const { dataUrl: compressed, width, height } = await compressImageDataUrl(dataUrl);
-        setProject((p) => ({ ...p, floorPlanDataUrl: compressed, imageWidth: width, imageHeight: height }));
-        setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
-      } catch (err) {
-        setStatusMsg(`도면 처리 실패: ${err instanceof Error ? err.message : err}`, "error");
-      }
+      // 원본 화질 그대로 세션에 보관 (화면 표시 + AI 인식용). Firestore 저장용 압축은
+      // silentSave에서 저장 직전에만 한다 — 여기서 미리 압축해두면 인식 정확도가 떨어진다.
+      setRawFloorPlanDataUrl(dataUrl);
+      const probe = new Image();
+      probe.onload = () => {
+        setProject((p) => ({ ...p, imageWidth: probe.naturalWidth, imageHeight: probe.naturalHeight }));
+      };
+      probe.src = dataUrl;
+      setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
     };
+    reader.onerror = () => setStatusMsg("도면 파일을 읽지 못했습니다.", "error");
     reader.readAsDataURL(file);
   }
 
