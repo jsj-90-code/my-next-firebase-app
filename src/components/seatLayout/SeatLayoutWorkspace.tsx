@@ -728,7 +728,7 @@ export function SeatLayoutWorkspace() {
     setPdfPickerBusy(true);
     setStatusMsg("선택한 페이지를 고해상도로 불러오는 중...");
     try {
-      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 8000);
+      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 8000, true);
       const probe = new Image();
       await new Promise<void>((resolve, reject) => {
         probe.onload = () => resolve();
@@ -809,6 +809,31 @@ export function SeatLayoutWorkspace() {
       h: rh / canvas.height,
     });
     setCropHint("영역이 지정됐습니다. 확인을 누르거나, 다시 클릭해서 새로 지정하세요.");
+  }
+
+  // 첫 번째 클릭 이후 마우스를 움직이는 동안 눈금선 위에 점선 사각형을 실시간으로 그려서,
+  // 두 번째 지점을 클릭하기 전에 자를 영역을 미리 볼 수 있게 한다.
+  function handleCropCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!cropPendingStartRef.current) return;
+    const canvas = cropCanvasRef.current;
+    const img = cropImgRef.current;
+    if (!canvas || !img) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    drawGridLines(ctx, canvas);
+
+    const { px, py } = cropPendingStartRef.current;
+    ctx.strokeStyle = "#F29801";
+    ctx.setLineDash([6, 3]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(Math.min(px, x), Math.min(py, y), Math.abs(x - px), Math.abs(y - py));
+    ctx.setLineDash([]);
   }
 
   function confirmPdfCrop() {
@@ -1293,6 +1318,7 @@ export function SeatLayoutWorkspace() {
                 <canvas
                   ref={cropCanvasRef}
                   onMouseDown={handleCropCanvasMouseDown}
+                  onMouseMove={handleCropCanvasMouseMove}
                   className="max-w-full cursor-crosshair"
                 />
               </div>

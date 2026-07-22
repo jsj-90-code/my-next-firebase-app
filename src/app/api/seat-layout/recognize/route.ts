@@ -46,21 +46,34 @@ const EXCLUDE_NOTE =
   "따로 세어야 합니다 — 등을 맞댄 한 쌍을 절대 1개로 합쳐서 세지 마세요. 줄 하나에 보이는 좌석 수를 센 " +
   "다음, 등을 맞댄 줄이 있다면 그 줄의 좌석 수도 별도로 세어 합산하세요.";
 
+// 바로 "몇 개다"라고 답하게 하면 겹치거나 줄이 많을 때 셈이 잘 틀린다.
+// 하나씩 순서대로 나열하게 강제하면(그 다음 나열한 개수를 COUNT로 쓰게 하면) 빠뜨리거나
+// 중복으로 세는 실수가 줄어든다 — 비전 모델의 개수 세기 정확도를 높이는 일반적인 방법이다.
+const LIST_THEN_COUNT_NOTE =
+  "바로 개수만 답하지 말고, 반드시 아래 순서로 진행하세요:\n" +
+  "1. 왼쪽 위부터 오른쪽 아래 순서로, 보이는 책상을 하나도 빠뜨리거나 중복 없이 번호를 매기며 나열하세요. " +
+  "각 줄은 \"n: 위치 설명\" 형식으로 쓰세요 (예: \"1: 첫번째 줄 왼쪽에서 1번째\", \"2: 첫번째 줄 왼쪽에서 2번째\"). " +
+  "등을 맞댄 뒷줄이 있다면 뒷줄의 책상들도 절대 빠뜨리지 말고 이어서 번호를 매기세요.\n" +
+  "2. 나열을 다 마친 다음에만 COUNT를 씁니다. COUNT 값은 반드시 방금 나열한 항목 수와 정확히 같아야 합니다.";
+
 function buildPrompt(mode: "desk" | "pc") {
   if (mode === "pc") {
     return (
       "이 이미지는 PC방 도면의 한 구역을 잘라낸 것입니다.\n" +
-      `개별 좌석(PC 1대가 놓인 책상) 아이콘의 개수를 세어주세요. ${EXCLUDE_NOTE}\n` +
-      "아래 형식으로만, 다른 설명 없이 한 줄로 답하세요:\n" +
+      `개별 좌석(PC 1대가 놓인 책상) 아이콘의 개수를 정확히 세어야 합니다. ${EXCLUDE_NOTE}\n` +
+      `${LIST_THEN_COUNT_NOTE}\n` +
+      "나열이 끝나면 마지막 줄에 다른 설명 없이 이 형식으로만 쓰세요:\n" +
       "COUNT: 숫자"
     );
   }
 
   return (
     "이 이미지는 PC방 도면의 한 구역을 잘라낸 것입니다.\n" +
-    `1) 개별 좌석을 나타내는 책상 아이콘의 개수를 세어주세요. ${EXCLUDE_NOTE}\n` +
-    "2) 책상 옆/위에 작게 적힌 치수 텍스트(예: 820*680, 850*680 등)를 읽고, 폭(mm) 값을 820/850/910/950/1000 중 가장 가까운 표준 사이즈로 판단해주세요. 텍스트가 안 보이거나 판단이 어려우면 UNKNOWN이라고 답하세요.\n" +
-    "아래 형식으로만, 다른 설명 없이 정확히 두 줄로 답하세요:\n" +
+    `개별 좌석을 나타내는 책상 아이콘의 개수를 정확히 세어야 합니다. ${EXCLUDE_NOTE}\n` +
+    `${LIST_THEN_COUNT_NOTE}\n` +
+    "나열이 끝나면, 책상 옆/위에 작게 적힌 치수 텍스트(예: 820*680, 850*680 등)를 읽고 폭(mm) 값을 " +
+    "820/850/910/950/1000 중 가장 가까운 표준 사이즈로 판단하세요. 텍스트가 안 보이거나 판단이 어려우면 UNKNOWN이라고 답하세요.\n" +
+    "마지막 두 줄에 다른 설명 없이 이 형식으로만 쓰세요:\n" +
     "COUNT: 숫자\n" +
     "SIZE: 820mm 또는 850mm 또는 910mm 또는 950mm 또는 1000mm 또는 UNKNOWN"
   );
@@ -106,7 +119,9 @@ export async function POST(request: Request) {
   try {
     const response = await client.messages.create({
       model: getClaudeModel(),
-      max_tokens: 200,
+      // 이제 답변 전에 책상을 하나씩 나열하게 하므로(개수 세기 정확도 향상 목적),
+      // 좌석이 많은 구역에서는 출력이 길어질 수 있어 토큰 한도를 넉넉히 잡는다.
+      max_tokens: 1500,
       // 단순 개수 세기 작업이라 thinking은 끈다 (adaptive thinking이 토큰을 다 써버리면
       // 복잡한 구역에서 정작 COUNT/SIZE 답변이 잘려서 인식 실패로 보이는 문제가 있었다).
       thinking: { type: "disabled" },
@@ -129,15 +144,16 @@ export async function POST(request: Request) {
       .map((block) => block.text)
       .join("\n");
 
-    const countMatch = text.match(/COUNT:\s*(\d+)/i);
-    if (!countMatch) {
+    // 나열 목록 다음에 오는 마지막 COUNT 줄을 최종 값으로 쓴다.
+    const countMatches = [...text.matchAll(/COUNT:\s*(\d+)/gi)];
+    if (!countMatches.length) {
       return NextResponse.json(
         { error: `좌석 수를 인식하지 못했습니다. 응답: ${text}` },
         { status: 502 },
       );
     }
 
-    const seats = parseInt(countMatch[1], 10);
+    const seats = parseInt(countMatches[countMatches.length - 1][1], 10);
     let deskSize: DeskSize | null = null;
 
     if (mode === "desk") {

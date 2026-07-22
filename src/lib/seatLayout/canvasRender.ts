@@ -84,6 +84,27 @@ export function drawTable(
   return totalH;
 }
 
+// 표 칸 너비를 실제 들어갈 글자 길이에 맞춰 계산한다 (내용은 짧은데 칸이 캔버스 끝까지
+// 늘어나 가로 여백만 커 보이는 문제를 막기 위함 — 고정 비율 대신 측정값을 쓴다).
+function measureColWidths(
+  c: CanvasRenderingContext2D,
+  titles: string[],
+  rowsData: (string | number)[][],
+  minWidth = 60,
+  padding = 30,
+): number[] {
+  return titles.map((title, ci) => {
+    c.font = "bold 16px sans-serif";
+    let max = c.measureText(title).width;
+    c.font = "15px sans-serif";
+    rowsData.forEach((row) => {
+      const w = c.measureText(String(row[ci] ?? "")).width;
+      if (w > max) max = w;
+    });
+    return Math.max(minWidth, Math.round(max + padding));
+  });
+}
+
 export type FloorPlanGeo = { imgX: number; imgY: number; areaW: number; areaH: number };
 
 export function drawFloorPlanCard(
@@ -372,7 +393,6 @@ export function renderOrderSummaryImage(
   fillBackground(c);
 
   const marginX = 44;
-  const contentW = COMPOSITE_W - marginX * 2;
 
   const bezelData = computeBezelTable(zones);
   const summaryData = computeDeskSummary(zones);
@@ -413,44 +433,36 @@ export function renderOrderSummaryImage(
 
   // [ 베젤 사이즈 ]
   drawSectionTitle("[ 베젤 사이즈 ]");
-  const gapMid = 16;
-  const halfW = (contentW - gapMid) / 2;
-  const bezelCols: TableCol[] = [
-    { title: "TYPE", width: halfW * 0.36 },
-    { title: "수량", width: halfW * 0.22 },
-    { title: "비고", width: halfW * 0.42 },
-  ];
+  const gapMid = 24;
   const leftRows = bezelData.leftRows.map((r) => [`좌베젤 ${r.value}mm`, `${r.qty} EA`, "-"]);
   const rightRows = bezelData.rightRows.map((r) => [
     `우베젤 ${r.value}mm`,
     `${r.qty} EA`,
     r.ambiguous ? `${r.deskSize} 책상용` : "-",
   ]);
+  const bezelTitles = ["TYPE", "수량", "비고"];
+  const bezelColW = measureColWidths(c, bezelTitles, [...leftRows, ...rightRows]);
+  const bezelCols: TableCol[] = bezelTitles.map((title, i) => ({ title, width: bezelColW[i] }));
+  const bezelW = bezelColW.reduce((s, w) => s + w, 0);
   const bezelH = Math.max(
-    drawTable(c, marginX, y, halfW, headerH, rowH, bezelCols, leftRows),
-    drawTable(c, marginX + halfW + gapMid, y, halfW, headerH, rowH, bezelCols, rightRows),
+    drawTable(c, marginX, y, bezelW, headerH, rowH, bezelCols, leftRows),
+    drawTable(c, marginX + bezelW + gapMid, y, bezelW, headerH, rowH, bezelCols, rightRows),
   );
   y += bezelH + sectionGap;
 
   // [ 책상 발주 합계 ]
   drawSectionTitle("[ 책상 발주 합계 ]");
-  const summaryCols: TableCol[] = [
-    { title: "책상종류", width: contentW * 0.16 },
-    { title: "책상사이즈", width: contentW * 0.14 },
-    { title: "칸막이", width: contentW * 0.2 },
-    { title: "수량", width: contentW * 0.12 },
-    { title: "존종류", width: contentW * 0.38 },
-  ];
   const summaryRows = summaryData.map((s) => [s.desk, s.deskSize, s.partition, `${s.qty} EA`, s.types]);
-  y += drawTable(c, marginX, y, contentW, headerH, rowH, summaryCols, summaryRows) + sectionGap;
+  const summaryTitles = ["책상종류", "책상사이즈", "칸막이", "수량", "존종류"];
+  const summaryColW = measureColWidths(c, summaryTitles, summaryRows);
+  const summaryCols: TableCol[] = summaryTitles.map((title, i) => ({ title, width: summaryColW[i] }));
+  y += drawTable(c, marginX, y, summaryColW.reduce((s, w) => s + w, 0), headerH, rowH, summaryCols, summaryRows) + sectionGap;
 
   // [ 장패드 수량 ]
   drawSectionTitle("[ 장패드 수량 ]");
-  const jangpadCols: TableCol[] = [
-    { title: "TYPE", width: contentW * 0.4 },
-    { title: "수량", width: contentW * 0.18 },
-    { title: "비고", width: contentW * 0.42 },
-  ];
   const jangpadTableRows = jangpadRows.map((r) => [r.name, `${r.total} EA`, `기준 ${r.qty} + 여분 2`]);
-  drawTable(c, marginX, y, contentW, headerH, rowH, jangpadCols, jangpadTableRows);
+  const jangpadTitles = ["TYPE", "수량", "비고"];
+  const jangpadColW = measureColWidths(c, jangpadTitles, jangpadTableRows);
+  const jangpadCols: TableCol[] = jangpadTitles.map((title, i) => ({ title, width: jangpadColW[i] }));
+  drawTable(c, marginX, y, jangpadColW.reduce((s, w) => s + w, 0), headerH, rowH, jangpadCols, jangpadTableRows);
 }
