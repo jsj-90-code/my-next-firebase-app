@@ -22,6 +22,8 @@ import {
   renderPcFloorplanImage,
 } from "@/lib/seatLayout/canvasRender";
 import { compressImageDataUrl } from "@/lib/seatLayout/imageCompress";
+import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
   emptyProject,
@@ -115,6 +117,12 @@ export function SeatLayoutWorkspace() {
   // 방금 업로드한 원본 화질 도면 (세션 동안만 메모리에 유지, Firestore에는 저장 안 함).
   // AI 좌석 인식은 화질이 중요해서, Firestore 저장용으로 압축한 이미지가 아니라 이걸로 잘라낸다.
   const [rawFloorPlanDataUrl, setRawFloorPlanDataUrl] = useState<string | null>(null);
+  // PDF 업로드 시: 페이지가 여러 장이라 어떤 페이지가 배치도인지 직접 골라야 한다.
+  const [pdfPickerPages, setPdfPickerPages] = useState<
+    { pageNumber: number; thumbnail: string }[] | null
+  >(null);
+  const [pdfPickerBusy, setPdfPickerBusy] = useState(false);
+  const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const compositeCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -635,24 +643,70 @@ export function SeatLayoutWorkspace() {
     setBusy(false);
   }
 
+  function applyFloorPlanDataUrl(dataUrl: string, width: number, height: number) {
+    // 원본 화질 그대로 세션에 보관 (화면 표시 + AI 인식용). Firestore 저장용 압축은
+    // silentSave에서 저장 직전에만 한다 — 여기서 미리 압축해두면 인식 정확도가 떨어진다.
+    setRawFloorPlanDataUrl(dataUrl);
+    setProject((p) => ({ ...p, imageWidth: width, imageHeight: height }));
+  }
+
+  function applyFloorPlanDataUrlFromProbe(dataUrl: string) {
+    const probe = new Image();
+    probe.onload = () => applyFloorPlanDataUrl(dataUrl, probe.naturalWidth, probe.naturalHeight);
+    probe.src = dataUrl;
+  }
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+    if (isPdf) {
+      setStatusMsg("PDF에서 페이지를 불러오는 중...");
+      try {
+        const pdf = await loadPdfDocument(file);
+        pdfDocRef.current = pdf;
+        const pages: { pageNumber: number; thumbnail: string }[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          pages.push({ pageNumber: i, thumbnail: await renderPdfPageToDataUrl(pdf, i, 260) });
+        }
+        setPdfPickerPages(pages);
+        setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
+      } catch (err) {
+        setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
+      } finally {
+        e.target.value = "";
+      }
+      return;
+    }
+
     const reader = new FileReader();
-    reader.onload = (evt) => {
-      const dataUrl = evt.target?.result as string;
-      // 원본 화질 그대로 세션에 보관 (화면 표시 + AI 인식용). Firestore 저장용 압축은
-      // silentSave에서 저장 직전에만 한다 — 여기서 미리 압축해두면 인식 정확도가 떨어진다.
-      setRawFloorPlanDataUrl(dataUrl);
-      const probe = new Image();
-      probe.onload = () => {
-        setProject((p) => ({ ...p, imageWidth: probe.naturalWidth, imageHeight: probe.naturalHeight }));
-      };
-      probe.src = dataUrl;
-      setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
-    };
+    reader.onload = (evt) => applyFloorPlanDataUrlFromProbe(evt.target?.result as string);
     reader.onerror = () => setStatusMsg("도면 파일을 읽지 못했습니다.", "error");
     reader.readAsDataURL(file);
+  }
+
+  async function selectPdfPage(pageNumber: number) {
+    const pdf = pdfDocRef.current;
+    if (!pdf) return;
+    setPdfPickerBusy(true);
+    setStatusMsg("선택한 페이지를 고해상도로 불러오는 중...");
+    try {
+      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 2200);
+      applyFloorPlanDataUrlFromProbe(dataUrl);
+      setPdfPickerPages(null);
+      pdfDocRef.current = null;
+      setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+    } catch (err) {
+      setStatusMsg(`페이지를 불러오지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
+    } finally {
+      setPdfPickerBusy(false);
+    }
+  }
+
+  function cancelPdfPicker() {
+    setPdfPickerPages(null);
+    pdfDocRef.current = null;
   }
 
   // ---------------- 합성 이미지 (FHD) ----------------
@@ -892,17 +946,54 @@ export function SeatLayoutWorkspace() {
               htmlFor="floorplan-file-input"
               className="mt-3 block cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400"
             >
-              도면 이미지 업로드
+              도면 이미지 업로드 (이미지 또는 PDF)
             </label>
             <input
               id="floorplan-file-input"
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               onChange={handleFileChange}
               className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
             />
-            <p className="mt-1 text-xs text-zinc-400">도면은 책상/PC 탭에서 공통으로 사용됩니다.</p>
+            <p className="mt-1 text-xs text-zinc-400">
+              도면은 책상/PC 탭에서 공통으로 사용됩니다. PDF는 화면 캡처보다 훨씬 선명해요.
+            </p>
+            {pdfPickerPages && (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  배치도(평면도) 페이지를 클릭해서 선택해주세요
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {pdfPickerPages.map((p) => (
+                    <button
+                      key={p.pageNumber}
+                      type="button"
+                      disabled={pdfPickerBusy}
+                      onClick={() => selectPdfPage(p.pageNumber)}
+                      className="group flex flex-col items-center gap-1 rounded-lg border border-zinc-300 bg-white p-1.5 transition hover:border-amber-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={p.thumbnail}
+                        alt={`${p.pageNumber}페이지`}
+                        className="aspect-[4/3] w-full rounded object-contain"
+                      />
+                      <span className="text-xs text-zinc-500 group-hover:text-amber-700 dark:text-zinc-400">
+                        {p.pageNumber}페이지
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelPdfPicker}
+                  className="mt-2 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  취소
+                </button>
+              </div>
+            )}
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
