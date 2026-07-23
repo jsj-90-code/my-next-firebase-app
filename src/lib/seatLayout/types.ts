@@ -54,6 +54,9 @@ export type DeskZone = NormalizedRect & {
   partition: string;
   monitorArm: string;
   chair: string;
+  // 이 존 안에서 "가방 선반 브라켓" 표시(도면 위 마주보는 책상 표시)가 있는 좌석 수.
+  // 이 좌석엔 아이락스 헤드셋걸이, 나머지(= seats - bagShelfCount)엔 아이센스 헤드셋걸이가 설치된다.
+  bagShelfCount: number;
 };
 
 export type PcSpecFieldId =
@@ -115,6 +118,11 @@ export function emptyProject(): Omit<SeatLayoutProject, "id"> {
 export type RecognizeResult = {
   seats: number;
   deskSize: DeskSize | null;
+  // 한 존 안에 책상 사이즈가 여러 종류 섞여있을 때 사이즈별 개수 (desk 모드에서만 채워짐).
+  // 2개 이상 있을 때만 채워지고, 단일 사이즈면 deskSize/seats만으로 충분하므로 비워둔다.
+  sizeBreakdown?: SizeBreakdownEntry[];
+  // "가방 선반 브라켓" 표시가 있는 좌석 수 (desk 모드에서만 채워짐, 헤드셋걸이 종류 산출용).
+  bagShelfCount?: number;
 };
 
 export type ProjectSummary = {

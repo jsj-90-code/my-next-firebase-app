@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getClaudeClient, getClaudeModel } from "@/lib/claude";
 import { adminAuth } from "@/lib/firebase-admin";
 import { DESK_SIZE_OPTIONS } from "@/lib/seatLayout/constants";
-import type { DeskSize, RecognizeResult } from "@/lib/seatLayout/types";
+import type { DeskSize, RecognizeResult, SizeBreakdownEntry } from "@/lib/seatLayout/types";
 
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
@@ -75,11 +75,21 @@ function buildPrompt(mode: "desk" | "pc") {
     "이 이미지는 PC방 도면의 한 구역을 잘라낸 것입니다.\n" +
     `개별 좌석을 나타내는 책상 아이콘의 개수를 정확히 세어야 합니다. ${EXCLUDE_NOTE}\n` +
     `${LIST_THEN_COUNT_NOTE}\n` +
-    "나열이 끝나면, 책상 옆/위에 작게 적힌 치수 텍스트(예: 820*680, 850*680 등)를 읽고 폭(mm) 값을 " +
-    "820/850/910/950/1000 중 가장 가까운 표준 사이즈로 판단하세요. 텍스트가 안 보이거나 판단이 어려우면 UNKNOWN이라고 답하세요.\n" +
-    "마지막 두 줄에 다른 설명 없이 이 형식으로만 쓰세요:\n" +
+    "나열이 끝나면, 방금 나열한 책상들을 사이즈별로 묶으세요. 책상 옆/위에 작게 적힌 치수 텍스트(예: " +
+    "820*680, 850*680 등)를 읽고 폭(mm) 값을 820/850/910/950/1000 중 가장 가까운 표준 사이즈로 판단하세요. " +
+    "한 구역 안에 서로 다른 사이즈가 섞여 있는 경우가 있으니, 절대로 하나로 뭉뚱그리지 말고 사이즈가 " +
+    "다르면 반드시 그룹을 나누세요. 텍스트가 안 보이거나 판단이 어려운 책상은 UNKNOWN 그룹으로 묶으세요.\n" +
+    "COUNT를 쓴 다음 줄부터, 다른 설명 없이 사이즈 그룹마다 한 줄씩 이 형식으로 쓰세요 (실제 존재하는 " +
+    "사이즈 그룹만, 필요한 만큼 여러 줄):\n" +
     "COUNT: 숫자\n" +
-    "SIZE: 820mm 또는 850mm 또는 910mm 또는 950mm 또는 1000mm 또는 UNKNOWN"
+    "GROUP: 820mm x숫자\n" +
+    "GROUP: 850mm x숫자\n" +
+    "모든 GROUP 숫자의 합은 COUNT와 반드시 같아야 합니다.\n" +
+    "마지막으로, 방금 나열한 책상들 중 주황/빨간색 점과 선으로 이어진 표시('가방 선반 브라켓' 설치 " +
+    "표시, 보통 마주보는 책상 줄 위에 그어져 있음)가 있는 책상이 몇 개인지 세세요. 이 표시가 등을 맞댄 " +
+    "앞줄/뒷줄 사이에 걸쳐 있으면 양쪽 줄의 책상을 모두 포함해서 세고, 표시가 없는 책상은 포함하지 " +
+    "마세요. 이 표시가 전혀 없으면 0으로 답하세요. GROUP 줄들 다음, 마지막 줄에 이 형식으로만 쓰세요:\n" +
+    "BRACKET: 숫자"
   );
 }
 
@@ -160,16 +170,35 @@ export async function POST(request: Request) {
 
     const seats = parseInt(countMatches[countMatches.length - 1][1], 10);
     let deskSize: DeskSize | null = null;
+    let sizeBreakdown: SizeBreakdownEntry[] | undefined;
+    let bagShelfCount: number | undefined;
 
     if (mode === "desk") {
-      const sizeMatch = text.match(/SIZE:\s*(\d{3,4}mm|UNKNOWN)/i);
-      const candidate = sizeMatch?.[1]?.toLowerCase() as DeskSize | undefined;
-      if (candidate && (DESK_SIZE_OPTIONS as string[]).includes(candidate)) {
-        deskSize = candidate;
+      // 사이즈 그룹 줄(GROUP: 850mm x3)을 모두 모은다. UNKNOWN으로 나온 그룹은 사이즈를
+      // 특정할 수 없으니 기본 사이즈로 잡아두고, 결과 메시지에서 "확인 필요"로 안내한다
+      // (프론트에서 사용자가 직접 고쳐야 함을 알 수 있도록).
+      const groupMatches = [...text.matchAll(/GROUP:\s*(\d{3,4}mm|UNKNOWN)\s*[x×]\s*(\d+)/gi)];
+      const grouped = new Map<DeskSize, number>();
+      for (const match of groupMatches) {
+        const qty = parseInt(match[2], 10);
+        if (!qty) continue;
+        const raw = match[1].toLowerCase();
+        const size = ((DESK_SIZE_OPTIONS as string[]).includes(raw) ? raw : DESK_SIZE_OPTIONS[0]) as DeskSize;
+        grouped.set(size, (grouped.get(size) ?? 0) + qty);
+      }
+      if (grouped.size) {
+        sizeBreakdown = [...grouped.entries()].map(([ds, qty]) => ({ deskSize: ds, qty }));
+        deskSize = sizeBreakdown[0].deskSize;
+      }
+
+      const bracketMatch = text.match(/BRACKET:\s*(\d+)/i);
+      if (bracketMatch) {
+        // 가방 선반 브라켓 표시가 있는 좌석은 전체 좌석 수를 넘을 수 없다.
+        bagShelfCount = Math.min(parseInt(bracketMatch[1], 10), seats);
       }
     }
 
-    const result: RecognizeResult = { seats, deskSize };
+    const result: RecognizeResult = { seats, deskSize, sizeBreakdown, bagShelfCount };
     return NextResponse.json(result);
   } catch (error) {
     const message =

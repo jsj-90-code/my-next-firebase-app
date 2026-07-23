@@ -5,11 +5,8 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   DESK_SIZE_OPTIONS,
-  FIELD_SUGGESTIONS,
   PC_SPEC_FIELDS,
-  PC_TYPE_DEFAULTS,
   SPEC_FIELDS,
-  TYPE_DEFAULTS,
   ZONE_TYPES,
   COMPOSITE_H,
   COMPOSITE_W,
@@ -25,6 +22,13 @@ import { compressImageDataUrl } from "@/lib/seatLayout/imageCompress";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/seatLayout/store";
+import {
+  defaultSeatLayoutSettings,
+  loadSeatLayoutSettings,
+  saveSeatLayoutSettings,
+  type SeatLayoutSettings,
+} from "@/lib/seatLayout/settings";
+import { SettingsPanel } from "@/components/seatLayout/SettingsPanel";
 import {
   emptyProject,
   type DeskSize,
@@ -46,28 +50,44 @@ type ActiveZone = DeskZone | PcZone;
 const DEFAULT_DRAG_HINT =
   "먼저 위에서 존 유형을 선택한 뒤, 도면 위를 한 번 클릭(좌상단), 다시 한 번 클릭(우하단)하세요.";
 
-function defaultDeskSpecValues(): Record<SpecFieldId, string> {
+function defaultDeskSpecValues(fields: SpecField[]): Record<SpecFieldId, string> {
   const out = {} as Record<SpecFieldId, string>;
-  SPEC_FIELDS.forEach((f) => {
+  fields.forEach((f) => {
     out[f.id] = f.def;
   });
   return out;
 }
 
-function resetDeskSpecDraft(typeKey: ZoneTypeKey): Record<SpecFieldId, string> {
-  const overrides = TYPE_DEFAULTS[typeKey] ?? {};
-  const base = defaultDeskSpecValues();
-  SPEC_FIELDS.forEach((f) => {
+function resetDeskSpecDraft(
+  typeKey: ZoneTypeKey,
+  fields: SpecField[],
+  typeDefaults: SeatLayoutSettings["typeDefaults"],
+): Record<SpecFieldId, string> {
+  const overrides = typeDefaults[typeKey] ?? {};
+  const base = defaultDeskSpecValues(fields);
+  fields.forEach((f) => {
     base[f.id] = overrides[f.id] ?? f.def;
   });
   return base;
 }
 
-function resetPcSpecDraft(typeKey: ZoneTypeKey, pcDefaults: PcSpecValues): PcSpecValues {
-  const overrides = PC_TYPE_DEFAULTS[typeKey] ?? {};
+function resetPcSpecDraft(
+  typeKey: ZoneTypeKey,
+  pcDefaults: PcSpecValues,
+  pcTypeDefaults: SeatLayoutSettings["pcTypeDefaults"],
+): PcSpecValues {
+  const overrides = pcTypeDefaults[typeKey] ?? {};
   const out: PcSpecValues = {};
   PC_SPEC_FIELDS.forEach((f) => {
     out[f.id] = overrides[f.id] ?? pcDefaults[f.id] ?? f.def;
+  });
+  return out;
+}
+
+function pcDefaultsFromFields(fields: { id: PcSpecFieldId; def: string }[]): PcSpecValues {
+  const out: PcSpecValues = {};
+  fields.forEach((f) => {
+    out[f.id] = f.def;
   });
   return out;
 }
@@ -93,8 +113,10 @@ export function SeatLayoutWorkspace() {
   const [formOpen, setFormOpen] = useState(false);
 
   const [breakdown, setBreakdown] = useState<SizeBreakdownEntry[]>([]);
+  // 이 존에서 "가방 선반 브라켓" 표시가 있는(=아이락스 헤드셋걸이가 설치될) 좌석 수.
+  const [bagShelfDraft, setBagShelfDraft] = useState("0");
   const [deskSpecDraft, setDeskSpecDraft] = useState<Record<SpecFieldId, string>>(
-    defaultDeskSpecValues(),
+    defaultDeskSpecValues(SPEC_FIELDS),
   );
   const [seatsDraft, setSeatsDraft] = useState("");
   const [pcSpecDraft, setPcSpecDraft] = useState<PcSpecValues>({});
@@ -105,6 +127,52 @@ export function SeatLayoutWorkspace() {
   const [pcDefaultsDraft, setPcDefaultsDraft] = useState<PcSpecValues>(defaultPcDefaults());
   const [pcDefaultsOpen, setPcDefaultsOpen] = useState(false);
 
+  // ---------------- 사양 설정 (드롭다운 옵션/기본값, Firestore에 저장되어 전체 프로젝트가 공유) ----------------
+  const [settings, setSettings] = useState<SeatLayoutSettings>(() => defaultSeatLayoutSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // 설정 로딩이 끝나기 전에 사용자가 프로젝트를 불러오면(project.updatedAt이 생기면), 그 뒤에
+  // 설정이 도착해도 이미 불러온 프로젝트의 pcDefaults를 덮어쓰면 안 된다 — ref로 추적한다.
+  const hasLoadedProjectRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const loaded = await loadSeatLayoutSettings();
+        if (cancelled) return;
+        setSettings(loaded);
+        if (!hasLoadedProjectRef.current) {
+          const fresh = pcDefaultsFromFields(
+            PC_SPEC_FIELDS.map((f) => ({ ...f, def: loaded.pcDefaults[f.id] || f.def })),
+          );
+          setPcDefaults(fresh);
+          setPcDefaultsDraft(fresh);
+        }
+      } catch {
+        // 설정을 못 불러와도 constants.ts의 기본값(초기 state)으로 그대로 동작한다.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const effectiveSpecFields = useMemo<SpecField[]>(
+    () =>
+      SPEC_FIELDS.map((f) => ({
+        ...f,
+        options: settings.specOptions[f.id]?.length ? settings.specOptions[f.id] : f.options,
+        def: settings.specDefaults[f.id] || f.def,
+      })),
+    [settings],
+  );
+  const effectivePcSpecFields = useMemo(
+    () => PC_SPEC_FIELDS.map((f) => ({ ...f, def: settings.pcDefaults[f.id] || f.def })),
+    [settings],
+  );
+
+  const [presentationUrl, setPresentationUrl] = useState<string | null>(null);
   const [aiResultText, setAiResultText] = useState("");
   const [recognizing, setRecognizing] = useState(false);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "success" | "error" }>({
@@ -366,12 +434,25 @@ export function SeatLayoutWorkspace() {
 
       const seats: number = data.seats ?? 0;
       const deskSize: DeskSize | null = data.deskSize ?? null;
+      const sizeBreakdown: SizeBreakdownEntry[] | undefined = data.sizeBreakdown;
+      const bagShelfCount: number | undefined = data.bagShelfCount;
 
       if (tab === "desk") {
-        const size = deskSize ?? DESK_SIZE_OPTIONS[0];
-        setBreakdown([{ deskSize: size, qty: seats }]);
-        const sizeMsg = deskSize ? `책상사이즈 ${deskSize}` : "책상사이즈 인식 실패(직접 선택 필요)";
-        setAiResultText(`AI 인식 결과: ${seats}석 / ${sizeMsg} — 사이즈가 섞여있으면 아래에서 줄을 나눠주세요.`);
+        setBagShelfDraft(String(bagShelfCount ?? 0));
+        const bagShelfMsg = bagShelfCount ? ` / 가방 선반(아이락스 헤드셋걸이) ${bagShelfCount}석` : "";
+        if (sizeBreakdown && sizeBreakdown.length) {
+          setBreakdown(sizeBreakdown.map((r) => ({ ...r })));
+          const total = sizeBreakdown.reduce((s, r) => s + r.qty, 0);
+          const sizeMsg = sizeBreakdown.map((r) => `${r.deskSize} ${r.qty}개`).join(", ");
+          setAiResultText(`AI 인식 결과: 총 ${total}석 (${sizeMsg})${bagShelfMsg} — 틀리면 아래에서 직접 수정하세요.`);
+        } else {
+          const size = deskSize ?? DESK_SIZE_OPTIONS[0];
+          setBreakdown([{ deskSize: size, qty: seats }]);
+          const sizeMsg = deskSize ? `책상사이즈 ${deskSize}` : "책상사이즈 인식 실패(직접 선택 필요)";
+          setAiResultText(
+            `AI 인식 결과: ${seats}석 / ${sizeMsg}${bagShelfMsg} — 사이즈가 섞여있으면 아래에서 줄을 나눠주세요.`,
+          );
+        }
       } else {
         setSeatsDraft(String(seats));
         setAiResultText(`AI 인식 결과: ${seats}대 (틀리면 아래에서 직접 수정하세요)`);
@@ -381,7 +462,10 @@ export function SeatLayoutWorkspace() {
       const message = err instanceof Error ? err.message : "알 수 없는 오류";
       setAiResultText(`인식 실패: ${message} — 아래 항목을 직접 입력해주세요.`);
       setStatusMsg("AI 인식 실패 - 수동 입력 필요", "error");
-      if (tab === "desk") setBreakdown([{ deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }]);
+      if (tab === "desk") {
+        setBreakdown([{ deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }]);
+        setBagShelfDraft("0");
+      }
     } finally {
       setRecognizing(false);
     }
@@ -395,11 +479,12 @@ export function SeatLayoutWorkspace() {
     setEtcColor("#555555");
     setSeatsDraft("");
     setBreakdown([{ deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }]);
+    setBagShelfDraft("0");
 
     if (activeTab === "desk") {
-      setDeskSpecDraft(resetDeskSpecDraft(selectedTypeKey));
+      setDeskSpecDraft(resetDeskSpecDraft(selectedTypeKey, effectiveSpecFields, settings.typeDefaults));
     } else {
-      setPcSpecDraft(resetPcSpecDraft(selectedTypeKey, pcDefaults));
+      setPcSpecDraft(resetPcSpecDraft(selectedTypeKey, pcDefaults, settings.pcTypeDefaults));
     }
     setFormOpen(true);
     void runRecognize(rect, activeTab);
@@ -419,6 +504,7 @@ export function SeatLayoutWorkspace() {
           ? dz.sizeBreakdown.map((r) => ({ ...r }))
           : [{ deskSize: (dz.deskSize || DESK_SIZE_OPTIONS[0]) as DeskSize, qty: dz.seats || 0 }],
       );
+      setBagShelfDraft(String(dz.bagShelfCount ?? 0));
       setDeskSpecDraft({
         desk: dz.desk,
         cooler: dz.cooler,
@@ -440,6 +526,7 @@ export function SeatLayoutWorkspace() {
     setEditingIndex(null);
     setBreakdown([]);
     setSeatsDraft("");
+    setBagShelfDraft("0");
     pendingStartRef.current = null;
     drawCanvas();
   }
@@ -448,12 +535,14 @@ export function SeatLayoutWorkspace() {
     if (editingIndex !== null) {
       if (activeTab === "desk") {
         const filtered = breakdown.filter((r) => r.qty > 0);
+        const totalSeats = filtered.reduce((s, r) => s + r.qty, 0);
         setProject((p) => {
           const zones = [...p.zones];
           const z = { ...zones[editingIndex] };
           z.sizeBreakdown = filtered;
           z.deskSize = filtered.length ? filtered[0].deskSize : "";
-          z.seats = filtered.reduce((s, r) => s + r.qty, 0);
+          z.seats = totalSeats;
+          z.bagShelfCount = Math.max(0, Math.min(Number(bagShelfDraft) || 0, totalSeats));
           z.desk = deskSpecDraft.desk;
           z.cooler = deskSpecDraft.cooler;
           z.partition = deskSpecDraft.partition;
@@ -488,6 +577,7 @@ export function SeatLayoutWorkspace() {
         setStatusMsg("수량이 0입니다. 사이즈별 수량을 확인해주세요.", "error");
         return;
       }
+      const totalSeats = filtered.reduce((s, r) => s + r.qty, 0);
       const zNew: DeskZone = {
         ...curRect,
         name,
@@ -495,7 +585,8 @@ export function SeatLayoutWorkspace() {
         color,
         sizeBreakdown: filtered,
         deskSize: filtered[0].deskSize,
-        seats: filtered.reduce((s, r) => s + r.qty, 0),
+        seats: totalSeats,
+        bagShelfCount: Math.max(0, Math.min(Number(bagShelfDraft) || 0, totalSeats)),
         desk: deskSpecDraft.desk,
         cooler: deskSpecDraft.cooler,
         partition: deskSpecDraft.partition,
@@ -545,7 +636,7 @@ export function SeatLayoutWorkspace() {
 
   function savePcDefaults() {
     const merged: PcSpecValues = {};
-    PC_SPEC_FIELDS.forEach((f) => {
+    effectivePcSpecFields.forEach((f) => {
       merged[f.id] = pcDefaultsDraft[f.id] || f.def;
     });
     setPcDefaults(merged);
@@ -566,7 +657,7 @@ export function SeatLayoutWorkspace() {
     const pcZones: PcZone[] = project.zones
       .filter((z) => z.typeKey !== "multi")
       .map((z) => {
-        const typeDef = PC_TYPE_DEFAULTS[z.typeKey] ?? {};
+        const typeDef = settings.pcTypeDefaults[z.typeKey] ?? {};
         const overrides: PcSpecValues = {};
         (Object.keys(typeDef) as PcSpecFieldId[]).forEach((k) => {
           if (typeDef[k] !== (pcDefaults[k] ?? "")) overrides[k] = typeDef[k];
@@ -598,13 +689,14 @@ export function SeatLayoutWorkspace() {
         setStatusMsg("프로젝트를 찾을 수 없습니다.", "error");
         return;
       }
+      hasLoadedProjectRef.current = true;
       setProject(loaded);
       setRawFloorPlanDataUrl(null);
       setActiveTab("desk");
       setSelectedTypeKey(null);
       cancelZone();
-      setPcDefaults(loaded.pcDefaults ?? defaultPcDefaults());
-      setPcDefaultsDraft(loaded.pcDefaults ?? defaultPcDefaults());
+      setPcDefaults(loaded.pcDefaults ?? pcDefaultsFromFields(effectivePcSpecFields));
+      setPcDefaultsDraft(loaded.pcDefaults ?? pcDefaultsFromFields(effectivePcSpecFields));
       setStatusMsg("불러오기 완료", "success");
     } catch (err) {
       setStatusMsg(`불러오기 실패: ${err instanceof Error ? err.message : err}`, "error");
@@ -616,8 +708,8 @@ export function SeatLayoutWorkspace() {
   function newProject() {
     setProject({ id: crypto.randomUUID(), ...emptyProject() });
     setRawFloorPlanDataUrl(null);
-    setPcDefaults(defaultPcDefaults());
-    setPcDefaultsDraft(defaultPcDefaults());
+    setPcDefaults(pcDefaultsFromFields(effectivePcSpecFields));
+    setPcDefaultsDraft(pcDefaultsFromFields(effectivePcSpecFields));
     setActiveTab("desk");
     setSelectedTypeKey(null);
     cancelZone();
@@ -728,7 +820,7 @@ export function SeatLayoutWorkspace() {
     setPdfPickerBusy(true);
     setStatusMsg("선택한 페이지를 고해상도로 불러오는 중...");
     try {
-      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 8000);
+      const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 10000);
       const probe = new Image();
       await new Promise<void>((resolve, reject) => {
         probe.onload = () => resolve();
@@ -927,6 +1019,7 @@ export function SeatLayoutWorkspace() {
     }
     setBusy(true);
     setStatusMsg("저장 중...");
+    setPresentationUrl(null);
     const saved = await silentSave();
     if (!saved) {
       setBusy(false);
@@ -937,7 +1030,7 @@ export function SeatLayoutWorkspace() {
       try {
         setStatusMsg("공유 프레젠테이션에 등록 중... (몇 초 걸릴 수 있습니다)");
         const token = await user.getIdToken();
-        let presentationUrl = "";
+        let latestUrl = "";
         // 맨 앞(0번)에 꽂히는 순서라, 화면에서 desk→pc→summary 순으로 보이도록 역순으로 등록한다.
         for (const item of [...outputs].reverse()) {
           const res = await fetch("/api/seat-layout/publish-slide", {
@@ -951,10 +1044,15 @@ export function SeatLayoutWorkspace() {
           });
           const data = await res.json();
           if (!res.ok) throw new Error(`${item.label}: ${data.error ?? "등록에 실패했습니다."}`);
-          presentationUrl = data.presentationUrl;
+          latestUrl = data.presentationUrl;
         }
         setStatusMsg(`등록 완료! (프레젠테이션에 ${outputs.length}장 반영됨)`, "success");
-        if (presentationUrl) window.open(presentationUrl, "_blank");
+        if (latestUrl) {
+          setPresentationUrl(latestUrl);
+          // await 이후의 window.open은 브라우저 팝업 차단에 걸리는 경우가 많아, 아래
+          // "프레젠테이션 열기" 링크를 항상 같이 보여준다. 열리면 좋고, 막히면 링크를 누르면 된다.
+          window.open(latestUrl, "_blank");
+        }
       } catch (err) {
         setStatusMsg(`등록 실패: ${err instanceof Error ? err.message : err}`, "error");
       }
@@ -977,16 +1075,39 @@ export function SeatLayoutWorkspace() {
             {user?.isAnonymous ? "사내 공용 접속" : `${user?.email} 님으로 로그인됨`}
           </p>
         </div>
-        {!user?.isAnonymous && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => logout()}
+            onClick={() => setSettingsOpen(true)}
             className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
           >
-            로그아웃
+            ⚙ 사양 설정
           </button>
-        )}
+          {!user?.isAnonymous && (
+            <button
+              type="button"
+              onClick={() => logout()}
+              className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              로그아웃
+            </button>
+          )}
+        </div>
       </header>
+
+      {settingsOpen && (
+        <SettingsPanel
+          settings={settings}
+          onClose={() => setSettingsOpen(false)}
+          onSave={async (next) => {
+            if (!user) return;
+            const saved = await saveSeatLayoutSettings(next, user.uid);
+            setSettings(saved);
+            setStatusMsg("사양 설정이 저장되었습니다.", "success");
+            setSettingsOpen(false);
+          }}
+        />
+      )}
 
       <div className="flex gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
         {(["desk", "pc"] as TabKey[]).map((tab) => (
@@ -1187,11 +1308,12 @@ export function SeatLayoutWorkspace() {
                     여기 값이 기본값이 되고, 존마다 다르게 지정한 항목만 별도로 표시됩니다.
                   </p>
                   <div className="grid grid-cols-2 gap-2">
-                    {PC_SPEC_FIELDS.map((f) => (
+                    {effectivePcSpecFields.map((f) => (
                       <PcFieldInput
                         key={f.id}
                         field={f}
                         value={pcDefaultsDraft[f.id] ?? f.def}
+                        suggestions={settings.pcSuggestions[f.id]}
                         onChange={(v) => setPcDefaultsDraft((d) => ({ ...d, [f.id]: v }))}
                       />
                     ))}
@@ -1231,12 +1353,17 @@ export function SeatLayoutWorkspace() {
                 onRecognizeAgain={() => curRect && runRecognize(curRect, activeTab)}
                 breakdown={breakdown}
                 onBreakdownChange={setBreakdown}
+                bagShelfDraft={bagShelfDraft}
+                onBagShelfDraftChange={setBagShelfDraft}
                 deskSpecDraft={deskSpecDraft}
                 onDeskSpecChange={(id, v) => setDeskSpecDraft((d) => ({ ...d, [id]: v }))}
                 seatsDraft={seatsDraft}
                 onSeatsDraftChange={setSeatsDraft}
                 pcSpecDraft={pcSpecDraft}
                 onPcSpecChange={(id, v) => setPcSpecDraft((d) => ({ ...d, [id]: v }))}
+                specFields={effectiveSpecFields}
+                pcSpecFields={effectivePcSpecFields}
+                pcSuggestions={settings.pcSuggestions}
                 onSave={confirmZone}
                 onCancel={cancelZone}
               />
@@ -1306,6 +1433,16 @@ export function SeatLayoutWorkspace() {
             </div>
             {status.text && (
               <p className={`mt-2 text-sm ${statusToneClass(status.tone)}`}>{status.text}</p>
+            )}
+            {presentationUrl && (
+              <a
+                href={presentationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+              >
+                프레젠테이션 열기 ↗
+              </a>
             )}
           </section>
         </div>
@@ -1387,12 +1524,17 @@ type ZoneFormProps = {
   onRecognizeAgain: () => void;
   breakdown: SizeBreakdownEntry[];
   onBreakdownChange: (next: SizeBreakdownEntry[]) => void;
+  bagShelfDraft: string;
+  onBagShelfDraftChange: (v: string) => void;
   deskSpecDraft: Record<SpecFieldId, string>;
   onDeskSpecChange: (id: SpecFieldId, value: string) => void;
   seatsDraft: string;
   onSeatsDraftChange: (v: string) => void;
   pcSpecDraft: PcSpecValues;
   onPcSpecChange: (id: PcSpecFieldId, value: string) => void;
+  specFields: SpecField[];
+  pcSpecFields: { id: PcSpecFieldId; label: string; def: string }[];
+  pcSuggestions: Partial<Record<PcSpecFieldId, string[]>>;
   onSave: () => void;
   onCancel: () => void;
 };
@@ -1412,12 +1554,17 @@ function ZoneForm(props: ZoneFormProps) {
     onRecognizeAgain,
     breakdown,
     onBreakdownChange,
+    bagShelfDraft,
+    onBagShelfDraftChange,
     deskSpecDraft,
     onDeskSpecChange,
     seatsDraft,
     onSeatsDraftChange,
     pcSpecDraft,
     onPcSpecChange,
+    specFields,
+    pcSpecFields,
+    pcSuggestions,
     onSave,
     onCancel,
   } = props;
@@ -1526,8 +1673,27 @@ function ZoneForm(props: ZoneFormProps) {
             </p>
           </div>
 
+          <div>
+            <label className="text-xs font-medium text-zinc-500">
+              아이락스 헤드셋걸이 설치 수량
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={breakdownTotal}
+              value={bagShelfDraft}
+              onChange={(e) => onBagShelfDraftChange(e.target.value)}
+              placeholder="0"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              나머지 {Math.max(0, breakdownTotal - (Number(bagShelfDraft) || 0))}석은 아이센스 헤드셋걸이로
+              계산됩니다.
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 gap-2 border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-800">
-            {SPEC_FIELDS.map((f) => (
+            {specFields.map((f) => (
               <SelectOrEtc
                 key={f.id}
                 field={f}
@@ -1550,11 +1716,12 @@ function ZoneForm(props: ZoneFormProps) {
             />
           </div>
           <div className="grid grid-cols-2 gap-2 border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-800">
-            {PC_SPEC_FIELDS.map((f) => (
+            {pcSpecFields.map((f) => (
               <PcFieldInput
                 key={f.id}
                 field={f}
                 value={pcSpecDraft[f.id] ?? ""}
+                suggestions={pcSuggestions[f.id]}
                 onChange={(v) => onPcSpecChange(f.id, v)}
               />
             ))}
@@ -1622,34 +1789,42 @@ function SelectOrEtc({
   );
 }
 
-// PC 탭 사양: 자동완성 후보가 있으면 datalist로 제안 + 자유 입력
+// PC 탭 사양: 설정에 등록된 후보를 드롭다운으로 보여주고, 목록에 없는 값은 "기타(직접입력)"으로 표시
 function PcFieldInput({
   field,
   value,
+  suggestions,
   onChange,
 }: {
   field: { id: PcSpecFieldId; label: string; def: string };
   value: string;
+  suggestions?: string[];
   onChange: (v: string) => void;
 }) {
-  const suggestions = FIELD_SUGGESTIONS[field.id];
-  const listId = `pc-suggest-${field.id}`;
+  const options = suggestions ?? [];
+  const isKnown = options.includes(value);
   return (
     <div>
       <label className="text-xs font-medium text-zinc-500">{field.label}</label>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        list={suggestions ? listId : undefined}
-        placeholder={field.def}
+      <select
+        value={isKnown ? value : "__etc__"}
+        onChange={(e) => onChange(e.target.value === "__etc__" ? "" : e.target.value)}
         className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-      />
-      {suggestions && (
-        <datalist id={listId}>
-          {suggestions.map((opt) => (
-            <option key={opt} value={opt} />
-          ))}
-        </datalist>
+      >
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt}
+          </option>
+        ))}
+        <option value="__etc__">기타(직접입력)</option>
+      </select>
+      {!isKnown && (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.def}
+          className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
       )}
     </div>
   );

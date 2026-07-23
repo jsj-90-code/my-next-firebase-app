@@ -143,6 +143,15 @@ export function computeDeskSeatsSum(zones: DeskZone[]): number {
   return zones.reduce((s, z) => s + (Number(z.seats) || 0), 0);
 }
 
+export type HeadsetHookTotals = { irock: number; isense: number };
+
+// 가방 선반 브라켓이 있는 좌석 = 아이락스 헤드셋걸이, 나머지 좌석 = 아이센스 헤드셋걸이.
+export function computeHeadsetHookTotals(zones: DeskZone[]): HeadsetHookTotals {
+  const irock = zones.reduce((s, z) => s + Math.min(Number(z.bagShelfCount) || 0, Number(z.seats) || 0), 0);
+  const isense = Math.max(0, computeDeskSeatsSum(zones) - irock);
+  return { irock, isense };
+}
+
 // 총 PC수 = 책상 탭 좌석 합계 + 2 (카운터 1대 + 대체PC 1대)
 export function computePcTotal(deskZones: DeskZone[]): number {
   return computeDeskSeatsSum(deskZones) + 2;

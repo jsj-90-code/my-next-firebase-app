@@ -7,6 +7,7 @@ import {
   computeBezelTable,
   computeCompactLayout,
   computeDeskSummary,
+  computeHeadsetHookTotals,
   computeJangpadTable,
   computePcTotal,
   getContrastText,
@@ -405,17 +406,7 @@ export function renderOrderSummaryImage(
   const rowH = 26;
   const sectionGap = 30;
 
-  // 존/사이즈 개수가 적을 때 표가 위쪽에 몰리고 아래쪽에 빈 여백만 남는 걸 막기 위해,
-  // 실제로 그려질 표 높이를 미리 계산해서 전체를 캔버스 안에서 수직으로 가운데 정렬한다.
-  const bezelRowCount = Math.max(1, bezelData.leftRows.length, bezelData.rightRows.length);
-  const summaryRowCount = Math.max(1, summaryData.length);
-  const jangpadRowCount = Math.max(1, jangpadRows.length);
-  const totalContentH =
-    mainTitleH +
-    titleH + (headerH + bezelRowCount * rowH) + sectionGap +
-    titleH + (headerH + summaryRowCount * rowH) + sectionGap +
-    titleH + (headerH + jangpadRowCount * rowH);
-  const topOffset = Math.max(20, (COMPOSITE_H - totalContentH) / 2);
+  const topOffset = 20;
 
   let y = topOffset + 26;
 
@@ -464,5 +455,19 @@ export function renderOrderSummaryImage(
   const jangpadTitles = ["TYPE", "수량", "비고"];
   const jangpadColW = measureColWidths(c, jangpadTitles, jangpadTableRows);
   const jangpadCols: TableCol[] = jangpadTitles.map((title, i) => ({ title, width: jangpadColW[i] }));
-  drawTable(c, marginX, y, jangpadColW.reduce((s, w) => s + w, 0), headerH, rowH, jangpadCols, jangpadTableRows);
+  y +=
+    drawTable(c, marginX, y, jangpadColW.reduce((s, w) => s + w, 0), headerH, rowH, jangpadCols, jangpadTableRows) +
+    sectionGap;
+
+  // [ 헤드셋걸이 개수 ] — 가방 선반 브라켓이 있는 좌석은 아이락스, 없는 좌석은 아이센스 헤드셋걸이.
+  drawSectionTitle("[ 헤드셋걸이 개수 ]");
+  const headsetTotals = computeHeadsetHookTotals(zones);
+  const headsetTableRows = [
+    ["아이락스 헤드셋걸이", `${headsetTotals.irock} EA`, "가방 선반 있는 좌석"],
+    ["아이센스 헤드셋걸이", `${headsetTotals.isense} EA`, "가방 선반 없는 좌석"],
+  ];
+  const headsetTitles = ["TYPE", "수량", "비고"];
+  const headsetColW = measureColWidths(c, headsetTitles, headsetTableRows);
+  const headsetCols: TableCol[] = headsetTitles.map((title, i) => ({ title, width: headsetColW[i] }));
+  drawTable(c, marginX, y, headsetColW.reduce((s, w) => s + w, 0), headerH, rowH, headsetCols, headsetTableRows);
 }
