@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "my-next-firebase-app-541f4"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }
