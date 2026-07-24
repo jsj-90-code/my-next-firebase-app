@@ -121,6 +121,10 @@ export async function POST(request: Request) {
       model: getClaudeModel(),
       // 단순 개수 세기보다 어려운(문자 인식 + 시각적 그룹핑 + 좌석수 대조) 작업이라 여유 있게 잡는다.
       max_tokens: 4000,
+      // Sonnet 5는 기본적으로 adaptive thinking을 켜는데, 이게 토큰 예산을 다 써버리면 정작
+      // ZONE:/RANGES: 최종 답변을 쓸 자리가 없어져서 응답이 통째로 비어버린다(recognize 라우트에서
+      // 이미 겪은 문제와 동일). thinking을 꺼서 모든 토큰이 눈에 보이는 답변에 쓰이게 한다.
+      thinking: { type: "disabled" },
       messages: [
         {
           role: "user",

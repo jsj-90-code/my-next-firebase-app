@@ -202,10 +202,13 @@ export function SeatLayoutWorkspace() {
   >(null);
   const [pdfPickerBusy, setPdfPickerBusy] = useState(false);
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
-  // PDF 페이지를 고른 다음: 제목 블록/범례 등을 빼고 실제 도면 영역만 잘라내는 단계.
+  // PDF 페이지를 고른 다음(또는 좌석번호표 이미지 업로드 후): 필요없는 부분을 빼고 실제 필요한
+  // 영역만 잘라내는 단계. 도면 크롭과 좌석번호표 크롭이 이 crop 상태/캔버스를 공유한다 —
+  // cropTarget으로 크롭 완료 후 결과를 어디에 적용할지만 구분한다.
   const [pdfCropSource, setPdfCropSource] = useState<
     { dataUrl: string; width: number; height: number } | null
   >(null);
+  const [cropTarget, setCropTarget] = useState<"floorplan" | "seatNumberPlate">("floorplan");
   const [cropRect, setCropRect] = useState<NormalizedRect | null>(null);
   const [cropHint, setCropHint] = useState("");
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -488,6 +491,10 @@ export function SeatLayoutWorkspace() {
   async function runSeatNumberRecognize(dataUrlOverride?: string) {
     const dataUrl = dataUrlOverride ?? rawSeatNumberPlateDataUrl;
     if (!user || !dataUrl) return;
+    if (!project.zones.length) {
+      setStatusMsg("먼저 책상 발주 도면 탭에서 존을 등록해주세요.", "error");
+      return;
+    }
     setSeatNumberRecognizing(true);
     setStatusMsg("좌석번호 인식 중...");
     try {
@@ -508,7 +515,15 @@ export function SeatLayoutWorkspace() {
       if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
       const ranges: SeatNumberRangeEntry[] = data.ranges ?? [];
       setProject((p) => ({ ...p, seatNumberRanges: ranges }));
-      setStatusMsg("좌석번호 인식 완료 — 결과를 확인하고 틀린 부분은 직접 수정하세요.", "success");
+      if (ranges.length) {
+        setStatusMsg("좌석번호 인식 완료 — 결과를 확인하고 틀린 부분은 직접 수정하세요.", "success");
+      } else {
+        setStatusMsg(
+          "존을 하나도 인식하지 못했습니다. 번호 글씨가 작아서 못 읽었을 수 있어요 — " +
+            "\"영역 잘라서 다시 인식\"으로 필요한 부분만 확대해서 다시 시도해보세요.",
+          "error",
+        );
+      }
     } catch (err) {
       setStatusMsg(`좌석번호 인식 실패: ${err instanceof Error ? err.message : err}`, "error");
     } finally {
@@ -904,6 +919,7 @@ export function SeatLayoutWorkspace() {
         probe.src = dataUrl;
       });
       cropImgRef.current = probe;
+      setCropTarget("floorplan");
       setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
       setCropRect(null);
       setCropHint("도면 영역의 왼쪽 위를 클릭하세요 (제목 블록/범례 표는 빼고 도면만).");
@@ -1004,7 +1020,7 @@ export function SeatLayoutWorkspace() {
     ctx.setLineDash([]);
   }
 
-  function confirmPdfCrop() {
+  function confirmCrop() {
     const img = cropImgRef.current;
     if (!img || !cropRect) return;
     const sx = cropRect.x * img.naturalWidth;
@@ -1017,23 +1033,57 @@ export function SeatLayoutWorkspace() {
     const ctx = off.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, off.width, off.height);
-    applyFloorPlanDataUrl(off.toDataURL("image/png"), off.width, off.height);
-    closePdfCrop();
-    setStatusMsg("도면 영역을 잘라서 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+    const dataUrl = off.toDataURL("image/png");
+
+    if (cropTarget === "seatNumberPlate") {
+      closeCrop();
+      setRawSeatNumberPlateDataUrl(dataUrl);
+      setStatusMsg("잘라낸 영역으로 좌석번호를 다시 인식합니다...");
+      runSeatNumberRecognize(dataUrl);
+    } else {
+      applyFloorPlanDataUrl(dataUrl, off.width, off.height);
+      closeCrop();
+      setStatusMsg("도면 영역을 잘라서 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+    }
   }
 
-  function usePdfPageAsIs() {
+  function useCropSourceAsIs() {
     if (!pdfCropSource) return;
-    applyFloorPlanDataUrl(pdfCropSource.dataUrl, pdfCropSource.width, pdfCropSource.height);
-    closePdfCrop();
-    setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+    if (cropTarget === "seatNumberPlate") {
+      const dataUrl = pdfCropSource.dataUrl;
+      closeCrop();
+      setRawSeatNumberPlateDataUrl(dataUrl);
+      runSeatNumberRecognize(dataUrl);
+    } else {
+      applyFloorPlanDataUrl(pdfCropSource.dataUrl, pdfCropSource.width, pdfCropSource.height);
+      closeCrop();
+      setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+    }
   }
 
-  function closePdfCrop() {
+  function closeCrop() {
     setPdfCropSource(null);
     setCropRect(null);
     cropPendingStartRef.current = null;
     cropImgRef.current = null;
+  }
+
+  // 방금 업로드한(또는 이미 갖고 있던) 좌석번호표 이미지에서 필요한 영역만 잘라서 재인식한다.
+  // 피난안내도처럼 안내문구/범례가 많이 섞인 이미지에서 인식이 잘 안 될 때 쓰라고 만든 기능이다 —
+  // 잘라내면 상대적으로 확대되는 효과라 작은 번호 글씨의 인식률이 올라간다.
+  function openSeatNumberPlateCrop() {
+    const dataUrl = rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl;
+    if (!dataUrl) return;
+    const probe = new Image();
+    probe.onload = () => {
+      cropImgRef.current = probe;
+      setCropTarget("seatNumberPlate");
+      setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
+      setCropRect(null);
+      setCropHint("좌석 번호가 보이는 도면 영역의 왼쪽 위를 클릭하세요 (안내문구/범례는 빼고).");
+    };
+    probe.onerror = () => setStatusMsg("좌석번호표 이미지를 불러오지 못했습니다.", "error");
+    probe.src = dataUrl;
   }
 
   // ---------------- 합성 이미지 (FHD) ----------------
@@ -1468,19 +1518,33 @@ export function SeatLayoutWorkspace() {
 
             {(rawSeatNumberPlateDataUrl || project.seatNumberPlateDataUrl) && project.zones.length > 0 && (
               <div className="mt-3 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
                     {seatNumberRecognizing ? "인식 중..." : "존별 좌석번호 (틀리면 직접 수정)"}
                   </p>
-                  <button
-                    type="button"
-                    disabled={seatNumberRecognizing}
-                    onClick={() => runSeatNumberRecognize()}
-                    className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-                  >
-                    다시 인식
-                  </button>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      disabled={seatNumberRecognizing}
+                      onClick={openSeatNumberPlateCrop}
+                      className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                    >
+                      영역 잘라서 다시 인식
+                    </button>
+                    <button
+                      type="button"
+                      disabled={seatNumberRecognizing}
+                      onClick={() => runSeatNumberRecognize()}
+                      className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                    >
+                      다시 인식
+                    </button>
+                  </div>
                 </div>
+                <p className="text-xs text-zinc-400">
+                  피난안내도처럼 안내문구가 많이 섞인 이미지는 인식이 잘 안 될 수 있어요 — 그럴 땐
+                  "영역 잘라서 다시 인식"으로 번호가 보이는 부분만 확대해서 다시 시도해보세요.
+                </p>
                 {project.zones.map((z) => {
                   const entry = project.seatNumberRanges.find((r) => r.zoneName === z.name);
                   return (
@@ -1606,21 +1670,21 @@ export function SeatLayoutWorkspace() {
                     <button
                       type="button"
                       disabled={!cropRect}
-                      onClick={confirmPdfCrop}
+                      onClick={confirmCrop}
                       className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
                     >
                       이 영역으로 자르기
                     </button>
                     <button
                       type="button"
-                      onClick={usePdfPageAsIs}
+                      onClick={useCropSourceAsIs}
                       className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
                     >
-                      자르지 않고 페이지 전체 사용
+                      {cropTarget === "seatNumberPlate" ? "자르지 않고 전체 이미지 사용" : "자르지 않고 페이지 전체 사용"}
                     </button>
                     <button
                       type="button"
-                      onClick={closePdfCrop}
+                      onClick={closeCrop}
                       className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900"
                     >
                       취소
