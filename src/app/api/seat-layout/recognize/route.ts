@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClaudeClient, getClaudeModel } from "@/lib/claude";
 import { adminAuth } from "@/lib/firebase-admin";
+import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 import { DESK_SIZE_OPTIONS } from "@/lib/seatLayout/constants";
 import type { DeskSize, RecognizeResult, SizeBreakdownEntry } from "@/lib/seatLayout/types";
 
@@ -18,7 +19,7 @@ type RecognizeRequestBody = {
   mode?: "desk" | "pc";
 };
 
-async function getVerifiedUserId(request: Request) {
+async function getVerifiedUser(request: Request) {
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
 
@@ -28,7 +29,7 @@ async function getVerifiedUserId(request: Request) {
 
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    return decoded.uid;
+    return { uid: decoded.uid, email: decoded.email ?? null };
   } catch {
     return null;
   }
@@ -94,10 +95,13 @@ function buildPrompt(mode: "desk" | "pc") {
 }
 
 export async function POST(request: Request) {
-  const userId = await getVerifiedUserId(request);
+  const user = await getVerifiedUser(request);
 
-  if (!userId) {
+  if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+  if (!isAllowedEmail(user.email)) {
+    return NextResponse.json({ error: "회사 계정으로만 이용할 수 있습니다." }, { status: 403 });
   }
 
   const client = getClaudeClient();

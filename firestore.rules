@@ -2,15 +2,23 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 좌석배치도 프로젝트: 로그인한 팀원이면 누구나 읽고 쓸 수 있는 공유 문서
+    // 회사 구글 워크스페이스 계정(@isens.camp)으로 로그인한 팀원만 허용.
+    // 클라이언트 쪽 도메인 검사를 우회해도 여기서 막히도록 서버(Firestore) 단에서 다시 확인한다.
+    function isCompanyAccount() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.matches('.*@isens[.]camp$');
+    }
+
+    // 좌석배치도 프로젝트: 회사 계정이면 누구나 읽고 쓸 수 있는 공유 문서
     // (기존 앱스크립트 버전이 스프레드시트 하나를 팀 전체가 공유하던 방식과 동일)
     match /seatLayoutProjects/{projectId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isCompanyAccount();
     }
 
     // 사양 드롭다운 옵션/기본값 설정 (모든 프로젝트가 공유하는 설정 문서 1개)
     match /seatLayoutSettings/{docId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isCompanyAccount();
     }
   }
 }

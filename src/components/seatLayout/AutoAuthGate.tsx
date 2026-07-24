@@ -2,22 +2,38 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { ALLOWED_EMAIL_DOMAIN, isAllowedEmail } from "@/lib/seatLayout/authDomain";
 
-// 좌석배치도 툴은 사내 전용 공유 도구라, 로그인 화면 없이 조용히 익명 로그인 후 바로 쓰게 한다.
-// Firestore/Storage 규칙은 여전히 "로그인한 사용자만" 허용하므로, 데이터 자체가 인터넷에
-// 그대로 노출되는 것은 아니다 (진짜 계정 없이 접근 가능한 정도로 보안 수준이 낮아질 뿐).
+// 좌석배치도 툴은 회사 구글 워크스페이스 계정(@isens.camp)을 가진 팀원만 접속할 수 있어야 한다.
+// 로그인 자체는 구글 계정으로 하되, 로그인한 이메일이 회사 도메인이 아니면 즉시 로그아웃시킨다.
+// (구글 로그인 화면의 hd 파라미터는 "추천"일 뿐 강제가 아니라서, 로그인 후에도 이메일을 다시 검사해야 한다.
+// 진짜 보안은 firestore.rules와 API 라우트의 서버 측 검사에서 걸린다.)
 export function AutoAuthGate({ children }: { children: ReactNode }) {
-  const { user, loading, configured, signInAsGuest } = useAuth();
+  const { user, loading, configured, signInWithGoogle, logout } = useAuth();
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
+
+  const allowed = isAllowedEmail(user?.email);
 
   useEffect(() => {
-    if (!configured || loading || user) return;
-    // 익명 로그인 자체는 외부 시스템(Firebase Auth) 호출이며, 로그인 성공 여부는
-    // AuthContext의 onAuthStateChanged 구독을 통해 반영된다.
-    signInAsGuest().catch((err) => {
-      setSignInError(err instanceof Error ? err.message : "자동 로그인에 실패했습니다.");
+    if (!user || allowed) return;
+    // 회사 도메인이 아닌 계정으로 로그인됐다면 바로 내보낸다.
+    logout().catch(() => {
+      // 로그아웃 자체가 실패해도 아래 안내 메시지는 그대로 보여준다.
     });
-  }, [configured, loading, user, signInAsGuest]);
+  }, [user, allowed, logout]);
+
+  async function handleSignIn() {
+    setSignInError(null);
+    setSigningIn(true);
+    try {
+      await signInWithGoogle({ hostedDomain: ALLOWED_EMAIL_DOMAIN });
+    } catch (err) {
+      setSignInError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
+    } finally {
+      setSigningIn(false);
+    }
+  }
 
   if (!configured) {
     return (
@@ -30,20 +46,7 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (signInError) {
-    return (
-      <div className="mx-auto w-full max-w-xl rounded-2xl border border-red-200 bg-red-50 p-8 text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100">
-        <h2 className="text-xl font-semibold">자동 로그인에 실패했습니다</h2>
-        <p className="mt-3 text-sm leading-6">
-          {signInError}
-          <br />
-          Firebase 콘솔 → Authentication → Sign-in method에서 &ldquo;익명&rdquo; 로그인이 켜져 있는지 확인해주세요.
-        </p>
-      </div>
-    );
-  }
-
-  if (loading || !user) {
+  if (loading) {
     return (
       <div className="mx-auto w-full max-w-xl rounded-2xl border border-zinc-200 px-8 py-12 text-center text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
         불러오는 중...
@@ -51,5 +54,41 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  if (user && allowed) {
+    return <>{children}</>;
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-xl rounded-2xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-950">
+      <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">회사 계정 로그인이 필요합니다</h2>
+      <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+        이 도구는 회사 구글 계정(@{ALLOWED_EMAIL_DOMAIN})으로 로그인한 팀원만 사용할 수 있습니다.
+      </p>
+
+      {user && !allowed && (
+        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+          {user.email} 계정은 @{ALLOWED_EMAIL_DOMAIN} 도메인이 아니라서 접속할 수 없습니다. 다른 계정으로 다시
+          로그인해주세요.
+        </p>
+      )}
+
+      {signInError && (
+        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+          {signInError}
+          <br />
+          Firebase 콘솔 → Authentication → Sign-in method에서 &ldquo;Google&rdquo; 로그인이 켜져 있는지
+          확인해주세요.
+        </p>
+      )}
+
+      <button
+        type="button"
+        disabled={signingIn}
+        onClick={handleSignIn}
+        className="mt-5 w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+      >
+        {signingIn ? "로그인 중..." : "회사 구글 계정으로 로그인"}
+      </button>
+    </div>
+  );
 }

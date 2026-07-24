@@ -256,11 +256,15 @@ function OptionEditor({
   onDefaultChange: (v: string) => void;
 }) {
   const [draftValue, setDraftValue] = useState("");
+  const [customDefaultMode, setCustomDefaultMode] = useState(false);
 
   function commitAdd() {
     onAdd(draftValue);
     setDraftValue("");
   }
+
+  const isDefaultKnown = options.includes(defaultValue);
+  const showCustomDefaultInput = customDefaultMode || (!isDefaultKnown && !defaultValue);
 
   return (
     <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
@@ -310,10 +314,18 @@ function OptionEditor({
         {freeDefault ? (
           <>
             <select
-              value={options.includes(defaultValue) ? defaultValue : "__etc__"}
-              onChange={(e) => onDefaultChange(e.target.value === "__etc__" ? "" : e.target.value)}
+              value={showCustomDefaultInput ? "__etc__" : defaultValue}
+              onChange={(e) => {
+                if (e.target.value === "__etc__") {
+                  setCustomDefaultMode(true);
+                } else {
+                  setCustomDefaultMode(false);
+                  onDefaultChange(e.target.value);
+                }
+              }}
               className="mt-1 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
             >
+              {!isDefaultKnown && defaultValue && <option value={defaultValue}>{defaultValue}</option>}
               {options.map((opt) => (
                 <option key={opt} value={opt}>
                   {opt}
@@ -321,7 +333,7 @@ function OptionEditor({
               ))}
               <option value="__etc__">기타(직접입력)</option>
             </select>
-            {!options.includes(defaultValue) && (
+            {showCustomDefaultInput && (
               <input
                 value={defaultValue}
                 onChange={(e) => onDefaultChange(e.target.value)}
@@ -367,39 +379,45 @@ function TypeOverrideField({
   suggestions?: string[];
   onChange: (v: string) => void;
 }) {
+  const list = suggestions ?? [];
+  const isKnown = value === "" || list.includes(value);
+  const [customMode, setCustomMode] = useState(false);
+  const showCustomInput = customMode || (!isKnown && !value);
   return (
     <div>
       <label className="text-xs text-zinc-500">{label}</label>
       {freeText ? (
-        (() => {
-          const list = suggestions ?? [];
-          const isKnown = value === "" || list.includes(value);
-          return (
-            <>
-              <select
-                value={isKnown ? value : "__etc__"}
-                onChange={(e) => onChange(e.target.value === "__etc__" ? "" : e.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-              >
-                <option value="">(기본값 사용)</option>
-                {list.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-                <option value="__etc__">기타(직접입력)</option>
-              </select>
-              {!isKnown && (
-                <input
-                  value={value}
-                  onChange={(e) => onChange(e.target.value)}
-                  placeholder="직접 입력"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
-                />
-              )}
-            </>
-          );
-        })()
+        <>
+          <select
+            value={showCustomInput ? "__etc__" : value}
+            onChange={(e) => {
+              if (e.target.value === "__etc__") {
+                setCustomMode(true);
+              } else {
+                setCustomMode(false);
+                onChange(e.target.value);
+              }
+            }}
+            className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <option value="">(기본값 사용)</option>
+            {!isKnown && value && <option value={value}>{value}</option>}
+            {list.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+            <option value="__etc__">기타(직접입력)</option>
+          </select>
+          {showCustomInput && (
+            <input
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="직접 입력"
+              className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          )}
+        </>
       ) : (
         <select
           value={value}

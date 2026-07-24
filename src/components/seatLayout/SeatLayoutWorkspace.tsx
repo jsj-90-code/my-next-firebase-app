@@ -1751,7 +1751,8 @@ function ZoneForm(props: ZoneFormProps) {
   );
 }
 
-// 책상 탭 사양: 정해진 옵션 + "기타(직접입력)"
+// 책상 탭 사양: 정해진 옵션 + "기타(직접입력)". 저장된 값이 목록에 없어도 옵션으로 끼워 넣어
+// 한 줄로만 표시하고, 입력창은 사용자가 "기타(직접입력)"을 실제로 골랐을 때만 띄운다.
 function SelectOrEtc({
   field,
   value,
@@ -1762,14 +1763,24 @@ function SelectOrEtc({
   onChange: (v: string) => void;
 }) {
   const isKnown = field.options.includes(value);
+  const [customMode, setCustomMode] = useState(false);
+  const showCustomInput = customMode || (!isKnown && !value);
   return (
     <div>
       <label className="text-xs font-medium text-zinc-500">{field.label}</label>
       <select
-        value={isKnown ? value : "__etc__"}
-        onChange={(e) => onChange(e.target.value === "__etc__" ? "" : e.target.value)}
+        value={showCustomInput ? "__etc__" : value}
+        onChange={(e) => {
+          if (e.target.value === "__etc__") {
+            setCustomMode(true);
+          } else {
+            setCustomMode(false);
+            onChange(e.target.value);
+          }
+        }}
         className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
       >
+        {!isKnown && value && <option value={value}>{value}</option>}
         {field.options.map((opt) => (
           <option key={opt} value={opt}>
             {opt}
@@ -1777,7 +1788,7 @@ function SelectOrEtc({
         ))}
         <option value="__etc__">기타(직접입력)</option>
       </select>
-      {!isKnown && (
+      {showCustomInput && (
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -1789,7 +1800,8 @@ function SelectOrEtc({
   );
 }
 
-// PC 탭 사양: 설정에 등록된 후보를 드롭다운으로 보여주고, 목록에 없는 값은 "기타(직접입력)"으로 표시
+// PC 탭 사양: 설정에 등록된 후보를 드롭다운으로 보여주고, 목록에 없는 값은 옵션에 끼워 넣어 그대로
+// 표시한다. "기타(직접입력)"은 사용자가 실제로 그 항목을 골랐을 때만 입력창을 띄우는 용도다.
 function PcFieldInput({
   field,
   value,
@@ -1803,14 +1815,24 @@ function PcFieldInput({
 }) {
   const options = suggestions ?? [];
   const isKnown = options.includes(value);
+  const [customMode, setCustomMode] = useState(false);
+  const showCustomInput = customMode || (!isKnown && !value);
   return (
     <div>
       <label className="text-xs font-medium text-zinc-500">{field.label}</label>
       <select
-        value={isKnown ? value : "__etc__"}
-        onChange={(e) => onChange(e.target.value === "__etc__" ? "" : e.target.value)}
+        value={showCustomInput ? "__etc__" : value}
+        onChange={(e) => {
+          if (e.target.value === "__etc__") {
+            setCustomMode(true);
+          } else {
+            setCustomMode(false);
+            onChange(e.target.value);
+          }
+        }}
         className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
       >
+        {!isKnown && value && <option value={value}>{value}</option>}
         {options.map((opt) => (
           <option key={opt} value={opt}>
             {opt}
@@ -1818,7 +1840,7 @@ function PcFieldInput({
         ))}
         <option value="__etc__">기타(직접입력)</option>
       </select>
-      {!isKnown && (
+      {showCustomInput && (
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
