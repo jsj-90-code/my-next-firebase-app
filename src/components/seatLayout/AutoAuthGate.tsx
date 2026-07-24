@@ -11,6 +11,7 @@ import { ALLOWED_EMAIL_DOMAIN, isAllowedEmail } from "@/lib/seatLayout/authDomai
 export function AutoAuthGate({ children }: { children: ReactNode }) {
   const { user, loading, configured, signInWithGoogle, logout } = useAuth();
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [signInErrorCode, setSignInErrorCode] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
 
   const allowed = isAllowedEmail(user?.email);
@@ -25,10 +26,13 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
 
   async function handleSignIn() {
     setSignInError(null);
+    setSignInErrorCode(null);
     setSigningIn(true);
     try {
       await signInWithGoogle({ hostedDomain: ALLOWED_EMAIL_DOMAIN });
     } catch (err) {
+      const code = typeof err === "object" && err && "code" in err ? String(err.code) : null;
+      setSignInErrorCode(code);
       setSignInError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
     } finally {
       setSigningIn(false);
@@ -76,8 +80,17 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
           {signInError}
           <br />
-          Firebase 콘솔 → Authentication → Sign-in method에서 &ldquo;Google&rdquo; 로그인이 켜져 있는지
-          확인해주세요.
+          {signInErrorCode === "auth/unauthorized-domain" ? (
+            <>
+              지금 접속한 주소가 Firebase에 등록되지 않았습니다. Firebase 콘솔 → Authentication →
+              Settings → 승인된 도메인에 이 사이트 주소를 추가해주세요.
+            </>
+          ) : (
+            <>
+              Firebase 콘솔 → Authentication → Sign-in method에서 &ldquo;Google&rdquo; 로그인이 켜져 있는지
+              확인해주세요.
+            </>
+          )}
         </p>
       )}
 
