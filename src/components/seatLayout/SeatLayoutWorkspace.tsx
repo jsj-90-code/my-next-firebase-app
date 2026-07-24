@@ -1068,7 +1068,7 @@ export function SeatLayoutWorkspace() {
 
   // ---------------- 렌더 ----------------
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
@@ -1153,42 +1153,58 @@ export function SeatLayoutWorkspace() {
 
       {formOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-zinc-950">
-            <ZoneForm
-              mode={editingIndex !== null ? "edit" : "create"}
-              activeTab={activeTab}
-              title={
-                editingIndex !== null
-                  ? `스펙 수정 — ${activeZones[editingIndex]?.name ?? ""}`
-                  : selectedType?.key === "etc"
-                    ? "존 정보 입력 (기타)"
-                    : `존 정보 입력 — ${nextNamePreview}`
-              }
-              isEtc={editingIndex === null && selectedType?.key === "etc"}
-              etcName={etcName}
-              onEtcNameChange={setEtcName}
-              etcColor={etcColor}
-              onEtcColorChange={setEtcColor}
-              showAi={editingIndex === null}
-              aiResultText={aiResultText}
-              recognizing={recognizing}
-              onRecognizeAgain={() => curRect && runRecognize(curRect, activeTab)}
-              breakdown={breakdown}
-              onBreakdownChange={setBreakdown}
-              bagShelfDraft={bagShelfDraft}
-              onBagShelfDraftChange={setBagShelfDraft}
-              deskSpecDraft={deskSpecDraft}
-              onDeskSpecChange={(id, v) => setDeskSpecDraft((d) => ({ ...d, [id]: v }))}
-              seatsDraft={seatsDraft}
-              onSeatsDraftChange={setSeatsDraft}
-              pcSpecDraft={pcSpecDraft}
-              onPcSpecChange={(id, v) => setPcSpecDraft((d) => ({ ...d, [id]: v }))}
-              specFields={effectiveSpecFields}
-              pcSpecFields={effectivePcSpecFields}
-              pcSuggestions={settings.pcSuggestions}
-              onSave={confirmZone}
-              onCancel={cancelZone}
-            />
+          <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-950">
+            <div className="flex-1 overflow-y-auto p-5">
+              <ZoneForm
+                mode={editingIndex !== null ? "edit" : "create"}
+                activeTab={activeTab}
+                title={
+                  editingIndex !== null
+                    ? `스펙 수정 — ${activeZones[editingIndex]?.name ?? ""}`
+                    : selectedType?.key === "etc"
+                      ? "존 정보 입력 (기타)"
+                      : `존 정보 입력 — ${nextNamePreview}`
+                }
+                isEtc={editingIndex === null && selectedType?.key === "etc"}
+                etcName={etcName}
+                onEtcNameChange={setEtcName}
+                etcColor={etcColor}
+                onEtcColorChange={setEtcColor}
+                showAi={editingIndex === null}
+                aiResultText={aiResultText}
+                recognizing={recognizing}
+                onRecognizeAgain={() => curRect && runRecognize(curRect, activeTab)}
+                breakdown={breakdown}
+                onBreakdownChange={setBreakdown}
+                bagShelfDraft={bagShelfDraft}
+                onBagShelfDraftChange={setBagShelfDraft}
+                deskSpecDraft={deskSpecDraft}
+                onDeskSpecChange={(id, v) => setDeskSpecDraft((d) => ({ ...d, [id]: v }))}
+                seatsDraft={seatsDraft}
+                onSeatsDraftChange={setSeatsDraft}
+                pcSpecDraft={pcSpecDraft}
+                onPcSpecChange={(id, v) => setPcSpecDraft((d) => ({ ...d, [id]: v }))}
+                specFields={effectiveSpecFields}
+                pcSpecFields={effectivePcSpecFields}
+                pcSuggestions={settings.pcSuggestions}
+              />
+            </div>
+            <div className="flex gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={confirmZone}
+                className="flex-1 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                저장
+              </button>
+              <button
+                type="button"
+                onClick={cancelZone}
+                className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                취소
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1448,90 +1464,92 @@ export function SeatLayoutWorkspace() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형 선택</h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
-              </p>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {ZONE_TYPES.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => selectType(t.key)}
-                  style={{
-                    background: t.color,
-                    color: getContrastText(t.color),
-                    boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
-                  }}
-                  className="cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold transition duration-150 hover:brightness-90 active:brightness-75"
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            {selectedType && (
-              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
-                선택됨: <b style={{ color: selectedType.color }}>{selectedType.label}</b> → 다음 존 이름:{" "}
-                <b>{nextNamePreview}</b>
-              </div>
-            )}
-          </section>
-
-          {pdfCropSource ? (
-            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{cropHint}</p>
-              <div className="mt-2 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800">
-                <canvas
-                  ref={cropCanvasRef}
-                  onMouseDown={handleCropCanvasMouseDown}
-                  onMouseMove={handleCropCanvasMouseMove}
-                  className="max-w-full cursor-crosshair"
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={!cropRect}
-                  onClick={confirmPdfCrop}
-                  className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                >
-                  이 영역으로 자르기
-                </button>
-                <button
-                  type="button"
-                  onClick={usePdfPageAsIs}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                >
-                  자르지 않고 페이지 전체 사용
-                </button>
-                <button
-                  type="button"
-                  onClick={closePdfCrop}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900"
-                >
-                  취소
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 p-3 dark:border-zinc-800 dark:bg-zinc-900">
-              {imgEl ? (
-                <canvas
-                  ref={canvasRef}
-                  onMouseDown={handleCanvasMouseDown}
-                  onMouseMove={handleCanvasMouseMove}
-                  className="max-w-full cursor-crosshair rounded-lg border border-zinc-300 bg-white dark:border-zinc-700"
-                />
+          <div className="flex flex-col gap-4 lg:flex-row">
+            <div className="min-w-0 flex-1">
+              {pdfCropSource ? (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{cropHint}</p>
+                  <div className="mt-2 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800">
+                    <canvas
+                      ref={cropCanvasRef}
+                      onMouseDown={handleCropCanvasMouseDown}
+                      onMouseMove={handleCropCanvasMouseMove}
+                      className="max-w-full cursor-crosshair"
+                    />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={!cropRect}
+                      onClick={confirmPdfCrop}
+                      className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+                    >
+                      이 영역으로 자르기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={usePdfPageAsIs}
+                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                    >
+                      자르지 않고 페이지 전체 사용
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closePdfCrop}
+                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900"
+                    >
+                      취소
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
-                  왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
+                <div className="overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  {imgEl ? (
+                    <canvas
+                      ref={canvasRef}
+                      onMouseDown={handleCanvasMouseDown}
+                      onMouseMove={handleCanvasMouseMove}
+                      className="max-w-full cursor-crosshair rounded-lg border border-zinc-300 bg-white dark:border-zinc-700"
+                    />
+                  ) : (
+                    <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
+                      왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
+
+            <section className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950 lg:w-44">
+              <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형</h2>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
+              </p>
+              <div className="mt-3 flex flex-col gap-1.5">
+                {ZONE_TYPES.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => selectType(t.key)}
+                    style={{
+                      background: t.color,
+                      color: getContrastText(t.color),
+                      boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
+                    }}
+                    className="w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-semibold transition duration-150 hover:brightness-90 active:brightness-75"
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {selectedType && (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
+                  선택됨: <b style={{ color: selectedType.color }}>{selectedType.label}</b> → 다음 존 이름:{" "}
+                  <b>{nextNamePreview}</b>
+                </div>
+              )}
+            </section>
+          </div>
           <canvas ref={compositeCanvasRef} className="hidden" />
         </div>
       </div>
@@ -1567,8 +1585,6 @@ type ZoneFormProps = {
   specFields: SpecField[];
   pcSpecFields: { id: PcSpecFieldId; label: string; def: string }[];
   pcSuggestions: Partial<Record<PcSpecFieldId, string[]>>;
-  onSave: () => void;
-  onCancel: () => void;
 };
 
 function ZoneForm(props: ZoneFormProps) {
@@ -1597,8 +1613,6 @@ function ZoneForm(props: ZoneFormProps) {
     specFields,
     pcSpecFields,
     pcSuggestions,
-    onSave,
-    onCancel,
   } = props;
 
   const breakdownTotal = breakdown.reduce((s, r) => s + (Number(r.qty) || 0), 0);
@@ -1760,25 +1774,6 @@ function ZoneForm(props: ZoneFormProps) {
           </div>
         </>
       )}
-
-      {/* 스펙 목록이 길어지면 화면 아래로 밀려나 스크롤을 두 번 해야 눌렀던 문제 때문에,
-          뷰포트 하단에 붙여서(sticky) 스크롤 중에도 항상 보이게 한다. */}
-      <div className="sticky bottom-2 z-10 -mx-5 -mb-5 flex gap-2 border-t border-zinc-200 bg-white/95 px-5 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95">
-        <button
-          type="button"
-          onClick={onSave}
-          className="flex-1 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-        >
-          저장
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-        >
-          취소
-        </button>
-      </div>
     </div>
   );
 }
