@@ -182,6 +182,12 @@ export function SeatLayoutWorkspace() {
   const [busy, setBusy] = useState(false);
 
   const [imgEl, setImgEl] = useState<HTMLImageElement | null>(null);
+  // 도면이 이미 올라온 뒤에는 매장명/업로드 입력 UI를 한 줄 요약으로 접어서, 화면 스크롤 길이를 줄인다.
+  // 도면이 없을 땐(첫 설정) 펼쳐서 보여준다.
+  const [uploadPanelOpen, setUploadPanelOpen] = useState(true);
+  useEffect(() => {
+    if (imgEl) setUploadPanelOpen(false);
+  }, [imgEl]);
   // 방금 업로드한 원본 화질 도면 (세션 동안만 메모리에 유지, Firestore에는 저장 안 함).
   // AI 좌석 인식은 화질이 중요해서, Firestore 저장용으로 압축한 이미지가 아니라 이걸로 잘라낸다.
   const [rawFloorPlanDataUrl, setRawFloorPlanDataUrl] = useState<string | null>(null);
@@ -1095,6 +1101,42 @@ export function SeatLayoutWorkspace() {
         </div>
       </header>
 
+      {/* 다운로드/공유 버튼을 화면 맨 아래에 두면 스크롤을 많이 해야 찾을 수 있어서, 상단에 고정(sticky)해
+          스크롤 위치와 무관하게 항상 바로 누를 수 있게 한다. */}
+      <div className="sticky top-0 z-20 -mx-4 flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={handleDownload}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            이미지 다운로드
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={handlePublishToSlides}
+            className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+          >
+            공유 프레젠테이션에 등록
+          </button>
+          {presentationUrl && (
+            <a
+              href={presentationUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+            >
+              프레젠테이션 열기 ↗
+            </a>
+          )}
+        </div>
+        {status.text && (
+          <p className={`text-sm ${statusToneClass(status.tone)}`}>{status.text}</p>
+        )}
+      </div>
+
       {settingsOpen && (
         <SettingsPanel
           settings={settings}
@@ -1107,6 +1149,48 @@ export function SeatLayoutWorkspace() {
             setSettingsOpen(false);
           }}
         />
+      )}
+
+      {formOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-zinc-950">
+            <ZoneForm
+              mode={editingIndex !== null ? "edit" : "create"}
+              activeTab={activeTab}
+              title={
+                editingIndex !== null
+                  ? `스펙 수정 — ${activeZones[editingIndex]?.name ?? ""}`
+                  : selectedType?.key === "etc"
+                    ? "존 정보 입력 (기타)"
+                    : `존 정보 입력 — ${nextNamePreview}`
+              }
+              isEtc={editingIndex === null && selectedType?.key === "etc"}
+              etcName={etcName}
+              onEtcNameChange={setEtcName}
+              etcColor={etcColor}
+              onEtcColorChange={setEtcColor}
+              showAi={editingIndex === null}
+              aiResultText={aiResultText}
+              recognizing={recognizing}
+              onRecognizeAgain={() => curRect && runRecognize(curRect, activeTab)}
+              breakdown={breakdown}
+              onBreakdownChange={setBreakdown}
+              bagShelfDraft={bagShelfDraft}
+              onBagShelfDraftChange={setBagShelfDraft}
+              deskSpecDraft={deskSpecDraft}
+              onDeskSpecChange={(id, v) => setDeskSpecDraft((d) => ({ ...d, [id]: v }))}
+              seatsDraft={seatsDraft}
+              onSeatsDraftChange={setSeatsDraft}
+              pcSpecDraft={pcSpecDraft}
+              onPcSpecChange={(id, v) => setPcSpecDraft((d) => ({ ...d, [id]: v }))}
+              specFields={effectiveSpecFields}
+              pcSpecFields={effectivePcSpecFields}
+              pcSuggestions={settings.pcSuggestions}
+              onSave={confirmZone}
+              onCancel={cancelZone}
+            />
+          </div>
+        </div>
       )}
 
       <div className="flex gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
@@ -1147,38 +1231,6 @@ export function SeatLayoutWorkspace() {
         </div>
       )}
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형 선택</h2>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
-          </p>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {ZONE_TYPES.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => selectType(t.key)}
-              style={{
-                background: t.color,
-                color: getContrastText(t.color),
-                boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
-              }}
-              className="cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold transition duration-150 hover:brightness-90 active:brightness-75"
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {selectedType && (
-          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
-            선택됨: <b style={{ color: selectedType.color }}>{selectedType.label}</b> → 다음 존 이름:{" "}
-            <b>{nextNamePreview}</b>
-          </div>
-        )}
-      </div>
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
         <div className="flex flex-col gap-4">
           <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
@@ -1215,65 +1267,87 @@ export function SeatLayoutWorkspace() {
           </section>
 
           <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">매장명</label>
-            <input
-              value={project.name}
-              onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
-              placeholder="예: 광주첨단점"
-              className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-            />
-            <label
-              htmlFor="floorplan-file-input"
-              className="mt-3 block cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400"
-            >
-              도면 이미지 업로드 (이미지 또는 PDF)
-            </label>
-            <input
-              id="floorplan-file-input"
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={handleFileChange}
-              className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
-            />
-            <p className="mt-1 text-xs text-zinc-400">
-              도면은 책상/PC 탭에서 공통으로 사용됩니다. PDF는 화면 캡처보다 훨씬 선명해요.
-            </p>
-            {pdfPickerPages && (
-              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
-                  배치도(평면도) 페이지를 클릭해서 선택해주세요
-                </p>
-                <div className="mt-2 grid grid-cols-3 gap-2">
-                  {pdfPickerPages.map((p) => (
-                    <button
-                      key={p.pageNumber}
-                      type="button"
-                      disabled={pdfPickerBusy}
-                      onClick={() => selectPdfPage(p.pageNumber)}
-                      className="group flex flex-col items-center gap-1 rounded-lg border border-zinc-300 bg-white p-1.5 transition hover:border-amber-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={p.thumbnail}
-                        alt={`${p.pageNumber}페이지`}
-                        className="aspect-[4/3] w-full rounded object-contain"
-                      />
-                      <span className="text-xs text-zinc-500 group-hover:text-amber-700 dark:text-zinc-400">
-                        {p.pageNumber}페이지
-                      </span>
-                    </button>
-                  ))}
-                </div>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">매장명 / 도면</label>
+              {imgEl && (
                 <button
                   type="button"
-                  onClick={cancelPdfPicker}
-                  className="mt-2 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300"
+                  onClick={() => setUploadPanelOpen((v) => !v)}
+                  className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
                 >
-                  취소
+                  {uploadPanelOpen ? "▾ 접기" : "▸ 매장명/도면 변경"}
                 </button>
+              )}
+            </div>
+
+            {uploadPanelOpen ? (
+              <>
+                <input
+                  value={project.name}
+                  onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
+                  placeholder="예: 광주첨단점"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+                <label
+                  htmlFor="floorplan-file-input"
+                  className="mt-3 block cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400"
+                >
+                  도면 이미지 업로드 (이미지 또는 PDF)
+                </label>
+                <input
+                  id="floorplan-file-input"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={handleFileChange}
+                  className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
+                />
+                <p className="mt-1 text-xs text-zinc-400">
+                  도면은 책상/PC 탭에서 공통으로 사용됩니다. PDF는 화면 캡처보다 훨씬 선명해요.
+                </p>
+                {pdfPickerPages && (
+                  <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                    <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                      배치도(평면도) 페이지를 클릭해서 선택해주세요
+                    </p>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {pdfPickerPages.map((p) => (
+                        <button
+                          key={p.pageNumber}
+                          type="button"
+                          disabled={pdfPickerBusy}
+                          onClick={() => selectPdfPage(p.pageNumber)}
+                          className="group flex flex-col items-center gap-1 rounded-lg border border-zinc-300 bg-white p-1.5 transition hover:border-amber-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={p.thumbnail}
+                            alt={`${p.pageNumber}페이지`}
+                            className="aspect-[4/3] w-full rounded object-contain"
+                          />
+                          <span className="text-xs text-zinc-500 group-hover:text-amber-700 dark:text-zinc-400">
+                            {p.pageNumber}페이지
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={cancelPdfPicker}
+                      className="mt-2 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300"
+                    >
+                      취소
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="mt-1 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+                <span className="font-medium">{project.name || "(매장명 미입력)"}</span>
+                <span className="text-xs text-zinc-400">· 도면 업로드됨</span>
               </div>
             )}
+
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
@@ -1331,45 +1405,7 @@ export function SeatLayoutWorkspace() {
           )}
 
           <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            {formOpen ? (
-              <ZoneForm
-                mode={editingIndex !== null ? "edit" : "create"}
-                activeTab={activeTab}
-                title={
-                  editingIndex !== null
-                    ? `스펙 수정 — ${activeZones[editingIndex]?.name ?? ""}`
-                    : selectedType?.key === "etc"
-                      ? "존 정보 입력 (기타)"
-                      : `존 정보 입력 — ${nextNamePreview}`
-                }
-                isEtc={editingIndex === null && selectedType?.key === "etc"}
-                etcName={etcName}
-                onEtcNameChange={setEtcName}
-                etcColor={etcColor}
-                onEtcColorChange={setEtcColor}
-                showAi={editingIndex === null}
-                aiResultText={aiResultText}
-                recognizing={recognizing}
-                onRecognizeAgain={() => curRect && runRecognize(curRect, activeTab)}
-                breakdown={breakdown}
-                onBreakdownChange={setBreakdown}
-                bagShelfDraft={bagShelfDraft}
-                onBagShelfDraftChange={setBagShelfDraft}
-                deskSpecDraft={deskSpecDraft}
-                onDeskSpecChange={(id, v) => setDeskSpecDraft((d) => ({ ...d, [id]: v }))}
-                seatsDraft={seatsDraft}
-                onSeatsDraftChange={setSeatsDraft}
-                pcSpecDraft={pcSpecDraft}
-                onPcSpecChange={(id, v) => setPcSpecDraft((d) => ({ ...d, [id]: v }))}
-                specFields={effectiveSpecFields}
-                pcSpecFields={effectivePcSpecFields}
-                pcSuggestions={settings.pcSuggestions}
-                onSave={confirmZone}
-                onCancel={cancelZone}
-              />
-            ) : (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
-            )}
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
           </section>
 
           <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
@@ -1409,45 +1445,41 @@ export function SeatLayoutWorkspace() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <p className="mb-2 text-xs text-zinc-400">
-              책상 발주 도면 / PC 발주 도면 / 발주 요약표 3장이 한 번에 만들어집니다.
-            </p>
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={handleDownload}
-                className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-              >
-                이미지 다운로드
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={handlePublishToSlides}
-                className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
-              >
-                공유 프레젠테이션에 등록
-              </button>
-            </div>
-            {status.text && (
-              <p className={`mt-2 text-sm ${statusToneClass(status.tone)}`}>{status.text}</p>
-            )}
-            {presentationUrl && (
-              <a
-                href={presentationUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-block text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
-              >
-                프레젠테이션 열기 ↗
-              </a>
-            )}
-          </section>
         </div>
 
         <div className="flex flex-col gap-4">
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형 선택</h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
+              </p>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {ZONE_TYPES.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => selectType(t.key)}
+                  style={{
+                    background: t.color,
+                    color: getContrastText(t.color),
+                    boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
+                  }}
+                  className="cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold transition duration-150 hover:brightness-90 active:brightness-75"
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {selectedType && (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
+                선택됨: <b style={{ color: selectedType.color }}>{selectedType.label}</b> → 다음 존 이름:{" "}
+                <b>{nextNamePreview}</b>
+              </div>
+            )}
+          </section>
+
           {pdfCropSource ? (
             <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
               <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{cropHint}</p>
