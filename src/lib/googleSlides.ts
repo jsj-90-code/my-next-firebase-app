@@ -113,7 +113,8 @@ export async function publishCompositeToSlides({
       requestBody: {
         requests: [
           ...deleteRequests,
-          { updateSlidesPosition: { slideObjectIds: [slideId], insertionIndex: 0 } },
+          // 1번 슬라이드(매뉴얼 안내문구)는 그대로 두고, 그 다음 자리(인덱스 1)부터 채운다.
+          { updateSlidesPosition: { slideObjectIds: [slideId], insertionIndex: 1 } },
           {
             createImage: {
               url: imageUrl,
@@ -137,7 +138,8 @@ export async function publishCompositeToSlides({
           {
             createSlide: {
               objectId: newSlideId,
-              insertionIndex: 0,
+              // 1번 슬라이드(매뉴얼 안내문구)는 그대로 두고, 그 다음 자리(인덱스 1)부터 채운다.
+              insertionIndex: 1,
               slideLayoutReference: { predefinedLayout: "BLANK" },
             },
           },

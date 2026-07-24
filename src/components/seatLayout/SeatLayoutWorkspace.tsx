@@ -39,6 +39,7 @@ import {
   type PcZone,
   type ProjectSummary,
   type SeatLayoutProject,
+  type SeatNumberRangeEntry,
   type SizeBreakdownEntry,
   type TabKey,
   type ZoneTypeKey,
@@ -191,6 +192,10 @@ export function SeatLayoutWorkspace() {
   // 방금 업로드한 원본 화질 도면 (세션 동안만 메모리에 유지, Firestore에는 저장 안 함).
   // AI 좌석 인식은 화질이 중요해서, Firestore 저장용으로 압축한 이미지가 아니라 이걸로 잘라낸다.
   const [rawFloorPlanDataUrl, setRawFloorPlanDataUrl] = useState<string | null>(null);
+  // 좌석번호표(피난안내도 등) 원본 화질 이미지 — 번호 인식은 이걸로 하고, 저장 직전에만 압축한다.
+  const [rawSeatNumberPlateDataUrl, setRawSeatNumberPlateDataUrl] = useState<string | null>(null);
+  const [seatNumberRecognizing, setSeatNumberRecognizing] = useState(false);
+  const seatNumberPlateInputRef = useRef<HTMLInputElement>(null);
   // PDF 업로드 시: 페이지가 여러 장이라 어떤 페이지가 배치도인지 직접 골라야 한다.
   const [pdfPickerPages, setPdfPickerPages] = useState<
     { pageNumber: number; thumbnail: string }[] | null
@@ -477,6 +482,61 @@ export function SeatLayoutWorkspace() {
     }
   }
 
+  // ---------------- 좌석번호표 인식 ----------------
+  // 좌석번호표(피난안내도 등)는 도면과 별개의 그림이라 좌표를 그대로 겹칠 수 없다. 그래서 존별
+  // "좌석 수"(이미 등록되어 있음)를 기준으로, 이미지에서 읽은 번호 그룹을 그 개수와 대조해 매칭한다.
+  async function runSeatNumberRecognize(dataUrlOverride?: string) {
+    const dataUrl = dataUrlOverride ?? rawSeatNumberPlateDataUrl;
+    if (!user || !dataUrl) return;
+    setSeatNumberRecognizing(true);
+    setStatusMsg("좌석번호 인식 중...");
+    try {
+      const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+      if (!match) throw new Error("이미지 데이터를 읽을 수 없습니다.");
+      const [, mimeType, base64] = match;
+      const token = await user.getIdToken();
+      const res = await fetch("/api/seat-layout/recognize-seat-numbers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType,
+          zones: project.zones.map((z) => ({ name: z.name, seats: z.seats, x: z.x, y: z.y, w: z.w, h: z.h })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
+      const ranges: SeatNumberRangeEntry[] = data.ranges ?? [];
+      setProject((p) => ({ ...p, seatNumberRanges: ranges }));
+      setStatusMsg("좌석번호 인식 완료 — 결과를 확인하고 틀린 부분은 직접 수정하세요.", "success");
+    } catch (err) {
+      setStatusMsg(`좌석번호 인식 실패: ${err instanceof Error ? err.message : err}`, "error");
+    } finally {
+      setSeatNumberRecognizing(false);
+    }
+  }
+
+  function handleSeatNumberPlateFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const dataUrl = evt.target?.result as string;
+      setRawSeatNumberPlateDataUrl(dataUrl);
+      runSeatNumberRecognize(dataUrl);
+    };
+    reader.onerror = () => setStatusMsg("좌석번호표 이미지를 읽지 못했습니다.", "error");
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function setSeatNumberRangeFor(zoneName: string, value: string) {
+    setProject((p) => {
+      const rest = p.seatNumberRanges.filter((r) => r.zoneName !== zoneName);
+      return { ...p, seatNumberRanges: value ? [...rest, { zoneName, ranges: value }] : rest };
+    });
+  }
+
   // ---------------- 존 폼 열기/닫기 ----------------
   function openZoneForm(rect: NormalizedRect) {
     if (!selectedTypeKey) return;
@@ -696,7 +756,10 @@ export function SeatLayoutWorkspace() {
         return;
       }
       hasLoadedProjectRef.current = true;
-      setProject(loaded);
+      // emptyProject()로 기본값을 먼저 채워서, 이 필드가 추가되기 전에 저장된 옛날 프로젝트를
+      // 불러와도 seatNumberPlateDataUrl/seatNumberRanges 등이 undefined가 되지 않게 한다.
+      setProject({ ...emptyProject(), ...loaded });
+      setRawSeatNumberPlateDataUrl(null);
       setRawFloorPlanDataUrl(null);
       setActiveTab("desk");
       setSelectedTypeKey(null);
@@ -714,6 +777,7 @@ export function SeatLayoutWorkspace() {
   function newProject() {
     setProject({ id: crypto.randomUUID(), ...emptyProject() });
     setRawFloorPlanDataUrl(null);
+    setRawSeatNumberPlateDataUrl(null);
     setPcDefaults(pcDefaultsFromFields(effectivePcSpecFields));
     setPcDefaultsDraft(pcDefaultsFromFields(effectivePcSpecFields));
     setActiveTab("desk");
@@ -753,11 +817,17 @@ export function SeatLayoutWorkspace() {
         const compressed = await compressImageDataUrl(rawFloorPlanDataUrl);
         floorPlanDataUrl = compressed.dataUrl;
       }
+      let seatNumberPlateDataUrl = project.seatNumberPlateDataUrl;
+      if (rawSeatNumberPlateDataUrl) {
+        const compressed = await compressImageDataUrl(rawSeatNumberPlateDataUrl);
+        seatNumberPlateDataUrl = compressed.dataUrl;
+      }
       const toSave: SeatLayoutProject = {
         ...project,
         name: project.name || "이름없음",
         pcDefaults,
         floorPlanDataUrl,
+        seatNumberPlateDataUrl,
       };
       const saved = await saveProject(toSave, user.uid);
       setProject(saved);
@@ -987,7 +1057,7 @@ export function SeatLayoutWorkspace() {
     renderPcFloorplanImage(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
     const pc = { key: "pc", label: "PC발주도면", dataUrl: cv.toDataURL("image/png") };
 
-    renderOrderSummaryImage(ctx, project.name, project.zones);
+    renderOrderSummaryImage(ctx, project.name, project.zones, project.seatNumberRanges);
     const summary = { key: "summary", label: "발주요약", dataUrl: cv.toDataURL("image/png") };
 
     return [desk, pc, summary];
@@ -1374,6 +1444,61 @@ export function SeatLayoutWorkspace() {
                 프로젝트 저장
               </button>
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <label
+              htmlFor="seat-number-plate-input"
+              className="block cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400"
+            >
+              좌석번호표 이미지 (선택 — 피난안내도 등)
+            </label>
+            <input
+              id="seat-number-plate-input"
+              ref={seatNumberPlateInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleSeatNumberPlateFileChange}
+              className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
+            />
+            <p className="mt-1 text-xs text-zinc-400">
+              업로드하면 존별 좌석번호 범위를 자동으로 인식해서 발주요약(슬라이드3)에 함께 넣습니다.
+              번호 인식은 100% 정확하지 않을 수 있어요 — 틀린 부분은 아래에서 직접 고치면 됩니다.
+            </p>
+
+            {(rawSeatNumberPlateDataUrl || project.seatNumberPlateDataUrl) && project.zones.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                    {seatNumberRecognizing ? "인식 중..." : "존별 좌석번호 (틀리면 직접 수정)"}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={seatNumberRecognizing}
+                    onClick={() => runSeatNumberRecognize()}
+                    className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    다시 인식
+                  </button>
+                </div>
+                {project.zones.map((z) => {
+                  const entry = project.seatNumberRanges.find((r) => r.zoneName === z.name);
+                  return (
+                    <div key={z.name} className="flex items-center gap-2">
+                      <span className="w-20 shrink-0 truncate text-xs text-zinc-500" title={z.name}>
+                        {z.name}
+                      </span>
+                      <input
+                        value={entry?.ranges ?? ""}
+                        onChange={(e) => setSeatNumberRangeFor(z.name, e.target.value)}
+                        placeholder="예: 1~10, 25~30"
+                        className="flex-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           {activeTab === "pc" && (

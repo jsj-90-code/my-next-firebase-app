@@ -15,7 +15,7 @@ import {
   tintColor,
 } from "./calc";
 import { COMPOSITE_H, COMPOSITE_W, PC_SPEC_FIELDS } from "./constants";
-import type { DeskZone, PcSpecValues, PcZone } from "./types";
+import type { DeskZone, PcSpecValues, PcZone, SeatNumberRangeEntry } from "./types";
 
 type TableCol = { title: string; width: number };
 
@@ -390,6 +390,7 @@ export function renderOrderSummaryImage(
   c: CanvasRenderingContext2D,
   projectName: string,
   zones: DeskZone[],
+  seatNumberRanges: SeatNumberRangeEntry[] = [],
 ) {
   fillBackground(c);
 
@@ -469,5 +470,36 @@ export function renderOrderSummaryImage(
   const headsetTitles = ["TYPE", "수량", "비고"];
   const headsetColW = measureColWidths(c, headsetTitles, headsetTableRows);
   const headsetCols: TableCol[] = headsetTitles.map((title, i) => ({ title, width: headsetColW[i] }));
-  drawTable(c, marginX, y, headsetColW.reduce((s, w) => s + w, 0), headerH, rowH, headsetCols, headsetTableRows);
+  y +=
+    drawTable(c, marginX, y, headsetColW.reduce((s, w) => s + w, 0), headerH, rowH, headsetCols, headsetTableRows) +
+    sectionGap;
+
+  // [ 좌석 번호 ] — 좌석번호표 이미지에서 자동인식(또는 직접입력)한 존별 번호 범위. 없으면(아직
+  // 좌석번호표를 안 올렸으면) 표 자체를 생략한다.
+  if (seatNumberRanges.length) {
+    drawSectionTitle("[ 좌석 번호 ]");
+    const seatNumberRows = zones
+      .map((z) => seatNumberRanges.find((r) => r.zoneName === z.name && r.ranges) && z)
+      .filter((z): z is DeskZone => Boolean(z))
+      .map((z) => {
+        const entry = seatNumberRanges.find((r) => r.zoneName === z.name)!;
+        return [z.name, entry.ranges, `${z.seats}석`];
+      });
+    const seatNumberTitles = ["존명", "좌석번호", "좌석수"];
+    const seatNumberColW = measureColWidths(c, seatNumberTitles, seatNumberRows);
+    const seatNumberCols: TableCol[] = seatNumberTitles.map((title, i) => ({
+      title,
+      width: seatNumberColW[i],
+    }));
+    drawTable(
+      c,
+      marginX,
+      y,
+      seatNumberColW.reduce((s, w) => s + w, 0),
+      headerH,
+      rowH,
+      seatNumberCols,
+      seatNumberRows,
+    );
+  }
 }

@@ -86,6 +86,13 @@ export type PcZone = NormalizedRect & {
   pcOverrides: PcSpecValues;
 };
 
+// 존 하나에 매칭된 좌석번호표 상의 번호 범위 (예: "1~10, 25~30"). AI가 자동 인식한 값을
+// 그대로 쓰거나, 틀린 부분은 사람이 직접 고쳐서 저장한다.
+export type SeatNumberRangeEntry = {
+  zoneName: string;
+  ranges: string;
+};
+
 export type SeatLayoutProject = {
   id: string;
   name: string;
@@ -97,6 +104,9 @@ export type SeatLayoutProject = {
   zones: DeskZone[];
   pcZones: PcZone[];
   pcDefaults: PcSpecValues;
+  // 좌석번호표(피난안내도 등) 이미지 — 존별 좌석번호 자동인식용. 도면과 별개로 선택 업로드.
+  seatNumberPlateDataUrl: string | null;
+  seatNumberRanges: SeatNumberRangeEntry[];
   updatedAt: number | null;
   updatedBy: string | null;
 };
@@ -110,6 +120,8 @@ export function emptyProject(): Omit<SeatLayoutProject, "id"> {
     zones: [],
     pcZones: [],
     pcDefaults: {},
+    seatNumberPlateDataUrl: null,
+    seatNumberRanges: [],
     updatedAt: null,
     updatedBy: null,
   };
