@@ -195,6 +195,9 @@ export function SeatLayoutWorkspace() {
   // 좌석번호표(피난안내도 등) 원본 화질 이미지 — 번호 인식은 이걸로 하고, 저장 직전에만 압축한다.
   const [rawSeatNumberPlateDataUrl, setRawSeatNumberPlateDataUrl] = useState<string | null>(null);
   const [seatNumberRecognizing, setSeatNumberRecognizing] = useState(false);
+  // 좌석수가 겹치는 존이나 어느 존과도 안 맞는 번호 그룹처럼, 자동 배정을 포기하고 사람 확인이
+  // 필요한 경우를 알려주는 안내문. (틀린 값을 억지로 채우는 것보다 안전하다.)
+  const [seatNumberWarnings, setSeatNumberWarnings] = useState<string[]>([]);
   const seatNumberPlateInputRef = useRef<HTMLInputElement>(null);
   // PDF 업로드 시: 페이지가 여러 장이라 어떤 페이지가 배치도인지 직접 골라야 한다.
   const [pdfPickerPages, setPdfPickerPages] = useState<
@@ -508,15 +511,22 @@ export function SeatLayoutWorkspace() {
         body: JSON.stringify({
           imageBase64: base64,
           mimeType,
-          zones: project.zones.map((z) => ({ name: z.name, seats: z.seats, x: z.x, y: z.y, w: z.w, h: z.h })),
+          zones: project.zones.map((z) => ({ name: z.name, seats: z.seats })),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
       const ranges: SeatNumberRangeEntry[] = data.ranges ?? [];
+      const warnings: string[] = data.warnings ?? [];
       setProject((p) => ({ ...p, seatNumberRanges: ranges }));
+      setSeatNumberWarnings(warnings);
       if (ranges.length) {
-        setStatusMsg("좌석번호 인식 완료 — 결과를 확인하고 틀린 부분은 직접 수정하세요.", "success");
+        setStatusMsg(
+          warnings.length
+            ? "좌석번호 인식 완료 — 일부 존은 자동 배정하지 못했습니다. 아래 안내를 확인하세요."
+            : "좌석번호 인식 완료 — 결과를 확인하고 틀린 부분은 직접 수정하세요.",
+          warnings.length ? "error" : "success",
+        );
       } else {
         setStatusMsg(
           "존을 하나도 인식하지 못했습니다. 번호 글씨가 작아서 못 읽었을 수 있어요 — " +
@@ -775,6 +785,7 @@ export function SeatLayoutWorkspace() {
       // 불러와도 seatNumberPlateDataUrl/seatNumberRanges 등이 undefined가 되지 않게 한다.
       setProject({ ...emptyProject(), ...loaded });
       setRawSeatNumberPlateDataUrl(null);
+      setSeatNumberWarnings([]);
       setRawFloorPlanDataUrl(null);
       setActiveTab("desk");
       setSelectedTypeKey(null);
@@ -793,6 +804,7 @@ export function SeatLayoutWorkspace() {
     setProject({ id: crypto.randomUUID(), ...emptyProject() });
     setRawFloorPlanDataUrl(null);
     setRawSeatNumberPlateDataUrl(null);
+    setSeatNumberWarnings([]);
     setPcDefaults(pcDefaultsFromFields(effectivePcSpecFields));
     setPcDefaultsDraft(pcDefaultsFromFields(effectivePcSpecFields));
     setActiveTab("desk");
@@ -1545,6 +1557,14 @@ export function SeatLayoutWorkspace() {
                   피난안내도처럼 안내문구가 많이 섞인 이미지는 인식이 잘 안 될 수 있어요 — 그럴 땐
                   "영역 잘라서 다시 인식"으로 번호가 보이는 부분만 확대해서 다시 시도해보세요.
                 </p>
+                {seatNumberWarnings.map((w, i) => (
+                  <p
+                    key={i}
+                    className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                  >
+                    {w}
+                  </p>
+                ))}
                 {project.zones.map((z) => {
                   const entry = project.seatNumberRanges.find((r) => r.zoneName === z.name);
                   return (
