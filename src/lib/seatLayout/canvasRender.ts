@@ -28,13 +28,14 @@ export function drawTable(
   rowH: number,
   cols: TableCol[],
   rowsData: (string | number)[][],
+  fontScale = 1,
 ): number {
   const totalH = headerH + Math.max(1, rowsData.length) * rowH;
 
   c.fillStyle = "#8D7B68";
   c.fillRect(x, y, w, headerH);
   c.fillStyle = "#ffffff";
-  c.font = "bold 16px sans-serif";
+  c.font = `bold ${Math.round(16 * fontScale)}px sans-serif`;
   let cx = x;
   cols.forEach((col) => {
     c.fillText(col.title, cx + 6, y + headerH * 0.68);
@@ -64,7 +65,7 @@ export function drawTable(
   c.stroke();
 
   const rows = rowsData.length ? rowsData : [["-", "-", "-"]];
-  c.font = "15px sans-serif";
+  c.font = `${Math.round(15 * fontScale)}px sans-serif`;
   c.fillStyle = "#2A2520";
   rows.forEach((rowVals, ri) => {
     const ry = y + headerH + ri * rowH;
@@ -399,27 +400,65 @@ export function renderOrderSummaryImage(
   const bezelData = computeBezelTable(zones);
   const summaryData = computeDeskSummary(zones);
   const jangpadRows = computeJangpadTable(zones);
+  const headsetTotals = computeHeadsetHookTotals(zones);
+  const hasSeatNumbers = seatNumberRanges.length > 0;
+  const seatNumberRows = hasSeatNumbers
+    ? zones
+        .map((z) => seatNumberRanges.find((r) => r.zoneName === z.name && r.ranges) && z)
+        .filter((z): z is DeskZone => Boolean(z))
+        .map((z) => {
+          const entry = seatNumberRanges.find((r) => r.zoneName === z.name)!;
+          return [z.name, entry.ranges, `${z.seats}석`];
+        })
+    : [];
 
-  const mainTitleH = 40;
-  const titleFont = "bold 26px sans-serif";
-  const titleH = 30;
-  const headerH = 32;
-  const rowH = 26;
-  const sectionGap = 30;
+  const baseMainTitleH = 40;
+  const baseTitleH = 30;
+  const baseHeaderH = 32;
+  const baseRowH = 26;
+  const baseSectionGap = 30;
+  const baseTitleFontPx = 26;
 
   const topOffset = 20;
+  const bottomMargin = 20;
+
+  // 존이 많으면(특히 좌석 번호 표까지 더해지면) 다섯 표를 다 그렸을 때 FHD 캔버스 높이(1080)를
+  // 넘어서 아래쪽이 잘리는 문제가 있었다 — 그려보기 전에 필요한 전체 높이를 먼저 계산해서,
+  // 넘칠 때만 표/여백/글자 크기를 비례해서 줄인다(computeCompactLayout과 같은 발상).
+  const tableH = (rows: number, headerH: number, rowH: number) => headerH + Math.max(1, rows) * rowH;
+  const sectionsCount = hasSeatNumbers ? 5 : 4;
+  const bezelH0 = Math.max(
+    tableH(bezelData.leftRows.length, baseHeaderH, baseRowH),
+    tableH(bezelData.rightRows.length, baseHeaderH, baseRowH),
+  );
+  const summaryH0 = tableH(summaryData.length, baseHeaderH, baseRowH);
+  const jangpadH0 = tableH(jangpadRows.length, baseHeaderH, baseRowH);
+  const headsetH0 = tableH(2, baseHeaderH, baseRowH);
+  const seatNumberH0 = hasSeatNumbers ? tableH(seatNumberRows.length, baseHeaderH, baseRowH) : 0;
+  const tablesTotalH0 = bezelH0 + summaryH0 + jangpadH0 + headsetH0 + seatNumberH0;
+  const contentNeeded0 = tablesTotalH0 + baseTitleH * sectionsCount + baseSectionGap * (sectionsCount - 1);
+
+  const headerAreaH = topOffset + 26 + (baseMainTitleH - 6);
+  const available = COMPOSITE_H - headerAreaH - bottomMargin;
+  const shrink = contentNeeded0 > available ? Math.max(0.55, available / contentNeeded0) : 1;
+
+  const titleH = baseTitleH * shrink;
+  const headerH = baseHeaderH * shrink;
+  const rowH = baseRowH * shrink;
+  const sectionGap = baseSectionGap * shrink;
+  const titleFont = `bold ${Math.max(14, Math.round(baseTitleFontPx * shrink))}px sans-serif`;
 
   let y = topOffset + 26;
 
   c.fillStyle = "#2A2520";
   c.font = "bold 34px sans-serif";
   c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, y);
-  y += mainTitleH - 6;
+  y += baseMainTitleH - 6;
 
   function drawSectionTitle(text: string) {
     c.fillStyle = "#2A2520";
     c.font = titleFont;
-    c.fillText(text, marginX, y + 22);
+    c.fillText(text, marginX, y + 22 * shrink);
     y += titleH;
   }
 
@@ -437,8 +476,8 @@ export function renderOrderSummaryImage(
   const bezelCols: TableCol[] = bezelTitles.map((title, i) => ({ title, width: bezelColW[i] }));
   const bezelW = bezelColW.reduce((s, w) => s + w, 0);
   const bezelH = Math.max(
-    drawTable(c, marginX, y, bezelW, headerH, rowH, bezelCols, leftRows),
-    drawTable(c, marginX + bezelW + gapMid, y, bezelW, headerH, rowH, bezelCols, rightRows),
+    drawTable(c, marginX, y, bezelW, headerH, rowH, bezelCols, leftRows, shrink),
+    drawTable(c, marginX + bezelW + gapMid, y, bezelW, headerH, rowH, bezelCols, rightRows, shrink),
   );
   y += bezelH + sectionGap;
 
@@ -448,7 +487,9 @@ export function renderOrderSummaryImage(
   const summaryTitles = ["책상종류", "책상사이즈", "칸막이", "수량", "존종류"];
   const summaryColW = measureColWidths(c, summaryTitles, summaryRows);
   const summaryCols: TableCol[] = summaryTitles.map((title, i) => ({ title, width: summaryColW[i] }));
-  y += drawTable(c, marginX, y, summaryColW.reduce((s, w) => s + w, 0), headerH, rowH, summaryCols, summaryRows) + sectionGap;
+  y +=
+    drawTable(c, marginX, y, summaryColW.reduce((s, w) => s + w, 0), headerH, rowH, summaryCols, summaryRows, shrink) +
+    sectionGap;
 
   // [ 장패드 수량 ]
   drawSectionTitle("[ 장패드 수량 ]");
@@ -457,12 +498,20 @@ export function renderOrderSummaryImage(
   const jangpadColW = measureColWidths(c, jangpadTitles, jangpadTableRows);
   const jangpadCols: TableCol[] = jangpadTitles.map((title, i) => ({ title, width: jangpadColW[i] }));
   y +=
-    drawTable(c, marginX, y, jangpadColW.reduce((s, w) => s + w, 0), headerH, rowH, jangpadCols, jangpadTableRows) +
-    sectionGap;
+    drawTable(
+      c,
+      marginX,
+      y,
+      jangpadColW.reduce((s, w) => s + w, 0),
+      headerH,
+      rowH,
+      jangpadCols,
+      jangpadTableRows,
+      shrink,
+    ) + sectionGap;
 
   // [ 헤드셋걸이 개수 ] — 가방 선반 브라켓이 있는 좌석은 아이락스, 없는 좌석은 아이센스 헤드셋걸이.
   drawSectionTitle("[ 헤드셋걸이 개수 ]");
-  const headsetTotals = computeHeadsetHookTotals(zones);
   const headsetTableRows = [
     ["아이락스 헤드셋걸이", `${headsetTotals.irock} EA`, "가방 선반 있는 좌석"],
     ["아이센스 헤드셋걸이", `${headsetTotals.isense} EA`, "가방 선반 없는 좌석"],
@@ -471,20 +520,22 @@ export function renderOrderSummaryImage(
   const headsetColW = measureColWidths(c, headsetTitles, headsetTableRows);
   const headsetCols: TableCol[] = headsetTitles.map((title, i) => ({ title, width: headsetColW[i] }));
   y +=
-    drawTable(c, marginX, y, headsetColW.reduce((s, w) => s + w, 0), headerH, rowH, headsetCols, headsetTableRows) +
-    sectionGap;
+    drawTable(
+      c,
+      marginX,
+      y,
+      headsetColW.reduce((s, w) => s + w, 0),
+      headerH,
+      rowH,
+      headsetCols,
+      headsetTableRows,
+      shrink,
+    ) + sectionGap;
 
   // [ 좌석 번호 ] — 좌석번호표 이미지에서 자동인식(또는 직접입력)한 존별 번호 범위. 없으면(아직
   // 좌석번호표를 안 올렸으면) 표 자체를 생략한다.
-  if (seatNumberRanges.length) {
+  if (hasSeatNumbers) {
     drawSectionTitle("[ 좌석 번호 ]");
-    const seatNumberRows = zones
-      .map((z) => seatNumberRanges.find((r) => r.zoneName === z.name && r.ranges) && z)
-      .filter((z): z is DeskZone => Boolean(z))
-      .map((z) => {
-        const entry = seatNumberRanges.find((r) => r.zoneName === z.name)!;
-        return [z.name, entry.ranges, `${z.seats}석`];
-      });
     const seatNumberTitles = ["존명", "좌석번호", "좌석수"];
     const seatNumberColW = measureColWidths(c, seatNumberTitles, seatNumberRows);
     const seatNumberCols: TableCol[] = seatNumberTitles.map((title, i) => ({
@@ -500,6 +551,7 @@ export function renderOrderSummaryImage(
       rowH,
       seatNumberCols,
       seatNumberRows,
+      shrink,
     );
   }
 }

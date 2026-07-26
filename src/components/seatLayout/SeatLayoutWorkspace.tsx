@@ -123,6 +123,11 @@ export function SeatLayoutWorkspace() {
   const [pcSpecDraft, setPcSpecDraft] = useState<PcSpecValues>({});
   const [etcName, setEtcName] = useState("");
   const [etcColor, setEtcColor] = useState("#555555");
+  // 스펙 수정 폼에서 존 유형(및 이름/색상)을 바꿀 때 쓰는 draft — 생성 시와 달리, 수정 시에는
+  // 유형을 나중에 바꿀 수 있어야 해서 별도 state로 둔다.
+  const [editTypeDraft, setEditTypeDraft] = useState<ZoneTypeKey>("etc");
+  const [editEtcNameDraft, setEditEtcNameDraft] = useState("");
+  const [editEtcColorDraft, setEditEtcColorDraft] = useState("#555555");
 
   const [pcDefaults, setPcDefaults] = useState<PcSpecValues>(defaultPcDefaults());
   const [pcDefaultsDraft, setPcDefaultsDraft] = useState<PcSpecValues>(defaultPcDefaults());
@@ -176,6 +181,12 @@ export function SeatLayoutWorkspace() {
   const [presentationUrl, setPresentationUrl] = useState<string | null>(null);
   const [aiResultText, setAiResultText] = useState("");
   const [recognizing, setRecognizing] = useState(false);
+  // 도면 등록 직후 "AI로 구역 초안 제안받기"를 누르는 동안의 로딩 상태 (테스트용 기능).
+  const [zoneSuggestBusy, setZoneSuggestBusy] = useState(false);
+  // 드래그로 위치/크기를 바꿨지만 아직 Enter로 재인식하지 않은 존 — 드래그만 해서는 재인식이
+  // 시작되지 않으므로(Enter를 눌러야 시작), 캔버스에 "재인식 필요" 표시를 남겨서 상태바 문구를
+  // 놓쳐도 알 수 있게 한다.
+  const [dirtyZoneIndex, setDirtyZoneIndex] = useState<number | null>(null);
   const [status, setStatus] = useState<{ text: string; tone: "info" | "success" | "error" }>({
     text: "",
     tone: "info",
@@ -187,7 +198,9 @@ export function SeatLayoutWorkspace() {
   // 도면이 없을 땐(첫 설정) 펼쳐서 보여준다.
   const [uploadPanelOpen, setUploadPanelOpen] = useState(true);
   useEffect(() => {
-    if (imgEl) setUploadPanelOpen(false);
+    // 도면이 생기면 접고, 없어지면(새 프로젝트 등으로) 다시 펼친다 — 반대 방향이 없으면
+    // "도면 업로드됨" 요약 문구만 남고 파일 입력창은 다시 못 여는 상태가 된다.
+    setUploadPanelOpen(!imgEl);
   }, [imgEl]);
   // 방금 업로드한 원본 화질 도면 (세션 동안만 메모리에 유지, Firestore에는 저장 안 함).
   // AI 좌석 인식은 화질이 중요해서, Firestore 저장용으로 압축한 이미지가 아니라 이걸로 잘라낸다.
@@ -198,6 +211,19 @@ export function SeatLayoutWorkspace() {
   // 좌석수가 겹치는 존이나 어느 존과도 안 맞는 번호 그룹처럼, 자동 배정을 포기하고 사람 확인이
   // 필요한 경우를 알려주는 안내문. (틀린 값을 억지로 채우는 것보다 안전하다.)
   const [seatNumberWarnings, setSeatNumberWarnings] = useState<string[]>([]);
+  // 벽 경계로 나뉜 그룹이 어느 존과도 안 맞아서 자동 배정 못한 번호 그룹들. 버튼으로 보여줘서
+  // 클릭하면 클립보드에 복사되게 하면, 경고 문구 속 숫자를 다시 옮겨 적는 것보다 훨씬 빠르다.
+  const [seatNumberUnmatchedGroups, setSeatNumberUnmatchedGroups] = useState<
+    { ranges: string; count: number }[]
+  >([]);
+  // 작업자가 실제로 하는 작업은 "존 설정한 도면"과 "피난안내도"를 나란히 띄워놓고 눈으로 비교하며
+  // 존별 좌석번호를 직접 입력하는 것이라, "좌석번호표 발주" 탭에서는 항상 이 비교 화면을 보여준다
+  // (별도 탭으로 분리했으니, 탭 전환 자체가 켜고 끄는 역할을 한다).
+  const [seatNumberImageModalOpen, setSeatNumberImageModalOpen] = useState(false);
+  // AI가 채워 넣은(=사람이 아직 확인/수정하지 않은) 존 이름 집합. 다음에 다시 "AI로 자동
+  // 채워보기"를 눌렀을 때, 사람이 직접 고친 값은 보호하되 AI가 예전에 잘못 채운 값은 다시
+  // 고칠 수 있게 구분하는 용도다. (state로 두면 렌더마다 갱신 타이밍을 신경 써야 해서 ref로 둔다.)
+  const aiFilledZoneNamesRef = useRef<Set<string>>(new Set());
   const seatNumberPlateInputRef = useRef<HTMLInputElement>(null);
   // PDF 업로드 시: 페이지가 여러 장이라 어떤 페이지가 배치도인지 직접 골라야 한다.
   const [pdfPickerPages, setPdfPickerPages] = useState<
@@ -228,6 +254,24 @@ export function SeatLayoutWorkspace() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingStartRef = useRef<{ px: number; py: number } | null>(null);
   const [dragHint, setDragHint] = useState(DEFAULT_DRAG_HINT);
+
+  // ---------------- 존 박스 선택/이동/크기조절 (존 유형을 고르지 않았을 때만 동작) ----------------
+  // 존 유형을 먼저 고르면 "새 구역 그리기" 모드, 안 고르면 "기존 구역 선택/편집" 모드로
+  // 자연스럽게 나뉜다 — 별도 모드 전환 UI가 필요 없다.
+  const [selectedZoneIndex, setSelectedZoneIndex] = useState<number | null>(null);
+  type ZoneDragState = {
+    index: number;
+    mode: "move" | "resize";
+    handle?: "tl" | "tr" | "bl" | "br";
+    startPx: { x: number; y: number };
+    startRect: NormalizedRect;
+    currentRect: NormalizedRect;
+    moved: boolean;
+  };
+  const zoneDragRef = useRef<ZoneDragState | null>(null);
+  const ZONE_HANDLE_SIZE = 10;
+  const ZONE_DELETE_ICON_SIZE = 16;
+  const ZONE_DRAG_MOVE_THRESHOLD = 3;
 
   const activeZones = useMemo<ActiveZone[]>(
     () => (activeTab === "pc" ? project.pcZones : project.zones),
@@ -261,6 +305,8 @@ export function SeatLayoutWorkspace() {
   // 방금 업로드한 원본(rawFloorPlanDataUrl)이 있으면 그걸 우선 쓰고, 없으면(=프로젝트를
   // 불러오기만 한 경우) Firestore에 저장된 압축본을 쓴다.
   const floorPlanSrc = rawFloorPlanDataUrl ?? project.floorPlanDataUrl;
+  // 좌석번호표(피난안내도) 미리보기 — 도면과 나란히 비교해서 볼 때 쓴다.
+  const seatNumberPlateSrc = rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl;
   useEffect(() => {
     if (!floorPlanSrc) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -305,13 +351,21 @@ export function SeatLayoutWorkspace() {
     ctx.restore();
   }
 
-  function drawZoneBox(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, z: ActiveZone) {
-    const x = z.x * canvas.width;
-    const y = z.y * canvas.height;
-    const w = z.w * canvas.width;
-    const h = z.h * canvas.height;
+  function drawZoneBox(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    z: ActiveZone,
+    rectOverride?: NormalizedRect,
+    selected?: boolean,
+    dirty?: boolean,
+  ) {
+    const r = rectOverride ?? z;
+    const x = r.x * canvas.width;
+    const y = r.y * canvas.height;
+    const w = r.w * canvas.width;
+    const h = r.h * canvas.height;
     ctx.strokeStyle = z.color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = selected ? 4 : 3;
     ctx.strokeRect(x, y, w, h);
     ctx.font = "bold 12px sans-serif";
     const textW = ctx.measureText(z.name).width;
@@ -323,6 +377,59 @@ export function SeatLayoutWorkspace() {
     ctx.fillRect(tagX, tagY, tagW, tagH);
     ctx.fillStyle = getContrastText(z.color);
     ctx.fillText(z.name, tagX + 5, tagY + 12);
+
+    // 위치/크기를 바꿨지만 아직 Enter로 재인식하지 않은 존 — 선택 여부와 무관하게 항상
+    // 표시해서, 다른 존을 만지는 동안에도 "이 존은 재인식이 안 끝났다"는 걸 알 수 있게 한다.
+    if (dirty) {
+      const bx = x;
+      const by = y - 12;
+      ctx.fillStyle = "#f59e0b";
+      ctx.beginPath();
+      ctx.arc(bx, by, ZONE_DELETE_ICON_SIZE / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("!", bx, by + 1);
+      ctx.textAlign = "start";
+      ctx.textBaseline = "alphabetic";
+    }
+
+    if (!selected) return;
+
+    // 리사이즈 핸들 (4개 모서리)
+    const half = ZONE_HANDLE_SIZE / 2;
+    [
+      [x, y],
+      [x + w, y],
+      [x, y + h],
+      [x + w, y + h],
+    ].forEach(([hx, hy]) => {
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(hx - half, hy - half, ZONE_HANDLE_SIZE, ZONE_HANDLE_SIZE);
+      ctx.strokeRect(hx - half, hy - half, ZONE_HANDLE_SIZE, ZONE_HANDLE_SIZE);
+    });
+
+    // 삭제 아이콘 (오른쪽 위 바깥쪽)
+    const dx = x + w;
+    const dy = y - 12;
+    ctx.fillStyle = "#dc2626";
+    ctx.beginPath();
+    ctx.arc(dx, dy, ZONE_DELETE_ICON_SIZE / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("×", dx, dy + 1);
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
   }
 
   function drawCanvas() {
@@ -335,15 +442,144 @@ export function SeatLayoutWorkspace() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
     drawGridLines(ctx, canvas);
-    activeZones.forEach((z) => drawZoneBox(ctx, canvas, z));
+    const dragging = zoneDragRef.current;
+    activeZones.forEach((z, i) => {
+      const rectOverride = dragging && dragging.index === i ? dragging.currentRect : undefined;
+      drawZoneBox(ctx, canvas, z, rectOverride, i === selectedZoneIndex, i === dirtyZoneIndex);
+    });
   }
 
   useEffect(() => {
     drawCanvas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imgEl, activeZones]);
+  }, [imgEl, activeZones, selectedZoneIndex, dirtyZoneIndex]);
+
+  // 구역이 선택된 상태에서 Enter를 누르면(양쪽을 번갈아 드래그로 다 조정한 뒤) 그 구역을
+  // 최종 위치로 다시 인식하고 수정 폼을 띄운다. 다른 입력창에 포커스가 있거나 폼이 이미
+  // 열려있을 때는 무시한다.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Enter") return;
+      if (formOpen) return;
+      if (activeTab === "seatNumber") return;
+      if (selectedZoneIndex === null) return;
+      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      const z = activeZones[selectedZoneIndex];
+      if (!z) return;
+      e.preventDefault();
+      const rect: NormalizedRect = { x: z.x, y: z.y, w: z.w, h: z.h };
+      setDirtyZoneIndex((cur) => (cur === selectedZoneIndex ? null : cur));
+      editZone(selectedZoneIndex);
+      void runRecognize(rect, activeTab);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [formOpen, selectedZoneIndex, activeTab, activeZones]);
+
+  // ---------------- 존 박스 선택/이동/크기조절 히트테스트 (캔버스 픽셀 좌표 기준) ----------------
+  function rectToPx(rect: NormalizedRect, canvas: HTMLCanvasElement) {
+    return {
+      x: rect.x * canvas.width,
+      y: rect.y * canvas.height,
+      w: rect.w * canvas.width,
+      h: rect.h * canvas.height,
+    };
+  }
+
+  function hitTestZoneHandle(
+    rectPx: { x: number; y: number; w: number; h: number },
+    px: number,
+    py: number,
+  ): "tl" | "tr" | "bl" | "br" | null {
+    const half = ZONE_HANDLE_SIZE / 2 + 4;
+    const corners: ["tl" | "tr" | "bl" | "br", number, number][] = [
+      ["tl", rectPx.x, rectPx.y],
+      ["tr", rectPx.x + rectPx.w, rectPx.y],
+      ["bl", rectPx.x, rectPx.y + rectPx.h],
+      ["br", rectPx.x + rectPx.w, rectPx.y + rectPx.h],
+    ];
+    for (const [handle, hx, hy] of corners) {
+      if (Math.abs(px - hx) <= half && Math.abs(py - hy) <= half) return handle;
+    }
+    return null;
+  }
+
+  function hitTestDeleteIcon(
+    rectPx: { x: number; y: number; w: number; h: number },
+    px: number,
+    py: number,
+  ): boolean {
+    const dx = rectPx.x + rectPx.w;
+    const dy = rectPx.y - 12;
+    const half = ZONE_DELETE_ICON_SIZE / 2 + 3;
+    return Math.abs(px - dx) <= half && Math.abs(py - dy) <= half;
+  }
+
+  function hitTestZoneBody(
+    rectPx: { x: number; y: number; w: number; h: number },
+    px: number,
+    py: number,
+  ): boolean {
+    return px >= rectPx.x && px <= rectPx.x + rectPx.w && py >= rectPx.y && py <= rectPx.y + rectPx.h;
+  }
+
+  // 존 유형을 고르지 않았을 때: 기존 구역 클릭 → 선택, 삭제 아이콘/모서리/안쪽 클릭에 따라
+  // 삭제·크기조절·이동 드래그를 시작한다.
+  function handleZoneSelectMouseDown(px: number, py: number, canvas: HTMLCanvasElement) {
+    if (selectedZoneIndex !== null && selectedZoneIndex < activeZones.length) {
+      const selectedZone = activeZones[selectedZoneIndex];
+      const rectPx = rectToPx(selectedZone, canvas);
+      if (hitTestDeleteIcon(rectPx, px, py)) {
+        deleteZone(selectedZoneIndex);
+        setSelectedZoneIndex(null);
+        return;
+      }
+      const handle = hitTestZoneHandle(rectPx, px, py);
+      if (handle) {
+        const startRect: NormalizedRect = {
+          x: selectedZone.x,
+          y: selectedZone.y,
+          w: selectedZone.w,
+          h: selectedZone.h,
+        };
+        zoneDragRef.current = {
+          index: selectedZoneIndex,
+          mode: "resize",
+          handle,
+          startPx: { x: px, y: py },
+          startRect,
+          currentRect: startRect,
+          moved: false,
+        };
+        return;
+      }
+    }
+
+    for (let i = activeZones.length - 1; i >= 0; i--) {
+      const z = activeZones[i];
+      const rectPx = rectToPx(z, canvas);
+      if (hitTestZoneBody(rectPx, px, py)) {
+        setSelectedZoneIndex(i);
+        const startRect: NormalizedRect = { x: z.x, y: z.y, w: z.w, h: z.h };
+        zoneDragRef.current = {
+          index: i,
+          mode: "move",
+          startPx: { x: px, y: py },
+          startRect,
+          currentRect: startRect,
+          moved: false,
+        };
+        return;
+      }
+    }
+
+    setSelectedZoneIndex(null);
+  }
 
   function handleCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    // "좌석번호표 발주" 탭에서는 도면이 비교용 참고 이미지일 뿐이라 존 지정을 받지 않는다.
+    if (activeTab === "seatNumber") return;
     if (editingIndex !== null) {
       setStatusMsg("스펙 수정 중에는 구역을 다시 지정할 수 없습니다. 취소 후 진행하세요.", "error");
       return;
@@ -352,15 +588,17 @@ export function SeatLayoutWorkspace() {
       setStatusMsg("먼저 도면 이미지를 업로드하세요.", "error");
       return;
     }
-    if (!selectedTypeKey) {
-      setStatusMsg("먼저 위에서 존 유형을 선택하세요.", "error");
-      return;
-    }
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const px = (e.clientX - rect.left) * (canvas.width / rect.width);
     const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    // 존 유형을 안 골랐으면 "새로 그리기"가 아니라 "기존 구역 선택/편집" 모드다.
+    if (!selectedTypeKey) {
+      handleZoneSelectMouseDown(px, py, canvas);
+      return;
+    }
 
     if (!pendingStartRef.current) {
       pendingStartRef.current = { px, py };
@@ -392,21 +630,116 @@ export function SeatLayoutWorkspace() {
   }
 
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!pendingStartRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const rectEl = canvas.getBoundingClientRect();
+    const px = (e.clientX - rectEl.left) * (canvas.width / rectEl.width);
+    const py = (e.clientY - rectEl.top) * (canvas.height / rectEl.height);
+
+    const drag = zoneDragRef.current;
+    if (drag) {
+      // 캔버스 밖에서 마우스 버튼을 놓으면 이 엘리먼트에는 mouseup이 발생하지 않아 드래그
+      // 상태가 그대로 남을 수 있다 — 버튼이 안 눌린 채로 다시 캔버스 위에 들어오면 그 상태를
+      // 버려서, 손 놓은 드래그가 유령처럼 계속 움직이는 걸 막는다.
+      if (e.buttons === 0) {
+        zoneDragRef.current = null;
+        drawCanvas();
+        return;
+      }
+      const dxPx = px - drag.startPx.x;
+      const dyPx = py - drag.startPx.y;
+      if (Math.abs(dxPx) > ZONE_DRAG_MOVE_THRESHOLD || Math.abs(dyPx) > ZONE_DRAG_MOVE_THRESHOLD) {
+        drag.moved = true;
+      }
+      const dxNorm = dxPx / canvas.width;
+      const dyNorm = dyPx / canvas.height;
+      let next: NormalizedRect;
+      if (drag.mode === "move") {
+        next = {
+          x: Math.max(0, Math.min(1 - drag.startRect.w, drag.startRect.x + dxNorm)),
+          y: Math.max(0, Math.min(1 - drag.startRect.h, drag.startRect.y + dyNorm)),
+          w: drag.startRect.w,
+          h: drag.startRect.h,
+        };
+      } else {
+        const { x: sx, y: sy, w: sw, h: sh } = drag.startRect;
+        let x1 = sx;
+        let y1 = sy;
+        let x2 = sx + sw;
+        let y2 = sy + sh;
+        if (drag.handle === "tl") {
+          x1 = sx + dxNorm;
+          y1 = sy + dyNorm;
+        } else if (drag.handle === "tr") {
+          x2 = sx + sw + dxNorm;
+          y1 = sy + dyNorm;
+        } else if (drag.handle === "bl") {
+          x1 = sx + dxNorm;
+          y2 = sy + sh + dyNorm;
+        } else if (drag.handle === "br") {
+          x2 = sx + sw + dxNorm;
+          y2 = sy + sh + dyNorm;
+        }
+        const cx1 = Math.max(0, Math.min(1, x1));
+        const cy1 = Math.max(0, Math.min(1, y1));
+        const cx2 = Math.max(0, Math.min(1, x2));
+        const cy2 = Math.max(0, Math.min(1, y2));
+        next = {
+          x: Math.min(cx1, cx2),
+          y: Math.min(cy1, cy2),
+          w: Math.abs(cx2 - cx1),
+          h: Math.abs(cy2 - cy1),
+        };
+      }
+      drag.currentRect = next;
+      drawCanvas();
+      return;
+    }
+
+    if (!pendingStartRef.current) return;
     drawCanvas();
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.strokeStyle = "#000";
     ctx.setLineDash([4, 2]);
     ctx.lineWidth = 1.5;
-    const { px, py } = pendingStartRef.current;
-    ctx.strokeRect(Math.min(px, x), Math.min(py, y), Math.abs(x - px), Math.abs(y - py));
+    const { px: startPx, py: startPy } = pendingStartRef.current;
+    ctx.strokeRect(Math.min(startPx, px), Math.min(startPy, py), Math.abs(px - startPx), Math.abs(py - startPy));
     ctx.setLineDash([]);
+  }
+
+  // 리사이즈/이동 드래그를 마치면(마우스를 뗄 때) 최종 위치를 반영하고, 위치가 실제로 바뀐
+  // 경우에만(단순 클릭과 구분) 그 구역을 다시 AI 인식해서 수정 폼으로 확인시킨다 — 위치가
+  // 바뀌면 크롭되는 이미지 영역도 달라지므로 이전 인식 결과는 더 이상 맞다고 볼 수 없다.
+  // 드래그가 끝나면 위치만 조용히 반영하고, 곧바로 재인식 폼을 띄우지 않는다 — 양쪽을 번갈아
+  // 조정해야 하는 경우 매번 팝업이 뜨면 취소하고 다시 조정하느라 불편하다는 피드백을 반영해,
+  // 다 조정한 뒤 Enter를 눌렀을 때만(handleZoneEnterKey) 재인식 폼을 띄우도록 분리했다.
+  function handleCanvasMouseUp() {
+    const drag = zoneDragRef.current;
+    zoneDragRef.current = null;
+    if (!drag || !drag.moved) {
+      drawCanvas();
+      return;
+    }
+    const finalRect = drag.currentRect;
+    if (activeTab === "desk") {
+      setProject((p) => {
+        const zones = [...p.zones];
+        zones[drag.index] = { ...zones[drag.index], ...finalRect };
+        return { ...p, zones };
+      });
+    } else {
+      setProject((p) => {
+        const pcZones = [...p.pcZones];
+        pcZones[drag.index] = { ...pcZones[drag.index], ...finalRect };
+        return { ...p, pcZones };
+      });
+    }
+    setDirtyZoneIndex(drag.index);
+    setStatusMsg(
+      "구역 위치를 변경했습니다 — 아직 재인식 전입니다(노란 느낌표). 다 조정했으면 Enter를 눌러 다시 인식하세요.",
+      "success",
+    );
   }
 
   // ---------------- 존 유형 선택 ----------------
@@ -421,6 +754,16 @@ export function SeatLayoutWorkspace() {
     const count = activeZones.filter((z) => z.typeKey === selectedType.key).length;
     return selectedType.label + nextSuffix(count);
   }, [selectedType, activeZones]);
+
+  // 수정 폼에서 존 유형을 바꿀 때 미리보기/저장에 쓰는 이름 — 자기 자신은 후보에서 제외하고
+  // 세어서 접미사를 매긴다 (예: 멀티존A가 이미 있으면 이 존은 멀티존B가 됨).
+  function nameForEditType(typeKey: ZoneTypeKey): string {
+    if (typeKey === "etc") return editEtcNameDraft || "기타존";
+    const type = ZONE_TYPES.find((t) => t.key === typeKey);
+    if (!type) return editEtcNameDraft || "기타존";
+    const count = activeZones.filter((z, i) => z.typeKey === typeKey && i !== editingIndex).length;
+    return type.label + nextSuffix(count);
+  }
 
   // ---------------- AI 자동 인식 ----------------
   function cropZoneImageBase64(rect: NormalizedRect): string {
@@ -493,9 +836,133 @@ export function SeatLayoutWorkspace() {
     }
   }
 
+  // ---------------- 존 구역 초안 제안 (테스트용) ----------------
+  // 도면에는 존 이름표가 없어서(그건 사람이 정함) AI는 위치/좌석수만 제안하고, 유형은 전부
+  // "기타"로 두고 사람이 확인하며 고르게 한다 — 기존 수동 작업과 마찬가지로, 존을 만든 뒤
+  // 이름/유형을 바꾸려면 지우고 다시 그려야 하는 건 동일하다.
+  const DRAFT_COLORS = ZONE_TYPES.filter((t) => t.key !== "etc").map((t) => t.color);
+
+  async function suggestZoneDrafts() {
+    if (!user || !floorPlanSrc) return;
+    if (project.zones.length > 0) {
+      const ok = window.confirm(
+        `이미 존이 ${project.zones.length}개 있습니다. AI가 제안하는 구역 초안을 추가로 넣을까요?`,
+      );
+      if (!ok) return;
+    }
+    setZoneSuggestBusy(true);
+    setStatusMsg("AI가 도면에서 구역 초안을 찾는 중...");
+    try {
+      const match = floorPlanSrc.match(/^data:([^;]+);base64,(.*)$/);
+      if (!match) throw new Error("도면 이미지 데이터를 읽을 수 없습니다.");
+      const [, mimeType, data] = match;
+      const token = await user.getIdToken();
+      const res = await fetch("/api/seat-layout/suggest-zones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ image: { data, mimeType } }),
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error ?? "구역 제안에 실패했습니다.");
+
+      const suggestions: { seats: number; x: number; y: number; w: number; h: number }[] =
+        resData.zones ?? [];
+      const startIdx = project.zones.length;
+      const drafts: DeskZone[] = suggestions.map((s, i) => ({
+        x: s.x,
+        y: s.y,
+        w: s.w,
+        h: s.h,
+        name: `AI제안${startIdx + i + 1}`,
+        typeKey: "etc",
+        color: DRAFT_COLORS[(startIdx + i) % DRAFT_COLORS.length],
+        seats: s.seats,
+        deskSize: DESK_SIZE_OPTIONS[0],
+        sizeBreakdown: [{ deskSize: DESK_SIZE_OPTIONS[0], qty: s.seats }],
+        desk: defaultDeskSpecValues(SPEC_FIELDS).desk,
+        cooler: defaultDeskSpecValues(SPEC_FIELDS).cooler,
+        partition: defaultDeskSpecValues(SPEC_FIELDS).partition,
+        monitorArm: defaultDeskSpecValues(SPEC_FIELDS).monitorArm,
+        chair: defaultDeskSpecValues(SPEC_FIELDS).chair,
+        bagShelfCount: 0,
+      }));
+
+      setProject((p) => ({ ...p, zones: [...p.zones, ...drafts] }));
+      setStatusMsg(
+        `구역 초안 ${drafts.length}개를 추가했습니다 — 위치를 확인하고, 이름/유형이 다르면 ` +
+          "지우고 다시 그려주세요 (참고용, 100% 정확하지 않을 수 있습니다).",
+        "success",
+      );
+    } catch (err) {
+      setStatusMsg(`구역 제안 실패: ${err instanceof Error ? err.message : err}`, "error");
+    } finally {
+      setZoneSuggestBusy(false);
+    }
+  }
+
   // ---------------- 좌석번호표 인식 ----------------
+  // 통짜 이미지 한 장만 AI에게 주면, 좌석이 촘촘하게 몰린 구역은 내부적으로 축소되며 글씨가
+  // 뭉개져 통째로 못 읽는 경우가 있었다(93석짜리 피난안내도에서 14석이 통째로 누락된 사례 확인).
+  // 그래서 전체 이미지 1장에 더해 좌상단/우상단/좌하단/우하단을 확대한 이미지 4장을 같이
+  // 보내서, 그룹 경계는 전체 이미지로 판단하고 작은 글씨는 확대본으로 검증하게 한다. (9/11 존이
+  // 맞았던 조합 — 여기서 더 손대지 않고 이대로 확정한다.)
+  async function buildSeatNumberTiles(
+    dataUrl: string,
+  ): Promise<{ data: string; mimeType: string }[]> {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("이미지를 불러오지 못했습니다."));
+      img.src = dataUrl;
+    });
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const toPngBase64 = (sx: number, sy: number, sw: number, sh: number) => {
+      const off = document.createElement("canvas");
+      off.width = Math.max(1, Math.round(sw));
+      off.height = Math.max(1, Math.round(sh));
+      const ctx = off.getContext("2d");
+      if (!ctx) throw new Error("캔버스를 생성할 수 없습니다.");
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, off.width, off.height);
+      return off.toDataURL("image/png").split(",")[1];
+    };
+    // 사분면 경계에 걸친 번호가 잘리지 않도록 살짝 겹치게 자른다.
+    const overlapRatio = 0.1;
+    const halfW = w / 2;
+    const halfH = h / 2;
+    const ow = w * overlapRatio;
+    const oh = h * overlapRatio;
+    const clampW = (sx: number, sw: number) => Math.min(sw, w - sx);
+    const clampH = (sy: number, sh: number) => Math.min(sh, h - sy);
+    const quadrants: [number, number, number, number][] = [
+      [0, 0, halfW + ow, halfH + oh], // 좌상단
+      [Math.max(0, halfW - ow), 0, halfW + ow, halfH + oh], // 우상단
+      [0, Math.max(0, halfH - oh), halfW + ow, halfH + oh], // 좌하단
+      [Math.max(0, halfW - ow), Math.max(0, halfH - oh), halfW + ow, halfH + oh], // 우하단
+    ];
+    const data = [
+      toPngBase64(0, 0, w, h),
+      ...quadrants.map(([sx, sy, sw, sh]) => toPngBase64(sx, sy, clampW(sx, sw), clampH(sy, sh))),
+    ];
+    return data.map((d) => ({ data: d, mimeType: "image/png" }));
+  }
+
   // 좌석번호표(피난안내도 등)는 도면과 별개의 그림이라 좌표를 그대로 겹칠 수 없다. 그래서 존별
   // "좌석 수"(이미 등록되어 있음)를 기준으로, 이미지에서 읽은 번호 그룹을 그 개수와 대조해 매칭한다.
+  // 존 이름/색상 박스가 그려진 책상 배치도 1장 — 피난안내도의 어느 구역이 어느 존인지 AI가
+  // 위치로 대응시키는 기준으로 쓰인다. 기존 FHD 합성용 캔버스(compositeCanvasRef)를 그대로
+  // 재사용한다.
+  function buildZoneReferenceImageBase64(): string | null {
+    const cv = compositeCanvasRef.current;
+    if (!cv || !imgEl) return null;
+    cv.width = COMPOSITE_W;
+    cv.height = COMPOSITE_H;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return null;
+    renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
+    return cv.toDataURL("image/png").split(",")[1];
+  }
+
   async function runSeatNumberRecognize(dataUrlOverride?: string) {
     const dataUrl = dataUrlOverride ?? rawSeatNumberPlateDataUrl;
     if (!user || !dataUrl) return;
@@ -503,19 +970,22 @@ export function SeatLayoutWorkspace() {
       setStatusMsg("먼저 책상 발주 도면 탭에서 존을 등록해주세요.", "error");
       return;
     }
+    const zoneImageData = buildZoneReferenceImageBase64();
+    if (!zoneImageData) {
+      setStatusMsg("먼저 도면을 업로드하세요.", "error");
+      return;
+    }
     setSeatNumberRecognizing(true);
-    setStatusMsg("좌석번호 인식 중...");
+    setStatusMsg("AI로 좌석번호 채워보는 중... (참고용 — 직접 입력한 존은 건드리지 않습니다)");
     try {
-      const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-      if (!match) throw new Error("이미지 데이터를 읽을 수 없습니다.");
-      const [, mimeType, base64] = match;
+      const images = await buildSeatNumberTiles(dataUrl);
       const token = await user.getIdToken();
       const res = await fetch("/api/seat-layout/recognize-seat-numbers", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          imageBase64: base64,
-          mimeType,
+          zoneImage: { data: zoneImageData, mimeType: "image/png" },
+          images,
           zones: project.zones.map((z) => ({ name: z.name, seats: z.seats })),
         }),
       });
@@ -523,24 +993,43 @@ export function SeatLayoutWorkspace() {
       if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
       const ranges: SeatNumberRangeEntry[] = data.ranges ?? [];
       const warnings: string[] = data.warnings ?? [];
-      setProject((p) => ({ ...p, seatNumberRanges: ranges }));
+      const unmatchedGroups: { ranges: string; count: number }[] = data.unmatchedGroups ?? [];
+      // 사람이 직접 고친 값은 AI 결과로 덮어쓰지 않는다. 다만 이전에 AI가 채워 넣고 사람이 손을
+      // 대지 않은 값은, AI가 이번엔 스스로 고칠 수 있게 계속 덮어쓸 수 있어야 한다 (안 그러면
+      // AI의 예전 오답이 영영 안 고쳐진 채로 남는다).
+      let filledCount = 0;
+      setProject((p) => {
+        const manuallyFilledZoneNames = new Set(
+          p.seatNumberRanges
+            .filter((r) => r.ranges.trim() && !aiFilledZoneNamesRef.current.has(r.zoneName))
+            .map((r) => r.zoneName),
+        );
+        const additions = ranges.filter((r) => !manuallyFilledZoneNames.has(r.zoneName));
+        filledCount = additions.length;
+        if (!additions.length) return p;
+        additions.forEach((a) => aiFilledZoneNamesRef.current.add(a.zoneName));
+        const rest = p.seatNumberRanges.filter(
+          (r) => !additions.some((a) => a.zoneName === r.zoneName),
+        );
+        return { ...p, seatNumberRanges: [...rest, ...additions] };
+      });
       setSeatNumberWarnings(warnings);
-      if (ranges.length) {
+      setSeatNumberUnmatchedGroups(unmatchedGroups);
+      if (filledCount) {
         setStatusMsg(
-          warnings.length
-            ? "좌석번호 인식 완료 — 일부 존은 자동 배정하지 못했습니다. 아래 안내를 확인하세요."
-            : "좌석번호 인식 완료 — 결과를 확인하고 틀린 부분은 직접 수정하세요.",
-          warnings.length ? "error" : "success",
+          `AI가 ${filledCount}개 존을 채웠습니다 — 틀릴 수 있으니 꼭 도면과 비교해서 확인하세요. ` +
+            (warnings.length ? "나머지는 아래 안내를 보고 직접 입력하세요." : ""),
+          "success",
         );
       } else {
         setStatusMsg(
-          "존을 하나도 인식하지 못했습니다. 번호 글씨가 작아서 못 읽었을 수 있어요 — " +
-            "\"영역 잘라서 다시 인식\"으로 필요한 부분만 확대해서 다시 시도해보세요.",
+          "AI가 새로 채운 존이 없습니다 (이미 직접 입력했거나, 인식에 실패했어요). " +
+            "오른쪽에서 도면과 비교하며 직접 입력해주세요.",
           "error",
         );
       }
     } catch (err) {
-      setStatusMsg(`좌석번호 인식 실패: ${err instanceof Error ? err.message : err}`, "error");
+      setStatusMsg(`AI 자동 채우기 실패: ${err instanceof Error ? err.message : err} — 직접 입력해주세요.`, "error");
     } finally {
       setSeatNumberRecognizing(false);
     }
@@ -594,10 +1083,24 @@ export function SeatLayoutWorkspace() {
   }
 
   function setSeatNumberRangeFor(zoneName: string, value: string) {
+    // 사람이 손으로 직접 고친 값이므로, 이후 AI 자동 채우기가 이 존은 더 이상 건드리지 않게
+    // "AI가 채운 값" 표시를 지운다.
+    aiFilledZoneNamesRef.current.delete(zoneName);
     setProject((p) => {
       const rest = p.seatNumberRanges.filter((r) => r.zoneName !== zoneName);
       return { ...p, seatNumberRanges: value ? [...rest, { zoneName, ranges: value }] : rest };
     });
+  }
+
+  // 벽 경계가 존 구분과 안 맞는 도면은 자동 배정이 잘 안 되는 게 정상이라, 매칭 못한 그룹을
+  // 클립보드로 복사해서 사람이 알맞은 존에 빠르게 옮겨 적을 수 있게 돕는다.
+  async function copySeatNumberGroup(ranges: string) {
+    try {
+      await navigator.clipboard.writeText(ranges);
+      setStatusMsg(`"${ranges}" 복사됨 — 알맞은 존의 입력칸에 붙여넣으세요.`, "success");
+    } catch {
+      setStatusMsg("복사에 실패했습니다. 숫자를 직접 옮겨 적어주세요.", "error");
+    }
   }
 
   // ---------------- 존 폼 열기/닫기 ----------------
@@ -624,7 +1127,12 @@ export function SeatLayoutWorkspace() {
     setEditingIndex(index);
     setCurRect(null);
     setFormOpen(true);
-    setAiResultText("");
+    // 드래그로 위치를 바꾼 뒤 Enter로 열린 경우, 이 값이 runRecognize가 끝날 때까지 잠깐 보이다가
+    // "AI가 인식하는 중..."으로 바로 바뀐다 — 인식이 진행/완료 중인지 폼 안에서 알 수 있게 한다.
+    setAiResultText("아래 값을 직접 입력하거나 \"다시 인식\"을 눌러 AI로 확인할 수 있습니다.");
+    setEditTypeDraft(z.typeKey);
+    setEditEtcNameDraft(z.typeKey === "etc" ? z.name : "");
+    setEditEtcColorDraft(z.typeKey === "etc" ? z.color : "#555555");
 
     if (activeTab === "desk") {
       const dz = z as DeskZone;
@@ -646,7 +1154,7 @@ export function SeatLayoutWorkspace() {
       setSeatsDraft(String(pz.seats ?? ""));
       setPcSpecDraft({ ...pcDefaults, ...pz.pcOverrides });
     }
-    setStatusMsg(`"${z.name}"의 스펙을 수정하는 중입니다. (구역/이름/색상은 변경되지 않습니다)`);
+    setStatusMsg(`"${z.name}"을(를) 수정하는 중입니다. 아래에서 스펙이나 존 유형을 바꿀 수 있습니다.`);
   }
 
   function cancelZone() {
@@ -662,12 +1170,18 @@ export function SeatLayoutWorkspace() {
 
   function confirmZone() {
     if (editingIndex !== null) {
+      const editType = ZONE_TYPES.find((t) => t.key === editTypeDraft);
+      const newName = nameForEditType(editTypeDraft);
+      const newColor = editTypeDraft === "etc" ? editEtcColorDraft : editType?.color ?? "#8D7B68";
       if (activeTab === "desk") {
         const filtered = breakdown.filter((r) => r.qty > 0);
         const totalSeats = filtered.reduce((s, r) => s + r.qty, 0);
         setProject((p) => {
           const zones = [...p.zones];
           const z = { ...zones[editingIndex] };
+          z.typeKey = editTypeDraft;
+          z.name = newName;
+          z.color = newColor;
           z.sizeBreakdown = filtered;
           z.deskSize = filtered.length ? filtered[0].deskSize : "";
           z.seats = totalSeats;
@@ -684,6 +1198,9 @@ export function SeatLayoutWorkspace() {
         setProject((p) => {
           const pcZones = [...p.pcZones];
           const z = { ...pcZones[editingIndex] };
+          z.typeKey = editTypeDraft;
+          z.name = newName;
+          z.color = newColor;
           z.seats = Number(seatsDraft) || 0;
           z.pcOverrides = computePcOverrides();
           pcZones[editingIndex] = z;
@@ -758,6 +1275,9 @@ export function SeatLayoutWorkspace() {
     } else {
       setProject((p) => ({ ...p, pcZones: p.pcZones.filter((_, i) => i !== index) }));
     }
+    // 삭제로 인덱스가 밀리면 선택/재인식-필요 표시가 엉뚱한 존을 가리킬 수 있으니 초기화한다.
+    setSelectedZoneIndex(null);
+    setDirtyZoneIndex(null);
   }
 
   // ---------------- PC 기본사양 ----------------
@@ -824,10 +1344,17 @@ export function SeatLayoutWorkspace() {
       setProject({ ...emptyProject(), ...loaded });
       setRawSeatNumberPlateDataUrl(null);
       setSeatNumberWarnings([]);
+      setSeatNumberUnmatchedGroups([]);
+      aiFilledZoneNamesRef.current.clear();
       setRawFloorPlanDataUrl(null);
       setActiveTab("desk");
       setSelectedTypeKey(null);
+      setSelectedZoneIndex(null);
+      setDirtyZoneIndex(null);
       cancelZone();
+      closeCrop();
+      cancelPdfPicker();
+      setSeatNumberImageModalOpen(false);
       setPcDefaults(loaded.pcDefaults ?? pcDefaultsFromFields(effectivePcSpecFields));
       setPcDefaultsDraft(loaded.pcDefaults ?? pcDefaultsFromFields(effectivePcSpecFields));
       setStatusMsg("불러오기 완료", "success");
@@ -843,11 +1370,18 @@ export function SeatLayoutWorkspace() {
     setRawFloorPlanDataUrl(null);
     setRawSeatNumberPlateDataUrl(null);
     setSeatNumberWarnings([]);
+    setSeatNumberUnmatchedGroups([]);
+    aiFilledZoneNamesRef.current.clear();
     setPcDefaults(pcDefaultsFromFields(effectivePcSpecFields));
     setPcDefaultsDraft(pcDefaultsFromFields(effectivePcSpecFields));
     setActiveTab("desk");
     setSelectedTypeKey(null);
+    setSelectedZoneIndex(null);
+    setDirtyZoneIndex(null);
     cancelZone();
+    closeCrop();
+    cancelPdfPicker();
+    setSeatNumberImageModalOpen(false);
     setStatusMsg("새 프로젝트를 시작합니다.");
   }
 
@@ -1003,8 +1537,11 @@ export function SeatLayoutWorkspace() {
     const canvas = cropCanvasRef.current;
     const img = cropImgRef.current;
     if (!canvas || !img || !pdfCropSource) return;
-    canvas.width = 900;
-    canvas.height = 900 * (img.naturalHeight / img.naturalWidth);
+    // 좌석번호표 크롭은 팝업으로 크게 띄우므로(최대 1600px), 900px 그대로면 화면을 다 못 채워
+    // 작은 번호 글씨를 정확히 찍기 어렵다. 팝업 폭에 맞춰 캔버스 해상도를 키운다.
+    const canvasWidth = cropTarget === "seatNumberPlate" ? 1500 : 900;
+    canvas.width = canvasWidth;
+    canvas.height = canvasWidth * (img.naturalHeight / img.naturalWidth);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1098,8 +1635,11 @@ export function SeatLayoutWorkspace() {
     if (cropTarget === "seatNumberPlate") {
       closeCrop();
       setRawSeatNumberPlateDataUrl(dataUrl);
-      setStatusMsg("잘라낸 영역으로 좌석번호를 다시 인식합니다...");
-      runSeatNumberRecognize(dataUrl);
+      setStatusMsg(
+        "좌석번호표를 등록했습니다 — 오른쪽에서 도면과 나란히 보면서 존별로 직접 입력하거나, " +
+          "\"AI로 자동 채워보기\"를 눌러보세요.",
+        "success",
+      );
     } else {
       applyFloorPlanDataUrl(dataUrl, off.width, off.height);
       closeCrop();
@@ -1113,7 +1653,11 @@ export function SeatLayoutWorkspace() {
       const dataUrl = pdfCropSource.dataUrl;
       closeCrop();
       setRawSeatNumberPlateDataUrl(dataUrl);
-      runSeatNumberRecognize(dataUrl);
+      setStatusMsg(
+        "좌석번호표를 등록했습니다 — 오른쪽에서 도면과 나란히 보면서 존별로 직접 입력하거나, " +
+          "\"AI로 자동 채워보기\"를 눌러보세요.",
+        "success",
+      );
     } else {
       applyFloorPlanDataUrl(pdfCropSource.dataUrl, pdfCropSource.width, pdfCropSource.height);
       closeCrop();
@@ -1373,6 +1917,43 @@ export function SeatLayoutWorkspace() {
         />
       )}
 
+      {/* 좌석번호표 크롭은 좌측 사이드바(폭 380px) 안에 그대로 넣으면 크롭용 캔버스가 심하게
+          축소되어 영역을 정확히 찍기 어려워진다. 그래서 팝업으로 크게 띄운다. */}
+      {pdfCropSource && cropTarget === "seatNumberPlate" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">
+          <div className="max-h-[96vh] w-full max-w-[96vw] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-zinc-950 xl:max-w-[1600px]">
+            {cropPanel()}
+          </div>
+        </div>
+      )}
+
+      {/* 피난안내도를 원본 해상도 그대로 크게 보고 싶을 때 (작은 번호 글씨 확인용). 스크롤해서
+          이동하면서 볼 수 있게 이미지를 축소하지 않고 그대로 띄운다. */}
+      {seatNumberImageModalOpen && seatNumberPlateSrc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4"
+          onClick={() => setSeatNumberImageModalOpen(false)}
+        >
+          <div
+            className="max-h-[96vh] max-w-[96vw] overflow-auto rounded-2xl bg-white p-2 shadow-xl dark:bg-zinc-950"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between px-2">
+              <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">피난안내도</p>
+              <button
+                type="button"
+                onClick={() => setSeatNumberImageModalOpen(false)}
+                className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                닫기
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={seatNumberPlateSrc} alt="피난안내도 확대" className="max-w-none" />
+          </div>
+        </div>
+      )}
+
       {formOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-zinc-950">
@@ -1392,10 +1973,27 @@ export function SeatLayoutWorkspace() {
                 onEtcNameChange={setEtcName}
                 etcColor={etcColor}
                 onEtcColorChange={setEtcColor}
-                showAi={editingIndex === null}
+                editTypeKey={editTypeDraft}
+                onEditTypeChange={(key) => {
+                  setEditTypeDraft(key);
+                  if (activeTab === "desk") {
+                    setDeskSpecDraft(resetDeskSpecDraft(key, effectiveSpecFields, settings.typeDefaults));
+                  } else {
+                    setPcSpecDraft(resetPcSpecDraft(key, pcDefaults, settings.pcTypeDefaults));
+                  }
+                }}
+                editNamePreview={nameForEditType(editTypeDraft)}
+                editEtcName={editEtcNameDraft}
+                onEditEtcNameChange={setEditEtcNameDraft}
+                editEtcColor={editEtcColorDraft}
+                onEditEtcColorChange={setEditEtcColorDraft}
+                showAi
                 aiResultText={aiResultText}
                 recognizing={recognizing}
-                onRecognizeAgain={() => curRect && runRecognize(curRect, activeTab)}
+                onRecognizeAgain={() => {
+                  const rect = editingIndex !== null ? activeZones[editingIndex] : curRect;
+                  if (rect) void runRecognize(rect, activeTab);
+                }}
                 breakdown={breakdown}
                 onBreakdownChange={setBreakdown}
                 bagShelfDraft={bagShelfDraft}
@@ -1432,13 +2030,15 @@ export function SeatLayoutWorkspace() {
       )}
 
       <div className="flex gap-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
-        {(["desk", "pc"] as TabKey[]).map((tab) => (
+        {(["desk", "pc", "seatNumber"] as TabKey[]).map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => {
               setActiveTab(tab);
               setSelectedTypeKey(null);
+              setSelectedZoneIndex(null);
+              setDirtyZoneIndex(null);
               cancelZone();
             }}
             className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition ${
@@ -1447,7 +2047,7 @@ export function SeatLayoutWorkspace() {
                 : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
             }`}
           >
-            {tab === "desk" ? "책상 발주 도면" : "PC 발주 도면"}
+            {tab === "desk" ? "책상 발주 도면" : tab === "pc" ? "PC 발주 도면" : "좌석번호표 발주"}
           </button>
         ))}
       </div>
@@ -1541,7 +2141,7 @@ export function SeatLayoutWorkspace() {
                   className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
                 />
                 <p className="mt-1 text-xs text-zinc-400">
-                  도면은 책상/PC 탭에서 공통으로 사용됩니다. PDF는 화면 캡처보다 훨씬 선명해요.
+                  도면은 모든 탭에서 공통으로 사용됩니다. PDF는 화면 캡처보다 훨씬 선명해요.
                 </p>
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
@@ -1598,6 +2198,7 @@ export function SeatLayoutWorkspace() {
             </div>
           </section>
 
+          {activeTab === "seatNumber" && (
           <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
             <label
               htmlFor="seat-number-plate-input"
@@ -1655,22 +2256,20 @@ export function SeatLayoutWorkspace() {
               </div>
             )}
 
-            {pdfCropSource && cropTarget === "seatNumberPlate" && <div className="mt-3">{cropPanel()}</div>}
-
             {(rawSeatNumberPlateDataUrl || project.seatNumberPlateDataUrl) && project.zones.length > 0 && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
-                    {seatNumberRecognizing ? "인식 중..." : "존별 좌석번호 (틀리면 직접 수정)"}
+                    {seatNumberRecognizing ? "AI가 채우는 중..." : "존별 좌석번호 (직접 입력, 틀리면 수정)"}
                   </p>
-                  <div className="flex gap-1.5">
+                  <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
                       disabled={seatNumberRecognizing}
                       onClick={openSeatNumberPlateCrop}
                       className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
                     >
-                      영역 잘라서 다시 인식
+                      영역 다시 자르기
                     </button>
                     <button
                       type="button"
@@ -1678,13 +2277,14 @@ export function SeatLayoutWorkspace() {
                       onClick={() => runSeatNumberRecognize()}
                       className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
                     >
-                      다시 인식
+                      AI로 자동 채워보기
                     </button>
                   </div>
                 </div>
                 <p className="text-xs text-zinc-400">
-                  피난안내도처럼 안내문구가 많이 섞인 이미지는 인식이 잘 안 될 수 있어요 — 그럴 땐
-                  "영역 잘라서 다시 인식"으로 번호가 보이는 부분만 확대해서 다시 시도해보세요.
+                  기본은 직접 입력입니다 — 오른쪽에서 책상 도면과 피난안내도를 나란히 보면서
+                  아래 칸에 존별 번호를 적어주세요. "AI로 자동 채워보기"는 참고용이며, 이미
+                  직접 입력한 존은 덮어쓰지 않습니다.
                 </p>
                 {seatNumberWarnings.map((w, i) => (
                   <p
@@ -1694,6 +2294,21 @@ export function SeatLayoutWorkspace() {
                     {w}
                   </p>
                 ))}
+                {seatNumberUnmatchedGroups.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {seatNumberUnmatchedGroups.map((g, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => copySeatNumberGroup(g.ranges)}
+                        title="클릭하면 복사됩니다"
+                        className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                      >
+                        {g.ranges} ({g.count}개) 복사
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {project.zones.map((z) => {
                   const entry = project.seatNumberRanges.find((r) => r.zoneName === z.name);
                   return (
@@ -1713,6 +2328,7 @@ export function SeatLayoutWorkspace() {
               </div>
             )}
           </section>
+          )}
 
           {activeTab === "pc" && (
             <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
@@ -1758,46 +2374,71 @@ export function SeatLayoutWorkspace() {
             </section>
           )}
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
-          </section>
+          {activeTab !== "seatNumber" && (
+            <>
+              <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  {selectedTypeKey
+                    ? dragHint
+                    : "존 유형을 고르지 않은 상태에서는, 도면 위 기존 구역을 클릭해서 선택하고 " +
+                      "모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다. 양쪽을 " +
+                      "번갈아 조정해도 괜찮습니다 — 위치를 바꾸면 구역 왼쪽 위에 노란 느낌표(!)가 " +
+                      "붙는데, 이건 아직 재인식 전이라는 뜻입니다. 다 조정한 뒤 Enter를 누르면 " +
+                      "재인식하고 느낌표가 사라집니다. 선택된 구역의 오른쪽 위 × 를 누르면 " +
+                      "삭제됩니다."}
+                </p>
+              </section>
 
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
-            <div className="mt-3 space-y-2">
-              {activeZones.length === 0 && (
-                <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
-              )}
-              {activeZones.map((z, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
-                  style={{ borderLeftColor: z.color }}
-                >
-                  <span className="text-zinc-700 dark:text-zinc-200">
-                    {z.name} ({z.seats}
-                    {activeTab === "pc" ? "대" : "개"})
-                  </span>
-                  <div className="flex shrink-0 gap-1">
+              <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
+                  {activeTab === "desk" && floorPlanSrc && (
                     <button
                       type="button"
-                      onClick={() => editZone(i)}
-                      className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-white dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      disabled={zoneSuggestBusy}
+                      onClick={suggestZoneDrafts}
+                      className="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
                     >
-                      수정
+                      {zoneSuggestBusy ? "제안받는 중..." : "AI로 구역 초안 제안받기 (테스트)"}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteZone(i)}
-                      className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
-                    >
-                      삭제
-                    </button>
-                  </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </section>
+                <div className="mt-3 space-y-2">
+                  {activeZones.length === 0 && (
+                    <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
+                  )}
+                  {activeZones.map((z, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
+                      style={{ borderLeftColor: z.color }}
+                    >
+                      <span className="text-zinc-700 dark:text-zinc-200">
+                        {z.name} ({z.seats}
+                        {activeTab === "pc" ? "대" : "개"})
+                      </span>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => editZone(i)}
+                          className="rounded-md border border-zinc-300 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-white dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteZone(i)}
+                          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </>
+          )}
 
         </div>
 
@@ -1816,6 +2457,7 @@ export function SeatLayoutWorkspace() {
                       ref={canvasRef}
                       onMouseDown={handleCanvasMouseDown}
                       onMouseMove={handleCanvasMouseMove}
+                      onMouseUp={handleCanvasMouseUp}
                       className="max-w-full cursor-crosshair rounded-lg border border-zinc-300 bg-white dark:border-zinc-700"
                     />
                   ) : (
@@ -1827,35 +2469,64 @@ export function SeatLayoutWorkspace() {
               )}
             </div>
 
-            <section className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950 lg:w-44">
-              <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형</h2>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
-              </p>
-              <div className="mt-3 flex flex-col gap-1.5">
-                {ZONE_TYPES.map((t) => (
+            {/* 존별 좌석번호는 결국 사람이 이 도면(왼쪽)과 피난안내도(오른쪽)를 눈으로 비교하며
+                입력하는 작업이라, 두 이미지를 나란히 띄워주는 게 AI 자동인식보다 핵심 기능이다. */}
+            {activeTab === "seatNumber" && seatNumberPlateSrc && (
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    피난안내도(좌석번호표)
+                  </p>
                   <button
-                    key={t.key}
                     type="button"
-                    onClick={() => selectType(t.key)}
-                    style={{
-                      background: t.color,
-                      color: getContrastText(t.color),
-                      boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
-                    }}
-                    className="w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-semibold transition duration-150 hover:brightness-90 active:brightness-75"
+                    onClick={() => setSeatNumberImageModalOpen(true)}
+                    className="text-xs font-medium text-amber-700 underline underline-offset-2 hover:text-amber-800 dark:text-amber-500"
                   >
-                    {t.label}
+                    크게 보기 ↗
                   </button>
-                ))}
-              </div>
-              {selectedType && (
-                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
-                  선택됨: <b style={{ color: selectedType.color }}>{selectedType.label}</b> → 다음 존 이름:{" "}
-                  <b>{nextNamePreview}</b>
                 </div>
-              )}
-            </section>
+                <div className="max-h-[720px] overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 p-2 dark:border-zinc-800 dark:bg-zinc-900">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={seatNumberPlateSrc}
+                    alt="피난안내도"
+                    className="w-full rounded-lg border border-zinc-300 dark:border-zinc-700"
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab !== "seatNumber" && (
+              <section className="w-full shrink-0 rounded-2xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950 lg:w-44">
+                <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형</h2>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
+                </p>
+                <div className="mt-3 flex flex-col gap-1.5">
+                  {ZONE_TYPES.map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => selectType(t.key)}
+                      style={{
+                        background: t.color,
+                        color: getContrastText(t.color),
+                        boxShadow: selectedTypeKey === t.key ? "0 0 0 3px rgba(0,0,0,0.35) inset" : undefined,
+                      }}
+                      className="w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-semibold transition duration-150 hover:brightness-90 active:brightness-75"
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {selectedType && (
+                  <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
+                    선택됨: <b style={{ color: selectedType.color }}>{selectedType.label}</b> → 다음 존 이름:{" "}
+                    <b>{nextNamePreview}</b>
+                  </div>
+                )}
+              </section>
+            )}
           </div>
           <canvas ref={compositeCanvasRef} className="hidden" />
         </div>
@@ -1875,6 +2546,14 @@ type ZoneFormProps = {
   onEtcNameChange: (v: string) => void;
   etcColor: string;
   onEtcColorChange: (v: string) => void;
+  // 수정 모드에서만 쓰는 존 유형 변경 (예: 멀티존A가 이미 있으면 멀티존B로 재배정)
+  editTypeKey: ZoneTypeKey;
+  onEditTypeChange: (key: ZoneTypeKey) => void;
+  editNamePreview: string;
+  editEtcName: string;
+  onEditEtcNameChange: (v: string) => void;
+  editEtcColor: string;
+  onEditEtcColorChange: (v: string) => void;
   showAi: boolean;
   aiResultText: string;
   recognizing: boolean;
@@ -1896,6 +2575,7 @@ type ZoneFormProps = {
 
 function ZoneForm(props: ZoneFormProps) {
   const {
+    mode,
     activeTab,
     title,
     isEtc,
@@ -1903,6 +2583,13 @@ function ZoneForm(props: ZoneFormProps) {
     onEtcNameChange,
     etcColor,
     onEtcColorChange,
+    editTypeKey,
+    onEditTypeChange,
+    editNamePreview,
+    editEtcName,
+    onEditEtcNameChange,
+    editEtcColor,
+    onEditEtcColorChange,
     showAi,
     aiResultText,
     recognizing,
@@ -1927,6 +2614,48 @@ function ZoneForm(props: ZoneFormProps) {
   return (
     <div className="flex flex-col gap-3">
       <p className="font-semibold text-zinc-900 dark:text-zinc-50">{title}</p>
+
+      {mode === "edit" && (
+        <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+          <label className="text-xs font-medium text-zinc-500">존 유형 변경</label>
+          <select
+            value={editTypeKey}
+            onChange={(e) => onEditTypeChange(e.target.value as ZoneTypeKey)}
+            className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+          >
+            {ZONE_TYPES.map((t) => (
+              <option key={t.key} value={t.key}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            새 이름: <b className="text-zinc-700 dark:text-zinc-200">{editNamePreview}</b>
+          </p>
+          {editTypeKey === "etc" && (
+            <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+              <div>
+                <label className="text-xs font-medium text-zinc-500">존 이름 (직접입력)</label>
+                <input
+                  value={editEtcName}
+                  onChange={(e) => onEditEtcNameChange(e.target.value)}
+                  placeholder="예: 카운터존"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-zinc-500">색상</label>
+                <input
+                  type="color"
+                  value={editEtcColor}
+                  onChange={(e) => onEditEtcColorChange(e.target.value)}
+                  className="mt-1 h-[38px] w-14 rounded-lg border border-zinc-300 dark:border-zinc-700"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {isEtc && (
         <div className="grid grid-cols-[1fr_auto] gap-2">

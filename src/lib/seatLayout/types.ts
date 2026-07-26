@@ -1,7 +1,7 @@
 // 아이센스 PC방 좌석배치도 작업 툴 - 공용 타입 정의
 // (구글 앱스크립트 v15를 Next.js/Firebase 기반으로 이식)
 
-export type TabKey = "desk" | "pc";
+export type TabKey = "desk" | "pc" | "seatNumber";
 
 export type DeskSize = "820mm" | "850mm" | "910mm" | "950mm" | "1000mm";
 
