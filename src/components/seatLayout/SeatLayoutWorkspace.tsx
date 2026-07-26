@@ -204,6 +204,11 @@ export function SeatLayoutWorkspace() {
     { pageNumber: number; thumbnail: string }[] | null
   >(null);
   const [pdfPickerBusy, setPdfPickerBusy] = useState(false);
+  // PDF 페이지 선택/크롭 화면은 도면과 좌석번호표가 공유한다 — 이 값으로 현재 어느 쪽을
+  // 위한 것인지 구분한다 (선택한 페이지를 어디에 적용할지, 크롭 결과를 어디로 보낼지).
+  const [pdfPickerTarget, setPdfPickerTarget] = useState<"floorplan" | "seatNumberPlate">(
+    "floorplan",
+  );
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   // PDF 페이지를 고른 다음(또는 좌석번호표 이미지 업로드 후): 필요없는 부분을 빼고 실제 필요한
   // 영역만 잘라내는 단계. 도면 크롭과 좌석번호표 크롭이 이 crop 상태/캔버스를 공유한다 —
@@ -541,14 +546,47 @@ export function SeatLayoutWorkspace() {
     }
   }
 
-  function handleSeatNumberPlateFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // 좌석번호표(피난안내도 등)는 안내문구/범례가 많이 섞여 있어 처음부터 통째로 인식을 시키면
+  // 실패하기 쉽다. 그래서 도면 업로드와 동일하게, 등록 즉시 인식하지 않고 먼저 크롭 화면을
+  // 띄워 필요한 영역만 고르게 한다 (전체를 그대로 쓰려면 크롭 화면의 버튼으로 건너뛸 수 있다).
+  async function handleSeatNumberPlateFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+    if (isPdf) {
+      setStatusMsg("PDF에서 페이지를 불러오는 중...");
+      try {
+        const pdf = await loadPdfDocument(file);
+        pdfDocRef.current = pdf;
+        const pages: { pageNumber: number; thumbnail: string }[] = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          pages.push({ pageNumber: i, thumbnail: await renderPdfPageToDataUrl(pdf, i, 260) });
+        }
+        setPdfPickerTarget("seatNumberPlate");
+        setPdfPickerPages(pages);
+        setStatusMsg(`PDF ${pdf.numPages}페이지 중 좌석번호표(피난안내도) 페이지를 선택해주세요.`, "success");
+      } catch (err) {
+        setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
+      } finally {
+        e.target.value = "";
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       const dataUrl = evt.target?.result as string;
-      setRawSeatNumberPlateDataUrl(dataUrl);
-      runSeatNumberRecognize(dataUrl);
+      const probe = new Image();
+      probe.onload = () => {
+        cropImgRef.current = probe;
+        setCropTarget("seatNumberPlate");
+        setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
+        setCropRect(null);
+        setCropHint("좌석 번호가 보이는 영역의 왼쪽 위를 클릭하세요 (안내문구/범례는 빼고).");
+      };
+      probe.onerror = () => setStatusMsg("좌석번호표 이미지를 읽지 못했습니다.", "error");
+      probe.src = dataUrl;
     };
     reader.onerror = () => setStatusMsg("좌석번호표 이미지를 읽지 못했습니다.", "error");
     reader.readAsDataURL(file);
@@ -901,6 +939,7 @@ export function SeatLayoutWorkspace() {
         for (let i = 1; i <= pdf.numPages; i++) {
           pages.push({ pageNumber: i, thumbnail: await renderPdfPageToDataUrl(pdf, i, 260) });
         }
+        setPdfPickerTarget("floorplan");
         setPdfPickerPages(pages);
         setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
       } catch (err) {
@@ -931,13 +970,22 @@ export function SeatLayoutWorkspace() {
         probe.src = dataUrl;
       });
       cropImgRef.current = probe;
-      setCropTarget("floorplan");
+      setCropTarget(pdfPickerTarget);
       setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
       setCropRect(null);
-      setCropHint("도면 영역의 왼쪽 위를 클릭하세요 (제목 블록/범례 표는 빼고 도면만).");
+      setCropHint(
+        pdfPickerTarget === "seatNumberPlate"
+          ? "좌석 번호가 보이는 영역의 왼쪽 위를 클릭하세요 (안내문구/범례는 빼고)."
+          : "도면 영역의 왼쪽 위를 클릭하세요 (제목 블록/범례 표는 빼고 도면만).",
+      );
       setPdfPickerPages(null);
       pdfDocRef.current = null;
-      setStatusMsg("실제 배치도 영역만 지정해주세요.", "success");
+      setStatusMsg(
+        pdfPickerTarget === "seatNumberPlate"
+          ? "좌석번호가 보이는 영역만 지정해주세요."
+          : "실제 배치도 영역만 지정해주세요.",
+        "success",
+      );
     } catch (err) {
       setStatusMsg(`페이지를 불러오지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
     } finally {
@@ -1198,6 +1246,48 @@ export function SeatLayoutWorkspace() {
     setBusy(false);
   }
 
+  // 도면 크롭과 좌석번호표 크롭이 화면 UI를 공유한다 — cropTarget에 따라 렌더링 위치만
+  // 다르게 배치한다 (도면 캔버스 자리를 좌석번호표 크롭이 가리지 않도록).
+  function cropPanel() {
+    return (
+      <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+        <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{cropHint}</p>
+        <div className="mt-2 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800">
+          <canvas
+            ref={cropCanvasRef}
+            onMouseDown={handleCropCanvasMouseDown}
+            onMouseMove={handleCropCanvasMouseMove}
+            className="max-w-full cursor-crosshair"
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!cropRect}
+            onClick={confirmCrop}
+            className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          >
+            이 영역으로 자르기
+          </button>
+          <button
+            type="button"
+            onClick={useCropSourceAsIs}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+          >
+            {cropTarget === "seatNumberPlate" ? "자르지 않고 전체 이미지 사용" : "자르지 않고 페이지 전체 사용"}
+          </button>
+          <button
+            type="button"
+            onClick={closeCrop}
+            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900"
+          >
+            취소
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ---------------- 렌더 ----------------
   return (
     <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -1453,7 +1543,7 @@ export function SeatLayoutWorkspace() {
                 <p className="mt-1 text-xs text-zinc-400">
                   도면은 책상/PC 탭에서 공통으로 사용됩니다. PDF는 화면 캡처보다 훨씬 선명해요.
                 </p>
-                {pdfPickerPages && (
+                {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
                     <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
                       배치도(평면도) 페이지를 클릭해서 선택해주세요
@@ -1513,20 +1603,59 @@ export function SeatLayoutWorkspace() {
               htmlFor="seat-number-plate-input"
               className="block cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400"
             >
-              좌석번호표 이미지 (선택 — 피난안내도 등)
+              좌석번호표 (선택 — 피난안내도 등, 이미지 또는 PDF)
             </label>
             <input
               id="seat-number-plate-input"
               ref={seatNumberPlateInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               onChange={handleSeatNumberPlateFileChange}
               className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
             />
             <p className="mt-1 text-xs text-zinc-400">
-              업로드하면 존별 좌석번호 범위를 자동으로 인식해서 발주요약(슬라이드3)에 함께 넣습니다.
-              번호 인식은 100% 정확하지 않을 수 있어요 — 틀린 부분은 아래에서 직접 고치면 됩니다.
+              등록하면 먼저 필요한 영역만 잘라낼 수 있고, 그 뒤 존별 좌석번호 범위를 자동으로
+              인식해서 발주요약(슬라이드3)에 함께 넣습니다. 번호 인식은 100% 정확하지 않을 수
+              있어요 — 틀린 부분은 아래에서 직접 고치면 됩니다.
             </p>
+
+            {pdfPickerPages && pdfPickerTarget === "seatNumberPlate" && (
+              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  좌석번호표(피난안내도) 페이지를 클릭해서 선택해주세요
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {pdfPickerPages.map((p) => (
+                    <button
+                      key={p.pageNumber}
+                      type="button"
+                      disabled={pdfPickerBusy}
+                      onClick={() => selectPdfPage(p.pageNumber)}
+                      className="group flex flex-col items-center gap-1 rounded-lg border border-zinc-300 bg-white p-1.5 transition hover:border-amber-500 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={p.thumbnail}
+                        alt={`${p.pageNumber}페이지`}
+                        className="aspect-[4/3] w-full rounded object-contain"
+                      />
+                      <span className="text-xs text-zinc-500 group-hover:text-amber-700 dark:text-zinc-400">
+                        {p.pageNumber}페이지
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelPdfPicker}
+                  className="mt-2 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300"
+                >
+                  취소
+                </button>
+              </div>
+            )}
+
+            {pdfCropSource && cropTarget === "seatNumberPlate" && <div className="mt-3">{cropPanel()}</div>}
 
             {(rawSeatNumberPlateDataUrl || project.seatNumberPlateDataUrl) && project.zones.length > 0 && (
               <div className="mt-3 space-y-2">
@@ -1675,42 +1804,11 @@ export function SeatLayoutWorkspace() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-4 lg:flex-row">
             <div className="min-w-0 flex-1">
-              {pdfCropSource ? (
-                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{cropHint}</p>
-                  <div className="mt-2 overflow-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800">
-                    <canvas
-                      ref={cropCanvasRef}
-                      onMouseDown={handleCropCanvasMouseDown}
-                      onMouseMove={handleCropCanvasMouseMove}
-                      className="max-w-full cursor-crosshair"
-                    />
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={!cropRect}
-                      onClick={confirmCrop}
-                      className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-                    >
-                      이 영역으로 자르기
-                    </button>
-                    <button
-                      type="button"
-                      onClick={useCropSourceAsIs}
-                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-white dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
-                    >
-                      {cropTarget === "seatNumberPlate" ? "자르지 않고 전체 이미지 사용" : "자르지 않고 페이지 전체 사용"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={closeCrop}
-                      className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900"
-                    >
-                      취소
-                    </button>
-                  </div>
-                </div>
+              {/* 좌석번호표 크롭은 왼쪽 "좌석번호표" 섹션에 따로 표시한다 — 여기서 같이 보여주면
+                  도면 크롭 때와 똑같이 도면 캔버스 자리를 가려서, 도면이 화면에서 사라진
+                  것처럼 보이는 문제가 있었다. */}
+              {pdfCropSource && cropTarget === "floorplan" ? (
+                cropPanel()
               ) : (
                 <div className="overflow-auto rounded-2xl border border-zinc-200 bg-zinc-100 p-3 dark:border-zinc-800 dark:bg-zinc-900">
                   {imgEl ? (
