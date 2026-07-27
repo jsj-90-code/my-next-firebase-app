@@ -84,11 +84,32 @@ function mergeSettings(base: SeatLayoutSettings, saved: Partial<SeatLayoutSettin
   };
 }
 
+// 현재 기본값이 옵션 목록에 없으면(예: 옵션이 아예 비어있고 기본값만 있는 CPU/CPU쿨러/
+// 무선충전기 등) 사양설정 화면에서 그 값이 칩으로 보이지 않아 수정할 수 없었다. 기본값을
+// 항상 옵션 목록에 포함시켜, 다른 항목처럼 클릭해서 이름을 수정하거나 삭제할 수 있게 한다.
+function withDefaultsRegistered(s: SeatLayoutSettings): SeatLayoutSettings {
+  const specOptions: Record<SpecFieldId, string[]> = { ...s.specOptions };
+  SPEC_FIELDS.forEach((f) => {
+    const def = s.specDefaults[f.id];
+    const list = specOptions[f.id] ?? [];
+    if (def && !list.includes(def)) specOptions[f.id] = [...list, def];
+  });
+
+  const pcSuggestions: Record<PcSpecFieldId, string[]> = { ...s.pcSuggestions };
+  PC_SPEC_FIELDS.forEach((f) => {
+    const def = s.pcDefaults[f.id];
+    const list = pcSuggestions[f.id] ?? [];
+    if (def && !list.includes(def)) pcSuggestions[f.id] = [...list, def];
+  });
+
+  return { ...s, specOptions, pcSuggestions };
+}
+
 export async function loadSeatLayoutSettings(): Promise<SeatLayoutSettings> {
   const base = defaultSeatLayoutSettings();
   const snap = await getDoc(doc(requireDb(), ...SETTINGS_DOC_PATH));
-  if (!snap.exists()) return base;
-  return mergeSettings(base, snap.data() as Partial<SeatLayoutSettings>);
+  if (!snap.exists()) return withDefaultsRegistered(base);
+  return withDefaultsRegistered(mergeSettings(base, snap.data() as Partial<SeatLayoutSettings>));
 }
 
 export async function saveSeatLayoutSettings(

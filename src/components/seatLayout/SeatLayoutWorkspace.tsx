@@ -85,12 +85,44 @@ function resetPcSpecDraft(
   return out;
 }
 
+// 완성된 PC 스펙 값 묶음(draft) 중, 전역 기본값과 다른 항목만 "존별 재정의(override)"로 남긴다.
+function diffPcOverrides(draft: PcSpecValues, pcDefaults: PcSpecValues): PcSpecValues {
+  const overrides: PcSpecValues = {};
+  PC_SPEC_FIELDS.forEach((f) => {
+    const v = draft[f.id] ?? "";
+    if (v !== (pcDefaults[f.id] ?? "")) overrides[f.id] = v;
+  });
+  return overrides;
+}
+
 function pcDefaultsFromFields(fields: { id: PcSpecFieldId; def: string }[]): PcSpecValues {
   const out: PcSpecValues = {};
   fields.forEach((f) => {
     out[f.id] = f.def;
   });
   return out;
+}
+
+// 같은 유형의 존이 여러 개일 때 "라벨A", "라벨B"... 식으로 이름을 매기되, 개수(count)만 보고
+// 다음 알파벳을 고르면 중간에 지워진 존이 있을 때 이미 쓰이고 있는 이름과 겹칠 수 있다
+// (예: A가 삭제되고 B만 남은 상태에서 새로 만들면 개수=1 → "B"가 또 나와 중복됨). 그래서
+// 실제로 아직 안 쓰인 이름을 찾을 때까지 확인한다.
+function nextAvailableZoneName(
+  zones: ActiveZone[],
+  typeKey: ZoneTypeKey,
+  label: string,
+  excludeIndex?: number | null,
+): string {
+  const existingNames = new Set(
+    zones.filter((z, i) => z.typeKey === typeKey && i !== excludeIndex).map((z) => z.name),
+  );
+  let i = 0;
+  let candidate = label + nextSuffix(i);
+  while (existingNames.has(candidate)) {
+    i += 1;
+    candidate = label + nextSuffix(i);
+  }
+  return candidate;
 }
 
 function statusToneClass(tone: "info" | "success" | "error") {
@@ -179,6 +211,18 @@ export function SeatLayoutWorkspace() {
   );
 
   const [presentationUrl, setPresentationUrl] = useState<string | null>(null);
+  const [seatNumberSheetUrl, setSeatNumberSheetUrl] = useState<string | null>(null);
+  const [deskOrderSheetUrl, setDeskOrderSheetUrl] = useState<string | null>(null);
+  const [seatNumberStoreInfoOpen, setSeatNumberStoreInfoOpen] = useState(false);
+  const [storeInfoDraft, setStoreInfoDraft] = useState({
+    openDate: "",
+    deliveryDate: "",
+    svName: "",
+    svPhone: "",
+    ownerName: "",
+    ownerPhone: "",
+    address: "",
+  });
   const [aiResultText, setAiResultText] = useState("");
   const [recognizing, setRecognizing] = useState(false);
   // 도면 등록 직후 "AI로 구역 초안 제안받기"를 누르는 동안의 로딩 상태 (테스트용 기능).
@@ -273,10 +317,14 @@ export function SeatLayoutWorkspace() {
   const ZONE_DELETE_ICON_SIZE = 16;
   const ZONE_DRAG_MOVE_THRESHOLD = 3;
 
-  const activeZones = useMemo<ActiveZone[]>(
-    () => (activeTab === "pc" ? project.pcZones : project.zones),
-    [activeTab, project.pcZones, project.zones],
-  );
+  // 좌석번호표 탭의 도면 비교 화면은, PC 발주 도면에서만 사양 차이로 존을 더 쪼갠 경우(예:
+  // "FPS존A"/"FPS존B")까지 구분해서 볼 수 있도록 PC 존이 있으면 PC 존 기준으로 보여준다
+  // (AI 인식 기준과 동일). PC 탭을 아직 안 채웠으면 지금처럼 책상 존을 보여준다.
+  const activeZones = useMemo<ActiveZone[]>(() => {
+    if (activeTab === "pc") return project.pcZones;
+    if (activeTab === "seatNumber" && project.pcZones.length) return project.pcZones;
+    return project.zones;
+  }, [activeTab, project.pcZones, project.zones]);
 
   function setStatusMsg(text: string, tone: "info" | "success" | "error" = "info") {
     setStatus({ text, tone });
@@ -751,18 +799,17 @@ export function SeatLayoutWorkspace() {
   const nextNamePreview = useMemo(() => {
     if (!selectedType) return "";
     if (selectedType.key === "etc") return "(직접 이름 입력)";
-    const count = activeZones.filter((z) => z.typeKey === selectedType.key).length;
-    return selectedType.label + nextSuffix(count);
+    return nextAvailableZoneName(activeZones, selectedType.key, selectedType.label);
   }, [selectedType, activeZones]);
 
-  // 수정 폼에서 존 유형을 바꿀 때 미리보기/저장에 쓰는 이름 — 자기 자신은 후보에서 제외하고
-  // 세어서 접미사를 매긴다 (예: 멀티존A가 이미 있으면 이 존은 멀티존B가 됨).
+  // 수정 폼에서 존 유형을 바꿀 때 미리보기/저장에 쓰는 이름 — 자기 자신은 후보에서 제외하고,
+  // 이미 쓰이고 있지 않은 이름 중 가장 앞선 걸 고른다 (예: 멀티존A가 이미 있으면 이 존은
+  // 멀티존B가 됨. 멀티존A가 삭제되어 없다면 멀티존A로 채워짐).
   function nameForEditType(typeKey: ZoneTypeKey): string {
     if (typeKey === "etc") return editEtcNameDraft || "기타존";
     const type = ZONE_TYPES.find((t) => t.key === typeKey);
     if (!type) return editEtcNameDraft || "기타존";
-    const count = activeZones.filter((z, i) => z.typeKey === typeKey && i !== editingIndex).length;
-    return type.label + nextSuffix(count);
+    return nextAvailableZoneName(activeZones, typeKey, type.label, editingIndex);
   }
 
   // ---------------- AI 자동 인식 ----------------
@@ -952,6 +999,12 @@ export function SeatLayoutWorkspace() {
   // 존 이름/색상 박스가 그려진 책상 배치도 1장 — 피난안내도의 어느 구역이 어느 존인지 AI가
   // 위치로 대응시키는 기준으로 쓰인다. 기존 FHD 합성용 캔버스(compositeCanvasRef)를 그대로
   // 재사용한다.
+  // PC 발주 도면에서 사양 차이로 존을 더 쪼갠 경우(예: "FPS존A"/"FPS존B")까지 AI가 한 번에 구분해
+  // 채울 수 있도록, PC 존이 있으면 PC 존 기준으로, 아직 PC 탭을 안 채웠으면 책상 존 기준으로 인식한다.
+  function getSeatNumberRecognitionZones(): (DeskZone | PcZone)[] {
+    return project.pcZones.length ? project.pcZones : project.zones;
+  }
+
   function buildZoneReferenceImageBase64(): string | null {
     const cv = compositeCanvasRef.current;
     if (!cv || !imgEl) return null;
@@ -959,15 +1012,20 @@ export function SeatLayoutWorkspace() {
     cv.height = COMPOSITE_H;
     const ctx = cv.getContext("2d");
     if (!ctx) return null;
-    renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
+    if (project.pcZones.length) {
+      renderPcFloorplanImage(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
+    } else {
+      renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
+    }
     return cv.toDataURL("image/png").split(",")[1];
   }
 
   async function runSeatNumberRecognize(dataUrlOverride?: string) {
     const dataUrl = dataUrlOverride ?? rawSeatNumberPlateDataUrl;
     if (!user || !dataUrl) return;
-    if (!project.zones.length) {
-      setStatusMsg("먼저 책상 발주 도면 탭에서 존을 등록해주세요.", "error");
+    const recognitionZones = getSeatNumberRecognitionZones();
+    if (!recognitionZones.length) {
+      setStatusMsg("먼저 책상 발주 도면(또는 PC 발주 도면) 탭에서 존을 등록해주세요.", "error");
       return;
     }
     const zoneImageData = buildZoneReferenceImageBase64();
@@ -986,7 +1044,7 @@ export function SeatLayoutWorkspace() {
         body: JSON.stringify({
           zoneImage: { data: zoneImageData, mimeType: "image/png" },
           images,
-          zones: project.zones.map((z) => ({ name: z.name, seats: z.seats })),
+          zones: recognitionZones.map((z) => ({ name: z.name, seats: z.seats })),
         }),
       });
       const data = await res.json();
@@ -1261,12 +1319,7 @@ export function SeatLayoutWorkspace() {
   }
 
   function computePcOverrides(): PcSpecValues {
-    const overrides: PcSpecValues = {};
-    PC_SPEC_FIELDS.forEach((f) => {
-      const v = pcSpecDraft[f.id] ?? "";
-      if (v !== (pcDefaults[f.id] ?? "")) overrides[f.id] = v;
-    });
-    return overrides;
+    return diffPcOverrides(pcSpecDraft, pcDefaults);
   }
 
   function deleteZone(index: number) {
@@ -1292,6 +1345,35 @@ export function SeatLayoutWorkspace() {
     setStatusMsg("PC 기본사양이 반영되었습니다. (존별로 다르게 지정한 항목만 별도 표시됩니다)", "success");
   }
 
+  // 사양설정이 바뀐 뒤에도 예전에 만든 프로젝트는 "전역 PC 기본사양"(project.pcDefaults)과
+  // 존별 재정의 값 모두 프로젝트 생성/저장 당시 값을 그대로 갖고 있어 최신 사양설정과 어긋날 수
+  // 있다 — 존 하나씩 "수정"에서 새로고침하는 대신, 전역 기본값부터 사양설정의 최신 값으로 다시
+  // 불러온 뒤, 그 새 기본값 기준으로 PC 존 전체를 한 번에 되돌린다. 존마다 따로 고쳐둔 값도
+  // 함께 되돌아간다.
+  function refreshAllPcZoneDefaults() {
+    const ok = window.confirm(
+      `전역 PC 기본사양과 PC 존 ${project.pcZones.length}개의 사양을 모두 사양설정의 최신 값으로 ` +
+        "새로고침합니다. 존마다 따로 고쳐둔 사양이 있다면 그 값도 기본값으로 되돌아갑니다. 계속할까요?",
+    );
+    if (!ok) return;
+    const freshDefaults = pcDefaultsFromFields(
+      PC_SPEC_FIELDS.map((f) => ({ ...f, def: settings.pcDefaults[f.id] || f.def })),
+    );
+    setPcDefaults(freshDefaults);
+    setPcDefaultsDraft(freshDefaults);
+    setProject((p) => ({
+      ...p,
+      pcZones: p.pcZones.map((z) => {
+        const draft = resetPcSpecDraft(z.typeKey, freshDefaults, settings.pcTypeDefaults);
+        return { ...z, pcOverrides: diffPcOverrides(draft, freshDefaults) };
+      }),
+    }));
+    setStatusMsg(
+      `전역 PC 기본사양과 PC 존 ${project.pcZones.length}개의 사양을 최신 기본값으로 새로고침했습니다. "프로젝트 저장"을 눌러야 반영됩니다.`,
+      "success",
+    );
+  }
+
   function importDeskZonesToPc() {
     if (!project.zones.length) {
       setStatusMsg("책상 발주 도면에 존이 없습니다. 먼저 책상 탭에서 구역을 지정해주세요.", "error");
@@ -1304,7 +1386,6 @@ export function SeatLayoutWorkspace() {
       if (!ok) return;
     }
     const pcZones: PcZone[] = project.zones
-      .filter((z) => z.typeKey !== "multi")
       .map((z) => {
         const typeDef = settings.pcTypeDefaults[z.typeKey] ?? {};
         const overrides: PcSpecValues = {};
@@ -1711,7 +1792,7 @@ export function SeatLayoutWorkspace() {
     renderPcFloorplanImage(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
     const pc = { key: "pc", label: "PC발주도면", dataUrl: cv.toDataURL("image/png") };
 
-    renderOrderSummaryImage(ctx, project.name, project.zones, project.seatNumberRanges);
+    renderOrderSummaryImage(ctx, project.name, project.zones, project.seatNumberRanges, project.pcZones);
     const summary = { key: "summary", label: "발주요약", dataUrl: cv.toDataURL("image/png") };
 
     return [desk, pc, summary];
@@ -1786,6 +1867,144 @@ export function SeatLayoutWorkspace() {
       } catch (err) {
         setStatusMsg(`등록 실패: ${err instanceof Error ? err.message : err}`, "error");
       }
+    }
+    setBusy(false);
+  }
+
+  async function handlePublishDeskOrder() {
+    if (!user) {
+      setStatusMsg("로그인이 필요합니다.", "error");
+      return;
+    }
+    if (!project.zones.length) {
+      setStatusMsg("먼저 책상 발주 도면 탭에서 존을 등록해주세요.", "error");
+      return;
+    }
+    setBusy(true);
+    setStatusMsg("저장 중...");
+    setDeskOrderSheetUrl(null);
+    const saved = await silentSave();
+    if (!saved) {
+      setBusy(false);
+      return;
+    }
+    try {
+      setStatusMsg("통합발주서에 등록 중... (몇 초 걸릴 수 있습니다)");
+      const token = await user.getIdToken();
+      const res = await fetch("/api/seat-layout/publish-desk-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ projectName: saved.name, zones: saved.zones }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "등록에 실패했습니다.");
+      setStatusMsg(`통합발주서에 등록 완료! ("${data.sheetTitle}" 탭)`, "success");
+      setDeskOrderSheetUrl(data.spreadsheetUrl);
+      window.open(data.spreadsheetUrl, "_blank");
+    } catch (err) {
+      setStatusMsg(`통합발주서 등록 실패: ${err instanceof Error ? err.message : err}`, "error");
+    }
+    setBusy(false);
+  }
+
+  // 좌석번호를 입력받을 존 이름 목록 — 기본은 책상 발주 도면의 존이지만, PC 발주 도면에서만
+  // 사양 차이로 존을 더 쪼갠 경우(예: 책상은 "FPS존A" 하나인데 PC는 "FPS존A"/"FPS존B"로 나눠
+  // 사양을 다르게 지정한 경우) 그 PC 전용 존 이름도 함께 포함해서, 나뉜 만큼 번호를 따로 입력할
+  // 수 있게 한다.
+  const seatNumberZoneNames = useMemo(() => {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    project.zones.forEach((z) => {
+      if (!seen.has(z.name)) {
+        seen.add(z.name);
+        names.push(z.name);
+      }
+    });
+    project.pcZones.forEach((z) => {
+      if (!seen.has(z.name)) {
+        seen.add(z.name);
+        names.push(z.name);
+      }
+    });
+    return names;
+  }, [project.zones, project.pcZones]);
+
+  // 위 목록 순서를 기준으로, 좌석번호가 입력된 존만 뽑는다. PC 스펙(GPU/모니터/키보드/마우스)은
+  // 같은 이름의 PC 존에 지정된 값이 있으면 그걸, 없으면 전역 PC 기본사양을 쓴다 — 도면/표에서
+  // 실제로 적용되는 값과 동일한 우선순위다. 존 유형은 PC 존 쪽 값을 우선하고(PC 전용 존은
+  // 책상 쪽에 대응하는 존이 없으므로), 없으면 책상 존의 유형을 쓴다.
+  function buildSeatNumberSheetEntries() {
+    return seatNumberZoneNames
+      .map((name) => {
+        const rangeEntry = project.seatNumberRanges.find((r) => r.zoneName === name && r.ranges);
+        if (!rangeEntry) return null;
+        const pcZone = project.pcZones.find((pz) => pz.name === name);
+        const deskZone = project.zones.find((dz) => dz.name === name);
+        const typeKey = pcZone?.typeKey ?? deskZone?.typeKey;
+        if (!typeKey) return null;
+        const overrides = pcZone?.pcOverrides ?? {};
+        const spec = (fieldId: PcSpecFieldId) =>
+          overrides[fieldId] ?? pcDefaults[fieldId] ?? PC_SPEC_FIELDS.find((f) => f.id === fieldId)?.def ?? "";
+        return {
+          zoneName: name,
+          ranges: rangeEntry.ranges,
+          typeKey,
+          gpu: spec("gpu"),
+          monitor: spec("monitor"),
+          keyboard: spec("keyboard"),
+          mouse: spec("mouse"),
+        };
+      })
+      .filter((e): e is NonNullable<typeof e> => Boolean(e));
+  }
+
+  function openSeatNumberSheetDialog() {
+    if (!user) {
+      setStatusMsg("로그인이 필요합니다.", "error");
+      return;
+    }
+    if (!buildSeatNumberSheetEntries().length) {
+      setStatusMsg("먼저 존별 좌석번호를 입력해주세요.", "error");
+      return;
+    }
+    setSeatNumberStoreInfoOpen(true);
+  }
+
+  async function handlePublishSeatNumberSheet() {
+    if (!user) {
+      setStatusMsg("로그인이 필요합니다.", "error");
+      return;
+    }
+    const entries = buildSeatNumberSheetEntries();
+    if (!entries.length) {
+      setStatusMsg("먼저 존별 좌석번호를 입력해주세요.", "error");
+      return;
+    }
+
+    setSeatNumberStoreInfoOpen(false);
+    setBusy(true);
+    setStatusMsg("저장 중...");
+    setSeatNumberSheetUrl(null);
+    const saved = await silentSave();
+    if (!saved) {
+      setBusy(false);
+      return;
+    }
+    try {
+      setStatusMsg("좌석번호표 시트에 등록 중... (몇 초 걸릴 수 있습니다)");
+      const token = await user.getIdToken();
+      const res = await fetch("/api/seat-layout/publish-seat-numbers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ projectName: saved.name, entries, storeInfo: storeInfoDraft }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "등록에 실패했습니다.");
+      setStatusMsg(`좌석번호표 시트에 등록 완료! ("${data.sheetTitle}" 탭)`, "success");
+      setSeatNumberSheetUrl(data.spreadsheetUrl);
+      window.open(data.spreadsheetUrl, "_blank");
+    } catch (err) {
+      setStatusMsg(`시트 등록 실패: ${err instanceof Error ? err.message : err}`, "error");
     }
     setBusy(false);
   }
@@ -1897,6 +2116,24 @@ export function SeatLayoutWorkspace() {
               프레젠테이션 열기 ↗
             </a>
           )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={handlePublishDeskOrder}
+            className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+          >
+            통합발주서 등록
+          </button>
+          {deskOrderSheetUrl && (
+            <a
+              href={deskOrderSheetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+            >
+              발주서 열기 ↗
+            </a>
+          )}
         </div>
         {status.text && (
           <p className={`text-sm ${statusToneClass(status.tone)}`}>{status.text}</p>
@@ -1915,6 +2152,86 @@ export function SeatLayoutWorkspace() {
             setSettingsOpen(false);
           }}
         />
+      )}
+
+      {/* 좌석번호표 시트 등록 전, 양식 5행에 들어갈 매장정보를 입력받는 팝업. 아직 확정 안 된
+          정보가 많을 수 있어 전부 선택 입력(비워도 등록 가능)으로 둔다. */}
+      {seatNumberStoreInfoOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl dark:bg-zinc-950">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              좌석번호표 시트 등록 - 매장정보
+            </h2>
+            <p className="mt-1 text-xs text-zinc-400">
+              아직 정해지지 않은 항목은 비워두고 등록해도 됩니다.
+            </p>
+            <div className="mt-3 space-y-2">
+              <input
+                value={storeInfoDraft.openDate}
+                onChange={(e) => setStoreInfoDraft((d) => ({ ...d, openDate: e.target.value }))}
+                placeholder="매장 오픈일 (예: 26.07.17)"
+                className="w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              <input
+                value={storeInfoDraft.deliveryDate}
+                onChange={(e) => setStoreInfoDraft((d) => ({ ...d, deliveryDate: e.target.value }))}
+                placeholder="입고 희망일 (예: 26.07.14)"
+                className="w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              <div className="flex gap-2">
+                <input
+                  value={storeInfoDraft.svName}
+                  onChange={(e) => setStoreInfoDraft((d) => ({ ...d, svName: e.target.value }))}
+                  placeholder="담당 SV 이름"
+                  className="flex-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <input
+                  value={storeInfoDraft.svPhone}
+                  onChange={(e) => setStoreInfoDraft((d) => ({ ...d, svPhone: e.target.value }))}
+                  placeholder="담당 SV 연락처"
+                  className="flex-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={storeInfoDraft.ownerName}
+                  onChange={(e) => setStoreInfoDraft((d) => ({ ...d, ownerName: e.target.value }))}
+                  placeholder="점주님 이름"
+                  className="flex-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <input
+                  value={storeInfoDraft.ownerPhone}
+                  onChange={(e) => setStoreInfoDraft((d) => ({ ...d, ownerPhone: e.target.value }))}
+                  placeholder="점주님 연락처"
+                  className="flex-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+              </div>
+              <input
+                value={storeInfoDraft.address}
+                onChange={(e) => setStoreInfoDraft((d) => ({ ...d, address: e.target.value }))}
+                placeholder="매장 주소"
+                className="w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSeatNumberStoreInfoOpen(false)}
+                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handlePublishSeatNumberSheet}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                등록
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 좌석번호표 크롭은 좌측 사이드바(폭 380px) 안에 그대로 넣으면 크롭용 캔버스가 심하게
@@ -2004,6 +2321,9 @@ export function SeatLayoutWorkspace() {
                 onSeatsDraftChange={setSeatsDraft}
                 pcSpecDraft={pcSpecDraft}
                 onPcSpecChange={(id, v) => setPcSpecDraft((d) => ({ ...d, [id]: v }))}
+                onResetPcSpecToDefaults={() =>
+                  setPcSpecDraft(resetPcSpecDraft(editTypeDraft, pcDefaults, settings.pcTypeDefaults))
+                }
                 specFields={effectiveSpecFields}
                 pcSpecFields={effectivePcSpecFields}
                 pcSuggestions={settings.pcSuggestions}
@@ -2309,22 +2629,45 @@ export function SeatLayoutWorkspace() {
                     ))}
                   </div>
                 )}
-                {project.zones.map((z) => {
-                  const entry = project.seatNumberRanges.find((r) => r.zoneName === z.name);
+                {/* PC 발주 도면에서만 사양 차이로 존을 더 쪼갠 경우(예: 책상은 "FPS존A" 하나인데
+                    PC는 "FPS존A"/"FPS존B"로 나눠 사양을 다르게 지정한 경우), 그 PC 전용 존 이름도
+                    목록에 같이 보여줘서 좌석번호를 따로 입력할 수 있게 한다. */}
+                {seatNumberZoneNames.map((name) => {
+                  const entry = project.seatNumberRanges.find((r) => r.zoneName === name);
                   return (
-                    <div key={z.name} className="flex items-center gap-2">
-                      <span className="w-20 shrink-0 truncate text-xs text-zinc-500" title={z.name}>
-                        {z.name}
+                    <div key={name} className="flex items-center gap-2">
+                      <span className="w-20 shrink-0 truncate text-xs text-zinc-500" title={name}>
+                        {name}
                       </span>
                       <input
                         value={entry?.ranges ?? ""}
-                        onChange={(e) => setSeatNumberRangeFor(z.name, e.target.value)}
+                        onChange={(e) => setSeatNumberRangeFor(name, e.target.value)}
                         placeholder="예: 1~10, 25~30"
                         className="flex-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
                       />
                     </div>
                   );
                 })}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={openSeatNumberSheetDialog}
+                    className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    좌석번호표 시트 등록
+                  </button>
+                  {seatNumberSheetUrl && (
+                    <a
+                      href={seatNumberSheetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+                    >
+                      시트 열기 ↗
+                    </a>
+                  )}
+                </div>
               </div>
             )}
           </section>
@@ -2368,6 +2711,14 @@ export function SeatLayoutWorkspace() {
                     className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
                   >
                     기본사양 반영
+                  </button>
+                  <button
+                    type="button"
+                    onClick={refreshAllPcZoneDefaults}
+                    title="사양설정에서 바뀐 존 유형별 기본값을 PC 존 전체에 한 번에 다시 반영합니다 (존별로 직접 고친 항목도 함께 되돌아갑니다)"
+                    className="w-full rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                  >
+                    ↻ PC 존 전체 사양 새로고침 ({project.pcZones.length}개)
                   </button>
                 </div>
               )}
@@ -2568,6 +2919,7 @@ type ZoneFormProps = {
   onSeatsDraftChange: (v: string) => void;
   pcSpecDraft: PcSpecValues;
   onPcSpecChange: (id: PcSpecFieldId, value: string) => void;
+  onResetPcSpecToDefaults: () => void;
   specFields: SpecField[];
   pcSpecFields: { id: PcSpecFieldId; label: string; def: string }[];
   pcSuggestions: Partial<Record<PcSpecFieldId, string[]>>;
@@ -2604,6 +2956,7 @@ function ZoneForm(props: ZoneFormProps) {
     onSeatsDraftChange,
     pcSpecDraft,
     onPcSpecChange,
+    onResetPcSpecToDefaults,
     specFields,
     pcSpecFields,
     pcSuggestions,
@@ -2797,6 +3150,18 @@ function ZoneForm(props: ZoneFormProps) {
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             />
           </div>
+          {mode === "edit" && (
+            <div className="border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={onResetPcSpecToDefaults}
+                title="사양설정에서 바뀐 존 유형별 기본값을 이 존에도 다시 반영합니다 (직접 고친 항목도 함께 되돌아갑니다)"
+                className="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                ↻ 최신 기본값으로 새로고침
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2 border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-800">
             {pcSpecFields.map((f) => (
               <PcFieldInput

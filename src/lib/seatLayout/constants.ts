@@ -18,7 +18,7 @@ export const ZONE_TYPES: ZoneType[] = [
   { key: "one_room", label: "1인룸", color: "#7FAF7C" },
   { key: "two", label: "2인룸", color: "#3E8E82" },
   { key: "three", label: "3인룸", color: "#3E7A8E" },
-  { key: "fc", label: "FC온라인존", color: "#3E6B9E" },
+  { key: "fc", label: "FC ONLINE존", color: "#3E6B9E" },
   { key: "fps", label: "FPS존", color: "#3E4F9E" },
   { key: "friends", label: "프렌즈존", color: "#6A4C9E" },
   { key: "vip", label: "VIP존", color: "#8C3E8E" },
@@ -57,7 +57,7 @@ export const SPEC_FIELDS: SpecField[] = [
   {
     id: "partition",
     label: "칸막이",
-    options: ["낮은 유리칸막이", "없음"],
+    options: ["낮은 유리칸막이", "와이드 유리칸막이", "없음"],
     def: "낮은 유리칸막이",
   },
   {
@@ -105,7 +105,7 @@ export const PC_SPEC_FIELDS: PcSpecField[] = [
   { id: "power", label: "POWER", def: "600W" },
   { id: "case", label: "CASE", def: "아센케이스 매립" },
   { id: "monitorArm", label: "모니터암", def: "아센암" },
-  { id: "monitor", label: "모니터", def: "제이씨현32인치240hz" },
+  { id: "monitor", label: "모니터", def: "제이씨현 32인치 240Hz" },
   { id: "mouse", label: "마우스", def: "G304 & 로켓(번지)" },
   { id: "keyboard", label: "키보드", def: "K400" },
   { id: "headset", label: "헤드셋", def: "G58" },
@@ -120,10 +120,12 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
   ram: ["16GB", "32GB"],
   gpu: ["RTX 5060", "RTX 5060Ti", "RX 9060"],
   monitor: [
-    "제이씨현32인치240hz",
-    "비트엠 27인치",
-    "비트엠 34인치",
-    "BenQ XL2540X+",
+    "제이씨현 32인치 240Hz",
+    "비트엠 27인치 IPS 240Hz",
+    "비트엠 34인치 울트라와이드",
+    "BenQ XL2540X+ 280Hz",
+    "큐닉스 27인치 300Hz",
+    "LG 울트라기어 GP750 240Hz",
   ],
   mouse: [
     "G304 & 로켓(번지)",
@@ -137,32 +139,32 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
 
 // 존 유형별 PC 기본사양 재정의 (없는 항목은 전역 기본값 사용)
 export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
-  vip: { monitorArm: "관절암", monitor: "비트엠 34인치" },
-  fc: { monitorArm: "관절암", monitor: "비트엠 27인치", joypad: "조이패드 포함" },
-  lol: { monitorArm: "관절암", monitor: "비트엠 27인치" },
+  vip: { monitorArm: "관절암", monitor: "비트엠 34인치 울트라와이드" },
+  fc: { monitorArm: "관절암", monitor: "큐닉스 27인치 300Hz", joypad: "조이패드 포함" },
+  lol: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   fps: {
     monitorArm: "관절암",
-    monitor: "BenQ XL2540X+",
+    monitor: "BenQ XL2540X+ 280Hz",
     mouse: "G304 & 스틸시리즈 라이벌3(번지)",
     keyboard: "Razer Huntsman V3 Pro",
     headset: "Razer BlackShark V2 Hyperspeed",
     charger: "무선충전기 (2포트 이상 어댑터 필요)",
   },
-  team: { monitorArm: "관절암", monitor: "비트엠 27인치" },
-  friends: { monitorArm: "관절암", monitor: "비트엠 27인치" },
+  team: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
+  friends: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   couple_seat: {
     monitorArm: "관절암",
-    monitor: "비트엠 27인치",
+    monitor: "비트엠 27인치 IPS 240Hz",
     mouse: "G304 + 오로치",
     headset: "앱코 N800(핑크)",
   },
   couple_room: {
     monitorArm: "관절암",
-    monitor: "비트엠 27인치",
+    monitor: "비트엠 27인치 IPS 240Hz",
     mouse: "G304 + 오로치",
     headset: "앱코 N800(핑크)",
   },
-  one_seat: { monitorArm: "관절암", monitor: "비트엠 27인치" },
+  one_seat: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
 };
 
 export function defaultPcDefaults(): PcSpecValues {

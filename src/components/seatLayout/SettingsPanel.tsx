@@ -41,6 +41,32 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
     }));
   }
 
+  // 항목 이름을 바꾸면서, 그 값을 기본값/존별 기본값으로 쓰고 있던 곳도 함께 새 이름으로 갱신한다.
+  function renameSpecOption(fieldId: SpecFieldId, oldValue: string, newValue: string) {
+    const trimmed = newValue.trim();
+    if (!trimmed || trimmed === oldValue) return;
+    setDraft((d) => {
+      const list = d.specOptions[fieldId] ?? [];
+      if (list.includes(trimmed)) return d;
+      const nextTypeDefaults = { ...d.typeDefaults };
+      for (const key of Object.keys(nextTypeDefaults) as ZoneTypeKey[]) {
+        const forType = nextTypeDefaults[key];
+        if (forType?.[fieldId] === oldValue) {
+          nextTypeDefaults[key] = { ...forType, [fieldId]: trimmed };
+        }
+      }
+      return {
+        ...d,
+        specOptions: { ...d.specOptions, [fieldId]: list.map((v) => (v === oldValue ? trimmed : v)) },
+        specDefaults:
+          d.specDefaults[fieldId] === oldValue
+            ? { ...d.specDefaults, [fieldId]: trimmed }
+            : d.specDefaults,
+        typeDefaults: nextTypeDefaults,
+      };
+    });
+  }
+
   function addPcSuggestion(fieldId: PcSpecFieldId, value: string) {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -59,6 +85,30 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
         [fieldId]: (d.pcSuggestions[fieldId] ?? []).filter((v) => v !== value),
       },
     }));
+  }
+
+  // 항목 이름을 바꾸면서, 그 값을 전역/존별 PC 기본사양으로 쓰고 있던 곳도 함께 새 이름으로 갱신한다.
+  function renamePcSuggestion(fieldId: PcSpecFieldId, oldValue: string, newValue: string) {
+    const trimmed = newValue.trim();
+    if (!trimmed || trimmed === oldValue) return;
+    setDraft((d) => {
+      const list = d.pcSuggestions[fieldId] ?? [];
+      if (list.includes(trimmed)) return d;
+      const nextPcTypeDefaults = { ...d.pcTypeDefaults };
+      for (const key of Object.keys(nextPcTypeDefaults) as ZoneTypeKey[]) {
+        const forType = nextPcTypeDefaults[key];
+        if (forType?.[fieldId] === oldValue) {
+          nextPcTypeDefaults[key] = { ...forType, [fieldId]: trimmed };
+        }
+      }
+      return {
+        ...d,
+        pcSuggestions: { ...d.pcSuggestions, [fieldId]: list.map((v) => (v === oldValue ? trimmed : v)) },
+        pcDefaults:
+          d.pcDefaults[fieldId] === oldValue ? { ...d.pcDefaults, [fieldId]: trimmed } : d.pcDefaults,
+        pcTypeDefaults: nextPcTypeDefaults,
+      };
+    });
   }
 
   function setSpecDefault(fieldId: SpecFieldId, value: string) {
@@ -96,6 +146,16 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
     }
   }
 
+  // "저장"을 누르지 않고 닫으면 추가/삭제/수정한 내용이 전부 사라진다 — 실수로 날리는 일이
+  // 없도록, 저장 안 된 변경이 있으면 닫기 전에 한 번 확인한다.
+  function handleClose() {
+    const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
+    if (dirty && !window.confirm("저장하지 않은 변경사항이 있습니다. 저장하지 않고 닫을까요?")) {
+      return;
+    }
+    onClose();
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl dark:bg-zinc-950">
@@ -103,7 +163,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">사양 설정</h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
           >
             닫기
@@ -127,6 +187,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
                   defaultValue={draft.specDefaults[f.id] ?? f.def}
                   onAdd={(v) => addSpecOption(f.id, v)}
                   onRemove={(v) => removeSpecOption(f.id, v)}
+                  onRename={(oldV, newV) => renameSpecOption(f.id, oldV, newV)}
                   onDefaultChange={(v) => setSpecDefault(f.id, v)}
                 />
               ))}
@@ -145,6 +206,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
                   freeDefault
                   onAdd={(v) => addPcSuggestion(f.id, v)}
                   onRemove={(v) => removePcSuggestion(f.id, v)}
+                  onRename={(oldV, newV) => renamePcSuggestion(f.id, oldV, newV)}
                   onDefaultChange={(v) => setPcDefault(f.id, v)}
                 />
               ))}
@@ -218,7 +280,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
         <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
           >
             취소
@@ -245,6 +307,7 @@ function OptionEditor({
   freeDefault,
   onAdd,
   onRemove,
+  onRename,
   onDefaultChange,
 }: {
   label: string;
@@ -253,14 +316,27 @@ function OptionEditor({
   freeDefault?: boolean;
   onAdd: (v: string) => void;
   onRemove: (v: string) => void;
+  onRename: (oldValue: string, newValue: string) => void;
   onDefaultChange: (v: string) => void;
 }) {
   const [draftValue, setDraftValue] = useState("");
   const [customDefaultMode, setCustomDefaultMode] = useState(false);
+  const [editingOpt, setEditingOpt] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState("");
 
   function commitAdd() {
     onAdd(draftValue);
     setDraftValue("");
+  }
+
+  function startEdit(opt: string) {
+    setEditingOpt(opt);
+    setEditingValue(opt);
+  }
+
+  function commitEdit() {
+    if (editingOpt !== null) onRename(editingOpt, editingValue);
+    setEditingOpt(null);
   }
 
   const isDefaultKnown = options.includes(defaultValue);
@@ -270,22 +346,50 @@ function OptionEditor({
     <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
       <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{label}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {options.map((opt) => (
-          <span
-            key={opt}
-            className="flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-          >
-            {opt}
-            <button
-              type="button"
-              onClick={() => onRemove(opt)}
-              aria-label={`${opt} 삭제`}
-              className="text-zinc-400 hover:text-red-600"
+        {options.map((opt) =>
+          editingOpt === opt ? (
+            <span key={opt} className="flex items-center gap-1">
+              <input
+                autoFocus
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitEdit();
+                  } else if (e.key === "Escape") {
+                    setEditingOpt(null);
+                  }
+                }}
+                onBlur={commitEdit}
+                className="w-40 rounded-full border border-zinc-300 px-2.5 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </span>
+          ) : (
+            <span
+              key={opt}
+              className="flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
             >
-              ×
-            </button>
-          </span>
-        ))}
+              <button
+                type="button"
+                onClick={() => startEdit(opt)}
+                aria-label={`${opt} 수정`}
+                title="클릭하여 이름 수정"
+                className="hover:underline"
+              >
+                {opt}
+              </button>
+              <button
+                type="button"
+                onClick={() => onRemove(opt)}
+                aria-label={`${opt} 삭제`}
+                className="text-zinc-400 hover:text-red-600"
+              >
+                ×
+              </button>
+            </span>
+          ),
+        )}
         {!options.length && <span className="text-xs text-zinc-400">등록된 항목 없음</span>}
       </div>
       <div className="mt-2 flex gap-1.5">

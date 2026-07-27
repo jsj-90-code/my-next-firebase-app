@@ -142,12 +142,47 @@ export function drawFloorPlanCard(
   return { imgX, imgY, areaW, areaH };
 }
 
+// 존끼리 인접/근접한 건 상관없지만, 존 이름표(태그)끼리 겹치면 가독성이 떨어진다.
+// 각 존 위에 기본 위치(존 좌상단 바로 위)로 이름표를 계산해둔 뒤, 이미 배치된 다른
+// 이름표와 겹치는 태그는 그 아래로 밀어내는 방식으로 겹침을 해소한다.
+function resolveTagOverlaps(
+  tags: { x: number; y: number; w: number; h: number }[],
+): { x: number; y: number; w: number; h: number }[] {
+  const GAP = 3;
+  const MAX_ITER = 100;
+  const order = tags.map((_, i) => i).sort((a, b) => tags[a].y - tags[b].y || tags[a].x - tags[b].x);
+  const placed: { x: number; y: number; w: number; h: number }[] = [];
+  const resolved: { x: number; y: number; w: number; h: number }[] = new Array(tags.length);
+
+  order.forEach((i) => {
+    const tag = { ...tags[i] };
+    let moved = true;
+    let guard = 0;
+    while (moved && guard < MAX_ITER) {
+      moved = false;
+      for (const p of placed) {
+        const overlap = tag.x < p.x + p.w && tag.x + tag.w > p.x && tag.y < p.y + p.h && tag.y + tag.h > p.y;
+        if (overlap) {
+          tag.y = p.y + p.h + GAP;
+          moved = true;
+          break;
+        }
+      }
+      guard++;
+    }
+    placed.push(tag);
+    resolved[i] = tag;
+  });
+
+  return resolved;
+}
+
 export function drawZoneOverlaysOnCard(
   c: CanvasRenderingContext2D,
   zones: (DeskZone | PcZone)[],
   geo: FloorPlanGeo,
 ) {
-  zones.forEach((z) => {
+  const rects = zones.map((z) => {
     const zx = geo.imgX + z.x * geo.areaW;
     const zy = geo.imgY + z.y * geo.areaH;
     const zw = z.w * geo.areaW;
@@ -157,16 +192,23 @@ export function drawZoneOverlaysOnCard(
     c.lineWidth = 5;
     c.strokeRect(zx, zy, zw, zh);
 
-    c.font = "bold 24px sans-serif";
+    return { z, zx, zy, zw, zh };
+  });
+
+  c.font = "bold 24px sans-serif";
+  const tagH = 30;
+  const naiveTags = rects.map(({ zx, zy, z }) => {
     const textW = c.measureText(z.name).width;
-    const tagW = textW + 18;
-    const tagH = 30;
-    const tagX = zx;
-    const tagY = Math.max(0, zy - tagH - 4);
+    return { x: zx, y: Math.max(0, zy - tagH - 4), w: textW + 18, h: tagH };
+  });
+  const tags = resolveTagOverlaps(naiveTags);
+
+  rects.forEach(({ z }, i) => {
+    const tag = tags[i];
     c.fillStyle = z.color;
-    c.fillRect(tagX, tagY, tagW, tagH);
+    c.fillRect(tag.x, tag.y, tag.w, tag.h);
     c.fillStyle = getContrastText(z.color);
-    c.fillText(z.name, tagX + 9, tagY + 20);
+    c.fillText(z.name, tag.x + 9, tag.y + 20);
   });
 }
 
@@ -392,6 +434,7 @@ export function renderOrderSummaryImage(
   projectName: string,
   zones: DeskZone[],
   seatNumberRanges: SeatNumberRangeEntry[] = [],
+  pcZones: PcZone[] = [],
 ) {
   fillBackground(c);
 
@@ -402,14 +445,25 @@ export function renderOrderSummaryImage(
   const jangpadRows = computeJangpadTable(zones);
   const headsetTotals = computeHeadsetHookTotals(zones);
   const hasSeatNumbers = seatNumberRanges.length > 0;
+  // 좌석번호는 기본적으로 책상 존 기준이지만, PC 발주 도면에서만 사양 차이로 존을 더 쪼갠
+  // 경우(예: "FPS존A"/"FPS존B") 그 PC 전용 존도 함께 나열한다.
+  const seatNumberZoneNames: string[] = [];
+  const seenSeatNumberZoneNames = new Set<string>();
+  [...zones, ...pcZones].forEach((z) => {
+    if (!seenSeatNumberZoneNames.has(z.name)) {
+      seenSeatNumberZoneNames.add(z.name);
+      seatNumberZoneNames.push(z.name);
+    }
+  });
   const seatNumberRows = hasSeatNumbers
-    ? zones
-        .map((z) => seatNumberRanges.find((r) => r.zoneName === z.name && r.ranges) && z)
-        .filter((z): z is DeskZone => Boolean(z))
-        .map((z) => {
-          const entry = seatNumberRanges.find((r) => r.zoneName === z.name)!;
-          return [z.name, entry.ranges, `${z.seats}석`];
+    ? seatNumberZoneNames
+        .map((name) => {
+          const entry = seatNumberRanges.find((r) => r.zoneName === name && r.ranges);
+          if (!entry) return null;
+          const seats = zones.find((z) => z.name === name)?.seats ?? pcZones.find((z) => z.name === name)?.seats ?? 0;
+          return [name, entry.ranges, `${seats}석`];
         })
+        .filter((row): row is [string, string, string] => Boolean(row))
     : [];
 
   const baseMainTitleH = 40;
