@@ -2743,16 +2743,23 @@ export function SeatLayoutWorkspace() {
           {activeTab !== "seatNumber" && (
             <>
               <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {selectedTypeKey
-                    ? dragHint
-                    : "존 유형을 고르지 않은 상태에서는, 도면 위 기존 구역을 클릭해서 선택하고 " +
-                      "모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다. 양쪽을 " +
-                      "번갈아 조정해도 괜찮습니다 — 위치를 바꾸면 구역 왼쪽 위에 노란 느낌표(!)가 " +
-                      "붙는데, 이건 아직 재인식 전이라는 뜻입니다. 다 조정한 뒤 Enter를 누르면 " +
-                      "재인식하고 느낌표가 사라집니다. 선택된 구역의 오른쪽 위 × 를 누르면 " +
-                      "삭제됩니다."}
-                </p>
+                {selectedTypeKey ? (
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
+                ) : (
+                  <ul className="space-y-2.5 text-sm text-zinc-600 dark:text-zinc-300">
+                    <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                      <span aria-hidden>⚠️</span>
+                      <span>존 구역 설정 시 파티션이 겹치지 않게 구역을 지정합니다. (인식 정확도에 영향)</span>
+                    </li>
+                    <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                      <span aria-hidden>⚠️</span>
+                      <span>책가방선반 설치 좌석은 구역 설정 시 브라켓 표시가 한 면이라도 겹치도록 지정합니다. (인식 정확도에 영향)</span>
+                    </li>
+                    <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
+                    <li>노란 느낌표(!)는 책상 수량/사이즈 인식 전이라는 뜻입니다. 조정 후 Enter를 누르면 재인식됩니다.</li>
+                    <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>
+                  </ul>
+                )}
               </section>
 
               <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
