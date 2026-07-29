@@ -324,26 +324,135 @@ export function renderPcFloorplanImage(
   const cardY = 15;
   const cardH = 1060 - cardY - cardBottomGap;
 
-  const overrideZonesCount = pcZones.filter((z) => z.pcOverrides && Object.keys(z.pcOverrides).length > 0).length;
-  const geometry = computeLegendGeometry(overrideZonesCount);
-  const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
-  drawZoneOverlaysOnCard(c, pcZones, geo);
+  // "LOL존A/LOL존B/LOL존C"처럼 뒤에 알파벳만 다르고 이름이 같은 계열의 존은 카드도 서로
+  // 붙어서 나오도록, 뒤에 붙은 알파벳 한 글자를 뗀 "기본 이름" 기준으로 정렬해 묶는다.
+  function baseZoneName(name: string): string {
+    return name.replace(/[A-Za-z]$/, "");
+  }
+
+  const overrideZones = pcZones
+    .map((z) => {
+      const ov = z.pcOverrides || {};
+      const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null).map((f) => ({
+        label: f.label,
+        value: ov[f.id] as string,
+      }));
+      return { zone: z, lines };
+    })
+    .filter((item) => item.lines.length > 0)
+    .sort((a, b) => {
+      const baseCmp = baseZoneName(a.zone.name).localeCompare(baseZoneName(b.zone.name));
+      return baseCmp !== 0 ? baseCmp : a.zone.name.localeCompare(b.zone.name);
+    });
 
   const panelAreaX = 20;
   const panelAreaY = 20;
-  const panelAreaW = geometry.panelAreaW;
   const basicQty = computeBasicPcQty(deskZones, pcZones);
+  // 존 이름을 그대로 따오지 않고 고정 문구로 둔다 — 멀티존A/멀티존B처럼 존 이름 뒤에 알파벳이
+  // 붙어도 이 박스 제목에는 항상 "멀티존"만 표시한다.
+  const defaultSpecLabel = "(멀티존)";
 
   const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad");
   const defHeaderH = 34;
   const defLineH = 25;
   const defBoxH = defHeaderH + Math.ceil(DEFAULT_BOX_FIELDS.length / 2) * defLineH + 10;
+  const panelTop = panelAreaY + defBoxH + 16;
+  const gap = 14;
+
+  // 존별 사양 카드는 같은 행(row)에 있는 카드끼리는 높이를 맞춰서 가로로 나란히 정렬되게 하고
+  // (스크린샷처럼 보기 편하도록), 줄이 적어 남는 자리는 그 카드 안에서 그냥 공백으로 남긴다.
+  // 행마다 필요한 높이는 그 행에서 제일 줄이 많은 카드 기준으로만 잡아서, 행끼리는 서로 다른
+  // 높이를 가질 수 있다(예: 1줄짜리 존만 있는 행은 낮고, 6줄짜리 존이 있는 행은 높게).
+  const BASE_HEADER_FONT = 25;
+  const BASE_BODY_FONT = 20;
+  const BASE_LINE_H = 30;
+  const BASE_HEADER_H = 46;
+  const MIN_COL_W = 250;
+  const basePanelAreaW = 900;
+  const baseCardX = 950;
+  const baseCardW = 955;
+  const gapBetween = 30;
+
+  function rowHeightsFor(cols: number): number[] {
+    const rows = Math.max(1, Math.ceil(overrideZones.length / cols));
+    const heights: number[] = [];
+    for (let r = 0; r < rows; r++) {
+      let maxLinesInRow = 1;
+      for (let col = 0; col < cols; col++) {
+        const item = overrideZones[r * cols + col];
+        if (item) maxLinesInRow = Math.max(maxLinesInRow, item.lines.length);
+      }
+      heights.push(BASE_HEADER_H + maxLinesInRow * BASE_LINE_H + 10);
+    }
+    return heights;
+  }
+
+  function panelAreaWForCols(cols: number): number {
+    if (cols <= 3) return basePanelAreaW;
+    const extraW = (cols - 3) * 150;
+    const maxPanelAreaW = baseCardX + baseCardW - gapBetween - panelAreaX - 480;
+    return Math.min(basePanelAreaW + extraW, maxPanelAreaW);
+  }
+
+  // 존이 많아 세로 공간이 모자라면, 도면 폭을 더 덜어오는 것 외에 패널 아래 한계선도 살짝
+  // 늘린다 — 다만 하단 제목 문구(y=1020)와 겹치지 않도록 940~1000 사이로만 늘어난다.
+  function panelBottomLimitForCols(cols: number): number {
+    const basePanelBottomLimit = 940;
+    if (cols <= 3) return basePanelBottomLimit;
+    const extraH = Math.min(60, (cols - 3) * 20);
+    return basePanelBottomLimit + extraH;
+  }
+
+  // 세로로 넘치면 폰트를 계속 줄이는 대신, 먼저 컬럼 수를 늘려(도면 폭을 좀 덜어와서) 컬럼당
+  // 카드 수를 줄여본다 — 컬럼 수별로 나오는 최종 배율(scale)이 가장 큰(=가장 읽기 좋은) 쪽을 고른다.
+  let best: { cols: number; panelAreaW: number; colW: number; scale: number } | null = null;
+
+  for (let cols = 3; cols <= 6; cols++) {
+    const panelAreaW = panelAreaWForCols(cols);
+    const colW = (panelAreaW - (cols - 1) * gap) / cols;
+    if (colW < MIN_COL_W && cols > 3) break;
+
+    const rowHeights = rowHeightsFor(cols);
+    const totalNeededH = rowHeights.reduce((s, h) => s + h, 0);
+    const availH = panelBottomLimitForCols(cols) - panelTop;
+    const heightScale = availH / totalNeededH;
+
+    c.font = `bold ${BASE_BODY_FONT}px sans-serif`;
+    let widthScale = Infinity;
+    overrideZones.forEach((item) => {
+      item.lines.forEach((ln) => {
+        c.font = `bold ${BASE_BODY_FONT}px sans-serif`;
+        const labelW = c.measureText(ln.label).width;
+        c.font = `${BASE_BODY_FONT}px sans-serif`;
+        const valueW = c.measureText(ln.value).width;
+        const needed = 18 + labelW + 10 + valueW + 6;
+        if (needed > 0) widthScale = Math.min(widthScale, colW / needed);
+      });
+    });
+    if (widthScale === Infinity) widthScale = 1;
+
+    const scale = Math.max(0.6, Math.min(1.8, Math.min(heightScale, widthScale)));
+    if (!best || scale > best.scale + 0.02) {
+      best = { cols, panelAreaW, colW, scale };
+    }
+    if (cols === 6 || colW < MIN_COL_W) break;
+  }
+
+  // overrideZones가 비어 있으면(전 존이 기본사양) 위 루프에서 best가 안 잡힐 수 있으니 안전망.
+  const chosen = best ?? { cols: 3, panelAreaW: basePanelAreaW, colW: (basePanelAreaW - 2 * gap) / 3, scale: 1 };
+  const { cols, panelAreaW, colW, scale } = chosen;
+  const cardX = panelAreaX + panelAreaW + gapBetween;
+  const cardW = baseCardX + baseCardW - cardX;
+
+  const geo = drawFloorPlanCard(c, img, cardY, cardH, cardX, cardW);
+  drawZoneOverlaysOnCard(c, pcZones, geo);
+
   c.fillStyle = "#2A2520";
   c.fillRect(panelAreaX, panelAreaY, panelAreaW, defHeaderH);
   c.fillStyle = "#ffffff";
   c.font = "bold 19px sans-serif";
   c.fillText(
-    `[ PC 기본사양 ] - ${basicQty}대 (카운터, 대체PC 포함)`,
+    `[ PC 기본사양${defaultSpecLabel} ] - ${basicQty}대 (카운터, 대체PC 포함)`,
     panelAreaX + 10,
     panelAreaY + defHeaderH * 0.7,
   );
@@ -367,43 +476,28 @@ export function renderPcFloorplanImage(
     c.fillText(pcDefaults[f.id] || f.def, lx + labelW + 10, ly + 16);
   });
 
-  const overrideZones = pcZones
-    .map((z) => {
-      const ov = z.pcOverrides || {};
-      const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null).map((f) => ({
-        label: f.label,
-        value: ov[f.id] as string,
-      }));
-      return { zone: z, lines };
-    })
-    .filter((item) => item.lines.length > 0);
-
-  const panelTop = panelAreaY + defBoxH + 16;
-  const panelBottomLimit = geometry.panelBottomLimit;
-  const maxLines = overrideZones.reduce((m, item) => Math.max(m, item.lines.length), 1);
-  const idealHeaderH = 48;
-  const LINE_H = 29;
-  const idealRowH = idealHeaderH + maxLines * LINE_H + 10;
-  const layout = computeCompactLayout(
-    overrideZones.length,
-    panelBottomLimit - panelTop,
-    idealRowH,
-    idealHeaderH,
-    25,
-    19,
-    geometry.cols,
-  );
-  const lineShrink = layout.rowH / idealRowH;
-  const colW = (panelAreaW - (layout.cols - 1) * 14) / layout.cols;
+  const rowH = rowHeightsFor(cols).map((h) => h * scale);
+  const rowY: number[] = [];
+  {
+    let acc = panelTop;
+    rowH.forEach((h) => {
+      rowY.push(acc);
+      acc += h;
+    });
+  }
+  const headerH = BASE_HEADER_H * scale;
+  const headerFont = Math.max(10, Math.round(BASE_HEADER_FONT * scale));
+  const bodyFont = Math.max(10, Math.round(BASE_BODY_FONT * scale));
+  const lineH = BASE_LINE_H * scale;
 
   overrideZones.forEach((item, idx) => {
     const z = item.zone;
-    const col = idx % layout.cols;
-    const row = Math.floor(idx / layout.cols);
-    const px = panelAreaX + col * (colW + 14);
-    const py = panelTop + row * layout.rowH;
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    const px = panelAreaX + col * (colW + gap);
+    const py = rowY[row];
     const pw = colW;
-    const ph = layout.rowH - 10;
+    const ph = rowH[row] - 10 * scale;
     const textColor = getContrastText(z.color);
     const bodyBg = tintColor(z.color, 0.93);
     const labelBg = tintColor(z.color, 0.72);
@@ -414,21 +508,22 @@ export function renderPcFloorplanImage(
     c.lineWidth = 2;
     c.strokeRect(px, py, pw, ph);
     c.fillStyle = z.color;
-    c.fillRect(px, py, pw, layout.headerH);
+    c.fillRect(px, py, pw, headerH);
     c.fillStyle = textColor;
-    c.font = `bold ${layout.headerFont}px sans-serif`;
-    c.fillText(`[${z.name}- ${z.seats}대]`, px + 8, py + layout.headerH * 0.68);
+    c.font = `bold ${headerFont}px sans-serif`;
+    c.fillText(`[${z.name}- ${z.seats}대]`, px + 8, py + headerH * 0.68);
 
-    const lineH = LINE_H * lineShrink;
+    // 줄 높이는 카드 자기 줄 수로 나누지 않고 패널 전체와 같은 고정값을 쓴다 — 그래서 같은 행
+    // 안에서 줄이 적은 카드는 나머지 칸을 억지로 채우지 않고 그냥 아래쪽에 공백으로 남는다.
     item.lines.forEach((ln, li) => {
-      const ly = py + layout.headerH + li * lineH;
-      c.font = `bold ${layout.bodyFont}px sans-serif`;
+      const ly = py + headerH + li * lineH;
+      c.font = `bold ${bodyFont}px sans-serif`;
       const labelW = c.measureText(ln.label).width;
       c.fillStyle = labelBg;
       c.fillRect(px + 4, ly + 4, labelW + 10, lineH - 8);
       c.fillStyle = "#2A2520";
       c.fillText(ln.label, px + 9, ly + lineH * 0.68);
-      c.font = `${layout.bodyFont}px sans-serif`;
+      c.font = `${bodyFont}px sans-serif`;
       c.fillText(ln.value, px + 18 + labelW, ly + lineH * 0.68);
       if (li < item.lines.length - 1) {
         c.strokeStyle = "#E5DFD3";

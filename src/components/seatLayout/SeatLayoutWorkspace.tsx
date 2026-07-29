@@ -572,16 +572,18 @@ export function SeatLayoutWorkspace() {
     return px >= rectPx.x && px <= rectPx.x + rectPx.w && py >= rectPx.y && py <= rectPx.y + rectPx.h;
   }
 
-  // 존 유형을 고르지 않았을 때: 기존 구역 클릭 → 선택, 삭제 아이콘/모서리/안쪽 클릭에 따라
-  // 삭제·크기조절·이동 드래그를 시작한다.
-  function handleZoneSelectMouseDown(px: number, py: number, canvas: HTMLCanvasElement) {
+  // 기존 구역 클릭 → 선택, 삭제 아이콘/모서리/안쪽 클릭에 따라 삭제·크기조절·이동 드래그를
+  // 시작한다. 존 유형을 선택한 상태에서도 이 함수를 먼저 태워서 기존 구역을 편집할 수 있게
+  // 해야 하므로, 실제로 뭔가(삭제/리사이즈/이동)를 처리했는지를 반환해서 호출부가 "새 구역
+  // 그리기로 넘어가도 되는지"를 판단할 수 있게 한다.
+  function handleZoneSelectMouseDown(px: number, py: number, canvas: HTMLCanvasElement): boolean {
     if (selectedZoneIndex !== null && selectedZoneIndex < activeZones.length) {
       const selectedZone = activeZones[selectedZoneIndex];
       const rectPx = rectToPx(selectedZone, canvas);
       if (hitTestDeleteIcon(rectPx, px, py)) {
         deleteZone(selectedZoneIndex);
         setSelectedZoneIndex(null);
-        return;
+        return true;
       }
       const handle = hitTestZoneHandle(rectPx, px, py);
       if (handle) {
@@ -600,7 +602,7 @@ export function SeatLayoutWorkspace() {
           currentRect: startRect,
           moved: false,
         };
-        return;
+        return true;
       }
     }
 
@@ -618,11 +620,12 @@ export function SeatLayoutWorkspace() {
           currentRect: startRect,
           moved: false,
         };
-        return;
+        return true;
       }
     }
 
     setSelectedZoneIndex(null);
+    return false;
   }
 
   function handleCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -642,10 +645,15 @@ export function SeatLayoutWorkspace() {
     const px = (e.clientX - rect.left) * (canvas.width / rect.width);
     const py = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-    // 존 유형을 안 골랐으면 "새로 그리기"가 아니라 "기존 구역 선택/편집" 모드다.
-    if (!selectedTypeKey) {
-      handleZoneSelectMouseDown(px, py, canvas);
-      return;
+    // 존 유형을 선택했더라도, 클릭한 지점에 기존 구역(또는 그 구역의 삭제 아이콘/모서리
+    // 핸들)이 있으면 새로 그리기보다 그 구역을 선택/편집하는 걸 우선한다 — 존 유형이 선택돼
+    // 있으면 항상 새 구역 그리기만 되고 기존 구역을 수정할 수 없던 문제를 고친 것. 단, 이미
+    // 첫 번째 모서리를 찍어 두 번째 클릭(반대쪽 모서리)을 기다리는 중이면 이 판단을 건너뛴다.
+    if (!pendingStartRef.current) {
+      const hitExisting = handleZoneSelectMouseDown(px, py, canvas);
+      if (hitExisting || !selectedTypeKey) {
+        return;
+      }
     }
 
     if (!pendingStartRef.current) {
@@ -2104,7 +2112,7 @@ export function SeatLayoutWorkspace() {
             onClick={handlePublishToSlides}
             className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
           >
-            공유 프레젠테이션에 등록
+            책상의자PC범례 데이터 등록
           </button>
           {presentationUrl && (
             <a
@@ -2544,6 +2552,29 @@ export function SeatLayoutWorkspace() {
               있어요 — 틀린 부분은 아래에서 직접 고치면 됩니다.
             </p>
 
+            {/* 스크롤해서 아래로 내려가야 겨우 보이던 문제 때문에, 등록 버튼은 이 탭 맨 위(업로드
+                입력 바로 아래)에 둔다 — 좌석번호를 아직 안 채웠으면 눌러도 에러 메시지만 뜬다. */}
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={openSeatNumberSheetDialog}
+                className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+              >
+                좌석번호표 발주 등록
+              </button>
+              {seatNumberSheetUrl && (
+                <a
+                  href={seatNumberSheetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+                >
+                  시트 열기 ↗
+                </a>
+              )}
+            </div>
+
             {pdfPickerPages && pdfPickerTarget === "seatNumberPlate" && (
               <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
                 <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
@@ -2652,26 +2683,6 @@ export function SeatLayoutWorkspace() {
                     </div>
                   );
                 })}
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={openSeatNumberSheetDialog}
-                    className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
-                  >
-                    좌석번호표 시트 등록
-                  </button>
-                  {seatNumberSheetUrl && (
-                    <a
-                      href={seatNumberSheetUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
-                    >
-                      시트 열기 ↗
-                    </a>
-                  )}
-                </div>
               </div>
             )}
           </section>
