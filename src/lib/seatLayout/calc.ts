@@ -197,6 +197,49 @@ export type CompactLayout = {
   bodyFont: number;
 };
 
+// 존 12개(기존 3열x4행 기준)를 넘어가는 순간부터 압축이 심해지던 문제를 완화하기 위한 기준값.
+// 이 개수를 넘으면 컬럼 수를 늘리고, 범례 영역도 넓혀서(computeLegendGeometry) 글자 축소 폭을 줄인다.
+export const ZONE_LEGEND_OVERFLOW_THRESHOLD = 12;
+
+export type LegendGeometry = {
+  cols: number;
+  panelAreaW: number;
+  panelBottomLimit: number;
+  cardX: number;
+  cardW: number;
+};
+
+// 존 카드(사양표) 개수에 따라 컬럼 수와 범례 가로/세로 사용 가능 영역을 정하고, 그만큼을
+// 우측 도면 카드 폭에서 덜어온다 — "12개 넘으면 도면/표 크기를 둘 다 줄여서 한 슬라이드에 담는다".
+export function computeLegendGeometry(count: number): LegendGeometry {
+  const basePanelAreaW = 900;
+  const basePanelBottomLimit = 940;
+  const baseCardX = 950;
+  const baseCardW = 955;
+
+  if (count <= ZONE_LEGEND_OVERFLOW_THRESHOLD) {
+    return {
+      cols: 3,
+      panelAreaW: basePanelAreaW,
+      panelBottomLimit: basePanelBottomLimit,
+      cardX: baseCardX,
+      cardW: baseCardW,
+    };
+  }
+
+  const excess = count - ZONE_LEGEND_OVERFLOW_THRESHOLD;
+  const cols = count <= 20 ? 4 : 5;
+  const extraW = Math.min(220, excess * 18);
+  const extraH = Math.min(100, excess * 8);
+  const panelAreaW = basePanelAreaW + extraW;
+  const panelBottomLimit = basePanelBottomLimit + extraH;
+  const gapBetween = 30;
+  const cardX = 20 + panelAreaW + gapBetween;
+  const cardW = baseCardX + baseCardW - cardX;
+
+  return { cols, panelAreaW, panelBottomLimit, cardX, cardW };
+}
+
 // 존 개수가 많아져도 카드가 화면 밖으로 넘치지 않도록 자동으로 축소
 export function computeCompactLayout(
   count: number,
@@ -205,8 +248,8 @@ export function computeCompactLayout(
   idealHeaderH: number,
   idealHeaderFont: number,
   idealBodyFont: number,
+  cols: number,
 ): CompactLayout {
-  const cols = 3;
   const rows = Math.max(1, Math.ceil(count / cols));
   const neededH = rows * idealRowH;
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));

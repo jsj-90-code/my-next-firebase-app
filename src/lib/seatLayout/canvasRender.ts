@@ -9,6 +9,7 @@ import {
   computeDeskSummary,
   computeHeadsetHookTotals,
   computeJangpadTable,
+  computeLegendGeometry,
   computePcTotal,
   getContrastText,
   getZoneSizeEntries,
@@ -114,9 +115,9 @@ export function drawFloorPlanCard(
   img: HTMLImageElement,
   cardY: number,
   cardH: number,
+  cardX = 950,
+  cardW = 955,
 ): FloorPlanGeo {
-  const cardX = 950;
-  const cardW = 955;
   c.fillStyle = "#ffffff";
   c.fillRect(cardX, cardY, cardW, cardH);
   c.strokeStyle = "#D9D2C4";
@@ -231,15 +232,24 @@ export function renderDeskFloorplanImage(
   const cardY = 15;
   const cardH = 1060 - cardY - cardBottomGap;
 
-  const geo = drawFloorPlanCard(c, img, cardY, cardH);
+  const geometry = computeLegendGeometry(zones.length);
+  const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
   drawZoneOverlaysOnCard(c, zones, geo);
 
   const panelAreaX = 20;
   const panelAreaY = 20;
-  const panelAreaW = 900;
-  const panelBottomLimit = 940;
+  const panelAreaW = geometry.panelAreaW;
+  const panelBottomLimit = geometry.panelBottomLimit;
   const gap = 14;
-  const layout = computeCompactLayout(zones.length, panelBottomLimit - panelAreaY, 225, 48, 25, 19);
+  const layout = computeCompactLayout(
+    zones.length,
+    panelBottomLimit - panelAreaY,
+    225,
+    48,
+    25,
+    19,
+    geometry.cols,
+  );
   const colW = (panelAreaW - (layout.cols - 1) * gap) / layout.cols;
   const specLabels = ["책상", "책상사이즈", "쿨러", "칸막이", "모니터암", "의자"];
 
@@ -314,12 +324,14 @@ export function renderPcFloorplanImage(
   const cardY = 15;
   const cardH = 1060 - cardY - cardBottomGap;
 
-  const geo = drawFloorPlanCard(c, img, cardY, cardH);
+  const overrideZonesCount = pcZones.filter((z) => z.pcOverrides && Object.keys(z.pcOverrides).length > 0).length;
+  const geometry = computeLegendGeometry(overrideZonesCount);
+  const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
   drawZoneOverlaysOnCard(c, pcZones, geo);
 
   const panelAreaX = 20;
   const panelAreaY = 20;
-  const panelAreaW = 900;
+  const panelAreaW = geometry.panelAreaW;
   const basicQty = computeBasicPcQty(deskZones, pcZones);
 
   const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad");
@@ -367,12 +379,20 @@ export function renderPcFloorplanImage(
     .filter((item) => item.lines.length > 0);
 
   const panelTop = panelAreaY + defBoxH + 16;
-  const panelBottomLimit = 940;
+  const panelBottomLimit = geometry.panelBottomLimit;
   const maxLines = overrideZones.reduce((m, item) => Math.max(m, item.lines.length), 1);
   const idealHeaderH = 48;
   const LINE_H = 29;
   const idealRowH = idealHeaderH + maxLines * LINE_H + 10;
-  const layout = computeCompactLayout(overrideZones.length, panelBottomLimit - panelTop, idealRowH, idealHeaderH, 25, 19);
+  const layout = computeCompactLayout(
+    overrideZones.length,
+    panelBottomLimit - panelTop,
+    idealRowH,
+    idealHeaderH,
+    25,
+    19,
+    geometry.cols,
+  );
   const lineShrink = layout.rowH / idealRowH;
   const colW = (panelAreaW - (layout.cols - 1) * 14) / layout.cols;
 

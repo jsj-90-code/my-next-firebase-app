@@ -2122,7 +2122,7 @@ export function SeatLayoutWorkspace() {
             onClick={handlePublishDeskOrder}
             className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
           >
-            통합발주서 등록
+            인테/가맹 통합발주서 등록
           </button>
           {deskOrderSheetUrl && (
             <a
@@ -2460,8 +2460,12 @@ export function SeatLayoutWorkspace() {
                   onChange={handleFileChange}
                   className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
                 />
-                <p className="mt-1 text-xs text-zinc-400">
-                  도면은 모든 탭에서 공통으로 사용됩니다. PDF는 화면 캡처보다 훨씬 선명해요.
+                <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-500">
+                  도면은 모든 탭에서 공통으로 사용됩니다.
+                  <br />
+                  💡 도면 이미지는 PDF로 등록하세요 — 화면 캡처보다 훨씬 선명해요.
+                  <br />
+                  💡 책가방선반 브라켓 표시가 있는 도면을 사용하세요 — 헤드셋걸이 종류가 자동으로 구분돼요.
                 </p>
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
