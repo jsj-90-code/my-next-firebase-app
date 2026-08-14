@@ -1029,7 +1029,7 @@ export function SeatLayoutWorkspace() {
   }
 
   async function runSeatNumberRecognize(dataUrlOverride?: string) {
-    const dataUrl = dataUrlOverride ?? rawSeatNumberPlateDataUrl;
+    const dataUrl = dataUrlOverride ?? rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl;
     if (!user || !dataUrl) return;
     const recognitionZones = getSeatNumberRecognitionZones();
     if (!recognitionZones.length) {
