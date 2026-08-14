@@ -23,9 +23,10 @@ export const ZONE_TYPES: ZoneType[] = [
   { key: "friends", label: "프렌즈존", color: "#6A4C9E" },
   { key: "vip", label: "VIP존", color: "#8C3E8E" },
   { key: "couple_seat", label: "커플석", color: "#B33E76" },
-  { key: "couple_room", label: "커플룸", color: "#8C2F58" },
+  { key: "couple_room", label: "커플존", color: "#8C2F58" },
   { key: "buff", label: "버프존", color: "#7A5C4A" },
   { key: "progamer", label: "리얼프로게이머존", color: "#4A4E5C" },
+  { key: "desk_only", label: "책상만 설치", color: "#6B6B6B" },
   { key: "etc", label: "기타(직접입력)", color: "#8D7B68" },
 ];
 
@@ -87,6 +88,8 @@ export const TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, Partial<Record<SpecField
   fps: { desk: "퍼스트클래스", monitorArm: "관절암" },
   friends: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
   vip: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
+  // 책상만 설치하고 PC/쿨러/모니터암/의자는 없는 존 (칸막이는 전역 기본값인 "낮은 유리칸막이" 그대로).
+  desk_only: { cooler: "해당없음", monitorArm: "해당없음", chair: "해당없음" },
 };
 
 export type PcSpecField = {

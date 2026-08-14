@@ -1021,7 +1021,7 @@ export function SeatLayoutWorkspace() {
     const ctx = cv.getContext("2d");
     if (!ctx) return null;
     if (project.pcZones.length) {
-      renderPcFloorplanImage(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
+      renderPcFloorplanImage(ctx, imgEl, project.name, project.pcZones, pcDefaults);
     } else {
       renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
     }
@@ -1267,7 +1267,7 @@ export function SeatLayoutWorkspace() {
           z.typeKey = editTypeDraft;
           z.name = newName;
           z.color = newColor;
-          z.seats = Number(seatsDraft) || 0;
+          z.seats = Math.max(0, Number(seatsDraft) || 0);
           z.pcOverrides = computePcOverrides();
           pcZones[editingIndex] = z;
           return { ...p, pcZones };
@@ -1307,11 +1307,9 @@ export function SeatLayoutWorkspace() {
       };
       setProject((p) => ({ ...p, zones: [...p.zones, zNew] }));
     } else {
-      const seats = Number(seatsDraft) || 0;
-      if (seats <= 0) {
-        setStatusMsg("대수가 0입니다. 확인해주세요.", "error");
-        return;
-      }
+      // 책상은 있지만 PC는 없는 존(예: 라운지 책상)을 표시만 하고 발주 수량엔 안 넣고 싶을 수
+      // 있어서, 0대 등록도 허용한다.
+      const seats = Math.max(0, Number(seatsDraft) || 0);
       const zNew: PcZone = {
         ...curRect,
         name,
@@ -1342,7 +1340,7 @@ export function SeatLayoutWorkspace() {
   }
 
   // ---------------- PC 기본사양 ----------------
-  const basicPcQty = computeBasicPcQty(project.zones, project.pcZones);
+  const basicPcQty = computeBasicPcQty(project.pcZones);
 
   function savePcDefaults() {
     const merged: PcSpecValues = {};
@@ -1408,7 +1406,8 @@ export function SeatLayoutWorkspace() {
           name: z.name,
           typeKey: z.typeKey,
           color: z.color,
-          seats: z.seats,
+          // "책상만 설치" 존은 PC가 없는 존이라, 책상 좌석수를 그대로 옮기지 않고 0대로 불러온다.
+          seats: z.typeKey === "desk_only" ? 0 : z.seats,
           pcOverrides: overrides,
         };
       });
@@ -1797,7 +1796,7 @@ export function SeatLayoutWorkspace() {
     renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
     const desk = { key: "desk", label: "책상발주도면", dataUrl: cv.toDataURL("image/png") };
 
-    renderPcFloorplanImage(ctx, imgEl, project.name, project.zones, project.pcZones, pcDefaults);
+    renderPcFloorplanImage(ctx, imgEl, project.name, project.pcZones, pcDefaults);
     const pc = { key: "pc", label: "PC발주도면", dataUrl: cv.toDataURL("image/png") };
 
     renderOrderSummaryImage(ctx, project.name, project.zones, project.seatNumberRanges, project.pcZones);
@@ -3171,6 +3170,7 @@ function ZoneForm(props: ZoneFormProps) {
               placeholder="10"
               className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             />
+            <p className="mt-1 text-xs text-zinc-400">책상은 있지만 PC가 없는 존은 0을 입력하세요.</p>
           </div>
           {mode === "edit" && (
             <div className="border-t border-dashed border-zinc-200 pt-3 dark:border-zinc-800">

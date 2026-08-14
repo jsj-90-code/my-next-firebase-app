@@ -21,6 +21,7 @@ export type ZoneTypeKey =
   | "couple_room"
   | "buff"
   | "progamer"
+  | "desk_only"
   | "etc";
 
 export type ZoneType = {

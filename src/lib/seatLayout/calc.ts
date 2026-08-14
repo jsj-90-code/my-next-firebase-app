@@ -146,15 +146,19 @@ export function computeDeskSeatsSum(zones: DeskZone[]): number {
 export type HeadsetHookTotals = { irock: number; isense: number };
 
 // 가방 선반 브라켓이 있는 좌석 = 아이락스 헤드셋걸이, 나머지 좌석 = 아이센스 헤드셋걸이.
+// "책상만 설치" 존은 PC/헤드셋 모두 없는 존이라 집계에서 제외한다.
 export function computeHeadsetHookTotals(zones: DeskZone[]): HeadsetHookTotals {
-  const irock = zones.reduce((s, z) => s + Math.min(Number(z.bagShelfCount) || 0, Number(z.seats) || 0), 0);
-  const isense = Math.max(0, computeDeskSeatsSum(zones) - irock);
+  const eligible = zones.filter((z) => z.typeKey !== "desk_only");
+  const irock = eligible.reduce((s, z) => s + Math.min(Number(z.bagShelfCount) || 0, Number(z.seats) || 0), 0);
+  const isense = Math.max(0, computeDeskSeatsSum(eligible) - irock);
   return { irock, isense };
 }
 
-// 총 PC수 = 책상 탭 좌석 합계 + 2 (카운터 1대 + 대체PC 1대)
-export function computePcTotal(deskZones: DeskZone[]): number {
-  return computeDeskSeatsSum(deskZones) + 2;
+// 총 PC수 = PC 존에 실제로 등록된 대수 합계 + 2 (카운터 1대 + 대체PC 1대).
+// 책상 좌석수를 그대로 쓰지 않는 이유: 책상은 있지만 PC는 없는 존(예: 라운지 책상)이 있을 수
+// 있어서, PC 탭에서 그 존을 0대로 두거나 아예 빼면 총 수량에도 그대로 반영되어야 하기 때문.
+export function computePcTotal(pcZones: PcZone[]): number {
+  return pcZones.reduce((s, z) => s + (Number(z.seats) || 0), 0) + 2;
 }
 
 export function computeOverriddenPcSeatsSum(pcZones: PcZone[]): number {
@@ -163,8 +167,8 @@ export function computeOverriddenPcSeatsSum(pcZones: PcZone[]): number {
     .reduce((s, z) => s + (Number(z.seats) || 0), 0);
 }
 
-export function computeBasicPcQty(deskZones: DeskZone[], pcZones: PcZone[]): number {
-  return computePcTotal(deskZones) - computeOverriddenPcSeatsSum(pcZones);
+export function computeBasicPcQty(pcZones: PcZone[]): number {
+  return computePcTotal(pcZones) - computeOverriddenPcSeatsSum(pcZones);
 }
 
 export function tintColor(hex: string, amt: number): string {

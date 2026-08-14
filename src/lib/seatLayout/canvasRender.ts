@@ -218,6 +218,22 @@ function fillBackground(c: CanvasRenderingContext2D) {
   c.fillRect(0, 0, COMPOSITE_W, COMPOSITE_H);
 }
 
+// 존 카드의 사양 값(예: 사이즈가 2종류 이상 섞인 "책상사이즈")이 칸 폭보다 길어지면
+// 옆 칸 카드에 그대로 덮여 잘려 보이던 문제를 막기 위해, 칸 폭에 맞을 때까지 글자 크기를 줄인다.
+function fitValueFontSize(
+  c: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  baseSize: number,
+  minSize = 10,
+): number {
+  if (!text || maxWidth <= 0) return baseSize;
+  c.font = `${baseSize}px sans-serif`;
+  const baseWidth = c.measureText(text).width;
+  if (baseWidth <= maxWidth) return baseSize;
+  return Math.max(minSize, Math.floor((maxWidth / baseWidth) * baseSize));
+}
+
 // 책상 발주 도면: 표(베젤/합계)는 renderOrderSummaryImage로 분리되었으므로,
 // 그만큼 비는 공간을 도면 카드 높이를 늘려서 채운다.
 export function renderDeskFloorplanImage(
@@ -289,7 +305,9 @@ export function renderDeskFloorplanImage(
       c.fillRect(px + 4, ly + 4, labelW + 10, lineH - 8);
       c.fillStyle = "#2A2520";
       c.fillText(label, px + 9, ly + lineH * 0.68);
-      c.font = `${layout.bodyFont}px sans-serif`;
+      const valueMaxW = pw - 22 - labelW;
+      const valueFont = fitValueFontSize(c, values[li], valueMaxW, layout.bodyFont);
+      c.font = `${valueFont}px sans-serif`;
       c.fillText(values[li], px + 18 + labelW, ly + lineH * 0.68);
       if (li < specLabels.length - 1) {
         c.strokeStyle = "#E5DFD3";
@@ -314,7 +332,6 @@ export function renderPcFloorplanImage(
   c: CanvasRenderingContext2D,
   img: HTMLImageElement,
   projectName: string,
-  deskZones: DeskZone[],
   pcZones: PcZone[],
   pcDefaults: PcSpecValues,
 ) {
@@ -347,7 +364,7 @@ export function renderPcFloorplanImage(
 
   const panelAreaX = 20;
   const panelAreaY = 20;
-  const basicQty = computeBasicPcQty(deskZones, pcZones);
+  const basicQty = computeBasicPcQty(pcZones);
   // 존 이름을 그대로 따오지 않고 고정 문구로 둔다 — 멀티존A/멀티존B처럼 존 이름 뒤에 알파벳이
   // 붙어도 이 박스 제목에는 항상 "멀티존"만 표시한다.
   const defaultSpecLabel = "(멀티존)";
@@ -536,7 +553,7 @@ export function renderPcFloorplanImage(
     });
   });
 
-  const totalPc = computePcTotal(deskZones);
+  const totalPc = computePcTotal(pcZones);
   c.fillStyle = "#2A2520";
   c.font = "bold 48px sans-serif";
   c.fillText(`${projectName || "매장명"}_PC ${totalPc}대(카운터,대체PC포함)`, panelAreaX, 1020);
