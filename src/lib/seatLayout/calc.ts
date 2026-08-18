@@ -110,19 +110,88 @@ const SKIP_ORDER_VALUES = new Set(["없음", "해당없음"]);
 
 export type OrderSummaryRow = { field: string; value: string; qty: number };
 
-// CPU/RAM/GPU는 한 세트로 묶어서 조립(업그레이드) 발주해야 하는 값이라(예: CPU/GPU/RAM을 함께
-// 올린 존은 그 조합 그대로 한 세트로 주문), 개별 항목 합계표에서는 빼고 computePcSetSummary로
-// 따로 묶어서 보여준다. 나머지 부품(모니터/키보드/마우스/모니터암 등)은 현장에서 개별
-// 설치되는 주변기기라 세트 구분 없이 그대로 항목별 합계면 충분하다.
-const PC_SET_FIELD_IDS = new Set<PcSpecFieldId>(["cpu", "ram", "gpu"]);
+// CPU/RAM/GPU/M·B/POWER/CPU쿨러는 한 세트로 묶어서 조립(업그레이드) 발주해야 하는 값이라
+// (예: 이 중 하나라도 함께 올린 존은 그 조합 그대로 한 세트로 주문), 개별 항목 합계표에서는
+// 빼고 computePcSetSummary로 따로 묶어서 보여준다. 나머지 부품(모니터/키보드/마우스/모니터암
+// 등)은 현장에서 개별 설치되는 주변기기라 세트 구분 없이 그대로 항목별 합계면 충분하다.
+const PC_SET_FIELD_IDS = new Set<PcSpecFieldId>(["cpu", "ram", "gpu", "mb", "power", "cpuCooler"]);
 
-// PC 발주 사양(모니터암/키보드/마우스 등) 값별 수량 합계. 존별 개별 지정값이 있으면 그 값을,
-// 없으면 전역 PC 기본사양을 쓴다 — PC 발주 도면/좌석번호표에서 실제로 적용되는 값과 동일한
-// 우선순위다.
+// 마우스 값은 "G304 & 로켓(번지)"처럼 "본체 & 부속품" 형태로 저장돼있다. 부속품(번지/거치대 등)
+// 수량은 본체와 따로 취합해야 해서, " & "/" + " 구분자로 나눠 앞부분(본체)과 뒷부분(부속품)을
+// 각각 별도 항목으로 집계한다.
+const MOUSE_SPLIT_RE = /\s*[&+]\s*/;
+const MOUSE_EXTRA_LABEL = "마우스 부속품";
+
+function splitMouseValue(value: string): string[] {
+  return value
+    .split(MOUSE_SPLIT_RE)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
+  const mainMap = new Map<string, number>();
+  const extraMap = new Map<string, number>();
+  pcZones.forEach((z) => {
+    const qty = Number(z.seats) || 0;
+    if (!qty) return;
+    const value = z.pcOverrides?.mouse ?? pcDefaults.mouse ?? def;
+    if (!value || SKIP_ORDER_VALUES.has(value)) return;
+    const [main, ...extras] = splitMouseValue(value);
+    if (main) mainMap.set(main, (mainMap.get(main) ?? 0) + qty);
+    extras.forEach((extra) => extraMap.set(extra, (extraMap.get(extra) ?? 0) + qty));
+  });
+
+  const rows: OrderSummaryRow[] = [];
+  Array.from(mainMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([value, qty]) => rows.push({ field: "마우스", value, qty }));
+  Array.from(extraMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([value, qty]) => rows.push({ field: MOUSE_EXTRA_LABEL, value, qty }));
+  return rows;
+}
+
+// 카운터 PC(1대)/대체 PC(1대)는 특정 존에 속하지 않아 좌석 데이터로 집계되지 않지만, 실제로는
+// 케이스가 필요한 PC라 여기서 고정 수량으로 더한다 — 카운터는 일반 케이스, 대체 PC는 손님
+// 좌석과 동일하게(전역 기본 케이스) 들어간다.
+const COUNTER_PC_CASE = "일반 케이스";
+const COUNTER_PC_CASE_QTY = 1;
+const SPARE_PC_CASE_QTY = 1;
+
+function computeCaseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
+  const map = new Map<string, number>();
+  const add = (value: string, qty: number) => {
+    if (!value || SKIP_ORDER_VALUES.has(value)) return;
+    map.set(value, (map.get(value) ?? 0) + qty);
+  };
+  pcZones.forEach((z) => {
+    const qty = Number(z.seats) || 0;
+    if (!qty) return;
+    add(z.pcOverrides?.case ?? pcDefaults.case ?? def, qty);
+  });
+  add(pcDefaults.case ?? def, SPARE_PC_CASE_QTY);
+  add(COUNTER_PC_CASE, COUNTER_PC_CASE_QTY);
+  return Array.from(map.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([value, qty]) => ({ field: "CASE", value, qty }));
+}
+
+// PC 발주 사양(모니터암/키보드/마우스/CASE 등) 값별 수량 합계. 존별 개별 지정값이 있으면 그
+// 값을, 없으면 전역 PC 기본사양을 쓴다 — PC 발주 도면/좌석번호표에서 실제로 적용되는 값과
+// 동일한 우선순위다.
 export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValues): OrderSummaryRow[] {
   const rows: OrderSummaryRow[] = [];
   PC_SPEC_FIELDS.forEach((f) => {
     if (PC_SET_FIELD_IDS.has(f.id)) return;
+    if (f.id === "mouse") {
+      rows.push(...computeMouseRows(pcZones, pcDefaults, f.def));
+      return;
+    }
+    if (f.id === "case") {
+      rows.push(...computeCaseRows(pcZones, pcDefaults, f.def));
+      return;
+    }
     const map = new Map<string, number>();
     pcZones.forEach((z) => {
       const qty = Number(z.seats) || 0;
@@ -138,12 +207,20 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
   return rows;
 }
 
-export type PcSetRow = { cpu: string; ram: string; gpu: string; qty: number };
+export type PcSetRow = {
+  cpu: string;
+  ram: string;
+  gpu: string;
+  mb: string;
+  power: string;
+  cpuCooler: string;
+  qty: number;
+};
 
-// 한 존에서 CPU/RAM/GPU 중 하나라도 기본사양과 다르게(업그레이드) 지정되면, 그 조합 전체를
-// 한 세트로 묶어서 수량을 합산한다. 조립 PC는 CPU/GPU/RAM을 따로따로 시킬 수 없고 한 세트로
-// 발주해야 하기 때문에, 이 셋을 개별 항목으로 쪼개서 세면 "CPU 10개 + GPU 10개"처럼 보여도
-// 실제로는 서로 다른 존의 조합이 섞여 몇 세트를 시켜야 하는지 알 수 없다.
+// 한 존에서 CPU/RAM/GPU/M·B/POWER/CPU쿨러 중 하나라도 기본사양과 다르게(업그레이드) 지정되면,
+// 그 조합 전체를 한 세트로 묶어서 수량을 합산한다. 조립 PC는 부품을 따로따로 시킬 수 없고 한
+// 세트로 발주해야 하기 때문에, 이 항목들을 개별로 쪼개서 세면 "CPU 10개 + GPU 10개"처럼
+// 보여도 실제로는 서로 다른 존의 조합이 섞여 몇 세트를 시켜야 하는지 알 수 없다.
 export function computePcSetSummary(pcZones: PcZone[], pcDefaults: PcSpecValues): PcSetRow[] {
   const spec = (z: PcZone, id: PcSpecFieldId): string => {
     const def = PC_SPEC_FIELDS.find((f) => f.id === id)?.def ?? "";
@@ -157,10 +234,13 @@ export function computePcSetSummary(pcZones: PcZone[], pcDefaults: PcSpecValues)
     const cpu = spec(z, "cpu");
     const ram = spec(z, "ram");
     const gpu = spec(z, "gpu");
-    const key = `${cpu}|${ram}|${gpu}`;
+    const mb = spec(z, "mb");
+    const power = spec(z, "power");
+    const cpuCooler = spec(z, "cpuCooler");
+    const key = `${cpu}|${ram}|${gpu}|${mb}|${power}|${cpuCooler}`;
     const existing = map.get(key);
     if (existing) existing.qty += qty;
-    else map.set(key, { cpu, ram, gpu, qty });
+    else map.set(key, { cpu, ram, gpu, mb, power, cpuCooler, qty });
   });
 
   return Array.from(map.values()).sort((a, b) => b.qty - a.qty);

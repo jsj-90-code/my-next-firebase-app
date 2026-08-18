@@ -689,13 +689,21 @@ export function renderOrderSummaryImage(
     drawTable(c, marginX, y, summaryColW.reduce((s, w) => s + w, 0), headerH, rowH, summaryCols, summaryRows, shrink) +
     sectionGap;
 
-  // [ PC 세트 구성 ] — CPU/RAM/GPU는 한 존 안에서 같이 업그레이드되면 한 세트로 묶어서
-  // 발주해야 하므로(부품별로 따로 시키면 어느 존 조합인지 알 수 없다), 조합별로 수량을 묶어서
-  // 보여준다. 나머지 부품은 현장에서 개별 설치하는 주변기기라 아래 [ PC 발주 합계 ]에 그대로
-  // 항목별로 나열한다.
+  // [ PC 세트 구성 ] — CPU/RAM/VGA/M·B/POWER/CPU쿨러는 한 존 안에서 같이 업그레이드되면 한
+  // 세트로 묶어서 발주해야 하므로(부품별로 따로 시키면 어느 존 조합인지 알 수 없다), 조합별로
+  // 수량을 묶어서 보여준다. 나머지 부품은 현장에서 개별 설치하는 주변기기라 아래
+  // [ PC 발주 합계 ]에 그대로 항목별로 나열한다.
   drawSectionTitle("[ PC 세트 구성 ]");
-  const pcSetTableRows = pcSetRows.map((r) => [r.cpu, r.ram, r.gpu, `${r.qty} EA`]);
-  const pcSetTitles = ["CPU", "RAM", "GPU", "수량"];
+  const pcSetTableRows = pcSetRows.map((r) => [
+    r.cpu,
+    r.ram,
+    r.gpu,
+    r.mb,
+    r.power,
+    r.cpuCooler,
+    `${r.qty} EA`,
+  ]);
+  const pcSetTitles = ["CPU", "RAM", "VGA", "M/B", "POWER", "CPU쿨러", "수량"];
   const pcSetColW = measureColWidths(c, pcSetTitles, pcSetTableRows);
   const pcSetCols: TableCol[] = pcSetTitles.map((title, i) => ({ title, width: pcSetColW[i] }));
   y +=
