@@ -76,7 +76,7 @@ const KEYBOARD_LABELS: Record<string, string> = {
 
 const MOUSE_LABELS: Record<string, string> = {
   "G304 & 스틸시리즈 라이벌3(번지)": "스틸시리즈 RIVAL 3 마우스",
-  "G304 & 로켓(번지)": "게이밍 듀얼 마우스",
+  "G304 & ROCCAT PURE SEL 유선 화이트": "게이밍 듀얼 마우스",
 };
 
 // 제조사명 뒤에 공백이 없는 옛날 표기(예: "제이씨현32인치240hz")가 남아있어도 브랜드를 확실히

@@ -116,11 +116,13 @@ export type OrderSummaryRow = { field: string; value: string; qty: number };
 // 등)은 현장에서 개별 설치되는 주변기기라 세트 구분 없이 그대로 항목별 합계면 충분하다.
 const PC_SET_FIELD_IDS = new Set<PcSpecFieldId>(["cpu", "ram", "gpu", "mb", "power", "cpuCooler"]);
 
-// 마우스 값은 "G304 & 로켓(번지)"처럼 "본체 & 부속품" 형태로 저장돼있다. 부속품(번지/거치대 등)
-// 수량은 본체와 따로 취합해야 해서, " & "/" + " 구분자로 나눠 앞부분(본체)과 뒷부분(부속품)을
-// 각각 별도 항목으로 집계한다.
+// 마우스 값은 "G304 & ROCCAT PURE SEL 유선 화이트"처럼 한 존(좌석)에 실제로 같이 들어가는
+// 마우스 두 종류를 " & "/" + " 구분자로 이어붙여 저장한다(부속품이 아니라 둘 다 마우스 완제품).
+// 좌석마다 두 종류가 각각 하나씩 들어가므로 각 제품을 좌석수만큼 따로 집계하면 된다 — 단,
+// 커플존은 예외로 좌석 2개당 이 조합을 통째로 1세트만 지급하고(한쪽 좌석엔 G304, 다른 쪽엔
+// 레이저오로치), 좌석마다 두 종류를 다 주는 게 아니라 좌석끼리 나눠 가지므로 좌석수를 반으로
+// 나눠서 집계한다.
 const MOUSE_SPLIT_RE = /\s*[&+]\s*/;
-const MOUSE_EXTRA_LABEL = "마우스 부속품";
 
 function splitMouseValue(value: string): string[] {
   return value
@@ -130,26 +132,24 @@ function splitMouseValue(value: string): string[] {
 }
 
 function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
-  const mainMap = new Map<string, number>();
-  const extraMap = new Map<string, number>();
+  const map = new Map<string, number>();
   pcZones.forEach((z) => {
-    const qty = Number(z.seats) || 0;
-    if (!qty) return;
+    const seats = Number(z.seats) || 0;
+    if (!seats) return;
     const value = z.pcOverrides?.mouse ?? pcDefaults.mouse ?? def;
     if (!value || SKIP_ORDER_VALUES.has(value)) return;
-    const [main, ...extras] = splitMouseValue(value);
-    if (main) mainMap.set(main, (mainMap.get(main) ?? 0) + qty);
-    extras.forEach((extra) => extraMap.set(extra, (extraMap.get(extra) ?? 0) + qty));
+    const parts = splitMouseValue(value);
+    if (!parts.length) return;
+    const isCouple = z.typeKey === "couple_seat" || z.typeKey === "couple_room";
+    const perProductQty = isCouple ? Math.round(seats / parts.length) : seats;
+    parts.forEach((part) => {
+      map.set(part, (map.get(part) ?? 0) + perProductQty);
+    });
   });
 
-  const rows: OrderSummaryRow[] = [];
-  Array.from(mainMap.entries())
+  return Array.from(map.entries())
     .sort((a, b) => b[1] - a[1])
-    .forEach(([value, qty]) => rows.push({ field: "마우스", value, qty }));
-  Array.from(extraMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .forEach(([value, qty]) => rows.push({ field: MOUSE_EXTRA_LABEL, value, qty }));
-  return rows;
+    .map(([value, qty]) => ({ field: "마우스", value, qty }));
 }
 
 // 카운터 PC(1대)/대체 PC(1대)는 특정 존에 속하지 않아 좌석 데이터로 집계되지 않지만, 실제로는
