@@ -100,7 +100,7 @@ export type PcSpecField = {
 
 // PC 탭: 직접입력 사양 필드 (존마다 다른 값만 저장됨)
 export const PC_SPEC_FIELDS: PcSpecField[] = [
-  { id: "cpu", label: "CPU", def: "i5-14400F" },
+  { id: "cpu", label: "CPU", def: "울트라5 시리즈2 225F" },
   { id: "cpuCooler", label: "CPU 쿨러", def: "마이크로닉스 ICEROCK 쿨러" },
   { id: "ram", label: "RAM", def: "16GB" },
   { id: "mb", label: "M/B", def: "H610M 2.5" },
@@ -120,6 +120,7 @@ export const PC_LABELS = PC_SPEC_FIELDS.map((f) => f.label);
 
 // 자주 쓰는 값 자동완성 후보 (직접입력은 그대로 가능)
 export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
+  cpu: ["울트라5 시리즈2 225F", "i5-14400F"],
   ram: ["16GB", "32GB"],
   gpu: ["RTX 5060", "RTX 5060Ti", "RX 9060"],
   monitor: [

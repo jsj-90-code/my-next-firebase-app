@@ -5,11 +5,14 @@
 import {
   computeBasicPcQty,
   computeBezelTable,
+  computeChairSummary,
   computeCompactLayout,
   computeDeskSummary,
   computeHeadsetHookTotals,
   computeJangpadTable,
   computeLegendGeometry,
+  computePcOrderSummary,
+  computePcSetSummary,
   computePcTotal,
   getContrastText,
   getZoneSizeEntries,
@@ -567,6 +570,7 @@ export function renderOrderSummaryImage(
   zones: DeskZone[],
   seatNumberRanges: SeatNumberRangeEntry[] = [],
   pcZones: PcZone[] = [],
+  pcDefaults: PcSpecValues = {},
 ) {
   fillBackground(c);
 
@@ -574,6 +578,8 @@ export function renderOrderSummaryImage(
 
   const bezelData = computeBezelTable(zones);
   const summaryData = computeDeskSummary(zones);
+  const pcSetRows = computePcSetSummary(pcZones, pcDefaults);
+  const pcOrderRows = [...computeChairSummary(zones), ...computePcOrderSummary(pcZones, pcDefaults)];
   const jangpadRows = computeJangpadTable(zones);
   const headsetTotals = computeHeadsetHookTotals(zones);
   const hasSeatNumbers = seatNumberRanges.length > 0;
@@ -612,16 +618,22 @@ export function renderOrderSummaryImage(
   // 넘어서 아래쪽이 잘리는 문제가 있었다 — 그려보기 전에 필요한 전체 높이를 먼저 계산해서,
   // 넘칠 때만 표/여백/글자 크기를 비례해서 줄인다(computeCompactLayout과 같은 발상).
   const tableH = (rows: number, headerH: number, rowH: number) => headerH + Math.max(1, rows) * rowH;
-  const sectionsCount = hasSeatNumbers ? 5 : 4;
+  const sectionsCount = hasSeatNumbers ? 7 : 6;
   const bezelH0 = Math.max(
     tableH(bezelData.leftRows.length, baseHeaderH, baseRowH),
     tableH(bezelData.rightRows.length, baseHeaderH, baseRowH),
   );
   const summaryH0 = tableH(summaryData.length, baseHeaderH, baseRowH);
+  const pcSetH0 = tableH(pcSetRows.length, baseHeaderH, baseRowH);
+  const pcOrderHalf0 = Math.ceil(pcOrderRows.length / 2);
+  const pcOrderH0 = Math.max(
+    tableH(pcOrderHalf0, baseHeaderH, baseRowH),
+    tableH(pcOrderRows.length - pcOrderHalf0, baseHeaderH, baseRowH),
+  );
   const jangpadH0 = tableH(jangpadRows.length, baseHeaderH, baseRowH);
   const headsetH0 = tableH(2, baseHeaderH, baseRowH);
   const seatNumberH0 = hasSeatNumbers ? tableH(seatNumberRows.length, baseHeaderH, baseRowH) : 0;
-  const tablesTotalH0 = bezelH0 + summaryH0 + jangpadH0 + headsetH0 + seatNumberH0;
+  const tablesTotalH0 = bezelH0 + summaryH0 + pcSetH0 + pcOrderH0 + jangpadH0 + headsetH0 + seatNumberH0;
   const contentNeeded0 = tablesTotalH0 + baseTitleH * sectionsCount + baseSectionGap * (sectionsCount - 1);
 
   const headerAreaH = topOffset + 26 + (baseMainTitleH - 6);
@@ -676,6 +688,45 @@ export function renderOrderSummaryImage(
   y +=
     drawTable(c, marginX, y, summaryColW.reduce((s, w) => s + w, 0), headerH, rowH, summaryCols, summaryRows, shrink) +
     sectionGap;
+
+  // [ PC 세트 구성 ] — CPU/RAM/GPU는 한 존 안에서 같이 업그레이드되면 한 세트로 묶어서
+  // 발주해야 하므로(부품별로 따로 시키면 어느 존 조합인지 알 수 없다), 조합별로 수량을 묶어서
+  // 보여준다. 나머지 부품은 현장에서 개별 설치하는 주변기기라 아래 [ PC 발주 합계 ]에 그대로
+  // 항목별로 나열한다.
+  drawSectionTitle("[ PC 세트 구성 ]");
+  const pcSetTableRows = pcSetRows.map((r) => [r.cpu, r.ram, r.gpu, `${r.qty} EA`]);
+  const pcSetTitles = ["CPU", "RAM", "GPU", "수량"];
+  const pcSetColW = measureColWidths(c, pcSetTitles, pcSetTableRows);
+  const pcSetCols: TableCol[] = pcSetTitles.map((title, i) => ({ title, width: pcSetColW[i] }));
+  y +=
+    drawTable(
+      c,
+      marginX,
+      y,
+      pcSetColW.reduce((s, w) => s + w, 0),
+      headerH,
+      rowH,
+      pcSetCols,
+      pcSetTableRows,
+      shrink,
+    ) + sectionGap;
+
+  // [ PC 발주 합계 ] — 의자(책상 존 기준) + 모니터암/키보드/마우스 등(PC 존 기준) 사양별
+  // 실제 주문 수량. 표가 길어질 수 있어 베젤 사이즈 표처럼 좌/우 2단으로 나눠 그린다.
+  drawSectionTitle("[ PC 발주 합계 ]");
+  const pcOrderTableRows = pcOrderRows.map((r) => [r.field, r.value, `${r.qty} EA`]);
+  const pcOrderTitles = ["항목", "제품", "수량"];
+  const pcOrderHalf = Math.ceil(pcOrderTableRows.length / 2);
+  const pcOrderLeftRows = pcOrderTableRows.slice(0, pcOrderHalf);
+  const pcOrderRightRows = pcOrderTableRows.slice(pcOrderHalf);
+  const pcOrderColW = measureColWidths(c, pcOrderTitles, pcOrderTableRows);
+  const pcOrderCols: TableCol[] = pcOrderTitles.map((title, i) => ({ title, width: pcOrderColW[i] }));
+  const pcOrderW = pcOrderColW.reduce((s, w) => s + w, 0);
+  y +=
+    Math.max(
+      drawTable(c, marginX, y, pcOrderW, headerH, rowH, pcOrderCols, pcOrderLeftRows, shrink),
+      drawTable(c, marginX + pcOrderW + gapMid, y, pcOrderW, headerH, rowH, pcOrderCols, pcOrderRightRows, shrink),
+    ) + sectionGap;
 
   // [ 장패드 수량 ]
   drawSectionTitle("[ 장패드 수량 ]");

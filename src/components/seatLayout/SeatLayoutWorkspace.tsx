@@ -1799,7 +1799,7 @@ export function SeatLayoutWorkspace() {
     renderPcFloorplanImage(ctx, imgEl, project.name, project.pcZones, pcDefaults);
     const pc = { key: "pc", label: "PC발주도면", dataUrl: cv.toDataURL("image/png") };
 
-    renderOrderSummaryImage(ctx, project.name, project.zones, project.seatNumberRanges, project.pcZones);
+    renderOrderSummaryImage(ctx, project.name, project.zones, project.seatNumberRanges, project.pcZones, pcDefaults);
     const summary = { key: "summary", label: "발주요약", dataUrl: cv.toDataURL("image/png") };
 
     return [desk, pc, summary];
