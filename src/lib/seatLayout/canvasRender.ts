@@ -19,6 +19,7 @@ import {
   groupDeskZonesForCard,
   mergeZoneDisplayNames,
   normalizeFieldValue,
+  PC_SET_FIELD_IDS,
   resolveAdapterValue,
   splitMouseValue,
   tintColor,
@@ -367,10 +368,13 @@ export function renderPcFloorplanImage(
   const overrideCardOrder: string[] = [];
   pcZones.forEach((z) => {
     const ov = z.pcOverrides || {};
-    // 옛날 문구 그대로 저장된 override는 정식 이름으로 바꿔서 보여주고, 정규화 후 값이 기본값과
-    // 똑같아지면(예: FPS 충전기가 예전엔 "무선충전기(2포트 이상)"였다가 지금은 기본값과 같은
-    // "무선충전기") 더 이상 "다른 사양"이 아니므로 카드에서 뺀다.
-    const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null)
+    // CPU/RAM/GPU/M·B/POWER/CPU쿨러(PC_SET_FIELD_IDS)는 [ PC 구성 ] 표에서 조합별로 이미 따로
+    // 집계되므로, 개별 존 카드에서 또 보여주면 중복이라 여기서는 아예 뺀다(예전에 저장된
+    // "기본값과 같은 M/B" 같은 잔여 override가 카드에 남아있던 문제도 이걸로 같이 해결된다).
+    // 옛날 문구 그대로 저장된 나머지 override는 정식 이름으로 바꿔서 보여주고, 정규화 후 값이
+    // 기본값과 똑같아지면(예: FPS 충전기가 예전엔 "무선충전기(2포트 이상)"였다가 지금은 기본값과
+    // 같은 "무선충전기") 더 이상 "다른 사양"이 아니므로 카드에서 뺀다.
+    const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null && !PC_SET_FIELD_IDS.has(f.id))
       .map((f) => {
         const value = normalizeFieldValue(f.id, ov[f.id] as string);
         const defaultValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);

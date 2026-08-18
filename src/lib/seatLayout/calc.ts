@@ -87,11 +87,14 @@ export type BezelTable = {
   rightRows: (BezelRow & { ambiguous: boolean })[];
 };
 
+// "책상만 설치" 존은 모니터/PC 자체가 없는 존이라 베젤(모니터 좌우 여백) 계산 대상이 아니다.
 export function computeBezelTable(zones: DeskZone[]): BezelTable {
   const leftMap = new Map<DeskSize, BezelRow>();
   const rightMap = new Map<string, BezelRow>();
 
-  zones.forEach((z) => {
+  zones
+    .filter((z) => z.typeKey !== "desk_only")
+    .forEach((z) => {
     const withP = hasPartition(z);
     getZoneSizeEntries(z).forEach((entry) => {
       const spec = BEZEL_MAP[entry.deskSize];
@@ -187,9 +190,9 @@ export type OrderSummaryRow = { field: string; value: string; qty: number; note?
 // 보유한다. 배정된 좌석이 하나도 없어도(예: 매장 전체가 다른 마우스로 바뀌어도) 여분 재고는
 // 항상 표에 나타나야 하므로, 계산된 수량이 0이어도 행을 새로 추가한다.
 const SPARE_STOCK: { field: string; value: string; spareQty: number }[] = [
-  { field: "마우스", value: "G304", spareQty: 5 },
+  { field: "마우스", value: "로지텍 G304_화이트 무선 마우스", spareQty: 5 },
   { field: "마우스", value: "ROCCAT PURE SEL 유선 화이트", spareQty: 5 },
-  { field: "키보드", value: "K400", spareQty: 5 },
+  { field: "키보드", value: "ISENS K400 광청축 크리스탈 키캡 키보드", spareQty: 5 },
   { field: "스피커", value: "블루오션 2 (앱코 S1000) 스피커", spareQty: 5 },
   { field: "헤드셋", value: "젬스트 LEF G58", spareQty: 5 },
   { field: "모니터", value: "제이씨현 32인치 240Hz", spareQty: 1 },
@@ -214,7 +217,7 @@ function applySpareStock(rows: OrderSummaryRow[]): OrderSummaryRow[] {
 // (예: 이 중 하나라도 함께 올린 존은 그 조합 그대로 한 세트로 주문), 개별 항목 합계표에서는
 // 빼고 computePcSetSummary로 따로 묶어서 보여준다. 나머지 부품(모니터/키보드/마우스/모니터암
 // 등)은 현장에서 개별 설치되는 주변기기라 세트 구분 없이 그대로 항목별 합계면 충분하다.
-const PC_SET_FIELD_IDS = new Set<PcSpecFieldId>(["cpu", "ram", "gpu", "mb", "power", "cpuCooler"]);
+export const PC_SET_FIELD_IDS = new Set<PcSpecFieldId>(["cpu", "ram", "gpu", "mb", "power", "cpuCooler"]);
 
 // 마우스 값은 "G304 & ROCCAT PURE SEL 유선 화이트"처럼 한 존(좌석)에 실제로 같이 들어가는
 // 마우스 두 종류를 " & "/" + " 구분자로 이어붙여 저장한다(부속품이 아니라 둘 다 마우스 완제품).
@@ -231,6 +234,7 @@ const MOUSE_SPLIT_RE = /\s*[&+]\s*/;
 const MOUSE_NAME_ALIASES: Record<string, string> = {
   로켓: "ROCCAT PURE SEL 유선 화이트",
   오로치: "레이저오로치 무선마우스_핑크",
+  G304: "로지텍 G304_화이트 무선 마우스",
 };
 
 function normalizeMouseName(raw: string): string {
@@ -299,6 +303,9 @@ const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>
   },
   headset: {
     G58: "젬스트 LEF G58",
+  },
+  keyboard: {
+    K400: "ISENS K400 광청축 크리스탈 키캡 키보드",
   },
   // 예전엔 어댑터 정보를 충전기 값 안에 같이 적었다(예: "무선충전기(2포트 이상)"). 이제는
   // 어댑터를 별도 항목(adapter)으로 분리했으니, 충전기 값 자체는 항상 "무선충전기"로 통일한다
@@ -400,9 +407,12 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
       if (!value || SKIP_ORDER_VALUES.has(value)) return;
       map.set(value, (map.get(value) ?? 0) + qty);
     });
-    const counterValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
-    if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
-      map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
+    // 카운터 PC는 모니터암(아센암/관절암) 없이 모니터 스탠드를 쓰기 때문에 모니터암 집계에서는 뺀다.
+    if (f.id !== "monitorArm") {
+      const counterValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
+      if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
+        map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
+      }
     }
     Array.from(map.entries())
       .sort((a, b) => b[1] - a[1])
