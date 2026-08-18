@@ -278,13 +278,6 @@ function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: stri
     .map(([value, qty]) => ({ field: "마우스", value, qty }));
 }
 
-// 카운터 PC(1대)/대체 PC(1대)는 특정 존에 속하지 않아 좌석 데이터로 집계되지 않지만, 실제로는
-// 케이스가 필요한 PC라 여기서 고정 수량으로 더한다 — 카운터는 일반 케이스, 대체 PC는 손님
-// 좌석과 동일하게(전역 기본 케이스) 들어간다.
-const COUNTER_PC_CASE = "일반 케이스";
-const COUNTER_PC_CASE_QTY = 1;
-const SPARE_PC_CASE_QTY = 1;
-
 // 코드에서 기본 문구를 바꿔도, 이미 저장된 프로젝트/사양설정 데이터에는 옛날 문구가 그대로
 // 남아있어 자동으로 안 바뀐다. 알려진 옛날 문구는 계산 시점에 새 문구로 치환해서 집계한다.
 const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>> = {
@@ -362,37 +355,16 @@ function computeAdapterRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: st
     .map(([value, qty]) => ({ field: "어답터", value, qty }));
 }
 
-function computeCaseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
-  const map = new Map<string, number>();
-  const add = (value: string, qty: number) => {
-    if (!value || SKIP_ORDER_VALUES.has(value)) return;
-    map.set(value, (map.get(value) ?? 0) + qty);
-  };
-  pcZones.forEach((z) => {
-    const qty = Number(z.seats) || 0;
-    if (!qty) return;
-    add(z.pcOverrides?.case ?? pcDefaults.case ?? def, qty);
-  });
-  add(pcDefaults.case ?? def, SPARE_PC_CASE_QTY);
-  add(COUNTER_PC_CASE, COUNTER_PC_CASE_QTY);
-  return Array.from(map.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([value, qty]) => ({ field: "CASE", value, qty }));
-}
-
-// PC 발주 사양(모니터암/키보드/마우스/CASE 등) 값별 수량 합계. 존별 개별 지정값이 있으면 그
-// 값을, 없으면 전역 PC 기본사양을 쓴다 — PC 발주 도면/좌석번호표에서 실제로 적용되는 값과
-// 동일한 우선순위다.
+// PC 발주 사양(모니터암/키보드/마우스 등) 값별 수량 합계. 존별 개별 지정값이 있으면 그 값을,
+// 없으면 전역 PC 기본사양을 쓴다 — PC 발주 도면/좌석번호표에서 실제로 적용되는 값과 동일한
+// 우선순위다. CASE는 존마다 다를 일이 없는 소모품이라 이 표에서는 뺀다.
 export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValues): OrderSummaryRow[] {
   const rows: OrderSummaryRow[] = [];
   PC_SPEC_FIELDS.forEach((f) => {
     if (PC_SET_FIELD_IDS.has(f.id)) return;
+    if (f.id === "case") return;
     if (f.id === "mouse") {
       rows.push(...computeMouseRows(pcZones, pcDefaults, f.def));
-      return;
-    }
-    if (f.id === "case") {
-      rows.push(...computeCaseRows(pcZones, pcDefaults, f.def));
       return;
     }
     if (f.id === "adapter") {
