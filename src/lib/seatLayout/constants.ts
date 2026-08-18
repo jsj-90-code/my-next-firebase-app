@@ -134,7 +134,7 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
   ],
   mouse: [
     "G304 & ROCCAT PURE SEL 유선 화이트",
-    "G304 & 스틸시리즈 라이벌3(번지)",
+    "G304 & 스틸시리즈 라이벌3",
     "G304 + 레이저오로치 무선마우스_핑크",
   ],
   keyboard: ["K400", "Razer Huntsman V3 Pro", "AULA F87 Pro 독거미 텐키리스"],
@@ -150,10 +150,10 @@ export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
   fps: {
     monitorArm: "관절암",
     monitor: "BenQ XL2540X+ 280Hz",
-    mouse: "G304 & 스틸시리즈 라이벌3(번지)",
+    mouse: "G304 & 스틸시리즈 라이벌3",
     keyboard: "Razer Huntsman V3 Pro",
     headset: "Razer BlackShark V2 Hyperspeed",
-    charger: "무선충전기 (2포트 이상 어댑터 필요)",
+    charger: "무선충전기(2포트 이상)",
   },
   team: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   friends: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },

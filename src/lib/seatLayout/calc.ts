@@ -157,10 +157,24 @@ const PC_SET_FIELD_IDS = new Set<PcSpecFieldId>(["cpu", "ram", "gpu", "mb", "pow
 // 나눠서 집계한다.
 const MOUSE_SPLIT_RE = /\s*[&+]\s*/;
 
+// 마우스 부품명 뒤에 "(번지)"/"(3개)"처럼 괄호로 덧붙은 문구는 실제 제품명이 아니라 메모성
+// 설명이라(부속품 표시든 수량 메모든), 항상 떼어내고 순수 제품명만 집계 키로 쓴다 — 안 그러면
+// "G304"와 "G304(3개)"가 서로 다른 항목으로 잡혀버린다. 그리고 예전에 잘못 붙여둔 이름은
+// 실제 정식 제품명으로 바꿔서 보여준다.
+const MOUSE_NAME_ALIASES: Record<string, string> = {
+  로켓: "ROCCAT PURE SEL 유선 화이트",
+  오로치: "레이저오로치 무선마우스_핑크",
+};
+
+function normalizeMouseName(raw: string): string {
+  const stripped = raw.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return MOUSE_NAME_ALIASES[stripped] ?? stripped;
+}
+
 function splitMouseValue(value: string): string[] {
   return value
     .split(MOUSE_SPLIT_RE)
-    .map((p) => p.trim())
+    .map((p) => normalizeMouseName(p))
     .filter(Boolean);
 }
 

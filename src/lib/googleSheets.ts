@@ -75,7 +75,7 @@ const KEYBOARD_LABELS: Record<string, string> = {
 };
 
 const MOUSE_LABELS: Record<string, string> = {
-  "G304 & 스틸시리즈 라이벌3(번지)": "스틸시리즈 RIVAL 3 마우스",
+  "G304 & 스틸시리즈 라이벌3": "스틸시리즈 RIVAL 3 마우스",
   "G304 & ROCCAT PURE SEL 유선 화이트": "게이밍 듀얼 마우스",
 };
 
