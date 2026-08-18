@@ -102,18 +102,19 @@ export type PcSpecField = {
 export const PC_SPEC_FIELDS: PcSpecField[] = [
   { id: "cpu", label: "CPU", def: "울트라5 시리즈2 225F" },
   { id: "cpuCooler", label: "CPU 쿨러", def: "마이크로닉스 ICEROCK 쿨러" },
-  { id: "ram", label: "RAM", def: "16GB" },
-  { id: "mb", label: "M/B", def: "H610M 2.5" },
-  { id: "gpu", label: "GPU", def: "RTX 5060" },
-  { id: "power", label: "POWER", def: "600W" },
+  { id: "ram", label: "RAM", def: "DDR5 16GB" },
+  { id: "mb", label: "M/B", def: "ASUS PRIME H810M-X 2.5G" },
+  { id: "gpu", label: "GPU", def: "RTX 5060 8GB" },
+  { id: "power", label: "POWER", def: "잘만 MegaMax ET 600W 80PLUS STANDARD" },
   { id: "case", label: "CASE", def: "아센케이스 매립" },
   { id: "monitorArm", label: "모니터암", def: "아센암" },
   { id: "monitor", label: "모니터", def: "제이씨현 32인치 240Hz" },
   { id: "mouse", label: "마우스", def: "G304 & ROCCAT PURE SEL 유선 화이트" },
   { id: "keyboard", label: "키보드", def: "K400" },
-  { id: "headset", label: "헤드셋", def: "G58" },
+  { id: "headset", label: "헤드셋", def: "젬스트 LEF G58" },
   { id: "speaker", label: "스피커", def: "블루오션 2 (앱코 S1000) 스피커" },
   { id: "charger", label: "충전기", def: "무선충전기" },
+  { id: "adapter", label: "어답터", def: "1구 어답터" },
   { id: "joypad", label: "조이패드", def: "없음" },
 ];
 
@@ -122,8 +123,11 @@ export const PC_LABELS = PC_SPEC_FIELDS.map((f) => f.label);
 // 자주 쓰는 값 자동완성 후보 (직접입력은 그대로 가능)
 export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
   cpu: ["울트라5 시리즈2 225F", "i5-14400F"],
-  ram: ["16GB", "32GB"],
-  gpu: ["RTX 5060", "RTX 5060Ti", "RX 9060"],
+  ram: ["DDR5 16GB", "DDR5 32GB"],
+  mb: ["ASUS PRIME H810M-X 2.5G", "H610M 2.5"],
+  gpu: ["RTX 5060 8GB", "RTX 5060Ti", "RX 9060"],
+  power: ["잘만 MegaMax ET 600W 80PLUS STANDARD", "600W"],
+  adapter: ["1구 어답터", "2구 어답터"],
   monitor: [
     "제이씨현 32인치 240Hz",
     "비트엠 27인치 IPS 240Hz",
@@ -138,7 +142,7 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
     "G304 + 레이저오로치 무선마우스_핑크",
   ],
   keyboard: ["K400", "Razer Huntsman V3 Pro", "AULA F87 Pro 독거미 텐키리스"],
-  headset: ["G58", "Razer BlackShark V2 Hyperspeed", "앱코 N800(핑크)"],
+  headset: ["젬스트 LEF G58", "Razer BlackShark V2 Hyperspeed", "앱코 N800(핑크)"],
   monitorArm: ["아센암", "관절암"],
 };
 
@@ -153,7 +157,7 @@ export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
     mouse: "G304 & 스틸시리즈 라이벌3",
     keyboard: "Razer Huntsman V3 Pro",
     headset: "Razer BlackShark V2 Hyperspeed",
-    charger: "무선충전기(2포트 이상)",
+    adapter: "2구 어답터",
   },
   team: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   friends: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
@@ -190,3 +194,9 @@ export const BEZEL_MAP: Record<DeskSize, { left: number; rightWith: number; righ
 
 export const COMPOSITE_W = 1920;
 export const COMPOSITE_H = 1080;
+
+// 다운로드/프레젠테이션용 최종 PNG는 이 배수만큼 더 높은 해상도로 뽑는다(캔버스 크기만
+// 키우고 ctx.scale로 그대로 확대해서 그리는 방식이라, canvasRender.ts의 좌표/폰트 크기 값은
+// 전부 COMPOSITE_W/H 기준 그대로 두면 된다). PPT에서 휠로 확대했을 때 글씨가 깨져 보이던
+// 문제 때문에 도입 — 2배면 3840x2160(4K)이라 충분히 선명하다.
+export const EXPORT_SCALE = 2;

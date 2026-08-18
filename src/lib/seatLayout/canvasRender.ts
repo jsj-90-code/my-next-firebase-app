@@ -3,6 +3,7 @@
 // renderDeskComposite / renderPcComposite 를 그대로 이식.
 
 import {
+  baseZoneName,
   computeBasicPcQty,
   computeBezelTable,
   computeChairSummary,
@@ -15,7 +16,8 @@ import {
   computePcSetSummary,
   computePcTotal,
   getContrastText,
-  getZoneSizeEntries,
+  groupDeskZonesForCard,
+  mergeZoneDisplayNames,
   tintColor,
 } from "./calc";
 import { COMPOSITE_H, COMPOSITE_W, PC_SPEC_FIELDS } from "./constants";
@@ -251,7 +253,12 @@ export function renderDeskFloorplanImage(
   const cardY = 15;
   const cardH = 1060 - cardY - cardBottomGap;
 
-  const geometry = computeLegendGeometry(zones.length);
+  // 좌측 사양표는 "FPS존A"/"FPS존B"처럼 이름 끝 알파벳만 다르고 사양이 완전히 같은 존을 한
+  // 카드로 합쳐서 보여준다(좌석수만 합산). 도면 위 존 박스(drawZoneOverlaysOnCard)는 실제
+  // 구역이 그대로 남아있어야 하므로 항상 원본 zones로 그린다.
+  const cardGroups = groupDeskZonesForCard(zones);
+
+  const geometry = computeLegendGeometry(cardGroups.length);
   const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
   drawZoneOverlaysOnCard(c, zones, geo);
 
@@ -261,7 +268,7 @@ export function renderDeskFloorplanImage(
   const panelBottomLimit = geometry.panelBottomLimit;
   const gap = 14;
   const layout = computeCompactLayout(
-    zones.length,
+    cardGroups.length,
     panelBottomLimit - panelAreaY,
     225,
     48,
@@ -272,32 +279,29 @@ export function renderDeskFloorplanImage(
   const colW = (panelAreaW - (layout.cols - 1) * gap) / layout.cols;
   const specLabels = ["책상", "책상사이즈", "쿨러", "칸막이", "모니터암", "의자"];
 
-  zones.forEach((z, idx) => {
+  cardGroups.forEach((g, idx) => {
     const col = idx % layout.cols;
     const row = Math.floor(idx / layout.cols);
     const px = panelAreaX + col * (colW + gap);
     const py = panelAreaY + row * layout.rowH;
     const pw = colW;
     const ph = layout.rowH - 10;
-    const textColor = getContrastText(z.color);
-    const bodyBg = tintColor(z.color, 0.93);
-    const labelBg = tintColor(z.color, 0.72);
+    const textColor = getContrastText(g.color);
+    const bodyBg = tintColor(g.color, 0.93);
+    const labelBg = tintColor(g.color, 0.72);
 
     c.fillStyle = bodyBg;
     c.fillRect(px, py, pw, ph);
-    c.strokeStyle = z.color;
+    c.strokeStyle = g.color;
     c.lineWidth = 2;
     c.strokeRect(px, py, pw, ph);
-    c.fillStyle = z.color;
+    c.fillStyle = g.color;
     c.fillRect(px, py, pw, layout.headerH);
     c.fillStyle = textColor;
     c.font = `bold ${layout.headerFont}px sans-serif`;
-    c.fillText(`[${z.name}- ${z.seats}석]`, px + 8, py + layout.headerH * 0.68);
+    c.fillText(`[${g.name}- ${g.seats}석]`, px + 8, py + layout.headerH * 0.68);
 
-    const sizeText = getZoneSizeEntries(z)
-      .map((e) => `${e.deskSize} x${e.qty}`)
-      .join(", ");
-    const values = [z.desk || "", sizeText, z.cooler || "", z.partition || "", z.monitorArm || "", z.chair || ""];
+    const values = [g.desk, g.sizeText, g.cooler, g.partition, g.monitorArm, g.chair];
     const lineH = (ph - layout.headerH) / specLabels.length;
 
     specLabels.forEach((label, li) => {
@@ -345,24 +349,41 @@ export function renderPcFloorplanImage(
   const cardH = 1060 - cardY - cardBottomGap;
 
   // "LOL존A/LOL존B/LOL존C"처럼 뒤에 알파벳만 다르고 이름이 같은 계열의 존은 카드도 서로
-  // 붙어서 나오도록, 뒤에 붙은 알파벳 한 글자를 뗀 "기본 이름" 기준으로 정렬해 묶는다.
-  function baseZoneName(name: string): string {
-    return name.replace(/[A-Za-z]$/, "");
-  }
+  // 붙어서 나오도록, 뒤에 붙은 알파벳 한 글자를 뗀 "기본 이름" 기준으로 정렬해 묶는다. 그리고
+  // 그중에서도 override 값이 완전히 같은 존(예: 사양 차이 없이 구역만 나눠둔 "FPS존A"/"FPS존B")은
+  // 좌석수만 합쳐서 카드 한 장으로 합친다 — 사양이 하나라도 다르면 합치지 않고 그대로 각각 보여준다.
+  const overrideCardsByKey = new Map<
+    string,
+    { names: string[]; seats: number; color: string; lines: { label: string; value: string }[] }
+  >();
+  const overrideCardOrder: string[] = [];
+  pcZones.forEach((z) => {
+    const ov = z.pcOverrides || {};
+    const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null).map((f) => ({
+      label: f.label,
+      value: ov[f.id] as string,
+    }));
+    if (!lines.length) return;
+    const linesKey = lines.map((l) => `${l.label}=${l.value}`).join("|");
+    const key = `${baseZoneName(z.name)}::${linesKey}`;
+    let g = overrideCardsByKey.get(key);
+    if (!g) {
+      g = { names: [], seats: 0, color: z.color, lines };
+      overrideCardsByKey.set(key, g);
+      overrideCardOrder.push(key);
+    }
+    g.names.push(z.name);
+    g.seats += Number(z.seats) || 0;
+  });
 
-  const overrideZones = pcZones
-    .map((z) => {
-      const ov = z.pcOverrides || {};
-      const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null).map((f) => ({
-        label: f.label,
-        value: ov[f.id] as string,
-      }));
-      return { zone: z, lines };
+  const overrideZones = overrideCardOrder
+    .map((key) => {
+      const g = overrideCardsByKey.get(key)!;
+      return { name: mergeZoneDisplayNames(g.names), seats: g.seats, color: g.color, lines: g.lines };
     })
-    .filter((item) => item.lines.length > 0)
     .sort((a, b) => {
-      const baseCmp = baseZoneName(a.zone.name).localeCompare(baseZoneName(b.zone.name));
-      return baseCmp !== 0 ? baseCmp : a.zone.name.localeCompare(b.zone.name);
+      const baseCmp = baseZoneName(a.name).localeCompare(baseZoneName(b.name));
+      return baseCmp !== 0 ? baseCmp : a.name.localeCompare(b.name);
     });
 
   const panelAreaX = 20;
@@ -511,27 +532,26 @@ export function renderPcFloorplanImage(
   const lineH = BASE_LINE_H * scale;
 
   overrideZones.forEach((item, idx) => {
-    const z = item.zone;
     const col = idx % cols;
     const row = Math.floor(idx / cols);
     const px = panelAreaX + col * (colW + gap);
     const py = rowY[row];
     const pw = colW;
     const ph = rowH[row] - 10 * scale;
-    const textColor = getContrastText(z.color);
-    const bodyBg = tintColor(z.color, 0.93);
-    const labelBg = tintColor(z.color, 0.72);
+    const textColor = getContrastText(item.color);
+    const bodyBg = tintColor(item.color, 0.93);
+    const labelBg = tintColor(item.color, 0.72);
 
     c.fillStyle = bodyBg;
     c.fillRect(px, py, pw, ph);
-    c.strokeStyle = z.color;
+    c.strokeStyle = item.color;
     c.lineWidth = 2;
     c.strokeRect(px, py, pw, ph);
-    c.fillStyle = z.color;
+    c.fillStyle = item.color;
     c.fillRect(px, py, pw, headerH);
     c.fillStyle = textColor;
     c.font = `bold ${headerFont}px sans-serif`;
-    c.fillText(`[${z.name}- ${z.seats}대]`, px + 8, py + headerH * 0.68);
+    c.fillText(`[${item.name}- ${item.seats}대]`, px + 8, py + headerH * 0.68);
 
     // 줄 높이는 카드 자기 줄 수로 나누지 않고 패널 전체와 같은 고정값을 쓴다 — 그래서 같은 행
     // 안에서 줄이 적은 카드는 나머지 칸을 억지로 채우지 않고 그냥 아래쪽에 공백으로 남는다.

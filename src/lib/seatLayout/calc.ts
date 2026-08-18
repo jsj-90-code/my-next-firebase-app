@@ -14,6 +14,73 @@ export function hasPartition(z: DeskZone): boolean {
   return !!(z.partition && z.partition !== "없음");
 }
 
+// "FPS존A"/"FPS존B"처럼 뒤에 알파벳 한 글자만 다르고 같은 계열인 존을 찾기 위한 "기본 이름".
+export function baseZoneName(name: string): string {
+  return name.replace(/[A-Za-z]$/, "");
+}
+
+// 합쳐진 카드의 이름표. 이름이 전부 같으면 그대로, "기본이름+알파벳"이 섞여 있으면
+// "FPS존A,B"처럼 접미사만 이어붙인다.
+export function mergeZoneDisplayNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  const unique = Array.from(new Set(names));
+  if (unique.length === 1) return unique[0];
+  const base = baseZoneName(names[0]);
+  const suffixes = names.map((n) => (n.startsWith(base) ? n.slice(base.length) : n)).filter(Boolean);
+  return suffixes.length ? `${base}${suffixes.join(",")}` : base;
+}
+
+export type DeskCardGroup = {
+  name: string;
+  seats: number;
+  color: string;
+  desk: string;
+  sizeText: string;
+  cooler: string;
+  partition: string;
+  monitorArm: string;
+  chair: string;
+};
+
+// 이름 끝 알파벳만 다르고(예: "FPS존A"/"FPS존B") 사양 값이 전부 같은 존은, 좌측 사양표에서
+// 카드를 두 개로 나눠 보여줄 필요가 없어 좌석수만 합쳐서 한 카드로 합친다. 사양이 하나라도
+// 다르면(사양 차이 때문에 원래 존을 쪼갠 경우) 합치지 않고 그대로 각각 보여준다. 도면 위
+// 존 박스 표시(drawZoneOverlaysOnCard)는 실제 물리적 구역이 그대로 남아있어야 하므로 이
+// 그룹핑과 무관하게 항상 원본 zones 배열을 그대로 쓴다.
+export function groupDeskZonesForCard(zones: DeskZone[]): DeskCardGroup[] {
+  const order: string[] = [];
+  const map = new Map<string, DeskCardGroup & { names: string[] }>();
+  zones.forEach((z) => {
+    const sizeText = getZoneSizeEntries(z)
+      .map((e) => `${e.deskSize} x${e.qty}`)
+      .join(", ");
+    const key = [baseZoneName(z.name), z.desk, sizeText, z.cooler, z.partition, z.monitorArm, z.chair].join(" ");
+    let g = map.get(key);
+    if (!g) {
+      g = {
+        names: [],
+        name: "",
+        seats: 0,
+        color: z.color,
+        desk: z.desk || "",
+        sizeText,
+        cooler: z.cooler || "",
+        partition: z.partition || "",
+        monitorArm: z.monitorArm || "",
+        chair: z.chair || "",
+      };
+      map.set(key, g);
+      order.push(key);
+    }
+    g.names.push(z.name);
+    g.seats += Number(z.seats) || 0;
+  });
+  return order.map((key) => {
+    const g = map.get(key)!;
+    return { ...g, name: mergeZoneDisplayNames(g.names) };
+  });
+}
+
 export type BezelRow = { value: number; deskSize: DeskSize; qty: number };
 export type BezelTable = {
   leftRows: BezelRow[];
@@ -124,7 +191,7 @@ const SPARE_STOCK: { field: string; value: string; spareQty: number }[] = [
   { field: "마우스", value: "ROCCAT PURE SEL 유선 화이트", spareQty: 5 },
   { field: "키보드", value: "K400", spareQty: 5 },
   { field: "스피커", value: "블루오션 2 (앱코 S1000) 스피커", spareQty: 5 },
-  { field: "헤드셋", value: "G58", spareQty: 5 },
+  { field: "헤드셋", value: "젬스트 LEF G58", spareQty: 5 },
   { field: "모니터", value: "제이씨현 32인치 240Hz", spareQty: 1 },
 ];
 
@@ -217,8 +284,28 @@ const SPARE_PC_CASE_QTY = 1;
 // 코드에서 기본 문구를 바꿔도, 이미 저장된 프로젝트/사양설정 데이터에는 옛날 문구가 그대로
 // 남아있어 자동으로 안 바뀐다. 알려진 옛날 문구는 계산 시점에 새 문구로 치환해서 집계한다.
 const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>> = {
+  ram: {
+    "16GB": "DDR5 16GB",
+    "32GB": "DDR5 32GB",
+  },
+  mb: {
+    "H610M 2.5": "ASUS PRIME H810M-X 2.5G",
+  },
+  gpu: {
+    "RTX 5060": "RTX 5060 8GB",
+  },
+  power: {
+    "600W": "잘만 MegaMax ET 600W 80PLUS STANDARD",
+  },
+  headset: {
+    G58: "젬스트 LEF G58",
+  },
+  // 예전엔 어댑터 정보를 충전기 값 안에 같이 적었다(예: "무선충전기(2포트 이상)"). 이제는
+  // 어댑터를 별도 항목(adapter)으로 분리했으니, 충전기 값 자체는 항상 "무선충전기"로 통일한다
+  // — 어댑터 구분은 resolveAdapterValue에서 이 옛 값을 보고 따로 추론한다.
   charger: {
-    "무선충전기 (2포트 이상 어댑터 필요)": "무선충전기(2포트 이상)",
+    "무선충전기 (2포트 이상 어댑터 필요)": "무선충전기",
+    "무선충전기(2포트 이상)": "무선충전기",
   },
   joypad: {
     "조이패드 포함": "조이패드",
@@ -227,6 +314,38 @@ const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>
 
 function normalizeFieldValue(fieldId: PcSpecFieldId, value: string): string {
   return FIELD_VALUE_ALIASES[fieldId]?.[value] ?? value;
+}
+
+// 어댑터 항목이 생기기 전에 저장된 존은 adapter override가 없다. 그런 존의 충전기 값에 예전
+// "2포트" 표시가 남아있으면, 그걸 근거로 어댑터를 "2구 어답터"로 추론해서 채워준다.
+const LEGACY_2PORT_CHARGER_VALUES = new Set([
+  "무선충전기 (2포트 이상 어댑터 필요)",
+  "무선충전기(2포트 이상)",
+]);
+
+function resolveAdapterValue(z: PcZone, pcDefaults: PcSpecValues, def: string): string {
+  if (z.pcOverrides?.adapter != null) return normalizeFieldValue("adapter", z.pcOverrides.adapter);
+  const legacyCharger = z.pcOverrides?.charger;
+  if (legacyCharger && LEGACY_2PORT_CHARGER_VALUES.has(legacyCharger)) return "2구 어답터";
+  return normalizeFieldValue("adapter", pcDefaults.adapter ?? def);
+}
+
+function computeAdapterRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
+  const map = new Map<string, number>();
+  pcZones.forEach((z) => {
+    const qty = Number(z.seats) || 0;
+    if (!qty) return;
+    const value = resolveAdapterValue(z, pcDefaults, def);
+    if (!value || SKIP_ORDER_VALUES.has(value)) return;
+    map.set(value, (map.get(value) ?? 0) + qty);
+  });
+  const counterValue = normalizeFieldValue("adapter", pcDefaults.adapter ?? def);
+  if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
+    map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
+  }
+  return Array.from(map.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([value, qty]) => ({ field: "어답터", value, qty }));
 }
 
 function computeCaseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
@@ -260,6 +379,10 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
     }
     if (f.id === "case") {
       rows.push(...computeCaseRows(pcZones, pcDefaults, f.def));
+      return;
+    }
+    if (f.id === "adapter") {
+      rows.push(...computeAdapterRows(pcZones, pcDefaults, f.def));
       return;
     }
     const map = new Map<string, number>();
@@ -303,7 +426,7 @@ const COUNTER_SPARE_PC_QTY = 2;
 export function computePcSetSummary(pcZones: PcZone[], pcDefaults: PcSpecValues): PcSetRow[] {
   const spec = (z: PcZone, id: PcSpecFieldId): string => {
     const def = PC_SPEC_FIELDS.find((f) => f.id === id)?.def ?? "";
-    return z.pcOverrides?.[id] ?? pcDefaults[id] ?? def;
+    return normalizeFieldValue(id, z.pcOverrides?.[id] ?? pcDefaults[id] ?? def);
   };
 
   const map = new Map<string, PcSetRow>();
@@ -322,12 +445,14 @@ export function computePcSetSummary(pcZones: PcZone[], pcDefaults: PcSpecValues)
     else map.set(key, { cpu, ram, gpu, mb, power, cpuCooler, qty });
   });
 
-  const dCpu = pcDefaults.cpu ?? PC_SPEC_FIELDS.find((f) => f.id === "cpu")?.def ?? "";
-  const dRam = pcDefaults.ram ?? PC_SPEC_FIELDS.find((f) => f.id === "ram")?.def ?? "";
-  const dGpu = pcDefaults.gpu ?? PC_SPEC_FIELDS.find((f) => f.id === "gpu")?.def ?? "";
-  const dMb = pcDefaults.mb ?? PC_SPEC_FIELDS.find((f) => f.id === "mb")?.def ?? "";
-  const dPower = pcDefaults.power ?? PC_SPEC_FIELDS.find((f) => f.id === "power")?.def ?? "";
-  const dCpuCooler = pcDefaults.cpuCooler ?? PC_SPEC_FIELDS.find((f) => f.id === "cpuCooler")?.def ?? "";
+  const defOf = (id: PcSpecFieldId) =>
+    normalizeFieldValue(id, pcDefaults[id] ?? PC_SPEC_FIELDS.find((f) => f.id === id)?.def ?? "");
+  const dCpu = defOf("cpu");
+  const dRam = defOf("ram");
+  const dGpu = defOf("gpu");
+  const dMb = defOf("mb");
+  const dPower = defOf("power");
+  const dCpuCooler = defOf("cpuCooler");
   const dKey = `${dCpu}|${dRam}|${dGpu}|${dMb}|${dPower}|${dCpuCooler}`;
   const existingDefault = map.get(dKey);
   if (existingDefault) existingDefault.qty += COUNTER_SPARE_PC_QTY;

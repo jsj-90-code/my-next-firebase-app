@@ -75,6 +75,7 @@ export type PcSpecFieldId =
   | "headset"
   | "speaker"
   | "charger"
+  | "adapter"
   | "joypad";
 
 export type PcSpecValues = Partial<Record<PcSpecFieldId, string>>;

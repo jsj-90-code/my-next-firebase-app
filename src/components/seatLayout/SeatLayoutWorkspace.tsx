@@ -10,6 +10,7 @@ import {
   ZONE_TYPES,
   COMPOSITE_H,
   COMPOSITE_W,
+  EXPORT_SCALE,
   defaultPcDefaults,
 } from "@/lib/seatLayout/constants";
 import { computeBasicPcQty, getContrastText, nextSuffix } from "@/lib/seatLayout/calc";
@@ -1788,10 +1789,14 @@ export function SeatLayoutWorkspace() {
       setStatusMsg("먼저 도면을 업로드하세요.", "error");
       return null;
     }
-    cv.width = COMPOSITE_W;
-    cv.height = COMPOSITE_H;
+    // 캔버스 자체를 EXPORT_SCALE배 키우고 그만큼 확대해서 그리면, canvasRender.ts의 좌표/폰트
+    // 크기(전부 COMPOSITE_W/H 기준)는 그대로 두고도 최종 PNG만 고해상도로 뽑을 수 있다 —
+    // PPT에서 휠로 확대했을 때 글씨가 깨져 보이던 문제 대응.
+    cv.width = COMPOSITE_W * EXPORT_SCALE;
+    cv.height = COMPOSITE_H * EXPORT_SCALE;
     const ctx = cv.getContext("2d");
     if (!ctx) return null;
+    ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
 
     renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
     const desk = { key: "desk", label: "책상발주도면", dataUrl: cv.toDataURL("image/png") };
