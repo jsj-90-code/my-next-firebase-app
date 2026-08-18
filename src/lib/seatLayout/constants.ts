@@ -112,6 +112,7 @@ export const PC_SPEC_FIELDS: PcSpecField[] = [
   { id: "mouse", label: "마우스", def: "G304 & ROCCAT PURE SEL 유선 화이트" },
   { id: "keyboard", label: "키보드", def: "K400" },
   { id: "headset", label: "헤드셋", def: "G58" },
+  { id: "speaker", label: "스피커", def: "블루오션 2 (앱코 S1000) 스피커" },
   { id: "charger", label: "충전기", def: "무선충전기" },
   { id: "joypad", label: "조이패드", def: "없음" },
 ];

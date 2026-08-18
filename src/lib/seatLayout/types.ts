@@ -73,6 +73,7 @@ export type PcSpecFieldId =
   | "mouse"
   | "keyboard"
   | "headset"
+  | "speaker"
   | "charger"
   | "joypad";
 

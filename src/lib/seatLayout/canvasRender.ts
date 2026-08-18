@@ -689,11 +689,12 @@ export function renderOrderSummaryImage(
     drawTable(c, marginX, y, summaryColW.reduce((s, w) => s + w, 0), headerH, rowH, summaryCols, summaryRows, shrink) +
     sectionGap;
 
-  // [ PC 세트 구성 ] — CPU/RAM/VGA/M·B/POWER/CPU쿨러는 한 존 안에서 같이 업그레이드되면 한
-  // 세트로 묶어서 발주해야 하므로(부품별로 따로 시키면 어느 존 조합인지 알 수 없다), 조합별로
-  // 수량을 묶어서 보여준다. 나머지 부품은 현장에서 개별 설치하는 주변기기라 아래
-  // [ PC 발주 합계 ]에 그대로 항목별로 나열한다.
-  drawSectionTitle("[ PC 세트 구성 ]");
+  // [ PC 구성 ] — CPU/RAM/VGA/M·B/POWER/CPU쿨러는 한 존 안에서 같이 업그레이드되면 한 세트로
+  // 묶어서 발주해야 하므로(부품별로 따로 시키면 어느 존 조합인지 알 수 없다), 조합별로 수량을
+  // 묶어서 보여준다. 좌석 배정분 외에 카운터 PC(1대)/대체 PC(1대)도 전역 기본 사양으로 더해서
+  // computePcTotal(좌석 합계+2)과 총수량이 맞도록 한다. 나머지 부품은 현장에서 개별 설치하는
+  // 주변기기라 아래 [ 주변기기 ]에 그대로 항목별로 나열한다.
+  drawSectionTitle("[ PC 구성 (카운터PC+여분PC 포함) ]");
   const pcSetTableRows = pcSetRows.map((r) => [
     r.cpu,
     r.ram,
@@ -719,11 +720,12 @@ export function renderOrderSummaryImage(
       shrink,
     ) + sectionGap;
 
-  // [ PC 발주 합계 ] — 의자(책상 존 기준) + 모니터암/키보드/마우스 등(PC 존 기준) 사양별
-  // 실제 주문 수량. 표가 길어질 수 있어 베젤 사이즈 표처럼 좌/우 2단으로 나눠 그린다.
-  drawSectionTitle("[ PC 발주 합계 ]");
-  const pcOrderTableRows = pcOrderRows.map((r) => [r.field, r.value, `${r.qty} EA`]);
-  const pcOrderTitles = ["항목", "제품", "수량"];
+  // [ 주변기기 ] — 의자(책상 존 기준) + 모니터암/키보드/마우스/헤드셋/스피커/모니터/CASE 등
+  // (PC 존 기준, 카운터 PC 1대분 포함) 사양별 실제 주문 수량. 표가 길어질 수 있어 베젤 사이즈
+  // 표처럼 좌/우 2단으로 나눠 그린다.
+  drawSectionTitle("[ 주변기기 ]");
+  const pcOrderTableRows = pcOrderRows.map((r) => [r.field, r.value, `${r.qty} EA`, r.note ?? "-"]);
+  const pcOrderTitles = ["항목", "제품", "수량", "비고"];
   const pcOrderHalf = Math.ceil(pcOrderTableRows.length / 2);
   const pcOrderLeftRows = pcOrderTableRows.slice(0, pcOrderHalf);
   const pcOrderRightRows = pcOrderTableRows.slice(pcOrderHalf);

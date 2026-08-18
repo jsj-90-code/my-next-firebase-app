@@ -108,7 +108,40 @@ export function computeDeskSummary(zones: DeskZone[]): DeskSummaryRow[] {
 // 설치하는 존의 의자) PC 발주 합계 표에서는 제외한다.
 const SKIP_ORDER_VALUES = new Set(["없음", "해당없음"]);
 
-export type OrderSummaryRow = { field: string; value: string; qty: number };
+// 카운터 PC(1대)는 특정 존에 속하지 않아 좌석 데이터로 집계되지 않지만, 실제로 사람이 쓰는
+// PC라 전역 기본사양 값으로 항상 1대를 더한다. 대체 PC(예비기, 창고 보관)는 사람이 상시
+// 사용하는 게 아니라 여기(주변기기: 모니터/키보드/마우스/헤드셋/스피커/모니터암 등)에는
+// 포함하지 않는다 — CPU/RAM/GPU 등 실제 부품이 필요한 [ PC 구성 ]/CASE 표에서만 반영한다.
+const COUNTER_PC_QTY = 1;
+
+export type OrderSummaryRow = { field: string; value: string; qty: number; note?: string };
+
+// 아래 소모품/주변기기는 실제 좌석 배정 수량과 무관하게 매장에서 늘 일정 수량을 여분으로
+// 보유한다. 배정된 좌석이 하나도 없어도(예: 매장 전체가 다른 마우스로 바뀌어도) 여분 재고는
+// 항상 표에 나타나야 하므로, 계산된 수량이 0이어도 행을 새로 추가한다.
+const SPARE_STOCK: { field: string; value: string; spareQty: number }[] = [
+  { field: "마우스", value: "G304", spareQty: 5 },
+  { field: "마우스", value: "ROCCAT PURE SEL 유선 화이트", spareQty: 5 },
+  { field: "키보드", value: "K400", spareQty: 5 },
+  { field: "스피커", value: "블루오션 2 (앱코 S1000) 스피커", spareQty: 5 },
+  { field: "헤드셋", value: "G58", spareQty: 5 },
+  { field: "모니터", value: "제이씨현 32인치 240Hz", spareQty: 1 },
+];
+
+function applySpareStock(rows: OrderSummaryRow[]): OrderSummaryRow[] {
+  const byKey = new Map<string, OrderSummaryRow>();
+  rows.forEach((r) => byKey.set(`${r.field}|${r.value}`, r));
+  SPARE_STOCK.forEach(({ field, value, spareQty }) => {
+    const existing = byKey.get(`${field}|${value}`);
+    if (existing) {
+      existing.note = `기준 ${existing.qty} + 여분 ${spareQty}`;
+      existing.qty += spareQty;
+    } else {
+      rows.push({ field, value, qty: spareQty, note: `배정 좌석 없음, 여분 ${spareQty}만 보유` });
+    }
+  });
+  return rows;
+}
 
 // CPU/RAM/GPU/M·B/POWER/CPU쿨러는 한 세트로 묶어서 조립(업그레이드) 발주해야 하는 값이라
 // (예: 이 중 하나라도 함께 올린 존은 그 조합 그대로 한 세트로 주문), 개별 항목 합계표에서는
@@ -146,6 +179,14 @@ function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: stri
       map.set(part, (map.get(part) ?? 0) + perProductQty);
     });
   });
+
+  // 카운터 PC(1대)도 커플존이 아닌 일반 조합 그대로 1대분을 더한다.
+  const counterValue = pcDefaults.mouse ?? def;
+  if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
+    splitMouseValue(counterValue).forEach((part) => {
+      map.set(part, (map.get(part) ?? 0) + COUNTER_PC_QTY);
+    });
+  }
 
   return Array.from(map.entries())
     .sort((a, b) => b[1] - a[1])
@@ -200,11 +241,15 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
       if (!value || SKIP_ORDER_VALUES.has(value)) return;
       map.set(value, (map.get(value) ?? 0) + qty);
     });
+    const counterValue = pcDefaults[f.id] ?? f.def;
+    if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
+      map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
+    }
     Array.from(map.entries())
       .sort((a, b) => b[1] - a[1])
       .forEach(([value, qty]) => rows.push({ field: f.label, value, qty }));
   });
-  return rows;
+  return applySpareStock(rows);
 }
 
 export type PcSetRow = {
@@ -216,6 +261,11 @@ export type PcSetRow = {
   cpuCooler: string;
   qty: number;
 };
+
+// 카운터 PC(1대)/대체 PC(1대)는 특정 존에 속하지 않아 좌석 데이터로 집계되지 않지만, 실제로
+// 부품이 들어가는 PC라 전역 기본 사양 조합으로 항상 2대를 더한다 — computePcTotal의
+// "좌석 합계 + 2"와 총수량이 맞아야 한다.
+const COUNTER_SPARE_PC_QTY = 2;
 
 // 한 존에서 CPU/RAM/GPU/M·B/POWER/CPU쿨러 중 하나라도 기본사양과 다르게(업그레이드) 지정되면,
 // 그 조합 전체를 한 세트로 묶어서 수량을 합산한다. 조립 PC는 부품을 따로따로 시킬 수 없고 한
@@ -242,6 +292,26 @@ export function computePcSetSummary(pcZones: PcZone[], pcDefaults: PcSpecValues)
     if (existing) existing.qty += qty;
     else map.set(key, { cpu, ram, gpu, mb, power, cpuCooler, qty });
   });
+
+  const dCpu = pcDefaults.cpu ?? PC_SPEC_FIELDS.find((f) => f.id === "cpu")?.def ?? "";
+  const dRam = pcDefaults.ram ?? PC_SPEC_FIELDS.find((f) => f.id === "ram")?.def ?? "";
+  const dGpu = pcDefaults.gpu ?? PC_SPEC_FIELDS.find((f) => f.id === "gpu")?.def ?? "";
+  const dMb = pcDefaults.mb ?? PC_SPEC_FIELDS.find((f) => f.id === "mb")?.def ?? "";
+  const dPower = pcDefaults.power ?? PC_SPEC_FIELDS.find((f) => f.id === "power")?.def ?? "";
+  const dCpuCooler = pcDefaults.cpuCooler ?? PC_SPEC_FIELDS.find((f) => f.id === "cpuCooler")?.def ?? "";
+  const dKey = `${dCpu}|${dRam}|${dGpu}|${dMb}|${dPower}|${dCpuCooler}`;
+  const existingDefault = map.get(dKey);
+  if (existingDefault) existingDefault.qty += COUNTER_SPARE_PC_QTY;
+  else
+    map.set(dKey, {
+      cpu: dCpu,
+      ram: dRam,
+      gpu: dGpu,
+      mb: dMb,
+      power: dPower,
+      cpuCooler: dCpuCooler,
+      qty: COUNTER_SPARE_PC_QTY,
+    });
 
   return Array.from(map.values()).sort((a, b) => b.qty - a.qty);
 }
