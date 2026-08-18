@@ -544,12 +544,16 @@ export function renderPcFloorplanImage(
     c.font = "bold 16px sans-serif";
     c.fillText(f.label, lx, ly + 16);
     const labelW = c.measureText(f.label).width;
-    c.font = "16px sans-serif";
     const rawDefault = pcDefaults[f.id] || f.def;
     // 마우스는 " & "로 이어붙인 조합이라 부품 하나씩 정규화한 뒤 다시 이어붙여야 하고, 나머지는
     // 통짜 문자열을 그대로 정규화한다 — 저장된 값이 옛 문구여도 항상 최신 이름으로 보여준다.
     const displayDefault =
       f.id === "mouse" ? splitMouseValue(rawDefault).join(" & ") : normalizeFieldValue(f.id, rawDefault);
+    // 마우스처럼 정식 제품명이 길어지면 칸 폭을 넘어 다음 칸에 잘려 보이던 문제가 있어,
+    // 칸에 맞을 때까지 글자 크기를 줄인다.
+    const valueMaxW = colW2 - (12 + labelW + 10) - 8;
+    const valueFont = fitValueFontSize(c, displayDefault, valueMaxW, 16, 10);
+    c.font = `${valueFont}px sans-serif`;
     c.fillText(displayDefault, lx + labelW + 10, ly + 16);
   });
 
