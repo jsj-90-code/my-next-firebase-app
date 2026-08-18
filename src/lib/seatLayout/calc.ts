@@ -214,6 +214,21 @@ const COUNTER_PC_CASE = "일반 케이스";
 const COUNTER_PC_CASE_QTY = 1;
 const SPARE_PC_CASE_QTY = 1;
 
+// 코드에서 기본 문구를 바꿔도, 이미 저장된 프로젝트/사양설정 데이터에는 옛날 문구가 그대로
+// 남아있어 자동으로 안 바뀐다. 알려진 옛날 문구는 계산 시점에 새 문구로 치환해서 집계한다.
+const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>> = {
+  charger: {
+    "무선충전기 (2포트 이상 어댑터 필요)": "무선충전기(2포트 이상)",
+  },
+  joypad: {
+    "조이패드 포함": "조이패드",
+  },
+};
+
+function normalizeFieldValue(fieldId: PcSpecFieldId, value: string): string {
+  return FIELD_VALUE_ALIASES[fieldId]?.[value] ?? value;
+}
+
 function computeCaseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
   const map = new Map<string, number>();
   const add = (value: string, qty: number) => {
@@ -251,11 +266,11 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
     pcZones.forEach((z) => {
       const qty = Number(z.seats) || 0;
       if (!qty) return;
-      const value = z.pcOverrides?.[f.id] ?? pcDefaults[f.id] ?? f.def;
+      const value = normalizeFieldValue(f.id, z.pcOverrides?.[f.id] ?? pcDefaults[f.id] ?? f.def);
       if (!value || SKIP_ORDER_VALUES.has(value)) return;
       map.set(value, (map.get(value) ?? 0) + qty);
     });
-    const counterValue = pcDefaults[f.id] ?? f.def;
+    const counterValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
     if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
       map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
     }

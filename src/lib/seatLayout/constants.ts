@@ -145,7 +145,7 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
 // 존 유형별 PC 기본사양 재정의 (없는 항목은 전역 기본값 사용)
 export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
   vip: { monitorArm: "관절암", monitor: "비트엠 34인치 울트라와이드" },
-  fc: { monitorArm: "관절암", monitor: "큐닉스 27인치 300Hz", joypad: "조이패드 포함" },
+  fc: { monitorArm: "관절암", monitor: "큐닉스 27인치 300Hz", joypad: "조이패드" },
   lol: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   fps: {
     monitorArm: "관절암",
