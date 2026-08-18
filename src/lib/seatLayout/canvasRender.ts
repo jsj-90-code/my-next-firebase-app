@@ -18,6 +18,9 @@ import {
   getContrastText,
   groupDeskZonesForCard,
   mergeZoneDisplayNames,
+  normalizeFieldValue,
+  resolveAdapterValue,
+  splitMouseValue,
   tintColor,
 } from "./calc";
 import { COMPOSITE_H, COMPOSITE_W, PC_SPEC_FIELDS } from "./constants";
@@ -201,11 +204,12 @@ export function drawZoneOverlaysOnCard(
     return { z, zx, zy, zw, zh };
   });
 
-  c.font = "bold 24px sans-serif";
-  const tagH = 30;
+  // 존이 많으면 이름표가 서로 겹치거나 도면이 번잡해 보여서, 기존 24px보다 작게 줄였다.
+  c.font = "bold 16px sans-serif";
+  const tagH = 22;
   const naiveTags = rects.map(({ zx, zy, z }) => {
     const textW = c.measureText(z.name).width;
-    return { x: zx, y: Math.max(0, zy - tagH - 4), w: textW + 18, h: tagH };
+    return { x: zx, y: Math.max(0, zy - tagH - 4), w: textW + 14, h: tagH };
   });
   const tags = resolveTagOverlaps(naiveTags);
 
@@ -214,7 +218,8 @@ export function drawZoneOverlaysOnCard(
     c.fillStyle = z.color;
     c.fillRect(tag.x, tag.y, tag.w, tag.h);
     c.fillStyle = getContrastText(z.color);
-    c.fillText(z.name, tag.x + 9, tag.y + 20);
+    c.font = "bold 16px sans-serif";
+    c.fillText(z.name, tag.x + 7, tag.y + 15.5);
   });
 }
 
@@ -231,9 +236,10 @@ function fitValueFontSize(
   maxWidth: number,
   baseSize: number,
   minSize = 10,
+  bold = false,
 ): number {
   if (!text || maxWidth <= 0) return baseSize;
-  c.font = `${baseSize}px sans-serif`;
+  c.font = `${bold ? "bold " : ""}${baseSize}px sans-serif`;
   const baseWidth = c.measureText(text).width;
   if (baseWidth <= maxWidth) return baseSize;
   return Math.max(minSize, Math.floor((maxWidth / baseWidth) * baseSize));
@@ -298,8 +304,10 @@ export function renderDeskFloorplanImage(
     c.fillStyle = g.color;
     c.fillRect(px, py, pw, layout.headerH);
     c.fillStyle = textColor;
-    c.font = `bold ${layout.headerFont}px sans-serif`;
-    c.fillText(`[${g.name}- ${g.seats}석]`, px + 8, py + layout.headerH * 0.68);
+    const deskHeaderText = `[${g.name}- ${g.seats}석]`;
+    const deskHeaderFont = fitValueFontSize(c, deskHeaderText, pw - 16, layout.headerFont, 11, true);
+    c.font = `bold ${deskHeaderFont}px sans-serif`;
+    c.fillText(deskHeaderText, px + 8, py + layout.headerH * 0.68);
 
     const values = [g.desk, g.sizeText, g.cooler, g.partition, g.monitorArm, g.chair];
     const lineH = (ph - layout.headerH) / specLabels.length;
@@ -359,10 +367,29 @@ export function renderPcFloorplanImage(
   const overrideCardOrder: string[] = [];
   pcZones.forEach((z) => {
     const ov = z.pcOverrides || {};
-    const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null).map((f) => ({
-      label: f.label,
-      value: ov[f.id] as string,
-    }));
+    // 옛날 문구 그대로 저장된 override는 정식 이름으로 바꿔서 보여주고, 정규화 후 값이 기본값과
+    // 똑같아지면(예: FPS 충전기가 예전엔 "무선충전기(2포트 이상)"였다가 지금은 기본값과 같은
+    // "무선충전기") 더 이상 "다른 사양"이 아니므로 카드에서 뺀다.
+    const lines = PC_SPEC_FIELDS.filter((f) => ov[f.id] != null)
+      .map((f) => {
+        const value = normalizeFieldValue(f.id, ov[f.id] as string);
+        const defaultValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
+        return { label: f.label, value, redundant: value === defaultValue };
+      })
+      .filter((ln) => !ln.redundant)
+      .map(({ label, value }) => ({ label, value }));
+
+    // 어답터 항목이 생기기 전에 저장된 존은 override가 없지만, 실제로 적용되는 값(레이저
+    // 블랙샤크 V2 하이퍼스피드 헤드셋을 쓰면 2구 어답터)이 기본값과 다르면 카드에도 보여준다.
+    if (ov.adapter == null) {
+      const adapterDef = PC_SPEC_FIELDS.find((f) => f.id === "adapter")?.def ?? "";
+      const adapterValue = resolveAdapterValue(z, pcDefaults, adapterDef);
+      const adapterDefaultValue = normalizeFieldValue("adapter", pcDefaults.adapter ?? adapterDef);
+      if (adapterValue !== adapterDefaultValue) {
+        lines.push({ label: "어답터", value: adapterValue });
+      }
+    }
+
     if (!lines.length) return;
     const linesKey = lines.map((l) => `${l.label}=${l.value}`).join("|");
     const key = `${baseZoneName(z.name)}::${linesKey}`;
@@ -514,7 +541,12 @@ export function renderPcFloorplanImage(
     c.fillText(f.label, lx, ly + 16);
     const labelW = c.measureText(f.label).width;
     c.font = "16px sans-serif";
-    c.fillText(pcDefaults[f.id] || f.def, lx + labelW + 10, ly + 16);
+    const rawDefault = pcDefaults[f.id] || f.def;
+    // 마우스는 " & "로 이어붙인 조합이라 부품 하나씩 정규화한 뒤 다시 이어붙여야 하고, 나머지는
+    // 통짜 문자열을 그대로 정규화한다 — 저장된 값이 옛 문구여도 항상 최신 이름으로 보여준다.
+    const displayDefault =
+      f.id === "mouse" ? splitMouseValue(rawDefault).join(" & ") : normalizeFieldValue(f.id, rawDefault);
+    c.fillText(displayDefault, lx + labelW + 10, ly + 16);
   });
 
   const rowH = rowHeightsFor(cols).map((h) => h * scale);
@@ -550,8 +582,10 @@ export function renderPcFloorplanImage(
     c.fillStyle = item.color;
     c.fillRect(px, py, pw, headerH);
     c.fillStyle = textColor;
-    c.font = `bold ${headerFont}px sans-serif`;
-    c.fillText(`[${item.name}- ${item.seats}대]`, px + 8, py + headerH * 0.68);
+    const pcHeaderText = `[${item.name}- ${item.seats}대]`;
+    const pcHeaderFont = fitValueFontSize(c, pcHeaderText, pw - 16, headerFont, 11, true);
+    c.font = `bold ${pcHeaderFont}px sans-serif`;
+    c.fillText(pcHeaderText, px + 8, py + headerH * 0.68);
 
     // 줄 높이는 카드 자기 줄 수로 나누지 않고 패널 전체와 같은 고정값을 쓴다 — 그래서 같은 행
     // 안에서 줄이 적은 카드는 나머지 칸을 억지로 채우지 않고 그냥 아래쪽에 공백으로 남는다.

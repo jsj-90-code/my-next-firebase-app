@@ -151,13 +151,15 @@ export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
   vip: { monitorArm: "관절암", monitor: "비트엠 34인치 울트라와이드" },
   fc: { monitorArm: "관절암", monitor: "큐닉스 27인치 300Hz", joypad: "조이패드" },
   lol: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
+  // 어답터는 존 유형이 아니라 헤드셋 종류로 정해져서(레이저 블랙샤크 V2 하이퍼스피드 헤드셋을
+  // 쓰는 좌석만 2구 어답터) 여기 override로 안 넣는다 — computePcOrderSummary가 헤드셋 값을
+  // 보고 자동으로 계산한다.
   fps: {
     monitorArm: "관절암",
     monitor: "BenQ XL2540X+ 280Hz",
     mouse: "G304 & 스틸시리즈 라이벌3",
     keyboard: "Razer Huntsman V3 Pro",
     headset: "Razer BlackShark V2 Hyperspeed",
-    adapter: "2구 어답터",
   },
   team: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   friends: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },

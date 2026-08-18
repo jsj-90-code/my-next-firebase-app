@@ -238,7 +238,7 @@ function normalizeMouseName(raw: string): string {
   return MOUSE_NAME_ALIASES[stripped] ?? stripped;
 }
 
-function splitMouseValue(value: string): string[] {
+export function splitMouseValue(value: string): string[] {
   return value
     .split(MOUSE_SPLIT_RE)
     .map((p) => normalizeMouseName(p))
@@ -312,9 +312,13 @@ const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>
   },
 };
 
-function normalizeFieldValue(fieldId: PcSpecFieldId, value: string): string {
+export function normalizeFieldValue(fieldId: PcSpecFieldId, value: string): string {
   return FIELD_VALUE_ALIASES[fieldId]?.[value] ?? value;
 }
+
+// 어댑터는 존 유형이 아니라 헤드셋 종류로 정해진다 — 레이저 블랙샤크 V2 하이퍼스피드 헤드셋을
+// 쓰는 좌석만 2구 어답터가 필요하고, 나머지는 기본값(1구 어답터)을 쓴다.
+const TWO_PORT_ADAPTER_HEADSET = "Razer BlackShark V2 Hyperspeed";
 
 // 어댑터 항목이 생기기 전에 저장된 존은 adapter override가 없다. 그런 존의 충전기 값에 예전
 // "2포트" 표시가 남아있으면, 그걸 근거로 어댑터를 "2구 어답터"로 추론해서 채워준다.
@@ -323,8 +327,11 @@ const LEGACY_2PORT_CHARGER_VALUES = new Set([
   "무선충전기(2포트 이상)",
 ]);
 
-function resolveAdapterValue(z: PcZone, pcDefaults: PcSpecValues, def: string): string {
+export function resolveAdapterValue(z: PcZone, pcDefaults: PcSpecValues, def: string): string {
   if (z.pcOverrides?.adapter != null) return normalizeFieldValue("adapter", z.pcOverrides.adapter);
+  const headsetDef = PC_SPEC_FIELDS.find((f) => f.id === "headset")?.def ?? "";
+  const resolvedHeadset = normalizeFieldValue("headset", z.pcOverrides?.headset ?? pcDefaults.headset ?? headsetDef);
+  if (resolvedHeadset === TWO_PORT_ADAPTER_HEADSET) return "2구 어답터";
   const legacyCharger = z.pcOverrides?.charger;
   if (legacyCharger && LEGACY_2PORT_CHARGER_VALUES.has(legacyCharger)) return "2구 어답터";
   return normalizeFieldValue("adapter", pcDefaults.adapter ?? def);
