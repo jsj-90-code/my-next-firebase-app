@@ -42,3 +42,6 @@ next-env.d.ts
 
 # playwright test artifacts
 .playwright-mcp/
+
+# 기밀 원본 데이터(가맹점 실매출 등) - 분석용으로만 로컬에 두고 git에는 올리지 않는다.
+/reference/

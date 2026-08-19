@@ -20,5 +20,70 @@ service cloud.firestore {
     match /seatLayoutSettings/{docId} {
       allow read, write: if isCompanyAccount();
     }
+
+    // 점포평가(V61/V62) 시스템 -----------------------------------------------
+
+    // 관리자 이메일 목록. 문서 자체는 Firebase 콘솔/관리자 SDK로만 등록하고,
+    // 클라이언트에서는 절대 쓸 수 없게 해서 이 목록으로 스스로 권한을 올리는 것을 막는다.
+    function isStoreEvalAdmin() {
+      return isCompanyAccount()
+        && exists(/databases/$(database)/documents/storeEvalAdmins/$(request.auth.token.email));
+    }
+
+    match /storeEvalAdmins/{email} {
+      allow read: if isCompanyAccount();
+      allow write: if false;
+    }
+
+    // 후보지코드(N001...) 자동 생성용 트랜잭션 카운터.
+    match /storeEvalMeta/{docId} {
+      allow read, write: if isCompanyAccount();
+    }
+
+    match /storeEvalCandidates/{candidateId} {
+      allow read, write: if isCompanyAccount();
+    }
+
+    match /storeEvalCompetitors/{competitorId} {
+      allow read, write: if isCompanyAccount();
+    }
+
+    match /storeEvalLocationEvaluations/{candidateId} {
+      allow read, write: if isCompanyAccount();
+    }
+
+    // 평가 결과 스냅샷: 재계산 이력을 보존해야 하므로 삭제는 막고 생성/수정만 허용한다.
+    match /storeEvalResults/{candidateId} {
+      allow read, create, update: if isCompanyAccount();
+      allow delete: if false;
+    }
+
+    // 모델 계수/판정기준: 일반 사용자는 읽기만, 변경은 관리자만.
+    match /storeEvalSettings/{docId} {
+      allow read: if isCompanyAccount();
+      allow write: if isStoreEvalAdmin();
+    }
+
+    // 설정 변경 이력: 관리자만 생성, 아무도 수정/삭제하지 못한다.
+    match /storeEvalSettingsHistory/{historyId} {
+      allow read: if isCompanyAccount();
+      allow create: if isStoreEvalAdmin();
+      allow update, delete: if false;
+    }
+
+    // 기존 가맹점 마스터/월별매출 (구글시트 "가맹점전수조사" 동기화 대상)
+    match /storeEvalExistingStores/{storeCode} {
+      allow read, write: if isCompanyAccount();
+    }
+
+    match /storeEvalExistingStoreSales/{salesId} {
+      allow read, write: if isCompanyAccount();
+    }
+
+    // 수정·삭제·재계산 이력: 생성만 허용(불변 로그), 수정/삭제 금지.
+    match /storeEvalAuditLog/{logId} {
+      allow read, create: if isCompanyAccount();
+      allow update, delete: if false;
+    }
   }
 }

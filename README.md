@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 점포평가 시스템 (V62) 사용 안내
 
-## Getting Started
+PC방 신규 후보지의 예상매출(V62 모델)을 계산하고, 기존 가맹점 실매출로 모델을 검증하는 사내 도구입니다.
+아래 순서대로 따라 하면 됩니다.
 
-First, run the development server:
+## 1. 처음 한 번만 하는 준비
+
+1. 이 저장소를 내려받고, 터미널(명령창)에서 이 폴더로 이동합니다.
+2. 패키지를 설치합니다.
+   ```bash
+   npm install
+   ```
+3. `.env.local` 파일이 있는지 확인합니다(없으면 `.env.local.example`을 복사해서 `.env.local`로 만들고, Firebase 콘솔에서 발급받은 값을 채워 넣습니다). 이미 있다면 이 단계는 건너뜁니다.
+4. Firestore 보안규칙을 배포합니다(점포평가 화면들이 데이터를 읽고 쓰려면 반드시 필요합니다. 이미 배포했다면 다시 할 필요는 없지만, `firestore.rules`를 고친 뒤에는 매번 다시 배포해야 합니다).
+   ```bash
+   npx firebase-tools deploy --only firestore:rules,firestore:indexes
+   ```
+
+## 2. 실행하기
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+터미널에 나오는 주소(보통 http://localhost:3000)를 브라우저에서 열고, 회사 구글 계정(@isens.camp)으로 로그인한 뒤 홈 화면에서 **"점포평가 시스템 (V62)"** 카드를 클릭합니다. 또는 바로 `http://localhost:3000/store-eval`로 들어가도 됩니다.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 3. 화면 구성
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **대시보드**: 등록된 후보지 수, 평가완료/입력필요/포화주의/입지재검토 건수, 후보지별 예상매출을 한눈에 봅니다.
+- **신규후보지**: "+ 신규 후보지 등록"을 누르면 N001, N002... 형식 코드가 자동으로 생성됩니다. 상세 페이지에는 탭이 4개 있습니다.
+  1. **기본정보** — 후보지 정보, 상권 인구통계, 자사 시설/사양을 입력합니다. "임시저장"은 나중에 다시 고칠 수 있는 초안, "저장"은 정식 등록입니다.
+  2. **경쟁점** — 후보지 주변 경쟁 PC방을 하나씩 추가합니다. 조사를 못 했으면 "경쟁점없음" 또는 "노후·저경쟁력 미조사" 중 하나를 골라주세요.
+  3. **입지동선평가** — 상권 안 위치, 동선, 외부유입제한, 브랜드구분(반드시 "블랙라벨"이어야 최종판정이 나옵니다) 등을 입력합니다.
+  4. **최종결과** — 위 세 탭을 다 채우면 V62 예상매출, 85%/115% 범위, 최종판정이 자동으로 계산됩니다. "적용된 산식과 계수 보기"를 누르면 어떤 수식·계수로 계산됐는지 전부 펼쳐볼 수 있고, "인쇄/PDF 저장"으로 출력할 수 있습니다.
+- **기존 가맹점 검증**: 기존 가맹점의 실제매출과 모델 예측값을 비교해서 모델이 얼마나 정확한지 보여줍니다. (아래 "4. 기존 가맹점 매출 데이터 연동" 참고)
+- **운영설정**: V62 계산에 쓰이는 모든 계수와 판정 기준을 봅니다. **관리자로 등록된 사람만 값을 바꿀 수 있습니다.** 관리자를 추가하려면 Firebase 콘솔 → Firestore Database → `storeEvalAdmins` 컬렉션에서, 문서 ID를 그 사람의 회사 이메일로(예: `jsj-90@isens.camp`) 만들면 됩니다(문서 내용은 아무거나 넣어도 됩니다 — 문서가 "존재하는지"만 확인합니다).
+- **백업**: (관리자 전용) 전체 데이터를 JSON 파일 하나로 내려받습니다.
 
-## Learn More
+## 4. 기존 가맹점 매출 데이터 연동
 
-To learn more about Next.js, take a look at the following resources:
+이 시스템은 기존 가맹점의 월별 실매출을 자체적으로 만들지 않습니다 — 본사에서 관리하는 구글 스프레드시트("PC가맹_PC_가맹점전수조사_데이터")의 매출DB를 그대로 가져와 씁니다. 지금은 자동 동기화 배치가 아직 없으니, 신규 매출이 쌓이면 아래 컬렉션에 값을 넣어주는 절차가 필요합니다(엔지니어에게 요청하거나, 추후 동기화 기능을 추가해야 합니다):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `storeEvalExistingStores` — 가맹점 마스터(가맹점코드, PC대수, 오픈일, V61 예측값 등)
+- `storeEvalExistingStoreSales` — 월별 매출(가맹점코드+연월별 PC매출/상품매출)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 5. 꼭 알아두어야 할 점 (정확도 관련 한계)
 
-## Deploy on Vercel
+원본 구글시트를 분석해서 대부분의 산식을 셀 수식 그대로 옮겼지만, 두 가지는 원본 Apps Script(`점포평가.gs`, `repair.gs`) 코드를 구하지 못해 100% 재현하지 못했습니다. 자세한 내용은 `docs/data-issues.md`에 정리해 두었습니다.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **V61 기본예측은 "근사치"입니다.** 원본은 비음수 릿지회귀+중앙값 블렌드라는 정교한 통계모형을 쓰는데, 이 웹 버전은 원본 시트에 이미 들어있던 안전장치(폴백 회귀식, 26개 검증표본으로 근사)를 씁니다. 화면에도 "폴백 근사치"라고 표시됩니다.
+2. **09_입지동선평가의 1~5점 판단기준표가 원본에 없습니다.** 화면에 참고 사례만 보여주고 "공식 기준"이라고는 표시하지 않습니다.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+나중에 `점포평가.gs`/`repair.gs` 원본을 구하게 되면 `src/lib/storeEval/calc.ts`의 해당 함수(주석에 근거가 다 적혀 있습니다)만 정확한 코드로 바꿔주면 됩니다.
+
+## 6. 개발자용 정보
+
+- 산식/타입/DB 코드: `src/lib/storeEval/` (`types.ts`, `calc.ts`, `evaluate.ts`, `store.ts`, `settings.ts`, `format.ts`)
+- 화면 코드: `src/app/store-eval/`
+- 자동 테스트(원본 엑셀 실제 값과 비교하는 골든 테스트 포함):
+  ```bash
+  npm run test
+  ```
+- 산식 분석 결과 문서: `docs/model-spec.md` / 미해결 항목: `docs/data-issues.md`
+
+---
+
+## (참고) Next.js 기본 안내
+
+이 프로젝트는 [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app)으로 시작된 Next.js 프로젝트입니다.
+
+```bash
+npm run dev
+```
+
+브라우저에서 [http://localhost:3000](http://localhost:3000)을 열면 됩니다. `src/app/page.tsx`를 수정하면 화면이 자동으로 갱신됩니다.
+
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Learn Next.js](https://nextjs.org/learn)

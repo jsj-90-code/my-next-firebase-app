@@ -33,6 +33,22 @@ export default function Home() {
           </p>
         </Link>
 
+        <Link
+          href="/store-eval"
+          className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+            사내 도구
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            점포평가 시스템 (V62) →
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            신규후보지·경쟁점·입지동선을 입력하면 V62 예상매출과 최종판정을 계산하고, 기존
+            가맹점 실매출로 모델을 검증합니다.
+          </p>
+        </Link>
+
         <AuthPanel />
       </main>
     </div>

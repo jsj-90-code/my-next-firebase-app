@@ -1,0 +1,412 @@
+"use client";
+
+// 탭2 경쟁점 - "3. 경쟁점 입력" 화면 요구사항.
+// Competitor 타입의 필드 전부를 폼에 반영하고, surveyState(신규 워크플로 필드)로
+// "경쟁점 데이터 없음"과 "노후·저경쟁력 미조사"를 구분한다(docs/data-issues.md #3).
+
+import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { deleteCompetitor, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
+import type { Competitor, CompetitorSurveyState, GroundLevel, SurveyLevel } from "@/lib/storeEval/types";
+import {
+  BooleanSelectField,
+  NumberField,
+  ScoreSelectField,
+  SelectField,
+  TextAreaField,
+  TextField,
+  gridClass,
+  sectionClass,
+  sectionTitleClass,
+} from "./formFields";
+
+const SURVEY_LEVEL_OPTIONS: { value: SurveyLevel; label: string }[] = [
+  { value: "상세", label: "상세" },
+  { value: "간략", label: "간략" },
+  { value: "외관만", label: "외관만" },
+];
+
+const SURVEY_STATE_OPTIONS: { value: CompetitorSurveyState; label: string }[] = [
+  { value: "조사완료", label: "조사완료" },
+  { value: "경쟁점없음", label: "경쟁점 없음" },
+  { value: "노후저경쟁력미조사", label: "노후·저경쟁력 미조사" },
+];
+
+const GROUND_LEVEL_OPTIONS: { value: GroundLevel; label: string }[] = [
+  { value: "지상", label: "지상" },
+  { value: "지하", label: "지하" },
+];
+
+const DOW_OPTIONS = ["월", "화", "수", "목", "금", "토", "일"].map((d) => ({ value: d, label: d }));
+
+function blankCompetitor(candidateCode: string): Competitor {
+  return {
+    id: `${candidateCode}_${Date.now()}`,
+    candidateCode,
+    name: "",
+    surveyLevel: null,
+    surveyState: "조사완료",
+    address: null,
+    distanceM: null,
+    floor: null,
+    groundLevel: null,
+    totalPcCount: null,
+    appliedPcCount: null,
+    hasElevator: null,
+    cpu: null,
+    vgaBase: null,
+    vgaTop: null,
+    ram: null,
+    monitor: null,
+    ratePer1000Won: null,
+    hourlyRateConverted: null,
+    paidDeduction: null,
+    visitedAt: null,
+    visitedDow: null,
+    visitorCount: null,
+    measuredSeatRate: null,
+    pingbotUtilization: null,
+    pingbotPeriod: null,
+    renovationYear: null,
+    specScore: null,
+    seatScore: null,
+    foodScore: null,
+    foodBasis: null,
+    interiorScore: null,
+    interiorBasis: null,
+    monitorScore: null,
+    monitorBasis: null,
+    locationScore: null,
+    room1: null,
+    room2: null,
+    teamRoom: null,
+    coupleZone: null,
+    premiumZone: null,
+    premiumSpec: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
+const NUMERIC_FIELDS: { key: keyof Competitor; label: string }[] = [
+  { key: "distanceM", label: "거리(m)" },
+  { key: "floor", label: "층수" },
+  { key: "totalPcCount", label: "전체대수" },
+  { key: "appliedPcCount", label: "적용대수" },
+  { key: "ratePer1000Won", label: "1000원당분" },
+  { key: "hourlyRateConverted", label: "시간당환산요금" },
+  { key: "visitorCount", label: "이용객수" },
+  { key: "measuredSeatRate", label: "실측착석률" },
+  { key: "pingbotUtilization", label: "핑봇_가동률" },
+  { key: "renovationYear", label: "리뉴얼연도" },
+  { key: "room1", label: "1인룸 수" },
+  { key: "room2", label: "2인룸 수" },
+  { key: "teamRoom", label: "팀룸 수" },
+  { key: "coupleZone", label: "커플존 수" },
+  { key: "premiumZone", label: "프리미엄존 수" },
+];
+
+function validate(form: Competitor): string[] {
+  const errors: string[] = [];
+  if (!form.name.trim()) errors.push("경쟁점명을 입력해주세요.");
+  for (const f of NUMERIC_FIELDS) {
+    const v = form[f.key];
+    if (typeof v === "number" && v < 0) errors.push(`${f.label}은(는) 음수가 될 수 없습니다.`);
+  }
+  return errors;
+}
+
+function CompetitorForm({
+  initial,
+  onCancel,
+  onSaved,
+  actor,
+}: {
+  initial: Competitor;
+  onCancel: () => void;
+  onSaved: (c: Competitor) => void;
+  actor: string | null;
+}) {
+  const [form, setForm] = useState<Competitor>(initial);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  function set<K extends keyof Competitor>(key: K, value: Competitor[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function handleSubmit() {
+    const validationErrors = validate(form);
+    setErrors(validationErrors);
+    if (validationErrors.length > 0) return;
+    setSaving(true);
+    try {
+      const toSave: Competitor = { ...form, updatedAt: Date.now() };
+      await saveCompetitor(toSave, actor);
+      onSaved(toSave);
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : "저장 중 오류가 발생했습니다."]);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className={`${sectionClass} border-zinc-300 dark:border-zinc-700`}>
+      <h3 className={sectionTitleClass}>경쟁점 {initial.name ? "수정" : "추가"}</h3>
+
+      <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <strong>조사상태</strong>는 원본 시트에 없던 신규 필드입니다. &ldquo;경쟁점 없음&rdquo;(상권에 경쟁점이 실제로
+        없음)과 &ldquo;노후·저경쟁력 미조사&rdquo;(경쟁점은 있으나 노후·저경쟁력이라 상세조사를 생략함)를 구분해
+        기록합니다.
+      </div>
+
+      <div className={`${gridClass} mt-4`}>
+        <TextField label="경쟁점명" value={form.name} onChange={(v) => set("name", v)} required />
+        <SelectField
+          label="조사상태"
+          value={form.surveyState}
+          onChange={(v) => set("surveyState", v ?? "조사완료")}
+          options={SURVEY_STATE_OPTIONS}
+          required
+        />
+        <SelectField label="조사수준" value={form.surveyLevel} onChange={(v) => set("surveyLevel", v)} options={SURVEY_LEVEL_OPTIONS} />
+        <TextField label="주소" value={form.address ?? ""} onChange={(v) => set("address", v || null)} />
+        <NumberField label="거리(m)" value={form.distanceM} onChange={(v) => set("distanceM", v)} />
+        <NumberField label="층수" value={form.floor} onChange={(v) => set("floor", v)} allowNegative />
+        <SelectField label="지상/지하" value={form.groundLevel} onChange={(v) => set("groundLevel", v)} options={GROUND_LEVEL_OPTIONS} />
+        <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
+      </div>
+
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">시설/사양</h4>
+      <div className={`${gridClass} mt-3`}>
+        <NumberField label="전체대수" value={form.totalPcCount} onChange={(v) => set("totalPcCount", v)} />
+        <NumberField label="적용대수" value={form.appliedPcCount} onChange={(v) => set("appliedPcCount", v)} hint="실사값 없으면 대체값을 조사 후 입력" />
+        <TextField label="CPU" value={form.cpu ?? ""} onChange={(v) => set("cpu", v || null)} />
+        <TextField label="VGA 기본" value={form.vgaBase ?? ""} onChange={(v) => set("vgaBase", v || null)} />
+        <TextField label="VGA 최고" value={form.vgaTop ?? ""} onChange={(v) => set("vgaTop", v || null)} />
+        <TextField label="RAM" value={form.ram ?? ""} onChange={(v) => set("ram", v || null)} />
+        <TextField label="모니터" value={form.monitor ?? ""} onChange={(v) => set("monitor", v || null)} />
+        <NumberField label="1000원당분" value={form.ratePer1000Won} onChange={(v) => set("ratePer1000Won", v)} />
+        <NumberField label="시간당환산요금" value={form.hourlyRateConverted} onChange={(v) => set("hourlyRateConverted", v)} />
+        <TextField label="유료차감" value={form.paidDeduction ?? ""} onChange={(v) => set("paidDeduction", v || null)} />
+      </div>
+
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">실측</h4>
+      <div className={`${gridClass} mt-3`}>
+        <TextField label="방문일시" value={form.visitedAt ?? ""} onChange={(v) => set("visitedAt", v || null)} placeholder="예: 2026-08-01 14:30" />
+        <SelectField label="방문요일" value={form.visitedDow} onChange={(v) => set("visitedDow", v)} options={DOW_OPTIONS} />
+        <NumberField label="이용객수" value={form.visitorCount} onChange={(v) => set("visitorCount", v)} />
+        <NumberField label="실측착석률" value={form.measuredSeatRate} onChange={(v) => set("measuredSeatRate", v)} step={0.01} hint="0~1 사이 비율" />
+        <NumberField label="핑봇_가동률" value={form.pingbotUtilization} onChange={(v) => set("pingbotUtilization", v)} step={0.01} hint="0~1 사이 비율" />
+        <TextField label="핑봇_조회기간" value={form.pingbotPeriod ?? ""} onChange={(v) => set("pingbotPeriod", v || null)} />
+        <NumberField label="리뉴얼연도" value={form.renovationYear} onChange={(v) => set("renovationYear", v)} step={1} />
+      </div>
+
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+        경쟁력 점수(1~5점 직접 입력) 및 평가근거
+      </h4>
+      <div className={`${gridClass} mt-3`}>
+        <ScoreSelectField label="사양 점수" value={form.specScore} onChange={(v) => set("specScore", v)} />
+        <ScoreSelectField label="좌석 점수" value={form.seatScore} onChange={(v) => set("seatScore", v)} />
+        <ScoreSelectField label="입지 점수" value={form.locationScore} onChange={(v) => set("locationScore", v)} />
+        <ScoreSelectField label="먹거리 점수" value={form.foodScore} onChange={(v) => set("foodScore", v)} />
+        <ScoreSelectField label="인테리어 점수" value={form.interiorScore} onChange={(v) => set("interiorScore", v)} />
+        <ScoreSelectField label="모니터 점수" value={form.monitorScore} onChange={(v) => set("monitorScore", v)} />
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <TextAreaField label="먹거리 근거" value={form.foodBasis ?? ""} onChange={(v) => set("foodBasis", v || null)} rows={2} />
+        <TextAreaField label="인테리어 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
+        <TextAreaField label="모니터 근거" value={form.monitorBasis ?? ""} onChange={(v) => set("monitorBasis", v || null)} rows={2} />
+      </div>
+
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">존 구성</h4>
+      <div className={`${gridClass} mt-3`}>
+        <NumberField label="1인룸 수" value={form.room1} onChange={(v) => set("room1", v)} />
+        <NumberField label="2인룸 수" value={form.room2} onChange={(v) => set("room2", v)} />
+        <NumberField label="팀룸 수" value={form.teamRoom} onChange={(v) => set("teamRoom", v)} />
+        <NumberField label="커플존 수" value={form.coupleZone} onChange={(v) => set("coupleZone", v)} />
+        <NumberField label="프리미엄존 수" value={form.premiumZone} onChange={(v) => set("premiumZone", v)} />
+        <BooleanSelectField label="프리미엄 사양 여부" value={form.premiumSpec} onChange={(v) => set("premiumSpec", v)} />
+      </div>
+
+      {errors.length > 0 && (
+        <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+          <ul className="list-inside list-disc">
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-5 flex justify-end gap-3 print:hidden">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={handleSubmit}
+          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+        >
+          {saving ? "저장 중..." : "저장"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
+  const { user } = useAuth();
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | "new" | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await listCompetitors(candidateCode);
+      setCompetitors(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "경쟁점 목록을 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }, [candidateCode]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleDelete(id: string) {
+    if (!confirm("이 경쟁점을 삭제하시겠습니까?")) return;
+    setBusyId(id);
+    setError(null);
+    try {
+      await deleteCompetitor(id, user?.email ?? null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "삭제 중 오류가 발생했습니다.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const editingCompetitor =
+    editingId === "new" ? blankCompetitor(candidateCode) : competitors.find((c) => c.id === editingId) ?? null;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">경쟁점</h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">이 후보지 반경 내 경쟁점 정보를 입력합니다.</p>
+        </div>
+        {editingId === null && (
+          <button
+            type="button"
+            onClick={() => setEditingId("new")}
+            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white print:hidden"
+          >
+            + 경쟁점 추가
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
+      )}
+
+      {editingCompetitor && (
+        <CompetitorForm
+          initial={editingCompetitor}
+          actor={user?.email ?? null}
+          onCancel={() => setEditingId(null)}
+          onSaved={async () => {
+            setEditingId(null);
+            await load();
+          }}
+        />
+      )}
+
+      {loading ? (
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>
+      ) : competitors.length === 0 ? (
+        <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          등록된 경쟁점이 없습니다.
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {competitors.map((c) => (
+            <div key={c.id} className={sectionClass}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-zinc-900 dark:text-zinc-50">{c.name || "(이름 없음)"}</p>
+                  <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{c.address || "주소 미입력"}</p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                    c.surveyState === "조사완료"
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      : c.surveyState === "경쟁점없음"
+                        ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                        : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                  }`}
+                >
+                  {SURVEY_STATE_OPTIONS.find((o) => o.value === c.surveyState)?.label ?? c.surveyState}
+                </span>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+                <div>
+                  <dt className="inline text-zinc-400">거리 </dt>
+                  <dd className="inline">{c.distanceM != null ? `${c.distanceM}m` : "-"}</dd>
+                </div>
+                <div>
+                  <dt className="inline text-zinc-400">적용대수 </dt>
+                  <dd className="inline">{c.appliedPcCount ?? c.totalPcCount ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt className="inline text-zinc-400">조사수준 </dt>
+                  <dd className="inline">{c.surveyLevel ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt className="inline text-zinc-400">경쟁력점수 </dt>
+                  <dd className="inline">
+                    {c.specScore != null && c.seatScore != null && c.foodScore != null && c.interiorScore != null && c.locationScore != null
+                      ? "입력완료"
+                      : "미입력"}
+                  </dd>
+                </div>
+              </dl>
+              <div className="mt-3 flex justify-end gap-2 print:hidden">
+                <button
+                  type="button"
+                  onClick={() => setEditingId(c.id)}
+                  className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  수정
+                </button>
+                <button
+                  type="button"
+                  disabled={busyId === c.id}
+                  onClick={() => handleDelete(c.id)}
+                  className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                >
+                  삭제
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
