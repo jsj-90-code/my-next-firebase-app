@@ -152,13 +152,13 @@ export async function POST(request: Request) {
         },
       ],
       config: {
-        // 답변 전에 책상을 하나씩 세면서 나열하게 하므로(개수 세기 정확도 향상 목적) 약간의
-        // 여유를 두되, 설명 없이 번호와 사이즈만 쓰게 했으니 너무 크게 잡을 필요는 없다
-        // (여기를 너무 크게 잡으면 응답이 길어질수록 체감 속도만 늦어진다).
-        maxOutputTokens: 750,
-        // 단순 개수 세기 작업이라 thinking은 끈다 (thinking이 토큰을 다 써버리면 복잡한
-        // 구역에서 정작 COUNT/SIZE 답변이 잘려서 인식 실패로 보이는 문제가 있었다).
-        thinkingConfig: { thinkingBudget: 0 },
+        // gemini-3.6-flash는 thinkingBudget: 0(완전 끄기)을 지원하지 않아 400 INVALID_ARGUMENT가
+        // 발생하므로 -1(모델이 알아서 판단)을 쓴다. 이때 "생각" 토큰도 maxOutputTokens 안에서
+        // 함께 소비되므로, 너무 작게 잡으면 책상이 많은 구역에서 리스트가 다 나오기 전에 잘려서
+        // 인식 실패로 보인다(예: "4: 910"에서 끊김). 다른 seat-layout 라우트들과 비슷한 수준으로
+        // 넉넉하게 잡는다.
+        maxOutputTokens: 16000,
+        thinkingConfig: { thinkingBudget: -1 },
       },
     });
 
