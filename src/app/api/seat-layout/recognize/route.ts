@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getClaudeClient, getClaudeModel } from "@/lib/claude";
+import { getGeminiClient, getGeminiModel } from "@/lib/gemini";
 import { adminAuth } from "@/lib/firebase-admin";
 import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 import { DESK_SIZE_OPTIONS } from "@/lib/seatLayout/constants";
@@ -109,11 +109,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "회사 계정으로만 이용할 수 있습니다." }, { status: 403 });
   }
 
-  const client = getClaudeClient();
+  const client = getGeminiClient();
 
   if (!client) {
     return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY가 설정되지 않았습니다." },
+      { error: "GEMINI_API_KEY가 설정되지 않았습니다." },
       { status: 500 },
     );
   }
@@ -140,33 +140,29 @@ export async function POST(request: Request) {
   }
 
   try {
-    const response = await client.messages.create({
-      model: getClaudeModel(),
-      // 답변 전에 책상을 하나씩 세면서 나열하게 하므로(개수 세기 정확도 향상 목적) 약간의
-      // 여유를 두되, 설명 없이 번호와 사이즈만 쓰게 했으니 너무 크게 잡을 필요는 없다
-      // (여기를 너무 크게 잡으면 응답이 길어질수록 체감 속도만 늦어진다).
-      max_tokens: 750,
-      // 단순 개수 세기 작업이라 thinking은 끈다 (adaptive thinking이 토큰을 다 써버리면
-      // 복잡한 구역에서 정작 COUNT/SIZE 답변이 잘려서 인식 실패로 보이는 문제가 있었다).
-      thinking: { type: "disabled" },
-      messages: [
+    const response = await client.models.generateContent({
+      model: getGeminiModel(),
+      contents: [
         {
           role: "user",
-          content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mimeType, data: imageBase64 },
-            },
-            { type: "text", text: buildPrompt(mode) },
+          parts: [
+            { inlineData: { mimeType, data: imageBase64 } },
+            { text: buildPrompt(mode) },
           ],
         },
       ],
+      config: {
+        // 답변 전에 책상을 하나씩 세면서 나열하게 하므로(개수 세기 정확도 향상 목적) 약간의
+        // 여유를 두되, 설명 없이 번호와 사이즈만 쓰게 했으니 너무 크게 잡을 필요는 없다
+        // (여기를 너무 크게 잡으면 응답이 길어질수록 체감 속도만 늦어진다).
+        maxOutputTokens: 750,
+        // 단순 개수 세기 작업이라 thinking은 끈다 (thinking이 토큰을 다 써버리면 복잡한
+        // 구역에서 정작 COUNT/SIZE 답변이 잘려서 인식 실패로 보이는 문제가 있었다).
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     });
 
-    const text = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
+    const text = response.text ?? "";
 
     // 나열 목록 다음에 오는 마지막 COUNT 줄을 최종 값으로 쓴다.
     const countMatches = [...text.matchAll(/COUNT:\s*(\d+)/gi)];
@@ -211,7 +207,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Claude API 요청에 실패했습니다.";
+      error instanceof Error ? error.message : "Gemini API 요청에 실패했습니다.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

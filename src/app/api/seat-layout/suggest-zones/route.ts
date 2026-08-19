@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getClaudeClient, getClaudeModel } from "@/lib/claude";
+import { getGeminiClient, getGeminiModel } from "@/lib/gemini";
 import { adminAuth } from "@/lib/firebase-admin";
 import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 
@@ -83,10 +83,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "회사 계정으로만 이용할 수 있습니다." }, { status: 403 });
   }
 
-  const client = getClaudeClient();
+  const client = getGeminiClient();
   if (!client) {
     return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY가 설정되지 않았습니다." },
+      { error: "GEMINI_API_KEY가 설정되지 않았습니다." },
       { status: 500 },
     );
   }
@@ -104,34 +104,26 @@ export async function POST(request: Request) {
   }
 
   try {
-    const stream = client.messages.stream({
-      model: getClaudeModel(),
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      output_config: { effort: "high" },
-      messages: [
+    const response = await client.models.generateContent({
+      model: getGeminiModel(),
+      contents: [
         {
           role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: image.mimeType as AllowedMimeType,
-                data: image.data,
-              },
-            },
-            { type: "text", text: PROMPT },
+          parts: [
+            { inlineData: { mimeType: image.mimeType, data: image.data } },
+            { text: PROMPT },
           ],
         },
       ],
+      config: {
+        maxOutputTokens: 16000,
+        // Claude의 "adaptive thinking + high effort"에 대응 — 모델이 필요한 만큼 스스로
+        // 생각하도록 예산을 고정하지 않고 동적으로 맡긴다.
+        thinkingConfig: { thinkingBudget: -1 },
+      },
     });
-    const response = await stream.finalMessage();
 
-    const text = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
+    const text = response.text ?? "";
 
     const zones = parseSuggestions(text);
     if (!zones.length) {
@@ -143,7 +135,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ zones });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Claude API 요청에 실패했습니다.";
+    const message = error instanceof Error ? error.message : "Gemini API 요청에 실패했습니다.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }

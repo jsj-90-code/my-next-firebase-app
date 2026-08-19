@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getClaudeClient, getClaudeModel } from "@/lib/claude";
+import { getGeminiClient, getGeminiModel } from "@/lib/gemini";
 import { adminAuth } from "@/lib/firebase-admin";
 import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 import type { SeatNumberRangeEntry } from "@/lib/seatLayout/types";
@@ -149,14 +149,9 @@ function parseNumberList(raw: string): number[] {
     .filter((n) => Number.isFinite(n));
 }
 
-function toImageBlock(img: ImageInput) {
+function toImagePart(img: ImageInput) {
   return {
-    type: "image" as const,
-    source: {
-      type: "base64" as const,
-      media_type: img.mimeType as AllowedMimeType,
-      data: img.data,
-    },
+    inlineData: { mimeType: img.mimeType, data: img.data },
   };
 }
 
@@ -170,11 +165,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "회사 계정으로만 이용할 수 있습니다." }, { status: 403 });
   }
 
-  const client = getClaudeClient();
+  const client = getGeminiClient();
 
   if (!client) {
     return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY가 설정되지 않았습니다." },
+      { error: "GEMINI_API_KEY가 설정되지 않았습니다." },
       { status: 500 },
     );
   }
@@ -205,36 +200,31 @@ export async function POST(request: Request) {
   try {
     const allImages = [zoneImage, ...plateImages];
     const imageContent = allImages.flatMap((img, i) => [
-      toImageBlock(img),
-      { type: "text" as const, text: IMAGE_LABELS[i] ?? `이미지 ${i + 1}` },
+      toImagePart(img),
+      { text: IMAGE_LABELS[i] ?? `이미지 ${i + 1}` },
     ]);
     const prompt = buildPrompt(zones, plateImages.length > 1);
 
-    // thinking(적응형) + 실제 답변(존별 번호 나열 + UNSURE 목록)을 합친 한도라서 넉넉히 잡는다.
-    // 지침이 늘어나며 AI가 더 오래 생각하다가 답을 쓸 자리가 없어 응답이 통째로 비는 걸 실제로
-    // 겪어서, 여유를 크게 늘렸다. 이만큼 큰 max_tokens는 논스트리밍이면 타임아웃 위험이 있어
-    // 스트리밍으로 받는다.
-    const stream = client.messages.stream({
-      model: getClaudeModel(),
-      // 생각(thinking)만 하다 답을 못 쓰고 끝나는 사례가 있어서 여유 있게 잡는다.
-      max_tokens: 32000,
-      // Sonnet 5부터는 고정 토큰 예산(budget_tokens) 방식이 제거되고 "adaptive"만 지원한다.
-      // 9/11 존이 맞았던 조합(이미지 5장 + effort "high") — 여기서 확정하고 더 손대지 않는다.
-      thinking: { type: "adaptive" },
-      output_config: { effort: "high" },
-      messages: [
+    // thinking(동적 예산) + 실제 답변(존별 번호 나열 + UNSURE 목록)을 합친 한도라서 넉넉히
+    // 잡는다. 지침이 늘어나며 AI가 더 오래 생각하다가 답을 쓸 자리가 없어 응답이 통째로 비는
+    // 걸 실제로 겪어서, 여유를 크게 늘렸다.
+    const response = await client.models.generateContent({
+      model: getGeminiModel(),
+      contents: [
         {
           role: "user",
-          content: [...imageContent, { type: "text", text: prompt }],
+          parts: [...imageContent, { text: prompt }],
         },
       ],
+      config: {
+        // 생각(thinking)만 하다 답을 못 쓰고 끝나는 사례가 있어서 여유 있게 잡는다.
+        maxOutputTokens: 32000,
+        // 고정 예산을 주지 않고 모델이 필요한 만큼 스스로 생각하도록 동적으로 맡긴다.
+        thinkingConfig: { thinkingBudget: -1 },
+      },
     });
-    const response = await stream.finalMessage();
 
-    const text = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
+    const text = response.text ?? "";
 
     const ranges: SeatNumberRangeEntry[] = [];
     const matchedNames = new Set<string>();
@@ -252,10 +242,10 @@ export async function POST(request: Request) {
     const unmatchedGroups = unsureMatch ? toRangeChips(parseNumberList(unsureMatch[1])) : [];
 
     if (!ranges.length && !unmatchedGroups.length) {
-      // stop_reason이 "max_tokens"면 생각(thinking)만 하다가 답을 쓸 자리가 없어서 응답이
+      // finishReason이 "MAX_TOKENS"면 생각(thinking)만 하다가 답을 쓸 자리가 없어서 응답이
       // 비어버린 것 — 사람이 재시도하면 되지만, 원인을 알 수 있게 메시지에 남겨둔다.
       const reasonHint =
-        response.stop_reason === "max_tokens"
+        response.candidates?.[0]?.finishReason === "MAX_TOKENS"
           ? " (AI가 생각하다가 답변을 쓰기 전에 토큰 한도를 다 썼습니다 — 다시 시도해보세요.)"
           : "";
       return NextResponse.json(
@@ -282,7 +272,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ranges, warnings, unmatchedGroups });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Claude API 요청에 실패했습니다.";
+    const message = error instanceof Error ? error.message : "Gemini API 요청에 실패했습니다.";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 }
