@@ -20,6 +20,7 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     targetMedianAE: 0.1,
     target20pctRatio: 0.75,
     maxAvgBias: 0.05,
+    target10pctRatio: 0.8,
     v61Fallback: {
       intercept: -79920.46038242977,
       hourlyRateCoef: 30.35495074620959,

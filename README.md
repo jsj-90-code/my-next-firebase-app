@@ -61,6 +61,11 @@ node scripts/syncSalesFromRevenueSheet.mjs
 합니다. 정기 자동화가 필요하면 Vercel Cron이나 Firebase Scheduled Function으로 이 스크립트
 로직을 옮기는 후속 작업이 필요합니다.
 
+`syncSalesFromRevenueSheet.mjs`는 매출DB에 "정상" 상태로 새로 올라온 매장(신규 오픈 가맹점)을
+`storeEvalExistingStores`에 자동 등록도 합니다 — 브랜드·요금 등 V61 학습 특징치는 매출DB에
+없으므로 비워두고, 그 다음 `migrateFullExistingStoreProfiles.mjs`를 돌려 09_입지동선평가 등에서
+채워야 학습 대상이 됩니다.
+
 **신규 가맹점 추가**: `/store-eval/existing-stores` 화면에서 직접 등록하거나, 신규후보지
 평가를 마친 뒤 [최종결과] 탭의 "오픈 확정 → 기존 가맹점으로 전환" 버튼으로 경쟁점·입지평가
 입력을 그대로 이어받아 등록할 수 있습니다. 이후 월매출·회원 스냅샷은 그 화면에서 계속

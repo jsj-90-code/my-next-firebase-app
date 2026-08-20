@@ -19,6 +19,7 @@ import type {
   CandidateInput,
   CompetitorInvestigationStatus,
   ExistingStore,
+  GroundLevel,
   InflowRestriction,
   ModelSettings,
   CompletionStatus,
@@ -1254,17 +1255,167 @@ export type ValidationStoreInput = {
   actualRevenueAvg: number | null; // 완료월 평균 실제매출 (누적평균매출)
   specialDemandType?: string | null; // 09_입지동선평가!특수수요유형 (대학가/군부대/산업단지 등)
   specialDemandIntensity?: string | null; // 특수수요강도 (없음/낮음/보통/높음)
+  // 2026-08-20 (5차) 추가 — 외부유입 보정(V62)·데이터 품질·오차원인 추정에 쓰는 입력.
+  inflowRestriction?: InflowRestriction | null; // 09_입지동선평가!외부유입제한 — V61→V62 보정률 직결
+  hasLocationEvaluation?: boolean; // 09_입지동선평가에 행이 있는지 (데이터 완성도 판정용)
+  floor?: number | null;
+  groundLevel?: GroundLevel | null;
+  hasElevator?: boolean | null;
+  competitorSummary?: CompetitorInvestigationSummary; // listCompetitors(storeCode) 집계 결과
 };
 
 export type ValidationStoreRow = ValidationStoreInput & {
   cohort: TenureCohort;
-  predictedRevenueAvg: number | null;
-  errorAmount: number | null; // 예측 - 실제
+  predictedRevenueAvg: number | null; // V61(외부유입 보정 전)
+  v62PredictedRevenueAvg: number | null; // V61 × (1+외부유입 보정률) — 실제 오차 계산은 이 값을 쓴다
+  errorAmount: number | null; // v62예측 - 실제
   absoluteErrorPct: number | null;
   direction: "과대예측" | "과소예측" | "정확" | null;
   includedInCoreAccuracy: boolean;
   exclusionReason: string | null;
+  operationalStatus: OperationalStatus;
+  dataCompleteness: DataCompletenessResult;
+  errorCause: ErrorCauseCode;
 };
+
+// ---- 경쟁점 조사상태 집계 (요청사항 4) ----
+export type CompetitorInvestigationSummaryStatus = "uninvestigated" | "detailed_complete" | "mixed" | "light";
+export type CompetitorDataReliability = "high" | "medium" | "low";
+export type CompetitorInvestigationSummary = {
+  totalCount: number;
+  detailedCount: number; // surveyLevel="상세"로 조사완료된 경쟁점 수
+  lightCount: number; // 조사완료됐지만 간략/외관만인 경쟁점 수
+  uninvestigatedCount: number; // 경쟁점없음/노후저경쟁력미조사
+  status: CompetitorInvestigationSummaryStatus;
+  detailedRatio: number | null; // detailedCount / totalCount
+  dataReliability: CompetitorDataReliability;
+};
+
+/**
+ * 경쟁점 조사상태를 후보지/매장 단위로 집계한다. 경쟁점 미조사는 "경쟁력이 낮다"는 뜻이
+ * 아니라 노후화 등으로 현장조사 필요성이 낮았을 수도 있다는 뜻이라, 경쟁력 점수 자체에는
+ * 영향을 주지 않고 이 신뢰도 필드로만 별도 관리한다(요청사항 4).
+ * 상세조사 비율은 조사완료된 것 중이 아니라 전체 경쟁점 수 대비로 계산한다 — 그래야 "경쟁점은
+ * 있는데 조사가 안 됨" 상황이 신뢰도를 실제로 낮추기 때문이다.
+ */
+export function computeCompetitorInvestigationSummary(
+  competitors: Pick<Competitor, "investigationStatus" | "surveyLevel">[],
+): CompetitorInvestigationSummary {
+  const totalCount = competitors.length;
+  const investigated = competitors.filter((c) => c.investigationStatus === "조사완료");
+  const detailedCount = investigated.filter((c) => c.surveyLevel === "상세").length;
+  const lightCount = investigated.length - detailedCount;
+  const uninvestigatedCount = totalCount - investigated.length;
+
+  let status: CompetitorInvestigationSummaryStatus;
+  if (totalCount === 0 || investigated.length === 0) status = "uninvestigated";
+  else if (lightCount === 0) status = "detailed_complete";
+  else if (detailedCount === 0) status = "light";
+  else status = "mixed";
+
+  const detailedRatio = totalCount ? detailedCount / totalCount : null;
+  const dataReliability: CompetitorDataReliability =
+    detailedRatio != null && detailedRatio >= 0.7 ? "high" : detailedCount > 0 ? "medium" : "low";
+
+  return { totalCount, detailedCount, lightCount, uninvestigatedCount, status, detailedRatio, dataReliability };
+}
+
+// ---- 데이터 완성도 (요청사항 5) ----
+export type DataCompletenessGrade = "complete" | "partial" | "excluded";
+export type DataCompletenessResult = {
+  score: number; // 25점 단위 4항목 합산, 0~100
+  grade: DataCompletenessGrade;
+  hasCoreInputs: boolean; // 핵심 예측 입력값(요금·자사수요·PC대수·경쟁력점수) 존재
+  hasLocationEvaluation: boolean; // 입지동선평가 존재
+  hasCompetitorInfo: boolean; // 경쟁점 조사정보 존재
+  hasActualPerformance: boolean; // 실제 매출·가동률 등 실적 존재
+};
+
+/** 4항목 각 25점, 100점 만점. 100=complete, 75 이상=partial, 미만=excluded (요청사항 5). */
+export function computeDataCompleteness(input: {
+  hourlyRate: number | null;
+  ownDemand: number | null;
+  pcCount: number | null;
+  competitivenessScore: number | null;
+  hasLocationEvaluation: boolean;
+  competitorCount: number;
+  actualMonthlyRevenueAvg: number | null;
+  completedMonths: number | null;
+}): DataCompletenessResult {
+  const hasCoreInputs =
+    input.hourlyRate != null && input.ownDemand != null && input.pcCount != null && input.competitivenessScore != null;
+  const hasLocationEvaluation = input.hasLocationEvaluation;
+  const hasCompetitorInfo = input.competitorCount > 0;
+  const hasActualPerformance = input.actualMonthlyRevenueAvg != null && (input.completedMonths ?? 0) > 0;
+  const score = [hasCoreInputs, hasLocationEvaluation, hasCompetitorInfo, hasActualPerformance].filter(Boolean).length * 25;
+  const grade: DataCompletenessGrade = score === 100 ? "complete" : score >= 75 ? "partial" : "excluded";
+  return { score, grade, hasCoreInputs, hasLocationEvaluation, hasCompetitorInfo, hasActualPerformance };
+}
+
+// ---- 운영상태 (요청사항 6) ----
+export type OperationalStatus = "normal" | "early" | "post_open_issue" | "abnormal";
+
+/**
+ * 송도점(경쟁점 가격전쟁)·동탄북광장점(운영관리 문제)처럼 오픈 후 발생한 요소는 abnormal이
+ * 아니라 post_open_issue로 분리한다 - 가맹계약 자체는 정상이라서다. 가맹해지·폐업처럼 계약
+ * 상태가 비정상인 경우만 abnormal로 본다(요청사항 6).
+ */
+export function computeOperationalStatus(input: {
+  franchiseStatus: string | null;
+  isPostOpenIssue: boolean;
+  cohort: TenureCohort;
+}): OperationalStatus {
+  if (input.franchiseStatus != null && input.franchiseStatus !== "정상") return "abnormal";
+  if (input.isPostOpenIssue) return "post_open_issue";
+  if (input.cohort !== "정식 검증군") return "early";
+  return "normal";
+}
+
+// ---- 오차원인 자동분류 (요청사항 7) ----
+export type ErrorCauseCode =
+  | "within_range"
+  | "external_inflow_underreflected"
+  | "special_demand_underreflected"
+  | "competitor_data_missing"
+  | "access_overestimated"
+  | "demand_share_overestimated"
+  | "demand_conversion_underestimated"
+  | "not_verifiable";
+
+/**
+ * 오차원인 "우선 추정" — 여러 원인이 겹칠 수 있어 단일 확정 진단이 아니라 화면에 참고용
+ * "우선 추정 원인"으로만 표시한다(요청사항 7 명시). 우선순위:
+ *   1) 비교 불가 → not_verifiable, 2) 이미 목표범위 이내 → within_range,
+ *   3) 경쟁 데이터 신뢰도가 낮음(low) → competitor_data_missing (경쟁 구도 자체를 못 봤을 가능성이
+ *      가장 먼저 의심된다), 4) 과소예측+특수수요점수>0 → special_demand_underreflected(10_오차원인분석
+ *      실사례 근거, [[computeSpecialDemandScore]] 참고), 5) 과대예측+외부유입제한 있음 →
+ *      external_inflow_underreflected(보정을 더 줬어야 했다는 뜻), 6) 과대예측+접근성 좋음(층·
+ *      엘리베이터) → access_overestimated, 7) 남은 과대예측 → demand_share_overestimated(경쟁력격차
+ *      기반 수요확보율 과대평가로 추정), 8) 남은 과소예측 → demand_conversion_underestimated(상권수요→
+ *      자사수요 전환율 과소평가로 추정). 이 순서는 확정 근거가 아니라 검토 우선순위 휴리스틱이다.
+ */
+export function classifyErrorCause(input: {
+  absoluteErrorPct: number | null;
+  direction: "과대예측" | "과소예측" | "정확" | null;
+  specialDemandScore: number;
+  inflowRestriction: InflowRestriction | null | undefined;
+  competitorDataReliability: CompetitorDataReliability | null | undefined;
+  floor: number | null | undefined;
+  groundLevel: GroundLevel | null | undefined;
+  hasElevator: boolean | null | undefined;
+}): ErrorCauseCode {
+  if (input.absoluteErrorPct == null || input.direction == null) return "not_verifiable";
+  if (input.absoluteErrorPct <= 0.1) return "within_range";
+  if (input.competitorDataReliability === "low") return "competitor_data_missing";
+  if (input.direction === "과소예측" && input.specialDemandScore > 0) return "special_demand_underreflected";
+  if (input.direction === "과대예측" && input.inflowRestriction != null && input.inflowRestriction !== "없음") {
+    return "external_inflow_underreflected";
+  }
+  const goodAccess = (computeLocationScoreFromFacts(input.floor ?? null, input.groundLevel ?? null, input.hasElevator ?? null) ?? 0) >= 4;
+  if (input.direction === "과대예측" && goodAccess) return "access_overestimated";
+  if (input.direction === "과대예측") return "demand_share_overestimated";
+  return "demand_conversion_underestimated";
+}
 
 export type ErrorBucket = { label: string; max: number | null }; // max=null이면 상한 없음(초과)
 export const ERROR_BUCKETS: ErrorBucket[] = [
@@ -1304,14 +1455,19 @@ export type ValidationSummary2 = {
   underPredictedMeanPct: number | null;
   meanBiasPct: number | null; // 평균 (예측-실제)/실제, 부호 있음
   buckets: ErrorBucketResult[];
-  passed: { mape: boolean; medianAe: boolean; within10: boolean; over20: boolean };
+  passed: { mape: boolean; medianAe: boolean; within10: boolean; within20: boolean; bias: boolean };
   targetsMetAll: boolean;
+  // 요청사항 8 — ±10% 이내 적중률 80%를 정식 도입의 "핵심 조건"으로 쓴다. 나머지 넷은 충족하는데
+  // 이 조건만 못 채우면 "조건부 사용"(부분 활용은 가능), 나머지 지표 자체가 못 미치면(모형이
+  // 아직 부정확) "재보정 필요"로 본다.
+  overallStatus: "정식 사용 가능" | "조건부 사용" | "재보정 필요";
+  statusReason: string;
 };
 
-/** 요청사항 6/7/8 — 오차구간·과대과소·편향·목표달성 여부를 한 번에 계산한다. */
+/** 요청사항 6/7/8 — 오차구간·과대과소·편향·목표달성 여부·현재 상태를 한 번에 계산한다. */
 export function summarizeValidationRows(
   rows: { storeName: string; absoluteErrorPct: number | null; errorAmount: number | null; actualRevenueAvg: number | null }[],
-  targets: { mape: number; medianAe: number; within10: number; maxOver20: number },
+  targets: { mape: number; medianAe: number; within10: number; within20: number; maxBias: number },
 ): ValidationSummary2 {
   const errors = rows.filter((r) => r.absoluteErrorPct != null).map((r) => r.absoluteErrorPct as number);
   const n = errors.length;
@@ -1329,19 +1485,41 @@ export function summarizeValidationRows(
   const medianAbsoluteErrorPct = n ? median(errors) : null;
   const within = (max: number) => (n ? errors.filter((e) => e <= max).length / n : null);
   const within20 = within(0.2);
+  const within10Ratio = within(0.1);
+  const meanBiasPct = signedPct.length ? signedPct.reduce((a, b) => a + b, 0) / signedPct.length : null;
   const passed = {
     mape: meanAbsoluteErrorPct != null && meanAbsoluteErrorPct <= targets.mape,
     medianAe: medianAbsoluteErrorPct != null && medianAbsoluteErrorPct <= targets.medianAe,
-    within10: (within(0.1) ?? 0) >= targets.within10,
-    over20: within20 != null && 1 - within20 <= targets.maxOver20,
+    within10: (within10Ratio ?? 0) >= targets.within10,
+    within20: (within20 ?? 0) >= targets.within20,
+    bias: meanBiasPct != null && Math.abs(meanBiasPct) <= targets.maxBias,
   };
+  const coreTargetsMet = passed.mape && passed.medianAe && passed.within20 && passed.bias;
+
+  let overallStatus: ValidationSummary2["overallStatus"];
+  let statusReason: string;
+  if (coreTargetsMet && passed.within10) {
+    overallStatus = "정식 사용 가능";
+    statusReason = "5개 목표(평균오차·중앙오차·±10%·±20%·편향)를 모두 충족했다.";
+  } else if (coreTargetsMet) {
+    overallStatus = "조건부 사용";
+    statusReason = `±10% 적중률 목표 미달(${((within10Ratio ?? 0) * 100).toFixed(1)}% < ${(targets.within10 * 100).toFixed(0)}%)로 재보정 필요`;
+  } else {
+    const failed: string[] = [];
+    if (!passed.mape) failed.push("평균절대오차");
+    if (!passed.medianAe) failed.push("중앙값절대오차");
+    if (!passed.within20) failed.push("±20% 적중률");
+    if (!passed.bias) failed.push("평균편향");
+    overallStatus = "재보정 필요";
+    statusReason = `${failed.join("·")} 목표 미달로 모형 자체 재보정 필요`;
+  }
 
   return {
     sampleCount: n,
     meanAbsoluteErrorPct,
     medianAbsoluteErrorPct,
     within5PctRatio: within(0.05),
-    within10PctRatio: within(0.1),
+    within10PctRatio: within10Ratio,
     within15PctRatio: within(0.15),
     within20PctRatio: within20,
     over20PctRatio: within20 != null ? 1 - within20 : null,
@@ -1349,10 +1527,12 @@ export function summarizeValidationRows(
     overPredictedMeanPct: overRows.length ? overRows.reduce((a, b) => a + b, 0) / overRows.length : null,
     underPredictedCount: underRows.length,
     underPredictedMeanPct: underRows.length ? underRows.reduce((a, b) => a + b, 0) / underRows.length : null,
-    meanBiasPct: signedPct.length ? signedPct.reduce((a, b) => a + b, 0) / signedPct.length : null,
+    meanBiasPct,
     buckets,
     passed,
-    targetsMetAll: passed.mape && passed.medianAe && passed.within10 && passed.over20,
+    targetsMetAll: coreTargetsMet && passed.within10,
+    overallStatus,
+    statusReason,
   };
 }
 
@@ -1364,7 +1544,7 @@ export function summarizeValidationRows(
  */
 export function runCohortValidation(
   stores: ValidationStoreInput[],
-  settings: Pick<ModelSettings, "v61Training">,
+  settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
 ): { rows: ValidationStoreRow[] } {
   const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
 
@@ -1429,10 +1609,17 @@ export function runCohortValidation(
       predictedRevenueAvg = pred?.monthlyRevenue ?? null;
     }
 
-    const errorAmount = predictedRevenueAvg != null && s.actualRevenueAvg != null ? predictedRevenueAvg - s.actualRevenueAvg : null;
+    // 요청사항 2 — 외부유입 제한 보정: V62예측 = V61예측 × (1+보정률). 오차·방향·오차구간은
+    // 전부 이 V62 값 기준으로 계산한다(V61 그대로 비교하면 강한 외부유입제한 매장의 오차가
+    // 실제보다 부풀려 보인다). inflowRestriction이 없으면(null/undefined) 보정 없이 V61=V62.
+    const v62Rate = getV62Rate(s.inflowRestriction ?? null, settings) ?? 0;
+    const v62PredictedRevenueAvg = predictedRevenueAvg != null ? computeV62Final(predictedRevenueAvg, v62Rate) : null;
+
+    const errorAmount =
+      v62PredictedRevenueAvg != null && s.actualRevenueAvg != null ? v62PredictedRevenueAvg - s.actualRevenueAvg : null;
     const absoluteErrorPct =
-      predictedRevenueAvg != null && s.actualRevenueAvg != null && s.actualRevenueAvg > 0
-        ? Math.abs(predictedRevenueAvg - s.actualRevenueAvg) / s.actualRevenueAvg
+      v62PredictedRevenueAvg != null && s.actualRevenueAvg != null && s.actualRevenueAvg > 0
+        ? Math.abs(v62PredictedRevenueAvg - s.actualRevenueAvg) / s.actualRevenueAvg
         : null;
     const direction: ValidationStoreRow["direction"] =
       errorAmount == null ? null : errorAmount > 0 ? "과대예측" : errorAmount < 0 ? "과소예측" : "정확";
@@ -1446,15 +1633,41 @@ export function runCohortValidation(
     else if (s.brand !== "블랙라벨") exclusionReason = `브랜드=${s.brand} (블랙라벨 아님)`;
     else if (!isCore) exclusionReason = `재직기간 미달(완료 ${s.completedMonths}개월, ${cohort}) — 완전 외부 검증군으로 예측`;
 
+    const operationalStatus = computeOperationalStatus({ franchiseStatus: s.franchiseStatus, isPostOpenIssue: s.isPostOpenIssue, cohort });
+    const dataCompleteness = computeDataCompleteness({
+      hourlyRate: s.hourlyRate,
+      ownDemand: s.ownDemand,
+      pcCount: s.pcCount,
+      competitivenessScore: s.competitivenessScore,
+      hasLocationEvaluation: s.hasLocationEvaluation ?? false,
+      competitorCount: s.competitorSummary?.totalCount ?? 0,
+      actualMonthlyRevenueAvg: s.actualRevenueAvg,
+      completedMonths: s.completedMonths,
+    });
+    const errorCause = classifyErrorCause({
+      absoluteErrorPct,
+      direction,
+      specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
+      inflowRestriction: s.inflowRestriction,
+      competitorDataReliability: s.competitorSummary?.dataReliability,
+      floor: s.floor,
+      groundLevel: s.groundLevel,
+      hasElevator: s.hasElevator,
+    });
+
     return {
       ...s,
       cohort,
       predictedRevenueAvg,
+      v62PredictedRevenueAvg,
       errorAmount,
       absoluteErrorPct,
       direction,
       includedInCoreAccuracy: isCore,
       exclusionReason,
+      operationalStatus,
+      dataCompleteness,
+      errorCause,
     };
   });
 

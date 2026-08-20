@@ -30,6 +30,7 @@ const FIELD_LABELS: Record<string, string> = {
   targetMedianAE: "목표 중앙절대오차",
   target20pctRatio: "목표 ±20% 이내 비율",
   maxAvgBias: "허용 평균편향",
+  target10pctRatio: "목표 ±10% 이내 비율(정식 도입 핵심 조건)",
   "v61Fallback.intercept": "V61 폴백 - 절편",
   "v61Fallback.hourlyRateCoef": "V61 폴백 - 요금계수",
   "v61Fallback.demandPerPcCoef": "V61 폴백 - 수요PC계수",
@@ -374,6 +375,12 @@ export default function StoreEvalSettingsPage() {
           readOnly={readOnly}
         />
         <NumberInput label="허용 평균편향" value={form.maxAvgBias} onChange={(v) => updateTop("maxAvgBias", v)} readOnly={readOnly} />
+        <NumberInput
+          label="목표 ±10% 이내 비율(정식 도입 핵심 조건)"
+          value={form.target10pctRatio}
+          onChange={(v) => updateTop("target10pctRatio", v)}
+          readOnly={readOnly}
+        />
       </Section>
 
       <Section

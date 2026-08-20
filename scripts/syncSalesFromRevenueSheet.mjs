@@ -1,10 +1,16 @@
-// 매출DB(구글시트) → storeEvalExistingStoreSales(Firestore) 동기화 스크립트.
+// 매출DB(구글시트) → storeEvalExistingStores/storeEvalExistingStoreSales(Firestore) 동기화 스크립트.
 //
 // 무엇을 하는가:
-//   Google Sheet의 `매출DB` 탭(원본 매출 원장, 매달 6열씩 블록으로 늘어나는 구조)에서 이미
-//   storeEvalExistingStores에 등록된 매장들의 월별 실적을 읽어 storeEvalExistingStoreSales에
-//   upsert하고, 그 최신 상태로 각 매장의 completedMonths/actualMonthlyRevenueAvg를 다시 계산해
-//   storeEvalExistingStores 문서도 함께 갱신한다.
+//   1) 매출DB 기본열(A~N)에 있지만 storeEvalExistingStores에는 아직 없는 "정상" 상태 매장을
+//      찾아 자동 등록한다(신규 가맹점이 매출DB에 매장정보를 입력하면, 이 스크립트를 다시
+//      돌리는 것만으로 웹에도 매장이 새로 생긴다). 브랜드(블랙라벨/리그)·요금·경쟁력점수 등
+//      V61 학습 특징치는 매출DB에 없으므로 null로 두고, migrateFullExistingStoreProfiles.mjs가
+//      01_점포기본정보/09_입지동선평가를 채운 뒤에야 학습 대상이 된다.
+//   2) Google Sheet의 `매출DB` 탭(원본 매출 원장, 매달 6열씩 블록으로 늘어나는 구조)에서
+//      storeEvalExistingStores에 등록된(위 1단계로 새로 등록된 매장 포함) 매장들의 월별 실적을
+//      읽어 storeEvalExistingStoreSales에 upsert하고, 그 최신 상태로 각 매장의
+//      completedMonths/actualMonthlyRevenueAvg를 다시 계산해 storeEvalExistingStores 문서도
+//      함께 갱신한다(월초에 전달 매출을 매출DB에 기입 → 이 스크립트 재실행 → 웹에 자동 반영).
 //
 // 왜 매출DB를 직접 읽는가(02_월별성과DB를 안 쓰는 이유):
 //   02_월별성과DB는 Apps Script 메뉴("점포평가 관리 → 전체 데이터 동기화")를 실행해야만
@@ -14,7 +20,9 @@
 //   SOURCE_HEADER_ROW=2, SOURCE_DATA_START_ROW=3)를 그대로 따른다.
 //
 // 실행: node scripts/syncSalesFromRevenueSheet.mjs
-// 반복 실행 안전함(멱등) — 이미 있는 월도 값이 같으면 그대로 덮어쓸 뿐 중복이 생기지 않는다.
+// 반복 실행 안전함(멱등) — 이미 있는 월/매장도 값이 같으면 그대로 덮어쓸 뿐 중복이 생기지 않는다.
+// 권장 순서: 매출DB에 신규 매장·월매출을 입력한 뒤 이 스크립트를 돌리고, 그다음
+// migrateFullExistingStoreProfiles.mjs로 01/05/09/03 시트의 나머지 값을 채운다.
 
 import { readFileSync } from "node:fs";
 import { google } from "googleapis";
@@ -63,6 +71,82 @@ const db = getFirestore(adminApp);
 
 const sheetsAuth = new google.auth.JWT({ email: clientEmail, key: privateKey, scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"] });
 const sheets = google.sheets({ version: "v4", auth: sheetsAuth });
+
+// 매출DB!J열(오픈일)은 "2015. 9. 4" 같은 점(.) 구분 표기다. 01_점포기본정보(toDateStr)와
+// 다른 포맷이라 별도 파서가 필요하다.
+function parseKoreanDate(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const m = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+  if (m) return `${m[1]}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[3])).padStart(2, "0")}`;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+// 신규 매장을 매출DB에서 자동으로 찾아 storeEvalExistingStores에 등록한다. 매출DB!E열
+// (가맹해지여부)이 "정상"인 매장만 대상으로 한다 — 과거 폐업/가맹해지 매장까지 전부
+// 끌어오면 학습·검증과 무관한 죽은 매장이 쌓이기 때문이다. brandType 등 V61 학습 특징치는
+// 매출DB에 없으므로 null로 남겨두고, migrateFullExistingStoreProfiles.mjs 재실행으로 채운다.
+async function autoRegisterNewStores(storeCodes, openedAtByCode) {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:N2000` });
+  const values = res.data.values ?? [];
+  let registered = 0;
+  let skipped = 0;
+  for (let r = SOURCE_DATA_START_ROW - 1; r < values.length; r++) {
+    const row = values[r];
+    if (!row || !row[0]) continue;
+    const code = String(row[0]).trim();
+    if (storeCodes.has(code)) continue;
+
+    const franchiseStatusRaw = String(row[4] ?? "").trim();
+    if (franchiseStatusRaw !== "정상") continue; // 신규 자동등록은 현재 정상 운영 매장만
+
+    const storeName = String(row[1] ?? "").trim();
+    const pcCount = toNumber(row[2]);
+    const address = String(row[12] ?? "").trim() || null;
+    const openedAt = parseKoreanDate(row[9]);
+    if (!storeName || !openedAt) {
+      console.log(`  ⚠️  ${code}: 매장명 또는 오픈일이 비어 있어 자동등록을 건너뜁니다 — 매출DB를 확인해주세요.`);
+      skipped++;
+      continue;
+    }
+
+    const now = Date.now();
+    const doc = {
+      storeCode: code,
+      storeName,
+      pcCount: pcCount ?? null,
+      floor: null,
+      groundLevel: null,
+      openedAt,
+      franchiseStatus: "정상",
+      excludedFromModel: false,
+      excludedReason: null,
+      v61Predicted: null,
+      referenceMarketDemand: null,
+      brandType: null, // 09_입지동선평가 확인 전 — migrateFullExistingStoreProfiles.mjs가 채운다
+      validationUse: null,
+      hourlyRate: null,
+      ownDemand: null,
+      competitivenessScore: null,
+      actualMonthlyRevenueAvg: null,
+      completedMonths: 0,
+      specialDemandType: null,
+      specialDemandIntensity: null,
+      address,
+      createdAt: now,
+      updatedAt: now,
+      updatedBy: "auto-sync-script",
+    };
+    await db.collection("storeEvalExistingStores").doc(code).set(doc, { merge: true });
+    storeCodes.add(code);
+    openedAtByCode.set(code, openedAt);
+    registered++;
+    console.log(`  ✅ 신규 매장 자동등록: ${code} ${storeName} (오픈일 ${openedAt}, PC ${pcCount ?? "?"}대)`);
+  }
+  console.log(`매출DB 기준 신규 매장 자동등록: ${registered}곳 (건너뜀 ${skipped}곳)`);
+}
 
 function parseMonthHeader(text) {
   const cleaned = String(text ?? "").trim().replace(/\s/g, "");
@@ -116,7 +200,11 @@ async function main() {
   const storesSnap = await db.collection("storeEvalExistingStores").get();
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const openedAtByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data().openedAt]));
-  console.log(`대상 매장(storeEvalExistingStores에 이미 등록된 매장): ${storeCodes.size}곳`);
+  console.log(`기존 등록 매장: ${storeCodes.size}곳`);
+
+  // 1-1) 매출DB에서 아직 등록 안 된 신규 매장을 자동 등록 (storeCodes/openedAtByCode를 그
+  //      자리에서 갱신하므로, 아래 매출 동기화 루프가 같은 실행에서 바로 반영한다)
+  await autoRegisterNewStores(storeCodes, openedAtByCode);
 
   // 2) 매출DB 전체 값 읽기
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:ZZ2000` });

@@ -203,6 +203,9 @@ export type ModelSettings = {
   targetMedianAE: number; // 0.10
   target20pctRatio: number; // 0.75
   maxAvgBias: number; // 0.05
+  // 2026-08-20 (5차) 추가 — ±10% 이내 적중률 목표. 12_운영판정 원본에는 없던 항목으로,
+  // 정식 도입의 핵심 조건으로 쓰기 위해 추가했다(사용자 요청사항).
+  target10pctRatio: number; // 0.8
   // ⚠️ 2026-08-20: 실제 V61은 아래 v61Training(비음수 릿지회귀)이다. v61Fallback은
   // 학습표본이 v61Training.minSampleCount 미만일 때만 쓰는 임시값이며, 화면에도
   // "임시 근사치·검증 전"으로 표시해야 한다(v61Fallback을 최종 결과처럼 보여주지 않는다).

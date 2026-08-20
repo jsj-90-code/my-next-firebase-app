@@ -6,10 +6,14 @@
 import { describe, expect, it } from "vitest";
 import {
   bucketizeErrors,
+  classifyErrorCause,
   classifyTenureCohort,
   computeAaBaselineRevenue,
   computeBoundedSales,
+  computeCompetitorInvestigationSummary,
   computeCompetitorOccupiedSeats,
+  computeDataCompleteness,
+  computeOperationalStatus,
   computeSpecialDemandScore,
   computeCompletedMonthsCount,
   computeCompletionStatus,
@@ -136,6 +140,46 @@ describe("검증 요약 지표 (12_운영판정!B8:H9, D15~D23)", () => {
   });
   it("전체 상태 = 조건부 사용 (표본수 미달, 성능지표는 통과)", () => {
     expect(summary.overallStatus).toBe("조건부 사용");
+  });
+});
+
+// 요청사항 9 — 06_검증대시보드 참고치와의 parity test. 숫자를 코드에 새로 하드코딩하지 않고,
+// 위 VALIDATION_ROWS(원본 시트에서 그대로 옮긴 실측 26곳)와 사용자가 전달한 조기검증 5곳의
+// 실제 절대오차율을 fixture로 그대로 넣어, 새 코호트 요약함수(summarizeValidationRows)가
+// 시트에 이미 확정된 집계치를 재현하는지만 검증한다 — 예측 모형 자체의 정확도를 주장하는
+// 테스트가 아니라, 집계 함수(평균/중앙값/±10%/±20% 비율)의 산술이 맞는지 확인하는 것이다.
+describe("summarizeValidationRows — 06_검증대시보드 참고치와 parity (요청사항 9)", () => {
+  const targets = { mape: 0.15, medianAe: 0.1, within10: 0.8, within20: 0.75, maxBias: 0.05 };
+
+  it("정식검증 26곳: 평균 11.7%·중앙값 9.1%·±10% 57.7%·±20% 76.9%", () => {
+    const rows = VALIDATION_ROWS.map(([, name, actual, , , , expectedV62, expectedAbsErr]) => ({
+      storeName: name,
+      absoluteErrorPct: expectedAbsErr,
+      errorAmount: expectedV62 - actual,
+      actualRevenueAvg: actual,
+    }));
+    const summary = summarizeValidationRows(rows, targets);
+    expect(summary.sampleCount).toBe(26);
+    expect(summary.meanAbsoluteErrorPct).toBeCloseTo(0.117, 2);
+    expect(summary.medianAbsoluteErrorPct).toBeCloseTo(0.091, 2);
+    expect(summary.within10PctRatio).toBeCloseTo(0.577, 2);
+    expect(summary.within20PctRatio).toBeCloseTo(0.769, 2);
+  });
+
+  it("조기검증 5곳(장산점8.1%·발산역점11.8%·일산탄현점13.4%·야당점15.2%·강릉교동점(신)20.8%): 평균 13.8%·중앙값 13.4%·±10% 20.0%·±20% 80.0%", () => {
+    const rows = [
+      { storeName: "장산점", absoluteErrorPct: 0.081, errorAmount: -1, actualRevenueAvg: 100 },
+      { storeName: "발산역점", absoluteErrorPct: 0.118, errorAmount: -1, actualRevenueAvg: 100 },
+      { storeName: "일산탄현점", absoluteErrorPct: 0.134, errorAmount: -1, actualRevenueAvg: 100 },
+      { storeName: "야당점", absoluteErrorPct: 0.152, errorAmount: -1, actualRevenueAvg: 100 },
+      { storeName: "강릉교동점(신)", absoluteErrorPct: 0.208, errorAmount: -1, actualRevenueAvg: 100 },
+    ];
+    const summary = summarizeValidationRows(rows, targets);
+    expect(summary.sampleCount).toBe(5);
+    expect(summary.meanAbsoluteErrorPct).toBeCloseTo(0.1386, 2);
+    expect(summary.medianAbsoluteErrorPct).toBeCloseTo(0.134, 2);
+    expect(summary.within10PctRatio).toBeCloseTo(0.2, 2);
+    expect(summary.within20PctRatio).toBeCloseTo(0.8, 2);
   });
 });
 
@@ -605,7 +649,7 @@ describe("summarizeValidationRows (목표 달성 여부 판정)", () => {
       errorAmount: 1000,
       actualRevenueAvg: 100000,
     }));
-    const summary = summarizeValidationRows(rows, { mape: 0.1, medianAe: 0.08, within10: 0.8, maxOver20: 0.1 });
+    const summary = summarizeValidationRows(rows, { mape: 0.1, medianAe: 0.08, within10: 0.8, within20: 0.9, maxBias: 0.05 });
     expect(summary.targetsMetAll).toBe(true);
     expect(summary.passed.mape).toBe(true);
     expect(summary.passed.within10).toBe(true);
@@ -617,7 +661,7 @@ describe("summarizeValidationRows (목표 달성 여부 판정)", () => {
       errorAmount: -1000,
       actualRevenueAvg: 100000,
     }));
-    const summary = summarizeValidationRows(rows, { mape: 0.1, medianAe: 0.08, within10: 0.8, maxOver20: 0.1 });
+    const summary = summarizeValidationRows(rows, { mape: 0.1, medianAe: 0.08, within10: 0.8, within20: 0.9, maxBias: 0.05 });
     expect(summary.targetsMetAll).toBe(false);
     expect(summary.underPredictedCount).toBe(10);
     expect(summary.overPredictedCount).toBe(0);
@@ -690,7 +734,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
   );
 
   it("핵심표본은 리브-원-아웃으로 예측하고 includedInCoreAccuracy=true다", () => {
-    const { rows } = runCohortValidation(coreStores, { v61Training: defaultModelSettings().v61Training });
+    const { rows } = runCohortValidation(coreStores, { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
     expect(rows.every((r) => r.includedInCoreAccuracy)).toBe(true);
     expect(rows.every((r) => r.predictedRevenueAvg != null)).toBe(true);
     expect(rows.every((r) => r.cohort === "정식 검증군")).toBe(true);
@@ -698,7 +742,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("12개월 미완료 매장은 학습에 전혀 안 쓰이고(완전 외부검증) 코호트로 분류된다", () => {
     const earlyStore = makeStore({ storeCode: "E1", storeName: "조기점포", completedMonths: 7 });
-    const { rows } = runCohortValidation([...coreStores, earlyStore], { v61Training: defaultModelSettings().v61Training });
+    const { rows } = runCohortValidation([...coreStores, earlyStore], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
     const early = rows.find((r) => r.storeCode === "E1")!;
     expect(early.cohort).toBe("조기 검증 B");
     expect(early.includedInCoreAccuracy).toBe(false);
@@ -707,7 +751,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("사후 운영이슈 점포는 핵심 정확도에서 제외되고 사유가 남는다", () => {
     const anomalyStore = makeStore({ storeCode: "A1", storeName: "이슈점포", isPostOpenIssue: true, postOpenIssueReason: "오픈 후 운영관리 문제" });
-    const { rows } = runCohortValidation([...coreStores, anomalyStore], { v61Training: defaultModelSettings().v61Training });
+    const { rows } = runCohortValidation([...coreStores, anomalyStore], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
     const anomaly = rows.find((r) => r.storeCode === "A1")!;
     expect(anomaly.includedInCoreAccuracy).toBe(false);
     expect(anomaly.exclusionReason).toContain("운영관리 문제");
@@ -715,7 +759,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("영업 1~2개월 매장은 참고용으로 분류되고 핵심 정확도에서 빠진다", () => {
     const refStore = makeStore({ storeCode: "R1", storeName: "참고점포", completedMonths: 1 });
-    const { rows } = runCohortValidation([...coreStores, refStore], { v61Training: defaultModelSettings().v61Training });
+    const { rows } = runCohortValidation([...coreStores, refStore], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
     const ref = rows.find((r) => r.storeCode === "R1")!;
     expect(ref.cohort).toBe("참고용");
     expect(ref.includedInCoreAccuracy).toBe(false);
@@ -724,7 +768,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("오픈 당월(완료월 0개) 매장은 예측값도 아예 내지 않는다 — 오픈달 매출로 평가하지 않는다", () => {
     const justOpened = makeStore({ storeCode: "J1", storeName: "오픈당월점포", completedMonths: 0, actualRevenueAvg: null });
-    const { rows } = runCohortValidation([...coreStores, justOpened], { v61Training: defaultModelSettings().v61Training });
+    const { rows } = runCohortValidation([...coreStores, justOpened], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
     const j = rows.find((r) => r.storeCode === "J1")!;
     expect(j.cohort).toBe("제외");
     expect(j.predictedRevenueAvg).toBeNull();
@@ -733,10 +777,139 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("브랜드 미확인 매장은 핵심 정확도에서 제외되고 사유가 남는다", () => {
     const unknownBrand = makeStore({ storeCode: "U1", storeName: "미확인점포", brand: null });
-    const { rows } = runCohortValidation([...coreStores, unknownBrand], { v61Training: defaultModelSettings().v61Training });
+    const { rows } = runCohortValidation([...coreStores, unknownBrand], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
     const u = rows.find((r) => r.storeCode === "U1")!;
     expect(u.includedInCoreAccuracy).toBe(false);
     expect(u.exclusionReason).toContain("브랜드 미확인");
+  });
+
+  it("요청사항 2 — 외부유입제한이 있으면 V62예측이 V61예측×(1+보정률)로 줄어들고 오차도 그 값 기준으로 계산된다", () => {
+    const strongInflow = makeStore({ storeCode: "F1", storeName: "외부유입강함점", inflowRestriction: "강함" });
+    const settings = { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment };
+    const { rows } = runCohortValidation([...coreStores, strongInflow], settings);
+    const f = rows.find((r) => r.storeCode === "F1")!;
+    expect(f.predictedRevenueAvg).not.toBeNull();
+    expect(f.v62PredictedRevenueAvg).not.toBeNull();
+    expect(f.v62PredictedRevenueAvg!).toBeCloseTo(Math.round(f.predictedRevenueAvg! * 0.8), -1);
+    expect(f.absoluteErrorPct).toBeCloseTo(Math.abs(f.v62PredictedRevenueAvg! - f.actualRevenueAvg!) / f.actualRevenueAvg!, 6);
+  });
+
+  it("외부유입제한이 없으면(null) V62=V61 그대로다", () => {
+    const noInflow = makeStore({ storeCode: "F2", storeName: "외부유입없음점", inflowRestriction: null });
+    const settings = { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment };
+    const { rows } = runCohortValidation([...coreStores, noInflow], settings);
+    const f = rows.find((r) => r.storeCode === "F2")!;
+    expect(f.v62PredictedRevenueAvg).toBe(f.predictedRevenueAvg);
+  });
+});
+
+describe("computeCompetitorInvestigationSummary (요청사항 4 — 경쟁점 조사상태·데이터 신뢰도)", () => {
+  it("경쟁점이 없으면 uninvestigated/low", () => {
+    const summary = computeCompetitorInvestigationSummary([]);
+    expect(summary.status).toBe("uninvestigated");
+    expect(summary.dataReliability).toBe("low");
+  });
+  it("전부 상세조사면 detailed_complete, 상세비율 100%면 high", () => {
+    const summary = computeCompetitorInvestigationSummary([
+      { investigationStatus: "조사완료", surveyLevel: "상세" },
+      { investigationStatus: "조사완료", surveyLevel: "상세" },
+    ]);
+    expect(summary.status).toBe("detailed_complete");
+    expect(summary.dataReliability).toBe("high");
+  });
+  it("상세+간이 혼재면 mixed", () => {
+    const summary = computeCompetitorInvestigationSummary([
+      { investigationStatus: "조사완료", surveyLevel: "상세" },
+      { investigationStatus: "조사완료", surveyLevel: "간략" },
+    ]);
+    expect(summary.status).toBe("mixed");
+  });
+  it("간이/외관만이면 light, 상세조사 없으면 신뢰도는 medium 이하", () => {
+    const summary = computeCompetitorInvestigationSummary([
+      { investigationStatus: "조사완료", surveyLevel: "외관만" },
+      { investigationStatus: "경쟁점없음", surveyLevel: null },
+    ]);
+    expect(summary.status).toBe("light");
+    expect(summary.dataReliability).toBe("low"); // 상세조사 0건
+  });
+  it("경쟁점은 있으나 조사정보가 없으면(노후저경쟁력미조사) uninvestigated — 경쟁력이 약하다는 뜻은 아니다", () => {
+    const summary = computeCompetitorInvestigationSummary([{ investigationStatus: "노후저경쟁력미조사", surveyLevel: null }]);
+    expect(summary.status).toBe("uninvestigated");
+    expect(summary.uninvestigatedCount).toBe(1);
+  });
+});
+
+describe("computeDataCompleteness (요청사항 5 — 25점×4항목)", () => {
+  const base = {
+    hourlyRate: 1300,
+    ownDemand: 200000,
+    pcCount: 100,
+    competitivenessScore: 4,
+    hasLocationEvaluation: true,
+    competitorCount: 3,
+    actualMonthlyRevenueAvg: 60000000,
+    completedMonths: 12,
+  };
+  it("4항목 모두 있으면 100점 complete", () => {
+    expect(computeDataCompleteness(base)).toMatchObject({ score: 100, grade: "complete" });
+  });
+  it("1항목 빠지면 75점 partial", () => {
+    expect(computeDataCompleteness({ ...base, competitorCount: 0 })).toMatchObject({ score: 75, grade: "partial" });
+  });
+  it("2항목 빠지면 50점 excluded", () => {
+    expect(computeDataCompleteness({ ...base, competitorCount: 0, hasLocationEvaluation: false })).toMatchObject({ score: 50, grade: "excluded" });
+  });
+});
+
+describe("computeOperationalStatus (요청사항 6 — 운영상태)", () => {
+  it("가맹해지 등 정상 아님 → abnormal (post_open_issue보다 우선)", () => {
+    expect(computeOperationalStatus({ franchiseStatus: "가맹해지", isPostOpenIssue: true, cohort: "정식 검증군" })).toBe("abnormal");
+  });
+  it("송도점형(경쟁점 가격전쟁)·동탄북광장형(운영관리 문제) — 계약은 정상이라 post_open_issue", () => {
+    expect(computeOperationalStatus({ franchiseStatus: "정상", isPostOpenIssue: true, cohort: "정식 검증군" })).toBe("post_open_issue");
+  });
+  it("12개월 미완료 정상 매장 → early", () => {
+    expect(computeOperationalStatus({ franchiseStatus: "정상", isPostOpenIssue: false, cohort: "조기 검증 B" })).toBe("early");
+  });
+  it("12개월 완료 정상 매장 → normal", () => {
+    expect(computeOperationalStatus({ franchiseStatus: "정상", isPostOpenIssue: false, cohort: "정식 검증군" })).toBe("normal");
+  });
+});
+
+describe("classifyErrorCause (요청사항 7 — 오차원인 우선 추정, 단일 확정 아님)", () => {
+  const baseInput = {
+    absoluteErrorPct: 0.25,
+    direction: "과대예측" as const,
+    specialDemandScore: 0,
+    inflowRestriction: null,
+    competitorDataReliability: "high" as const,
+    floor: 1,
+    groundLevel: "지상" as const,
+    hasElevator: true,
+  };
+  it("비교 불가(실적 없음) → not_verifiable", () => {
+    expect(classifyErrorCause({ ...baseInput, absoluteErrorPct: null })).toBe("not_verifiable");
+  });
+  it("오차가 이미 10% 이내 → within_range", () => {
+    expect(classifyErrorCause({ ...baseInput, absoluteErrorPct: 0.05 })).toBe("within_range");
+  });
+  it("경쟁 데이터 신뢰도 low → competitor_data_missing (다른 신호보다 우선)", () => {
+    expect(classifyErrorCause({ ...baseInput, competitorDataReliability: "low" })).toBe("competitor_data_missing");
+  });
+  it("과소예측+특수수요점수>0 → special_demand_underreflected", () => {
+    expect(classifyErrorCause({ ...baseInput, direction: "과소예측", specialDemandScore: 3 })).toBe("special_demand_underreflected");
+  });
+  it("과대예측+외부유입제한 있음 → external_inflow_underreflected", () => {
+    expect(classifyErrorCause({ ...baseInput, inflowRestriction: "강함" })).toBe("external_inflow_underreflected");
+  });
+  it("과대예측+접근성 좋음(1층+엘리베이터) → access_overestimated", () => {
+    expect(classifyErrorCause({ ...baseInput, floor: 1, hasElevator: true })).toBe("access_overestimated");
+  });
+  it("남은 과대예측(접근성도 안 좋음) → demand_share_overestimated", () => {
+    expect(classifyErrorCause({ ...baseInput, floor: 6, hasElevator: false, groundLevel: "지상" })).toBe("demand_share_overestimated");
+  });
+  it("남은 과소예측 → demand_conversion_underestimated", () => {
+    expect(classifyErrorCause({ ...baseInput, direction: "과소예측" })).toBe("demand_conversion_underestimated");
   });
 });
 
