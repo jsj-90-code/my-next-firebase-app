@@ -207,6 +207,20 @@ export function ScoreSelectField({
   );
 }
 
+/** 자동계산된 값을 읽기전용으로 보여준다 (사양/좌석/입지 점수 등 - 점포평가.gs 자동계산 열). */
+export function ComputedField({ label, value, hint }: { label: string; value: number | null; hint?: string }) {
+  return (
+    <FieldWrap label={label} hint={hint}>
+      <input
+        type="text"
+        readOnly
+        value={value == null ? "-" : String(value)}
+        className="w-full rounded-md border border-zinc-200 bg-zinc-100 px-2.5 py-1.5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+      />
+    </FieldWrap>
+  );
+}
+
 export function BooleanSelectField({
   label,
   value,

@@ -1,15 +1,18 @@
 "use client";
 
 // 탭2 경쟁점 - "3. 경쟁점 입력" 화면 요구사항.
-// Competitor 타입의 필드 전부를 폼에 반영하고, surveyState(신규 워크플로 필드)로
+// Competitor 타입의 필드 전부를 폼에 반영하고, investigationStatus(신규 워크플로 필드)로
 // "경쟁점 데이터 없음"과 "노후·저경쟁력 미조사"를 구분한다(docs/data-issues.md #3).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { deleteCompetitor, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
-import type { Competitor, CompetitorSurveyState, GroundLevel, SurveyLevel } from "@/lib/storeEval/types";
+import { computeCompetitorScores } from "@/lib/storeEval/calc";
+import { defaultModelSettings } from "@/lib/storeEval/settings";
+import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
+import type { Competitor, CompetitorSurveyState, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
 import {
   BooleanSelectField,
+  ComputedField,
   NumberField,
   ScoreSelectField,
   SelectField,
@@ -45,7 +48,7 @@ function blankCompetitor(candidateCode: string): Competitor {
     candidateCode,
     name: "",
     surveyLevel: null,
-    surveyState: "조사완료",
+    investigationStatus: "조사완료",
     address: null,
     distanceM: null,
     floor: null,
@@ -68,15 +71,12 @@ function blankCompetitor(candidateCode: string): Competitor {
     pingbotUtilization: null,
     pingbotPeriod: null,
     renovationYear: null,
-    specScore: null,
-    seatScore: null,
     foodScore: null,
     foodBasis: null,
     interiorScore: null,
     interiorBasis: null,
     monitorScore: null,
     monitorBasis: null,
-    locationScore: null,
     room1: null,
     room2: null,
     teamRoom: null,
@@ -130,6 +130,15 @@ function CompetitorForm({
   const [form, setForm] = useState<Competitor>(initial);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+
+  useEffect(() => {
+    getModelSettings().then((s) => {
+      if (s) setSettings(s);
+    });
+  }, []);
+
+  const computed = useMemo(() => computeCompetitorScores(form, settings), [form, settings]);
 
   function set<K extends keyof Competitor>(key: K, value: Competitor[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -165,8 +174,8 @@ function CompetitorForm({
         <TextField label="경쟁점명" value={form.name} onChange={(v) => set("name", v)} required />
         <SelectField
           label="조사상태"
-          value={form.surveyState}
-          onChange={(v) => set("surveyState", v ?? "조사완료")}
+          value={form.investigationStatus}
+          onChange={(v) => set("investigationStatus", v ?? "조사완료")}
           options={SURVEY_STATE_OPTIONS}
           required
         />
@@ -204,16 +213,21 @@ function CompetitorForm({
       </div>
 
       <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        경쟁력 점수(1~5점 직접 입력) 및 평가근거
+        경쟁력 점수 및 평가근거
       </h4>
+      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        사양·좌석·입지 점수는 위 VGA·존구성·층수+엘리베이터로부터 자동 계산됩니다. 조사수준이
+        간략/외관만이면 미입력 항목은 기본값(2.0/1.5)으로 채워집니다.
+      </p>
       <div className={`${gridClass} mt-3`}>
-        <ScoreSelectField label="사양 점수" value={form.specScore} onChange={(v) => set("specScore", v)} />
-        <ScoreSelectField label="좌석 점수" value={form.seatScore} onChange={(v) => set("seatScore", v)} />
-        <ScoreSelectField label="입지 점수" value={form.locationScore} onChange={(v) => set("locationScore", v)} />
+        <ComputedField label="사양 점수 (자동)" value={computed.spec} hint="VGA 70%+모니터 30%+프리미엄존 가산" />
+        <ComputedField label="좌석 점수 (자동)" value={computed.seat} hint="존 다양성 50%+수용력 50%" />
+        <ComputedField label="입지 점수 (자동)" value={computed.location} hint="층수+엘리베이터+지상/지하" />
         <ScoreSelectField label="먹거리 점수" value={form.foodScore} onChange={(v) => set("foodScore", v)} />
         <ScoreSelectField label="인테리어 점수" value={form.interiorScore} onChange={(v) => set("interiorScore", v)} />
         <ScoreSelectField label="모니터 점수" value={form.monitorScore} onChange={(v) => set("monitorScore", v)} />
       </div>
+      <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">종합 경쟁력점수: {computed.total ?? "-"}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <TextAreaField label="먹거리 근거" value={form.foodBasis ?? ""} onChange={(v) => set("foodBasis", v || null)} rows={2} />
         <TextAreaField label="인테리어 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
@@ -268,6 +282,13 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+
+  useEffect(() => {
+    getModelSettings().then((s) => {
+      if (s) setSettings(s);
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -354,14 +375,14 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                    c.surveyState === "조사완료"
+                    c.investigationStatus === "조사완료"
                       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                      : c.surveyState === "경쟁점없음"
+                      : c.investigationStatus === "경쟁점없음"
                         ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
                         : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
                   }`}
                 >
-                  {SURVEY_STATE_OPTIONS.find((o) => o.value === c.surveyState)?.label ?? c.surveyState}
+                  {SURVEY_STATE_OPTIONS.find((o) => o.value === c.investigationStatus)?.label ?? c.investigationStatus}
                 </span>
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-zinc-600 dark:text-zinc-400">
@@ -379,11 +400,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                 </div>
                 <div>
                   <dt className="inline text-zinc-400">경쟁력점수 </dt>
-                  <dd className="inline">
-                    {c.specScore != null && c.seatScore != null && c.foodScore != null && c.interiorScore != null && c.locationScore != null
-                      ? "입력완료"
-                      : "미입력"}
-                  </dd>
+                  <dd className="inline">{computeCompetitorScores(c, settings).total ?? "-"}</dd>
                 </div>
               </dl>
               <div className="mt-3 flex justify-end gap-2 print:hidden">

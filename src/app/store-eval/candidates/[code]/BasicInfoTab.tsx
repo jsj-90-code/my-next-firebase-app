@@ -3,11 +3,14 @@
 // 탭1 기본정보 - "2. 신규후보지 입력" 화면 요구사항.
 // CandidateInput 타입의 실제 필드 전부를 폼으로 구성한다 (필드를 빼거나 추가하지 않는다).
 
-import { useEffect, useState } from "react";
-import { saveCandidate } from "@/lib/storeEval/store";
-import type { CandidateInput, GroundLevel, ReviewStatus } from "@/lib/storeEval/types";
+import { useEffect, useMemo, useState } from "react";
+import { computeLocationScoreFromFacts, computeSeatScore, computeSpecScore, computeZoneComposition, GAME_ZONE_BONUS } from "@/lib/storeEval/calc";
+import { defaultModelSettings } from "@/lib/storeEval/settings";
+import { getModelSettings, saveCandidate } from "@/lib/storeEval/store";
+import type { CandidateInput, GroundLevel, ModelSettings, ReviewStatus } from "@/lib/storeEval/types";
 import {
   BooleanSelectField,
+  ComputedField,
   DateField,
   NumberField,
   SelectField,
@@ -35,6 +38,7 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "floor", label: "점포층수" },
   { key: "hourlyRate", label: "요금표_시간당원" },
   { key: "demographicsYear", label: "상권데이터기준연도" },
+  { key: "plannedOpenMonth", label: "예상오픈월" },
   { key: "pop500m", label: "반경500m 총인구(거주)" },
   { key: "area1kmKm2", label: "반경1km 면적(㎢)" },
   { key: "pop1km", label: "반경1km 총인구" },
@@ -94,6 +98,40 @@ export function BasicInfoTab({
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
+  const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+
+  useEffect(() => {
+    getModelSettings().then((s) => {
+      if (s) setSettings(s);
+    });
+  }, []);
+
+  const computedScores = useMemo(() => {
+    const { kinds, rooms } = computeZoneComposition(
+      [form.ownRoom1, form.ownRoom2, form.ownTeamRoom, form.ownCoupleZone, form.ownVipZone],
+      [form.ownFriendsZone],
+    );
+    return {
+      spec: computeSpecScore(form.ownVgaBase, form.ownVgaTop, (form.ownGameZoneCount ?? 0) * GAME_ZONE_BONUS, form.ownMonitorScore, settings),
+      seat: computeSeatScore(kinds, rooms),
+      location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
+    };
+  }, [
+    form.ownVgaBase,
+    form.ownVgaTop,
+    form.ownGameZoneCount,
+    form.ownMonitorScore,
+    form.ownRoom1,
+    form.ownRoom2,
+    form.ownTeamRoom,
+    form.ownCoupleZone,
+    form.ownVipZone,
+    form.ownFriendsZone,
+    form.floor,
+    form.groundLevel,
+    form.hasElevator,
+    settings,
+  ]);
 
   // 후보지코드(=candidate.code)가 바뀔 때만 폼을 리셋한다. 저장 후 부모가 candidate를 갱신해도
   // 사용자가 입력 중인 값을 덮어쓰지 않기 위해 candidate 전체가 아니라 code에만 반응한다.
@@ -150,6 +188,7 @@ export function BasicInfoTab({
           <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
           <NumberField label="요금표_시간당원" value={form.hourlyRate} onChange={(v) => set("hourlyRate", v)} required />
           <NumberField label="상권데이터기준연도" value={form.demographicsYear} onChange={(v) => set("demographicsYear", v)} step={1} />
+          <NumberField label="예상오픈월 (1~12)" value={form.plannedOpenMonth} onChange={(v) => set("plannedOpenMonth", v)} step={1} hint="AA 기준매출(오픈월부터 10개월 평균) 계산에 사용" />
         </div>
       </section>
 
@@ -217,23 +256,24 @@ export function BasicInfoTab({
       </section>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>경쟁력 점수 (1~5점 직접 입력)</h3>
+        <h3 className={sectionTitleClass}>경쟁력 점수</h3>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          원본 시트는 사양/좌석/입지 점수를 VGA·존구성·층수 조건으로 자동 계산하지만, 정확한 변환식을 확보하지 못해
-          먹거리/인테리어평가와 동일하게 평가자가 1~5점을 직접 입력하도록 통일했습니다(docs/data-issues.md #7). 종합
-          경쟁력점수 가중합(사양25%·좌석30%·먹거리20%·인테리어15%·입지10%)은 원본 계수 그대로 적용됩니다.
+          사양·좌석·입지 점수는 위에 입력한 VGA·존구성·층수+엘리베이터로부터 원본 Apps Script(점포평가.gs)
+          그대로 자동 계산됩니다. 먹거리·인테리어·모니터는 원본에서도 평가자가 1~5점을 직접 입력하는
+          항목입니다. 종합 경쟁력점수 가중합(사양25%·좌석30%·먹거리20%·인테리어15%·입지10%)은 원본 계수
+          그대로 적용됩니다.
         </p>
         <div className={`${gridClass} mt-4`}>
-          <ScoreSelectField label="사양 점수" value={form.ownSpecScore} onChange={(v) => set("ownSpecScore", v)} />
-          <ScoreSelectField label="좌석 점수" value={form.ownSeatScore} onChange={(v) => set("ownSeatScore", v)} />
+          <ComputedField label="사양 점수 (자동)" value={computedScores.spec} hint="VGA 70%+모니터 30%+게임존 가산" />
+          <ComputedField label="좌석 점수 (자동)" value={computedScores.seat} hint="존 다양성 50%+수용력 50%" />
           <ScoreSelectField label="먹거리 점수" value={form.ownFoodScore} onChange={(v) => set("ownFoodScore", v)} />
           <ScoreSelectField label="인테리어 점수" value={form.ownInteriorScore} onChange={(v) => set("ownInteriorScore", v)} />
-          <ScoreSelectField label="입지 점수" value={form.ownLocationScore} onChange={(v) => set("ownLocationScore", v)} />
+          <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
           <ScoreSelectField
             label="모니터 점수"
             value={form.ownMonitorScore}
             onChange={(v) => set("ownMonitorScore", v)}
-            hint="사양 산식 보조참고용 (07 원본 필드)"
+            hint="사양 점수의 모니터 30% 비중 (07 원본 필드)"
           />
         </div>
       </section>

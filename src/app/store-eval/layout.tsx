@@ -8,6 +8,7 @@ import { AutoAuthGate } from "@/components/seatLayout/AutoAuthGate";
 const NAV_ITEMS = [
   { href: "/store-eval", label: "대시보드" },
   { href: "/store-eval/candidates", label: "신규후보지" },
+  { href: "/store-eval/existing-stores", label: "기존 가맹점 관리" },
   { href: "/store-eval/validation", label: "기존 가맹점 검증" },
   { href: "/store-eval/settings", label: "운영설정" },
   { href: "/store-eval/backup", label: "백업" },
