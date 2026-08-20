@@ -226,10 +226,15 @@ export async function POST(request: Request) {
 
     const text = response.text ?? "";
 
+    // gemini-3.5-flash-lite로 바꾼 뒤로 "ZONE:"/"UNSURE:" 접두어를 빠뜨리거나 줄바꿈 없이
+    // 한 줄로 쭉 이어붙여("팀룸A = 84,85,86,87 팀룸B = ...") 응답하는 경우가 있어, 줄 구분이나
+    // 접두어 없이도 파싱되게 관대하게 둔다. 이름 캡처는 non-greedy + 번호 캡처는 숫자/쉼표/공백만
+    // 허용하는 문자 클래스라서, 다음 존 이름(한글/영문)이 나오는 지점에서 자연히 끊긴다.
     const ranges: SeatNumberRangeEntry[] = [];
     const matchedNames = new Set<string>();
-    for (const m of text.matchAll(/ZONE:\s*(.+?)\s*=\s*([\d,\s]+)/g)) {
+    for (const m of text.matchAll(/(?:ZONE:\s*)?(.+?)\s*=\s*([\d][\d,\s]*)/g)) {
       const zoneName = m[1].trim();
+      if (/^UNSURE$/i.test(zoneName)) continue;
       const zone = zones.find((z) => z.name === zoneName);
       if (!zone || matchedNames.has(zone.name)) continue;
       const numbers = parseNumberList(m[2]);
@@ -238,7 +243,7 @@ export async function POST(request: Request) {
       matchedNames.add(zone.name);
     }
 
-    const unsureMatch = text.match(/UNSURE:\s*([\d,\s]+)/);
+    const unsureMatch = text.match(/UNSURE\s*[:=]\s*([\d,\s]+)/i);
     const unmatchedGroups = unsureMatch ? toRangeChips(parseNumberList(unsureMatch[1])) : [];
 
     if (!ranges.length && !unmatchedGroups.length) {
