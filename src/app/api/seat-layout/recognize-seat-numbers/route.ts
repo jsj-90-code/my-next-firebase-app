@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGeminiClient, getGeminiModel } from "@/lib/gemini";
+import { getGeminiClient, getSeatNumberGeminiModel } from "@/lib/gemini";
 import { adminAuth } from "@/lib/firebase-admin";
 import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 import type { SeatNumberRangeEntry } from "@/lib/seatLayout/types";
@@ -209,7 +209,7 @@ export async function POST(request: Request) {
     // 잡는다. 지침이 늘어나며 AI가 더 오래 생각하다가 답을 쓸 자리가 없어 응답이 통째로 비는
     // 걸 실제로 겪어서, 여유를 크게 늘렸다.
     const response = await client.models.generateContent({
-      model: getGeminiModel(),
+      model: getSeatNumberGeminiModel(),
       contents: [
         {
           role: "user",
