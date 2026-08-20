@@ -22,6 +22,7 @@ function emptyCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput
     hasElevator: true,
     hourlyRate: 1400,
     demographicsYear: 2026,
+    plannedOpenMonth: 3,
     pop500m: 10338,
     area1kmKm2: 3.14,
     pop1km: 67450,
@@ -55,11 +56,8 @@ function emptyCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput
     ownCoupleZone: 1,
     ownVipZone: 1,
     ownFriendsZone: 0,
-    ownSpecScore: 4,
-    ownSeatScore: 4,
     ownFoodScore: 4,
     ownInteriorScore: 4,
-    ownLocationScore: 4,
     ownMonitorScore: 4,
     createdAt: 0,
     updatedAt: 0,
@@ -74,7 +72,7 @@ const competitor: Competitor = {
   candidateCode: "N001",
   name: "경쟁점A",
   surveyLevel: "상세",
-  surveyState: "조사완료",
+  investigationStatus: "조사완료",
   address: null,
   distanceM: 300,
   floor: 1,
@@ -97,15 +95,12 @@ const competitor: Competitor = {
   pingbotUtilization: null,
   pingbotPeriod: null,
   renovationYear: null,
-  specScore: 3,
-  seatScore: 3,
   foodScore: 3,
   foodBasis: null,
   interiorScore: 3,
   interiorBasis: null,
   monitorScore: 3,
   monitorBasis: null,
-  locationScore: 3,
   room1: 0,
   room2: 0,
   teamRoom: 0,
@@ -144,6 +139,7 @@ describe("evaluateCandidate 배선 검증", () => {
       locationEvaluation: locationEval,
       settings,
       existingMarketDemands: [1000, 2000, 3000],
+      existingStores: [],
     });
     expect(result.candidateCode).toBe("N001");
     expect(result.marketCharacter).toBe("번화가"); // 유동500=166062 / 거주500=10338 → 16배
@@ -161,6 +157,7 @@ describe("evaluateCandidate 배선 검증", () => {
       locationEvaluation: null,
       settings,
       existingMarketDemands: [],
+      existingStores: [],
     });
     expect(result.completionStatus).toBe("09 입지평가 필요");
     expect(result.finalJudgement).toBe("09 입지평가 필요");
@@ -173,6 +170,7 @@ describe("evaluateCandidate 배선 검증", () => {
       locationEvaluation: { ...locationEval, brandType: "리그PC방" },
       settings,
       existingMarketDemands: [],
+      existingStores: [],
     });
     expect(result.completionStatus).toBe("브랜드 확인 필요");
   });
@@ -184,6 +182,7 @@ describe("evaluateCandidate 배선 검증", () => {
       locationEvaluation: locationEval,
       settings,
       existingMarketDemands: [],
+      existingStores: [],
     });
     // (실영업 5 - 1) * 100 = 400
     expect(result.competitorIp).toBe(400);

@@ -5,19 +5,50 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  bucketizeErrors,
+  classifyTenureCohort,
+  computeAaBaselineRevenue,
   computeBoundedSales,
+  computeCompetitorOccupiedSeats,
+  computeSpecialDemandScore,
+  computeCompletedMonthsCount,
   computeCompletionStatus,
   computeCumulativeAverageSales,
+  computeStabilizedPerformance,
+  computeExpectedOccupiedSeats,
+  computeExpectedOwnDemand,
+  computeExpectedUtilization,
   computeFinalJudgement,
+  computeFloatingRawDemand,
   computeLocationCompositeScore,
+  computeLocationScoreFromFacts,
   computeMarketCharacter,
+  computeMeasuredForecast,
+  computeSeatScore,
+  computeSpecScore,
   computeV61Fallback,
   computeV62Final,
   computeValidationRow,
+  computeZoneComposition,
+  fitEmpiricalRevenueModel,
+  fitNonnegativeRidgeRegression,
+  GAME_ZONE_BONUS,
   getV62Rate,
+  isEligibleForV61Training,
+  judgeAaGrade,
+  lookupDemandCapture,
+  predictEmpiricalRevenue,
+  runCohortValidation,
+  runLeaveOneOutValidation,
+  scoreFromVga,
   summarizeValidation,
+  summarizeValidationRows,
+  type EmpiricalRevenueSample,
+  type V61TrainingStore,
   type ValidationInputRow,
+  type ValidationStoreInput,
 } from "./calc";
+import type { CandidateInput } from "./types";
 import { defaultModelSettings } from "./settings";
 
 const settings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
@@ -196,5 +227,566 @@ describe("입력완성도/최종운영판정 (13_신규후보지판정 T/U열 �
   it("완료가 아니면 T값을 그대로 승계", () => {
     const judgement = computeFinalJudgement({ completionStatus: "09 입지평가 필요", v62Final: null, ipPerDemand: null, inflowRestriction: null, saturationThreshold: 7 });
     expect(judgement).toBe("09 입지평가 필요");
+  });
+});
+
+// 아래 3개 describe는 원본 Apps Script(점포평가.gs) scoreFromVga_/scoreFromSpecWithMonitor_/
+// scoreFromZoneComposition_/scoreFromAccess_를 그대로 포팅한 함수들의 골든 테스트다.
+// 예시 값은 .gs 코드 주석(V37/V13 변경이력)에 실사례로 적힌 값을 그대로 옮겼다.
+
+describe("scoreFromVga (VGA 모델명 → 사양점수)", () => {
+  it.each([
+    ["RTX 4060", 4],
+    ["2060", 2],
+    ["GTX 1660", 1],
+  ])("%s → %d점", (text, expected) => {
+    expect(scoreFromVga(text)).toBe(expected);
+  });
+  it("모델명이 없으면 null", () => {
+    expect(scoreFromVga(null)).toBeNull();
+  });
+});
+
+describe("computeSpecScore (사양점수 = VGA 70% + 모니터 30%)", () => {
+  const specSettings = { specWeights: defaultModelSettings().specWeights };
+  it("VGA만 있으면 VGA 점수 그대로", () => {
+    expect(computeSpecScore("RTX 4060", null, 0, null, specSettings)).toBe(4);
+  });
+  it("모니터만 있으면 모니터 점수 그대로", () => {
+    expect(computeSpecScore(null, null, 0, 5, specSettings)).toBe(5);
+  });
+  it("VGA 4점 + 게임존 3종(+0.6) + 모니터 5점 → 4.6*0.7+5*0.3=4.72", () => {
+    expect(computeSpecScore("RTX 4060", null, 3 * GAME_ZONE_BONUS, 5, specSettings)).toBeCloseTo(4.72, 2);
+  });
+});
+
+describe("computeZoneComposition/computeSeatScore (좌석점수 = 다양성 50% + 수용력 50%)", () => {
+  it("자사 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15) → 종류수5·독립룸수10 → 4.0점", () => {
+    const { kinds, rooms } = computeZoneComposition([0, 0, 2, 3, 5], [15]);
+    expect(kinds).toBe(5); // 일반석1 + 팀룸/커플존/VIP존/프렌즈존 4종
+    expect(rooms).toBe(10); // 2+3+5, 프렌즈존은 제외 (가중치 없이 단순 합계)
+    expect(computeSeatScore(kinds, rooms)).toBe(4.0);
+  });
+  it("경쟁점 팀룸 8개(1종) vs 자사 3종(각1개) — 둘 다 반영", () => {
+    const rival = computeZoneComposition([0, 0, 8, 0]);
+    expect(rival.kinds).toBe(2);
+    expect(rival.rooms).toBe(8);
+    expect(computeSeatScore(rival.kinds, rival.rooms)).toBeCloseTo((2 * 0.5 + 4 * 0.5), 2);
+  });
+});
+
+describe("computeLocationScoreFromFacts (입지점수 = 층수+엘리베이터+지상/지하)", () => {
+  it("지하1층 + 엘리베이터 없음 → 4점 (전대후문점 실적 1위 근거, 지하1~2층은 1~2층과 동급)", () => {
+    expect(computeLocationScoreFromFacts(1, "지하", false)).toBe(4);
+  });
+  it("3층 + 엘리베이터 있음 → 4점", () => {
+    expect(computeLocationScoreFromFacts(3, "지상", true)).toBe(4);
+  });
+  it("6층 이상 + 엘리베이터 없음 → 0점", () => {
+    expect(computeLocationScoreFromFacts(6, "지상", false)).toBe(0);
+  });
+  it("층수 미입력 → null", () => {
+    expect(computeLocationScoreFromFacts(null, "지상", true)).toBeNull();
+  });
+});
+
+describe("computeFloatingRawDemand (40개 상권 평균 연령구성 대체값 — data-issues.md #5 해결)", () => {
+  it("연령구성 입력이 없어도 유동인구 평균만 있으면 40개 상권 평균 구성으로 계산한다", () => {
+    const candidate = { floating500Avg: 8000 } as unknown as CandidateInput;
+    expect(computeFloatingRawDemand(candidate)).toBeCloseTo(660.76, 1);
+  });
+  it("유동인구 평균 자체가 없으면 null", () => {
+    const candidate = {} as unknown as CandidateInput;
+    expect(computeFloatingRawDemand(candidate)).toBeNull();
+  });
+});
+
+describe("fitNonnegativeRidgeRegression (V61 비음수 릿지회귀 좌표하강법)", () => {
+  it("완전한 선형관계(y=2x)를 잡아낸다", () => {
+    const z = [[-1], [0], [1], [2]];
+    const y = z.map(([x]) => 2 * x);
+    const beta = fitNonnegativeRidgeRegression(z, y, 0.01);
+    expect(beta).not.toBeNull();
+    expect(beta![0]).toBeCloseTo(2, 1);
+  });
+  it("음의 상관관계는 0으로 제한된다(비음수 제약)", () => {
+    const z = [[-1], [0], [1], [2]];
+    const y = z.map(([x]) => -2 * x);
+    const beta = fitNonnegativeRidgeRegression(z, y, 0.01);
+    expect(beta![0]).toBe(0);
+  });
+});
+
+describe("fitEmpiricalRevenueModel/predictEmpiricalRevenue (V61 정상운영모형)", () => {
+  it("최소 학습표본 미달이면 null", () => {
+    const samples: EmpiricalRevenueSample[] = Array.from({ length: 3 }, (_, i) => ({
+      featuresRaw: [Math.log(1000 + i), Math.log(10 + i), 4],
+      revenuePerPc: 600000 + i * 1000,
+    }));
+    expect(fitEmpiricalRevenueModel(samples, 1, 12)).toBeNull();
+  });
+  it("표본이 충분하면 학습해서 예측한다", () => {
+    const samples: EmpiricalRevenueSample[] = Array.from({ length: 12 }, (_, i) => ({
+      featuresRaw: [Math.log(1000 + i * 20), Math.log(10 + i), 3 + (i % 3) * 0.5],
+      revenuePerPc: 500000 + i * 15000,
+    }));
+    const model = fitEmpiricalRevenueModel(samples, 1, 12);
+    expect(model).not.toBeNull();
+    expect(model!.sampleCount).toBe(12);
+    const prediction = predictEmpiricalRevenue(model!, [Math.log(1100), Math.log(12), 4], 100, 0.6, 0.4);
+    expect(prediction).not.toBeNull();
+    expect(prediction!.monthlyRevenue).toBeGreaterThan(0);
+    expect(prediction!.dailyRevenuePerPc).toBeGreaterThan(0);
+  });
+});
+
+describe("computeExpectedOwnDemand (예측_자사수요 = 상권수요 × 점유율)", () => {
+  it("경쟁점이 없으면 점유율 100%", () => {
+    expect(computeExpectedOwnDemand(1000, 100, 1.2, 0)).toBe(1000);
+  });
+  it("자사IP×격차 대 경쟁IP 비례로 나눈다", () => {
+    // 점유율 = (100*1.5)/(100*1.5+150) = 150/300 = 0.5
+    expect(computeExpectedOwnDemand(2000, 100, 1.5, 150)).toBe(1000);
+  });
+});
+
+describe("lookupDemandCapture (경쟁력격차 → 수요확보율/신규수요증가율 룩업표)", () => {
+  const table = defaultModelSettings().demandCaptureTable;
+  it.each([
+    [-1, 0.4, 0],
+    [0.79, 0.4, 0],
+    [0.8, 0.5, 0],
+    [1.0, 0.55, 0.03],
+    [1.29, 0.55, 0.03],
+    [1.3, 0.6, 0.05],
+    [1.7, 0.65, 0.1],
+    [2.2, 0.7, 0.12],
+    [10, 0.7, 0.12],
+  ])("격차 %s → 확보율 %s, 증가율 %s", (gap, capture, growth) => {
+    const result = lookupDemandCapture(gap, table);
+    expect(result?.captureRate).toBeCloseTo(capture, 5);
+    expect(result?.growthRate).toBeCloseTo(growth, 5);
+  });
+  it("격차가 null이면 null", () => {
+    expect(lookupDemandCapture(null, table)).toBeNull();
+  });
+});
+
+describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청사항 5: 미조사/값누락 구분)", () => {
+  function comp(overrides: Partial<Parameters<typeof computeCompetitorOccupiedSeats>[0][number]>) {
+    return {
+      id: "x",
+      candidateCode: "N001",
+      name: "c",
+      surveyLevel: null,
+      investigationStatus: "조사완료" as const,
+      address: null,
+      distanceM: null,
+      floor: null,
+      groundLevel: null,
+      totalPcCount: null,
+      appliedPcCount: null,
+      hasElevator: null,
+      cpu: null,
+      vgaBase: null,
+      vgaTop: null,
+      ram: null,
+      monitor: null,
+      ratePer1000Won: null,
+      hourlyRateConverted: null,
+      paidDeduction: null,
+      visitedAt: null,
+      visitedDow: null,
+      visitorCount: null,
+      measuredSeatRate: null,
+      pingbotUtilization: null,
+      pingbotPeriod: null,
+      renovationYear: null,
+      foodScore: null,
+      foodBasis: null,
+      interiorScore: null,
+      interiorBasis: null,
+      monitorScore: null,
+      monitorBasis: null,
+      room1: null,
+      room2: null,
+      teamRoom: null,
+      coupleZone: null,
+      premiumZone: null,
+      premiumSpec: null,
+      createdAt: 0,
+      updatedAt: 0,
+      ...overrides,
+    };
+  }
+
+  it("핑봇_가동률 실측값을 적용대수와 곱해 합산한다(0~1/%표기 모두 지원)", () => {
+    const result = computeCompetitorOccupiedSeats([
+      comp({ appliedPcCount: 100, pingbotUtilization: 0.3 }),
+      comp({ appliedPcCount: 50, pingbotUtilization: 40 }), // 40 → 0.4로 정규화
+    ]);
+    expect(result.seats).toBeCloseTo(100 * 0.3 + 50 * 0.4, 2);
+    expect(result.coverage.measured).toBe(2);
+  });
+
+  it("노후저경쟁력미조사는 0을 더하되 '미조사로 제외'로 구분한다(값 누락과 다르게 표시)", () => {
+    const result = computeCompetitorOccupiedSeats([
+      comp({ appliedPcCount: 100, pingbotUtilization: 0.3 }),
+      comp({ investigationStatus: "노후저경쟁력미조사" }),
+    ]);
+    expect(result.seats).toBeCloseTo(30, 2);
+    expect(result.coverage.assumedLowThreat).toBe(1);
+    expect(result.coverage.missingData).toBe(0);
+  });
+
+  it("조사완료인데 값이 없으면 '값 누락'으로 구분한다", () => {
+    const result = computeCompetitorOccupiedSeats([
+      comp({ appliedPcCount: 100, pingbotUtilization: 0.3 }),
+      comp({ investigationStatus: "조사완료", appliedPcCount: 80 }), // 가동률 데이터 없음
+    ]);
+    expect(result.coverage.missingData).toBe(1);
+    expect(result.coverage.assumedLowThreat).toBe(0);
+  });
+
+  it("경쟁점없음은 완전히 제외한다", () => {
+    const result = computeCompetitorOccupiedSeats([comp({ investigationStatus: "경쟁점없음" })]);
+    expect(result.coverage.excludedNoCompetitor).toBe(1);
+    expect(result.seats).toBeNull(); // 실측이 하나도 없으므로 산출 불가
+  });
+
+  it("실측이 하나도 없으면 null(원본 SUMPRODUCT처럼 빈 값)", () => {
+    const result = computeCompetitorOccupiedSeats([comp({ appliedPcCount: 100 })]);
+    expect(result.seats).toBeNull();
+  });
+});
+
+describe("실측기반 예상월매출 파이프라인 (경쟁점 실가동좌석 → 예상평균가동좌석 → 가동률 → 매출)", () => {
+  it("예상 평균가동좌석 = 실가동좌석×확보율×(1+증가율)", () => {
+    expect(computeExpectedOccupiedSeats(37, 0.6, 0.05)).toBeCloseTo(37 * 0.6 * 1.05, 2);
+  });
+  it("예상 가동률은 100%를 초과할 수 있다(수요 초과 신호)", () => {
+    expect(computeExpectedUtilization(150, 100)).toBeCloseTo(1.5, 4);
+  });
+  it("실측기반 예상월매출 = 평균가동좌석×24×30×요금÷(1-상품비율)", () => {
+    const result = computeMeasuredForecast(23.31, 1200, 0.5, 100);
+    expect(result?.monthlyRevenue).toBe(Math.round((23.31 * 24 * 30 * 1200) / 0.5));
+    expect(result?.dailyRevenuePerPc).toBe(Math.round((result!.monthlyRevenue) / 100 / 30));
+  });
+});
+
+describe("AA 기준매출 (오픈월부터 10개월 순수익 2,000만원 대당 일매출목표 평균)", () => {
+  const targets = defaultModelSettings().aaMonthlyTargets;
+  it("1월 오픈·100대 초과분은 100대로 캡", () => {
+    // 1~10월 평균을 손으로 검산
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const expectedAvg =
+      months.reduce((sum, m) => {
+        const t = targets.find((x) => x.month === m)!;
+        return sum + t.dailyRevenuePerPcTarget * t.daysInMonth;
+      }, 0) / 10;
+    expect(computeAaBaselineRevenue(150, 1, targets, 100)).toBe(Math.round(100 * expectedAvg));
+  });
+  it("11월 오픈이면 다음해 1~8월까지 순환한다", () => {
+    const months = [11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
+    const expectedAvg =
+      months.reduce((sum, m) => {
+        const t = targets.find((x) => x.month === m)!;
+        return sum + t.dailyRevenuePerPcTarget * t.daysInMonth;
+      }, 0) / 10;
+    expect(computeAaBaselineRevenue(80, 11, targets, 100)).toBe(Math.round(80 * expectedAvg));
+  });
+  it("오픈월 미입력이면 null", () => {
+    expect(computeAaBaselineRevenue(100, null, targets, 100)).toBeNull();
+  });
+});
+
+describe("judgeAaGrade (13_신규후보지판정!자동평가 그대로)", () => {
+  it("오픈월 없으면 오픈월 입력 필요", () => {
+    expect(judgeAaGrade({ plannedOpenMonth: null, measuredForecastRevenue: 100, aaBaselineRevenue: 100, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("오픈월 입력 필요");
+  });
+  it("실측/기준값 없으면 실측자료 부족", () => {
+    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: null, aaBaselineRevenue: 100, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("실측자료 부족");
+  });
+  it("가동률이 최대검토가동률 초과면 데이터 재검토", () => {
+    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 100, aaBaselineRevenue: 90, expectedUtilization: 0.6, maxReviewUtilization: 0.5 })).toBe("데이터 재검토");
+  });
+  it("실측 >= 기준이면 AA", () => {
+    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 100, aaBaselineRevenue: 90, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("AA");
+  });
+  it("실측 < 기준이면 AA 미달", () => {
+    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 80, aaBaselineRevenue: 90, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("AA 미달");
+  });
+});
+
+describe("computeSpecialDemandScore (10_오차원인분석 근거 — 대학가·군부대·산업단지만 점수화)", () => {
+  it.each([
+    ["대학가", "높음", 3],
+    ["군부대", "높음", 3],
+    ["산업단지", "보통", 2],
+    ["산업단지", "낮음", 1],
+  ])("%s/%s → %d점", (type, intensity, expected) => {
+    expect(computeSpecialDemandScore(type, intensity)).toBe(expected);
+  });
+  it("특수수요 없음이면 0점", () => {
+    expect(computeSpecialDemandScore("없음", "높음")).toBe(0);
+    expect(computeSpecialDemandScore(null, null)).toBe(0);
+  });
+  it("근거가 확인되지 않은 유형(관광유흥/기타)은 강도와 무관하게 0점 — 지어내지 않는다", () => {
+    expect(computeSpecialDemandScore("관광유흥", "높음")).toBe(0);
+    expect(computeSpecialDemandScore("기타", "높음")).toBe(0);
+  });
+});
+
+describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·정상영업·산식학습제외 아님)", () => {
+  const base = {
+    brandType: "블랙라벨",
+    franchiseStatus: "정상",
+    excludedFromModel: false,
+    pcCount: 100,
+    hourlyRate: 1200,
+    ownDemand: 2000,
+    competitivenessScore: 4,
+    actualMonthlyRevenueAvg: 60000000,
+  };
+  it("모든 조건 충족 시 true", () => {
+    expect(isEligibleForV61Training(base)).toBe(true);
+  });
+  it("리그PC방이면 false", () => {
+    expect(isEligibleForV61Training({ ...base, brandType: "리그PC방" })).toBe(false);
+  });
+  it("산식학습제외면 false", () => {
+    expect(isEligibleForV61Training({ ...base, excludedFromModel: true })).toBe(false);
+  });
+  it("정상영업이 아니면 false", () => {
+    expect(isEligibleForV61Training({ ...base, franchiseStatus: "가맹해지" })).toBe(false);
+  });
+});
+
+describe("classifyTenureCohort (재직기간 코호트 분류)", () => {
+  it.each([
+    [12, "정식 검증군"],
+    [15, "정식 검증군"],
+    [9, "조기 검증 A"],
+    [11, "조기 검증 A"],
+    [6, "조기 검증 B"],
+    [8, "조기 검증 B"],
+    [3, "조기 검증 C"],
+    [5, "조기 검증 C"],
+    [1, "참고용"],
+    [2, "참고용"],
+    [0, "제외"],
+    [null, "제외"],
+  ])("%s개월 → %s", (months, expected) => {
+    expect(classifyTenureCohort(months)).toBe(expected);
+  });
+});
+
+describe("bucketizeErrors (오차 구간별 적중률)", () => {
+  it("각 구간에 정확히 분류하고 경계값은 하한 구간에 포함하지 않는다", () => {
+    const rows = [
+      { absoluteErrorPct: 0.05, storeName: "A" }, // ±5% 이내 (경계 포함)
+      { absoluteErrorPct: 0.051, storeName: "B" }, // 5~10%
+      { absoluteErrorPct: 0.25, storeName: "C" }, // 20~30%
+      { absoluteErrorPct: 0.35, storeName: "D" }, // 30% 초과
+    ];
+    const buckets = bucketizeErrors(rows);
+    expect(buckets.find((b) => b.label === "±5% 이내")?.storeNames).toEqual(["A"]);
+    expect(buckets.find((b) => b.label === "5% 초과~10% 이내")?.storeNames).toEqual(["B"]);
+    expect(buckets.find((b) => b.label === "20% 초과~30% 이내")?.storeNames).toEqual(["C"]);
+    expect(buckets.find((b) => b.label === "30% 초과")?.storeNames).toEqual(["D"]);
+  });
+});
+
+describe("summarizeValidationRows (목표 달성 여부 판정)", () => {
+  it("모든 목표를 충족하면 targetsMetAll=true", () => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      storeName: `S${i}`,
+      absoluteErrorPct: 0.05,
+      errorAmount: 1000,
+      actualRevenueAvg: 100000,
+    }));
+    const summary = summarizeValidationRows(rows, { mape: 0.1, medianAe: 0.08, within10: 0.8, maxOver20: 0.1 });
+    expect(summary.targetsMetAll).toBe(true);
+    expect(summary.passed.mape).toBe(true);
+    expect(summary.passed.within10).toBe(true);
+  });
+  it("목표 미달이면 targetsMetAll=false", () => {
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      storeName: `S${i}`,
+      absoluteErrorPct: 0.25,
+      errorAmount: -1000,
+      actualRevenueAvg: 100000,
+    }));
+    const summary = summarizeValidationRows(rows, { mape: 0.1, medianAe: 0.08, within10: 0.8, maxOver20: 0.1 });
+    expect(summary.targetsMetAll).toBe(false);
+    expect(summary.underPredictedCount).toBe(10);
+    expect(summary.overPredictedCount).toBe(0);
+  });
+});
+
+describe("runLeaveOneOutValidation (자기 자신을 뺀 학습으로 예측 — 데이터 누출 방지)", () => {
+  it("표본이 충분하면 각 매장을 서로 다른 모형으로 예측한다", () => {
+    const stores: V61TrainingStore[] = Array.from({ length: 13 }, (_, i) => ({
+      storeCode: `S${i}`,
+      storeName: `점포${i}`,
+      pcCount: 100,
+      hourlyRate: 1200 + i * 20,
+      ownDemand: (2000 + i * 100) * 100,
+      competitivenessScore: 3.5 + (i % 5) * 0.2,
+      actualMonthlyRevenueAvg: 55000000 + i * 1000000,
+      specialDemandScore: 0,
+    }));
+    const result = runLeaveOneOutValidation(stores, 1, 0.6, 0.4, 12);
+    expect(result.sampleCount).toBe(13);
+    expect(result.rows.every((r) => r.predictedRevenue != null)).toBe(true);
+    expect(result.meanAbsoluteErrorPct).not.toBeNull();
+  });
+  it("표본이 부족하면 예측 불가", () => {
+    const stores: V61TrainingStore[] = Array.from({ length: 5 }, (_, i) => ({
+      storeCode: `S${i}`,
+      storeName: `점포${i}`,
+      pcCount: 100,
+      hourlyRate: 1200,
+      ownDemand: 200000,
+      competitivenessScore: 4,
+      actualMonthlyRevenueAvg: 55000000,
+      specialDemandScore: 0,
+    }));
+    const result = runLeaveOneOutValidation(stores, 1, 0.6, 0.4, 12);
+    expect(result.sampleCount).toBe(0);
+    expect(result.rows.every((r) => r.predictedRevenue == null)).toBe(true);
+  });
+});
+
+describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 검증 — 데이터 누출 방지)", () => {
+  function makeStore(overrides: Partial<ValidationStoreInput>): ValidationStoreInput {
+    return {
+      storeCode: "S",
+      storeName: "점포",
+      brand: "블랙라벨",
+      openedAt: "2025-01-01",
+      completedMonths: 12,
+      franchiseStatus: "정상",
+      isPostOpenIssue: false,
+      postOpenIssueReason: null,
+      pcCount: 100,
+      hourlyRate: 1300,
+      ownDemand: 200000,
+      competitivenessScore: 4,
+      actualRevenueAvg: 60000000,
+      ...overrides,
+    };
+  }
+
+  const coreStores: ValidationStoreInput[] = Array.from({ length: 13 }, (_, i) =>
+    makeStore({
+      storeCode: `C${i}`,
+      storeName: `핵심${i}`,
+      hourlyRate: 1200 + i * 20,
+      ownDemand: (2000 + i * 100) * 100,
+      competitivenessScore: 3.5 + (i % 5) * 0.2,
+      actualRevenueAvg: 55000000 + i * 1000000,
+    }),
+  );
+
+  it("핵심표본은 리브-원-아웃으로 예측하고 includedInCoreAccuracy=true다", () => {
+    const { rows } = runCohortValidation(coreStores, { v61Training: defaultModelSettings().v61Training });
+    expect(rows.every((r) => r.includedInCoreAccuracy)).toBe(true);
+    expect(rows.every((r) => r.predictedRevenueAvg != null)).toBe(true);
+    expect(rows.every((r) => r.cohort === "정식 검증군")).toBe(true);
+  });
+
+  it("12개월 미완료 매장은 학습에 전혀 안 쓰이고(완전 외부검증) 코호트로 분류된다", () => {
+    const earlyStore = makeStore({ storeCode: "E1", storeName: "조기점포", completedMonths: 7 });
+    const { rows } = runCohortValidation([...coreStores, earlyStore], { v61Training: defaultModelSettings().v61Training });
+    const early = rows.find((r) => r.storeCode === "E1")!;
+    expect(early.cohort).toBe("조기 검증 B");
+    expect(early.includedInCoreAccuracy).toBe(false);
+    expect(early.predictedRevenueAvg).not.toBeNull(); // 전체 학습모형으로 예측은 된다
+  });
+
+  it("사후 운영이슈 점포는 핵심 정확도에서 제외되고 사유가 남는다", () => {
+    const anomalyStore = makeStore({ storeCode: "A1", storeName: "이슈점포", isPostOpenIssue: true, postOpenIssueReason: "오픈 후 운영관리 문제" });
+    const { rows } = runCohortValidation([...coreStores, anomalyStore], { v61Training: defaultModelSettings().v61Training });
+    const anomaly = rows.find((r) => r.storeCode === "A1")!;
+    expect(anomaly.includedInCoreAccuracy).toBe(false);
+    expect(anomaly.exclusionReason).toContain("운영관리 문제");
+  });
+
+  it("영업 1~2개월 매장은 참고용으로 분류되고 핵심 정확도에서 빠진다", () => {
+    const refStore = makeStore({ storeCode: "R1", storeName: "참고점포", completedMonths: 1 });
+    const { rows } = runCohortValidation([...coreStores, refStore], { v61Training: defaultModelSettings().v61Training });
+    const ref = rows.find((r) => r.storeCode === "R1")!;
+    expect(ref.cohort).toBe("참고용");
+    expect(ref.includedInCoreAccuracy).toBe(false);
+    expect(ref.exclusionReason).toContain("참고자료");
+  });
+
+  it("오픈 당월(완료월 0개) 매장은 예측값도 아예 내지 않는다 — 오픈달 매출로 평가하지 않는다", () => {
+    const justOpened = makeStore({ storeCode: "J1", storeName: "오픈당월점포", completedMonths: 0, actualRevenueAvg: null });
+    const { rows } = runCohortValidation([...coreStores, justOpened], { v61Training: defaultModelSettings().v61Training });
+    const j = rows.find((r) => r.storeCode === "J1")!;
+    expect(j.cohort).toBe("제외");
+    expect(j.predictedRevenueAvg).toBeNull();
+    expect(j.absoluteErrorPct).toBeNull();
+  });
+
+  it("브랜드 미확인 매장은 핵심 정확도에서 제외되고 사유가 남는다", () => {
+    const unknownBrand = makeStore({ storeCode: "U1", storeName: "미확인점포", brand: null });
+    const { rows } = runCohortValidation([...coreStores, unknownBrand], { v61Training: defaultModelSettings().v61Training });
+    const u = rows.find((r) => r.storeCode === "U1")!;
+    expect(u.includedInCoreAccuracy).toBe(false);
+    expect(u.exclusionReason).toContain("브랜드 미확인");
+  });
+});
+
+describe("computeStabilizedPerformance (매출DB 라이브 동기화 — 평가창 12개월 + 누적평균 2개월차부터)", () => {
+  it("오픈 후 12개월 넘게 쌓인 매장도 1~12개월 구간만 평가창으로 쓴다", () => {
+    // 21개월치 데이터가 있어도 completedMonths는 12를 넘지 않는다
+    const monthlySales = Array.from({ length: 21 }, (_, i) => ({
+      elapsedMonths: i + 1,
+      pcSales: 40000000 + i * 100000,
+      productSales: 5000000,
+    }));
+    const result = computeStabilizedPerformance(monthlySales);
+    expect(result.completedMonths).toBe(12);
+  });
+
+  it("2개월차부터 평균하고 1개월차는 뺀다", () => {
+    const monthlySales = [
+      { elapsedMonths: 1, pcSales: 10000000, productSales: 0 }, // 오픈효과로 낮음 - 제외돼야 함
+      { elapsedMonths: 2, pcSales: 50000000, productSales: 0 },
+      { elapsedMonths: 3, pcSales: 50000000, productSales: 0 },
+    ];
+    const result = computeStabilizedPerformance(monthlySales);
+    expect(result.actualMonthlyRevenueAvg).toBe(50000000);
+  });
+
+  it("2개월차 데이터가 아직 없으면 1개월차라도 쓴다", () => {
+    const monthlySales = [{ elapsedMonths: 1, pcSales: 30000000, productSales: 0 }];
+    const result = computeStabilizedPerformance(monthlySales);
+    expect(result.actualMonthlyRevenueAvg).toBe(30000000);
+    expect(result.completedMonths).toBe(1);
+  });
+
+  it("13개월차 이후 데이터는 평가창 밖이라 완전히 무시한다", () => {
+    const monthlySales = [
+      { elapsedMonths: 2, pcSales: 40000000, productSales: 0 },
+      { elapsedMonths: 13, pcSales: 999999999, productSales: 0 }, // 창 밖 - 평균에 영향 없어야 함
+    ];
+    const result = computeStabilizedPerformance(monthlySales);
+    expect(result.completedMonths).toBe(1);
+    expect(result.actualMonthlyRevenueAvg).toBe(40000000);
+  });
+});
+
+describe("computeCompletedMonthsCount", () => {
+  it("매출이 0보다 큰 달만 센다", () => {
+    const rows = [
+      { pcSales: 100, productSales: 0 },
+      { pcSales: 0, productSales: 0 },
+      { pcSales: null, productSales: 50 },
+    ];
+    expect(computeCompletedMonthsCount(rows)).toBe(2);
   });
 });

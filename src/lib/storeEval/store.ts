@@ -31,6 +31,7 @@ import type {
   Competitor,
   EvaluationResult,
   ExistingStore,
+  ExistingStoreMemberSnapshot,
   ExistingStoreMonthlySales,
   LocationEvaluation,
   ModelSettings,
@@ -60,7 +61,7 @@ function sanitize<T>(value: T): T {
 export type AuditAction = "생성" | "수정" | "삭제" | "재계산";
 export type AuditLogEntry = {
   id: string;
-  entityType: "candidate" | "competitor" | "locationEvaluation" | "evaluationResult" | "modelSettings";
+  entityType: "candidate" | "competitor" | "locationEvaluation" | "evaluationResult" | "modelSettings" | "existingStore";
   entityId: string;
   action: AuditAction;
   before: unknown;
@@ -127,9 +128,20 @@ export async function duplicateCandidate(sourceCode: string, actor: string | nul
 // ---------------------------------------------------------------------------
 // 05_경쟁점정보 (Competitor, candidateCode로 1:N)
 // ---------------------------------------------------------------------------
+/**
+ * 2026-08-20: Competitor.surveyState 필드를 investigationStatus로 개명했다. 개명 전에 저장된
+ * 문서는 investigationStatus가 없고 surveyState만 있으므로, 읽어올 때 옮겨 담아 하위호환한다.
+ */
+function migrateCompetitorInvestigationStatus(data: Record<string, unknown>): Competitor {
+  if (data.investigationStatus == null && data.surveyState != null) {
+    return { ...data, investigationStatus: data.surveyState } as Competitor;
+  }
+  return data as Competitor;
+}
+
 export async function listCompetitors(candidateCode: string): Promise<Competitor[]> {
   const snap = await getDocs(query(collection(requireDb(), COMPETITORS), where("candidateCode", "==", candidateCode)));
-  return snap.docs.map((d) => d.data() as Competitor);
+  return snap.docs.map((d) => migrateCompetitorInvestigationStatus(d.data()));
 }
 
 export async function saveCompetitor(competitor: Competitor, actor: string | null): Promise<void> {
@@ -223,6 +235,130 @@ export async function listExistingStoreSales(storeCode?: string): Promise<Existi
 export async function upsertExistingStoreSales(sales: ExistingStoreMonthlySales): Promise<void> {
   const id = `${sales.storeCode}_${sales.yearMonth}`;
   await setDoc(doc(requireDb(), EXISTING_STORE_SALES, id), sanitize(sales));
+}
+
+export async function getExistingStore(storeCode: string): Promise<ExistingStore | null> {
+  const snap = await getDoc(doc(requireDb(), EXISTING_STORES, storeCode));
+  return snap.exists() ? (snap.data() as ExistingStore) : null;
+}
+
+export async function deleteExistingStore(storeCode: string, actor: string | null): Promise<void> {
+  const ref = doc(requireDb(), EXISTING_STORES, storeCode);
+  const before = await getDoc(ref);
+  await deleteDoc(ref);
+  await writeAuditLog({ entityType: "existingStore", entityId: storeCode, action: "삭제", before: before.exists() ? before.data() : null, after: null, actor });
+}
+
+// ---------------------------------------------------------------------------
+// 03_회원정보입력 (ExistingStoreMemberSnapshot, storeCode+snapshotDate로 1:N 스냅샷 누적)
+// calc.ts 계산에는 쓰지 않는 참고 데이터다(docs/data-issues.md #4) - 12개월 미만 매장 위주로
+// 계속 갱신한다는 전제로 화면에서 자유롭게 추가한다.
+// ---------------------------------------------------------------------------
+const EXISTING_STORE_MEMBERS = "storeEvalExistingStoreMembers";
+
+export async function listExistingStoreMembers(storeCode?: string): Promise<ExistingStoreMemberSnapshot[]> {
+  const base = collection(requireDb(), EXISTING_STORE_MEMBERS);
+  const snap = await getDocs(storeCode ? query(base, where("storeCode", "==", storeCode)) : base);
+  return snap.docs.map((d) => d.data() as ExistingStoreMemberSnapshot);
+}
+
+export async function upsertExistingStoreMemberSnapshot(snapshot: ExistingStoreMemberSnapshot): Promise<void> {
+  const id = `${snapshot.storeCode}_${snapshot.snapshotDate}`;
+  await setDoc(doc(requireDb(), EXISTING_STORE_MEMBERS, id), sanitize(snapshot));
+}
+
+// ---------------------------------------------------------------------------
+// 신규 가맹점 오픈 → 기존 가맹점으로 전환
+// 후보지로 평가받아 오픈까지 간 매장은 07/05/09 입력값을 다시 타이핑할 필요 없이 그대로
+// 옮겨 기존 가맹점 마스터를 만든다. Google Sheet 없이도 이 경로 하나로 신규 매장이 계속
+// 쌓이도록 하기 위한 구조다.
+// ---------------------------------------------------------------------------
+export async function convertCandidateToExistingStore(input: {
+  candidate: CandidateInput;
+  competitors: Competitor[];
+  locationEvaluation: LocationEvaluation | null;
+  actor: string | null;
+}): Promise<ExistingStore> {
+  const { candidate: c, competitors, locationEvaluation: loc, actor } = input;
+  const now = Date.now();
+
+  const store: ExistingStore = {
+    storeCode: c.code,
+    storeName: c.name,
+    pcCount: c.expectedPcCount,
+    floor: c.floor,
+    groundLevel: c.groundLevel,
+    openedAt: null, // 실제 오픈일은 전환 직후 화면에서 입력해야 한다 (평가 단계엔 확정일이 없음)
+    franchiseStatus: "정상",
+    excludedFromModel: false,
+    excludedReason: null,
+    v61Predicted: null,
+    referenceMarketDemand: null,
+    brandType: loc?.brandType ?? null,
+    specialDemandType: loc?.specialDemandType ?? null,
+    specialDemandIntensity: loc?.specialDemandIntensity ?? null,
+    validationUse: null,
+    hourlyRate: c.hourlyRate,
+    ownDemand: null, // 실측 가동률이 쌓이기 전까지는 계산하지 않는다 (04_점포평가요약!예측_자사수요와 동일 산식 필요)
+    competitivenessScore: null,
+    actualMonthlyRevenueAvg: null,
+    completedMonths: 0,
+    address: c.address,
+    hasElevator: c.hasElevator,
+    demographicsYear: c.demographicsYear,
+    renovationYear: null,
+    ownVgaBase: c.ownVgaBase,
+    ownVgaTop: c.ownVgaTop,
+    ownGameZoneCount: c.ownGameZoneCount,
+    ownRoom1: c.ownRoom1,
+    ownRoom2: c.ownRoom2,
+    ownTeamRoom: c.ownTeamRoom,
+    ownCoupleZone: c.ownCoupleZone,
+    ownVipZone: c.ownVipZone,
+    ownFriendsZone: c.ownFriendsZone,
+    ownFoodScore: c.ownFoodScore,
+    ownInteriorScore: c.ownInteriorScore,
+    ownMonitorScore: c.ownMonitorScore,
+    pop500m: c.pop500m,
+    area1kmKm2: c.area1kmKm2,
+    pop1km: c.pop1km,
+    male1kmRatio: c.male1kmRatio,
+    age1km_0_9: c.age1km_0_9,
+    age1km_10_19: c.age1km_10_19,
+    age1km_20_29: c.age1km_20_29,
+    age1km_30_39: c.age1km_30_39,
+    age1km_40_49: c.age1km_40_49,
+    age1km_50_59: c.age1km_50_59,
+    age1km_60_69: c.age1km_60_69,
+    age1km_70_79: c.age1km_70_79,
+    age1km_80plus: c.age1km_80plus,
+    floating500Avg: c.floating500Avg,
+    floating500Male: c.floating500Male,
+    floating500Female: c.floating500Female,
+    floating500_10s: c.floating500_10s,
+    floating500_20s: c.floating500_20s,
+    floating500_30s: c.floating500_30s,
+    floating500_40s: c.floating500_40s,
+    floating500_50s: c.floating500_50s,
+    floating500_60plus: c.floating500_60plus,
+    licensedPcStores500m: c.licensedPcStores500m,
+    operatingPcStores500m: c.operatingPcStores500m,
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: actor,
+  };
+  await upsertExistingStore(store);
+
+  // 경쟁점은 후보지코드로 저장돼 있던 것을 그대로 같은 storeCode로 재저장한다(경쟁점 컬렉션은
+  // 후보지/기존점 구분 없이 candidateCode 필드 하나를 공유 키로 쓴다).
+  for (const comp of competitors) {
+    await saveCompetitor({ ...comp, candidateCode: c.code }, actor);
+  }
+  // 입지평가(브랜드·외부유입 등)도 같은 코드로 이미 존재하므로 별도 복사가 필요 없다
+  // (storeEvalLocationEvaluations는 candidateCode를 문서ID로 그대로 재사용).
+
+  await writeAuditLog({ entityType: "existingStore", entityId: c.code, action: "생성", before: null, after: store, actor });
+  return store;
 }
 
 export { serverTimestamp };
