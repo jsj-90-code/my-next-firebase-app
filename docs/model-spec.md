@@ -3,6 +3,7 @@
 > 분석 대상 원본: `reference/점포평가_V62_원본.xlsx`
 > (구글시트 "PC가맹_PC_가맹점전수조사_데이터_VF_260428_기밀(보안최상)", 소유자 bluelgs@isens.camp, fileId `1Q5yCOL5IT_pT8lYKvtzhzPK3ihC0otVifQBNPi0SjRA`)
 > 이 문서는 시트에 남아 있는 셀 수식·데이터 검증(드롭다운)·기록된 값만을 근거로 작성했다. 추측이 필요한 부분은 임의로 채우지 않고 `docs/data-issues.md`에 별도로 남겼다.
+> **2026-08-20 갱신**: 원본 Apps Script(`점포평가.gs`/`repair.gs`, 로컬 사본 `reference/apps-script/`)를 확보해 이 문서 작성 당시 미확보였던 V61 알고리즘·자동채점표 다수를 확인했다. 이 문서 자체는 셀 수식 분석 결과라 그대로 유효하지만, `docs/data-issues.md`의 "2026-08-20 갱신" 절에서 어떤 항목이 새로 해결됐는지 확인할 것.
 
 ## 0. 운영 원칙 (00_V62사용안내, 08_계산기준, 12_운영판정)
 
