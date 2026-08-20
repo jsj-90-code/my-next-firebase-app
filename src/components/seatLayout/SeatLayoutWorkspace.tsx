@@ -20,6 +20,7 @@ import {
   renderPcFloorplanImage,
 } from "@/lib/seatLayout/canvasRender";
 import { compressImageDataUrl } from "@/lib/seatLayout/imageCompress";
+import { buildQuadrantTiles } from "@/lib/seatLayout/imageTiles";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/seatLayout/store";
@@ -909,14 +910,14 @@ export function SeatLayoutWorkspace() {
     setZoneSuggestBusy(true);
     setStatusMsg("AI가 도면에서 구역 초안을 찾는 중...");
     try {
-      const match = floorPlanSrc.match(/^data:([^;]+);base64,(.*)$/);
-      if (!match) throw new Error("도면 이미지 데이터를 읽을 수 없습니다.");
-      const [, mimeType, data] = match;
+      // 전체 이미지 1장만으로는 책상 경계선이 뭉개져 구역 상자가 책상을 반쯤 자르거나 빠뜨리는
+      // 경우가 있어, 좌석번호 인식과 동일하게 확대 사분면 4장을 같이 보내 경계를 정밀하게 잡는다.
+      const images = await buildQuadrantTiles(floorPlanSrc);
       const token = await user.getIdToken();
       const res = await fetch("/api/seat-layout/suggest-zones", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ image: { data, mimeType } }),
+        body: JSON.stringify({ images }),
       });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error ?? "구역 제안에 실패했습니다.");
@@ -961,47 +962,8 @@ export function SeatLayoutWorkspace() {
   // 뭉개져 통째로 못 읽는 경우가 있었다(93석짜리 피난안내도에서 14석이 통째로 누락된 사례 확인).
   // 그래서 전체 이미지 1장에 더해 좌상단/우상단/좌하단/우하단을 확대한 이미지 4장을 같이
   // 보내서, 그룹 경계는 전체 이미지로 판단하고 작은 글씨는 확대본으로 검증하게 한다. (9/11 존이
-  // 맞았던 조합 — 여기서 더 손대지 않고 이대로 확정한다.)
-  async function buildSeatNumberTiles(
-    dataUrl: string,
-  ): Promise<{ data: string; mimeType: string }[]> {
-    const img = new Image();
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("이미지를 불러오지 못했습니다."));
-      img.src = dataUrl;
-    });
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    const toPngBase64 = (sx: number, sy: number, sw: number, sh: number) => {
-      const off = document.createElement("canvas");
-      off.width = Math.max(1, Math.round(sw));
-      off.height = Math.max(1, Math.round(sh));
-      const ctx = off.getContext("2d");
-      if (!ctx) throw new Error("캔버스를 생성할 수 없습니다.");
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, off.width, off.height);
-      return off.toDataURL("image/png").split(",")[1];
-    };
-    // 사분면 경계에 걸친 번호가 잘리지 않도록 살짝 겹치게 자른다.
-    const overlapRatio = 0.1;
-    const halfW = w / 2;
-    const halfH = h / 2;
-    const ow = w * overlapRatio;
-    const oh = h * overlapRatio;
-    const clampW = (sx: number, sw: number) => Math.min(sw, w - sx);
-    const clampH = (sy: number, sh: number) => Math.min(sh, h - sy);
-    const quadrants: [number, number, number, number][] = [
-      [0, 0, halfW + ow, halfH + oh], // 좌상단
-      [Math.max(0, halfW - ow), 0, halfW + ow, halfH + oh], // 우상단
-      [0, Math.max(0, halfH - oh), halfW + ow, halfH + oh], // 좌하단
-      [Math.max(0, halfW - ow), Math.max(0, halfH - oh), halfW + ow, halfH + oh], // 우하단
-    ];
-    const data = [
-      toPngBase64(0, 0, w, h),
-      ...quadrants.map(([sx, sy, sw, sh]) => toPngBase64(sx, sy, clampW(sx, sw), clampH(sy, sh))),
-    ];
-    return data.map((d) => ({ data: d, mimeType: "image/png" }));
-  }
+  // 맞았던 조합 — 여기서 더 손대지 않고 이대로 확정한다.) 구역 초안 제안에도 같은 이유로 재사용.
+  const buildSeatNumberTiles = buildQuadrantTiles;
 
   // 좌석번호표(피난안내도 등)는 도면과 별개의 그림이라 좌표를 그대로 겹칠 수 없다. 그래서 존별
   // "좌석 수"(이미 등록되어 있음)를 기준으로, 이미지에서 읽은 번호 그룹을 그 개수와 대조해 매칭한다.
