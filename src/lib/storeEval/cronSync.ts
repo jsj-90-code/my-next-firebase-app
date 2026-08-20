@@ -79,6 +79,20 @@ class BatchWriter {
   }
 }
 
+/**
+ * patch의 값이 현재 Firestore 문서와 완전히 같으면 true.
+ * updatedAt류 메타 필드는 항상 바뀌므로 비교에서 제외한다 - 실제 내용이 안 바뀌었는데도
+ * 매일 다시 쓰는 것을 막아야 Firestore 무료 쓰기 할당량(하루 20,000건)을 넘기지 않는다.
+ */
+function isSameData(current: Record<string, unknown> | undefined, patch: Record<string, unknown>): boolean {
+  if (!current) return false;
+  for (const key of Object.keys(patch)) {
+    if (key === "updatedAt" || key === "updatedBy" || key === "createdAt") continue;
+    if (current[key] !== patch[key]) return false;
+  }
+  return true;
+}
+
 function toNumber(v: unknown): number | null {
   if (typeof v === "number") return v;
   if (v == null || v === "") return null;
@@ -158,6 +172,11 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
 
   const storesSnap = await db.collection("storeEvalExistingStores").get();
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
+  const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
+
+  // 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존 경쟁점·입지평가 데이터를 미리 읽어둔다.
+  const existingCompByid = new Map((await db.collection("storeEvalCompetitors").get()).docs.map((d) => [d.id, d.data()]));
+  const existingLocByCode = new Map((await db.collection("storeEvalLocationEvaluations").get()).docs.map((d) => [d.id, d.data()]));
 
   // ---- 01_점포기본정보 ----
   const stores01 = await readSheetAsObjects(sheets, "01_점포기본정보", "A1:CQ1000");
@@ -217,8 +236,10 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     } else {
       patch.openedAt = sheetOpenedAt;
     }
-    await writer.set(db.collection("storeEvalExistingStores").doc(code), patch, true);
-    profileUpdated++;
+    if (!isSameData(storeDataByCode.get(code), patch)) {
+      await writer.set(db.collection("storeEvalExistingStores").doc(code), patch, true);
+      profileUpdated++;
+    }
   }
 
   // ---- 05_경쟁점정보 ----
@@ -273,8 +294,10 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    await writer.set(db.collection("storeEvalCompetitors").doc(id), competitor);
-    compWritten++;
+    if (!isSameData(existingCompByid.get(id), competitor)) {
+      await writer.set(db.collection("storeEvalCompetitors").doc(id), competitor);
+      compWritten++;
+    }
   }
 
   // ---- 09_입지동선평가 ----
@@ -302,13 +325,21 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       updatedAt: Date.now(),
       updatedBy: "cron-sync",
     };
-    await writer.set(db.collection("storeEvalLocationEvaluations").doc(code), doc, true);
-    await writer.set(
-      db.collection("storeEvalExistingStores").doc(code),
-      { specialDemandType: doc.specialDemandType, specialDemandIntensity: doc.specialDemandIntensity, updatedAt: Date.now() },
-      true,
-    );
-    locUpdated++;
+    let changed = false;
+    if (!isSameData(existingLocByCode.get(code), doc)) {
+      await writer.set(db.collection("storeEvalLocationEvaluations").doc(code), doc, true);
+      changed = true;
+    }
+    const specialDemandPatch = { specialDemandType: doc.specialDemandType, specialDemandIntensity: doc.specialDemandIntensity };
+    if (!isSameData(storeDataByCode.get(code), specialDemandPatch)) {
+      await writer.set(
+        db.collection("storeEvalExistingStores").doc(code),
+        { ...specialDemandPatch, updatedAt: Date.now() },
+        true,
+      );
+      changed = true;
+    }
+    if (changed) locUpdated++;
   }
 
   // ---- 03_회원정보입력 ----
@@ -402,6 +433,9 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
   const storesSnap = await db.collection("storeEvalExistingStores").get();
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const openedAtByCode = new Map<string, string | null>(storesSnap.docs.map((d) => [d.id, (d.data().openedAt as string) ?? null]));
+  const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
+  // 값이 안 바뀐 매출 문서는 다시 쓰지 않기 위해 기존 매출 데이터를 미리 읽어둔다.
+  const existingSalesById = new Map((await db.collection("storeEvalExistingStoreSales").get()).docs.map((d) => [d.id, d.data()]));
 
   const isBlackLabelByCode = await fetchBrandColorByCode(sheets);
   const brandTypeFor = (code: string): "블랙라벨" | "확인필요" => (isBlackLabelByCode.get(code) ? "블랙라벨" : "확인필요");
@@ -473,8 +507,11 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
   let brandUpdated = 0;
   for (const code of storeCodes) {
     if (!isBlackLabelByCode.has(code)) continue;
-    await writer.set(db.collection("storeEvalExistingStores").doc(code), { brandType: brandTypeFor(code), updatedAt: Date.now() }, true);
-    brandUpdated++;
+    const patch = { brandType: brandTypeFor(code) };
+    if (!isSameData(storeDataByCode.get(code), patch)) {
+      await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);
+      brandUpdated++;
+    }
   }
 
   // ---- 2) 월별 매출 upsert + completedMonths/actualMonthlyRevenueAvg 재계산 ----
@@ -516,8 +553,11 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
         utilizationRate: utilizationRate != null ? (utilizationRate > 1 ? utilizationRate / 100 : utilizationRate) : null,
         salesPerPcPerDay: salesPerPcPerDay ?? null,
       };
-      await writer.set(db.collection("storeEvalExistingStoreSales").doc(`${code}_${yearMonth}`), salesDoc);
-      salesUpserted++;
+      const salesId = `${code}_${yearMonth}`;
+      if (!isSameData(existingSalesById.get(salesId), salesDoc)) {
+        await writer.set(db.collection("storeEvalExistingStoreSales").doc(salesId), salesDoc);
+        salesUpserted++;
+      }
       monthlyForThisStore.push({ yearMonth, pcSales: salesDoc.pcSales, productSales: salesDoc.productSales });
     }
 
@@ -535,8 +575,11 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
 
     if (withElapsed.length === 0) continue;
     const { completedMonths, actualMonthlyRevenueAvg } = computeStabilizedPerformance(withElapsed);
-    await writer.set(db.collection("storeEvalExistingStores").doc(code), { completedMonths, actualMonthlyRevenueAvg, updatedAt: Date.now() }, true);
-    storesRecalculated++;
+    const patch = { completedMonths, actualMonthlyRevenueAvg };
+    if (!isSameData(storeDataByCode.get(code), patch)) {
+      await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);
+      storesRecalculated++;
+    }
   }
 
   await writer.finish();
