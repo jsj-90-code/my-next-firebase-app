@@ -80,6 +80,12 @@ service cloud.firestore {
       allow read, write: if isCompanyAccount();
     }
 
+    // 03_회원정보입력 스냅샷 - calc.ts 계산에는 안 쓰이는 참고 데이터지만
+    // existing-stores 화면에서 클라이언트 SDK로 직접 읽고 쓴다.
+    match /storeEvalExistingStoreMembers/{snapshotId} {
+      allow read, write: if isCompanyAccount();
+    }
+
     // 수정·삭제·재계산 이력: 생성만 허용(불변 로그), 수정/삭제 금지.
     match /storeEvalAuditLog/{logId} {
       allow read, create: if isCompanyAccount();
