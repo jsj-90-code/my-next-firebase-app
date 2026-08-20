@@ -912,7 +912,10 @@ export function SeatLayoutWorkspace() {
     try {
       // 전체 이미지 1장만으로는 책상 경계선이 뭉개져 구역 상자가 책상을 반쯤 자르거나 빠뜨리는
       // 경우가 있어, 좌석번호 인식과 동일하게 확대 사분면 4장을 같이 보내 경계를 정밀하게 잡는다.
-      const images = await buildQuadrantTiles(floorPlanSrc);
+      // 원본 도면은 고화질 그대로라 5장을 그대로 만들면 요청 용량이 너무 커지므로(Request Entity
+      // Too Large 발생 확인) 타일을 자르기 전에 적당히 축소한다 — 구역 경계 판단에는 이 정도
+      // 해상도면 충분하다.
+      const images = await buildQuadrantTiles(floorPlanSrc, 1800);
       const token = await user.getIdToken();
       const res = await fetch("/api/seat-layout/suggest-zones", {
         method: "POST",
