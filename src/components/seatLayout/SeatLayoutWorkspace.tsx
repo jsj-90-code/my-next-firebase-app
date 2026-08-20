@@ -894,9 +894,11 @@ export function SeatLayoutWorkspace() {
   }
 
   // ---------------- 존 구역 초안 제안 (테스트용) ----------------
-  // 도면에는 존 이름표가 없어서(그건 사람이 정함) AI는 위치/좌석수만 제안하고, 유형은 전부
-  // "기타"로 두고 사람이 확인하며 고르게 한다 — 기존 수동 작업과 마찬가지로, 존을 만든 뒤
-  // 이름/유형을 바꾸려면 지우고 다시 그려야 하는 건 동일하다.
+  // 도면에는 존 이름표가 없어서(그건 사람이 정함) AI는 기본적으로 위치/좌석수만 제안하고 유형은
+  // "기타"로 둔다. 다만 파티션 두께/색이나 방 형태처럼 도면에서 실제로 구분 가능한 몇몇 유형
+  // (세레머니 팀룸/VIP존/프렌즈존/1인석/커플석)은 확신이 있을 때만 AI가 유형까지 붙여주는데,
+  // 100% 정확하진 않으니 사람이 확인은 해야 한다 — 존을 만든 뒤 이름/유형을 바꾸려면 지우고
+  // 다시 그려야 하는 건 기존 수동 작업과 동일하다.
   const DRAFT_COLORS = ZONE_TYPES.filter((t) => t.key !== "etc").map((t) => t.color);
 
   async function suggestZoneDrafts() {
@@ -925,27 +927,47 @@ export function SeatLayoutWorkspace() {
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error ?? "구역 제안에 실패했습니다.");
 
-      const suggestions: { seats: number; x: number; y: number; w: number; h: number }[] =
-        resData.zones ?? [];
+      const suggestions: {
+        seats: number;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        type?: string;
+      }[] = resData.zones ?? [];
       const startIdx = project.zones.length;
-      const drafts: DeskZone[] = suggestions.map((s, i) => ({
-        x: s.x,
-        y: s.y,
-        w: s.w,
-        h: s.h,
-        name: `AI제안${startIdx + i + 1}`,
-        typeKey: "etc",
-        color: DRAFT_COLORS[(startIdx + i) % DRAFT_COLORS.length],
-        seats: s.seats,
-        deskSize: DESK_SIZE_OPTIONS[0],
-        sizeBreakdown: [{ deskSize: DESK_SIZE_OPTIONS[0], qty: s.seats }],
-        desk: defaultDeskSpecValues(SPEC_FIELDS).desk,
-        cooler: defaultDeskSpecValues(SPEC_FIELDS).cooler,
-        partition: defaultDeskSpecValues(SPEC_FIELDS).partition,
-        monitorArm: defaultDeskSpecValues(SPEC_FIELDS).monitorArm,
-        chair: defaultDeskSpecValues(SPEC_FIELDS).chair,
-        bagShelfCount: 0,
-      }));
+      // 파티션 두께/색이나 방 형태로 유형까지 확신 있게 추정된 구역은 실제 그 유형으로 만들고
+      // (수동으로 그 유형 버튼을 눌러 그린 것과 동일하게 사양 기본값도 적용), 확신이 없는 구역은
+      // 기존처럼 "기타"로 두고 사람이 고르게 한다.
+      const namesSoFar: ActiveZone[] = [...activeZones];
+      const drafts: DeskZone[] = suggestions.map((s, i) => {
+        const matchedType = s.type ? ZONE_TYPES.find((t) => t.key === s.type) : undefined;
+        const typeKey: ZoneTypeKey = matchedType?.key ?? "etc";
+        const name = matchedType
+          ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label)
+          : `AI제안${startIdx + i + 1}`;
+        const specValues = resetDeskSpecDraft(typeKey, SPEC_FIELDS, settings.typeDefaults);
+        const zone: DeskZone = {
+          x: s.x,
+          y: s.y,
+          w: s.w,
+          h: s.h,
+          name,
+          typeKey,
+          color: matchedType?.color ?? DRAFT_COLORS[(startIdx + i) % DRAFT_COLORS.length],
+          seats: s.seats,
+          deskSize: DESK_SIZE_OPTIONS[0],
+          sizeBreakdown: [{ deskSize: DESK_SIZE_OPTIONS[0], qty: s.seats }],
+          desk: specValues.desk,
+          cooler: specValues.cooler,
+          partition: specValues.partition,
+          monitorArm: specValues.monitorArm,
+          chair: specValues.chair,
+          bagShelfCount: 0,
+        };
+        namesSoFar.push(zone);
+        return zone;
+      });
 
       setProject((p) => ({ ...p, zones: [...p.zones, ...drafts] }));
       setStatusMsg(
