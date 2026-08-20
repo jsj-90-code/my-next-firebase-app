@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGeminiClient, getGeminiModel } from "@/lib/gemini";
+import { getGeminiClient, getSuggestZonesGeminiModel } from "@/lib/gemini";
 import { adminAuth } from "@/lib/firebase-admin";
 import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 
@@ -143,7 +143,7 @@ export async function POST(request: Request) {
       { text: IMAGE_LABELS[i] ?? `이미지 ${i + 1}` },
     ]);
     const response = await client.models.generateContent({
-      model: getGeminiModel(),
+      model: getSuggestZonesGeminiModel(),
       contents: [
         {
           role: "user",
