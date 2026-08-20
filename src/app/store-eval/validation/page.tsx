@@ -102,7 +102,10 @@ async function loadValidationData(): Promise<{ rows: ValidationStoreRow[]; setti
       return {
         storeCode: s.storeCode,
         storeName: s.storeName,
-        brand: loc?.brandType ?? null,
+        // 매출DB!지점명 배경색(노란색=블랙라벨) 기준으로 cron-sync가 채운 값을 우선 쓴다 -
+        // 09_입지동선평가엔 행이 있는 매장만 브랜드가 있어 전체를 못 덮지만, 매출DB엔 전
+        // 매장이 다 있어 이쪽이 더 포괄적이다(둘이 있는 41곳은 값이 서로 일치함을 확인함).
+        brand: s.brandType ?? loc?.brandType ?? null,
         openedAt: s.openedAt,
         completedMonths: s.completedMonths ?? 0,
         franchiseStatus: s.franchiseStatus,

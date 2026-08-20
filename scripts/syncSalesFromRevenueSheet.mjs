@@ -3,9 +3,10 @@
 // 무엇을 하는가:
 //   1) 매출DB 기본열(A~N)에 있지만 storeEvalExistingStores에는 아직 없는 "정상" 상태 매장을
 //      찾아 자동 등록한다(신규 가맹점이 매출DB에 매장정보를 입력하면, 이 스크립트를 다시
-//      돌리는 것만으로 웹에도 매장이 새로 생긴다). 브랜드(블랙라벨/리그)·요금·경쟁력점수 등
-//      V61 학습 특징치는 매출DB에 없으므로 null로 두고, migrateFullExistingStoreProfiles.mjs가
-//      01_점포기본정보/09_입지동선평가를 채운 뒤에야 학습 대상이 된다.
+//      돌리는 것만으로 웹에도 매장이 새로 생긴다). 브랜드는 매출DB!지점명 배경색(노란색=
+//      블랙라벨, 사용자 확인)으로 매번 다시 판정해 이미 등록된 매장까지 포함해 갱신한다.
+//      요금·경쟁력점수 등 나머지 V61 학습 특징치는 매출DB에 없으므로 null로 두고,
+//      migrateFullExistingStoreProfiles.mjs가 01_점포기본정보를 채운 뒤에야 학습 대상이 된다.
 //   2) Google Sheet의 `매출DB` 탭(원본 매출 원장, 매달 6열씩 블록으로 늘어나는 구조)에서
 //      storeEvalExistingStores에 등록된(위 1단계로 새로 등록된 매장 포함) 매장들의 월별 실적을
 //      읽어 storeEvalExistingStoreSales에 upsert하고, 그 최신 상태로 각 매장의
@@ -84,11 +85,35 @@ function parseKoreanDate(v) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
+// 매출DB!지점명(B열) 배경색으로 블랙라벨 여부를 읽는다(사용자 확인: "노란색만 블랙라벨").
+// 09_입지동선평가!브랜드구분과 대조해보니 노란색 41곳이 09시트의 블랙라벨 41곳과 정확히
+// 일치했다 — 매출DB 쪽이 항상 존재하는(모든 매장이 매출DB엔 있음) 더 포괄적인 소스라 이걸
+// 기준으로 삼는다. 노란색이 아니면 "확인필요"로 명확히 남긴다(다른 브랜드명을 단정하지 않음).
+async function fetchBrandColorByCode() {
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    ranges: [`'${SOURCE_SHEET_NAME}'!A${SOURCE_DATA_START_ROW}:B2000`],
+    fields: "sheets.data.rowData.values(formattedValue,effectiveFormat.backgroundColor)",
+  });
+  const rows = res.data.sheets?.[0]?.data?.[0]?.rowData ?? [];
+  const isBlackLabelByCode = new Map();
+  for (const row of rows) {
+    const cells = row.values ?? [];
+    const code = cells[0]?.formattedValue?.trim();
+    if (!code) continue;
+    const bg = cells[1]?.effectiveFormat?.backgroundColor;
+    const isYellow = !!bg && (bg.red ?? 0) >= 0.9 && (bg.green ?? 0) >= 0.9 && (bg.blue ?? 0) <= 0.2;
+    isBlackLabelByCode.set(code, isYellow);
+  }
+  return isBlackLabelByCode;
+}
+
 // 신규 매장을 매출DB에서 자동으로 찾아 storeEvalExistingStores에 등록한다. 매출DB!E열
 // (가맹해지여부)이 "정상"인 매장만 대상으로 한다 — 과거 폐업/가맹해지 매장까지 전부
-// 끌어오면 학습·검증과 무관한 죽은 매장이 쌓이기 때문이다. brandType 등 V61 학습 특징치는
-// 매출DB에 없으므로 null로 남겨두고, migrateFullExistingStoreProfiles.mjs 재실행으로 채운다.
-async function autoRegisterNewStores(storeCodes, openedAtByCode) {
+// 끌어오면 학습·검증과 무관한 죽은 매장이 쌓이기 때문이다. brandType은 위 색상 판정을 쓰고,
+// 그 외 요금·경쟁력점수 등 V61 학습 특징치는 매출DB에 없으므로 null로 남겨두고,
+// migrateFullExistingStoreProfiles.mjs 재실행으로 채운다.
+async function autoRegisterNewStores(storeCodes, openedAtByCode, isBlackLabelByCode) {
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:N2000` });
   const values = res.data.values ?? [];
   let registered = 0;
@@ -125,7 +150,7 @@ async function autoRegisterNewStores(storeCodes, openedAtByCode) {
       excludedReason: null,
       v61Predicted: null,
       referenceMarketDemand: null,
-      brandType: null, // 09_입지동선평가 확인 전 — migrateFullExistingStoreProfiles.mjs가 채운다
+      brandType: isBlackLabelByCode.get(code) ? "블랙라벨" : "확인필요",
       validationUse: null,
       hourlyRate: null,
       ownDemand: null,
@@ -202,9 +227,24 @@ async function main() {
   const openedAtByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data().openedAt]));
   console.log(`기존 등록 매장: ${storeCodes.size}곳`);
 
+  const isBlackLabelByCode = await fetchBrandColorByCode();
+
   // 1-1) 매출DB에서 아직 등록 안 된 신규 매장을 자동 등록 (storeCodes/openedAtByCode를 그
   //      자리에서 갱신하므로, 아래 매출 동기화 루프가 같은 실행에서 바로 반영한다)
-  await autoRegisterNewStores(storeCodes, openedAtByCode);
+  await autoRegisterNewStores(storeCodes, openedAtByCode, isBlackLabelByCode);
+
+  // 1-2) 이미 등록된 매장도 매출DB 색상 기준으로 brandType을 매번 다시 맞춘다(멱등) —
+  //      09_입지동선평가에 행이 없어 여태 브랜드를 확인할 방법이 없던 매장도 이걸로 채워진다.
+  let brandUpdated = 0;
+  for (const code of storeCodes) {
+    if (!isBlackLabelByCode.has(code)) continue;
+    await db.collection("storeEvalExistingStores").doc(code).set(
+      { brandType: isBlackLabelByCode.get(code) ? "블랙라벨" : "확인필요", updatedAt: Date.now() },
+      { merge: true },
+    );
+    brandUpdated++;
+  }
+  console.log(`매출DB 색상 기준 brandType 갱신: ${brandUpdated}곳`);
 
   // 2) 매출DB 전체 값 읽기
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:ZZ2000` });

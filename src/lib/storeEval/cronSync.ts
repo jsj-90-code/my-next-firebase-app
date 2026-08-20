@@ -26,6 +26,32 @@ function getSheetsClient() {
   return google.sheets({ version: "v4", auth });
 }
 
+/**
+ * 매출DB!지점명(B열) 배경색으로 블랙라벨 여부를 읽는다(사용자 확인: "노란색만 블랙라벨").
+ * 09_입지동선평가!브랜드구분과 대조해보니 노란색 41곳이 09시트의 블랙라벨 41곳과 정확히
+ * 일치했다 — 매출DB 쪽이 항상 존재하는(모든 매장이 매출DB엔 있음) 더 포괄적인 소스라
+ * 이걸 기준으로 삼는다. 노란색이 아니면 "확인필요"로 명확히 남긴다("리그PC방"이라고
+ * 단정하지 않음 — 색만으로는 정확한 다른 브랜드명까지는 알 수 없다).
+ */
+async function fetchBrandColorByCode(sheets: NonNullable<ReturnType<typeof getSheetsClient>>): Promise<Map<string, boolean>> {
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    ranges: [`'${SOURCE_SHEET_NAME}'!A${SOURCE_DATA_START_ROW}:B2000`],
+    fields: "sheets.data.rowData.values(formattedValue,effectiveFormat.backgroundColor)",
+  });
+  const rows = res.data.sheets?.[0]?.data?.[0]?.rowData ?? [];
+  const isBlackLabelByCode = new Map<string, boolean>();
+  for (const row of rows) {
+    const cells = row.values ?? [];
+    const code = cells[0]?.formattedValue?.trim();
+    if (!code) continue;
+    const bg = cells[1]?.effectiveFormat?.backgroundColor;
+    const isYellow = !!bg && (bg.red ?? 0) >= 0.9 && (bg.green ?? 0) >= 0.9 && (bg.blue ?? 0) <= 0.2;
+    isBlackLabelByCode.set(code, isYellow);
+  }
+  return isBlackLabelByCode;
+}
+
 /** 문서를 하나씩 await하지 않고 최대 450건씩 묶어 커밋한다 - 수천 건도 몇 초 안에 끝난다. */
 class BatchWriter {
   private batch = this.db.batch();
@@ -357,6 +383,7 @@ export type RevenueSyncSummary = {
   registeredStoreCount: number;
   autoRegisteredStores: string[];
   autoRegisterSkipped: string[];
+  brandUpdated: number;
   salesUpserted: number;
   storesRecalculated: number;
 };
@@ -376,10 +403,13 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const openedAtByCode = new Map<string, string | null>(storesSnap.docs.map((d) => [d.id, (d.data().openedAt as string) ?? null]));
 
+  const isBlackLabelByCode = await fetchBrandColorByCode(sheets);
+  const brandTypeFor = (code: string): "블랙라벨" | "확인필요" => (isBlackLabelByCode.get(code) ? "블랙라벨" : "확인필요");
+
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:ZZ2000` });
   const values = res.data.values ?? [];
   if (values.length < SOURCE_DATA_START_ROW) {
-    return { registeredStoreCount: storeCodes.size, autoRegisteredStores: [], autoRegisterSkipped: [], salesUpserted: 0, storesRecalculated: 0 };
+    return { registeredStoreCount: storeCodes.size, autoRegisteredStores: [], autoRegisterSkipped: [], brandUpdated: 0, salesUpserted: 0, storesRecalculated: 0 };
   }
 
   // ---- 1) 매출DB!E열(가맹해지여부)이 "정상"인데 아직 미등록인 매장을 자동 등록 ----
@@ -416,7 +446,7 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
         excludedReason: null,
         v61Predicted: null,
         referenceMarketDemand: null,
-        brandType: null,
+        brandType: brandTypeFor(code),
         validationUse: null,
         hourlyRate: null,
         ownDemand: null,
@@ -435,6 +465,16 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
     storeCodes.add(code);
     openedAtByCode.set(code, openedAt);
     autoRegisteredStores.push(`${code} ${storeName}`);
+  }
+
+  // ---- 1-1) 이미 등록된 매장도 매출DB 색상 기준으로 brandType을 매번 다시 맞춘다(멱등) ----
+  // 09_입지동선평가에 행이 없는 매장은 여태 브랜드를 확인할 방법이 없었는데, 매출DB!지점명
+  // 배경색(노란색=블랙라벨)이 09시트가 있는 41곳과 정확히 일치함을 확인해 이걸 기준으로 쓴다.
+  let brandUpdated = 0;
+  for (const code of storeCodes) {
+    if (!isBlackLabelByCode.has(code)) continue;
+    await writer.set(db.collection("storeEvalExistingStores").doc(code), { brandType: brandTypeFor(code), updatedAt: Date.now() }, true);
+    brandUpdated++;
   }
 
   // ---- 2) 월별 매출 upsert + completedMonths/actualMonthlyRevenueAvg 재계산 ----
@@ -501,5 +541,5 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
 
   await writer.finish();
 
-  return { registeredStoreCount: storeCodes.size, autoRegisteredStores, autoRegisterSkipped, salesUpserted, storesRecalculated };
+  return { registeredStoreCount: storeCodes.size, autoRegisteredStores, autoRegisterSkipped, brandUpdated, salesUpserted, storesRecalculated };
 }
