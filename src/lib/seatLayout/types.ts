@@ -9,6 +9,7 @@ export type ZoneTypeKey =
   | "multi"
   | "lol"
   | "team"
+  | "ceremony_team"
   | "one_seat"
   | "one_room"
   | "two"

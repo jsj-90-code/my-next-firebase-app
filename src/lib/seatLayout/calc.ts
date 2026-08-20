@@ -2,7 +2,15 @@
 // 앱스크립트 v15 Index.html의 계산 함수들을 순수 함수로 이식.
 
 import { BEZEL_MAP, getZoneTypeLabel, PC_SPEC_FIELDS } from "./constants";
-import type { DeskZone, DeskSize, PcSpecFieldId, PcSpecValues, PcZone, SizeBreakdownEntry } from "./types";
+import type {
+  DeskZone,
+  DeskSize,
+  PcSpecFieldId,
+  PcSpecValues,
+  PcZone,
+  SizeBreakdownEntry,
+  ZoneTypeKey,
+} from "./types";
 
 export function getZoneSizeEntries(z: DeskZone): SizeBreakdownEntry[] {
   if (z.sizeBreakdown && z.sizeBreakdown.length) return z.sizeBreakdown;
@@ -310,6 +318,15 @@ const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>
   joypad: {
     "조이패드 포함": "조이패드",
   },
+  // "1구 어답터"(예전 기본값)는 항상 "그때는 기본값이었다"는 뜻이라 안전하게 새 기본값
+  // "2구 어답터"로 옮길 수 있다. 반대로 "2구→3구"는 여기 넣지 않는다 — "2구 어답터"라는
+  // 문자열이 이제는 새 기본값 자체이기도 해서, 옛 값인지 방금 계산된 새 기본값인지 문자열만
+  // 보고는 구분이 안 된다(실제로 넣었다가 방금 계산한 새 기본값까지 3구로 잘못 밀려버리는
+  // 버그가 나서 뺐다). 옛 프로젝트에 "2구 어답터"로 저장된 커스텀 값이 남아있다면 드롭다운에서
+  // 사람이 다시 골라야 한다.
+  adapter: {
+    "1구 어답터": "2구 어답터",
+  },
 };
 
 export function normalizeFieldValue(fieldId: PcSpecFieldId, value: string): string {
@@ -317,23 +334,30 @@ export function normalizeFieldValue(fieldId: PcSpecFieldId, value: string): stri
 }
 
 // 어댑터는 존 유형이 아니라 헤드셋 종류로 정해진다 — 레이저 블랙샤크 V2 하이퍼스피드 헤드셋을
-// 쓰는 좌석만 2구 어답터가 필요하고, 나머지는 기본값(1구 어답터)을 쓴다.
-const TWO_PORT_ADAPTER_HEADSET = "Razer BlackShark V2 Hyperspeed";
+// 쓰는 좌석만 3구 어답터가 필요하고, 나머지는 기본값(2구 어답터)을 쓴다.
+const THREE_PORT_ADAPTER_HEADSET = "Razer BlackShark V2 Hyperspeed";
 
 // 어댑터 항목이 생기기 전에 저장된 존은 adapter override가 없다. 그런 존의 충전기 값에 예전
-// "2포트" 표시가 남아있으면, 그걸 근거로 어댑터를 "2구 어답터"로 추론해서 채워준다.
+// "2포트" 표시가 남아있으면, 그걸 근거로 어댑터를 "3구 어답터"로 추론해서 채워준다.
 const LEGACY_2PORT_CHARGER_VALUES = new Set([
   "무선충전기 (2포트 이상 어댑터 필요)",
   "무선충전기(2포트 이상)",
 ]);
 
+// 헤드셋과 무관하게 존 유형만으로 어댑터가 정해지는 예외 (예: 세레머니 팀룸은 다인 좌석이라
+// 전원 콘센트가 더 필요해 항상 3구 어답터).
+const TYPE_ADAPTER_DEFAULTS: Partial<Record<ZoneTypeKey, string>> = {
+  ceremony_team: "3구 어답터",
+};
+
 export function resolveAdapterValue(z: PcZone, pcDefaults: PcSpecValues, def: string): string {
   if (z.pcOverrides?.adapter != null) return normalizeFieldValue("adapter", z.pcOverrides.adapter);
   const headsetDef = PC_SPEC_FIELDS.find((f) => f.id === "headset")?.def ?? "";
   const resolvedHeadset = normalizeFieldValue("headset", z.pcOverrides?.headset ?? pcDefaults.headset ?? headsetDef);
-  if (resolvedHeadset === TWO_PORT_ADAPTER_HEADSET) return "2구 어답터";
+  if (resolvedHeadset === THREE_PORT_ADAPTER_HEADSET) return "3구 어답터";
   const legacyCharger = z.pcOverrides?.charger;
-  if (legacyCharger && LEGACY_2PORT_CHARGER_VALUES.has(legacyCharger)) return "2구 어답터";
+  if (legacyCharger && LEGACY_2PORT_CHARGER_VALUES.has(legacyCharger)) return "3구 어답터";
+  if (TYPE_ADAPTER_DEFAULTS[z.typeKey]) return TYPE_ADAPTER_DEFAULTS[z.typeKey]!;
   return normalizeFieldValue("adapter", pcDefaults.adapter ?? def);
 }
 

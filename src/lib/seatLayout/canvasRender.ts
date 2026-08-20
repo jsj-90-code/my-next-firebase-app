@@ -382,7 +382,7 @@ export function renderPcFloorplanImage(
       .map(({ label, value }) => ({ label, value }));
 
     // 어답터 항목이 생기기 전에 저장된 존은 override가 없지만, 실제로 적용되는 값(레이저
-    // 블랙샤크 V2 하이퍼스피드 헤드셋을 쓰면 2구 어답터)이 기본값과 다르면 카드에도 보여준다.
+    // 블랙샤크 V2 하이퍼스피드 헤드셋을 쓰면 3구 어답터)이 기본값과 다르면 카드에도 보여준다.
     if (ov.adapter == null) {
       const adapterDef = PC_SPEC_FIELDS.find((f) => f.id === "adapter")?.def ?? "";
       const adapterValue = resolveAdapterValue(z, pcDefaults, adapterDef);

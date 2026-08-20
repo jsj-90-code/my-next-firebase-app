@@ -10,20 +10,23 @@ import type {
   ZoneTypeKey,
 } from "./types";
 
+// 순서: 멀티존-LOL존-FC ONLINE존-FPS존-프렌즈존-커플석-커플존-VIP존-세레머니 팀룸-팀룸-1인석-
+// 1인룸-2인룸-3인룸-버프존/리얼프로게이머존-책상만 설치 (기타(직접입력)는 항상 맨 끝 유지).
 export const ZONE_TYPES: ZoneType[] = [
   { key: "multi", label: "멀티존", color: "#C1543F" },
   { key: "lol", label: "LOL존", color: "#C98B3E" },
+  { key: "fc", label: "FC ONLINE존", color: "#3E6B9E" },
+  { key: "fps", label: "FPS존", color: "#3E4F9E" },
+  { key: "friends", label: "프렌즈존", color: "#6A4C9E" },
+  { key: "couple_seat", label: "커플석", color: "#B33E76" },
+  { key: "couple_room", label: "커플존", color: "#8C2F58" },
+  { key: "vip", label: "VIP존", color: "#8C3E8E" },
+  { key: "ceremony_team", label: "세레머니 팀룸", color: "#C9A227" },
   { key: "team", label: "팀룸", color: "#A98C3B" },
   { key: "one_seat", label: "1인석", color: "#5C8A5A" },
   { key: "one_room", label: "1인룸", color: "#7FAF7C" },
   { key: "two", label: "2인룸", color: "#3E8E82" },
   { key: "three", label: "3인룸", color: "#3E7A8E" },
-  { key: "fc", label: "FC ONLINE존", color: "#3E6B9E" },
-  { key: "fps", label: "FPS존", color: "#3E4F9E" },
-  { key: "friends", label: "프렌즈존", color: "#6A4C9E" },
-  { key: "vip", label: "VIP존", color: "#8C3E8E" },
-  { key: "couple_seat", label: "커플석", color: "#B33E76" },
-  { key: "couple_room", label: "커플존", color: "#8C2F58" },
   { key: "buff", label: "버프존", color: "#7A5C4A" },
   { key: "progamer", label: "리얼프로게이머존", color: "#4A4E5C" },
   { key: "desk_only", label: "책상만 설치", color: "#6B6B6B" },
@@ -78,6 +81,7 @@ export const SPEC_FIELDS: SpecField[] = [
 export const TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, Partial<Record<SpecFieldId, string>>>> = {
   lol: { desk: "퍼스트클래스", monitorArm: "관절암" },
   team: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
+  ceremony_team: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
   one_seat: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
   one_room: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
   two: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
@@ -114,7 +118,7 @@ export const PC_SPEC_FIELDS: PcSpecField[] = [
   { id: "headset", label: "헤드셋", def: "젬스트 LEF G58" },
   { id: "speaker", label: "스피커", def: "블루오션 2 (앱코 S1000) 스피커" },
   { id: "charger", label: "충전기", def: "무선충전기" },
-  { id: "adapter", label: "어답터", def: "1구 어답터" },
+  { id: "adapter", label: "어답터", def: "2구 어답터" },
   { id: "joypad", label: "조이패드", def: "없음" },
 ];
 
@@ -127,7 +131,7 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
   mb: ["ASUS PRIME H810M-X 2.5G", "H610M 2.5"],
   gpu: ["RTX 5060 8GB", "RTX 5060Ti", "RX 9060"],
   power: ["잘만 MegaMax ET 600W 80PLUS STANDARD", "600W"],
-  adapter: ["1구 어답터", "2구 어답터"],
+  adapter: ["2구 어답터", "3구 어답터"],
   monitor: [
     "제이씨현 32인치 240Hz",
     "비트엠 27인치 IPS 240Hz",
@@ -152,7 +156,7 @@ export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
   fc: { monitorArm: "관절암", monitor: "큐닉스 27인치 300Hz", joypad: "조이패드" },
   lol: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   // 어답터는 존 유형이 아니라 헤드셋 종류로 정해져서(레이저 블랙샤크 V2 하이퍼스피드 헤드셋을
-  // 쓰는 좌석만 2구 어답터) 여기 override로 안 넣는다 — computePcOrderSummary가 헤드셋 값을
+  // 쓰는 좌석만 3구 어답터) 여기 override로 안 넣는다 — computePcOrderSummary가 헤드셋 값을
   // 보고 자동으로 계산한다.
   fps: {
     monitorArm: "관절암",
@@ -162,6 +166,7 @@ export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
     headset: "Razer BlackShark V2 Hyperspeed",
   },
   team: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
+  ceremony_team: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   friends: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
   couple_seat: {
     monitorArm: "관절암",
