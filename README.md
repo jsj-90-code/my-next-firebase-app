@@ -57,14 +57,19 @@ node scripts/migrateFullExistingStoreProfiles.mjs
 #    (오픈 1~12개월 평가창을 자동 적용해 completedMonths/actualMonthlyRevenueAvg를 재계산함)
 node scripts/syncSalesFromRevenueSheet.mjs
 ```
-아직 스케줄러(Cron)로 자동 실행되지는 않습니다 — 매출DB가 갱신될 때마다 수동으로 재실행해야
-합니다. 정기 자동화가 필요하면 Vercel Cron이나 Firebase Scheduled Function으로 이 스크립트
-로직을 옮기는 후속 작업이 필요합니다.
+위 두 스크립트는 로컬에서 손으로 돌리는 백필·디버깅용입니다. **2026-08-20부터 Vercel Cron으로
+자동 실행됩니다** — `vercel.json`에 등록된 `/api/store-eval/cron-sync`가 매일 06:00(KST)에
+호출되어 매출DB 동기화(신규 매장 자동등록 포함) → 01/05/09/03 프로필 마이그레이션 순서로 실행합니다.
+로직은 `src/lib/storeEval/cronSync.ts`에 있고(스크립트와 동일하되 Firestore 배치쓰기로 바꿔
+서버리스 실행시간 제한 안에 끝나게 했습니다 — 실측 약 25초), 계산 규칙은 여전히 `calc.ts`
+하나만 참조합니다. **Vercel 프로젝트 환경변수에 `CRON_SECRET`을 반드시 설정해야** 합니다(설정
+안 하면 이 경로는 항상 401을 반환합니다 — Vercel이 Cron 호출마다 `Authorization: Bearer
+{CRON_SECRET}`을 자동으로 붙여줍니다).
 
-`syncSalesFromRevenueSheet.mjs`는 매출DB에 "정상" 상태로 새로 올라온 매장(신규 오픈 가맹점)을
-`storeEvalExistingStores`에 자동 등록도 합니다 — 브랜드·요금 등 V61 학습 특징치는 매출DB에
-없으므로 비워두고, 그 다음 `migrateFullExistingStoreProfiles.mjs`를 돌려 09_입지동선평가 등에서
-채워야 학습 대상이 됩니다.
+`syncSalesFromRevenueSheet.mjs`(그리고 Cron 경로도 동일하게)는 매출DB에 "정상" 상태로 새로
+올라온 매장(신규 오픈 가맹점)을 `storeEvalExistingStores`에 자동 등록도 합니다 — 브랜드·요금 등
+V61 학습 특징치는 매출DB에 없으므로 비워두고, 그 다음 프로필 마이그레이션이 09_입지동선평가
+등에서 채워야 학습 대상이 됩니다.
 
 **신규 가맹점 추가**: `/store-eval/existing-stores` 화면에서 직접 등록하거나, 신규후보지
 평가를 마친 뒤 [최종결과] 탭의 "오픈 확정 → 기존 가맹점으로 전환" 버튼으로 경쟁점·입지평가

@@ -1262,11 +1262,15 @@ export type ValidationStoreInput = {
   groundLevel?: GroundLevel | null;
   hasElevator?: boolean | null;
   competitorSummary?: CompetitorInvestigationSummary; // listCompetitors(storeCode) 집계 결과
+  // 2026-08-20 (6차) 추가 — sheetParity 비교용. storeEvalExistingStores!v61Predicted
+  // (원본 04_점포평가요약!예측_월매출 캐시값, 재계산 아님)을 그대로 들고 온다.
+  sheetV61Predicted?: number | null;
 };
 
 export type ValidationStoreRow = ValidationStoreInput & {
   cohort: TenureCohort;
-  predictedRevenueAvg: number | null; // V61(외부유입 보정 전)
+  predictedRevenueAvg: number | null; // V61(외부유입 보정 전, 리브-원-아웃 재학습 결과 — loocvValidation)
+  v62Rate: number; // 이번 매장에 적용된 외부유입 보정률(0이면 보정 없음/미평가)
   v62PredictedRevenueAvg: number | null; // V61 × (1+외부유입 보정률) — 실제 오차 계산은 이 값을 쓴다
   errorAmount: number | null; // v62예측 - 실제
   absoluteErrorPct: number | null;
@@ -1659,6 +1663,7 @@ export function runCohortValidation(
       ...s,
       cohort,
       predictedRevenueAvg,
+      v62Rate,
       v62PredictedRevenueAvg,
       errorAmount,
       absoluteErrorPct,
@@ -1672,4 +1677,91 @@ export function runCohortValidation(
   });
 
   return { rows };
+}
+
+// ---------------------------------------------------------------------------
+// 2026-08-20 (6차) 추가 — 웹 V62와 구글시트 V62 검증값 불일치 원인 추적.
+//
+// 두 계산 모드를 절대 섞지 않는다:
+//   - sheetParity: 시트에 저장된 V61 예측값(ExistingStore.v61Predicted, 재계산 없이 원본 그대로)
+//     + 외부유입 보정만 적용해 "시트가 원래 보여주던 결과"를 재현한다. computeValidationRow/
+//     summarizeValidation(기존 golden-data 테스트로 이미 검증됨)을 그대로 재사용한다.
+//   - loocvValidation: runCohortValidation의 리브-원-아웃 재학습 결과(predictedRevenueAvg/
+//     v62PredictedRevenueAvg) — 매 매장을 학습에서 뺀 뒤 다시 학습해 예측하므로 시트의
+//     "전체를 다 넣고 학습한 모형으로 자기 자신을 예측"과는 원천적으로 값이 다를 수 있다.
+// ---------------------------------------------------------------------------
+
+export type ParityDiffStage = "V61예측차이" | "외부유입보정률차이" | "반올림차이" | "일치" | "비교불가";
+
+export type ParityComparisonRow = {
+  storeCode: string;
+  storeName: string;
+  actualRevenueAvg: number | null;
+  sheetV61Predicted: number | null;
+  webV61Predicted: number | null;
+  sheetInflowRate: number | null;
+  webInflowRate: number | null;
+  sheetV62Predicted: number | null;
+  webV62Predicted: number | null;
+  predictionDiff: number | null; // webV62 - sheetV62
+  sheetAbsoluteErrorPct: number | null;
+  webAbsoluteErrorPct: number | null;
+  diffStage: ParityDiffStage;
+};
+
+/**
+ * sheetParity(캐시된 시트 V61 + 보정률) vs loocvValidation(리브-원-아웃 재학습) 매장별 비교표.
+ * loocvRows는 runCohortValidation의 결과를 그대로 받는다(재계산하지 않음 - 단일 출처 유지).
+ */
+export function buildParityComparisonRows(
+  stores: ValidationStoreInput[],
+  loocvRows: ValidationStoreRow[],
+  settings: Pick<ModelSettings, "inflowAdjustment">,
+): ParityComparisonRow[] {
+  const loocvByCode = new Map(loocvRows.map((r) => [r.storeCode, r]));
+  return stores
+    .filter((s) => s.brand === "블랙라벨" && s.sheetV61Predicted != null && s.actualRevenueAvg != null)
+    .map((s) => {
+      const loocv = loocvByCode.get(s.storeCode);
+      const sheetRate = getV62Rate(s.inflowRestriction ?? null, settings);
+      const sheetV62Predicted = computeV62Final(s.sheetV61Predicted ?? null, sheetRate);
+      const webV61Predicted = loocv?.predictedRevenueAvg ?? null;
+      const webV62Predicted = loocv?.v62PredictedRevenueAvg ?? null;
+      const webInflowRate = loocv?.v62Rate ?? null;
+      const actual = s.actualRevenueAvg as number;
+
+      const sheetAbsoluteErrorPct = sheetV62Predicted != null ? Math.abs(sheetV62Predicted - actual) / actual : null;
+      const webAbsoluteErrorPct = loocv?.absoluteErrorPct ?? null;
+      const predictionDiff = webV62Predicted != null && sheetV62Predicted != null ? webV62Predicted - sheetV62Predicted : null;
+
+      let diffStage: ParityDiffStage = "비교불가";
+      if (webV61Predicted != null && s.sheetV61Predicted != null) {
+        const v61RelDiff = Math.abs(webV61Predicted - s.sheetV61Predicted) / Math.max(1, s.sheetV61Predicted);
+        if (v61RelDiff > 0.001) {
+          diffStage = "V61예측차이";
+        } else if (sheetRate != null && webInflowRate != null && Math.abs(sheetRate - webInflowRate) > 0.0001) {
+          diffStage = "외부유입보정률차이";
+        } else if (sheetV62Predicted !== webV62Predicted) {
+          diffStage = "반올림차이";
+        } else {
+          diffStage = "일치";
+        }
+      }
+
+      return {
+        storeCode: s.storeCode,
+        storeName: s.storeName,
+        actualRevenueAvg: s.actualRevenueAvg,
+        sheetV61Predicted: s.sheetV61Predicted ?? null,
+        webV61Predicted,
+        sheetInflowRate: sheetRate,
+        webInflowRate,
+        sheetV62Predicted,
+        webV62Predicted,
+        predictionDiff,
+        sheetAbsoluteErrorPct,
+        webAbsoluteErrorPct,
+        diffStage,
+      };
+    });
 }

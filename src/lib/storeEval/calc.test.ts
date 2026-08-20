@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bucketizeErrors,
+  buildParityComparisonRows,
   classifyErrorCause,
   classifyTenureCohort,
   computeAaBaselineRevenue,
@@ -51,6 +52,7 @@ import {
   type V61TrainingStore,
   type ValidationInputRow,
   type ValidationStoreInput,
+  type ValidationStoreRow,
 } from "./calc";
 import type { CandidateInput } from "./types";
 import { defaultModelSettings } from "./settings";
@@ -963,3 +965,82 @@ describe("computeCompletedMonthsCount", () => {
     expect(computeCompletedMonthsCount(rows)).toBe(2);
   });
 });
+
+describe("buildParityComparisonRows (요청사항 — sheetParity vs loocvValidation 매장별 비교, 요청사항 1/2)", () => {
+  const inflowSettings = { inflowAdjustment: defaultModelSettings().inflowAdjustment };
+  function makeInput(overrides: Partial<ValidationStoreInput>): ValidationStoreInput {
+    return {
+      storeCode: "S1",
+      storeName: "테스트점",
+      brand: "블랙라벨",
+      openedAt: "2024-01-01",
+      completedMonths: 12,
+      franchiseStatus: "정상",
+      isPostOpenIssue: false,
+      postOpenIssueReason: null,
+      pcCount: 100,
+      hourlyRate: 1300,
+      ownDemand: 200000,
+      competitivenessScore: 4,
+      actualRevenueAvg: 60000000,
+      sheetV61Predicted: 58000000,
+      inflowRestriction: "보통",
+      ...overrides,
+    };
+  }
+  function makeLoocvRow(storeCode: string, predictedRevenueAvg: number, v62Rate: number): ValidationStoreRow {
+    const v62PredictedRevenueAvg = computeV62Final(predictedRevenueAvg, v62Rate);
+    const actual = 60000000;
+    return {
+      ...makeInput({ storeCode }),
+      cohort: "정식 검증군",
+      predictedRevenueAvg,
+      v62Rate,
+      v62PredictedRevenueAvg,
+      errorAmount: v62PredictedRevenueAvg! - actual,
+      absoluteErrorPct: Math.abs(v62PredictedRevenueAvg! - actual) / actual,
+      direction: "과대예측",
+      includedInCoreAccuracy: true,
+      exclusionReason: null,
+      operationalStatus: "normal",
+      dataCompleteness: { score: 100, grade: "complete", hasCoreInputs: true, hasLocationEvaluation: true, hasCompetitorInfo: true, hasActualPerformance: true },
+      errorCause: "within_range",
+    };
+  }
+
+  it("웹 V61과 시트 V61이 유의미하게 다르면 diffStage=V61예측차이", () => {
+    const stores = [makeInput({ storeCode: "S1", sheetV61Predicted: 58000000, inflowRestriction: "보통" })];
+    const loocvRows = [makeLoocvRow("S1", 65000000, -0.03)]; // 웹 예측이 시트보다 12% 높음
+    const rows = buildParityComparisonRows(stores, loocvRows, inflowSettings);
+    expect(rows[0].diffStage).toBe("V61예측차이");
+  });
+
+  it("V61은 같은데(오차<0.1%) 외부유입 보정률이 다르면 diffStage=외부유입보정률차이", () => {
+    const stores = [makeInput({ storeCode: "S1", sheetV61Predicted: 58000000, inflowRestriction: "보통" })];
+    const loocvRows = [makeLoocvRow("S1", 58000000, -0.2)]; // 보정률만 다르게(강함 취급) 강제
+    const rows = buildParityComparisonRows(stores, loocvRows, inflowSettings);
+    expect(rows[0].diffStage).toBe("외부유입보정률차이");
+  });
+
+  it("V61·보정률·V62예측까지 전부 같으면 diffStage=일치", () => {
+    const stores = [makeInput({ storeCode: "S1", sheetV61Predicted: 58000000, inflowRestriction: "보통" })];
+    const loocvRows = [makeLoocvRow("S1", 58000000, -0.03)];
+    const rows = buildParityComparisonRows(stores, loocvRows, inflowSettings);
+    expect(rows[0].diffStage).toBe("일치");
+    expect(rows[0].predictionDiff).toBe(0);
+  });
+
+  it("웹 쪽 리브-원-아웃 결과가 아예 없으면(짝이 안 맞으면) diffStage=비교불가", () => {
+    const stores = [makeInput({ storeCode: "S1" })];
+    const rows = buildParityComparisonRows(stores, [], inflowSettings);
+    expect(rows[0].diffStage).toBe("비교불가");
+    expect(rows[0].webV61Predicted).toBeNull();
+  });
+
+  it("브랜드가 블랙라벨이 아니거나 시트 V61이 없으면 비교 대상에서 아예 빠진다", () => {
+    const stores = [makeInput({ storeCode: "S1", brand: "리그PC방" }), makeInput({ storeCode: "S2", sheetV61Predicted: null })];
+    const rows = buildParityComparisonRows(stores, [makeLoocvRow("S1", 58000000, -0.03), makeLoocvRow("S2", 58000000, -0.03)], inflowSettings);
+    expect(rows.length).toBe(0);
+  });
+});
+
