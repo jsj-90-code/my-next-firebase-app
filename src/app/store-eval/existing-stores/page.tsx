@@ -8,8 +8,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatNumber, formatWon } from "@/lib/storeEval/format";
+import { formatDateTime, formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import {
+  linkExistingStoreToCandidate,
   listExistingStoreMembers,
   listExistingStores,
   listExistingStoreSales,
@@ -107,6 +108,8 @@ function blankStore(): ExistingStore {
     floating500_60plus: null,
     licensedPcStores500m: null,
     operatingPcStores500m: null,
+    originCandidateCode: null,
+    predictedAtConversion: null,
     createdAt: now,
     updatedAt: now,
     updatedBy: null,
@@ -174,6 +177,15 @@ function NewStoreForm({ onCancel, onSaved, actor }: { onCancel: () => void; onSa
   );
 }
 
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{label}</p>
+      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{value}</p>
+    </div>
+  );
+}
+
 function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; actor: string | null; onChanged: () => void }) {
   const [sales, setSales] = useState<ExistingStoreMonthlySales[]>([]);
   const [members, setMembers] = useState<ExistingStoreMemberSnapshot[]>([]);
@@ -185,6 +197,8 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
   const [totalMembers, setTotalMembers] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [editStore, setEditStore] = useState<ExistingStore>(store);
+  const [linkCandidateCode, setLinkCandidateCode] = useState("");
+  const [linkMessage, setLinkMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -263,8 +277,68 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
     }
   }
 
+  async function handleLink() {
+    if (!linkCandidateCode.trim()) return;
+    setBusy(true);
+    setLinkMessage(null);
+    try {
+      const updated = await linkExistingStoreToCandidate(store.storeCode, linkCandidateCode.trim(), actor);
+      setLinkMessage(
+        updated.predictedAtConversion
+          ? "연결했습니다. 후보지평가 당시 예측값도 함께 불러왔습니다."
+          : "연결했습니다. 다만 그 후보지의 예측값 스냅샷은 이미 재계산으로 덮어써져서 남아있지 않습니다(연결만 됨).",
+      );
+      setLinkCandidateCode("");
+      onChanged();
+    } catch (err) {
+      setLinkMessage(err instanceof Error ? err.message : "연결 중 오류가 발생했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      {store.predictedAtConversion ? (
+        <div className="mb-4 rounded-lg border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
+          <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            후보지평가 당시 예측 vs 실제매출 — {store.predictedAtConversion.candidateCode} (
+            {formatDateTime(store.predictedAtConversion.calculatedAt)} 계산)
+          </h4>
+          <div className={`${gridClass} mt-2`}>
+            <StatBox label="예측 당시 V62 최종예상월매출" value={formatWon(store.predictedAtConversion.v62Final)} />
+            <StatBox label="예측 당시 보수판단매출(85%)" value={formatWon(store.predictedAtConversion.conservativeSales)} />
+            <StatBox label="예측 당시 상한참고매출(115%)" value={formatWon(store.predictedAtConversion.upperSales)} />
+            <StatBox label="현재 실제매출평균" value={formatWon(store.actualMonthlyRevenueAvg)} />
+            <StatBox
+              label="오차율 (실제-예측)/예측"
+              value={
+                store.predictedAtConversion.v62Final && store.actualMonthlyRevenueAvg != null
+                  ? formatPercent((store.actualMonthlyRevenueAvg - store.predictedAtConversion.v62Final) / store.predictedAtConversion.v62Final)
+                  : "실제매출 입력 전"
+              }
+            />
+          </div>
+        </div>
+      ) : store.originCandidateCode ? (
+        <p className="mb-4 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+          후보지 {store.originCandidateCode}에서 연결됐지만, 예측값 스냅샷은 이미 재계산으로 덮어써져서 남아있지 않습니다.
+        </p>
+      ) : (
+        <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
+          <TextField label="후보지코드 연결 (예: N001)" value={linkCandidateCode} onChange={setLinkCandidateCode} placeholder="N001" />
+          <button
+            type="button"
+            disabled={busy || !linkCandidateCode.trim()}
+            onClick={handleLink}
+            className="h-fit rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            연결
+          </button>
+          {linkMessage && <p className="text-xs text-zinc-500 dark:text-zinc-400">{linkMessage}</p>}
+        </div>
+      )}
+
       <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">운영 상태 (사후 운영이슈·가맹상태)</h4>
       <div className={`${gridClass} mt-2`}>
         <SelectField label="가맹상태" value={editStore.franchiseStatus} onChange={(v) => setEditStore((p) => ({ ...p, franchiseStatus: v }))} options={FRANCHISE_STATUS_OPTIONS} />
@@ -338,6 +412,12 @@ export default function ExistingStoresPage() {
     load();
   }, [load]);
 
+  // 요청사항 — 이 화면은 블랙라벨 매장만 보여준다. 브랜드는 매출DB!지점명 배경색(노란색=
+  // 블랙라벨)으로 cron-sync가 채운 brandType 필드를 그대로 쓴다(추측하지 않음, 이미 존재하는
+  // 판정 결과를 화면에서 걸러서 보여줄 뿐).
+  const blackLabelStores = stores.filter((s) => s.brandType === "블랙라벨");
+  const hiddenCount = stores.length - blackLabelStores.length;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -345,7 +425,8 @@ export default function ExistingStoresPage() {
           <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">기존 가맹점 관리</h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
             신규 가맹점이 오픈하면 여기서 등록하고, 매달 매출과 회원 데이터를 계속 쌓습니다. V61 학습·검증(6. 기존 가맹점 검증)은 여기 쌓인
-            데이터를 그대로 사용합니다.
+            데이터를 그대로 사용합니다. 블랙라벨 매장만 표시합니다
+            {hiddenCount > 0 && ` (리그PC방·확인필요 ${hiddenCount}곳은 숨김)`}.
           </p>
         </div>
         {!showNew && (
@@ -385,7 +466,7 @@ export default function ExistingStoresPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {stores.map((s) => (
+              {blackLabelStores.map((s) => (
                 <>
                   <tr key={s.storeCode} className="text-zinc-800 dark:text-zinc-200">
                     <td className="px-3 py-2 font-medium">{s.storeCode}</td>
@@ -415,10 +496,12 @@ export default function ExistingStoresPage() {
                   )}
                 </>
               ))}
-              {stores.length === 0 && (
+              {blackLabelStores.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
-                    등록된 기존 가맹점이 없습니다.
+                    {stores.length === 0
+                      ? "등록된 기존 가맹점이 없습니다."
+                      : "블랙라벨로 확인된 매장이 없습니다(브랜드가 리그PC방·확인필요인 매장뿐입니다)."}
                   </td>
                 </tr>
               )}

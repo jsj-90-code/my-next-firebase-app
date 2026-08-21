@@ -13,6 +13,10 @@ import { CompetitorsTab } from "./CompetitorsTab";
 import { LocationEvalTab } from "./LocationEvalTab";
 import { ResultTab } from "./ResultTab";
 
+// "new"는 실제 후보지코드(N001...) 형식과 겹치지 않는 예약어다 — 아직 코드가 발급되지 않은
+// 신규 등록 draft를 나타낸다. 코드는 BasicInfoTab에서 첫 저장을 누르는 순간에만 발급된다.
+const NEW_DRAFT_CODE = "new";
+
 const TABS = [
   { key: "basic", label: "기본정보" },
   { key: "competitors", label: "경쟁점" },
@@ -81,32 +85,35 @@ function blankCandidate(code: string): CandidateInput {
 export default function CandidateDetailPage() {
   const params = useParams<{ code: string }>();
   const code = decodeURIComponent(params.code);
+  const isNewDraft = code === NEW_DRAFT_CODE;
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  const isNew = searchParams.get("new") === "1";
 
   const [candidate, setCandidate] = useState<CandidateInput | null>(null);
   const [persisted, setPersisted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const activeTab = (["basic", "competitors", "location", "result"].includes(searchParams.get("tab") ?? "")
-    ? searchParams.get("tab")
-    : "basic") as TabKey;
+  // 코드가 아직 발급되지 않은 draft 상태에서는 기본정보 탭만 허용한다 — 경쟁점/입지동선평가는
+  // 실제 후보지코드가 있어야 candidateCode로 하위 문서를 저장할 수 있기 때문이다.
+  const requestedTab = searchParams.get("tab") ?? "";
+  const activeTab = (!persisted ? "basic" : ["basic", "competitors", "location", "result"].includes(requestedTab) ? requestedTab : "basic") as TabKey;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      if (isNewDraft) {
+        setCandidate(blankCandidate(NEW_DRAFT_CODE));
+        setPersisted(false);
+        return;
+      }
       const existing = await getCandidate(code);
       if (existing) {
         setCandidate(existing);
         setPersisted(true);
-      } else if (isNew) {
-        setCandidate(blankCandidate(code));
-        setPersisted(false);
       } else {
         setError("해당 후보지를 찾을 수 없습니다.");
       }
@@ -116,16 +123,16 @@ export default function CandidateDetailPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
+  }, [code, isNewDraft]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   function setTab(tab: TabKey) {
+    if (!persisted) return; // draft 상태에서는 기본정보만 — 저장 전엔 탭 전환 막음
     const qs = new URLSearchParams(searchParams.toString());
     qs.set("tab", tab);
-    qs.delete("new");
     router.replace(`${pathname}?${qs.toString()}`);
   }
 
@@ -154,31 +161,39 @@ export default function CandidateDetailPage() {
             ← 신규후보지 목록
           </Link>
           <h1 className="mt-1 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-            {candidate.name || "(이름 없음)"} <span className="font-mono text-sm text-zinc-400">{candidate.code}</span>
+            {candidate.name || "(이름 없음)"}{" "}
+            {!isNewDraft && <span className="font-mono text-sm text-zinc-400">{candidate.code}</span>}
           </h1>
         </div>
         {!persisted && (
           <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-            아직 저장되지 않은 신규 후보지입니다
+            아직 저장되지 않은 신규 후보지입니다 — 저장하면 후보지코드가 발급됩니다
           </span>
         )}
       </div>
 
       <nav className="flex gap-1 border-b border-zinc-200 text-sm dark:border-zinc-800 print:hidden">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setTab(tab.key)}
-            className={`-mb-px rounded-t-md border-b-2 px-4 py-2 font-medium transition ${
-              activeTab === tab.key
-                ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
-                : "border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map((tab) => {
+          const disabled = !persisted && tab.key !== "basic";
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setTab(tab.key)}
+              disabled={disabled}
+              title={disabled ? "기본정보를 먼저 저장해야 이용할 수 있습니다" : undefined}
+              className={`-mb-px rounded-t-md border-b-2 px-4 py-2 font-medium transition ${
+                activeTab === tab.key
+                  ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+                  : disabled
+                    ? "cursor-not-allowed border-transparent text-zinc-300 dark:text-zinc-700"
+                    : "border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </nav>
 
       <div>
@@ -189,6 +204,7 @@ export default function CandidateDetailPage() {
             onSaved={(saved) => {
               setCandidate(saved);
               setPersisted(true);
+              if (isNewDraft) router.replace(`/store-eval/candidates/${saved.code}`);
             }}
           />
         )}

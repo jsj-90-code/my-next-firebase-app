@@ -310,7 +310,10 @@ export type EvaluationResult = {
   // 두 번째 예측 경로이며, 화면에는 두 값을 나란히 보여주고 어느 쪽도 감추지 않는다.
   competitorOccupiedSeats: number | null; // 경쟁점 실가동좌석
   competitorOccupiedSeatsCoverage: {
-    measured: number; // 핑봇_가동률·실측착석률로 실측된 경쟁점 수
+    measured: number; // 핑봇_가동률(기간평균)로 실측된 경쟁점 수 — 좌석수 합산에 포함
+    // 2026-08-21: 방문 시점 실시간 착석률(measuredSeatRate)뿐이고 핑봇 기간평균이 없는 경쟁점 수.
+    // 방문 시각에 따라 값이 크게 흔들려 평균가동률로 못 써서 좌석수 합산에서는 뺀다(참고만 표시).
+    realtimeSnapshotOnly: number;
     assumedLowThreat: number; // 노후저경쟁력미조사로 간주해 채운 경쟁점 수
     missingData: number; // 조사완료인데 값이 없어 집계에서 제외된 경쟁점 수(완결성 경고 대상)
     excludedNoCompetitor: number; // 경쟁점없음으로 처음부터 제외된 수
@@ -408,6 +411,29 @@ export type ExistingStore = {
   floating500_60plus: number | null;
   licensedPcStores500m: number | null;
   operatingPcStores500m: number | null;
+
+  // 2026-08-21 추가 — "후보지평가 → 오픈 → 실제매출로 검증" 흐름을 실제로 잇기 위한 필드.
+  // 이 매장이 어느 후보지평가에서 나왔는지, 그때 화면에 보였던 예측값이 뭐였는지를 기록한다.
+  // convertCandidateToExistingStore(전환 시)나 linkExistingStoreToCandidate(수동 연결 시)로만
+  // 채워진다 — 자동 이름/주소 매칭으로 추론하지 않는다(오매칭 위험).
+  originCandidateCode: string | null;
+  // 후보지평가 당시의 예측값 스냅샷. storeEvalResults는 Result 탭을 열 때마다 최신 모델로
+  // 다시 계산해서 덮어써지므로(evaluate.ts), 여기 스냅샷은 연결 시점 이후 절대 재계산하지
+  // 않는다 — "그때 이 숫자를 보고 출점을 결정했다"는 기록 그 자체를 보존하는 목적.
+  predictedAtConversion: {
+    candidateCode: string;
+    v61Baseline: number | null;
+    v61ModelLabel: string;
+    v61TrainingSampleCount: number;
+    v62Rate: number | null;
+    v62Final: number | null;
+    conservativeSales: number | null;
+    upperSales: number | null;
+    expectedPcCount: number | null;
+    hourlyRate: number | null;
+    calculatedAt: number; // 후보지평가 당시 evaluateCandidate 계산 시각
+    linkedAt: number; // 이 스냅샷을 기존 가맹점에 연결한 시각(전환 또는 수동연결 시점)
+  } | null;
 
   createdAt: number;
   updatedAt: number;

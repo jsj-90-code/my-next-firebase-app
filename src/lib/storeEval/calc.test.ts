@@ -13,6 +13,7 @@ import {
   computeBoundedSales,
   computeCompetitorInvestigationSummary,
   computeCompetitorOccupiedSeats,
+  computeCompetitivenessScore,
   computeDataCompleteness,
   computeOperationalStatus,
   computeSpecialDemandScore,
@@ -35,6 +36,9 @@ import {
   computeV62Final,
   computeValidationRow,
   computeZoneComposition,
+  applyStandardOwnFacilityDefaults,
+  describeNotVerifiableReason,
+  diagnoseLoocvSensitivity,
   fitEmpiricalRevenueModel,
   fitNonnegativeRidgeRegression,
   GAME_ZONE_BONUS,
@@ -321,6 +325,57 @@ describe("computeZoneComposition/computeSeatScore (좌석점수 = 다양성 50% 
   });
 });
 
+describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: 비우면 표준값 적용, 2026-08-21)", () => {
+  const blank = {
+    ownGameZoneCount: null,
+    ownTeamRoom: null,
+    ownCoupleZone: null,
+    ownVipZone: null,
+    ownFriendsZone: null,
+    ownFoodScore: null,
+    ownInteriorScore: null,
+    ownMonitorScore: null,
+  };
+  it("전부 비어있으면 표준값(게임존3·팀룸2·커플존3·VIP존5·프렌즈존15·평가4점)을 적용한다", () => {
+    expect(applyStandardOwnFacilityDefaults(blank)).toEqual({
+      ownGameZoneCount: 3,
+      ownTeamRoom: 2,
+      ownCoupleZone: 3,
+      ownVipZone: 5,
+      ownFriendsZone: 15,
+      ownFoodScore: 4,
+      ownInteriorScore: 4,
+      ownMonitorScore: 4,
+    });
+  });
+  it("실제 값이 입력돼 있으면 표준값으로 덮어쓰지 않는다", () => {
+    const real = { ...blank, ownGameZoneCount: 1, ownTeamRoom: 0, ownFoodScore: 2 };
+    const result = applyStandardOwnFacilityDefaults(real);
+    expect(result.ownGameZoneCount).toBe(1);
+    expect(result.ownTeamRoom).toBe(0); // 0은 "값 있음"이므로 표준값(2)으로 안 바뀐다
+    expect(result.ownFoodScore).toBe(2);
+    expect(result.ownVipZone).toBe(5); // 나머지 비어있는 항목은 여전히 표준값
+  });
+  it("신중동점(N001) 실사례: 표준값 적용 시 사양4.70·좌석4.00·경쟁력4.18을 그대로 재현한다", () => {
+    const facility = applyStandardOwnFacilityDefaults(blank);
+    const { kinds, rooms } = computeZoneComposition(
+      [0, 0, facility.ownTeamRoom, facility.ownCoupleZone, facility.ownVipZone],
+      [facility.ownFriendsZone],
+    );
+    const specSettings = { specWeights: defaultModelSettings().specWeights };
+    const spec = computeSpecScore("RTX 5060", null, facility.ownGameZoneCount * GAME_ZONE_BONUS, facility.ownMonitorScore, specSettings);
+    const seat = computeSeatScore(kinds, rooms);
+    expect(spec).toBeCloseTo(4.7, 2);
+    expect(seat).toBeCloseTo(4.0, 2);
+    const competitivenessSettings = { competitivenessWeights: defaultModelSettings().competitivenessWeights };
+    const total = computeCompetitivenessScore(
+      { spec, seat, food: facility.ownFoodScore, interior: facility.ownInteriorScore, location: computeLocationScoreFromFacts(1, "지하", false) },
+      competitivenessSettings,
+    );
+    expect(total).toBeCloseTo(4.18, 2); // 시트 04_점포평가요약 "자사_경쟁력점수" 스냅샷과 일치
+  });
+});
+
 describe("computeLocationScoreFromFacts (입지점수 = 층수+엘리베이터+지상/지하)", () => {
   it("지하1층 + 엘리베이터 없음 → 4점 (전대후문점 실적 1위 근거, 지하1~2층은 1~2층과 동급)", () => {
     expect(computeLocationScoreFromFacts(1, "지하", false)).toBe(4);
@@ -492,6 +547,17 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
     ]);
     expect(result.coverage.missingData).toBe(1);
     expect(result.coverage.assumedLowThreat).toBe(0);
+  });
+
+  it("핑봇 없이 실측착석률(현장 방문 시점 실시간값)만 있으면 좌석수에 안 더하고 참고로만 구분한다(2026-08-21, 신중동점 사례)", () => {
+    const result = computeCompetitorOccupiedSeats([
+      comp({ appliedPcCount: 100, pingbotUtilization: 0.3 }),
+      comp({ appliedPcCount: 194, measuredSeatRate: 28.9 }), // 방문 시점 1회 실측, 기간평균 아님
+    ]);
+    expect(result.seats).toBeCloseTo(30, 2); // 실시간값 194*0.289는 합산에서 빠진다
+    expect(result.coverage.measured).toBe(1);
+    expect(result.coverage.realtimeSnapshotOnly).toBe(1);
+    expect(result.coverage.missingData).toBe(0);
   });
 
   it("경쟁점없음은 완전히 제외한다", () => {
@@ -668,6 +734,25 @@ describe("summarizeValidationRows (목표 달성 여부 판정)", () => {
     expect(summary.underPredictedCount).toBe(10);
     expect(summary.overPredictedCount).toBe(0);
   });
+  it('"재보정 필요" 문구는 ±10%·±20%가 둘 다 미달이면 두 수치를 모두 보여준다(이름만 나열하지 않음)', () => {
+    // mape/medianAe/bias는 통과, within10=0.6<0.8·within20=0.6<0.75만 실패하도록 구성 —
+    // 이전엔 이 분기(재보정 필요)에서 within10이 아예 검사되지 않아 ±10% 수치가 문구에서 빠졌었다.
+    const rows = [
+      ...Array.from({ length: 3 }, (_, i) => ({ storeName: `A${i}`, absoluteErrorPct: 0.02, errorAmount: 2, actualRevenueAvg: 100 })),
+      ...Array.from({ length: 3 }, (_, i) => ({ storeName: `B${i}`, absoluteErrorPct: 0.02, errorAmount: -2, actualRevenueAvg: 100 })),
+      ...Array.from({ length: 2 }, (_, i) => ({ storeName: `C${i}`, absoluteErrorPct: 0.3, errorAmount: 30, actualRevenueAvg: 100 })),
+      ...Array.from({ length: 2 }, (_, i) => ({ storeName: `D${i}`, absoluteErrorPct: 0.3, errorAmount: -30, actualRevenueAvg: 100 })),
+    ];
+    const summary = summarizeValidationRows(rows, { mape: 0.15, medianAe: 0.1, within10: 0.8, within20: 0.75, maxBias: 0.05 });
+    expect(summary.passed.mape).toBe(true);
+    expect(summary.passed.medianAe).toBe(true);
+    expect(summary.passed.bias).toBe(true);
+    expect(summary.within10PctRatio).toBeCloseTo(0.6, 5);
+    expect(summary.within20PctRatio).toBeCloseTo(0.6, 5);
+    expect(summary.overallStatus).toBe("재보정 필요");
+    expect(summary.statusReason).toContain("±10% 적중률 60.0%로 목표 80% 미달");
+    expect(summary.statusReason).toContain("±20% 적중률 60.0%로 목표 75% 미달");
+  });
 });
 
 describe("runLeaveOneOutValidation (자기 자신을 뺀 학습으로 예측 — 데이터 누출 방지)", () => {
@@ -749,6 +834,32 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
     expect(early.cohort).toBe("조기 검증 B");
     expect(early.includedInCoreAccuracy).toBe(false);
     expect(early.predictedRevenueAvg).not.toBeNull(); // 전체 학습모형으로 예측은 된다
+    expect(early.includedInEarlyValidation).toBe(true);
+  });
+
+  it("정상 조기검증 매장은 includedInEarlyValidation=true, 핵심표본은 false다(배타적)", () => {
+    const { rows } = runCohortValidation(coreStores, {
+      v61Training: defaultModelSettings().v61Training,
+      inflowAdjustment: defaultModelSettings().inflowAdjustment,
+    });
+    expect(rows.every((r) => r.includedInEarlyValidation === false)).toBe(true);
+  });
+
+  it("사후 운영이슈 조기검증 매장은 조기검증 집계에서도 빠진다", () => {
+    const earlyIssue = makeStore({
+      storeCode: "E2",
+      storeName: "조기이슈점포",
+      completedMonths: 7,
+      isPostOpenIssue: true,
+      postOpenIssueReason: "오픈 후 경쟁점 가격전쟁",
+    });
+    const { rows } = runCohortValidation([...coreStores, earlyIssue], {
+      v61Training: defaultModelSettings().v61Training,
+      inflowAdjustment: defaultModelSettings().inflowAdjustment,
+    });
+    const e = rows.find((r) => r.storeCode === "E2")!;
+    expect(e.cohort).toBe("조기 검증 B");
+    expect(e.includedInEarlyValidation).toBe(false);
   });
 
   it("사후 운영이슈 점포는 핵심 정확도에서 제외되고 사유가 남는다", () => {
@@ -802,6 +913,177 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
     const { rows } = runCohortValidation([...coreStores, noInflow], settings);
     const f = rows.find((r) => r.storeCode === "F2")!;
     expect(f.v62PredictedRevenueAvg).toBe(f.predictedRevenueAvg);
+  });
+});
+
+describe('describeNotVerifiableReason ("검증 불가(실적 없음)" 세분화 — 새 산식 없이 기존 필드만 조합)', () => {
+  const complete = { score: 100, grade: "complete" as const, hasCoreInputs: true, hasLocationEvaluation: true, hasCompetitorInfo: true, hasActualPerformance: true };
+  const base = {
+    actualRevenueAvg: 60000000,
+    cohort: "정식 검증군" as const,
+    brand: "블랙라벨" as const,
+    franchiseStatus: "정상",
+    v62PredictedRevenueAvg: 58000000,
+    dataCompleteness: complete,
+  };
+  it("완료된 실제매출 월이 없으면(코호트=제외) 그 사유를 먼저 보여준다", () => {
+    expect(describeNotVerifiableReason({ ...base, actualRevenueAvg: null, cohort: "제외" })).toBe("완료된 실제매출 월 없음");
+    expect(describeNotVerifiableReason({ ...base, cohort: "제외" })).toBe("완료된 실제매출 월 없음");
+  });
+  it("브랜드가 null이면(09_입지동선평가 행 없음) 입지동선평가 미작성", () => {
+    expect(describeNotVerifiableReason({ ...base, brand: null })).toBe("입지동선평가 미작성");
+  });
+  it("브랜드가 블랙라벨이 아니면 타 브랜드", () => {
+    expect(describeNotVerifiableReason({ ...base, brand: "리그PC방" })).toBe("타 브랜드");
+  });
+  it("정상영업이 아니면 정상영업 아님", () => {
+    expect(describeNotVerifiableReason({ ...base, franchiseStatus: "가맹해지" })).toBe("정상영업 아님");
+  });
+  it("데이터완성도가 excluded면 데이터 완성도 미달", () => {
+    expect(describeNotVerifiableReason({ ...base, dataCompleteness: { ...complete, grade: "excluded", score: 50 } })).toBe("데이터 완성도 미달");
+  });
+  it("데이터완성도는 partial(핵심입력값은 있음)인데 핵심입력값이 없으면 예측 입력값 부족", () => {
+    expect(
+      describeNotVerifiableReason({ ...base, dataCompleteness: { ...complete, grade: "partial", score: 75, hasCoreInputs: false } }),
+    ).toBe("예측 입력값 부족");
+  });
+  it("모든 입력이 있는데 V62 예측값만 없으면 V62 예측값 없음 — 검단사거리점처럼 '실적 없음'으로 오인되지 않아야 한다", () => {
+    expect(describeNotVerifiableReason({ ...base, v62PredictedRevenueAvg: null })).toBe("V62 예측값 없음");
+  });
+  it("위 사유가 전부 아니면 원인 미분류로 표시한다(실제로는 도달하지 않아야 하는 폴백)", () => {
+    expect(describeNotVerifiableReason(base)).toBe("검증 불가(원인 미분류)");
+  });
+});
+
+describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스크립트 대체)", () => {
+  const settings = { v61Training: defaultModelSettings().v61Training };
+  function makeStore(overrides: Partial<ValidationStoreInput>): ValidationStoreInput {
+    return {
+      storeCode: "S",
+      storeName: "점포",
+      brand: "블랙라벨",
+      openedAt: "2025-01-01",
+      completedMonths: 12,
+      franchiseStatus: "정상",
+      isPostOpenIssue: false,
+      postOpenIssueReason: null,
+      pcCount: 100,
+      hourlyRate: 1300,
+      ownDemand: 200000,
+      competitivenessScore: 4,
+      actualRevenueAvg: 60000000,
+      ...overrides,
+    };
+  }
+  const normalStores: ValidationStoreInput[] = Array.from({ length: 12 }, (_, i) =>
+    makeStore({
+      storeCode: `N${i}`,
+      storeName: `정상${i}`,
+      hourlyRate: 1200 + i * 20,
+      ownDemand: (2000 + i * 100) * 100,
+      competitivenessScore: 3.5 + (i % 5) * 0.2,
+      actualRevenueAvg: 55000000 + i * 1000000,
+    }),
+  );
+  const outlier = makeStore({
+    storeCode: "OUT1",
+    storeName: "이상치점",
+    hourlyRate: 3200,
+    ownDemand: 60000,
+    competitivenessScore: 1,
+    actualRevenueAvg: 95000000,
+  });
+
+  it("존재하지 않는 매장코드는 null을 반환한다", () => {
+    expect(diagnoseLoocvSensitivity("NOPE", normalStores, settings)).toBeNull();
+  });
+
+  it("with/without 학습표본 수가 정확히 1개 차이나고, 혼합예측은 ridge단독·baseline단독 사이 값이다(볼록결합)", () => {
+    const diag = diagnoseLoocvSensitivity("N0", [...normalStores, outlier], settings)!;
+    expect(diag).not.toBeNull();
+    expect(diag.sampleCountWithout).toBe(diag.sampleCountWith - 1);
+    expect(diag.coefficientsWith).toHaveLength(3);
+    expect(diag.coefficientsWithout).toHaveLength(3);
+    const lo = Math.min(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
+    const hi = Math.max(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
+    expect(diag.blendedPrediction!).toBeGreaterThanOrEqual(lo);
+    expect(diag.blendedPrediction!).toBeLessThanOrEqual(hi);
+  });
+
+  it("나머지 학습표본 범위 안쪽(양끝이 아닌) 매장은 학습범위 이탈이 아니다", () => {
+    const diag = diagnoseLoocvSensitivity("N6", normalStores, settings)!;
+    expect(diag.isOutOfTrainingRange).toBe(false);
+  });
+
+  it("나머지와 특징값이 크게 다른 이상치 매장은 학습범위 이탈로 잡힌다", () => {
+    const diag = diagnoseLoocvSensitivity("OUT1", [...normalStores, outlier], settings)!;
+    expect(diag.isOutOfTrainingRange).toBe(true);
+  });
+
+  it("계수·입력값은 그대로 노출만 한다 — with/without 표본수 외에는 아무 값도 임의로 바꾸지 않는다", () => {
+    const diag = diagnoseLoocvSensitivity("N0", [...normalStores, outlier], settings)!;
+    expect(diag.sampleCountWith).toBe(normalStores.length + 1);
+  });
+});
+
+describe('매장별 비교표의 "LOOCV 고변동 점포" 표시 (buildParityComparisonRows)', () => {
+  const inflowSettings = { inflowAdjustment: defaultModelSettings().inflowAdjustment };
+  function makeInput(overrides: Partial<ValidationStoreInput>): ValidationStoreInput {
+    return {
+      storeCode: "S1",
+      storeName: "테스트점",
+      brand: "블랙라벨",
+      openedAt: "2024-01-01",
+      completedMonths: 12,
+      franchiseStatus: "정상",
+      isPostOpenIssue: false,
+      postOpenIssueReason: null,
+      pcCount: 100,
+      hourlyRate: 1300,
+      ownDemand: 200000,
+      competitivenessScore: 4,
+      actualRevenueAvg: 60000000,
+      sheetV61Predicted: 58000000,
+      inflowRestriction: "없음",
+      ...overrides,
+    };
+  }
+  function makeLoocvRow(storeCode: string, predictedRevenueAvg: number, v62Rate: number): ValidationStoreRow {
+    const v62PredictedRevenueAvg = computeV62Final(predictedRevenueAvg, v62Rate);
+    const actual = 60000000;
+    return {
+      ...makeInput({ storeCode }),
+      cohort: "정식 검증군",
+      predictedRevenueAvg,
+      v62Rate,
+      v62PredictedRevenueAvg,
+      errorAmount: v62PredictedRevenueAvg! - actual,
+      absoluteErrorPct: Math.abs(v62PredictedRevenueAvg! - actual) / actual,
+      direction: "과대예측",
+      includedInCoreAccuracy: true,
+      includedInEarlyValidation: false,
+      exclusionReason: null,
+      operationalStatus: "normal",
+      dataCompleteness: { score: 100, grade: "complete", hasCoreInputs: true, hasLocationEvaluation: true, hasCompetitorInfo: true, hasActualPerformance: true },
+      errorCause: "within_range",
+    };
+  }
+
+  it("시흥배곧점 사례처럼 웹 V61이 시트 V61보다 30% 넘게 높으면 LOOCV 고변동 점포로 표시된다", () => {
+    // 시트(sheetParity) 69,419,989원 vs 웹 LOOCV 107,888,052원(약 55% 차이) 실제 사례를 단순화해 재현.
+    const stores = [makeInput({ storeCode: "BG", storeName: "시흥배곧점", sheetV61Predicted: 69419989 })];
+    const loocvRows = [makeLoocvRow("BG", 107888052, 0)];
+    const rows = buildParityComparisonRows(stores, loocvRows, inflowSettings);
+    expect(rows[0].diffStage).toBe("V61예측차이");
+    expect(rows[0].predictionDiffPct).toBeGreaterThan(0.3);
+    expect(rows[0].isLoocvHighVariance).toBe(true);
+  });
+
+  it("웹/시트 V61 차이가 30% 이내면 LOOCV 고변동 점포로 표시되지 않는다", () => {
+    const stores = [makeInput({ storeCode: "S1", sheetV61Predicted: 58000000 })];
+    const loocvRows = [makeLoocvRow("S1", 62000000, 0)]; // 약 7% 차이
+    const rows = buildParityComparisonRows(stores, loocvRows, inflowSettings);
+    expect(rows[0].isLoocvHighVariance).toBe(false);
   });
 });
 
@@ -1001,6 +1283,7 @@ describe("buildParityComparisonRows (요청사항 — sheetParity vs loocvValida
       absoluteErrorPct: Math.abs(v62PredictedRevenueAvg! - actual) / actual,
       direction: "과대예측",
       includedInCoreAccuracy: true,
+      includedInEarlyValidation: false,
       exclusionReason: null,
       operationalStatus: "normal",
       dataCompleteness: { score: 100, grade: "complete", hasCoreInputs: true, hasLocationEvaluation: true, hasCompetitorInfo: true, hasActualPerformance: true },

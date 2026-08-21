@@ -187,4 +187,49 @@ describe("evaluateCandidate 배선 검증", () => {
     // (실영업 5 - 1) * 100 = 400
     expect(result.competitorIp).toBe(400);
   });
+
+  it("자사 시설 입력값이 비어있으면 표준 존 구성(2026-08-21)으로 계산해 실제 입력값과 같은 결과를 낸다", () => {
+    const blankFacility = {
+      ownGameZoneCount: null,
+      ownRoom1: 0,
+      ownRoom2: 0,
+      ownTeamRoom: null,
+      ownCoupleZone: null,
+      ownVipZone: null,
+      ownFriendsZone: null,
+      ownFoodScore: null,
+      ownInteriorScore: null,
+      ownMonitorScore: null,
+    };
+    const standardFacility = {
+      ownGameZoneCount: 3,
+      ownRoom1: 0,
+      ownRoom2: 0,
+      ownTeamRoom: 2,
+      ownCoupleZone: 3,
+      ownVipZone: 5,
+      ownFriendsZone: 15,
+      ownFoodScore: 4,
+      ownInteriorScore: 4,
+      ownMonitorScore: 4,
+    };
+    const blankResult = evaluateCandidate({
+      candidate: emptyCandidate(blankFacility),
+      competitors: [competitor],
+      locationEvaluation: locationEval,
+      settings,
+      existingMarketDemands: [1000, 2000, 3000],
+      existingStores: [],
+    });
+    const explicitResult = evaluateCandidate({
+      candidate: emptyCandidate(standardFacility),
+      competitors: [competitor],
+      locationEvaluation: locationEval,
+      settings,
+      existingMarketDemands: [1000, 2000, 3000],
+      existingStores: [],
+    });
+    expect(blankResult.competitivenessGap).toBeCloseTo(explicitResult.competitivenessGap ?? 0, 6);
+    expect(blankResult.v62Final).toBe(explicitResult.v62Final);
+  });
 });

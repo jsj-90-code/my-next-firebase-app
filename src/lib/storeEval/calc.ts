@@ -392,6 +392,57 @@ export function computeSeatScore(kinds: number, rooms: number): number {
 }
 
 /**
+ * 07_신규후보지 헤더 셀 메모("비우면 표준 N개/표준값 적용") 근거 — 신규후보지는 아직 시설이
+ * 갖춰지지 않은 경우가 많아, 자사 시설 입력값이 비어 있으면 평균적으로 들어가는 회사 표준
+ * 구성으로 간주한다(2026-08-21, 사용자 확인). 1인룸/2인룸/VGA최고사양은 표준값이 없어(비우면
+ * 그대로 0/공란) 대상이 아니다. 이미 실제 값이 입력돼 있으면 그 값을 그대로 쓴다.
+ */
+export const STANDARD_OWN_FACILITY_DEFAULTS = {
+  gameZoneCount: 3,
+  teamRoom: 2,
+  coupleZone: 3,
+  vipZone: 5,
+  friendsZone: 15,
+  foodScore: 4,
+  interiorScore: 4,
+  monitorScore: 4,
+};
+
+export type StandardOwnFacilityInput = {
+  ownGameZoneCount: number | null;
+  ownTeamRoom: number | null;
+  ownCoupleZone: number | null;
+  ownVipZone: number | null;
+  ownFriendsZone: number | null;
+  ownFoodScore: number | null;
+  ownInteriorScore: number | null;
+  ownMonitorScore: number | null;
+};
+
+export function applyStandardOwnFacilityDefaults(input: StandardOwnFacilityInput): {
+  ownGameZoneCount: number;
+  ownTeamRoom: number;
+  ownCoupleZone: number;
+  ownVipZone: number;
+  ownFriendsZone: number;
+  ownFoodScore: number;
+  ownInteriorScore: number;
+  ownMonitorScore: number;
+} {
+  const d = STANDARD_OWN_FACILITY_DEFAULTS;
+  return {
+    ownGameZoneCount: input.ownGameZoneCount ?? d.gameZoneCount,
+    ownTeamRoom: input.ownTeamRoom ?? d.teamRoom,
+    ownCoupleZone: input.ownCoupleZone ?? d.coupleZone,
+    ownVipZone: input.ownVipZone ?? d.vipZone,
+    ownFriendsZone: input.ownFriendsZone ?? d.friendsZone,
+    ownFoodScore: input.ownFoodScore ?? d.foodScore,
+    ownInteriorScore: input.ownInteriorScore ?? d.interiorScore,
+    ownMonitorScore: input.ownMonitorScore ?? d.monitorScore,
+  };
+}
+
+/**
  * scoreFromAccess_: 층수 + 엘리베이터 + 지상/지하 → 입지(진입편의) 점수.
  * 지하1~2층·1~2층 4 / 3층 3 / 4층 2 / 5층 1 / 6층이상 0, 엘리베이터 유 +1(상한 5).
  * 지하는 계단 하나라 2층과 동급으로 본다(전대후문점 지하1층이 40개 중 실적 1위 — 원본 근거).
@@ -1091,17 +1142,27 @@ function normalizePercentLike(v: number): number {
 
 export type CompetitorOccupiedSeatsResult = {
   seats: number | null;
-  coverage: { measured: number; assumedLowThreat: number; missingData: number; excludedNoCompetitor: number };
+  coverage: {
+    measured: number;
+    realtimeSnapshotOnly: number;
+    assumedLowThreat: number;
+    missingData: number;
+    excludedNoCompetitor: number;
+  };
 };
 
 /**
- * 경쟁점 실가동좌석 = Σ(적용대수 × 실측가동률). 실측가동률은 핑봇_가동률 우선, 없으면
- * 실측착석률. 어느 쪽도 없으면 0을 더하되(원본 SUMPRODUCT와 동일), 왜 0인지는 coverage로
- * 구분해 남긴다 — "노후저경쟁력미조사"(업무 판단으로 조사 생략)와 "값 누락"(조사완료인데
- * 비어 있음)을 같은 0으로 뭉개지 않는다(요청사항 5).
+ * 경쟁점 실가동좌석 = Σ(적용대수 × 실측가동률). 실측가동률은 핑봇_가동률(기간 평균)만
+ * 인정한다 — 실측착석률(현장 방문 시점의 실시간 가동률 한 컷)은 방문 시각에 따라 크게
+ * 흔들려서 "평균 수요"로 환산할 근거가 못 된다(2026-08-21, 사용자 확인 — 신중동점 사례:
+ * 경쟁점 3곳 모두 같은 날 같은 시각(16:30) 1회 방문 실측만 있고 핑봇 기간평균이 없어, 이
+ * 실시간값을 그대로 평균가동률처럼 곱했더니 예상 가동좌석이 계획 PC대수를 초과했다). 어느
+ * 쪽도 없으면 0을 더하되(원본 SUMPRODUCT와 동일), 왜 0인지는 coverage로 구분해 남긴다 —
+ * "노후저경쟁력미조사"(업무 판단으로 조사 생략)·"실시간 실측뿐"(핑봇 없음, 참고용)·"값 누락"
+ * (조사완료인데 비어 있음)을 같은 0으로 뭉개지 않는다(요청사항 5 + 2026-08-21 갱신).
  */
 export function computeCompetitorOccupiedSeats(competitors: Competitor[]): CompetitorOccupiedSeatsResult {
-  const coverage = { measured: 0, assumedLowThreat: 0, missingData: 0, excludedNoCompetitor: 0 };
+  const coverage = { measured: 0, realtimeSnapshotOnly: 0, assumedLowThreat: 0, missingData: 0, excludedNoCompetitor: 0 };
   let seats = 0;
   let anyMeasured = false;
 
@@ -1111,11 +1172,14 @@ export function computeCompetitorOccupiedSeats(competitors: Competitor[]): Compe
       continue;
     }
     const appliedCount = computeCompetitorAppliedPcCount(c) ?? 0;
-    const rawRate = c.pingbotUtilization ?? c.measuredSeatRate;
-    if (rawRate != null) {
+    if (c.pingbotUtilization != null) {
       anyMeasured = true;
       coverage.measured++;
-      seats += appliedCount * normalizePercentLike(rawRate);
+      seats += appliedCount * normalizePercentLike(c.pingbotUtilization);
+    } else if (c.measuredSeatRate != null) {
+      // 핑봇 기간평균이 없고 방문 시점 실시간 착석률뿐이면 좌석수 합산에는 넣지 않는다 -
+      // 참고 정보로만 coverage에 남긴다.
+      coverage.realtimeSnapshotOnly++;
     } else if (c.investigationStatus === "노후저경쟁력미조사") {
       coverage.assumedLowThreat++;
       // 실측 없이 지어낸 가동률을 곱하지 않는다 - 원본 SUMPRODUCT도 미실측 행은 0으로 더한다.
@@ -1276,6 +1340,9 @@ export type ValidationStoreRow = ValidationStoreInput & {
   absoluteErrorPct: number | null;
   direction: "과대예측" | "과소예측" | "정확" | null;
   includedInCoreAccuracy: boolean;
+  // 요청사항 — 조기검증(완료 3~11개월, 코호트 A/B/C) 포함 여부를 매장 행 단위로 노출한다.
+  // 정식검증(includedInCoreAccuracy)과 조기검증은 서로 배타적이다(같은 매장이 둘 다 true일 수 없음).
+  includedInEarlyValidation: boolean;
   exclusionReason: string | null;
   operationalStatus: OperationalStatus;
   dataCompleteness: DataCompletenessResult;
@@ -1421,6 +1488,30 @@ export function classifyErrorCause(input: {
   return "demand_conversion_underestimated";
 }
 
+/**
+ * errorCause가 "not_verifiable"일 때만 쓰는 세분화 사유 — classifyErrorCause의 오차원인 추정
+ * 우선순위(오차가 있는 경우)와는 별개로, "왜 오차 자체를 계산할 수 없었는지"를 이미 계산된
+ * 필드(exclusionReason/dataCompleteness/brand/franchiseStatus)만 조합해 구분한다. 새 산식은
+ * 없다 — 우선순위는 위에서부터 먼저 해당하는 사유 하나만 반환한다.
+ */
+export function describeNotVerifiableReason(row: {
+  actualRevenueAvg: number | null;
+  cohort: TenureCohort;
+  brand: string | null;
+  franchiseStatus: string | null;
+  v62PredictedRevenueAvg: number | null;
+  dataCompleteness: DataCompletenessResult;
+}): string {
+  if (row.actualRevenueAvg == null || row.cohort === "제외") return "완료된 실제매출 월 없음";
+  if (row.brand == null) return "입지동선평가 미작성";
+  if (row.brand !== "블랙라벨") return "타 브랜드";
+  if (row.franchiseStatus !== "정상") return "정상영업 아님";
+  if (row.dataCompleteness.grade === "excluded") return "데이터 완성도 미달";
+  if (!row.dataCompleteness.hasCoreInputs) return "예측 입력값 부족";
+  if (row.v62PredictedRevenueAvg == null) return "V62 예측값 없음";
+  return "검증 불가(원인 미분류)";
+}
+
 export type ErrorBucket = { label: string; max: number | null }; // max=null이면 상한 없음(초과)
 export const ERROR_BUCKETS: ErrorBucket[] = [
   { label: "±5% 이내", max: 0.05 },
@@ -1500,6 +1591,9 @@ export function summarizeValidationRows(
   };
   const coreTargetsMet = passed.mape && passed.medianAe && passed.within20 && passed.bias;
 
+  const pct = (v: number | null) => ((v ?? 0) * 100).toFixed(1);
+  const pct0 = (v: number) => (v * 100).toFixed(0);
+
   let overallStatus: ValidationSummary2["overallStatus"];
   let statusReason: string;
   if (coreTargetsMet && passed.within10) {
@@ -1507,15 +1601,19 @@ export function summarizeValidationRows(
     statusReason = "5개 목표(평균오차·중앙오차·±10%·±20%·편향)를 모두 충족했다.";
   } else if (coreTargetsMet) {
     overallStatus = "조건부 사용";
-    statusReason = `±10% 적중률 목표 미달(${((within10Ratio ?? 0) * 100).toFixed(1)}% < ${(targets.within10 * 100).toFixed(0)}%)로 재보정 필요`;
+    statusReason = `±10% 적중률 목표 미달(${pct(within10Ratio)}% < ${pct0(targets.within10)}%)로 재보정 필요`;
   } else {
+    // 요청사항: "재보정 필요" 상태에서도 실패한 지표 이름만 나열하지 않고, ±10%를 포함해 모든
+    // 실패 지표의 실제 수치 vs 목표 수치를 그대로 보여준다(정확도가 목표에 도달한 것처럼 보이지
+    // 않게, 또한 숨겨지는 지표가 없게).
     const failed: string[] = [];
-    if (!passed.mape) failed.push("평균절대오차");
-    if (!passed.medianAe) failed.push("중앙값절대오차");
-    if (!passed.within20) failed.push("±20% 적중률");
-    if (!passed.bias) failed.push("평균편향");
+    if (!passed.mape) failed.push(`평균절대오차 ${pct(meanAbsoluteErrorPct)}%로 목표 ${pct0(targets.mape)}% 초과`);
+    if (!passed.medianAe) failed.push(`중앙값절대오차 ${pct(medianAbsoluteErrorPct)}%로 목표 ${pct0(targets.medianAe)}% 초과`);
+    if (!passed.within10) failed.push(`±10% 적중률 ${pct(within10Ratio)}%로 목표 ${pct0(targets.within10)}% 미달`);
+    if (!passed.within20) failed.push(`±20% 적중률 ${pct(within20)}%로 목표 ${pct0(targets.within20)}% 미달`);
+    if (!passed.bias) failed.push(`평균편향 ${pct(meanBiasPct)}%로 허용범위(±${pct0(targets.maxBias)}%) 초과`);
     overallStatus = "재보정 필요";
-    statusReason = `${failed.join("·")} 목표 미달로 모형 자체 재보정 필요`;
+    statusReason = `${failed.join(", ")} — 모형 자체 재보정 필요`;
   }
 
   return {
@@ -1540,19 +1638,9 @@ export function summarizeValidationRows(
   };
 }
 
-/**
- * 요청사항 1~5 — 12개월 미완료 매장까지 포함한 전체 검증.
- * 데이터 누출 방지(요청사항 4): 학습표본(12개월 완료·블랙라벨·정상영업·산식학습제외 아님)은
- * 리브-원-아웃으로, 그 외 전부(재직기간 미달·브랜드 미확인·사후 운영이슈·가맹해지 등)는
- * "학습에 전혀 쓰이지 않은" 완전 외부 검증군으로 취급해 학습표본 전체로 학습한 모형으로 예측한다.
- */
-export function runCohortValidation(
-  stores: ValidationStoreInput[],
-  settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
-): { rows: ValidationStoreRow[] } {
-  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
-
-  const isCoreEligible = (s: ValidationStoreInput) =>
+/** V61 학습표본 자격(12개월 완료·블랙라벨·정상영업·산식학습제외 아님·핵심 입력값 존재). */
+export function isCoreEligibleForV61Training(s: ValidationStoreInput): boolean {
+  return (
     s.brand === "블랙라벨" &&
     !s.isPostOpenIssue &&
     s.franchiseStatus === "정상" &&
@@ -1562,10 +1650,13 @@ export function runCohortValidation(
     s.ownDemand != null &&
     s.competitivenessScore != null &&
     s.actualRevenueAvg != null &&
-    s.actualRevenueAvg > 0;
+    s.actualRevenueAvg > 0
+  );
+}
 
-  const coreStores = stores.filter(isCoreEligible);
-  const toTraining = (s: ValidationStoreInput): V61TrainingStore => ({
+/** 학습표본 자격이 있는 매장을 V61 학습 입력 형태로 변환한다(runCohortValidation/diagnoseLoocvSensitivity 공용). */
+export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
+  return {
     storeCode: s.storeCode,
     storeName: s.storeName,
     pcCount: s.pcCount as number,
@@ -1574,8 +1665,23 @@ export function runCohortValidation(
     competitivenessScore: s.competitivenessScore as number,
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
-  });
-  const coreTraining = coreStores.map(toTraining);
+  };
+}
+
+/**
+ * 요청사항 1~5 — 12개월 미완료 매장까지 포함한 전체 검증.
+ * 데이터 누출 방지(요청사항 4): 학습표본(12개월 완료·블랙라벨·정상영업·산식학습제외 아님)은
+ * 리브-원-아웃으로, 그 외 전부(영업기간 미달·브랜드 미확인·사후 운영이슈·가맹해지 등)는
+ * "학습에 전혀 쓰이지 않은" 완전 외부 검증군으로 취급해 학습표본 전체로 학습한 모형으로 예측한다.
+ */
+export function runCohortValidation(
+  stores: ValidationStoreInput[],
+  settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
+): { rows: ValidationStoreRow[] } {
+  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
+
+  const coreStores = stores.filter(isCoreEligibleForV61Training);
+  const coreTraining = coreStores.map(toV61TrainingStore);
 
   // 리브-원-아웃: 핵심 학습표본끼리는 서로를 빼고 학습·예측한다(데이터 누출 방지).
   const loo = runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount);
@@ -1586,7 +1692,7 @@ export function runCohortValidation(
 
   const rows: ValidationStoreRow[] = stores.map((s) => {
     const cohort = classifyTenureCohort(s.completedMonths);
-    const isCore = isCoreEligible(s);
+    const isCore = isCoreEligibleForV61Training(s);
 
     let predictedRevenueAvg: number | null = null;
     if (isCore) {
@@ -1635,7 +1741,7 @@ export function runCohortValidation(
     else if (s.franchiseStatus !== "정상") exclusionReason = `정상영업 아님(${s.franchiseStatus ?? "확인필요"})`;
     else if (s.brand == null) exclusionReason = "브랜드 미확인(09_입지동선평가에 행 없음)";
     else if (s.brand !== "블랙라벨") exclusionReason = `브랜드=${s.brand} (블랙라벨 아님)`;
-    else if (!isCore) exclusionReason = `재직기간 미달(완료 ${s.completedMonths}개월, ${cohort}) — 완전 외부 검증군으로 예측`;
+    else if (!isCore) exclusionReason = `영업기간 미달(완료 ${s.completedMonths}개월, ${cohort}) — 완전 외부 검증군으로 예측`;
 
     const operationalStatus = computeOperationalStatus({ franchiseStatus: s.franchiseStatus, isPostOpenIssue: s.isPostOpenIssue, cohort });
     const dataCompleteness = computeDataCompleteness({
@@ -1659,6 +1765,16 @@ export function runCohortValidation(
       hasElevator: s.hasElevator,
     });
 
+    // 조기검증 포함조건: 완료개월 3~11개월(코호트 A/B/C) + 실제/예측 존재 + 블랙라벨 +
+    // 학습제외 아님(사후 운영이슈 아님) + 정상영업. 정식검증(isCore)과는 배타적이다.
+    const includedInEarlyValidation =
+      !isCore &&
+      (cohort === "조기 검증 A" || cohort === "조기 검증 B" || cohort === "조기 검증 C") &&
+      !s.isPostOpenIssue &&
+      s.franchiseStatus === "정상" &&
+      s.actualRevenueAvg != null &&
+      v62PredictedRevenueAvg != null;
+
     return {
       ...s,
       cohort,
@@ -1669,6 +1785,7 @@ export function runCohortValidation(
       absoluteErrorPct,
       direction,
       includedInCoreAccuracy: isCore,
+      includedInEarlyValidation,
       exclusionReason,
       operationalStatus,
       dataCompleteness,
@@ -1704,10 +1821,18 @@ export type ParityComparisonRow = {
   sheetV62Predicted: number | null;
   webV62Predicted: number | null;
   predictionDiff: number | null; // webV62 - sheetV62
+  predictionDiffPct: number | null; // |predictionDiff| / sheetV62Predicted
   sheetAbsoluteErrorPct: number | null;
   webAbsoluteErrorPct: number | null;
   diffStage: ParityDiffStage;
+  // V61 예측 단계에서 시트(인샘플)와 웹(리브-원-아웃)의 차이가 유난히 큰 점포 표시용(시흥배곧점
+  // 사례 ~55%가 계기). 계산 오류가 아니라 "이 매장을 뺐을 때 모형이 크게 흔들린다"는 신호일 뿐이며,
+  // 이 매장의 계수·입력값을 임의로 조정하지 않는다 — diagnoseLoocvSensitivity로 원인만 들여다본다.
+  isLoocvHighVariance: boolean;
 };
+
+/** V61예측차이 단계에서 |웹-시트|/시트 비율이 이 값을 넘으면 "LOOCV 고변동 점포"로 표시한다. */
+export const LOOCV_HIGH_VARIANCE_THRESHOLD = 0.3;
 
 /**
  * sheetParity(캐시된 시트 V61 + 보정률) vs loocvValidation(리브-원-아웃 재학습) 매장별 비교표.
@@ -1748,6 +1873,11 @@ export function buildParityComparisonRows(
         }
       }
 
+      const predictionDiffPct =
+        predictionDiff != null && sheetV62Predicted ? Math.abs(predictionDiff) / sheetV62Predicted : null;
+      const isLoocvHighVariance =
+        diffStage === "V61예측차이" && predictionDiffPct != null && predictionDiffPct > LOOCV_HIGH_VARIANCE_THRESHOLD;
+
       return {
         storeCode: s.storeCode,
         storeName: s.storeName,
@@ -1759,9 +1889,84 @@ export function buildParityComparisonRows(
         sheetV62Predicted,
         webV62Predicted,
         predictionDiff,
+        predictionDiffPct,
         sheetAbsoluteErrorPct,
         webAbsoluteErrorPct,
         diffStage,
+        isLoocvHighVariance,
       };
     });
+}
+
+export type LoocvSensitivityDiagnostic = {
+  storeCode: string;
+  storeName: string;
+  featuresRaw: number[]; // [log(요금), log(자사수요/PC), 경쟁력점수] — empiricalFeaturesFor와 동일 순서
+  sampleCountWith: number; // 대상 매장을 포함한 학습표본 수
+  sampleCountWithout: number; // 대상 매장을 제외한 학습표본 수(= sampleCountWith - 1)
+  featureMeansWith: number[] | null;
+  featureSdsWith: number[] | null;
+  coefficientsWith: number[] | null;
+  featureMeansWithout: number[] | null;
+  featureSdsWithout: number[] | null;
+  coefficientsWithout: number[] | null;
+  ridgeOnlyPrediction: number | null; // 대상 매장 제외 학습모형, ridgeWeight=1/baselineWeight=0
+  baselineOnlyPrediction: number | null; // 대상 매장 제외 학습모형, ridgeWeight=0/baselineWeight=1
+  blendedPrediction: number | null; // 대상 매장 제외 학습모형, 실제 설정된 ridgeWeight/baselineWeight
+  isOutOfTrainingRange: boolean; // 대상 매장의 특징값이 나머지 학습표본의 범위(min~max) 밖인지
+};
+
+/**
+ * 특정 매장을 학습에서 뺐을 때(LOOCV) 예측이 왜 크게 흔들리는지 들여다보는 읽기전용 진단.
+ * fitEmpiricalRevenueModel/predictEmpiricalRevenue를 그대로 재사용하며, 계수나 입력값을
+ * 수정하지 않는다 — 시흥배곧점처럼 LOOCV_HIGH_VARIANCE_THRESHOLD를 넘는 점포의 원인을
+ * 화면에 투명하게 보여주기 위한 것이다(scripts/diagnoseBaegotLOOCV.mjs의 1회성 진단을
+ * 재사용 가능한 형태로 앱에 편입).
+ */
+export function diagnoseLoocvSensitivity(
+  storeCode: string,
+  stores: ValidationStoreInput[],
+  settings: Pick<ModelSettings, "v61Training">,
+): LoocvSensitivityDiagnostic | null {
+  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
+  const coreTraining = stores.filter(isCoreEligibleForV61Training).map(toV61TrainingStore);
+  const target = coreTraining.find((s) => s.storeCode === storeCode);
+  if (!target) return null;
+
+  const withoutTraining = coreTraining.filter((s) => s.storeCode !== storeCode);
+  const featuresRaw = empiricalFeaturesFor(target);
+
+  const withModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount);
+  const withoutModel = fitEmpiricalRevenueModel(withoutTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount);
+
+  const ridgeOnly = withoutModel ? predictEmpiricalRevenue(withoutModel, featuresRaw, target.pcCount, 1, 0) : null;
+  const baselineOnly = withoutModel ? predictEmpiricalRevenue(withoutModel, featuresRaw, target.pcCount, 0, 1) : null;
+  const blended = withoutModel
+    ? predictEmpiricalRevenue(withoutModel, featuresRaw, target.pcCount, ridgeWeight, baselineWeight)
+    : null;
+
+  const withoutFeatureCols = withoutTraining.map(toEmpiricalSample).map((s) => s.featuresRaw);
+  const isOutOfTrainingRange = featuresRaw.some((v, j) => {
+    const col = withoutFeatureCols.map((f) => f[j]);
+    if (!col.length) return false;
+    return v < Math.min(...col) || v > Math.max(...col);
+  });
+
+  return {
+    storeCode: target.storeCode,
+    storeName: target.storeName,
+    featuresRaw,
+    sampleCountWith: coreTraining.length,
+    sampleCountWithout: withoutTraining.length,
+    featureMeansWith: withModel?.featureMeans ?? null,
+    featureSdsWith: withModel?.featureSds ?? null,
+    coefficientsWith: withModel?.coefficients ?? null,
+    featureMeansWithout: withoutModel?.featureMeans ?? null,
+    featureSdsWithout: withoutModel?.featureSds ?? null,
+    coefficientsWithout: withoutModel?.coefficients ?? null,
+    ridgeOnlyPrediction: ridgeOnly?.monthlyRevenue ?? null,
+    baselineOnlyPrediction: baselineOnly?.monthlyRevenue ?? null,
+    blendedPrediction: blended?.monthlyRevenue ?? null,
+    isOutOfTrainingRange,
+  };
 }

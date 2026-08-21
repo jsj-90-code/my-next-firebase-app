@@ -16,6 +16,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   buildParityComparisonRows,
   computeValidationRow,
+  describeNotVerifiableReason,
+  diagnoseLoocvSensitivity,
   runCohortValidation,
   summarizeValidation,
   summarizeValidationRows,
@@ -23,6 +25,7 @@ import {
   type CompetitorInvestigationSummaryStatus,
   type DataCompletenessGrade,
   type ErrorCauseCode,
+  type LoocvSensitivityDiagnostic,
   type OperationalStatus,
   type ParityComparisonRow,
   type TenureCohort,
@@ -214,7 +217,8 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
             <th className="px-3 py-2">절대오차율</th>
             <th className="px-3 py-2">방향</th>
             <th className="px-3 py-2">우선 추정 원인</th>
-            <th className="px-3 py-2">핵심정확도 포함</th>
+            <th className="px-3 py-2">정식검증 포함</th>
+            <th className="px-3 py-2">조기검증 포함</th>
             <th className="px-3 py-2">제외/참고 사유</th>
           </tr>
         </thead>
@@ -232,14 +236,17 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
               <td className="px-3 py-2">{formatWon(r.errorAmount)}</td>
               <td className="px-3 py-2">{formatPercent(r.absoluteErrorPct)}</td>
               <td className={`px-3 py-2 font-medium ${directionColor(r.direction)}`}>{r.direction ?? "-"}</td>
-              <td className="px-3 py-2 text-xs">{ERROR_CAUSE_LABELS[r.errorCause]}</td>
+              <td className="px-3 py-2 text-xs">
+                {r.errorCause === "not_verifiable" ? describeNotVerifiableReason(r) : ERROR_CAUSE_LABELS[r.errorCause]}
+              </td>
               <td className="px-3 py-2">{r.includedInCoreAccuracy ? "예" : "아니오"}</td>
+              <td className="px-3 py-2">{r.includedInEarlyValidation ? "예" : "아니오"}</td>
               <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{r.exclusionReason ?? "-"}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={14} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
+              <td colSpan={15} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
                 해당 코호트에 점포가 없습니다.
               </td>
             </tr>
@@ -292,6 +299,7 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
             <th className="px-3 py-2">시트 절대오차율</th>
             <th className="px-3 py-2">웹 절대오차율</th>
             <th className="px-3 py-2">차이 발생 단계</th>
+            <th className="px-3 py-2">비고</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -309,17 +317,51 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
               <td className="px-3 py-2">{formatPercent(r.sheetAbsoluteErrorPct)}</td>
               <td className="px-3 py-2">{formatPercent(r.webAbsoluteErrorPct)}</td>
               <td className="px-3 py-2 text-xs">{DIFF_STAGE_LABELS[r.diffStage]}</td>
+              <td className="px-3 py-2 text-xs">
+                {r.isLoocvHighVariance && (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                    LOOCV 고변동 점포
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={12} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
+              <td colSpan={13} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
                 비교할 매장이 없습니다(시트 V61 캐시값이 있는 블랙라벨 매장만 대상).
               </td>
             </tr>
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * "LOOCV 고변동 점포"(예: 시흥배곧점, ±30% 초과)의 원인을 그대로 보여주는 진단 블록. 계수·
+ * 입력값을 수정하지 않고 diagnoseLoocvSensitivity 결과를 노출만 한다(1회성 스크립트 대체).
+ */
+function LoocvDiagnosticBlock({ diagnostic }: { diagnostic: LoocvSensitivityDiagnostic }) {
+  const fmtNum = (v: number | null) => (v == null ? "-" : v.toFixed(4));
+  return (
+    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+      <h4 className="font-semibold">{diagnostic.storeName} — LOOCV 고변동 원인 진단(참고용, 계수 임의 수정 없음)</h4>
+      <ul className="mt-2 space-y-1 text-xs">
+        <li>입력 특징값(log요금·log수요/PC·경쟁력점수): {diagnostic.featuresRaw.map((v) => v.toFixed(4)).join(", ")}</li>
+        <li>
+          학습표본 수: 포함 {diagnostic.sampleCountWith}곳 / 제외(리브-원-아웃) {diagnostic.sampleCountWithout}곳
+        </li>
+        <li>회귀계수(포함): {diagnostic.coefficientsWith?.map(fmtNum).join(", ") ?? "-"}</li>
+        <li>회귀계수(제외): {diagnostic.coefficientsWithout?.map(fmtNum).join(", ") ?? "-"}</li>
+        <li>ridge 단독 예측: {formatWon(diagnostic.ridgeOnlyPrediction)}</li>
+        <li>baseline(중앙값) 단독 예측: {formatWon(diagnostic.baselineOnlyPrediction)}</li>
+        <li>0.6/0.4 혼합 예측(제외 학습모형 기준): {formatWon(diagnostic.blendedPrediction)}</li>
+        <li>
+          학습범위 이탈 여부: {diagnostic.isOutOfTrainingRange ? "예 — 이 매장을 빼면 나머지 표본 범위 밖의 값이 된다" : "아니오"}
+        </li>
+      </ul>
     </div>
   );
 }
@@ -481,8 +523,19 @@ export default function ValidationPage() {
       byCohort.set(r.cohort, list);
     }
 
+    // "12개월 완료 블랙라벨 N곳 / 공식 정식검증 포함 M곳" — 코호트만 기준인 전체 집합과, 그중
+    // 사후운영이슈 등으로 공식 정식검증(coreRows)에서 빠진 매장을 구분해 보여준다. 매장명을
+    // 하드코딩하지 않고 exclusionReason을 그대로 노출한다.
+    const fullTenureRows = byCohort.get("정식 검증군") ?? [];
+    const fullTenureExcluded = fullTenureRows.filter((r) => !r.includedInCoreAccuracy);
+
     const completenessCounts = countBy(combinedRows, (r) => r.dataCompleteness.grade);
     const competitorStatusCounts = countBy(combinedRows, (r) => r.competitorSummary?.status ?? "uninvestigated");
+
+    // 12_운영판정!D21(입지평가 누락 COUNTIFS)에 대응 — 학습/조기검증에 실제로 쓰이는 매장 중
+    // 09_입지동선평가를 아직 안 채운 곳이 있는지 화면에서 바로 세어 보여준다(0곳이 정상).
+    // 예측값을 바꾸는 계산이 아니라 데이터 입력 누락을 알려주는 체크리스트다.
+    const missingLocationEvalRows = combinedRows.filter((r) => !r.hasLocationEvaluation);
 
     return {
       rows,
@@ -500,6 +553,9 @@ export default function ValidationPage() {
       sheetCombinedSummary,
       parityRows,
       byCohort,
+      fullTenureRows,
+      fullTenureExcluded,
+      missingLocationEvalRows,
       completenessCounts,
       competitorStatusCounts,
       settings,
@@ -545,14 +601,21 @@ export default function ValidationPage() {
     sheetEarlySummary,
     sheetCombinedSummary,
     parityRows,
+    fullTenureRows,
+    fullTenureExcluded,
+    missingLocationEvalRows,
+    combinedRows,
+    settings,
   } = computed;
+
+  const loocvHighVarianceRows = parityRows.filter((r) => r.isLoocvHighVariance);
 
   return (
     <div className="space-y-10">
       <div>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">6. 기존 가맹점 검증</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          V61 실측 학습모형(비음수 릿지회귀)에 외부유입 보정(V62)까지 적용한 예측치를 재직기간별 코호트로 나눠 검증합니다. 12개월 완료·
+          V61 실측 학습모형(비음수 릿지회귀)에 외부유입 보정(V62)까지 적용한 예측치를 영업기간별 코호트로 나눠 검증합니다. 12개월 완료·
           블랙라벨·정상영업 표본은 리브-원-아웃, 그 외는 학습에 전혀 쓰이지 않은 완전 외부 검증군으로 예측합니다. 블랙라벨 매장만
           검증하며{excludedNonBlackLabelCount > 0 ? `, 리그PC방·브랜드 미확인 ${excludedNonBlackLabelCount}곳은 이 화면에서 제외됩니다.` : "."}
         </p>
@@ -562,12 +625,13 @@ export default function ValidationPage() {
       <section className="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm leading-6 text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
         <h3 className="font-semibold">웹 V62와 시트 V62 차이 원인 확인 결과</h3>
         <p className="mt-1">
-          아래 "sheetParity"는 시트에 저장된 V61 캐시값 그대로 재현한 결과, "loocvValidation"은 매 매장을 학습에서 뺀 뒤 다시 학습해
-          예측한 결과입니다. 두 값의 차이는 계산 버그가 아니라 <b>검증점포를 학습에 포함했는지 여부</b>(시트=전체 26곳으로 학습한 모형이
-          자기 자신을 예측 / 웹=리브-원-아웃으로 자기 자신을 뺀 모형이 예측)에서 대부분 설명됩니다. 나머지 항목(입력 특징값·결측값 처리·
-          릿지계수/lambda·외부유입 보정 순서·반올림 시점)은 점검 결과 동일했습니다 — 아래 "차이 원인 점검표" 참고. LOOCV 구현 자체에는
-          문제가 없다고 확인했으므로, <b>공식 모델 성능은 loocvValidation을 사용</b>하고 sheetParity는 이관(마이그레이션) 검증용으로만
-          남겨둡니다.
+          아래 <b>"V62 운영 결과"</b>는 시트에 저장된 V61 캐시값 그대로 재현한 결과, <b>"리브원아웃 교차검증"</b>은 매 매장을 학습에서
+          뺀 뒤 다시 학습해 예측한 결과입니다. 두 값의 차이는 계산 버그가 아니라 <b>검증점포를 학습에 포함했는지 여부</b>(시트=전체 26곳으로
+          학습한 모형이 자기 자신을 예측 / 웹=리브-원-아웃으로 자기 자신을 뺀 모형이 예측)에서 대부분 설명됩니다. 나머지 항목(입력
+          특징값·결측값 처리·릿지계수/lambda·외부유입 보정 순서·반올림 시점)은 점검 결과 동일했습니다 — 아래 "차이 원인 점검표" 참고.
+          리브원아웃 교차검증 구현 자체에는 문제가 없다고 확인했으므로, <b>모델 검증 적중률(공식 성능)은 리브원아웃 교차검증을 사용</b>하고
+          V62 운영 결과(시트 재현 적중률)는 이관(마이그레이션) 검증용으로만 남겨둡니다. 실제 신규후보지 평가에 쓰는 예상매출은 항상
+          V62 운영 결과이며, 리브원아웃 교차검증 값은 신규후보지 운영 예상매출로 쓰지 않습니다.
         </p>
       </section>
 
@@ -575,6 +639,18 @@ export default function ValidationPage() {
       <section className="rounded-2xl border border-zinc-300 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900">
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">검증 결과 요약</h2>
         <ul className="mt-3 space-y-1 text-sm text-zinc-700 dark:text-zinc-300">
+          <li>
+            12개월 완료 블랙라벨: {fullTenureRows.length}곳 / 공식 정식검증 포함: {coreSummary.sampleCount}곳
+          </li>
+          {fullTenureExcluded.length > 0 && (
+            <li className="text-xs text-zinc-500 dark:text-zinc-400">
+              {fullTenureExcluded.map((r) => `${r.storeName}(${r.exclusionReason})`).join(", ")}
+            </li>
+          )}
+          <li className={missingLocationEvalRows.length > 0 ? "font-semibold text-amber-600 dark:text-amber-400" : ""}>
+            입지평가 누락(정식+조기검증 대상): {missingLocationEvalRows.length}곳
+            {missingLocationEvalRows.length > 0 && ` — ${missingLocationEvalRows.map((r) => r.storeName).join(", ")}`}
+          </li>
           <li>핵심 검증점포: {coreSummary.sampleCount}개</li>
           <li>
             ±5% 이내: {coreSummary.buckets[0].count}개 ({formatPercent(coreSummary.buckets[0].ratio)})
@@ -593,11 +669,12 @@ export default function ValidationPage() {
           <li>평균 절대오차율: {formatPercent(coreSummary.meanAbsoluteErrorPct)}</li>
           <li>중앙값 절대오차율: {formatPercent(coreSummary.medianAbsoluteErrorPct)}</li>
           <li className="font-semibold">
-            현재 상태: {coreSummary.overallStatus} — {coreSummary.statusReason}
+            현재 상태: {coreSummary.overallStatus} — 리브원아웃 기준 {coreSummary.statusReason}
           </li>
         </ul>
       </section>
 
+      <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">모델 검증 적중률 (리브원아웃 교차검증 — 신규점포 일반화 성능 참고)</h2>
       <SummaryBlock title="1. 12개월 완료 정상영업점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
       <SummaryBlock title="2. 12개월 미완료 정상영업점 조기 적중률 (조기검증, 완전 외부 검증군)" summary={computed.earlySummary} benchmark={REFERENCE_BENCHMARK.조기검증} />
       <SummaryBlock title="3. 정식검증+조기검증 통합 적중률" summary={combinedSummary} benchmark={REFERENCE_BENCHMARK.통합} />
@@ -605,9 +682,12 @@ export default function ValidationPage() {
 
       <section className="space-y-4 rounded-2xl border border-zinc-300 p-5 dark:border-zinc-700">
         <div>
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">sheetParity — 시트 재현 (이관 검증용, 공식 성능 아님)</h2>
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            시트 재현 적중률 — V62 운영 결과 (이관 검증용, 공식 성능 아님)
+          </h2>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            시트에 저장된 V61 예측값(재계산 없이 그대로)에 외부유입 보정만 적용한 결과입니다. 아래 loocvValidation과 절대 섞지 않습니다.
+            시트에 저장된 V61 예측값(재계산 없이 그대로)에 외부유입 보정만 적용한 결과입니다. 실제 신규후보지 평가에 쓰는 예상매출이
+            이 방식과 같습니다. 위 리브원아웃 교차검증과 절대 섞지 않습니다.
           </p>
         </div>
         <SheetParitySummaryBlock title="정식검증(시트 재현)" summary={sheetCoreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
@@ -617,13 +697,27 @@ export default function ValidationPage() {
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">매장별 비교표 — sheetParity vs loocvValidation</h2>
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">매장별 비교표 — V62 운영 결과 vs 리브원아웃 교차검증</h2>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             정식검증+조기검증 대상 매장만. "차이 발생 단계"는 V61 예측 → 외부유입 보정률 → 반올림 순으로 처음 어긋난 지점을 표시합니다.
           </p>
         </div>
         <ParityComparisonTable rows={parityRows} />
       </section>
+
+      {loocvHighVarianceRows.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">LOOCV 고변동 점포 진단</h2>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            V61 예측 단계에서 웹(리브원아웃 교차검증)과 시트(V62 운영 결과)의 차이가 {formatPercent(0.3)}를 넘는 매장입니다. 구현
+            오류가 아니라 이 매장을 학습에서 뺐을 때 모형이 크게 흔들린다는 신호이며, 계수나 입력값을 임의로 수정하지 않습니다.
+          </p>
+          {loocvHighVarianceRows.map((r) => {
+            const diagnostic = diagnoseLoocvSensitivity(r.storeCode, combinedRows, settings);
+            return diagnostic ? <LoocvDiagnosticBlock key={r.storeCode} diagnostic={diagnostic} /> : null;
+          })}
+        </section>
+      )}
 
       <section className="rounded-xl border border-zinc-300 bg-white p-4 text-sm leading-6 dark:border-zinc-700 dark:bg-zinc-950">
         <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">차이 원인 점검표</h3>

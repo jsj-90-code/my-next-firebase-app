@@ -277,9 +277,15 @@ export async function convertCandidateToExistingStore(input: {
   candidate: CandidateInput;
   competitors: Competitor[];
   locationEvaluation: LocationEvaluation | null;
+  // 2026-08-21 추가 — 전환하는 그 순간 화면에 보이던 예측값을 스냅샷으로 동결해 둔다("후보지평가
+  // → 오픈 → 실제매출로 검증" 흐름을 잇기 위함). storeEvalResults는 이후 재계산되며 덮어써지므로
+  // 이 시점에 넘겨받은 값만이 "그때 본 예측"의 유일한 기록이다. 없으면(로딩 실패 등) null로 두고
+  // 예측값 없이 연결만 한다 - 나중에 linkExistingStoreToCandidate로 다시 채울 수는 없다(재계산
+  // 금지 원칙과 같은 이유로, 지나간 예측값을 사후에 지어내지 않는다).
+  evaluationResult: EvaluationResult | null;
   actor: string | null;
 }): Promise<ExistingStore> {
-  const { candidate: c, competitors, locationEvaluation: loc, actor } = input;
+  const { candidate: c, competitors, locationEvaluation: loc, evaluationResult, actor } = input;
   const now = Date.now();
 
   const store: ExistingStore = {
@@ -294,6 +300,23 @@ export async function convertCandidateToExistingStore(input: {
     excludedReason: null,
     v61Predicted: null,
     referenceMarketDemand: null,
+    originCandidateCode: c.code,
+    predictedAtConversion: evaluationResult
+      ? {
+          candidateCode: evaluationResult.candidateCode,
+          v61Baseline: evaluationResult.v61Baseline,
+          v61ModelLabel: evaluationResult.v61ModelLabel,
+          v61TrainingSampleCount: evaluationResult.v61TrainingSampleCount,
+          v62Rate: evaluationResult.v62Rate,
+          v62Final: evaluationResult.v62Final,
+          conservativeSales: evaluationResult.conservativeSales,
+          upperSales: evaluationResult.upperSales,
+          expectedPcCount: evaluationResult.expectedPcCount,
+          hourlyRate: evaluationResult.hourlyRate,
+          calculatedAt: evaluationResult.calculatedAt,
+          linkedAt: now,
+        }
+      : null,
     brandType: loc?.brandType ?? null,
     specialDemandType: loc?.specialDemandType ?? null,
     specialDemandIntensity: loc?.specialDemandIntensity ?? null,
@@ -359,6 +382,51 @@ export async function convertCandidateToExistingStore(input: {
 
   await writeAuditLog({ entityType: "existingStore", entityId: c.code, action: "생성", before: null, after: store, actor });
   return store;
+}
+
+/**
+ * 이미 등록된 기존 가맹점(이 전환 기능이 생기기 전에 만들어졌거나, 후보지평가 없이 매출DB
+ * 자동감지로 등록된 매장)을 나중에라도 후보지코드와 수동으로 연결한다. 이름/주소로 자동
+ * 추측하지 않고, 사용자가 직접 코드를 확인해서 입력하는 것만 받는다(오매칭 방지).
+ * storeEvalResults에 그 후보지의 예측값 스냅샷이 아직 남아있으면 같이 채우고, 이미 재계산으로
+ * 덮어써져서 없으면(evaluate.ts는 Result 탭을 열 때마다 재계산·덮어쓴다) 연결만 하고 예측값은
+ * 지어내지 않는다.
+ */
+export async function linkExistingStoreToCandidate(
+  storeCode: string,
+  candidateCode: string,
+  actor: string | null,
+): Promise<ExistingStore> {
+  const store = await getExistingStore(storeCode);
+  if (!store) throw new Error(`기존 가맹점을 찾지 못했습니다: ${storeCode}`);
+  const result = await getEvaluationResult(candidateCode);
+  const now = Date.now();
+
+  const updated: ExistingStore = {
+    ...store,
+    originCandidateCode: candidateCode,
+    predictedAtConversion: result
+      ? {
+          candidateCode: result.candidateCode,
+          v61Baseline: result.v61Baseline,
+          v61ModelLabel: result.v61ModelLabel,
+          v61TrainingSampleCount: result.v61TrainingSampleCount,
+          v62Rate: result.v62Rate,
+          v62Final: result.v62Final,
+          conservativeSales: result.conservativeSales,
+          upperSales: result.upperSales,
+          expectedPcCount: result.expectedPcCount,
+          hourlyRate: result.hourlyRate,
+          calculatedAt: result.calculatedAt,
+          linkedAt: now,
+        }
+      : null,
+    updatedAt: now,
+    updatedBy: actor,
+  };
+  await upsertExistingStore(updated);
+  await writeAuditLog({ entityType: "existingStore", entityId: storeCode, action: "수정", before: store, after: updated, actor });
+  return updated;
 }
 
 export { serverTimestamp };

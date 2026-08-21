@@ -4,9 +4,16 @@
 // CandidateInput 타입의 실제 필드 전부를 폼으로 구성한다 (필드를 빼거나 추가하지 않는다).
 
 import { useEffect, useMemo, useState } from "react";
-import { computeLocationScoreFromFacts, computeSeatScore, computeSpecScore, computeZoneComposition, GAME_ZONE_BONUS } from "@/lib/storeEval/calc";
+import {
+  applyStandardOwnFacilityDefaults,
+  computeLocationScoreFromFacts,
+  computeSeatScore,
+  computeSpecScore,
+  computeZoneComposition,
+  GAME_ZONE_BONUS,
+} from "@/lib/storeEval/calc";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getModelSettings, saveCandidate } from "@/lib/storeEval/store";
+import { generateNextCandidateCode, getModelSettings, saveCandidate } from "@/lib/storeEval/store";
 import type { CandidateInput, GroundLevel, ModelSettings, ReviewStatus } from "@/lib/storeEval/types";
 import {
   BooleanSelectField,
@@ -107,12 +114,15 @@ export function BasicInfoTab({
   }, []);
 
   const computedScores = useMemo(() => {
+    // 비어있는 자사 시설 입력값은 회사 표준 존 구성으로 계산한다(evaluate.ts와 동일 규칙 —
+    // 결과 탭에서 최종 계산할 때와 이 미리보기가 다르게 보이지 않도록 맞춘다).
+    const facility = applyStandardOwnFacilityDefaults(form);
     const { kinds, rooms } = computeZoneComposition(
-      [form.ownRoom1, form.ownRoom2, form.ownTeamRoom, form.ownCoupleZone, form.ownVipZone],
-      [form.ownFriendsZone],
+      [form.ownRoom1, form.ownRoom2, facility.ownTeamRoom, facility.ownCoupleZone, facility.ownVipZone],
+      [facility.ownFriendsZone],
     );
     return {
-      spec: computeSpecScore(form.ownVgaBase, form.ownVgaTop, (form.ownGameZoneCount ?? 0) * GAME_ZONE_BONUS, form.ownMonitorScore, settings),
+      spec: computeSpecScore(form.ownVgaBase, form.ownVgaTop, facility.ownGameZoneCount * GAME_ZONE_BONUS, facility.ownMonitorScore, settings),
       seat: computeSeatScore(kinds, rooms),
       location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
     };
@@ -154,7 +164,10 @@ export function BasicInfoTab({
 
     setSaving(isDraft ? "draft" : "final");
     try {
-      const toSave: CandidateInput = { ...form, isDraft };
+      // 후보지코드는 첫 저장 시점에만 발급한다(요청사항) — "new" draft 상태에서 코드를 미리
+      // 뽑아두면 등록 버튼만 누르고 저장 안 하는 경우 번호가 영구히 건너뛴다.
+      const code = form.code === "new" ? await generateNextCandidateCode() : form.code;
+      const toSave: CandidateInput = { ...form, code, isDraft };
       await saveCandidate(toSave, actor);
       setForm(toSave);
       onSaved(toSave);
@@ -171,7 +184,7 @@ export function BasicInfoTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>기본정보</h3>
         <div className={`${gridClass} mt-4`}>
-          <FieldReadonly label="후보지코드" value={form.code} />
+          <FieldReadonly label="후보지코드" value={form.code === "new" ? "저장 시 자동 발급" : form.code} />
           <TextField label="후보지명" value={form.name} onChange={(v) => set("name", v)} required />
           <TextField label="주소" value={form.address} onChange={(v) => set("address", v)} required />
           <DateField label="검토일" value={form.reviewDate} onChange={(v) => set("reviewDate", v)} />
@@ -244,14 +257,14 @@ export function BasicInfoTab({
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>
         <div className={`${gridClass} mt-4`}>
           <TextField label="VGA 기본사양" value={form.ownVgaBase ?? ""} onChange={(v) => set("ownVgaBase", v || null)} />
-          <TextField label="VGA 최고사양" value={form.ownVgaTop ?? ""} onChange={(v) => set("ownVgaTop", v || null)} />
-          <NumberField label="게임존 수" value={form.ownGameZoneCount} onChange={(v) => set("ownGameZoneCount", v)} />
+          <TextField label="VGA 최고사양" value={form.ownVgaTop ?? ""} onChange={(v) => set("ownVgaTop", v || null)} hint="없으면 비움 (표준값 없음)" />
+          <NumberField label="게임존 수" value={form.ownGameZoneCount} onChange={(v) => set("ownGameZoneCount", v)} hint="비우면 표준 3종 적용" />
           <NumberField label="1인룸 수" value={form.ownRoom1} onChange={(v) => set("ownRoom1", v)} />
           <NumberField label="2인룸 수" value={form.ownRoom2} onChange={(v) => set("ownRoom2", v)} />
-          <NumberField label="팀룸 수" value={form.ownTeamRoom} onChange={(v) => set("ownTeamRoom", v)} />
-          <NumberField label="커플존 수" value={form.ownCoupleZone} onChange={(v) => set("ownCoupleZone", v)} />
-          <NumberField label="VIP존 수" value={form.ownVipZone} onChange={(v) => set("ownVipZone", v)} />
-          <NumberField label="프렌즈존 수" value={form.ownFriendsZone} onChange={(v) => set("ownFriendsZone", v)} />
+          <NumberField label="팀룸 수" value={form.ownTeamRoom} onChange={(v) => set("ownTeamRoom", v)} hint="비우면 표준 2개 적용" />
+          <NumberField label="커플존 수" value={form.ownCoupleZone} onChange={(v) => set("ownCoupleZone", v)} hint="비우면 표준 3개 적용" />
+          <NumberField label="VIP존 수" value={form.ownVipZone} onChange={(v) => set("ownVipZone", v)} hint="비우면 표준 5개 적용" />
+          <NumberField label="프렌즈존 수" value={form.ownFriendsZone} onChange={(v) => set("ownFriendsZone", v)} hint="비우면 표준 15개 적용" />
         </div>
       </section>
 
@@ -266,14 +279,14 @@ export function BasicInfoTab({
         <div className={`${gridClass} mt-4`}>
           <ComputedField label="사양 점수 (자동)" value={computedScores.spec} hint="VGA 70%+모니터 30%+게임존 가산" />
           <ComputedField label="좌석 점수 (자동)" value={computedScores.seat} hint="존 다양성 50%+수용력 50%" />
-          <ScoreSelectField label="먹거리 점수" value={form.ownFoodScore} onChange={(v) => set("ownFoodScore", v)} />
-          <ScoreSelectField label="인테리어 점수" value={form.ownInteriorScore} onChange={(v) => set("ownInteriorScore", v)} />
+          <ScoreSelectField label="먹거리 점수" value={form.ownFoodScore} onChange={(v) => set("ownFoodScore", v)} hint="비우면 표준값 4 적용" />
+          <ScoreSelectField label="인테리어 점수" value={form.ownInteriorScore} onChange={(v) => set("ownInteriorScore", v)} hint="비우면 표준값 4 적용" />
           <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
           <ScoreSelectField
             label="모니터 점수"
             value={form.ownMonitorScore}
             onChange={(v) => set("ownMonitorScore", v)}
-            hint="사양 점수의 모니터 30% 비중 (07 원본 필드)"
+            hint="사양 점수의 모니터 30% 비중 (07 원본 필드) · 비우면 표준값 4 적용"
           />
         </div>
       </section>

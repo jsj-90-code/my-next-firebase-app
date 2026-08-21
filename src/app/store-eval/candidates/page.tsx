@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { deleteCandidate, duplicateCandidate, generateNextCandidateCode, listCandidates } from "@/lib/storeEval/store";
+import { deleteCandidate, duplicateCandidate, listCandidates } from "@/lib/storeEval/store";
 import type { CandidateInput, ReviewStatus } from "@/lib/storeEval/types";
 import { formatDateTime } from "@/lib/storeEval/format";
 
@@ -44,16 +44,11 @@ export default function CandidateListPage() {
     load();
   }, [load]);
 
-  async function handleCreate() {
+  // 요청사항 — 후보지코드는 "임시저장/저장"을 처음 누르는 순간에만 발급한다(BasicInfoTab.handleSave).
+  // 여기서 미리 발급해두면 등록 버튼만 누르고 저장 안 하고 나가는 경우 번호가 영구히 건너뛴다.
+  function handleCreate() {
     setCreating(true);
-    setError(null);
-    try {
-      const code = await generateNextCandidateCode();
-      router.push(`/store-eval/candidates/${code}?new=1`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "새 후보지코드를 발급하지 못했습니다.");
-      setCreating(false);
-    }
+    router.push("/store-eval/candidates/new");
   }
 
   async function handleDuplicate(code: string) {

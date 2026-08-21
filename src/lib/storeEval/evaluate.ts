@@ -8,6 +8,7 @@
 // 모자랄 때만 폴백을 쓰고, 그 사실을 result.v61IsFallback/v61ModelLabel로 화면에 명시한다.
 
 import {
+  applyStandardOwnFacilityDefaults,
   buildV61TrainingStores,
   computeAaBaselineRevenue,
   computeBoundedSales,
@@ -62,22 +63,26 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const competitorIp = computeCompetitorIp(competitors, c.operatingPcStores500m);
   const ipPerDemand = computeIpPerDemand(marketDemand, c.expectedPcCount, competitorIp);
 
+  // 자사 시설 입력값이 비어 있으면 회사 표준 존 구성으로 간주한다(07_신규후보지 헤더 메모
+  // "비우면 표준 N개 적용" 근거, docs/data-issues.md 2026-08-21 갱신). 1인룸/2인룸은 표준값이
+  // 없어(비우면 그대로 0) 대상이 아니다.
+  const ownFacility = applyStandardOwnFacilityDefaults(c);
   const { kinds: ownKinds, rooms: ownRooms } = computeZoneComposition(
-    [c.ownRoom1, c.ownRoom2, c.ownTeamRoom, c.ownCoupleZone, c.ownVipZone],
-    [c.ownFriendsZone],
+    [c.ownRoom1, c.ownRoom2, ownFacility.ownTeamRoom, ownFacility.ownCoupleZone, ownFacility.ownVipZone],
+    [ownFacility.ownFriendsZone],
   );
   const ownSpecScore = computeSpecScore(
     c.ownVgaBase,
     c.ownVgaTop,
-    (c.ownGameZoneCount ?? 0) * GAME_ZONE_BONUS,
-    c.ownMonitorScore,
+    ownFacility.ownGameZoneCount * GAME_ZONE_BONUS,
+    ownFacility.ownMonitorScore,
     settings,
   );
   const ownSeatScore = computeSeatScore(ownKinds, ownRooms);
   const ownLocationScore = computeLocationScoreFromFacts(c.floor, c.groundLevel, c.hasElevator);
 
   const ownCompetitivenessScore = computeCompetitivenessScore(
-    { spec: ownSpecScore, seat: ownSeatScore, food: c.ownFoodScore, interior: c.ownInteriorScore, location: ownLocationScore },
+    { spec: ownSpecScore, seat: ownSeatScore, food: ownFacility.ownFoodScore, interior: ownFacility.ownInteriorScore, location: ownLocationScore },
     settings,
   );
   const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);

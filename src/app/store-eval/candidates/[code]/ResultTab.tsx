@@ -64,7 +64,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         getLocationEvaluation(candidateCode),
       ]);
       if (!candidate) throw new Error("후보지 기본정보를 찾을 수 없습니다.");
-      await convertCandidateToExistingStore({ candidate, competitors, locationEvaluation, actor: user?.email ?? null });
+      // 지금 화면에 떠 있는 예측값(result)을 그대로 넘겨 스냅샷으로 동결한다 - 이후 모델이
+      // 바뀌어도 "그때 이 숫자를 보고 전환했다"는 기록은 다시 계산되지 않는다.
+      await convertCandidateToExistingStore({ candidate, competitors, locationEvaluation, evaluationResult: result, actor: user?.email ?? null });
       setAlreadyExisting(true);
       setConvertMessage("기존 가맹점으로 전환했습니다. [기존 가맹점 관리] 화면에서 오픈일·월매출을 이어서 입력해주세요.");
     } catch (err) {
@@ -207,14 +209,34 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       </section>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>실측기반 예상월매출 — 경쟁점 실가동좌석 기반 (V61과 별개 경로)</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className={sectionTitleClass}>실측기반 예상월매출 — 경쟁점 실가동좌석 기반 (V61/V62와 별개 경로, 참고용)</h3>
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+              result.measuredForecastNeedsReview
+                ? "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"
+                : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+            }`}
+          >
+            {result.measuredForecastNeedsReview ? "데이터 재검토 필요" : "미검증 참고 지표"}
+          </span>
+        </div>
+        {/* 이 경로(13_신규후보지판정 AA열)는 원본 시트에도 존재 목적을 설명하는 근거가 없고,
+            V61/V62처럼 기존 가맹점 리브-원-아웃 검증을 거친 적이 없다(docs/data-issues.md
+            2026-08-21 참고). 그래서 V62와 달리 emphasis 카드로 강조하지 않고, 항상 미검증
+            경고를 띄운다 — 가동률 초과일 때만 경고하면 "평소엔 믿을만하다"는 오해를 주기 때문. */}
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          이 값은 V61/V62처럼 기존 가맹점 실제매출로 검증된 적이 없는 별도 계산입니다(경쟁점 실가동좌석을 우리 매장 좌석점유로
+          환산하는 방식). 출점 판단은 위 &ldquo;V62 최종예상월매출&rdquo;을 기준으로 하고, 이 값은 참고로만 봐주세요.
+          {result.measuredForecastNeedsReview && " 특히 예상 가동률이 계획한 PC대수를 넘어서 신뢰도가 더 낮습니다."}
+        </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard
             label="경쟁점 실가동좌석"
             value={result.competitorOccupiedSeats != null ? formatNumber(result.competitorOccupiedSeats) : "산출불가"}
             hint={
               result.competitorOccupiedSeatsCoverage
-                ? `실측 ${result.competitorOccupiedSeatsCoverage.measured} · 미조사추정 ${result.competitorOccupiedSeatsCoverage.assumedLowThreat} · 값누락 ${result.competitorOccupiedSeatsCoverage.missingData}`
+                ? `핑봇실측 ${result.competitorOccupiedSeatsCoverage.measured} · 현장방문만(참고,미반영) ${result.competitorOccupiedSeatsCoverage.realtimeSnapshotOnly} · 미조사추정 ${result.competitorOccupiedSeatsCoverage.assumedLowThreat} · 값누락 ${result.competitorOccupiedSeatsCoverage.missingData}`
                 : undefined
             }
           />
@@ -227,14 +249,15 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             hint={result.measuredForecastNeedsReview ? "최대검토가동률 초과 — 데이터 재검토 필요" : undefined}
           />
           <ResultCard label="예상 대당 일매출" value={formatWon(result.expectedDailyRevenuePerPc)} />
-          <ResultCard label="실측기반 예상월매출" value={formatWon(result.measuredForecastMonthlyRevenue)} emphasis />
+          <ResultCard label="실측기반 예상월매출 (참고용, 미검증)" value={formatWon(result.measuredForecastMonthlyRevenue)} />
         </div>
       </section>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>AA 기준매출 판정</h3>
+        <h3 className={sectionTitleClass}>AA 기준매출 판정 (참고용, 미검증)</h3>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          예상 오픈월부터 10개월간 &ldquo;순수익 2,000만원 대당 일매출목표&rdquo; 평균과 실측기반 예상월매출을 비교합니다.
+          예상 오픈월부터 10개월간 &ldquo;순수익 2,000만원 대당 일매출목표&rdquo; 평균과 위 미검증 실측기반 예상월매출을
+          비교하는 등급 판정입니다. 최종운영판정과 무관하며, 출점 여부 결정에는 쓰지 않습니다.
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard label="AA 기준매출" value={formatWon(result.aaBaselineRevenue)} />
