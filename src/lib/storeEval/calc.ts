@@ -30,15 +30,17 @@ import type {
 // 3.1 상권분석
 // ---------------------------------------------------------------------------
 
-// 08_계산기준: "10대 남39%·여13% / 20대 남42%·여15% / 30대 남17%·여5% / 40대 남10%·여2% /
-// 50대 남4%·여1% / 60대이상 남1%·여0%"
+// 08_계산기준 프로즈("10대 남39%·여13% / ... / 60대이상 남1%·여0%")는 반올림된 요약이다.
+// 실제 실행되는 값은 점포평가.gs CONFIG.MARKET.이용률(2026-08-22 원본 재대조로 확인)이며,
+// 30대 여성·50대 남녀·60대이상 여성이 08_계산기준 반올림과 소수점 단위로 다르다 — 이 값이
+// 정확한 원본이다.
 export const PC_USAGE_RATE_BY_AGE_GENDER = {
   age10s: { male: 0.39, female: 0.13 },
   age20s: { male: 0.42, female: 0.15 },
-  age30s: { male: 0.17, female: 0.05 },
+  age30s: { male: 0.17, female: 0.045 },
   age40s: { male: 0.1, female: 0.02 },
-  age50s: { male: 0.04, female: 0.01 },
-  age60plus: { male: 0.01, female: 0.0 },
+  age50s: { male: 0.035, female: 0.008 },
+  age60plus: { male: 0.01, female: 0.003 },
 } as const;
 
 export type AgeBandPopulation = {
@@ -182,7 +184,18 @@ export function computeMarketDemand(c: CandidateInput, settings: Pick<ModelSetti
   const useFloating = marketCharacter !== "주거중심";
   const demandSource: "유동" | "주거" = useFloating ? "유동" : "주거";
   const rawDemand = useFloating ? floatingDemand : residentDemand;
-  if (rawDemand == null) return { marketCharacter, demandSource, rawDemand: null, marketDemand: null };
+
+  // 08_계산기준/analyzeMarket_ 원본: 주거중심인데 반경1km 연령 실측이 50% 미달(residentDemand=null)
+  // 이어도 포기하지 않고, 이미 있는 유동원수요 × 혼합유효율(0.61)로 상권수요를 낸다("유동 ×
+  // 0.61 (주거 미입력)"). 추측으로 새 데이터를 지어내는 게 아니라 이미 실측된 다른 원수요를
+  // 원본이 설계한 대체 계산에 쓰는 것이라 추측성 보정 금지 원칙과 배치되지 않는다.
+  if (rawDemand == null) {
+    if (marketCharacter === "주거중심" && floatingDemand != null) {
+      const fallbackDemand = Math.round(floatingDemand * settings.marketDemandEffectiveRate.mixed);
+      return { marketCharacter, demandSource: "유동", rawDemand: floatingDemand, marketDemand: fallbackDemand };
+    }
+    return { marketCharacter, demandSource, rawDemand: null, marketDemand: null };
+  }
 
   const rate =
     marketCharacter === "번화가"

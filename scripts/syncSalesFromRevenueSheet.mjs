@@ -190,6 +190,14 @@ function toNumber(v) {
   const n = Number(String(v).replace(/,/g, "").trim());
   return Number.isNaN(n) ? null : n;
 }
+// PC대비상품비율/가동율 셀은 "30.85%" 같은 표시 문자열로 온다. toNumber()는 %를 못 벗겨내
+// null이 돼버렸었다(2026-08-22 발견, cronSync.ts와 동일 버그) — %/,를 제거한 뒤 파싱한다.
+function toPercentNumber(v) {
+  if (typeof v === "number") return v;
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/[%,]/g, "").trim());
+  return Number.isNaN(n) ? null : n;
+}
 
 // src/lib/storeEval/calc.ts의 computeStabilizedPerformance와 반드시 같은 규칙을 써야 한다
 // (원본 점포평가.gs: EVAL_MONTHS=12, CUMUL_FROM=2 — 오픈 1~12개월만 평가창, 2개월차부터 평균,
@@ -275,9 +283,9 @@ async function main() {
     for (const block of monthBlocks) {
       const pcSales = toNumber(row[block.startCol + 1]);
       const productSales = toNumber(row[block.startCol + 2]);
-      const utilizationRate = toNumber(row[block.startCol + 4]);
+      const utilizationRate = toPercentNumber(row[block.startCol + 4]);
       const salesPerPcPerDay = toNumber(row[block.startCol + 5]);
-      const productRatio = toNumber(row[block.startCol + 3]);
+      const productRatio = toPercentNumber(row[block.startCol + 3]);
       const hasAny = pcSales != null || productSales != null;
       if (!hasAny) continue;
 

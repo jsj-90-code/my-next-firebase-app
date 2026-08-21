@@ -99,6 +99,16 @@ function toNumber(v: unknown): number | null {
   const n = Number(String(v).replace(/,/g, "").trim());
   return Number.isNaN(n) ? null : n;
 }
+// 매출DB의 PC대비상품비율/가동율 셀은 Sheets API가 "30.85%" 같은 표시 문자열로 돌려준다.
+// toNumber()는 %를 못 벗겨내 NaN→null이 돼버린다(2026-08-22 발견, migrateFullExistingStoreProfiles.mjs
+// 핑봇 버그와 동일 패턴) — %/,를 제거한 뒤 파싱한다. 아래 호출부의 ">1이면 /100" 정규화는 이
+// 함수가 %를 실제로 벗겨내야 값을 받으므로 함께 고친다.
+function toPercentNumber(v: unknown): number | null {
+  if (typeof v === "number") return v;
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/[%,]/g, "").trim());
+  return Number.isNaN(n) ? null : n;
+}
 function toBool(v: unknown): boolean {
   const s = String(v ?? "").trim();
   return s === "유" || s === "Y" || s === "true";
@@ -538,9 +548,9 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
     for (const block of monthBlocks) {
       const pcSales = toNumber(row[block.startCol + 1]);
       const productSales = toNumber(row[block.startCol + 2]);
-      const utilizationRate = toNumber(row[block.startCol + 4]);
+      const utilizationRate = toPercentNumber(row[block.startCol + 4]);
       const salesPerPcPerDay = toNumber(row[block.startCol + 5]);
-      const productRatio = toNumber(row[block.startCol + 3]);
+      const productRatio = toPercentNumber(row[block.startCol + 3]);
       if (pcSales == null && productSales == null) continue;
 
       const yearMonth = `${block.year}-${String(block.month).padStart(2, "0")}`;

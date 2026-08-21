@@ -30,6 +30,7 @@ import {
   computeLocationCompositeScore,
   computeLocationScoreFromFacts,
   computeMarketCharacter,
+  computeMarketDemand,
   computeMeasuredForecast,
   computeSeatScore,
   computeSpecScore,
@@ -395,11 +396,57 @@ describe("computeLocationScoreFromFacts (입지점수 = 층수+엘리베이터+�
 describe("computeFloatingRawDemand (40개 상권 평균 연령구성 대체값 — data-issues.md #5 해결)", () => {
   it("연령구성 입력이 없어도 유동인구 평균만 있으면 40개 상권 평균 구성으로 계산한다", () => {
     const candidate = { floating500Avg: 8000 } as unknown as CandidateInput;
-    expect(computeFloatingRawDemand(candidate)).toBeCloseTo(660.76, 1);
+    expect(computeFloatingRawDemand(candidate)).toBeCloseTo(654.44, 1);
   });
   it("유동인구 평균 자체가 없으면 null", () => {
     const candidate = {} as unknown as CandidateInput;
     expect(computeFloatingRawDemand(candidate)).toBeNull();
+  });
+});
+
+describe("computeMarketDemand — 주거중심인데 반경1km 연령실측 미달 시 유동원수요로 대체(analyzeMarket_ 원본, 2026-08-22 발견/수정)", () => {
+  const demandSettings = { marketCharacterThreshold: settings.marketCharacterThreshold, marketDemandEffectiveRate: settings.marketDemandEffectiveRate };
+  it("주거중심이고 거주인구 실측이 있으면 주거원수요×주거유효율을 쓴다", () => {
+    const candidate = {
+      floating500Avg: 1000,
+      pop500m: 1000, // 유동/거주 비율 1 → 주거중심
+      pop1km: 1000,
+      male1kmRatio: 0.5,
+      age1km_0_9: 100,
+      age1km_10_19: 100,
+      age1km_20_29: 100,
+      age1km_30_39: 100,
+      age1km_40_49: 100,
+      age1km_50_59: 100,
+      age1km_60_69: 0,
+      age1km_70_79: 0,
+      age1km_80plus: 0,
+    } as unknown as CandidateInput;
+    const result = computeMarketDemand(candidate, demandSettings);
+    expect(result.marketCharacter).toBe("주거중심");
+    expect(result.demandSource).toBe("주거");
+    expect(result.marketDemand).not.toBeNull();
+  });
+  it("주거중심인데 반경1km 연령실측이 총인구의 50% 미달(거주원수요 null)이어도, 유동원수요×혼합유효율로 상권수요를 낸다(추측 아님 — 원본이 설계한 대체 계산)", () => {
+    const candidate = {
+      floating500Avg: 1000,
+      pop500m: 1000, // 주거중심
+      pop1km: 1000,
+      age1km_0_9: 10, // 총 10명, 총인구 1000명의 1% → 50% 미달 → residentDemand null
+    } as unknown as CandidateInput;
+    const result = computeMarketDemand(candidate, demandSettings);
+    expect(result.marketCharacter).toBe("주거중심");
+    expect(result.demandSource).toBe("유동");
+    expect(result.marketDemand).not.toBeNull();
+    expect(result.marketDemand).toBe(Math.round((computeFloatingRawDemand(candidate) ?? 0) * settings.marketDemandEffectiveRate.mixed));
+  });
+  it("유동인구 평균이 없으면 상권성격 자체를 못 정하므로(대체할 원수요도 없음) null", () => {
+    // floating500Avg가 없으면 computeMarketCharacter/computeFloatingRawDemand 둘 다 null이라
+    // "주거중심인데 대체할 유동원수요조차 없는" 상황은 이 경로로만 재현된다.
+    const candidate = { pop500m: 1000, pop1km: 1000, male1kmRatio: 0.5, age1km_0_9: 10 } as unknown as CandidateInput;
+    const result = computeMarketDemand(candidate, demandSettings);
+    expect(result.marketCharacter).toBeNull();
+    expect(result.marketDemand).toBeNull();
   });
 });
 
