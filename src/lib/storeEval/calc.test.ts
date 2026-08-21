@@ -757,6 +757,27 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const forecast = computeMeasuredForecast(result.expectedOccupiedSeats, 1300, settings.measuredForecastProductRatio, 100);
     expect(result.measuredForecastMonthlyRevenue).toBe(forecast?.monthlyRevenue ?? null);
   });
+
+  describe("경쟁점 핑봇 커버율(원본 CONFIG.MODEL.최소커버율=0.70과 같은 개념, 2026-08-22 추가 — 표본 제외 기준이 아니라 참고 신뢰도)", () => {
+    it("경쟁점 전부 핑봇 실측이면 커버율 100%, 낮은신뢰도 아님", () => {
+      const result = computeExistingStoreMeasuredForecast(baseStore(), [competitor(), competitor({ id: "c2" })], settings);
+      expect(result.competitorCoverageRatio).toBe(1);
+      expect(result.isLowCoverageReliability).toBe(false);
+    });
+    it("조사된 경쟁점 5곳 중 1곳만 핑봇 실측이면 커버율 20%로 낮은신뢰도 표시하되, 표본에서 빼지는 않는다", () => {
+      const competitors = [
+        competitor(),
+        competitor({ id: "c2", pingbotUtilization: null, measuredSeatRate: 30 }),
+        competitor({ id: "c3", pingbotUtilization: null, measuredSeatRate: null }),
+        competitor({ id: "c4", pingbotUtilization: null, measuredSeatRate: null }),
+        competitor({ id: "c5", pingbotUtilization: null, measuredSeatRate: null }),
+      ];
+      const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
+      expect(result.excludedReason).toBeNull();
+      expect(result.competitorCoverageRatio).toBeCloseTo(0.2, 4);
+      expect(result.isLowCoverageReliability).toBe(true);
+    });
+  });
 });
 
 describe("AA 기준매출 (오픈월부터 10개월 순수익 2,000만원 대당 일매출목표 평균)", () => {

@@ -1277,12 +1277,28 @@ export type ExistingStoreMeasuredForecastResult = {
   competitivenessGap: number | null;
   competitorOccupiedSeats: number | null;
   competitorOccupiedSeatsCoverage: CompetitorOccupiedSeatsResult["coverage"] | null;
+  // 조사된 경쟁점(핑봇 실측+실시간뿐+저경쟁력추정+값누락) 중 핑봇 실측이 있는 비율. 원본
+  // measuredDemand_의 "커버율(조회된 경쟁점 IP÷전체 경쟁점 IP)"과 같은 개념 — 원본도 이 값으로
+  // 표본을 거르지 않고 참고 신뢰도로만 썼다(2026-08-22, 점포평가.gs 재대조). 웹도 표본 포함
+  // 여부를 이 값으로 가르지 않는다 — 낮아도 계산은 그대로 하고, 신뢰도 참고용으로만 노출한다.
+  competitorCoverageRatio: number | null;
+  isLowCoverageReliability: boolean;
   demandCaptureRate: number | null;
   newDemandGrowthRate: number | null;
   expectedOccupiedSeats: number | null;
   expectedUtilization: number | null;
   measuredForecastMonthlyRevenue: number | null;
 };
+
+/** 원본 CONFIG.MODEL.최소커버율(0.70) — 참고 신뢰도 임계값일 뿐 표본 제외 기준이 아니다. */
+export const MEASURED_FORECAST_MIN_COVERAGE_RATIO = 0.7;
+
+/** 조사된 경쟁점(핑봇 실측+실시간뿐+저경쟁력추정+값누락) 중 핑봇 실측 비율. 경쟁점없음은 분모에서 뺀다. */
+export function computeCompetitorCoverageRatio(coverage: CompetitorOccupiedSeatsResult["coverage"]): number | null {
+  const surveyed = coverage.measured + coverage.realtimeSnapshotOnly + coverage.assumedLowThreat + coverage.missingData;
+  if (surveyed === 0) return null;
+  return coverage.measured / surveyed;
+}
 
 export function computeExistingStoreMeasuredForecast(
   store: Pick<
@@ -1317,6 +1333,8 @@ export function computeExistingStoreMeasuredForecast(
     competitivenessGap: null,
     competitorOccupiedSeats: null,
     competitorOccupiedSeatsCoverage: null,
+    competitorCoverageRatio: null,
+    isLowCoverageReliability: false,
     demandCaptureRate: null,
     newDemandGrowthRate: null,
     expectedOccupiedSeats: null,
@@ -1351,6 +1369,7 @@ export function computeExistingStoreMeasuredForecast(
   const competitivenessGap = computeCompetitivenessGap(ownCompetitivenessScore, competitorAvgCompetitiveness);
 
   const occupied = computeCompetitorOccupiedSeats(competitors);
+  const coverageRatio = computeCompetitorCoverageRatio(occupied.coverage);
   if (occupied.seats == null) {
     return {
       ...base,
@@ -1358,6 +1377,8 @@ export function computeExistingStoreMeasuredForecast(
       competitorAvgCompetitiveness,
       competitivenessGap,
       competitorOccupiedSeatsCoverage: occupied.coverage,
+      competitorCoverageRatio: coverageRatio,
+      isLowCoverageReliability: coverageRatio != null && coverageRatio < MEASURED_FORECAST_MIN_COVERAGE_RATIO,
       excludedReason: "경쟁점 실측 데이터 부족(핑봇 실측 없음)",
     };
   }
@@ -1375,6 +1396,8 @@ export function computeExistingStoreMeasuredForecast(
     competitivenessGap,
     competitorOccupiedSeats: occupied.seats,
     competitorOccupiedSeatsCoverage: occupied.coverage,
+    competitorCoverageRatio: coverageRatio,
+    isLowCoverageReliability: coverageRatio != null && coverageRatio < MEASURED_FORECAST_MIN_COVERAGE_RATIO,
     demandCaptureRate: capture?.captureRate ?? null,
     newDemandGrowthRate: capture?.growthRate ?? null,
     expectedOccupiedSeats,

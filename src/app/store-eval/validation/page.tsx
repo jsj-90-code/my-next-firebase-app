@@ -543,6 +543,8 @@ export default function ValidationPage() {
         storeName: m.row.storeName,
         actualRevenueAvg: m.row.actualRevenueAvg,
         forecastRevenue: m.forecast.measuredForecastMonthlyRevenue,
+        coverageRatio: m.forecast.competitorCoverageRatio,
+        isLowCoverageReliability: m.forecast.isLowCoverageReliability,
         errorAmount:
           m.forecast.measuredForecastMonthlyRevenue != null && m.row.actualRevenueAvg != null
             ? m.forecast.measuredForecastMonthlyRevenue - m.row.actualRevenueAvg
@@ -869,6 +871,7 @@ export default function ValidationPage() {
                   <th className="px-3 py-2">실측기반 예상월매출</th>
                   <th className="px-3 py-2">실제매출평균</th>
                   <th className="px-3 py-2">절대오차율</th>
+                  <th className="px-3 py-2">경쟁점 핑봇 커버율</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -878,10 +881,19 @@ export default function ValidationPage() {
                     <td className="px-3 py-2">{formatWon(m.forecastRevenue)}</td>
                     <td className="px-3 py-2">{formatWon(m.actualRevenueAvg)}</td>
                     <td className="px-3 py-2">{formatPercent(m.absoluteErrorPct)}</td>
+                    <td className={`px-3 py-2 ${m.isLowCoverageReliability ? "text-amber-600 dark:text-amber-400" : ""}`}>
+                      {formatPercent(m.coverageRatio)}
+                      {m.isLowCoverageReliability && " (낮음)"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <p className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+              경쟁점 핑봇 커버율 = 조사된 경쟁점 중 핑봇 기간평균 가동률이 있는 비율. 70% 미만이면
+              "낮음"으로 표시합니다(원본 점포평가.gs의 최소커버율 0.70 기준 — 원본도 이 값으로 표본을
+              거르지 않고 참고 신뢰도로만 씁니다).
+            </p>
           </div>
         )}
       </section>
