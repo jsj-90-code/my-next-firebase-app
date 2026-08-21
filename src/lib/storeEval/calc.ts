@@ -1242,6 +1242,135 @@ export function computeMeasuredForecast(
 }
 
 // ---------------------------------------------------------------------------
+// 2026-08-21 — "실측기반 예상월매출" 백테스트. evaluate.ts가 후보지에 대해 하는 계산과 완전히
+// 같은 조합을 기존 가맹점(ExistingStore)에 그대로 적용한다(새 산식 없음, evaluate.ts:64-158
+// 참고).
+//
+// 처음엔 후보지와 달리 표준값 폴백(applyStandardOwnFacilityDefaults)을 안 쓰기로 했었으나,
+// 실데이터로 돌려보니 기존 가맹점 26곳 전부 ownFoodScore/ownInteriorScore/ownMonitorScore가
+// 하나도 없어서(0/26) 표본이 0곳이 됐다 — 존종류/VGA는 26곳 전부 실측값이 있는데, 이 3개
+// "평가자 직접입력 1~5점" 항목만 애초에 기존 가맹점 마이그레이션 대상이 아니었던 것으로
+// 보인다. 이 3개는 원본 시트 자체가 "공백이면 표준값 4(우리 매장이 척도 기준점)"로 정의해둔
+// 항목이라(신규후보지와 동일 규칙, 물리적 시설 여부를 추측하는 게 아니라 "특별히 낫지도
+// 못하지도 않다"는 평가 기준일 뿐) 후보지와 같은 폴백을 그대로 적용한다. 존종류/VGA는
+// 실측값이 없으면(위 26곳은 전부 있었지만, 다른 매장은 없을 수 있음) 여전히 표본에서
+// 제외한다 — 그건 "몇 개 지었는지" 같은 물리적 사실이라 추측하지 않는다.
+// ---------------------------------------------------------------------------
+export type ExistingStoreMeasuredForecastResult = {
+  storeCode: string;
+  excludedReason: string | null; // null이면 표본에 포함됨
+  ownCompetitivenessScore: number | null;
+  competitorAvgCompetitiveness: number | null;
+  competitivenessGap: number | null;
+  competitorOccupiedSeats: number | null;
+  competitorOccupiedSeatsCoverage: CompetitorOccupiedSeatsResult["coverage"] | null;
+  demandCaptureRate: number | null;
+  newDemandGrowthRate: number | null;
+  expectedOccupiedSeats: number | null;
+  expectedUtilization: number | null;
+  measuredForecastMonthlyRevenue: number | null;
+};
+
+export function computeExistingStoreMeasuredForecast(
+  store: Pick<
+    ExistingStore,
+    | "storeCode"
+    | "pcCount"
+    | "floor"
+    | "groundLevel"
+    | "hasElevator"
+    | "hourlyRate"
+    | "ownVgaBase"
+    | "ownVgaTop"
+    | "ownGameZoneCount"
+    | "ownRoom1"
+    | "ownRoom2"
+    | "ownTeamRoom"
+    | "ownCoupleZone"
+    | "ownVipZone"
+    | "ownFriendsZone"
+    | "ownFoodScore"
+    | "ownInteriorScore"
+    | "ownMonitorScore"
+  >,
+  competitors: Competitor[],
+  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "demandCaptureTable" | "measuredForecastProductRatio">,
+): ExistingStoreMeasuredForecastResult {
+  const base: ExistingStoreMeasuredForecastResult = {
+    storeCode: store.storeCode,
+    excludedReason: null,
+    ownCompetitivenessScore: null,
+    competitorAvgCompetitiveness: null,
+    competitivenessGap: null,
+    competitorOccupiedSeats: null,
+    competitorOccupiedSeatsCoverage: null,
+    demandCaptureRate: null,
+    newDemandGrowthRate: null,
+    expectedOccupiedSeats: null,
+    expectedUtilization: null,
+    measuredForecastMonthlyRevenue: null,
+  };
+
+  // 존종류/VGA는 물리적 시설 사실이라 없으면 추측하지 않고 제외한다. 먹거리/인테리어/모니터
+  // 평가(1~5점, 평가자 직접입력 항목)는 원본 시트에도 "공백이면 표준값 4" 규칙이 있어 후보지와
+  // 동일하게 applyStandardOwnFacilityDefaults로 채운다(아래에서 store.ownFoodScore 등 원본이
+  // 아니라 facility.* 채워진 값을 쓴다).
+  if (store.ownVgaBase == null || store.ownGameZoneCount == null || store.ownTeamRoom == null || store.ownCoupleZone == null || store.ownVipZone == null || store.ownFriendsZone == null) {
+    return { ...base, excludedReason: "데이터 부족(자사 존구성/VGA 미완비)" };
+  }
+  if (competitors.length === 0) {
+    return { ...base, excludedReason: "경쟁점 정보 없음" };
+  }
+
+  const facility = applyStandardOwnFacilityDefaults(store);
+  const { kinds, rooms } = computeZoneComposition(
+    [store.ownRoom1, store.ownRoom2, store.ownTeamRoom, store.ownCoupleZone, store.ownVipZone],
+    [store.ownFriendsZone],
+  );
+  const ownSpecScore = computeSpecScore(store.ownVgaBase, store.ownVgaTop, facility.ownGameZoneCount * GAME_ZONE_BONUS, facility.ownMonitorScore, settings);
+  const ownSeatScore = computeSeatScore(kinds, rooms);
+  const ownLocationScore = computeLocationScoreFromFacts(store.floor, store.groundLevel, store.hasElevator);
+  const ownCompetitivenessScore = computeCompetitivenessScore(
+    { spec: ownSpecScore, seat: ownSeatScore, food: facility.ownFoodScore, interior: facility.ownInteriorScore, location: ownLocationScore },
+    settings,
+  );
+  const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);
+  const competitivenessGap = computeCompetitivenessGap(ownCompetitivenessScore, competitorAvgCompetitiveness);
+
+  const occupied = computeCompetitorOccupiedSeats(competitors);
+  if (occupied.seats == null) {
+    return {
+      ...base,
+      ownCompetitivenessScore,
+      competitorAvgCompetitiveness,
+      competitivenessGap,
+      competitorOccupiedSeatsCoverage: occupied.coverage,
+      excludedReason: "경쟁점 실측 데이터 부족(핑봇 실측 없음)",
+    };
+  }
+
+  const capture = lookupDemandCapture(competitivenessGap, settings.demandCaptureTable);
+  const expectedOccupiedSeats = computeExpectedOccupiedSeats(occupied.seats, capture?.captureRate ?? null, capture?.growthRate ?? null);
+  const expectedUtilization = computeExpectedUtilization(expectedOccupiedSeats, store.pcCount);
+  const forecast = computeMeasuredForecast(expectedOccupiedSeats, store.hourlyRate, settings.measuredForecastProductRatio, store.pcCount);
+
+  return {
+    storeCode: store.storeCode,
+    excludedReason: null,
+    ownCompetitivenessScore,
+    competitorAvgCompetitiveness,
+    competitivenessGap,
+    competitorOccupiedSeats: occupied.seats,
+    competitorOccupiedSeatsCoverage: occupied.coverage,
+    demandCaptureRate: capture?.captureRate ?? null,
+    newDemandGrowthRate: capture?.growthRate ?? null,
+    expectedOccupiedSeats,
+    expectedUtilization,
+    measuredForecastMonthlyRevenue: forecast?.monthlyRevenue ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // AA 기준매출 — 예상 오픈월부터 10개월간 "순수익 2,000만원 대당 일매출목표" 평균 (08_계산기준!C54:E65)
 // ---------------------------------------------------------------------------
 

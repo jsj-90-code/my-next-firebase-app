@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildParityComparisonRows,
+  computeExistingStoreMeasuredForecast,
   computeValidationRow,
   describeNotVerifiableReason,
   diagnoseLoocvSensitivity,
@@ -38,7 +39,7 @@ import {
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { getLocationEvaluation, getModelSettings, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
-import type { ModelSettings } from "@/lib/storeEval/types";
+import type { Competitor, ExistingStore, ModelSettings } from "@/lib/storeEval/types";
 
 // 기존 Google Sheet 참고 결과 (06_검증대시보드, docs/model-spec.md 근거). 코드에서 재계산하지
 //않고 시트에 이미 확정된 값을 그대로 옮겨 참고용으로만 비교한다 - 우리 쪽 산정식이 아니다.
@@ -92,16 +93,31 @@ type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "empty" }
-  | { status: "ready"; rows: ValidationStoreRow[]; settings: ModelSettings };
+  | {
+      status: "ready";
+      rows: ValidationStoreRow[];
+      settings: ModelSettings;
+      existingStoresByCode: Map<string, ExistingStore>;
+      competitorsByCode: Map<string, Competitor[]>;
+    };
 
-async function loadValidationData(): Promise<{ rows: ValidationStoreRow[]; settings: ModelSettings } | null> {
+async function loadValidationData(): Promise<{
+  rows: ValidationStoreRow[];
+  settings: ModelSettings;
+  existingStoresByCode: Map<string, ExistingStore>;
+  competitorsByCode: Map<string, Competitor[]>;
+} | null> {
   const [stores, settingsDoc] = await Promise.all([listExistingStores(), getModelSettings()]);
   if (stores.length === 0) return null;
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
 
+  const existingStoresByCode = new Map(stores.map((s) => [s.storeCode, s]));
+  const competitorsByCode = new Map<string, Competitor[]>();
+
   const inputs: ValidationStoreInput[] = await Promise.all(
     stores.map(async (s) => {
       const [loc, competitors] = await Promise.all([getLocationEvaluation(s.storeCode), listCompetitors(s.storeCode)]);
+      competitorsByCode.set(s.storeCode, competitors);
       return {
         storeCode: s.storeCode,
         storeName: s.storeName,
@@ -133,7 +149,7 @@ async function loadValidationData(): Promise<{ rows: ValidationStoreRow[]; setti
   );
 
   const { rows } = runCohortValidation(inputs, settings);
-  return { rows, settings };
+  return { rows, settings, existingStoresByCode, competitorsByCode };
 }
 
 const COHORT_LABELS: Record<TenureCohort, string> = {
@@ -433,6 +449,30 @@ function SummaryBlock({ title, summary, benchmark }: { title: string; summary: V
   );
 }
 
+/**
+ * "실측기반 예상월매출" 백테스트 결과 표시(2026-08-21, 처음 검증). SummaryBlock과 다르게
+ * passed 배지·overallStatus 배지를 안 보여준다 — targetMAE 등은 V61/V62 전용으로 설계된
+ * 목표치라 이 지표에 그대로 들이대면 "이미 검증된 목표가 있다"는 오해를 준다. 숫자만 그대로
+ * 보여주고 통과/미달 판단은 화면이 아니라 사용자가 한다.
+ */
+function MeasuredForecastSummaryBlock({ summary }: { summary: ValidationSummary2 }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <SummaryCard title="표본 수" value={`${formatNumber(summary.sampleCount)}곳`} />
+      <SummaryCard title="평균절대오차(MAPE)" value={formatPercent(summary.meanAbsoluteErrorPct)} />
+      <SummaryCard title="중앙값절대오차" value={formatPercent(summary.medianAbsoluteErrorPct)} />
+      <SummaryCard title="±5% 이내" value={formatPercent(summary.within5PctRatio)} />
+      <SummaryCard title="±10% 이내" value={formatPercent(summary.within10PctRatio)} />
+      <SummaryCard title="±20% 이내" value={formatPercent(summary.within20PctRatio)} />
+      <SummaryCard title="평균편향" value={formatPercent(summary.meanBiasPct)} />
+      <SummaryCard
+        title="과대예측/과소예측"
+        value={`${summary.overPredictedCount}곳 / ${summary.underPredictedCount}곳`}
+      />
+    </div>
+  );
+}
+
 export default function ValidationPage() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
@@ -443,7 +483,17 @@ export default function ValidationPage() {
       try {
         const data = await loadValidationData();
         if (cancelled) return;
-        setState(data ? { status: "ready", rows: data.rows, settings: data.settings } : { status: "empty" });
+        setState(
+          data
+            ? {
+                status: "ready",
+                rows: data.rows,
+                settings: data.settings,
+                existingStoresByCode: data.existingStoresByCode,
+                competitorsByCode: data.competitorsByCode,
+              }
+            : { status: "empty" },
+        );
       } catch (err) {
         if (cancelled) return;
         setState({ status: "error", message: err instanceof Error ? err.message : "데이터를 불러오지 못했습니다." });
@@ -457,7 +507,7 @@ export default function ValidationPage() {
 
   const computed = useMemo(() => {
     if (state.status !== "ready") return null;
-    const { rows, settings } = state;
+    const { rows, settings, existingStoresByCode, competitorsByCode } = state;
 
     const targets = {
       mape: settings.targetMAE,
@@ -473,6 +523,37 @@ export default function ValidationPage() {
     const excludedNonBlackLabelCount = rows.length - blackLabelRows.length;
 
     const coreRows = blackLabelRows.filter((r) => r.includedInCoreAccuracy);
+
+    // 2026-08-21 — "실측기반 예상월매출"(AA경로) 백테스트. 정식검증(coreRows)과 같은 매장
+    // 모집단에, 이 경로만의 조건(자사 시설값 완비 + 경쟁점 실측 존재)을 추가로 요구한다.
+    // computeExistingStoreMeasuredForecast(calc.ts)가 표본 포함 여부와 사유를 그대로 반환한다 —
+    // 화면에서 다시 판단하지 않는다(무음 누락 금지, excludedNonBlackLabelCount와 같은 패턴).
+    const measuredForecastResults = coreRows.map((r) => {
+      const store = existingStoresByCode.get(r.storeCode);
+      const competitors = competitorsByCode.get(r.storeCode) ?? [];
+      const forecast = store ? computeExistingStoreMeasuredForecast(store, competitors, settings) : null;
+      return { row: r, forecast };
+    });
+    const measuredForecastExcluded = measuredForecastResults.filter((m) => !m.forecast || m.forecast.excludedReason != null);
+    const measuredForecastIncluded = measuredForecastResults
+      .filter((m): m is { row: ValidationStoreRow; forecast: NonNullable<(typeof measuredForecastResults)[number]["forecast"]> } =>
+        m.forecast != null && m.forecast.excludedReason == null,
+      )
+      .map((m) => ({
+        storeName: m.row.storeName,
+        actualRevenueAvg: m.row.actualRevenueAvg,
+        forecastRevenue: m.forecast.measuredForecastMonthlyRevenue,
+        errorAmount:
+          m.forecast.measuredForecastMonthlyRevenue != null && m.row.actualRevenueAvg != null
+            ? m.forecast.measuredForecastMonthlyRevenue - m.row.actualRevenueAvg
+            : null,
+        absoluteErrorPct:
+          m.forecast.measuredForecastMonthlyRevenue != null && m.row.actualRevenueAvg != null && m.row.actualRevenueAvg > 0
+            ? Math.abs(m.forecast.measuredForecastMonthlyRevenue - m.row.actualRevenueAvg) / m.row.actualRevenueAvg
+            : null,
+      }))
+      .filter((m) => m.absoluteErrorPct != null);
+    const measuredForecastSummary = summarizeValidationRows(measuredForecastIncluded, targets);
     // 요청사항 1 — 조기검증 포함조건: 완료개월 3~11개월(코호트 A/B/C) + 실제/예측 존재 + 블랙라벨
     // + 학습제외 아님(사후 운영이슈 아님) + 정상영업.
     const earlyNormalRows = blackLabelRows.filter(
@@ -555,6 +636,9 @@ export default function ValidationPage() {
       byCohort,
       fullTenureRows,
       fullTenureExcluded,
+      measuredForecastIncluded,
+      measuredForecastExcluded,
+      measuredForecastSummary,
       missingLocationEvalRows,
       completenessCounts,
       competitorStatusCounts,
@@ -605,6 +689,9 @@ export default function ValidationPage() {
     fullTenureExcluded,
     missingLocationEvalRows,
     combinedRows,
+    measuredForecastIncluded,
+    measuredForecastExcluded,
+    measuredForecastSummary,
     settings,
   } = computed;
 
@@ -751,6 +838,52 @@ export default function ValidationPage() {
             <b>반올림 시점 차이</b>: 없음 — 둘 다 V61을 반올림한 뒤 그 값으로 V62를 다시 반올림한다(이중 반올림이지만 시트·웹 동일).
           </li>
         </ul>
+      </section>
+
+      <section className="space-y-3 rounded-2xl border border-zinc-300 p-5 dark:border-zinc-700">
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+          5. 실측기반 예상월매출 검증 (신규 — 경쟁점 실가동좌석 기반, 이번에 처음 검증)
+        </h2>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          V61/V62(인구·이용률 기반)과 완전히 별개인 두 번째 경로를 기존 가맹점 실제매출로 처음 검증해봤습니다. 이 경로는 원본
+          시트에도 존재 목적이 문서화돼 있지 않고 지금까지 검증된 적이 없어서, V61/V62 같은 통과/미달 목표(목표 MAE 등)를 적용하지
+          않고 수치만 그대로 보여줍니다 — 계속 쓸지 여부는 이 결과를 보고 판단해주세요.
+        </p>
+        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+          정식검증({coreSummary.sampleCount}곳) 중 자사 시설값이 완비되고 경쟁점 실측(핑봇)이 있는{" "}
+          {measuredForecastIncluded.length}곳만 표본에 포함했습니다.
+          {measuredForecastExcluded.length > 0 &&
+            ` 제외 ${measuredForecastExcluded.length}곳: ${measuredForecastExcluded
+              .map((m) => `${m.row.storeName}(${m.forecast?.excludedReason ?? "산출 불가"})`)
+              .join(", ")}`}
+        </p>
+        <div className="mt-4">
+          <MeasuredForecastSummaryBlock summary={measuredForecastSummary} />
+        </div>
+        {measuredForecastIncluded.length > 0 && (
+          <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+            <table className="w-full min-w-[600px] text-sm">
+              <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                <tr>
+                  <th className="px-3 py-2">점포명</th>
+                  <th className="px-3 py-2">실측기반 예상월매출</th>
+                  <th className="px-3 py-2">실제매출평균</th>
+                  <th className="px-3 py-2">절대오차율</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {measuredForecastIncluded.map((m) => (
+                  <tr key={m.storeName}>
+                    <td className="px-3 py-2 font-medium">{m.storeName}</td>
+                    <td className="px-3 py-2">{formatWon(m.forecastRevenue)}</td>
+                    <td className="px-3 py-2">{formatWon(m.actualRevenueAvg)}</td>
+                    <td className="px-3 py-2">{formatPercent(m.absoluteErrorPct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">

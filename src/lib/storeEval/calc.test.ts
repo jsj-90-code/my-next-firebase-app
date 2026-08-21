@@ -15,6 +15,7 @@ import {
   computeCompetitorOccupiedSeats,
   computeCompetitivenessScore,
   computeDataCompleteness,
+  computeExistingStoreMeasuredForecast,
   computeOperationalStatus,
   computeSpecialDemandScore,
   computeCompletedMonthsCount,
@@ -583,6 +584,131 @@ describe("실측기반 예상월매출 파이프라인 (경쟁점 실가동좌�
     const result = computeMeasuredForecast(23.31, 1200, 0.5, 100);
     expect(result?.monthlyRevenue).toBe(Math.round((23.31 * 24 * 30 * 1200) / 0.5));
     expect(result?.dailyRevenuePerPc).toBe(Math.round((result!.monthlyRevenue) / 100 / 30));
+  });
+});
+
+describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 예상월매출 백테스트, 2026-08-21)", () => {
+  const settings = defaultModelSettings();
+  function baseStore(overrides: Partial<Parameters<typeof computeExistingStoreMeasuredForecast>[0]> = {}) {
+    return {
+      storeCode: "S1",
+      pcCount: 100,
+      floor: 1,
+      groundLevel: "지하" as const,
+      hasElevator: false,
+      hourlyRate: 1300,
+      ownVgaBase: "RTX 5060",
+      ownVgaTop: null,
+      ownGameZoneCount: 3,
+      ownRoom1: 0,
+      ownRoom2: 0,
+      ownTeamRoom: 2,
+      ownCoupleZone: 3,
+      ownVipZone: 5,
+      ownFriendsZone: 15,
+      ownFoodScore: 4,
+      ownInteriorScore: 4,
+      ownMonitorScore: 4,
+      ...overrides,
+    };
+  }
+  function competitor(overrides: Partial<Parameters<typeof computeExistingStoreMeasuredForecast>[1][number]> = {}) {
+    return {
+      id: "c1",
+      candidateCode: "S1",
+      name: "경쟁점",
+      surveyLevel: "상세" as const,
+      investigationStatus: "조사완료" as const,
+      address: null,
+      distanceM: null,
+      floor: null,
+      groundLevel: null,
+      totalPcCount: 100,
+      appliedPcCount: 100,
+      hasElevator: null,
+      cpu: null,
+      vgaBase: null,
+      vgaTop: null,
+      ram: null,
+      monitor: null,
+      ratePer1000Won: null,
+      hourlyRateConverted: null,
+      paidDeduction: null,
+      visitedAt: null,
+      visitedDow: null,
+      visitorCount: null,
+      measuredSeatRate: null,
+      pingbotUtilization: 30,
+      pingbotPeriod: "최근 30일",
+      renovationYear: null,
+      foodScore: 3,
+      foodBasis: null,
+      interiorScore: 3,
+      interiorBasis: null,
+      monitorScore: 3,
+      monitorBasis: null,
+      room1: null,
+      room2: null,
+      teamRoom: null,
+      coupleZone: null,
+      premiumZone: null,
+      premiumSpec: null,
+      createdAt: 0,
+      updatedAt: 0,
+      ...overrides,
+    };
+  }
+
+  it("존구성/VGA가 하나라도 없으면(물리적 시설 사실) 표준값으로 채우지 않고 데이터 부족으로 제외한다", () => {
+    const result = computeExistingStoreMeasuredForecast(baseStore({ ownVgaBase: null }), [competitor()], settings);
+    expect(result.excludedReason).toBe("데이터 부족(자사 존구성/VGA 미완비)");
+    expect(result.measuredForecastMonthlyRevenue).toBeNull();
+  });
+
+  it("먹거리/인테리어/모니터평가(평가자 직접입력)가 없으면 표준값 4로 채우고 표본에서 빼지 않는다 — 실데이터 26곳 전부 이 3개가 비어 있었음(2026-08-21 확인)", () => {
+    const result = computeExistingStoreMeasuredForecast(
+      baseStore({ ownFoodScore: null, ownInteriorScore: null, ownMonitorScore: null }),
+      [competitor()],
+      settings,
+    );
+    expect(result.excludedReason).toBeNull();
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.18, 2); // 표준값 4로 채워도 신중동점 사례와 동일 결과
+  });
+
+  it("경쟁점 정보가 없으면 제외한다", () => {
+    const result = computeExistingStoreMeasuredForecast(baseStore(), [], settings);
+    expect(result.excludedReason).toBe("경쟁점 정보 없음");
+  });
+
+  it("경쟁점은 있지만 핑봇 실측이 하나도 없으면(방문시점 실시간값만) 제외한다", () => {
+    const result = computeExistingStoreMeasuredForecast(
+      baseStore(),
+      [competitor({ pingbotUtilization: null, measuredSeatRate: 28.9 })],
+      settings,
+    );
+    expect(result.excludedReason).toBe("경쟁점 실측 데이터 부족(핑봇 실측 없음)");
+  });
+
+  it("입력이 완비되면 evaluate.ts와 동일한 조합으로 계산하고, 각 단계 출력이 재조합값과 일치한다", () => {
+    const competitors = [competitor()];
+    const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
+    expect(result.excludedReason).toBeNull();
+    // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합은 신중동점 실사례와
+    // 동일해서 경쟁력점수 4.18을 그대로 재현해야 한다(calc.ts applyStandardOwnFacilityDefaults 테스트 참고).
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.18, 2);
+
+    const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
+    expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
+    expect(result.newDemandGrowthRate).toBe(capture?.growthRate ?? null);
+
+    const expectedSeats = computeExpectedOccupiedSeats(result.competitorOccupiedSeats, capture?.captureRate ?? null, capture?.growthRate ?? null);
+    expect(result.expectedOccupiedSeats).toBeCloseTo(expectedSeats ?? -1, 4);
+
+    const expectedUtil = computeExpectedUtilization(result.expectedOccupiedSeats, 100);
+    expect(result.expectedUtilization).toBeCloseTo(expectedUtil ?? -1, 6);
+
+    const forecast = computeMeasuredForecast(result.expectedOccupiedSeats, 1300, settings.measuredForecastProductRatio, 100);
+    expect(result.measuredForecastMonthlyRevenue).toBe(forecast?.monthlyRevenue ?? null);
   });
 });
 
