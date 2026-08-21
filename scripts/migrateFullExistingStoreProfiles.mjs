@@ -190,12 +190,22 @@ async function main() {
   // ---- 05_경쟁점정보: 기존 가맹점의 경쟁점 실사값을 storeEvalCompetitors로 ----
   const comps05 = await readSheetAsObjects("05_경쟁점정보", "A1:AX2000");
   let compWritten = 0;
+  // id를 "코드_이름_전역순번"으로 만들면(예전 방식) 시트 행이 추가/삭제돼 순번이 밀리는 순간
+  // 재실행 시 기존 문서를 덮어쓰지 못하고 옛 값(핑봇 버그 이전 null 등)이 orphan으로 남는다
+  // (2026-08-22 발견 — 실제로는 orphan이 아니라 N001~N003 후보지 문서였음을 확인했지만, 구조적
+  // 위험 자체는 남아있어 예방 차원에서 고친다). "코드_이름"만으로 키를 만들어 매장 내 순서가
+  // 바뀌어도 같은 경쟁점은 항상 같은 id로 덮어써지게 하고, 같은 매장에 동명 경쟁점이 있을 때만
+  // 매장별 순번을 붙여 구분한다(전역 순번 아님).
+  const seenKeyCount = new Map();
   for (const c of comps05) {
     const code = toText(c["가맹점코드"]);
     if (!code || !storeCodes.has(code)) continue;
     const name = toText(c["경쟁점명"]);
     if (!name) continue;
-    const id = `${code}_${name}_${compWritten}`; // 원본에 고유ID가 없어 코드+이름+순번으로 구성
+    const baseKey = `${code}_${name}`;
+    const seenCount = seenKeyCount.get(baseKey) ?? 0;
+    seenKeyCount.set(baseKey, seenCount + 1);
+    const id = seenCount === 0 ? baseKey : `${baseKey}_${seenCount}`;
     const competitor = {
       id,
       candidateCode: code,
