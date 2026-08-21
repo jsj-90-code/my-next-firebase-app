@@ -62,6 +62,16 @@ function toNumber(v) {
   const n = Number(String(v).replace(/,/g, "").trim());
   return Number.isNaN(n) ? null : n;
 }
+// 시트에서 퍼센트 서식 셀(예: 핑봇_가동률, 실측착석률)은 Sheets API가 "14.1%" 같은 표시 문자열로
+// 돌려준다. toNumber()는 "%"를 못 벗겨내서 전부 null이 됐었다(2026-08-21 발견) — %를 제거한 뒤
+// 숫자로 파싱한다. 저장 관례(normalizePercentLike, calc.ts)에 맞춰 나눗셈 없이 원본 퍼센트
+// 숫자 그대로 반환한다(예: "14.1%" → 14.1).
+function toPercentNumber(v) {
+  if (typeof v === "number") return v;
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/[%,]/g, "").trim());
+  return Number.isNaN(n) ? null : n;
+}
 function toBool(v) {
   const s = String(v ?? "").trim();
   return s === "유" || s === "Y" || s === "true";
@@ -210,8 +220,8 @@ async function main() {
       visitedAt: toText(c["방문일시"]),
       visitedDow: toText(c["방문요일"]),
       visitorCount: toNumber(c["이용객수"]),
-      measuredSeatRate: toNumber(c["실측착석률"]),
-      pingbotUtilization: toNumber(c["핑봇_가동률"]),
+      measuredSeatRate: toPercentNumber(c["실측착석률"]),
+      pingbotUtilization: toPercentNumber(c["핑봇_가동률"]),
       pingbotPeriod: toText(c["핑봇_조회기간"]),
       renovationYear: toNumber(c["리뉴얼연도"]),
       foodScore: toNumber(c["먹거리평가"]),
