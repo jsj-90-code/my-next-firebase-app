@@ -184,9 +184,10 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
 
-  // 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존 경쟁점·입지평가 데이터를 미리 읽어둔다.
+  // 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존 경쟁점·입지평가·회원스냅샷 데이터를 미리 읽어둔다.
   const existingCompByid = new Map((await db.collection("storeEvalCompetitors").get()).docs.map((d) => [d.id, d.data()]));
   const existingLocByCode = new Map((await db.collection("storeEvalLocationEvaluations").get()).docs.map((d) => [d.id, d.data()]));
+  const existingMemberById = new Map((await db.collection("storeEvalExistingStoreMembers").get()).docs.map((d) => [d.id, d.data()]));
 
   // ---- 01_점포기본정보 ----
   const stores01 = await readSheetAsObjects(sheets, "01_점포기본정보", "A1:CQ1000");
@@ -197,6 +198,10 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     const patch: Record<string, unknown> = {
       address: toText(s["주소"]),
       hasElevator: toBool(s["엘리베이터"]),
+      // 오픈 후 좌석을 늘린 매장은 이 값(오픈 초기 대수)으로 V61 학습/예측을 해야 한다
+      // (2026-08-22, migrateFullExistingStoreProfiles.mjs와 동일 필드 — 자동 동기화도
+      // 시트가 나중에 갱신되면 따라가도록 여기에도 추가).
+      evaluationPcCount: toNumber(s["평가기준_PC대수"]),
       demographicsYear: toNumber(s["상권데이터기준연도"]),
       renovationYear: toNumber(s["자사_리뉴얼연도"]),
       ownVgaBase: toText(s["자사_VGA_기본"]),
@@ -255,12 +260,22 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   // ---- 05_경쟁점정보 ----
   const comps05 = await readSheetAsObjects(sheets, "05_경쟁점정보", "A1:AX2000");
   let compWritten = 0;
+  // id를 "코드_이름_전역순번"으로 만들면(예전 방식) 시트 행이 추가/삭제되거나 다른 경쟁점이
+  // 먼저 스킵되는 순간 재실행 시 기존 문서를 덮어쓰지 못하고 옛 값이 orphan으로 남는다
+  // (migrateFullExistingStoreProfiles.mjs와 동일 이유로 2026-08-22 수정 - 이 파일이 그 스크립트와
+  // "완전히 동일"해야 한다는 파일 상단 주석과 어긋나 있던 걸 바로잡음). "코드_이름"만으로 키를
+  // 만들어 매장 내 순서가 바뀌어도 같은 경쟁점은 항상 같은 id로 덮어써지게 하고, 같은 매장에
+  // 동명 경쟁점이 있을 때만 매장별 순번을 붙여 구분한다(전역 순번 아님).
+  const seenKeyCount = new Map<string, number>();
   for (const c of comps05) {
     const code = toText(c["가맹점코드"]);
     if (!code || !storeCodes.has(code)) continue;
     const name = toText(c["경쟁점명"]);
     if (!name) continue;
-    const id = `${code}_${name}_${compWritten}`;
+    const baseKey = `${code}_${name}`;
+    const seenCount = seenKeyCount.get(baseKey) ?? 0;
+    seenKeyCount.set(baseKey, seenCount + 1);
+    const id = seenCount === 0 ? baseKey : `${baseKey}_${seenCount}`;
     const competitor = {
       id,
       candidateCode: code,
@@ -285,8 +300,10 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       visitedAt: toText(c["방문일시"]),
       visitedDow: toText(c["방문요일"]),
       visitorCount: toNumber(c["이용객수"]),
-      measuredSeatRate: toNumber(c["실측착석률"]),
-      pingbotUtilization: toNumber(c["핑봇_가동률"]),
+      // 퍼센트 서식 셀("14.1%")은 toNumber로는 NaN → null이 된다(2026-08-21 발견, 여기서는
+      // 2026-08-22까지 안 고쳐져 있었음 - migrateFullExistingStoreProfiles.mjs와 동일하게 수정).
+      measuredSeatRate: toPercentNumber(c["실측착석률"]),
+      pingbotUtilization: toPercentNumber(c["핑봇_가동률"]),
       pingbotPeriod: toText(c["핑봇_조회기간"]),
       renovationYear: toNumber(c["리뉴얼연도"]),
       foodScore: toNumber(c["먹거리평가"]),
@@ -301,7 +318,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       coupleZone: toNumber(c["커플존"]),
       premiumZone: toBool(c["프리미엄존"]) ? 1 : 0,
       premiumSpec: toText(c["프리미엄사양"]) != null,
-      createdAt: Date.now(),
+      createdAt: (existingCompByid.get(id)?.createdAt as number | undefined) ?? Date.now(),
       updatedAt: Date.now(),
     };
     if (!isSameData(existingCompByid.get(id), competitor)) {
@@ -380,8 +397,14 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       memo: toText(m["메모"]),
       updatedAt: Date.now(),
     };
-    await writer.set(db.collection("storeEvalExistingStoreMembers").doc(`${code}_${snapshotDate}`), snapshot);
-    memberWritten++;
+    const memberId = `${code}_${snapshotDate}`;
+    // 값이 안 바뀌어도 매번 다시 쓰던 버그 - migrateFullExistingStoreProfiles.mjs는
+    // 2026-08-22에 diff 기반으로 고쳤는데 이 파일은 그대로 남아있었다(파일 상단 "완전히
+    // 동일" 주석과 어긋남). 나머지 섹션(경쟁점·입지평가·매출)과 동일하게 diff 체크를 추가한다.
+    if (!isSameData(existingMemberById.get(memberId), snapshot)) {
+      await writer.set(db.collection("storeEvalExistingStoreMembers").doc(memberId), snapshot);
+      memberWritten++;
+    }
   }
 
   await writer.finish();
