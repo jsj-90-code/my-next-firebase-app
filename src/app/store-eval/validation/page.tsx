@@ -508,19 +508,44 @@ function AccuracyBadge({ absoluteErrorPct }: { absoluteErrorPct: number | null }
   );
 }
 
+/** "12개월 이상 운영"(정식검증 대상) 여부 배지 — classifyTenureCohort(calc.ts) 기준 그대로. */
+function TenureBadge({ cohort }: { cohort: ValidationStoreRow["cohort"] }) {
+  const isFormal = cohort === "정식 검증군";
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+        isFormal
+          ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200"
+          : "bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400"
+      }`}
+    >
+      {isFormal ? "12개월 이상" : "12개월 미만"}
+    </span>
+  );
+}
+
 /**
- * 처음 보는 사람을 위한 "결론만" 표 — 정식검증 매장별로 실제매출·예측매출·오차율·적중 여부만
- * 보여준다(브랜드·운영상태·데이터완성도 등 전문 컬럼은 아래 "자세히 보기"의 코호트별 상세표에만
- * 남겨둔다). 계산은 하지 않고 이미 계산된 ValidationStoreRow 필드를 그대로 옮겨 보여줄 뿐이다.
+ * 처음 보는 사람을 위한 "결론만" 표 — 블랙라벨 전체 매장을 매장명·운영기간(12개월 이상 여부)·
+ * 실제매출·예측매출·오차율·적중 여부만으로 보여준다(브랜드·운영상태·데이터완성도 등 전문 컬럼은
+ * 아래 "자세히 보기"의 코호트별 상세표에만 남겨둔다). 계산은 하지 않고 이미 계산된
+ * ValidationStoreRow 필드를 그대로 옮겨 보여줄 뿐이다. 12개월 미만 매장은 정식검증 표본이
+ * 아니라서 위 요약 문단의 통계(적중률 등)에는 안 들어가지만, 이 표에는 참고용으로 같이 보여준다
+ * (요청사항 2026-08-22: "12개월 미만 매장도 같이 넣고 12개월 이상 여부를 표기해달라").
  */
 function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
-  const sorted = [...rows].sort((a, b) => (b.absoluteErrorPct ?? -1) - (a.absoluteErrorPct ?? -1));
+  const sorted = [...rows].sort((a, b) => {
+    const aFormal = a.cohort === "정식 검증군" ? 0 : 1;
+    const bFormal = b.cohort === "정식 검증군" ? 0 : 1;
+    if (aFormal !== bFormal) return aFormal - bFormal;
+    return (b.absoluteErrorPct ?? -1) - (a.absoluteErrorPct ?? -1);
+  });
   return (
     <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
-      <table className="w-full min-w-[560px] text-sm">
+      <table className="w-full min-w-[640px] text-sm">
         <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
           <tr>
             <th className="px-3 py-2">매장명</th>
+            <th className="px-3 py-2">운영기간</th>
             <th className="px-3 py-2">실제매출(월평균)</th>
             <th className="px-3 py-2">모델 예측매출</th>
             <th className="px-3 py-2">오차율</th>
@@ -531,6 +556,9 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
           {sorted.map((r) => (
             <tr key={r.storeCode} className="text-zinc-800 dark:text-zinc-200">
               <td className="px-3 py-2 font-medium">{r.storeName}</td>
+              <td className="px-3 py-2">
+                <TenureBadge cohort={r.cohort} />
+              </td>
               <td className="px-3 py-2">{formatWon(r.actualRevenueAvg)}</td>
               <td className="px-3 py-2">{formatWon(r.v62PredictedRevenueAvg)}</td>
               <td className="px-3 py-2">{formatPercent(r.absoluteErrorPct)}</td>
@@ -785,6 +813,7 @@ export default function ValidationPage() {
 
     return {
       rows,
+      blackLabelRows,
       excludedNonBlackLabelCount,
       coreRows,
       earlyNormalRows,
@@ -842,6 +871,7 @@ export default function ValidationPage() {
   const {
     coreSummary,
     coreRows,
+    blackLabelRows,
     combinedSummary,
     byCohort,
     completenessCounts,
@@ -890,7 +920,11 @@ export default function ValidationPage() {
           {coreRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
           전체 평균으로는 실제 매출과 <b>{formatPercent(coreSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
         </p>
-        <SimpleResultTable rows={coreRows} />
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 위 통계는 이 중 "12개월 이상" 매장만 대상으로 계산한
+          공식 검증 결과이고, 12개월 미만 매장은 아직 운영 기간이 짧아 참고용으로만 같이 보여드립니다.
+        </p>
+        <SimpleResultTable rows={blackLabelRows} />
       </section>
 
       <GlossarySection />
