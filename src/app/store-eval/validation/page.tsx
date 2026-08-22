@@ -118,7 +118,10 @@ async function loadValidationData(): Promise<{
 
   const inputs: ValidationStoreInput[] = await Promise.all(
     stores.map(async (s) => {
-      const [loc, competitors] = await Promise.all([getLocationEvaluation(s.storeCode), listCompetitors(s.storeCode)]);
+      // 전환 시 실제 가맹점코드가 후보지코드와 달라질 수 있다(2026-08-22 확인) - 경쟁점/입지평가는
+      // 후보지코드(candidateCode)로 저장돼 있으므로, originCandidateCode가 있으면 그걸로 찾는다.
+      const lookupCode = s.originCandidateCode ?? s.storeCode;
+      const [loc, competitors] = await Promise.all([getLocationEvaluation(lookupCode), listCompetitors(lookupCode)]);
       competitorsByCode.set(s.storeCode, competitors);
       return {
         storeCode: s.storeCode,

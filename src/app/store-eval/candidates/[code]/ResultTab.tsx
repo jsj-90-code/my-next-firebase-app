@@ -10,8 +10,8 @@ import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/store
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   convertCandidateToExistingStore,
+  findExistingStoreByOriginCandidate,
   getCandidate,
-  getExistingStore,
   getLocationEvaluation,
   getModelSettings,
   listCompetitors,
@@ -49,12 +49,22 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const [alreadyExisting, setAlreadyExisting] = useState(false);
   const [converting, setConverting] = useState(false);
   const [convertMessage, setConvertMessage] = useState<string | null>(null);
+  // 계약 확정 후 부여되는 실제 가맹점코드 - 후보지코드(N001 등)와 다른 게 정상적인 업무 구조라
+  // 전환 직전에 사용자가 확인/수정할 수 있게 한다(기본값은 후보지코드, 같으면 그대로 두면 됨).
+  const [newStoreCode, setNewStoreCode] = useState(candidateCode);
 
   useEffect(() => {
-    getExistingStore(candidateCode).then((s) => setAlreadyExisting(s != null));
+    // 전환 후에는 storeCode가 candidateCode와 달라질 수 있으므로, 문서ID 직접 조회가 아니라
+    // originCandidateCode 역조회로 "이미 전환됐는지"를 판정한다(2026-08-22부터).
+    findExistingStoreByOriginCandidate(candidateCode).then((s) => setAlreadyExisting(s != null));
   }, [candidateCode]);
 
   async function handleConvert() {
+    const storeCode = newStoreCode.trim();
+    if (!storeCode) {
+      setConvertMessage("가맹점코드를 입력해주세요.");
+      return;
+    }
     setConverting(true);
     setConvertMessage(null);
     try {
@@ -66,7 +76,14 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (!candidate) throw new Error("후보지 기본정보를 찾을 수 없습니다.");
       // 지금 화면에 떠 있는 예측값(result)을 그대로 넘겨 스냅샷으로 동결한다 - 이후 모델이
       // 바뀌어도 "그때 이 숫자를 보고 전환했다"는 기록은 다시 계산되지 않는다.
-      await convertCandidateToExistingStore({ candidate, competitors, locationEvaluation, evaluationResult: result, actor: user?.email ?? null });
+      await convertCandidateToExistingStore({
+        candidate,
+        competitors,
+        locationEvaluation,
+        evaluationResult: result,
+        storeCode,
+        actor: user?.email ?? null,
+      });
       setAlreadyExisting(true);
       setConvertMessage("기존 가맹점으로 전환했습니다. [기존 가맹점 관리] 화면에서 오픈일·월매출을 이어서 입력해주세요.");
     } catch (err) {
@@ -161,14 +178,26 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             이미 기존 가맹점으로 전환됨 — [기존 가맹점 관리] 화면에서 관리하세요.
           </span>
         ) : (
-          <button
-            type="button"
-            disabled={converting}
-            onClick={handleConvert}
-            className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
-          >
-            {converting ? "전환 중..." : "오픈 확정 → 기존 가맹점으로 전환"}
-          </button>
+          <>
+            <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+              실제 가맹점코드
+              <input
+                type="text"
+                value={newStoreCode}
+                onChange={(e) => setNewStoreCode(e.target.value)}
+                placeholder="예: 20260703437"
+                className="w-40 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={converting}
+              onClick={handleConvert}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+            >
+              {converting ? "전환 중..." : "오픈 확정 → 기존 가맹점으로 전환"}
+            </button>
+          </>
         )}
         {convertMessage && <p className="text-xs text-zinc-600 dark:text-zinc-400">{convertMessage}</p>}
       </div>

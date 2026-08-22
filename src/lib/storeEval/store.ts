@@ -242,6 +242,17 @@ export async function getExistingStore(storeCode: string): Promise<ExistingStore
   return snap.exists() ? (snap.data() as ExistingStore) : null;
 }
 
+/**
+ * 후보지코드로 이미 전환된 기존 가맹점을 찾는다. 전환 시점에 실제 가맹점코드(후보지코드와
+ * 다를 수 있음 - 계약 확정 후 부여되는 정식 코드가 따로 있는 업무 구조, 2026-08-22 확인)를
+ * 입력받게 되면서, "이미 전환됐는지" 판정을 더 이상 storeCode===candidateCode로 가정할 수 없다.
+ * originCandidateCode로 역조회한다(가맹점코드가 후보지코드와 같아도, 달라도 항상 이 필드로 찾음).
+ */
+export async function findExistingStoreByOriginCandidate(candidateCode: string): Promise<ExistingStore | null> {
+  const snap = await getDocs(query(collection(requireDb(), EXISTING_STORES), where("originCandidateCode", "==", candidateCode)));
+  return snap.empty ? null : (snap.docs[0].data() as ExistingStore);
+}
+
 export async function deleteExistingStore(storeCode: string, actor: string | null): Promise<void> {
   const ref = doc(requireDb(), EXISTING_STORES, storeCode);
   const before = await getDoc(ref);
@@ -283,13 +294,17 @@ export async function convertCandidateToExistingStore(input: {
   // 예측값 없이 연결만 한다 - 나중에 linkExistingStoreToCandidate로 다시 채울 수는 없다(재계산
   // 금지 원칙과 같은 이유로, 지나간 예측값을 사후에 지어내지 않는다).
   evaluationResult: EvaluationResult | null;
+  // 계약 확정 후 부여되는 정식 가맹점코드 - 후보지코드(N001 등)와 다른 게 정상적인 업무 구조다
+  // (2026-08-22 확인). 안 주어지면 이전처럼 후보지코드를 그대로 쓴다(하위호환).
+  storeCode?: string;
   actor: string | null;
 }): Promise<ExistingStore> {
   const { candidate: c, competitors, locationEvaluation: loc, evaluationResult, actor } = input;
+  const finalStoreCode = input.storeCode?.trim() || c.code;
   const now = Date.now();
 
   const store: ExistingStore = {
-    storeCode: c.code,
+    storeCode: finalStoreCode,
     storeName: c.name,
     pcCount: c.expectedPcCount,
     evaluationPcCount: null, // 전환 시점 pcCount가 곧 오픈 초기 대수이므로 별도값 불필요 - 이후 대수가 늘면 사용자가 채운다.
@@ -301,6 +316,8 @@ export async function convertCandidateToExistingStore(input: {
     excludedReason: null,
     v61Predicted: null,
     referenceMarketDemand: null,
+    // originCandidateCode는 항상 후보지코드(c.code)다 - storeCode가 달라져도 이 필드로 후보지
+    // 평가 당시의 경쟁점/입지평가 데이터(candidateCode로 저장돼 있음)를 계속 찾아올 수 있다.
     originCandidateCode: c.code,
     predictedAtConversion: evaluationResult
       ? {
@@ -373,15 +390,15 @@ export async function convertCandidateToExistingStore(input: {
   };
   await upsertExistingStore(store);
 
-  // 경쟁점은 후보지코드로 저장돼 있던 것을 그대로 같은 storeCode로 재저장한다(경쟁점 컬렉션은
-  // 후보지/기존점 구분 없이 candidateCode 필드 하나를 공유 키로 쓴다).
+  // 경쟁점/입지평가는 옮기지 않고 후보지코드(c.code)에 그대로 둔다 - storeCode가 후보지코드와
+  // 달라져도(2026-08-22부터) originCandidateCode로 항상 되짚어 찾아올 수 있으므로 복사할
+  // 필요가 없다(listCompetitors/getLocationEvaluation 호출부가 store.originCandidateCode를
+  // 우선 쓰도록 되어 있다 - validation/page.tsx 참고).
   for (const comp of competitors) {
     await saveCompetitor({ ...comp, candidateCode: c.code }, actor);
   }
-  // 입지평가(브랜드·외부유입 등)도 같은 코드로 이미 존재하므로 별도 복사가 필요 없다
-  // (storeEvalLocationEvaluations는 candidateCode를 문서ID로 그대로 재사용).
 
-  await writeAuditLog({ entityType: "existingStore", entityId: c.code, action: "생성", before: null, after: store, actor });
+  await writeAuditLog({ entityType: "existingStore", entityId: finalStoreCode, action: "생성", before: null, after: store, actor });
   return store;
 }
 
