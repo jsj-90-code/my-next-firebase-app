@@ -135,6 +135,10 @@ async function main() {
     const patch = {
       address: toText(s["주소"]),
       hasElevator: toBool(s["엘리베이터"]),
+      // 오픈 초기(학습표본 산정 시점) PC대수. 오픈 후 좌석을 늘린 매장은 이 값이 현재
+      // PC대수(가맹점코드/매출DB 기준)와 다르다 - V61 학습/예측은 이 값을 우선 쓴다
+      // (2026-08-22, 사용자 확인. 예: 시흥배곧점 168대(현재) vs 108대(평가기준)).
+      evaluationPcCount: toNumber(s["평가기준_PC대수"]),
       demographicsYear: toNumber(s["상권데이터기준연도"]),
       renovationYear: toNumber(s["자사_리뉴얼연도"]),
       ownVgaBase: toText(s["자사_VGA_기본"]),

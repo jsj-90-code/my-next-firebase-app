@@ -482,6 +482,7 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
         storeCode: code,
         storeName,
         pcCount: pcCount ?? null,
+        evaluationPcCount: null,
         floor: null,
         groundLevel: null,
         openedAt,

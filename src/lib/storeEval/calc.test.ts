@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   bucketizeErrors,
   buildParityComparisonRows,
+  buildV61TrainingStores,
   classifyErrorCause,
   classifyTenureCohort,
   computeAaBaselineRevenue,
@@ -54,6 +55,7 @@ import {
   scoreFromVga,
   summarizeValidation,
   summarizeValidationRows,
+  toV61TrainingStore,
   type EmpiricalRevenueSample,
   type V61TrainingStore,
   type ValidationInputRow,
@@ -868,6 +870,63 @@ describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·정�
   });
 });
 
+describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선 사용 (오픈 후 좌석 증설 매장 왜곡 방지, 2026-08-22)", () => {
+  const baseExistingStore = {
+    storeCode: "BG",
+    storeName: "시흥배곧점",
+    pcCount: 168,
+    evaluationPcCount: null as number | null,
+    floor: 1,
+    groundLevel: "지상" as const,
+    openedAt: "2024-05-07",
+    franchiseStatus: "정상",
+    excludedFromModel: false,
+    excludedReason: null,
+    v61Predicted: null,
+    referenceMarketDemand: null,
+    brandType: "블랙라벨" as const,
+    validationUse: "사용" as const,
+    hourlyRate: 1200,
+    ownDemand: 300000,
+    competitivenessScore: 4,
+    actualMonthlyRevenueAvg: 83129382,
+    completedMonths: 12,
+    specialDemandType: null,
+    specialDemandIntensity: null,
+    hasElevator: true,
+  };
+
+  it("evaluationPcCount가 있으면 pcCount 대신 그걸 쓴다 — 현재 168대이지만 오픈 초기 108대로 학습", () => {
+    const [trained] = buildV61TrainingStores([{ ...baseExistingStore, evaluationPcCount: 108 } as any]);
+    expect(trained.pcCount).toBe(108);
+  });
+
+  it("evaluationPcCount가 없으면 현재 pcCount로 폴백한다(대부분의 매장)", () => {
+    const [trained] = buildV61TrainingStores([{ ...baseExistingStore, evaluationPcCount: null } as any]);
+    expect(trained.pcCount).toBe(168);
+  });
+
+  it("toV61TrainingStore(ValidationStoreInput)도 동일하게 evaluationPcCount를 우선한다", () => {
+    const input: ValidationStoreInput = {
+      storeCode: "BG",
+      storeName: "시흥배곧점",
+      brand: "블랙라벨",
+      openedAt: "2024-05-07",
+      completedMonths: 12,
+      franchiseStatus: "정상",
+      isPostOpenIssue: false,
+      postOpenIssueReason: null,
+      pcCount: 168,
+      evaluationPcCount: 108,
+      hourlyRate: 1200,
+      ownDemand: 300000,
+      competitivenessScore: 4,
+      actualRevenueAvg: 83129382,
+    };
+    expect(toV61TrainingStore(input).pcCount).toBe(108);
+  });
+});
+
 describe("classifyTenureCohort (재직기간 코호트 분류)", () => {
   it.each([
     [12, "정식 검증군"],
@@ -1315,6 +1374,16 @@ describe("computeCompetitorInvestigationSummary (요청사항 4 — 경쟁점 �
     expect(summary.status).toBe("uninvestigated");
     expect(summary.uninvestigatedCount).toBe(1);
   });
+  it("경쟁점 문서가 있고 전부 경쟁점없음이면 confirmed_no_competitor/high — '조사 안 됨'과 구분 (탕정역점 등 독점상권 실사례, 2026-08-22)", () => {
+    const summary = computeCompetitorInvestigationSummary([{ investigationStatus: "경쟁점없음", surveyLevel: null }]);
+    expect(summary.status).toBe("confirmed_no_competitor");
+    expect(summary.dataReliability).toBe("high");
+  });
+  it("경쟁점 문서가 아예 없으면(빈 배열) 여전히 uninvestigated/low — confirmed_no_competitor와 다름(둘 다 0건이지만 하나는 확인됨, 하나는 모름)", () => {
+    const summary = computeCompetitorInvestigationSummary([]);
+    expect(summary.status).toBe("uninvestigated");
+    expect(summary.dataReliability).toBe("low");
+  });
 });
 
 describe("computeDataCompleteness (요청사항 5 — 25점×4항목)", () => {
@@ -1373,6 +1442,11 @@ describe("classifyErrorCause (요청사항 7 — 오차원인 우선 추정, 단
   });
   it("경쟁 데이터 신뢰도 low → competitor_data_missing (다른 신호보다 우선)", () => {
     expect(classifyErrorCause({ ...baseInput, competitorDataReliability: "low" })).toBe("competitor_data_missing");
+  });
+  it("확인된 독점상권(competitorConfirmedNoCompetitor) → monopoly_market_unmodeled, competitor_data_missing보다 우선 (탕정역점 등 실사례, 2026-08-22)", () => {
+    expect(classifyErrorCause({ ...baseInput, competitorDataReliability: "high", competitorConfirmedNoCompetitor: true })).toBe(
+      "monopoly_market_unmodeled",
+    );
   });
   it("과소예측+특수수요점수>0 → special_demand_underreflected", () => {
     expect(classifyErrorCause({ ...baseInput, direction: "과소예측", specialDemandScore: 3 })).toBe("special_demand_underreflected");

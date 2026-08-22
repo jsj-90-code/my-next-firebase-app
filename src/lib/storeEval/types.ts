@@ -335,7 +335,12 @@ export type EvaluationResult = {
 export type ExistingStore = {
   storeCode: string; // 가맹점코드
   storeName: string;
-  pcCount: number | null;
+  pcCount: number | null; // 현재 실제 운영 대수(오픈 후 좌석 추가 등으로 바뀔 수 있음)
+  // 01_점포기본정보!평가기준_PC대수 - 오픈 초기(실제매출 학습표본 산정 시점) 대수. 오픈 후
+  // 좌석을 늘린 매장은 pcCount(현재값)로 대당매출을 나누면 실제보다 낮게 계산돼 학습이
+  // 왜곡된다(2026-08-22, 사용자 확인). V61 학습·리브원아웃 예측에서는 이 값이 있으면
+  // pcCount 대신 이 값을 쓴다. null이면(대부분 매장, 오픈 후 대수 변경 없음) pcCount로 폴백.
+  evaluationPcCount: number | null;
   floor: number | null;
   groundLevel: GroundLevel | null;
   openedAt: string | null;

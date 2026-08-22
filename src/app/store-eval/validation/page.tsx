@@ -55,6 +55,7 @@ const ERROR_CAUSE_LABELS: Record<ErrorCauseCode, string> = {
   external_inflow_underreflected: "외부유입 제한 과소반영(추정)",
   special_demand_underreflected: "특수수요 과소반영(추정)",
   competitor_data_missing: "경쟁점 데이터 부족(추정)",
+  monopoly_market_unmodeled: "확인된 독점상권(경쟁점 없음, 모델 미반영)",
   access_overestimated: "접근성 과대평가(추정)",
   demand_share_overestimated: "수요확보율 과대평가(추정)",
   demand_conversion_underestimated: "수요전환율 과소평가(추정)",
@@ -79,6 +80,7 @@ const COMPETITOR_STATUS_LABELS: Record<CompetitorInvestigationSummaryStatus, str
   mixed: "상세·간이 혼재",
   light: "외관·간이조사만 존재",
   uninvestigated: "미조사",
+  confirmed_no_competitor: "확인된 독점상권(경쟁점 없음)",
 };
 
 const DIFF_STAGE_LABELS: Record<ParityComparisonRow["diffStage"], string> = {
@@ -131,6 +133,7 @@ async function loadValidationData(): Promise<{
         isPostOpenIssue: s.excludedFromModel,
         postOpenIssueReason: s.excludedReason,
         pcCount: s.pcCount,
+        evaluationPcCount: s.evaluationPcCount,
         hourlyRate: s.hourlyRate,
         ownDemand: s.ownDemand,
         competitivenessScore: s.competitivenessScore,

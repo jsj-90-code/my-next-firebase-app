@@ -51,6 +51,7 @@ function blankStore(): ExistingStore {
     storeCode: "",
     storeName: "",
     pcCount: null,
+    evaluationPcCount: null,
     floor: null,
     groundLevel: null,
     openedAt: null,

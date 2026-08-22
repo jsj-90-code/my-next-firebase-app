@@ -292,6 +292,7 @@ export async function convertCandidateToExistingStore(input: {
     storeCode: c.code,
     storeName: c.name,
     pcCount: c.expectedPcCount,
+    evaluationPcCount: null, // 전환 시점 pcCount가 곧 오픈 초기 대수이므로 별도값 불필요 - 이후 대수가 늘면 사용자가 채운다.
     floor: c.floor,
     groundLevel: c.groundLevel,
     openedAt: null, // 실제 오픈일은 전환 직후 화면에서 입력해야 한다 (평가 단계엔 확정일이 없음)

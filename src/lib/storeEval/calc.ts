@@ -1023,7 +1023,9 @@ export function buildV61TrainingStores(stores: ExistingStore[]): V61TrainingStor
   return stores.filter(isEligibleForV61Training).map((s) => ({
     storeCode: s.storeCode,
     storeName: s.storeName,
-    pcCount: s.pcCount as number,
+    // 오픈 후 좌석을 늘린 매장은 evaluationPcCount(오픈 초기 대수)로 대당매출을 계산해야
+    // 한다 - 현재 pcCount로 나누면 실제보다 낮게 왜곡된다(2026-08-22 확인).
+    pcCount: (s.evaluationPcCount ?? s.pcCount) as number,
     hourlyRate: s.hourlyRate as number,
     ownDemand: s.ownDemand as number,
     competitivenessScore: s.competitivenessScore as number,
@@ -1478,6 +1480,7 @@ export type ValidationStoreInput = {
   isPostOpenIssue: boolean; // 오픈 후 운영미숙·장기휴업·영업중단·가격덤핑 등 특이사항
   postOpenIssueReason: string | null;
   pcCount: number | null;
+  evaluationPcCount?: number | null; // ExistingStore.evaluationPcCount와 동일 — 있으면 pcCount 대신 이걸로 학습/예측
   hourlyRate: number | null;
   ownDemand: number | null;
   competitivenessScore: number | null;
@@ -1515,7 +1518,7 @@ export type ValidationStoreRow = ValidationStoreInput & {
 };
 
 // ---- 경쟁점 조사상태 집계 (요청사항 4) ----
-export type CompetitorInvestigationSummaryStatus = "uninvestigated" | "detailed_complete" | "mixed" | "light";
+export type CompetitorInvestigationSummaryStatus = "uninvestigated" | "detailed_complete" | "mixed" | "light" | "confirmed_no_competitor";
 export type CompetitorDataReliability = "high" | "medium" | "low";
 export type CompetitorInvestigationSummary = {
   totalCount: number;
@@ -1542,16 +1545,27 @@ export function computeCompetitorInvestigationSummary(
   const detailedCount = investigated.filter((c) => c.surveyLevel === "상세").length;
   const lightCount = investigated.length - detailedCount;
   const uninvestigatedCount = totalCount - investigated.length;
+  // 경쟁점 문서가 하나 이상 있고 전부 "경쟁점없음"이면, 이건 "조사가 안 됐다(모름)"가 아니라
+  // "확인 결과 이 상권엔 경쟁점이 원래 없다(독점상권)"는 뜻이다 - 둘을 같은 "low 신뢰도"로
+  // 뭉개면 실제로는 완전히 확인된 사실을 "데이터 부족"으로 오진하게 된다(2026-08-22, 탕정역점·
+  // 남악점·광주각화점 실사례에서 확인).
+  const confirmedNoCompetitor = totalCount > 0 && competitors.every((c) => c.investigationStatus === "경쟁점없음");
 
   let status: CompetitorInvestigationSummaryStatus;
-  if (totalCount === 0 || investigated.length === 0) status = "uninvestigated";
+  if (confirmedNoCompetitor) status = "confirmed_no_competitor";
+  else if (totalCount === 0 || investigated.length === 0) status = "uninvestigated";
   else if (lightCount === 0) status = "detailed_complete";
   else if (detailedCount === 0) status = "light";
   else status = "mixed";
 
   const detailedRatio = totalCount ? detailedCount / totalCount : null;
-  const dataReliability: CompetitorDataReliability =
-    detailedRatio != null && detailedRatio >= 0.7 ? "high" : detailedCount > 0 ? "medium" : "low";
+  const dataReliability: CompetitorDataReliability = confirmedNoCompetitor
+    ? "high"
+    : detailedRatio != null && detailedRatio >= 0.7
+      ? "high"
+      : detailedCount > 0
+        ? "medium"
+        : "low";
 
   return { totalCount, detailedCount, lightCount, uninvestigatedCount, status, detailedRatio, dataReliability };
 }
@@ -1613,6 +1627,7 @@ export type ErrorCauseCode =
   | "external_inflow_underreflected"
   | "special_demand_underreflected"
   | "competitor_data_missing"
+  | "monopoly_market_unmodeled"
   | "access_overestimated"
   | "demand_share_overestimated"
   | "demand_conversion_underestimated"
@@ -1622,13 +1637,16 @@ export type ErrorCauseCode =
  * 오차원인 "우선 추정" — 여러 원인이 겹칠 수 있어 단일 확정 진단이 아니라 화면에 참고용
  * "우선 추정 원인"으로만 표시한다(요청사항 7 명시). 우선순위:
  *   1) 비교 불가 → not_verifiable, 2) 이미 목표범위 이내 → within_range,
- *   3) 경쟁 데이터 신뢰도가 낮음(low) → competitor_data_missing (경쟁 구도 자체를 못 봤을 가능성이
- *      가장 먼저 의심된다), 4) 과소예측+특수수요점수>0 → special_demand_underreflected(10_오차원인분석
- *      실사례 근거, [[computeSpecialDemandScore]] 참고), 5) 과대예측+외부유입제한 있음 →
- *      external_inflow_underreflected(보정을 더 줬어야 했다는 뜻), 6) 과대예측+접근성 좋음(층·
- *      엘리베이터) → access_overestimated, 7) 남은 과대예측 → demand_share_overestimated(경쟁력격차
- *      기반 수요확보율 과대평가로 추정), 8) 남은 과소예측 → demand_conversion_underestimated(상권수요→
- *      자사수요 전환율 과소평가로 추정). 이 순서는 확정 근거가 아니라 검토 우선순위 휴리스틱이다.
+ *   3) 확인된 독점상권(경쟁점 자체가 없음) → monopoly_market_unmodeled (모델에 경쟁강도 피처가
+ *      없어 못 잡는 구조적 한계라는 뜻, "조사 부실"과는 다르다 — 2026-08-22 확인),
+ *   4) 경쟁 데이터 신뢰도가 낮음(low, 조사 여부 자체가 불확실) → competitor_data_missing
+ *      (경쟁 구도 자체를 못 봤을 가능성이 의심된다), 5) 과소예측+특수수요점수>0 →
+ *      special_demand_underreflected(10_오차원인분석 실사례 근거, [[computeSpecialDemandScore]]
+ *      참고), 6) 과대예측+외부유입제한 있음 → external_inflow_underreflected(보정을 더 줬어야
+ *      했다는 뜻), 7) 과대예측+접근성 좋음(층·엘리베이터) → access_overestimated, 8) 남은
+ *      과대예측 → demand_share_overestimated(경쟁력격차 기반 수요확보율 과대평가로 추정), 9) 남은
+ *      과소예측 → demand_conversion_underestimated(상권수요→자사수요 전환율 과소평가로 추정).
+ *      이 순서는 확정 근거가 아니라 검토 우선순위 휴리스틱이다.
  */
 export function classifyErrorCause(input: {
   absoluteErrorPct: number | null;
@@ -1636,12 +1654,14 @@ export function classifyErrorCause(input: {
   specialDemandScore: number;
   inflowRestriction: InflowRestriction | null | undefined;
   competitorDataReliability: CompetitorDataReliability | null | undefined;
+  competitorConfirmedNoCompetitor?: boolean;
   floor: number | null | undefined;
   groundLevel: GroundLevel | null | undefined;
   hasElevator: boolean | null | undefined;
 }): ErrorCauseCode {
   if (input.absoluteErrorPct == null || input.direction == null) return "not_verifiable";
   if (input.absoluteErrorPct <= 0.1) return "within_range";
+  if (input.competitorConfirmedNoCompetitor) return "monopoly_market_unmodeled";
   if (input.competitorDataReliability === "low") return "competitor_data_missing";
   if (input.direction === "과소예측" && input.specialDemandScore > 0) return "special_demand_underreflected";
   if (input.direction === "과대예측" && input.inflowRestriction != null && input.inflowRestriction !== "없음") {
@@ -1824,7 +1844,7 @@ export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
   return {
     storeCode: s.storeCode,
     storeName: s.storeName,
-    pcCount: s.pcCount as number,
+    pcCount: (s.evaluationPcCount ?? s.pcCount) as number,
     hourlyRate: s.hourlyRate as number,
     ownDemand: s.ownDemand as number,
     competitivenessScore: s.competitivenessScore as number,
@@ -1925,6 +1945,7 @@ export function runCohortValidation(
       specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
       inflowRestriction: s.inflowRestriction,
       competitorDataReliability: s.competitorSummary?.dataReliability,
+      competitorConfirmedNoCompetitor: s.competitorSummary?.status === "confirmed_no_competitor",
       floor: s.floor,
       groundLevel: s.groundLevel,
       hasElevator: s.hasElevator,
