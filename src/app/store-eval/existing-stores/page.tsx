@@ -419,6 +419,20 @@ export default function ExistingStoresPage() {
   const blackLabelStores = stores.filter((s) => s.brandType === "블랙라벨");
   const hiddenCount = stores.length - blackLabelStores.length;
 
+  // 요청사항 — 블랙라벨 기준 총 매장 수 + 가맹상태별 분포(정상/해지/기타)를 요약 표시.
+  // franchiseStatus는 자유 문자열(예: "정상"/"가맹해지"/"폐업"/"폐점(인허가문제)" 등)이라
+  // 고정된 항목만 세지 않고 실제로 존재하는 값을 전부 그대로 집계한다(임의로 뭉개지 않음).
+  const franchiseStatusCounts = new Map<string, number>();
+  for (const s of blackLabelStores) {
+    const key = s.franchiseStatus ?? "미확인";
+    franchiseStatusCounts.set(key, (franchiseStatusCounts.get(key) ?? 0) + 1);
+  }
+  const franchiseStatusBreakdown = [...franchiseStatusCounts.entries()].sort((a, b) => {
+    if (a[0] === "정상") return -1;
+    if (b[0] === "정상") return 1;
+    return b[1] - a[1];
+  });
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -451,6 +465,19 @@ export default function ExistingStoresPage() {
       {loading ? (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>
       ) : (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <span className="font-semibold text-zinc-900 dark:text-zinc-50">블랙라벨 총 {blackLabelStores.length}개</span>
+          <span className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-600 dark:text-zinc-400">
+            {franchiseStatusBreakdown.map(([status, count]) => (
+              <span key={status}>
+                {status} <span className="font-medium text-zinc-800 dark:text-zinc-200">{count}개</span>
+              </span>
+            ))}
+          </span>
+        </div>
+      )}
+
+      {loading ? null : (
         <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
           <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">

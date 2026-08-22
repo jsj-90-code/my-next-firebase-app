@@ -385,6 +385,102 @@ function LoocvDiagnosticBlock({ diagnostic }: { diagnostic: LoocvSensitivityDiag
   );
 }
 
+// 처음 이 화면을 보는 사람을 위한 상태 배지 — overallStatus(calc.ts summarizeValidationRows)를
+// 색상·평문 설명으로 번역해서 보여준다. 판정 로직은 그대로, 표시만 눈에 띄게 바꾼 것.
+const OVERALL_STATUS_STYLE: Record<ValidationSummary2["overallStatus"], { badge: string; plain: string }> = {
+  "정식 사용 가능": {
+    badge: "border-green-300 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950/30 dark:text-green-200",
+    plain: "모델이 목표 정확도를 모두 충족했습니다. 신규 후보지 매출 예측에 그대로 사용해도 됩니다.",
+  },
+  "조건부 사용": {
+    badge: "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200",
+    plain: "일부 목표치를 못 채웠습니다. 참고용으로 쓰되, 중요한 의사결정 전에는 아래에서 오차가 큰 매장을 함께 확인하세요.",
+  },
+  "재보정 필요": {
+    badge: "border-red-300 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200",
+    plain: "정확도 목표를 다수 못 채웠습니다. 이 결과를 그대로 의사결정에 쓰지 말고 원인 분석이 먼저 필요합니다.",
+  },
+};
+
+/** 화면 맨 위에서 "지금 이 모델을 믿고 써도 되는지"를 한눈에 보여주는 배지. */
+function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
+  const style = OVERALL_STATUS_STYLE[summary.overallStatus];
+  return (
+    <section className={`rounded-2xl border-2 p-5 ${style.badge}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide opacity-70">현재 모델 상태 (정식검증 기준)</p>
+          <p className="mt-1 text-2xl font-bold">{summary.overallStatus}</p>
+        </div>
+        <div className="flex gap-6">
+          <div>
+            <p className="text-xs opacity-70">±10% 이내 적중률</p>
+            <p className="text-xl font-semibold">{formatPercent(summary.within10PctRatio)}</p>
+          </div>
+          <div>
+            <p className="text-xs opacity-70">평균 오차율(MAPE)</p>
+            <p className="text-xl font-semibold">{formatPercent(summary.meanAbsoluteErrorPct)}</p>
+          </div>
+        </div>
+      </div>
+      <p className="mt-3 text-sm leading-6">{style.plain}</p>
+    </section>
+  );
+}
+
+/**
+ * 처음 보는 사람을 위한 용어 설명. <details>로 만들어 기본은 펼쳐두되(요청사항: 처음 보는
+ * 사람도 이해할 수 있게) 익숙한 사용자는 클릭 한 번으로 접을 수 있다. 판정/계산 로직과는
+ * 무관한 순수 설명 텍스트라 여기 문구를 고쳐도 검증 결과에 영향을 주지 않는다.
+ */
+function GlossarySection() {
+  return (
+    <details open className="rounded-2xl border border-zinc-300 bg-white p-5 text-sm leading-6 dark:border-zinc-700 dark:bg-zinc-950">
+      <summary className="cursor-pointer text-base font-semibold text-zinc-900 dark:text-zinc-50">
+        📖 처음 보시나요? 이 화면 읽는 법 (클릭하면 접힙니다)
+      </summary>
+      <div className="mt-3 space-y-3 text-zinc-700 dark:text-zinc-300">
+        <p>
+          이 화면은 <b>신규 매장 매출 예측 모델</b>이 실제로 얼마나 정확한지, 이미 운영 중인 가맹점의 실제 매출과 비교해서 검증합니다.
+          아래 숫자들이 목표치를 넘으면 이 모델을 새 후보지 평가에 그대로 써도 된다는 뜻입니다.
+        </p>
+        <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+          <li>
+            <b>V61</b> — 기본 매출 예측 모델(요금·예상수요·경쟁력점수로 예측)
+          </li>
+          <li>
+            <b>V62</b> — V61에 "외부유입 제한" 보정까지 더한 최종 예측치(실제 후보지 평가에 쓰는 값)
+          </li>
+          <li>
+            <b>리브원아웃 교차검증(LOOCV)</b> — 한 매장을 학습 데이터에서 빼고, 마치 처음 보는 신규 매장인 것처럼 그 매장의 매출을
+            예측해보는 방법. 실제 신규 후보지를 예측할 때와 조건이 가장 비슷해서, 이 숫자가 곧 진짜 모델 성능입니다.
+          </li>
+          <li>
+            <b>V62 운영 결과(시트 재현)</b> — 원본 구글시트가 예전에 계산해둔 값을 웹이 똑같이 재현하는지 확인하는 것. 모델 성능
+            검증이 아니라 "이관이 제대로 됐는지" 확인용입니다.
+          </li>
+          <li>
+            <b>코호트(정식검증/조기검증)</b> — 오픈한 지 얼마나 됐는지로 나눈 그룹. 12개월 이상 운영한 매장만 "정식검증", 그
+            미만은 "조기검증"입니다.
+          </li>
+          <li>
+            <b>MAPE(평균절대오차율)</b> — 예측이 실제매출과 평균적으로 몇 % 차이 나는지. 낮을수록 좋습니다.
+          </li>
+          <li>
+            <b>±10% 이내 적중률</b> — 예측이 실제매출과 10% 이내로 맞은 매장의 비율. 높을수록 좋습니다(목표 80%).
+          </li>
+          <li>
+            <b>편향</b> — 예측이 실제보다 전체적으로 높게(+) 또는 낮게(-) 쏠려 있는지.
+          </li>
+        </ul>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          빠르게 결론만 보고 싶다면 바로 아래 색깔 배지("현재 모델 상태")와 "검증 결과 요약"만 보셔도 됩니다.
+        </p>
+      </div>
+    </details>
+  );
+}
+
 function SummaryBlock({ title, summary, benchmark }: { title: string; summary: ValidationSummary2; benchmark?: ReferenceBenchmark }) {
   return (
     <section className="space-y-3">
@@ -713,6 +809,10 @@ export default function ValidationPage() {
         </p>
       </div>
 
+      <HeadlineStatusBanner summary={coreSummary} />
+
+      <GlossarySection />
+
       {/* 요청사항 6 — 공식 성능/이관 검증용 구분 결론 */}
       <section className="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm leading-6 text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
         <h3 className="font-semibold">웹 V62와 시트 V62 차이 원인 확인 결과</h3>
@@ -766,7 +866,12 @@ export default function ValidationPage() {
         </ul>
       </section>
 
-      <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">모델 검증 적중률 (리브원아웃 교차검증 — 신규점포 일반화 성능 참고)</h2>
+      <div>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">모델 검증 적중률 (리브원아웃 교차검증 — 신규점포 일반화 성능 참고)</h2>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          여기가 이 화면의 핵심입니다 — 신규 후보지를 예측할 때와 가장 비슷한 조건으로 측정한 <b>진짜 모델 성능</b>입니다.
+        </p>
+      </div>
       <SummaryBlock title="1. 12개월 완료 정상영업점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
       <SummaryBlock title="2. 12개월 미완료 정상영업점 조기 적중률 (조기검증, 완전 외부 검증군)" summary={computed.earlySummary} benchmark={REFERENCE_BENCHMARK.조기검증} />
       <SummaryBlock title="3. 정식검증+조기검증 통합 적중률" summary={combinedSummary} benchmark={REFERENCE_BENCHMARK.통합} />
