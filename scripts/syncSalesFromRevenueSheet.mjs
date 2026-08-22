@@ -29,6 +29,7 @@ import { readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { loadCollectionMap, needsWrite, makeWriteCounter } from "./lib/diffWrite.mjs";
 
 function loadEnvLocal() {
   let text;
@@ -233,6 +234,9 @@ async function main() {
   const storesSnap = await db.collection("storeEvalExistingStores").get();
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const openedAtByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data().openedAt]));
+  // 매번 재조회하지 않고 이번 실행에서 갱신할 때마다 그 자리에서 같이 갱신해, brandType/
+  // completedMonths 비교를 추가 read 없이 메모리에서 바로 할 수 있게 한다.
+  const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   console.log(`기존 등록 매장: ${storeCodes.size}곳`);
 
   const isBlackLabelByCode = await fetchBrandColorByCode();
@@ -243,16 +247,18 @@ async function main() {
 
   // 1-2) 이미 등록된 매장도 매출DB 색상 기준으로 brandType을 매번 다시 맞춘다(멱등) —
   //      09_입지동선평가에 행이 없어 여태 브랜드를 확인할 방법이 없던 매장도 이걸로 채워진다.
-  let brandUpdated = 0;
+  //      값이 실제로 안 바뀌었으면 쓰지 않는다(Firestore 쓰기 할당량 절약, 2026-08-22).
+  const brandCounter = makeWriteCounter();
   for (const code of storeCodes) {
     if (!isBlackLabelByCode.has(code)) continue;
-    await db.collection("storeEvalExistingStores").doc(code).set(
-      { brandType: isBlackLabelByCode.get(code) ? "블랙라벨" : "확인필요", updatedAt: Date.now() },
-      { merge: true },
-    );
-    brandUpdated++;
+    const brandType = isBlackLabelByCode.get(code) ? "블랙라벨" : "확인필요";
+    const dirty = needsWrite(storeDataByCode.get(code), { brandType }, { merge: true });
+    brandCounter.mark(dirty);
+    if (!dirty) continue;
+    await db.collection("storeEvalExistingStores").doc(code).set({ brandType, updatedAt: Date.now() }, { merge: true });
+    storeDataByCode.set(code, { ...storeDataByCode.get(code), brandType });
   }
-  console.log(`매출DB 색상 기준 brandType 갱신: ${brandUpdated}곳`);
+  console.log(`매출DB 색상 기준 brandType 갱신: ${brandCounter.summary()}`);
 
   // 2) 매출DB 전체 값 읽기
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:ZZ2000` });
@@ -270,8 +276,11 @@ async function main() {
   }
   console.log(`매출DB에서 발견한 월별 블록 수: ${monthBlocks.length} (최초 ${monthBlocks[0]?.year}-${monthBlocks[0]?.month}, 최신 ${monthBlocks.at(-1)?.year}-${monthBlocks.at(-1)?.month})`);
 
-  let salesWritten = 0;
-  let storesUpdated = 0;
+  // 매출DB 6000여 건을 매번 통째로 다시 쓰지 않도록, 기존 값을 한 번에 읽어 메모리에서 비교한다
+  // (2026-08-22, Firestore 쓰기 할당량 초과 반복 발생 후 도입).
+  const existingSalesMap = await loadCollectionMap(db, "storeEvalExistingStoreSales");
+  const salesCounter = makeWriteCounter();
+  const storesCounter = makeWriteCounter();
 
   for (let r = SOURCE_DATA_START_ROW - 1; r < values.length; r++) {
     const row = values[r];
@@ -299,8 +308,13 @@ async function main() {
         utilizationRate: utilizationRate != null ? (utilizationRate > 1 ? utilizationRate / 100 : utilizationRate) : null,
         salesPerPcPerDay: salesPerPcPerDay ?? null,
       };
-      await db.collection("storeEvalExistingStoreSales").doc(`${code}_${yearMonth}`).set(salesDoc);
-      salesWritten++;
+      const salesId = `${code}_${yearMonth}`;
+      const dirty = needsWrite(existingSalesMap.get(salesId), salesDoc, { merge: false, ignoreKeys: [] });
+      salesCounter.mark(dirty);
+      if (dirty) {
+        await db.collection("storeEvalExistingStoreSales").doc(salesId).set(salesDoc);
+        existingSalesMap.set(salesId, salesDoc);
+      }
       monthlyForThisStore.push(salesDoc);
     }
 
@@ -327,15 +341,18 @@ async function main() {
     }
     const { completedMonths, actualMonthlyRevenueAvg } = computeStabilizedPerformance(withElapsed);
 
-    await db.collection("storeEvalExistingStores").doc(code).set(
-      { completedMonths, actualMonthlyRevenueAvg, updatedAt: Date.now() },
-      { merge: true },
-    );
-    storesUpdated++;
+    const dirty = needsWrite(storeDataByCode.get(code), { completedMonths, actualMonthlyRevenueAvg }, { merge: true });
+    storesCounter.mark(dirty);
+    if (dirty) {
+      await db.collection("storeEvalExistingStores").doc(code).set(
+        { completedMonths, actualMonthlyRevenueAvg, updatedAt: Date.now() },
+        { merge: true },
+      );
+    }
   }
 
-  console.log(`\nstoreEvalExistingStoreSales: ${salesWritten}건 upsert`);
-  console.log(`storeEvalExistingStores 재계산 갱신: ${storesUpdated}곳`);
+  console.log(`\nstoreEvalExistingStoreSales: ${salesCounter.summary()}`);
+  console.log(`storeEvalExistingStores 재계산 갱신: ${storesCounter.summary()}`);
   console.log("완료");
 }
 

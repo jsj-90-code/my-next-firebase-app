@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { loadCollectionMap, needsWrite, makeWriteCounter } from "./lib/diffWrite.mjs";
 
 function loadEnvLocal() {
   let text;
@@ -119,11 +120,15 @@ async function readSheetAsObjects(sheetName, range) {
 async function main() {
   const storesSnap = await db.collection("storeEvalExistingStores").get();
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
+  // 매번 재조회하지 않고 이번 실행에서 patch할 때마다 그 자리에서 같이 갱신해, 다음 단계
+  // (specialDemandType 복제 등)의 비교도 추가 read 없이 메모리에서 하게 한다.
+  const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   console.log(`대상 매장: ${storeCodes.size}곳`);
 
   // ---- 01_점포기본정보: 나머지 원본 입력값을 merge로 채운다 ----
+  // 값이 실제로 안 바뀌었으면 쓰지 않는다(Firestore 쓰기 할당량 절약, 2026-08-22).
   const stores01 = await readSheetAsObjects("01_점포기본정보", "A1:CQ1000");
-  let profileUpdated = 0;
+  const profileCounter = makeWriteCounter();
   for (const s of stores01) {
     const code = toText(s["가맹점코드"]);
     if (!code || !storeCodes.has(code)) continue;
@@ -182,14 +187,22 @@ async function main() {
     } else {
       patch.openedAt = sheetOpenedAt;
     }
-    await db.collection("storeEvalExistingStores").doc(code).set(patch, { merge: true });
-    profileUpdated++;
+    const dirty = needsWrite(storeDataByCode.get(code), patch, { merge: true });
+    profileCounter.mark(dirty);
+    if (dirty) {
+      await db.collection("storeEvalExistingStores").doc(code).set(patch, { merge: true });
+      storeDataByCode.set(code, { ...storeDataByCode.get(code), ...patch });
+    }
   }
-  console.log(`01_점포기본정보 → storeEvalExistingStores 병합: ${profileUpdated}곳`);
+  console.log(`01_점포기본정보 → storeEvalExistingStores 병합: ${profileCounter.summary()}`);
 
   // ---- 05_경쟁점정보: 기존 가맹점의 경쟁점 실사값을 storeEvalCompetitors로 ----
+  // 값이 실제로 안 바뀌었으면 쓰지 않고, createdAt도 최초 등록 시점 값을 그대로 보존한다
+  // (예전엔 안 바뀐 문서도 매번 통째로 덮어써서 createdAt이 실행할 때마다 "지금"으로
+  // 리셋됐었다 — Firestore 쓰기 할당량 절약과 함께 이 부수 버그도 같이 고친다, 2026-08-22).
+  const existingCompetitorMap = await loadCollectionMap(db, "storeEvalCompetitors");
   const comps05 = await readSheetAsObjects("05_경쟁점정보", "A1:AX2000");
-  let compWritten = 0;
+  const compCounter = makeWriteCounter();
   // id를 "코드_이름_전역순번"으로 만들면(예전 방식) 시트 행이 추가/삭제돼 순번이 밀리는 순간
   // 재실행 시 기존 문서를 덮어쓰지 못하고 옛 값(핑봇 버그 이전 null 등)이 orphan으로 남는다
   // (2026-08-22 발견 — 실제로는 orphan이 아니라 N001~N003 후보지 문서였음을 확인했지만, 구조적
@@ -246,17 +259,23 @@ async function main() {
       coupleZone: toNumber(c["커플존"]),
       premiumZone: toBool(c["프리미엄존"]) ? 1 : 0,
       premiumSpec: toText(c["프리미엄사양"]) != null,
-      createdAt: Date.now(),
+      createdAt: existingCompetitorMap.get(id)?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
     };
-    await db.collection("storeEvalCompetitors").doc(id).set(competitor);
-    compWritten++;
+    const dirty = needsWrite(existingCompetitorMap.get(id), competitor, { merge: false, ignoreKeys: ["updatedAt"] });
+    compCounter.mark(dirty);
+    if (dirty) {
+      await db.collection("storeEvalCompetitors").doc(id).set(competitor);
+      existingCompetitorMap.set(id, competitor);
+    }
   }
-  console.log(`05_경쟁점정보 → storeEvalCompetitors: ${compWritten}건`);
+  console.log(`05_경쟁점정보 → storeEvalCompetitors: ${compCounter.summary()}`);
 
   // ---- 09_입지동선평가: 전체 필드 (브랜드/외부유입 외 나머지도) ----
+  // 값이 실제로 안 바뀌었으면 쓰지 않는다(Firestore 쓰기 할당량 절약, 2026-08-22).
+  const existingLocationMap = await loadCollectionMap(db, "storeEvalLocationEvaluations");
   const loc09 = await readSheetAsObjects("09_입지동선평가", "A1:P200");
-  let locUpdated = 0;
+  const locCounter = makeWriteCounter();
   for (const l of loc09) {
     const code = toText(l["점포코드"]);
     if (!code || !storeCodes.has(code)) continue;
@@ -279,20 +298,27 @@ async function main() {
       updatedAt: Date.now(),
       updatedBy: "migration-script",
     };
-    await db.collection("storeEvalLocationEvaluations").doc(code).set(doc, { merge: true });
+    const locDirty = needsWrite(existingLocationMap.get(code), doc, { merge: true });
+    locCounter.mark(locDirty);
+    if (locDirty) {
+      await db.collection("storeEvalLocationEvaluations").doc(code).set(doc, { merge: true });
+      existingLocationMap.set(code, { ...existingLocationMap.get(code), ...doc });
+    }
     // V61 학습 4번째 피처(특수수요점수)에 쓰도록 storeEvalExistingStores에도 복제해 둔다
     // (calc.ts buildV61TrainingStores가 ExistingStore만 보고 순수함수로 남게 하기 위함).
-    await db.collection("storeEvalExistingStores").doc(code).set(
-      { specialDemandType: doc.specialDemandType, specialDemandIntensity: doc.specialDemandIntensity, updatedAt: Date.now() },
-      { merge: true },
-    );
-    locUpdated++;
+    const specialDemandPatch = { specialDemandType: doc.specialDemandType, specialDemandIntensity: doc.specialDemandIntensity };
+    if (needsWrite(storeDataByCode.get(code), specialDemandPatch, { merge: true })) {
+      await db.collection("storeEvalExistingStores").doc(code).set({ ...specialDemandPatch, updatedAt: Date.now() }, { merge: true });
+      storeDataByCode.set(code, { ...storeDataByCode.get(code), ...specialDemandPatch });
+    }
   }
-  console.log(`09_입지동선평가 → storeEvalLocationEvaluations (+ storeEvalExistingStores 특수수요 복제): ${locUpdated}곳`);
+  console.log(`09_입지동선평가 → storeEvalLocationEvaluations (+ storeEvalExistingStores 특수수요 복제): ${locCounter.summary()}`);
 
   // ---- 03_회원정보입력: 스냅샷 그대로 누적 ----
+  // 값이 실제로 안 바뀌었으면 쓰지 않는다(Firestore 쓰기 할당량 절약, 2026-08-22).
+  const existingMemberMap = await loadCollectionMap(db, "storeEvalExistingStoreMembers");
   const members03 = await readSheetAsObjects("03_회원정보입력", "A1:T1000");
-  let memberWritten = 0;
+  const memberCounter = makeWriteCounter();
   for (const m of members03) {
     const code = toText(m["가맹점코드"]);
     if (!code || !storeCodes.has(code)) continue;
@@ -318,10 +344,15 @@ async function main() {
       memo: toText(m["메모"]),
       updatedAt: Date.now(),
     };
-    await db.collection("storeEvalExistingStoreMembers").doc(`${code}_${snapshotDate}`).set(snapshot);
-    memberWritten++;
+    const memberId = `${code}_${snapshotDate}`;
+    const memberDirty = needsWrite(existingMemberMap.get(memberId), snapshot, { merge: false });
+    memberCounter.mark(memberDirty);
+    if (memberDirty) {
+      await db.collection("storeEvalExistingStoreMembers").doc(memberId).set(snapshot);
+      existingMemberMap.set(memberId, snapshot);
+    }
   }
-  console.log(`03_회원정보입력 → storeEvalExistingStoreMembers: ${memberWritten}건`);
+  console.log(`03_회원정보입력 → storeEvalExistingStoreMembers: ${memberCounter.summary()}`);
 
   console.log("\n전체 마이그레이션 완료");
 }
