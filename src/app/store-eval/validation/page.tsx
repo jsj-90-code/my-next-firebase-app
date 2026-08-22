@@ -435,9 +435,9 @@ function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
  */
 function GlossarySection() {
   return (
-    <details open className="rounded-2xl border border-zinc-300 bg-white p-5 text-sm leading-6 dark:border-zinc-700 dark:bg-zinc-950">
+    <details className="rounded-2xl border border-zinc-300 bg-white p-5 text-sm leading-6 dark:border-zinc-700 dark:bg-zinc-950">
       <summary className="cursor-pointer text-base font-semibold text-zinc-900 dark:text-zinc-50">
-        📖 처음 보시나요? 이 화면 읽는 법 (클릭하면 접힙니다)
+        📖 용어가 헷갈리시나요? (V61/V62/LOOCV 등 설명 — 클릭하면 펼쳐집니다)
       </summary>
       <div className="mt-3 space-y-3 text-zinc-700 dark:text-zinc-300">
         <p>
@@ -473,11 +473,75 @@ function GlossarySection() {
             <b>편향</b> — 예측이 실제보다 전체적으로 높게(+) 또는 낮게(-) 쏠려 있는지.
           </li>
         </ul>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          빠르게 결론만 보고 싶다면 바로 아래 색깔 배지("현재 모델 상태")와 "검증 결과 요약"만 보셔도 됩니다.
-        </p>
       </div>
     </details>
+  );
+}
+
+/** 오차율만 보고 "잘 맞았는지"를 3단계 배지로 보여준다(±10%/±20% 버킷과 동일 경계, 새 기준 아님). */
+function AccuracyBadge({ absoluteErrorPct }: { absoluteErrorPct: number | null }) {
+  if (absoluteErrorPct == null) {
+    return (
+      <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+        확인 불가
+      </span>
+    );
+  }
+  if (absoluteErrorPct <= 0.1) {
+    return (
+      <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400">
+        적중
+      </span>
+    );
+  }
+  if (absoluteErrorPct <= 0.2) {
+    return (
+      <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+        근접
+      </span>
+    );
+  }
+  return (
+    <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
+      차이 큼
+    </span>
+  );
+}
+
+/**
+ * 처음 보는 사람을 위한 "결론만" 표 — 정식검증 매장별로 실제매출·예측매출·오차율·적중 여부만
+ * 보여준다(브랜드·운영상태·데이터완성도 등 전문 컬럼은 아래 "자세히 보기"의 코호트별 상세표에만
+ * 남겨둔다). 계산은 하지 않고 이미 계산된 ValidationStoreRow 필드를 그대로 옮겨 보여줄 뿐이다.
+ */
+function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
+  const sorted = [...rows].sort((a, b) => (b.absoluteErrorPct ?? -1) - (a.absoluteErrorPct ?? -1));
+  return (
+    <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <table className="w-full min-w-[560px] text-sm">
+        <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+          <tr>
+            <th className="px-3 py-2">매장명</th>
+            <th className="px-3 py-2">실제매출(월평균)</th>
+            <th className="px-3 py-2">모델 예측매출</th>
+            <th className="px-3 py-2">오차율</th>
+            <th className="px-3 py-2">결과</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          {sorted.map((r) => (
+            <tr key={r.storeCode} className="text-zinc-800 dark:text-zinc-200">
+              <td className="px-3 py-2 font-medium">{r.storeName}</td>
+              <td className="px-3 py-2">{formatWon(r.actualRevenueAvg)}</td>
+              <td className="px-3 py-2">{formatWon(r.v62PredictedRevenueAvg)}</td>
+              <td className="px-3 py-2">{formatPercent(r.absoluteErrorPct)}</td>
+              <td className="px-3 py-2">
+                <AccuracyBadge absoluteErrorPct={r.absoluteErrorPct} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -777,6 +841,7 @@ export default function ValidationPage() {
 
   const {
     coreSummary,
+    coreRows,
     combinedSummary,
     byCohort,
     completenessCounts,
@@ -803,16 +868,38 @@ export default function ValidationPage() {
       <div>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">6. 기존 가맹점 검증</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          V61 실측 학습모형(비음수 릿지회귀)에 외부유입 보정(V62)까지 적용한 예측치를 영업기간별 코호트로 나눠 검증합니다. 12개월 완료·
-          블랙라벨·정상영업 표본은 리브-원-아웃, 그 외는 학습에 전혀 쓰이지 않은 완전 외부 검증군으로 예측합니다. 블랙라벨 매장만
-          검증하며{excludedNonBlackLabelCount > 0 ? `, 리그PC방·브랜드 미확인 ${excludedNonBlackLabelCount}곳은 이 화면에서 제외됩니다.` : "."}
+          신규 매장 매출을 예측하는 모델이 얼마나 정확한지, 이미 운영 중인 블랙라벨 매장의 실제 매출과 비교해 확인하는 화면입니다.
+        </p>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          블랙라벨 매장만 검증하며{excludedNonBlackLabelCount > 0 ? `, 리그PC방·브랜드 미확인 ${excludedNonBlackLabelCount}곳은 이 화면에서 제외됩니다.` : "."}{" "}
+          계산 방식(리브원아웃 교차검증 등)의 자세한 설명은 아래 용어 설명과 "자세히 보기"를 참고하세요.
         </p>
       </div>
 
       <HeadlineStatusBanner summary={coreSummary} />
 
+      {/* 요청사항 — "처음 보는 사람도 이해할 수 있게": 결론만 평문으로 먼저 보여주고, 표도
+          전문 컬럼(브랜드/운영상태/데이터완성도/우선추정원인 등) 없이 매장명·실제매출·예측매출·
+          오차율·적중여부만 남긴다. 아래 전문가용 상세 데이터와 계산 결과는 완전히 동일하다 —
+          보여주는 범위만 줄인 것이지 새 계산은 하나도 없다. */}
+      <section className="space-y-3">
+        <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+          12개월 이상 정상 운영 중인 블랙라벨 매장 <b>{coreSummary.sampleCount}곳</b>으로 확인한 결과,{" "}
+          <b>{coreRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct <= 0.1).length}곳</b>(
+          {formatPercent(coreSummary.within10PctRatio)})은 모델 예측이 실제 매출과 <b>10% 이내</b>로 맞았습니다. 나머지{" "}
+          {coreRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
+          전체 평균으로는 실제 매출과 <b>{formatPercent(coreSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
+        </p>
+        <SimpleResultTable rows={coreRows} />
+      </section>
+
       <GlossarySection />
 
+      <details className="rounded-2xl border border-zinc-300 p-5 dark:border-zinc-700">
+        <summary className="cursor-pointer text-base font-semibold text-zinc-900 dark:text-zinc-50">
+          🔍 자세히 보기 (전문가·분석용 상세 데이터)
+        </summary>
+        <div className="mt-6 space-y-10">
       {/* 요청사항 6 — 공식 성능/이관 검증용 구분 결론 */}
       <section className="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm leading-6 text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
         <h3 className="font-semibold">웹 V62와 시트 V62 차이 원인 확인 결과</h3>
@@ -1035,6 +1122,8 @@ export default function ValidationPage() {
           </section>
         );
       })}
+        </div>
+      </details>
     </div>
   );
 }
