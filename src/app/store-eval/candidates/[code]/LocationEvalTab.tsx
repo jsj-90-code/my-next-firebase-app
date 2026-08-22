@@ -85,6 +85,8 @@ export function LocationEvalTab({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,6 +141,49 @@ export function LocationEvalTab({
     }
   }
 
+  // 요청사항(2026-08-22) — 공식 기준표가 없는 이 5개 점수는 원래도 "사람이 GPT에게 물어보고
+  // 손으로 옮겨 적던" 방식이었다(위 참고사례 배지 참고). 그 과정을 앱 안으로 옮겨온 것뿐이며,
+  // AI 결과는 절대 자동저장하지 않고 폼에만 채워 넣어 사람이 검토·수정 후 직접 저장하게 한다.
+  async function handleAiFill() {
+    if (!candidateAddress.trim()) {
+      setAiError("주소가 없으면 AI가 조사할 수 없습니다. 기본정보 탭에서 주소를 먼저 입력해주세요.");
+      return;
+    }
+    setAiError(null);
+    setAiLoading(true);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch("/api/store-eval/ai-location-eval", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ address: candidateAddress, name: candidateName }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "AI 초안 생성에 실패했습니다.");
+      setForm((prev) =>
+        prev
+          ? {
+              ...prev,
+              locationScore: data.locationScore,
+              flowScore: data.flowScore,
+              preemptionScore: data.preemptionScore,
+              visibilityScore: data.visibilityScore,
+              attractionScore: data.attractionScore,
+              mapMemo: `AI 초안: ${data.rationale}`,
+            }
+          : prev,
+      );
+      setMessage(null);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "AI 초안 생성 중 오류가 발생했습니다.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>;
   if (!form) return <p className="text-sm text-zinc-500 dark:text-zinc-400">데이터를 불러오지 못했습니다.</p>;
 
@@ -162,7 +207,23 @@ export function LocationEvalTab({
       </details>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>입지동선 점수 (1~5)</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className={sectionTitleClass}>입지동선 점수 (1~5)</h3>
+          <button
+            type="button"
+            disabled={aiLoading}
+            onClick={handleAiFill}
+            className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+          >
+            {aiLoading ? "AI가 조사 중..." : "AI로 초안 채우기"}
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          주소를 웹 검색으로 조사해서 아래 5개 점수와 근거(지도판단메모)를 자동으로 채웁니다. 저장 전까지는 그대로 반영 안 되니, 결과를 검토하고 필요하면 수정한 뒤 아래 &ldquo;저장&rdquo;을 눌러주세요.
+        </p>
+        {aiError && (
+          <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{aiError}</p>
+        )}
         <div className={`${gridClass} mt-4`}>
           <ScoreSelectField label="상권내위치점수" value={form.locationScore} onChange={(v) => set("locationScore", v as LocationEvaluation["locationScore"])} />
           <ScoreSelectField label="주요동선점수" value={form.flowScore} onChange={(v) => set("flowScore", v as LocationEvaluation["flowScore"])} />
