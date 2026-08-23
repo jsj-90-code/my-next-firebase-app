@@ -30,6 +30,7 @@ import { google } from "googleapis";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { loadCollectionMap, needsWrite, makeWriteCounter } from "./lib/diffWrite.mjs";
+import { toNumber, toPercentNumber, parseKoreanDate } from "./lib/sheetParsers.mjs";
 
 function loadEnvLocal() {
   let text;
@@ -73,18 +74,6 @@ const db = getFirestore(adminApp);
 
 const sheetsAuth = new google.auth.JWT({ email: clientEmail, key: privateKey, scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"] });
 const sheets = google.sheets({ version: "v4", auth: sheetsAuth });
-
-// 매출DB!J열(오픈일)은 "2015. 9. 4" 같은 점(.) 구분 표기다. 01_점포기본정보(toDateStr)와
-// 다른 포맷이라 별도 파서가 필요하다.
-function parseKoreanDate(v) {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (!s) return null;
-  const m = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
-  if (m) return `${m[1]}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[3])).padStart(2, "0")}`;
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
-}
 
 // 매출DB!지점명(B열) 배경색으로 블랙라벨 여부를 읽는다(사용자 확인: "노란색만 블랙라벨").
 // 09_입지동선평가!브랜드구분과 대조해보니 노란색 41곳이 09시트의 블랙라벨 41곳과 정확히
@@ -183,21 +172,6 @@ function parseMonthHeader(text) {
   const month = Number(m[2]);
   if (month < 1 || month > 12) return null;
   return { year, month };
-}
-
-function toNumber(v) {
-  if (typeof v === "number") return v;
-  if (v == null || v === "") return null;
-  const n = Number(String(v).replace(/,/g, "").trim());
-  return Number.isNaN(n) ? null : n;
-}
-// PC대비상품비율/가동율 셀은 "30.85%" 같은 표시 문자열로 온다. toNumber()는 %를 못 벗겨내
-// null이 돼버렸었다(2026-08-22 발견, cronSync.ts와 동일 버그) — %/,를 제거한 뒤 파싱한다.
-function toPercentNumber(v) {
-  if (typeof v === "number") return v;
-  if (v == null || v === "") return null;
-  const n = Number(String(v).replace(/[%,]/g, "").trim());
-  return Number.isNaN(n) ? null : n;
 }
 
 // src/lib/storeEval/calc.ts의 computeStabilizedPerformance와 반드시 같은 규칙을 써야 한다

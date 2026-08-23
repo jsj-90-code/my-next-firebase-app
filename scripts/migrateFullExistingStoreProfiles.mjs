@@ -18,6 +18,7 @@ import { google } from "googleapis";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { loadCollectionMap, needsWrite, makeWriteCounter } from "./lib/diffWrite.mjs";
+import { toNumber, toPercentNumber, toBool, toText, toDateStr, isOpenDateSuspicious } from "./lib/sheetParsers.mjs";
 
 function loadEnvLocal() {
   let text;
@@ -56,53 +57,6 @@ const db = getFirestore(adminApp);
 
 const sheetsAuth = new google.auth.JWT({ email: clientEmail, key: privateKey, scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"] });
 const sheets = google.sheets({ version: "v4", auth: sheetsAuth });
-
-function toNumber(v) {
-  if (typeof v === "number") return v;
-  if (v == null || v === "") return null;
-  const n = Number(String(v).replace(/,/g, "").trim());
-  return Number.isNaN(n) ? null : n;
-}
-// 시트에서 퍼센트 서식 셀(예: 핑봇_가동률, 실측착석률)은 Sheets API가 "14.1%" 같은 표시 문자열로
-// 돌려준다. toNumber()는 "%"를 못 벗겨내서 전부 null이 됐었다(2026-08-21 발견) — %를 제거한 뒤
-// 숫자로 파싱한다. 저장 관례(normalizePercentLike, calc.ts)에 맞춰 나눗셈 없이 원본 퍼센트
-// 숫자 그대로 반환한다(예: "14.1%" → 14.1).
-function toPercentNumber(v) {
-  if (typeof v === "number") return v;
-  if (v == null || v === "") return null;
-  const n = Number(String(v).replace(/[%,]/g, "").trim());
-  return Number.isNaN(n) ? null : n;
-}
-function toBool(v) {
-  const s = String(v ?? "").trim();
-  return s === "유" || s === "Y" || s === "true";
-}
-function toText(v) {
-  const s = v == null ? "" : String(v).trim();
-  return s === "" ? null : s;
-}
-function toDateStr(v) {
-  if (v == null || v === "") return null;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
-  const s = String(v).trim();
-  const parsed = new Date(s);
-  return Number.isNaN(parsed.getTime()) ? s : parsed.toISOString().slice(0, 10);
-}
-
-// 가맹점코드 앞 8자리(YYYYMMDD)는 보통 오픈일과 가깝다(등록일-오픈일 차이는 보통 몇 주 이내).
-// 훨씬 크게 벌어지면 시트 오픈일이 아직 정확히 입력 안 된 placeholder일 가능성이 높다
-// (실사례: 문산점 - 여러 신규 매장에 동일한 임시 날짜가 들어가 있었음). 이런 경우 openedAt을
-// 덮어쓰지 않는다 - 이미 Firestore에 사람이 확인해서 고쳐둔 값이 있을 수 있는데 시트의
-// placeholder로 되돌리면 안 되기 때문이다. 시트 쪽 오픈일을 실제로 고치는 게 근본 해결책이다.
-function isOpenDateSuspicious(code, sheetOpenedAt) {
-  const m = code.match(/^(\d{4})(\d{2})(\d{2})/);
-  if (!m || !sheetOpenedAt) return false;
-  const derived = new Date(`${m[1]}-${m[2]}-${m[3]}`);
-  const sheet = new Date(sheetOpenedAt);
-  if (Number.isNaN(derived.getTime()) || Number.isNaN(sheet.getTime())) return false;
-  const diffDays = Math.abs((sheet.getTime() - derived.getTime()) / 86400000);
-  return diffDays > 30;
-}
 
 async function readSheetAsObjects(sheetName, range) {
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${sheetName}'!${range}` });

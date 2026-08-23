@@ -14,6 +14,12 @@ import { google } from "googleapis";
 import type { Firestore } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { computeStabilizedPerformance } from "./calc";
+// scripts/migrateFullExistingStoreProfiles.mjs, scripts/syncSalesFromRevenueSheet.mjs와 셀 파싱/
+// dirty-check 로직을 하나로 합친다(tsconfig allowJs) — 예전엔 세 곳에 거의 동일하게 복붙돼 있어서
+// 핑봇_가동률 퍼센트 파싱 버그가 한쪽만 고쳐지고 이 파일엔 남아있던 사고가 있었다(2026-08-22,
+// docs/data-issues.md). 단일 출처로 합쳐 같은 드리프트가 재발하지 않게 한다(2026-08-24).
+import { needsWrite } from "../../../scripts/lib/diffWrite.mjs";
+import { toNumber, toPercentNumber, toBool, toText, toDateStr, parseKoreanDate, isOpenDateSuspicious } from "../../../scripts/lib/sheetParsers.mjs";
 
 const SPREADSHEET_ID = process.env.STORE_EVAL_SPREADSHEET_ID || "1Q5yCOL5IT_pT8lYKvtzhzPK3ihC0otVifQBNPi0SjRA";
 const BATCH_LIMIT = 450; // Firestore 배치 한도(500)에서 여유를 둔 값
@@ -83,66 +89,11 @@ class BatchWriter {
  * patch의 값이 현재 Firestore 문서와 완전히 같으면 true.
  * updatedAt류 메타 필드는 항상 바뀌므로 비교에서 제외한다 - 실제 내용이 안 바뀌었는데도
  * 매일 다시 쓰는 것을 막아야 Firestore 무료 쓰기 할당량(하루 20,000건)을 넘기지 않는다.
+ * scripts/*.mjs가 쓰는 diffWrite.mjs의 needsWrite(merge:true)를 그대로 위임한다(2026-08-24) —
+ * 두 구현이 따로 있으면 한쪽만 고쳐지는 드리프트가 재발한다.
  */
 function isSameData(current: Record<string, unknown> | undefined, patch: Record<string, unknown>): boolean {
-  if (!current) return false;
-  for (const key of Object.keys(patch)) {
-    if (key === "updatedAt" || key === "updatedBy" || key === "createdAt") continue;
-    if (current[key] !== patch[key]) return false;
-  }
-  return true;
-}
-
-function toNumber(v: unknown): number | null {
-  if (typeof v === "number") return v;
-  if (v == null || v === "") return null;
-  const n = Number(String(v).replace(/,/g, "").trim());
-  return Number.isNaN(n) ? null : n;
-}
-// 매출DB의 PC대비상품비율/가동율 셀은 Sheets API가 "30.85%" 같은 표시 문자열로 돌려준다.
-// toNumber()는 %를 못 벗겨내 NaN→null이 돼버린다(2026-08-22 발견, migrateFullExistingStoreProfiles.mjs
-// 핑봇 버그와 동일 패턴) — %/,를 제거한 뒤 파싱한다. 아래 호출부의 ">1이면 /100" 정규화는 이
-// 함수가 %를 실제로 벗겨내야 값을 받으므로 함께 고친다.
-function toPercentNumber(v: unknown): number | null {
-  if (typeof v === "number") return v;
-  if (v == null || v === "") return null;
-  const n = Number(String(v).replace(/[%,]/g, "").trim());
-  return Number.isNaN(n) ? null : n;
-}
-function toBool(v: unknown): boolean {
-  const s = String(v ?? "").trim();
-  return s === "유" || s === "Y" || s === "true";
-}
-function toText(v: unknown): string | null {
-  const s = v == null ? "" : String(v).trim();
-  return s === "" ? null : s;
-}
-function toDateStr(v: unknown): string | null {
-  if (v == null || v === "") return null;
-  const s = String(v).trim();
-  const parsed = new Date(s);
-  return Number.isNaN(parsed.getTime()) ? s : parsed.toISOString().slice(0, 10);
-}
-// 매출DB!오픈일 열은 "2015. 9. 4" 같은 점(.) 구분 표기라 01_점포기본정보와 다른 파서가 필요하다.
-function parseKoreanDate(v: unknown): string | null {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (!s) return null;
-  const m = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
-  if (m) return `${m[1]}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[3])).padStart(2, "0")}`;
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
-}
-
-// 가맹점코드 앞 8자리(YYYYMMDD)와 시트 오픈일이 30일 넘게 차이나면 placeholder일 가능성이 높아
-// openedAt을 덮어쓰지 않는다(실사례: 문산점). scripts/migrateFullExistingStoreProfiles.mjs와 동일.
-function isOpenDateSuspicious(code: string, sheetOpenedAt: string | null): boolean {
-  const m = code.match(/^(\d{4})(\d{2})(\d{2})/);
-  if (!m || !sheetOpenedAt) return false;
-  const derived = new Date(`${m[1]}-${m[2]}-${m[3]}`);
-  const sheet = new Date(sheetOpenedAt);
-  if (Number.isNaN(derived.getTime()) || Number.isNaN(sheet.getTime())) return false;
-  return Math.abs((sheet.getTime() - derived.getTime()) / 86400000) > 30;
+  return !needsWrite(current, patch, { merge: true });
 }
 
 async function readSheetAsObjects(
@@ -180,14 +131,20 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   const writer = new BatchWriter(db);
   const suspiciousOpenDates: string[] = [];
 
-  const storesSnap = await db.collection("storeEvalExistingStores").get();
+  // 넷 다 서로 의존하지 않는 읽기라 순차 await 대신 병렬로 실행한다(2026-08-24, Cron 함수
+  // 실행시간 제한 안에서 여유를 늘림). 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존
+  // 경쟁점·입지평가·회원스냅샷 데이터도 미리 읽어둔다.
+  const [storesSnap, competitorsSnap, locationsSnap, membersSnap] = await Promise.all([
+    db.collection("storeEvalExistingStores").get(),
+    db.collection("storeEvalCompetitors").get(),
+    db.collection("storeEvalLocationEvaluations").get(),
+    db.collection("storeEvalExistingStoreMembers").get(),
+  ]);
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
-
-  // 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존 경쟁점·입지평가·회원스냅샷 데이터를 미리 읽어둔다.
-  const existingCompByid = new Map((await db.collection("storeEvalCompetitors").get()).docs.map((d) => [d.id, d.data()]));
-  const existingLocByCode = new Map((await db.collection("storeEvalLocationEvaluations").get()).docs.map((d) => [d.id, d.data()]));
-  const existingMemberById = new Map((await db.collection("storeEvalExistingStoreMembers").get()).docs.map((d) => [d.id, d.data()]));
+  const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, d.data()]));
+  const existingLocByCode = new Map(locationsSnap.docs.map((d) => [d.id, d.data()]));
+  const existingMemberById = new Map(membersSnap.docs.map((d) => [d.id, d.data()]));
 
   // ---- 01_점포기본정보 ----
   const stores01 = await readSheetAsObjects(sheets, "01_점포기본정보", "A1:CQ1000");
@@ -463,18 +420,22 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
   const db = adminDb;
   const writer = new BatchWriter(db);
 
-  const storesSnap = await db.collection("storeEvalExistingStores").get();
+  // 넷 다 서로 의존하지 않는 읽기(Firestore 2건 + Sheets API 2건)라 순차 await 대신 병렬로
+  // 실행한다(2026-08-24, Cron 함수 실행시간 제한 안에서 여유를 늘림).
+  const [storesSnap, salesSnap, isBlackLabelByCode, sheetValuesRes] = await Promise.all([
+    db.collection("storeEvalExistingStores").get(),
+    // 값이 안 바뀐 매출 문서는 다시 쓰지 않기 위해 기존 매출 데이터를 미리 읽어둔다.
+    db.collection("storeEvalExistingStoreSales").get(),
+    fetchBrandColorByCode(sheets),
+    sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:ZZ2000` }),
+  ]);
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const openedAtByCode = new Map<string, string | null>(storesSnap.docs.map((d) => [d.id, (d.data().openedAt as string) ?? null]));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
-  // 값이 안 바뀐 매출 문서는 다시 쓰지 않기 위해 기존 매출 데이터를 미리 읽어둔다.
-  const existingSalesById = new Map((await db.collection("storeEvalExistingStoreSales").get()).docs.map((d) => [d.id, d.data()]));
-
-  const isBlackLabelByCode = await fetchBrandColorByCode(sheets);
+  const existingSalesById = new Map(salesSnap.docs.map((d) => [d.id, d.data()]));
   const brandTypeFor = (code: string): "블랙라벨" | "확인필요" => (isBlackLabelByCode.get(code) ? "블랙라벨" : "확인필요");
 
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${SOURCE_SHEET_NAME}'!A1:ZZ2000` });
-  const values = res.data.values ?? [];
+  const values = sheetValuesRes.data.values ?? [];
   if (values.length < SOURCE_DATA_START_ROW) {
     return { registeredStoreCount: storeCodes.size, autoRegisteredStores: [], autoRegisterSkipped: [], brandUpdated: 0, salesUpserted: 0, storesRecalculated: 0 };
   }
