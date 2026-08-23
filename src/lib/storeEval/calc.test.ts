@@ -46,6 +46,7 @@ import {
   fitNonnegativeRidgeRegression,
   GAME_ZONE_BONUS,
   getV62Rate,
+  isCoreEligibleForV61Training,
   isEligibleForV61Training,
   judgeAaGrade,
   lookupDemandCapture,
@@ -868,6 +869,12 @@ describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·정�
   it("정상영업이 아니면 false", () => {
     expect(isEligibleForV61Training({ ...base, franchiseStatus: "가맹해지" })).toBe(false);
   });
+  it("evaluationPcCount가 0이면 false — pcCount는 양수여도 실제 학습에 쓰이는 값(evaluationPcCount)이 0이면 대당매출이 Infinity가 되므로 제외해야 한다(2026-08-24)", () => {
+    expect(isEligibleForV61Training({ ...base, evaluationPcCount: 0 })).toBe(false);
+  });
+  it("evaluationPcCount가 null이면 pcCount로 판정한다(폴백)", () => {
+    expect(isEligibleForV61Training({ ...base, evaluationPcCount: null })).toBe(true);
+  });
 });
 
 describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선 사용 (오픈 후 좌석 증설 매장 왜곡 방지, 2026-08-22)", () => {
@@ -924,6 +931,26 @@ describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선
       actualRevenueAvg: 83129382,
     };
     expect(toV61TrainingStore(input).pcCount).toBe(108);
+  });
+
+  it("isCoreEligibleForV61Training도 evaluationPcCount가 0이면 false — pcCount != null만 보던 예전 판정은 이 경우를 놓쳐 대당매출 Infinity를 학습에 흘려보냈다(2026-08-24)", () => {
+    const input: ValidationStoreInput = {
+      storeCode: "BG",
+      storeName: "시흥배곧점",
+      brand: "블랙라벨",
+      openedAt: "2024-05-07",
+      completedMonths: 12,
+      franchiseStatus: "정상",
+      isPostOpenIssue: false,
+      postOpenIssueReason: null,
+      pcCount: 168,
+      evaluationPcCount: 0,
+      hourlyRate: 1200,
+      ownDemand: 300000,
+      competitivenessScore: 4,
+      actualRevenueAvg: 83129382,
+    };
+    expect(isCoreEligibleForV61Training(input)).toBe(false);
   });
 });
 

@@ -163,19 +163,21 @@ export function LocationEvalTab({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "AI 초안 생성에 실패했습니다.");
-      setForm((prev) =>
-        prev
-          ? {
-              ...prev,
-              locationScore: data.locationScore,
-              flowScore: data.flowScore,
-              preemptionScore: data.preemptionScore,
-              visibilityScore: data.visibilityScore,
-              attractionScore: data.attractionScore,
-              mapMemo: `AI 초안: ${data.rationale}`,
-            }
-          : prev,
-      );
+      setForm((prev) => {
+        if (!prev) return prev;
+        // 기존에 사람이 적어둔 메모를 지우지 않고 AI 초안을 뒤에 덧붙인다(2026-08-24, 덮어쓰기 버그 수정).
+        const existingMemo = prev.mapMemo?.trim();
+        const aiDraft = `AI 초안: ${data.rationale}`;
+        return {
+          ...prev,
+          locationScore: data.locationScore,
+          flowScore: data.flowScore,
+          preemptionScore: data.preemptionScore,
+          visibilityScore: data.visibilityScore,
+          attractionScore: data.attractionScore,
+          mapMemo: existingMemo ? `${existingMemo}\n\n${aiDraft}` : aiDraft,
+        };
+      });
       setMessage(null);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI 초안 생성 중 오류가 발생했습니다.");

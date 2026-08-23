@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getClaudeClient } from "@/lib/claude";
+import { getClaudeClient, getClaudeModel } from "@/lib/claude";
 import { adminAuth } from "@/lib/firebase-admin";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -123,8 +123,12 @@ export async function POST(request: Request) {
       SCORE_TOOL,
     ];
 
+    // 웹검색 기반 조사·판단 품질이 중요해 기본값은 opus-5로 두되(chat 라우트의 sonnet-5 기본값과는
+    // 별도 env var), 모델 교체 시 이 헬퍼 한 곳만 고치면 되도록 getClaudeModel()을 재사용한다.
+    const model = getClaudeModel("ANTHROPIC_LOCATION_EVAL_MODEL", "claude-opus-5");
+
     let response = await client.messages.create({
-      model: "claude-opus-5",
+      model,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools,
@@ -139,7 +143,7 @@ export async function POST(request: Request) {
       messages.push({ role: "assistant", content: response.content });
       messages.push({ role: "user", content: "지금까지 조사한 내용을 바탕으로 submit_location_scores 도구를 호출해서 결과를 제출하세요." });
       response = await client.messages.create({
-        model: "claude-opus-5",
+        model,
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
         tools,

@@ -1002,6 +1002,7 @@ export function isEligibleForV61Training(store: {
   franchiseStatus: string | null;
   excludedFromModel: boolean;
   pcCount: number | null;
+  evaluationPcCount?: number | null;
   hourlyRate: number | null;
   ownDemand: number | null;
   competitivenessScore: number | null;
@@ -1010,7 +1011,11 @@ export function isEligibleForV61Training(store: {
   if (store.brandType !== "블랙라벨") return false;
   if (store.excludedFromModel) return false;
   if (store.franchiseStatus !== "정상") return false;
-  if (!store.pcCount || store.pcCount <= 0) return false;
+  // 학습에 실제로 쓰이는 값은 evaluationPcCount ?? pcCount (buildV61TrainingStores와 동일 규칙) —
+  // evaluationPcCount가 0으로 들어오면 대당매출이 Infinity가 되어 회귀 전체를 오염시키므로
+  // 반드시 이 "해석된" 값으로 양수 검사를 해야 한다(2026-08-24 확인).
+  const resolvedPcCount = store.evaluationPcCount ?? store.pcCount;
+  if (!resolvedPcCount || resolvedPcCount <= 0) return false;
   if (store.hourlyRate == null || store.hourlyRate <= 0) return false;
   if (store.ownDemand == null || store.ownDemand <= 0) return false;
   if (store.competitivenessScore == null) return false;
@@ -1825,12 +1830,17 @@ export function summarizeValidationRows(
 
 /** V61 학습표본 자격(12개월 완료·블랙라벨·정상영업·산식학습제외 아님·핵심 입력값 존재). */
 export function isCoreEligibleForV61Training(s: ValidationStoreInput): boolean {
+  // toV61TrainingStore가 실제로 쓰는 값은 evaluationPcCount ?? pcCount이므로 그 해석된 값이
+  // 양수인지 확인해야 한다 — 그냥 pcCount != null만 보면 evaluationPcCount:0인 매장이 통과해
+  // 대당매출이 Infinity가 되어 학습 전체를 오염시킨다(2026-08-24 확인, isEligibleForV61Training과 동일 이슈).
+  const resolvedPcCount = s.evaluationPcCount ?? s.pcCount;
   return (
     s.brand === "블랙라벨" &&
     !s.isPostOpenIssue &&
     s.franchiseStatus === "정상" &&
     s.completedMonths >= 12 &&
-    s.pcCount != null &&
+    resolvedPcCount != null &&
+    resolvedPcCount > 0 &&
     s.hourlyRate != null &&
     s.ownDemand != null &&
     s.competitivenessScore != null &&
