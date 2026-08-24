@@ -525,14 +525,17 @@ export function BasicInfoTab({
         </div>
       </section>
 
-      {/* 2026-08-24 (2단계) 추가 — 아래 세 섹션(유동인구 1km/직장인구/시설정보)은 소상공인365
-          상권분석에서만 채울 수 있는 참고자료다. calc.ts 어떤 함수도 이 값들을 읽지 않는다
-          (기존 V62 산식·계수 불변 원칙) — 위 500m 유동인구/경쟁카운트와 혼동하지 않도록 별도
-          섹션으로 분리했다. */}
+      {/* 2026-08-24 (5차) — 소상공인365 참고자료(유동인구 1km/직장인구/시설정보) 세 카드를
+          하나로 합침(사용자 요청: "반경 하나에 전체 복붙 한 번이면 되는데 따로 있을 필요 없음").
+          calc.ts 어떤 함수도 이 값들을 읽지 않는다(기존 V62 산식·계수 불변 원칙) — 그래서 카드
+          자체는 합쳐도 되지만, 핵심 계산에 쓰이는 위 "유동인구(반경 500m)"/"경쟁 카운트" 섹션과
+          헷갈리지 않도록 이 통합 카드 전체에 "참고자료" 배지를 유지한다. */}
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>유동인구 (반경 1km, 참고자료)</h3>
+        <h3 className={sectionTitleClass}>소상공인365 참고자료 (유동인구 1km · 직장인구 · 시설정보)</h3>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
-        <div className={`${gridClass} mt-4`}>
+
+        <p className="mt-4 text-xs font-medium text-zinc-600 dark:text-zinc-400">유동인구 (1km)</p>
+        <div className={`${gridClass} mt-2`}>
           <NumberField label="유동인구 평균" value={form.floating1kmAvg} onChange={(v) => set("floating1kmAvg", v)} />
           <NumberField label="유동인구 남" value={form.floating1kmMale} onChange={(v) => set("floating1kmMale", v)} />
           <NumberField label="유동인구 여" value={form.floating1kmFemale} onChange={(v) => set("floating1kmFemale", v)} />
@@ -545,12 +548,9 @@ export function BasicInfoTab({
           <NumberField label="인허가 PC방업소수(1km)" value={form.licensedPcStores1km} onChange={(v) => set("licensedPcStores1km", v)} />
           <NumberField label="실영업 PC방업소수(1km)" value={form.operatingPcStores1km} onChange={(v) => set("operatingPcStores1km", v)} />
         </div>
-      </section>
 
-      <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>직장인구 (참고자료)</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
-        <div className={`${gridClass} mt-4`}>
+        <p className="mt-6 text-xs font-medium text-zinc-600 dark:text-zinc-400">직장인구 (500m / 1km)</p>
+        <div className={`${gridClass} mt-2`}>
           <NumberField label="직장인구 전체(500m)" value={form.employ500Total} onChange={(v) => set("employ500Total", v)} />
           <NumberField label="직장인구 남(500m)" value={form.employ500Male} onChange={(v) => set("employ500Male", v)} />
           <NumberField label="직장인구 여(500m)" value={form.employ500Female} onChange={(v) => set("employ500Female", v)} />
@@ -558,12 +558,9 @@ export function BasicInfoTab({
           <NumberField label="직장인구 남(1km)" value={form.employ1kmMale} onChange={(v) => set("employ1kmMale", v)} />
           <NumberField label="직장인구 여(1km)" value={form.employ1kmFemale} onChange={(v) => set("employ1kmFemale", v)} />
         </div>
-      </section>
 
-      <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>시설정보 (참고자료)</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
-        <div className={`${gridClass} mt-4`}>
+        <p className="mt-6 text-xs font-medium text-zinc-600 dark:text-zinc-400">시설정보 (500m / 1km)</p>
+        <div className={`${gridClass} mt-2`}>
           <NumberField label="고등학생 수(500m)" value={form.facility500HighSchool} onChange={(v) => set("facility500HighSchool", v)} />
           <NumberField label="중학생 수(500m)" value={form.facility500MiddleSchool} onChange={(v) => set("facility500MiddleSchool", v)} />
           <NumberField label="초등학생 수(500m)" value={form.facility500ElementarySchool} onChange={(v) => set("facility500ElementarySchool", v)} />
