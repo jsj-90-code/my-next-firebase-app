@@ -271,9 +271,8 @@ export const SGIS_FIELD_SPECS: MarketFieldSpec[] = [
 // 파서+필드스펙을 골라 쓰는 방식으로 바꿨다.
 //
 // 확인 안 된 것(이번 재설계 범위 밖, 자동추출 대상에서 제외 — 그냥 수동 입력으로 남겨둠):
-//   - "지하철역/버스정류장 개수"는 있지만 "지하철 승하차 인원" 표의 실제 모양은 아직 못 봄
-//     (역이 있는 지역에서만 나오는데 지금까지 조회한 후보지엔 역이 없었음 — 확인되면 자동화 예정,
-//     사용자가 직접 조사해서 채우는 개념이 아니다).
+//   - "지하철역/버스정류장 개수"(교통시설 현황(시군구 기준))는 매칭 안 함 — "지하철 승하차 인원"
+//     ("지하철 이용 현황" 표, 역이 있는 후보지로 실사용자가 확인해준 원문으로 구현함)만 매칭한다.
 //   - 초/중/고등학생 수는 "학교시설(학교수/학생수)" 표에서 확인해 자동추출함(아래 참고).
 //   - 상권_기준연월/업소수_기준시점은 문장형 텍스트라 표가 아니다(사용자 직접 입력 전용).
 //   - 소상공인365 "업소수"는 등록 사업체 집계 성격이라 "인허가" 쪽에 대응시킨다(사용자 확인,
@@ -452,6 +451,21 @@ function facilitySchoolSpecs(radiusKey: "500" | "1km", displayRadius: string): M
   ];
 }
 
+// 2026-08-24 (5차) — 인천 남동구 논현2동(지하철역 있는 실제 후보지) 리포트로 확인: "지하철 이용
+// 현황" 표만 다른 표와 완전히 다른 모양이다 — "선택 영역" 표기가 아예 없고, 노선명+역명이 라벨로
+// 나오고("수인선 호구포역"), 그 뒤로 최근 3개년 승하차 인원이 이어진다. 반경 안에 역이 여러 개면
+// 행이 여러 줄 나올 수 있어(안 겪어봤지만 구조상 가능) 전부 더한다. 최신 연도(마지막 칸)만 쓴다.
+function facilitySubwaySpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
+  return [
+    {
+      key: radiusKey === "500" ? "facility500SubwayRiders" : "facility1kmSubwayRiders",
+      displayLabel: `지하철 승하차(${displayRadius})`,
+      matchLabels: ["지하철승하차"],
+      kind: "count",
+    },
+  ];
+}
+
 // 2026-08-24 — 사용자 제안으로 재설계: "표 종류"를 매번 고르지 말고 "반경 500m 설정 > 분석하기 >
 // 전체 복사 후 붙여넣기 / 반경 1km 설정 > 전체 복사 후 붙여넣기" 두 번만 하면 되도록 바꿨다.
 // 유동인구/직장인구 표는 행 모양이 똑같아 구분이 안 됐지만, 리포트 전체를 복사하면 각 표 앞에
@@ -459,7 +473,7 @@ function facilitySchoolSpecs(radiusKey: "500" | "1km", displayRadius: string): M
 // "업소수 추이")이 함께 딸려온다 — 이 소제목을 섹션 마커로 삼아 SGIS의 "반경 기준 Xkm" 처리와
 // 같은 방식으로 어느 표인지 자동 판별한다. 소제목이 지나간 뒤에 나오는 "선택 영역" 행만 그 표의
 // 데이터로 취급하므로, 표 종류 선택 버튼 자체가 필요 없어졌다(반경 선택만 남는다).
-type Sb365Table = "유동인구" | "직장인구" | "세대수" | "업소수" | "학교시설";
+type Sb365Table = "유동인구" | "직장인구" | "세대수" | "업소수" | "학교시설" | "지하철";
 
 const SB365_SECTION_MARKERS: { re: RegExp; table: Sb365Table }[] = [
   { re: /성별\s*\/?\s*연령대별[\s\S]{0,10}유동인구/, table: "유동인구" },
@@ -467,6 +481,7 @@ const SB365_SECTION_MARKERS: { re: RegExp; table: Sb365Table }[] = [
   { re: /세대\s*수[\s\S]{0,6}추이/, table: "세대수" },
   { re: /업소수[\s\S]{0,6}추이/, table: "업소수" },
   { re: /학교시설\s*\(\s*학교수\s*\/\s*학생수\s*\)/, table: "학교시설" },
+  { re: /지하철\s*이용\s*현황/, table: "지하철" },
 ];
 
 /**
@@ -481,6 +496,9 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
   // "학교시설" 표만 "선택 영역 | 학교수 | ..." 행 바로 다음 줄에 라벨 없이 "학생수 | ..."만 이어지는
   // 특수 구조라(우리가 원하는 건 학교수가 아니라 학생수 행이다) 별도 상태로 다음 줄을 기다린다.
   let awaitingSchoolStudentRow = false;
+  // "지하철" 표는 "선택 영역" 표기가 아예 없고 노선명+역명이 라벨로 나온다 — 반경 안에 역이
+  // 여러 개면 행이 여러 줄이라(다 더해야 함) 한 줄 보고 바로 currentTable을 안 비운다.
+  let subwayRidersSum: number | null = null;
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -495,6 +513,20 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
     if (tokens.length < 2) continue;
     const { label, values } = splitLabelAndValues(tokens);
     const normLabel = normalizeLabel(label);
+
+    if (currentTable === "지하철") {
+      // "노선명 역명 | 2023년값 2024년값 2025년값" 모양의 역 데이터 행만 받는다(라벨이 정확히
+      // 두 토큰) — 안내문·표 헤더·연도행("2023 2024 2025")은 토큰 수가 안 맞아 자연히 무시된다.
+      // "선택 영역"도 공백이 하나 있어 우연히 "두 토큰"이 되는데, 이건 뒤에 이어지는 "교통시설
+      // 현황(시군구 기준)" 표("선택 영역 | 1 | 22")라 명시적으로 제외해야 한다(실측 중 발견한
+      // 버그: 제외 안 하면 역 개수까지 승하차 인원에 더해져 버림).
+      const labelTokens = label.split(" ").filter(Boolean);
+      if (labelTokens.length === 2 && !normLabel.includes("선택영역") && values.length >= 2) {
+        const latest = parseNumberLoose(values[values.length - 1]);
+        if (latest != null) subwayRidersSum = (subwayRidersSum ?? 0) + latest;
+      }
+      continue;
+    }
 
     if (currentTable === "학교시설" && awaitingSchoolStudentRow) {
       // "선택 영역"이 안 붙어있는 계속행이라 일반 필터를 우회해서 봐야 한다.
@@ -537,6 +569,7 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
       if (values.length > 0) pairs.push({ label: table, value: values[values.length - 1] });
     }
   }
+  if (subwayRidersSum != null) pairs.push({ label: "지하철승하차", value: String(subwayRidersSum) });
   return pairs;
 }
 
@@ -559,6 +592,7 @@ export const SOSANGONGIN365_TABLE_VARIANTS: Sosangongin365TableVariant[] = [
       ...householdsSpec(radiusKey, displayRadius),
       ...pcStoreSpec(radiusKey, displayRadius),
       ...facilitySchoolSpecs(radiusKey, displayRadius),
+      ...facilitySubwaySpecs(radiusKey, displayRadius),
     ],
     extract: parseSosangongin365FullReport,
   },

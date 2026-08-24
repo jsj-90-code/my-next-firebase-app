@@ -591,7 +591,7 @@ export function BasicInfoTab({
             label="지하철 승하차(500m)"
             value={form.facility500SubwayRiders}
             onChange={(v) => set("facility500SubwayRiders", v)}
-            hint="소상공인365에 표는 있으나 역이 있는 후보지로 실제 표 모양을 아직 못 봐서 자동추출 미구현 (직접 입력하는 값이 아님 — 확인되면 자동화 예정)"
+            hint="소상공인365 '지하철 이용 현황' 자동추출(반경 내 역이 여러 개면 합산) — 역 없는 지역은 공란"
           />
           <NumberField label="세대수(500m)" value={form.facility500Households} onChange={(v) => set("facility500Households", v)} />
           <NumberField label="고등학생 수(1km)" value={form.facility1kmHighSchool} onChange={(v) => set("facility1kmHighSchool", v)} />
@@ -601,7 +601,7 @@ export function BasicInfoTab({
             label="지하철 승하차(1km)"
             value={form.facility1kmSubwayRiders}
             onChange={(v) => set("facility1kmSubwayRiders", v)}
-            hint="소상공인365에 표는 있으나 역이 있는 후보지로 실제 표 모양을 아직 못 봐서 자동추출 미구현 (직접 입력하는 값이 아님 — 확인되면 자동화 예정)"
+            hint="소상공인365 '지하철 이용 현황' 자동추출(반경 내 역이 여러 개면 합산) — 역 없는 지역은 공란"
           />
           <NumberField label="세대수(1km)" value={form.facility1kmHouseholds} onChange={(v) => set("facility1kmHouseholds", v)} />
         </div>

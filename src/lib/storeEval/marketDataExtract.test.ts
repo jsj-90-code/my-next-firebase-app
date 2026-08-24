@@ -469,6 +469,54 @@ describe("parseSosangongin365FullReport — 학교시설(학교수/학생수) �
   });
 });
 
+// 2026-08-24 (5차) — 인천 남동구 논현2동(지하철역이 실제로 있는 후보지)에서 사용자가 그대로
+// 붙여넣어준 원문 발췌. 이 표만 "선택 영역" 표기가 아예 없고 노선명+역명이 라벨로 나온다는 걸
+// 이 실측 데이터로 처음 확인했다 — 그 전까지는 "지하철이 존재하지 않습니다" 케이스만 봐서
+// 자동추출을 못 만들고 있었다.
+const REAL_SB365_SUBWAY_EXCERPT = `
+주변시설현황
+교통시설 현황
+지하철 이용 현황
+단위 : 명
+
+*일부 환승역에서는 승객 수가 집계되지 않을 수 있습니다.*
+노선구분	역명	일평균 승하차 인원
+2023	2024	2025
+수인선	호구포역	7,650	7,409	7,308
+교통시설 현황 (시군구 기준)
+단위 : 개
+
+지역	지하철역	버스정류장
+선택 영역	1	22
+논현2동	14	70
+남동구	14	1,171
+분석결과
+선택 영역 인근에는 지하철역 1개, 버스정류장 22개가 있습니다.
+`;
+
+describe("parseSosangongin365FullReport — 지하철 이용 현황: '선택 영역' 표기가 없는 유일한 표", () => {
+  it("노선명+역명 행에서 최신 연도(2025) 승하차 인원만 뽑는다", () => {
+    const pairs = parseSosangongin365FullReport(REAL_SB365_SUBWAY_EXCERPT);
+    expect(pairs.find((p) => p.label === "지하철승하차")?.value).toBe("7308");
+  });
+
+  it("뒤에 이어지는 '교통시설 현황(시군구 기준)' 표의 역 개수(1)가 섞여 들어오면 안 된다", () => {
+    const pairs = parseSosangongin365FullReport(REAL_SB365_SUBWAY_EXCERPT);
+    const subwayPairs = pairs.filter((p) => p.label === "지하철승하차");
+    expect(subwayPairs).toHaveLength(1);
+    expect(subwayPairs[0].value).not.toBe("1");
+  });
+
+  it("반경별 facility500SubwayRiders/facility1kmSubwayRiders로 매칭된다", () => {
+    const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
+    const pairs = variant.extract(REAL_SB365_SUBWAY_EXCERPT);
+    const result500 = extractFields(pairs, variant.buildSpecs("500", "500m"));
+    const result1km = extractFields(pairs, variant.buildSpecs("1km", "1km"));
+    expect(result500.find((r) => r.fieldKey === "facility500SubwayRiders")?.parsedValue).toBe(7308);
+    expect(result1km.find((r) => r.fieldKey === "facility1kmSubwayRiders")?.parsedValue).toBe(7308);
+  });
+});
+
 describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 골라 4개 지표를 한 번에 매칭", () => {
   it("리포트 전체 붙여넣기 한 번으로 유동인구/직장인구/세대수/업소수가 모두 매칭된다(500m)", () => {
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
