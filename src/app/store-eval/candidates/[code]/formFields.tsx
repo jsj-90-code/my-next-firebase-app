@@ -14,15 +14,26 @@ export const sectionClass =
 export const sectionTitleClass = "text-sm font-semibold text-zinc-900 dark:text-zinc-100";
 export const gridClass = "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4";
 
+/** 자동추출 데이터 소스가 없어 사용자가 직접 조사/입력해야 하는 필드에 붙이는 표시. */
+export function ManualBadge() {
+  return (
+    <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+      직접입력
+    </span>
+  );
+}
+
 export function FieldWrap({
   label,
   required,
   hint,
+  manualOnly,
   children,
 }: {
   label: string;
   required?: boolean;
   hint?: string;
+  manualOnly?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -30,6 +41,7 @@ export function FieldWrap({
       <span className={labelClass}>
         {label}
         {required && <span className="ml-0.5 text-red-500">*</span>}
+        {manualOnly && <ManualBadge />}
       </span>
       {children}
       {hint && <span className="text-[11px] leading-4 text-zinc-400">{hint}</span>}
@@ -44,6 +56,7 @@ export function TextField({
   required,
   placeholder,
   hint,
+  manualOnly,
 }: {
   label: string;
   value: string;
@@ -51,9 +64,10 @@ export function TextField({
   required?: boolean;
   placeholder?: string;
   hint?: string;
+  manualOnly?: boolean;
 }) {
   return (
-    <FieldWrap label={label} required={required} hint={hint}>
+    <FieldWrap label={label} required={required} hint={hint} manualOnly={manualOnly}>
       <input
         type="text"
         value={value}
@@ -93,6 +107,7 @@ export function NumberField({
   step = 1,
   hint,
   allowNegative = false,
+  manualOnly,
 }: {
   label: string;
   value: number | null;
@@ -101,13 +116,18 @@ export function NumberField({
   step?: number;
   hint?: string;
   allowNegative?: boolean;
+  manualOnly?: boolean;
 }) {
   return (
-    <FieldWrap label={label} required={required} hint={hint}>
+    <FieldWrap label={label} required={required} hint={hint} manualOnly={manualOnly}>
       <input
         type="number"
         step={step}
         min={allowNegative ? undefined : 0}
+        // 값이 없는 것("아직 확인 안 됨")과 실제 0("확인해보니 0")은 실제로는 구분해야 하는
+        // 값이라 빈 값을 진짜 0으로 채우진 않는다 — 대신 placeholder로만 "0"을 흐리게 보여줘서
+        // 공란이 고장난 것처럼 보이는 걸 막는다(타이핑하면 바로 placeholder는 사라짐).
+        placeholder="0"
         value={value ?? ""}
         onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value === "" ? null : Number(e.target.value))}
         className={inputClass}

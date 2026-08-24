@@ -410,11 +410,16 @@ function householdsSpec(radiusKey: "500" | "1km", displayRadius: string): Market
 }
 
 function pcStoreSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
+  // 2026-08-24 (5차) — 500m "실영업 PC방업소수"는 V62 공식(computeCompetitorIp)에 실제로 쓰이는
+  // 핵심값인데, 사용자가 원래 네이버 지도 로드뷰로 직접 확인해서 판단하는 값이라고 확인함(카드
+  // 데이터 기반 추정치로 자동 덮어써지면 안 됨) — 그래서 500m은 자동추출 후보에서 아예 뺐다.
+  // 1km 버전(operatingPcStores1km)은 V62 계산에 안 쓰이는 참고자료라 그대로 자동추출 유지.
+  if (radiusKey === "500") return [];
   return [
     {
       // 소상공인365 "업소수"는 카드데이터 기반 실제 영업 추정치라 "실영업" 쪽에 대응시킨다 —
-      // "인허가"에 대응하는 지표는 이 플랫폼에서 못 찾았다(수동 입력으로 못 찾아 남겨둠).
-      key: radiusKey === "500" ? "operatingPcStores500m" : "operatingPcStores1km",
+      // "인허가"에 대응하는 지표는 이 플랫폼에서 못 찾았다(수동 입력으로 남겨둠).
+      key: "operatingPcStores1km",
       displayLabel: `실영업 PC방업소수(${displayRadius})`,
       matchLabels: ["업소수"],
       kind: "count",

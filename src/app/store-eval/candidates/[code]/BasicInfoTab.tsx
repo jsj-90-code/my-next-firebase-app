@@ -518,10 +518,16 @@ export function BasicInfoTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁 카운트 (반경 500m)</h3>
         <div className={`${gridClass} mt-4`}>
-          <TextField label="상권_기준연월" value={form.commercialDataYearMonth ?? ""} onChange={(v) => set("commercialDataYearMonth", v || null)} hint="예: 2026-07" />
-          <TextField label="업소수_기준시점" value={form.businessCountAsOfDate ?? ""} onChange={(v) => set("businessCountAsOfDate", v || null)} />
-          <NumberField label="인허가 PC방업소수" value={form.licensedPcStores500m} onChange={(v) => set("licensedPcStores500m", v)} />
-          <NumberField label="실영업 PC방업소수" value={form.operatingPcStores500m} onChange={(v) => set("operatingPcStores500m", v)} />
+          <TextField label="상권_기준연월" value={form.commercialDataYearMonth ?? ""} onChange={(v) => set("commercialDataYearMonth", v || null)} hint="예: 2026-07" manualOnly />
+          <TextField label="업소수_기준시점" value={form.businessCountAsOfDate ?? ""} onChange={(v) => set("businessCountAsOfDate", v || null)} manualOnly />
+          <NumberField label="인허가 PC방업소수" value={form.licensedPcStores500m} onChange={(v) => set("licensedPcStores500m", v)} manualOnly />
+          <NumberField
+            label="실영업 PC방업소수"
+            value={form.operatingPcStores500m}
+            onChange={(v) => set("operatingPcStores500m", v)}
+            hint="네이버 로드뷰 등으로 직접 확인 — 소상공인365 추정치를 자동 반영하지 않음"
+            manualOnly
+          />
         </div>
       </section>
 
@@ -545,7 +551,7 @@ export function BasicInfoTab({
           <NumberField label="유동 40대" value={form.floating1km_40s} onChange={(v) => set("floating1km_40s", v)} />
           <NumberField label="유동 50대" value={form.floating1km_50s} onChange={(v) => set("floating1km_50s", v)} />
           <NumberField label="유동 60대 이상" value={form.floating1km_60plus} onChange={(v) => set("floating1km_60plus", v)} />
-          <NumberField label="인허가 PC방업소수(1km)" value={form.licensedPcStores1km} onChange={(v) => set("licensedPcStores1km", v)} />
+          <NumberField label="인허가 PC방업소수(1km)" value={form.licensedPcStores1km} onChange={(v) => set("licensedPcStores1km", v)} manualOnly />
           <NumberField label="실영업 PC방업소수(1km)" value={form.operatingPcStores1km} onChange={(v) => set("operatingPcStores1km", v)} />
         </div>
 
@@ -564,12 +570,24 @@ export function BasicInfoTab({
           <NumberField label="고등학생 수(500m)" value={form.facility500HighSchool} onChange={(v) => set("facility500HighSchool", v)} />
           <NumberField label="중학생 수(500m)" value={form.facility500MiddleSchool} onChange={(v) => set("facility500MiddleSchool", v)} />
           <NumberField label="초등학생 수(500m)" value={form.facility500ElementarySchool} onChange={(v) => set("facility500ElementarySchool", v)} />
-          <NumberField label="지하철 승하차(500m)" value={form.facility500SubwayRiders} onChange={(v) => set("facility500SubwayRiders", v)} />
+          <NumberField
+            label="지하철 승하차(500m)"
+            value={form.facility500SubwayRiders}
+            onChange={(v) => set("facility500SubwayRiders", v)}
+            hint="소상공인365에 표는 있으나 실제 표 모양 미확인 — 아직 자동추출 안 됨"
+            manualOnly
+          />
           <NumberField label="세대수(500m)" value={form.facility500Households} onChange={(v) => set("facility500Households", v)} />
           <NumberField label="고등학생 수(1km)" value={form.facility1kmHighSchool} onChange={(v) => set("facility1kmHighSchool", v)} />
           <NumberField label="중학생 수(1km)" value={form.facility1kmMiddleSchool} onChange={(v) => set("facility1kmMiddleSchool", v)} />
           <NumberField label="초등학생 수(1km)" value={form.facility1kmElementarySchool} onChange={(v) => set("facility1kmElementarySchool", v)} />
-          <NumberField label="지하철 승하차(1km)" value={form.facility1kmSubwayRiders} onChange={(v) => set("facility1kmSubwayRiders", v)} />
+          <NumberField
+            label="지하철 승하차(1km)"
+            value={form.facility1kmSubwayRiders}
+            onChange={(v) => set("facility1kmSubwayRiders", v)}
+            hint="소상공인365에 표는 있으나 실제 표 모양 미확인 — 아직 자동추출 안 됨"
+            manualOnly
+          />
           <NumberField label="세대수(1km)" value={form.facility1kmHouseholds} onChange={(v) => set("facility1kmHouseholds", v)} />
         </div>
       </section>

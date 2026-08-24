@@ -479,7 +479,9 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(4994);
     expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(3126);
     expect(result.find((r) => r.fieldKey === "facility500Households")?.parsedValue).toBe(6956);
-    expect(result.find((r) => r.fieldKey === "operatingPcStores500m")?.parsedValue).toBe(2);
+    // 500m "실영업 PC방업소수"는 사용자가 네이버 로드뷰로 직접 확인하는 핵심(V62) 값이라
+    // 소상공인365 카드데이터 추정치로 자동 제안하지 않는다(의도적으로 후보에서 제외).
+    expect(result.some((r) => r.fieldKey === "operatingPcStores500m")).toBe(false);
     expect(result.some((r) => r.fieldKey === "licensedPcStores500m")).toBe(false);
   });
 
