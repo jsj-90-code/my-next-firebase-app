@@ -3,8 +3,10 @@ import {
   extractFields,
   parsePastedTable,
   parsePastedTableSectioned,
+  parseSosangongin365DemographicRow,
+  parseSosangongin365TrendLatest,
   SGIS_FIELD_SPECS,
-  SOSANGONGIN365_FIELD_SPECS,
+  SOSANGONGIN365_TABLE_VARIANTS,
 } from "./marketDataExtract";
 
 // 2026-08-24 — sgis.kostat.go.kr/view/catchmentArea/main에서 실제 지점(대전광역시청새마을금고,
@@ -131,52 +133,93 @@ describe("extractFields — SGIS (실제 보고서 레이아웃)", () => {
   });
 });
 
-describe("extractFields — 소상공인365", () => {
-  it("500m/1km 유동인구 항목을 서로 혼동하지 않고 구분한다", () => {
-    const pairs = [
-      { label: "유동인구 일평균(500m)", value: "166,062" },
-      { label: "유동인구 일평균(1km)", value: "500,000" },
-    ];
-    const result = extractFields(pairs, SOSANGONGIN365_FIELD_SPECS);
-    expect(result.find((r) => r.fieldKey === "floating500Avg")?.parsedValue).toBe(166062);
-    expect(result.find((r) => r.fieldKey === "floating1kmAvg")?.parsedValue).toBe(500000);
+// 2026-08-24 — bigdata.sbiz.or.kr 상세분석(대전광역시청새마을금고 인근, 서울 구로3동 등으로
+// 실제 조회)에서 그대로 옮긴 실측 데이터. SGIS와 달리 "지역 × 성별/연령대" 매트릭스 표라
+// 한 행에 여러 숫자가 나열되고, 비교 지역(소공동/중구 등) 행이 같이 섞여 있다.
+const REAL_SB365_FLOATING_EXCERPT = `
+지역	구분	일일	남성	여성	10대	20대	30대	40대	50대	60대이상
+선택 영역	인구	184,038	103,612	80,426	7,165	27,188	30,914	37,904	38,103	42,764
+선택 영역	비율		56.3	43.7	4.0	15.0	17.0	21.0	21.0	23.0
+소공동	인구	186,497	104,715	81,782	7,082	27,024	31,816	38,863	38,789	42,924
+소공동	비율		56.1	43.9	4.0	14.0	17.0	21.0	21.0	23.0
+`;
+
+const REAL_SB365_HOUSEHOLDS_EXCERPT = `
+지역	세대수
+2024년 하반기	2025년 상반기	2025년 하반기	2026년 상반기
+선택 영역	827	823	818	817
+소공동	1,257	1,249	1,241	1,240
+`;
+
+const REAL_SB365_BUSINESS_COUNT_EXCERPT = `
+지역	구분	25.05	25.06	25.07	25.08	25.09	25.10	25.11	25.12	26.01	26.02	26.03	26.04	26.05
+선택 영역	업소수	1	1	1	2	2	2	2	2	3	3	3	3	3
+선택 영역	증감률	0.0	0.0	0.0	100.0	0.0	0.0	0.0	0.0	50.0	0.0	0.0	0.0	0.0
+중구	업소수	21	21	21	20	20	20	20	20	20	20	20	21	20
+`;
+
+describe("parseSosangongin365DemographicRow — 실제 리포트(유동인구/직장인구 공용 표 모양)", () => {
+  it("'선택 영역'의 인구 행만 뽑고 비교 지역·비율 행은 무시한다", () => {
+    const pairs = parseSosangongin365DemographicRow(REAL_SB365_FLOATING_EXCERPT);
+    expect(pairs.find((p) => p.label === "전체")?.value).toBe("184,038");
+    expect(pairs.find((p) => p.label === "남성")?.value).toBe("103,612");
+    expect(pairs.find((p) => p.label === "60대이상")?.value).toBe("42,764");
+    // 소공동(비교 지역)의 값(186,497 등)이 섞여 들어오면 안 된다.
+    expect(pairs.some((p) => p.value === "186,497")).toBe(false);
   });
 
-  it("인허가/실영업 PC방업소수를 서로 혼동하지 않는다", () => {
-    const pairs = [
-      { label: "인허가 PC방업소수(500m)", value: "6" },
-      { label: "실영업 PC방업소수(500m)", value: "5" },
-    ];
-    const result = extractFields(pairs, SOSANGONGIN365_FIELD_SPECS);
-    expect(result.find((r) => r.fieldKey === "licensedPcStores500m")?.parsedValue).toBe(6);
-    expect(result.find((r) => r.fieldKey === "operatingPcStores500m")?.parsedValue).toBe(5);
+  it("매칭되는 '선택 영역' 행이 없으면 빈 배열을 반환한다(지어내지 않음)", () => {
+    expect(parseSosangongin365DemographicRow("소공동\t인구\t100\t50\t50\t10\t10\t10\t10\t10\t10")).toEqual([]);
+  });
+});
+
+describe("parseSosangongin365TrendLatest — 세대수/업소수 시계열 표", () => {
+  it("세대수 표에서 '선택 영역'의 가장 최근(마지막) 값을 가져온다", () => {
+    expect(parseSosangongin365TrendLatest(REAL_SB365_HOUSEHOLDS_EXCERPT)).toBe(817);
   });
 
-  it("직장인구 남/여를 전체와 구분한다", () => {
-    const pairs = [
-      { label: "직장인구 전체(500m)", value: "1000" },
-      { label: "직장인구 남성(500m)", value: "600" },
-      { label: "직장인구 여성(500m)", value: "400" },
-    ];
-    const result = extractFields(pairs, SOSANGONGIN365_FIELD_SPECS);
-    expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(1000);
-    expect(result.find((r) => r.fieldKey === "employ500Male")?.parsedValue).toBe(600);
-    expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(400);
+  it("rowLabelHint로 업소수 표를 구분해서 가져오고, 증감률 행은 건너뛴다", () => {
+    expect(parseSosangongin365TrendLatest(REAL_SB365_BUSINESS_COUNT_EXCERPT, "업소수")).toBe(3);
   });
 
-  it("상권_기준연월은 숫자로 파싱하지 않고 문자열 그대로 남긴다", () => {
-    const pairs = [{ label: "상권 기준연월", value: "2026-07" }];
-    const result = extractFields(pairs, SOSANGONGIN365_FIELD_SPECS);
-    expect(result.find((r) => r.fieldKey === "commercialDataYearMonth")?.parsedValue).toBe("2026-07");
+  it("힌트 없이 업소수 표를 읽으면(라벨이 '선택 영역' 단독이 아니라서) 못 찾는다 — 표 종류를 반드시 구분해야 함", () => {
+    expect(parseSosangongin365TrendLatest(REAL_SB365_BUSINESS_COUNT_EXCERPT)).toBeNull();
+  });
+});
+
+describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류/반경 선택에 따라 올바른 필드에 매칭", () => {
+  it("유동인구 변형: 500m와 1km 필드 키가 서로 다르게 생성된다", () => {
+    const variant = SOSANGONGIN365_TABLE_VARIANTS.find((v) => v.key === "유동인구")!;
+    const pairs = variant.extract(REAL_SB365_FLOATING_EXCERPT);
+    const result500 = extractFields(pairs, variant.buildSpecs("500", "500m"));
+    const result1km = extractFields(pairs, variant.buildSpecs("1km", "1km"));
+    expect(result500.find((r) => r.fieldKey === "floating500Avg")?.parsedValue).toBe(184038);
+    expect(result1km.find((r) => r.fieldKey === "floating1kmAvg")?.parsedValue).toBe(184038);
+    expect(result500.find((r) => r.fieldKey === "floating500Male")?.parsedValue).toBe(103612);
   });
 
-  it("세대수(500m)와 세대수(1km)를 구분한다", () => {
-    const pairs = [
-      { label: "세대수(500m)", value: "3000" },
-      { label: "세대수(1km)", value: "9000" },
-    ];
-    const result = extractFields(pairs, SOSANGONGIN365_FIELD_SPECS);
-    expect(result.find((r) => r.fieldKey === "facility500Households")?.parsedValue).toBe(3000);
-    expect(result.find((r) => r.fieldKey === "facility1kmHouseholds")?.parsedValue).toBe(9000);
+  it("직장인구 변형: 같은 표 모양이지만 employ 필드로 매핑된다", () => {
+    const variant = SOSANGONGIN365_TABLE_VARIANTS.find((v) => v.key === "직장인구")!;
+    const pairs = variant.extract(REAL_SB365_FLOATING_EXCERPT);
+    const result = extractFields(pairs, variant.buildSpecs("500", "500m"));
+    expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(184038);
+    expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(80426);
+  });
+
+  it("세대수 변형: 반경에 따라 facility500Households/facility1kmHouseholds로 나뉜다", () => {
+    const variant = SOSANGONGIN365_TABLE_VARIANTS.find((v) => v.key === "세대수")!;
+    const pairs = variant.extract(REAL_SB365_HOUSEHOLDS_EXCERPT);
+    const result500 = extractFields(pairs, variant.buildSpecs("500", "500m"));
+    const result1km = extractFields(pairs, variant.buildSpecs("1km", "1km"));
+    expect(result500.find((r) => r.fieldKey === "facility500Households")?.parsedValue).toBe(817);
+    expect(result1km.find((r) => r.fieldKey === "facility1kmHouseholds")?.parsedValue).toBe(817);
+  });
+
+  it("업소수 변형: operatingPcStores로 매핑되고(인허가 쪽은 이 플랫폼에 없어 매칭 대상이 아님)", () => {
+    const variant = SOSANGONGIN365_TABLE_VARIANTS.find((v) => v.key === "업소수")!;
+    const pairs = variant.extract(REAL_SB365_BUSINESS_COUNT_EXCERPT);
+    const result = extractFields(pairs, variant.buildSpecs("500", "500m"));
+    expect(result.find((r) => r.fieldKey === "operatingPcStores500m")?.parsedValue).toBe(3);
+    expect(result.some((r) => r.fieldKey === "licensedPcStores500m")).toBe(false);
   });
 });

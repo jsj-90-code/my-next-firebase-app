@@ -223,35 +223,113 @@ export const SGIS_FIELD_SPECS: MarketFieldSpec[] = [
   },
 ];
 
+// ---- 소상공인365 상세분석 리포트 (2026-08-24 실제 사이트 확인 후 전면 재설계) ----
+//
+// SGIS와 완전히 다른 표 구조였다: 라벨:값 한 줄짜리가 아니라 "지역 × 성별/연령대"(또는
+// "지역 × 기간") 매트릭스 표다 — 한 행에 여러 숫자가 쭉 나열된다. 게다가:
+//   - 한 리포트가 반경 하나만 다룬다(SGIS처럼 500m+1km가 같이 안 나옴 — 500m/1km를 각각 따로
+//     조회해야 하고, 붙여넣은 텍스트만 봐서는 어느 반경인지 알 수 없다 → 사용자가 직접 골라야 함).
+//   - "유동인구"와 "직장인구" 표가 서로 모양이 완전히 똑같다(둘 다 "선택 영역 | 인구 | 전체 |
+//     남성 | 여성 | 10대...60대이상") → 텍스트만 봐서는 어느 표인지 구분이 안 됨 → 사용자가 직접
+//     "지금 붙여넣는 게 어느 표인지" 골라야 함.
+// 그래서 라벨 매칭만으로 전부 자동판별하는 대신, 사용자가 (반경, 표 종류)를 먼저 고르면 그에 맞는
+// 파서+필드스펙을 골라 쓰는 방식으로 바꿨다.
+//
+// 확인 안 된 것(이번 재설계 범위 밖, 자동추출 대상에서 제외 — 그냥 수동 입력으로 남겨둠):
+//   - "지하철역/버스정류장 개수"는 있지만 "지하철 승하차 인원"은 못 찾음(단위 자체가 다름).
+//   - 초/중/고등학생 수를 확인 못 함(다른 탭에 있을 수 있으나 미확인).
+//   - "인허가 PC방업소수"에 해당하는 지표를 못 찾음(있는 건 카드데이터 기반 "업소수" 하나뿐이라
+//     실영업 쪽에만 대응시킨다).
+//   - 상권_기준연월/업소수_기준시점은 문장형 텍스트라 표가 아니다.
+
+const SB365_DEMO_CATEGORIES: { key: string; matches: string[] }[] = [
+  { key: "남성", matches: ["남성"] },
+  { key: "여성", matches: ["여성"] },
+  { key: "10대", matches: ["10대"] },
+  { key: "20대", matches: ["20대"] },
+  { key: "30대", matches: ["30대"] },
+  { key: "40대", matches: ["40대"] },
+  { key: "50대", matches: ["50대"] },
+  { key: "60대이상", matches: ["60대이상", "60대+"] },
+];
+
+function isNumericToken(t: string): boolean {
+  return parseNumberLoose(t) != null;
+}
+
+function tokenizeMatrixLine(line: string): string[] {
+  const cols = line.includes("\t") ? line.split("\t") : line.split(/ {2,}/);
+  return cols.map((c) => c.trim()).filter((c) => c !== "");
+}
+
+/** 라벨(선행 비숫자 토큰들)과 값(후행 숫자 토큰들)을 한 줄에서 분리한다. */
+function splitLabelAndValues(tokens: string[]): { label: string; values: string[] } {
+  let splitIdx = tokens.length;
+  while (splitIdx > 0 && isNumericToken(tokens[splitIdx - 1])) splitIdx--;
+  return { label: tokens.slice(0, splitIdx).join(" "), values: tokens.slice(splitIdx) };
+}
+
+/**
+ * "성별/연령대별 일평균 유동인구"/"성별/연령대별 직장인구" 표 전용. 두 표가 모양이 완전히
+ * 똑같아서(선택 영역 | 인구 | 전체 | 남성 | 여성 | 10대...60대이상) 이 함수 하나로 공용 처리한다
+ * — 어느 지표인지는 호출부(사용자가 고른 표 종류)가 이미 안다. 비교 지역(소공동/중구 등) 행과
+ * "비율"/"증감률" 행은 무시하고 우리 후보지("선택 영역")의 인원수 행만 본다.
+ */
+export function parseSosangongin365DemographicRow(text: string): LabelValuePair[] {
+  const pairs: LabelValuePair[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const tokens = tokenizeMatrixLine(line);
+    if (tokens.length < 2) continue;
+    const { label, values } = splitLabelAndValues(tokens);
+    const normLabel = normalizeLabel(label);
+    if (!normLabel.includes("선택영역")) continue; // 소공동/중구 등 비교 지역은 우리 후보지가 아니다
+    if (normLabel.includes("비율") || normLabel.includes("증감률")) continue;
+    if (values.length === SB365_DEMO_CATEGORIES.length + 1) {
+      pairs.push({ label: "전체", value: values[0] });
+      SB365_DEMO_CATEGORIES.forEach((cat, i) => pairs.push({ label: cat.key, value: values[i + 1] }));
+    } else if (values.length === SB365_DEMO_CATEGORIES.length) {
+      SB365_DEMO_CATEGORIES.forEach((cat, i) => pairs.push({ label: cat.key, value: values[i] }));
+    }
+  }
+  return pairs;
+}
+
+/**
+ * "세대 수 추이"/"업소수 추이"처럼 "선택 영역"(+선택적으로 "업소수" 같은 라벨) 뒤에 기간별
+ * 숫자가 쭉 나오는 시계열 표 — 가장 최근(마지막) 값만 쓴다. rowLabelHint를 주면 그 문자열이
+ * 행 라벨에 포함될 때만 인정한다("업소수"를 지정하면 세대수 표와 안 섞인다 — 세대수 표는
+ * "선택 영역" 라벨만 단독으로 온다).
+ */
+export function parseSosangongin365TrendLatest(text: string, rowLabelHint?: string): number | null {
+  const hintNorm = rowLabelHint ? normalizeLabel(rowLabelHint) : null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const tokens = tokenizeMatrixLine(line);
+    if (tokens.length < 2) continue;
+    const { label, values } = splitLabelAndValues(tokens);
+    const normLabel = normalizeLabel(label);
+    if (!normLabel.includes("선택영역")) continue;
+    if (normLabel.includes("증감률")) continue;
+    if (hintNorm ? !normLabel.includes(hintNorm) : normLabel !== "선택영역") continue;
+    if (values.length === 0) continue;
+    return parseNumberLoose(values[values.length - 1]);
+  }
+  return null;
+}
+
 function floatingSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
   const prefix = radiusKey === "500" ? "floating500" : "floating1km";
-  const matchRadiusTokens = radiusKey === "500" ? ["500m", "500"] : ["1km", "1000m", "1000"];
-  // 반경 토큰(500m/1km 등)을 반드시 붙여서만 후보로 삼는다 — bare 라벨까지 후보에 넣으면 500m
-  // 항목과 1km 항목이 서로의 값을 가로채는 오매칭이 생긴다(2026-08-24 테스트로 발견/수정).
-  const withRadius = (base: string[]) => base.flatMap((m) => matchRadiusTokens.map((r) => `${m}${r}`));
   return [
-    {
-      key: `${prefix}Avg`,
-      displayLabel: `유동인구 평균(${displayRadius})`,
-      matchLabels: withRadius(["유동인구일평균", "일평균유동인구", "유동인구평균"]),
-      kind: "count",
-    },
-    {
-      key: `${prefix}Male`,
-      displayLabel: `유동인구 남(${displayRadius})`,
-      matchLabels: withRadius(["유동인구남성", "유동인구남"]),
-      kind: "count",
-    },
-    {
-      key: `${prefix}Female`,
-      displayLabel: `유동인구 여(${displayRadius})`,
-      matchLabels: withRadius(["유동인구여성", "유동인구여"]),
-      kind: "count",
-    },
+    { key: `${prefix}Avg`, displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["전체"], kind: "count" },
+    { key: `${prefix}Male`, displayLabel: `유동인구 남(${displayRadius})`, matchLabels: ["남성"], kind: "count" },
+    { key: `${prefix}Female`, displayLabel: `유동인구 여(${displayRadius})`, matchLabels: ["여성"], kind: "count" },
     ...FLOATING_DECADE_BANDS.map((b) => ({
       key: `${prefix}_${b.suffix}`,
       displayLabel: `유동 ${b.label}(${displayRadius})`,
-      matchLabels: withRadius(b.matches.map((m) => `유동인구${m}`)),
+      matchLabels: b.matches,
       kind: "count" as const,
     })),
   ];
@@ -259,43 +337,63 @@ function floatingSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketF
 
 function employSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
   const prefix = radiusKey === "500" ? "employ500" : "employ1km";
-  const matchRadiusTokens = radiusKey === "500" ? ["500m", "500"] : ["1km", "1000m", "1000"];
-  // 반경 토큰(500m/1km 등)을 반드시 붙여서만 후보로 삼는다 — bare 라벨까지 후보에 넣으면 500m
-  // 항목과 1km 항목이 서로의 값을 가로채는 오매칭이 생긴다(2026-08-24 테스트로 발견/수정).
-  const withRadius = (base: string[]) => base.flatMap((m) => matchRadiusTokens.map((r) => `${m}${r}`));
   return [
-    { key: `${prefix}Total`, displayLabel: `직장인구 전체(${displayRadius})`, matchLabels: withRadius(["직장인구전체", "직장인구"]), kind: "count" },
-    { key: `${prefix}Male`, displayLabel: `직장인구 남(${displayRadius})`, matchLabels: withRadius(["직장인구남성", "직장인구남"]), kind: "count" },
-    { key: `${prefix}Female`, displayLabel: `직장인구 여(${displayRadius})`, matchLabels: withRadius(["직장인구여성", "직장인구여"]), kind: "count" },
+    { key: `${prefix}Total`, displayLabel: `직장인구 전체(${displayRadius})`, matchLabels: ["전체"], kind: "count" },
+    { key: `${prefix}Male`, displayLabel: `직장인구 남(${displayRadius})`, matchLabels: ["남성"], kind: "count" },
+    { key: `${prefix}Female`, displayLabel: `직장인구 여(${displayRadius})`, matchLabels: ["여성"], kind: "count" },
   ];
 }
 
-function facilitySpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
-  const prefix = radiusKey === "500" ? "facility500" : "facility1km";
-  const matchRadiusTokens = radiusKey === "500" ? ["500m", "500"] : ["1km", "1000m", "1000"];
-  // 반경 토큰(500m/1km 등)을 반드시 붙여서만 후보로 삼는다 — bare 라벨까지 후보에 넣으면 500m
-  // 항목과 1km 항목이 서로의 값을 가로채는 오매칭이 생긴다(2026-08-24 테스트로 발견/수정).
-  const withRadius = (base: string[]) => base.flatMap((m) => matchRadiusTokens.map((r) => `${m}${r}`));
+function householdsSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
   return [
-    { key: `${prefix}HighSchool`, displayLabel: `고등학생 수(${displayRadius})`, matchLabels: withRadius(["고등학생수", "고등학생"]), kind: "count" },
-    { key: `${prefix}MiddleSchool`, displayLabel: `중학생 수(${displayRadius})`, matchLabels: withRadius(["중학생수", "중학생"]), kind: "count" },
-    { key: `${prefix}ElementarySchool`, displayLabel: `초등학생 수(${displayRadius})`, matchLabels: withRadius(["초등학생수", "초등학생"]), kind: "count" },
-    { key: `${prefix}SubwayRiders`, displayLabel: `지하철 승하차(${displayRadius})`, matchLabels: withRadius(["지하철승하차인원", "지하철승하차", "지하철이용객"]), kind: "count" },
-    { key: `${prefix}Households`, displayLabel: `세대수(${displayRadius})`, matchLabels: withRadius(["세대수"]), kind: "count" },
+    {
+      key: radiusKey === "500" ? "facility500Households" : "facility1kmHouseholds",
+      displayLabel: `세대수(${displayRadius})`,
+      matchLabels: ["세대수"],
+      kind: "count",
+    },
   ];
 }
 
-export const SOSANGONGIN365_FIELD_SPECS: MarketFieldSpec[] = [
-  { key: "commercialDataYearMonth", displayLabel: "상권_기준연월", matchLabels: ["상권기준연월", "기준연월", "데이터기준월"], kind: "yearMonth" },
-  { key: "businessCountAsOfDate", displayLabel: "업소수_기준시점", matchLabels: ["업소수기준시점", "업소기준일", "업종기준일"], kind: "date" },
-  { key: "licensedPcStores500m", displayLabel: "인허가 PC방업소수(500m)", matchLabels: ["인허가PC방업소수500m", "인허가PC방업소수", "PC방인허가업소수"], kind: "count" },
-  { key: "operatingPcStores500m", displayLabel: "실영업 PC방업소수(500m)", matchLabels: ["실영업PC방업소수500m", "실영업PC방업소수", "PC방실영업업소수"], kind: "count" },
-  { key: "licensedPcStores1km", displayLabel: "인허가 PC방업소수(1km)", matchLabels: ["인허가PC방업소수1km", "인허가PC방업소수1000m"], kind: "count" },
-  { key: "operatingPcStores1km", displayLabel: "실영업 PC방업소수(1km)", matchLabels: ["실영업PC방업소수1km", "실영업PC방업소수1000m"], kind: "count" },
-  ...floatingSpecs("500", "500m"),
-  ...floatingSpecs("1km", "1km"),
-  ...employSpecs("500", "500m"),
-  ...employSpecs("1km", "1km"),
-  ...facilitySpecs("500", "500m"),
-  ...facilitySpecs("1km", "1km"),
+function pcStoreSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
+  return [
+    {
+      // 소상공인365 "업소수"는 카드데이터 기반 실제 영업 추정치라 "실영업" 쪽에 대응시킨다 —
+      // "인허가"에 대응하는 지표는 이 플랫폼에서 못 찾았다(수동 입력으로 남겨둠).
+      key: radiusKey === "500" ? "operatingPcStores500m" : "operatingPcStores1km",
+      displayLabel: `실영업 PC방업소수(${displayRadius})`,
+      matchLabels: ["업소수"],
+      kind: "count",
+    },
+  ];
+}
+
+export type Sosangongin365TableVariant = {
+  key: "유동인구" | "직장인구" | "세대수" | "업소수";
+  label: string;
+  buildSpecs: (radiusKey: "500" | "1km", displayRadius: string) => MarketFieldSpec[];
+  extract: (text: string) => LabelValuePair[];
+};
+
+export const SOSANGONGIN365_TABLE_VARIANTS: Sosangongin365TableVariant[] = [
+  { key: "유동인구", label: "유동인구 (성별/연령대별)", buildSpecs: floatingSpecs, extract: parseSosangongin365DemographicRow },
+  { key: "직장인구", label: "직장인구 (성별/연령대별)", buildSpecs: employSpecs, extract: parseSosangongin365DemographicRow },
+  {
+    key: "세대수",
+    label: "세대 수 현황",
+    buildSpecs: householdsSpec,
+    extract: (text) => {
+      const v = parseSosangongin365TrendLatest(text);
+      return v == null ? [] : [{ label: "세대수", value: String(v) }];
+    },
+  },
+  {
+    key: "업소수",
+    label: "업소수 추이 (PC방)",
+    buildSpecs: pcStoreSpec,
+    extract: (text) => {
+      const v = parseSosangongin365TrendLatest(text, "업소수");
+      return v == null ? [] : [{ label: "업소수", value: String(v) }];
+    },
+  },
 ];

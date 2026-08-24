@@ -15,7 +15,7 @@ import {
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
 import { MarketDataUploadPanel } from "@/components/storeEval/MarketDataUploadPanel";
-import { SGIS_FIELD_SPECS, SOSANGONGIN365_FIELD_SPECS } from "@/lib/storeEval/marketDataExtract";
+import { SGIS_FIELD_SPECS, SOSANGONGIN365_TABLE_VARIANTS } from "@/lib/storeEval/marketDataExtract";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   generateNextCandidateCode,
@@ -444,16 +444,18 @@ export function BasicInfoTab({
               showFileUpload={false}
             />
             <MarketDataUploadPanel
-              title="소상공인365 상권분석 (유동인구·직장·시설)"
+              title="소상공인365 상권분석 (유동인구·직장인구·세대수·업소수)"
               openUrl="https://bigdata.sbiz.or.kr/"
               openLabel="소상공인365 열기"
-              instructions="상세분석 → 반경 방식으로 후보지 위치를 클릭 후 500m·1km를 각각 입력해 조회하고, 리포트를 업로드하거나 표를 붙여넣으세요."
-              specs={SOSANGONGIN365_FIELD_SPECS}
+              instructions='빅데이터 상권분석 → 상세분석 → 업종은 "PC방"으로, 반경은 아래에서 고른 것과 같은 값으로 설정 후 분석하기. 결과 리포트에서 아래 고른 표(유동인구/직장인구는 "인구분석" 탭, 세대수/업소수는 "지역현황"·"업종분석" 탭)의 "선택 영역" 행이 포함되게 표를 복사해 붙여넣으세요. 500m·1km는 사이트에서 각각 다시 분석해야 합니다(한 리포트에 같이 안 나옴).'
+              tableVariants={SOSANGONGIN365_TABLE_VARIANTS}
               sourceType="sosangongin365"
               candidateCode={form.code}
               coord={{ lat: form.lat, lng: form.lng }}
               actorEmail={actor}
               onApply={handleApplyMarketDataUpload}
+              defaultMode="paste"
+              showFileUpload={false}
             />
           </div>
           {marketDataUploads.length > 0 && (

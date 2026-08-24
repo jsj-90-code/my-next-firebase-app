@@ -5,18 +5,24 @@
 // 복사한 표를 붙여넣으면, 결정적 라벨매칭(marketDataExtract.ts)으로 값을 추출해 보여준다.
 // AI가 숫자를 만들어내지 않는다 — 매칭 안 된 항목은 빈칸이고, 사용자가 확인/수정 후에만 적용된다.
 
-import { useState, type ChangeEvent } from "react";
+import { useMemo, useState, type ChangeEvent } from "react";
 import {
   extractFields,
   parsePastedTable,
   parsePastedTableSectioned,
   type ExtractedFieldDraft,
   type MarketFieldSpec,
+  type Sosangongin365TableVariant,
 } from "@/lib/storeEval/marketDataExtract";
 import { extractLabelValuePairsFromFile, hashFile } from "@/lib/storeEval/spreadsheetPairs";
 import type { MarketDataSourceType, MarketDataUpload } from "@/lib/storeEval/types";
 
 type EditableDraft = ExtractedFieldDraft & { checked: boolean; editedValue: string };
+
+const RADIUS_OPTIONS: { key: "500" | "1km"; label: string }[] = [
+  { key: "500", label: "500m" },
+  { key: "1km", label: "1km" },
+];
 
 function toDraftValueText(v: number | string | null): string {
   return v == null ? "" : String(v);
@@ -36,12 +42,13 @@ export function MarketDataUploadPanel({
   defaultMode = "file",
   pasteParser = "plain",
   showFileUpload = true,
+  tableVariants,
 }: {
   title: string;
   openUrl: string;
   openLabel: string;
   instructions: string;
-  specs: MarketFieldSpec[];
+  specs?: MarketFieldSpec[];
   sourceType: MarketDataSourceType;
   candidateCode: string;
   coord: { lat: number; lng: number } | null;
@@ -54,6 +61,11 @@ export function MarketDataUploadPanel({
   defaultMode?: "file" | "paste";
   pasteParser?: "plain" | "sectioned";
   showFileUpload?: boolean;
+  // 소상공인365 전용(2026-08-24 실제 사이트 확인 후 추가) — 이 사이트는 리포트 하나가 반경 한
+  // 개만 다루고(500m/1km 각각 따로 조회해야 함), 유동인구/직장인구 표가 서로 모양이 완전히
+  // 똑같아서 텍스트만 보고는 어느 표인지 구분이 안 된다. 그래서 라벨 자동판별 대신 사용자가
+  // (표 종류, 반경)를 먼저 고르게 한다.
+  tableVariants?: Sosangongin365TableVariant[];
 }) {
   const [mode, setMode] = useState<"file" | "paste">(defaultMode);
   const [pastedText, setPastedText] = useState("");
@@ -62,9 +74,20 @@ export function MarketDataUploadPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
+  const [variantKey, setVariantKey] = useState<string | null>(tableVariants?.[0]?.key ?? null);
+  const [radiusKey, setRadiusKey] = useState<"500" | "1km">("500");
+
+  const activeVariant = tableVariants?.find((v) => v.key === variantKey) ?? null;
+  const radiusLabel = RADIUS_OPTIONS.find((r) => r.key === radiusKey)!.label;
+  // 표 종류/반경 선택에 따라 매번 다시 계산한다 — 소상공인365 모드에서만 쓰인다(specs prop은
+  // 일반 모드 전용).
+  const resolvedSpecs = useMemo<MarketFieldSpec[]>(() => {
+    if (activeVariant) return activeVariant.buildSpecs(radiusKey, radiusLabel);
+    return specs ?? [];
+  }, [activeVariant, radiusKey, radiusLabel, specs]);
 
   function draftsFrom(pairs: { label: string; value: string }[]): EditableDraft[] {
-    return extractFields(pairs, specs).map((d) => ({ ...d, checked: d.autoExtracted, editedValue: toDraftValueText(d.parsedValue) }));
+    return extractFields(pairs, resolvedSpecs).map((d) => ({ ...d, checked: d.autoExtracted, editedValue: toDraftValueText(d.parsedValue) }));
   }
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
@@ -91,9 +114,17 @@ export function MarketDataUploadPanel({
   function handleExtractPasted() {
     setError(null);
     setApplyMessage(null);
-    const pairs = pasteParser === "sectioned" ? parsePastedTableSectioned(pastedText) : parsePastedTable(pastedText);
+    const pairs = activeVariant
+      ? activeVariant.extract(pastedText)
+      : pasteParser === "sectioned"
+        ? parsePastedTableSectioned(pastedText)
+        : parsePastedTable(pastedText);
     if (pairs.length === 0) {
-      setError("표에서 라벨/값 쌍을 찾지 못했습니다. 셀 사이 탭(Tab)이 유지되도록 그대로 복사해서 붙여넣어주세요.");
+      setError(
+        activeVariant
+          ? "'선택 영역' 행을 찾지 못했습니다 — 표 종류/반경 선택이 맞는지, 복사한 표에 '선택 영역' 행이 포함됐는지 확인해주세요."
+          : "표에서 라벨/값 쌍을 찾지 못했습니다. 셀 사이 탭(Tab)이 유지되도록 그대로 복사해서 붙여넣어주세요.",
+      );
       return;
     }
     setDrafts(draftsFrom(pairs));
@@ -108,7 +139,7 @@ export function MarketDataUploadPanel({
     if (!drafts) return;
     const patch: Record<string, number | string> = {};
     const extractedFields = drafts.map((d) => {
-      const spec = specs.find((s) => s.key === d.fieldKey)!;
+      const spec = resolvedSpecs.find((s) => s.key === d.fieldKey)!;
       const trimmed = d.editedValue.trim();
       let value: number | string | null = null;
       if (d.checked && trimmed !== "") {
@@ -163,6 +194,41 @@ export function MarketDataUploadPanel({
         </a>
       </div>
       <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{instructions}</p>
+
+      {tableVariants && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
+          <div className="flex flex-wrap gap-1.5">
+            {tableVariants.map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                onClick={() => {
+                  setVariantKey(v.key);
+                  setDrafts(null);
+                }}
+                className={`rounded-md px-2 py-1 text-xs font-medium ${v.key === variantKey ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            {RADIUS_OPTIONS.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                onClick={() => {
+                  setRadiusKey(r.key);
+                  setDrafts(null);
+                }}
+                className={`rounded-md px-2 py-1 text-xs font-medium ${r.key === radiusKey ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showFileUpload && (
         <div className="mt-3 flex gap-2 text-xs">
