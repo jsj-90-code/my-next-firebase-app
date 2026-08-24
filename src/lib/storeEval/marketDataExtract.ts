@@ -81,20 +81,50 @@ export function parsePastedTable(text: string): LabelValuePair[] {
  */
 const RADIUS_SECTION_RE = /반경\s*(?:기준)?\s*([\d.]+)\s*km/i;
 
+// "선택년도" 줄 바로 다음에 오는 "인구/가구/주택 (2024년), 사업체/종사자 (2024년)" 같은 문장형
+// 텍스트에서 연도만 뽑는다 — 이 항목만 표가 아니라 문장이라 위 라벨/값 로직과 별개로 처리한다
+// (2026-08-24 실사용자 붙여넣기로 확인).
+const YEAR_SENTENCE_RE = /인구[\s\S]*?\((\d{4})년\)/;
+
+/**
+ * "면적" 위젯은 표가 아니라 셀 하나씩 완전히 다른 줄로 복사된다 — "구분"/"총 면적"/"값(km2)"/
+ * "0.78"이 각각 독립된 줄로 나온다(2026-08-24 실사용자 붙여넣기로 확인, 반경1km 면적이 계속
+ * 안 채워진다는 제보로 발견). 탭/공백 구분자가 있는 정상 행과 섞여 나오므로, 토큰이 하나뿐인
+ * "외톨이" 줄들을 모아뒀다가 "구분 / 표시명 / 값(...) / 숫자" 4개 묶음을 만나면 (표시명 → 숫자)
+ * 쌍으로 합친다. 그 조합이 아닌 외톨이 줄(제목·안내문구 등)은 그냥 버린다 — 지어내지 않는다.
+ */
+function flushLoneBuffer(buffer: string[], radiusKm: number | null, pairs: LabelValuePair[]): void {
+  for (let i = 0; i + 3 < buffer.length; i += 4) {
+    const [capA, name, capB, value] = buffer.slice(i, i + 4);
+    if (normalizeLabel(capA) === "구분" && normalizeLabel(capB).startsWith("값")) {
+      pairs.push({ label: name, value, radiusKm });
+    }
+  }
+}
+
 export function parsePastedTableSectioned(text: string): LabelValuePair[] {
   const pairs: LabelValuePair[] = [];
   let currentRadius: number | null = null;
+  let loneBuffer: string[] = [];
+
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
     const sectionMatch = line.match(RADIUS_SECTION_RE);
     if (sectionMatch) {
+      flushLoneBuffer(loneBuffer, currentRadius, pairs);
+      loneBuffer = [];
       currentRadius = Number(sectionMatch[1]);
       continue;
     }
     const cols = line.includes("\t") ? line.split("\t") : line.split(/ {2,}/);
     const trimmedCols = cols.map((c) => c.trim()).filter((c) => c !== "");
-    if (trimmedCols.length < 2) continue;
+    if (trimmedCols.length < 2) {
+      loneBuffer.push(line);
+      continue;
+    }
+    flushLoneBuffer(loneBuffer, currentRadius, pairs);
+    loneBuffer = [];
     // 실제 보고서 표는 "구분 | 값(명) | 백분율(%)" 3열이다 — 마지막 열(백분율)을 값으로 삼으면
     // 총인구 같은 개수 항목이 죄다 "100"(퍼센트)으로 잘못 채워진다(2026-08-24 테스트로 발견).
     // 2열이면 그대로 값으로 쓰고, 3열 이상이면 "값" 열(두 번째)과 "비율" 열(마지막)을 각각
@@ -107,6 +137,11 @@ export function parsePastedTableSectioned(text: string): LabelValuePair[] {
       pairs.push({ label: `${trimmedCols[0]} 비율`, value: trimmedCols[trimmedCols.length - 1], radiusKm: currentRadius });
     }
   }
+  flushLoneBuffer(loneBuffer, currentRadius, pairs);
+
+  const yearMatch = text.match(YEAR_SENTENCE_RE);
+  if (yearMatch) pairs.push({ label: "상권데이터기준연도", value: yearMatch[1], radiusKm: null });
+
   return pairs;
 }
 
@@ -323,13 +358,13 @@ export function parseSosangongin365TrendLatest(text: string, rowLabelHint?: stri
 function floatingSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
   const prefix = radiusKey === "500" ? "floating500" : "floating1km";
   return [
-    { key: `${prefix}Avg`, displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["전체"], kind: "count" },
-    { key: `${prefix}Male`, displayLabel: `유동인구 남(${displayRadius})`, matchLabels: ["남성"], kind: "count" },
-    { key: `${prefix}Female`, displayLabel: `유동인구 여(${displayRadius})`, matchLabels: ["여성"], kind: "count" },
+    { key: `${prefix}Avg`, displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["유동인구:전체"], kind: "count" },
+    { key: `${prefix}Male`, displayLabel: `유동인구 남(${displayRadius})`, matchLabels: ["유동인구:남성"], kind: "count" },
+    { key: `${prefix}Female`, displayLabel: `유동인구 여(${displayRadius})`, matchLabels: ["유동인구:여성"], kind: "count" },
     ...FLOATING_DECADE_BANDS.map((b) => ({
       key: `${prefix}_${b.suffix}`,
       displayLabel: `유동 ${b.label}(${displayRadius})`,
-      matchLabels: b.matches,
+      matchLabels: b.matches.map((m) => `유동인구:${m}`),
       kind: "count" as const,
     })),
   ];
@@ -338,9 +373,9 @@ function floatingSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketF
 function employSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
   const prefix = radiusKey === "500" ? "employ500" : "employ1km";
   return [
-    { key: `${prefix}Total`, displayLabel: `직장인구 전체(${displayRadius})`, matchLabels: ["전체"], kind: "count" },
-    { key: `${prefix}Male`, displayLabel: `직장인구 남(${displayRadius})`, matchLabels: ["남성"], kind: "count" },
-    { key: `${prefix}Female`, displayLabel: `직장인구 여(${displayRadius})`, matchLabels: ["여성"], kind: "count" },
+    { key: `${prefix}Total`, displayLabel: `직장인구 전체(${displayRadius})`, matchLabels: ["직장인구:전체"], kind: "count" },
+    { key: `${prefix}Male`, displayLabel: `직장인구 남(${displayRadius})`, matchLabels: ["직장인구:남성"], kind: "count" },
+    { key: `${prefix}Female`, displayLabel: `직장인구 여(${displayRadius})`, matchLabels: ["직장인구:여성"], kind: "count" },
   ];
 }
 
@@ -368,32 +403,81 @@ function pcStoreSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFie
   ];
 }
 
+// 2026-08-24 — 사용자 제안으로 재설계: "표 종류"를 매번 고르지 말고 "반경 500m 설정 > 분석하기 >
+// 전체 복사 후 붙여넣기 / 반경 1km 설정 > 전체 복사 후 붙여넣기" 두 번만 하면 되도록 바꿨다.
+// 유동인구/직장인구 표는 행 모양이 똑같아 구분이 안 됐지만, 리포트 전체를 복사하면 각 표 앞에
+// 실제 소제목("성별/연령대별 일평균 유동인구" / "성별/연령대별 직장인구" / "세대 수 추이" /
+// "업소수 추이")이 함께 딸려온다 — 이 소제목을 섹션 마커로 삼아 SGIS의 "반경 기준 Xkm" 처리와
+// 같은 방식으로 어느 표인지 자동 판별한다. 소제목이 지나간 뒤에 나오는 "선택 영역" 행만 그 표의
+// 데이터로 취급하므로, 표 종류 선택 버튼 자체가 필요 없어졌다(반경 선택만 남는다).
+const SB365_SECTION_MARKERS: { re: RegExp; table: "유동인구" | "직장인구" | "세대수" | "업소수" }[] = [
+  { re: /성별\s*\/?\s*연령대별[\s\S]{0,10}유동인구/, table: "유동인구" },
+  { re: /성별\s*\/?\s*연령대별[\s\S]{0,10}직장인구/, table: "직장인구" },
+  { re: /세대\s*수[\s\S]{0,6}추이/, table: "세대수" },
+  { re: /업소수[\s\S]{0,6}추이/, table: "업소수" },
+];
+
+/**
+ * 500m 또는 1km로 반경을 맞춘 뒤 소상공인365 상세분석 리포트 페이지 전체를 Ctrl+A로 복사해
+ * 붙여넣은 텍스트에서 유동인구/직장인구/세대수/업소수 4개 표를 한 번에 뽑아낸다. 표 종류는
+ * SB365_SECTION_MARKERS로 만난 소제목으로 판별하고, 그 표의 라벨엔 "유동인구:"/"직장인구:"
+ * 접두어를 붙여 이후 floatingSpecs/employSpecs의 matchLabels와 짝을 맞춘다.
+ */
+export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
+  const pairs: LabelValuePair[] = [];
+  let currentTable: "유동인구" | "직장인구" | "세대수" | "업소수" | null = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const marker = SB365_SECTION_MARKERS.find((m) => m.re.test(line));
+    if (marker) {
+      currentTable = marker.table;
+      continue;
+    }
+    if (!currentTable) continue; // 표 소제목을 아직 못 만났으면(안내문 등) 건너뛴다
+    const tokens = tokenizeMatrixLine(line);
+    if (tokens.length < 2) continue;
+    const { label, values } = splitLabelAndValues(tokens);
+    const normLabel = normalizeLabel(label);
+    if (!normLabel.includes("선택영역")) continue; // 비교 지역 행은 우리 후보지가 아니다
+    if (normLabel.includes("비율") || normLabel.includes("증감률")) continue;
+
+    if (currentTable === "유동인구" || currentTable === "직장인구") {
+      if (values.length === SB365_DEMO_CATEGORIES.length + 1) {
+        pairs.push({ label: `${currentTable}:전체`, value: values[0] });
+        SB365_DEMO_CATEGORIES.forEach((cat, i) =>
+          pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i + 1] })
+        );
+      } else if (values.length === SB365_DEMO_CATEGORIES.length) {
+        SB365_DEMO_CATEGORIES.forEach((cat, i) => pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i] }));
+      }
+    } else {
+      // 세대수/업소수: "선택 영역 | (업소수) | 기간별 숫자..." 시계열의 마지막(최신) 값만 쓴다
+      if (values.length > 0) pairs.push({ label: currentTable, value: values[values.length - 1] });
+    }
+  }
+  return pairs;
+}
+
 export type Sosangongin365TableVariant = {
-  key: "유동인구" | "직장인구" | "세대수" | "업소수";
+  key: "전체";
   label: string;
   buildSpecs: (radiusKey: "500" | "1km", displayRadius: string) => MarketFieldSpec[];
   extract: (text: string) => LabelValuePair[];
 };
 
+// 표 종류 선택 버튼 없이 반경만 고르면 되도록 단일 항목으로 둔다(MarketDataUploadPanel은
+// tableVariants.length === 1이면 표 종류 버튼 자체를 숨긴다).
 export const SOSANGONGIN365_TABLE_VARIANTS: Sosangongin365TableVariant[] = [
-  { key: "유동인구", label: "유동인구 (성별/연령대별)", buildSpecs: floatingSpecs, extract: parseSosangongin365DemographicRow },
-  { key: "직장인구", label: "직장인구 (성별/연령대별)", buildSpecs: employSpecs, extract: parseSosangongin365DemographicRow },
   {
-    key: "세대수",
-    label: "세대 수 현황",
-    buildSpecs: householdsSpec,
-    extract: (text) => {
-      const v = parseSosangongin365TrendLatest(text);
-      return v == null ? [] : [{ label: "세대수", value: String(v) }];
-    },
-  },
-  {
-    key: "업소수",
-    label: "업소수 추이 (PC방)",
-    buildSpecs: pcStoreSpec,
-    extract: (text) => {
-      const v = parseSosangongin365TrendLatest(text, "업소수");
-      return v == null ? [] : [{ label: "업소수", value: String(v) }];
-    },
+    key: "전체",
+    label: "상권분석 리포트 전체",
+    buildSpecs: (radiusKey, displayRadius) => [
+      ...floatingSpecs(radiusKey, displayRadius),
+      ...employSpecs(radiusKey, displayRadius),
+      ...householdsSpec(radiusKey, displayRadius),
+      ...pcStoreSpec(radiusKey, displayRadius),
+    ],
+    extract: parseSosangongin365FullReport,
   },
 ];

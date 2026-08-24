@@ -197,21 +197,23 @@ export function MarketDataUploadPanel({
 
       {tableVariants && (
         <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
-          <div className="flex flex-wrap gap-1.5">
-            {tableVariants.map((v) => (
-              <button
-                key={v.key}
-                type="button"
-                onClick={() => {
-                  setVariantKey(v.key);
-                  setDrafts(null);
-                }}
-                className={`rounded-md px-2 py-1 text-xs font-medium ${v.key === variantKey ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
+          {tableVariants.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {tableVariants.map((v) => (
+                <button
+                  key={v.key}
+                  type="button"
+                  onClick={() => {
+                    setVariantKey(v.key);
+                    setDrafts(null);
+                  }}
+                  className={`rounded-md px-2 py-1 text-xs font-medium ${v.key === variantKey ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex gap-1.5">
             {RADIUS_OPTIONS.map((r) => (
               <button

@@ -447,7 +447,7 @@ export function BasicInfoTab({
               title="소상공인365 상권분석 (유동인구·직장인구·세대수·업소수)"
               openUrl="https://bigdata.sbiz.or.kr/"
               openLabel="소상공인365 열기"
-              instructions='빅데이터 상권분석 → 상세분석 → 업종은 "PC방"으로, 반경은 아래에서 고른 것과 같은 값으로 설정 후 분석하기. 결과 리포트에서 아래 고른 표(유동인구/직장인구는 "인구분석" 탭, 세대수/업소수는 "지역현황"·"업종분석" 탭)의 "선택 영역" 행이 포함되게 표를 복사해 붙여넣으세요. 500m·1km는 사이트에서 각각 다시 분석해야 합니다(한 리포트에 같이 안 나옴).'
+              instructions='빅데이터 상권분석 → 상세분석 → 업종 "PC방", 반경은 아래에서 고른 값(500m/1km)과 같게 설정 후 분석하기 → 리포트 페이지 전체를 Ctrl+A로 선택해 그대로 복사해 붙여넣으세요(표를 따로 고를 필요 없습니다). 500m·1km는 사이트에서 각각 다시 분석해야 하니, 반경을 바꿔가며 두 번 반복하면 됩니다(한 리포트에 같이 안 나옴).'
               tableVariants={SOSANGONGIN365_TABLE_VARIANTS}
               sourceType="sosangongin365"
               candidateCode={form.code}
