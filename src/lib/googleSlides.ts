@@ -60,11 +60,18 @@ export async function publishCompositeToSlides({
 
   // 1) 합성 이미지를 드라이브에 올린다. Slides API는 이미지를 URL로만 가져올 수 있어서
   //    (바이트를 직접 전송하는 방법이 없다) 링크가 있으면 볼 수 있게 공개 설정을 해준다.
+  //    클라이언트가 PNG(다운로드 경로에서 재사용 시)나 JPEG(구글 프레젠테이션 등록 — 우리
+  //    서버 API 요청 본문 크기 제한(약 4.2~4.3MB에서 "Request Entity Too Large" 실측)을
+  //    피하려고 훨씬 가벼운 JPEG로 보낸다) 둘 다 보낼 수 있어, data URL의 실제 mimeType을
+  //    그대로 읽어서 사용한다.
+  const mimeMatch = imageDataUrl.match(/^data:([^;]+);base64,/);
+  const mimeType = mimeMatch?.[1] ?? "image/png";
+  const extension = mimeType === "image/jpeg" ? "jpg" : "png";
   const base64 = imageDataUrl.includes(",") ? imageDataUrl.split(",")[1] : imageDataUrl;
   const buffer = Buffer.from(base64, "base64");
   const uploaded = await drive.files.create({
-    requestBody: { name: `${projectName}_${slideKey}.png`, parents: [sharedDriveId] },
-    media: { mimeType: "image/png", body: Readable.from(buffer) },
+    requestBody: { name: `${projectName}_${slideKey}.${extension}`, parents: [sharedDriveId] },
+    media: { mimeType, body: Readable.from(buffer) },
     fields: "id",
     supportsAllDrives: true,
   });

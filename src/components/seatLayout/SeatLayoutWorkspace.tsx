@@ -1773,7 +1773,14 @@ export function SeatLayoutWorkspace() {
 
   // scale: 다운로드는 EXPORT_SCALE(고해상도, 제한 없음), 구글 프레젠테이션 등록은
   // SLIDES_EXPORT_SCALE(Slides API의 25메가픽셀 한도 안쪽)을 넘겨서 호출한다.
-  function renderAllOutputs(scale: number): ExportItem[] | null {
+  // format/quality: 다운로드는 무손실 PNG, 구글 프레젠테이션 등록은 우리 서버 API의 요청
+  // 본문 크기 제한(약 4.5MB, 5MB에서 "Request Entity Too Large"로 실측 확인됨)에 걸리지
+  // 않도록 훨씬 가벼운 JPEG로 보낸다.
+  function renderAllOutputs(
+    scale: number,
+    format: "image/png" | "image/jpeg" = "image/png",
+    quality?: number,
+  ): ExportItem[] | null {
     const cv = compositeCanvasRef.current;
     if (!cv || !imgEl) {
       setStatusMsg("먼저 도면을 업로드하세요.", "error");
@@ -1789,15 +1796,51 @@ export function SeatLayoutWorkspace() {
     ctx.scale(scale, scale);
 
     renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
-    const desk = { key: "desk", label: "책상발주도면", dataUrl: cv.toDataURL("image/png") };
+    const desk = { key: "desk", label: "책상발주도면", dataUrl: cv.toDataURL(format, quality) };
 
     renderPcFloorplanImage(ctx, imgEl, project.name, project.pcZones, pcDefaults);
-    const pc = { key: "pc", label: "PC발주도면", dataUrl: cv.toDataURL("image/png") };
+    const pc = { key: "pc", label: "PC발주도면", dataUrl: cv.toDataURL(format, quality) };
 
     renderOrderSummaryImage(ctx, project.name, project.zones, project.seatNumberRanges, project.pcZones, pcDefaults);
-    const summary = { key: "summary", label: "발주요약", dataUrl: cv.toDataURL("image/png") };
+    const summary = { key: "summary", label: "발주요약", dataUrl: cv.toDataURL(format, quality) };
 
     return [desk, pc, summary];
+  }
+
+  // 우리 서버 API(/api/seat-layout/publish-slide)의 요청 본문 크기 제한을 실측한 값(약
+  // 4.2MB는 통과, 4.3MB부터 "Request Entity Too Large")보다 넉넉히 아래로 안전 마진을 둔다.
+  // 존이 많아 표가 커지는 매장도 있어 한 배율/화질로 항상 충분하다고 보장할 수 없으므로,
+  // JPEG 화질 → 배율 순으로 낮춰가며 셋 다 이 한도 안에 들어올 때까지 다시 렌더링한다.
+  const SLIDES_MAX_DATA_URL_CHARS = 3_500_000;
+  const SLIDES_RENDER_ATTEMPTS: { scale: number; quality: number }[] = [
+    { scale: SLIDES_EXPORT_SCALE, quality: 0.92 },
+    { scale: SLIDES_EXPORT_SCALE, quality: 0.75 },
+    { scale: 2.5, quality: 0.85 },
+    { scale: 2, quality: 0.8 },
+  ];
+
+  function renderAllOutputsForSlides(): ExportItem[] | null {
+    let last: ExportItem[] | null = null;
+    for (const { scale, quality } of SLIDES_RENDER_ATTEMPTS) {
+      const outputs = renderAllOutputs(scale, "image/jpeg", quality);
+      if (!outputs) return null;
+      last = outputs;
+      if (outputs.every((o) => o.dataUrl.length <= SLIDES_MAX_DATA_URL_CHARS)) return outputs;
+    }
+    // 제일 낮춘 시도까지도 한도를 넘으면(존이 극단적으로 많은 매장), 마지막 결과라도 그대로
+    // 시도해본다 — 서버가 413으로 거부하면 그 에러 메시지가 그대로 사용자에게 표시된다.
+    return last;
+  }
+
+  // 서버가 항상 JSON을 준다고 가정하면 안 된다 — Vercel 게이트웨이가 요청 본문 크기 초과 시
+  // "Request Entity Too Large" 같은 순수 텍스트를 돌려줘서 res.json()이 파싱 에러로 죽는다.
+  async function readJsonOrText(res: Response): Promise<{ error?: string; [k: string]: unknown }> {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: text || `서버 오류 (HTTP ${res.status})` };
+    }
   }
 
   async function handleDownload() {
@@ -1838,7 +1881,7 @@ export function SeatLayoutWorkspace() {
       setBusy(false);
       return;
     }
-    const outputs = renderAllOutputs(SLIDES_EXPORT_SCALE);
+    const outputs = renderAllOutputsForSlides();
     if (outputs) {
       try {
         setStatusMsg("공유 프레젠테이션에 등록 중... (몇 초 걸릴 수 있습니다)");
@@ -1855,9 +1898,9 @@ export function SeatLayoutWorkspace() {
               imageDataUrl: item.dataUrl,
             }),
           });
-          const data = await res.json();
+          const data = await readJsonOrText(res);
           if (!res.ok) throw new Error(`${item.label}: ${data.error ?? "등록에 실패했습니다."}`);
-          latestUrl = data.presentationUrl;
+          latestUrl = data.presentationUrl as string;
         }
         setStatusMsg(`등록 완료! (프레젠테이션에 ${outputs.length}장 반영됨)`, "success");
         if (latestUrl) {
