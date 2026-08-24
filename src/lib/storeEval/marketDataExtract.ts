@@ -413,10 +413,35 @@ function pcStoreSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFie
   return [
     {
       // 소상공인365 "업소수"는 카드데이터 기반 실제 영업 추정치라 "실영업" 쪽에 대응시킨다 —
-      // "인허가"에 대응하는 지표는 이 플랫폼에서 못 찾았다(수동 입력으로 남겨둠).
+      // "인허가"에 대응하는 지표는 이 플랫폼에서 못 찾았다(수동 입력으로 못 찾아 남겨둠).
       key: radiusKey === "500" ? "operatingPcStores500m" : "operatingPcStores1km",
       displayLabel: `실영업 PC방업소수(${displayRadius})`,
       matchLabels: ["업소수"],
+      kind: "count",
+    },
+  ];
+}
+
+// 2026-08-24 (5차) — 실제 리포트의 "학교시설 (학교수/학생수)" 표에서 확인: 대학교/고등학교/
+// 중학교/초등학교/유치원 5개 컬럼 순서. CandidateInput엔 고등/중/초등학생 수 필드만 있어(대학교·
+// 유치원 대응 필드 없음) 그 3개만 spec으로 노출한다.
+const SB365_SCHOOL_CATEGORIES: { key: string; matches: string[] }[] = [
+  { key: "대학교", matches: ["대학교"] },
+  { key: "고등학교", matches: ["고등학교"] },
+  { key: "중학교", matches: ["중학교"] },
+  { key: "초등학교", matches: ["초등학교"] },
+  { key: "유치원", matches: ["유치원"] },
+];
+
+function facilitySchoolSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
+  const prefix = radiusKey === "500" ? "facility500" : "facility1km";
+  return [
+    { key: `${prefix}HighSchool`, displayLabel: `고등학생 수(${displayRadius})`, matchLabels: ["학교시설:고등학교"], kind: "count" },
+    { key: `${prefix}MiddleSchool`, displayLabel: `중학생 수(${displayRadius})`, matchLabels: ["학교시설:중학교"], kind: "count" },
+    {
+      key: `${prefix}ElementarySchool`,
+      displayLabel: `초등학생 수(${displayRadius})`,
+      matchLabels: ["학교시설:초등학교"],
       kind: "count",
     },
   ];
@@ -429,11 +454,14 @@ function pcStoreSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFie
 // "업소수 추이")이 함께 딸려온다 — 이 소제목을 섹션 마커로 삼아 SGIS의 "반경 기준 Xkm" 처리와
 // 같은 방식으로 어느 표인지 자동 판별한다. 소제목이 지나간 뒤에 나오는 "선택 영역" 행만 그 표의
 // 데이터로 취급하므로, 표 종류 선택 버튼 자체가 필요 없어졌다(반경 선택만 남는다).
-const SB365_SECTION_MARKERS: { re: RegExp; table: "유동인구" | "직장인구" | "세대수" | "업소수" }[] = [
+type Sb365Table = "유동인구" | "직장인구" | "세대수" | "업소수" | "학교시설";
+
+const SB365_SECTION_MARKERS: { re: RegExp; table: Sb365Table }[] = [
   { re: /성별\s*\/?\s*연령대별[\s\S]{0,10}유동인구/, table: "유동인구" },
   { re: /성별\s*\/?\s*연령대별[\s\S]{0,10}직장인구/, table: "직장인구" },
   { re: /세대\s*수[\s\S]{0,6}추이/, table: "세대수" },
   { re: /업소수[\s\S]{0,6}추이/, table: "업소수" },
+  { re: /학교시설\s*\(\s*학교수\s*\/\s*학생수\s*\)/, table: "학교시설" },
 ];
 
 /**
@@ -444,13 +472,17 @@ const SB365_SECTION_MARKERS: { re: RegExp; table: "유동인구" | "직장인구
  */
 export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
   const pairs: LabelValuePair[] = [];
-  let currentTable: "유동인구" | "직장인구" | "세대수" | "업소수" | null = null;
+  let currentTable: Sb365Table | null = null;
+  // "학교시설" 표만 "선택 영역 | 학교수 | ..." 행 바로 다음 줄에 라벨 없이 "학생수 | ..."만 이어지는
+  // 특수 구조라(우리가 원하는 건 학교수가 아니라 학생수 행이다) 별도 상태로 다음 줄을 기다린다.
+  let awaitingSchoolStudentRow = false;
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
     const marker = SB365_SECTION_MARKERS.find((m) => m.re.test(line));
     if (marker) {
       currentTable = marker.table;
+      awaitingSchoolStudentRow = false;
       continue;
     }
     if (!currentTable) continue; // 표 소제목을 아직 못 만났으면(안내문 등) 건너뛴다
@@ -458,14 +490,32 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
     if (tokens.length < 2) continue;
     const { label, values } = splitLabelAndValues(tokens);
     const normLabel = normalizeLabel(label);
+
+    if (currentTable === "학교시설" && awaitingSchoolStudentRow) {
+      // "선택 영역"이 안 붙어있는 계속행이라 일반 필터를 우회해서 봐야 한다.
+      awaitingSchoolStudentRow = false;
+      currentTable = null;
+      if (normLabel === "학생수" && values.length === SB365_SCHOOL_CATEGORIES.length) {
+        SB365_SCHOOL_CATEGORIES.forEach((cat, i) => pairs.push({ label: `학교시설:${cat.key}`, value: values[i] }));
+      }
+      continue;
+    }
+
     if (!normLabel.includes("선택영역")) continue; // 비교 지역 행은 우리 후보지가 아니다
     if (normLabel.includes("비율") || normLabel.includes("증감률")) continue;
 
+    if (currentTable === "학교시설") {
+      // "선택 영역 | 학교수 | ..." 행 자체엔 학교 '개수'만 있다 — 다음 줄의 학생수를 기다린다.
+      if (normLabel.includes("학교수")) awaitingSchoolStudentRow = true;
+      else currentTable = null; // 예상과 다른 행이면 안전하게 포기(지어내지 않음)
+      continue;
+    }
+
     // 표마다 우리가 볼 "선택 영역" 데이터 행은 정확히 하나뿐이다(그 아래 "비율"/"증감률" 계속행,
     // 다른 지역 비교행은 이미 위에서 걸러짐). 그 한 줄을 찾으면 즉시 currentTable을 비워서, 다음
-    // 소제목(마커)을 만나기 전까지 나오는 전혀 무관한 표(공동주택/학교시설/교통시설 등)의 "선택
-    // 영역" 행이 같은 표로 계속 잘못 누적되는 걸 막는다 — 실사용자 리포트(세대수 1km)에서 세대수
-    // 표 뒤로 마커 없는 표가 여러 개 이어져 값이 계속 덮어써지던 버그를 이렇게 재현/수정했다.
+    // 소제목(마커)을 만나기 전까지 나오는 전혀 무관한 표(공동주택/교통시설 등)의 "선택 영역" 행이
+    // 같은 표로 계속 잘못 누적되는 걸 막는다 — 실사용자 리포트(세대수 1km)에서 세대수 표 뒤로
+    // 마커 없는 표가 여러 개 이어져 값이 계속 덮어써지던 버그를 이렇게 재현/수정했다.
     const table = currentTable;
     currentTable = null;
     if (table === "유동인구" || table === "직장인구") {
@@ -503,6 +553,7 @@ export const SOSANGONGIN365_TABLE_VARIANTS: Sosangongin365TableVariant[] = [
       ...employSpecs(radiusKey, displayRadius),
       ...householdsSpec(radiusKey, displayRadius),
       ...pcStoreSpec(radiusKey, displayRadius),
+      ...facilitySchoolSpecs(radiusKey, displayRadius),
     ],
     extract: parseSosangongin365FullReport,
   },

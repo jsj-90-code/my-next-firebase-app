@@ -432,6 +432,43 @@ describe("parseSosangongin365FullReport — 마커 없는 후속 표로 값이 �
   });
 });
 
+// 2026-08-24 (5차) — N006(강원 춘천시 석사동) 실제 저장값 점검 중 사용자가 발견: "학교시설
+// (학교수/학생수)" 표에 실제로 학생수 데이터가 있는데 추출 로직이 아예 없어서 공란이었음. 이
+// 표는 "선택 영역 | 학교수 | ..." 행 바로 다음 줄에 라벨 없이 "학생수 | ..."만 이어지는 특이한
+// 구조라(비율/증감률 계속행과 비슷하게 "선택 영역" 접두어가 없음) 실제 원문으로 재현한다.
+const REAL_SB365_SCHOOL_EXCERPT = `
+주변시설현황
+학교시설 (학교수/학생수)
+단위 : 개, 명
+
+지역	구분	대학교	고등학교	중학교	초등학교	유치원
+선택 영역	학교수	1	0	1	4	4
+학생수	1,241	0	865	1,375	483
+석사동	학교수	1	0	1	4	3
+학생수	1,241	0	738	2,071	225
+`;
+
+describe("parseSosangongin365FullReport — 학교시설(학교수/학생수) 표: 학교수가 아니라 학생수 행을 뽑는다", () => {
+  it("'선택 영역' 라벨 없는 학생수 계속행에서 고등/중/초등학생 수를 정확히 뽑는다", () => {
+    const pairs = parseSosangongin365FullReport(REAL_SB365_SCHOOL_EXCERPT);
+    expect(pairs.find((p) => p.label === "학교시설:고등학교")?.value).toBe("0");
+    expect(pairs.find((p) => p.label === "학교시설:중학교")?.value).toBe("865");
+    expect(pairs.find((p) => p.label === "학교시설:초등학교")?.value).toBe("1,375");
+    // 석사동(비교 지역)의 학생수(738/2,071)가 섞여 들어오면 안 된다.
+    expect(pairs.some((p) => p.value === "738" || p.value === "2,071")).toBe(false);
+  });
+
+  it("SOSANGONGIN365_TABLE_VARIANTS로 반경별 facility 필드 키에 매칭된다", () => {
+    const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
+    const pairs = variant.extract(REAL_SB365_SCHOOL_EXCERPT);
+    const result500 = extractFields(pairs, variant.buildSpecs("500", "500m"));
+    const result1km = extractFields(pairs, variant.buildSpecs("1km", "1km"));
+    expect(result500.find((r) => r.fieldKey === "facility500MiddleSchool")?.parsedValue).toBe(865);
+    expect(result500.find((r) => r.fieldKey === "facility500ElementarySchool")?.parsedValue).toBe(1375);
+    expect(result1km.find((r) => r.fieldKey === "facility1kmMiddleSchool")?.parsedValue).toBe(865);
+  });
+});
+
 describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 골라 4개 지표를 한 번에 매칭", () => {
   it("리포트 전체 붙여넣기 한 번으로 유동인구/직장인구/세대수/업소수가 모두 매칭된다(500m)", () => {
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
