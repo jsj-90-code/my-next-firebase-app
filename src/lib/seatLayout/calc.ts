@@ -257,6 +257,9 @@ export function splitMouseValue(value: string): string[] {
     .filter(Boolean);
 }
 
+// 카운터 PC(직원용)에는 지급하지 않는 마우스 — 정규화된(별칭 치환 후) 제품명 기준.
+const COUNTER_EXCLUDED_MOUSE = "ROCCAT PURE SEL 유선 화이트";
+
 function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
   const map = new Map<string, number>();
   pcZones.forEach((z) => {
@@ -273,12 +276,15 @@ function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: stri
     });
   });
 
-  // 카운터 PC(1대)도 커플존이 아닌 일반 조합 그대로 1대분을 더한다.
+  // 카운터 PC(1대)도 마우스 조합 중 로지텍 G304만 1대분 받는다 — ROCCAT PURE SEL(로켓마우스)은
+  // 좌석에 두 번째 마우스로 같이 지급하는 조합용이라 카운터 직원용으로는 필요 없다.
   const counterValue = pcDefaults.mouse ?? def;
   if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
-    splitMouseValue(counterValue).forEach((part) => {
-      map.set(part, (map.get(part) ?? 0) + COUNTER_PC_QTY);
-    });
+    splitMouseValue(counterValue)
+      .filter((part) => part !== COUNTER_EXCLUDED_MOUSE)
+      .forEach((part) => {
+        map.set(part, (map.get(part) ?? 0) + COUNTER_PC_QTY);
+      });
   }
 
   return Array.from(map.entries())
@@ -404,8 +410,8 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
       map.set(value, (map.get(value) ?? 0) + qty);
     });
     // 카운터 PC는 모니터암(아센암/관절암) 없이 모니터 스탠드를 쓰고, 직원이 헤드셋도 착용하지
-    // 않으므로 모니터암/헤드셋 집계에서는 뺀다.
-    if (f.id !== "monitorArm" && f.id !== "headset") {
+    // 않고, 무선충전기도 두지 않으므로 모니터암/헤드셋/충전기 집계에서는 뺀다.
+    if (f.id !== "monitorArm" && f.id !== "headset" && f.id !== "charger") {
       const counterValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
       if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
         map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
