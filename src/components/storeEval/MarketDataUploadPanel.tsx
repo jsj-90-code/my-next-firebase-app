@@ -6,7 +6,13 @@
 // AI가 숫자를 만들어내지 않는다 — 매칭 안 된 항목은 빈칸이고, 사용자가 확인/수정 후에만 적용된다.
 
 import { useState, type ChangeEvent } from "react";
-import { extractFields, parsePastedTable, type ExtractedFieldDraft, type MarketFieldSpec } from "@/lib/storeEval/marketDataExtract";
+import {
+  extractFields,
+  parsePastedTable,
+  parsePastedTableSectioned,
+  type ExtractedFieldDraft,
+  type MarketFieldSpec,
+} from "@/lib/storeEval/marketDataExtract";
 import { extractLabelValuePairsFromFile, hashFile } from "@/lib/storeEval/spreadsheetPairs";
 import type { MarketDataSourceType, MarketDataUpload } from "@/lib/storeEval/types";
 
@@ -27,6 +33,9 @@ export function MarketDataUploadPanel({
   coord,
   actorEmail,
   onApply,
+  defaultMode = "file",
+  pasteParser = "plain",
+  showFileUpload = true,
 }: {
   title: string;
   openUrl: string;
@@ -38,8 +47,15 @@ export function MarketDataUploadPanel({
   coord: { lat: number; lng: number } | null;
   actorEmail: string | null;
   onApply: (patch: Record<string, number | string>, upload: MarketDataUpload) => void;
+  // SGIS 생활권역 통계지도는 PDF 보고서만 제공하고 엑셀/CSV가 없다(2026-08-24 확인) — 그 경우
+  // 파일 업로드 탭 자체를 숨기고 붙여넣기를 기본으로 띄운다. 그 표는 "반경 기준 0.5km" 섹션
+  // 제목 아래 "전체"/"남"/"0~9세 인구" 식으로 반경이 라벨에 안 붙어 있어서, sectioned 파서로
+  // 섹션을 태깅해야만 500m/1km를 구분해 매칭할 수 있다.
+  defaultMode?: "file" | "paste";
+  pasteParser?: "plain" | "sectioned";
+  showFileUpload?: boolean;
 }) {
-  const [mode, setMode] = useState<"file" | "paste">("file");
+  const [mode, setMode] = useState<"file" | "paste">(defaultMode);
   const [pastedText, setPastedText] = useState("");
   const [drafts, setDrafts] = useState<EditableDraft[] | null>(null);
   const [fileInfo, setFileInfo] = useState<{ name: string; hash: string } | null>(null);
@@ -75,7 +91,7 @@ export function MarketDataUploadPanel({
   function handleExtractPasted() {
     setError(null);
     setApplyMessage(null);
-    const pairs = parsePastedTable(pastedText);
+    const pairs = pasteParser === "sectioned" ? parsePastedTableSectioned(pastedText) : parsePastedTable(pastedText);
     if (pairs.length === 0) {
       setError("표에서 라벨/값 쌍을 찾지 못했습니다. 셀 사이 탭(Tab)이 유지되도록 그대로 복사해서 붙여넣어주세요.");
       return;
@@ -148,24 +164,26 @@ export function MarketDataUploadPanel({
       </div>
       <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{instructions}</p>
 
-      <div className="mt-3 flex gap-2 text-xs">
-        <button
-          type="button"
-          onClick={() => setMode("file")}
-          className={`rounded-md px-2 py-1 font-medium ${mode === "file" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
-        >
-          파일 업로드
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("paste")}
-          className={`rounded-md px-2 py-1 font-medium ${mode === "paste" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
-        >
-          표 붙여넣기(파일 미지원 시)
-        </button>
-      </div>
+      {showFileUpload && (
+        <div className="mt-3 flex gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setMode("file")}
+            className={`rounded-md px-2 py-1 font-medium ${mode === "file" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+          >
+            파일 업로드
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("paste")}
+            className={`rounded-md px-2 py-1 font-medium ${mode === "paste" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+          >
+            표 붙여넣기
+          </button>
+        </div>
+      )}
 
-      {mode === "file" ? (
+      {showFileUpload && mode === "file" ? (
         <input
           type="file"
           accept=".xlsx,.xls,.csv"

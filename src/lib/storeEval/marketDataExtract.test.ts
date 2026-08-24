@@ -1,5 +1,63 @@
 import { describe, expect, it } from "vitest";
-import { extractFields, parsePastedTable, SGIS_FIELD_SPECS, SOSANGONGIN365_FIELD_SPECS } from "./marketDataExtract";
+import {
+  extractFields,
+  parsePastedTable,
+  parsePastedTableSectioned,
+  SGIS_FIELD_SPECS,
+  SOSANGONGIN365_FIELD_SPECS,
+} from "./marketDataExtract";
+
+// 2026-08-24 — sgis.kostat.go.kr/view/catchmentArea/main에서 실제 지점(대전광역시청새마을금고,
+// 반경 0.5km+1km)으로 보고서를 뽑아 그대로 옮긴 실측 데이터. 섹션 제목 아래 "구분/값(/백분율)"
+// 형태로 반경이 라벨에 안 붙어 있는 게 실제 레이아웃이다 — 이 문자열이 "표를 복사해 붙여넣기"의
+// 정답 시나리오다.
+const REAL_SGIS_REPORT_EXCERPT = `
+반경 기준 0.5km - 면적
+구분	값(km²)
+총면적	0.78
+
+- 인구(나이)
+구분	값(명)	백분율(%)
+전체	7,656	100
+0~9세 인구	390	5.1
+10~19세 인구	678	8.9
+20~29세 인구	1,177	15.4
+30~39세 인구	1,312	17.1
+40~49세 인구	1,226	16.0
+50~59세 인구	1,363	17.8
+60~69세 인구	991	12.9
+70~79세 인구	319	4.2
+80세 이상 인구	199	2.6
+
+- 인구(성별)
+구분	값(명)	백분율(%)
+전체	7,656	100
+남	3,674	48.0
+여	3,980	52.0
+
+반경 기준 1km - 면적
+구분	값(km²)
+총면적	3.05
+
+- 인구(나이)
+구분	값(명)	백분율(%)
+전체	29,540	100
+0~9세 인구	1,450	4.9
+10~19세 인구	2,610	8.8
+20~29세 인구	4,520	15.3
+30~39세 인구	5,010	17.0
+40~49세 인구	4,730	16.0
+50~59세 인구	5,230	17.7
+60~69세 인구	3,780	12.8
+70~79세 인구	1,320	4.5
+80세 이상 인구	890	3.0
+
+- 인구(성별)
+구분	값(명)	백분율(%)
+전체	29,540	100
+남	14,300	48.4
+여	15,240	51.6
+`;
 
 describe("parsePastedTable", () => {
   it("탭 구분 표를 라벨/값 쌍으로 파싱한다", () => {
@@ -26,48 +84,50 @@ describe("parsePastedTable", () => {
   });
 });
 
-describe("extractFields — SGIS", () => {
-  it("정확히 일치하는 라벨을 찾아 숫자로 파싱한다", () => {
-    const pairs = [
-      { label: "반경500m 총인구", value: "10,338" },
-      { label: "반경1km 남성비율", value: "49.63%" },
-    ];
-    const result = extractFields(pairs, SGIS_FIELD_SPECS);
-    const pop500m = result.find((r) => r.fieldKey === "pop500m");
-    expect(pop500m?.parsedValue).toBe(10338);
-    expect(pop500m?.autoExtracted).toBe(true);
+describe("parsePastedTableSectioned", () => {
+  it("'반경 기준 X km' 섹션 제목으로 이후 행을 태깅하고, 제목 줄 자체는 데이터로 넣지 않는다", () => {
+    const pairs = parsePastedTableSectioned(REAL_SGIS_REPORT_EXCERPT);
+    expect(pairs.some((p) => p.label.includes("반경 기준"))).toBe(false);
+    const totalPairs = pairs.filter((p) => p.label === "전체");
+    expect(totalPairs.map((p) => p.radiusKm)).toEqual([0.5, 0.5, 1, 1]); // 인구(나이)+인구(성별) 각 섹션의 "전체"
+  });
+});
 
-    const maleRatio = result.find((r) => r.fieldKey === "male1kmRatio");
-    expect(maleRatio?.parsedValue).toBeCloseTo(0.4963, 4);
+describe("extractFields — SGIS (실제 보고서 레이아웃)", () => {
+  const pairs = parsePastedTableSectioned(REAL_SGIS_REPORT_EXCERPT);
+  const result = extractFields(pairs, SGIS_FIELD_SPECS);
+  const byKey = (key: string) => result.find((r) => r.fieldKey === key);
+
+  it("반경이 같은 라벨('전체')이라도 섹션(0.5km/1km)으로 pop500m/pop1km를 정확히 구분한다", () => {
+    expect(byKey("pop500m")?.parsedValue).toBe(7656);
+    expect(byKey("pop1km")?.parsedValue).toBe(29540);
   });
 
-  it("비율이 이미 0~1이면 다시 나누지 않는다", () => {
-    const pairs = [{ label: "반경1km 남성비율", value: "0.4963" }];
-    const result = extractFields(pairs, SGIS_FIELD_SPECS);
-    expect(result.find((r) => r.fieldKey === "male1kmRatio")?.parsedValue).toBeCloseTo(0.4963, 4);
+  it("면적은 1km 섹션의 '총면적'만 area1kmKm2에 매칭한다(500m 섹션 값은 무시)", () => {
+    expect(byKey("area1kmKm2")?.parsedValue).toBe(3.05);
+  });
+
+  it("'남' 라벨의 백분율(%) 열을 male1kmRatio로 쓰고 0~1 비율로 변환한다(1km 섹션 기준)", () => {
+    expect(byKey("male1kmRatio")?.parsedValue).toBeCloseTo(0.484, 3);
+  });
+
+  it("연령대 9개 밴드를 1km 섹션 값으로 전부 찾는다(500m 섹션 값과 혼동하지 않음)", () => {
+    expect(byKey("age1km_0_9")?.parsedValue).toBe(1450);
+    expect(byKey("age1km_80plus")?.parsedValue).toBe(890);
+    const ageFields = result.filter((r) => r.fieldKey.startsWith("age1km_"));
+    expect(ageFields.every((f) => f.autoExtracted)).toBe(true);
+  });
+
+  it("radiusKm이 지정된 스펙은 섹션 태깅이 없는(plain) 붙여넣기에서는 매칭되지 않는다 — 지어내지 않음", () => {
+    const untaggedPairs = parsePastedTable(REAL_SGIS_REPORT_EXCERPT);
+    const untaggedResult = extractFields(untaggedPairs, SGIS_FIELD_SPECS);
+    expect(untaggedResult.find((r) => r.fieldKey === "pop500m")?.parsedValue).toBeNull();
+    expect(untaggedResult.find((r) => r.fieldKey === "pop1km")?.parsedValue).toBeNull();
   });
 
   it("매칭되는 라벨이 없으면 지어내지 않고 null로 남긴다", () => {
-    const result = extractFields([], SGIS_FIELD_SPECS);
-    expect(result.every((r) => r.parsedValue === null && r.autoExtracted === false)).toBe(true);
-  });
-
-  it("연령대 9개 밴드를 전부 찾는다", () => {
-    const pairs = [
-      { label: "0~9세", value: "100" },
-      { label: "10~19세", value: "200" },
-      { label: "20~29세", value: "300" },
-      { label: "30~39세", value: "400" },
-      { label: "40~49세", value: "500" },
-      { label: "50~59세", value: "600" },
-      { label: "60~69세", value: "700" },
-      { label: "70~79세", value: "800" },
-      { label: "80세이상", value: "900" },
-    ];
-    const result = extractFields(pairs, SGIS_FIELD_SPECS);
-    const ageFields = result.filter((r) => r.fieldKey.startsWith("age1km_"));
-    expect(ageFields).toHaveLength(9);
-    expect(ageFields.every((f) => f.autoExtracted)).toBe(true);
+    const empty = extractFields([], SGIS_FIELD_SPECS);
+    expect(empty.every((r) => r.parsedValue === null && r.autoExtracted === false)).toBe(true);
   });
 });
 

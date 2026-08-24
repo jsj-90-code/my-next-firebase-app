@@ -422,22 +422,26 @@ export function BasicInfoTab({
         <section className={sectionClass}>
           <h3 className={sectionTitleClass}>SGIS·소상공인365 업로드 자동추출 (반경 500m/1km 통계)</h3>
           <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-            SGIS·소상공인365 모두 반경(500m/1km) 통계를 조회하는 공식 API가 없어(2026-08-24 확인) 직접 조회 후 파일을
-            업로드해야 합니다. 라벨을 찾아 자동으로 채워두지만, 값이 다르면 자동확정하지 않고 표에서 직접 확인·수정한
-            뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요 — 그 뒤에도 이 탭의 &ldquo;저장&rdquo;을 눌러야 최종 반영됩니다.
+            SGIS·소상공인365 모두 반경(500m/1km) 통계를 조회하는 공식 API가 없어(2026-08-24 확인) 직접 조회해야 합니다.
+            SGIS는 PDF 보고서만 제공해 표를 복사해 붙여넣는 방식만 됩니다(엑셀 없음). 라벨을 찾아 자동으로 채워두지만,
+            값이 다르면 자동확정하지 않고 표에서 직접 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요 — 그 뒤에도 이
+            탭의 &ldquo;저장&rdquo;을 눌러야 최종 반영됩니다.
           </p>
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <MarketDataUploadPanel
               title="SGIS 생활권역 통계 (인구·연령)"
               openUrl="https://sgis.kostat.go.kr/view/catchmentArea/main"
               openLabel="SGIS 생활권역 열기"
-              instructions={`좌표(${form.lat.toFixed(6)}, ${form.lng.toFixed(6)})를 중심으로 반경 500m·1km를 각각 조회한 뒤, 다운로드한 파일을 올리거나 표를 복사해 붙여넣으세요.`}
+              instructions={`좌표(${form.lat.toFixed(6)}, ${form.lng.toFixed(6)}) 부근을 검색해 지점 선택 → 세부설정에서 반경 0.5km·1km 선택 → 통계정보 보기 → 보고서(PDF) 열기. PDF의 "인구(나이)"/"인구(성별)"/"면적" 표를 반경 섹션(예: "반경 기준 0.5km")까지 포함해 그대로 복사해 붙여넣으세요.`}
               specs={SGIS_FIELD_SPECS}
               sourceType="sgis_life_area"
               candidateCode={form.code}
               coord={{ lat: form.lat, lng: form.lng }}
               actorEmail={actor}
               onApply={handleApplyMarketDataUpload}
+              defaultMode="paste"
+              pasteParser="sectioned"
+              showFileUpload={false}
             />
             <MarketDataUploadPanel
               title="소상공인365 상권분석 (유동인구·직장·시설)"

@@ -14,9 +14,16 @@ export type MarketFieldSpec = {
   displayLabel: string; // 화면 표시용 한글명
   matchLabels: string[]; // 원본에서 찾을 라벨 후보(정규화 후 부분일치)
   kind: FieldKind;
+  // 2026-08-24 실제 SGIS 생활권역 통계지도 보고서 확인 후 추가 — 이 사이트는 "전체"/"남"/
+  // "0~9세 인구"처럼 반경을 라벨에 안 붙이고, "반경 기준 0.5km"/"반경 기준 1km" 섹션 제목
+  // 아래에 표를 반복해서 배치한다. 그래서 라벨만 봐서는 500m 값인지 1km 값인지 구분이 안 되고,
+  // 섹션 문맥(radiusKm)까지 같이 봐야 한다. radiusKm이 지정된 스펙은 parsePastedTableSectioned가
+  // 매긴 섹션 태그가 일치하는 후보만 매칭 대상으로 삼는다(소상공인365처럼 라벨 자체에 반경이
+  // 박혀 있는 스펙은 이 필드를 안 쓴다).
+  radiusKm?: number;
 };
 
-export type LabelValuePair = { label: string; value: string };
+export type LabelValuePair = { label: string; value: string; radiusKm?: number | null };
 
 export type ExtractedFieldDraft = {
   fieldKey: string;
@@ -67,18 +74,62 @@ export function parsePastedTable(text: string): LabelValuePair[] {
   return pairs;
 }
 
-/** 라벨 후보 중 하나라도 (정규화 후) 서로 포함관계면 매칭으로 본다. */
-function findMatch(pairs: (LabelValuePair & { normLabel: string })[], matchLabels: string[]): (LabelValuePair & { normLabel: string }) | null {
+/**
+ * SGIS 생활권역 통계지도 보고서 전용 — "반경 기준 0.5km" 같은 섹션 제목을 기준으로 그 아래
+ * 표의 각 행(구분/값[/백분율]을 붙여넣은 줄)에 반경(km)을 태깅한다. 섹션 제목이 안 나오면
+ * radiusKm은 null로 남는다(그 경우 radiusKm이 지정된 스펙과는 매칭되지 않는다 — 지어내지 않음).
+ */
+const RADIUS_SECTION_RE = /반경\s*(?:기준)?\s*([\d.]+)\s*km/i;
+
+export function parsePastedTableSectioned(text: string): LabelValuePair[] {
+  const pairs: LabelValuePair[] = [];
+  let currentRadius: number | null = null;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const sectionMatch = line.match(RADIUS_SECTION_RE);
+    if (sectionMatch) {
+      currentRadius = Number(sectionMatch[1]);
+      continue;
+    }
+    const cols = line.includes("\t") ? line.split("\t") : line.split(/ {2,}/);
+    const trimmedCols = cols.map((c) => c.trim()).filter((c) => c !== "");
+    if (trimmedCols.length < 2) continue;
+    // 실제 보고서 표는 "구분 | 값(명) | 백분율(%)" 3열이다 — 마지막 열(백분율)을 값으로 삼으면
+    // 총인구 같은 개수 항목이 죄다 "100"(퍼센트)으로 잘못 채워진다(2026-08-24 테스트로 발견).
+    // 2열이면 그대로 값으로 쓰고, 3열 이상이면 "값" 열(두 번째)과 "비율" 열(마지막)을 각각
+    // 별도 라벨("원라벨"/"원라벨 비율")로 둘 다 내보내 male1kmRatio처럼 비율이 필요한 스펙도
+    // 찾을 수 있게 한다.
+    if (trimmedCols.length === 2) {
+      pairs.push({ label: trimmedCols[0], value: trimmedCols[1], radiusKm: currentRadius });
+    } else {
+      pairs.push({ label: trimmedCols[0], value: trimmedCols[1], radiusKm: currentRadius });
+      pairs.push({ label: `${trimmedCols[0]} 비율`, value: trimmedCols[trimmedCols.length - 1], radiusKm: currentRadius });
+    }
+  }
+  return pairs;
+}
+
+/** 실제 라벨이 후보 문자열을 포함하면 매칭으로 본다(단방향 — 실제라벨 ⊇ 후보). 후보가 실제
+ * 라벨을 포함하는 반대 방향은 보지 않는다: "남"처럼 짧은 실제 라벨이 있으면 "남비율" 같은
+ * (그 라벨을 접두어로 포함하는) 후보가 엉뚱하게 같이 걸려버린다(2026-08-24 테스트로 발견 — "남
+ * 비율" 후보가 "남"(원시 인원수) 행까지 잘못 집어 비율 계산이 100배 틀어졌었다).
+ * spec에 radiusKm이 있으면 그 반경으로 태깅된 후보만 본다(둘 다 없으면(untagged) radiusKm 지정
+ * 스펙과는 매칭 안 함 — 500m 값과 1km 값을 구분 못 하는 채로 아무거나 채우면 안 되기 때문). */
+function findMatch(
+  pairs: (LabelValuePair & { normLabel: string })[],
+  matchLabels: string[],
+  radiusKm?: number,
+): (LabelValuePair & { normLabel: string }) | null {
   const candidates = matchLabels.map(normalizeLabel);
-  return (
-    pairs.find((p) => candidates.some((c) => c.length > 0 && (p.normLabel.includes(c) || c.includes(p.normLabel)))) ?? null
-  );
+  const scoped = radiusKm == null ? pairs : pairs.filter((p) => p.radiusKm === radiusKm);
+  return scoped.find((p) => candidates.some((c) => c.length > 0 && p.normLabel.includes(c))) ?? null;
 }
 
 export function extractFields(pairs: LabelValuePair[], specs: MarketFieldSpec[]): ExtractedFieldDraft[] {
   const normalized = pairs.map((p) => ({ ...p, normLabel: normalizeLabel(p.label) }));
   return specs.map((spec) => {
-    const match = findMatch(normalized, spec.matchLabels);
+    const match = findMatch(normalized, spec.matchLabels, spec.radiusKm);
     if (!match) {
       return { fieldKey: spec.key, displayLabel: spec.displayLabel, matchedLabel: null, rawValue: null, parsedValue: null, autoExtracted: false };
     }
@@ -117,41 +168,57 @@ const FLOATING_DECADE_BANDS: { suffix: string; label: string; matches: string[] 
   { suffix: "60plus", label: "60대이상", matches: ["60대이상", "60대+"] },
 ];
 
+// 2026-08-24 — 실제 SGIS 생활권역 통계지도 보고서(sgis.kostat.go.kr/view/catchmentArea/main)를
+// 직접 조회해 확인한 라벨 그대로다: "반경 기준 0.5km"/"반경 기준 1km" 섹션 아래 "구분/값(/백분율)"
+// 표에 "전체"/"남"/"여"/"0~9세 인구"/"총면적" 같은 짧은 라벨만 나온다(반경이 라벨에 안 붙음).
+// 그래서 parsePastedTableSectioned로 섹션을 태깅해야만 500m/1km를 구분할 수 있다 — radiusKm 없이
+// "전체"/"남" 같은 짧은 라벨만으로 매칭하면 엉뚱한 표(가구/주택 합계 등)나 다른 반경 값을 잘못
+// 가져올 위험이 커서, 이 파일에서 로직으로 강제한다(findMatch가 radiusKm 불일치·미태깅 후보는
+// 아예 안 봄).
 export const SGIS_FIELD_SPECS: MarketFieldSpec[] = [
   {
     key: "pop500m",
     displayLabel: "반경500m 총인구(거주)",
-    matchLabels: ["반경500m총인구", "500m총인구", "500m거주인구", "반경500m인구"],
+    matchLabels: ["전체", "총인구"],
     kind: "count",
+    radiusKm: 0.5,
   },
   {
     key: "area1kmKm2",
     displayLabel: "반경1km 면적(㎢)",
-    matchLabels: ["반경1km조회면적", "1km조회면적", "1km면적", "조회면적"],
+    matchLabels: ["총면적", "조회면적"],
     kind: "count",
+    radiusKm: 1,
   },
   {
     key: "pop1km",
     displayLabel: "반경1km 총인구",
-    matchLabels: ["반경1km총인구", "1km총인구", "1km거주인구"],
+    matchLabels: ["전체", "총인구"],
     kind: "count",
+    radiusKm: 1,
   },
   {
     key: "male1kmRatio",
     displayLabel: "반경1km 남성비율",
-    matchLabels: ["1km남성비율", "남성비율", "남자비율"],
+    // "인구(성별)" 표는 "남 | 3,674 | 48.0"(구분/값/백분율) 3열이라, parsePastedTableSectioned가
+    // "남 비율" 라벨로 백분율(48.0) 열을 따로 내보낸다 — kind:"ratio"가 그 값을 /100 처리한다.
+    matchLabels: ["남비율"],
     kind: "ratio",
+    radiusKm: 1,
   },
   ...AGE_BANDS.map((b) => ({
     key: `age1km_${b.suffix}`,
     displayLabel: `1km ${b.label}`,
     matchLabels: b.matches,
     kind: "count" as const,
+    radiusKm: 1,
   })),
   {
     key: "demographicsYear",
     displayLabel: "상권데이터기준연도",
-    matchLabels: ["상권데이터기준연도", "기준연도", "통계기준연도", "데이터기준연도"],
+    // 보고서엔 "선택년도: 인구/가구/주택 (2024년)" 식 문장으로만 나와 표 형태가 아니다 —
+    // 이 항목은 자동매칭 기대하지 말고 사용자가 직접 입력하는 게 안전하다(지어내지 않음).
+    matchLabels: ["상권데이터기준연도", "통계기준연도", "데이터기준연도"],
     kind: "count",
   },
 ];
