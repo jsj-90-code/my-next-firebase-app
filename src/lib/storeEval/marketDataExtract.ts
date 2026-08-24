@@ -461,18 +461,25 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
     if (!normLabel.includes("선택영역")) continue; // 비교 지역 행은 우리 후보지가 아니다
     if (normLabel.includes("비율") || normLabel.includes("증감률")) continue;
 
-    if (currentTable === "유동인구" || currentTable === "직장인구") {
+    // 표마다 우리가 볼 "선택 영역" 데이터 행은 정확히 하나뿐이다(그 아래 "비율"/"증감률" 계속행,
+    // 다른 지역 비교행은 이미 위에서 걸러짐). 그 한 줄을 찾으면 즉시 currentTable을 비워서, 다음
+    // 소제목(마커)을 만나기 전까지 나오는 전혀 무관한 표(공동주택/학교시설/교통시설 등)의 "선택
+    // 영역" 행이 같은 표로 계속 잘못 누적되는 걸 막는다 — 실사용자 리포트(세대수 1km)에서 세대수
+    // 표 뒤로 마커 없는 표가 여러 개 이어져 값이 계속 덮어써지던 버그를 이렇게 재현/수정했다.
+    const table = currentTable;
+    currentTable = null;
+    if (table === "유동인구" || table === "직장인구") {
       // 유동인구는 10대부터, 직장인구는 20대부터라 분류 개수(따라서 값 칸 수)가 다르다.
-      const categories = currentTable === "직장인구" ? SB365_EMPLOY_CATEGORIES : SB365_DEMO_CATEGORIES;
+      const categories = table === "직장인구" ? SB365_EMPLOY_CATEGORIES : SB365_DEMO_CATEGORIES;
       if (values.length === categories.length + 1) {
-        pairs.push({ label: `${currentTable}:전체`, value: values[0] });
-        categories.forEach((cat, i) => pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i + 1] }));
+        pairs.push({ label: `${table}:전체`, value: values[0] });
+        categories.forEach((cat, i) => pairs.push({ label: `${table}:${cat.key}`, value: values[i + 1] }));
       } else if (values.length === categories.length) {
-        categories.forEach((cat, i) => pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i] }));
+        categories.forEach((cat, i) => pairs.push({ label: `${table}:${cat.key}`, value: values[i] }));
       }
-    } else {
+    } else if (table) {
       // 세대수/업소수: "선택 영역 | (업소수) | 기간별 숫자..." 시계열의 마지막(최신) 값만 쓴다
-      if (values.length > 0) pairs.push({ label: currentTable, value: values[values.length - 1] });
+      if (values.length > 0) pairs.push({ label: table, value: values[values.length - 1] });
     }
   }
   return pairs;
