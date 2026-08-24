@@ -11,6 +11,7 @@ import {
   COMPOSITE_H,
   COMPOSITE_W,
   EXPORT_SCALE,
+  SLIDES_EXPORT_SCALE,
   defaultPcDefaults,
 } from "@/lib/seatLayout/constants";
 import { computeBasicPcQty, getContrastText, nextSuffix } from "@/lib/seatLayout/calc";
@@ -1770,20 +1771,22 @@ export function SeatLayoutWorkspace() {
   // 책상 발주 도면 / PC 발주 도면 / 발주 요약표, 이렇게 항상 3장을 만든다 (현재 탭과 무관하게 전체 프로젝트 기준).
   type ExportItem = { key: string; label: string; dataUrl: string };
 
-  function renderAllOutputs(): ExportItem[] | null {
+  // scale: 다운로드는 EXPORT_SCALE(고해상도, 제한 없음), 구글 프레젠테이션 등록은
+  // SLIDES_EXPORT_SCALE(Slides API의 25메가픽셀 한도 안쪽)을 넘겨서 호출한다.
+  function renderAllOutputs(scale: number): ExportItem[] | null {
     const cv = compositeCanvasRef.current;
     if (!cv || !imgEl) {
       setStatusMsg("먼저 도면을 업로드하세요.", "error");
       return null;
     }
-    // 캔버스 자체를 EXPORT_SCALE배 키우고 그만큼 확대해서 그리면, canvasRender.ts의 좌표/폰트
+    // 캔버스 자체를 scale배 키우고 그만큼 확대해서 그리면, canvasRender.ts의 좌표/폰트
     // 크기(전부 COMPOSITE_W/H 기준)는 그대로 두고도 최종 PNG만 고해상도로 뽑을 수 있다 —
     // PPT에서 휠로 확대했을 때 글씨가 깨져 보이던 문제 대응.
-    cv.width = COMPOSITE_W * EXPORT_SCALE;
-    cv.height = COMPOSITE_H * EXPORT_SCALE;
+    cv.width = Math.round(COMPOSITE_W * scale);
+    cv.height = Math.round(COMPOSITE_H * scale);
     const ctx = cv.getContext("2d");
     if (!ctx) return null;
-    ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
+    ctx.scale(scale, scale);
 
     renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
     const desk = { key: "desk", label: "책상발주도면", dataUrl: cv.toDataURL("image/png") };
@@ -1809,7 +1812,7 @@ export function SeatLayoutWorkspace() {
       setBusy(false);
       return;
     }
-    const outputs = renderAllOutputs();
+    const outputs = renderAllOutputs(EXPORT_SCALE);
     if (outputs) {
       outputs.forEach((item) => {
         const link = document.createElement("a");
@@ -1835,7 +1838,7 @@ export function SeatLayoutWorkspace() {
       setBusy(false);
       return;
     }
-    const outputs = renderAllOutputs();
+    const outputs = renderAllOutputs(SLIDES_EXPORT_SCALE);
     if (outputs) {
       try {
         setStatusMsg("공유 프레젠테이션에 등록 중... (몇 초 걸릴 수 있습니다)");
