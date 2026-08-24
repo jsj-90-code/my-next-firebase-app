@@ -679,8 +679,8 @@ export function computeCompactLayout(
     rows,
     rowH: idealRowH * shrink,
     headerH: clamp(idealHeaderH * shrink, 20, idealHeaderH),
-    headerFont: clamp(idealHeaderFont * shrink, 10, idealHeaderFont),
-    bodyFont: clamp(idealBodyFont * shrink, 8, idealBodyFont),
+    headerFont: clamp(idealHeaderFont * shrink, 11, idealHeaderFont),
+    bodyFont: clamp(idealBodyFont * shrink, 10, idealBodyFont),
   };
 }
 
