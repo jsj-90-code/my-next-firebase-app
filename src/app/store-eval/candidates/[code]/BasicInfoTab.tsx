@@ -518,14 +518,25 @@ export function BasicInfoTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁 카운트 (반경 500m)</h3>
         <div className={`${gridClass} mt-4`}>
-          <TextField label="상권_기준연월" value={form.commercialDataYearMonth ?? ""} onChange={(v) => set("commercialDataYearMonth", v || null)} hint="예: 2026-07" manualOnly />
+          <TextField
+            label="상권_기준연월"
+            value={form.commercialDataYearMonth ?? ""}
+            onChange={(v) => set("commercialDataYearMonth", v || null)}
+            hint="예: 2026-07 — 아래 인허가/실영업 업소수를 확인한 시점 메모(개수 아님)"
+            manualOnly
+          />
           <TextField label="업소수_기준시점" value={form.businessCountAsOfDate ?? ""} onChange={(v) => set("businessCountAsOfDate", v || null)} manualOnly />
-          <NumberField label="인허가 PC방업소수" value={form.licensedPcStores500m} onChange={(v) => set("licensedPcStores500m", v)} manualOnly />
+          <NumberField
+            label="인허가 PC방업소수"
+            value={form.licensedPcStores500m}
+            onChange={(v) => set("licensedPcStores500m", v)}
+            hint="소상공인365 '업소수'(등록 사업체 집계) 자동추출"
+          />
           <NumberField
             label="실영업 PC방업소수"
             value={form.operatingPcStores500m}
             onChange={(v) => set("operatingPcStores500m", v)}
-            hint="네이버 로드뷰 등으로 직접 확인 — 소상공인365 추정치를 자동 반영하지 않음"
+            hint="네이버 로드뷰 등으로 실제 영업 중인지 직접 확인해서 입력"
             manualOnly
           />
         </div>
@@ -551,8 +562,14 @@ export function BasicInfoTab({
           <NumberField label="유동 40대" value={form.floating1km_40s} onChange={(v) => set("floating1km_40s", v)} />
           <NumberField label="유동 50대" value={form.floating1km_50s} onChange={(v) => set("floating1km_50s", v)} />
           <NumberField label="유동 60대 이상" value={form.floating1km_60plus} onChange={(v) => set("floating1km_60plus", v)} />
-          <NumberField label="인허가 PC방업소수(1km)" value={form.licensedPcStores1km} onChange={(v) => set("licensedPcStores1km", v)} manualOnly />
-          <NumberField label="실영업 PC방업소수(1km)" value={form.operatingPcStores1km} onChange={(v) => set("operatingPcStores1km", v)} />
+          <NumberField label="인허가 PC방업소수(1km)" value={form.licensedPcStores1km} onChange={(v) => set("licensedPcStores1km", v)} />
+          <NumberField
+            label="실영업 PC방업소수(1km)"
+            value={form.operatingPcStores1km}
+            onChange={(v) => set("operatingPcStores1km", v)}
+            hint="네이버 로드뷰 등으로 직접 확인해서 입력(자동추출 안 함)"
+            manualOnly
+          />
         </div>
 
         <p className="mt-6 text-xs font-medium text-zinc-600 dark:text-zinc-400">직장인구 (500m / 1km)</p>
@@ -574,8 +591,7 @@ export function BasicInfoTab({
             label="지하철 승하차(500m)"
             value={form.facility500SubwayRiders}
             onChange={(v) => set("facility500SubwayRiders", v)}
-            hint="소상공인365에 표는 있으나 실제 표 모양 미확인 — 아직 자동추출 안 됨"
-            manualOnly
+            hint="소상공인365에 표는 있으나 역이 있는 후보지로 실제 표 모양을 아직 못 봐서 자동추출 미구현 (직접 입력하는 값이 아님 — 확인되면 자동화 예정)"
           />
           <NumberField label="세대수(500m)" value={form.facility500Households} onChange={(v) => set("facility500Households", v)} />
           <NumberField label="고등학생 수(1km)" value={form.facility1kmHighSchool} onChange={(v) => set("facility1kmHighSchool", v)} />
@@ -585,8 +601,7 @@ export function BasicInfoTab({
             label="지하철 승하차(1km)"
             value={form.facility1kmSubwayRiders}
             onChange={(v) => set("facility1kmSubwayRiders", v)}
-            hint="소상공인365에 표는 있으나 실제 표 모양 미확인 — 아직 자동추출 안 됨"
-            manualOnly
+            hint="소상공인365에 표는 있으나 역이 있는 후보지로 실제 표 모양을 아직 못 봐서 자동추출 미구현 (직접 입력하는 값이 아님 — 확인되면 자동화 예정)"
           />
           <NumberField label="세대수(1km)" value={form.facility1kmHouseholds} onChange={(v) => set("facility1kmHouseholds", v)} />
         </div>

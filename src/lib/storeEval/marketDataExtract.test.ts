@@ -479,10 +479,11 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(4994);
     expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(3126);
     expect(result.find((r) => r.fieldKey === "facility500Households")?.parsedValue).toBe(6956);
-    // 500m "실영업 PC방업소수"는 사용자가 네이버 로드뷰로 직접 확인하는 핵심(V62) 값이라
-    // 소상공인365 카드데이터 추정치로 자동 제안하지 않는다(의도적으로 후보에서 제외).
+    // 소상공인365 "업소수"는 등록 사업체 집계 성격이라 "인허가" 쪽에 자동 매칭한다. "실영업"은
+    // 사용자가 네이버 로드뷰로 직접 확인하는 값이라(500m은 V62 핵심값이기도 함) 자동추출 대상이
+    // 아니다(500m/1km 둘 다 후보에서 제외).
+    expect(result.find((r) => r.fieldKey === "licensedPcStores500m")?.parsedValue).toBe(2);
     expect(result.some((r) => r.fieldKey === "operatingPcStores500m")).toBe(false);
-    expect(result.some((r) => r.fieldKey === "licensedPcStores500m")).toBe(false);
   });
 
   it("반경을 1km로 바꾸면 1km 전용 필드 키로 매칭된다", () => {
@@ -491,6 +492,8 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     const result = extractFields(pairs, variant.buildSpecs("1km", "1km"));
     expect(result.find((r) => r.fieldKey === "floating1kmAvg")?.parsedValue).toBe(65634);
     expect(result.find((r) => r.fieldKey === "facility1kmHouseholds")?.parsedValue).toBe(6956);
+    expect(result.find((r) => r.fieldKey === "licensedPcStores1km")?.parsedValue).toBe(2);
+    expect(result.some((r) => r.fieldKey === "operatingPcStores1km")).toBe(false);
   });
 
   it("표 종류 버튼이 필요 없도록 변형이 단 하나('전체')뿐이다", () => {
