@@ -119,7 +119,7 @@ export function BasicInfoTab({
   actor: string | null;
   onSaved: (c: CandidateInput) => void;
 }) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [form, setForm] = useState<CandidateInput>(candidate);
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -149,9 +149,12 @@ export function BasicInfoTab({
   }, []);
 
   useEffect(() => {
-    if (candidate.code !== "new") loadMarketData(candidate.code);
+    // Firebase Auth 세션 복원(onAuthStateChanged)이 끝나기 전에 Firestore를 읽으면 request.auth가
+    // 아직 없어 "Missing or insufficient permissions"가 뜬다(핫리로드 직후 재현되는 레이스
+    // 컨디션, 2026-08-24 확인) — authLoading이 끝나고 로그인된 사용자가 있을 때만 조회한다.
+    if (candidate.code !== "new" && !authLoading && user) loadMarketData(candidate.code);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidate.code]);
+  }, [candidate.code, authLoading, user]);
 
   async function handleCollectMarketData() {
     if (form.code === "new") {
@@ -308,9 +311,9 @@ export function BasicInfoTab({
         <div className="mt-4 flex flex-wrap items-center gap-3 print:hidden">
           <button
             type="button"
-            disabled={collecting || form.code === "new"}
+            disabled={collecting || form.code === "new" || authLoading}
             onClick={handleCollectMarketData}
-            title={form.code === "new" ? "먼저 저장한 뒤 이용할 수 있습니다" : undefined}
+            title={form.code === "new" ? "먼저 저장한 뒤 이용할 수 있습니다" : authLoading ? "로그인 확인 중입니다" : undefined}
             className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
             {collecting ? "수집 중..." : "상권자료 수집"}
