@@ -277,10 +277,25 @@ export const SGIS_FIELD_SPECS: MarketFieldSpec[] = [
 //     실영업 쪽에만 대응시킨다).
 //   - 상권_기준연월/업소수_기준시점은 문장형 텍스트라 표가 아니다.
 
+// 2026-08-24 (5차) — 실제 리포트(강원 춘천시 석사동)로 확인: 유동인구 표는 "10대"부터 있지만
+// 직장인구 표는 "20대"부터 시작한다(10세 미만 직장인이 없으니 당연함) — 그래서 두 표의 값 개수가
+// 다르다(유동인구: 전체+8분류=9칸, 직장인구: 전체+7분류=8칸). 같은 8칸이라고 유동인구용 8분류
+// 표(전체 없이 8분류만)로 잘못 해석하면 "전체" 항목이 아예 안 잡히고 남은 값도 한 칸씩 밀려서
+// 다 틀어진다 — 그래서 표 종류별로 분류 목록을 따로 둔다.
 const SB365_DEMO_CATEGORIES: { key: string; matches: string[] }[] = [
   { key: "남성", matches: ["남성"] },
   { key: "여성", matches: ["여성"] },
   { key: "10대", matches: ["10대"] },
+  { key: "20대", matches: ["20대"] },
+  { key: "30대", matches: ["30대"] },
+  { key: "40대", matches: ["40대"] },
+  { key: "50대", matches: ["50대"] },
+  { key: "60대이상", matches: ["60대이상", "60대+"] },
+];
+
+const SB365_EMPLOY_CATEGORIES: { key: string; matches: string[] }[] = [
+  { key: "남성", matches: ["남성"] },
+  { key: "여성", matches: ["여성"] },
   { key: "20대", matches: ["20대"] },
   { key: "30대", matches: ["30대"] },
   { key: "40대", matches: ["40대"] },
@@ -305,12 +320,16 @@ function splitLabelAndValues(tokens: string[]): { label: string; values: string[
 }
 
 /**
- * "성별/연령대별 일평균 유동인구"/"성별/연령대별 직장인구" 표 전용. 두 표가 모양이 완전히
- * 똑같아서(선택 영역 | 인구 | 전체 | 남성 | 여성 | 10대...60대이상) 이 함수 하나로 공용 처리한다
- * — 어느 지표인지는 호출부(사용자가 고른 표 종류)가 이미 안다. 비교 지역(소공동/중구 등) 행과
+ * "성별/연령대별 일평균 유동인구"/"성별/연령대별 직장인구" 표 전용. 표 모양(선택 영역 | 인구 |
+ * 전체 | 남성 | 여성 | 연령대...)은 같지만 **연령대 목록이 다르다**(유동인구는 10대부터,
+ * 직장인구는 20대부터 — 미성년 직장인이 없어서 칸 수 자체가 하나 적다) — 그래서 어느 표인지에
+ * 따라 categories를 다르게 넘겨야 한다(기본값은 유동인구 기준). 비교 지역(소공동/중구 등) 행과
  * "비율"/"증감률" 행은 무시하고 우리 후보지("선택 영역")의 인원수 행만 본다.
  */
-export function parseSosangongin365DemographicRow(text: string): LabelValuePair[] {
+export function parseSosangongin365DemographicRow(
+  text: string,
+  categories: { key: string; matches: string[] }[] = SB365_DEMO_CATEGORIES
+): LabelValuePair[] {
   const pairs: LabelValuePair[] = [];
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -321,11 +340,11 @@ export function parseSosangongin365DemographicRow(text: string): LabelValuePair[
     const normLabel = normalizeLabel(label);
     if (!normLabel.includes("선택영역")) continue; // 소공동/중구 등 비교 지역은 우리 후보지가 아니다
     if (normLabel.includes("비율") || normLabel.includes("증감률")) continue;
-    if (values.length === SB365_DEMO_CATEGORIES.length + 1) {
+    if (values.length === categories.length + 1) {
       pairs.push({ label: "전체", value: values[0] });
-      SB365_DEMO_CATEGORIES.forEach((cat, i) => pairs.push({ label: cat.key, value: values[i + 1] }));
-    } else if (values.length === SB365_DEMO_CATEGORIES.length) {
-      SB365_DEMO_CATEGORIES.forEach((cat, i) => pairs.push({ label: cat.key, value: values[i] }));
+      categories.forEach((cat, i) => pairs.push({ label: cat.key, value: values[i + 1] }));
+    } else if (values.length === categories.length) {
+      categories.forEach((cat, i) => pairs.push({ label: cat.key, value: values[i] }));
     }
   }
   return pairs;
@@ -443,13 +462,13 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
     if (normLabel.includes("비율") || normLabel.includes("증감률")) continue;
 
     if (currentTable === "유동인구" || currentTable === "직장인구") {
-      if (values.length === SB365_DEMO_CATEGORIES.length + 1) {
+      // 유동인구는 10대부터, 직장인구는 20대부터라 분류 개수(따라서 값 칸 수)가 다르다.
+      const categories = currentTable === "직장인구" ? SB365_EMPLOY_CATEGORIES : SB365_DEMO_CATEGORIES;
+      if (values.length === categories.length + 1) {
         pairs.push({ label: `${currentTable}:전체`, value: values[0] });
-        SB365_DEMO_CATEGORIES.forEach((cat, i) =>
-          pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i + 1] })
-        );
-      } else if (values.length === SB365_DEMO_CATEGORIES.length) {
-        SB365_DEMO_CATEGORIES.forEach((cat, i) => pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i] }));
+        categories.forEach((cat, i) => pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i + 1] }));
+      } else if (values.length === categories.length) {
+        categories.forEach((cat, i) => pairs.push({ label: `${currentTable}:${cat.key}`, value: values[i] }));
       }
     } else {
       // 세대수/업소수: "선택 영역 | (업소수) | 기간별 숫자..." 시계열의 마지막(최신) 값만 쓴다

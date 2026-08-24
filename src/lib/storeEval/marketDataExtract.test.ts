@@ -319,53 +319,72 @@ describe("parseSosangongin365TrendLatest — 세대수/업소수 시계열 표",
   });
 });
 
-// 2026-08-24 — 사용자 제안으로 재설계: "표 종류"를 매번 고르지 않고 "반경 설정 → 분석하기 →
-// 리포트 전체 복사후 붙여넣기"만 하도록 바꿨다. 유동인구/직장인구/세대수/업소수 네 표를 실제
-// 리포트에 딸려오는 소제목("성별/연령대별 일평균 유동인구" 등)과 함께 한 번에 붙여넣은 텍스트로
-// 재현한 픽스처.
+// 2026-08-24 (5차) — 사용자 제안으로 재설계: "표 종류"를 매번 고르지 않고 "반경 설정 → 분석하기 →
+// 리포트 전체 복사후 붙여넣기"만 하도록 바꿨다. 아래는 사용자가 실제로 강원 춘천시 석사동(PC방,
+// 반경 250m)으로 조회해 그대로 붙여넣어준 리포트 원문에서 발췌한 실측 데이터다. **직장인구 표는
+// 유동인구와 달리 "10대"가 없고 "20대"부터 시작한다**(전체+7분류=8칸 vs 유동인구 전체+8분류=9칸)
+// — 이 칸 수 차이를 놓쳐서 "직장인구 전체(500m)"이 매칭 안 되던 실제 버그를 재현하는 픽스처다.
 const REAL_SB365_FULL_REPORT_EXCERPT = `
 상권분석 상세분석 리포트
 
 성별/연령대별 일평균 유동인구
-지역	구분	일일	남성	여성	10대	20대	30대	40대	50대	60대이상
-선택 영역	인구	184,038	103,612	80,426	7,165	27,188	30,914	37,904	38,103	42,764
-선택 영역	비율		56.3	43.7	4.0	15.0	17.0	21.0	21.0	23.0
-소공동	인구	186,497	104,715	81,782	7,082	27,024	31,816	38,863	38,789	42,924
+단위 : 명, %
 
+지역	구분	일일	성별	연령대별
+남성	여성	10대	20대	30대	40대	50대	60대이상
+선택 영역	인구	65,634	34,075	31,558	6,962	5,363	6,191	12,026	14,672	20,420
+비율	51.9	48.1	11.0	8.0	9.0	18.0	22.0	31.0
+석사동	인구	132,737	72,278	60,459	14,117	15,348	13,501	23,918	28,515	37,337
+
+직장인구
 성별/연령대별 직장인구
-지역	구분	일일	남성	여성	10대	20대	30대	40대	50대	60대이상
-선택 영역	인구	52,300	28,150	24,150	1,200	9,800	12,400	13,900	10,500	4,500
-선택 영역	비율		53.8	46.2	2.3	18.7	23.7	26.6	20.1	8.6
-소공동	인구	53,900	29,000	24,900	1,300	9,900	12,600	14,000	10,600	4,600
+단위 : 명, %
 
+지역	구분	전체	성별	연령별
+남성	여성	20대	30대	40대	50대	60대 이상
+선택 영역	인구	4,994	1,868	3,126	490	728	1,167	1,252	1,357
+비율	100.0	37.4	62.6	9.8	14.6	23.4	25.1	27.2
+
+세대 수 현황
 세대 수 추이
+단위 : 세대
+
 지역	세대수
 2024년 하반기	2025년 상반기	2025년 하반기	2026년 상반기
-선택 영역	827	823	818	817
-소공동	1,257	1,249	1,241	1,240
+선택 영역	6,858	6,854	6,970	6,956
+석사동	15,423	15,361	15,371	15,271
 
 업소수 추이
+단위 : 개, %
+
 지역	구분	25.05	25.06	25.07	25.08	25.09	25.10	25.11	25.12	26.01	26.02	26.03	26.04	26.05
-선택 영역	업소수	1	1	1	2	2	2	2	2	3	3	3	3	3
-선택 영역	증감률	0.0	0.0	0.0	100.0	0.0	0.0	0.0	0.0	50.0	0.0	0.0	0.0	0.0
-중구	업소수	21	21	21	20	20	20	20	20	20	20	20	21	20
+선택 영역	업소수	2	2	2	3	2	2	2	2	2	2	2	2	2
+증감률	0.0	0.0	0.0	50.0	33.3	0.0	0.0	0.0	0.0	0.0	0.0	0.0	0.0
+석사동	업소수	10	10	9	10	9	9	9	8	8	8	8	8	7
 `;
 
 describe("parseSosangongin365FullReport — 리포트 전체를 한 번에 붙여넣었을 때", () => {
   it("소제목으로 유동인구/직장인구 표를 구분해서 서로 안 섞인다", () => {
     const pairs = parseSosangongin365FullReport(REAL_SB365_FULL_REPORT_EXCERPT);
-    expect(pairs.find((p) => p.label === "유동인구:전체")?.value).toBe("184,038");
-    expect(pairs.find((p) => p.label === "유동인구:남성")?.value).toBe("103,612");
-    expect(pairs.find((p) => p.label === "직장인구:전체")?.value).toBe("52,300");
-    expect(pairs.find((p) => p.label === "직장인구:여성")?.value).toBe("24,150");
+    expect(pairs.find((p) => p.label === "유동인구:전체")?.value).toBe("65,634");
+    expect(pairs.find((p) => p.label === "유동인구:남성")?.value).toBe("34,075");
     // 소공동(비교 지역) 값이 섞여 들어오면 안 된다.
-    expect(pairs.some((p) => p.value === "186,497" || p.value === "53,900")).toBe(false);
+    expect(pairs.some((p) => p.value === "132,737")).toBe(false);
+  });
+
+  it("직장인구는 '10대'가 없어 유동인구보다 칸이 하나 적은데도 '전체'가 정확히 매칭된다(실사용자 버그 재현)", () => {
+    const pairs = parseSosangongin365FullReport(REAL_SB365_FULL_REPORT_EXCERPT);
+    expect(pairs.find((p) => p.label === "직장인구:전체")?.value).toBe("4,994");
+    expect(pairs.find((p) => p.label === "직장인구:남성")?.value).toBe("1,868");
+    expect(pairs.find((p) => p.label === "직장인구:여성")?.value).toBe("3,126");
+    expect(pairs.find((p) => p.label === "직장인구:20대")?.value).toBe("490");
+    expect(pairs.find((p) => p.label === "직장인구:10대")).toBeUndefined();
   });
 
   it("세대수/업소수도 같은 붙여넣기 안에서 최신값만 뽑는다(증감률 행 제외)", () => {
     const pairs = parseSosangongin365FullReport(REAL_SB365_FULL_REPORT_EXCERPT);
-    expect(pairs.find((p) => p.label === "세대수")?.value).toBe("817");
-    expect(pairs.find((p) => p.label === "업소수")?.value).toBe("3");
+    expect(pairs.find((p) => p.label === "세대수")?.value).toBe("6,956");
+    expect(pairs.find((p) => p.label === "업소수")?.value).toBe("2");
   });
 });
 
@@ -374,12 +393,12 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
     const pairs = variant.extract(REAL_SB365_FULL_REPORT_EXCERPT);
     const result = extractFields(pairs, variant.buildSpecs("500", "500m"));
-    expect(result.find((r) => r.fieldKey === "floating500Avg")?.parsedValue).toBe(184038);
-    expect(result.find((r) => r.fieldKey === "floating500Male")?.parsedValue).toBe(103612);
-    expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(52300);
-    expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(24150);
-    expect(result.find((r) => r.fieldKey === "facility500Households")?.parsedValue).toBe(817);
-    expect(result.find((r) => r.fieldKey === "operatingPcStores500m")?.parsedValue).toBe(3);
+    expect(result.find((r) => r.fieldKey === "floating500Avg")?.parsedValue).toBe(65634);
+    expect(result.find((r) => r.fieldKey === "floating500Male")?.parsedValue).toBe(34075);
+    expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(4994);
+    expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(3126);
+    expect(result.find((r) => r.fieldKey === "facility500Households")?.parsedValue).toBe(6956);
+    expect(result.find((r) => r.fieldKey === "operatingPcStores500m")?.parsedValue).toBe(2);
     expect(result.some((r) => r.fieldKey === "licensedPcStores500m")).toBe(false);
   });
 
@@ -387,8 +406,8 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
     const pairs = variant.extract(REAL_SB365_FULL_REPORT_EXCERPT);
     const result = extractFields(pairs, variant.buildSpecs("1km", "1km"));
-    expect(result.find((r) => r.fieldKey === "floating1kmAvg")?.parsedValue).toBe(184038);
-    expect(result.find((r) => r.fieldKey === "facility1kmHouseholds")?.parsedValue).toBe(817);
+    expect(result.find((r) => r.fieldKey === "floating1kmAvg")?.parsedValue).toBe(65634);
+    expect(result.find((r) => r.fieldKey === "facility1kmHouseholds")?.parsedValue).toBe(6956);
   });
 
   it("표 종류 버튼이 필요 없도록 변형이 단 하나('전체')뿐이다", () => {
