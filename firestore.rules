@@ -65,6 +65,14 @@ service cloud.firestore {
       allow update: if isCompanyAccount();
     }
 
+    // 상권자료 자동수집 2단계(2026-08-24) — SGIS/소상공인365 반자동 업로드 이력. 생성만 허용하고
+    // 수정/삭제는 막아 "어느 파일에서 언제 뽑았는지" 기록이 사후에 바뀌지 않게 한다(storeEvalAuditLog와
+    // 동일한 불변 로그 취급).
+    match /storeEvalMarketDataUploads/{uploadId} {
+      allow read, create: if isCompanyAccount();
+      allow update, delete: if false;
+    }
+
     match /storeEvalLocationEvaluations/{candidateId} {
       allow read, write: if isCompanyAccount();
     }

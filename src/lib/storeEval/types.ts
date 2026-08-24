@@ -76,6 +76,44 @@ export type CandidateInput = {
   licensedPcStores500m: number | null; // 인허가_PC방업소수_500m
   operatingPcStores500m: number | null; // 실영업_PC방업소수_500m
 
+  // 2026-08-24 (2단계) 추가 — 소상공인365 상권분석 원본에서만 채울 수 있는 항목(공식 API 없음,
+  // 반자동 업로드-추출 전용, /store-eval/candidates 상권자료 자동화 참고). 위 500m 값들은 기존과
+  // 동일하게 calc.ts(computeFloatingRawDemand/computeCompetitorIp)가 읽지만, 이 블록의 1km 버전과
+  // 직장/시설 항목은 전부 참고자료일 뿐이다 — calc.ts 어떤 함수도 이 아래 필드를 읽지 않는다
+  // (기존 V62 산식·계수 불변 원칙, 사용자 요청사항).
+  commercialDataYearMonth: string | null; // 상권_기준연월
+  businessCountAsOfDate: string | null; // 업소수_기준시점
+  licensedPcStores1km: number | null;
+  operatingPcStores1km: number | null;
+
+  floating1kmAvg: number | null;
+  floating1kmMale: number | null;
+  floating1kmFemale: number | null;
+  floating1km_10s: number | null;
+  floating1km_20s: number | null;
+  floating1km_30s: number | null;
+  floating1km_40s: number | null;
+  floating1km_50s: number | null;
+  floating1km_60plus: number | null;
+
+  employ500Total: number | null; // 직장500_전체
+  employ500Male: number | null;
+  employ500Female: number | null;
+  employ1kmTotal: number | null;
+  employ1kmMale: number | null;
+  employ1kmFemale: number | null;
+
+  facility500HighSchool: number | null; // 시설500_고등학생
+  facility500MiddleSchool: number | null;
+  facility500ElementarySchool: number | null;
+  facility500SubwayRiders: number | null; // 시설500_지하철승하차
+  facility500Households: number | null; // 시설500_세대수
+  facility1kmHighSchool: number | null;
+  facility1kmMiddleSchool: number | null;
+  facility1kmElementarySchool: number | null;
+  facility1kmSubwayRiders: number | null;
+  facility1kmHouseholds: number | null;
+
   // 자사 시설/사양 (경쟁력 점수 입력)
   ownVgaBase: string | null;
   ownVgaTop: string | null;
@@ -545,4 +583,34 @@ export type DemandPoint = {
   sourcePlaceId: string | null; // 카카오 장소 id — 재수집 시 중복 제거 키
   fetchedAt: number;
   confirmed: boolean; // 사용자가 화면에서 확인했는지
+};
+
+// ---- 상권자료 자동수집 2단계(2026-08-24) — SGIS/소상공인365 반자동 업로드-추출 ----
+// 공식 API가 없어 사람이 각 사이트에서 직접 조회한 원본(엑셀/CSV/붙여넣기 표)을 업로드하면,
+// 클라이언트에서 결정적 라벨매칭으로 값을 추출한다(AI가 숫자를 만들어내지 않는다는 원칙 유지).
+// 업로드마다 이 기록을 남겨 "어느 파일에서 언제 뽑은 값인지" 추적한다(요청사항 4장 "SGIS 원본자료마다
+// 저장" 항목).
+export type MarketDataSourceType = "sgis_life_area" | "sosangongin365";
+
+export type ExtractedFieldRecord = {
+  fieldKey: string; // CandidateInput 필드명 (예: "pop500m")
+  matchedLabel: string | null; // 원본에서 매칭된 라벨 텍스트 (매칭 실패 시 null)
+  rawValue: string | null; // 원본 셀/텍스트 그대로
+  parsedValue: number | string | null; // 파싱된 값
+  autoExtracted: boolean; // 라벨매칭으로 자동 인식됐는지
+  userEdited: boolean; // 사용자가 추출값을 직접 고쳤는지
+  applied: boolean; // 실제로 후보지 필드에 반영했는지
+};
+
+export type MarketDataUpload = {
+  id: string;
+  candidateCode: string;
+  sourceType: MarketDataSourceType;
+  coordAtUpload: { lat: number; lng: number } | null; // 업로드 시점 후보지 확정좌표(기준점 추적용)
+  fileName: string | null; // 붙여넣기 표를 썼으면 null
+  fileHash: string | null; // 원본파일 SHA-256 (재추출/대조용)
+  pastedTable: boolean; // 파일 업로드 대신 표 붙여넣기를 썼는지
+  extractedFields: ExtractedFieldRecord[];
+  uploadedAt: number;
+  uploadedBy: string | null;
 };

@@ -36,6 +36,7 @@ import type {
   ExistingStoreMemberSnapshot,
   ExistingStoreMonthlySales,
   LocationEvaluation,
+  MarketDataUpload,
   ModelSettings,
   ModelSettingsHistoryEntry,
 } from "./types";
@@ -44,6 +45,7 @@ const CANDIDATES = "storeEvalCandidates";
 const COMPETITORS = "storeEvalCompetitors";
 const ADMIN_DONG_REFERENCES = "storeEvalAdminDongReferences";
 const DEMAND_POINTS = "storeEvalDemandPoints";
+const MARKET_DATA_UPLOADS = "storeEvalMarketDataUploads";
 const LOCATION_EVALS = "storeEvalLocationEvaluations";
 const RESULTS = "storeEvalResults";
 const SETTINGS = "storeEvalSettings";
@@ -183,6 +185,19 @@ export async function confirmDemandPoint(id: string): Promise<void> {
 
 export async function deleteDemandPoint(id: string): Promise<void> {
   await deleteDoc(doc(requireDb(), DEMAND_POINTS, id));
+}
+
+// ---------------------------------------------------------------------------
+// 상권자료 자동수집 2단계 — SGIS/소상공인365 반자동 업로드 이력(출처 추적, 불변 로그)
+// ---------------------------------------------------------------------------
+export async function listMarketDataUploads(candidateCode: string): Promise<MarketDataUpload[]> {
+  // where절 하나만 쓰면 복합 인덱스가 필요 없다 - 업로드 수가 후보지당 몇 건뿐이라 정렬은 JS에서 한다.
+  const snap = await getDocs(query(collection(requireDb(), MARKET_DATA_UPLOADS), where("candidateCode", "==", candidateCode)));
+  return snap.docs.map((d) => d.data() as MarketDataUpload).sort((a, b) => b.uploadedAt - a.uploadedAt);
+}
+
+export async function saveMarketDataUpload(upload: MarketDataUpload): Promise<void> {
+  await setDoc(doc(requireDb(), MARKET_DATA_UPLOADS, upload.id), sanitize(upload));
 }
 
 // ---------------------------------------------------------------------------

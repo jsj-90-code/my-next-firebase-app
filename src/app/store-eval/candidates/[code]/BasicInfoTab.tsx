@@ -14,6 +14,8 @@ import {
   GAME_ZONE_BONUS,
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
+import { MarketDataUploadPanel } from "@/components/storeEval/MarketDataUploadPanel";
+import { SGIS_FIELD_SPECS, SOSANGONGIN365_FIELD_SPECS } from "@/lib/storeEval/marketDataExtract";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   generateNextCandidateCode,
@@ -22,7 +24,9 @@ import {
   getModelSettings,
   listCompetitors,
   listDemandPoints,
+  listMarketDataUploads,
   saveCandidate,
+  saveMarketDataUpload,
 } from "@/lib/storeEval/store";
 import type {
   AdminDongReference,
@@ -30,6 +34,7 @@ import type {
   Competitor,
   DemandPoint,
   GroundLevel,
+  MarketDataUpload,
   ModelSettings,
   ReviewStatus,
 } from "@/lib/storeEval/types";
@@ -88,6 +93,33 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "floating500_60plus", label: "유동 60대이상(500m)" },
   { key: "licensedPcStores500m", label: "인허가 PC방업소수(500m)" },
   { key: "operatingPcStores500m", label: "실영업 PC방업소수(500m)" },
+  { key: "licensedPcStores1km", label: "인허가 PC방업소수(1km)" },
+  { key: "operatingPcStores1km", label: "실영업 PC방업소수(1km)" },
+  { key: "floating1kmAvg", label: "유동인구 평균(1km)" },
+  { key: "floating1kmMale", label: "유동인구 남(1km)" },
+  { key: "floating1kmFemale", label: "유동인구 여(1km)" },
+  { key: "floating1km_10s", label: "유동 10대(1km)" },
+  { key: "floating1km_20s", label: "유동 20대(1km)" },
+  { key: "floating1km_30s", label: "유동 30대(1km)" },
+  { key: "floating1km_40s", label: "유동 40대(1km)" },
+  { key: "floating1km_50s", label: "유동 50대(1km)" },
+  { key: "floating1km_60plus", label: "유동 60대이상(1km)" },
+  { key: "employ500Total", label: "직장인구 전체(500m)" },
+  { key: "employ500Male", label: "직장인구 남(500m)" },
+  { key: "employ500Female", label: "직장인구 여(500m)" },
+  { key: "employ1kmTotal", label: "직장인구 전체(1km)" },
+  { key: "employ1kmMale", label: "직장인구 남(1km)" },
+  { key: "employ1kmFemale", label: "직장인구 여(1km)" },
+  { key: "facility500HighSchool", label: "고등학생 수(500m)" },
+  { key: "facility500MiddleSchool", label: "중학생 수(500m)" },
+  { key: "facility500ElementarySchool", label: "초등학생 수(500m)" },
+  { key: "facility500SubwayRiders", label: "지하철 승하차(500m)" },
+  { key: "facility500Households", label: "세대수(500m)" },
+  { key: "facility1kmHighSchool", label: "고등학생 수(1km)" },
+  { key: "facility1kmMiddleSchool", label: "중학생 수(1km)" },
+  { key: "facility1kmElementarySchool", label: "초등학생 수(1km)" },
+  { key: "facility1kmSubwayRiders", label: "지하철 승하차(1km)" },
+  { key: "facility1kmHouseholds", label: "세대수(1km)" },
   { key: "ownGameZoneCount", label: "게임존 수" },
   { key: "ownRoom1", label: "1인룸 수" },
   { key: "ownRoom2", label: "2인룸 수" },
@@ -134,12 +166,20 @@ export function BasicInfoTab({
   const [adminDongRef, setAdminDongRef] = useState<AdminDongReference | null>(null);
   const [demandPoints, setDemandPoints] = useState<DemandPoint[]>([]);
   const [autoCompetitors, setAutoCompetitors] = useState<Competitor[]>([]);
+  // 2단계(2026-08-24) — SGIS/소상공인365 반자동 업로드 이력.
+  const [marketDataUploads, setMarketDataUploads] = useState<MarketDataUpload[]>([]);
 
   const loadMarketData = useCallback(async (code: string) => {
-    const [adminDong, points, comps] = await Promise.all([getAdminDongReference(code), listDemandPoints(code), listCompetitors(code)]);
+    const [adminDong, points, comps, uploads] = await Promise.all([
+      getAdminDongReference(code),
+      listDemandPoints(code),
+      listCompetitors(code),
+      listMarketDataUploads(code),
+    ]);
     setAdminDongRef(adminDong);
     setDemandPoints(points);
     setAutoCompetitors(comps.filter((c) => c.source === "kakao"));
+    setMarketDataUploads(uploads);
   }, []);
 
   useEffect(() => {
@@ -205,6 +245,16 @@ export function BasicInfoTab({
     await saveCandidate(updated, actor);
     onSaved(updated);
     setCollectMessage("지도에서 수정한 위치로 좌표를 확정했습니다.");
+  }
+
+  // SGIS/소상공인365 업로드 패널에서 추출값을 "폼에 적용"했을 때 — AI 초안과 동일하게 폼 상태만
+  // 바꾸고, 사용자가 확인 후 "저장"을 눌러야 실제로 저장된다(자동확정 금지 원칙). 업로드 이력
+  // 자체는 불변 로그라 여기서 바로 저장한다(값을 실제로 반영했는지와 무관하게 "이 파일에서 이걸
+  // 뽑았다"는 사실 자체는 남겨야 하므로).
+  async function handleApplyMarketDataUpload(patch: Record<string, number | string>, upload: MarketDataUpload) {
+    setForm((prev) => ({ ...prev, ...patch }) as CandidateInput);
+    await saveMarketDataUpload(upload);
+    setMarketDataUploads((prev) => [upload, ...prev]);
   }
 
   const mapPoints: MapPoint[] = useMemo(
@@ -368,6 +418,57 @@ export function BasicInfoTab({
         </section>
       )}
 
+      {form.lat != null && form.lng != null && (
+        <section className={sectionClass}>
+          <h3 className={sectionTitleClass}>SGIS·소상공인365 업로드 자동추출 (반경 500m/1km 통계)</h3>
+          <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+            SGIS·소상공인365 모두 반경(500m/1km) 통계를 조회하는 공식 API가 없어(2026-08-24 확인) 직접 조회 후 파일을
+            업로드해야 합니다. 라벨을 찾아 자동으로 채워두지만, 값이 다르면 자동확정하지 않고 표에서 직접 확인·수정한
+            뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요 — 그 뒤에도 이 탭의 &ldquo;저장&rdquo;을 눌러야 최종 반영됩니다.
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <MarketDataUploadPanel
+              title="SGIS 생활권역 통계 (인구·연령)"
+              openUrl="https://sgis.kostat.go.kr/view/catchmentArea/main"
+              openLabel="SGIS 생활권역 열기"
+              instructions={`좌표(${form.lat.toFixed(6)}, ${form.lng.toFixed(6)})를 중심으로 반경 500m·1km를 각각 조회한 뒤, 다운로드한 파일을 올리거나 표를 복사해 붙여넣으세요.`}
+              specs={SGIS_FIELD_SPECS}
+              sourceType="sgis_life_area"
+              candidateCode={form.code}
+              coord={{ lat: form.lat, lng: form.lng }}
+              actorEmail={actor}
+              onApply={handleApplyMarketDataUpload}
+            />
+            <MarketDataUploadPanel
+              title="소상공인365 상권분석 (유동인구·직장·시설)"
+              openUrl="https://bigdata.sbiz.or.kr/"
+              openLabel="소상공인365 열기"
+              instructions="상세분석 → 반경 방식으로 후보지 위치를 클릭 후 500m·1km를 각각 입력해 조회하고, 리포트를 업로드하거나 표를 붙여넣으세요."
+              specs={SOSANGONGIN365_FIELD_SPECS}
+              sourceType="sosangongin365"
+              candidateCode={form.code}
+              coord={{ lat: form.lat, lng: form.lng }}
+              actorEmail={actor}
+              onApply={handleApplyMarketDataUpload}
+            />
+          </div>
+          {marketDataUploads.length > 0 && (
+            <div className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+              <strong>업로드 이력</strong>
+              <ul className="mt-1 list-inside list-disc">
+                {marketDataUploads.slice(0, 5).map((u) => (
+                  <li key={u.id}>
+                    {u.sourceType === "sgis_life_area" ? "SGIS 생활권역" : "소상공인365"} —{" "}
+                    {new Date(u.uploadedAt).toLocaleString("ko-KR")} · {u.fileName ?? "표 붙여넣기"} ·{" "}
+                    {u.extractedFields.filter((f) => f.applied).length}개 항목 반영
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>상권 인구통계 (반경 500m / 1km)</h3>
         <div className={`${gridClass} mt-4`}>
@@ -411,8 +512,62 @@ export function BasicInfoTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁 카운트 (반경 500m)</h3>
         <div className={`${gridClass} mt-4`}>
+          <TextField label="상권_기준연월" value={form.commercialDataYearMonth ?? ""} onChange={(v) => set("commercialDataYearMonth", v || null)} hint="예: 2026-07" />
+          <TextField label="업소수_기준시점" value={form.businessCountAsOfDate ?? ""} onChange={(v) => set("businessCountAsOfDate", v || null)} />
           <NumberField label="인허가 PC방업소수" value={form.licensedPcStores500m} onChange={(v) => set("licensedPcStores500m", v)} />
           <NumberField label="실영업 PC방업소수" value={form.operatingPcStores500m} onChange={(v) => set("operatingPcStores500m", v)} />
+        </div>
+      </section>
+
+      {/* 2026-08-24 (2단계) 추가 — 아래 세 섹션(유동인구 1km/직장인구/시설정보)은 소상공인365
+          상권분석에서만 채울 수 있는 참고자료다. calc.ts 어떤 함수도 이 값들을 읽지 않는다
+          (기존 V62 산식·계수 불변 원칙) — 위 500m 유동인구/경쟁카운트와 혼동하지 않도록 별도
+          섹션으로 분리했다. */}
+      <section className={sectionClass}>
+        <h3 className={sectionTitleClass}>유동인구 (반경 1km, 참고자료)</h3>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
+        <div className={`${gridClass} mt-4`}>
+          <NumberField label="유동인구 평균" value={form.floating1kmAvg} onChange={(v) => set("floating1kmAvg", v)} />
+          <NumberField label="유동인구 남" value={form.floating1kmMale} onChange={(v) => set("floating1kmMale", v)} />
+          <NumberField label="유동인구 여" value={form.floating1kmFemale} onChange={(v) => set("floating1kmFemale", v)} />
+          <NumberField label="유동 10대" value={form.floating1km_10s} onChange={(v) => set("floating1km_10s", v)} />
+          <NumberField label="유동 20대" value={form.floating1km_20s} onChange={(v) => set("floating1km_20s", v)} />
+          <NumberField label="유동 30대" value={form.floating1km_30s} onChange={(v) => set("floating1km_30s", v)} />
+          <NumberField label="유동 40대" value={form.floating1km_40s} onChange={(v) => set("floating1km_40s", v)} />
+          <NumberField label="유동 50대" value={form.floating1km_50s} onChange={(v) => set("floating1km_50s", v)} />
+          <NumberField label="유동 60대 이상" value={form.floating1km_60plus} onChange={(v) => set("floating1km_60plus", v)} />
+          <NumberField label="인허가 PC방업소수(1km)" value={form.licensedPcStores1km} onChange={(v) => set("licensedPcStores1km", v)} />
+          <NumberField label="실영업 PC방업소수(1km)" value={form.operatingPcStores1km} onChange={(v) => set("operatingPcStores1km", v)} />
+        </div>
+      </section>
+
+      <section className={sectionClass}>
+        <h3 className={sectionTitleClass}>직장인구 (참고자료)</h3>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
+        <div className={`${gridClass} mt-4`}>
+          <NumberField label="직장인구 전체(500m)" value={form.employ500Total} onChange={(v) => set("employ500Total", v)} />
+          <NumberField label="직장인구 남(500m)" value={form.employ500Male} onChange={(v) => set("employ500Male", v)} />
+          <NumberField label="직장인구 여(500m)" value={form.employ500Female} onChange={(v) => set("employ500Female", v)} />
+          <NumberField label="직장인구 전체(1km)" value={form.employ1kmTotal} onChange={(v) => set("employ1kmTotal", v)} />
+          <NumberField label="직장인구 남(1km)" value={form.employ1kmMale} onChange={(v) => set("employ1kmMale", v)} />
+          <NumberField label="직장인구 여(1km)" value={form.employ1kmFemale} onChange={(v) => set("employ1kmFemale", v)} />
+        </div>
+      </section>
+
+      <section className={sectionClass}>
+        <h3 className={sectionTitleClass}>시설정보 (참고자료)</h3>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
+        <div className={`${gridClass} mt-4`}>
+          <NumberField label="고등학생 수(500m)" value={form.facility500HighSchool} onChange={(v) => set("facility500HighSchool", v)} />
+          <NumberField label="중학생 수(500m)" value={form.facility500MiddleSchool} onChange={(v) => set("facility500MiddleSchool", v)} />
+          <NumberField label="초등학생 수(500m)" value={form.facility500ElementarySchool} onChange={(v) => set("facility500ElementarySchool", v)} />
+          <NumberField label="지하철 승하차(500m)" value={form.facility500SubwayRiders} onChange={(v) => set("facility500SubwayRiders", v)} />
+          <NumberField label="세대수(500m)" value={form.facility500Households} onChange={(v) => set("facility500Households", v)} />
+          <NumberField label="고등학생 수(1km)" value={form.facility1kmHighSchool} onChange={(v) => set("facility1kmHighSchool", v)} />
+          <NumberField label="중학생 수(1km)" value={form.facility1kmMiddleSchool} onChange={(v) => set("facility1kmMiddleSchool", v)} />
+          <NumberField label="초등학생 수(1km)" value={form.facility1kmElementarySchool} onChange={(v) => set("facility1kmElementarySchool", v)} />
+          <NumberField label="지하철 승하차(1km)" value={form.facility1kmSubwayRiders} onChange={(v) => set("facility1kmSubwayRiders", v)} />
+          <NumberField label="세대수(1km)" value={form.facility1kmHouseholds} onChange={(v) => set("facility1kmHouseholds", v)} />
         </div>
       </section>
 
