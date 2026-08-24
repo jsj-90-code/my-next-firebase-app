@@ -29,6 +29,15 @@ export type CandidateInput = {
   code: string; // 후보지코드, N001 형식
   name: string;
   address: string;
+  // 2026-08-24 추가 — 카카오 Local API 주소검색 결과(상권자료 자동수집 1단계). address는 여전히
+  // 사람이 입력하는 원본 텍스트 그대로 두고, 이 필드들은 그걸 지오코딩한 결과만 담는다(추정 좌표
+  // 생성 금지 — 매칭 실패 시 전부 null로 남는다). lat/lng가 모든 반경분석의 기준점이 된다.
+  lat: number | null;
+  lng: number | null;
+  roadAddress: string | null; // 정규화된 도로명주소
+  jibunAddress: string | null; // 지번주소
+  buildingName: string | null;
+  geocodedAt: number | null; // 조회일시 (지도에서 마커를 수동 보정한 경우도 갱신)
   reviewDate: string | null; // ISO date
   reviewStatus: ReviewStatus;
   expectedPcCount: number | null;
@@ -164,6 +173,13 @@ export type Competitor = {
   coupleZone: number | null;
   premiumZone: number | null; // 프리미엄존 개수(원본은 유/무이나 웹은 개수 입력 - 0보다 크면 "유"로 취급)
   premiumSpec: boolean | null;
+  // 2026-08-24 추가 — 카카오 Local API로 자동수집된 PC방 경쟁점 표시용(선택 필드, 기존 수동입력
+  // 경쟁점엔 없음/null). lat/lng은 자동수집분만 채워지며, V62 계산 어디에도 쓰이지 않는다
+  // (경쟁력 산식은 여전히 실사값 기반 필드만 읽는다).
+  source?: "kakao" | "manual" | null;
+  sourcePlaceId?: string | null; // 카카오 장소 id — 재수집 시 중복 방지 키
+  lat?: number | null;
+  lng?: number | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -485,3 +501,48 @@ export type ExistingStoreMonthlySales = {
 
 // 12_운영판정!A36:N200 검증 대시보드 한 행의 계산 결과 타입은 calc.ts의 ValidationInputRow /
 // ValidationComputedRow / ValidationSummaryResult를 그 자리에서 그대로 쓴다(중복 정의하지 않음).
+
+// ---- 상권자료 자동수집 1단계(2026-08-24) ----
+// "행정구역 참고자료" — SGIS 행정동 단위 공식 API로 완전자동 수집되는 값. 원본 요청사항의
+// 핵심 경고: 이 값들은 반경(500m/1km) 통계가 아니므로 pop500m/pop1km/age1km_* 같은 V62 계산
+// 입력칸에 절대 넣지 않는다. calc.ts의 어떤 함수도 이 컬렉션을 읽지 않는다 — 화면에 참고용으로만
+// 표시한다.
+export type AdminDongReference = {
+  candidateCode: string;
+  admCd: string; // 행정구역 코드
+  admName: string; // 행정구역명
+  totalPopulation: number | null;
+  malePopulation: number | null;
+  femalePopulation: number | null;
+  year: number | null; // 기준연도
+  fetchedAt: number; // 조회일시
+};
+
+// 경쟁점(PC방)이 아닌 수요거점 — 지하철역/버스정류장/학교/대학/아파트단지/대형상업시설/
+// 먹자상권/군부대/산업단지/관광유흥. PC방은 기존 Competitor 스키마(투자상태 워크플로가 이미
+// 있음)에 그대로 편입하고, 여기엔 넣지 않는다.
+export type DemandPointCategory =
+  | "지하철역"
+  | "버스정류장"
+  | "학교"
+  | "대학"
+  | "아파트단지"
+  | "대형상업시설"
+  | "먹자상권"
+  | "군부대"
+  | "산업단지"
+  | "관광유흥";
+
+export type DemandPoint = {
+  id: string;
+  candidateCode: string;
+  name: string;
+  category: DemandPointCategory;
+  lat: number;
+  lng: number;
+  distanceM: number; // 확정좌표 기준 직선거리(하버사인) — 도보거리는 이번 단계 범위 밖
+  source: "kakao"; // 자동수집 출처 (사실값 자동생성이 아니라 카카오 응답을 그대로 옮긴 것)
+  sourcePlaceId: string | null; // 카카오 장소 id — 재수집 시 중복 제거 키
+  fetchedAt: number;
+  confirmed: boolean; // 사용자가 화면에서 확인했는지
+};

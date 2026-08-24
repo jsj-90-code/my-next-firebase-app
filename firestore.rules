@@ -48,6 +48,23 @@ service cloud.firestore {
       allow read, write: if isCompanyAccount();
     }
 
+    // 상권자료 자동수집 1단계(2026-08-24) — 행정구역 참고자료(SGIS)와 수요거점(카카오)은
+    // /api/store-eval/collect-market-data가 firebase-admin(보안규칙 우회)으로 쓰고, 클라이언트는
+    // 읽기 전용 + 수요거점 확인표시만 한다.
+    match /storeEvalAdminDongReferences/{candidateId} {
+      allow read: if isCompanyAccount();
+      allow write: if false;
+    }
+
+    match /storeEvalDemandPoints/{pointId} {
+      allow read: if isCompanyAccount();
+      allow create, delete: if false;
+      // confirmed 필드만 클라이언트에서 갱신 가능하게 하려 했으나, Firestore 규칙에서
+      // "변경된 필드만" 제한하려면 diff 검사가 필요해 일단 전체 update를 허용하고 UI에서만
+      // confirmed 토글로 제한한다(내부 전용 도구이므로 위험도 낮음 - storeEvalCompetitors와 동일 수준).
+      allow update: if isCompanyAccount();
+    }
+
     match /storeEvalLocationEvaluations/{candidateId} {
       allow read, write: if isCompanyAccount();
     }

@@ -27,8 +27,10 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type {
+  AdminDongReference,
   CandidateInput,
   Competitor,
+  DemandPoint,
   EvaluationResult,
   ExistingStore,
   ExistingStoreMemberSnapshot,
@@ -40,6 +42,8 @@ import type {
 
 const CANDIDATES = "storeEvalCandidates";
 const COMPETITORS = "storeEvalCompetitors";
+const ADMIN_DONG_REFERENCES = "storeEvalAdminDongReferences";
+const DEMAND_POINTS = "storeEvalDemandPoints";
 const LOCATION_EVALS = "storeEvalLocationEvaluations";
 const RESULTS = "storeEvalResults";
 const SETTINGS = "storeEvalSettings";
@@ -156,6 +160,29 @@ export async function deleteCompetitor(id: string, actor: string | null): Promis
   const before = await getDoc(ref);
   await deleteDoc(ref);
   await writeAuditLog({ entityType: "competitor", entityId: id, action: "삭제", before: before.exists() ? before.data() : null, after: null, actor });
+}
+
+// ---------------------------------------------------------------------------
+// 상권자료 자동수집 1단계 — 행정구역 참고자료 / 수요거점 (읽기 전용, 쓰기는
+// /api/store-eval/collect-market-data가 firebase-admin으로 처리한다)
+// ---------------------------------------------------------------------------
+export async function getAdminDongReference(candidateCode: string): Promise<AdminDongReference | null> {
+  const snap = await getDoc(doc(requireDb(), ADMIN_DONG_REFERENCES, candidateCode));
+  return snap.exists() ? (snap.data() as AdminDongReference) : null;
+}
+
+export async function listDemandPoints(candidateCode: string): Promise<DemandPoint[]> {
+  const snap = await getDocs(query(collection(requireDb(), DEMAND_POINTS), where("candidateCode", "==", candidateCode)));
+  return snap.docs.map((d) => d.data() as DemandPoint);
+}
+
+/** 수요거점을 화면에서 확인했다는 표시만 남긴다(내용 자체는 자동수집 그대로 - 사람이 값을 고치지 않음). */
+export async function confirmDemandPoint(id: string): Promise<void> {
+  await setDoc(doc(requireDb(), DEMAND_POINTS, id), { confirmed: true }, { merge: true });
+}
+
+export async function deleteDemandPoint(id: string): Promise<void> {
+  await deleteDoc(doc(requireDb(), DEMAND_POINTS, id));
 }
 
 // ---------------------------------------------------------------------------

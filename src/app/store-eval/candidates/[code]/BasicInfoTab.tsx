@@ -3,7 +3,8 @@
 // 탭1 기본정보 - "2. 신규후보지 입력" 화면 요구사항.
 // CandidateInput 타입의 실제 필드 전부를 폼으로 구성한다 (필드를 빼거나 추가하지 않는다).
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   applyStandardOwnFacilityDefaults,
   computeLocationScoreFromFacts,
@@ -12,9 +13,26 @@ import {
   computeZoneComposition,
   GAME_ZONE_BONUS,
 } from "@/lib/storeEval/calc";
+import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { generateNextCandidateCode, getModelSettings, saveCandidate } from "@/lib/storeEval/store";
-import type { CandidateInput, GroundLevel, ModelSettings, ReviewStatus } from "@/lib/storeEval/types";
+import {
+  generateNextCandidateCode,
+  getAdminDongReference,
+  getCandidate,
+  getModelSettings,
+  listCompetitors,
+  listDemandPoints,
+  saveCandidate,
+} from "@/lib/storeEval/store";
+import type {
+  AdminDongReference,
+  CandidateInput,
+  Competitor,
+  DemandPoint,
+  GroundLevel,
+  ModelSettings,
+  ReviewStatus,
+} from "@/lib/storeEval/types";
 import {
   BooleanSelectField,
   ComputedField,
@@ -101,17 +119,100 @@ export function BasicInfoTab({
   actor: string | null;
   onSaved: (c: CandidateInput) => void;
 }) {
+  const { user } = useAuth();
   const [form, setForm] = useState<CandidateInput>(candidate);
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
 
+  // 상권자료 자동수집 1단계(2026-08-24) — 주소→좌표, 행정구역 참고자료, 경쟁점/수요거점 자동수집.
+  const [collecting, setCollecting] = useState(false);
+  const [collectMessage, setCollectMessage] = useState<string | null>(null);
+  const [collectError, setCollectError] = useState<string | null>(null);
+  const [nearbyWarnings, setNearbyWarnings] = useState<{ code: string; name: string }[]>([]);
+  const [adminDongRef, setAdminDongRef] = useState<AdminDongReference | null>(null);
+  const [demandPoints, setDemandPoints] = useState<DemandPoint[]>([]);
+  const [autoCompetitors, setAutoCompetitors] = useState<Competitor[]>([]);
+
+  const loadMarketData = useCallback(async (code: string) => {
+    const [adminDong, points, comps] = await Promise.all([getAdminDongReference(code), listDemandPoints(code), listCompetitors(code)]);
+    setAdminDongRef(adminDong);
+    setDemandPoints(points);
+    setAutoCompetitors(comps.filter((c) => c.source === "kakao"));
+  }, []);
+
   useEffect(() => {
     getModelSettings().then((s) => {
       if (s) setSettings(s);
     });
   }, []);
+
+  useEffect(() => {
+    if (candidate.code !== "new") loadMarketData(candidate.code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate.code]);
+
+  async function handleCollectMarketData() {
+    if (form.code === "new") {
+      setCollectError("먼저 저장한 뒤 이용할 수 있습니다.");
+      return;
+    }
+    if (!form.address.trim()) {
+      setCollectError("주소를 먼저 입력해주세요.");
+      return;
+    }
+    setCollecting(true);
+    setCollectError(null);
+    setCollectMessage(null);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch("/api/store-eval/collect-market-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ candidateCode: form.code }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "상권자료 수집에 실패했습니다.");
+      if (data.error) {
+        setCollectError(data.error);
+        return;
+      }
+      const fresh = await getCandidate(form.code);
+      if (fresh) {
+        setForm(fresh);
+        onSaved(fresh);
+      }
+      await loadMarketData(form.code);
+      setNearbyWarnings(data.nearbyDuplicateWarnings ?? []);
+      const parts = [`좌표 확인 완료`, `경쟁점(PC방) ${data.competitorsAdded}건`, `수요거점 ${data.demandPointsAdded}건 자동수집`];
+      if (data.adminDongReferenceStatus === "자동수집 완료") parts.push("행정구역 참고자료 수집 완료");
+      else if (data.adminDongReferenceError) parts.push(`행정구역 참고자료 실패: ${data.adminDongReferenceError}`);
+      setCollectMessage(parts.join(" · "));
+    } catch (err) {
+      setCollectError(err instanceof Error ? err.message : "상권자료 수집 중 오류가 발생했습니다.");
+    } finally {
+      setCollecting(false);
+    }
+  }
+
+  async function handleConfirmMapPosition(lat: number, lng: number) {
+    const updated = { ...form, lat, lng, geocodedAt: Date.now() };
+    setForm(updated);
+    await saveCandidate(updated, actor);
+    onSaved(updated);
+    setCollectMessage("지도에서 수정한 위치로 좌표를 확정했습니다.");
+  }
+
+  const mapPoints: MapPoint[] = useMemo(
+    () => [
+      ...demandPoints.map((p) => ({ id: p.id, name: p.name, lat: p.lat, lng: p.lng, category: p.category })),
+      ...autoCompetitors
+        .filter((c): c is Competitor & { lat: number; lng: number } => c.lat != null && c.lng != null)
+        .map((c) => ({ id: c.id, name: c.name, lat: c.lat, lng: c.lng, category: "PC방(경쟁점)" as const })),
+    ],
+    [demandPoints, autoCompetitors],
+  );
 
   const computedScores = useMemo(() => {
     // 비어있는 자사 시설 입력값은 회사 표준 존 구성으로 계산한다(evaluate.ts와 동일 규칙 —
@@ -203,7 +304,66 @@ export function BasicInfoTab({
           <NumberField label="상권데이터기준연도" value={form.demographicsYear} onChange={(v) => set("demographicsYear", v)} step={1} />
           <NumberField label="예상오픈월 (1~12)" value={form.plannedOpenMonth} onChange={(v) => set("plannedOpenMonth", v)} step={1} hint="AA 기준매출(오픈월부터 10개월 평균) 계산에 사용" />
         </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 print:hidden">
+          <button
+            type="button"
+            disabled={collecting || form.code === "new"}
+            onClick={handleCollectMarketData}
+            title={form.code === "new" ? "먼저 저장한 뒤 이용할 수 있습니다" : undefined}
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            {collecting ? "수집 중..." : "상권자료 수집"}
+          </button>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            주소로 좌표 확인 + 행정구역 참고자료 + 주변 경쟁점(PC방)·수요거점을 자동으로 모읍니다.
+          </span>
+        </div>
+        {collectError && (
+          <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{collectError}</p>
+        )}
+        {collectMessage && (
+          <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+            {collectMessage}
+          </p>
+        )}
+        {nearbyWarnings.length > 0 && (
+          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            중복 후보지 가능성: {nearbyWarnings.map((w) => `${w.name || w.code}(${w.code})`).join(", ")}
+          </div>
+        )}
       </section>
+
+      {form.lat != null && form.lng != null && (
+        <section className={sectionClass}>
+          <h3 className={sectionTitleClass}>좌표 · 지도 (상권자료 자동수집)</h3>
+          <div className={`${gridClass} mt-4`}>
+            <FieldReadonly label="도로명주소" value={form.roadAddress ?? "-"} />
+            <FieldReadonly label="지번주소" value={form.jibunAddress ?? "-"} />
+            <FieldReadonly label="건물명" value={form.buildingName ?? "-"} />
+            <FieldReadonly label="좌표" value={`${form.lat.toFixed(6)}, ${form.lng.toFixed(6)}`} />
+          </div>
+          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+            마커가 실제 출입구와 다르면 지도에서 드래그해 보정한 뒤 확정하세요 — 확정한 좌표가 모든 반경분석의 기준점이 됩니다.
+          </p>
+          <div className="mt-3">
+            <CandidateMap lat={form.lat} lng={form.lng} points={mapPoints} onConfirmPosition={handleConfirmMapPosition} />
+          </div>
+          {adminDongRef && (
+            <div className="mt-4 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+              <strong>행정구역 참고자료</strong>({adminDongRef.admName}, {adminDongRef.year ?? "-"}년 기준) — 총인구{" "}
+              {adminDongRef.totalPopulation?.toLocaleString() ?? "-"}명. 이 값은 행정동 단위이며, 아래 &ldquo;반경
+              500m/1km&rdquo; 계산 입력값과는 다른 자료이므로 그대로 옮겨 쓰지 않습니다.
+            </div>
+          )}
+          {(demandPoints.length > 0 || autoCompetitors.length > 0) && (
+            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+              자동수집: 경쟁점(PC방) {autoCompetitors.length}건 · 수요거점 {demandPoints.length}건 — 경쟁점 탭에서 상세 확인/실사 상태 갱신이
+              필요합니다. 군부대·산업단지·관광유흥·먹자상권은 이번 단계에서 자동수집 대상이 아닙니다.
+            </p>
+          )}
+        </section>
+      )}
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>상권 인구통계 (반경 500m / 1km)</h3>
