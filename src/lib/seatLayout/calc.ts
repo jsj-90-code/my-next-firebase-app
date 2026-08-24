@@ -403,8 +403,9 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
       if (!value || SKIP_ORDER_VALUES.has(value)) return;
       map.set(value, (map.get(value) ?? 0) + qty);
     });
-    // 카운터 PC는 모니터암(아센암/관절암) 없이 모니터 스탠드를 쓰기 때문에 모니터암 집계에서는 뺀다.
-    if (f.id !== "monitorArm") {
+    // 카운터 PC는 모니터암(아센암/관절암) 없이 모니터 스탠드를 쓰고, 직원이 헤드셋도 착용하지
+    // 않으므로 모니터암/헤드셋 집계에서는 뺀다.
+    if (f.id !== "monitorArm" && f.id !== "headset") {
       const counterValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
       if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
         map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
