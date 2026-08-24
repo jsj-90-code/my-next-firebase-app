@@ -508,26 +508,29 @@ export function computeChairSummary(zones: DeskZone[]): OrderSummaryRow[] {
 export type JangpadRow = { name: string; qty: number; total: number };
 
 // 장패드 수량 계산 (책상사이즈/존유형 기준, 여분 +2 항상 포함)
+// "책상만 설치" 존은 PC/모니터 없이 책상만 있는 존이라 장패드(PC 앞에 까는 패드)도 필요 없어 제외한다.
 export function computeJangpadTable(deskZones: DeskZone[]): JangpadRow[] {
   let m800B = 0;
   let m800R = 0;
   let m830B = 0;
   let m890B = 0;
 
-  deskZones.forEach((z) => {
-    const isCouple = z.typeKey === "couple_seat" || z.typeKey === "couple_room";
-    getZoneSizeEntries(z).forEach((entry) => {
-      const qty = Number(entry.qty) || 0;
-      if (entry.deskSize === "820mm") {
-        if (isCouple) m800R += qty;
-        else m800B += qty;
-      } else if (entry.deskSize === "850mm") {
-        m830B += qty;
-      } else if (["910mm", "950mm", "1000mm"].includes(entry.deskSize)) {
-        m890B += qty;
-      }
+  deskZones
+    .filter((z) => z.typeKey !== "desk_only")
+    .forEach((z) => {
+      const isCouple = z.typeKey === "couple_seat" || z.typeKey === "couple_room";
+      getZoneSizeEntries(z).forEach((entry) => {
+        const qty = Number(entry.qty) || 0;
+        if (entry.deskSize === "820mm") {
+          if (isCouple) m800R += qty;
+          else m800B += qty;
+        } else if (entry.deskSize === "850mm") {
+          m830B += qty;
+        } else if (["910mm", "950mm", "1000mm"].includes(entry.deskSize)) {
+          m890B += qty;
+        }
+      });
     });
-  });
 
   const rows: JangpadRow[] = [
     { name: "IS-M800_B(신규)", qty: m800B, total: 0 },
