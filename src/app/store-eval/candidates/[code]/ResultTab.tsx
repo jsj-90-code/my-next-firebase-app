@@ -306,7 +306,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className={sectionTitleClass}>매출 예측 — V61/V62 (인구·이용률 기반)</h3>
+          <h3 className={sectionTitleClass}>매출 예측 (V62)</h3>
           <span
             className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
               result.v61IsFallback
@@ -323,13 +323,25 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             그대로 쓰지 말고, 기존 가맹점 학습 데이터가 채워진 뒤 다시 계산해주세요.
           </p>
         )}
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ResultCard label="V61 기본예측" value={formatWon(result.v61Baseline)} hint={result.v61ModelLabel} />
-          <ResultCard label="V62 보정률" value={formatPercent(result.v62Rate)} />
+        {/* 2026-08-25 — V61 기본예측/V62 보정률/보수판단/상한참고를 V62 최종예상월매출과 나란히
+            큰 카드로 늘어놓으면 실제로 쓰는 값(V62 최종예상월매출)이 어느 건지 헷갈린다는 지적
+            (사용자 확인: "저 데이터를 쓰질 않으니까... 값 여러개 보여주면 오히려 혼동옴"). 완전히
+            숨기면 나중에 V62 값이 이상해 보일 때 V61과 비교해서 원인을 못 찾게 되므로, 지우지
+            않고 접이식으로만 옮긴다. */}
+        <div className="mt-4">
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
-          <ResultCard label="보수판단매출 (85%)" value={formatWon(result.conservativeSales)} />
-          <ResultCard label="상한참고매출 (115%)" value={formatWon(result.upperSales)} />
         </div>
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+            세부 계산값 보기 (V61 기본예측 · V62 보정률 · 보수/상한 참고범위)
+          </summary>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <ResultCard label="V61 기본예측" value={formatWon(result.v61Baseline)} hint={result.v61ModelLabel} />
+            <ResultCard label="V62 보정률" value={formatPercent(result.v62Rate)} />
+            <ResultCard label="보수판단매출 (85%)" value={formatWon(result.conservativeSales)} />
+            <ResultCard label="상한참고매출 (115%)" value={formatWon(result.upperSales)} />
+          </div>
+        </details>
       </section>
 
       <section className={sectionClass}>
