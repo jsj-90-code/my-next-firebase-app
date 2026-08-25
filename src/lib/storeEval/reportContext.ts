@@ -7,7 +7,18 @@
 import { formatNumber, formatPercent, formatScore, formatWon } from "./format";
 import type { CandidateInput, Competitor, EvaluationResult } from "./types";
 
-export type DaouReportContextCandidate = Pick<CandidateInput, "name" | "address" | "pop500m" | "floating500Avg">;
+export type DaouReportContextCandidate = Pick<
+  CandidateInput,
+  | "name"
+  | "address"
+  | "pop500m"
+  | "floating500Avg"
+  | "facility500SubwayRiders"
+  | "facility500Households"
+  | "facility500HighSchool"
+  | "facility500MiddleSchool"
+  | "facility500ElementarySchool"
+>;
 export type DaouReportContextCompetitor = Pick<Competitor, "name" | "distanceM" | "investigationStatus">;
 
 export type DaouReportContextInput = {
@@ -18,25 +29,51 @@ export type DaouReportContextInput = {
 
 // 2026-08-25 — 경쟁력격차(computeCompetitivenessGap)는 자사점수÷경쟁점평균점수 "비율"이라
 // 1.0이 동률 기준점이다(음수/양수 개념이 아님). 원점수(4.28 vs 2.53 같은 값)를 그대로 주면
-// "다른 사람이 봤을 때 판단이 안 된다"는 지적(2026-08-25)이 있어, 우위/동등/열세 3단계 라벨로
-// 바꿔서 준다 — 새 계산이 아니라 이미 있는 비율값을 사람이 읽기 쉬운 말로 바꾸는 것뿐이다.
-// 동등 구간(0.95~1.05)은 demandCaptureTable의 1.0 경계(model-spec 08_계산기준)를 기준으로 ±5%.
+// "다른 사람이 봤을 때 판단이 안 된다"는 지적(2026-08-25)이 있어 라벨로 바꿔서 준다 — 새 계산이
+// 아니라 이미 있는 비율값을 사람이 읽기 쉬운 말로 바꾸는 것뿐이다.
+// 2026-08-25 — "매우우위/우위/열세처럼 더 구체적으로 구분해달라"는 요청으로 3단계→5단계로 확장.
+// 임의의 새 기준을 만들지 않고, 경쟁력격차가 실제로 쓰이는 demandCaptureTable(08_계산기준)의
+// 기존 경계값(0.8/1.0/1.3/1.7)을 그대로 재사용한다 — 이 표가 이미 "이 정도 격차면 확보율이
+// 이만큼 오른다"고 구분해둔 지점이라 자의적이지 않다. settings에서 이 표를 바꾸면 이 라벨
+// 경계는 자동으로 따라가지 않는다(화면표시 전용 하드코딩) — 표가 바뀌면 같이 검토 필요.
 function competitivenessLabel(gap: number | null): string | null {
   if (gap == null) return null;
-  if (gap >= 1.05) return "우위";
-  if (gap <= 0.95) return "열세";
-  return "동등";
+  if (gap >= 1.7) return "매우우위";
+  if (gap >= 1.3) return "우위";
+  if (gap >= 1.0) return "동등";
+  if (gap >= 0.8) return "열세";
+  return "매우열세";
 }
 
 export function buildDaouReportContext({ candidate, competitors, result }: DaouReportContextInput): string {
   const lines: string[] = [];
 
+  // 2026-08-25 — [후보지] 줄은 AI가 상황을 파악하는 내부 참고용일 뿐, [상권] 섹션 문장에는
+  // 주소/이름을 다시 쓰지 말라고 프롬프트에 별도 지시한다(다우오피스 게시글에 이미 주소가
+  // 적혀 있어 중복이라는 지적, 2026-08-25).
   lines.push(`[후보지] ${candidate.name || "(이름 없음)"} / ${candidate.address || "(주소 없음)"}`);
 
   // 2026-08-25 — 상권등급(SS/S/A/B)은 다우오피스 보고서에 언급하지 않는다(사용자 확인).
+  // 반경500m 지하철승하차/세대수/학생수(고+중+초)는 소상공인365에서 이미 뽑아둔 값인데 있을
+  // 때만 "특이사항"으로 붙인다(0/null이면 노이즈만 되니 생략) - 상권 문장에 주소 대신 채울
+  // 실질적인 내용을 달라는 요청(2026-08-25) 반영.
+  const specialNotes: string[] = [];
+  if (candidate.facility500SubwayRiders) {
+    specialNotes.push(`지하철 승하차인구(500m) 약 ${formatNumber(candidate.facility500SubwayRiders)}명`);
+  }
+  if (candidate.facility500Households) {
+    specialNotes.push(`세대수(500m) 약 ${formatNumber(candidate.facility500Households)}세대`);
+  }
+  const studentTotal =
+    (candidate.facility500HighSchool ?? 0) + (candidate.facility500MiddleSchool ?? 0) + (candidate.facility500ElementarySchool ?? 0);
+  if (studentTotal > 0) {
+    specialNotes.push(`반경500m 학생수(초중고 합) 약 ${formatNumber(studentTotal)}명`);
+  }
+
   lines.push(
     `[상권 데이터] 반경500m 거주인구 ${formatNumber(candidate.pop500m)}명, 반경500m 유동인구(평균) ${formatNumber(candidate.floating500Avg)}명, ` +
-      `상권수요 ${formatNumber(result.marketDemand)}, 상권성격 ${result.marketCharacter ?? "-"}`,
+      `상권수요 ${formatNumber(result.marketDemand)}, 상권성격 ${result.marketCharacter ?? "-"}` +
+      (specialNotes.length > 0 ? `, 특이사항: ${specialNotes.join(", ")}` : ""),
   );
 
   const investigated = competitors.filter((c) => c.investigationStatus !== "경쟁점없음");

@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { buildDaouReportContext } from "./reportContext";
+import { buildDaouReportContext, type DaouReportContextCandidate } from "./reportContext";
 import type { EvaluationResult } from "./types";
+
+function baseCandidate(overrides: Partial<DaouReportContextCandidate> = {}): DaouReportContextCandidate {
+  return {
+    name: "후보1",
+    address: "주소1",
+    pop500m: 1000,
+    floating500Avg: 1000,
+    facility500SubwayRiders: null,
+    facility500Households: null,
+    facility500HighSchool: null,
+    facility500MiddleSchool: null,
+    facility500ElementarySchool: null,
+    ...overrides,
+  };
+}
 
 function baseResult(overrides: Partial<EvaluationResult> = {}): EvaluationResult {
   return {
@@ -53,7 +68,7 @@ function baseResult(overrides: Partial<EvaluationResult> = {}): EvaluationResult
 describe("buildDaouReportContext", () => {
   it("상권등급을 언급하지 않는다", () => {
     const text = buildDaouReportContext({
-      candidate: { name: "하안금당사거리", address: "경기 광명시 하안동 200-2", pop500m: 24390, floating500Avg: 64229 },
+      candidate: baseCandidate({ name: "하안금당사거리", address: "경기 광명시 하안동 200-2", pop500m: 24390, floating500Avg: 64229 }),
       competitors: [{ name: "메타피씨방", distanceM: 420, investigationStatus: "조사완료" }],
       result: baseResult(),
     });
@@ -61,36 +76,27 @@ describe("buildDaouReportContext", () => {
     expect(text).not.toContain("상권등급 A");
   });
 
-  it("경쟁력격차(비율)를 원점수 대신 우위/동등/열세 라벨로 바꾼다 (경쟁점이 있을 때)", () => {
+  it("경쟁력격차(비율)를 원점수 대신 5단계 라벨로 바꾼다 (경쟁점이 있을 때)", () => {
     const oneCompetitor = [{ name: "경쟁점A", distanceM: 200, investigationStatus: "조사완료" as const }];
+    const labelFor = (gap: number) =>
+      buildDaouReportContext({ candidate: baseCandidate(), competitors: oneCompetitor, result: baseResult({ competitivenessGap: gap }) });
 
-    const superior = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
-      competitors: oneCompetitor,
-      result: baseResult({ competitivenessGap: 1.69 }),
-    });
-    expect(superior).toContain("우위");
+    expect(labelFor(2.2)).toContain("매우우위");
+    expect(labelFor(1.5)).toContain("우위");
+    expect(labelFor(1.5)).not.toContain("매우우위");
+    expect(labelFor(1.0)).toContain("동등");
+    expect(labelFor(0.9)).toContain("열세");
+    expect(labelFor(0.9)).not.toContain("매우열세");
+    expect(labelFor(0.5)).toContain("매우열세");
+
+    const superior = labelFor(1.69);
     expect(superior).not.toContain("4.28");
     expect(superior).not.toContain("2.53");
-
-    const equal = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
-      competitors: oneCompetitor,
-      result: baseResult({ competitivenessGap: 1.0 }),
-    });
-    expect(equal).toContain("동등");
-
-    const inferior = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
-      competitors: oneCompetitor,
-      result: baseResult({ competitivenessGap: 0.5 }),
-    });
-    expect(inferior).toContain("열세");
   });
 
   it("예상 수요확보율을 백분율로 포함한다", () => {
     const text = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
+      candidate: baseCandidate(),
       competitors: [],
       result: baseResult({ demandCaptureRate: 0.6 }),
     });
@@ -99,7 +105,7 @@ describe("buildDaouReportContext", () => {
 
   it("V62 매출예측 근거로 상권수요·자사확보예상수요를 포함한다", () => {
     const text = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
+      candidate: baseCandidate(),
       competitors: [],
       result: baseResult({ marketDemand: 5000, expectedOwnDemand: 3200, v62Final: 63_000_000 }),
     });
@@ -108,9 +114,28 @@ describe("buildDaouReportContext", () => {
     expect(text).toContain("63,000,000원");
   });
 
+  it("반경500m 특이사항(지하철·세대수·학생수)이 있으면 포함하고, 없으면 생략한다", () => {
+    const withNotes = buildDaouReportContext({
+      candidate: baseCandidate({ facility500SubwayRiders: 30693, facility500Households: 12073, facility500HighSchool: 0, facility500MiddleSchool: 952, facility500ElementarySchool: 787 }),
+      competitors: [],
+      result: baseResult(),
+    });
+    expect(withNotes).toContain("특이사항");
+    expect(withNotes).toContain("지하철 승하차인구(500m) 약 30,693명");
+    expect(withNotes).toContain("세대수(500m) 약 12,073세대");
+    expect(withNotes).toContain("반경500m 학생수(초중고 합) 약 1,739명");
+
+    const withoutNotes = buildDaouReportContext({
+      candidate: baseCandidate(),
+      competitors: [],
+      result: baseResult(),
+    });
+    expect(withoutNotes).not.toContain("특이사항");
+  });
+
   it("보수판단매출/상한참고매출을 언급하지 않는다", () => {
     const text = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
+      candidate: baseCandidate(),
       competitors: [],
       result: baseResult(),
     });
@@ -118,9 +143,9 @@ describe("buildDaouReportContext", () => {
     expect(text).not.toContain("상한참고");
   });
 
-  it("경쟁점이 없으면 우위/동등/열세 라벨을 붙이지 않는다 (gap=1.0 원본 기본값과 모순 방지)", () => {
+  it("경쟁점이 없으면 경쟁력 라벨을 붙이지 않는다 (gap=1.0 원본 기본값과 모순 방지)", () => {
     const text = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
+      candidate: baseCandidate(),
       competitors: [],
       result: baseResult({ competitivenessGap: 1.0, demandCaptureRate: 0.55 }),
     });
@@ -132,7 +157,7 @@ describe("buildDaouReportContext", () => {
 
   it("경쟁점없음으로 처리된 경쟁점은 목록에서 제외한다", () => {
     const text = buildDaouReportContext({
-      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
+      candidate: baseCandidate(),
       competitors: [{ name: "제외대상", distanceM: 100, investigationStatus: "경쟁점없음" }],
       result: baseResult(),
     });
