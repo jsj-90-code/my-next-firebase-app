@@ -59,7 +59,10 @@ const ERROR_CAUSE_LABELS: Record<ErrorCauseCode, string> = {
   access_overestimated: "접근성 과대평가(추정)",
   demand_share_overestimated: "수요확보율 과대평가(추정)",
   demand_conversion_underestimated: "수요전환율 과소평가(추정)",
-  not_verifiable: "검증 불가(실적 없음)",
+  // 실제로는 항상 describeNotVerifiableReason()으로 대체 표시되어 이 값 자체는 화면에 안 뜨지만
+  // (line 262 참고), 혹시 모를 다른 참조를 위해 "실적 없음"으로 단정하지 않는 중립적 문구로 둔다
+  // — 검단사거리점처럼 실제매출은 있는데 예측만 안 나오는 경우도 이 코드로 분류되기 때문이다.
+  not_verifiable: "검증 불가(사유 확인 필요)",
 };
 
 const OPERATIONAL_STATUS_LABELS: Record<OperationalStatus, string> = {
@@ -567,6 +570,12 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
               <td className="px-3 py-2">{formatPercent(r.absoluteErrorPct)}</td>
               <td className="px-3 py-2">
                 <AccuracyBadge absoluteErrorPct={r.absoluteErrorPct} />
+                {/* 2026-08-25 추가 — 실제매출은 있는데 예측이 안 나온 매장(검단사거리점 등)이
+                    "실적 없음"으로 오인되지 않도록, 이미 계산된 사유(describeNotVerifiableReason)를
+                    바로 옆에 보여준다. 자세히 보기의 전문가용 표에만 있던 걸 여기로도 노출. */}
+                {r.absoluteErrorPct == null && r.errorCause === "not_verifiable" && (
+                  <span className="ml-1.5 text-[11px] text-zinc-400">({describeNotVerifiableReason(r)})</span>
+                )}
               </td>
             </tr>
           ))}
