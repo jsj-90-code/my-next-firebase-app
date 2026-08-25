@@ -42,7 +42,15 @@ import {
   predictEmpiricalRevenue,
   toEmpiricalSample,
 } from "./calc";
-import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, LocationEvaluation, ModelSettings } from "./types";
+import type {
+  CandidateInput,
+  Competitor,
+  EvaluationResult,
+  ExistingStore,
+  LocationEvaluation,
+  ModelSettings,
+  V61TrainedModelExplain,
+} from "./types";
 
 export type EvaluateContext = {
   candidate: CandidateInput;
@@ -97,15 +105,17 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
 
   let v61Baseline: number | null = null;
   let v61IsFallback = true;
+  let v61TrainedModelExplain: V61TrainedModelExplain | null = null;
   if (trainedModel && c.expectedPcCount && c.hourlyRate != null && expectedOwnDemand != null && ownCompetitivenessScore != null) {
+    const featuresRaw = empiricalFeaturesFor({
+      hourlyRate: c.hourlyRate,
+      ownDemand: expectedOwnDemand,
+      pcCount: c.expectedPcCount,
+      competitivenessScore: ownCompetitivenessScore,
+    });
     const prediction = predictEmpiricalRevenue(
       trainedModel,
-      empiricalFeaturesFor({
-        hourlyRate: c.hourlyRate,
-        ownDemand: expectedOwnDemand,
-        pcCount: c.expectedPcCount,
-        competitivenessScore: ownCompetitivenessScore,
-      }),
+      featuresRaw,
       c.expectedPcCount,
       settings.v61Training.ridgeWeight,
       settings.v61Training.baselineWeight,
@@ -113,6 +123,24 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     if (prediction) {
       v61Baseline = prediction.monthlyRevenue;
       v61IsFallback = false;
+      v61TrainedModelExplain = {
+        sampleCount: trainedModel.sampleCount,
+        featureLabels: ["시간당요금", "자사수요/PC대수", "경쟁력점수"],
+        featureRealValues: [c.hourlyRate, expectedOwnDemand / c.expectedPcCount, ownCompetitivenessScore],
+        featureModelValues: featuresRaw,
+        featureMeans: trainedModel.featureMeans,
+        featureSds: trainedModel.featureSds,
+        featureZValues: prediction.explain.z,
+        coefficients: trainedModel.coefficients,
+        yMean: trainedModel.yMean,
+        logPerPc: prediction.explain.logPerPc,
+        ridgeRevenue: prediction.explain.ridgeRevenue,
+        perPcMedian: trainedModel.perPcMedian,
+        baselineRevenue: prediction.explain.baselineRevenue,
+        ridgeWeight: settings.v61Training.ridgeWeight,
+        baselineWeight: settings.v61Training.baselineWeight,
+        pcCount: c.expectedPcCount,
+      };
     }
   }
   if (v61Baseline == null) {
@@ -180,6 +208,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     v61ModelLabel: v61IsFallback ? "임시 근사치·검증 전" : "V61 실측 학습모형",
     v61TrainingSampleCount: trainingStores.length,
     v61ValidationMeanAbsError: null, // 후보지 평가 화면에서는 채우지 않는다 - 검증 화면(validation/page.tsx)에서 별도 계산
+    v61TrainedModelExplain,
     locationScore,
     inflowRestriction,
     v62Rate,

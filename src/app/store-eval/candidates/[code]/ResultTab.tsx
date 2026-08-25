@@ -19,7 +19,7 @@ import {
   saveEvaluationResult,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
-import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelSettings } from "@/lib/storeEval/types";
+import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { sectionClass, sectionTitleClass } from "./formFields";
 
@@ -48,6 +48,100 @@ function ResultCard({ label, value, emphasis, hint }: { label: string; value: st
       <p className={`text-xs ${emphasis ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-500 dark:text-zinc-400"}`}>{label}</p>
       <p className={`mt-1 font-semibold ${emphasis ? "text-2xl" : "text-lg"}`}>{value}</p>
       {hint && <p className={`mt-1 text-[11px] ${emphasis ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-400"}`}>{hint}</p>}
+    </div>
+  );
+}
+
+// 2026-08-25 추가 — "적용된 산식과 계수 보기"가 학습표본 부족 때만 쓰는 폴백 회귀식만 설명하고
+// 있었는데, 2026-08-20부터 학습표본이 충분하면(현재 대부분) 이 학습모형을 우선 쓰도록 바뀐 뒤에도
+// 그대로 방치돼 있었다 - "지금 실제로 쓴 산식"과 화면 설명이 어긋나 있었다는 뜻. 사용자가 "예상
+// 매출이 어떻게 나온건지 이해가 안 된다"고 확인해서, 실제 계산에 쓰인 숫자를 그대로 따라가며
+// 보여주는 단계별 표로 바꾼다(evaluate.ts가 predictEmpiricalRevenue의 중간값을 그대로 넘겨준 것 -
+// 새 계산 없음).
+// 순서가 evaluate.ts의 featureLabels(["시간당요금", "자사수요/PC대수", "경쟁력점수"])와 반드시
+// 일치해야 한다 - 표시 단위(원/명/점)를 요인별로 다르게 포맷하기 위한 것뿐, 값 자체는 그대로다.
+const FEATURE_REAL_VALUE_FORMATTERS = [
+  (v: number) => formatWon(v),
+  (v: number) => `${formatScore(v, 1)}명`,
+  (v: number) => `${formatScore(v, 2)}점`,
+];
+
+function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61TrainedModelExplain; v61Baseline: number | null }) {
+  const rows = explain.featureLabels.map((label, i) => ({
+    label,
+    realValue: explain.featureRealValues[i],
+    formattedRealValue: (FEATURE_REAL_VALUE_FORMATTERS[i] ?? ((v: number) => formatScore(v, 2)))(explain.featureRealValues[i]),
+    modelValue: explain.featureModelValues[i],
+    isLogTransformed: explain.featureRealValues[i] !== explain.featureModelValues[i],
+    mean: explain.featureMeans[i],
+    sd: explain.featureSds[i],
+    z: explain.featureZValues[i],
+    coef: explain.coefficients[i],
+    contribution: explain.featureZValues[i] * explain.coefficients[i],
+  }));
+  const contributionSum = rows.reduce((s, r) => s + r.contribution, 0);
+  const ridgePerPc = Math.exp(explain.logPerPc);
+
+  return (
+    <div>
+      <p className="font-semibold text-zinc-800 dark:text-zinc-200">§4.1 V61 기본예측(학습모형)</p>
+      <p className="mt-1">
+        기존 가맹점 {explain.sampleCount}곳의 실제 매출 데이터로 학습한 통계모형(비음수 릿지회귀)입니다. 이 후보지의 조건 3가지를 넣으면
+        아래 표처럼 계산됩니다.
+      </p>
+
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[560px] border-collapse text-[11px]">
+          <thead>
+            <tr className="border-b border-zinc-200 text-left text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+              <th className="py-1 pr-2">요인</th>
+              <th className="py-1 pr-2">이 후보지 값</th>
+              <th className="py-1 pr-2">학습평균</th>
+              <th className="py-1 pr-2">학습표준편차</th>
+              <th className="py-1 pr-2">표준화값(z)</th>
+              <th className="py-1 pr-2">학습된 가중치</th>
+              <th className="py-1">기여도(z×가중치)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label} className="border-b border-zinc-100 dark:border-zinc-900">
+                <td className="py-1 pr-2 font-medium text-zinc-700 dark:text-zinc-300">
+                  {r.label}
+                  {r.isLogTransformed && <span className="ml-1 text-zinc-400">(로그값 기준)</span>}
+                </td>
+                <td className="py-1 pr-2">
+                  {r.formattedRealValue}
+                  {r.isLogTransformed && <span className="ml-1 text-zinc-400">→ log {formatScore(r.modelValue, 3)}</span>}
+                </td>
+                <td className="py-1 pr-2">{formatScore(r.mean, 3)}</td>
+                <td className="py-1 pr-2">{formatScore(r.sd, 3)}</td>
+                <td className="py-1 pr-2">{formatScore(r.z, 3)}</td>
+                <td className="py-1 pr-2">{formatScore(r.coef, 3)}</td>
+                <td className="py-1">{formatScore(r.contribution, 3)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="mt-2">
+        기여도 합계 {formatScore(contributionSum, 3)} + 학습평균(로그 대당월매출) {formatScore(explain.yMean, 3)} = 로그 대당월매출{" "}
+        {formatScore(explain.logPerPc, 3)}
+        <br />
+        exp({formatScore(explain.logPerPc, 3)}) = 회귀예측 대당월매출 {formatWon(ridgePerPc)} × 예상PC대수 {formatNumber(explain.pcCount)}대 ={" "}
+        <b>회귀예측매출 {formatWon(explain.ridgeRevenue)}</b>
+        <br />
+        기준모형(학습표본 대당월매출 중앙값) {formatWon(explain.perPcMedian)} × 예상PC대수 {formatNumber(explain.pcCount)}대 ={" "}
+        <b>기준모형매출 {formatWon(explain.baselineRevenue)}</b>
+        <br />
+        V61 기본예측 = 회귀예측매출×{formatPercent(explain.ridgeWeight, 0)} + 기준모형매출×{formatPercent(explain.baselineWeight, 0)} ={" "}
+        <b>{formatWon(v61Baseline)}</b>
+      </p>
+      <p className="mt-1 text-[11px] text-zinc-400">
+        학습된 가중치(계수)는 항상 0 이상입니다(비음수 릿지회귀) — 세 조건 중 어느 것도 매출을 깎는 방향으로 작용하지 않고, 학습평균보다
+        낫다는 요인만 매출을 끌어올립니다. 학습표본이 바뀌면(가맹점 추가·갱신) 평균·표준편차·가중치도 같이 바뀝니다.
+      </p>
     </div>
   );
 }
@@ -487,21 +581,25 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       <details className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950 print:hidden">
         <summary className="cursor-pointer font-medium text-zinc-700 dark:text-zinc-300">적용된 산식과 계수 보기</summary>
         <div className="mt-4 flex flex-col gap-4 text-xs leading-6 text-zinc-600 dark:text-zinc-400">
-          <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-200">§4.1 V61 기본예측(폴백 회귀식)</p>
-            <p>
-              자사수요_per_PC = (상권수요 × 경쟁력격차) / (예상PC대수 × 경쟁력격차 + 경쟁IP)
-              <br />
-              선형값 = {settingsUsed.v61Fallback.intercept.toLocaleString("ko-KR")} + {settingsUsed.v61Fallback.hourlyRateCoef.toLocaleString("ko-KR")} × 시간당요금 +{" "}
-              {settingsUsed.v61Fallback.demandPerPcCoef.toLocaleString("ko-KR")} × 자사수요_per_PC + {settingsUsed.v61Fallback.competitivenessCoef.toLocaleString("ko-KR")} × 자사_경쟁력점수
-              <br />
-              V61(폴백) = 예상PC대수 × MAX(0, 선형값)
-            </p>
-            <p className="mt-1 text-[11px] text-zinc-400">
-              07_신규후보지!BW(예측_월매출)에 Apps Script 계산값이 있으면 그 값을 우선 사용해야 하지만, 웹 구현에서는 항상 이 폴백식만
-              사용합니다(v61IsFallback = true). docs/data-issues.md #1 참고.
-            </p>
-          </div>
+          {result.v61IsFallback ? (
+            <div>
+              <p className="font-semibold text-zinc-800 dark:text-zinc-200">§4.1 V61 기본예측(폴백 회귀식)</p>
+              <p>
+                자사수요_per_PC = (상권수요 × 경쟁력격차) / (예상PC대수 × 경쟁력격차 + 경쟁IP)
+                <br />
+                선형값 = {settingsUsed.v61Fallback.intercept.toLocaleString("ko-KR")} + {settingsUsed.v61Fallback.hourlyRateCoef.toLocaleString("ko-KR")} × 시간당요금 +{" "}
+                {settingsUsed.v61Fallback.demandPerPcCoef.toLocaleString("ko-KR")} × 자사수요_per_PC + {settingsUsed.v61Fallback.competitivenessCoef.toLocaleString("ko-KR")} × 자사_경쟁력점수
+                <br />
+                V61(폴백) = 예상PC대수 × MAX(0, 선형값)
+              </p>
+              <p className="mt-1 text-[11px] text-zinc-400">
+                기존 가맹점 학습표본이 최소 기준({settingsUsed.v61Training.minSampleCount}곳)에 못 미쳐, 아래 학습모형 대신 사람이 미리
+                정해둔 이 임시 근사식을 씁니다. docs/data-issues.md #1 참고.
+              </p>
+            </div>
+          ) : result.v61TrainedModelExplain ? (
+            <V61TrainedModelExplainSection explain={result.v61TrainedModelExplain} v61Baseline={result.v61Baseline} />
+          ) : null}
 
           <div>
             <p className="font-semibold text-zinc-800 dark:text-zinc-200">§4 V62 보정 계수 (12_운영판정 O/P열)</p>

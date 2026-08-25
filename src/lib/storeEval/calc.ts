@@ -958,14 +958,26 @@ export function predictEmpiricalRevenue(
   pcCount: number,
   ridgeWeight: number,
   baselineWeight: number,
-): { monthlyRevenue: number; dailyRevenuePerPc: number } | null {
+): {
+  monthlyRevenue: number;
+  dailyRevenuePerPc: number;
+  // 2026-08-25 추가 — 화면(ResultTab "적용된 산식과 계수 보기")에서 이 예측이 어떻게 나왔는지
+  // 사람이 실제 숫자를 따라가며 이해할 수 있게, 이미 계산하는 중간값을 그대로 노출한다(새 계산
+  // 아님). model.featureMeans/featureSds/coefficients/yMean/perPcMedian은 호출부(evaluate.ts)가
+  // model 인자를 그대로 갖고 있어 여기서 다시 안 돌려준다 - 중복 방지.
+  explain: { z: number[]; logPerPc: number; ridgeRevenue: number; baselineRevenue: number };
+} | null {
   if (!pcCount) return null;
   const z = featuresRaw.map((v, j) => (v - model.featureMeans[j]) / model.featureSds[j]);
   const logPerPc = model.yMean + z.reduce((s, v, j) => s + v * model.coefficients[j], 0);
   const ridgeRevenue = Math.exp(logPerPc) * pcCount;
   const baselineRevenue = model.perPcMedian * pcCount;
   const monthlyRevenue = ridgeRevenue * ridgeWeight + baselineRevenue * baselineWeight;
-  return { monthlyRevenue: Math.round(monthlyRevenue), dailyRevenuePerPc: Math.round(monthlyRevenue / pcCount / 30) };
+  return {
+    monthlyRevenue: Math.round(monthlyRevenue),
+    dailyRevenuePerPc: Math.round(monthlyRevenue / pcCount / 30),
+    explain: { z, logPerPc, ridgeRevenue, baselineRevenue },
+  };
 }
 
 // ---------------------------------------------------------------------------

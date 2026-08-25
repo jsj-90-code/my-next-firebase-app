@@ -30,6 +30,7 @@ function baseResult(overrides: Partial<EvaluationResult> = {}): EvaluationResult
     v61ModelLabel: "V61 실측 학습모형",
     v61TrainingSampleCount: 34,
     v61ValidationMeanAbsError: null,
+    v61TrainedModelExplain: null,
     locationScore: 4,
     inflowRestriction: "없음",
     v62Rate: -0.03,

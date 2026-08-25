@@ -331,6 +331,31 @@ export type FinalJudgement =
   | "입지 재검토"
   | "평가 완료";
 
+// 2026-08-25 추가 — "적용된 산식과 계수 보기"가 학습표본 부족시 쓰는 폴백 회귀식만 설명하고
+// 있었는데(2026-08-20부터 실제로는 학습된 모형을 우선 쓰도록 바뀐 뒤에도 그대로 방치됨), 정작
+// 지금 대부분의 후보지가 쓰는 학습모형 쪽은 화면에 아무 설명이 없어 사용자가 "예상매출이 어떻게
+// 나온건지 이해가 안 된다"고 확인함. 이 값들은 predictEmpiricalRevenue/fitEmpiricalRevenueModel이
+// 이미 계산하는 중간값을 그대로 노출한 것뿐이다(calc.ts 참고) — 화면이 실제 산식을 실제 숫자로
+// 따라갈 수 있게 한다. v61IsFallback=true(학습표본 부족)일 때는 null.
+export type V61TrainedModelExplain = {
+  sampleCount: number;
+  featureLabels: string[]; // ["시간당요금", "자사수요/PC대수", "경쟁력점수"]
+  featureRealValues: number[]; // 사람이 읽는 실제값(요금 원, 수요/PC 명, 경쟁력점수)
+  featureModelValues: number[]; // 학습에 실제로 들어간 값(요금·수요/PC는 로그 변환됨) = empiricalFeaturesFor 결과
+  featureMeans: number[]; // featureModelValues 기준 학습표본 평균
+  featureSds: number[]; // featureModelValues 기준 학습표본 표준편차
+  featureZValues: number[]; // 표준화값 = (featureModelValues - featureMeans) / featureSds
+  coefficients: number[]; // 학습된 가중치(비음수 릿지회귀라 항상 0 이상)
+  yMean: number; // 학습표본의 log(대당월매출) 평균
+  logPerPc: number; // yMean + Σ(표준화값 × 가중치)
+  ridgeRevenue: number; // exp(logPerPc) × 예상PC대수 = 회귀예측 매출
+  perPcMedian: number; // 기준모형 대당월매출(학습표본 중앙값)
+  baselineRevenue: number; // perPcMedian × 예상PC대수 = 기준모형 매출
+  ridgeWeight: number; // 회귀예측 반영비율
+  baselineWeight: number; // 기준모형 반영비율
+  pcCount: number; // 예상PC대수 (ridgeRevenue/baselineRevenue 계산에 쓰인 값, 화면 표시용)
+};
+
 export type EvaluationResult = {
   candidateCode: string;
   candidateName: string;
@@ -343,6 +368,7 @@ export type EvaluationResult = {
   v61ModelLabel: "V61 실측 학습모형" | "임시 근사치·검증 전"; // 화면 표시용 (요청사항 8)
   v61TrainingSampleCount: number; // 학습에 실제로 쓰인 기존 가맹점 수
   v61ValidationMeanAbsError: number | null; // 학습모형의 leave-one-out 평균절대오차 (검증 전이면 null)
+  v61TrainedModelExplain: V61TrainedModelExplain | null; // 학습모형 사용 시(v61IsFallback=false)에만 채워짐
   locationScore: number | null; // 입지동선종합점수
   inflowRestriction: InflowRestriction | null;
   v62Rate: number | null; // V62 보정률

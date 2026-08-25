@@ -490,6 +490,37 @@ describe("fitEmpiricalRevenueModel/predictEmpiricalRevenue (V61 정상운영모�
     expect(prediction!.monthlyRevenue).toBeGreaterThan(0);
     expect(prediction!.dailyRevenuePerPc).toBeGreaterThan(0);
   });
+
+  // 2026-08-25 추가 — "적용된 산식과 계수 보기"에서 예측이 실제로 어떻게 나왔는지 화면에
+  // 보여주기 위해 predictEmpiricalRevenue가 중간값(explain)을 노출하게 됐다. 그 중간값들이
+  // 서로 정합적인 관계를 실제로 만족하는지 확인한다(계산 로직 자체 회귀 방지).
+  it("explain의 중간값들이 최종 monthlyRevenue와 수학적으로 정합한다", () => {
+    const samples: EmpiricalRevenueSample[] = Array.from({ length: 12 }, (_, i) => ({
+      featuresRaw: [Math.log(1000 + i * 20), Math.log(10 + i), 3 + (i % 3) * 0.5],
+      revenuePerPc: 500000 + i * 15000,
+    }));
+    const model = fitEmpiricalRevenueModel(samples, 1, 12)!;
+    const featuresRaw = [Math.log(1100), Math.log(12), 4];
+    const pcCount = 100;
+    const ridgeWeight = 0.6;
+    const baselineWeight = 0.4;
+    const prediction = predictEmpiricalRevenue(model, featuresRaw, pcCount, ridgeWeight, baselineWeight)!;
+
+    // z = (원값 - 학습평균) / 학습표준편차
+    featuresRaw.forEach((v, j) => {
+      expect(prediction.explain.z[j]).toBeCloseTo((v - model.featureMeans[j]) / model.featureSds[j], 10);
+    });
+    // logPerPc = yMean + Σ(z × 학습된 가중치)
+    const expectedLogPerPc = model.yMean + prediction.explain.z.reduce((s, v, j) => s + v * model.coefficients[j], 0);
+    expect(prediction.explain.logPerPc).toBeCloseTo(expectedLogPerPc, 10);
+    // 회귀예측매출 = exp(logPerPc) × PC대수
+    expect(prediction.explain.ridgeRevenue).toBeCloseTo(Math.exp(prediction.explain.logPerPc) * pcCount, 6);
+    // 기준모형매출 = 대당월매출 중앙값 × PC대수
+    expect(prediction.explain.baselineRevenue).toBeCloseTo(model.perPcMedian * pcCount, 6);
+    // 최종 = 회귀예측매출×비중 + 기준모형매출×비중 (반올림 전)
+    const blended = prediction.explain.ridgeRevenue * ridgeWeight + prediction.explain.baselineRevenue * baselineWeight;
+    expect(prediction.monthlyRevenue).toBe(Math.round(blended));
+  });
 });
 
 describe("computeExpectedOwnDemand (예측_자사수요 = 상권수요 × 점유율)", () => {
