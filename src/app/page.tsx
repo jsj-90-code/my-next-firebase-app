@@ -1,4 +1,5 @@
 import { HomeAuthStatus } from "@/components/HomeAuthStatus";
+import { HomeToolStatus } from "@/components/HomeToolStatus";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const TOOLS = [
@@ -21,8 +22,8 @@ export default function Home() {
   return (
     <div className="app-theme relative flex flex-1 flex-col items-center justify-center px-6 py-16">
       <ThemeToggle className="app-btn-outline absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs sm:right-6 sm:top-6" />
-      <main className="flex w-full max-w-xl flex-col items-center gap-10 text-center">
-        <div className="space-y-2">
+      <main className="flex w-full max-w-2xl flex-col items-center gap-10 text-center">
+        <div className="max-w-xl space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8a8072]">ISENS</p>
           <h1 className="text-4xl font-extrabold tracking-tight text-[#171310] dark:text-[#f2ede2]">
             아이센스 <span className="text-[#c05a2c]">사내 도구</span>
@@ -32,27 +33,30 @@ export default function Home() {
 
         <HomeAuthStatus />
 
-        <div className="flex w-full flex-col gap-3">
+        <div className="grid w-full grid-cols-1 gap-5 sm:grid-cols-2">
           {TOOLS.map((tool) => (
             <a
               key={tool.href}
               href={tool.href}
-              className="app-card group flex w-full items-start gap-4 rounded-2xl p-5 text-left transition hover:border-[#c05a2c]/40"
+              className="app-card group flex flex-col overflow-hidden rounded-2xl text-left transition hover:border-[#c05a2c]/40"
             >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c05a2c]/10 text-[#c05a2c]">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.4} className="h-6 w-6">
-                  {tool.icon}
-                </svg>
+              <div className="flex flex-1 items-start gap-4 p-5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c05a2c]/10 text-[#c05a2c]">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.4} className="h-6 w-6">
+                    {tool.icon}
+                  </svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="flex items-center justify-between text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
+                    {tool.label}
+                    <span className="text-[#c9bfae] transition group-hover:translate-x-0.5 group-hover:text-[#c05a2c]">
+                      →
+                    </span>
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-[#8a8072]">{tool.description}</p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <h2 className="flex items-center justify-between text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
-                  {tool.label}
-                  <span className="text-[#c9bfae] transition group-hover:translate-x-0.5 group-hover:text-[#c05a2c]">
-                    →
-                  </span>
-                </h2>
-                <p className="mt-1 text-sm leading-6 text-[#8a8072]">{tool.description}</p>
-              </div>
+              <HomeToolStatus tool={tool.href === "/seat-layout" ? "seat-layout" : "store-eval"} />
             </a>
           ))}
         </div>
