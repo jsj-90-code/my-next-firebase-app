@@ -24,8 +24,8 @@ export default function Home() {
       className="app-theme relative flex flex-1 flex-col items-center justify-center px-6 py-16"
       style={{
         backgroundImage:
-          "linear-gradient(var(--sl-hairline) 1px, transparent 1px), linear-gradient(90deg, var(--sl-hairline) 1px, transparent 1px)",
-        backgroundSize: "28px 28px",
+          "linear-gradient(var(--sl-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--sl-grid-line) 1px, transparent 1px)",
+        backgroundSize: "40px 40px",
       }}
     >
       <ThemeToggle className="app-btn-outline absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs sm:right-6 sm:top-6" />
