@@ -245,7 +245,13 @@ export default function CandidateDetailPage() {
         )}
         {activeTab === "competitors" && <CompetitorsTab candidateCode={code} />}
         {activeTab === "location" && (
-          <LocationEvalTab candidateCode={code} candidateName={candidate.name} candidateAddress={candidate.address} />
+          <LocationEvalTab
+            candidateCode={code}
+            candidateName={candidate.name}
+            candidateAddress={candidate.address}
+            candidateLat={candidate.lat}
+            candidateLng={candidate.lng}
+          />
         )}
         {activeTab === "result" && <ResultTab candidateCode={code} />}
       </div>

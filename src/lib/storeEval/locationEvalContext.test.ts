@@ -1,0 +1,233 @@
+import { describe, expect, it } from "vitest";
+import { buildLocationEvalContext } from "./locationEvalContext";
+import type { AdminDongReference, CandidateInput, Competitor, DemandPoint } from "./types";
+
+function baseCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput {
+  return {
+    code: "N999",
+    name: "테스트후보지",
+    address: "서울 강남구 테스트로 1",
+    lat: 37.5,
+    lng: 127.0,
+    roadAddress: "서울 강남구 테스트로 1",
+    jibunAddress: null,
+    buildingName: null,
+    geocodedAt: null,
+    reviewDate: null,
+    reviewStatus: "진행",
+    expectedPcCount: null,
+    floor: null,
+    groundLevel: null,
+    hasElevator: null,
+    hourlyRate: null,
+    demographicsYear: null,
+    plannedOpenMonth: null,
+    pop500m: null,
+    area1kmKm2: null,
+    pop1km: null,
+    male1kmRatio: null,
+    age1km_0_9: null,
+    age1km_10_19: null,
+    age1km_20_29: null,
+    age1km_30_39: null,
+    age1km_40_49: null,
+    age1km_50_59: null,
+    age1km_60_69: null,
+    age1km_70_79: null,
+    age1km_80plus: null,
+    floating500Avg: null,
+    floating500Male: null,
+    floating500Female: null,
+    floating500_10s: null,
+    floating500_20s: null,
+    floating500_30s: null,
+    floating500_40s: null,
+    floating500_50s: null,
+    floating500_60plus: null,
+    licensedPcStores500m: null,
+    operatingPcStores500m: null,
+    commercialDataYearMonth: null,
+    businessCountAsOfDate: null,
+    licensedPcStores1km: null,
+    operatingPcStores1km: null,
+    floating1kmAvg: null,
+    floating1kmMale: null,
+    floating1kmFemale: null,
+    floating1km_10s: null,
+    floating1km_20s: null,
+    floating1km_30s: null,
+    floating1km_40s: null,
+    floating1km_50s: null,
+    floating1km_60plus: null,
+    employ500Total: null,
+    employ500Male: null,
+    employ500Female: null,
+    employ1kmTotal: null,
+    employ1kmMale: null,
+    employ1kmFemale: null,
+    facility500HighSchool: null,
+    facility500MiddleSchool: null,
+    facility500ElementarySchool: null,
+    facility500SubwayRiders: null,
+    facility500Households: null,
+    facility1kmHighSchool: null,
+    facility1kmMiddleSchool: null,
+    facility1kmElementarySchool: null,
+    facility1kmSubwayRiders: null,
+    facility1kmHouseholds: null,
+    ownVgaBase: null,
+    ownVgaTop: null,
+    ownGameZoneCount: null,
+    ownRoom1: null,
+    ownRoom2: null,
+    ownTeamRoom: null,
+    ownCoupleZone: null,
+    ownVipZone: null,
+    ownFriendsZone: null,
+    ownFoodScore: null,
+    ownInteriorScore: null,
+    ownMonitorScore: null,
+    createdAt: 0,
+    updatedAt: 0,
+    updatedBy: null,
+    isDraft: false,
+    ...overrides,
+  };
+}
+
+function competitor(overrides: Partial<Competitor>): Competitor {
+  return {
+    id: "c1",
+    candidateCode: "N999",
+    name: "경쟁점",
+    surveyLevel: null,
+    investigationStatus: "조사완료",
+    address: null,
+    distanceM: null,
+    floor: null,
+    groundLevel: null,
+    totalPcCount: null,
+    appliedPcCount: null,
+    hasElevator: null,
+    cpu: null,
+    vgaBase: null,
+    vgaTop: null,
+    ram: null,
+    monitor: null,
+    ratePer1000Won: null,
+    hourlyRateConverted: null,
+    paidDeduction: null,
+    visitedAt: null,
+    visitedDow: null,
+    visitorCount: null,
+    measuredSeatRate: null,
+    pingbotUtilization: null,
+    pingbotPeriod: null,
+    renovationYear: null,
+    foodScore: null,
+    foodBasis: null,
+    interiorScore: null,
+    interiorBasis: null,
+    monitorScore: null,
+    monitorBasis: null,
+    room1: null,
+    room2: null,
+    teamRoom: null,
+    coupleZone: null,
+    premiumZone: null,
+    premiumSpec: null,
+    createdAt: 0,
+    updatedAt: 0,
+    ...overrides,
+  };
+}
+
+function demandPoint(overrides: Partial<DemandPoint>): DemandPoint {
+  return {
+    id: "d1",
+    candidateCode: "N999",
+    name: "수요거점",
+    category: "지하철역",
+    lat: 37.5,
+    lng: 127.0,
+    distanceM: 100,
+    source: "kakao",
+    sourcePlaceId: null,
+    fetchedAt: 0,
+    confirmed: false,
+    ...overrides,
+  };
+}
+
+describe("buildLocationEvalContext", () => {
+  it("데이터가 하나도 없으면 '없음' 계열 문구로 채운다(값을 지어내지 않는다)", () => {
+    const text = buildLocationEvalContext({
+      candidate: baseCandidate(),
+      competitors: [],
+      demandPoints: [],
+      adminDongReference: null,
+    });
+    expect(text).toContain("수집된 경쟁점 없음");
+    expect(text).toContain("수집된 수요거점 없음");
+    expect(text).toContain("행정동 인구통계 없음");
+    expect(text).toContain("소상공인365/SGIS 참고자료 없음");
+  });
+
+  it("경쟁점은 500m/1km 카운트와 거리순 목록을 만든다", () => {
+    const text = buildLocationEvalContext({
+      candidate: baseCandidate(),
+      competitors: [
+        competitor({ id: "c1", name: "가까운PC방", distanceM: 200 }),
+        competitor({ id: "c2", name: "먼PC방", distanceM: 900 }),
+        competitor({ id: "c3", name: "범위밖PC방", distanceM: 1500 }),
+        competitor({ id: "c4", name: "거리모름PC방", distanceM: null }),
+      ],
+      demandPoints: [],
+      adminDongReference: null,
+    });
+    expect(text).toContain("500m 이내 1곳");
+    expect(text).toContain("1km 이내 2곳");
+    expect(text).toContain("가까운PC방 (200m)");
+    // 거리 정보 없는 경쟁점은 목록에서 제외되지만 카운트를 틀리게 만들지 않는다.
+    expect(text).not.toContain("거리모름PC방");
+  });
+
+  it("수요거점은 카테고리별로 묶고 거리순으로 정렬한다", () => {
+    const text = buildLocationEvalContext({
+      candidate: baseCandidate(),
+      competitors: [],
+      demandPoints: [
+        demandPoint({ id: "d1", name: "먼역", category: "지하철역", distanceM: 800 }),
+        demandPoint({ id: "d2", name: "가까운역", category: "지하철역", distanceM: 300 }),
+        demandPoint({ id: "d3", name: "학교", category: "학교", distanceM: 400 }),
+      ],
+      adminDongReference: null,
+    });
+    expect(text).toContain("지하철역 (2건): 가까운역(300m), 먼역(800m)");
+    expect(text).toContain("학교 (1건): 학교(400m)");
+  });
+
+  it("행정동 인구통계와 소상공인365 참고자료를 있는 값만 요약한다", () => {
+    const ref: AdminDongReference = {
+      candidateCode: "N999",
+      admCd: "1168010100",
+      admName: "역삼동",
+      totalPopulation: 12345,
+      malePopulation: 6000,
+      femalePopulation: 6345,
+      year: 2024,
+      fetchedAt: 0,
+    };
+    const text = buildLocationEvalContext({
+      candidate: baseCandidate({ floating500Avg: 5000, licensedPcStores500m: 3 }),
+      competitors: [],
+      demandPoints: [],
+      adminDongReference: ref,
+    });
+    expect(text).toContain("역삼동(2024년 기준) 총인구 12,345명");
+    expect(text).toContain("유동인구 500m 일평균 5,000명");
+    expect(text).toContain("인허가 PC방업소수 500m 3개");
+    // 채워지지 않은 필드는 지어내지 않고 아예 줄 자체를 안 만든다.
+    expect(text).not.toContain("직장인구 500m");
+  });
+});

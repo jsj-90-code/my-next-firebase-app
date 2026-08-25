@@ -5,8 +5,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { LocationEvalAiReviewPanel, type LocationEvalAiDraft, type LocationEvalAiFields } from "@/components/storeEval/LocationEvalAiReviewPanel";
 import { computeLocationCompositeScore } from "@/lib/storeEval/calc";
 import { formatScore } from "@/lib/storeEval/format";
+import { captureKakaoStaticMapUrl } from "@/lib/storeEval/kakaoStaticMapCapture";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { getLocationEvaluation, getModelSettings, saveLocationEvaluation } from "@/lib/storeEval/store";
 import type {
@@ -73,10 +75,14 @@ export function LocationEvalTab({
   candidateCode,
   candidateName,
   candidateAddress,
+  candidateLat,
+  candidateLng,
 }: {
   candidateCode: string;
   candidateName: string;
   candidateAddress: string;
+  candidateLat: number | null;
+  candidateLng: number | null;
 }) {
   const { user } = useAuth();
   const [form, setForm] = useState<LocationEvaluation | null>(null);
@@ -87,6 +93,7 @@ export function LocationEvalTab({
   const [message, setMessage] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiDraft, setAiDraft] = useState<LocationEvalAiDraft | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,17 +148,24 @@ export function LocationEvalTab({
     }
   }
 
-  // 요청사항(2026-08-22) — 공식 기준표가 없는 이 5개 점수는 원래도 "사람이 GPT에게 물어보고
-  // 손으로 옮겨 적던" 방식이었다(위 참고사례 배지 참고). 그 과정을 앱 안으로 옮겨온 것뿐이며,
-  // AI 결과는 절대 자동저장하지 않고 폼에만 채워 넣어 사람이 검토·수정 후 직접 저장하게 한다.
+  // 요청사항(2026-08-22, 2026-08-25 확장) — 공식 기준표가 없는 판단 필드들은 원래도 "사람이
+  // GPT/AI에게 물어보고 손으로 옮겨 적던" 방식이었다(위 참고사례 배지 참고). 그 과정을 앱 안으로
+  // 옮겨온 것뿐이며, AI 결과는 절대 자동저장하지 않는다 — 아래 승인화면에서 검토·수정 후 "선택
+  // 항목 적용"을 눌러야 폼에 반영되고, 그 뒤에도 최종 "저장"을 별도로 눌러야 한다.
   async function handleAiFill() {
     if (!candidateAddress.trim()) {
       setAiError("주소가 없으면 AI가 조사할 수 없습니다. 기본정보 탭에서 주소를 먼저 입력해주세요.");
       return;
     }
     setAiError(null);
+    setAiDraft(null);
     setAiLoading(true);
     try {
+      // 지도 이미지는 있으면 좋은 부가 컨텍스트일 뿐이라 실패해도 흐름을 막지 않는다(캡처 유틸이
+      // 이미 내부에서 예외를 삼키고 null을 반환함).
+      const mapImageUrl =
+        candidateLat != null && candidateLng != null ? await captureKakaoStaticMapUrl(candidateLat, candidateLng) : null;
+
       const token = await user?.getIdToken();
       const response = await fetch("/api/store-eval/ai-location-eval", {
         method: "POST",
@@ -159,25 +173,11 @@ export function LocationEvalTab({
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ address: candidateAddress, name: candidateName }),
+        body: JSON.stringify({ candidateCode, mapImageUrl: mapImageUrl ?? undefined }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "AI 초안 생성에 실패했습니다.");
-      setForm((prev) => {
-        if (!prev) return prev;
-        // 기존에 사람이 적어둔 메모를 지우지 않고 AI 초안을 뒤에 덧붙인다(2026-08-24, 덮어쓰기 버그 수정).
-        const existingMemo = prev.mapMemo?.trim();
-        const aiDraft = `AI 초안: ${data.rationale}`;
-        return {
-          ...prev,
-          locationScore: data.locationScore,
-          flowScore: data.flowScore,
-          preemptionScore: data.preemptionScore,
-          visibilityScore: data.visibilityScore,
-          attractionScore: data.attractionScore,
-          mapMemo: existingMemo ? `${existingMemo}\n\n${aiDraft}` : aiDraft,
-        };
-      });
+      setAiDraft({ fields: data.fields, confidence: data.confidence, rationale: data.rationale, warnings: data.warnings ?? [] });
       setMessage(null);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI 초안 생성 중 오류가 발생했습니다.");
@@ -186,13 +186,28 @@ export function LocationEvalTab({
     }
   }
 
+  function handleApplyAiPatch(patch: Partial<LocationEvalAiFields>, rationale: string) {
+    setForm((prev) => {
+      if (!prev) return prev;
+      // 기존에 사람이 적어둔 메모를 지우지 않고 AI 초안을 뒤에 덧붙인다(2026-08-24, 덮어쓰기 버그 수정).
+      const existingMemo = prev.mapMemo?.trim();
+      const aiNote = `AI 초안: ${rationale}`;
+      return {
+        ...prev,
+        ...patch,
+        mapMemo: existingMemo ? `${existingMemo}\n\n${aiNote}` : aiNote,
+      };
+    });
+    setAiDraft(null);
+  }
+
   if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>;
   if (!form) return <p className="text-sm text-zinc-500 dark:text-zinc-400">데이터를 불러오지 못했습니다.</p>;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-lg bg-zinc-100 px-3 py-2 text-xs leading-5 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
-        <strong>공식 기준표 없음</strong> — 아래 4개 점수(상권내위치/주요동선/선점경쟁/접근가시성)의 1~5점 판단
+        <strong>공식 기준표 없음</strong> — 아래 판단 필드(점수·특수수요·외부유입제한·수요이탈위험 등)의
         기준은 원본 스프레드시트 어디에도 문서화되어 있지 않습니다(docs/data-issues.md #2). 아래 참고자료는 원본
         시트에 실제로 기재됐던 사례 2건일 뿐 &ldquo;공식 기준&rdquo;이 아니므로 참고용으로만 사용하세요.
       </div>
@@ -221,10 +236,30 @@ export function LocationEvalTab({
           </button>
         </div>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          주소를 웹 검색으로 조사해서 아래 5개 점수와 근거(지도판단메모)를 자동으로 채웁니다. 저장 전까지는 그대로 반영 안 되니, 결과를 검토하고 필요하면 수정한 뒤 아래 &ldquo;저장&rdquo;을 눌러주세요.
+          이미 수집된 경쟁점·수요거점·행정동통계·지도 이미지를 참고자료로 주고, 부족한 부분만 웹검색으로
+          보완해서 5개 점수뿐 아니라 특수수요/외부유입제한/수요이탈위험/상권구조메모까지 초안을 제안합니다.
+          자동저장되지 않으니 아래 승인화면에서 검토·수정 후 적용하고, 최종적으로 &ldquo;저장&rdquo;을 눌러주세요.
         </p>
         {aiError && (
           <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{aiError}</p>
+        )}
+        {aiDraft && (
+          <LocationEvalAiReviewPanel
+            draft={aiDraft}
+            currentValues={{
+              locationScore: form.locationScore,
+              flowScore: form.flowScore,
+              preemptionScore: form.preemptionScore,
+              visibilityScore: form.visibilityScore,
+              attractionScore: form.attractionScore,
+              specialDemandType: form.specialDemandType,
+              specialDemandIntensity: form.specialDemandIntensity,
+              inflowRestriction: form.inflowRestriction,
+              demandLeakageRisk: form.demandLeakageRisk,
+              marketStructureMemo: form.marketStructureMemo,
+            }}
+            onApply={handleApplyAiPatch}
+          />
         )}
         <div className={`${gridClass} mt-4`}>
           <ScoreSelectField label="상권내위치점수" value={form.locationScore} onChange={(v) => set("locationScore", v as LocationEvaluation["locationScore"])} />
