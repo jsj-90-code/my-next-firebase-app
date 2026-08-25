@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { AutoAuthGate } from "@/components/seatLayout/AutoAuthGate";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV_ITEMS = [
   { href: "/store-eval", label: "대시보드" },
@@ -44,7 +43,6 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
                 );
               })}
             </nav>
-            <ThemeToggle className="ml-auto rounded-full border border-zinc-300 px-3 py-1.5 text-xs text-zinc-600 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800" />
           </div>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
