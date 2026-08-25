@@ -42,9 +42,12 @@ export function buildDaouReportContext({ candidate, competitors, result }: DaouR
       `IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
   );
 
+  // 2026-08-25 — 보수판단매출(85%)/상한참고매출(115%)은 V62 최종예상월매출에서 기계적으로 곱한
+  // 참고 범위일 뿐 실제로 쓰는 값이 아니라서(사용자 확인), 보고서 문장에는 넣지 않는다. 여러
+  // 숫자를 늘어놓으면 오히려 핵심 값(V62 최종예상월매출)이 흐려진다는 지적.
   lines.push(
     `[매출 예측] 예상 PC대수 ${formatNumber(result.expectedPcCount)}대, 시간당요금 ${formatWon(result.hourlyRate)}, ` +
-      `V62 최종예상월매출 ${formatWon(result.v62Final)}(보수판단 ${formatWon(result.conservativeSales)} ~ 상한참고 ${formatWon(result.upperSales)})`,
+      `V62 최종예상월매출 ${formatWon(result.v62Final)}`,
   );
 
   if (result.expectedUtilization != null) {
