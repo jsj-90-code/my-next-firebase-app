@@ -31,6 +31,7 @@ export default function AiValidationPage() {
   const [stores, setStores] = useState<ExistingStore[] | null>(null);
   const [sampleSize, setSampleSize] = useState(10);
   const [runAll, setRunAll] = useState(false);
+  const [specificQuery, setSpecificQuery] = useState("");
   const [status, setStatus] = useState<RunStatus>("idle");
   const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
   const [outcomes, setOutcomes] = useState<PerStoreOutcome[]>([]);
@@ -45,6 +46,11 @@ export default function AiValidationPage() {
 
   function pickTargets(all: ExistingStore[]): ExistingStore[] {
     const pool = all.filter((s) => s.brandType === "블랙라벨");
+    const query = specificQuery.trim();
+    if (query) {
+      // 특정 매장만 재검증하고 싶을 때(예: 버그 수정 후 재확인) — 매장코드/매장명 부분일치.
+      return pool.filter((s) => s.storeCode.includes(query) || s.storeName.includes(query));
+    }
     if (runAll) return pool;
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, Math.min(sampleSize, shuffled.length));
@@ -128,14 +134,30 @@ export default function AiValidationPage() {
               type="number"
               min={1}
               value={sampleSize}
-              disabled={runAll || status === "running"}
+              disabled={runAll || status === "running" || specificQuery.trim() !== ""}
               onChange={(e) => setSampleSize(Math.max(1, Number(e.target.value) || 1))}
               className="w-24 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
             />
           </label>
           <label className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-            <input type="checkbox" checked={runAll} disabled={status === "running"} onChange={(e) => setRunAll(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={runAll}
+              disabled={status === "running" || specificQuery.trim() !== ""}
+              onChange={(e) => setRunAll(e.target.checked)}
+            />
             전체 실행
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            특정 매장만 재검증(코드/이름, 선택)
+            <input
+              type="text"
+              value={specificQuery}
+              disabled={status === "running"}
+              onChange={(e) => setSpecificQuery(e.target.value)}
+              placeholder="예: 시흥배곧점"
+              className="w-48 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
           </label>
           <button
             type="button"
