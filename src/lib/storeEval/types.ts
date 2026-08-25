@@ -361,6 +361,10 @@ export type EvaluationResult = {
   // 만드는 게 아니라 이미 계산된 값을 노출하는 것뿐이라 여기에 추가한다.
   ownCompetitivenessScore: number | null; // 자사_경쟁력점수
   competitorAvgCompetitiveness: number | null; // 경쟁점_평균경쟁력
+  // 2026-08-25 추가 — 다우오피스 보고서 종합의견에 "상권수요 X명 중 Y명 확보 예상" 근거 문장을
+  // 넣으려면 필요하다. computeExpectedOwnDemand(예측_자사수요)는 V61 학습 특징치(log(자사수요/PC))
+  // 계산에 이미 쓰이던 값이라 evaluate.ts가 계산만 하고 버렸었다 - 새 계산이 아니라 노출만 추가.
+  expectedOwnDemand: number | null; // 예측_자사수요 (상권수요 × 경쟁력격차 기반 점유율)
   completionStatus: CompletionStatus | null; // 입력완성도
   finalJudgement: FinalJudgement | null; // 최종운영판정
   modelVersion: string; // 계산 시점 모델 버전

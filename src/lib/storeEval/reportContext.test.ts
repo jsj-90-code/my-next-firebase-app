@@ -29,6 +29,7 @@ function baseResult(overrides: Partial<EvaluationResult> = {}): EvaluationResult
     competitivenessGap: 1.69,
     ownCompetitivenessScore: 4.28,
     competitorAvgCompetitiveness: 2.53,
+    expectedOwnDemand: 3200,
     completionStatus: "완료",
     finalJudgement: "평가 완료",
     modelVersion: "V62",
@@ -94,6 +95,17 @@ describe("buildDaouReportContext", () => {
       result: baseResult({ demandCaptureRate: 0.6 }),
     });
     expect(text).toContain("60.0%");
+  });
+
+  it("V62 매출예측 근거로 상권수요·자사확보예상수요를 포함한다", () => {
+    const text = buildDaouReportContext({
+      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
+      competitors: [],
+      result: baseResult({ marketDemand: 5000, expectedOwnDemand: 3200, v62Final: 63_000_000 }),
+    });
+    expect(text).toContain("5,000명");
+    expect(text).toContain("3,200명");
+    expect(text).toContain("63,000,000원");
   });
 
   it("보수판단매출/상한참고매출을 언급하지 않는다", () => {

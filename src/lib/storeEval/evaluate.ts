@@ -194,6 +194,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     competitivenessGap,
     ownCompetitivenessScore,
     competitorAvgCompetitiveness,
+    expectedOwnDemand,
     completionStatus,
     finalJudgement,
     modelVersion: settings.modelVersion,

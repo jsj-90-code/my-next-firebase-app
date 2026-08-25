@@ -74,15 +74,23 @@ export function buildDaouReportContext({ candidate, competitors, result }: DaouR
   // 2026-08-25 — 보수판단매출(85%)/상한참고매출(115%)은 V62 최종예상월매출에서 기계적으로 곱한
   // 참고 범위일 뿐 실제로 쓰는 값이 아니라서(사용자 확인), 보고서 문장에는 넣지 않는다. 여러
   // 숫자를 늘어놓으면 오히려 핵심 값(V62 최종예상월매출)이 흐려진다는 지적.
+  //
+  // 2026-08-25 — 종합 의견에 "수요 X명 중 Y명 확보 예상 → 그래서 매출은 Z원"이라는 산출근거를
+  // 넣어달라는 요청. expectedOwnDemand(예측_자사수요 = 상권수요×점유율)는 V61 학습 특징치
+  // (log(자사수요/PC))로 실제 V62 계산에 쓰이는 값이라 여기 넣는다 - 아래 [참고]의 예상
+  // 수요확보율/가동률(경쟁점 실가동좌석 기반 별도 파이프라인, 실측기반 예상월매출 전용)과는
+  // 다른 계산이다. V62는 회귀모형이라 "가동률" 같은 중간 퍼센트 단계 자체가 없어서, 그 가동률을
+  // V62 근거인 것처럼 쓰면 안 된다(사용자 확인 - V62는 그대로 두고 근거는 수요만).
   lines.push(
-    `[매출 예측] 예상 PC대수 ${formatNumber(result.expectedPcCount)}대, 시간당요금 ${formatWon(result.hourlyRate)}, ` +
-      `V62 최종예상월매출 ${formatWon(result.v62Final)}`,
+    `[매출 예측] 상권수요 약 ${formatNumber(result.marketDemand)}명 중 경쟁력·PC대수 비중을 반영해 자사가 확보할 것으로 예상되는 ` +
+      `수요는 약 ${formatNumber(result.expectedOwnDemand)}명, 예상 PC대수 ${formatNumber(result.expectedPcCount)}대, ` +
+      `시간당요금 ${formatWon(result.hourlyRate)}, V62 최종예상월매출 ${formatWon(result.v62Final)}`,
   );
 
   if (result.expectedUtilization != null) {
     lines.push(
       `[참고] 실측기반 예상가동률 ${formatPercent(result.expectedUtilization)} — 경쟁점 실가동좌석을 기반으로 한 별도 계산 경로이며 ` +
-        "미검증 참고 지표입니다(위 V62 매출과는 다른 산식). 근거가 필요할 때만 참고로만 언급하세요.",
+        "미검증 참고 지표입니다(위 V62 매출과는 다른 산식, V62의 근거로 쓰지 마세요). 근거가 필요할 때만 참고로만 언급하세요.",
     );
   }
 
