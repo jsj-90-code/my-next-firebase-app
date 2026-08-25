@@ -6,7 +6,7 @@
 // "구조"다 — storeEvalExistingStores/storeEvalExistingStoreSales/storeEvalExistingStoreMembers를
 // 그대로 사용한다(src/lib/storeEval/store.ts).
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime, formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import {
@@ -401,6 +401,7 @@ export default function ExistingStoresPage() {
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -432,6 +433,13 @@ export default function ExistingStoresPage() {
     if (b[0] === "정상") return 1;
     return b[1] - a[1];
   });
+
+  // 2026-08-25 추가 — 133곳까지 늘어난 목록에서 코드/이름으로 바로 찾기(주소 필드는 이 타입에
+  // 없음 - ExistingStore는 재무/운영 데이터 전용, 위치정보는 09_입지동선평가 쪽에 있음).
+  const query = search.trim().toLowerCase();
+  const visibleStores = query
+    ? blackLabelStores.filter((s) => s.storeCode.toLowerCase().includes(query) || s.storeName.toLowerCase().includes(query))
+    : blackLabelStores;
 
   return (
     <div className="flex flex-col gap-6">
@@ -478,6 +486,14 @@ export default function ExistingStoresPage() {
       )}
 
       {loading ? null : (
+        <>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="가맹점코드·가맹점명으로 검색"
+          className="w-full max-w-xs rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+        />
         <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
           <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
@@ -494,8 +510,8 @@ export default function ExistingStoresPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {blackLabelStores.map((s) => (
-                <>
+              {visibleStores.map((s) => (
+                <Fragment key={s.storeCode}>
                   <tr key={s.storeCode} className="text-zinc-800 dark:text-zinc-200">
                     <td className="px-3 py-2 font-medium">{s.storeCode}</td>
                     <td className="px-3 py-2">{s.storeName}</td>
@@ -522,20 +538,23 @@ export default function ExistingStoresPage() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
-              {blackLabelStores.length === 0 && (
+              {visibleStores.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
                     {stores.length === 0
                       ? "등록된 기존 가맹점이 없습니다."
-                      : "블랙라벨로 확인된 매장이 없습니다(브랜드가 리그PC방·확인필요인 매장뿐입니다)."}
+                      : blackLabelStores.length === 0
+                        ? "블랙라벨로 확인된 매장이 없습니다(브랜드가 리그PC방·확인필요인 매장뿐입니다)."
+                        : `"${search}"와(과) 일치하는 매장이 없습니다.`}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

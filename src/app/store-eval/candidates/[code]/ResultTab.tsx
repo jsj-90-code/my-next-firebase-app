@@ -19,7 +19,8 @@ import {
   saveEvaluationResult,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
-import type { EvaluationResult, FinalJudgement, ModelSettings } from "@/lib/storeEval/types";
+import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelSettings } from "@/lib/storeEval/types";
+import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { sectionClass, sectionTitleClass } from "./formFields";
 
 function judgementStyle(j: FinalJudgement | null): string {
@@ -66,6 +67,15 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 사용자가 반드시 직접 입력하게 한다.
   const [newStoreCode, setNewStoreCode] = useState("");
   const [existingStoreCodes, setExistingStoreCodes] = useState<Set<string>>(new Set());
+
+  // 다우오피스 평가기록 보고서 초안 - candidate/competitors는 원래 run() 안에서 계산만 하고
+  // 버렸는데, 보고서 컨텍스트를 만들려면 화면에 떠 있는 것과 같은 값이 필요해 여기 같이 담아둔다.
+  const [candidateForReport, setCandidateForReport] = useState<CandidateInput | null>(null);
+  const [competitorsForReport, setCompetitorsForReport] = useState<Competitor[]>([]);
+  const [reportDraft, setReportDraft] = useState<DaouReportDraft | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   useEffect(() => {
     // 전환 후에는 storeCode가 candidateCode와 달라질 수 있으므로, 문서ID 직접 조회가 아니라
@@ -142,6 +152,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       await saveEvaluationResult(evaluated, user?.email ?? null);
       setResult(evaluated);
       setSettingsUsed(settings);
+      setCandidateForReport(candidate);
+      setCompetitorsForReport(competitors);
+      setReportDraft(null);
+      setReportError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "최종결과를 계산하지 못했습니다.");
     } finally {
@@ -153,6 +167,55 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   useEffect(() => {
     run();
   }, [run]);
+
+  // 다우오피스에 기입할 보고서 텍스트 초안 - AI(Gemini)가 자연스럽게 문장을 쓰게 한다(요청사항,
+  // 2026-08-25). 다우오피스 자체에 자동 기입하지 않는다 — 사람이 검토 후 복사해서 직접 붙여넣는다.
+  async function handleGenerateReport() {
+    if (!result || !candidateForReport) return;
+    setReportLoading(true);
+    setReportError(null);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch("/api/store-eval/generate-daou-report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          candidate: {
+            name: candidateForReport.name,
+            address: candidateForReport.address,
+            pop500m: candidateForReport.pop500m,
+            floating500Avg: candidateForReport.floating500Avg,
+          },
+          competitors: competitorsForReport.map((c) => ({
+            name: c.name,
+            distanceM: c.distanceM,
+            investigationStatus: c.investigationStatus,
+          })),
+          result,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "보고서 초안 생성에 실패했습니다.");
+      setReportDraft(data);
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : "보고서 초안 생성 중 오류가 발생했습니다.");
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  function handleCopy(key: string, text: string) {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey((prev) => (prev === key ? null : prev)), 1500);
+      })
+      .catch(() => setReportError("클립보드 복사에 실패했습니다. 직접 선택해서 복사해주세요."));
+  }
 
   if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">계산 중...</p>;
 
@@ -340,6 +403,68 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <ResultCard label="IP당수요" value={formatScore(result.ipPerDemand)} hint="여유 >15 / 포화 <7 (08_계산기준)" />
           <ResultCard label="경쟁력격차" value={formatScore(result.competitivenessGap)} />
         </div>
+      </section>
+
+      <section className={`${sectionClass} print:hidden`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className={sectionTitleClass}>다우오피스 평가기록 초안</h3>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              위 계산 결과만 근거로 AI(Gemini)가 [상권]/[경쟁]/[종합 의견] 문장을 씁니다. 다우오피스에 자동으로 기입하지 않으니,
+              내용을 검토·수정한 뒤 직접 복사해서 붙여넣어주세요. 손익계산(투자비·회수기간 등)은 포함하지 않습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={reportLoading}
+            onClick={handleGenerateReport}
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            {reportLoading ? "생성 중..." : reportDraft ? "다시 생성" : "AI 초안 생성"}
+          </button>
+        </div>
+
+        {reportError && (
+          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{reportError}</p>
+        )}
+
+        {reportDraft && (
+          <div className="mt-4 flex flex-col gap-3">
+            {(
+              [
+                { key: "market", label: "상권", text: reportDraft.marketSection },
+                { key: "competition", label: "경쟁", text: reportDraft.competitionSection },
+                { key: "summary", label: "종합 의견", text: reportDraft.summarySection },
+              ] as const
+            ).map((section) => (
+              <div key={section.key} className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">[{section.label}]</p>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(section.key, section.text)}
+                    className="rounded-md border border-zinc-300 px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    {copiedKey === section.key ? "복사됨" : "복사"}
+                  </button>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-800 dark:text-zinc-200">{section.text}</p>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() =>
+                handleCopy(
+                  "all",
+                  `[상권] ${reportDraft.marketSection}\n[경쟁] ${reportDraft.competitionSection}\n[종합 의견] ${reportDraft.summarySection}`,
+                )
+              }
+              className="w-fit rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+            >
+              {copiedKey === "all" ? "전체 복사됨" : "전체 복사"}
+            </button>
+          </div>
+        )}
       </section>
 
       <details className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950 print:hidden">

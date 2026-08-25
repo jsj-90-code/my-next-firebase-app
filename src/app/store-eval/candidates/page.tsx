@@ -26,6 +26,7 @@ export default function CandidateListPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +78,13 @@ export default function CandidateListPage() {
     }
   }
 
+  const query = search.trim().toLowerCase();
+  const filteredCandidates = query
+    ? candidates.filter(
+        (c) => c.code.toLowerCase().includes(query) || c.name.toLowerCase().includes(query) || c.address.toLowerCase().includes(query),
+      )
+    : candidates;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -99,6 +107,16 @@ export default function CandidateListPage() {
       {error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
       )}
+
+      {/* 2026-08-25 추가 — 후보지가 늘어나면서 코드/이름/주소로 바로 찾을 방법이 없었다. 서버
+          쪽 검색 없이(목록이 크지 않음) 클라이언트에서 이미 불러온 목록을 그대로 필터링한다. */}
+      <input
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="코드·이름·주소로 검색"
+        className="w-full max-w-xs rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+      />
 
       <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <table className="w-full min-w-[720px] text-left text-sm">
@@ -125,8 +143,14 @@ export default function CandidateListPage() {
                   등록된 후보지가 없습니다. &ldquo;신규 후보지 등록&rdquo; 버튼으로 시작하세요.
                 </td>
               </tr>
+            ) : filteredCandidates.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
+                  &ldquo;{search}&rdquo;와(과) 일치하는 후보지가 없습니다.
+                </td>
+              </tr>
             ) : (
-              candidates.map((c) => (
+              filteredCandidates.map((c) => (
                 <tr key={c.code} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/60">
                   <td className="px-4 py-3 font-mono text-xs text-zinc-500 dark:text-zinc-400">{c.code}</td>
                   <td className="px-4 py-3">

@@ -355,6 +355,12 @@ export type EvaluationResult = {
   competitorIp: number | null;
   ipPerDemand: number | null;
   competitivenessGap: number | null;
+  // 2026-08-25 추가 — 다우오피스 평가기록 보고서 초안(§경쟁 섹션)에서 "자사 vs 경쟁점 평균
+  // 경쟁력"을 그대로 보여주려면 격차(competitivenessGap)만으로는 부족하다. evaluate.ts는 이미 이
+  // 두 값을 계산하고 버렸었는데(CandidateComputed 타입에만 정의되고 실제로는 안 쓰임), 새 값을
+  // 만드는 게 아니라 이미 계산된 값을 노출하는 것뿐이라 여기에 추가한다.
+  ownCompetitivenessScore: number | null; // 자사_경쟁력점수
+  competitorAvgCompetitiveness: number | null; // 경쟁점_평균경쟁력
   completionStatus: CompletionStatus | null; // 입력완성도
   finalJudgement: FinalJudgement | null; // 최종운영판정
   modelVersion: string; // 계산 시점 모델 버전
