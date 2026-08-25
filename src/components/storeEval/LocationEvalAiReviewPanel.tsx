@@ -116,25 +116,25 @@ export function LocationEvalAiReviewPanel({
   const appliedCount = rows.filter((r) => r.checked && r.editedValue.trim() !== "").length;
 
   return (
-    <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50/50 p-4 dark:border-sky-900 dark:bg-sky-950/20">
-      <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">AI 제안 검토</h4>
-      <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+    <div className="mt-4 rounded-xl border border-[var(--sl-info)]/25 bg-[var(--sl-info-soft)] p-4">
+      <h4 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">AI 제안 검토</h4>
+      <p className="mt-1 text-xs leading-5 text-[#8a8072]">
         신뢰도 {Math.round(CONFIDENCE_AUTO_APPLY_THRESHOLD * 100)}% 미만인 항목은 기본적으로 체크가 해제돼
         있습니다 — 값을 직접 확인·수정한 뒤 체크해주세요. 값은 체크 여부와 상관없이 바로 고칠 수 있습니다.
       </p>
 
       {draft.warnings.length > 0 && (
-        <div className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <div className="mt-2 rounded-md bg-[var(--sl-warn-soft)] px-2 py-1 text-xs text-[var(--sl-warn)]">
           {draft.warnings.map((w, i) => (
             <p key={i}>{w}</p>
           ))}
         </div>
       )}
 
-      <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className="mt-3 overflow-x-auto rounded-lg border border-[#171310]/[0.08] dark:border-white/[0.08]">
         <table className="w-full text-xs">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
-            <tr className="text-left text-zinc-500 dark:text-zinc-400">
+          <thead className="bg-[#fffdf7] dark:bg-[#1c1912]">
+            <tr className="text-left text-[#8a8072]">
               <th className="w-8 px-2 py-1"></th>
               <th className="px-2 py-1">항목</th>
               <th className="px-2 py-1">현재값</th>
@@ -148,18 +148,18 @@ export function LocationEvalAiReviewPanel({
               const confidence = draft.confidence[meta.key] ?? 0;
               const lowConfidence = confidence < CONFIDENCE_AUTO_APPLY_THRESHOLD;
               return (
-                <tr key={meta.key} className="border-t border-zinc-100 dark:border-zinc-800">
+                <tr key={meta.key} className="border-t border-[#171310]/[0.06] dark:border-white/[0.06]">
                   <td className="px-2 py-1 text-center align-top">
                     <input type="checkbox" checked={row.checked} onChange={(e) => updateRow(idx, { checked: e.target.checked })} />
                   </td>
-                  <td className="px-2 py-1 align-top text-zinc-700 dark:text-zinc-300">{meta.label}</td>
-                  <td className="px-2 py-1 align-top text-zinc-400">{displayValue(currentValues[meta.key])}</td>
+                  <td className="px-2 py-1 align-top text-[#5c5346] dark:text-[#c9bfae]">{meta.label}</td>
+                  <td className="px-2 py-1 align-top text-[#8a8072]">{displayValue(currentValues[meta.key])}</td>
                   <td className="px-2 py-1 align-top">
                     {meta.options ? (
                       <select
                         value={row.editedValue}
                         onChange={(e) => updateRow(idx, { editedValue: e.target.value, checked: true })}
-                        className="w-28 rounded border border-zinc-200 px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+                        className="app-input w-28 px-1.5 py-0.5"
                       >
                         <option value="">(없음)</option>
                         {meta.options.map((opt) => (
@@ -173,13 +173,13 @@ export function LocationEvalAiReviewPanel({
                         value={row.editedValue}
                         rows={2}
                         onChange={(e) => updateRow(idx, { editedValue: e.target.value, checked: true })}
-                        className="w-56 rounded border border-zinc-200 px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+                        className="app-input w-56 px-1.5 py-0.5"
                       />
                     ) : (
                       <select
                         value={row.editedValue}
                         onChange={(e) => updateRow(idx, { editedValue: e.target.value, checked: true })}
-                        className="w-20 rounded border border-zinc-200 px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+                        className="app-input w-20 px-1.5 py-0.5"
                       >
                         <option value="">(없음)</option>
                         {[1, 2, 3, 4, 5].map((n) => (
@@ -190,7 +190,7 @@ export function LocationEvalAiReviewPanel({
                       </select>
                     )}
                   </td>
-                  <td className={`px-2 py-1 align-top ${lowConfidence ? "font-medium text-amber-600 dark:text-amber-400" : "text-zinc-400"}`}>
+                  <td className={`px-2 py-1 align-top ${lowConfidence ? "font-medium text-[var(--sl-warn)]" : "text-[#8a8072]"}`}>
                     {Math.round(confidence * 100)}%
                   </td>
                 </tr>
@@ -200,22 +200,22 @@ export function LocationEvalAiReviewPanel({
         </table>
       </div>
 
-      <details className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">
+      <details className="mt-3 text-xs text-[#5c5346] dark:text-[#c9bfae]">
         <summary className="cursor-pointer font-medium">AI 조사 근거(종합) 보기</summary>
         <p className="mt-1 whitespace-pre-wrap leading-5">{draft.rationale}</p>
       </details>
 
       {applyMessage && (
-        <p className="mt-2 rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{applyMessage}</p>
+        <p className="app-badge app-badge-ok mt-2 w-full justify-start py-1 text-xs">{applyMessage}</p>
       )}
 
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-[11px] text-zinc-400">{appliedCount}개 항목 적용 예정</span>
+        <span className="text-[11px] text-[#8a8072]">{appliedCount}개 항목 적용 예정</span>
         <button
           type="button"
           onClick={handleApply}
           disabled={appliedCount === 0}
-          className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="app-btn-primary rounded-md px-3 py-1.5 text-xs disabled:opacity-40"
         >
           선택 항목 적용
         </button>

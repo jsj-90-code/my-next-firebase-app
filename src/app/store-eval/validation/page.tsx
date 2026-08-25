@@ -171,30 +171,24 @@ const COHORT_LABELS: Record<TenureCohort, string> = {
 };
 
 function directionColor(direction: ValidationStoreRow["direction"]): string {
-  if (direction === "과대예측") return "text-red-600 dark:text-red-400";
-  if (direction === "과소예측") return "text-blue-600 dark:text-blue-400";
-  return "text-zinc-500 dark:text-zinc-400";
+  if (direction === "과대예측") return "text-[var(--sl-danger)]";
+  if (direction === "과소예측") return "text-[var(--sl-info)]";
+  return "text-[#8a8072]";
 }
 
 function SummaryCard({ title, value, passed, sub }: { title: string; value: string; passed?: boolean; sub?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{title}</p>
-      <p className="mt-1 flex items-baseline gap-1.5 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+    <div className="app-card rounded-xl p-4">
+      <p className="text-xs font-medium text-[#8a8072]">{title}</p>
+      <p className="mt-1 flex items-baseline gap-1.5 text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">
         {value}
         {passed !== undefined && (
-          <span
-            className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-              passed
-                ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400"
-            }`}
-          >
+          <span className={`app-badge ${passed ? "app-badge-ok" : "app-badge-danger"}`}>
             {passed ? "통과" : "미달"}
           </span>
         )}
       </p>
-      {sub && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{sub}</p>}
+      {sub && <p className="mt-0.5 text-xs text-[#8a8072]">{sub}</p>}
     </div>
   );
 }
@@ -210,9 +204,9 @@ function countBy<T extends string>(rows: ValidationStoreRow[], pick: (r: Validat
 
 function BreakdownCard({ title, rows, labels }: { title: string; rows: { key: string; count: number }[]; labels: Record<string, string> }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{title}</p>
-      <ul className="mt-2 space-y-1 text-sm text-zinc-800 dark:text-zinc-200">
+    <div className="app-card rounded-xl p-4">
+      <p className="text-xs font-medium text-[#8a8072]">{title}</p>
+      <ul className="mt-2 space-y-1 text-sm text-[#171310] dark:text-[#f2ede2]">
         {rows.map((r) => (
           <li key={r.key} className="flex justify-between">
             <span>{labels[r.key] ?? r.key}</span>
@@ -226,9 +220,9 @@ function BreakdownCard({ title, rows, labels }: { title: string; rows: { key: st
 
 function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+    <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
       <table className="w-full min-w-[1600px] text-sm">
-        <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+        <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
           <tr>
             <th className="px-3 py-2">점포명</th>
             <th className="px-3 py-2">브랜드</th>
@@ -247,9 +241,9 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
             <th className="px-3 py-2">제외/참고 사유</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
           {rows.map((r) => (
-            <tr key={r.storeCode} className="text-zinc-800 dark:text-zinc-200">
+            <tr key={r.storeCode} className="text-[#171310] dark:text-[#f2ede2]">
               <td className="px-3 py-2 font-medium">{r.storeName}</td>
               <td className="px-3 py-2">{r.brand ?? "확인필요"}</td>
               <td className="px-3 py-2">{r.completedMonths}개월</td>
@@ -266,12 +260,12 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
               </td>
               <td className="px-3 py-2">{r.includedInCoreAccuracy ? "예" : "아니오"}</td>
               <td className="px-3 py-2">{r.includedInEarlyValidation ? "예" : "아니오"}</td>
-              <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{r.exclusionReason ?? "-"}</td>
+              <td className="px-3 py-2 text-xs text-[#8a8072]">{r.exclusionReason ?? "-"}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={15} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
+              <td colSpan={15} className="px-3 py-6 text-center text-[#8a8072]">
                 해당 코호트에 점포가 없습니다.
               </td>
             </tr>
@@ -286,7 +280,7 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
 function SheetParitySummaryBlock({ title, summary, benchmark }: { title: string; summary: ValidationSummaryResult; benchmark?: ReferenceBenchmark }) {
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{title}</h3>
+      <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h3>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <SummaryCard title="표본 수" value={`${formatNumber(summary.sampleCount)}곳`} />
         <SummaryCard title="평균절대오차" value={formatPercent(summary.meanAbsoluteError)} />
@@ -296,7 +290,7 @@ function SheetParitySummaryBlock({ title, summary, benchmark }: { title: string;
         <SummaryCard title="평균편향" value={formatPercent(summary.meanBias)} />
       </div>
       {benchmark && (
-        <p className="rounded-lg bg-zinc-100 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+        <p className="app-card-sm rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
           기존 Google Sheet 참고 결과({benchmark.sampleCount}개 점포): 평균오차 {formatPercent(benchmark.meanAbsoluteErrorPct)} · 중앙값{" "}
           {formatPercent(benchmark.medianAbsoluteErrorPct)} · ±10% 이내 {formatPercent(benchmark.within10PctRatio)} · ±20% 이내{" "}
           {formatPercent(benchmark.within20PctRatio)}
@@ -308,9 +302,9 @@ function SheetParitySummaryBlock({ title, summary, benchmark }: { title: string;
 
 function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+    <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
       <table className="w-full min-w-[1700px] text-sm">
-        <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+        <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
           <tr>
             <th className="px-3 py-2">점포명</th>
             <th className="px-3 py-2">실제매출</th>
@@ -327,9 +321,9 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
             <th className="px-3 py-2">비고</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
           {rows.map((r) => (
-            <tr key={r.storeCode} className="text-zinc-800 dark:text-zinc-200">
+            <tr key={r.storeCode} className="text-[#171310] dark:text-[#f2ede2]">
               <td className="px-3 py-2 font-medium">{r.storeName}</td>
               <td className="px-3 py-2">{formatWon(r.actualRevenueAvg)}</td>
               <td className="px-3 py-2">{formatWon(r.sheetV61Predicted)}</td>
@@ -344,16 +338,14 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
               <td className="px-3 py-2 text-xs">{DIFF_STAGE_LABELS[r.diffStage]}</td>
               <td className="px-3 py-2 text-xs">
                 {r.isLoocvHighVariance && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                    LOOCV 고변동 점포
-                  </span>
+                  <span className="app-badge app-badge-warn">LOOCV 고변동 점포</span>
                 )}
               </td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={13} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
+              <td colSpan={13} className="px-3 py-6 text-center text-[#8a8072]">
                 비교할 매장이 없습니다(시트 V61 캐시값이 있는 블랙라벨 매장만 대상).
               </td>
             </tr>
@@ -371,7 +363,7 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
 function LoocvDiagnosticBlock({ diagnostic }: { diagnostic: LoocvSensitivityDiagnostic }) {
   const fmtNum = (v: number | null) => (v == null ? "-" : v.toFixed(4));
   return (
-    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+    <div className="rounded-xl border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
       <h4 className="font-semibold">{diagnostic.storeName} — LOOCV 고변동 원인 진단(참고용, 계수 임의 수정 없음)</h4>
       <ul className="mt-2 space-y-1 text-xs">
         <li>입력 특징값(log요금·log수요/PC·경쟁력점수): {diagnostic.featuresRaw.map((v) => v.toFixed(4)).join(", ")}</li>
@@ -395,15 +387,15 @@ function LoocvDiagnosticBlock({ diagnostic }: { diagnostic: LoocvSensitivityDiag
 // 색상·평문 설명으로 번역해서 보여준다. 판정 로직은 그대로, 표시만 눈에 띄게 바꾼 것.
 const OVERALL_STATUS_STYLE: Record<ValidationSummary2["overallStatus"], { badge: string; plain: string }> = {
   "정식 사용 가능": {
-    badge: "border-green-300 bg-green-50 text-green-900 dark:border-green-800 dark:bg-green-950/30 dark:text-green-200",
+    badge: "border-[var(--sl-ok)]/35 bg-[var(--sl-ok-soft)] text-[#171310] dark:text-[#f2ede2]",
     plain: "모델이 목표 정확도를 모두 충족했습니다. 신규 후보지 매출 예측에 그대로 사용해도 됩니다.",
   },
   "조건부 사용": {
-    badge: "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200",
+    badge: "border-[var(--sl-warn)]/35 bg-[var(--sl-warn-soft)] text-[#171310] dark:text-[#f2ede2]",
     plain: "일부 목표치를 못 채웠습니다. 참고용으로 쓰되, 중요한 의사결정 전에는 아래에서 오차가 큰 매장을 함께 확인하세요.",
   },
   "재보정 필요": {
-    badge: "border-red-300 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200",
+    badge: "border-[var(--sl-danger)]/35 bg-[var(--sl-danger-soft)] text-[#171310] dark:text-[#f2ede2]",
     plain: "정확도 목표를 다수 못 채웠습니다. 이 결과를 그대로 의사결정에 쓰지 말고 원인 분석이 먼저 필요합니다.",
   },
 };
@@ -441,11 +433,11 @@ function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
  */
 function GlossarySection() {
   return (
-    <details className="rounded-2xl border border-zinc-300 bg-white p-5 text-sm leading-6 dark:border-zinc-700 dark:bg-zinc-950">
-      <summary className="cursor-pointer text-base font-semibold text-zinc-900 dark:text-zinc-50">
+    <details className="app-card rounded-2xl p-5 text-sm leading-6">
+      <summary className="cursor-pointer text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
         📖 용어가 헷갈리시나요? (V61/V62/LOOCV 등 설명 — 클릭하면 펼쳐집니다)
       </summary>
-      <div className="mt-3 space-y-3 text-zinc-700 dark:text-zinc-300">
+      <div className="mt-3 space-y-3 text-[#5c5346] dark:text-[#c9bfae]">
         <p>
           이 화면은 <b>신규 매장 매출 예측 모델</b>이 실제로 얼마나 정확한지, 이미 운영 중인 가맹점의 실제 매출과 비교해서 검증합니다.
           아래 숫자들이 목표치를 넘으면 이 모델을 새 후보지 평가에 그대로 써도 된다는 뜻입니다.
@@ -487,44 +479,22 @@ function GlossarySection() {
 /** 오차율만 보고 "잘 맞았는지"를 3단계 배지로 보여준다(±10%/±20% 버킷과 동일 경계, 새 기준 아님). */
 function AccuracyBadge({ absoluteErrorPct }: { absoluteErrorPct: number | null }) {
   if (absoluteErrorPct == null) {
-    return (
-      <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
-        확인 불가
-      </span>
-    );
+    return <span className="app-badge app-badge-neutral">확인 불가</span>;
   }
   if (absoluteErrorPct <= 0.1) {
-    return (
-      <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400">
-        적중
-      </span>
-    );
+    return <span className="app-badge app-badge-ok">적중</span>;
   }
   if (absoluteErrorPct <= 0.2) {
-    return (
-      <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-        근접
-      </span>
-    );
+    return <span className="app-badge app-badge-warn">근접</span>;
   }
-  return (
-    <span className="rounded px-1.5 py-0.5 text-[11px] font-medium bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400">
-      차이 큼
-    </span>
-  );
+  return <span className="app-badge app-badge-danger">차이 큼</span>;
 }
 
 /** "12개월 이상 운영"(정식검증 대상) 여부 배지 — classifyTenureCohort(calc.ts) 기준 그대로. */
 function TenureBadge({ cohort }: { cohort: ValidationStoreRow["cohort"] }) {
   const isFormal = cohort === "정식 검증군";
   return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
-        isFormal
-          ? "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200"
-          : "bg-zinc-100 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400"
-      }`}
-    >
+    <span className={`app-badge ${isFormal ? "app-badge-info" : "app-badge-neutral"}`}>
       {isFormal ? "12개월 이상" : "12개월 미만"}
     </span>
   );
@@ -546,9 +516,9 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
     return (b.absoluteErrorPct ?? -1) - (a.absoluteErrorPct ?? -1);
   });
   return (
-    <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+    <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
       <table className="w-full min-w-[640px] text-sm">
-        <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+        <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
           <tr>
             <th className="px-3 py-2">매장명</th>
             <th className="px-3 py-2">운영기간</th>
@@ -558,9 +528,9 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
             <th className="px-3 py-2">결과</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
           {sorted.map((r) => (
-            <tr key={r.storeCode} className="text-zinc-800 dark:text-zinc-200">
+            <tr key={r.storeCode} className="text-[#171310] dark:text-[#f2ede2]">
               <td className="px-3 py-2 font-medium">{r.storeName}</td>
               <td className="px-3 py-2">
                 <TenureBadge cohort={r.cohort} />
@@ -574,7 +544,7 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
                     "실적 없음"으로 오인되지 않도록, 이미 계산된 사유(describeNotVerifiableReason)를
                     바로 옆에 보여준다. 자세히 보기의 전문가용 표에만 있던 걸 여기로도 노출. */}
                 {r.absoluteErrorPct == null && r.errorCause === "not_verifiable" && (
-                  <span className="ml-1.5 text-[11px] text-zinc-400">({describeNotVerifiableReason(r)})</span>
+                  <span className="ml-1.5 text-[11px] text-[#8a8072]">({describeNotVerifiableReason(r)})</span>
                 )}
               </td>
             </tr>
@@ -588,7 +558,7 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
 function SummaryBlock({ title, summary, benchmark }: { title: string; summary: ValidationSummary2; benchmark?: ReferenceBenchmark }) {
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{title}</h3>
+      <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h3>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <SummaryCard title="표본 수" value={`${formatNumber(summary.sampleCount)}곳`} />
         <SummaryCard title="평균절대오차(MAPE)" value={formatPercent(summary.meanAbsoluteErrorPct)} passed={summary.passed.mape} />
@@ -611,24 +581,24 @@ function SummaryBlock({ title, summary, benchmark }: { title: string; summary: V
       <p
         className={`rounded-lg px-3 py-2 text-xs font-medium ${
           summary.overallStatus === "정식 사용 가능"
-            ? "bg-green-100 text-green-800 dark:bg-green-950/30 dark:text-green-300"
+            ? "bg-[var(--sl-ok-soft)] text-[var(--sl-ok)]"
             : summary.overallStatus === "조건부 사용"
-              ? "bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
-              : "bg-red-100 text-red-800 dark:bg-red-950/30 dark:text-red-300"
+              ? "bg-[var(--sl-warn-soft)] text-[var(--sl-warn)]"
+              : "bg-[var(--sl-danger-soft)] text-[var(--sl-danger)]"
         }`}
       >
         현재 상태: {summary.overallStatus} — {summary.statusReason}
       </p>
       {benchmark && (
-        <p className="rounded-lg bg-zinc-100 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+        <p className="app-card-sm rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
           기존 Google Sheet 참고 결과({benchmark.sampleCount}개 점포): 평균오차 {formatPercent(benchmark.meanAbsoluteErrorPct)} · 중앙값{" "}
           {formatPercent(benchmark.medianAbsoluteErrorPct)} · ±10% 이내 {formatPercent(benchmark.within10PctRatio)} · ±20% 이내{" "}
           {formatPercent(benchmark.within20PctRatio)}
         </p>
       )}
-      <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+      <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
         <table className="w-full min-w-[600px] text-sm">
-          <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+          <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
             <tr>
               <th className="px-3 py-2">오차 구간</th>
               <th className="px-3 py-2">점포 수</th>
@@ -636,13 +606,13 @@ function SummaryBlock({ title, summary, benchmark }: { title: string; summary: V
               <th className="px-3 py-2">점포명</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
             {summary.buckets.map((b) => (
               <tr key={b.label}>
                 <td className="px-3 py-2 font-medium">{b.label}</td>
                 <td className="px-3 py-2">{b.count}곳</td>
                 <td className="px-3 py-2">{formatPercent(b.ratio)}</td>
-                <td className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">{b.storeNames.join(", ") || "-"}</td>
+                <td className="px-3 py-2 text-xs text-[#8a8072]">{b.storeNames.join(", ") || "-"}</td>
               </tr>
             ))}
           </tbody>
@@ -854,7 +824,7 @@ export default function ValidationPage() {
 
   if (state.status === "loading") {
     return (
-      <div className="rounded-2xl border border-zinc-200 px-8 py-16 text-center text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+      <div className="app-card rounded-2xl px-8 py-16 text-center text-[#5c5346] dark:text-[#c9bfae]">
         불러오는 중...
       </div>
     );
@@ -862,7 +832,7 @@ export default function ValidationPage() {
 
   if (state.status === "error") {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+      <div className="rounded-2xl border border-[var(--sl-danger)]/30 bg-[var(--sl-danger-soft)] p-8 text-[#171310] dark:text-[#f2ede2]">
         <h2 className="text-lg font-semibold">데이터를 불러오지 못했습니다</h2>
         <p className="mt-2 text-sm leading-6">{state.message}</p>
       </div>
@@ -871,9 +841,9 @@ export default function ValidationPage() {
 
   if (state.status === "empty" || !computed) {
     return (
-      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">아직 등록된 기존 가맹점이 없습니다</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+      <div className="app-card rounded-2xl p-8 text-center">
+        <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">아직 등록된 기존 가맹점이 없습니다</h2>
+        <p className="mt-2 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
           기존 가맹점 마스터(storeEvalExistingStores)와 학습 특징치가 Firestore에 들어오면 이 화면에 검증 결과가 표시됩니다.
         </p>
       </div>
@@ -908,11 +878,11 @@ export default function ValidationPage() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">6. 기존 가맹점 검증</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">6. 기존 가맹점 검증</h1>
+        <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
           신규 매장 매출을 예측하는 모델이 얼마나 정확한지, 이미 운영 중인 블랙라벨 매장의 실제 매출과 비교해 확인하는 화면입니다.
         </p>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-xs text-[#8a8072]">
           블랙라벨 매장만 검증하며{excludedNonBlackLabelCount > 0 ? `, 리그PC방·브랜드 미확인 ${excludedNonBlackLabelCount}곳은 이 화면에서 제외됩니다.` : "."}{" "}
           계산 방식(리브원아웃 교차검증 등)의 자세한 설명은 아래 용어 설명과 "자세히 보기"를 참고하세요.
         </p>
@@ -925,14 +895,14 @@ export default function ValidationPage() {
           오차율·적중여부만 남긴다. 아래 전문가용 상세 데이터와 계산 결과는 완전히 동일하다 —
           보여주는 범위만 줄인 것이지 새 계산은 하나도 없다. */}
       <section className="space-y-3">
-        <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+        <p className="text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
           12개월 이상 정상 운영 중인 블랙라벨 매장 <b>{coreSummary.sampleCount}곳</b>으로 확인한 결과,{" "}
           <b>{coreRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct <= 0.1).length}곳</b>(
           {formatPercent(coreSummary.within10PctRatio)})은 모델 예측이 실제 매출과 <b>10% 이내</b>로 맞았습니다. 나머지{" "}
           {coreRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
           전체 평균으로는 실제 매출과 <b>{formatPercent(coreSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
         </p>
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs text-[#8a8072]">
           아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 위 통계는 이 중 "12개월 이상" 매장만 대상으로 계산한
           공식 검증 결과이고, 12개월 미만 매장은 아직 운영 기간이 짧아 참고용으로만 같이 보여드립니다.
         </p>
@@ -941,13 +911,13 @@ export default function ValidationPage() {
 
       <GlossarySection />
 
-      <details className="rounded-2xl border border-zinc-300 p-5 dark:border-zinc-700">
-        <summary className="cursor-pointer text-base font-semibold text-zinc-900 dark:text-zinc-50">
+      <details className="app-card rounded-2xl p-5">
+        <summary className="cursor-pointer text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
           🔍 자세히 보기 (전문가·분석용 상세 데이터)
         </summary>
         <div className="mt-6 space-y-10">
       {/* 요청사항 6 — 공식 성능/이관 검증용 구분 결론 */}
-      <section className="rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm leading-6 text-sky-900 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-200">
+      <section className="rounded-xl border border-[var(--sl-info)]/30 bg-[var(--sl-info-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
         <h3 className="font-semibold">웹 V62와 시트 V62 차이 원인 확인 결과</h3>
         <p className="mt-1">
           아래 <b>"V62 운영 결과"</b>는 시트에 저장된 V61 캐시값 그대로 재현한 결과, <b>"리브원아웃 교차검증"</b>은 매 매장을 학습에서
@@ -961,18 +931,18 @@ export default function ValidationPage() {
       </section>
 
       {/* 최상단 요약 (요청사항 8/10 형식) */}
-      <section className="rounded-2xl border border-zinc-300 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">검증 결과 요약</h2>
-        <ul className="mt-3 space-y-1 text-sm text-zinc-700 dark:text-zinc-300">
+      <section className="app-card-sm rounded-2xl p-5">
+        <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">검증 결과 요약</h2>
+        <ul className="mt-3 space-y-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
           <li>
             12개월 완료 블랙라벨: {fullTenureRows.length}곳 / 공식 정식검증 포함: {coreSummary.sampleCount}곳
           </li>
           {fullTenureExcluded.length > 0 && (
-            <li className="text-xs text-zinc-500 dark:text-zinc-400">
+            <li className="text-xs text-[#8a8072]">
               {fullTenureExcluded.map((r) => `${r.storeName}(${r.exclusionReason})`).join(", ")}
             </li>
           )}
-          <li className={missingLocationEvalRows.length > 0 ? "font-semibold text-amber-600 dark:text-amber-400" : ""}>
+          <li className={missingLocationEvalRows.length > 0 ? "font-semibold text-[var(--sl-warn)]" : ""}>
             입지평가 누락(정식+조기검증 대상): {missingLocationEvalRows.length}곳
             {missingLocationEvalRows.length > 0 && ` — ${missingLocationEvalRows.map((r) => r.storeName).join(", ")}`}
           </li>
@@ -1000,8 +970,8 @@ export default function ValidationPage() {
       </section>
 
       <div>
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">모델 검증 적중률 (리브원아웃 교차검증 — 신규점포 일반화 성능 참고)</h2>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">모델 검증 적중률 (리브원아웃 교차검증 — 신규점포 일반화 성능 참고)</h2>
+        <p className="mt-1 text-xs text-[#8a8072]">
           여기가 이 화면의 핵심입니다 — 신규 후보지를 예측할 때와 가장 비슷한 조건으로 측정한 <b>진짜 모델 성능</b>입니다.
         </p>
       </div>
@@ -1010,12 +980,12 @@ export default function ValidationPage() {
       <SummaryBlock title="3. 정식검증+조기검증 통합 적중률" summary={combinedSummary} benchmark={REFERENCE_BENCHMARK.통합} />
       <SummaryBlock title="4. 사후 운영이슈·참고용 점포까지 포함한 참고 적중률" summary={computed.referenceSummary} />
 
-      <section className="space-y-4 rounded-2xl border border-zinc-300 p-5 dark:border-zinc-700">
+      <section className="space-y-4 app-card rounded-2xl p-5">
         <div>
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+          <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
             시트 재현 적중률 — V62 운영 결과 (이관 검증용, 공식 성능 아님)
           </h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-xs text-[#8a8072]">
             시트에 저장된 V61 예측값(재계산 없이 그대로)에 외부유입 보정만 적용한 결과입니다. 실제 신규후보지 평가에 쓰는 예상매출이
             이 방식과 같습니다. 위 리브원아웃 교차검증과 절대 섞지 않습니다.
           </p>
@@ -1027,8 +997,8 @@ export default function ValidationPage() {
 
       <section className="space-y-3">
         <div>
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">매장별 비교표 — V62 운영 결과 vs 리브원아웃 교차검증</h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 비교표 — V62 운영 결과 vs 리브원아웃 교차검증</h2>
+          <p className="mt-1 text-xs text-[#8a8072]">
             정식검증+조기검증 대상 매장만. "차이 발생 단계"는 V61 예측 → 외부유입 보정률 → 반올림 순으로 처음 어긋난 지점을 표시합니다.
           </p>
         </div>
@@ -1037,8 +1007,8 @@ export default function ValidationPage() {
 
       {loocvHighVarianceRows.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">LOOCV 고변동 점포 진단</h2>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">LOOCV 고변동 점포 진단</h2>
+          <p className="text-xs text-[#8a8072]">
             V61 예측 단계에서 웹(리브원아웃 교차검증)과 시트(V62 운영 결과)의 차이가 {formatPercent(0.3)}를 넘는 매장입니다. 구현
             오류가 아니라 이 매장을 학습에서 뺐을 때 모형이 크게 흔들린다는 신호이며, 계수나 입력값을 임의로 수정하지 않습니다.
           </p>
@@ -1049,9 +1019,9 @@ export default function ValidationPage() {
         </section>
       )}
 
-      <section className="rounded-xl border border-zinc-300 bg-white p-4 text-sm leading-6 dark:border-zinc-700 dark:bg-zinc-950">
-        <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">차이 원인 점검표</h3>
-        <ul className="mt-2 space-y-1.5 text-zinc-700 dark:text-zinc-300">
+      <section className="app-card rounded-xl p-4 text-sm leading-6">
+        <h3 className="font-semibold text-[#171310] dark:text-[#f2ede2]">차이 원인 점검표</h3>
+        <ul className="mt-2 space-y-1.5 text-[#5c5346] dark:text-[#c9bfae]">
           <li>
             <b>학습대상 점포 차이</b>: 없음 — 시트·웹 모두 블랙라벨·정상영업·산식학습제외 아님·12개월 완료 26곳을 학습에 쓴다.
           </li>
@@ -1083,16 +1053,16 @@ export default function ValidationPage() {
         </ul>
       </section>
 
-      <section className="space-y-3 rounded-2xl border border-zinc-300 p-5 dark:border-zinc-700">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+      <section className="space-y-3 app-card rounded-2xl p-5">
+        <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
           5. 실측기반 예상월매출 검증 (신규 — 경쟁점 실가동좌석 기반, 이번에 처음 검증)
         </h2>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
           V61/V62(인구·이용률 기반)과 완전히 별개인 두 번째 경로를 기존 가맹점 실제매출로 처음 검증해봤습니다. 이 경로는 원본
           시트에도 존재 목적이 문서화돼 있지 않고 지금까지 검증된 적이 없어서, V61/V62 같은 통과/미달 목표(목표 MAE 등)를 적용하지
           않고 수치만 그대로 보여줍니다 — 계속 쓸지 여부는 이 결과를 보고 판단해주세요.
         </p>
-        <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-2 text-xs text-[#8a8072]">
           정식검증({coreSummary.sampleCount}곳) 중 자사 시설값이 완비되고 경쟁점 실측(핑봇)이 있는{" "}
           {measuredForecastIncluded.length}곳만 표본에 포함했습니다.
           {measuredForecastExcluded.length > 0 &&
@@ -1104,9 +1074,9 @@ export default function ValidationPage() {
           <MeasuredForecastSummaryBlock summary={measuredForecastSummary} />
         </div>
         {measuredForecastIncluded.length > 0 && (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+          <div className="mt-4 overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
             <table className="w-full min-w-[600px] text-sm">
-              <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+              <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
                 <tr>
                   <th className="px-3 py-2">점포명</th>
                   <th className="px-3 py-2">실측기반 예상월매출</th>
@@ -1115,14 +1085,14 @@ export default function ValidationPage() {
                   <th className="px-3 py-2">경쟁점 핑봇 커버율</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
                 {measuredForecastIncluded.map((m) => (
                   <tr key={m.storeName}>
                     <td className="px-3 py-2 font-medium">{m.storeName}</td>
                     <td className="px-3 py-2">{formatWon(m.forecastRevenue)}</td>
                     <td className="px-3 py-2">{formatWon(m.actualRevenueAvg)}</td>
                     <td className="px-3 py-2">{formatPercent(m.absoluteErrorPct)}</td>
-                    <td className={`px-3 py-2 ${m.isLowCoverageReliability ? "text-amber-600 dark:text-amber-400" : ""}`}>
+                    <td className={`px-3 py-2 ${m.isLowCoverageReliability ? "text-[var(--sl-warn)]" : ""}`}>
                       {formatPercent(m.coverageRatio)}
                       {m.isLowCoverageReliability && " (낮음)"}
                     </td>
@@ -1130,7 +1100,7 @@ export default function ValidationPage() {
                 ))}
               </tbody>
             </table>
-            <p className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="px-3 py-2 text-xs text-[#8a8072]">
               경쟁점 핑봇 커버율 = 조사된 경쟁점 중 핑봇 기간평균 가동률이 있는 비율. 70% 미만이면
               "낮음"으로 표시합니다(원본 점포평가.gs의 최소커버율 0.70 기준 — 원본도 이 값으로 표본을
               거르지 않고 참고 신뢰도로만 씁니다).
@@ -1145,7 +1115,7 @@ export default function ValidationPage() {
       </section>
 
       {!coreSummary.targetsMetAll && (
-        <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <section className="rounded-xl border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
           <h3 className="font-semibold">목표 미달성 — 정확도가 나온 것처럼 표시하지 않습니다</h3>
           <p className="mt-1">
             점포별 표의 "우선 추정 원인" 열은 확정 진단이 아니라 검토 우선순위 참고용입니다. 오차가 큰 점포는 아래 표에서 절대오차율이
@@ -1159,7 +1129,7 @@ export default function ValidationPage() {
         const rows = byCohort.get(cohort) ?? [];
         return (
           <section key={cohort}>
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
               {COHORT_LABELS[cohort]} ({rows.length}곳)
             </h2>
             <div className="mt-2">

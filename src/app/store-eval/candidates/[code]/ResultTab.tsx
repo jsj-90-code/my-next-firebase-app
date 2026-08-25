@@ -24,11 +24,10 @@ import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { sectionClass, sectionTitleClass } from "./formFields";
 
 function judgementStyle(j: FinalJudgement | null): string {
-  if (j === "평가 완료") return "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300";
-  if (j === "포화 주의" || j === "입지 재검토") return "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300";
-  if (j === "V62 계산 확인 필요") return "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
-  if (j == null) return "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400";
-  return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"; // "~확인 필요"/"~분석 필요"류
+  if (j === "평가 완료") return "app-badge-ok";
+  if (j === "포화 주의" || j === "입지 재검토") return "app-badge-warn";
+  if (j === "V62 계산 확인 필요") return "app-badge-danger";
+  return "app-badge-neutral"; // 값 없음 또는 "~확인 필요"/"~분석 필요"류
 }
 
 // 2026-08-25 추가 — "최종운영판정" 한 배지가 "아직 입력/계산이 덜 끝났다"는 신호(원본 13_
@@ -44,10 +43,10 @@ function judgementKind(j: FinalJudgement | null): "계산 상태" | "사업 판�
 
 function ResultCard({ label, value, emphasis, hint }: { label: string; value: string; emphasis?: boolean; hint?: string }) {
   return (
-    <div className={`rounded-xl border border-zinc-200 p-4 dark:border-zinc-800 ${emphasis ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "bg-white dark:bg-zinc-950"}`}>
-      <p className={`text-xs ${emphasis ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-500 dark:text-zinc-400"}`}>{label}</p>
+    <div className={`rounded-xl p-4 ${emphasis ? "bg-[#171310] text-white dark:bg-[#f2ede2] dark:text-[#171310]" : "app-card"}`}>
+      <p className={`text-xs ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[#8a8072]"}`}>{label}</p>
       <p className={`mt-1 font-semibold ${emphasis ? "text-2xl" : "text-lg"}`}>{value}</p>
-      {hint && <p className={`mt-1 text-[11px] ${emphasis ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-400"}`}>{hint}</p>}
+      {hint && <p className={`mt-1 text-[11px] ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[#8a8072]"}`}>{hint}</p>}
     </div>
   );
 }
@@ -84,7 +83,7 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
 
   return (
     <div>
-      <p className="font-semibold text-zinc-800 dark:text-zinc-200">§4.1 V61 기본예측(학습모형)</p>
+      <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">§4.1 V61 기본예측(학습모형)</p>
       <p className="mt-1">
         기존 가맹점 {explain.sampleCount}곳의 실제 매출 데이터로 학습한 통계모형(비음수 릿지회귀)입니다. 이 후보지의 조건 3가지를 넣으면
         아래 표처럼 계산됩니다.
@@ -93,7 +92,7 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[560px] border-collapse text-[11px]">
           <thead>
-            <tr className="border-b border-zinc-200 text-left text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            <tr className="border-b border-[#171310]/[0.08] text-left text-[#8a8072] dark:border-white/[0.08]">
               <th className="py-1 pr-2">요인</th>
               <th className="py-1 pr-2">이 후보지 값</th>
               <th className="py-1 pr-2">학습평균</th>
@@ -105,14 +104,14 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.label} className="border-b border-zinc-100 dark:border-zinc-900">
-                <td className="py-1 pr-2 font-medium text-zinc-700 dark:text-zinc-300">
+              <tr key={r.label} className="border-b border-[#171310]/[0.06] dark:border-white/[0.06]">
+                <td className="py-1 pr-2 font-medium text-[#5c5346] dark:text-[#c9bfae]">
                   {r.label}
-                  {r.isLogTransformed && <span className="ml-1 text-zinc-400">(로그값 기준)</span>}
+                  {r.isLogTransformed && <span className="ml-1 text-[#8a8072]">(로그값 기준)</span>}
                 </td>
                 <td className="py-1 pr-2">
                   {r.formattedRealValue}
-                  {r.isLogTransformed && <span className="ml-1 text-zinc-400">→ log {formatScore(r.modelValue, 3)}</span>}
+                  {r.isLogTransformed && <span className="ml-1 text-[#8a8072]">→ log {formatScore(r.modelValue, 3)}</span>}
                 </td>
                 <td className="py-1 pr-2">{formatScore(r.mean, 3)}</td>
                 <td className="py-1 pr-2">{formatScore(r.sd, 3)}</td>
@@ -138,7 +137,7 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
         V61 기본예측 = 회귀예측매출×{formatPercent(explain.ridgeWeight, 0)} + 기준모형매출×{formatPercent(explain.baselineWeight, 0)} ={" "}
         <b>{formatWon(v61Baseline)}</b>
       </p>
-      <p className="mt-1 text-[11px] text-zinc-400">
+      <p className="mt-1 text-[11px] text-[#8a8072]">
         학습된 가중치(계수)는 항상 0 이상입니다(비음수 릿지회귀) — 세 조건 중 어느 것도 매출을 깎는 방향으로 작용하지 않고, 학습평균보다
         낫다는 요인만 매출을 끌어올립니다. 학습표본이 바뀌면(가맹점 추가·갱신) 평균·표준편차·가중치도 같이 바뀝니다.
       </p>
@@ -316,16 +315,16 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       .catch(() => setReportError("클립보드 복사에 실패했습니다. 직접 선택해서 복사해주세요."));
   }
 
-  if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">계산 중...</p>;
+  if (loading) return <p className="text-sm text-[#8a8072]">계산 중...</p>;
 
   if (error) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
+        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
         <button
           type="button"
           onClick={run}
-          className="w-fit rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          className="app-btn-outline w-fit rounded-lg px-4 py-2 text-sm"
         >
           다시 시도
         </button>
@@ -339,21 +338,21 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">최종평가 결과</h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">모델버전 {result.modelVersion} 기준 계산 결과입니다.</p>
+          <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">최종평가 결과</h2>
+          <p className="mt-1 text-sm text-[#8a8072]">모델버전 {result.modelVersion} 기준 계산 결과입니다.</p>
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={run}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="app-btn-outline rounded-lg px-4 py-2 text-sm"
           >
             다시 계산
           </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+            className="app-btn-primary rounded-lg px-4 py-2 text-sm"
           >
             인쇄 / PDF 저장
           </button>
@@ -362,44 +361,44 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
       <div className="flex flex-wrap items-center gap-3 print:hidden">
         {alreadyExisting ? (
-          <span className="rounded-lg bg-zinc-100 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          <span className="app-card-sm rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
             이미 기존 가맹점으로 전환됨 — [기존 가맹점 관리] 화면에서 관리하세요.
           </span>
         ) : (
           <>
-            <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+            <label className="flex items-center gap-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
               실제 가맹점코드
               <input
                 type="text"
                 value={newStoreCode}
                 onChange={(e) => setNewStoreCode(e.target.value)}
                 placeholder="예: 20260703437"
-                className="w-40 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                className="app-input w-40 px-2 py-1.5 text-sm"
               />
             </label>
             <button
               type="button"
               disabled={converting}
               onClick={handleConvert}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+              className="rounded-lg border border-[var(--sl-ok)]/30 bg-[var(--sl-ok-soft)] px-4 py-2 text-sm font-medium text-[var(--sl-ok)] hover:brightness-95 disabled:opacity-50"
             >
               {converting ? "전환 중..." : "오픈 확정 → 기존 가맹점으로 전환"}
             </button>
           </>
         )}
-        {convertMessage && <p className="text-xs text-zinc-600 dark:text-zinc-400">{convertMessage}</p>}
+        {convertMessage && <p className="text-xs text-[#5c5346] dark:text-[#c9bfae]">{convertMessage}</p>}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <span className={`rounded-full px-3 py-1 text-sm font-semibold ${judgementStyle(result.finalJudgement)}`}>
+        <span className={`app-badge text-sm ${judgementStyle(result.finalJudgement)}`}>
           {judgementKind(result.finalJudgement) && (
             <span className="mr-1.5 text-[10px] font-normal opacity-70">[{judgementKind(result.finalJudgement)}]</span>
           )}
           최종운영판정: {result.finalJudgement ?? "-"}
         </span>
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">입력완성도: {result.completionStatus ?? "-"}</span>
+        <span className="text-xs text-[#8a8072]">입력완성도: {result.completionStatus ?? "-"}</span>
       </div>
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-[#8a8072]">
         [계산 상태]는 아직 입력·계산이 덜 끝났다는 뜻이고, [사업 판정]이 떠야 실제 출점 판단에 참고할 수 있는 결과입니다.
       </p>
 
@@ -407,17 +406,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className={sectionTitleClass}>매출 예측 (V62)</h3>
           <span
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-              result.v61IsFallback
-                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-                : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-            }`}
+            className={`app-badge text-xs ${result.v61IsFallback ? "app-badge-warn" : "app-badge-ok"}`}
           >
             {result.v61ModelLabel} · 학습표본 {result.v61TrainingSampleCount}곳
           </span>
         </div>
         {result.v61IsFallback && (
-          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
             학습표본이 최소 기준({settingsUsed.v61Training.minSampleCount}곳)에 못 미쳐 임시 폴백 회귀식을 썼습니다. 실제 후보지 판단에
             그대로 쓰지 말고, 기존 가맹점 학습 데이터가 채워진 뒤 다시 계산해주세요.
           </p>
@@ -431,7 +426,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
         </div>
         <details className="mt-3">
-          <summary className="cursor-pointer text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200">
+          <summary className="cursor-pointer text-xs font-medium text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]">
             세부 계산값 보기 (V61 기본예측 · V62 보정률 · 보수/상한 참고범위)
           </summary>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -447,11 +442,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className={sectionTitleClass}>실측기반 예상월매출 — 경쟁점 실가동좌석 기반 (V61/V62와 별개 경로, 참고용)</h3>
           <span
-            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-              result.measuredForecastNeedsReview
-                ? "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"
-                : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-            }`}
+            className={`app-badge text-xs ${result.measuredForecastNeedsReview ? "app-badge-danger" : "app-badge-warn"}`}
           >
             {result.measuredForecastNeedsReview ? "데이터 재검토 필요" : "미검증 참고 지표"}
           </span>
@@ -460,7 +451,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             V61/V62처럼 기존 가맹점 리브-원-아웃 검증을 거친 적이 없다(docs/data-issues.md
             2026-08-21 참고). 그래서 V62와 달리 emphasis 카드로 강조하지 않고, 항상 미검증
             경고를 띄운다 — 가동률 초과일 때만 경고하면 "평소엔 믿을만하다"는 오해를 주기 때문. */}
-        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
           이 값은 V61/V62처럼 기존 가맹점 실제매출로 검증된 적이 없는 별도 계산입니다(경쟁점 실가동좌석을 우리 매장 좌석점유로
           환산하는 방식). 출점 판단은 위 &ldquo;V62 최종예상월매출&rdquo;을 기준으로 하고, 이 값은 참고로만 봐주세요.
           {result.measuredForecastNeedsReview && " 특히 예상 가동률이 계획한 PC대수를 넘어서 신뢰도가 더 낮습니다."}
@@ -490,7 +481,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>AA 기준매출 판정 (참고용, 미검증)</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-xs text-[#8a8072]">
           예상 오픈월부터 10개월간 &ldquo;순수익 2,000만원 대당 일매출목표&rdquo; 평균과 위 미검증 실측기반 예상월매출을
           비교하는 등급 판정입니다. 최종운영판정과 무관하며, 출점 여부 결정에는 쓰지 않습니다.
         </p>
@@ -520,7 +511,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className={sectionTitleClass}>다우오피스 평가기록 초안</h3>
-            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 text-xs text-[#8a8072]">
               위 계산 결과만 근거로 AI(Gemini)가 [상권]/[경쟁]/[종합 의견] 문장을 씁니다. 다우오피스에 자동으로 기입하지 않으니,
               내용을 검토·수정한 뒤 직접 복사해서 붙여넣어주세요. 손익계산(투자비·회수기간 등)은 포함하지 않습니다.
             </p>
@@ -529,14 +520,14 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             type="button"
             disabled={reportLoading}
             onClick={handleGenerateReport}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="app-btn-outline rounded-lg px-4 py-2 text-sm disabled:opacity-50"
           >
             {reportLoading ? "생성 중..." : reportDraft ? "다시 생성" : "AI 초안 생성"}
           </button>
         </div>
 
         {reportError && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{reportError}</p>
+          <p className="app-badge app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{reportError}</p>
         )}
 
         {reportDraft && (
@@ -548,18 +539,18 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
                 { key: "summary", label: "종합 의견", text: reportDraft.summarySection },
               ] as const
             ).map((section) => (
-              <div key={section.key} className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-800">
+              <div key={section.key} className="app-card-sm rounded-xl p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">[{section.label}]</p>
+                  <p className="text-xs font-semibold text-[#8a8072]">[{section.label}]</p>
                   <button
                     type="button"
                     onClick={() => handleCopy(section.key, section.text)}
-                    className="rounded-md border border-zinc-300 px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    className="app-btn-outline rounded-md px-2 py-0.5 text-[11px]"
                   >
                     {copiedKey === section.key ? "복사됨" : "복사"}
                   </button>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-800 dark:text-zinc-200">{section.text}</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm text-[#171310] dark:text-[#f2ede2]">{section.text}</p>
               </div>
             ))}
             <button
@@ -570,7 +561,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
                   `[상권] ${reportDraft.marketSection}\n[경쟁] ${reportDraft.competitionSection}\n[종합 의견] ${reportDraft.summarySection}`,
                 )
               }
-              className="w-fit rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              className="app-btn-primary w-fit rounded-lg px-4 py-2 text-sm"
             >
               {copiedKey === "all" ? "전체 복사됨" : "전체 복사"}
             </button>
@@ -578,12 +569,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         )}
       </section>
 
-      <details className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950 print:hidden">
-        <summary className="cursor-pointer font-medium text-zinc-700 dark:text-zinc-300">적용된 산식과 계수 보기</summary>
-        <div className="mt-4 flex flex-col gap-4 text-xs leading-6 text-zinc-600 dark:text-zinc-400">
+      <details className="app-card rounded-2xl p-4 text-sm print:hidden">
+        <summary className="cursor-pointer font-medium text-[#5c5346] dark:text-[#c9bfae]">적용된 산식과 계수 보기</summary>
+        <div className="mt-4 flex flex-col gap-4 text-xs leading-6 text-[#5c5346] dark:text-[#c9bfae]">
           {result.v61IsFallback ? (
             <div>
-              <p className="font-semibold text-zinc-800 dark:text-zinc-200">§4.1 V61 기본예측(폴백 회귀식)</p>
+              <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">§4.1 V61 기본예측(폴백 회귀식)</p>
               <p>
                 자사수요_per_PC = (상권수요 × 경쟁력격차) / (예상PC대수 × 경쟁력격차 + 경쟁IP)
                 <br />
@@ -592,7 +583,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
                 <br />
                 V61(폴백) = 예상PC대수 × MAX(0, 선형값)
               </p>
-              <p className="mt-1 text-[11px] text-zinc-400">
+              <p className="mt-1 text-[11px] text-[#8a8072]">
                 기존 가맹점 학습표본이 최소 기준({settingsUsed.v61Training.minSampleCount}곳)에 못 미쳐, 아래 학습모형 대신 사람이 미리
                 정해둔 이 임시 근사식을 씁니다. docs/data-issues.md #1 참고.
               </p>
@@ -602,7 +593,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           ) : null}
 
           <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-200">§4 V62 보정 계수 (12_운영판정 O/P열)</p>
+            <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">§4 V62 보정 계수 (12_운영판정 O/P열)</p>
             <p>
               외부유입제한 없음 {formatPercent(settingsUsed.inflowAdjustment.없음)} / 보통 {formatPercent(settingsUsed.inflowAdjustment.보통)} / 강함{" "}
               {formatPercent(settingsUsed.inflowAdjustment.강함)}
@@ -614,7 +605,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           </div>
 
           <div>
-            <p className="font-semibold text-zinc-800 dark:text-zinc-200">§6 13_신규후보지판정 T/U열 로직 (원본 문자열 그대로)</p>
+            <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">§6 13_신규후보지판정 T/U열 로직 (원본 문자열 그대로)</p>
             <p>
               입력완성도: V61 없음→&ldquo;07 분석 필요&rdquo; / 입지동선점수 없음→&ldquo;09 입지평가 필요&rdquo; / 외부유입제한 없음→&ldquo;외부유입 확인
               필요&rdquo; / 브랜드구분≠{settingsUsed.brandFilter}→&ldquo;브랜드 확인 필요&rdquo; / 그 외→&ldquo;완료&rdquo;

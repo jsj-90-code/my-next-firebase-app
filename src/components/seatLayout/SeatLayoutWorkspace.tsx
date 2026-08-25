@@ -129,9 +129,9 @@ function nextAvailableZoneName(
 }
 
 function statusToneClass(tone: "info" | "success" | "error") {
-  if (tone === "success") return "text-emerald-600 dark:text-emerald-400";
-  if (tone === "error") return "text-red-600 dark:text-red-400";
-  return "text-zinc-500 dark:text-zinc-400";
+  if (tone === "success") return "text-[var(--sl-ok)]";
+  if (tone === "error") return "text-[var(--sl-danger)]";
+  return "text-[#8a8072]";
 }
 
 export function SeatLayoutWorkspace() {
@@ -2058,8 +2058,8 @@ export function SeatLayoutWorkspace() {
   // 다르게 배치한다 (도면 캔버스 자리를 좌석번호표 크롭이 가리지 않도록).
   function cropPanel() {
     return (
-      <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-        <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">{cropHint}</p>
+      <div className="app-card-sm rounded-2xl p-3">
+        <p className="text-sm font-semibold text-[var(--sl-warn)]">{cropHint}</p>
         <div className="mt-2 overflow-auto rounded-lg border border-black/[0.06] bg-white dark:border-white/[0.08]">
           <canvas
             ref={cropCanvasRef}
@@ -2087,7 +2087,7 @@ export function SeatLayoutWorkspace() {
           <button
             type="button"
             onClick={closeCrop}
-            className="rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-black/[0.04] dark:border-white/10 dark:hover:bg-white/[0.06]"
+            className="rounded-lg app-btn-outline px-3 py-2 text-sm"
           >
             취소
           </button>
@@ -2101,7 +2101,10 @@ export function SeatLayoutWorkspace() {
     <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
       <header className="-mx-4 -mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#171310]/[0.08] px-4 py-4 dark:border-white/[0.08] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="text-xl font-bold tracking-tight text-[#171310] dark:text-[#f2ede2] sm:text-2xl">
+          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-[#171310] dark:text-[#f2ede2] sm:text-2xl">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-5 w-5 shrink-0 text-[#c05a2c]">
+              <path d="M3 3h18v18H3z M3 9h18 M9 9v12 M12 12h6v6h-6z" />
+            </svg>
             아이센스 <span className="text-[#c05a2c]">PC방 좌석배치도</span> 작업 툴
           </h1>
           <Link
@@ -2167,7 +2170,7 @@ export function SeatLayoutWorkspace() {
               href={presentationUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+              className="text-sm font-medium text-[#c05a2c] underline hover:text-[#c05a2c]/80"
             >
               프레젠테이션 열기 ↗
             </a>
@@ -2180,7 +2183,7 @@ export function SeatLayoutWorkspace() {
               href={deskOrderSheetUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+              className="text-sm font-medium text-[#c05a2c] underline hover:text-[#c05a2c]/80"
             >
               발주서 열기 ↗
             </a>
@@ -2211,10 +2214,10 @@ export function SeatLayoutWorkspace() {
       {seatNumberStoreInfoOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="app-card w-full max-w-md rounded-2xl p-5">
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">
               좌석번호표 시트 등록 - 매장정보
             </h2>
-            <p className="mt-1 text-xs text-zinc-400">
+            <p className="mt-1 text-xs text-[#8a8072]">
               아직 정해지지 않은 항목은 비워두고 등록해도 됩니다.
             </p>
             <div className="mt-3 space-y-2">
@@ -2308,7 +2311,7 @@ export function SeatLayoutWorkspace() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-2 flex items-center justify-between px-2">
-              <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">피난안내도</p>
+              <p className="text-sm font-semibold text-[#5c5346] dark:text-[#c9bfae]">피난안내도</p>
               <button
                 type="button"
                 onClick={() => setSeatNumberImageModalOpen(false)}
@@ -2392,7 +2395,7 @@ export function SeatLayoutWorkspace() {
               <button
                 type="button"
                 onClick={cancelZone}
-                className="flex-1 rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                className="flex-1 rounded-lg app-btn-outline px-3 py-2 text-sm"
               >
                 취소
               </button>
@@ -2402,9 +2405,9 @@ export function SeatLayoutWorkspace() {
       )}
 
       {activeTab === "pc" && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">책상 구역 불러오기</p>
-          <p className="mt-1 text-sm text-amber-800/80 dark:text-amber-200/70">
+        <div className="app-card-sm rounded-2xl p-4">
+          <p className="text-sm font-semibold text-[var(--sl-warn)]">책상 구역 불러오기</p>
+          <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
             책상 발주 도면에서 지정한 구역을 그대로 가져와서 PC 존으로 씁니다. 이름/색상/좌표/대수는 그대로 복사되고,
             PC 사양은 기본사양으로 시작합니다.
           </p>
@@ -2425,7 +2428,7 @@ export function SeatLayoutWorkspace() {
       >
         <div className="flex flex-col gap-4">
           <section className="app-card rounded-2xl p-5">
-            <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">불러올 프로젝트 (매장)</label>
+            <label className="text-xs font-medium text-[#8a8072]">불러올 프로젝트 (매장)</label>
             <select
               value={project.updatedAt ? project.id : ""}
               onChange={(e) => handleSelectProject(e.target.value)}
@@ -2450,7 +2453,7 @@ export function SeatLayoutWorkspace() {
               <button
                 type="button"
                 onClick={deleteCurrentProject}
-                className="flex-1 rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
+                className="flex-1 rounded-lg border border-[var(--sl-danger)]/30 px-3 py-2 text-sm font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)]"
               >
                 선택한 프로젝트 삭제
               </button>
@@ -2459,12 +2462,12 @@ export function SeatLayoutWorkspace() {
 
           <section className="app-card rounded-2xl p-5">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">매장명 / 도면</label>
+              <label className="text-xs font-medium text-[#8a8072]">매장명 / 도면</label>
               {imgEl && (
                 <button
                   type="button"
                   onClick={() => setUploadPanelOpen((v) => !v)}
-                  className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                  className="text-xs font-medium text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]"
                 >
                   {uploadPanelOpen ? "▾ 접기" : "▸ 매장명/도면 변경"}
                 </button>
@@ -2481,7 +2484,7 @@ export function SeatLayoutWorkspace() {
                 />
                 <label
                   htmlFor="floorplan-file-input"
-                  className="mt-3 block cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400"
+                  className="mt-3 block cursor-pointer text-xs font-medium text-[#8a8072]"
                 >
                   도면 이미지 업로드 (이미지 또는 PDF)
                 </label>
@@ -2491,9 +2494,9 @@ export function SeatLayoutWorkspace() {
                   type="file"
                   accept="image/*,application/pdf"
                   onChange={handleFileChange}
-                  className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
+                  className="mt-1 w-full text-sm text-[#5c5346] file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:opacity-80 dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
                 />
-                <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-500">
+                <p className="mt-1 text-xs font-medium text-[var(--sl-warn)]">
                   도면은 모든 탭에서 공통으로 사용됩니다.
                   <br />
                   💡 도면 이미지는 PDF로 등록하세요 — 화면 캡처보다 훨씬 선명해요.
@@ -2501,8 +2504,8 @@ export function SeatLayoutWorkspace() {
                   💡 책가방선반 브라켓 표시가 있는 도면을 사용하세요 — 헤드셋걸이 종류가 자동으로 구분돼요.
                 </p>
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
-                  <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-                    <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  <div className="app-card-sm mt-3 rounded-lg p-3">
+                    <p className="text-xs font-semibold text-[var(--sl-warn)]">
                       배치도(평면도) 페이지를 클릭해서 선택해주세요
                     </p>
                     <div className="mt-2 grid grid-cols-3 gap-2">
@@ -2512,7 +2515,7 @@ export function SeatLayoutWorkspace() {
                           type="button"
                           disabled={pdfPickerBusy}
                           onClick={() => selectPdfPage(p.pageNumber)}
-                          className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-amber-500 disabled:opacity-50 dark:border-white/10 dark:bg-zinc-900"
+                          className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-[#c05a2c]/60 disabled:opacity-50 dark:border-white/10 dark:bg-[#1c1912]"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -2520,7 +2523,7 @@ export function SeatLayoutWorkspace() {
                             alt={`${p.pageNumber}페이지`}
                             className="aspect-[4/3] w-full rounded object-contain"
                           />
-                          <span className="text-xs text-zinc-500 group-hover:text-amber-700 dark:text-zinc-400">
+                          <span className="text-xs text-[#8a8072] group-hover:text-[#c05a2c]">
                             {p.pageNumber}페이지
                           </span>
                         </button>
@@ -2529,7 +2532,7 @@ export function SeatLayoutWorkspace() {
                     <button
                       type="button"
                       onClick={cancelPdfPicker}
-                      className="mt-2 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300"
+                      className="mt-2 text-xs text-[#8a8072] underline underline-offset-2 hover:text-[#171310] dark:hover:text-[#f2ede2]"
                     >
                       취소
                     </button>
@@ -2537,9 +2540,9 @@ export function SeatLayoutWorkspace() {
                 )}
               </>
             ) : (
-              <div className="mt-1 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <div className="mt-1 flex items-center gap-2 text-sm text-[#5c5346] dark:text-[#c9bfae]">
                 <span className="font-medium">{project.name || "(매장명 미입력)"}</span>
-                <span className="text-xs text-zinc-400">· 도면 업로드됨</span>
+                <span className="text-xs text-[#8a8072]">· 도면 업로드됨</span>
               </div>
             )}
 
@@ -2558,13 +2561,13 @@ export function SeatLayoutWorkspace() {
           {activeTab !== "seatNumber" && (
             <section className="app-card rounded-2xl p-5">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
+                <h2 className="font-semibold text-[#171310] dark:text-[#f2ede2]">존 목록</h2>
                 {activeTab === "desk" && floorPlanSrc && (
                   <button
                     type="button"
                     disabled={zoneSuggestBusy}
                     onClick={suggestZoneDrafts}
-                    className="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                    className="app-btn-accent rounded-full px-3 py-1 text-xs disabled:opacity-50"
                   >
                     {zoneSuggestBusy ? "제안받는 중..." : "AI로 구역 초안 제안받기 (테스트)"}
                   </button>
@@ -2572,15 +2575,15 @@ export function SeatLayoutWorkspace() {
               </div>
               <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
                 {activeZones.length === 0 && (
-                  <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
+                  <p className="text-sm text-[#8a8072]">아직 등록된 존이 없습니다.</p>
                 )}
                 {activeZones.map((z, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
+                    className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-[#f9f5ea] px-3 py-2 text-sm dark:bg-[#1e1b14]"
                     style={{ borderLeftColor: z.color }}
                   >
-                    <span className="text-zinc-700 dark:text-zinc-200">
+                    <span className="text-[#5c5346] dark:text-[#c9bfae]">
                       {z.name} ({z.seats}
                       {activeTab === "pc" ? "대" : "개"})
                     </span>
@@ -2595,7 +2598,7 @@ export function SeatLayoutWorkspace() {
                       <button
                         type="button"
                         onClick={() => deleteZone(i)}
-                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
+                        className="rounded-md border border-[var(--sl-danger)]/30 px-2 py-1 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)]"
                       >
                         삭제
                       </button>
@@ -2610,7 +2613,7 @@ export function SeatLayoutWorkspace() {
           <section className="app-card rounded-2xl p-5">
             <label
               htmlFor="seat-number-plate-input"
-              className="block cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400"
+              className="block cursor-pointer text-xs font-medium text-[#8a8072]"
             >
               좌석번호표 (선택 — 피난안내도 등, 이미지 또는 PDF)
             </label>
@@ -2620,9 +2623,9 @@ export function SeatLayoutWorkspace() {
               type="file"
               accept="image/*,application/pdf"
               onChange={handleSeatNumberPlateFileChange}
-              className="mt-1 w-full text-sm text-zinc-600 file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:bg-zinc-700 dark:text-zinc-300 dark:file:bg-zinc-100 dark:file:text-zinc-900 dark:hover:file:bg-white"
+              className="mt-1 w-full text-sm text-[#5c5346] file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:opacity-80 dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
             />
-            <p className="mt-1 text-xs text-zinc-400">
+            <p className="mt-1 text-xs text-[#8a8072]">
               등록하면 먼저 필요한 영역만 잘라낼 수 있고, 그 뒤 존별 좌석번호 범위를 자동으로
               인식해서 발주요약(슬라이드3)에 함께 넣습니다. 번호 인식은 100% 정확하지 않을 수
               있어요 — 틀린 부분은 아래에서 직접 고치면 됩니다.
@@ -2635,7 +2638,7 @@ export function SeatLayoutWorkspace() {
                 type="button"
                 disabled={busy}
                 onClick={openSeatNumberSheetDialog}
-                className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+                className="app-btn-accent rounded-lg px-3 py-2 text-sm disabled:opacity-50"
               >
                 좌석번호표 발주 등록
               </button>
@@ -2644,7 +2647,7 @@ export function SeatLayoutWorkspace() {
                   href={seatNumberSheetUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm font-medium text-amber-700 underline hover:text-amber-800 dark:text-amber-500"
+                  className="text-sm font-medium text-[#c05a2c] underline hover:text-[#c05a2c]/80"
                 >
                   시트 열기 ↗
                 </a>
@@ -2652,8 +2655,8 @@ export function SeatLayoutWorkspace() {
             </div>
 
             {pdfPickerPages && pdfPickerTarget === "seatNumberPlate" && (
-              <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+              <div className="app-card-sm mt-3 rounded-lg p-3">
+                <p className="text-xs font-semibold text-[var(--sl-warn)]">
                   좌석번호표(피난안내도) 페이지를 클릭해서 선택해주세요
                 </p>
                 <div className="mt-2 grid grid-cols-3 gap-2">
@@ -2663,7 +2666,7 @@ export function SeatLayoutWorkspace() {
                       type="button"
                       disabled={pdfPickerBusy}
                       onClick={() => selectPdfPage(p.pageNumber)}
-                      className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-amber-500 disabled:opacity-50 dark:border-white/10 dark:bg-zinc-900"
+                      className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-[#c05a2c]/60 disabled:opacity-50 dark:border-white/10 dark:bg-[#1c1912]"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -2671,7 +2674,7 @@ export function SeatLayoutWorkspace() {
                         alt={`${p.pageNumber}페이지`}
                         className="aspect-[4/3] w-full rounded object-contain"
                       />
-                      <span className="text-xs text-zinc-500 group-hover:text-amber-700 dark:text-zinc-400">
+                      <span className="text-xs text-[#8a8072] group-hover:text-[#c05a2c]">
                         {p.pageNumber}페이지
                       </span>
                     </button>
@@ -2680,7 +2683,7 @@ export function SeatLayoutWorkspace() {
                 <button
                   type="button"
                   onClick={cancelPdfPicker}
-                  className="mt-2 text-xs text-zinc-500 underline underline-offset-2 hover:text-zinc-700 dark:hover:text-zinc-300"
+                  className="mt-2 text-xs text-[#8a8072] underline underline-offset-2 hover:text-[#171310] dark:hover:text-[#f2ede2]"
                 >
                   취소
                 </button>
@@ -2690,7 +2693,7 @@ export function SeatLayoutWorkspace() {
             {(rawSeatNumberPlateDataUrl || project.seatNumberPlateDataUrl) && project.zones.length > 0 && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+                  <p className="text-xs font-semibold text-[#5c5346] dark:text-[#c9bfae]">
                     {seatNumberRecognizing ? "AI가 채우는 중..." : "존별 좌석번호 (직접 입력, 틀리면 수정)"}
                   </p>
                   <div className="flex flex-wrap gap-1.5">
@@ -2712,16 +2715,13 @@ export function SeatLayoutWorkspace() {
                     </button>
                   </div>
                 </div>
-                <p className="text-xs text-zinc-400">
+                <p className="text-xs text-[#8a8072]">
                   기본은 직접 입력입니다 — 오른쪽에서 책상 도면과 피난안내도를 나란히 보면서
                   아래 칸에 존별 번호를 적어주세요. "AI로 자동 채워보기"는 참고용이며, 이미
                   직접 입력한 존은 덮어쓰지 않습니다.
                 </p>
                 {seatNumberWarnings.map((w, i) => (
-                  <p
-                    key={i}
-                    className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
-                  >
+                  <p key={i} className="app-badge app-badge-warn w-full justify-start py-1.5 text-xs">
                     {w}
                   </p>
                 ))}
@@ -2733,7 +2733,7 @@ export function SeatLayoutWorkspace() {
                         type="button"
                         onClick={() => copySeatNumberGroup(g.ranges)}
                         title="클릭하면 복사됩니다"
-                        className="rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                        className="rounded-full border border-[var(--sl-warn)]/40 bg-[var(--sl-warn-soft)] px-2.5 py-1 text-xs font-medium text-[var(--sl-warn)] hover:opacity-80"
                       >
                         {g.ranges} ({g.count}개) 복사
                       </button>
@@ -2747,7 +2747,7 @@ export function SeatLayoutWorkspace() {
                   const entry = project.seatNumberRanges.find((r) => r.zoneName === name);
                   return (
                     <div key={name} className="flex items-center gap-2">
-                      <span className="w-20 shrink-0 truncate text-xs text-zinc-500" title={name}>
+                      <span className="w-20 shrink-0 truncate text-xs text-[#8a8072]" title={name}>
                         {name}
                       </span>
                       <input
@@ -2774,15 +2774,15 @@ export function SeatLayoutWorkspace() {
                 }}
                 className="flex w-full items-center justify-between text-left"
               >
-                <span className="font-semibold text-zinc-900 dark:text-zinc-50">PC 기본사양</span>
-                <span className="text-xs font-medium text-zinc-500">{pcDefaultsOpen ? "▾ 접기" : "▸ 펼치기"}</span>
+                <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">PC 기본사양</span>
+                <span className="text-xs font-medium text-[#8a8072]">{pcDefaultsOpen ? "▾ 접기" : "▸ 펼치기"}</span>
               </button>
-              <p className="mt-1 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              <p className="mt-1 text-sm font-semibold text-[#5c5346] dark:text-[#c9bfae]">
                 PC 기본사양 - {basicPcQty}대 (카운터, 대체PC 포함)
               </p>
               {pcDefaultsOpen && (
                 <div className="mt-3 space-y-2">
-                  <p className="text-xs text-zinc-400">
+                  <p className="text-xs text-[#8a8072]">
                     여기 값이 기본값이 되고, 존마다 다르게 지정한 항목만 별도로 표시됩니다.
                   </p>
                   <div className="grid grid-cols-2 gap-2">
@@ -2807,7 +2807,7 @@ export function SeatLayoutWorkspace() {
                     type="button"
                     onClick={refreshAllPcZoneDefaults}
                     title="사양설정에서 바뀐 존 유형별 기본값을 PC 존 전체에 한 번에 다시 반영합니다 (존별로 직접 고친 항목도 함께 되돌아갑니다)"
-                    className="w-full rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                    className="app-btn-accent w-full rounded-lg px-3 py-2 text-sm"
                   >
                     ↻ PC 존 전체 사양 새로고침 ({project.pcZones.length}개)
                   </button>
@@ -2837,7 +2837,7 @@ export function SeatLayoutWorkspace() {
                       className="max-h-[76vh] max-w-full cursor-crosshair rounded-lg border border-black/10 bg-white dark:border-white/10"
                     />
                   ) : (
-                    <div className="flex h-64 w-full items-center justify-center text-sm text-zinc-400">
+                    <div className="flex h-64 w-full items-center justify-center text-sm text-[#8a8072]">
                       왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
                     </div>
                   )}
@@ -2850,13 +2850,13 @@ export function SeatLayoutWorkspace() {
             {activeTab === "seatNumber" && seatNumberPlateSrc && (
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center justify-between">
-                  <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                  <p className="text-xs font-semibold text-[#8a8072]">
                     피난안내도(좌석번호표)
                   </p>
                   <button
                     type="button"
                     onClick={() => setSeatNumberImageModalOpen(true)}
-                    className="text-xs font-medium text-amber-700 underline underline-offset-2 hover:text-amber-800 dark:text-amber-500"
+                    className="text-xs font-medium text-[#c05a2c] underline underline-offset-2 hover:text-[#c05a2c]/80"
                   >
                     크게 보기 ↗
                   </button>
@@ -2879,8 +2879,8 @@ export function SeatLayoutWorkspace() {
         {activeTab !== "seatNumber" && (
           <div className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
             <section className="app-card rounded-2xl p-4">
-              <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형</h2>
-              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <h2 className="font-semibold text-[#171310] dark:text-[#f2ede2]">① 존 유형</h2>
+              <p className="mt-1 text-xs text-[#8a8072]">
                 클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
               </p>
               <div className="mt-3 grid grid-cols-2 gap-1.5">
@@ -2898,7 +2898,7 @@ export function SeatLayoutWorkspace() {
                 ))}
               </div>
               {selectedType && (
-                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
+                <div className="app-card-sm mt-3 rounded-lg px-3 py-2 text-sm text-[#5c5346] dark:text-[#c9bfae]">
                   선택됨: <b>{selectedType.label}</b> → 다음 존 이름: <b>{nextNamePreview}</b>
                 </div>
               )}
@@ -2906,14 +2906,14 @@ export function SeatLayoutWorkspace() {
 
             <section className="app-card rounded-2xl p-5">
               {selectedTypeKey ? (
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
+                <p className="text-sm text-[#8a8072]">{dragHint}</p>
               ) : (
-                <ul className="space-y-2.5 text-sm text-zinc-600 dark:text-zinc-300">
-                  <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                <ul className="space-y-2.5 text-sm text-[#5c5346] dark:text-[#c9bfae]">
+                  <li className="flex items-start gap-2 rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] px-3 py-2 font-medium text-[var(--sl-warn)]">
                     <span aria-hidden>⚠️</span>
                     <span>존 구역 설정 시 파티션이 겹치지 않게 구역을 지정합니다. (인식 정확도에 영향)</span>
                   </li>
-                  <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                  <li className="flex items-start gap-2 rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] px-3 py-2 font-medium text-[var(--sl-warn)]">
                     <span aria-hidden>⚠️</span>
                     <span>책가방선반 설치 좌석은 구역 설정 시 브라켓 표시가 한 면이라도 겹치도록 지정합니다. (인식 정확도에 영향)</span>
                   </li>
@@ -3011,11 +3011,11 @@ function ZoneForm(props: ZoneFormProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="font-semibold text-zinc-900 dark:text-zinc-50">{title}</p>
+      <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</p>
 
       {mode === "edit" && (
         <div className="app-card-sm rounded-lg p-3">
-          <label className="text-xs font-medium text-zinc-500">존 유형 변경</label>
+          <label className="text-xs font-medium text-[#8a8072]">존 유형 변경</label>
           <select
             value={editTypeKey}
             onChange={(e) => onEditTypeChange(e.target.value as ZoneTypeKey)}
@@ -3027,13 +3027,13 @@ function ZoneForm(props: ZoneFormProps) {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            새 이름: <b className="text-zinc-700 dark:text-zinc-200">{editNamePreview}</b>
+          <p className="mt-1 text-xs text-[#8a8072]">
+            새 이름: <b className="text-[#5c5346] dark:text-[#c9bfae]">{editNamePreview}</b>
           </p>
           {editTypeKey === "etc" && (
             <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
               <div>
-                <label className="text-xs font-medium text-zinc-500">존 이름 (직접입력)</label>
+                <label className="text-xs font-medium text-[#8a8072]">존 이름 (직접입력)</label>
                 <input
                   value={editEtcName}
                   onChange={(e) => onEditEtcNameChange(e.target.value)}
@@ -3042,7 +3042,7 @@ function ZoneForm(props: ZoneFormProps) {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-zinc-500">색상</label>
+                <label className="text-xs font-medium text-[#8a8072]">색상</label>
                 <input
                   type="color"
                   value={editEtcColor}
@@ -3058,7 +3058,7 @@ function ZoneForm(props: ZoneFormProps) {
       {isEtc && (
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <div>
-            <label className="text-xs font-medium text-zinc-500">존 이름 (직접입력)</label>
+            <label className="text-xs font-medium text-[#8a8072]">존 이름 (직접입력)</label>
             <input
               value={etcName}
               onChange={(e) => onEtcNameChange(e.target.value)}
@@ -3067,7 +3067,7 @@ function ZoneForm(props: ZoneFormProps) {
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-zinc-500">색상</label>
+            <label className="text-xs font-medium text-[#8a8072]">색상</label>
             <input
               type="color"
               value={etcColor}
@@ -3079,16 +3079,16 @@ function ZoneForm(props: ZoneFormProps) {
       )}
 
       {showAi && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
-          <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+        <div className="app-card-sm rounded-lg p-3">
+          <p className="text-xs font-semibold text-[var(--sl-warn)]">
             AI 자동인식 {activeTab === "pc" ? "(PC 대수)" : "(좌석 수량 + 책상사이즈)"}
           </p>
-          <p className="mt-1 text-sm text-amber-800/90 dark:text-amber-200/80">{aiResultText}</p>
+          <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">{aiResultText}</p>
           <button
             type="button"
             disabled={recognizing}
             onClick={onRecognizeAgain}
-            className="mt-2 rounded-full border border-amber-400 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:text-amber-200"
+            className="app-btn-accent mt-2 rounded-full px-3 py-1 text-xs disabled:opacity-50"
           >
             다시 인식
           </button>
@@ -3101,7 +3101,7 @@ function ZoneForm(props: ZoneFormProps) {
             <div className="space-y-2">
               {breakdown.map((row, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  {i === 0 && <span className="w-16 shrink-0 text-xs text-zinc-500">책상사이즈</span>}
+                  {i === 0 && <span className="w-16 shrink-0 text-xs text-[#8a8072]">책상사이즈</span>}
                   <select
                     value={row.deskSize}
                     onChange={(e) => {
@@ -3148,13 +3148,13 @@ function ZoneForm(props: ZoneFormProps) {
             >
               + 다른 사이즈 추가 (섞여있을 때만)
             </button>
-            <p className="mt-2 text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+            <p className="mt-2 text-sm font-semibold text-[#5c5346] dark:text-[#c9bfae]">
               합계: {breakdownTotal}석{breakdown.length > 1 ? ` (사이즈 ${breakdown.length}종 합산)` : ""}
             </p>
           </div>
 
           <div>
-            <label className="text-xs font-medium text-zinc-500">
+            <label className="text-xs font-medium text-[#8a8072]">
               아이락스 헤드셋걸이 설치 수량
             </label>
             <input
@@ -3166,7 +3166,7 @@ function ZoneForm(props: ZoneFormProps) {
               placeholder="0"
               className="mt-1 w-full app-input px-3 py-2 text-sm"
             />
-            <p className="mt-1 text-xs text-zinc-400">
+            <p className="mt-1 text-xs text-[#8a8072]">
               나머지 {Math.max(0, breakdownTotal - (Number(bagShelfDraft) || 0))}석은 아이센스 헤드셋걸이로
               계산됩니다.
             </p>
@@ -3186,7 +3186,7 @@ function ZoneForm(props: ZoneFormProps) {
       ) : (
         <>
           <div>
-            <label className="text-xs font-medium text-zinc-500">대수</label>
+            <label className="text-xs font-medium text-[#8a8072]">대수</label>
             <input
               type="number"
               value={seatsDraft}
@@ -3194,7 +3194,7 @@ function ZoneForm(props: ZoneFormProps) {
               placeholder="10"
               className="mt-1 w-full app-input px-3 py-2 text-sm"
             />
-            <p className="mt-1 text-xs text-zinc-400">책상은 있지만 PC가 없는 존은 0을 입력하세요.</p>
+            <p className="mt-1 text-xs text-[#8a8072]">책상은 있지만 PC가 없는 존은 0을 입력하세요.</p>
           </div>
           {mode === "edit" && (
             <div className="border-t border-dashed border-black/[0.06] pt-3 dark:border-white/[0.08]">
@@ -3241,7 +3241,7 @@ function SelectOrEtc({
   const showCustomInput = customMode || (!isKnown && !value);
   return (
     <div>
-      <label className="text-xs font-medium text-zinc-500">{field.label}</label>
+      <label className="text-xs font-medium text-[#8a8072]">{field.label}</label>
       <select
         value={showCustomInput ? "__etc__" : value}
         onChange={(e) => {
@@ -3293,7 +3293,7 @@ function PcFieldInput({
   const showCustomInput = customMode || (!isKnown && !value);
   return (
     <div>
-      <label className="text-xs font-medium text-zinc-500">{field.label}</label>
+      <label className="text-xs font-medium text-[#8a8072]">{field.label}</label>
       <select
         value={showCustomInput ? "__etc__" : value}
         onChange={(e) => {

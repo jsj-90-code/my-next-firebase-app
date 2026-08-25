@@ -5,14 +5,16 @@ const TOOLS = [
     href: "/seat-layout",
     label: "PC방 좌석배치도 작업 툴",
     description: "매장 도면에 존을 그리고, AI로 좌석 수를 인식하고, 발주용 FHD 이미지를 만듭니다.",
+    icon: <path d="M3 3h18v18H3z M3 9h18 M9 9v12 M12 12h6v6h-6z" />,
   },
   {
     href: "/store-eval",
     label: "점포평가 시스템 (V62)",
     description:
       "신규후보지·경쟁점·입지동선을 입력하면 V62 예상매출과 최종판정을 계산하고, 기존 가맹점 실매출로 모델을 검증합니다.",
+    icon: <path d="M4 19V9l8-5 8 5v10 M4 19h16 M9 19v-6h6v6" />,
   },
-];
+] as const;
 
 export default function Home() {
   return (
@@ -33,15 +35,22 @@ export default function Home() {
             <a
               key={tool.href}
               href={tool.href}
-              className="app-card group w-full rounded-2xl p-5 text-left transition hover:border-[#c05a2c]/40"
+              className="app-card group flex w-full items-start gap-4 rounded-2xl p-5 text-left transition hover:border-[#c05a2c]/40"
             >
-              <h2 className="flex items-center justify-between text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
-                {tool.label}
-                <span className="text-[#c9bfae] transition group-hover:translate-x-0.5 group-hover:text-[#c05a2c]">
-                  →
-                </span>
-              </h2>
-              <p className="mt-1 text-sm leading-6 text-[#8a8072]">{tool.description}</p>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c05a2c]/10 text-[#c05a2c]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.4} className="h-6 w-6">
+                  {tool.icon}
+                </svg>
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="flex items-center justify-between text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
+                  {tool.label}
+                  <span className="text-[#c9bfae] transition group-hover:translate-x-0.5 group-hover:text-[#c05a2c]">
+                    →
+                  </span>
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-[#8a8072]">{tool.description}</p>
+              </div>
             </a>
           ))}
         </div>

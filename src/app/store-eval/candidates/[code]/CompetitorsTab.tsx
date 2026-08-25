@@ -166,10 +166,10 @@ function CompetitorForm({
   }
 
   return (
-    <section className={`${sectionClass} border-zinc-300 dark:border-zinc-700`}>
+    <section className={sectionClass}>
       <h3 className={sectionTitleClass}>경쟁점 {initial.name ? "수정" : "추가"}</h3>
 
-      <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+      <div className="app-card-sm mt-3 rounded-lg px-3 py-2 text-xs leading-5 text-[var(--sl-warn)]">
         <strong>조사상태</strong>는 원본 시트에 없던 신규 필드입니다. &ldquo;경쟁점 없음&rdquo;(상권에 경쟁점이 실제로
         없음)과 &ldquo;노후·저경쟁력 미조사&rdquo;(경쟁점은 있으나 노후·저경쟁력이라 상세조사를 생략함)를 구분해
         기록합니다.
@@ -192,7 +192,7 @@ function CompetitorForm({
         <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
       </div>
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">시설/사양</h4>
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">시설/사양</h4>
       <div className={`${gridClass} mt-3`}>
         <NumberField label="전체대수" value={form.totalPcCount} onChange={(v) => set("totalPcCount", v)} />
         <NumberField label="적용대수" value={form.appliedPcCount} onChange={(v) => set("appliedPcCount", v)} hint="실사값 없으면 대체값을 조사 후 입력" />
@@ -206,7 +206,7 @@ function CompetitorForm({
         <TextField label="유료차감" value={form.paidDeduction ?? ""} onChange={(v) => set("paidDeduction", v || null)} />
       </div>
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">실측</h4>
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">실측</h4>
       <div className={`${gridClass} mt-3`}>
         <TextField label="방문일시" value={form.visitedAt ?? ""} onChange={(v) => set("visitedAt", v || null)} placeholder="예: 2026-08-01 14:30" />
         <SelectField label="방문요일" value={form.visitedDow} onChange={(v) => set("visitedDow", v)} options={DOW_OPTIONS} />
@@ -217,10 +217,10 @@ function CompetitorForm({
         <NumberField label="리뉴얼연도" value={form.renovationYear} onChange={(v) => set("renovationYear", v)} step={1} />
       </div>
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">
         경쟁력 점수 및 평가근거
       </h4>
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="mt-1 text-xs text-[#8a8072]">
         사양·좌석·입지 점수는 위 VGA·존구성·층수+엘리베이터로부터 자동 계산됩니다. 조사수준이
         간략/외관만이면 미입력 항목은 기본값(2.0/1.5)으로 채워집니다.
       </p>
@@ -232,14 +232,14 @@ function CompetitorForm({
         <ScoreSelectField label="인테리어 점수" value={form.interiorScore} onChange={(v) => set("interiorScore", v)} />
         <ScoreSelectField label="모니터 점수" value={form.monitorScore} onChange={(v) => set("monitorScore", v)} />
       </div>
-      <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">종합 경쟁력점수: {computed.total ?? "-"}</p>
+      <p className="mt-2 text-xs text-[#8a8072]">종합 경쟁력점수: {computed.total ?? "-"}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <TextAreaField label="먹거리 근거" value={form.foodBasis ?? ""} onChange={(v) => set("foodBasis", v || null)} rows={2} />
         <TextAreaField label="인테리어 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
         <TextAreaField label="모니터 근거" value={form.monitorBasis ?? ""} onChange={(v) => set("monitorBasis", v || null)} rows={2} />
       </div>
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">존 구성</h4>
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">존 구성</h4>
       <div className={`${gridClass} mt-3`}>
         <NumberField label="1인룸 수" value={form.room1} onChange={(v) => set("room1", v)} />
         <NumberField label="2인룸 수" value={form.room2} onChange={(v) => set("room2", v)} />
@@ -250,7 +250,7 @@ function CompetitorForm({
       </div>
 
       {errors.length > 0 && (
-        <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+        <div className="app-badge app-badge-danger mt-4 w-full justify-start px-3 py-2 text-sm">
           <ul className="list-inside list-disc">
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
@@ -260,18 +260,14 @@ function CompetitorForm({
       )}
 
       <div className="mt-5 flex justify-end gap-3 print:hidden">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
+        <button type="button" onClick={onCancel} className="app-btn-outline rounded-lg px-4 py-2 text-sm">
           취소
         </button>
         <button
           type="button"
           disabled={saving}
           onClick={handleSubmit}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
         >
           {saving ? "저장 중..." : "저장"}
         </button>
@@ -333,14 +329,14 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">경쟁점</h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">이 후보지 반경 내 경쟁점 정보를 입력합니다.</p>
+          <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁점</h2>
+          <p className="mt-1 text-sm text-[#8a8072]">이 후보지 반경 내 경쟁점 정보를 입력합니다.</p>
         </div>
         {editingId === null && (
           <button
             type="button"
             onClick={() => setEditingId("new")}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white print:hidden"
+            className="app-btn-primary rounded-lg px-4 py-2 text-sm print:hidden"
           >
             + 경쟁점 추가
           </button>
@@ -348,7 +344,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
       </div>
 
       {error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
+        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
 
       {/* 2026-08-25 추가 — "실제 조사 경쟁점 수"를 조사수준별로 쪼개서 바로 보여준다. 이미
@@ -356,25 +352,25 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
           여기서도 재사용할 뿐 새 산식은 없다. "몇 곳 중 몇 곳을 얼마나 자세히 봤는지"를 입력
           단계에서부터 알 수 있게 한다. */}
       {!loading && competitors.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+        <div className="app-card-sm flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl px-4 py-3 text-xs text-[#5c5346] dark:text-[#c9bfae]">
           {(() => {
             const summary = computeCompetitorInvestigationSummary(competitors);
             return (
               <>
-                <span className="font-semibold text-zinc-900 dark:text-zinc-50">경쟁점 총 {summary.totalCount}곳</span>
+                <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁점 총 {summary.totalCount}곳</span>
                 <span>상세조사 {summary.detailedCount}곳</span>
                 <span>간략·외관조사 {summary.lightCount}곳</span>
                 <span>미조사 {summary.uninvestigatedCount}곳</span>
                 {summary.status === "confirmed_no_competitor" && (
-                  <span className="font-medium text-emerald-700 dark:text-emerald-400">확인된 독점상권(경쟁점 없음)</span>
+                  <span className="font-medium text-[var(--sl-ok)]">확인된 독점상권(경쟁점 없음)</span>
                 )}
                 <span
                   className={
                     summary.dataReliability === "high"
-                      ? "text-emerald-700 dark:text-emerald-400"
+                      ? "text-[var(--sl-ok)]"
                       : summary.dataReliability === "medium"
-                        ? "text-amber-700 dark:text-amber-400"
-                        : "text-red-700 dark:text-red-400"
+                        ? "text-[var(--sl-warn)]"
+                        : "text-[var(--sl-danger)]"
                   }
                 >
                   데이터 신뢰도: {summary.dataReliability === "high" ? "높음" : summary.dataReliability === "medium" ? "보통" : "낮음"}
@@ -398,9 +394,9 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
       )}
 
       {loading ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>
+        <p className="text-sm text-[#8a8072]">불러오는 중...</p>
       ) : competitors.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-zinc-300 px-4 py-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+        <p className="app-card rounded-2xl border-dashed px-4 py-8 text-center text-sm text-[#8a8072]">
           등록된 경쟁점이 없습니다.
         </p>
       ) : (
@@ -409,36 +405,36 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
             <div key={c.id} className={sectionClass}>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="font-medium text-zinc-900 dark:text-zinc-50">{c.name || "(이름 없음)"}</p>
-                  <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{c.address || "주소 미입력"}</p>
+                  <p className="font-medium text-[#171310] dark:text-[#f2ede2]">{c.name || "(이름 없음)"}</p>
+                  <p className="mt-0.5 text-xs text-[#8a8072]">{c.address || "주소 미입력"}</p>
                 </div>
                 <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                  className={`app-badge shrink-0 ${
                     c.investigationStatus === "조사완료"
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                      ? "app-badge-ok"
                       : c.investigationStatus === "경쟁점없음"
-                        ? "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                        : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                        ? "app-badge-neutral"
+                        : "app-badge-warn"
                   }`}
                 >
                   {SURVEY_STATE_OPTIONS.find((o) => o.value === c.investigationStatus)?.label ?? c.investigationStatus}
                 </span>
               </div>
-              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-zinc-600 dark:text-zinc-400">
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">
                 <div>
-                  <dt className="inline text-zinc-400">거리 </dt>
+                  <dt className="inline text-[#8a8072]">거리 </dt>
                   <dd className="inline">{c.distanceM != null ? `${c.distanceM}m` : "-"}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-zinc-400">적용대수 </dt>
+                  <dt className="inline text-[#8a8072]">적용대수 </dt>
                   <dd className="inline">{c.appliedPcCount ?? c.totalPcCount ?? "-"}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-zinc-400">조사수준 </dt>
+                  <dt className="inline text-[#8a8072]">조사수준 </dt>
                   <dd className="inline">{c.surveyLevel ?? "-"}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-zinc-400">경쟁력점수 </dt>
+                  <dt className="inline text-[#8a8072]">경쟁력점수 </dt>
                   <dd className="inline">{computeCompetitorScores(c, settings).total ?? "-"}</dd>
                 </div>
               </dl>
@@ -446,7 +442,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                 <button
                   type="button"
                   onClick={() => setEditingId(c.id)}
-                  className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  className="app-btn-outline rounded-md px-2.5 py-1 text-xs"
                 >
                   수정
                 </button>
@@ -454,7 +450,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                   type="button"
                   disabled={busyId === c.id}
                   onClick={() => handleDelete(c.id)}
-                  className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                  className="rounded-md border border-[var(--sl-danger)]/30 px-2.5 py-1 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50"
                 >
                   삭제
                 </button>

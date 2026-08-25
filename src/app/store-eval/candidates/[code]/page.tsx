@@ -172,14 +172,14 @@ export default function CandidateDetailPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>;
+    return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
   }
 
   if (error) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
-        <Link href="/store-eval/candidates" className="w-fit text-sm text-zinc-600 underline dark:text-zinc-400">
+        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <Link href="/store-eval/candidates" className="w-fit text-sm text-[#8a8072] underline">
           목록으로 돌아가기
         </Link>
       </div>
@@ -192,22 +192,22 @@ export default function CandidateDetailPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <Link href="/store-eval/candidates" className="text-xs text-zinc-500 hover:underline dark:text-zinc-400">
+          <Link href="/store-eval/candidates" className="text-xs text-[#8a8072] hover:underline">
             ← 신규후보지 목록
           </Link>
-          <h1 className="mt-1 text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+          <h1 className="mt-1 text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">
             {candidate.name || "(이름 없음)"}{" "}
-            {!isNewDraft && <span className="font-mono text-sm text-zinc-400">{candidate.code}</span>}
+            {!isNewDraft && <span className="font-mono text-sm text-[#8a8072]">{candidate.code}</span>}
           </h1>
         </div>
         {!persisted && (
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+          <span className="app-badge app-badge-warn">
             아직 저장되지 않은 신규 후보지입니다 — 저장하면 후보지코드가 발급됩니다
           </span>
         )}
       </div>
 
-      <nav className="flex gap-1 border-b border-zinc-200 text-sm dark:border-zinc-800 print:hidden">
+      <nav className="flex gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08] print:hidden">
         {TABS.map((tab) => {
           const disabled = !persisted && tab.key !== "basic";
           return (
@@ -219,10 +219,10 @@ export default function CandidateDetailPage() {
               title={disabled ? "기본정보를 먼저 저장해야 이용할 수 있습니다" : undefined}
               className={`-mb-px rounded-t-md border-b-2 px-4 py-2 font-medium transition ${
                 activeTab === tab.key
-                  ? "border-zinc-900 text-zinc-900 dark:border-zinc-100 dark:text-zinc-100"
+                  ? "border-[#c05a2c] text-[#171310] dark:text-[#f2ede2]"
                   : disabled
-                    ? "cursor-not-allowed border-transparent text-zinc-300 dark:text-zinc-700"
-                    : "border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                    ? "cursor-not-allowed border-transparent text-[#c9bfae] dark:text-[#4a4438]"
+                    : "border-transparent text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]"
               }`}
             >
               {tab.label}

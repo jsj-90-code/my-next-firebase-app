@@ -117,8 +117,8 @@ export default function AiValidationPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">AI 채점 검증</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">AI 채점 검증</h1>
+        <p className="mt-1 text-sm text-[#8a8072]">
           이미 문을 연 블랙라벨 매장은 오픈 전 사람이 직접 매긴 입지동선평가 점수(5개)가 정답지로
           남아있습니다. 같은 주소로 AI를 다시 돌려 사람 점수와 비교합니다(목표: ±1점 이내 80%).
           지도 이미지는 이 검증에서는 포함하지 않고 텍스트 컨텍스트+웹검색만 사용합니다. 결과는
@@ -126,9 +126,9 @@ export default function AiValidationPage() {
         </p>
       </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+      <section className="app-card rounded-2xl p-5">
         <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          <label className="flex flex-col gap-1 text-xs font-medium text-[#8a8072]">
             검증 매장 수
             <input
               type="number"
@@ -136,10 +136,10 @@ export default function AiValidationPage() {
               value={sampleSize}
               disabled={runAll || status === "running" || specificQuery.trim() !== ""}
               onChange={(e) => setSampleSize(Math.max(1, Number(e.target.value) || 1))}
-              className="w-24 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              className="app-input w-24 px-2 py-1.5 text-sm"
             />
           </label>
-          <label className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          <label className="flex items-center gap-2 text-xs font-medium text-[#8a8072]">
             <input
               type="checkbox"
               checked={runAll}
@@ -148,7 +148,7 @@ export default function AiValidationPage() {
             />
             전체 실행
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+          <label className="flex flex-col gap-1 text-xs font-medium text-[#8a8072]">
             특정 매장만 재검증(코드/이름, 선택)
             <input
               type="text"
@@ -156,48 +156,37 @@ export default function AiValidationPage() {
               disabled={status === "running"}
               onChange={(e) => setSpecificQuery(e.target.value)}
               placeholder="예: 시흥배곧점"
-              className="w-48 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              className="app-input w-48 px-2 py-1.5 text-sm"
             />
           </label>
-          <button
-            type="button"
-            onClick={handleRun}
-            disabled={status === "running"}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-          >
+          <button type="button" onClick={handleRun} disabled={status === "running"} className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">
             {status === "running" ? "검증 중..." : "검증 시작"}
           </button>
         </div>
         {progress && status === "running" && (
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-3 text-xs text-[#8a8072]">
             {progress.done}/{progress.total} 처리 중{progress.current ? ` (${progress.current})` : ""}... 매장당 30~45초 정도 걸립니다.
           </p>
         )}
-        {error && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
-        )}
+        {error && <p className="app-badge app-badge-danger mt-3">{error}</p>}
       </section>
 
       {outcomes.length > 0 && (
         <>
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">정확도 요약</h2>
+          <section className="app-card rounded-2xl p-5">
+            <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">정확도 요약</h2>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <div
-                className={`rounded-lg px-4 py-3 ${
-                  summary.withinOneRatio >= TARGET_RATIO ? "bg-emerald-50 dark:bg-emerald-950/30" : "bg-amber-50 dark:bg-amber-950/30"
-                }`}
-              >
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">전체 ±1점 이내 적중률 (목표 {TARGET_RATIO * 100}%)</p>
+              <div className={`app-card-sm rounded-lg px-4 py-3 ${summary.withinOneRatio >= TARGET_RATIO ? "" : ""}`}>
+                <p className="text-xs text-[#8a8072]">전체 ±1점 이내 적중률 (목표 {TARGET_RATIO * 100}%)</p>
                 <p
-                  className={`text-lg font-semibold ${
-                    summary.withinOneRatio >= TARGET_RATIO ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"
+                  className={`text-lg font-semibold tabular-nums ${
+                    summary.withinOneRatio >= TARGET_RATIO ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"
                   }`}
                 >
                   {(summary.withinOneRatio * 100).toFixed(1)}% ({summary.withinOneCount}/{summary.totalPairs})
                 </p>
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="text-xs text-[#8a8072]">
                 성공 {summary.storeCount}곳 · 실패/스킵 {skippedResults.length}곳
               </p>
             </div>
@@ -205,9 +194,9 @@ export default function AiValidationPage() {
               {SCORE_FIELD_KEYS.map((key) => {
                 const f = summary.perField[key];
                 return (
-                  <div key={key} className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{SCORE_FIELD_LABELS[key]}</p>
-                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                  <div key={key} className="app-card-sm rounded-lg px-3 py-2">
+                    <p className="text-[11px] text-[#8a8072]">{SCORE_FIELD_LABELS[key]}</p>
+                    <p className="text-sm font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">
                       {(f.ratio * 100).toFixed(0)}% ({f.withinOne}/{f.total})
                     </p>
                   </div>
@@ -217,12 +206,12 @@ export default function AiValidationPage() {
           </section>
 
           {okResults.length > 0 && (
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">매장별 비교 (AI/실제)</h2>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <section className="app-card rounded-2xl p-5">
+              <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 비교 (AI/실제)</h2>
+              <div className="app-card-sm mt-3 overflow-x-auto rounded-lg">
                 <table className="w-full text-xs">
-                  <thead className="bg-zinc-50 dark:bg-zinc-900">
-                    <tr className="text-left text-zinc-500 dark:text-zinc-400">
+                  <thead>
+                    <tr className="text-left text-[#8a8072]">
                       <th className="px-2 py-1.5">매장명</th>
                       <th className="px-2 py-1.5">주소</th>
                       {SCORE_FIELD_KEYS.map((key) => (
@@ -234,13 +223,13 @@ export default function AiValidationPage() {
                   </thead>
                   <tbody>
                     {okResults.map((o) => (
-                      <tr key={o.result.storeCode} className="border-t border-zinc-100 dark:border-zinc-800">
-                        <td className="px-2 py-1.5 text-zinc-700 dark:text-zinc-300">{o.result.storeName}</td>
-                        <td className="px-2 py-1.5 text-zinc-400">{o.result.address}</td>
+                      <tr key={o.result.storeCode} className="border-t border-[#171310]/[0.08] dark:border-white/[0.08]">
+                        <td className="px-2 py-1.5 text-[#5c5346] dark:text-[#c9bfae]">{o.result.storeName}</td>
+                        <td className="px-2 py-1.5 text-[#8a8072]">{o.result.address}</td>
                         {o.result.rows.map((row) => (
                           <td
                             key={row.field}
-                            className={`px-2 py-1.5 font-medium ${row.withinOne ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}
+                            className={`px-2 py-1.5 font-medium tabular-nums ${row.withinOne ? "text-[var(--sl-ok)]" : "text-[var(--sl-danger)]"}`}
                           >
                             {row.ai ?? "-"}/{row.ground}
                           </td>
@@ -254,9 +243,9 @@ export default function AiValidationPage() {
           )}
 
           {skippedResults.length > 0 && (
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">실패/스킵된 매장</h2>
-              <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <section className="app-card rounded-2xl p-5">
+              <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">실패/스킵된 매장</h2>
+              <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-[#8a8072]">
                 {skippedResults.map((o, i) => (
                   <li key={`${o.storeCode}_${i}`}>
                     {o.storeName} — {o.reason}

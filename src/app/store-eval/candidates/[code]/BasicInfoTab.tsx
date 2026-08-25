@@ -372,24 +372,24 @@ export function BasicInfoTab({
             disabled={collecting || form.code === "new" || authLoading}
             onClick={handleCollectMarketData}
             title={form.code === "new" ? "먼저 저장한 뒤 이용할 수 있습니다" : authLoading ? "로그인 확인 중입니다" : undefined}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="app-btn-outline rounded-lg px-4 py-2 text-sm disabled:opacity-50"
           >
             {collecting ? "수집 중..." : "상권자료 수집"}
           </button>
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="text-xs text-[#8a8072]">
             주소로 좌표 확인 + 행정구역 참고자료 + 주변 경쟁점(PC방)·수요거점을 자동으로 모읍니다.
           </span>
         </div>
         {collectError && (
-          <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{collectError}</p>
+          <p className="app-badge app-badge-danger mt-2 w-full justify-start px-3 py-2 text-sm">{collectError}</p>
         )}
         {collectMessage && (
-          <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+          <p className="app-badge app-badge-ok mt-2 w-full justify-start px-3 py-2 text-sm">
             {collectMessage}
           </p>
         )}
         {nearbyWarnings.length > 0 && (
-          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          <div className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs">
             중복 후보지 가능성: {nearbyWarnings.map((w) => `${w.name || w.code}(${w.code})`).join(", ")}
           </div>
         )}
@@ -404,21 +404,21 @@ export function BasicInfoTab({
             <FieldReadonly label="건물명" value={form.buildingName ?? "-"} />
             <FieldReadonly label="좌표" value={`${form.lat.toFixed(6)}, ${form.lng.toFixed(6)}`} />
           </div>
-          <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-3 text-xs text-[#8a8072]">
             마커가 실제 출입구와 다르면 지도에서 드래그해 보정한 뒤 확정하세요 — 확정한 좌표가 모든 반경분석의 기준점이 됩니다.
           </p>
           <div className="mt-3">
             <CandidateMap lat={form.lat} lng={form.lng} points={mapPoints} onConfirmPosition={handleConfirmMapPosition} />
           </div>
           {adminDongRef && (
-            <div className="mt-4 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+            <div className="app-card-sm mt-4 rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
               <strong>행정구역 참고자료</strong>({adminDongRef.admName}, {adminDongRef.year ?? "-"}년 기준) — 총인구{" "}
               {adminDongRef.totalPopulation?.toLocaleString() ?? "-"}명. 이 값은 행정동 단위이며, 아래 &ldquo;반경
               500m/1km&rdquo; 계산 입력값과는 다른 자료이므로 그대로 옮겨 쓰지 않습니다.
             </div>
           )}
           {(demandPoints.length > 0 || autoCompetitors.length > 0) && (
-            <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-2 text-xs text-[#8a8072]">
               자동수집: 경쟁점(PC방) {autoCompetitors.length}건 · 수요거점 {demandPoints.length}건 — 경쟁점 탭에서 상세 확인/실사 상태 갱신이
               필요합니다. 군부대·산업단지·관광유흥·먹자상권은 이번 단계에서 자동수집 대상이 아닙니다.
             </p>
@@ -429,7 +429,7 @@ export function BasicInfoTab({
       {form.lat != null && form.lng != null && (
         <section className={sectionClass}>
           <h3 className={sectionTitleClass}>SGIS·소상공인365 업로드 자동추출 (반경 500m/1km 통계)</h3>
-          <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-xs leading-5 text-[#8a8072]">
             SGIS·소상공인365 모두 반경(500m/1km) 통계를 조회하는 공식 API가 없어(2026-08-24 확인) 직접 조회해야 합니다.
             SGIS는 PDF 보고서만 제공해 표를 복사해 붙여넣는 방식만 됩니다(엑셀 없음). 라벨을 찾아 자동으로 채워두지만,
             값이 다르면 자동확정하지 않고 표에서 직접 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요 — 그 뒤에도 이
@@ -467,7 +467,7 @@ export function BasicInfoTab({
             />
           </div>
           {marketDataUploads.length > 0 && (
-            <div className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="mt-4 text-xs text-[#8a8072]">
               <strong>업로드 이력</strong>
               <ul className="mt-1 list-inside list-disc">
                 {marketDataUploads.slice(0, 5).map((u) => (
@@ -568,9 +568,9 @@ export function BasicInfoTab({
           헷갈리지 않도록 이 통합 카드 전체에 "참고자료" 배지를 유지한다. */}
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>소상공인365 참고자료 (유동인구 1km · 직장인구 · 시설정보)</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
+        <p className="mt-1 text-xs text-[#8a8072]">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
 
-        <p className="mt-4 text-xs font-medium text-zinc-600 dark:text-zinc-400">유동인구 (1km)</p>
+        <p className="mt-4 text-xs font-medium text-[#8a8072]">유동인구 (1km)</p>
         <div className={`${gridClass} mt-2`}>
           <NumberField label="유동인구 평균" value={form.floating1kmAvg} onChange={(v) => set("floating1kmAvg", v)} />
           <NumberField label="유동인구 남" value={form.floating1kmMale} onChange={(v) => set("floating1kmMale", v)} />
@@ -601,7 +601,7 @@ export function BasicInfoTab({
           />
         </div>
 
-        <p className="mt-6 text-xs font-medium text-zinc-600 dark:text-zinc-400">직장인구 (500m / 1km)</p>
+        <p className="mt-6 text-xs font-medium text-[#8a8072]">직장인구 (500m / 1km)</p>
         <div className={`${gridClass} mt-2`}>
           <NumberField label="직장인구 전체(500m)" value={form.employ500Total} onChange={(v) => set("employ500Total", v)} />
           <NumberField label="직장인구 남(500m)" value={form.employ500Male} onChange={(v) => set("employ500Male", v)} />
@@ -611,7 +611,7 @@ export function BasicInfoTab({
           <NumberField label="직장인구 여(1km)" value={form.employ1kmFemale} onChange={(v) => set("employ1kmFemale", v)} />
         </div>
 
-        <p className="mt-6 text-xs font-medium text-zinc-600 dark:text-zinc-400">시설정보 (500m / 1km)</p>
+        <p className="mt-6 text-xs font-medium text-[#8a8072]">시설정보 (500m / 1km)</p>
         <div className={`${gridClass} mt-2`}>
           <NumberField label="고등학생 수(500m)" value={form.facility500HighSchool} onChange={(v) => set("facility500HighSchool", v)} />
           <NumberField label="중학생 수(500m)" value={form.facility500MiddleSchool} onChange={(v) => set("facility500MiddleSchool", v)} />
@@ -653,7 +653,7 @@ export function BasicInfoTab({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁력 점수</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-xs text-[#8a8072]">
           사양·좌석·입지 점수는 위에 입력한 VGA·존구성·층수+엘리베이터로부터 원본 Apps Script(점포평가.gs)
           그대로 자동 계산됩니다. 먹거리·인테리어·모니터는 원본에서도 평가자가 1~5점을 직접 입력하는
           항목입니다. 종합 경쟁력점수 가중합(사양25%·좌석30%·먹거리20%·인테리어15%·입지10%)은 원본 계수
@@ -675,7 +675,7 @@ export function BasicInfoTab({
       </section>
 
       {errors.length > 0 && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+        <div className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">
           <ul className="list-inside list-disc">
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
@@ -684,7 +684,7 @@ export function BasicInfoTab({
         </div>
       )}
       {message && (
-        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+        <p className="app-badge app-badge-ok w-full justify-start px-3 py-2 text-sm">
           {message}
         </p>
       )}
@@ -694,7 +694,7 @@ export function BasicInfoTab({
           type="button"
           disabled={saving !== null}
           onClick={() => handleSave(true)}
-          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          className="app-btn-outline rounded-lg px-4 py-2 text-sm disabled:opacity-50"
         >
           {saving === "draft" ? "저장 중..." : "임시저장"}
         </button>
@@ -702,7 +702,7 @@ export function BasicInfoTab({
           type="button"
           disabled={saving !== null}
           onClick={() => handleSave(false)}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
         >
           {saving === "final" ? "저장 중..." : "저장"}
         </button>
@@ -714,12 +714,12 @@ export function BasicInfoTab({
 function FieldReadonly({ label, value }: { label: string; value: string }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{label}</span>
+      <span className="text-xs font-medium text-[#8a8072]">{label}</span>
       <input
         type="text"
         value={value}
         readOnly
-        className="w-full rounded-md border border-zinc-200 bg-zinc-100 px-2.5 py-1.5 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+        className="app-card-sm w-full rounded-md px-2.5 py-1.5 text-sm text-[#8a8072]"
       />
     </label>
   );

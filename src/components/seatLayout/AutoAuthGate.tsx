@@ -52,7 +52,7 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-xl rounded-2xl border border-zinc-200 px-8 py-12 text-center text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+      <div className="app-card mx-auto w-full max-w-xl rounded-2xl px-8 py-12 text-center text-[#8a8072]">
         불러오는 중...
       </div>
     );
@@ -63,21 +63,21 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-xl rounded-2xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-950">
-      <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">회사 계정 로그인이 필요합니다</h2>
-      <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+    <div className="app-card mx-auto w-full max-w-xl rounded-2xl p-8 text-center">
+      <h2 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">회사 계정 로그인이 필요합니다</h2>
+      <p className="mt-3 text-sm leading-6 text-[#8a8072]">
         이 도구는 회사 구글 계정(@{ALLOWED_EMAIL_DOMAIN})으로 로그인한 팀원만 사용할 수 있습니다.
       </p>
 
       {user && !allowed && (
-        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+        <p className="app-badge app-badge-danger mt-3 w-full justify-center py-2 text-sm">
           {user.email} 계정은 @{ALLOWED_EMAIL_DOMAIN} 도메인이 아니라서 접속할 수 없습니다. 다른 계정으로 다시
           로그인해주세요.
         </p>
       )}
 
       {signInError && (
-        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+        <p className="app-badge app-badge-danger mt-3 w-full justify-center py-2 text-left text-sm leading-6">
           {signInError}
           <br />
           {signInErrorCode === "auth/unauthorized-domain" ? (
@@ -98,7 +98,7 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
         type="button"
         disabled={signingIn}
         onClick={handleSignIn}
-        className="mt-5 w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+        className="app-btn-primary mt-5 w-full rounded-lg px-4 py-2.5 text-sm disabled:opacity-50"
       >
         {signingIn ? "로그인 중..." : "회사 구글 계정으로 로그인"}
       </button>

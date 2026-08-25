@@ -1,23 +1,21 @@
 "use client";
 
 // 점포평가 상세 화면(기본정보/경쟁점/입지동선평가)에서 공유하는 폼 필드 컴포넌트.
-// 스타일은 AutoAuthGate/layout.tsx의 zinc 팔레트 + rounded 톤을 그대로 따른다.
+// 스타일은 globals.css의 app-theme(따뜻한 크림/테라코타 "블루프린트 용지" 톤)을 그대로 따른다.
 
 import type { ChangeEvent, ReactNode } from "react";
 
-const inputClass =
-  "w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-sm focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
-const labelClass = "text-xs font-medium text-zinc-600 dark:text-zinc-400";
+const inputClass = "app-input w-full px-2.5 py-1.5 text-sm";
+const labelClass = "text-xs font-medium text-[#8a8072]";
 
-export const sectionClass =
-  "rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950";
-export const sectionTitleClass = "text-sm font-semibold text-zinc-900 dark:text-zinc-100";
+export const sectionClass = "app-card rounded-2xl p-5";
+export const sectionTitleClass = "text-sm font-semibold text-[#171310] dark:text-[#f2ede2]";
 export const gridClass = "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4";
 
 /** 자동추출 데이터 소스가 없어 사용자가 직접 조사/입력해야 하는 필드에 붙이는 표시. */
 export function ManualBadge() {
   return (
-    <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+    <span className="app-badge app-badge-warn ml-1 px-1 py-0.5 text-[10px]">
       직접입력
     </span>
   );
@@ -40,11 +38,11 @@ export function FieldWrap({
     <label className="flex flex-col gap-1">
       <span className={labelClass}>
         {label}
-        {required && <span className="ml-0.5 text-red-500">*</span>}
+        {required && <span className="ml-0.5 text-[var(--sl-danger)]">*</span>}
         {manualOnly && <ManualBadge />}
       </span>
       {children}
-      {hint && <span className="text-[11px] leading-4 text-zinc-400">{hint}</span>}
+      {hint && <span className="text-[11px] leading-4 text-[#8a8072]">{hint}</span>}
     </label>
   );
 }
@@ -235,7 +233,7 @@ export function ComputedField({ label, value, hint }: { label: string; value: nu
         type="text"
         readOnly
         value={value == null ? "-" : String(value)}
-        className="w-full rounded-md border border-zinc-200 bg-zinc-100 px-2.5 py-1.5 text-sm text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+        className="app-card-sm w-full rounded-md px-2.5 py-1.5 text-sm text-[#5c5346] dark:text-[#c9bfae]"
       />
     </FieldWrap>
   );

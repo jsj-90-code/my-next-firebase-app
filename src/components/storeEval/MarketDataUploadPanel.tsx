@@ -181,22 +181,17 @@ export function MarketDataUploadPanel({
   const appliedCount = drafts?.filter((d) => d.checked && d.editedValue.trim() !== "").length ?? 0;
 
   return (
-    <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+    <div className="app-card rounded-xl p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h4>
-        <a
-          href={openUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-        >
+        <h4 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h4>
+        <a href={openUrl} target="_blank" rel="noopener noreferrer" className="app-btn-outline rounded-md px-3 py-1 text-xs">
           {openLabel} ↗
         </a>
       </div>
-      <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{instructions}</p>
+      <p className="mt-1 text-xs leading-5 text-[#8a8072]">{instructions}</p>
 
       {tableVariants && (
-        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 p-2 dark:bg-zinc-900">
+        <div className="app-card-sm mt-3 flex flex-wrap items-center gap-3 rounded-lg p-2">
           {tableVariants.length > 1 && (
             <div className="flex flex-wrap gap-1.5">
               {tableVariants.map((v) => (
@@ -207,7 +202,7 @@ export function MarketDataUploadPanel({
                     setVariantKey(v.key);
                     setDrafts(null);
                   }}
-                  className={`rounded-md px-2 py-1 text-xs font-medium ${v.key === variantKey ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+                  className={`app-type-btn rounded-md px-2 py-1 text-xs ${v.key === variantKey ? "app-type-btn-active" : ""}`}
                 >
                   {v.label}
                 </button>
@@ -223,7 +218,7 @@ export function MarketDataUploadPanel({
                   setRadiusKey(r.key);
                   setDrafts(null);
                 }}
-                className={`rounded-md px-2 py-1 text-xs font-medium ${r.key === radiusKey ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+                className={`app-type-btn rounded-md px-2 py-1 text-xs ${r.key === radiusKey ? "app-type-btn-active" : ""}`}
               >
                 {r.label}
               </button>
@@ -233,18 +228,18 @@ export function MarketDataUploadPanel({
       )}
 
       {showFileUpload && (
-        <div className="mt-3 flex gap-2 text-xs">
+        <div className="app-tabbar mt-3 flex w-fit gap-1 p-1 text-xs">
           <button
             type="button"
             onClick={() => setMode("file")}
-            className={`rounded-md px-2 py-1 font-medium ${mode === "file" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+            className={`app-tab rounded-md px-2 py-1 ${mode === "file" ? "app-tab-active" : ""}`}
           >
             파일 업로드
           </button>
           <button
             type="button"
             onClick={() => setMode("paste")}
-            className={`rounded-md px-2 py-1 font-medium ${mode === "paste" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "border border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"}`}
+            className={`app-tab rounded-md px-2 py-1 ${mode === "paste" ? "app-tab-active" : ""}`}
           >
             표 붙여넣기
           </button>
@@ -257,7 +252,7 @@ export function MarketDataUploadPanel({
           accept=".xlsx,.xls,.csv"
           onChange={handleFileChange}
           disabled={busy}
-          className="mt-2 block w-full text-xs text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white dark:text-zinc-400 dark:file:bg-zinc-100 dark:file:text-zinc-900"
+          className="mt-2 block w-full text-xs text-[#5c5346] file:mr-3 file:rounded-md file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
         />
       ) : (
         <div className="mt-2 flex flex-col gap-2">
@@ -266,31 +261,27 @@ export function MarketDataUploadPanel({
             onChange={(e) => setPastedText(e.target.value)}
             rows={4}
             placeholder="원본 사이트에서 표를 그대로 복사해 붙여넣으세요 (셀 사이 탭 유지)"
-            className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            className="app-input w-full px-2.5 py-1.5 text-xs"
           />
-          <button
-            type="button"
-            onClick={handleExtractPasted}
-            className="w-fit rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+          <button type="button" onClick={handleExtractPasted} className="app-btn-outline w-fit rounded-md px-3 py-1 text-xs">
             추출
           </button>
         </div>
       )}
 
-      {busy && <p className="mt-2 text-xs text-zinc-500">파일을 읽는 중...</p>}
-      {error && <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">{error}</p>}
+      {busy && <p className="mt-2 text-xs text-[#8a8072]">파일을 읽는 중...</p>}
+      {error && <p className="app-badge app-badge-warn mt-2 w-full justify-start py-1 text-xs">{error}</p>}
       {applyMessage && (
-        <p className="mt-2 rounded-md bg-emerald-50 px-2 py-1 text-xs text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{applyMessage}</p>
+        <p className="app-badge app-badge-ok mt-2 w-full justify-start py-1 text-xs">{applyMessage}</p>
       )}
-      {fileInfo && <p className="mt-2 text-[11px] text-zinc-400">업로드 파일: {fileInfo.name}</p>}
+      {fileInfo && <p className="mt-2 text-[11px] text-[#8a8072]">업로드 파일: {fileInfo.name}</p>}
 
       {drafts && (
         <div className="mt-3">
-          <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="max-h-72 overflow-y-auto rounded-lg border border-[#171310]/[0.08] dark:border-white/[0.08]">
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900">
-                <tr className="text-left text-zinc-500 dark:text-zinc-400">
+              <thead className="sticky top-0 bg-[#fffdf7] dark:bg-[#1c1912]">
+                <tr className="text-left text-[#8a8072]">
                   <th className="w-8 px-2 py-1"></th>
                   <th className="px-2 py-1">항목</th>
                   <th className="px-2 py-1">원본 라벨(매칭)</th>
@@ -299,7 +290,7 @@ export function MarketDataUploadPanel({
               </thead>
               <tbody>
                 {drafts.map((d, idx) => (
-                  <tr key={d.fieldKey} className="border-t border-zinc-100 dark:border-zinc-800">
+                  <tr key={d.fieldKey} className="border-t border-[#171310]/[0.06] dark:border-white/[0.06]">
                     <td className="px-2 py-1 text-center">
                       <input
                         type="checkbox"
@@ -307,14 +298,14 @@ export function MarketDataUploadPanel({
                         onChange={(e) => updateDraft(idx, { checked: e.target.checked })}
                       />
                     </td>
-                    <td className="px-2 py-1 text-zinc-700 dark:text-zinc-300">{d.displayLabel}</td>
-                    <td className="px-2 py-1 text-zinc-400">{d.matchedLabel ?? <span className="italic">매칭 안 됨</span>}</td>
+                    <td className="px-2 py-1 text-[#5c5346] dark:text-[#c9bfae]">{d.displayLabel}</td>
+                    <td className="px-2 py-1 text-[#8a8072]">{d.matchedLabel ?? <span className="italic">매칭 안 됨</span>}</td>
                     <td className="px-2 py-1">
                       <input
                         type="text"
                         value={d.editedValue}
                         onChange={(e) => updateDraft(idx, { editedValue: e.target.value, checked: true })}
-                        className="w-28 rounded border border-zinc-200 px-1.5 py-0.5 dark:border-zinc-700 dark:bg-zinc-900"
+                        className="app-input w-28 px-1.5 py-0.5"
                       />
                     </td>
                   </tr>
@@ -323,12 +314,12 @@ export function MarketDataUploadPanel({
             </table>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-[11px] text-zinc-400">{appliedCount}개 항목 적용 예정</span>
+            <span className="text-[11px] text-[#8a8072]">{appliedCount}개 항목 적용 예정</span>
             <button
               type="button"
               onClick={handleApply}
               disabled={appliedCount === 0}
-              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              className="app-btn-primary rounded-md px-3 py-1.5 text-xs disabled:opacity-40"
             >
               폼에 적용
             </button>

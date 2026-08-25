@@ -95,7 +95,7 @@ export function CandidateMap({
 
   if (!jsKey) {
     return (
-      <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+      <p className="rounded-lg bg-[var(--sl-warn-soft)] px-3 py-2 text-xs text-[var(--sl-warn)]">
         NEXT_PUBLIC_KAKAO_MAP_JS_KEY가 설정되지 않아 지도를 표시할 수 없습니다.
       </p>
     );
@@ -108,9 +108,9 @@ export function CandidateMap({
         strategy="afterInteractive"
         onReady={() => setSdkLoaded(true)}
       />
-      <div ref={containerRef} className="h-80 w-full rounded-xl border border-zinc-200 dark:border-zinc-800" />
+      <div ref={containerRef} className="h-80 w-full rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]" />
       {pendingPosition && (
-        <div className="flex items-center gap-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+        <div className="flex items-center gap-3 rounded-lg bg-[var(--sl-info-soft)] px-3 py-2 text-xs text-[var(--sl-info)]">
           <span>
             마커를 이동했습니다 ({pendingPosition.lat.toFixed(6)}, {pendingPosition.lng.toFixed(6)}).
           </span>
@@ -120,7 +120,7 @@ export function CandidateMap({
               onConfirmPosition(pendingPosition.lat, pendingPosition.lng);
               setPendingPosition(null);
             }}
-            className="rounded-md bg-blue-600 px-2 py-1 font-semibold text-white hover:bg-blue-700"
+            className="rounded-md bg-[var(--sl-info)] px-2 py-1 font-semibold text-white hover:opacity-90"
           >
             이 위치로 확정
           </button>
@@ -130,13 +130,13 @@ export function CandidateMap({
               markerRef.current?.setPosition(new window.kakao.maps.LatLng(lat, lng));
               setPendingPosition(null);
             }}
-            className="rounded-md border border-blue-300 px-2 py-1 font-semibold text-blue-700 hover:bg-blue-100"
+            className="rounded-md border border-[var(--sl-info)]/40 px-2 py-1 font-semibold text-[var(--sl-info)] hover:bg-[var(--sl-info-soft)]"
           >
             취소
           </button>
         </div>
       )}
-      <div className="flex flex-wrap gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+      <div className="flex flex-wrap gap-2 text-[11px] text-[#8a8072]">
         {Object.entries(CATEGORY_COLORS).map(([label, color]) => (
           <span key={label} className="flex items-center gap-1">
             <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />

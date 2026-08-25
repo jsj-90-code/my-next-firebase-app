@@ -128,14 +128,14 @@ export default function StoreEvalBackupPage() {
   }
 
   if (loading) {
-    return <div className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</div>;
+    return <div className="py-16 text-center text-sm text-[#8a8072]">불러오는 중...</div>;
   }
 
   if (!isAdmin) {
     return (
-      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">접근 권한이 없습니다</h2>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+      <div className="app-card rounded-2xl p-8 text-center">
+        <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">접근 권한이 없습니다</h2>
+        <p className="mt-2 text-sm text-[#8a8072]">
           데이터 백업/복원은 점포평가 시스템 관리자만 이용할 수 있습니다.
         </p>
       </div>
@@ -145,29 +145,29 @@ export default function StoreEvalBackupPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">데이터 백업 / 복원</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">데이터 백업 / 복원</h1>
+        <p className="mt-1 text-sm text-[#8a8072]">
           신규후보지, 기존 가맹점, 매출, 경쟁점, 입지동선평가, 운영설정과 그 변경이력까지 전체 데이터를 다룹니다.
         </p>
       </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">백업</h2>
+      <section className="app-card rounded-2xl p-6">
+        <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">백업</h2>
         <button
           type="button"
           onClick={handleExport}
           disabled={busy}
-          className="mt-3 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="app-btn-primary mt-3 rounded-lg px-4 py-2.5 text-sm disabled:opacity-50"
         >
           {busy ? "백업 생성 중..." : "전체 데이터 백업(JSON)"}
         </button>
-        {message && <p className="mt-3 text-sm text-green-600 dark:text-green-400">{message}</p>}
-        {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">백업 실패: {error}</p>}
+        {message && <p className="mt-3 text-sm text-[var(--sl-ok)]">{message}</p>}
+        {error && <p className="mt-3 text-sm text-[var(--sl-danger)]">백업 실패: {error}</p>}
       </section>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">복원</h2>
-        <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+      <section className="app-card rounded-2xl p-6">
+        <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">복원</h2>
+        <p className="mt-1 text-xs leading-5 text-[#8a8072]">
           백업 파일에 있는 문서만 지금 데이터 위에 덮어씁니다(병합) — 백업 파일에 없는 기존 데이터는 지우지 않습니다.
           실행 전 지금 상태를 자동으로 한 번 더 백업 다운로드합니다.
         </p>
@@ -181,24 +181,22 @@ export default function StoreEvalBackupPage() {
             const file = e.target.files?.[0];
             if (file) handleFileSelected(file);
           }}
-          className="mt-4 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white dark:text-zinc-400 dark:file:bg-zinc-100 dark:file:text-zinc-900"
+          className="mt-4 block w-full text-sm text-[#5c5346] file:mr-3 file:rounded-md file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
         />
-        {fileName && <p className="mt-2 text-xs text-zinc-400">선택한 파일: {fileName}</p>}
+        {fileName && <p className="mt-2 text-xs text-[#8a8072]">선택한 파일: {fileName}</p>}
 
-        {restoreError && (
-          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{restoreError}</p>
-        )}
+        {restoreError && <p className="app-badge app-badge-danger mt-3 w-full justify-start py-2 text-sm">{restoreError}</p>}
 
-        {stage === "previewing" && <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">파일 확인 중...</p>}
+        {stage === "previewing" && <p className="mt-3 text-sm text-[#8a8072]">파일 확인 중...</p>}
 
         {(stage === "ready" || stage === "restoring") && preview && payload && (
           <div className="mt-4 flex flex-col gap-3">
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs text-[#8a8072]">
               이 백업은 {new Date(payload.exportedAt).toLocaleString("ko-KR")}에 만들어졌습니다.
             </p>
-            <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className="app-card-sm overflow-x-auto rounded-lg">
               <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                <thead className="text-left text-xs font-medium text-[#8a8072]">
                   <tr>
                     <th className="px-3 py-2">항목</th>
                     <th className="px-3 py-2">현재 보유</th>
@@ -206,13 +204,13 @@ export default function StoreEvalBackupPage() {
                     <th className="px-3 py-2">덮어써질 문서</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
                   {preview.map((p) => (
                     <tr key={p.label}>
-                      <td className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">{p.label}</td>
-                      <td className="px-3 py-2 text-zinc-500 dark:text-zinc-400">{p.currentTotal === -1 ? "-" : `${p.currentTotal}건`}</td>
-                      <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">{p.toAdd}건</td>
-                      <td className="px-3 py-2 text-amber-700 dark:text-amber-400">{p.toUpdate > 0 ? `${p.toUpdate}건` : "-"}</td>
+                      <td className="px-3 py-2 font-medium text-[#171310] dark:text-[#f2ede2]">{p.label}</td>
+                      <td className="px-3 py-2 text-[#8a8072]">{p.currentTotal === -1 ? "-" : `${p.currentTotal}건`}</td>
+                      <td className="px-3 py-2 text-[var(--sl-ok)]">{p.toAdd}건</td>
+                      <td className="px-3 py-2 text-[var(--sl-warn)]">{p.toUpdate > 0 ? `${p.toUpdate}건` : "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -220,7 +218,7 @@ export default function StoreEvalBackupPage() {
             </div>
 
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-zinc-700 dark:text-zinc-300">
+              <span className="text-[#5c5346] dark:text-[#c9bfae]">
                 되돌릴 수 없는 작업입니다. 계속하려면 아래에 정확히 <strong>복원</strong>이라고 입력하세요.
               </span>
               <input
@@ -228,7 +226,7 @@ export default function StoreEvalBackupPage() {
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 disabled={stage === "restoring"}
-                className="w-40 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+                className="app-input w-40 px-3 py-1.5 text-sm"
               />
             </label>
 
@@ -237,7 +235,7 @@ export default function StoreEvalBackupPage() {
                 type="button"
                 onClick={handleRestore}
                 disabled={stage === "restoring" || confirmText !== "복원"}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+                className="rounded-lg bg-[var(--sl-danger)] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
               >
                 {stage === "restoring" ? "사전 백업 후 복원 중..." : "사전 백업 후 복원 실행"}
               </button>
@@ -245,7 +243,7 @@ export default function StoreEvalBackupPage() {
                 type="button"
                 onClick={resetRestoreFlow}
                 disabled={stage === "restoring"}
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                className="app-btn-outline rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40"
               >
                 취소
               </button>
@@ -254,7 +252,7 @@ export default function StoreEvalBackupPage() {
         )}
 
         {stage === "done" && restoreResult && (
-          <div className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+          <div className="app-badge app-badge-ok mt-4 w-full flex-col items-start gap-0 rounded-lg px-4 py-3 text-sm">
             <p className="font-semibold">복원이 완료되었습니다.</p>
             <ul className="mt-2 list-inside list-disc text-xs">
               {restoreResult.counts &&
@@ -267,7 +265,7 @@ export default function StoreEvalBackupPage() {
             <button
               type="button"
               onClick={resetRestoreFlow}
-              className="mt-3 rounded-md border border-emerald-300 px-3 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-300"
+              className="app-btn-outline mt-3 rounded-md px-3 py-1 text-xs font-medium"
             >
               닫기
             </button>
@@ -275,49 +273,43 @@ export default function StoreEvalBackupPage() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <section className="app-card rounded-2xl p-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">복원 로그</h2>
+          <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">복원 로그</h2>
           <button
             type="button"
             onClick={loadLog}
             disabled={logLoading}
-            className="rounded-md border border-zinc-300 px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="app-btn-outline rounded-md px-3 py-1 text-xs font-medium disabled:opacity-50"
           >
             {logLoading ? "불러오는 중..." : "불러오기"}
           </button>
         </div>
         {log == null ? (
-          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">&ldquo;불러오기&rdquo;를 눌러 지금까지의 복원 시도 이력을 확인하세요.</p>
+          <p className="mt-3 text-sm text-[#8a8072]">&ldquo;불러오기&rdquo;를 눌러 지금까지의 복원 시도 이력을 확인하세요.</p>
         ) : log.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">아직 복원 이력이 없습니다.</p>
+          <p className="mt-3 text-sm text-[#8a8072]">아직 복원 이력이 없습니다.</p>
         ) : (
           <ul className="mt-4 flex flex-col gap-3">
             {log.map((entry) => (
-              <li key={entry.id} className="rounded-xl border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+              <li key={entry.id} className="app-card-sm rounded-xl p-4 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium text-zinc-900 dark:text-zinc-50">{formatDateTime(entry.restoredAt)}</span>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      entry.success
-                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                        : "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"
-                    }`}
-                  >
+                  <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{formatDateTime(entry.restoredAt)}</span>
+                  <span className={`app-badge ${entry.success ? "app-badge-ok" : "app-badge-danger"}`}>
                     {entry.success ? "성공" : "실패"}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="mt-1 text-xs text-[#8a8072]">
                   실행자: {entry.actor ?? "알수없음"} · 백업 시점: {entry.sourceExportedAt ? new Date(entry.sourceExportedAt).toLocaleString("ko-KR") : "-"}
                 </p>
                 {entry.success && entry.counts && (
-                  <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                  <p className="mt-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">
                     {Object.entries(entry.counts)
                       .map(([k, v]) => `${k} ${v}건`)
                       .join(" · ")}
                   </p>
                 )}
-                {!entry.success && entry.error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{entry.error}</p>}
+                {!entry.success && entry.error && <p className="mt-1 text-xs text-[var(--sl-danger)]">{entry.error}</p>}
               </li>
             ))}
           </ul>

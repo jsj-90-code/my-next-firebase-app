@@ -144,9 +144,9 @@ function NewStoreForm({ onCancel, onSaved, actor }: { onCancel: () => void; onSa
   }
 
   return (
-    <section className={`${sectionClass} border-zinc-300 dark:border-zinc-700`}>
+    <section className={`${sectionClass} app-card`}>
       <h3 className={sectionTitleClass}>신규 가맹점 등록</h3>
-      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="mt-1 text-xs text-[#8a8072]">
         신규후보지 평가를 거쳐 오픈한 매장은 해당 후보지 화면의 &ldquo;기존 가맹점으로 전환&rdquo; 버튼을 쓰는 게 더 편합니다(경쟁점·입지평가를
         다시 입력할 필요가 없습니다). 이 폼은 평가 없이 바로 등록해야 하는 경우용입니다.
       </p>
@@ -160,17 +160,12 @@ function NewStoreForm({ onCancel, onSaved, actor }: { onCancel: () => void; onSa
         <SelectField label="가맹상태" value={form.franchiseStatus} onChange={(v) => set("franchiseStatus", v)} options={FRANCHISE_STATUS_OPTIONS} />
         <NumberField label="요금표_시간당원" value={form.hourlyRate} onChange={(v) => set("hourlyRate", v)} />
       </div>
-      {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="mt-3 text-sm text-[var(--sl-danger)]">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
-        <button type="button" onClick={onCancel} className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+        <button type="button" onClick={onCancel} className="app-btn-outline rounded-lg px-4 py-2 text-sm">
           취소
         </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={handleSave}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-        >
+        <button type="button" disabled={saving} onClick={handleSave} className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">
           {saving ? "저장 중..." : "등록"}
         </button>
       </div>
@@ -180,9 +175,9 @@ function NewStoreForm({ onCancel, onSaved, actor }: { onCancel: () => void; onSa
 
 function StatBox({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 dark:border-zinc-800 dark:bg-zinc-900">
-      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">{label}</p>
-      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{value}</p>
+    <div className="app-card-sm rounded-md px-2.5 py-1.5">
+      <p className="text-[11px] text-[#8a8072]">{label}</p>
+      <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{value}</p>
     </div>
   );
 }
@@ -299,10 +294,10 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="app-card-sm mt-3 rounded-xl p-4">
       {store.predictedAtConversion ? (
-        <div className="mb-4 rounded-lg border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
-          <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+        <div className="app-card mb-4 rounded-lg p-3">
+          <h4 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
             후보지평가 당시 예측 vs 실제매출 — {store.predictedAtConversion.candidateCode} (
             {formatDateTime(store.predictedAtConversion.calculatedAt)} 계산)
           </h4>
@@ -322,70 +317,65 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
           </div>
         </div>
       ) : store.originCandidateCode ? (
-        <p className="mb-4 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400">
+        <p className="app-card mb-4 rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
           후보지 {store.originCandidateCode}에서 연결됐지만, 예측값 스냅샷은 이미 재계산으로 덮어써져서 남아있지 않습니다.
         </p>
       ) : (
-        <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-zinc-300 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-950">
+        <div className="app-card mb-4 flex flex-wrap items-end gap-2 rounded-lg p-3">
           <TextField label="후보지코드 연결 (예: N001)" value={linkCandidateCode} onChange={setLinkCandidateCode} placeholder="N001" />
-          <button
-            type="button"
-            disabled={busy || !linkCandidateCode.trim()}
-            onClick={handleLink}
-            className="h-fit rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
+          <button type="button" disabled={busy || !linkCandidateCode.trim()} onClick={handleLink} className="app-btn-outline h-fit rounded-md px-3 py-1.5 text-xs disabled:opacity-50">
             연결
           </button>
-          {linkMessage && <p className="text-xs text-zinc-500 dark:text-zinc-400">{linkMessage}</p>}
+          {linkMessage && <p className="text-xs text-[#8a8072]">{linkMessage}</p>}
         </div>
       )}
 
-      <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">운영 상태 (사후 운영이슈·가맹상태)</h4>
+      <h4 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">운영 상태 (사후 운영이슈·가맹상태)</h4>
       <div className={`${gridClass} mt-2`}>
         <SelectField label="가맹상태" value={editStore.franchiseStatus} onChange={(v) => setEditStore((p) => ({ ...p, franchiseStatus: v }))} options={FRANCHISE_STATUS_OPTIONS} />
         <BooleanSelectField label="산식학습제외" value={editStore.excludedFromModel} onChange={(v) => setEditStore((p) => ({ ...p, excludedFromModel: v ?? false }))} />
         <TextField label="학습제외사유" value={editStore.excludedReason ?? ""} onChange={(v) => setEditStore((p) => ({ ...p, excludedReason: v || null }))} hint="예: 오픈 후 운영관리 문제, 경쟁점 가격전쟁" />
         <SelectField label="브랜드" value={editStore.brandType} onChange={(v) => setEditStore((p) => ({ ...p, brandType: v as ExistingStore["brandType"] }))} options={BRAND_OPTIONS} />
       </div>
-      <button type="button" disabled={busy} onClick={saveStoreEdits} className="mt-2 rounded-md border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
+      <button type="button" disabled={busy} onClick={saveStoreEdits} className="app-btn-outline mt-2 rounded-md px-3 py-1.5 text-xs disabled:opacity-50">
         운영 상태 저장
       </button>
 
-      <h4 className="mt-5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">월매출 기록 ({sales.length}건)</h4>
+      <h4 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">월매출 기록 ({sales.length}건)</h4>
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <TextField label="연월 (yyyy-MM)" value={yearMonth} onChange={setYearMonth} placeholder="2026-08" />
         <NumberField label="PC매출" value={pcSales} onChange={setPcSales} />
         <NumberField label="상품매출" value={productSales} onChange={setProductSales} />
-        <button type="button" disabled={busy || !yearMonth} onClick={saveSales} className="h-fit rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
+        <button type="button" disabled={busy || !yearMonth} onClick={saveSales} className="app-btn-primary h-fit rounded-md px-3 py-1.5 text-xs disabled:opacity-50">
           월매출 추가/수정
         </button>
       </div>
       {!loading && (
-        <div className="mt-2 max-h-40 overflow-y-auto text-xs text-zinc-600 dark:text-zinc-400">
+        <div className="mt-2 max-h-40 overflow-y-auto text-xs text-[#5c5346] dark:text-[#c9bfae]">
           {sales.map((s) => (
-            <div key={s.yearMonth} className="flex justify-between border-b border-zinc-200 py-1 dark:border-zinc-800">
+            <div key={s.yearMonth} className="flex justify-between border-b border-[#171310]/[0.08] py-1 dark:border-white/[0.08]">
               <span>{s.yearMonth}</span>
-              <span>{formatWon((s.pcSales ?? 0) + (s.productSales ?? 0))}</span>
+              <span className="font-mono tabular-nums">{formatWon((s.pcSales ?? 0) + (s.productSales ?? 0))}</span>
             </div>
           ))}
           {sales.length === 0 && <p>기록 없음</p>}
         </div>
       )}
 
-      <h4 className="mt-5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">회원 스냅샷 ({members.length}건) — 12개월 미만 매장 위주로 계속 갱신</h4>
+      <h4 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">회원 스냅샷 ({members.length}건) — 12개월 미만 매장 위주로 계속 갱신</h4>
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <DateField label="회원자료기준일" value={snapshotDate} onChange={setSnapshotDate} />
         <NumberField label="총회원수_집계" value={totalMembers} onChange={setTotalMembers} />
-        <button type="button" disabled={busy || !snapshotDate} onClick={saveMember} className="h-fit rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900">
+        <button type="button" disabled={busy || !snapshotDate} onClick={saveMember} className="app-btn-primary h-fit rounded-md px-3 py-1.5 text-xs disabled:opacity-50">
           회원 스냅샷 추가
         </button>
       </div>
       {!loading && (
-        <div className="mt-2 max-h-32 overflow-y-auto text-xs text-zinc-600 dark:text-zinc-400">
+        <div className="mt-2 max-h-32 overflow-y-auto text-xs text-[#5c5346] dark:text-[#c9bfae]">
           {members.map((m) => (
-            <div key={m.snapshotDate} className="flex justify-between border-b border-zinc-200 py-1 dark:border-zinc-800">
+            <div key={m.snapshotDate} className="flex justify-between border-b border-[#171310]/[0.08] py-1 dark:border-white/[0.08]">
               <span>{m.snapshotDate}</span>
-              <span>{formatNumber(m.totalMembersReported)}명</span>
+              <span className="font-mono tabular-nums">{formatNumber(m.totalMembersReported)}명</span>
             </div>
           ))}
           {members.length === 0 && <p>기록 없음</p>}
@@ -445,15 +435,15 @@ export default function ExistingStoresPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">기존 가맹점 관리</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">기존 가맹점 관리</h1>
+          <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
             신규 가맹점이 오픈하면 여기서 등록하고, 매달 매출과 회원 데이터를 계속 쌓습니다. V61 학습·검증(6. 기존 가맹점 검증)은 여기 쌓인
             데이터를 그대로 사용합니다. 블랙라벨 매장만 표시합니다
             {hiddenCount > 0 && ` (리그PC방·확인필요 ${hiddenCount}곳은 숨김)`}.
           </p>
         </div>
         {!showNew && (
-          <button type="button" onClick={() => setShowNew(true)} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white">
+          <button type="button" onClick={() => setShowNew(true)} className="app-btn-primary rounded-lg px-4 py-2 text-sm">
             + 신규 가맹점 등록
           </button>
         )}
@@ -471,14 +461,14 @@ export default function ExistingStoresPage() {
       )}
 
       {loading ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>
+        <p className="text-sm text-[#8a8072]">불러오는 중...</p>
       ) : (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <span className="font-semibold text-zinc-900 dark:text-zinc-50">블랙라벨 총 {blackLabelStores.length}개</span>
-          <span className="flex flex-wrap gap-x-4 gap-y-1 text-zinc-600 dark:text-zinc-400">
+        <div className="app-card-sm flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl px-4 py-3 text-sm">
+          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">블랙라벨 총 {blackLabelStores.length}개</span>
+          <span className="flex flex-wrap gap-x-4 gap-y-1 text-[#5c5346] dark:text-[#c9bfae]">
             {franchiseStatusBreakdown.map(([status, count]) => (
               <span key={status}>
-                {status} <span className="font-medium text-zinc-800 dark:text-zinc-200">{count}개</span>
+                {status} <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{count}개</span>
               </span>
             ))}
           </span>
@@ -492,11 +482,11 @@ export default function ExistingStoresPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="가맹점코드·가맹점명으로 검색"
-          className="w-full max-w-xs rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+          className="app-input w-full max-w-xs px-3 py-1.5 text-sm"
         />
-        <div className="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div className="app-card overflow-x-auto rounded-xl">
           <table className="w-full min-w-[900px] text-sm">
-            <thead className="bg-zinc-50 text-left text-xs font-medium text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+            <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
               <tr>
                 <th className="px-3 py-2">가맹점코드</th>
                 <th className="px-3 py-2">가맹점명</th>
@@ -509,23 +499,23 @@ export default function ExistingStoresPage() {
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
               {visibleStores.map((s) => (
                 <Fragment key={s.storeCode}>
-                  <tr key={s.storeCode} className="text-zinc-800 dark:text-zinc-200">
-                    <td className="px-3 py-2 font-medium">{s.storeCode}</td>
+                  <tr key={s.storeCode} className="app-row text-[#5c5346] dark:text-[#c9bfae]">
+                    <td className="px-3 py-2 font-mono font-medium">{s.storeCode}</td>
                     <td className="px-3 py-2">{s.storeName}</td>
                     <td className="px-3 py-2">{s.brandType ?? "확인필요"}</td>
                     <td className="px-3 py-2">{s.openedAt ?? "-"}</td>
-                    <td className="px-3 py-2">{formatNumber(s.pcCount)}</td>
+                    <td className="px-3 py-2 font-mono tabular-nums">{formatNumber(s.pcCount)}</td>
                     <td className="px-3 py-2">{s.completedMonths ?? 0}개월</td>
-                    <td className="px-3 py-2">{formatWon(s.actualMonthlyRevenueAvg)}</td>
+                    <td className="px-3 py-2 font-mono tabular-nums">{formatWon(s.actualMonthlyRevenueAvg)}</td>
                     <td className="px-3 py-2">{s.franchiseStatus ?? "-"}</td>
                     <td className="px-3 py-2">
                       <button
                         type="button"
                         onClick={() => setExpanded(expanded === s.storeCode ? null : s.storeCode)}
-                        className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        className="app-btn-outline rounded-md px-2.5 py-1 text-xs"
                       >
                         {expanded === s.storeCode ? "닫기" : "관리"}
                       </button>
@@ -542,7 +532,7 @@ export default function ExistingStoresPage() {
               ))}
               {visibleStores.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-zinc-500 dark:text-zinc-400">
+                  <td colSpan={9} className="px-3 py-6 text-center text-[#8a8072]">
                     {stores.length === 0
                       ? "등록된 기존 가맹점이 없습니다."
                       : blackLabelStores.length === 0

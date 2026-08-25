@@ -18,25 +18,24 @@ const NAV_ITEMS = [
 export function StoreEvalChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   return (
-    <AutoAuthGate>
-      <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
-        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-            <Link href="/store-eval" className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              점포평가 시스템 (V62)
+    <div className="app-theme flex min-h-screen flex-col">
+      <AutoAuthGate>
+        <header className="border-b border-[#171310]/[0.08] bg-[#fffdf7] dark:border-white/[0.08] dark:bg-[#1c1912]">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+            <Link href="/store-eval" className="flex items-center gap-2 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-[18px] w-[18px] shrink-0 text-[#c05a2c]">
+                <path d="M4 19V9l8-5 8 5v10 M4 19h16 M9 19v-6h6v6" />
+              </svg>
+              점포평가 <span className="text-[#c05a2c]">V62</span>
             </Link>
-            <nav className="flex gap-1 text-sm">
+            <nav className="app-tabbar flex flex-wrap gap-1 p-1 text-sm">
               {NAV_ITEMS.map((item) => {
                 const active = item.href === "/store-eval" ? pathname === item.href : pathname?.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-md px-3 py-1.5 transition ${
-                      active
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                        : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                    }`}
+                    className={`app-tab rounded-lg px-3 py-1.5 ${active ? "app-tab-active" : ""}`}
                   >
                     {item.label}
                   </Link>
@@ -46,7 +45,7 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
-      </div>
-    </AutoAuthGate>
+      </AutoAuthGate>
+    </div>
   );
 }

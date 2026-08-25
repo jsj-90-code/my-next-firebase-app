@@ -96,20 +96,16 @@ function NumberInput({
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
-      <span className="text-zinc-700 dark:text-zinc-300">{label}</span>
+      <span className="text-[#5c5346] dark:text-[#c9bfae]">{label}</span>
       <input
         type="number"
         step="any"
         value={Number.isFinite(value) ? value : 0}
         readOnly={readOnly}
         onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
-        className={`rounded-lg border px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-50 ${
-          readOnly
-            ? "border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900"
-            : "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-950"
-        }`}
+        className={`app-input px-3 py-1.5 text-sm ${readOnly ? "opacity-60" : ""}`}
       />
-      {hint && <span className="text-xs text-zinc-500 dark:text-zinc-400">{hint}</span>}
+      {hint && <span className="text-xs text-[#8a8072]">{hint}</span>}
     </label>
   );
 }
@@ -129,19 +125,15 @@ function TextInput({
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
-      <span className="text-zinc-700 dark:text-zinc-300">{label}</span>
+      <span className="text-[#5c5346] dark:text-[#c9bfae]">{label}</span>
       <input
         type="text"
         value={value}
         readOnly={readOnly}
         onChange={(e) => onChange(e.target.value)}
-        className={`rounded-lg border px-3 py-1.5 text-sm text-zinc-900 dark:text-zinc-50 ${
-          readOnly
-            ? "border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900"
-            : "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-950"
-        }`}
+        className={`app-input px-3 py-1.5 text-sm ${readOnly ? "opacity-60" : ""}`}
       />
-      {hint && <span className="text-xs text-zinc-500 dark:text-zinc-400">{hint}</span>}
+      {hint && <span className="text-xs text-[#8a8072]">{hint}</span>}
     </label>
   );
 }
@@ -158,15 +150,11 @@ function Section({
   warning?: string | null;
 }) {
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">{title}</h2>
-      {description && <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{description}</p>}
+    <section className="app-card rounded-2xl p-5">
+      <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h2>
+      {description && <p className="mt-1 text-xs leading-5 text-[#8a8072]">{description}</p>}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">{children}</div>
-      {warning && (
-        <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-          ⚠ {warning}
-        </p>
-      )}
+      {warning && <p className="app-badge app-badge-warn mt-3 w-full justify-start py-2 text-xs">⚠ {warning}</p>}
     </section>
   );
 }
@@ -333,12 +321,12 @@ export default function StoreEvalSettingsPage() {
   const readOnly = !isAdmin;
 
   if (loading || adminLoading) {
-    return <div className="py-16 text-center text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</div>;
+    return <div className="py-16 text-center text-sm text-[#8a8072]">불러오는 중...</div>;
   }
 
   if (loadError) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+      <div className="app-badge app-badge-danger w-full justify-start rounded-2xl p-6 text-sm">
         설정을 불러오지 못했습니다: {loadError}
       </div>
     );
@@ -349,20 +337,20 @@ export default function StoreEvalSettingsPage() {
   return (
     <div className="flex flex-col gap-6 pb-16">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">7. 운영설정</h1>
-        <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">7. 운영설정</h1>
+        <p className="mt-1 text-sm text-[#8a8072]">
           V61/V62 계산에 쓰이는 계수와 판정 기준을 관리합니다. 값을 바꾸면 이후의 모든 계산에 즉시 반영됩니다.
         </p>
       </div>
 
       {usingDefault && (
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+        <p className="app-badge app-badge-warn w-full justify-start py-3 text-sm">
           아직 저장된 설정이 없습니다 - 기본값을 보여줍니다.
         </p>
       )}
 
       {!isAdmin && (
-        <p className="rounded-lg bg-zinc-100 px-4 py-3 text-sm text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+        <p className="app-badge app-badge-neutral w-full justify-start py-3 text-sm">
           운영설정 변경 권한이 없어 조회만 가능합니다. 값 변경이 필요하면 관리자에게 문의하세요.
         </p>
       )}
@@ -609,7 +597,7 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       {form.updatedAt > 0 && (
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs text-[#8a8072]">
           마지막 저장: {formatDateTime(form.updatedAt)}
           {form.updatedBy ? ` (${form.updatedBy})` : ""}
         </p>
@@ -618,13 +606,13 @@ export default function StoreEvalSettingsPage() {
       {isAdmin && (
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-zinc-700 dark:text-zinc-300">변경 사유 (필수)</span>
+            <span className="text-[#5c5346] dark:text-[#c9bfae]">변경 사유 (필수)</span>
             <input
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="예: ±10% 적중률 재보정을 위해 외부유입 보정률 강함을 -20%→-25%로 조정"
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+              className="app-input px-3 py-1.5 text-sm"
             />
           </label>
           <div className="flex items-center gap-3">
@@ -632,39 +620,39 @@ export default function StoreEvalSettingsPage() {
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+            className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
           >
             {saving ? "저장 중..." : "저장"}
           </button>
-          {saveMessage && <span className="text-sm text-green-600 dark:text-green-400">{saveMessage}</span>}
-          {saveError && <span className="text-sm text-red-600 dark:text-red-400">{saveError}</span>}
+          {saveMessage && <span className="text-sm text-[var(--sl-ok)]">{saveMessage}</span>}
+          {saveError && <span className="text-sm text-[var(--sl-danger)]">{saveError}</span>}
           </div>
         </div>
       )}
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">변경 이력</h2>
+      <section className="app-card rounded-2xl p-5">
+        <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">변경 이력</h2>
         {historyLoading ? (
-          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>
+          <p className="mt-3 text-sm text-[#8a8072]">불러오는 중...</p>
         ) : historyError ? (
-          <p className="mt-3 text-sm text-red-600 dark:text-red-400">이력을 불러오지 못했습니다: {historyError}</p>
+          <p className="mt-3 text-sm text-[var(--sl-danger)]">이력을 불러오지 못했습니다: {historyError}</p>
         ) : history.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">아직 변경 이력이 없습니다.</p>
+          <p className="mt-3 text-sm text-[#8a8072]">아직 변경 이력이 없습니다.</p>
         ) : (
           <ul className="mt-4 flex flex-col gap-4">
             {history.map((entry) => {
               const diffs = diffEntries(entry.before, entry.after);
               return (
-                <li key={entry.id} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+                <li key={entry.id} className="app-card-sm rounded-xl p-4">
                   <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-                    <span className="font-medium text-zinc-900 dark:text-zinc-50">{formatDateTime(entry.changedAt)}</span>
-                    <span className="text-zinc-500 dark:text-zinc-400">변경자: {entry.changedBy ?? "알수없음"}</span>
+                    <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{formatDateTime(entry.changedAt)}</span>
+                    <span className="text-[#8a8072]">변경자: {entry.changedBy ?? "알수없음"}</span>
                   </div>
-                  <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">사유: {entry.reason ?? "(기록 없음 — 이 필드 도입 이전 변경)"}</p>
+                  <p className="mt-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">사유: {entry.reason ?? "(기록 없음 — 이 필드 도입 이전 변경)"}</p>
                   {diffs.length === 0 ? (
-                    <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">변경된 값이 없습니다.</p>
+                    <p className="mt-2 text-xs text-[#8a8072]">변경된 값이 없습니다.</p>
                   ) : (
-                    <ul className="mt-2 flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+                    <ul className="mt-2 flex flex-col gap-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">
                       {diffs.map((d) => (
                         <li key={d.label}>
                           {d.label}: {d.before} → {d.after}
@@ -676,7 +664,7 @@ export default function StoreEvalSettingsPage() {
                     <button
                       type="button"
                       onClick={() => handleRestore(entry)}
-                      className="mt-3 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      className="app-btn-outline mt-3 rounded-md px-2.5 py-1 text-xs font-medium"
                     >
                       이 시점 값으로 되돌리기
                     </button>

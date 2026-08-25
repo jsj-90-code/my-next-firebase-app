@@ -12,10 +12,10 @@ import type { CandidateInput, ReviewStatus } from "@/lib/storeEval/types";
 import { formatDateTime } from "@/lib/storeEval/format";
 
 const REVIEW_STATUS_STYLE: Record<ReviewStatus, string> = {
-  진행: "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300",
-  보류: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
-  종료: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-  완료: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  진행: "app-badge app-badge-info",
+  보류: "app-badge app-badge-warn",
+  종료: "app-badge app-badge-neutral",
+  완료: "app-badge app-badge-ok",
 };
 
 export default function CandidateListPage() {
@@ -89,8 +89,8 @@ export default function CandidateListPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">신규후보지</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+          <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">신규후보지</h1>
+          <p className="mt-1 text-sm text-[#8a8072]">
             신규 후보지를 등록하고, 경쟁점·입지동선평가를 거쳐 V62 최종판정을 확인합니다.
           </p>
         </div>
@@ -98,14 +98,14 @@ export default function CandidateListPage() {
           type="button"
           onClick={handleCreate}
           disabled={creating}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
         >
           {creating ? "코드 발급 중..." : "+ 신규 후보지 등록"}
         </button>
       </div>
 
       {error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
+        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
 
       {/* 2026-08-25 추가 — 후보지가 늘어나면서 코드/이름/주소로 바로 찾을 방법이 없었다. 서버
@@ -115,12 +115,12 @@ export default function CandidateListPage() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="코드·이름·주소로 검색"
-        className="w-full max-w-xs rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+        className="app-input w-full max-w-xs px-3 py-1.5 text-sm"
       />
 
-      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="app-card overflow-x-auto rounded-2xl">
         <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          <thead className="border-b border-[#171310]/[0.08] bg-[#171310]/[0.02] text-xs uppercase tracking-wide text-[#8a8072] dark:border-white/[0.08] dark:bg-white/[0.02]">
             <tr>
               <th className="px-4 py-3">코드</th>
               <th className="px-4 py-3">이름</th>
@@ -130,54 +130,54 @@ export default function CandidateListPage() {
               <th className="px-4 py-3 text-right">작업</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+          <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-[#8a8072]">
                   불러오는 중...
                 </td>
               </tr>
             ) : candidates.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-[#8a8072]">
                   등록된 후보지가 없습니다. &ldquo;신규 후보지 등록&rdquo; 버튼으로 시작하세요.
                 </td>
               </tr>
             ) : filteredCandidates.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-[#8a8072]">
                   &ldquo;{search}&rdquo;와(과) 일치하는 후보지가 없습니다.
                 </td>
               </tr>
             ) : (
               filteredCandidates.map((c) => (
-                <tr key={c.code} className="hover:bg-zinc-50 dark:hover:bg-zinc-900/60">
-                  <td className="px-4 py-3 font-mono text-xs text-zinc-500 dark:text-zinc-400">{c.code}</td>
+                <tr key={c.code} className="app-row">
+                  <td className="px-4 py-3 font-mono text-xs tabular-nums text-[#8a8072]">{c.code}</td>
                   <td className="px-4 py-3">
                     <Link
                       href={`/store-eval/candidates/${c.code}`}
-                      className="font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+                      className="font-medium text-[#171310] hover:underline dark:text-[#f2ede2]"
                     >
                       {c.name || "(이름 없음)"}
                     </Link>
                     {c.isDraft && (
-                      <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      <span className="app-badge app-badge-neutral ml-2 px-1.5 py-0.5 text-[11px]">
                         임시저장
                       </span>
                     )}
                   </td>
-                  <td className="max-w-[240px] truncate px-4 py-3 text-zinc-600 dark:text-zinc-400">{c.address || "-"}</td>
+                  <td className="max-w-[240px] truncate px-4 py-3 text-[#5c5346] dark:text-[#c9bfae]">{c.address || "-"}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${REVIEW_STATUS_STYLE[c.reviewStatus]}`}>
+                    <span className={REVIEW_STATUS_STYLE[c.reviewStatus]}>
                       {c.reviewStatus}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{formatDateTime(c.updatedAt)}</td>
+                  <td className="px-4 py-3 font-mono text-[#8a8072]">{formatDateTime(c.updatedAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <Link
                         href={`/store-eval/candidates/${c.code}`}
-                        className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        className="app-btn-outline rounded-md px-2.5 py-1 text-xs"
                       >
                         열기
                       </Link>
@@ -185,7 +185,7 @@ export default function CandidateListPage() {
                         type="button"
                         disabled={busyCode === c.code}
                         onClick={() => handleDuplicate(c.code)}
-                        className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        className="app-btn-outline rounded-md px-2.5 py-1 text-xs disabled:opacity-50"
                       >
                         복사
                       </button>
@@ -193,7 +193,7 @@ export default function CandidateListPage() {
                         type="button"
                         disabled={busyCode === c.code}
                         onClick={() => handleDelete(c.code)}
-                        className="rounded-md border border-red-200 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
+                        className="rounded-md border border-[var(--sl-danger)]/30 px-2.5 py-1 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50"
                       >
                         삭제
                       </button>

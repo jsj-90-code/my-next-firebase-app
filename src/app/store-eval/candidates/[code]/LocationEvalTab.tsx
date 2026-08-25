@@ -201,20 +201,20 @@ export function LocationEvalTab({
     setAiDraft(null);
   }
 
-  if (loading) return <p className="text-sm text-zinc-500 dark:text-zinc-400">불러오는 중...</p>;
-  if (!form) return <p className="text-sm text-zinc-500 dark:text-zinc-400">데이터를 불러오지 못했습니다.</p>;
+  if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
+  if (!form) return <p className="text-sm text-[#8a8072]">데이터를 불러오지 못했습니다.</p>;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-lg bg-zinc-100 px-3 py-2 text-xs leading-5 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400">
+      <div className="app-card-sm rounded-lg px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
         <strong>공식 기준표 없음</strong> — 아래 판단 필드(점수·특수수요·외부유입제한·수요이탈위험 등)의
         기준은 원본 스프레드시트 어디에도 문서화되어 있지 않습니다(docs/data-issues.md #2). 아래 참고자료는 원본
         시트에 실제로 기재됐던 사례 2건일 뿐 &ldquo;공식 기준&rdquo;이 아니므로 참고용으로만 사용하세요.
       </div>
 
-      <details className="rounded-2xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <summary className="cursor-pointer font-medium text-zinc-700 dark:text-zinc-300">참고용 실사례 보기 (model-spec.md §7.1)</summary>
-        <ul className="mt-3 list-inside list-disc space-y-2 text-xs leading-5 text-zinc-600 dark:text-zinc-400">
+      <details className="app-card rounded-2xl p-4 text-sm">
+        <summary className="cursor-pointer font-medium text-[#5c5346] dark:text-[#c9bfae]">참고용 실사례 보기 (model-spec.md §7.1)</summary>
+        <ul className="mt-3 list-inside list-disc space-y-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
           <li>
             &ldquo;AI 재평가: 아파트 배후 내부 입지, 역·먹자상권 경쟁점은 영향 제한&rdquo; — 상권내위치4 / 주요동선4 /
             선점경쟁3 / 접근가시성4 → 종합 3.75
@@ -230,18 +230,18 @@ export function LocationEvalTab({
             type="button"
             disabled={aiLoading}
             onClick={handleAiFill}
-            className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100 disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+            className="rounded-lg border border-[var(--sl-info)]/30 bg-[var(--sl-info-soft)] px-3 py-1.5 text-xs font-medium text-[var(--sl-info)] hover:brightness-95 disabled:opacity-50"
           >
             {aiLoading ? "AI가 조사 중..." : "AI로 초안 채우기"}
           </button>
         </div>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="mt-1 text-xs text-[#8a8072]">
           이미 수집된 경쟁점·수요거점·행정동통계·지도 이미지를 참고자료로 주고, 부족한 부분만 웹검색으로
           보완해서 5개 점수뿐 아니라 특수수요/외부유입제한/수요이탈위험/상권구조메모까지 초안을 제안합니다.
           자동저장되지 않으니 아래 승인화면에서 검토·수정 후 적용하고, 최종적으로 &ldquo;저장&rdquo;을 눌러주세요.
         </p>
         {aiError && (
-          <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">{aiError}</p>
+          <p className="app-badge app-badge-danger mt-2 w-full justify-start px-3 py-2 text-xs">{aiError}</p>
         )}
         {aiDraft && (
           <LocationEvalAiReviewPanel
@@ -288,9 +288,9 @@ export function LocationEvalTab({
           />
         </div>
 
-        <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">입지동선종합점수 실시간 미리보기 (저장하지 않음, 4개 점수 입력 시 계산)</p>
-          <p className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
+          <p className="text-xs text-[#8a8072]">입지동선종합점수 실시간 미리보기 (저장하지 않음, 4개 점수 입력 시 계산)</p>
+          <p className="mt-1 text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">
             {compositePreview != null ? formatScore(compositePreview) : "- (4개 점수를 모두 입력하세요)"}
           </p>
         </div>
@@ -328,7 +328,7 @@ export function LocationEvalTab({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>외부유입 / 브랜드</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">외부유입제한은 V62 보정률에 직결되는 핵심 항목입니다(강함 -20% / 보통 -3% / 없음 0%).</p>
+        <p className="mt-1 text-xs text-[#8a8072]">외부유입제한은 V62 보정률에 직결되는 핵심 항목입니다(강함 -20% / 보통 -3% / 없음 0%).</p>
         <div className={`${gridClass} mt-4`}>
           <SelectField
             label="외부유입제한"
@@ -363,10 +363,10 @@ export function LocationEvalTab({
       </section>
 
       {error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
+        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
       {message && (
-        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+        <p className="app-badge app-badge-ok w-full justify-start px-3 py-2 text-sm">
           {message}
         </p>
       )}
@@ -376,7 +376,7 @@ export function LocationEvalTab({
           type="button"
           disabled={saving}
           onClick={handleSave}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
         >
           {saving ? "저장 중..." : "저장"}
         </button>
