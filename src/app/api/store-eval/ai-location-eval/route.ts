@@ -69,7 +69,10 @@ const FIELD_SCHEMAS: Record<FieldKey, ReturnType<typeof scoreProp> | ReturnType<
   attractionScore: scoreProp("상권흡인력점수 — 이 상권 자체가 사람을 끌어모으는 힘"),
   specialDemandType: enumProp(SPECIAL_DEMAND_TYPES, "특수수요유형"),
   specialDemandIntensity: enumProp(SPECIAL_DEMAND_INTENSITIES, "특수수요강도"),
-  inflowRestriction: enumProp(INFLOW_LEVELS, "외부유입제한 — 이 상권이 인근 상권으로 수요를 얼마나 뺏기기 쉬운가"),
+  inflowRestriction: enumProp(
+    INFLOW_LEVELS,
+    "외부유입제한 — 이 상권이 주변 동네에서 손님을 끌어오기 얼마나 어려운가(강할수록 이 동네 주민 수요에만 의존)",
+  ),
   demandLeakageRisk: enumProp(INFLOW_LEVELS, "수요이탈위험 — 온라인/타 여가수단 등으로 수요 자체가 빠질 위험"),
   marketStructureMemo: textProp("상권구조에 대한 자유서술 메모(1~2문장)"),
 };

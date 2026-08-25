@@ -262,10 +262,30 @@ export function LocationEvalTab({
           />
         )}
         <div className={`${gridClass} mt-4`}>
-          <ScoreSelectField label="상권내위치점수" value={form.locationScore} onChange={(v) => set("locationScore", v as LocationEvaluation["locationScore"])} />
-          <ScoreSelectField label="주요동선점수" value={form.flowScore} onChange={(v) => set("flowScore", v as LocationEvaluation["flowScore"])} />
-          <ScoreSelectField label="선점경쟁점수" value={form.preemptionScore} onChange={(v) => set("preemptionScore", v as LocationEvaluation["preemptionScore"])} />
-          <ScoreSelectField label="접근가시성점수" value={form.visibilityScore} onChange={(v) => set("visibilityScore", v as LocationEvaluation["visibilityScore"])} />
+          <ScoreSelectField
+            label="상권내위치점수"
+            value={form.locationScore}
+            onChange={(v) => set("locationScore", v as LocationEvaluation["locationScore"])}
+            hint="유동인구가 몰리는 상권(역세권/먹자골목 등)의 중심부에 가까울수록 높은 점수."
+          />
+          <ScoreSelectField
+            label="주요동선점수"
+            value={form.flowScore}
+            onChange={(v) => set("flowScore", v as LocationEvaluation["flowScore"])}
+            hint="사람들이 실제로 많이 지나다니는 이동경로(역 출구, 큰 도로, 버스정류장 앞 등)에 있을수록 높은 점수."
+          />
+          <ScoreSelectField
+            label="선점경쟁점수"
+            value={form.preemptionScore}
+            onChange={(v) => set("preemptionScore", v as LocationEvaluation["preemptionScore"])}
+            hint="주변 경쟁 PC방이 이미 더 좋은 자리를 선점하고 있어서 이 후보지가 불리할수록 낮은 점수."
+          />
+          <ScoreSelectField
+            label="접근가시성점수"
+            value={form.visibilityScore}
+            onChange={(v) => set("visibilityScore", v as LocationEvaluation["visibilityScore"])}
+            hint="도로에서 간판/입구가 잘 보이고 들어가기 쉬울수록 높은 점수(층수, 계단·엘리베이터 여부 포함)."
+          />
         </div>
 
         <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -283,22 +303,62 @@ export function LocationEvalTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>상권흡인력 / 특수수요</h3>
         <div className={`${gridClass} mt-4`}>
-          <ScoreSelectField label="상권흡인력점수" value={form.attractionScore} onChange={(v) => set("attractionScore", v as LocationEvaluation["attractionScore"])} />
-          <SelectField label="특수수요유형" value={form.specialDemandType} onChange={(v) => set("specialDemandType", v)} options={SPECIAL_DEMAND_TYPE_OPTIONS} />
-          <SelectField label="특수수요강도" value={form.specialDemandIntensity} onChange={(v) => set("specialDemandIntensity", v)} options={SPECIAL_DEMAND_INTENSITY_OPTIONS} />
+          <ScoreSelectField
+            label="상권흡인력점수"
+            value={form.attractionScore}
+            onChange={(v) => set("attractionScore", v as LocationEvaluation["attractionScore"])}
+            hint="이 상권 자체가 사람을 끌어모으는 힘(전체적인 상권 규모·활력)이 클수록 높은 점수."
+          />
+          <SelectField
+            label="특수수요유형"
+            value={form.specialDemandType}
+            onChange={(v) => set("specialDemandType", v)}
+            options={SPECIAL_DEMAND_TYPE_OPTIONS}
+            hint="대학가/군부대/산업단지/관광유흥처럼 일반 상권과 다른 특수한 수요원이 있는지."
+          />
+          <SelectField
+            label="특수수요강도"
+            value={form.specialDemandIntensity}
+            onChange={(v) => set("specialDemandIntensity", v)}
+            options={SPECIAL_DEMAND_INTENSITY_OPTIONS}
+            hint="위 특수수요가 매출에 실제로 얼마나 영향을 줄 정도인지."
+          />
         </div>
       </section>
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>외부유입 / 브랜드</h3>
-        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">외부유입제한은 V62 보정률에 직결되는 핵심 항목입니다.</p>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">외부유입제한은 V62 보정률에 직결되는 핵심 항목입니다(강함 -20% / 보통 -3% / 없음 0%).</p>
         <div className={`${gridClass} mt-4`}>
-          <SelectField label="외부유입제한" value={form.inflowRestriction} onChange={(v) => set("inflowRestriction", v)} options={INFLOW_RESTRICTION_OPTIONS} />
-          <SelectField label="수요이탈위험" value={form.demandLeakageRisk} onChange={(v) => set("demandLeakageRisk", v)} options={INFLOW_RESTRICTION_OPTIONS} />
-          <SelectField label="브랜드구분" value={form.brandType} onChange={(v) => set("brandType", v)} options={BRAND_TYPE_OPTIONS} />
+          <SelectField
+            label="외부유입제한"
+            value={form.inflowRestriction}
+            onChange={(v) => set("inflowRestriction", v)}
+            options={INFLOW_RESTRICTION_OPTIONS}
+            hint="이 상권이 주변 동네에서 손님을 끌어오기 얼마나 어려운지 — 강할수록(이 동네 주민 수요에만 의존할수록) 예상매출을 더 낮춰서 계산합니다."
+          />
+          <SelectField
+            label="수요이탈위험"
+            value={form.demandLeakageRisk}
+            onChange={(v) => set("demandLeakageRisk", v)}
+            options={INFLOW_RESTRICTION_OPTIONS}
+            hint="온라인 게임방 앱, 스터디카페 등 다른 여가수단으로 수요 자체가 빠질 위험. 현재는 참고 기록용이며 V62 계산에는 반영되지 않습니다."
+          />
+          <SelectField
+            label="브랜드구분"
+            value={form.brandType}
+            onChange={(v) => set("brandType", v)}
+            options={BRAND_TYPE_OPTIONS}
+            hint="V61 학습표본은 '블랙라벨'만 사용합니다 — 여기 값이 다르면 검증 대상에서 자동 제외됩니다."
+          />
         </div>
         <div className="mt-4">
-          <TextAreaField label="상권구조메모" value={form.marketStructureMemo ?? ""} onChange={(v) => set("marketStructureMemo", v || null)} />
+          <TextAreaField
+            label="상권구조메모"
+            value={form.marketStructureMemo ?? ""}
+            onChange={(v) => set("marketStructureMemo", v || null)}
+            hint="위 선택형 항목들로 다 담기지 않는 상권 특징을 자유롭게 남깁니다."
+          />
         </div>
       </section>
 
