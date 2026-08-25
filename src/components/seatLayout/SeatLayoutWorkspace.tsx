@@ -2845,7 +2845,7 @@ export function SeatLayoutWorkspace() {
                       className="max-h-[76vh] max-w-full cursor-crosshair rounded-lg border border-black/10 bg-white dark:border-white/10"
                     />
                   ) : (
-                    <div className="flex h-64 w-full items-center justify-center text-sm text-[#8a8072]">
+                    <div className="flex min-h-[620px] w-full items-center justify-center text-sm text-[#8a8072]">
                       왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
                     </div>
                   )}
