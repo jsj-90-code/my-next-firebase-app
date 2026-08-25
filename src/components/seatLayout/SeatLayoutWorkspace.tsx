@@ -2414,7 +2414,11 @@ export function SeatLayoutWorkspace() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
+      <div
+        className={`grid grid-cols-1 gap-6 ${
+          activeTab === "seatNumber" ? "lg:grid-cols-[340px_1fr]" : "lg:grid-cols-[320px_1fr_300px]"
+        }`}
+      >
         <div className="flex flex-col gap-4">
           <section className="app-card rounded-2xl p-5">
             <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">불러올 프로젝트 (매장)</label>
@@ -2757,79 +2761,6 @@ export function SeatLayoutWorkspace() {
             </section>
           )}
 
-          {activeTab !== "seatNumber" && (
-            <>
-              <section className="app-card rounded-2xl p-5">
-                {selectedTypeKey ? (
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
-                ) : (
-                  <ul className="space-y-2.5 text-sm text-zinc-600 dark:text-zinc-300">
-                    <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                      <span aria-hidden>⚠️</span>
-                      <span>존 구역 설정 시 파티션이 겹치지 않게 구역을 지정합니다. (인식 정확도에 영향)</span>
-                    </li>
-                    <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                      <span aria-hidden>⚠️</span>
-                      <span>책가방선반 설치 좌석은 구역 설정 시 브라켓 표시가 한 면이라도 겹치도록 지정합니다. (인식 정확도에 영향)</span>
-                    </li>
-                    <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
-                    <li>노란 느낌표(!)는 책상 수량/사이즈 인식 전이라는 뜻입니다. 조정 후 Enter를 누르면 재인식됩니다.</li>
-                    <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>
-                  </ul>
-                )}
-              </section>
-
-              <section className="app-card rounded-2xl p-5">
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
-                  {activeTab === "desk" && floorPlanSrc && (
-                    <button
-                      type="button"
-                      disabled={zoneSuggestBusy}
-                      onClick={suggestZoneDrafts}
-                      className="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
-                    >
-                      {zoneSuggestBusy ? "제안받는 중..." : "AI로 구역 초안 제안받기 (테스트)"}
-                    </button>
-                  )}
-                </div>
-                <div className="mt-3 space-y-2">
-                  {activeZones.length === 0 && (
-                    <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
-                  )}
-                  {activeZones.map((z, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
-                      style={{ borderLeftColor: z.color }}
-                    >
-                      <span className="text-zinc-700 dark:text-zinc-200">
-                        {z.name} ({z.seats}
-                        {activeTab === "pc" ? "대" : "개"})
-                      </span>
-                      <div className="flex shrink-0 gap-1">
-                        <button
-                          type="button"
-                          onClick={() => editZone(i)}
-                          className="rounded-md border border-black/10 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                        >
-                          수정
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteZone(i)}
-                          className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-
         </div>
 
         <div className="flex flex-col gap-4">
@@ -2841,7 +2772,7 @@ export function SeatLayoutWorkspace() {
               {pdfCropSource && cropTarget === "floorplan" ? (
                 cropPanel()
               ) : (
-                <div className="overflow-auto app-frame rounded-2xl p-3">
+                <div className="flex justify-center overflow-auto app-frame rounded-2xl p-3">
                   {imgEl ? (
                     <canvas
                       ref={canvasRef}
@@ -2851,7 +2782,7 @@ export function SeatLayoutWorkspace() {
                       className="max-w-full cursor-crosshair rounded-lg border border-black/10 bg-white dark:border-white/10"
                     />
                   ) : (
-                    <div className="flex h-64 items-center justify-center text-sm text-zinc-400">
+                    <div className="flex h-64 w-full items-center justify-center text-sm text-zinc-400">
                       왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
                     </div>
                   )}
@@ -2886,36 +2817,108 @@ export function SeatLayoutWorkspace() {
               </div>
             )}
 
-            {activeTab !== "seatNumber" && (
-              <section className="w-full shrink-0 app-card rounded-2xl p-4 lg:w-44">
-                <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형</h2>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
-                </p>
-                <div className="mt-3 flex flex-col gap-1.5">
-                  {ZONE_TYPES.map((t) => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => selectType(t.key)}
-                      className={`app-type-btn w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm ${
-                        selectedTypeKey === t.key ? "app-type-btn-active" : ""
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-                {selectedType && (
-                  <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
-                    선택됨: <b>{selectedType.label}</b> → 다음 존 이름: <b>{nextNamePreview}</b>
-                  </div>
-                )}
-              </section>
-            )}
           </div>
           <canvas ref={compositeCanvasRef} className="hidden" />
         </div>
+
+        {activeTab !== "seatNumber" && (
+          <div className="flex flex-col gap-4">
+            <section className="app-card rounded-2xl p-4">
+              <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형</h2>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-1.5">
+                {ZONE_TYPES.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => selectType(t.key)}
+                    className={`app-type-btn w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm ${
+                      selectedTypeKey === t.key ? "app-type-btn-active" : ""
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {selectedType && (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-zinc-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-zinc-200">
+                  선택됨: <b>{selectedType.label}</b> → 다음 존 이름: <b>{nextNamePreview}</b>
+                </div>
+              )}
+            </section>
+
+            <section className="app-card rounded-2xl p-5">
+              {selectedTypeKey ? (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">{dragHint}</p>
+              ) : (
+                <ul className="space-y-2.5 text-sm text-zinc-600 dark:text-zinc-300">
+                  <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                    <span aria-hidden>⚠️</span>
+                    <span>존 구역 설정 시 파티션이 겹치지 않게 구역을 지정합니다. (인식 정확도에 영향)</span>
+                  </li>
+                  <li className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                    <span aria-hidden>⚠️</span>
+                    <span>책가방선반 설치 좌석은 구역 설정 시 브라켓 표시가 한 면이라도 겹치도록 지정합니다. (인식 정확도에 영향)</span>
+                  </li>
+                  <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
+                  <li>노란 느낌표(!)는 책상 수량/사이즈 인식 전이라는 뜻입니다. 조정 후 Enter를 누르면 재인식됩니다.</li>
+                  <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>
+                </ul>
+              )}
+            </section>
+
+            <section className="app-card flex-1 rounded-2xl p-5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
+                {activeTab === "desk" && floorPlanSrc && (
+                  <button
+                    type="button"
+                    disabled={zoneSuggestBusy}
+                    onClick={suggestZoneDrafts}
+                    className="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                  >
+                    {zoneSuggestBusy ? "제안받는 중..." : "AI로 구역 초안 제안받기 (테스트)"}
+                  </button>
+                )}
+              </div>
+              <div className="mt-3 space-y-2">
+                {activeZones.length === 0 && (
+                  <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
+                )}
+                {activeZones.map((z, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
+                    style={{ borderLeftColor: z.color }}
+                  >
+                    <span className="text-zinc-700 dark:text-zinc-200">
+                      {z.name} ({z.seats}
+                      {activeTab === "pc" ? "대" : "개"})
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => editZone(i)}
+                        className="rounded-md border border-black/10 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteZone(i)}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );
