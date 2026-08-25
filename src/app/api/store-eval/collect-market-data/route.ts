@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { geocodeAddress, searchByCategory, searchByKeyword, type KakaoPlace } from "@/lib/kakao";
 import { fetchAdminDongPopulation, geocodeToAdminDong } from "@/lib/sgis";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { DEMAND_POINT_TARGETS, NEARBY_PC_RADIUS_M } from "@/lib/storeEval/demandPointTargets";
 import { findNearbyCandidates, haversineDistanceMeters } from "@/lib/storeEval/geo";
 import type { Competitor, DemandPoint, DemandPointCategory } from "@/lib/storeEval/types";
 
@@ -13,22 +14,6 @@ import type { Competitor, DemandPoint, DemandPointCategory } from "@/lib/storeEv
 // AI가 추정한 값은 하나도 없다(그 부분은 3단계 Gemini 라우트에서 별도로 다룬다).
 
 const DUPLICATE_RADIUS_M = 100;
-const NEARBY_PC_RADIUS_M = 500;
-
-const DEMAND_POINT_TARGETS: (
-  | { kind: "category"; code: string; category: DemandPointCategory; radiusM: number }
-  | { kind: "keyword"; keyword: string; category: DemandPointCategory; radiusM: number }
-)[] = [
-  { kind: "category", code: "SW8", category: "지하철역", radiusM: 1000 },
-  { kind: "keyword", keyword: "버스정류장", category: "버스정류장", radiusM: 500 },
-  { kind: "category", code: "SC4", category: "학교", radiusM: 1000 },
-  { kind: "keyword", keyword: "대학교", category: "대학", radiusM: 2000 },
-  { kind: "keyword", keyword: "아파트", category: "아파트단지", radiusM: 1000 },
-  { kind: "category", code: "MT1", category: "대형상업시설", radiusM: 1500 },
-  { kind: "keyword", keyword: "백화점", category: "대형상업시설", radiusM: 2000 },
-];
-// 군부대/산업단지/관광유흥/먹자상권은 카카오 카테고리·키워드로 신뢰성 있게 자동수집하기 어려워
-// 1단계 범위에서 제외했다(완료 보고에 명시) — 3단계 AI평가에서 사용자 현장메모/판단으로 다룬다.
 
 async function getVerifiedUserId(request: Request): Promise<string | null> {
   const authHeader = request.headers.get("authorization");

@@ -6,6 +6,28 @@
 
 import type { AdminDongReference, CandidateInput, Competitor, DemandPoint } from "./types";
 
+// 이 파일이 실제로 읽는 필드만 좁혀서 별도로 정의한다 — 신규후보지(CandidateInput, 90여 필드)뿐
+// 아니라 기존 매장 AI채점검증(4단계)에서도 이 함수를 그대로 쓰기 위함이다. CandidateInput은
+// 구조적으로 이 타입을 만족하므로 기존 호출부는 변경 없이 그대로 동작한다.
+export type LocationEvalContextCandidate = Pick<
+  CandidateInput,
+  | "name"
+  | "address"
+  | "roadAddress"
+  | "floating500Avg"
+  | "floating1kmAvg"
+  | "employ500Total"
+  | "employ1kmTotal"
+  | "facility500Households"
+  | "facility1kmHouseholds"
+  | "licensedPcStores500m"
+  | "licensedPcStores1km"
+  | "facility500SubwayRiders"
+  | "facility500HighSchool"
+  | "facility500MiddleSchool"
+  | "facility500ElementarySchool"
+>;
+
 const TOP_N = 8;
 
 function fmt(n: number | null | undefined, unit = ""): string {
@@ -50,7 +72,7 @@ function adminDongSummary(ref: AdminDongReference | null): string {
 
 // 소상공인365/SGIS 반자동 업로드-추출로 채워지는 참고자료(계산에는 쓰이지 않음, CandidateInput
 // 타입 주석 참고) — 값이 있는 항목만 골라 보여준다.
-function marketDataSummary(candidate: CandidateInput): string {
+function marketDataSummary(candidate: LocationEvalContextCandidate): string {
   const lines: string[] = [];
   if (candidate.floating500Avg != null) lines.push(`유동인구 500m 일평균 ${fmt(candidate.floating500Avg, "명")}`);
   if (candidate.floating1kmAvg != null) lines.push(`유동인구 1km 일평균 ${fmt(candidate.floating1kmAvg, "명")}`);
@@ -74,7 +96,7 @@ function marketDataSummary(candidate: CandidateInput): string {
 }
 
 export function buildLocationEvalContext(input: {
-  candidate: CandidateInput;
+  candidate: LocationEvalContextCandidate;
   competitors: Competitor[];
   demandPoints: DemandPoint[];
   adminDongReference: AdminDongReference | null;
