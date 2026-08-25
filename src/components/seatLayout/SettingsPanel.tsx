@@ -158,8 +158,8 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl dark:bg-zinc-950">
-        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 dark:border-zinc-800">
+      <div className="app-card flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl">
+        <div className="flex items-center justify-between border-b border-black/[0.06] px-5 py-4 dark:border-white/[0.08]">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">사양 설정</h2>
           <button
             type="button"
@@ -221,7 +221,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
             </p>
             <div className="space-y-2">
               {ZONE_TYPES.map((t) => (
-                <div key={t.key} className="rounded-xl border border-zinc-200 dark:border-zinc-800">
+                <div key={t.key} className="rounded-xl border border-black/[0.06] dark:border-white/[0.08]">
                   <button
                     type="button"
                     onClick={() => setExpandedType((cur) => (cur === t.key ? null : t.key))}
@@ -239,7 +239,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
                     </span>
                   </button>
                   {expandedType === t.key && (
-                    <div className="space-y-3 border-t border-zinc-200 px-3 py-3 dark:border-zinc-800">
+                    <div className="space-y-3 border-t border-black/[0.06] px-3 py-3 dark:border-white/[0.08]">
                       <div>
                         <p className="mb-1 text-xs font-semibold text-zinc-500">책상 탭</p>
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -277,11 +277,11 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
           </section>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4 dark:border-zinc-800">
+        <div className="flex justify-end gap-2 border-t border-black/[0.06] px-5 py-4 dark:border-white/[0.08]">
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            className="rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
           >
             취소
           </button>
@@ -289,7 +289,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
             type="button"
             disabled={saving}
             onClick={handleSave}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+            className="app-btn-primary rounded-lg px-4 py-2 text-sm"
           >
             저장
           </button>
@@ -343,7 +343,7 @@ function OptionEditor({
   const showCustomDefaultInput = customDefaultMode || (!isDefaultKnown && !defaultValue);
 
   return (
-    <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+    <div className="rounded-lg border border-black/[0.06] p-3 dark:border-white/[0.08]">
       <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200">{label}</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {options.map((opt) =>
@@ -362,7 +362,7 @@ function OptionEditor({
                   }
                 }}
                 onBlur={commitEdit}
-                className="w-40 rounded-full border border-zinc-300 px-2.5 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="w-40 rounded-full border border-black/10 px-2.5 py-1 text-xs dark:border-white/10 dark:bg-zinc-900"
               />
             </span>
           ) : (
@@ -403,12 +403,12 @@ function OptionEditor({
             }
           }}
           placeholder="새 항목 입력 후 추가"
-          className="flex-1 rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+          className="flex-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
         />
         <button
           type="button"
           onClick={commitAdd}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
         >
           추가
         </button>
@@ -427,7 +427,7 @@ function OptionEditor({
                   onDefaultChange(e.target.value);
                 }
               }}
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              className="mt-1 w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
             >
               {!isDefaultKnown && defaultValue && <option value={defaultValue}>{defaultValue}</option>}
               {options.map((opt) => (
@@ -442,7 +442,7 @@ function OptionEditor({
                 value={defaultValue}
                 onChange={(e) => onDefaultChange(e.target.value)}
                 placeholder="직접 입력"
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                className="mt-1 w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
               />
             )}
           </>
@@ -450,7 +450,7 @@ function OptionEditor({
           <select
             value={defaultValue}
             onChange={(e) => onDefaultChange(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            className="mt-1 w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
           >
             {!options.includes(defaultValue) && defaultValue && (
               <option value={defaultValue}>{defaultValue}</option>
@@ -502,7 +502,7 @@ function TypeOverrideField({
                 onChange(e.target.value);
               }
             }}
-            className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
           >
             <option value="">(기본값 사용)</option>
             {!isKnown && value && <option value={value}>{value}</option>}
@@ -518,7 +518,7 @@ function TypeOverrideField({
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="직접 입력"
-              className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
             />
           )}
         </>
@@ -526,7 +526,7 @@ function TypeOverrideField({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+          className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
         >
           <option value="">(기본값 사용)</option>
           {(options ?? []).map((opt) => (

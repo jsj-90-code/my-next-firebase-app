@@ -1,55 +1,50 @@
-import Link from "next/link";
-import { AuthPanel } from "@/components/AuthPanel";
+import { HomeAuthStatus } from "@/components/HomeAuthStatus";
+
+const TOOLS = [
+  {
+    href: "/seat-layout",
+    label: "PC방 좌석배치도 작업 툴",
+    description: "매장 도면에 존을 그리고, AI로 좌석 수를 인식하고, 발주용 FHD 이미지를 만듭니다.",
+  },
+  {
+    href: "/store-eval",
+    label: "점포평가 시스템 (V62)",
+    description:
+      "신규후보지·경쟁점·입지동선을 입력하면 V62 예상매출과 최종판정을 계산하고, 기존 가맹점 실매출로 모델을 검증합니다.",
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-zinc-50 px-6 py-16 dark:bg-black">
-      <main className="flex w-full max-w-3xl flex-col items-center gap-8 text-center">
-        <div className="space-y-3">
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
-            Next.js + Firebase + Vercel + Claude
-          </p>
-          <h1 className="text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            GitHub · Vercel · Firebase · Claude
+    <div className="app-theme flex flex-1 flex-col items-center justify-center px-6 py-16">
+      <main className="flex w-full max-w-xl flex-col items-center gap-10 text-center">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8a8072]">ISENS</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-[#171310] dark:text-[#f2ede2]">
+            아이센스 <span className="text-[#c05a2c]">사내 도구</span>
           </h1>
-          <p className="mx-auto max-w-2xl text-base leading-7 text-zinc-600 dark:text-zinc-400">
-            Firebase Auth로 로그인한 뒤 Claude와 대화하세요. GitHub에 푸시하면
-            Vercel이 자동으로 배포합니다.
-          </p>
+          <p className="text-sm leading-6 text-[#8a8072]">회사 구글 계정으로 로그인한 뒤 아래 도구를 이용하세요.</p>
         </div>
 
-        <Link
-          href="/seat-layout"
-          className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
-            사내 도구
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            PC방 좌석배치도 작업 툴 →
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            매장 도면에 존을 그리고, AI로 좌석 수를 인식하고, 발주용 FHD 이미지를 만듭니다.
-          </p>
-        </Link>
+        <HomeAuthStatus />
 
-        <Link
-          href="/store-eval"
-          className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
-            사내 도구
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            점포평가 시스템 (V62) →
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            신규후보지·경쟁점·입지동선을 입력하면 V62 예상매출과 최종판정을 계산하고, 기존
-            가맹점 실매출로 모델을 검증합니다.
-          </p>
-        </Link>
-
-        <AuthPanel />
+        <div className="flex w-full flex-col gap-3">
+          {TOOLS.map((tool) => (
+            <a
+              key={tool.href}
+              href={tool.href}
+              className="app-card group w-full rounded-2xl p-5 text-left transition hover:border-[#c05a2c]/40"
+            >
+              <h2 className="flex items-center justify-between text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
+                {tool.label}
+                <span className="text-[#c9bfae] transition group-hover:translate-x-0.5 group-hover:text-[#c05a2c]">
+                  →
+                </span>
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-[#8a8072]">{tool.description}</p>
+            </a>
+          ))}
+        </div>
       </main>
     </div>
   );

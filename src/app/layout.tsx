@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "My Next Firebase App",
-  description: "Next.js + Firebase Auth + Vercel",
+  title: "아이센스 사내 도구",
+  description: "아이센스 사내 업무 도구 모음",
 };
 
 export default function RootLayout({
