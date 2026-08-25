@@ -20,7 +20,14 @@ const TOOLS = [
 
 export default function Home() {
   return (
-    <div className="app-theme relative flex flex-1 flex-col items-center justify-center px-6 py-16">
+    <div
+      className="app-theme relative flex flex-1 flex-col items-center justify-center px-6 py-16"
+      style={{
+        backgroundImage:
+          "linear-gradient(var(--sl-hairline) 1px, transparent 1px), linear-gradient(90deg, var(--sl-hairline) 1px, transparent 1px)",
+        backgroundSize: "28px 28px",
+      }}
+    >
       <ThemeToggle className="app-btn-outline absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs sm:right-6 sm:top-6" />
       <main className="flex w-full max-w-2xl flex-col items-center gap-10 text-center">
         <div className="max-w-xl space-y-2">

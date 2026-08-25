@@ -377,7 +377,8 @@ export function SeatLayoutWorkspace() {
   }, [floorPlanSrc]);
 
   // ---------------- 캔버스 그리기 ----------------
-  // 영역(존 지정 / PDF 크롭)을 정확하게 클릭하기 쉽도록 보조 눈금선을 그린다.
+  // 크롭 화면(영역을 정확히 클릭해 잘라내는 용도)에서만 쓰는 보조 눈금선 — 실제 도면 표시
+  // 캔버스(drawCanvas)에는 도면 위에 선이 겹쳐 보이지 않도록 더 이상 그리지 않는다.
   function drawGridLines(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) {
     const minorStep = 50;
     const majorStep = 200;
@@ -493,7 +494,6 @@ export function SeatLayoutWorkspace() {
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
-    drawGridLines(ctx, canvas);
     const dragging = zoneDragRef.current;
     activeZones.forEach((z, i) => {
       const rectOverride = dragging && dragging.index === i ? dragging.currentRect : undefined;
@@ -2155,7 +2155,7 @@ export function SeatLayoutWorkspace() {
                 }}
                 className={`app-tab rounded-lg px-3 pt-1.5 pb-2 text-sm ${activeTab === tab ? "app-tab-active" : ""}`}
               >
-                {tab === "desk" ? "책상 발주 도면" : tab === "pc" ? "PC 발주 도면" : "좌석번호표 발주"}
+                {tab === "desk" ? "① 책상 발주 도면" : tab === "pc" ? "② PC 발주 도면" : "③ 좌석번호표 발주"}
               </button>
             ))}
           </div>
@@ -2488,7 +2488,7 @@ export function SeatLayoutWorkspace() {
                   htmlFor="floorplan-file-input"
                   className="mt-3 block cursor-pointer text-xs font-medium text-[#8a8072]"
                 >
-                  도면 이미지 업로드 (이미지 또는 PDF)
+                  도면 업로드 (PDF 권장)
                 </label>
                 <input
                   id="floorplan-file-input"
@@ -2582,12 +2582,18 @@ export function SeatLayoutWorkspace() {
                 {activeZones.map((z, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-[#f9f5ea] px-3 py-2 text-sm dark:bg-[#1e1b14]"
-                    style={{ borderLeftColor: z.color }}
+                    className="flex items-center justify-between gap-2 rounded-lg bg-[#f9f5ea] px-3 py-2 text-sm dark:bg-[#1e1b14]"
                   >
-                    <span className="text-[#5c5346] dark:text-[#c9bfae]">
-                      {z.name} ({z.seats}
-                      {activeTab === "pc" ? "대" : "개"})
+                    <span className="flex min-w-0 items-center gap-2 text-[#5c5346] dark:text-[#c9bfae]">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                        style={{ background: z.color }}
+                        aria-hidden
+                      />
+                      <span className="truncate">
+                        {z.name} ({z.seats}
+                        {activeTab === "pc" ? "대" : "개"})
+                      </span>
                     </span>
                     <div className="flex shrink-0 gap-1">
                       <button
@@ -2891,11 +2897,16 @@ export function SeatLayoutWorkspace() {
                     key={t.key}
                     type="button"
                     onClick={() => selectType(t.key)}
-                    className={`app-type-btn w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm ${
+                    className={`app-type-btn flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
                       selectedTypeKey === t.key ? "app-type-btn-active" : ""
                     }`}
                   >
-                    {t.label}
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                      style={{ background: t.color }}
+                      aria-hidden
+                    />
+                    <span className="truncate">{t.label}</span>
                   </button>
                 ))}
               </div>
