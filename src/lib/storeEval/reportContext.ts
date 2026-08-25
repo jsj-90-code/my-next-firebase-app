@@ -49,12 +49,27 @@ export function buildDaouReportContext({ candidate, competitors, result }: DaouR
     lines.push(`[경쟁점] 총 ${investigated.length}곳 — ${list}`);
   }
 
-  const label = competitivenessLabel(result.competitivenessGap);
-  lines.push(
-    `[경쟁력 비교] 자사 시설·서비스 경쟁력은 경쟁점 평균 대비 ${label ?? "비교 불가"} 수준` +
-      (result.demandCaptureRate != null ? `, 예상 수요확보율 ${formatPercent(result.demandCaptureRate)}` : "") +
-      `, 경쟁IP ${formatNumber(result.competitorIp)}, IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
-  );
+  // 2026-08-25 — 경쟁점이 0곳이면 computeCompetitivenessGap이 1.0(원본 08_계산기준 정의상
+  // "경쟁점 없으면 1.0")을 반환하는데, 이건 실측 동률이 아니라 "비교 대상 자체가 없다"는
+  // 뜻이다. 이 상태에서 competitivenessLabel을 그대로 적용하면 "경쟁점 평균 대비 동등"이라고
+  // 나와서 위 [경쟁점] 줄("조사된 경쟁점 없음")과 모순돼 보인다 - 경쟁점이 없을 때는
+  // 우위/동등/열세 라벨 자체를 붙이지 않는다(사용자 질문으로 발견, 2026-08-25).
+  if (investigated.length === 0) {
+    lines.push(
+      `[경쟁력 비교] 비교할 경쟁점이 없어 경쟁력 비교 대상 없음` +
+        (result.demandCaptureRate != null
+          ? `, 예상 수요확보율 ${formatPercent(result.demandCaptureRate)}(경쟁점 없음일 때의 원본 기준값)`
+          : "") +
+        `, 경쟁IP ${formatNumber(result.competitorIp)}, IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
+    );
+  } else {
+    const label = competitivenessLabel(result.competitivenessGap);
+    lines.push(
+      `[경쟁력 비교] 자사 시설·서비스 경쟁력은 경쟁점 평균 대비 ${label ?? "비교 불가"} 수준` +
+        (result.demandCaptureRate != null ? `, 예상 수요확보율 ${formatPercent(result.demandCaptureRate)}` : "") +
+        `, 경쟁IP ${formatNumber(result.competitorIp)}, IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
+    );
+  }
 
   // 2026-08-25 — 보수판단매출(85%)/상한참고매출(115%)은 V62 최종예상월매출에서 기계적으로 곱한
   // 참고 범위일 뿐 실제로 쓰는 값이 아니라서(사용자 확인), 보고서 문장에는 넣지 않는다. 여러

@@ -60,10 +60,12 @@ describe("buildDaouReportContext", () => {
     expect(text).not.toContain("상권등급 A");
   });
 
-  it("경쟁력격차(비율)를 원점수 대신 우위/동등/열세 라벨로 바꾼다", () => {
+  it("경쟁력격차(비율)를 원점수 대신 우위/동등/열세 라벨로 바꾼다 (경쟁점이 있을 때)", () => {
+    const oneCompetitor = [{ name: "경쟁점A", distanceM: 200, investigationStatus: "조사완료" as const }];
+
     const superior = buildDaouReportContext({
       candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
-      competitors: [],
+      competitors: oneCompetitor,
       result: baseResult({ competitivenessGap: 1.69 }),
     });
     expect(superior).toContain("우위");
@@ -72,14 +74,14 @@ describe("buildDaouReportContext", () => {
 
     const equal = buildDaouReportContext({
       candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
-      competitors: [],
+      competitors: oneCompetitor,
       result: baseResult({ competitivenessGap: 1.0 }),
     });
     expect(equal).toContain("동등");
 
     const inferior = buildDaouReportContext({
       candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
-      competitors: [],
+      competitors: oneCompetitor,
       result: baseResult({ competitivenessGap: 0.5 }),
     });
     expect(inferior).toContain("열세");
@@ -102,6 +104,18 @@ describe("buildDaouReportContext", () => {
     });
     expect(text).not.toContain("보수판단");
     expect(text).not.toContain("상한참고");
+  });
+
+  it("경쟁점이 없으면 우위/동등/열세 라벨을 붙이지 않는다 (gap=1.0 원본 기본값과 모순 방지)", () => {
+    const text = buildDaouReportContext({
+      candidate: { name: "후보1", address: "주소1", pop500m: 1000, floating500Avg: 1000 },
+      competitors: [],
+      result: baseResult({ competitivenessGap: 1.0, demandCaptureRate: 0.55 }),
+    });
+    expect(text).not.toContain("우위");
+    expect(text).not.toContain("동등");
+    expect(text).not.toContain("열세");
+    expect(text).toContain("비교할 경쟁점이 없어 경쟁력 비교 대상 없음");
   });
 
   it("경쟁점없음으로 처리된 경쟁점은 목록에서 제외한다", () => {
