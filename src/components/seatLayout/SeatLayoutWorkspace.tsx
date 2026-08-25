@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   DESK_SIZE_OPTIONS,
   PC_SPEC_FIELDS,
@@ -2118,6 +2119,7 @@ export function SeatLayoutWorkspace() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ThemeToggle className="app-btn-outline-light px-3 py-1.5 text-sm" />
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
