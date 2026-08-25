@@ -116,5 +116,13 @@ service cloud.firestore {
       allow read, create: if isCompanyAccount();
       allow update, delete: if false;
     }
+
+    // 백업 복원 로그(요청사항 17) — storeEvalAuditLog와 동일하게 성공/실패 여부와 무관하게
+    // 항상 기록되는 불변 로그. 실제 복원 쓰기(storeEvalCandidates 등)는 기존 컬렉션 규칙을
+    // 그대로 따르고, 여기서는 로그 문서 자체만 다룬다.
+    match /storeEvalRestoreLog/{logId} {
+      allow read, create: if isCompanyAccount();
+      allow update, delete: if false;
+    }
   }
 }

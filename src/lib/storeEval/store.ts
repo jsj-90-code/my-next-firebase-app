@@ -23,6 +23,7 @@ import {
   serverTimestamp,
   setDoc,
   where,
+  writeBatch,
   type Firestore,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -53,6 +54,7 @@ const SETTINGS_HISTORY = "storeEvalSettingsHistory";
 const EXISTING_STORES = "storeEvalExistingStores";
 const EXISTING_STORE_SALES = "storeEvalExistingStoreSales";
 const AUDIT_LOG = "storeEvalAuditLog";
+const RESTORE_LOG = "storeEvalRestoreLog";
 const META = "storeEvalMeta";
 
 function requireDb(): Firestore {
@@ -148,6 +150,18 @@ function migrateCompetitorInvestigationStatus(data: Record<string, unknown>): Co
 export async function listCompetitors(candidateCode: string): Promise<Competitor[]> {
   const snap = await getDocs(query(collection(requireDb(), COMPETITORS), where("candidateCode", "==", candidateCode)));
   return snap.docs.map((d) => migrateCompetitorInvestigationStatus(d.data()));
+}
+
+/** 백업 전용 — 후보지 구분 없이 전체 경쟁점 문서를 그대로 가져온다(개수가 많지 않아 컬렉션 통째로 조회). */
+export async function listAllCompetitors(): Promise<Competitor[]> {
+  const snap = await getDocs(collection(requireDb(), COMPETITORS));
+  return snap.docs.map((d) => migrateCompetitorInvestigationStatus(d.data()));
+}
+
+/** 백업 전용 — 전체 입지동선평가 문서를 그대로 가져온다. */
+export async function listAllLocationEvaluations(): Promise<LocationEvaluation[]> {
+  const snap = await getDocs(collection(requireDb(), LOCATION_EVALS));
+  return snap.docs.map((d) => d.data() as LocationEvaluation);
 }
 
 export async function saveCompetitor(competitor: Competitor, actor: string | null): Promise<void> {
@@ -487,6 +501,92 @@ export async function linkExistingStoreToCandidate(
   await upsertExistingStore(updated);
   await writeAuditLog({ entityType: "existingStore", entityId: storeCode, action: "수정", before: store, after: updated, actor });
   return updated;
+}
+
+// ---------------------------------------------------------------------------
+// 백업 복원 (요청사항 17) — backup.ts가 검증·미리보기·자동사전백업을 담당하고, 여기서는
+// "이 문서들을 이 컬렉션에 그대로 덮어쓴다"는 실제 쓰기만 한다. 항상 upsert(merge 없는 set)만
+// 하고 백업 파일에 없는 기존 문서는 절대 지우지 않는다 — "복원=병합"이 이 기능의 안전 경계다
+// (전체 컬렉션을 지우고 다시 채우는 방식은 훨씬 위험해서 채택하지 않음).
+const RESTORE_BATCH_LIMIT = 450; // Firestore batch 500건 제한에 여유를 둔 값(cronSync.ts와 동일 기준)
+
+async function batchUpsert<T extends object>(collectionName: string, items: T[], idOf: (item: T) => string): Promise<number> {
+  let written = 0;
+  for (let i = 0; i < items.length; i += RESTORE_BATCH_LIMIT) {
+    const chunk = items.slice(i, i + RESTORE_BATCH_LIMIT);
+    const batch = writeBatch(requireDb());
+    for (const item of chunk) {
+      batch.set(doc(requireDb(), collectionName, idOf(item)), sanitize(item) as Record<string, unknown>);
+      written++;
+    }
+    await batch.commit();
+  }
+  return written;
+}
+
+export type RestoreBackupPayload = {
+  candidates: CandidateInput[];
+  existingStores: ExistingStore[];
+  existingStoreSales: ExistingStoreMonthlySales[];
+  competitors: Competitor[];
+  locationEvaluations: LocationEvaluation[];
+  modelSettings: ModelSettings | null;
+  modelSettingsHistory: ModelSettingsHistoryEntry[];
+};
+
+export type RestoreLogEntry = {
+  id: string;
+  restoredAt: number;
+  actor: string | null;
+  sourceExportedAt: string | null; // 백업 파일 자체의 exportedAt(어느 시점 스냅샷인지)
+  success: boolean;
+  counts: Record<string, number> | null; // 컬렉션별 upsert 건수(성공 시)
+  error: string | null; // 실패 시 메시지
+};
+
+/** 백업 파일 내용을 그대로 각 컬렉션에 upsert한다. 실패해도 성공해도 항상 로그 1건을 남긴다. */
+export async function restoreFromBackup(
+  payload: RestoreBackupPayload,
+  sourceExportedAt: string | null,
+  actor: string | null,
+): Promise<RestoreLogEntry> {
+  const restoredAt = Date.now();
+  const id = `${restoredAt}`;
+  try {
+    const counts: Record<string, number> = {};
+    counts.candidates = await batchUpsert(CANDIDATES, payload.candidates, (c) => c.code);
+    counts.existingStores = await batchUpsert(EXISTING_STORES, payload.existingStores, (s) => s.storeCode);
+    counts.existingStoreSales = await batchUpsert(EXISTING_STORE_SALES, payload.existingStoreSales, (s) => `${s.storeCode}_${s.yearMonth}`);
+    counts.competitors = await batchUpsert(COMPETITORS, payload.competitors, (c) => c.id);
+    counts.locationEvaluations = await batchUpsert(LOCATION_EVALS, payload.locationEvaluations, (l) => l.candidateCode);
+    counts.modelSettingsHistory = await batchUpsert(SETTINGS_HISTORY, payload.modelSettingsHistory, (h) => h.id);
+    if (payload.modelSettings) {
+      await setDoc(doc(requireDb(), SETTINGS, "current"), sanitize(payload.modelSettings));
+      counts.modelSettings = 1;
+    }
+    const log: RestoreLogEntry = { id, restoredAt, actor, sourceExportedAt, success: true, counts, error: null };
+    await setDoc(doc(requireDb(), RESTORE_LOG, id), sanitize(log));
+    return log;
+  } catch (err) {
+    const log: RestoreLogEntry = {
+      id,
+      restoredAt,
+      actor,
+      sourceExportedAt,
+      success: false,
+      counts: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+    // 로그 자체 쓰기도 실패할 수 있으니(예: 이미 Firestore 연결이 끊긴 상황) 조용히 무시하고
+    // 원래 에러를 그대로 던진다 — 로그 실패로 원인이 가려지면 안 된다.
+    await setDoc(doc(requireDb(), RESTORE_LOG, id), sanitize(log)).catch(() => {});
+    throw err;
+  }
+}
+
+export async function listRestoreLog(): Promise<RestoreLogEntry[]> {
+  const snap = await getDocs(query(collection(requireDb(), RESTORE_LOG), orderBy("restoredAt", "desc")));
+  return snap.docs.map((d) => d.data() as RestoreLogEntry);
 }
 
 export { serverTimestamp };
