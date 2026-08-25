@@ -2102,18 +2102,18 @@ export function SeatLayoutWorkspace() {
     <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
       <header className="-mx-4 -mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#171310]/[0.08] px-4 py-4 dark:border-white/[0.08] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-[#171310] dark:text-[#f2ede2] sm:text-2xl">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-5 w-5 shrink-0 text-[#c05a2c]">
-              <path d="M3 3h18v18H3z M3 9h18 M9 9v12 M12 12h6v6h-6z" />
-            </svg>
-            아이센스 <span className="text-[#c05a2c]">PC방 좌석배치도</span> 작업 툴
-          </h1>
           <Link
             href="/"
             className="text-xs text-[#8a8072] transition hover:text-[#171310] dark:hover:text-[#f2ede2]"
           >
             ← 홈으로
           </Link>
+          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-[#171310] dark:text-[#f2ede2] sm:text-2xl">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-5 w-5 shrink-0 text-[#c05a2c]">
+              <path d="M3 3h18v18H3z M3 9h18 M9 9v12 M12 12h6v6h-6z" />
+            </svg>
+            아이센스 <span className="text-[#c05a2c]">PC방 좌석배치도</span> 작업 툴
+          </h1>
           <p className="text-xs text-[#8a8072]">
             {user?.isAnonymous ? "사내 공용 접속" : `${user?.email} 님으로 로그인됨`}
           </p>
