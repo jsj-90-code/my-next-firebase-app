@@ -16,14 +16,27 @@ export type DaouReportContextInput = {
   result: EvaluationResult;
 };
 
+// 2026-08-25 — 경쟁력격차(computeCompetitivenessGap)는 자사점수÷경쟁점평균점수 "비율"이라
+// 1.0이 동률 기준점이다(음수/양수 개념이 아님). 원점수(4.28 vs 2.53 같은 값)를 그대로 주면
+// "다른 사람이 봤을 때 판단이 안 된다"는 지적(2026-08-25)이 있어, 우위/동등/열세 3단계 라벨로
+// 바꿔서 준다 — 새 계산이 아니라 이미 있는 비율값을 사람이 읽기 쉬운 말로 바꾸는 것뿐이다.
+// 동등 구간(0.95~1.05)은 demandCaptureTable의 1.0 경계(model-spec 08_계산기준)를 기준으로 ±5%.
+function competitivenessLabel(gap: number | null): string | null {
+  if (gap == null) return null;
+  if (gap >= 1.05) return "우위";
+  if (gap <= 0.95) return "열세";
+  return "동등";
+}
+
 export function buildDaouReportContext({ candidate, competitors, result }: DaouReportContextInput): string {
   const lines: string[] = [];
 
   lines.push(`[후보지] ${candidate.name || "(이름 없음)"} / ${candidate.address || "(주소 없음)"}`);
 
+  // 2026-08-25 — 상권등급(SS/S/A/B)은 다우오피스 보고서에 언급하지 않는다(사용자 확인).
   lines.push(
     `[상권 데이터] 반경500m 거주인구 ${formatNumber(candidate.pop500m)}명, 반경500m 유동인구(평균) ${formatNumber(candidate.floating500Avg)}명, ` +
-      `상권수요 ${formatNumber(result.marketDemand)}, 상권등급 ${result.marketGrade ?? "-"}, 상권성격 ${result.marketCharacter ?? "-"}`,
+      `상권수요 ${formatNumber(result.marketDemand)}, 상권성격 ${result.marketCharacter ?? "-"}`,
   );
 
   const investigated = competitors.filter((c) => c.investigationStatus !== "경쟁점없음");
@@ -36,10 +49,11 @@ export function buildDaouReportContext({ candidate, competitors, result }: DaouR
     lines.push(`[경쟁점] 총 ${investigated.length}곳 — ${list}`);
   }
 
+  const label = competitivenessLabel(result.competitivenessGap);
   lines.push(
-    `[경쟁력 비교] 자사 경쟁력점수 ${formatScore(result.ownCompetitivenessScore)}, 경쟁점 평균 경쟁력점수 ${formatScore(result.competitorAvgCompetitiveness)}, ` +
-      `경쟁력격차 ${formatScore(result.competitivenessGap)}(양수면 자사 우위), 경쟁IP ${formatNumber(result.competitorIp)}, ` +
-      `IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
+    `[경쟁력 비교] 자사 시설·서비스 경쟁력은 경쟁점 평균 대비 ${label ?? "비교 불가"} 수준` +
+      (result.demandCaptureRate != null ? `, 예상 수요확보율 ${formatPercent(result.demandCaptureRate)}` : "") +
+      `, 경쟁IP ${formatNumber(result.competitorIp)}, IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
   );
 
   // 2026-08-25 — 보수판단매출(85%)/상한참고매출(115%)은 V62 최종예상월매출에서 기계적으로 곱한
