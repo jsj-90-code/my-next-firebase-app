@@ -49,9 +49,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const [alreadyExisting, setAlreadyExisting] = useState(false);
   const [converting, setConverting] = useState(false);
   const [convertMessage, setConvertMessage] = useState<string | null>(null);
-  // 계약 확정 후 부여되는 실제 가맹점코드 - 후보지코드(N001 등)와 다른 게 정상적인 업무 구조라
-  // 전환 직전에 사용자가 확인/수정할 수 있게 한다(기본값은 후보지코드, 같으면 그대로 두면 됨).
-  const [newStoreCode, setNewStoreCode] = useState(candidateCode);
+  // 2026-08-25 수정 — 실제 가맹점코드는 후보지코드(N001 등)와 다른 정식 코드다(계약 확정 후
+  // 부여). 예전엔 기본값을 후보지코드로 채워둬서, 사용자가 그대로 두고 전환하면 정식 코드가
+  // 아닌 후보지코드가 그대로 가맹점코드로 저장되는 사고가 날 수 있었다 — 빈칸으로 시작해서
+  // 사용자가 반드시 직접 입력하게 한다.
+  const [newStoreCode, setNewStoreCode] = useState("");
+  const [existingStoreCodes, setExistingStoreCodes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     // 전환 후에는 storeCode가 candidateCode와 달라질 수 있으므로, 문서ID 직접 조회가 아니라
@@ -63,6 +66,17 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
     const storeCode = newStoreCode.trim();
     if (!storeCode) {
       setConvertMessage("가맹점코드를 입력해주세요.");
+      return;
+    }
+    if (/^N\d+$/i.test(storeCode)) {
+      setConvertMessage("후보지코드(N으로 시작) 형식입니다 — 계약 확정 후 부여되는 정식 가맹점코드를 입력해주세요.");
+      return;
+    }
+    if (existingStoreCodes.has(storeCode)) {
+      setConvertMessage(`이미 존재하는 가맹점코드입니다(${storeCode}) — 다른 코드를 입력하거나 오타를 확인해주세요.`);
+      return;
+    }
+    if (!window.confirm(`가맹점코드 "${storeCode}"로 기존 가맹점 전환을 진행할까요? 전환 후에는 되돌릴 수 없습니다.`)) {
       return;
     }
     setConverting(true);
@@ -108,6 +122,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         getModelSettings(),
       ]);
       const settings: ModelSettings = modelSettingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };
+      setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
       const existingMarketDemands = existingStores
         .map((s) => s.referenceMarketDemand)
         .filter((v): v is number => v != null);
