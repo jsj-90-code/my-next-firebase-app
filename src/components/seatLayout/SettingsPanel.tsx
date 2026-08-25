@@ -281,7 +281,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
           <button
             type="button"
             onClick={handleClose}
-            className="rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+            className="app-btn-outline rounded-lg px-4 py-2 text-sm"
           >
             취소
           </button>
@@ -362,7 +362,7 @@ function OptionEditor({
                   }
                 }}
                 onBlur={commitEdit}
-                className="w-40 rounded-full border border-black/10 px-2.5 py-1 text-xs dark:border-white/10 dark:bg-zinc-900"
+                className="app-input w-40 px-2.5 py-1 text-xs"
               />
             </span>
           ) : (
@@ -403,12 +403,12 @@ function OptionEditor({
             }
           }}
           placeholder="새 항목 입력 후 추가"
-          className="flex-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
+          className="flex-1 app-input px-2.5 py-1.5 text-xs"
         />
         <button
           type="button"
           onClick={commitAdd}
-          className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+          className="app-btn-outline rounded-lg px-3 py-1.5 text-xs"
         >
           추가
         </button>
@@ -427,7 +427,7 @@ function OptionEditor({
                   onDefaultChange(e.target.value);
                 }
               }}
-              className="mt-1 w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
+              className="mt-1 w-full app-input px-2.5 py-1.5 text-xs"
             >
               {!isDefaultKnown && defaultValue && <option value={defaultValue}>{defaultValue}</option>}
               {options.map((opt) => (
@@ -442,7 +442,7 @@ function OptionEditor({
                 value={defaultValue}
                 onChange={(e) => onDefaultChange(e.target.value)}
                 placeholder="직접 입력"
-                className="mt-1 w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
+                className="mt-1 w-full app-input px-2.5 py-1.5 text-xs"
               />
             )}
           </>
@@ -450,7 +450,7 @@ function OptionEditor({
           <select
             value={defaultValue}
             onChange={(e) => onDefaultChange(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
+            className="mt-1 w-full app-input px-2.5 py-1.5 text-xs"
           >
             {!options.includes(defaultValue) && defaultValue && (
               <option value={defaultValue}>{defaultValue}</option>
@@ -502,7 +502,7 @@ function TypeOverrideField({
                 onChange(e.target.value);
               }
             }}
-            className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
+            className="mt-1 w-full app-input px-2 py-1.5 text-xs"
           >
             <option value="">(기본값 사용)</option>
             {!isKnown && value && <option value={value}>{value}</option>}
@@ -518,7 +518,7 @@ function TypeOverrideField({
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="직접 입력"
-              className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
+              className="mt-1 w-full app-input px-2 py-1.5 text-xs"
             />
           )}
         </>
@@ -526,7 +526,7 @@ function TypeOverrideField({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-zinc-900"
+          className="mt-1 w-full app-input px-2 py-1.5 text-xs"
         >
           <option value="">(기본값 사용)</option>
           {(options ?? []).map((opt) => (

@@ -171,22 +171,44 @@ body {
   }
 }
 
-/* 밑줄 탭 — 채워진 필 대신 텍스트 + 얇은 밑줄만 */
+/* 세그먼트 탭 — 클릭 가능한 컨트롤로 보이도록 칩 형태 + 선택 시 채움 */
 .app-tabbar {
-  border-bottom: 1px solid var(--sl-hairline);
+  background: rgba(23, 19, 16, 0.05);
+  border-radius: 0.7rem;
+}
+@media (prefers-color-scheme: dark) {
+  .app-tabbar {
+    background: rgba(255, 255, 255, 0.06);
+  }
 }
 .app-tab {
   font-weight: 500;
   color: var(--sl-ink-soft);
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s ease, border-color 0.15s ease;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .app-tab:hover {
+  background: rgba(23, 19, 16, 0.06);
   color: var(--sl-ink);
 }
 .app-tab-active {
-  color: var(--sl-ink);
-  border-bottom-color: var(--sl-gold);
+  background: var(--sl-ink);
+  color: #fff;
+}
+.app-tab-active:hover {
+  background: var(--sl-ink);
+}
+@media (prefers-color-scheme: dark) {
+  .app-tab:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .app-tab-active {
+    background: #f2ede2;
+    color: #171310;
+  }
+  .app-tab-active:hover {
+    background: #f2ede2;
+  }
 }
 
 .app-type-btn {

@@ -486,8 +486,8 @@ export function SeatLayoutWorkspace() {
   function drawCanvas() {
     const canvas = canvasRef.current;
     if (!canvas || !imgEl?.naturalWidth) return;
-    canvas.width = 900;
-    canvas.height = 900 * (imgEl.naturalHeight / imgEl.naturalWidth);
+    canvas.width = 1100;
+    canvas.height = 1100 * (imgEl.naturalHeight / imgEl.naturalWidth);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2080,7 +2080,7 @@ export function SeatLayoutWorkspace() {
           <button
             type="button"
             onClick={useCropSourceAsIs}
-            className="rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+            className="rounded-lg app-btn-outline px-3 py-2 text-sm"
           >
             {cropTarget === "seatNumberPlate" ? "자르지 않고 전체 이미지 사용" : "자르지 않고 페이지 전체 사용"}
           </button>
@@ -2098,19 +2098,19 @@ export function SeatLayoutWorkspace() {
 
   // ---------------- 렌더 ----------------
   return (
-    <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="-mx-4 -mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#171310]/[0.08] px-4 py-7 dark:border-white/[0.08] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div>
+    <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-4 px-4 py-6 sm:px-6 lg:px-8">
+      <header className="-mx-4 -mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#171310]/[0.08] px-4 py-4 dark:border-white/[0.08] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <h1 className="text-xl font-bold tracking-tight text-[#171310] dark:text-[#f2ede2] sm:text-2xl">
+            아이센스 <span className="text-[#c05a2c]">PC방 좌석배치도</span> 작업 툴
+          </h1>
           <Link
             href="/"
-            className="text-sm text-[#8a8072] transition hover:text-[#171310] dark:text-[#8a8072] dark:hover:text-[#f2ede2]"
+            className="text-xs text-[#8a8072] transition hover:text-[#171310] dark:hover:text-[#f2ede2]"
           >
             ← 홈으로
           </Link>
-          <h1 className="mt-1 text-3xl font-extrabold leading-tight tracking-tight text-[#171310] dark:text-[#f2ede2] sm:text-4xl">
-            아이센스 <span className="text-[#c05a2c]">PC방 좌석배치도</span> 작업 툴
-          </h1>
-          <p className="text-sm text-[#8a8072]">
+          <p className="text-xs text-[#8a8072]">
             {user?.isAnonymous ? "사내 공용 접속" : `${user?.email} 님으로 로그인됨`}
           </p>
         </div>
@@ -2118,22 +2118,44 @@ export function SeatLayoutWorkspace() {
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="app-btn-outline-light px-4 py-2 text-sm"
+            className="app-btn-outline-light px-3 py-1.5 text-sm"
           >
             ⚙ 사양 설정
           </button>
           {!user?.isAnonymous && (
-            <button type="button" onClick={() => logout()} className="app-btn-outline-light px-4 py-2 text-sm">
+            <button type="button" onClick={() => logout()} className="app-btn-outline-light px-3 py-1.5 text-sm">
               로그아웃
             </button>
           )}
         </div>
       </header>
 
-      {/* 다운로드/공유 버튼을 화면 맨 아래에 두면 스크롤을 많이 해야 찾을 수 있어서, 상단에 고정(sticky)해
-          스크롤 위치와 무관하게 항상 바로 누를 수 있게 한다. */}
-      <div className="sticky top-0 z-20 -mx-4 flex flex-wrap items-center justify-between gap-3 border-b border-[#171310]/[0.08] bg-[#f5f1e6]/85 px-4 py-3 backdrop-blur dark:border-white/[0.08] dark:bg-[#14120d]/85 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* 헤더의 아래쪽 줄과 이 바의 아래쪽 줄, 두 줄 사이에 내용이 위아래로 고르게 배치되도록 헤더와
+          이 바 사이에는 별도 간격(gap)을 두지 않는다 — 이 바 자신의 상하 패딩만으로 균형을 맞춘다.
+          (다운로드/공유 버튼을 화면 맨 아래에 두면 스크롤을 많이 해야 찾을 수 있어서, 상단에
+          고정(sticky)해 스크롤 위치와 무관하게 항상 바로 누를 수 있게 한다.) */}
+      <div className="sticky top-0 z-20 -mx-4 -mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-[#171310]/[0.08] bg-[#f5f1e6]/85 px-4 py-2 backdrop-blur dark:border-white/[0.08] dark:bg-[#14120d]/85 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="app-tabbar flex items-center gap-1 pt-1 pb-1.5">
+            {(["desk", "pc", "seatNumber"] as TabKey[]).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => {
+                  setActiveTab(tab);
+                  setSelectedTypeKey(null);
+                  setSelectedZoneIndex(null);
+                  setDirtyZoneIndex(null);
+                  cancelZone();
+                }}
+                className={`app-tab rounded-lg px-3 pt-1.5 pb-2 text-sm ${activeTab === tab ? "app-tab-active" : ""}`}
+              >
+                {tab === "desk" ? "책상 발주 도면" : tab === "pc" ? "PC 발주 도면" : "좌석번호표 발주"}
+              </button>
+            ))}
+          </div>
+          <div className="hidden h-5 w-px bg-[#171310]/[0.12] dark:bg-white/[0.12] sm:block" />
+          <div className="flex flex-wrap items-center gap-2">
           <button type="button" disabled={busy} onClick={handleDownload} className="app-btn-outline rounded-lg px-3 py-2 text-sm">
             이미지 다운로드
           </button>
@@ -2163,6 +2185,7 @@ export function SeatLayoutWorkspace() {
               발주서 열기 ↗
             </a>
           )}
+          </div>
         </div>
         {status.text && (
           <p className={`text-sm ${statusToneClass(status.tone)}`}>{status.text}</p>
@@ -2199,26 +2222,26 @@ export function SeatLayoutWorkspace() {
                 value={storeInfoDraft.openDate}
                 onChange={(e) => setStoreInfoDraft((d) => ({ ...d, openDate: e.target.value }))}
                 placeholder="매장 오픈일 (예: 26.07.17)"
-                className="w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                className="w-full app-input px-2.5 py-1.5 text-sm"
               />
               <input
                 value={storeInfoDraft.deliveryDate}
                 onChange={(e) => setStoreInfoDraft((d) => ({ ...d, deliveryDate: e.target.value }))}
                 placeholder="입고 희망일 (예: 26.07.14)"
-                className="w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                className="w-full app-input px-2.5 py-1.5 text-sm"
               />
               <div className="flex gap-2">
                 <input
                   value={storeInfoDraft.svName}
                   onChange={(e) => setStoreInfoDraft((d) => ({ ...d, svName: e.target.value }))}
                   placeholder="담당 SV 이름"
-                  className="flex-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                  className="flex-1 app-input px-2.5 py-1.5 text-sm"
                 />
                 <input
                   value={storeInfoDraft.svPhone}
                   onChange={(e) => setStoreInfoDraft((d) => ({ ...d, svPhone: e.target.value }))}
                   placeholder="담당 SV 연락처"
-                  className="flex-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                  className="flex-1 app-input px-2.5 py-1.5 text-sm"
                 />
               </div>
               <div className="flex gap-2">
@@ -2226,27 +2249,27 @@ export function SeatLayoutWorkspace() {
                   value={storeInfoDraft.ownerName}
                   onChange={(e) => setStoreInfoDraft((d) => ({ ...d, ownerName: e.target.value }))}
                   placeholder="점주님 이름"
-                  className="flex-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                  className="flex-1 app-input px-2.5 py-1.5 text-sm"
                 />
                 <input
                   value={storeInfoDraft.ownerPhone}
                   onChange={(e) => setStoreInfoDraft((d) => ({ ...d, ownerPhone: e.target.value }))}
                   placeholder="점주님 연락처"
-                  className="flex-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                  className="flex-1 app-input px-2.5 py-1.5 text-sm"
                 />
               </div>
               <input
                 value={storeInfoDraft.address}
                 onChange={(e) => setStoreInfoDraft((d) => ({ ...d, address: e.target.value }))}
                 placeholder="매장 주소"
-                className="w-full rounded-lg border border-black/10 px-2.5 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                className="w-full app-input px-2.5 py-1.5 text-sm"
               />
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setSeatNumberStoreInfoOpen(false)}
-                className="rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                className="app-btn-outline rounded-lg px-4 py-2 text-sm"
               >
                 취소
               </button>
@@ -2289,7 +2312,7 @@ export function SeatLayoutWorkspace() {
               <button
                 type="button"
                 onClick={() => setSeatNumberImageModalOpen(false)}
-                className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                className="rounded-full app-btn-outline px-3 py-1 text-xs"
               >
                 닫기
               </button>
@@ -2378,25 +2401,6 @@ export function SeatLayoutWorkspace() {
         </div>
       )}
 
-      <div className="app-tabbar flex gap-6">
-        {(["desk", "pc", "seatNumber"] as TabKey[]).map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => {
-              setActiveTab(tab);
-              setSelectedTypeKey(null);
-              setSelectedZoneIndex(null);
-              setDirtyZoneIndex(null);
-              cancelZone();
-            }}
-            className={`app-tab px-0.5 pb-3 text-sm ${activeTab === tab ? "app-tab-active" : ""}`}
-          >
-            {tab === "desk" ? "책상 발주 도면" : tab === "pc" ? "PC 발주 도면" : "좌석번호표 발주"}
-          </button>
-        ))}
-      </div>
-
       {activeTab === "pc" && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/20">
           <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">책상 구역 불러오기</p>
@@ -2426,7 +2430,7 @@ export function SeatLayoutWorkspace() {
               value={project.updatedAt ? project.id : ""}
               onChange={(e) => handleSelectProject(e.target.value)}
               disabled={busy}
-              className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
+              className="mt-1 w-full app-input px-3 py-2 text-sm"
             >
               <option value="">-- 프로젝트 선택 --</option>
               {projects.map((p) => (
@@ -2439,7 +2443,7 @@ export function SeatLayoutWorkspace() {
               <button
                 type="button"
                 onClick={newProject}
-                className="flex-1 rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+                className="flex-1 rounded-lg app-btn-outline px-3 py-2 text-sm"
               >
                 + 새 프로젝트
               </button>
@@ -2473,7 +2477,7 @@ export function SeatLayoutWorkspace() {
                   value={project.name}
                   onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
                   placeholder="예: 광주첨단점"
-                  className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900 dark:text-zinc-100"
+                  className="mt-1 w-full app-input px-3 py-2 text-sm"
                 />
                 <label
                   htmlFor="floorplan-file-input"
@@ -2550,6 +2554,57 @@ export function SeatLayoutWorkspace() {
               </button>
             </div>
           </section>
+
+          {activeTab !== "seatNumber" && (
+            <section className="app-card rounded-2xl p-5">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
+                {activeTab === "desk" && floorPlanSrc && (
+                  <button
+                    type="button"
+                    disabled={zoneSuggestBusy}
+                    onClick={suggestZoneDrafts}
+                    className="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                  >
+                    {zoneSuggestBusy ? "제안받는 중..." : "AI로 구역 초안 제안받기 (테스트)"}
+                  </button>
+                )}
+              </div>
+              <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                {activeZones.length === 0 && (
+                  <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
+                )}
+                {activeZones.map((z, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
+                    style={{ borderLeftColor: z.color }}
+                  >
+                    <span className="text-zinc-700 dark:text-zinc-200">
+                      {z.name} ({z.seats}
+                      {activeTab === "pc" ? "대" : "개"})
+                    </span>
+                    <div className="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => editZone(i)}
+                        className="app-btn-outline rounded-md px-2 py-1 text-xs"
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteZone(i)}
+                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {activeTab === "seatNumber" && (
           <section className="app-card rounded-2xl p-5">
@@ -2643,7 +2698,7 @@ export function SeatLayoutWorkspace() {
                       type="button"
                       disabled={seatNumberRecognizing}
                       onClick={openSeatNumberPlateCrop}
-                      className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] disabled:opacity-50 dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                      className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
                     >
                       영역 다시 자르기
                     </button>
@@ -2651,7 +2706,7 @@ export function SeatLayoutWorkspace() {
                       type="button"
                       disabled={seatNumberRecognizing}
                       onClick={() => runSeatNumberRecognize()}
-                      className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] disabled:opacity-50 dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                      className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
                     >
                       AI로 자동 채워보기
                     </button>
@@ -2699,7 +2754,7 @@ export function SeatLayoutWorkspace() {
                         value={entry?.ranges ?? ""}
                         onChange={(e) => setSeatNumberRangeFor(name, e.target.value)}
                         placeholder="예: 1~10, 25~30"
-                        className="flex-1 rounded-lg border border-black/10 px-2 py-1 text-xs dark:border-white/10 dark:bg-zinc-900"
+                        className="app-input flex-1 px-2 py-1 text-xs"
                       />
                     </div>
                   );
@@ -2744,7 +2799,7 @@ export function SeatLayoutWorkspace() {
                   <button
                     type="button"
                     onClick={savePcDefaults}
-                    className="w-full rounded-lg border border-black/10 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+                    className="w-full rounded-lg app-btn-outline px-3 py-2 text-sm"
                   >
                     기본사양 반영
                   </button>
@@ -2779,7 +2834,7 @@ export function SeatLayoutWorkspace() {
                       onMouseDown={handleCanvasMouseDown}
                       onMouseMove={handleCanvasMouseMove}
                       onMouseUp={handleCanvasMouseUp}
-                      className="max-w-full cursor-crosshair rounded-lg border border-black/10 bg-white dark:border-white/10"
+                      className="max-h-[76vh] max-w-full cursor-crosshair rounded-lg border border-black/10 bg-white dark:border-white/10"
                     />
                   ) : (
                     <div className="flex h-64 w-full items-center justify-center text-sm text-zinc-400">
@@ -2822,7 +2877,7 @@ export function SeatLayoutWorkspace() {
         </div>
 
         {activeTab !== "seatNumber" && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
             <section className="app-card rounded-2xl p-4">
               <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">① 존 유형</h2>
               <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -2869,54 +2924,6 @@ export function SeatLayoutWorkspace() {
               )}
             </section>
 
-            <section className="app-card flex-1 rounded-2xl p-5">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="font-semibold text-zinc-900 dark:text-zinc-50">존 목록</h2>
-                {activeTab === "desk" && floorPlanSrc && (
-                  <button
-                    type="button"
-                    disabled={zoneSuggestBusy}
-                    onClick={suggestZoneDrafts}
-                    className="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50 dark:border-amber-800 dark:text-amber-300 dark:hover:bg-amber-950/30"
-                  >
-                    {zoneSuggestBusy ? "제안받는 중..." : "AI로 구역 초안 제안받기 (테스트)"}
-                  </button>
-                )}
-              </div>
-              <div className="mt-3 space-y-2">
-                {activeZones.length === 0 && (
-                  <p className="text-sm text-zinc-400">아직 등록된 존이 없습니다.</p>
-                )}
-                {activeZones.map((z, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between gap-2 rounded-lg border-l-4 bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900"
-                    style={{ borderLeftColor: z.color }}
-                  >
-                    <span className="text-zinc-700 dark:text-zinc-200">
-                      {z.name} ({z.seats}
-                      {activeTab === "pc" ? "대" : "개"})
-                    </span>
-                    <div className="flex shrink-0 gap-1">
-                      <button
-                        type="button"
-                        onClick={() => editZone(i)}
-                        className="rounded-md border border-black/10 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                      >
-                        수정
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteZone(i)}
-                        className="rounded-md border border-red-300 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
-                      >
-                        삭제
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
           </div>
         )}
       </div>
@@ -3012,7 +3019,7 @@ function ZoneForm(props: ZoneFormProps) {
           <select
             value={editTypeKey}
             onChange={(e) => onEditTypeChange(e.target.value as ZoneTypeKey)}
-            className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-950"
+            className="app-input mt-1 w-full px-3 py-2 text-sm"
           >
             {ZONE_TYPES.map((t) => (
               <option key={t.key} value={t.key}>
@@ -3031,7 +3038,7 @@ function ZoneForm(props: ZoneFormProps) {
                   value={editEtcName}
                   onChange={(e) => onEditEtcNameChange(e.target.value)}
                   placeholder="예: 카운터존"
-                  className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+                  className="mt-1 w-full app-input px-3 py-2 text-sm"
                 />
               </div>
               <div>
@@ -3056,7 +3063,7 @@ function ZoneForm(props: ZoneFormProps) {
               value={etcName}
               onChange={(e) => onEtcNameChange(e.target.value)}
               placeholder="예: 카운터존"
-              className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+              className="mt-1 w-full app-input px-3 py-2 text-sm"
             />
           </div>
           <div>
@@ -3102,7 +3109,7 @@ function ZoneForm(props: ZoneFormProps) {
                       next[i] = { ...next[i], deskSize: e.target.value as DeskSize };
                       onBreakdownChange(next);
                     }}
-                    className="rounded-lg border border-black/10 px-2 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                    className="app-input px-2 py-1.5 text-sm"
                   >
                     {DESK_SIZE_OPTIONS.map((opt) => (
                       <option key={opt} value={opt}>
@@ -3120,13 +3127,13 @@ function ZoneForm(props: ZoneFormProps) {
                       next[i] = { ...next[i], qty: Number(e.target.value) || 0 };
                       onBreakdownChange(next);
                     }}
-                    className="w-20 rounded-lg border border-black/10 px-2 py-1.5 text-sm dark:border-white/10 dark:bg-zinc-900"
+                    className="w-20 app-input px-2 py-1.5 text-sm"
                   />
                   {i > 0 && (
                     <button
                       type="button"
                       onClick={() => onBreakdownChange(breakdown.filter((_, ri) => ri !== i))}
-                      className="rounded-md border border-black/10 px-2 py-1 text-xs text-zinc-500 hover:bg-black/[0.04] dark:border-white/10 dark:hover:bg-zinc-800"
+                      className="app-btn-outline rounded-md px-2 py-1 text-xs"
                     >
                       삭제
                     </button>
@@ -3137,7 +3144,7 @@ function ZoneForm(props: ZoneFormProps) {
             <button
               type="button"
               onClick={() => onBreakdownChange([...breakdown, { deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }])}
-              className="mt-2 rounded-full border border-black/10 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              className="app-btn-outline mt-2 rounded-full px-3 py-1 text-xs"
             >
               + 다른 사이즈 추가 (섞여있을 때만)
             </button>
@@ -3157,7 +3164,7 @@ function ZoneForm(props: ZoneFormProps) {
               value={bagShelfDraft}
               onChange={(e) => onBagShelfDraftChange(e.target.value)}
               placeholder="0"
-              className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+              className="mt-1 w-full app-input px-3 py-2 text-sm"
             />
             <p className="mt-1 text-xs text-zinc-400">
               나머지 {Math.max(0, breakdownTotal - (Number(bagShelfDraft) || 0))}석은 아이센스 헤드셋걸이로
@@ -3185,7 +3192,7 @@ function ZoneForm(props: ZoneFormProps) {
               value={seatsDraft}
               onChange={(e) => onSeatsDraftChange(e.target.value)}
               placeholder="10"
-              className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+              className="mt-1 w-full app-input px-3 py-2 text-sm"
             />
             <p className="mt-1 text-xs text-zinc-400">책상은 있지만 PC가 없는 존은 0을 입력하세요.</p>
           </div>
@@ -3195,7 +3202,7 @@ function ZoneForm(props: ZoneFormProps) {
                 type="button"
                 onClick={onResetPcSpecToDefaults}
                 title="사양설정에서 바뀐 존 유형별 기본값을 이 존에도 다시 반영합니다 (직접 고친 항목도 함께 되돌아갑니다)"
-                className="rounded-full border border-black/10 px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[0.04] dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                className="rounded-full app-btn-outline px-3 py-1 text-xs"
               >
                 ↻ 최신 기본값으로 새로고침
               </button>
@@ -3245,7 +3252,7 @@ function SelectOrEtc({
             onChange(e.target.value);
           }
         }}
-        className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+        className="mt-1 w-full app-input px-3 py-2 text-sm"
       >
         {!isKnown && value && <option value={value}>{value}</option>}
         {field.options.map((opt) => (
@@ -3260,7 +3267,7 @@ function SelectOrEtc({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={`${field.label} 직접입력`}
-          className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+          className="mt-1 w-full app-input px-3 py-2 text-sm"
         />
       )}
     </div>
@@ -3297,7 +3304,7 @@ function PcFieldInput({
             onChange(e.target.value);
           }
         }}
-        className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+        className="mt-1 w-full app-input px-3 py-2 text-sm"
       >
         {!isKnown && value && <option value={value}>{value}</option>}
         {options.map((opt) => (
@@ -3312,7 +3319,7 @@ function PcFieldInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.def}
-          className="mt-1 w-full rounded-lg border border-black/10 px-3 py-2 text-sm dark:border-white/10 dark:bg-zinc-900"
+          className="mt-1 w-full app-input px-3 py-2 text-sm"
         />
       )}
     </div>
