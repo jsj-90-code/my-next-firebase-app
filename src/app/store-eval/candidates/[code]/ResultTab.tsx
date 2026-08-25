@@ -30,6 +30,17 @@ function judgementStyle(j: FinalJudgement | null): string {
   return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"; // "~확인 필요"/"~분석 필요"류
 }
 
+// 2026-08-25 추가 — "최종운영판정" 한 배지가 "아직 입력/계산이 덜 끝났다"는 신호(원본 13_
+// 신규후보지판정 T/U열 조건식이 그대로 이 문자열을 만든다, model-spec.md §"완료 상태" 참고)와
+// "출점을 어떻게 판단해야 하는가"라는 신호를 둘 다 담고 있어서 헷갈릴 수 있다는 지적이 있었다.
+// 값 자체(원본 시트 문자열)는 절대 안 바꾸고 — 원본과 다른 문자열을 쓰면 안 된다는 기존 원칙
+// (docs/model-spec.md §6) — 어느 종류의 신호인지 배지 앞에 작게만 구분해서 보여준다.
+const CALC_STATE_JUDGEMENTS: FinalJudgement[] = ["07 분석 필요", "09 입지평가 필요", "외부유입 확인 필요", "브랜드 확인 필요", "V62 계산 확인 필요"];
+function judgementKind(j: FinalJudgement | null): "계산 상태" | "사업 판정" | null {
+  if (j == null) return null;
+  return CALC_STATE_JUDGEMENTS.includes(j) ? "계산 상태" : "사업 판정";
+}
+
 function ResultCard({ label, value, emphasis, hint }: { label: string; value: string; emphasis?: boolean; hint?: string }) {
   return (
     <div className={`rounded-xl border border-zinc-200 p-4 dark:border-zinc-800 ${emphasis ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "bg-white dark:bg-zinc-950"}`}>
@@ -217,12 +228,18 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         {convertMessage && <p className="text-xs text-zinc-600 dark:text-zinc-400">{convertMessage}</p>}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <span className={`rounded-full px-3 py-1 text-sm font-semibold ${judgementStyle(result.finalJudgement)}`}>
+          {judgementKind(result.finalJudgement) && (
+            <span className="mr-1.5 text-[10px] font-normal opacity-70">[{judgementKind(result.finalJudgement)}]</span>
+          )}
           최종운영판정: {result.finalJudgement ?? "-"}
         </span>
         <span className="text-xs text-zinc-500 dark:text-zinc-400">입력완성도: {result.completionStatus ?? "-"}</span>
       </div>
+      <p className="text-xs text-zinc-400">
+        [계산 상태]는 아직 입력·계산이 덜 끝났다는 뜻이고, [사업 판정]이 떠야 실제 출점 판단에 참고할 수 있는 결과입니다.
+      </p>
 
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-2">

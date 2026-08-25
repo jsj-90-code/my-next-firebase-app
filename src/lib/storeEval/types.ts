@@ -307,6 +307,9 @@ export type ModelSettingsHistoryEntry = {
   changedBy: string | null;
   before: ModelSettings;
   after: ModelSettings;
+  // 2026-08-25 추가 — 운영설정 변경은 즉시 전체 예측값에 영향을 주는 민감한 작업이라 "왜 바꿨는지"를
+  // 필수로 남긴다. 기존(이 필드 도입 전) 이력 문서는 null로 남는다(과거 기록을 지어내지 않음).
+  reason: string | null;
 };
 
 // ---- 13_신규후보지판정 : 최종 결과 스냅샷 ----

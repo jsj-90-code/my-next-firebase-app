@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { computeCompetitorScores } from "@/lib/storeEval/calc";
+import { computeCompetitorInvestigationSummary, computeCompetitorScores } from "@/lib/storeEval/calc";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
 import type { Competitor, CompetitorSurveyState, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
@@ -113,6 +113,11 @@ function validate(form: Competitor): string[] {
     const v = form[f.key];
     if (typeof v === "number" && v < 0) errors.push(`${f.label}은(는) 음수가 될 수 없습니다.`);
   }
+  // 2026-08-25 추가 — 두 필드는 calc.ts normalizePercentLike가 0~1(비율)과 1~100(퍼센트 숫자)
+  // 두 표기를 모두 허용하는 레거시 데이터 호환 방식이라, 상한도 그에 맞춰 100으로 잡는다
+  // (0~1로 단정해서 UI를 바꾸면 기존에 퍼센트 숫자로 넣힌 정상 데이터를 틀렸다고 오판하게 됨).
+  if (form.measuredSeatRate != null && form.measuredSeatRate > 100) errors.push("실측착석률은 100을 넘을 수 없습니다.");
+  if (form.pingbotUtilization != null && form.pingbotUtilization > 100) errors.push("핑봇_가동률은 100을 넘을 수 없습니다.");
   return errors;
 }
 
@@ -344,6 +349,40 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
 
       {error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
+      )}
+
+      {/* 2026-08-25 추가 — "실제 조사 경쟁점 수"를 조사수준별로 쪼개서 바로 보여준다. 이미
+          existing-store 검증화면에서만 쓰던 computeCompetitorInvestigationSummary(calc.ts)를
+          여기서도 재사용할 뿐 새 산식은 없다. "몇 곳 중 몇 곳을 얼마나 자세히 봤는지"를 입력
+          단계에서부터 알 수 있게 한다. */}
+      {!loading && competitors.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          {(() => {
+            const summary = computeCompetitorInvestigationSummary(competitors);
+            return (
+              <>
+                <span className="font-semibold text-zinc-900 dark:text-zinc-50">경쟁점 총 {summary.totalCount}곳</span>
+                <span>상세조사 {summary.detailedCount}곳</span>
+                <span>간략·외관조사 {summary.lightCount}곳</span>
+                <span>미조사 {summary.uninvestigatedCount}곳</span>
+                {summary.status === "confirmed_no_competitor" && (
+                  <span className="font-medium text-emerald-700 dark:text-emerald-400">확인된 독점상권(경쟁점 없음)</span>
+                )}
+                <span
+                  className={
+                    summary.dataReliability === "high"
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : summary.dataReliability === "medium"
+                        ? "text-amber-700 dark:text-amber-400"
+                        : "text-red-700 dark:text-red-400"
+                  }
+                >
+                  데이터 신뢰도: {summary.dataReliability === "high" ? "높음" : summary.dataReliability === "medium" ? "보통" : "낮음"}
+                </span>
+              </>
+            );
+          })()}
+        </div>
       )}
 
       {editingCompetitor && (

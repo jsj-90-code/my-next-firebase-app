@@ -139,6 +139,14 @@ function validate(form: CandidateInput): string[] {
     const v = form[f.key];
     if (typeof v === "number" && v < 0) errors.push(`${f.label}은(는) 음수가 될 수 없습니다.`);
   }
+  // 2026-08-25 추가 — 위 "음수 불가" 일괄 검사만으로는 못 잡는 범위 검증(0은 통과하지만 실제로는
+  // 말이 안 되는 값, 또는 상한이 있는 값).
+  if (form.expectedPcCount != null && form.expectedPcCount < 1) errors.push("예상PC대수는 1대 이상이어야 합니다.");
+  if (form.hourlyRate != null && form.hourlyRate <= 0) errors.push("요금표_시간당원은 0보다 커야 합니다.");
+  if (form.plannedOpenMonth != null && (form.plannedOpenMonth < 1 || form.plannedOpenMonth > 12)) {
+    errors.push("예상오픈월은 1~12 사이여야 합니다.");
+  }
+  if (form.male1kmRatio != null && form.male1kmRatio > 1) errors.push("반경1km 남성비율은 100%를 넘을 수 없습니다.");
   return errors;
 }
 
@@ -481,12 +489,15 @@ export function BasicInfoTab({
           <NumberField label="반경500m 총인구(거주)" value={form.pop500m} onChange={(v) => set("pop500m", v)} />
           <NumberField label="반경1km 면적(㎢)" value={form.area1kmKm2} onChange={(v) => set("area1kmKm2", v)} step={0.01} />
           <NumberField label="반경1km 총인구" value={form.pop1km} onChange={(v) => set("pop1km", v)} />
+          {/* 2026-08-25 수정 — 내부 저장값은 그대로 0~1 소수(기존 데이터 호환)지만, 화면에는
+              "0.5086999999999999" 같은 부동소수점 오차가 그대로 보이던 문제 + 0~1/0~100 단위
+              혼동을 막기 위해 입력창 자체를 퍼센트(0~100)로 보여주고 저장 시에만 0~1로 환산한다. */}
           <NumberField
-            label="반경1km 남성비율"
-            value={form.male1kmRatio}
-            onChange={(v) => set("male1kmRatio", v)}
-            step={0.01}
-            hint="0~1 사이 비율 (예: 0.52)"
+            label="반경1km 남성비율(%)"
+            value={form.male1kmRatio == null ? null : Math.round(form.male1kmRatio * 1000) / 10}
+            onChange={(v) => set("male1kmRatio", v == null ? null : v / 100)}
+            step={0.1}
+            hint="0~100% 사이 값 (예: 52.0) — 저장은 내부적으로 0~1 소수로 변환됩니다"
           />
           <NumberField label="1km 0~9세" value={form.age1km_0_9} onChange={(v) => set("age1km_0_9", v)} />
           <NumberField label="1km 10~19세" value={form.age1km_10_19} onChange={(v) => set("age1km_10_19", v)} />
@@ -530,7 +541,7 @@ export function BasicInfoTab({
             label="인허가 PC방업소수"
             value={form.licensedPcStores500m}
             onChange={(v) => set("licensedPcStores500m", v)}
-            hint="소상공인365 '업소수'(등록 사업체 집계) 자동추출"
+            hint="기존 인허가 PC방 수(후보점 제외) — 소상공인365 '업소수'(등록 사업체 집계) 자동추출"
           />
           <NumberField
             label="실영업 PC방업소수"
@@ -538,6 +549,14 @@ export function BasicInfoTab({
             onChange={(v) => set("operatingPcStores500m", v)}
             hint="네이버 로드뷰 등으로 실제 영업 중인지 직접 확인해서 입력"
             manualOnly
+          />
+          {/* 2026-08-25 추가 — "기존 인허가 PC방 수"(후보점 제외, 산식 입력값)와 "후보점 입점 후
+              예상 총 PC방 수"(참고용, +1)를 혼동하지 않도록 별도 읽기전용 필드로 분리해 보여준다.
+              저장하지 않는다 — 위 값 + 1을 매번 다시 계산할 뿐이다. */}
+          <ComputedField
+            label="후보점 포함 예상 총 PC방 수(500m)"
+            value={form.licensedPcStores500m == null ? null : form.licensedPcStores500m + 1}
+            hint="참고용 — 인허가 PC방업소수 + 1(이 후보점 자신). 산식 입력값 아님."
           />
         </div>
       </section>
@@ -562,13 +581,23 @@ export function BasicInfoTab({
           <NumberField label="유동 40대" value={form.floating1km_40s} onChange={(v) => set("floating1km_40s", v)} />
           <NumberField label="유동 50대" value={form.floating1km_50s} onChange={(v) => set("floating1km_50s", v)} />
           <NumberField label="유동 60대 이상" value={form.floating1km_60plus} onChange={(v) => set("floating1km_60plus", v)} />
-          <NumberField label="인허가 PC방업소수(1km)" value={form.licensedPcStores1km} onChange={(v) => set("licensedPcStores1km", v)} />
+          <NumberField
+            label="인허가 PC방업소수(1km)"
+            value={form.licensedPcStores1km}
+            onChange={(v) => set("licensedPcStores1km", v)}
+            hint="기존 인허가 PC방 수(후보점 제외)"
+          />
           <NumberField
             label="실영업 PC방업소수(1km)"
             value={form.operatingPcStores1km}
             onChange={(v) => set("operatingPcStores1km", v)}
             hint="네이버 로드뷰 등으로 직접 확인해서 입력(자동추출 안 함)"
             manualOnly
+          />
+          <ComputedField
+            label="후보점 포함 예상 총 PC방 수(1km)"
+            value={form.licensedPcStores1km == null ? null : form.licensedPcStores1km + 1}
+            hint="참고용 — 인허가 PC방업소수(1km) + 1. 산식 입력값 아님."
           />
         </div>
 

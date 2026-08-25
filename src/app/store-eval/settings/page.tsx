@@ -183,6 +183,7 @@ export default function StoreEvalSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
 
   const [history, setHistory] = useState<ModelSettingsHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -264,21 +265,69 @@ export default function StoreEvalSettingsPage() {
     return `${label} 가중치 합이 100%(1.0)가 아닙니다. 현재 합: ${(sum * 100).toFixed(1)}%`;
   }
 
+  // 2026-08-25 추가 — 저장을 막는 실제 검증(기존엔 가중치 합 경고를 보여주기만 하고 저장은
+  // 그냥 됐다). 외부유입 보정률은 "덜 준다(0%)~아예 없다고 보고 크게 깎는다(-100%)" 사이의
+  // 할인율이라 0~-1 범위를 벗어나면 실수로 보고 막는다.
+  function validationErrors(f: ModelSettings): string[] {
+    const errors: string[] = [];
+    const specSum = sumWarning(f.specWeights.vga + f.specWeights.monitor, "사양(VGA/모니터)");
+    const compSum = sumWarning(
+      f.competitivenessWeights.spec +
+        f.competitivenessWeights.seat +
+        f.competitivenessWeights.food +
+        f.competitivenessWeights.interior +
+        f.competitivenessWeights.location,
+      "경쟁력",
+    );
+    const locSum = sumWarning(
+      f.locationCompositeWeights.withinMarket +
+        f.locationCompositeWeights.flow +
+        f.locationCompositeWeights.preemption +
+        f.locationCompositeWeights.visibility,
+      "입지동선종합점수",
+    );
+    for (const w of [specSum, compSum, locSum]) if (w) errors.push(w);
+    for (const [label, v] of Object.entries(f.inflowAdjustment)) {
+      if (v > 0 || v < -1) errors.push(`외부유입 보정률 - ${label}은(는) 0~-100%(-1~0) 범위여야 합니다. 현재: ${(v * 100).toFixed(1)}%`);
+    }
+    return errors;
+  }
+
   async function handleSave() {
     if (!form) return;
-    setSaving(true);
     setSaveMessage(null);
     setSaveError(null);
+    if (!reason.trim()) {
+      setSaveError("변경 사유를 입력해주세요 — 이후 다른 관리자가 이력을 볼 때 왜 바꿨는지 알 수 있어야 합니다.");
+      return;
+    }
+    const errors = validationErrors(form);
+    if (errors.length > 0) {
+      setSaveError(errors.join(" / "));
+      return;
+    }
+    setSaving(true);
     try {
-      await saveModelSettings(form, user?.email ?? null);
+      await saveModelSettings(form, user?.email ?? null, reason.trim());
       setSaveMessage("저장되었습니다.");
       setUsingDefault(false);
+      setReason("");
       await reloadHistory();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "저장에 실패했습니다.");
     } finally {
       setSaving(false);
     }
+  }
+
+  // 2026-08-25 추가 — 이전 버전으로 되돌리기. 그 시점의 값을 폼에 다시 채워 넣기만 하고 바로
+  // 저장하지는 않는다 — 사용자가 검토하고 사유를 적은 뒤 평소와 같은 "저장" 버튼을 눌러야
+  // 실제로 반영된다(롤백도 새 변경이력 한 줄로 남는다, 과거를 지우지 않는다).
+  function handleRestore(entry: ModelSettingsHistoryEntry) {
+    setForm(entry.after);
+    setReason(`롤백: ${formatDateTime(entry.changedAt)} 시점(${entry.changedBy ?? "알수없음"})으로 복원`);
+    setSaveError(null);
+    setSaveMessage('복원할 값을 불러왔습니다 — 위 항목들을 확인하고 "저장"을 눌러야 실제로 반영됩니다.');
   }
 
   const readOnly = !isAdmin;
@@ -567,7 +616,18 @@ export default function StoreEvalSettingsPage() {
       )}
 
       {isAdmin && (
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-zinc-700 dark:text-zinc-300">변경 사유 (필수)</span>
+            <input
+              type="text"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="예: ±10% 적중률 재보정을 위해 외부유입 보정률 강함을 -20%→-25%로 조정"
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+            />
+          </label>
+          <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={handleSave}
@@ -578,6 +638,7 @@ export default function StoreEvalSettingsPage() {
           </button>
           {saveMessage && <span className="text-sm text-green-600 dark:text-green-400">{saveMessage}</span>}
           {saveError && <span className="text-sm text-red-600 dark:text-red-400">{saveError}</span>}
+          </div>
         </div>
       )}
 
@@ -599,6 +660,7 @@ export default function StoreEvalSettingsPage() {
                     <span className="font-medium text-zinc-900 dark:text-zinc-50">{formatDateTime(entry.changedAt)}</span>
                     <span className="text-zinc-500 dark:text-zinc-400">변경자: {entry.changedBy ?? "알수없음"}</span>
                   </div>
+                  <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">사유: {entry.reason ?? "(기록 없음 — 이 필드 도입 이전 변경)"}</p>
                   {diffs.length === 0 ? (
                     <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">변경된 값이 없습니다.</p>
                   ) : (
@@ -609,6 +671,15 @@ export default function StoreEvalSettingsPage() {
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleRestore(entry)}
+                      className="mt-3 rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      이 시점 값으로 되돌리기
+                    </button>
                   )}
                 </li>
               );

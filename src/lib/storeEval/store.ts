@@ -241,12 +241,12 @@ export async function getModelSettings(): Promise<ModelSettings | null> {
   return snap.exists() ? (snap.data() as ModelSettings) : null;
 }
 
-export async function saveModelSettings(settings: ModelSettings, actor: string | null): Promise<void> {
+export async function saveModelSettings(settings: ModelSettings, actor: string | null, reason: string | null = null): Promise<void> {
   const before = await getModelSettings();
   await setDoc(doc(requireDb(), SETTINGS, "current"), sanitize({ ...settings, updatedAt: Date.now(), updatedBy: actor }));
   if (before) {
     const historyId = `${Date.now()}`;
-    const historyEntry: ModelSettingsHistoryEntry = { id: historyId, changedAt: Date.now(), changedBy: actor, before, after: settings };
+    const historyEntry: ModelSettingsHistoryEntry = { id: historyId, changedAt: Date.now(), changedBy: actor, before, after: settings, reason };
     await setDoc(doc(requireDb(), SETTINGS_HISTORY, historyId), sanitize(historyEntry));
   }
 }
