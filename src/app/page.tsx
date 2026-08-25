@@ -1,4 +1,5 @@
 import { HomeAuthStatus } from "@/components/HomeAuthStatus";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const TOOLS = [
   {
@@ -16,7 +17,8 @@ const TOOLS = [
 
 export default function Home() {
   return (
-    <div className="app-theme flex flex-1 flex-col items-center justify-center px-6 py-16">
+    <div className="app-theme relative flex flex-1 flex-col items-center justify-center px-6 py-16">
+      <ThemeToggle className="app-btn-outline absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs sm:right-6 sm:top-6" />
       <main className="flex w-full max-w-xl flex-col items-center gap-10 text-center">
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8a8072]">ISENS</p>

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* 다크모드를 시스템 설정이 아니라 <html class="dark">로 직접 켜고 끈다 (ThemeToggle.tsx).
+   이렇게 해야 이 파일 전체와 Tailwind의 dark: 유틸리티가 전부 같은 스위치 하나를 본다. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -12,11 +16,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {
@@ -37,14 +39,12 @@ body {
   min-height: 100%;
   background: #f5f1e6;
 }
-@media (prefers-color-scheme: dark) {
-  .app-theme {
-    --sl-ink: #f2ede2;
-    --sl-ink-soft: #a39b8c;
-    --sl-gold-soft: rgba(224, 122, 68, 0.14);
-    --sl-hairline: rgba(255, 255, 255, 0.09);
-    background: #14120d;
-  }
+:root.dark .app-theme {
+  --sl-ink: #f2ede2;
+  --sl-ink-soft: #a39b8c;
+  --sl-gold-soft: rgba(224, 122, 68, 0.14);
+  --sl-hairline: rgba(255, 255, 255, 0.09);
+  background: #14120d;
 }
 
 .app-card {
@@ -56,24 +56,20 @@ body {
   border: 1px solid var(--sl-hairline);
   background: #f9f5ea;
 }
-@media (prefers-color-scheme: dark) {
-  .app-card {
-    background: #1c1912;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px -22px rgba(0, 0, 0, 0.7);
-  }
-  .app-card-sm {
-    background: #1e1b14;
-  }
+:root.dark .app-card {
+  background: #1c1912;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 30px -22px rgba(0, 0, 0, 0.7);
+}
+:root.dark .app-card-sm {
+  background: #1e1b14;
 }
 
 .app-frame {
   border: 1px solid var(--sl-hairline);
   background: #efe9d8;
 }
-@media (prefers-color-scheme: dark) {
-  .app-frame {
-    background: #1a1712;
-  }
+:root.dark .app-frame {
+  background: #1a1712;
 }
 
 /* 화면 전체에서 가장 중요한 단 하나의 동작(발주/등록 확정)에만 쓰는 강조 버튼 */
@@ -89,11 +85,9 @@ body {
 .app-btn-primary:disabled {
   opacity: 0.4;
 }
-@media (prefers-color-scheme: dark) {
-  .app-btn-primary {
-    background: #f2ede2;
-    color: #171310;
-  }
+:root.dark .app-btn-primary {
+  background: #f2ede2;
+  color: #171310;
 }
 
 /* 골드는 채우지 않고 아주 얇은 라인 + 텍스트로만 — 색은 있지만 무겁지 않게 */
@@ -126,13 +120,11 @@ body {
 .app-btn-outline:disabled {
   opacity: 0.4;
 }
-@media (prefers-color-scheme: dark) {
-  .app-btn-outline {
-    color: #f2ede2;
-  }
-  .app-btn-outline:hover {
-    background: rgba(255, 255, 255, 0.06);
-  }
+:root.dark .app-btn-outline {
+  color: #f2ede2;
+}
+:root.dark .app-btn-outline:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .app-btn-outline-light {
@@ -147,10 +139,8 @@ body {
   background: rgba(23, 19, 16, 0.04);
   color: var(--sl-ink);
 }
-@media (prefers-color-scheme: dark) {
-  .app-btn-outline-light:hover {
-    background: rgba(255, 255, 255, 0.06);
-  }
+:root.dark .app-btn-outline-light:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .app-input {
@@ -164,11 +154,9 @@ body {
   border-color: var(--sl-gold);
   box-shadow: 0 0 0 3px rgba(192, 90, 44, 0.15);
 }
-@media (prefers-color-scheme: dark) {
-  .app-input {
-    background: #1c1912;
-    color: #f2ede2;
-  }
+:root.dark .app-input {
+  background: #1c1912;
+  color: #f2ede2;
 }
 
 /* 세그먼트 탭 — 클릭 가능한 컨트롤로 보이도록 칩 형태 + 선택 시 채움 */
@@ -176,10 +164,8 @@ body {
   background: rgba(23, 19, 16, 0.05);
   border-radius: 0.7rem;
 }
-@media (prefers-color-scheme: dark) {
-  .app-tabbar {
-    background: rgba(255, 255, 255, 0.06);
-  }
+:root.dark .app-tabbar {
+  background: rgba(255, 255, 255, 0.06);
 }
 .app-tab {
   font-weight: 500;
@@ -198,17 +184,15 @@ body {
 .app-tab-active:hover {
   background: var(--sl-ink);
 }
-@media (prefers-color-scheme: dark) {
-  .app-tab:hover {
-    background: rgba(255, 255, 255, 0.08);
-  }
-  .app-tab-active {
-    background: #f2ede2;
-    color: #171310;
-  }
-  .app-tab-active:hover {
-    background: #f2ede2;
-  }
+:root.dark .app-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+:root.dark .app-tab-active {
+  background: #f2ede2;
+  color: #171310;
+}
+:root.dark .app-tab-active:hover {
+  background: #f2ede2;
 }
 
 .app-type-btn {
@@ -227,9 +211,7 @@ body {
   background: var(--sl-ink);
   color: #fff;
 }
-@media (prefers-color-scheme: dark) {
-  .app-type-btn-active {
-    background: #f2ede2;
-    color: #171310;
-  }
+:root.dark .app-type-btn-active {
+  background: #f2ede2;
+  color: #171310;
 }
