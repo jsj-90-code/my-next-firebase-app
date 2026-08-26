@@ -25,7 +25,7 @@ export default function Home() {
       style={{
         backgroundImage:
           "linear-gradient(var(--sl-grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--sl-grid-line) 1px, transparent 1px)",
-        backgroundSize: "40px 40px",
+        backgroundSize: "64px 64px",
       }}
     >
       <ThemeToggle className="app-btn-outline absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs sm:right-6 sm:top-6" />
