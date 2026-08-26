@@ -2159,6 +2159,17 @@ export function SeatLayoutWorkspace() {
               </button>
             ))}
           </div>
+          {activeTab !== "seatNumber" && (
+            <>
+              <div className="hidden h-5 w-px bg-[#171310]/[0.12] dark:bg-white/[0.12] sm:block" />
+              <span className="app-badge app-badge-ok shrink-0 gap-1.5">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3 w-3 shrink-0">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                존 {activeZones.length}개 등록됨
+              </span>
+            </>
+          )}
           <div className="hidden h-5 w-px bg-[#171310]/[0.12] dark:bg-white/[0.12] sm:block" />
           <div className="flex flex-wrap items-center gap-2">
           <button type="button" disabled={busy} onClick={handleDownload} className="app-btn-outline rounded-lg px-3 py-2 text-sm">
@@ -2594,6 +2605,9 @@ export function SeatLayoutWorkspace() {
                         {z.name} ({z.seats}
                         {activeTab === "pc" ? "대" : "개"})
                       </span>
+                      {i === dirtyZoneIndex && (
+                        <span className="app-badge app-badge-warn shrink-0">재인식 필요</span>
+                      )}
                     </span>
                     <div className="flex shrink-0 gap-1">
                       <button
