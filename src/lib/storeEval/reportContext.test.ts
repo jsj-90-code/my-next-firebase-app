@@ -60,6 +60,7 @@ function baseResult(overrides: Partial<EvaluationResult> = {}): EvaluationResult
     expectedDailyRevenuePerPc: 8968,
     measuredForecastMonthlyRevenue: 26_900_000,
     measuredForecastNeedsReview: false,
+    v62ImpliedUtilization: 0.42,
     aaBaselineRevenue: 56_600_000,
     aaBaselineRevenue1500: 45_000_000,
     aaBaselineRevenue1000: 33_500_000,

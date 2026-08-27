@@ -28,6 +28,7 @@ import {
   computeExpectedUtilization,
   computeFinalJudgement,
   computeFloatingRawDemand,
+  computeImpliedUtilizationFromRevenue,
   computeLocationCompositeScore,
   computeLocationScoreFromFacts,
   computeMarketCharacter,
@@ -665,6 +666,25 @@ describe("실측기반 예상월매출 파이프라인 (경쟁점 실가동좌�
     const result = computeMeasuredForecast(23.31, 1200, 0.5, 100);
     expect(result?.monthlyRevenue).toBe(Math.round((23.31 * 24 * 30 * 1200) / 0.5));
     expect(result?.dailyRevenuePerPc).toBe(Math.round((result!.monthlyRevenue) / 100 / 30));
+  });
+});
+
+describe("computeImpliedUtilizationFromRevenue (2026-08-27, computeMeasuredForecast 역산)", () => {
+  it("computeMeasuredForecast로 만든 매출을 거꾸로 풀면 원래 가동률로 되돌아온다", () => {
+    const seats = 23.31;
+    const pcCount = 100;
+    const forecast = computeMeasuredForecast(seats, 1200, 0.5, pcCount);
+    const implied = computeImpliedUtilizationFromRevenue(forecast!.monthlyRevenue, 1200, 0.5, pcCount);
+    expect(implied).toBeCloseTo(seats / pcCount, 3);
+  });
+  it("V62 매출이 높으면(회귀모형이 뽑아준 값) 100%를 넘는 값도 그대로 반환한다(잘라내지 않음)", () => {
+    const implied = computeImpliedUtilizationFromRevenue(300_000_000, 1500, 0.5, 100);
+    expect(implied).toBeGreaterThan(1);
+  });
+  it("입력값이 없으면 null", () => {
+    expect(computeImpliedUtilizationFromRevenue(null, 1500, 0.5, 100)).toBeNull();
+    expect(computeImpliedUtilizationFromRevenue(100_000_000, null, 0.5, 100)).toBeNull();
+    expect(computeImpliedUtilizationFromRevenue(100_000_000, 1500, 0.5, null)).toBeNull();
   });
 });
 

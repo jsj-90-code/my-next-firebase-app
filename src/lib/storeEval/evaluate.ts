@@ -27,6 +27,7 @@ import {
   computeLocationScoreFromFacts,
   computeMarketDemand,
   computeMarketGrade,
+  computeImpliedUtilizationFromRevenue,
   computeMeasuredForecast,
   computeSeatScore,
   computeSpecScore,
@@ -186,6 +187,15 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const expectedOccupiedSeats = computeExpectedOccupiedSeats(occupied.seats, capture?.captureRate ?? null, capture?.growthRate ?? null);
   const expectedUtilization = computeExpectedUtilization(expectedOccupiedSeats, c.expectedPcCount);
   const measuredForecast = computeMeasuredForecast(expectedOccupiedSeats, c.hourlyRate, settings.measuredForecastProductRatio, c.expectedPcCount);
+  // 2026-08-27 — V62 최종예상월매출(v62Final, 위에서 이미 계산됨)을 같은 공식으로 거꾸로 풀어 "이
+  // 매출이 나오려면 가동률이 몇%여야 하는가"를 구한다. 경쟁점 실측(핑봇) 데이터 품질과 무관하게
+  // V62 자체와 항상 정합적이다(사용자 질문: "예상매출액 있으니 그걸로 가동률 환산하면 되잖아").
+  const v62ImpliedUtilization = computeImpliedUtilizationFromRevenue(
+    v62Final,
+    c.hourlyRate,
+    settings.measuredForecastProductRatio,
+    c.expectedPcCount,
+  );
 
   // ---- AA 기준매출 (요청사항 4) — 2,000/1,500/1,000만원 3단계, 전부 같은 산식(PC대수 100대 상한
   // 포함)이고 월별기준표만 다르다. 1,500만원표는 defaultModelSettings에 없을 수 있는 옛 저장값
@@ -256,6 +266,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     expectedDailyRevenuePerPc: measuredForecast?.dailyRevenuePerPc ?? null,
     measuredForecastMonthlyRevenue: measuredForecast?.monthlyRevenue ?? null,
     measuredForecastNeedsReview: aaJudgement === "데이터 재검토",
+    v62ImpliedUtilization,
 
     aaBaselineRevenue,
     aaBaselineRevenue1500,

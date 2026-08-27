@@ -423,6 +423,9 @@ export type EvaluationResult = {
   expectedUtilization: number | null; // 예상 가동률 = 예상평균가동좌석 ÷ 예상PC대수 (100% 초과 가능 — 수요초과 신호)
   expectedDailyRevenuePerPc: number | null; // 예상 대당 일매출
   measuredForecastMonthlyRevenue: number | null; // 실측기반 예상월매출
+  // 2026-08-27 추가 — V62 최종예상월매출을 같은 공식으로 거꾸로 풀어낸 가동률(경쟁점 실측 데이터
+  // 품질에 영향받지 않음, computeImpliedUtilizationFromRevenue 참고).
+  v62ImpliedUtilization: number | null;
   measuredForecastNeedsReview: boolean; // 예상가동률이 최대검토가동률을 넘어 "데이터 재검토" 대상인지
 
   // 요청사항 4 — AA 기준매출(오픈월부터 10개월 순수익 2,000만원 대당 일매출목표 평균)

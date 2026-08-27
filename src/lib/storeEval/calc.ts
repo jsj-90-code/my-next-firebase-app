@@ -1273,6 +1273,25 @@ export function computeMeasuredForecast(
   return { monthlyRevenue, dailyRevenuePerPc: Math.round(monthlyRevenue / pcCount / 30) };
 }
 
+/**
+ * 2026-08-27 추가 — computeMeasuredForecast의 역산. "예상매출액이 이미 있는데(V62), 그걸
+ * 가동률로 환산하면 안 되냐"는 사용자 질문으로 추가했다. 기존 "예상 가동률"(computeExpectedUtilization)
+ * 은 경쟁점 실가동좌석(핑봇 실측) 기반의 별개 경로라 V62와 다른 값이 나올 수 있어 헷갈렸는데,
+ * 이 함수는 V62 최종예상월매출 자체를 같은 공식(매출=가동좌석×24×30×요금÷(1-상품비율))으로
+ * 거꾸로 풀어 "이 매출이 나오려면 좌석이 몇 개나 돌아가야 하는가"를 구한다 — V62와 완전히
+ * 정합적인 값이라 별도 경쟁점 데이터 품질에 영향받지 않는다.
+ */
+export function computeImpliedUtilizationFromRevenue(
+  monthlyRevenue: number | null,
+  hourlyRate: number | null,
+  productRatio: number,
+  pcCount: number | null,
+): number | null {
+  if (monthlyRevenue == null || !hourlyRate || !pcCount) return null;
+  const impliedOccupiedSeats = (monthlyRevenue * (1 - productRatio)) / (24 * 30 * hourlyRate);
+  return Math.round((impliedOccupiedSeats / pcCount) * 10000) / 10000;
+}
+
 // ---------------------------------------------------------------------------
 // 2026-08-21 — "실측기반 예상월매출" 백테스트. evaluate.ts가 후보지에 대해 하는 계산과 완전히
 // 같은 조합을 기존 가맹점(ExistingStore)에 그대로 적용한다(새 산식 없음, evaluate.ts:64-158
