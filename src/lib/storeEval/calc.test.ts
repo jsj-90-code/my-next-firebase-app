@@ -27,6 +27,8 @@ import {
   computeExpectedOwnDemand,
   computeExpectedUtilization,
   computeFinalJudgement,
+  computeFoodScore,
+  computeInteriorScore,
   computeCompetitorAppliedPcCount,
   computeFloatingRawDemand,
   computeImpliedUtilizationFromRevenue,
@@ -390,6 +392,35 @@ describe("computeSpecScore (VGA70%+모니터30%, 원본 산식 그대로 — 202
   });
 });
 
+describe("computeFoodScore (먹거리 브랜드 기준, 2026-08-27 추가)", () => {
+  it("브랜드가 있으면 settings.foodBrandScores 값을 그대로 쓴다(직접입력값 무시)", () => {
+    expect(computeFoodScore({ brand: "쉐프앤클릭", legacyScore: 2 }, settings)).toBe(settings.foodBrandScores.쉐프앤클릭);
+    expect(computeFoodScore({ brand: "비바쿡", legacyScore: null }, settings)).toBe(settings.foodBrandScores.비바쿡);
+  });
+  it("브랜드없음이면 직접입력값(legacyScore)을 쓴다", () => {
+    expect(computeFoodScore({ brand: "브랜드없음", legacyScore: 2 }, settings)).toBe(2);
+  });
+  it("브랜드를 안 정했으면(null) 직접입력값(legacyScore)을 쓴다", () => {
+    expect(computeFoodScore({ brand: null, legacyScore: 3 }, settings)).toBe(3);
+  });
+  it("브랜드도 직접입력값도 없으면 null", () => {
+    expect(computeFoodScore({ brand: null, legacyScore: null }, settings)).toBeNull();
+  });
+});
+
+describe("computeInteriorScore (인테리어 수준+매장관리상태 평균, 2026-08-27 추가)", () => {
+  it("두 세부항목이 다 있으면 평균(0.5점 단위 반올림)", () => {
+    expect(computeInteriorScore({ levelScore: 4, conditionScore: 3, legacyScore: null })).toBe(3.5);
+    expect(computeInteriorScore({ levelScore: 4, conditionScore: 4.5, legacyScore: null })).toBe(4.5); // 4.25→반올림
+  });
+  it("하나만 있으면 그 값 그대로", () => {
+    expect(computeInteriorScore({ levelScore: 3.5, conditionScore: null, legacyScore: null })).toBe(3.5);
+  });
+  it("둘 다 없으면 직접입력값(legacyScore)으로 폴백 — 기존 40개 매장은 항상 이 경로", () => {
+    expect(computeInteriorScore({ levelScore: null, conditionScore: null, legacyScore: 4 })).toBe(4);
+  });
+});
+
 describe("computeZoneComposition/computeSeatScore (좌석점수 = 다양성 50% + 수용력 50%)", () => {
   it("자사 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15) → 종류수5·독립룸수10 → 4.0점", () => {
     const { kinds, rooms } = computeZoneComposition([0, 0, 2, 3, 5], [15]);
@@ -685,8 +716,11 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
       renovationYear: null,
       foodScore: null,
       foodBasis: null,
+      foodBrand: null,
       interiorScore: null,
       interiorBasis: null,
+      interiorLevelScore: null,
+      interiorConditionScore: null,
       monitorScore: null,
       monitorBasis: null,
       room1: null,
@@ -820,6 +854,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       ownFoodScore: 4,
       ownInteriorScore: 4,
       ownMonitorScore: 4,
+      ownFoodBrand: null,
+      ownInteriorLevelScore: null,
+      ownInteriorConditionScore: null,
       ...overrides,
     };
   }
@@ -854,8 +891,11 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       renovationYear: null,
       foodScore: 3,
       foodBasis: null,
+      foodBrand: null,
       interiorScore: 3,
       interiorBasis: null,
+      interiorLevelScore: null,
+      interiorConditionScore: null,
       monitorScore: 3,
       monitorBasis: null,
       room1: null,

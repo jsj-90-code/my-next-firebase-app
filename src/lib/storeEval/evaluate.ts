@@ -22,6 +22,8 @@ import {
   computeExpectedOwnDemand,
   computeExpectedUtilization,
   computeFinalJudgement,
+  computeFoodScore,
+  computeInteriorScore,
   computeIpPerDemand,
   computeLocationCompositeScore,
   computeLocationScoreFromFacts,
@@ -92,9 +94,15 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   );
   const ownSeatScore = computeSeatScore(ownKinds, ownRooms);
   const ownLocationScore = computeLocationScoreFromFacts(c.floor, c.groundLevel, c.hasElevator);
+  const ownFoodScore = computeFoodScore({ brand: c.ownFoodBrand, legacyScore: ownFacility.ownFoodScore }, settings);
+  const ownInteriorScore = computeInteriorScore({
+    levelScore: c.ownInteriorLevelScore,
+    conditionScore: c.ownInteriorConditionScore,
+    legacyScore: ownFacility.ownInteriorScore,
+  });
 
   const ownCompetitivenessScore = computeCompetitivenessScore(
-    { spec: ownSpecScore, seat: ownSeatScore, food: ownFacility.ownFoodScore, interior: ownFacility.ownInteriorScore, location: ownLocationScore },
+    { spec: ownSpecScore, seat: ownSeatScore, food: ownFoodScore, interior: ownInteriorScore, location: ownLocationScore },
     settings,
   );
   const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);

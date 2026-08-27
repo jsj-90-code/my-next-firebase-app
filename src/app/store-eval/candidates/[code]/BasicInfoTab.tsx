@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   applyStandardOwnFacilityDefaults,
+  computeFoodScore,
+  computeInteriorScore,
   computeLocationScoreFromFacts,
   computeSeatScore,
   computeSpecScore,
@@ -35,6 +37,7 @@ import type {
   CandidateInput,
   Competitor,
   DemandPoint,
+  FoodBrand,
   GroundLevel,
   MarketDataUpload,
   ModelSettings,
@@ -52,6 +55,15 @@ import {
   sectionClass,
   sectionTitleClass,
 } from "./formFields";
+
+// 2026-08-27 추가 — 먹거리 브랜드 선택지(사용자 확인). "브랜드없음"이면 직접 1~5점을 입력한다.
+const FOOD_BRAND_OPTIONS: { value: FoodBrand; label: string }[] = [
+  { value: "쉐프앤클릭", label: "쉐프앤클릭 (블랙라벨 자체)" },
+  { value: "비바쿡", label: "비바쿡" },
+  { value: "PC토랑", label: "PC토랑" },
+  { value: "기타브랜드", label: "기타 브랜드" },
+  { value: "브랜드없음", label: "브랜드없음 (직접입력)" },
+];
 
 const REVIEW_STATUS_OPTIONS: { value: ReviewStatus; label: string }[] = [
   { value: "진행", label: "진행" },
@@ -279,6 +291,12 @@ export function BasicInfoTab({
       ),
       seat: computeSeatScore(kinds, rooms),
       location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
+      food: computeFoodScore({ brand: form.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings),
+      interior: computeInteriorScore({
+        levelScore: form.ownInteriorLevelScore,
+        conditionScore: form.ownInteriorConditionScore,
+        legacyScore: facility.ownInteriorScore,
+      }),
       // 참고용 제안값 — 사양점수 자동계산엔 안 들어가고, 종합사양(모니터) 점수를 사람이 매길 때
       // 참고하라고 화면에만 보여준다(2026-08-27, CPU/RAM 자동가중치 원복 이후).
       cpuSuggestion: scoreFromCpu(form.ownCpu),
@@ -300,6 +318,11 @@ export function BasicInfoTab({
     form.floor,
     form.groundLevel,
     form.hasElevator,
+    form.ownFoodBrand,
+    form.ownFoodScore,
+    form.ownInteriorLevelScore,
+    form.ownInteriorConditionScore,
+    form.ownInteriorScore,
     settings,
   ]);
 
@@ -631,26 +654,52 @@ export function BasicInfoTab({
         <h3 className={sectionTitleClass}>경쟁력 점수</h3>
         <p className="mt-1 text-xs text-[#8a8072]">
           사양·좌석·입지 점수는 위에 입력한 VGA·존구성·층수+엘리베이터로부터 원본 Apps Script(점포평가.gs)
-          그대로 자동 계산됩니다. 먹거리·인테리어·모니터는 원본에서도 평가자가 1~5점을 직접 입력하는
-          항목입니다. 종합 경쟁력점수 가중합(사양25%·좌석30%·먹거리20%·인테리어15%·입지10%)은 원본 계수
-          그대로 적용됩니다.
+          그대로 자동 계산됩니다. 종합 경쟁력점수 가중합(사양25%·좌석30%·먹거리20%·인테리어15%·입지10%)은
+          원본 계수 그대로 적용됩니다.
         </p>
         <div className={`${gridClass} mt-4`}>
           <ComputedField label="사양 점수 (자동)" value={computedScores.spec} hint="VGA(+게임존 가산) 70% + 종합사양(모니터) 30%" />
           <ComputedField label="좌석 점수 (자동)" value={computedScores.seat} hint="존 다양성 50%+수용력 50%" />
-          <ScoreSelectField label="먹거리 점수" value={form.ownFoodScore} onChange={(v) => set("ownFoodScore", v)} hint="비우면 표준값 5(상) 적용" />
-          <ScoreSelectField label="인테리어 점수" value={form.ownInteriorScore} onChange={(v) => set("ownInteriorScore", v)} hint="비우면 표준값 5(상) 적용" />
           <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
           <ScoreSelectField
-            label="종합사양 점수 (모니터·CPU·메모리)"
+            label="종합사양 점수 (모니터·CPU·메모리·주변기기)"
             value={form.ownMonitorScore}
             onChange={(v) => set("ownMonitorScore", v)}
             hint={
-              `모니터 화질·CPU·메모리를 종합해서 직접 1~5점 평가 (07 원본 필드) · 비우면 표준값 4 적용` +
+              `모니터 화질·CPU·메모리·주변기기(키보드/마우스/헤드셋)를 종합해서 직접 1~5점 평가 · 비우면 표준값 4 적용` +
               (computedScores.cpuSuggestion != null || computedScores.ramSuggestion != null
                 ? ` · 참고: CPU${computedScores.cpuSuggestion ?? "-"}점/RAM${computedScores.ramSuggestion ?? "-"}점(자동제안, 참고만)`
                 : "")
             }
+          />
+        </div>
+
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">먹거리</h4>
+        <p className="mt-1 text-xs text-[#8a8072]">
+          조리방식은 최신 PC방이 대부분 인덕션이라 변별력이 없어, 실제 사용 브랜드를 기준으로 점수를
+          매깁니다(브랜드별 점수는 설정 화면에서 조정). 브랜드없음이면 직접입력값을 씁니다.
+        </p>
+        <div className={`${gridClass} mt-3`}>
+          <SelectField label="먹거리 브랜드" value={form.ownFoodBrand} onChange={(v) => set("ownFoodBrand", v)} options={FOOD_BRAND_OPTIONS} />
+          <ScoreSelectField
+            label="먹거리 점수 (직접입력)"
+            value={form.ownFoodScore}
+            onChange={(v) => set("ownFoodScore", v)}
+            hint="브랜드없음/미입력일 때만 사용 · 비우면 표준값 5(상) 적용"
+          />
+          <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} hint="브랜드 점수 또는 직접입력값" />
+        </div>
+
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어</h4>
+        <div className={`${gridClass} mt-3`}>
+          <ScoreSelectField label="인테리어 수준" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
+          <ScoreSelectField label="매장관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />
+          <ComputedField label="인테리어 점수 (최종)" value={computedScores.interior} hint="위 두 항목의 평균, 둘 다 비었으면 아래 직접입력값" />
+          <ScoreSelectField
+            label="인테리어 점수 (직접입력)"
+            value={form.ownInteriorScore}
+            onChange={(v) => set("ownInteriorScore", v)}
+            hint="위 세부항목을 하나도 안 채웠을 때만 사용 · 비우면 표준값 5(상) 적용"
           />
         </div>
       </section>

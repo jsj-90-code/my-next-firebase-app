@@ -19,6 +19,7 @@ import type {
   CandidateInput,
   CompetitorInvestigationStatus,
   ExistingStore,
+  FoodBrand,
   GroundLevel,
   InflowRestriction,
   ModelSettings,
@@ -572,6 +573,49 @@ export function computeCompetitivenessScore(
 }
 
 /**
+ * 2026-08-27 추가 — 먹거리(20%)·인테리어(15%)가 종합 경쟁력점수의 35%를 차지하는데 입력이
+ * "평가자 감으로 1~5점 중 하나 고르기"뿐이라 1점 차이(=배점의 20%)만으로 예상매출이 크게
+ * 흔들린다는 지적(사용자 확인)에 따라 정교화한다.
+ *
+ * 먹거리는 조리방식 기반 세분화 대신(최신 PC방은 다 인덕션이라 변별력이 없다는 사용자 지적)
+ * 실제 사용 브랜드 기준으로 매긴다 — settings.foodBrandScores에서 브랜드별 점수를 읽고,
+ * "브랜드없음"이거나 안 정했으면 조사자 직접입력값(legacyScore, 점포개발자 의견 등)을 그대로
+ * 쓴다.
+ *
+ * 인테리어는 사양점수(computeSpecScore)와 같은 방식 — 세부항목(인테리어 수준·매장관리상태)
+ * 평균 — 으로 정교화한다. 하나라도 채우면 평균(0.5점 단위 반올림)을 쓰고, 둘 다 비어 있으면
+ * 기존처럼 종합 직접입력값(legacyScore)을 그대로 쓴다.
+ *
+ * 둘 다 기존 40개 매장은 새 필드가 없어 항상 폴백을 타므로 competitivenessScore 스냅샷/LOOCV에는
+ * 영향이 없다.
+ */
+function averageFilledScores(subs: (number | null)[], legacyScore: number | null): number | null {
+  const filled = subs.filter((v): v is number => v != null);
+  if (filled.length === 0) return legacyScore;
+  const avg = filled.reduce((a, b) => a + b, 0) / filled.length;
+  return Math.round(avg * 2) / 2;
+}
+
+export function computeFoodScore(
+  input: { brand: FoodBrand | null; legacyScore: number | null },
+  settings: Pick<ModelSettings, "foodBrandScores">,
+): number | null {
+  if (input.brand != null && input.brand !== "브랜드없음") {
+    const preset = settings.foodBrandScores[input.brand];
+    if (preset != null) return preset;
+  }
+  return input.legacyScore;
+}
+
+export function computeInteriorScore(input: {
+  levelScore: number | null;
+  conditionScore: number | null;
+  legacyScore: number | null;
+}): number | null {
+  return averageFilledScores([input.levelScore, input.conditionScore], input.legacyScore);
+}
+
+/**
  * 경쟁점 한 곳의 경쟁력점수 5개 구성요소를 계산한다.
  * 사양/좌석/입지는 VGA·존구성(1인룸/2인룸/팀룸/커플존 — VIP존/프렌즈존은 경쟁점 조사 대상 제외)·
  * 층수+엘리베이터로 자동 계산하고, 조사수준이 간략/외관만이면 미입력 항목을 기본값(2.0/1.5)으로
@@ -579,7 +623,7 @@ export function computeCompetitivenessScore(
  */
 export function computeCompetitorScores(
   c: Competitor,
-  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights">,
+  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "foodBrandScores">,
 ): { spec: number | null; seat: number | null; food: number | null; interior: number | null; location: number | null; total: number | null } {
   const { kinds, rooms } = computeZoneComposition([c.room1, c.room2, c.teamRoom, c.coupleZone]);
   const hasPremium = (c.premiumZone ?? 0) > 0;
@@ -592,8 +636,20 @@ export function computeCompetitorScores(
     c.investigationStatus,
   );
   const seat = applySurveyLevelDefault(computeSeatScore(kinds, rooms), c.surveyLevel, c.investigationStatus);
-  const food = applySurveyLevelDefault(c.foodScore, c.surveyLevel, c.investigationStatus);
-  const interior = applySurveyLevelDefault(c.interiorScore, c.surveyLevel, c.investigationStatus);
+  const food = applySurveyLevelDefault(
+    computeFoodScore({ brand: c.foodBrand, legacyScore: c.foodScore }, settings),
+    c.surveyLevel,
+    c.investigationStatus,
+  );
+  const interior = applySurveyLevelDefault(
+    computeInteriorScore({
+      levelScore: c.interiorLevelScore,
+      conditionScore: c.interiorConditionScore,
+      legacyScore: c.interiorScore,
+    }),
+    c.surveyLevel,
+    c.investigationStatus,
+  );
   const location = applySurveyLevelDefault(
     computeLocationScoreFromFacts(c.floor, c.groundLevel, c.hasElevator),
     c.surveyLevel,
@@ -606,7 +662,7 @@ export function computeCompetitorScores(
 /** 경쟁점_평균경쟁력 = 경쟁점들의 경쟁력점수를 적용대수로 가중평균. */
 export function computeCompetitorAvgCompetitiveness(
   competitors: Competitor[],
-  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights">,
+  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "foodBrandScores">,
 ): number | null {
   const scored = competitors
     .map((c) => ({
@@ -1444,9 +1500,12 @@ export function computeExistingStoreMeasuredForecast(
     | "ownFoodScore"
     | "ownInteriorScore"
     | "ownMonitorScore"
+    | "ownFoodBrand"
+    | "ownInteriorLevelScore"
+    | "ownInteriorConditionScore"
   >,
   competitors: Competitor[],
-  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "demandCaptureTable" | "measuredForecastProductRatio">,
+  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "demandCaptureTable" | "measuredForecastProductRatio" | "foodBrandScores">,
 ): ExistingStoreMeasuredForecastResult {
   const base: ExistingStoreMeasuredForecastResult = {
     storeCode: store.storeCode,
@@ -1496,8 +1555,14 @@ export function computeExistingStoreMeasuredForecast(
   );
   const ownSeatScore = computeSeatScore(kinds, rooms);
   const ownLocationScore = computeLocationScoreFromFacts(store.floor, store.groundLevel, store.hasElevator);
+  const ownFoodScore = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
+  const ownInteriorScore = computeInteriorScore({
+    levelScore: store.ownInteriorLevelScore,
+    conditionScore: store.ownInteriorConditionScore,
+    legacyScore: facility.ownInteriorScore,
+  });
   const ownCompetitivenessScore = computeCompetitivenessScore(
-    { spec: ownSpecScore, seat: ownSeatScore, food: facility.ownFoodScore, interior: facility.ownInteriorScore, location: ownLocationScore },
+    { spec: ownSpecScore, seat: ownSeatScore, food: ownFoodScore, interior: ownInteriorScore, location: ownLocationScore },
     settings,
   );
   const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);

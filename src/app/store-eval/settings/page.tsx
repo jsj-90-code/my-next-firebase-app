@@ -50,6 +50,10 @@ const FIELD_LABELS: Record<string, string> = {
   "competitivenessWeights.location": "경쟁력 가중치 - 입지",
   "specWeights.vga": "사양 가중치 - VGA",
   "specWeights.monitor": "사양 가중치 - 모니터",
+  "foodBrandScores.쉐프앤클릭": "먹거리 브랜드 점수 - 쉐프앤클릭",
+  "foodBrandScores.비바쿡": "먹거리 브랜드 점수 - 비바쿡",
+  "foodBrandScores.PC토랑": "먹거리 브랜드 점수 - PC토랑",
+  "foodBrandScores.기타브랜드": "먹거리 브랜드 점수 - 기타브랜드",
   "locationCompositeWeights.withinMarket": "입지동선 가중치 - 상권내위치",
   "locationCompositeWeights.flow": "입지동선 가중치 - 주요동선",
   "locationCompositeWeights.preemption": "입지동선 가중치 - 선점경쟁",
@@ -549,6 +553,36 @@ export default function StoreEvalSettingsPage() {
           label="사양 가중치 - 모니터"
           value={form.specWeights.monitor}
           onChange={(v) => updateGroup("specWeights", "monitor", v)}
+          readOnly={readOnly}
+        />
+      </Section>
+
+      <Section
+        title="먹거리 브랜드별 점수"
+        description="브랜드가 정해진 매장은 이 점수를 그대로 쓴다(브랜드없음이면 직접입력값 사용). 실측 근거 없는 초안값이니 필요시 조정할 것 - 2026-08-27 추가."
+      >
+        <NumberInput
+          label="쉐프앤클릭 (블랙라벨 자체)"
+          value={form.foodBrandScores.쉐프앤클릭}
+          onChange={(v) => updateGroup("foodBrandScores", "쉐프앤클릭", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="비바쿡"
+          value={form.foodBrandScores.비바쿡}
+          onChange={(v) => updateGroup("foodBrandScores", "비바쿡", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="PC토랑"
+          value={form.foodBrandScores.PC토랑}
+          onChange={(v) => updateGroup("foodBrandScores", "PC토랑", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="기타 브랜드"
+          value={form.foodBrandScores.기타브랜드}
+          onChange={(v) => updateGroup("foodBrandScores", "기타브랜드", v)}
           readOnly={readOnly}
         />
       </Section>

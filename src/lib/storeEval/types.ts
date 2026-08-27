@@ -28,6 +28,13 @@ export type CompetitorInvestigationStatus = CompetitorSurveyState;
 export type InflowRestriction = "없음" | "보통" | "강함";
 export type BrandType = "블랙라벨" | "리그PC방" | "확인필요";
 export type SpecialDemandType = "없음" | "대학가" | "군부대" | "산업단지" | "관광유흥" | "기타";
+
+/**
+ * 2026-08-27 추가 — 먹거리 점수를 조사자 감이 아니라 실제 사용 브랜드 기준으로 매기기 위한
+ * 분류(사용자 확인). 쉐프앤클릭은 블랙라벨 자체 먹거리 브랜드, 비바쿡·PC토랑은 그 외 흔한
+ * 외부 먹거리 브랜드다. 브랜드별 점수는 settings.foodBrandScores에서 조정한다.
+ */
+export type FoodBrand = "쉐프앤클릭" | "비바쿡" | "PC토랑" | "기타브랜드" | "브랜드없음";
 export type SpecialDemandIntensity = "없음" | "낮음" | "보통" | "높음";
 
 // ---- 07_신규후보지 : 신규 후보지 입력 ----
@@ -125,9 +132,22 @@ export type CandidateInput = {
   // calc.ts의 computeSpecScore/computeSeatScore/computeLocationScoreFromFacts로 매번 파생하고
   // CandidateComputed에 결과를 담는다. 먹거리/인테리어/모니터평가는 원본에서도 평가자가 1~5점을
   // 직접 입력하는 항목이라 그대로 둔다.
-  ownFoodScore: number | null; // 1~5
-  ownInteriorScore: number | null; // 1~5
-  ownMonitorScore: number | null; // 1~5 (사양 산식의 모니터 30% 비중 — 07 원본 필드)
+  ownFoodScore: number | null; // 1~5 - 먹거리 브랜드가 "브랜드없음"이거나 안 정했을 때 쓰는 직접입력값(폴백)
+  ownInteriorScore: number | null; // 1~5 - 세부항목을 하나도 안 채웠을 때 쓰는 종합 직접입력값(폴백)
+  ownMonitorScore: number | null; // 1~5 (사양 산식의 모니터 30% 비중, 원본 필드). 모니터 화질뿐 아니라
+  // CPU·RAM·주변기기(키보드/마우스/헤드셋)까지 종합해 평가자가 정성적으로 매기는 "종합사양" 항목이다
+  // (2026-08-27, CPU/RAM 자동가중치 재시도 후 원복하며 확정한 방식을 주변기기까지 확장 — 사용자 확인).
+
+  // 2026-08-27 추가 — 먹거리 1점 차이로 예상매출이 크게 흔들린다는 지적(사용자 확인)에 따라, "조사자
+  // 감으로 1~5점 찍기" 대신 실제로 매장이 쓰는 먹거리 브랜드를 기준으로 점수를 매긴다(최신 PC방은
+  // 조리방식이 다 인덕션 등으로 비슷해 조리방식 자체는 변별력이 없다는 판단, 사용자 확인). 브랜드별
+  // 점수는 settings.foodBrandScores에서 읽는다(calc.ts computeFoodScore). "브랜드없음"이거나 안
+  // 정했으면 위 ownFoodScore 직접입력값(조사자 판단 또는 점포개발자 의견)을 그대로 쓴다.
+  ownFoodBrand: FoodBrand | null;
+  // 인테리어는 세부항목 평균으로 정교화한다(사양점수와 같은 방식). 하나라도 채우면 평균(0.5점 단위)을
+  // 쓰고, 둘 다 비어 있으면 위 ownInteriorScore 직접입력값을 그대로 쓴다(calc.ts computeInteriorScore).
+  ownInteriorLevelScore: number | null; // 인테리어 수준(마감·컨셉 퀄리티)
+  ownInteriorConditionScore: number | null; // 매장관리상태(청결도·노후도)
 
   createdAt: number;
   updatedAt: number;
@@ -197,12 +217,17 @@ export type Competitor = {
   // 사양/좌석/입지 점수는 CandidateInput과 같은 이유로 자동 계산(계산결과는 저장하지 않고
   // calc.ts의 computeSpecScore/computeSeatScore/computeLocationScoreFromFacts로 매번 파생한다).
   // 먹거리/인테리어/모니터는 원본에서도 조사자가 1~5점을 직접 입력한다.
-  foodScore: number | null; // 1~5
+  foodScore: number | null; // 1~5 - 먹거리 브랜드가 "브랜드없음"이거나 안 정했을 때 쓰는 직접입력값(폴백)
   foodBasis: string | null;
-  interiorScore: number | null;
+  interiorScore: number | null; // 세부항목을 하나도 안 채웠을 때 쓰는 종합 직접입력값(폴백)
   interiorBasis: string | null;
-  monitorScore: number | null;
+  monitorScore: number | null; // CPU·RAM·주변기기까지 종합한 "종합사양" - CandidateInput.ownMonitorScore와 동일
   monitorBasis: string | null;
+  // 2026-08-27 추가 — CandidateInput.ownFoodBrand/ownInteriorLevelScore 등과 같은 이유/규칙(선택
+  // 항목). calc.ts computeFoodScore/computeInteriorScore 참고.
+  foodBrand: FoodBrand | null;
+  interiorLevelScore: number | null; // 인테리어 수준(마감·컨셉 퀄리티)
+  interiorConditionScore: number | null; // 매장관리상태(청결도·노후도)
   room1: number | null;
   room2: number | null;
   teamRoom: number | null;
@@ -298,6 +323,10 @@ export type ModelSettings = {
   // computeMarketGrade 주석 참고). 값은 그 상대평가가 쓰던 실제 경계값을 반올림한 고정 금액이다.
   marketGradeAbsoluteThresholds: { SS: number; S: number; A: number };
   competitivenessWeights: { spec: number; seat: number; food: number; interior: number; location: number }; // 25/30/20/15/10%
+  // 2026-08-27 추가 — 먹거리 점수를 조사자 감이 아니라 실제 사용 브랜드 기준으로 매기기 위한
+  // 브랜드별 점수표(calc.ts computeFoodScore). "브랜드없음"은 표에 없다 — 그 경우 직접입력값을
+  // 그대로 쓴다. 기본값은 사용자가 확정한 실측치가 아니라 임의 초안이라 설정 화면에서 조정한다.
+  foodBrandScores: Record<Exclude<FoodBrand, "브랜드없음">, number>;
   // CPU/RAM 슬롯은 2026-08-27에 자동공식(세대·용량 환산)으로 실험했다가 LOOCV 정확도가
   // 원본(VGA70%+모니터30%)보다 나빠져 가중치 0으로 원복했다(computeSpecScore 주석 참고).
   // CPU/RAM은 대신 "모니터"(종합사양) 항목에 평가자가 정성적으로 참고해 반영한다.
@@ -518,6 +547,11 @@ export type ExistingStore = {
   ownFoodScore: number | null;
   ownInteriorScore: number | null;
   ownMonitorScore: number | null;
+  // 2026-08-27 추가 — CandidateInput과 동일(계산 함수 하나 공유). computeExistingStoreMeasuredForecast에서만
+  // 쓰이고, 얼려둔 competitivenessScore/ownDemand 스냅샷 자체는 바뀌지 않는다.
+  ownFoodBrand: FoodBrand | null;
+  ownInteriorLevelScore: number | null;
+  ownInteriorConditionScore: number | null;
   pop500m: number | null;
   area1kmKm2: number | null;
   pop1km: number | null;

@@ -200,13 +200,17 @@ export function ScoreSelectField({
   onChange,
   required,
   hint,
+  step = 1,
 }: {
   label: string;
   value: number | null;
   onChange: (v: number | null) => void;
   required?: boolean;
   hint?: string;
+  /** 2026-08-27 추가 — 세부항목(인테리어 수준 등)은 0.5 단위로 더 촘촘하게 고를 수 있게 한다. */
+  step?: 1 | 0.5;
 }) {
+  const options = step === 0.5 ? [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] : [1, 2, 3, 4, 5];
   return (
     <FieldWrap label={label} required={required} hint={hint}>
       <select
@@ -215,7 +219,7 @@ export function ScoreSelectField({
         className={inputClass}
       >
         <option value="">선택 안 함</option>
-        {[1, 2, 3, 4, 5].map((n) => (
+        {options.map((n) => (
           <option key={n} value={n}>
             {n}점
           </option>

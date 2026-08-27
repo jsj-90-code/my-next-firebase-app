@@ -10,7 +10,7 @@ import { computeCompetitorInvestigationSummary, computeCompetitorScores } from "
 import { parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
-import type { Competitor, CompetitorSurveyState, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
+import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
 import {
   BooleanSelectField,
   ComputedField,
@@ -23,6 +23,15 @@ import {
   sectionClass,
   sectionTitleClass,
 } from "./formFields";
+
+// 2026-08-27 추가 — 먹거리 브랜드 선택지(사용자 확인). "브랜드없음"이면 직접 1~5점을 입력한다.
+const FOOD_BRAND_OPTIONS: { value: FoodBrand; label: string }[] = [
+  { value: "쉐프앤클릭", label: "쉐프앤클릭 (블랙라벨 자체)" },
+  { value: "비바쿡", label: "비바쿡" },
+  { value: "PC토랑", label: "PC토랑" },
+  { value: "기타브랜드", label: "기타 브랜드" },
+  { value: "브랜드없음", label: "브랜드없음 (직접입력)" },
+];
 
 const SURVEY_LEVEL_OPTIONS: { value: SurveyLevel; label: string }[] = [
   { value: "상세", label: "상세" },
@@ -74,8 +83,11 @@ function blankCompetitor(candidateCode: string): Competitor {
     renovationYear: null,
     foodScore: null,
     foodBasis: null,
+    foodBrand: null,
     interiorScore: null,
     interiorBasis: null,
+    interiorLevelScore: null,
+    interiorConditionScore: null,
     monitorScore: null,
     monitorBasis: null,
     room1: null,
@@ -260,9 +272,30 @@ function CompetitorForm({
         <ComputedField label="사양 점수 (자동)" value={computed.spec} hint="VGA 70%+모니터 30%+프리미엄존 가산" />
         <ComputedField label="좌석 점수 (자동)" value={computed.seat} hint="존 다양성 50%+수용력 50%" />
         <ComputedField label="입지 점수 (자동)" value={computed.location} hint="층수+엘리베이터+지상/지하" />
-        <ScoreSelectField label="먹거리 점수" value={form.foodScore} onChange={(v) => set("foodScore", v)} />
-        <ScoreSelectField label="인테리어 점수" value={form.interiorScore} onChange={(v) => set("interiorScore", v)} />
-        <ScoreSelectField label="모니터 점수" value={form.monitorScore} onChange={(v) => set("monitorScore", v)} />
+        <SelectField
+          label="먹거리 브랜드"
+          value={form.foodBrand}
+          onChange={(v) => set("foodBrand", v)}
+          options={FOOD_BRAND_OPTIONS}
+          hint="브랜드를 고르면 설정에 등록된 점수를 자동 적용. 브랜드없음이면 아래 직접입력 사용"
+        />
+        <ScoreSelectField
+          label="먹거리 점수 (직접입력)"
+          value={form.foodScore}
+          onChange={(v) => set("foodScore", v)}
+          hint="브랜드가 브랜드없음/미입력일 때만 사용됨"
+        />
+        <ComputedField label="먹거리 점수 (최종)" value={computed.food} hint="브랜드 점수 또는 직접입력값" />
+        <ScoreSelectField label="인테리어 수준" value={form.interiorLevelScore} onChange={(v) => set("interiorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
+        <ScoreSelectField label="매장관리상태" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="청결도·노후도" />
+        <ComputedField label="인테리어 점수 (최종)" value={computed.interior} hint="위 두 항목의 평균, 둘 다 비었으면 아래 직접입력값" />
+        <ScoreSelectField
+          label="인테리어 점수 (직접입력)"
+          value={form.interiorScore}
+          onChange={(v) => set("interiorScore", v)}
+          hint="위 세부항목을 하나도 안 채웠을 때만 사용됨"
+        />
+        <ScoreSelectField label="모니터 점수" value={form.monitorScore} onChange={(v) => set("monitorScore", v)} hint="모니터·CPU·RAM·주변기기를 종합해 직접 평가" />
       </div>
       <p className="mt-2 text-xs text-[#8a8072]">종합 경쟁력점수: {computed.total ?? "-"}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
