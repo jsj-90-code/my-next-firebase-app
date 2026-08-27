@@ -6,6 +6,7 @@
 // "구조"다 — storeEvalExistingStores/storeEvalExistingStoreSales/storeEvalExistingStoreMembers를
 // 그대로 사용한다(src/lib/storeEval/store.ts).
 
+import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime, formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
@@ -506,7 +507,11 @@ export default function ExistingStoresPage() {
                 <Fragment key={s.storeCode}>
                   <tr key={s.storeCode} className="app-row text-[#5c5346] dark:text-[#c9bfae]">
                     <td className="px-3 py-2 font-mono font-medium">{s.storeCode}</td>
-                    <td className="px-3 py-2">{s.storeName}</td>
+                    <td className="px-3 py-2">
+                      <Link href={`/store-eval/existing-stores/${s.storeCode}`} className="hover:underline">
+                        {s.storeName}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2">{s.brandType ?? "확인필요"}</td>
                     <td className="px-3 py-2">{s.openedAt ?? "-"}</td>
                     <td className="px-3 py-2 font-mono tabular-nums">{formatNumber(s.pcCount)}</td>

@@ -77,12 +77,19 @@ export function LocationEvalTab({
   candidateAddress,
   candidateLat,
   candidateLng,
+  existingStoreCode,
 }: {
   candidateCode: string;
   candidateName: string;
   candidateAddress: string;
   candidateLat: number | null;
   candidateLng: number | null;
+  // 2026-08-27 추가 — 기존 가맹점 화면에서 이 탭을 재사용할 때만 넘긴다. candidateCode는 여기서도
+  // LocationEvaluation을 읽고 쓰는 키(originCandidateCode ?? storeCode)로 그대로 쓰이지만, AI
+  // 초안 생성은 storeEvalCandidates 문서가 있어야 하는 /api/store-eval/ai-location-eval 대신
+  // 이 매장 코드로 /api/store-eval/ai-location-eval-existing-store를 호출해야 한다(순수 레거시
+  // 매장은 candidateCode 문서 자체가 없다).
+  existingStoreCode?: string;
 }) {
   const { user } = useAuth();
   const [form, setForm] = useState<LocationEvaluation | null>(null);
@@ -167,14 +174,21 @@ export function LocationEvalTab({
         candidateLat != null && candidateLng != null ? await captureKakaoStaticMapUrl(candidateLat, candidateLng) : null;
 
       const token = await user?.getIdToken();
-      const response = await fetch("/api/store-eval/ai-location-eval", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const response = await fetch(
+        existingStoreCode ? "/api/store-eval/ai-location-eval-existing-store" : "/api/store-eval/ai-location-eval",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(
+            existingStoreCode
+              ? { storeCode: existingStoreCode, mapImageUrl: mapImageUrl ?? undefined }
+              : { candidateCode, mapImageUrl: mapImageUrl ?? undefined },
+          ),
         },
-        body: JSON.stringify({ candidateCode, mapImageUrl: mapImageUrl ?? undefined }),
-      });
+      );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "AI 초안 생성에 실패했습니다.");
       setAiDraft({ fields: data.fields, confidence: data.confidence, rationale: data.rationale, warnings: data.warnings ?? [] });
