@@ -89,12 +89,18 @@ function blankCompetitor(candidateCode: string): Competitor {
   };
 }
 
-/** 붙여넣기 파싱 결과를 빈 경쟁점 폼에 얹는다 - 판단이 애매해서 파서가 null로 둔 값(주소·거리·
- * 적용대수·경쟁력 점수 등)은 그대로 비워둬서 사람이 직접 채우게 한다. */
-function applyParsedNote(base: Competitor, note: ParsedCompetitorNote): Competitor {
+/**
+ * 붙여넣기 파싱 결과를 경쟁점 폼에 얹는다 - 판단이 애매해서 파서가 null로 둔 값(주소·거리·적용대수·
+ * 경쟁력 점수 등)은 그대로 비워둬서 사람이 직접 채우게 한다.
+ * base가 새 빈 경쟁점이면 매장명도 붙여넣은 이름 그대로 쓰지만, 이미 등록된 경쟁점에 병합하는
+ * 경우(2026-08-27 수정)에는 기존 매장명(보통 카카오 자동수집으로 이미 깔끔하게 들어있음)을
+ * 점포개발자가 줄여 쓴 이름으로 덮어쓰지 않는다 — 이름이 서로 완전히 다를 수 있다는 사용자 확인
+ * ("탑스타pc방" vs "탑스타PC 울산삼산점")으로 발견된 문제.
+ */
+function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: { overwriteName: boolean }): Competitor {
   return {
     ...base,
-    name: note.name,
+    name: options.overwriteName ? note.name : base.name,
     surveyLevel: "상세",
     totalPcCount: note.totalPcCount,
     cpu: note.cpu,
@@ -319,14 +325,45 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [parsedNotes, setParsedNotes] = useState<ParsedCompetitorNote[]>([]);
   const [prefill, setPrefill] = useState<Competitor | null>(null);
+  // 2026-08-27 수정 — 매장명이 완전히 같지 않은 경우가 많다는 사용자 확인(예: "레드포스아레나" vs
+  // "레드포스pc아레나 삼산점")으로 자동 이름매칭을 없애고, 병합 대상을 사람이 직접 고르게 한다.
+  // 값은 "new" 또는 기존 경쟁점 id. 파싱 직후 이름이 정확히 같은 경쟁점이 있으면 기본값으로만
+  // 미리 선택해두고, 최종 판단은 항상 사람이 드롭다운에서 확인/변경한다.
+  const [mergeTargets, setMergeTargets] = useState<Record<number, string>>({});
 
   function handleParsePaste() {
-    setParsedNotes(parseCompetitorNotes(pasteText));
+    const notes = parseCompetitorNotes(pasteText);
+    setParsedNotes(notes);
+    const defaults: Record<number, string> = {};
+    notes.forEach((note, i) => {
+      defaults[i] = findMatchingCompetitor(note.name)?.id ?? "new";
+    });
+    setMergeTargets(defaults);
   }
 
-  function handleFillFromParsed(note: ParsedCompetitorNote) {
-    setPrefill(applyParsedNote(blankCompetitor(candidateCode), note));
-    setEditingId("new");
+  /** 공백만 다르고 사실상 같은 이름이면 매칭시키기 위한 정규화(대소문자·공백 무시). */
+  function normalizeCompetitorName(name: string): string {
+    return name.replace(/\s+/g, "").toLowerCase();
+  }
+
+  function findMatchingCompetitor(name: string): Competitor | null {
+    const normalized = normalizeCompetitorName(name);
+    return competitors.find((c) => normalizeCompetitorName(c.name) === normalized) ?? null;
+  }
+
+  // 2026-08-27 수정 — 병합 대상(새 경쟁점 vs 기존 경쟁점)을 사람이 드롭다운에서 고른 뒤 이 함수를
+  // 호출한다. 기존 경쟁점을 골랐으면 그 위에 붙여넣기 값만 덮어쓴다(거리·주소·적용대수·경쟁력
+  // 점수처럼 파서가 못 읽는 기존 값을 보존하기 위함) — 예전엔 항상 빈 폼에서 시작해서, 이미 거리를
+  // 입력해둔 경쟁점을 다시 붙여넣으면 그 값이 사라지는 문제가 있었다(사용자가 실사용 중 발견).
+  function handleFillFromParsed(note: ParsedCompetitorNote, targetId: string) {
+    const matched = targetId === "new" ? null : competitors.find((c) => c.id === targetId) ?? null;
+    if (matched) {
+      setPrefill(applyParsedNote(matched, note, { overwriteName: false }));
+      setEditingId(matched.id);
+    } else {
+      setPrefill(applyParsedNote(blankCompetitor(candidateCode), note, { overwriteName: true }));
+      setEditingId("new");
+    }
   }
 
   useEffect(() => {
@@ -366,8 +403,10 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
     }
   }
 
+  // prefill이 있으면(붙여넣기로 채운 경우) 그걸 우선한다 - editingId가 기존 경쟁점 id를 가리켜도
+  // (기존 데이터에 병합) 그 위에 얹은 prefill을 보여줘야 하기 때문이다.
   const editingCompetitor =
-    editingId === "new" ? (prefill ?? blankCompetitor(candidateCode)) : competitors.find((c) => c.id === editingId) ?? null;
+    prefill ?? (editingId === "new" ? blankCompetitor(candidateCode) : competitors.find((c) => c.id === editingId) ?? null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -418,22 +457,36 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {parsedNotes.map((note, i) => (
                 <div key={`${note.name}_${i}`} className="app-card-sm rounded-lg p-3 text-xs">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">{note.name}</p>
-                      <p className="mt-0.5 text-[#8a8072]">
-                        전체 {note.totalPcCount ?? "-"}대 · {note.cpu ?? "-"} · {note.vgaBase ?? "-"}
-                      </p>
-                      <p className="mt-0.5 text-[#8a8072]">방문 {note.visitedAt ?? "-"} · {note.visitorCount ?? "-"}명</p>
-                    </div>
+                  <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">{note.name}</p>
+                  <p className="mt-0.5 text-[#8a8072]">
+                    전체 {note.totalPcCount ?? "-"}대 · {note.cpu ?? "-"} · {note.vgaBase ?? "-"}
+                  </p>
+                  <p className="mt-0.5 text-[#8a8072]">방문 {note.visitedAt ?? "-"} · {note.visitorCount ?? "-"}명</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <select
+                      value={mergeTargets[i] ?? "new"}
+                      onChange={(e) => setMergeTargets((prev) => ({ ...prev, [i]: e.target.value }))}
+                      className="app-input px-2 py-1 text-[11px]"
+                    >
+                      <option value="new">새 경쟁점으로 추가</option>
+                      {competitors.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          기존: {c.name || "(이름 없음)"}{c.distanceM != null ? ` · ${c.distanceM}m` : ""}
+                        </option>
+                      ))}
+                    </select>
                     <button
                       type="button"
-                      onClick={() => handleFillFromParsed(note)}
+                      onClick={() => handleFillFromParsed(note, mergeTargets[i] ?? "new")}
                       className="app-btn-outline shrink-0 rounded-md px-2 py-1 text-[11px]"
                     >
                       폼에 채우기
                     </button>
                   </div>
+                  <p className="mt-1 text-[10px] text-[#8a8072]">
+                    이름이 자동으로 안 맞을 수 있어(예: &ldquo;탑스타pc방&rdquo; vs &ldquo;탑스타PC 울산삼산점&rdquo;) 병합할
+                    기존 경쟁점을 직접 확인하고 골라주세요. 이미 이름이 똑같은 경쟁점이 있으면 기본으로 선택해둡니다.
+                  </p>
                 </div>
               ))}
             </div>
