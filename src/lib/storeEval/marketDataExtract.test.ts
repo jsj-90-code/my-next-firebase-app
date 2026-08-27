@@ -246,6 +246,18 @@ describe("extractFields — SGIS 실사용자 붙여넣기(Ctrl+A 전체선택, 
     expect(byKey("area1kmKm2")?.parsedValue).toBe(3.14);
   });
 
+  it("면적 4묶음(구분/총 면적/값(km2)/0.78) 앞에 무관한 외톨이 줄이 하나 끼어도 밀리지 않고 찾는다(2026-08-27 — 예전엔 4칸 고정보폭이라 앞에 한 줄만 끼면 통째로 못 찾았음)", () => {
+    const withStrayLine = `반경 기준 1km - 면적
+안내문구
+구분
+총 면적
+값(km2)
+2.71`;
+    const pairs = parsePastedTableSectioned(withStrayLine);
+    const result = extractFields(pairs, SGIS_FIELD_SPECS);
+    expect(result.find((r) => r.fieldKey === "area1kmKm2")?.parsedValue).toBe(2.71);
+  });
+
   it("가구/주택 잡음이 섞여 있어도 인구수는 정확히 구분된다(0.5km=19099, 1km=40645)", () => {
     expect(byKey("pop500m")?.parsedValue).toBe(19099);
     expect(byKey("pop1km")?.parsedValue).toBe(40645);

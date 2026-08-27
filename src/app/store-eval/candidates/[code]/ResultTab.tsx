@@ -466,20 +466,22 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className={sectionTitleClass}>실측기반 예상월매출 — 경쟁점 실가동좌석 기반 (V61/V62와 별개 경로, 참고용)</h3>
-          <span
-            className={`app-badge text-xs ${result.measuredForecastNeedsReview ? "app-badge-danger" : "app-badge-warn"}`}
-          >
-            {result.measuredForecastNeedsReview ? "데이터 재검토 필요" : "미검증 참고 지표"}
-          </span>
+          <span className="app-badge app-badge-warn text-xs">미검증 참고 지표</span>
         </div>
         {/* 이 경로(13_신규후보지판정 AA열)는 원본 시트에도 존재 목적을 설명하는 근거가 없고,
             V61/V62처럼 기존 가맹점 리브-원-아웃 검증을 거친 적이 없다(docs/data-issues.md
             2026-08-21 참고). 그래서 V62와 달리 emphasis 카드로 강조하지 않고, 항상 미검증
-            경고를 띄운다 — 가동률 초과일 때만 경고하면 "평소엔 믿을만하다"는 오해를 주기 때문. */}
+            경고를 띄운다 — 가동률 초과일 때만 경고하면 "평소엔 믿을만하다"는 오해를 주기 때문.
+            2026-08-27: measuredForecastNeedsReview("데이터 재검토 필요" 배지/문구)는 ReportCard에서
+            이미 뺐다 — 경쟁점 많은 상권은 주요 경쟁점만 실사하는 게 정상 업무 프로세스라 예상
+            가동률이 검토기준을 넘는 게 흔한 정상 상태이지, "재검토가 필요한 문제"가 아니기
+            때문이다(사용자 확인, ReportCard.tsx 커밋 12c8896/이후 배지 제거 참고). 여기 ResultTab도
+            같은 이유로 경고성 문구 대신 담백한 방법론 설명으로 통일한다. */}
         <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
           이 값은 V61/V62처럼 기존 가맹점 실제매출로 검증된 적이 없는 별도 계산입니다(경쟁점 실가동좌석을 우리 매장 좌석점유로
           환산하는 방식). 출점 판단은 위 &ldquo;V62 최종예상월매출&rdquo;을 기준으로 하고, 이 값은 참고로만 봐주세요.
-          {result.measuredForecastNeedsReview && " 특히 예상 가동률이 계획한 PC대수를 넘어서 신뢰도가 더 낮습니다."}
+          {result.measuredForecastNeedsReview &&
+            " 예상 가동률이 계획한 PC대수를 넘는데, 경쟁점이 많은 상권은 주요 경쟁점 위주로만 실사하는 게 정상 업무 프로세스라(전수조사 아님) 흔히 나오는 결과입니다 — 데이터가 잘못됐다는 뜻은 아닙니다."}
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard
@@ -497,7 +499,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <ResultCard
             label="예상 가동률"
             value={formatPercent(result.expectedUtilization)}
-            hint={result.measuredForecastNeedsReview ? "최대검토가동률 초과 — 데이터 재검토 필요" : undefined}
+            hint={result.measuredForecastNeedsReview ? "주요 경쟁점 위주 실측 기준 추정치로, 실제보다 높게 나올 수 있음" : undefined}
           />
           <ResultCard label="예상 대당 일매출" value={formatWon(result.expectedDailyRevenuePerPc)} />
           <ResultCard label="실측기반 예상월매출 (참고용, 미검증)" value={formatWon(result.measuredForecastMonthlyRevenue)} />

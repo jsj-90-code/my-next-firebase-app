@@ -233,7 +233,7 @@ export default function StoreEvalSettingsPage() {
     });
   }
 
-  const specWeightSum = form ? form.specWeights.vga + form.specWeights.monitor : 1;
+  const specWeightSum = form ? form.specWeights.vga + form.specWeights.monitor + form.specWeights.ram + form.specWeights.cpu : 1;
   const competitivenessWeightSum = form
     ? form.competitivenessWeights.spec +
       form.competitivenessWeights.seat +
@@ -258,7 +258,7 @@ export default function StoreEvalSettingsPage() {
   // 할인율이라 0~-1 범위를 벗어나면 실수로 보고 막는다.
   function validationErrors(f: ModelSettings): string[] {
     const errors: string[] = [];
-    const specSum = sumWarning(f.specWeights.vga + f.specWeights.monitor, "사양(VGA/모니터)");
+    const specSum = sumWarning(f.specWeights.vga + f.specWeights.monitor + f.specWeights.ram + f.specWeights.cpu, "사양(VGA/모니터/RAM/CPU)");
     const compSum = sumWarning(
       f.competitivenessWeights.spec +
         f.competitivenessWeights.seat +
@@ -506,7 +506,7 @@ export default function StoreEvalSettingsPage() {
       <Section
         title="경쟁력 가중치 / 사양 가중치"
         description="자사_경쟁력점수(BM) = 사양×spec + 좌석×seat + 먹거리×food + 인테리어×interior + 입지×location"
-        warning={sumWarning(competitivenessWeightSum, "경쟁력") ?? sumWarning(specWeightSum, "사양(VGA/모니터)")}
+        warning={sumWarning(competitivenessWeightSum, "경쟁력") ?? sumWarning(specWeightSum, "사양(VGA/모니터/RAM/CPU)")}
       >
         <NumberInput
           label="경쟁력 가중치 - 사양"

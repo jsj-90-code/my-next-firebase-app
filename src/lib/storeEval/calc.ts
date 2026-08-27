@@ -1466,9 +1466,9 @@ export function computeExistingStoreMeasuredForecast(
   };
 
   // 존종류/VGA는 물리적 시설 사실이라 없으면 추측하지 않고 제외한다. 먹거리/인테리어/모니터
-  // 평가(1~5점, 평가자 직접입력 항목)는 원본 시트에도 "공백이면 표준값 4" 규칙이 있어 후보지와
-  // 동일하게 applyStandardOwnFacilityDefaults로 채운다(아래에서 store.ownFoodScore 등 원본이
-  // 아니라 facility.* 채워진 값을 쓴다).
+  // 평가(1~5점, 평가자 직접입력 항목)는 원본 시트에도 "공백이면 표준값 4" 규칙이 있어
+  // applyStandardOwnFacilityDefaults로 채운다(아래에서 store.ownFoodScore 등 원본이 아니라
+  // facility.* 채워진 값을 쓴다) — 단, 어떤 기본값을 쓰는지는 후보지와 다르다, 바로 아래 참고.
   if (store.ownVgaBase == null || store.ownGameZoneCount == null || store.ownTeamRoom == null || store.ownCoupleZone == null || store.ownVipZone == null || store.ownFriendsZone == null) {
     return { ...base, excludedReason: "데이터 부족(자사 존구성/VGA 미완비)" };
   }

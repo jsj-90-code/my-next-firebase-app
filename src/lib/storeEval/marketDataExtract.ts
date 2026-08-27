@@ -38,9 +38,13 @@ function normalizeLabel(s: string): string {
   return s.replace(/\s+/g, "").replace(/[():：·]/g, "");
 }
 
-/** "14.1%", "1,234명", "52.3" 같은 표시 문자열에서 숫자만 뽑는다. 못 뽑으면 null(지어내지 않음). */
+/**
+ * "14.1%", "1,234명", "52.3", "3.14㎢" 같은 표시 문자열에서 숫자만 뽑는다. 못 뽑으면 null(지어내지
+ * 않음). 면적(반경1km 조회면적) 위젯은 실제로는 단위가 값과 분리된 줄로 나와 이 함수까진 안
+ * 타지만(flushLoneBuffer 주석 참고), 값에 단위가 그대로 붙어 오는 다른 포맷도 방어해둔다.
+ */
 function parseNumberLoose(raw: string): number | null {
-  const cleaned = raw.replace(/[,%명건가구원세대개]/g, "").trim();
+  const cleaned = raw.replace(/[,%명건가구원세대개㎢㎡]|km2|km²/gi, "").trim();
   if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isNaN(n) ? null : n;
@@ -94,10 +98,15 @@ const YEAR_SENTENCE_RE = /인구[\s\S]*?\((\d{4})년\)/;
  * 쌍으로 합친다. 그 조합이 아닌 외톨이 줄(제목·안내문구 등)은 그냥 버린다 — 지어내지 않는다.
  */
 function flushLoneBuffer(buffer: string[], radiusKm: number | null, pairs: LabelValuePair[]): void {
-  for (let i = 0; i + 3 < buffer.length; i += 4) {
+  // 2026-08-27: 예전엔 4칸씩 고정 보폭(i += 4)으로 잘랐는데, "구분" 앞에 무관한 외톨이 줄(제목 등)이
+  // 하나라도 끼면 그 뒤 진짜 4묶음 전체가 밀려서 통째로 못 찾고 조용히 버려졌다(같은 위젯에서 이미
+  // 한 번 실사용 중 발견된 것과 같은 종류의 문제). "구분"이 나오는 자리를 찾아서 그 뒤 3칸을
+  // 보는 방식으로 바꿔, 앞에 끼어든 무관한 줄이 있어도 흔들리지 않게 한다.
+  for (let i = 0; i + 3 < buffer.length; i++) {
     const [capA, name, capB, value] = buffer.slice(i, i + 4);
     if (normalizeLabel(capA) === "구분" && normalizeLabel(capB).startsWith("값")) {
       pairs.push({ label: name, value, radiusKm });
+      i += 3; // 방금 소비한 4묶음은 건너뛴다(같은 자리에서 다시 "구분"으로 오검출 방지).
     }
   }
 }

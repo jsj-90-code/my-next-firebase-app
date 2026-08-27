@@ -423,6 +423,11 @@ export async function convertCandidateToExistingStore(input: {
     ownCoupleZone: c.ownCoupleZone,
     ownVipZone: c.ownVipZone,
     ownFriendsZone: c.ownFriendsZone,
+    // 2026-08-27 확인 — 후보지에서 빈칸이던 값(null)은 여기서도 null 그대로 넘어온다. 후보지
+    // 평가 때는 빈칸이 5점(신규후보지 기본값)으로 계산됐지만, 전환 후 이 매장을 백테스트할 땐
+    // EXISTING_STORE_FACILITY_DEFAULTS(4점, 원본 시트 규칙)로 채워진다 — 의도된 것이다. 백테스트는
+    // "이 매장이 후보지였을 때 얼마로 추정됐는지"가 아니라 "다른 91개 기존 가맹점과 같은 기준으로
+    // 비교했을 때 어떤지"가 목적이라, 전환 출처와 무관하게 전부 원본 규칙을 따라야 한다.
     ownFoodScore: c.ownFoodScore,
     ownInteriorScore: c.ownInteriorScore,
     ownMonitorScore: c.ownMonitorScore,
