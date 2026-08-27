@@ -55,6 +55,8 @@ import {
   predictEmpiricalRevenue,
   runCohortValidation,
   runLeaveOneOutValidation,
+  scoreFromCpu,
+  scoreFromRam,
   scoreFromVga,
   summarizeValidation,
   summarizeValidationRows,
@@ -304,16 +306,61 @@ describe("scoreFromVga (VGA 모델명 → 사양점수)", () => {
   });
 });
 
-describe("computeSpecScore (사양점수 = VGA 70% + 모니터 30%)", () => {
-  const specSettings = { specWeights: defaultModelSettings().specWeights };
+describe("scoreFromCpu (2026-08-27 추가 — 세대 기반 CPU 점수, 14세대=4점 기준 1세대당 1점)", () => {
+  it("'N세대' 텍스트에서 뽑는다", () => {
+    expect(scoreFromCpu("i5 14세대")).toBe(4);
+  });
+  it("인텔 5자리 모델번호(앞 2자리=세대)에서 뽑는다", () => {
+    expect(scoreFromCpu("14400")).toBe(4);
+    expect(scoreFromCpu("14400F")).toBe(4); // 사용자 확정 앵커
+    expect(scoreFromCpu("13400")).toBe(3);
+    expect(scoreFromCpu("12400")).toBe(2);
+  });
+  it("세대가 낮으면 clamp 하한(1), 높으면 상한(5)", () => {
+    expect(scoreFromCpu("11400")).toBe(1); // 11세대 -> 1
+    expect(scoreFromCpu("16400")).toBe(5); // 16세대 -> 6 -> 5로 clamp
+  });
+  it("4자리 구형 모델번호(9세대 이하, 예: i5-9400)는 5자리 패턴에 안 걸려 null - 지어내지 않는다", () => {
+    expect(scoreFromCpu("i5-9400")).toBeNull();
+  });
+  it("세대를 못 뽑으면(AMD 등) null - 지어내지 않는다", () => {
+    expect(scoreFromCpu("ryzen 9600")).toBeNull();
+    expect(scoreFromCpu("울트라5 시리즈2 225F")).toBeNull();
+  });
+  it("텍스트가 없으면 null", () => {
+    expect(scoreFromCpu(null)).toBeNull();
+  });
+});
+
+describe("scoreFromRam (2026-08-27 추가 — 16GB=중(3점) 기준, 2배당 1단계)", () => {
+  it("사용자 확정 앵커 2개", () => {
+    expect(scoreFromRam("16G")).toBe(3);
+    expect(scoreFromRam("32G")).toBe(4);
+  });
+  it("2배씩 늘어날 때마다 1단계씩 확장 해석", () => {
+    expect(scoreFromRam("8G")).toBe(2);
+    expect(scoreFromRam("64G")).toBe(5);
+  });
+  it("텍스트가 없거나 단위를 못 뽑으면 null", () => {
+    expect(scoreFromRam(null)).toBeNull();
+    expect(scoreFromRam("많음")).toBeNull();
+  });
+});
+
+describe("computeSpecScore (VGA70%+모니터30%, 원본 산식 그대로 — 2026-08-27에 CPU/RAM 자동가중치를 실험했다가 LOOCV 정확도가 나빠져 원복함. CPU/RAM 필드는 남아있지만 기본 specWeights가 ram:0/cpu:0라 계산엔 영향 없음)", () => {
   it("VGA만 있으면 VGA 점수 그대로", () => {
-    expect(computeSpecScore("RTX 4060", null, 0, null, specSettings)).toBe(4);
+    expect(computeSpecScore({ cpu: null, vgaBase: "RTX 4060", vgaTop: null, ram: null, monitorScore: null, bonus: 0 }, settings)).toBe(4);
   });
   it("모니터만 있으면 모니터 점수 그대로", () => {
-    expect(computeSpecScore(null, null, 0, 5, specSettings)).toBe(5);
+    expect(computeSpecScore({ cpu: null, vgaBase: null, vgaTop: null, ram: null, monitorScore: 5, bonus: 0 }, settings)).toBe(5);
   });
-  it("VGA 4점 + 게임존 3종(+0.6) + 모니터 5점 → 4.6*0.7+5*0.3=4.72", () => {
-    expect(computeSpecScore("RTX 4060", null, 3 * GAME_ZONE_BONUS, 5, specSettings)).toBeCloseTo(4.72, 2);
+  it("VGA+모니터 있으면 70/30 가중평균 — CPU/RAM이 같이 입력돼 있어도 가중치0이라 무시된다", () => {
+    // VGA 4060+게임존3종(4.6점)*.7 + 모니터 5점*.3 = 3.22+1.5 = 4.72
+    // (CPU 14400/RAM 32G도 넣었지만 weight=0이라 결과에 영향 없음을 같이 확인)
+    expect(computeSpecScore({ cpu: "14400", vgaBase: "RTX 4060", vgaTop: null, ram: "32G", monitorScore: 5, bonus: 3 * GAME_ZONE_BONUS }, settings)).toBeCloseTo(4.72, 2);
+  });
+  it("전부 없으면 null(지어내지 않음)", () => {
+    expect(computeSpecScore({ cpu: null, vgaBase: null, vgaTop: null, ram: null, monitorScore: null, bonus: 0 }, settings)).toBeNull();
   });
 });
 
@@ -343,15 +390,17 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     ownInteriorScore: null,
     ownMonitorScore: null,
   };
-  it("전부 비어있으면 표준값(게임존3·팀룸2·커플존3·VIP존5·프렌즈존15·평가4점)을 적용한다", () => {
+  it("전부 비어있으면 표준값(게임존3·팀룸2·커플존3·VIP존5·프렌즈존15·먹거리/인테리어5점·모니터4점)을 적용한다", () => {
+    // 2026-08-27: 오픈 초기 기준 먹거리/인테리어는 "상"(5점)이 더 현실적이라는 사용자 확인으로
+    // 4→5로 올렸다(원본 시트 "빈칸이면 4" 규칙과 달라진 값 — 의도된 재조정).
     expect(applyStandardOwnFacilityDefaults(blank)).toEqual({
       ownGameZoneCount: 3,
       ownTeamRoom: 2,
       ownCoupleZone: 3,
       ownVipZone: 5,
       ownFriendsZone: 15,
-      ownFoodScore: 4,
-      ownInteriorScore: 4,
+      ownFoodScore: 5,
+      ownInteriorScore: 5,
       ownMonitorScore: 4,
     });
   });
@@ -363,23 +412,35 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     expect(result.ownFoodScore).toBe(2);
     expect(result.ownVipZone).toBe(5); // 나머지 비어있는 항목은 여전히 표준값
   });
-  it("신중동점(N001) 실사례: 표준값 적용 시 사양4.70·좌석4.00·경쟁력4.18을 그대로 재현한다", () => {
+  it("신중동점(N001) 실사례 — 원본 VGA70%+모니터30% 산식 기준으로는 사양4.70·좌석4.00·경쟁력4.18이었다(시트 04_점포평가요약 스냅샷). CPU/RAM은 참고 필드일 뿐 가중치가 0이라 사양점수는 원본과 그대로 4.70이 나온다. food/interior 표준값만 2026-08-27에 4→5로 재조정돼 경쟁력점수는 원본(4.18)과 달라진다(의도된 변경, 사용자 확정).", () => {
     const facility = applyStandardOwnFacilityDefaults(blank);
     const { kinds, rooms } = computeZoneComposition(
       [0, 0, facility.ownTeamRoom, facility.ownCoupleZone, facility.ownVipZone],
       [facility.ownFriendsZone],
     );
-    const specSettings = { specWeights: defaultModelSettings().specWeights };
-    const spec = computeSpecScore("RTX 5060", null, facility.ownGameZoneCount * GAME_ZONE_BONUS, facility.ownMonitorScore, specSettings);
+    const spec = computeSpecScore(
+      {
+        cpu: null,
+        vgaBase: "RTX 5060",
+        vgaTop: null,
+        ram: null,
+        monitorScore: facility.ownMonitorScore,
+        bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
+      },
+      settings,
+    );
     const seat = computeSeatScore(kinds, rooms);
+    // VGA(5.0)*.7 + 모니터(4)*.3 = 3.5+1.2 = 4.7 — 원본 산식과 동일
     expect(spec).toBeCloseTo(4.7, 2);
-    expect(seat).toBeCloseTo(4.0, 2);
+    expect(seat).toBeCloseTo(4.0, 2); // 좌석점수는 이번 변경과 무관, 그대로
     const competitivenessSettings = { competitivenessWeights: defaultModelSettings().competitivenessWeights };
     const total = computeCompetitivenessScore(
       { spec, seat, food: facility.ownFoodScore, interior: facility.ownInteriorScore, location: computeLocationScoreFromFacts(1, "지하", false) },
       competitivenessSettings,
     );
-    expect(total).toBeCloseTo(4.18, 2); // 시트 04_점포평가요약 "자사_경쟁력점수" 스냅샷과 일치
+    // spec은 원본과 동일(4.7) + food/interior 4→5(표준값 재조정)만 반영된 값:
+    // 4.7*.25+4.0*.3+5*.2+5*.15+4.0*.1 = 4.525
+    expect(total).toBeCloseTo(4.525, 3);
   });
 });
 
@@ -719,6 +780,8 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       groundLevel: "지하" as const,
       hasElevator: false,
       hourlyRate: 1300,
+      ownCpu: null,
+      ownRam: null,
       ownVgaBase: "RTX 5060",
       ownVgaTop: null,
       ownGameZoneCount: 3,
@@ -787,14 +850,17 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     expect(result.measuredForecastMonthlyRevenue).toBeNull();
   });
 
-  it("먹거리/인테리어/모니터평가(평가자 직접입력)가 없으면 표준값 4로 채우고 표본에서 빼지 않는다 — 실데이터 26곳 전부 이 3개가 비어 있었음(2026-08-21 확인)", () => {
+  it("먹거리/인테리어/모니터평가(평가자 직접입력)가 없으면 표준값(먹거리·인테리어5점/모니터4점)으로 채우고 표본에서 빼지 않는다 — 실데이터 26곳 전부 이 3개가 비어 있었음(2026-08-21 확인, 표준값은 2026-08-27에 4→5로 재조정)", () => {
     const result = computeExistingStoreMeasuredForecast(
       baseStore({ ownFoodScore: null, ownInteriorScore: null, ownMonitorScore: null }),
       [competitor()],
       settings,
     );
     expect(result.excludedReason).toBeNull();
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.18, 2); // 표준값 4로 채워도 신중동점 사례와 동일 결과
+    // spec: VGA(5.0)*.7+모니터(4)*.3=4.7(CPU/RAM은 참고필드일 뿐 가중치0이라 무관)
+    // seat=4.0 food=5 interior=5 location=4.0
+    // → 4.7*.25+4.0*.3+5*.2+5*.15+4.0*.1 = 4.525
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.525, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -816,8 +882,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
     expect(result.excludedReason).toBeNull();
     // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합은 신중동점 실사례와
-    // 동일해서 경쟁력점수 4.18을 그대로 재현해야 한다(calc.ts applyStandardOwnFacilityDefaults 테스트 참고).
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.18, 2);
+    // 같다. 사양점수는 원본 그대로(VGA5.0*.7+모니터4*.3=4.7, CPU/RAM은 참고필드일 뿐 가중치0이라
+    // 무관)라 ownCompetitivenessScore도 원본 산식 값 4.18과 동일하게 4.175가 나온다
+    // (4.7*.25+4*.3+4*.2+4*.15+4*.1=4.175).
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.175, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);

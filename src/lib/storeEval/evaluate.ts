@@ -82,10 +82,14 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     [ownFacility.ownFriendsZone],
   );
   const ownSpecScore = computeSpecScore(
-    c.ownVgaBase,
-    c.ownVgaTop,
-    ownFacility.ownGameZoneCount * GAME_ZONE_BONUS,
-    ownFacility.ownMonitorScore,
+    {
+      cpu: c.ownCpu,
+      vgaBase: c.ownVgaBase,
+      vgaTop: c.ownVgaTop,
+      ram: c.ownRam,
+      monitorScore: ownFacility.ownMonitorScore,
+      bonus: ownFacility.ownGameZoneCount * GAME_ZONE_BONUS,
+    },
     settings,
   );
   const ownSeatScore = computeSeatScore(ownKinds, ownRooms);

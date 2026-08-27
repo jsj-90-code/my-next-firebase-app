@@ -121,6 +121,10 @@ export type CandidateInput = {
   facility1kmHouseholds: number | null;
 
   // 자사 시설/사양 (경쟁력 점수 입력)
+  // 2026-08-27 추가 — 사양점수 산식을 VGA70%+모니터30%에서 CPU/VGA/RAM/모니터 4항목 평균으로
+  // 바꾸면서, 경쟁점(cpu/ram 필드 있음)과 같은 기준으로 자사도 평가하려면 필요해졌다.
+  ownCpu: string | null;
+  ownRam: string | null;
   ownVgaBase: string | null;
   ownVgaTop: string | null;
   ownGameZoneCount: number | null;
@@ -304,7 +308,10 @@ export type ModelSettings = {
   marketDemandEffectiveRate: { downtown: number; mixed: number; residential: number }; // 0.53/0.61/0.78
   marketGradePercentile: { SS: number; S: number; A: number }; // 상위10/30/60%
   competitivenessWeights: { spec: number; seat: number; food: number; interior: number; location: number }; // 25/30/20/15/10%
-  specWeights: { vga: number; monitor: number }; // 70/30
+  // CPU/RAM 슬롯은 2026-08-27에 자동공식(세대·용량 환산)으로 실험했다가 LOOCV 정확도가
+  // 원본(VGA70%+모니터30%)보다 나빠져 가중치 0으로 원복했다(computeSpecScore 주석 참고).
+  // CPU/RAM은 대신 "모니터"(종합사양) 항목에 평가자가 정성적으로 참고해 반영한다.
+  specWeights: { vga: number; monitor: number; ram: number; cpu: number };
   // 09_입지동선평가!H열(입지동선종합점수) = 상권내위치×0.3 + 주요동선×0.3 + 선점경쟁×0.25 + 접근가시성×0.15
   locationCompositeWeights: { withinMarket: number; flow: number; preemption: number; visibility: number };
   brandFilter: string; // "블랙라벨"
@@ -501,6 +508,8 @@ export type ExistingStore = {
   hasElevator: boolean | null;
   demographicsYear: number | null;
   renovationYear: number | null; // 자사_리뉴얼연도 (후보지 단계에는 없고 기존점에만 있음)
+  ownCpu: string | null; // 2026-08-27 추가 - CandidateInput.ownCpu와 동일
+  ownRam: string | null;
   ownVgaBase: string | null;
   ownVgaTop: string | null;
   ownGameZoneCount: number | null;

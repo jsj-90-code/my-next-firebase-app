@@ -412,6 +412,8 @@ export async function convertCandidateToExistingStore(input: {
     hasElevator: c.hasElevator,
     demographicsYear: c.demographicsYear,
     renovationYear: null,
+    ownCpu: c.ownCpu,
+    ownRam: c.ownRam,
     ownVgaBase: c.ownVgaBase,
     ownVgaTop: c.ownVgaTop,
     ownGameZoneCount: c.ownGameZoneCount,

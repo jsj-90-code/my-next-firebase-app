@@ -73,6 +73,8 @@ function blankStore(): ExistingStore {
     hasElevator: null,
     demographicsYear: null,
     renovationYear: null,
+    ownCpu: null,
+    ownRam: null,
     ownVgaBase: null,
     ownVgaTop: null,
     ownGameZoneCount: null,

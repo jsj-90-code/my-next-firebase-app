@@ -334,23 +334,72 @@ export function scoreFromVgaSpec(vgaBase: string | null, vgaTop: string | null, 
 }
 
 /**
- * scoreFromSpecWithMonitor_: 사양점수 = VGA 70% + 모니터 30% (specWeights).
- * 모니터 미입력 시 VGA만으로 계산해 기존과 같게 동작한다(원본 그대로).
+ * 2026-08-27 추가 — CPU 세대 → 1~5점. "N세대"라고 쓰인 텍스트("i5 14세대")나 인텔 데스크탑 5자리
+ * 모델번호("14400","14400F","12400")에서 세대(앞 2자리)를 뽑는다. 14세대=4점 기준, 세대가 1
+ * 낮아질 때마다 1점씩 낮춘다(사용자 확정: "14400을 4점으로 하고, 세대별로 1점씩 다운그레이드").
+ * 모델명에서 세대를 못 뽑으면 null(지어내지 않음 — 사람이 직접 입력).
+ */
+export function scoreFromCpu(text: string | null): number | null {
+  if (!text) return null;
+  const genLabelM = text.match(/(\d{1,2})\s*세대/);
+  const generation = genLabelM ? Number(genLabelM[1]) : text.match(/(\d{2})\d{3}/)?.[1];
+  if (generation == null) return null;
+  return Math.min(5, Math.max(1, Number(generation) - 10));
+}
+
+/**
+ * 2026-08-27 추가 — RAM 용량(GB) → 1~5점. 16GB=중(3점, 기준) · 32GB=중상(4점, 한 단계 위)
+ * (사용자 확정치 2개). 그 외 용량은 16GB 대비 2배씩 늘어날 때마다 1단계씩 올라간다고 확장
+ * 해석했다(예: 8GB=2점/64GB=5점) — 이 확장 구간은 사용자가 준 두 값 사이 규칙을 추정한 것이라
+ * 실제 사례로 어긋나면 조정이 필요하다.
+ */
+export function scoreFromRam(text: string | null): number | null {
+  if (!text) return null;
+  const m = text.match(/(\d+)\s*G/i);
+  if (!m) return null;
+  const gb = Number(m[1]);
+  if (gb <= 0) return null;
+  const tier = Math.round(Math.log2(gb / 16));
+  return Math.min(5, Math.max(1, 3 + tier));
+}
+
+/**
+ * 사양점수 — CPU/VGA/RAM/모니터 4항목의 가중평균. 가중치는 settings.specWeights에서 읽는다.
+ * 값이 있는 항목만 평균에 넣고, 그 항목들의 가중치 합으로 재정규화한다(전부 없으면 null) —
+ * 데이터가 없다고 억지로 중간값을 채우지 않는다.
+ *
+ * 2026-08-27: 한때 CPU/RAM을 자동공식(세대·용량 환산, scoreFromCpu/scoreFromRam)으로 독립
+ * 가중치를 줘 봤으나(단순평균·50/30/10/10 가중평균 둘 다) LOOCV 정확도가 원본(VGA70%+모니터30%,
+ * MAPE 11.6%)보다 나빠져 원복했다(사용자 확정) — 옛 매장이 최신 CPU 기준으로 불리해지는 구조적
+ * 문제도 있었다. 지금 기본 설정은 ram:0/cpu:0이라 사실상 VGA70%+모니터30%와 동일하게 동작한다.
+ * CPU/RAM은 이제 "모니터"(→종합사양) 항목에 평가자가 정성적으로 참고해 반영한다. scoreFromCpu/
+ * scoreFromRam 함수와 이 가중치 슬롯은 나중에 시간 보정 구조가 갖춰지면 다시 켤 수 있도록 남겨둔다.
+ * (자사 쪽 "빈 칸이면 4점" 기본값은 applyStandardOwnFacilityDefaults의 monitorScore 기본값을
+ * 통해 자연히 적용된다 - 모니터만 있어도 그 값이 그대로 사양점수가 되므로 별도 처리 불필요).
  * @param bonus 자사: 게임존수 × GAME_ZONE_BONUS(0.2) / 경쟁점: 프리미엄존 유(1) × 0.5, 무(0) × 0.5
  */
 export function computeSpecScore(
-  vgaBase: string | null,
-  vgaTop: string | null,
-  bonus: number,
-  monitorScore: number | null,
+  input: {
+    cpu: string | null;
+    vgaBase: string | null;
+    vgaTop: string | null;
+    ram: string | null;
+    monitorScore: number | null;
+    bonus: number;
+  },
   settings: Pick<ModelSettings, "specWeights">,
 ): number | null {
-  const vga = scoreFromVgaSpec(vgaBase, vgaTop, bonus);
-  const m = clampRating(monitorScore);
-  if (vga == null) return m;
-  if (m == null) return vga;
   const w = settings.specWeights;
-  return Math.round((vga * w.vga + m * w.monitor) * 100) / 100;
+  const items = [
+    { score: scoreFromVgaSpec(input.vgaBase, input.vgaTop, input.bonus), weight: w.vga },
+    { score: clampRating(input.monitorScore), weight: w.monitor },
+    { score: scoreFromRam(input.ram), weight: w.ram },
+    { score: scoreFromCpu(input.cpu), weight: w.cpu },
+  ].filter((i): i is { score: number; weight: number } => i.score != null);
+  if (items.length === 0) return null;
+  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
+  if (totalWeight === 0) return null;
+  return Math.round((items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight) * 100) / 100;
 }
 
 /** 자사 게임존 사양 가산: 게임존 수 × GAME_ZONE_BONUS(0.2). */
@@ -411,6 +460,11 @@ export function computeSeatScore(kinds: number, rooms: number): number {
  * 갖춰지지 않은 경우가 많아, 자사 시설 입력값이 비어 있으면 평균적으로 들어가는 회사 표준
  * 구성으로 간주한다(2026-08-21, 사용자 확인). 1인룸/2인룸/VGA최고사양은 표준값이 없어(비우면
  * 그대로 0/공란) 대상이 아니다. 이미 실제 값이 입력돼 있으면 그 값을 그대로 쓴다.
+ * 2026-08-27: 오픈 초기 기준으로 인테리어·먹거리는 "상"(5점)이 더 현실적이라는 사용자 확인으로
+ * 4→5로 올렸다(원본 시트의 "빈칸이면 4" 규칙을 웹에서 재조정 — 원본과 다른 값이라는 점 인지).
+ * monitorScore는 그대로 4 — 사양점수(CPU/VGA/RAM/모니터 4항목 평균)가 이 값을 통해 자연히
+ * "중상(4점)" 기본값을 얻는다(CPU/VGA/RAM 미입력 시 모니터 점수만 남아 평균이 곧 4가 됨,
+ * 별도의 "사양 기본값" 코드를 새로 안 만들어도 되는 이유).
  */
 export const STANDARD_OWN_FACILITY_DEFAULTS = {
   gameZoneCount: 3,
@@ -418,8 +472,8 @@ export const STANDARD_OWN_FACILITY_DEFAULTS = {
   coupleZone: 3,
   vipZone: 5,
   friendsZone: 15,
-  foodScore: 4,
-  interiorScore: 4,
+  foodScore: 5,
+  interiorScore: 5,
   monitorScore: 4,
 };
 
@@ -511,7 +565,10 @@ export function computeCompetitorScores(
   const { kinds, rooms } = computeZoneComposition([c.room1, c.room2, c.teamRoom, c.coupleZone]);
   const hasPremium = (c.premiumZone ?? 0) > 0;
   const spec = applySurveyLevelDefault(
-    computeSpecScore(c.vgaBase, c.vgaTop, hasPremium ? PREMIUM_ZONE_BONUS : 0, c.monitorScore, settings),
+    computeSpecScore(
+      { cpu: c.cpu, vgaBase: c.vgaBase, vgaTop: c.vgaTop, ram: c.ram, monitorScore: c.monitorScore, bonus: hasPremium ? PREMIUM_ZONE_BONUS : 0 },
+      settings,
+    ),
     c.surveyLevel,
     c.investigationStatus,
   );
@@ -1354,6 +1411,8 @@ export function computeExistingStoreMeasuredForecast(
     | "groundLevel"
     | "hasElevator"
     | "hourlyRate"
+    | "ownCpu"
+    | "ownRam"
     | "ownVgaBase"
     | "ownVgaTop"
     | "ownGameZoneCount"
@@ -1403,7 +1462,17 @@ export function computeExistingStoreMeasuredForecast(
     [store.ownRoom1, store.ownRoom2, store.ownTeamRoom, store.ownCoupleZone, store.ownVipZone],
     [store.ownFriendsZone],
   );
-  const ownSpecScore = computeSpecScore(store.ownVgaBase, store.ownVgaTop, facility.ownGameZoneCount * GAME_ZONE_BONUS, facility.ownMonitorScore, settings);
+  const ownSpecScore = computeSpecScore(
+    {
+      cpu: store.ownCpu,
+      vgaBase: store.ownVgaBase,
+      vgaTop: store.ownVgaTop,
+      ram: store.ownRam,
+      monitorScore: facility.ownMonitorScore,
+      bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
+    },
+    settings,
+  );
   const ownSeatScore = computeSeatScore(kinds, rooms);
   const ownLocationScore = computeLocationScoreFromFacts(store.floor, store.groundLevel, store.hasElevator);
   const ownCompetitivenessScore = computeCompetitivenessScore(

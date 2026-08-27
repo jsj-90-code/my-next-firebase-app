@@ -12,6 +12,8 @@ import {
   computeSpecScore,
   computeZoneComposition,
   GAME_ZONE_BONUS,
+  scoreFromCpu,
+  scoreFromRam,
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
 import { MarketDataUploadPanel } from "@/components/storeEval/MarketDataUploadPanel";
@@ -284,11 +286,27 @@ export function BasicInfoTab({
       [facility.ownFriendsZone],
     );
     return {
-      spec: computeSpecScore(form.ownVgaBase, form.ownVgaTop, facility.ownGameZoneCount * GAME_ZONE_BONUS, facility.ownMonitorScore, settings),
+      spec: computeSpecScore(
+        {
+          cpu: form.ownCpu,
+          vgaBase: form.ownVgaBase,
+          vgaTop: form.ownVgaTop,
+          ram: form.ownRam,
+          monitorScore: facility.ownMonitorScore,
+          bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
+        },
+        settings,
+      ),
       seat: computeSeatScore(kinds, rooms),
       location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
+      // 참고용 제안값 — 사양점수 자동계산엔 안 들어가고, 종합사양(모니터) 점수를 사람이 매길 때
+      // 참고하라고 화면에만 보여준다(2026-08-27, CPU/RAM 자동가중치 원복 이후).
+      cpuSuggestion: scoreFromCpu(form.ownCpu),
+      ramSuggestion: scoreFromRam(form.ownRam),
     };
   }, [
+    form.ownCpu,
+    form.ownRam,
     form.ownVgaBase,
     form.ownVgaTop,
     form.ownGameZoneCount,
@@ -639,6 +657,18 @@ export function BasicInfoTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>
         <div className={`${gridClass} mt-4`}>
+          <TextField
+            label="CPU"
+            value={form.ownCpu ?? ""}
+            onChange={(v) => set("ownCpu", v || null)}
+            hint="예: 14400F, i5 14세대 — 참고용 기록(사양점수엔 자동 반영 안 됨, 아래 종합사양 점수에 참고)"
+          />
+          <TextField
+            label="RAM"
+            value={form.ownRam ?? ""}
+            onChange={(v) => set("ownRam", v || null)}
+            hint="예: 16G, 32G — 참고용 기록(사양점수엔 자동 반영 안 됨)"
+          />
           <TextField label="VGA 기본사양" value={form.ownVgaBase ?? ""} onChange={(v) => set("ownVgaBase", v || null)} />
           <TextField label="VGA 최고사양" value={form.ownVgaTop ?? ""} onChange={(v) => set("ownVgaTop", v || null)} hint="없으면 비움 (표준값 없음)" />
           <NumberField label="게임존 수" value={form.ownGameZoneCount} onChange={(v) => set("ownGameZoneCount", v)} hint="비우면 표준 3종 적용" />
@@ -660,16 +690,21 @@ export function BasicInfoTab({
           그대로 적용됩니다.
         </p>
         <div className={`${gridClass} mt-4`}>
-          <ComputedField label="사양 점수 (자동)" value={computedScores.spec} hint="VGA 70%+모니터 30%+게임존 가산" />
+          <ComputedField label="사양 점수 (자동)" value={computedScores.spec} hint="VGA(+게임존 가산) 70% + 종합사양(모니터) 30%" />
           <ComputedField label="좌석 점수 (자동)" value={computedScores.seat} hint="존 다양성 50%+수용력 50%" />
-          <ScoreSelectField label="먹거리 점수" value={form.ownFoodScore} onChange={(v) => set("ownFoodScore", v)} hint="비우면 표준값 4 적용" />
-          <ScoreSelectField label="인테리어 점수" value={form.ownInteriorScore} onChange={(v) => set("ownInteriorScore", v)} hint="비우면 표준값 4 적용" />
+          <ScoreSelectField label="먹거리 점수" value={form.ownFoodScore} onChange={(v) => set("ownFoodScore", v)} hint="비우면 표준값 5(상) 적용" />
+          <ScoreSelectField label="인테리어 점수" value={form.ownInteriorScore} onChange={(v) => set("ownInteriorScore", v)} hint="비우면 표준값 5(상) 적용" />
           <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
           <ScoreSelectField
-            label="모니터 점수"
+            label="종합사양 점수 (모니터·CPU·메모리)"
             value={form.ownMonitorScore}
             onChange={(v) => set("ownMonitorScore", v)}
-            hint="사양 점수의 모니터 30% 비중 (07 원본 필드) · 비우면 표준값 4 적용"
+            hint={
+              `모니터 화질·CPU·메모리를 종합해서 직접 1~5점 평가 (07 원본 필드) · 비우면 표준값 4 적용` +
+              (computedScores.cpuSuggestion != null || computedScores.ramSuggestion != null
+                ? ` · 참고: CPU${computedScores.cpuSuggestion ?? "-"}점/RAM${computedScores.ramSuggestion ?? "-"}점(자동제안, 참고만)`
+                : "")
+            }
           />
         </div>
       </section>

@@ -98,6 +98,8 @@ function blankCandidate(code: string): CandidateInput {
     facility1kmElementarySchool: null,
     facility1kmSubwayRiders: null,
     facility1kmHouseholds: null,
+    ownCpu: null,
+    ownRam: null,
     ownVgaBase: null,
     ownVgaTop: null,
     ownGameZoneCount: null,

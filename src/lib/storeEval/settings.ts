@@ -95,7 +95,11 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     marketDemandEffectiveRate: { downtown: 0.53, mixed: 0.61, residential: 0.78 },
     marketGradePercentile: { SS: 0.1, S: 0.3, A: 0.6 },
     competitivenessWeights: { spec: 0.25, seat: 0.3, food: 0.2, interior: 0.15, location: 0.1 },
-    specWeights: { vga: 0.7, monitor: 0.3 },
+    // 2026-08-27 — CPU/RAM을 자동공식(세대·용량 환산)으로 분리 가중치를 줬더니 LOOCV 정확도가
+    // 원본(11.6%)보다 나빠져 원복했다(사용자 확정). CPU/RAM은 이제 "모니터" 항목(종합사양 점수,
+    // 평가자가 CPU/RAM까지 참고해서 직접 1~5점 입력)에 정성적으로 녹아들고, 자동계산 가중치는
+    // 0으로 꺼둔다 — 나중에 시간 보정 구조가 갖춰지면 다시 켤 수 있게 필드/함수는 남겨둔다.
+    specWeights: { vga: 0.7, monitor: 0.3, ram: 0, cpu: 0 },
     locationCompositeWeights: { withinMarket: 0.3, flow: 0.3, preemption: 0.25, visibility: 0.15 },
     brandFilter: "블랙라벨",
     saturationThreshold: 7,

@@ -82,6 +82,8 @@ function emptyCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput
     facility1kmElementarySchool: null,
     facility1kmSubwayRiders: null,
     facility1kmHouseholds: null,
+    ownCpu: null,
+    ownRam: null,
     ownVgaBase: null,
     ownVgaTop: null,
     ownGameZoneCount: 1,
@@ -244,8 +246,9 @@ describe("evaluateCandidate 배선 검증", () => {
       ownCoupleZone: 3,
       ownVipZone: 5,
       ownFriendsZone: 15,
-      ownFoodScore: 4,
-      ownInteriorScore: 4,
+      // 2026-08-27: 표준값이 4→5(먹거리/인테리어)로 재조정됨 - STANDARD_OWN_FACILITY_DEFAULTS와 맞춘다.
+      ownFoodScore: 5,
+      ownInteriorScore: 5,
       ownMonitorScore: 4,
     };
     const blankResult = evaluateCandidate({
