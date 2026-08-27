@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV_ITEMS = [
   { href: "/store-eval", label: "대시보드" },
+  { href: "/store-eval/how-it-works", label: "매출 계산법" },
   { href: "/store-eval/candidates", label: "신규후보지" },
   { href: "/store-eval/existing-stores", label: "기존 가맹점 관리" },
   { href: "/store-eval/validation", label: "기존 가맹점 검증" },
