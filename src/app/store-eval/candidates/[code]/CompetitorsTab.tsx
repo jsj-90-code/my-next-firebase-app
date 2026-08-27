@@ -277,24 +277,28 @@ function CompetitorForm({
           value={form.foodBrand}
           onChange={(v) => set("foodBrand", v)}
           options={FOOD_BRAND_OPTIONS}
-          hint="브랜드를 고르면 설정에 등록된 점수를 자동 적용. 브랜드없음이면 아래 직접입력 사용"
+          hint="브랜드를 고르면 설정에 등록된 점수를 자동 적용"
         />
-        <ScoreSelectField
-          label="먹거리 점수 (직접입력)"
-          value={form.foodScore}
-          onChange={(v) => set("foodScore", v)}
-          hint="브랜드가 브랜드없음/미입력일 때만 사용됨"
-        />
-        <ComputedField label="먹거리 점수 (최종)" value={computed.food} hint="브랜드 점수 또는 직접입력값" />
+        {(form.foodBrand == null || form.foodBrand === "브랜드없음") && (
+          <ScoreSelectField
+            label="먹거리 점수 (직접입력)"
+            value={form.foodScore}
+            onChange={(v) => set("foodScore", v)}
+            hint="브랜드없음/미정일 때 직접 평가"
+          />
+        )}
+        <ComputedField label="먹거리 점수 (최종)" value={computed.food} />
         <ScoreSelectField label="인테리어 수준" value={form.interiorLevelScore} onChange={(v) => set("interiorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
         <ScoreSelectField label="매장관리상태" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="청결도·노후도" />
-        <ComputedField label="인테리어 점수 (최종)" value={computed.interior} hint="위 두 항목의 평균, 둘 다 비었으면 아래 직접입력값" />
-        <ScoreSelectField
-          label="인테리어 점수 (직접입력)"
-          value={form.interiorScore}
-          onChange={(v) => set("interiorScore", v)}
-          hint="위 세부항목을 하나도 안 채웠을 때만 사용됨"
-        />
+        {form.interiorLevelScore == null && form.interiorConditionScore == null && (
+          <ScoreSelectField
+            label="인테리어 점수 (직접입력)"
+            value={form.interiorScore}
+            onChange={(v) => set("interiorScore", v)}
+            hint="위 세부항목을 둘 다 안 채웠을 때 직접 평가"
+          />
+        )}
+        <ComputedField label="인테리어 점수 (최종)" value={computed.interior} />
         <ScoreSelectField label="모니터 점수" value={form.monitorScore} onChange={(v) => set("monitorScore", v)} hint="모니터·CPU·RAM·주변기기를 종합해 직접 평가" />
       </div>
       <p className="mt-2 text-xs text-[#8a8072]">종합 경쟁력점수: {computed.total ?? "-"}</p>

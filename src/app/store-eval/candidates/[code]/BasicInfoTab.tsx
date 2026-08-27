@@ -681,26 +681,30 @@ export function BasicInfoTab({
         </p>
         <div className={`${gridClass} mt-3`}>
           <SelectField label="먹거리 브랜드" value={form.ownFoodBrand} onChange={(v) => set("ownFoodBrand", v)} options={FOOD_BRAND_OPTIONS} />
-          <ScoreSelectField
-            label="먹거리 점수 (직접입력)"
-            value={form.ownFoodScore}
-            onChange={(v) => set("ownFoodScore", v)}
-            hint="브랜드없음/미입력일 때만 사용 · 비우면 표준값 5(상) 적용"
-          />
-          <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} hint="브랜드 점수 또는 직접입력값" />
+          {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && (
+            <ScoreSelectField
+              label="먹거리 점수 (직접입력)"
+              value={form.ownFoodScore}
+              onChange={(v) => set("ownFoodScore", v)}
+              hint="브랜드없음/미정일 때 직접 평가 · 비우면 표준값 5(상) 적용"
+            />
+          )}
+          <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} />
         </div>
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어</h4>
         <div className={`${gridClass} mt-3`}>
           <ScoreSelectField label="인테리어 수준" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
           <ScoreSelectField label="매장관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />
-          <ComputedField label="인테리어 점수 (최종)" value={computedScores.interior} hint="위 두 항목의 평균, 둘 다 비었으면 아래 직접입력값" />
-          <ScoreSelectField
-            label="인테리어 점수 (직접입력)"
-            value={form.ownInteriorScore}
-            onChange={(v) => set("ownInteriorScore", v)}
-            hint="위 세부항목을 하나도 안 채웠을 때만 사용 · 비우면 표준값 5(상) 적용"
-          />
+          {form.ownInteriorLevelScore == null && form.ownInteriorConditionScore == null && (
+            <ScoreSelectField
+              label="인테리어 점수 (직접입력)"
+              value={form.ownInteriorScore}
+              onChange={(v) => set("ownInteriorScore", v)}
+              hint="위 세부항목을 둘 다 안 채웠을 때 직접 평가 · 비우면 표준값 5(상) 적용"
+            />
+          )}
+          <ComputedField label="인테리어 점수 (최종)" value={computedScores.interior} />
         </div>
       </section>
 

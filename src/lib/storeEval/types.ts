@@ -137,6 +137,18 @@ export type CandidateInput = {
   ownMonitorScore: number | null; // 1~5 (사양 산식의 모니터 30% 비중, 원본 필드). 모니터 화질뿐 아니라
   // CPU·RAM·주변기기(키보드/마우스/헤드셋)까지 종합해 평가자가 정성적으로 매기는 "종합사양" 항목이다
   // (2026-08-27, CPU/RAM 자동가중치 재시도 후 원복하며 확정한 방식을 주변기기까지 확장 — 사용자 확인).
+  // TODO(다음 세션) — 사용자가 "종합사양 점수도 세부항목으로 분해(CPU/메모리/주변기기, 각 0.5단위 평균)"를
+  // 먹거리/인테리어와 같은 패턴으로 요청함(2026-08-27). 아직 미착수 - types.ts에 ownSpecCpuScore/
+  // ownSpecRamScore/ownSpecPeripheralScore 3필드 추가(+Competitor/ExistingStore 동일) → calc.ts에
+  // computeGeneralSpecScore(computeInteriorScore와 같은 averageFilledScores 패턴, legacyScore=
+  // ownMonitorScore) 추가 → evaluate.ts/computeExistingStoreMeasuredForecast/computeCompetitorScores
+  // 3곳에서 computeSpecScore 호출 전에 이 값을 미리 계산해 monitorScore 파라미터로 넘기기(computeSpecScore
+  // 시그니처 자체는 안 건드림) → BasicInfoTab.tsx/CompetitorsTab.tsx에 세부항목 3개 추가하고 기존
+  // "종합사양 점수(직접입력)"는 셋 다 비었을 때만 보이게(먹거리/인테리어와 동일 조건부 숨김 패턴,
+  // 이번 커밋에서 이미 적용한 것과 같은 방식) → 테스트 픽스처(calc.test.ts/evaluate.test.ts/
+  // locationEvalContext.test.ts)와 blank builder(candidates/[code]/page.tsx, existing-stores/page.tsx)
+  // 에 null 기본값 추가 → API 라우트 3곳(ai-location-eval-existing-store/ai-validation-run/
+  // collect-market-data)의 Competitor 객체 리터럴에도 null 추가.
 
   // 2026-08-27 추가 — 먹거리 1점 차이로 예상매출이 크게 흔들린다는 지적(사용자 확인)에 따라, "조사자
   // 감으로 1~5점 찍기" 대신 실제로 매장이 쓰는 먹거리 브랜드를 기준으로 점수를 매긴다(최신 PC방은
