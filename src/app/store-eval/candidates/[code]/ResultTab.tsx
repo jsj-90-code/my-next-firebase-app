@@ -262,11 +262,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       ]);
       const settings: ModelSettings = modelSettingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
-      const existingMarketDemands = existingStores
-        .map((s) => s.referenceMarketDemand)
-        .filter((v): v is number => v != null);
 
-      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingMarketDemands, existingStores });
+      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores });
       await saveEvaluationResult(evaluated, user?.email ?? null);
       setResult(evaluated);
       setSettingsUsed(settings);

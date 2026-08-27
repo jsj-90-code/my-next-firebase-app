@@ -93,7 +93,9 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     aaMaxPcCount: 100,
     marketCharacterThreshold: { downtown: 8, mixed: 4 },
     marketDemandEffectiveRate: { downtown: 0.53, mixed: 0.61, residential: 0.78 },
-    marketGradePercentile: { SS: 0.1, S: 0.3, A: 0.6 },
+    // 2026-08-27 (2차) — 상대평가(상위10/30/60%)를 절대평가로 바꿨다(사용자 확정). 값은 그
+    // 상대평가가 실제로 쓰던 경계값(기존 40개 매장 상권수요 분포)을 반올림한 고정 금액이다.
+    marketGradeAbsoluteThresholds: { SS: 12000, S: 7500, A: 4800 },
     competitivenessWeights: { spec: 0.25, seat: 0.3, food: 0.2, interior: 0.15, location: 0.1 },
     // 2026-08-27 — CPU/RAM을 자동공식(세대·용량 환산)으로 분리 가중치를 줬더니 LOOCV 정확도가
     // 원본(11.6%)보다 나빠져 원복했다(사용자 확정). CPU/RAM은 이제 "모니터" 항목(종합사양 점수,

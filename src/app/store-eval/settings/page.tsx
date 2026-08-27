@@ -40,9 +40,9 @@ const FIELD_LABELS: Record<string, string> = {
   "marketDemandEffectiveRate.downtown": "상권수요 유효율 - 번화가",
   "marketDemandEffectiveRate.mixed": "상권수요 유효율 - 혼합",
   "marketDemandEffectiveRate.residential": "상권수요 유효율 - 주거중심",
-  "marketGradePercentile.SS": "상권등급 백분위 - SS",
-  "marketGradePercentile.S": "상권등급 백분위 - S",
-  "marketGradePercentile.A": "상권등급 백분위 - A",
+  "marketGradeAbsoluteThresholds.SS": "상권등급 기준(절대) - SS",
+  "marketGradeAbsoluteThresholds.S": "상권등급 기준(절대) - S",
+  "marketGradeAbsoluteThresholds.A": "상권등급 기준(절대) - A",
   "competitivenessWeights.spec": "경쟁력 가중치 - 사양",
   "competitivenessWeights.seat": "경쟁력 가중치 - 좌석",
   "competitivenessWeights.food": "경쟁력 가중치 - 먹거리",
@@ -483,22 +483,22 @@ export default function StoreEvalSettingsPage() {
           readOnly={readOnly}
         />
         <NumberInput
-          label="상권등급 백분위 - SS"
-          value={form.marketGradePercentile.SS}
-          onChange={(v) => updateGroup("marketGradePercentile", "SS", v)}
+          label="상권등급 기준(절대) - SS"
+          value={form.marketGradeAbsoluteThresholds.SS}
+          onChange={(v) => updateGroup("marketGradeAbsoluteThresholds", "SS", v)}
           readOnly={readOnly}
-          hint="상위 이 비율 이내면 SS"
+          hint="상권수요가 이 값 이상이면 SS"
         />
         <NumberInput
-          label="상권등급 백분위 - S"
-          value={form.marketGradePercentile.S}
-          onChange={(v) => updateGroup("marketGradePercentile", "S", v)}
+          label="상권등급 기준(절대) - S"
+          value={form.marketGradeAbsoluteThresholds.S}
+          onChange={(v) => updateGroup("marketGradeAbsoluteThresholds", "S", v)}
           readOnly={readOnly}
         />
         <NumberInput
-          label="상권등급 백분위 - A"
-          value={form.marketGradePercentile.A}
-          onChange={(v) => updateGroup("marketGradePercentile", "A", v)}
+          label="상권등급 기준(절대) - A"
+          value={form.marketGradeAbsoluteThresholds.A}
+          onChange={(v) => updateGroup("marketGradeAbsoluteThresholds", "A", v)}
           readOnly={readOnly}
         />
       </Section>

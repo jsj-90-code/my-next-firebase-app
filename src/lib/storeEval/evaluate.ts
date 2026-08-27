@@ -59,17 +59,15 @@ export type EvaluateContext = {
   competitors: Competitor[];
   locationEvaluation: LocationEvaluation | null;
   settings: ModelSettings;
-  /** 상권등급(SS/S/A/B) 백분위 계산용 - 기존 검증대상 점포들의 상권수요 목록 (model-spec.md §3.1). */
-  existingMarketDemands: number[];
   /** V61 실측 학습모형의 학습표본 원천 - 블랙라벨·정상영업·산식학습제외 아닌 기존 가맹점 전체를 넘긴다. */
   existingStores: ExistingStore[];
 };
 
 export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
-  const { candidate: c, competitors, locationEvaluation: loc, settings, existingMarketDemands, existingStores } = ctx;
+  const { candidate: c, competitors, locationEvaluation: loc, settings, existingStores } = ctx;
 
   const { marketCharacter, marketDemand } = computeMarketDemand(c, settings);
-  const marketGrade = computeMarketGrade(marketDemand, existingMarketDemands, settings);
+  const marketGrade = computeMarketGrade(marketDemand, settings);
   const competitorIp = computeCompetitorIp(competitors, c.operatingPcStores500m);
   const ipPerDemand = computeIpPerDemand(marketDemand, c.expectedPcCount, competitorIp);
 

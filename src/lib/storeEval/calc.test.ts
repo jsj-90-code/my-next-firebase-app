@@ -34,6 +34,7 @@ import {
   computeLocationScoreFromFacts,
   computeMarketCharacter,
   computeMarketDemand,
+  computeMarketGrade,
   computeMeasuredForecast,
   computeSeatScore,
   computeSpecScore,
@@ -231,6 +232,31 @@ describe("상권성격 판정 (08_계산기준: 8배 이상 번화가/4~8배 혼
   });
   it("4배 미만 → 주거중심", () => {
     expect(computeMarketCharacter(399, 100, settings)).toBe("주거중심");
+  });
+});
+
+// 2026-08-27 (2차) — 상대평가(상위10/30/60% 백분위)에서 절대평가로 바꿨다(사용자 확정) — 매장이
+// 새로 추가돼도 등급 기준선이 안 흔들리게 하기 위함. 기본 설정값(SS 12,000/S 7,500/A 4,800)은
+// 원래 상대평가가 실제로 쓰던 경계값을 반올림해 고정한 것이다.
+describe("computeMarketGrade (절대평가로 변경, 2026-08-27 2차)", () => {
+  it("SS 기준 이상이면 SS", () => {
+    expect(computeMarketGrade(12000, settings)).toBe("SS");
+    expect(computeMarketGrade(20000, settings)).toBe("SS");
+  });
+  it("S 기준 이상 SS 미만이면 S", () => {
+    expect(computeMarketGrade(7500, settings)).toBe("S");
+    expect(computeMarketGrade(11999, settings)).toBe("S");
+  });
+  it("A 기준 이상 S 미만이면 A", () => {
+    expect(computeMarketGrade(4800, settings)).toBe("A");
+    expect(computeMarketGrade(7499, settings)).toBe("A");
+  });
+  it("A 기준 미만이면 B", () => {
+    expect(computeMarketGrade(4799, settings)).toBe("B");
+    expect(computeMarketGrade(0, settings)).toBe("B");
+  });
+  it("상권수요가 없으면 null(비교 표본과 무관하게 결정되므로 표본 없어도 동작)", () => {
+    expect(computeMarketGrade(null, settings)).toBeNull();
   });
 });
 

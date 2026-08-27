@@ -210,21 +210,21 @@ export function computeMarketDemand(c: CandidateInput, settings: Pick<ModelSetti
 export type MarketGrade = "SS" | "S" | "A" | "B";
 
 /**
- * 08_계산기준: "기존 가맹점 상권수요 분포의 백분위. SS 상위10% / S 상위30% / A 상위60% / B 상위100%".
- * 고정 금액 기준이 아니라 검증표본(existingMarketDemands) 분포에서 매번 다시 계산해야 한다.
+ * 2026-08-27 (2차) — 원래 "기존 가맹점 상권수요 분포의 백분위"(SS 상위10%/S 상위30%/A 상위60%)로
+ * 매번 다시 계산하는 상대평가였는데, 매장이 새로 추가될 때마다 등급 기준선이 흔들리는 문제가
+ * 있었다(같은 상권수요라도 비교 표본이 바뀌면 등급이 바뀜) — 절대평가로 바꿨다(사용자 확정).
+ * 아래 고정 금액은 그 상대평가가 실제로 쓰던 경계값(40개 매장 분포에서 상위10/30/60% 지점)을
+ * 깔끔한 숫자로 반올림해 그대로 고정한 것이다 — 새 기준을 지어낸 게 아니다.
  */
 export function computeMarketGrade(
   marketDemand: number | null,
-  existingMarketDemands: number[],
-  settings: Pick<ModelSettings, "marketGradePercentile">,
+  settings: Pick<ModelSettings, "marketGradeAbsoluteThresholds">,
 ): MarketGrade | null {
-  if (marketDemand == null || existingMarketDemands.length === 0) return null;
-  const sorted = [...existingMarketDemands].sort((a, b) => b - a); // 내림차순
-  const rank = sorted.filter((v) => v >= marketDemand).length; // marketDemand보다 크거나 같은 표본 수
-  const percentileFromTop = rank / sorted.length;
-  if (percentileFromTop <= settings.marketGradePercentile.SS) return "SS";
-  if (percentileFromTop <= settings.marketGradePercentile.S) return "S";
-  if (percentileFromTop <= settings.marketGradePercentile.A) return "A";
+  if (marketDemand == null) return null;
+  const t = settings.marketGradeAbsoluteThresholds;
+  if (marketDemand >= t.SS) return "SS";
+  if (marketDemand >= t.S) return "S";
+  if (marketDemand >= t.A) return "A";
   return "B";
 }
 

@@ -20,13 +20,6 @@ function marketDemandSourceHint(marketCharacter: EvaluationResult["marketCharact
   return null;
 }
 
-function gradeBadgeStyle(judgement: EvaluationResult["aaJudgement"]): string {
-  if (judgement === "2,000만원 이상") return "bg-[#2f6b4f] text-white";
-  if (judgement === "1,500만원 이상" || judgement === "1,000만원 이상") return "bg-[#a4823c] text-white";
-  if (judgement === "1,000만원 미달") return "bg-[#a4432c] text-white";
-  return "bg-[#8a8072] text-white";
-}
-
 function PercentBar({ label, value, hint }: { label: string; value: number | null; hint?: string }) {
   const pct = value == null ? null : Math.min(100, Math.max(0, value * 100));
   return (
@@ -110,21 +103,10 @@ export function ReportCard({
       id="report-card"
       className="w-[420px] rounded-2xl border border-[#171310]/[0.08] bg-[#fbf7ee] p-5 text-[#171310] dark:border-white/[0.08] dark:bg-[#171310] dark:text-[#f2ede2]"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[10px] tracking-wide text-[#8a8072]">ISENS 점포평가 · V62</p>
-          <h3 className="mt-0.5 text-lg font-bold">{candidate.name}</h3>
-          <p className="mt-0.5 text-xs text-[#8a8072]">{candidate.address}</p>
-        </div>
-        {/* 2026-08-27 (2차): aaJudgement가 이제 V62(정식 계산) 기준이라 "데이터 재검토" 상태 자체가
-            없어졌다 — AA경로(핑봇 실측) 기반이던 예전엔 경쟁점 실사가 부분적일 때 이 상태가 흔하게
-            뜨면서 카드가 고장난 것처럼 보이는 문제가 있었는데, 근본 원인(AA경로 자체의 낮은 신뢰도,
-            평균오차 52%)을 없애서 해결했다. */}
-        {result.aaJudgement && (
-          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${gradeBadgeStyle(result.aaJudgement)}`}>
-            {result.aaJudgement}
-          </span>
-        )}
+      <div>
+        <p className="text-[10px] tracking-wide text-[#8a8072]">ISENS 점포평가 · V62</p>
+        <h3 className="mt-0.5 text-lg font-bold">{candidate.name}</h3>
+        <p className="mt-0.5 text-xs text-[#8a8072]">{candidate.address}</p>
       </div>
 
       <div className="mt-4 rounded-xl bg-[#171310] p-4 text-white dark:bg-[#f2ede2] dark:text-[#171310]">
@@ -170,6 +152,41 @@ export function ReportCard({
           hint="V62 최종예상월매출을 좌석 가동률로 환산한 값 (100% 초과 시 수요초과 신호)"
         />
       </div>
+
+      {/* 2026-08-27 (3차) — 카드 상단의 "2,000만원 이상" 같은 등급 배지를 빼고, 이 매장의 실제
+          선투자 프로모션 기준매출 원화 값을 아래쪽에 보여달라는 요청(사용자 확인) — 추상적인
+          등급 라벨 대신 세 기준선 실제 금액과 이 매장의 V62가 어디에 해당하는지를 함께 보여준다. */}
+      {result.aaJudgement && result.aaJudgement !== "오픈월 입력 필요" && result.aaJudgement !== "실측자료 부족" && (
+        <div className="mt-4">
+          <p className="text-[10px] font-semibold text-[#8a8072]">선투자 프로모션 기준매출</p>
+          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+            {(
+              [
+                { tier: "2,000만원 이상" as const, amount: result.aaBaselineRevenue },
+                { tier: "1,500만원 이상" as const, amount: result.aaBaselineRevenue1500 },
+                { tier: "1,000만원 이상" as const, amount: result.aaBaselineRevenue1000 },
+              ]
+            ).map(({ tier, amount }) => {
+              const achieved =
+                result.aaJudgement === tier ||
+                (result.aaJudgement === "2,000만원 이상" && tier !== "2,000만원 이상") ||
+                (result.aaJudgement === "1,500만원 이상" && tier === "1,000만원 이상");
+              return (
+                <div
+                  key={tier}
+                  className={`rounded-lg p-2 text-center ${achieved ? "bg-[#2f6b4f] text-white" : "bg-[#171310]/[0.04] text-[#8a8072] dark:bg-white/[0.06]"}`}
+                >
+                  <p className="text-[9px] opacity-80">{tier.replace(" 이상", "")}</p>
+                  <p className="mt-0.5 text-[11px] font-semibold">{formatWon(amount)}</p>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[9px] text-[#8a8072]">
+            {result.aaJudgement === "1,000만원 미달" ? "1,000만원 기준 미달" : `${result.aaJudgement} 달성`} · 출점 판단(V62)과는 별개 판정
+          </p>
+        </div>
+      )}
 
       {topCompetitors.length > 0 && (
         <div className="mt-4">

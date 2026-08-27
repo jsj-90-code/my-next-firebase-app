@@ -294,7 +294,9 @@ export type ModelSettings = {
   // 08_계산기준의 상권/경쟁력 계수 (하드코딩 금지 대상)
   marketCharacterThreshold: { downtown: number; mixed: number }; // 8배/4배
   marketDemandEffectiveRate: { downtown: number; mixed: number; residential: number }; // 0.53/0.61/0.78
-  marketGradePercentile: { SS: number; S: number; A: number }; // 상위10/30/60%
+  // 2026-08-27 (2차) — 상대평가(상위10/30/60% 백분위)에서 절대평가로 바꿨다(사용자 확정, calc.ts
+  // computeMarketGrade 주석 참고). 값은 그 상대평가가 쓰던 실제 경계값을 반올림한 고정 금액이다.
+  marketGradeAbsoluteThresholds: { SS: number; S: number; A: number };
   competitivenessWeights: { spec: number; seat: number; food: number; interior: number; location: number }; // 25/30/20/15/10%
   // CPU/RAM 슬롯은 2026-08-27에 자동공식(세대·용량 환산)으로 실험했다가 LOOCV 정확도가
   // 원본(VGA70%+모니터30%)보다 나빠져 가중치 0으로 원복했다(computeSpecScore 주석 참고).
@@ -471,8 +473,9 @@ export type ExistingStore = {
   // 참고용(비교 대상) — 원본 스프레드시트 "V61 기본예측(참고)" 캐시값. 웹은 이 값을 그대로 쓰지
   // 않고 v61Training 특징치로 매번 다시 학습·검증한다(아래 세 필드 + actualMonthlyRevenueAvg).
   v61Predicted: number | null;
-  // 04_점포평가요약!X열(상권수요) - 신규후보지 상권등급(SS/S/A/B) 백분위 계산의 비교 모집단으로 쓴다
-  // (calc.ts computeMarketGrade의 existingMarketDemands 인자).
+  // 04_점포평가요약!X열(상권수요) - 2026-08-27 (2차)까지는 신규후보지 상권등급(SS/S/A/B) 백분위
+  // 계산의 비교 모집단으로 썼으나, 절대평가로 바뀌면서(calc.ts computeMarketGrade 주석 참고) 더
+  // 이상 계산에 쓰이지 않는다 — 참고용 스냅샷으로만 남겨둔다.
   referenceMarketDemand: number | null;
 
   // 2026-08-20 추가 — V61 실측 학습모형(비음수 릿지회귀)의 학습 특징치.

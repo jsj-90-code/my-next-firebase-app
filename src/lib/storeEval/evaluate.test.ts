@@ -154,7 +154,6 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: locationEval,
       settings,
-      existingMarketDemands: [1000, 2000, 3000],
       existingStores: [],
     });
     expect(result.candidateCode).toBe("N001");
@@ -172,7 +171,6 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: null,
       settings,
-      existingMarketDemands: [],
       existingStores: [],
     });
     expect(result.completionStatus).toBe("09 입지평가 필요");
@@ -185,7 +183,6 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: { ...locationEval, brandType: "리그PC방" },
       settings,
-      existingMarketDemands: [],
       existingStores: [],
     });
     expect(result.completionStatus).toBe("브랜드 확인 필요");
@@ -197,7 +194,6 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [],
       locationEvaluation: locationEval,
       settings,
-      existingMarketDemands: [],
       existingStores: [],
     });
     // (실영업 5 - 1) * 100 = 400
@@ -235,7 +231,6 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: locationEval,
       settings,
-      existingMarketDemands: [1000, 2000, 3000],
       existingStores: [],
     });
     const explicitResult = evaluateCandidate({
@@ -243,7 +238,6 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: locationEval,
       settings,
-      existingMarketDemands: [1000, 2000, 3000],
       existingStores: [],
     });
     expect(blankResult.competitivenessGap).toBeCloseTo(explicitResult.competitivenessGap ?? 0, 6);
