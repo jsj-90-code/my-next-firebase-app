@@ -42,6 +42,26 @@ export async function POST(request: Request) {
   const candidateCode = body.candidateCode?.trim();
   if (!candidateCode) return NextResponse.json({ error: "candidateCode가 필요합니다." }, { status: 400 });
 
+  // 2026-08-27 발견 — 이 후보지가 이미 오픈해서 기존 가맹점으로 전환된 경우(convertCandidateToExistingStore),
+  // 경쟁점/입지평가는 옮기지 않고 originCandidateCode로 되짚어 찾는 구조라(위 주석·store.ts 참고),
+  // 여기서 확인 없이 지우면 그 매장 자체는 안 지워져도 검증(LOOCV)에 쓰이는 경쟁점·입지평가 데이터가
+  // 조용히 사라진다. 연결된 기존 가맹점이 있으면 삭제를 막는다.
+  const linkedStoreSnap = await adminDb
+    .collection("storeEvalExistingStores")
+    .where("originCandidateCode", "==", candidateCode)
+    .limit(1)
+    .get();
+  const linkedByStoreCode = linkedStoreSnap.empty
+    ? await adminDb.collection("storeEvalExistingStores").doc(candidateCode).get()
+    : null;
+  if (!linkedStoreSnap.empty || linkedByStoreCode?.exists) {
+    const storeName = linkedStoreSnap.empty ? linkedByStoreCode?.data()?.storeName : linkedStoreSnap.docs[0].data().storeName;
+    return NextResponse.json(
+      { error: `이미 기존 가맹점(${storeName ?? "이름 미상"})으로 전환된 후보지입니다. 경쟁점·입지평가 데이터가 그 매장 검증에 쓰이고 있어 삭제할 수 없습니다.` },
+      { status: 409 },
+    );
+  }
+
   const candidateRef = adminDb.collection("storeEvalCandidates").doc(candidateCode);
   const before = (await candidateRef.get()).data() ?? null;
 

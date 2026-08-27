@@ -100,7 +100,8 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
   if (!name) return null;
 
   const totalPcCountText = matchLine(block, /전체\s*대수\s*[:：]\s*(.+)/);
-  const totalPcCount = totalPcCountText ? Number(totalPcCountText.match(/(\d+)/)?.[1] ?? "") || null : null;
+  const totalPcCountMatch = totalPcCountText?.match(/(\d+)/)?.[1];
+  const totalPcCount = totalPcCountMatch != null ? Number(totalPcCountMatch) : null;
 
   const cpu = matchLine(block, /CPU\s*[:：]\s*(.+)/);
   const vgaBase = matchLine(block, /VGA\s*[:：]\s*(.+)/);

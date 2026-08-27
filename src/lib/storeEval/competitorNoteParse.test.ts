@@ -321,4 +321,9 @@ describe("parseCompetitorNotes — 2번째 원문 형식(■ 매장명 마커, �
     expect(e.visitedAt).toBeNull();
     expect(e.foodBasis).toBe("중하");
   });
+
+  it("전체 대수가 0이면(폐업/공실 등) null이 아니라 0을 그대로 남긴다 — falsy-zero 버그 재발 방지(2026-08-27)", () => {
+    const entries = parseCompetitorNotes(`- 매장명 : 테스트매장\n\n- 전체 대수 : 0대`);
+    expect(entries[0].totalPcCount).toBe(0);
+  });
 });
