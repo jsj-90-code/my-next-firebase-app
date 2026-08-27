@@ -8,7 +8,17 @@
 // 있는 값 그대로다 - 새 계산 없음.
 
 import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
+import { competitivenessLabel } from "@/lib/storeEval/reportContext";
 import type { CandidateInput, Competitor, EvaluationResult } from "@/lib/storeEval/types";
+
+// 2026-08-27: "경쟁력격차 1.63이면 처음 보는 사람은 감이 안 온다"는 지적 — 원점수 대신
+// reportContext.ts가 이미 다우오피스 보고서용으로 쓰던 5단계 라벨(매우우위~매우열세, 08_계산기준
+// demandCaptureTable 경계값 그대로 재사용)을 가져다 쓴다. 새 기준을 만들지 않고 기존 걸 재사용.
+function marketDemandSourceHint(marketCharacter: EvaluationResult["marketCharacter"]): string | null {
+  if (marketCharacter === "주거중심") return "거주인구 기반";
+  if (marketCharacter === "번화가" || marketCharacter === "혼합") return "유동인구 기반";
+  return null;
+}
 
 function gradeBadgeStyle(judgement: EvaluationResult["aaJudgement"]): string {
   if (judgement === "2,000만원 이상") return "bg-[#2f6b4f] text-white";
@@ -29,6 +39,42 @@ function PercentBar({ label, value, hint }: { label: string; value: number | nul
         <div className="h-full rounded-full bg-[#a4432c]" style={{ width: `${pct ?? 0}%` }} />
       </div>
       {hint && <p className="mt-0.5 text-[10px] text-[#8a8072]">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * 2026-08-27: "수요가 매출까지 어떻게 이어지는지 근거가 안 보인다"는 사용자 지적으로 추가.
+ * AI 호출 없이 이미 계산돼 있는 값만 순서대로 이어 붙인다(reportContext.ts의 "[매출 예측]" 문장과
+ * 같은 체인 — 상권수요 → 자사 확보 예상수요(경쟁력·PC대수 비중 반영) → PC대수×요금 → V62 최종매출).
+ * 예상 가동률(실측기반 별도 경로)은 이 체인에 안 쓴다 — V62는 회귀모형이라 가동률이라는 중간
+ * 단계 자체가 없다(reportContext.ts와 동일 원칙).
+ */
+function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: EvaluationResult; hourlyRate: number | null; expectedPcCount: number | null }) {
+  const steps = [
+    { label: "상권수요", value: result.marketDemand != null ? `${formatNumber(result.marketDemand)}명` : "-" },
+    { label: "자사 확보 예상 수요", value: result.expectedOwnDemand != null ? `${formatNumber(result.expectedOwnDemand)}명` : "-", hint: "경쟁력·PC대수 비중 반영" },
+    { label: "PC대수 × 시간당요금", value: `${formatNumber(expectedPcCount)}대 × ${formatWon(hourlyRate)}` },
+  ];
+  return (
+    <div className="mt-4 rounded-xl border border-[#171310]/[0.08] p-3 dark:border-white/[0.08]">
+      <p className="text-[10px] font-semibold text-[#8a8072]">매출 산정 근거</p>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {steps.map((step) => (
+          <div key={step.label}>
+            <div className="flex items-baseline justify-between text-[11px]">
+              <span className="text-[#5c5346] dark:text-[#c9bfae]">{step.label}</span>
+              <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{step.value}</span>
+            </div>
+            {step.hint && <p className="text-[9px] text-[#8a8072]">{step.hint}</p>}
+            <p className="mt-1 text-center text-[10px] text-[#8a8072]">↓</p>
+          </div>
+        ))}
+        <div className="flex items-baseline justify-between text-[11px]">
+          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">V62 최종예상월매출</span>
+          <span className="font-bold text-[#a4432c]">{formatWon(result.v62Final)}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -83,11 +129,25 @@ export function ReportCard({
         </p>
       </div>
 
+      <ReasoningChain result={result} hourlyRate={candidate.hourlyRate} expectedPcCount={candidate.expectedPcCount} />
+
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <StatTile label="상권수요" value={formatNumber(result.marketDemand)} />
-        <StatTile label="경쟁IP" value={formatNumber(result.competitorIp)} />
+        <StatTile
+          label="상권수요"
+          value={`${formatNumber(result.marketDemand)}명`}
+          hint={marketDemandSourceHint(result.marketCharacter) ?? undefined}
+        />
+        <StatTile label="경쟁IP" value={formatNumber(result.competitorIp)} hint="경쟁점 시설·서비스 종합점수 합" />
         <StatTile label="IP당수요" value={formatScore(result.ipPerDemand)} hint="여유>15 / 포화<7" />
-        <StatTile label="경쟁력격차" value={formatScore(result.competitivenessGap)} />
+        <StatTile
+          label="경쟁력격차"
+          value={
+            competitors.length === 0
+              ? "비교 대상 없음"
+              : `${formatScore(result.competitivenessGap)} (${competitivenessLabel(result.competitivenessGap) ?? "비교 불가"})`
+          }
+          hint="경쟁점 평균 대비, 1.0=동률"
+        />
       </div>
 
       {/* 2026-08-27: 사용자가 실사용(외부 공유용) 중 발견 — 경쟁점 핑봇_가동률이 일부만 입력돼

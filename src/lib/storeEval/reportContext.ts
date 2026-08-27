@@ -36,7 +36,7 @@ export type DaouReportContextInput = {
 // 기존 경계값(0.8/1.0/1.3/1.7)을 그대로 재사용한다 — 이 표가 이미 "이 정도 격차면 확보율이
 // 이만큼 오른다"고 구분해둔 지점이라 자의적이지 않다. settings에서 이 표를 바꾸면 이 라벨
 // 경계는 자동으로 따라가지 않는다(화면표시 전용 하드코딩) — 표가 바뀌면 같이 검토 필요.
-function competitivenessLabel(gap: number | null): string | null {
+export function competitivenessLabel(gap: number | null): string | null {
   if (gap == null) return null;
   if (gap >= 1.7) return "매우우위";
   if (gap >= 1.3) return "우위";
