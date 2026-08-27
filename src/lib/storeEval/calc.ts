@@ -462,9 +462,10 @@ export function computeSeatScore(kinds: number, rooms: number): number {
  * 그대로 0/공란) 대상이 아니다. 이미 실제 값이 입력돼 있으면 그 값을 그대로 쓴다.
  * 2026-08-27: 오픈 초기 기준으로 인테리어·먹거리는 "상"(5점)이 더 현실적이라는 사용자 확인으로
  * 4→5로 올렸다(원본 시트의 "빈칸이면 4" 규칙을 웹에서 재조정 — 원본과 다른 값이라는 점 인지).
- * monitorScore는 그대로 4 — 사양점수(CPU/VGA/RAM/모니터 4항목 평균)가 이 값을 통해 자연히
- * "중상(4점)" 기본값을 얻는다(CPU/VGA/RAM 미입력 시 모니터 점수만 남아 평균이 곧 4가 됨,
- * 별도의 "사양 기본값" 코드를 새로 안 만들어도 되는 이유).
+ * 이 5점 기본값은 "신규후보지(아직 안 열린 우리 매장)"에만 쓴다 — EXISTING_STORE_FACILITY_DEFAULTS
+ * 주석 참고, 기존 가맹점 백테스트엔 안 쓴다.
+ * monitorScore는 그대로 4 — 사양점수(VGA70%+모니터30%)가 이 값을 통해 자연히 "중상(4점)"
+ * 기본값을 얻는다(모니터만 남아 그 값이 곧 사양점수가 됨, 별도 "사양 기본값" 코드 불필요).
  */
 export const STANDARD_OWN_FACILITY_DEFAULTS = {
   gameZoneCount: 3,
@@ -475,6 +476,21 @@ export const STANDARD_OWN_FACILITY_DEFAULTS = {
   foodScore: 5,
   interiorScore: 5,
   monitorScore: 4,
+};
+
+/**
+ * 2026-08-27 발견 — 위 STANDARD_OWN_FACILITY_DEFAULTS(먹거리·인테리어 5점)를 기존 가맹점
+ * 백테스트(computeExistingStoreMeasuredForecast)에도 그대로 썼더니, 원본 시트에 먹거리/인테리어
+ * 평가가 비어있는 오래된 매장들의 competitivenessScore가 원본 스냅샷보다 최대 0.4점 가까이 높게
+ * 재계산됐다(예: 창원남양점 원본3.4 → 재계산3.795). 원본 시트 자체의 "빈칸이면 4" 규칙과 다른
+ * 값을 과거 실적 데이터에 소급 적용한 셈이라 LOOCV 정확도가 나빠지는 원인이었다(CPU 세대 산식이
+ * 옛 매장을 불리하게 만든다고 지적했던 것과 같은 종류의 문제 — 신규 기준을 과거 데이터에
+ * 소급하면 안 된다). 기존 가맹점 백테스트는 원본 규칙 그대로 4/4/4를 쓴다.
+ */
+export const EXISTING_STORE_FACILITY_DEFAULTS = {
+  ...STANDARD_OWN_FACILITY_DEFAULTS,
+  foodScore: 4,
+  interiorScore: 4,
 };
 
 export type StandardOwnFacilityInput = {
@@ -488,7 +504,10 @@ export type StandardOwnFacilityInput = {
   ownMonitorScore: number | null;
 };
 
-export function applyStandardOwnFacilityDefaults(input: StandardOwnFacilityInput): {
+export function applyStandardOwnFacilityDefaults(
+  input: StandardOwnFacilityInput,
+  defaults: typeof STANDARD_OWN_FACILITY_DEFAULTS = STANDARD_OWN_FACILITY_DEFAULTS,
+): {
   ownGameZoneCount: number;
   ownTeamRoom: number;
   ownCoupleZone: number;
@@ -498,7 +517,7 @@ export function applyStandardOwnFacilityDefaults(input: StandardOwnFacilityInput
   ownInteriorScore: number;
   ownMonitorScore: number;
 } {
-  const d = STANDARD_OWN_FACILITY_DEFAULTS;
+  const d = defaults;
   return {
     ownGameZoneCount: input.ownGameZoneCount ?? d.gameZoneCount,
     ownTeamRoom: input.ownTeamRoom ?? d.teamRoom,
@@ -1457,7 +1476,9 @@ export function computeExistingStoreMeasuredForecast(
     return { ...base, excludedReason: "경쟁점 정보 없음" };
   }
 
-  const facility = applyStandardOwnFacilityDefaults(store);
+  // 기존 가맹점 백테스트는 신규후보지용 5점 기본값이 아니라 원본 시트 규칙(빈칸이면 4)을 쓴다
+  // (EXISTING_STORE_FACILITY_DEFAULTS 주석 참고 — 과거 실적에 새 기준을 소급 적용하지 않는다).
+  const facility = applyStandardOwnFacilityDefaults(store, EXISTING_STORE_FACILITY_DEFAULTS);
   const { kinds, rooms } = computeZoneComposition(
     [store.ownRoom1, store.ownRoom2, store.ownTeamRoom, store.ownCoupleZone, store.ownVipZone],
     [store.ownFriendsZone],

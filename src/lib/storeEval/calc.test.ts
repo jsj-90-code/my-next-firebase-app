@@ -850,7 +850,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     expect(result.measuredForecastMonthlyRevenue).toBeNull();
   });
 
-  it("먹거리/인테리어/모니터평가(평가자 직접입력)가 없으면 표준값(먹거리·인테리어5점/모니터4점)으로 채우고 표본에서 빼지 않는다 — 실데이터 26곳 전부 이 3개가 비어 있었음(2026-08-21 확인, 표준값은 2026-08-27에 4→5로 재조정)", () => {
+  it("먹거리/인테리어/모니터평가(평가자 직접입력)가 없으면 원본 시트 규칙(빈칸이면 4점)으로 채우고 표본에서 빼지 않는다 — 실데이터 26곳 전부 이 3개가 비어 있었음(2026-08-21 확인). 2026-08-27에 신규후보지 기본값은 4→5로 올렸지만, 기존 가맹점 백테스트는 과거 실적에 새 기준을 소급 적용하면 안 되므로 EXISTING_STORE_FACILITY_DEFAULTS(원본 그대로 4/4)를 따로 쓴다.", () => {
     const result = computeExistingStoreMeasuredForecast(
       baseStore({ ownFoodScore: null, ownInteriorScore: null, ownMonitorScore: null }),
       [competitor()],
@@ -858,9 +858,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     );
     expect(result.excludedReason).toBeNull();
     // spec: VGA(5.0)*.7+모니터(4)*.3=4.7(CPU/RAM은 참고필드일 뿐 가중치0이라 무관)
-    // seat=4.0 food=5 interior=5 location=4.0
-    // → 4.7*.25+4.0*.3+5*.2+5*.15+4.0*.1 = 4.525
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.525, 3);
+    // seat=4.0 food=4 interior=4 location=4.0 (기존 가맹점은 원본 규칙대로 4/4)
+    // → 4.7*.25+4.0*.3+4*.2+4*.15+4*.1 = 4.175
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.175, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
