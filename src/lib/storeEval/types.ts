@@ -16,7 +16,13 @@ export type SurveyLevel = "상세" | "간략" | "외관만";
 //   노후저경쟁력미조사  경쟁점은 존재하지만 "노후·저경쟁력이라 조사할 필요가 없다"는 업무 판단.
 //                      존재 자체는 반영해야 하므로 간략_기본대수(70대)·간략_기본점수(1.5, 외관만과
 //                      동일 취급) 로 채우되, "실측이 아니라 판단으로 채운 값"이라는 걸 화면에 남긴다.
-export type CompetitorSurveyState = "조사완료" | "경쟁점없음" | "노후저경쟁력미조사";
+//   오픈예정           2026-08-27 추가 — 아직 개점 전이라 실측(핑봇·방문착석률)이 원천적으로 존재할
+//                      수 없는 경쟁점(예: 네이버지도에 "오픈예정"으로 이미 올라온 매장). 후보지가
+//                      실제로 문을 열 시점엔 이미 영업 중일 가능성이 높아 경쟁IP엔 반영한다(알려진
+//                      PC대수가 있으면 그대로, 없으면 노후저경쟁력미조사와 동일하게 70대로 채움,
+//                      사용자 확인) — 다만 실가동좌석 집계에서는 "값 누락"이 아니라 "아직 측정
+//                      불가능"이라는 걸 구분해 남긴다(완결성 경고 대상에서 제외).
+export type CompetitorSurveyState = "조사완료" | "경쟁점없음" | "노후저경쟁력미조사" | "오픈예정";
 // 요청사항 문구(investigationStatus)에 맞춘 별칭 — 값은 CompetitorSurveyState와 동일하다.
 export type CompetitorInvestigationStatus = CompetitorSurveyState;
 export type InflowRestriction = "없음" | "보통" | "강함";
@@ -416,6 +422,7 @@ export type EvaluationResult = {
     assumedLowThreat: number; // 노후저경쟁력미조사로 간주해 채운 경쟁점 수
     missingData: number; // 조사완료인데 값이 없어 집계에서 제외된 경쟁점 수(완결성 경고 대상)
     excludedNoCompetitor: number; // 경쟁점없음으로 처음부터 제외된 수
+    notYetOpen: number; // 오픈예정이라 실측이 원천적으로 불가능해 제외된 수(완결성 경고 대상 아님)
   } | null;
   demandCaptureRate: number | null; // 예상 수요확보율 (경쟁력격차 룩업)
   newDemandGrowthRate: number | null; // 신규수요 증가율 (경쟁력격차 룩업)

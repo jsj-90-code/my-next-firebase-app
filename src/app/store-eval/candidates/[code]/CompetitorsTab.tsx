@@ -34,6 +34,7 @@ const SURVEY_STATE_OPTIONS: { value: CompetitorSurveyState; label: string }[] = 
   { value: "조사완료", label: "조사완료" },
   { value: "경쟁점없음", label: "경쟁점 없음" },
   { value: "노후저경쟁력미조사", label: "노후·저경쟁력 미조사" },
+  { value: "오픈예정", label: "오픈예정(미개점)" },
 ];
 
 const GROUND_LEVEL_OPTIONS: { value: GroundLevel; label: string }[] = [

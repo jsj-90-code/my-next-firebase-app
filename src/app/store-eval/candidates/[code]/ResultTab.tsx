@@ -487,7 +487,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             value={result.competitorOccupiedSeats != null ? formatNumber(result.competitorOccupiedSeats) : "산출불가"}
             hint={
               result.competitorOccupiedSeatsCoverage
-                ? `핑봇실측 ${result.competitorOccupiedSeatsCoverage.measured} · 현장방문만(참고,미반영) ${result.competitorOccupiedSeatsCoverage.realtimeSnapshotOnly} · 미조사추정 ${result.competitorOccupiedSeatsCoverage.assumedLowThreat} · 값누락 ${result.competitorOccupiedSeatsCoverage.missingData}`
+                ? `핑봇실측 ${result.competitorOccupiedSeatsCoverage.measured} · 현장방문만(참고,미반영) ${result.competitorOccupiedSeatsCoverage.realtimeSnapshotOnly} · 미조사추정 ${result.competitorOccupiedSeatsCoverage.assumedLowThreat} · 오픈예정(측정불가) ${result.competitorOccupiedSeatsCoverage.notYetOpen} · 값누락 ${result.competitorOccupiedSeatsCoverage.missingData}`
                 : undefined
             }
           />

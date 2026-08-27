@@ -292,7 +292,9 @@ export function computeCompetitorAppliedPcCount(
   if (c.appliedPcCount != null) return c.appliedPcCount;
   if (c.totalPcCount != null) return c.totalPcCount;
   if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return 70;
-  if (c.investigationStatus === "노후저경쟁력미조사") return 70;
+  // 노후저경쟁력미조사와 오픈예정(2026-08-27) 둘 다 "존재는 하지만 실사 못 함" 케이스라 같은
+  // 기본값(간략_기본대수)으로 채운다 - PC대수가 알려져 있으면 위에서 이미 그 값을 썼을 것이다.
+  if (c.investigationStatus === "노후저경쟁력미조사" || c.investigationStatus === "오픈예정") return 70;
   return null;
 }
 
@@ -1180,6 +1182,7 @@ export type CompetitorOccupiedSeatsResult = {
     assumedLowThreat: number;
     missingData: number;
     excludedNoCompetitor: number;
+    notYetOpen: number;
   };
 };
 
@@ -1194,7 +1197,7 @@ export type CompetitorOccupiedSeatsResult = {
  * (조사완료인데 비어 있음)을 같은 0으로 뭉개지 않는다(요청사항 5 + 2026-08-21 갱신).
  */
 export function computeCompetitorOccupiedSeats(competitors: Competitor[]): CompetitorOccupiedSeatsResult {
-  const coverage = { measured: 0, realtimeSnapshotOnly: 0, assumedLowThreat: 0, missingData: 0, excludedNoCompetitor: 0 };
+  const coverage = { measured: 0, realtimeSnapshotOnly: 0, assumedLowThreat: 0, missingData: 0, excludedNoCompetitor: 0, notYetOpen: 0 };
   let seats = 0;
   let anyMeasured = false;
 
@@ -1215,6 +1218,10 @@ export function computeCompetitorOccupiedSeats(competitors: Competitor[]): Compe
     } else if (c.investigationStatus === "노후저경쟁력미조사") {
       coverage.assumedLowThreat++;
       // 실측 없이 지어낸 가동률을 곱하지 않는다 - 원본 SUMPRODUCT도 미실측 행은 0으로 더한다.
+    } else if (c.investigationStatus === "오픈예정") {
+      // 아직 개점 전이라 실측 자체가 원천적으로 불가능하다 - "값 누락"(완결성 경고 대상)과
+      // 구분해서 별도로 카운트한다(2026-08-27).
+      coverage.notYetOpen++;
     } else {
       coverage.missingData++;
     }

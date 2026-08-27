@@ -27,6 +27,7 @@ import {
   computeExpectedOwnDemand,
   computeExpectedUtilization,
   computeFinalJudgement,
+  computeCompetitorAppliedPcCount,
   computeFloatingRawDemand,
   computeImpliedUtilizationFromRevenue,
   computeLocationCompositeScore,
@@ -556,6 +557,15 @@ describe("lookupDemandCapture (경쟁력격차 → 수요확보율/신규수요�
   });
 });
 
+describe("computeCompetitorAppliedPcCount — 오픈예정 경쟁점 처리(2026-08-27)", () => {
+  it("PC대수가 알려져 있으면(네이버지도 등) 그 값을 그대로 쓴다", () => {
+    expect(computeCompetitorAppliedPcCount({ totalPcCount: 100, appliedPcCount: null, surveyLevel: null, investigationStatus: "오픈예정" })).toBe(100);
+  });
+  it("PC대수를 모르면 노후저경쟁력미조사와 동일하게 간략_기본대수(70)로 채운다", () => {
+    expect(computeCompetitorAppliedPcCount({ totalPcCount: null, appliedPcCount: null, surveyLevel: null, investigationStatus: "오픈예정" })).toBe(70);
+  });
+});
+
 describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청사항 5: 미조사/값누락 구분)", () => {
   function comp(overrides: Partial<Parameters<typeof computeCompetitorOccupiedSeats>[0][number]>) {
     return {
@@ -621,6 +631,17 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
     expect(result.seats).toBeCloseTo(30, 2);
     expect(result.coverage.assumedLowThreat).toBe(1);
     expect(result.coverage.missingData).toBe(0);
+  });
+
+  it("오픈예정은 0을 더하되 '아직 측정 불가'로 구분한다(값 누락·노후저경쟁력미조사와 다르게 표시, 2026-08-27)", () => {
+    const result = computeCompetitorOccupiedSeats([
+      comp({ appliedPcCount: 100, pingbotUtilization: 0.3 }),
+      comp({ investigationStatus: "오픈예정", totalPcCount: 100 }),
+    ]);
+    expect(result.seats).toBeCloseTo(30, 2);
+    expect(result.coverage.notYetOpen).toBe(1);
+    expect(result.coverage.missingData).toBe(0);
+    expect(result.coverage.assumedLowThreat).toBe(0);
   });
 
   it("조사완료인데 값이 없으면 '값 누락'으로 구분한다", () => {
