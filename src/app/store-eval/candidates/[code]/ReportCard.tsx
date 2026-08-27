@@ -150,25 +150,24 @@ export function ReportCard({
         />
       </div>
 
-      {/* 2026-08-27: 사용자가 실사용(외부 공유용) 중 발견 — 경쟁점 핑봇_가동률이 일부만 입력돼
-          있으면 예상 가동률이 100%를 훌쩍 넘어(예: 110%) 카드만 봐서는 앱이 고장난 것처럼 보인다.
-          이미 계산돼 있는 measuredForecastNeedsReview(가동률이 검토기준 초과)를 그대로 반영해,
-          이럴 때는 수치 대신 "데이터 재검토 필요" 안내로 바꾼다 - 숫자를 지어내거나 억지로
-          100%로 잘라 보여주지 않고, 아직 공유하기엔 자료가 부족하다는 사실 자체를 보여준다. */}
-      {result.measuredForecastNeedsReview ? (
-        <div className="mt-4 rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] p-3 text-[11px] text-[var(--sl-warn)]">
-          <p className="font-semibold">⚠ 수요확보율/가동률 데이터 재검토 필요</p>
-          <p className="mt-1 text-[10px] leading-relaxed">
-            경쟁점 실측자료(핑봇_가동률)가 일부만 입력돼 있어 예상 가동률이 비정상적으로 높게 나옵니다. 경쟁점 탭에서
-            나머지 핑봇_가동률을 채운 뒤 다시 계산해주세요.
-          </p>
-        </div>
-      ) : (
-        <div className="mt-4 flex flex-col gap-3">
-          <PercentBar label="예상 수요확보율" value={result.demandCaptureRate} />
-          <PercentBar label="예상 가동률" value={result.expectedUtilization} hint="100% 초과 시 수요초과 신호" />
-        </div>
-      )}
+      {/* 2026-08-27 (2차 수정) — 경쟁점이 많은 상권은 업무 프로세스상 원래 주요 경쟁점만 실사하고
+          핑봇_가동률도 그 일부만 조회한다(전수조사가 아님, 사용자 확인) — "일부만 입력됨"은 결측이
+          아니라 정상적인 업무 방식이라, "데이터 재검토 필요"라는 경고성 문구는 사용자가 취할 조치가
+          없는데 카드가 고장난 것처럼 보이게 했다(실사용 중 지적). 숫자는 항상 그대로 보여주고,
+          100% 초과일 때만 경고가 아니라 "왜 이렇게 나올 수 있는지" 담백한 방법론 설명으로 바꾼다 -
+          핑봇을 전부 조회한 상권이면 이 문구 자체가 안 뜨고 숫자만 보인다. */}
+      <div className="mt-4 flex flex-col gap-3">
+        <PercentBar label="예상 수요확보율" value={result.demandCaptureRate} />
+        <PercentBar
+          label="예상 가동률"
+          value={result.expectedUtilization}
+          hint={
+            result.expectedUtilization != null && result.expectedUtilization > 1
+              ? "주요 경쟁점 위주 실측 기준 추정치로, 실제보다 높게 나올 수 있음"
+              : "100% 초과 시 수요초과 신호"
+          }
+        />
+      </div>
 
       {topCompetitors.length > 0 && (
         <div className="mt-4">
