@@ -503,12 +503,14 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       </section>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>선투자 프로모션 기준매출 판정 (참고용, 미검증)</h3>
+        <h3 className={sectionTitleClass}>선투자 프로모션 기준매출 판정 (참고용)</h3>
         <p className="mt-1 text-xs text-[#8a8072]">
-          예상 오픈월부터 10개월간 &ldquo;순수익 2,000/1,500/1,000만원 대당 일매출목표&rdquo; 평균과 위 미검증 실측기반
-          예상월매출을 비교하는 3단계 등급 판정입니다(1,500만원은 2,000/1,000만원 실측표의 월별 평균). PC대수는 100대
-          상한이 적용됩니다(100대 초과여도 100대 기준으로 계산). 최종운영판정과 무관하며, 출점 여부 결정에는 쓰지
-          않습니다.
+          예상 오픈월부터 10개월간 &ldquo;순수익 2,000/1,500/1,000만원 대당 일매출목표&rdquo; 평균과 위 V62 최종예상월매출을
+          비교하는 3단계 등급 판정입니다(1,500만원은 2,000/1,000만원 실측표의 월별 평균). PC대수는 100대 상한이
+          적용됩니다(100대 초과여도 100대 기준으로 계산). 선투자 프로모션 대상 판단용이라 최종운영판정과는 별개이고,
+          출점 여부 결정에는 쓰지 않습니다.
+          {/* 2026-08-27 (2차): 원래 여기 비교 대상은 미검증 AA경로(핑봇 실측)였는데, 평균오차 52%로
+              확인돼 V62(정식 계산) 기준으로 바꿨다 — calc.ts judgeAaGrade 주석 참고. */}
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard label="2,000만원 기준매출" value={formatWon(result.aaBaselineRevenue)} />

@@ -1570,29 +1570,32 @@ export function computeAaBaselineRevenue(
 
 /**
  * 13_신규후보지판정!AC열 "자동평가"를 확장한 것 — 원본은 기준(2,000만원) 이상/미달 2단계뿐이었는데,
- * 2026-08-27 사용자 요청으로 1,000/1,500/2,000만원 3단계 기준매출과 비교해 어느 구간인지 판정한다
- * (실측기반 예상월매출을 그대로 3개 기준선과 비교하는 것뿐 - 산식 자체는 안 바뀜).
+ * 2026-08-27 사용자 요청으로 1,000/1,500/2,000만원 3단계 기준매출과 비교해 어느 구간인지 판정한다.
+ *
+ * 2026-08-27 (2차) — 원래 여기 비교 대상은 AA경로(실측기반 예상월매출, 경쟁점 핑봇 실측 기반)였다.
+ * 실사례(하안금당사거리점)에서 V62(정식 계산)는 7,300만원으로 아주 좋은데, AA경로는 경쟁점 핑봇
+ * 데이터가 3곳 중 2곳 없어서 3,000만원까지 낮게 나와 "1,000만원 미달"이라는 잘못된 경고가 떴다 —
+ * 별도 검증에서 AA경로 평균오차가 52%(V62는 11%대)로 확인돼 근거 자체가 부실했다. 그래서 이제
+ * V62 최종예상월매출을 기준으로 비교한다(사용자 확정) — "데이터 재검토"(AA경로 가동률 초과 감지용)
+ * 상태도 AA경로 전용이라 같이 없앴다.
  */
 export function judgeAaGrade(input: {
   plannedOpenMonth: number | null;
-  measuredForecastRevenue: number | null;
+  forecastRevenue: number | null;
   aaBaselineRevenue2000: number | null;
   aaBaselineRevenue1500: number | null;
   aaBaselineRevenue1000: number | null;
-  expectedUtilization: number | null;
-  maxReviewUtilization: number;
-}): "오픈월 입력 필요" | "실측자료 부족" | "데이터 재검토" | "2,000만원 이상" | "1,500만원 이상" | "1,000만원 이상" | "1,000만원 미달" {
+}): "오픈월 입력 필요" | "실측자료 부족" | "2,000만원 이상" | "1,500만원 이상" | "1,000만원 이상" | "1,000만원 미달" {
   if (input.plannedOpenMonth == null) return "오픈월 입력 필요";
   if (
-    input.measuredForecastRevenue == null ||
+    input.forecastRevenue == null ||
     input.aaBaselineRevenue2000 == null ||
     input.aaBaselineRevenue1500 == null ||
     input.aaBaselineRevenue1000 == null
   ) {
     return "실측자료 부족";
   }
-  if (input.expectedUtilization != null && input.expectedUtilization > input.maxReviewUtilization) return "데이터 재검토";
-  const r = input.measuredForecastRevenue;
+  const r = input.forecastRevenue;
   if (r >= input.aaBaselineRevenue2000) return "2,000만원 이상";
   if (r >= input.aaBaselineRevenue1500) return "1,500만원 이상";
   if (r >= input.aaBaselineRevenue1000) return "1,000만원 이상";

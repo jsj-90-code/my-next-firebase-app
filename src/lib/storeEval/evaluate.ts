@@ -219,13 +219,14 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   );
   const aaJudgement = judgeAaGrade({
     plannedOpenMonth: c.plannedOpenMonth,
-    measuredForecastRevenue: measuredForecast?.monthlyRevenue ?? null,
+    forecastRevenue: v62Final,
     aaBaselineRevenue2000: aaBaselineRevenue,
     aaBaselineRevenue1500,
     aaBaselineRevenue1000,
-    expectedUtilization,
-    maxReviewUtilization: settings.measuredForecastMaxReviewUtilization,
   });
+  // "데이터 재검토"는 이제 aaJudgement가 아니라 AA경로 자체의 가동률 초과 여부로 직접 판단한다
+  // (judgeAaGrade는 더 이상 AA경로를 안 봄 — 위 주석 참고).
+  const measuredForecastNeedsReview = expectedUtilization != null && expectedUtilization > settings.measuredForecastMaxReviewUtilization;
 
   const result: EvaluationResult = {
     candidateCode: c.code,
@@ -269,7 +270,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     expectedUtilization,
     expectedDailyRevenuePerPc: measuredForecast?.dailyRevenuePerPc ?? null,
     measuredForecastMonthlyRevenue: measuredForecast?.monthlyRevenue ?? null,
-    measuredForecastNeedsReview: aaJudgement === "데이터 재검토",
+    measuredForecastNeedsReview,
     v62ImpliedUtilization,
 
     aaBaselineRevenue,

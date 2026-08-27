@@ -949,33 +949,32 @@ describe("AA 기준매출 (오픈월부터 10개월 순수익 2,000만원 대당
   });
 });
 
-describe("judgeAaGrade (13_신규후보지판정!자동평가를 2,000/1,500/1,000만원 3단계로 확장, 2026-08-27)", () => {
+// 2026-08-27 (2차) — 실사례(하안금당사거리점)에서 이 판정이 AA경로(핑봇 실측, 평균오차 52%로
+// 확인됨) 기준이라 V62(정식 계산, 7,300만원으로 아주 양호)와 무관하게 "1,000만원 미달"이라는
+// 잘못된 경고가 떴다(경쟁점 3곳 중 2곳 핑봇 데이터 누락). V62 최종예상월매출 기준으로 바꿨다
+// (사용자 확정) — "데이터 재검토"(AA경로 가동률 초과 감지용) 상태도 같이 없앴다.
+describe("judgeAaGrade (13_신규후보지판정!자동평가를 2,000/1,500/1,000만원 3단계로 확장 + V62 기준으로 변경, 2026-08-27)", () => {
   const base = { aaBaselineRevenue2000: 200, aaBaselineRevenue1500: 150, aaBaselineRevenue1000: 100 };
   it("오픈월 없으면 오픈월 입력 필요", () => {
-    expect(judgeAaGrade({ plannedOpenMonth: null, measuredForecastRevenue: 300, ...base, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("오픈월 입력 필요");
+    expect(judgeAaGrade({ plannedOpenMonth: null, forecastRevenue: 300, ...base })).toBe("오픈월 입력 필요");
   });
-  it("실측값이 없으면 실측자료 부족", () => {
-    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: null, ...base, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("실측자료 부족");
+  it("예측매출이 없으면 실측자료 부족", () => {
+    expect(judgeAaGrade({ plannedOpenMonth: 3, forecastRevenue: null, ...base })).toBe("실측자료 부족");
   });
   it("기준값(1,500만원) 하나라도 없으면 실측자료 부족", () => {
-    expect(
-      judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 300, ...base, aaBaselineRevenue1500: null, expectedUtilization: 0.2, maxReviewUtilization: 0.5 }),
-    ).toBe("실측자료 부족");
-  });
-  it("가동률이 최대검토가동률 초과면 데이터 재검토", () => {
-    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 300, ...base, expectedUtilization: 0.6, maxReviewUtilization: 0.5 })).toBe("데이터 재검토");
+    expect(judgeAaGrade({ plannedOpenMonth: 3, forecastRevenue: 300, ...base, aaBaselineRevenue1500: null })).toBe("실측자료 부족");
   });
   it("2,000만원 기준 이상이면 2,000만원 이상", () => {
-    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 200, ...base, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("2,000만원 이상");
+    expect(judgeAaGrade({ plannedOpenMonth: 3, forecastRevenue: 200, ...base })).toBe("2,000만원 이상");
   });
   it("1,500만원 이상 2,000만원 미만이면 1,500만원 이상", () => {
-    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 199, ...base, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("1,500만원 이상");
+    expect(judgeAaGrade({ plannedOpenMonth: 3, forecastRevenue: 199, ...base })).toBe("1,500만원 이상");
   });
   it("1,000만원 이상 1,500만원 미만이면 1,000만원 이상", () => {
-    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 149, ...base, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("1,000만원 이상");
+    expect(judgeAaGrade({ plannedOpenMonth: 3, forecastRevenue: 149, ...base })).toBe("1,000만원 이상");
   });
   it("1,000만원 미만이면 1,000만원 미달", () => {
-    expect(judgeAaGrade({ plannedOpenMonth: 3, measuredForecastRevenue: 99, ...base, expectedUtilization: 0.2, maxReviewUtilization: 0.5 })).toBe("1,000만원 미달");
+    expect(judgeAaGrade({ plannedOpenMonth: 3, forecastRevenue: 99, ...base })).toBe("1,000만원 미달");
   });
 });
 

@@ -116,11 +116,11 @@ export function ReportCard({
           <h3 className="mt-0.5 text-lg font-bold">{candidate.name}</h3>
           <p className="mt-0.5 text-xs text-[#8a8072]">{candidate.address}</p>
         </div>
-        {/* 2026-08-27: "데이터 재검토"는 사용자 요청으로 배지에서 뺐다 — 경쟁점이 많은 상권은
-            주요 경쟁점만 실사하는 게 정상 업무 프로세스라(핑봇 전수조회 자체가 거의 불가능),
-            이 상태가 예외적 문제가 아니라 흔한 정상 상태다. 값 자체(aaJudgement)는 그대로 두고
-            카드 배지 표시에서만 이 경우를 생략한다. */}
-        {result.aaJudgement && result.aaJudgement !== "데이터 재검토" && (
+        {/* 2026-08-27 (2차): aaJudgement가 이제 V62(정식 계산) 기준이라 "데이터 재검토" 상태 자체가
+            없어졌다 — AA경로(핑봇 실측) 기반이던 예전엔 경쟁점 실사가 부분적일 때 이 상태가 흔하게
+            뜨면서 카드가 고장난 것처럼 보이는 문제가 있었는데, 근본 원인(AA경로 자체의 낮은 신뢰도,
+            평균오차 52%)을 없애서 해결했다. */}
+        {result.aaJudgement && (
           <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${gradeBadgeStyle(result.aaJudgement)}`}>
             {result.aaJudgement}
           </span>
