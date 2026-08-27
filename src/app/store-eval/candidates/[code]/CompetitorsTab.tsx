@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { computeCompetitorInvestigationSummary, computeCompetitorScores } from "@/lib/storeEval/calc";
+import { parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
 import type { Competitor, CompetitorSurveyState, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
@@ -85,6 +86,32 @@ function blankCompetitor(candidateCode: string): Competitor {
     premiumSpec: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+  };
+}
+
+/** 붙여넣기 파싱 결과를 빈 경쟁점 폼에 얹는다 - 판단이 애매해서 파서가 null로 둔 값(주소·거리·
+ * 적용대수·경쟁력 점수 등)은 그대로 비워둬서 사람이 직접 채우게 한다. */
+function applyParsedNote(base: Competitor, note: ParsedCompetitorNote): Competitor {
+  return {
+    ...base,
+    name: note.name,
+    surveyLevel: "상세",
+    totalPcCount: note.totalPcCount,
+    cpu: note.cpu,
+    vgaBase: note.vgaBase,
+    ram: note.ram,
+    monitor: note.monitor,
+    premiumZone: note.premiumZone,
+    coupleZone: note.coupleZone,
+    room1: note.room1,
+    room2: note.room2,
+    teamRoom: note.teamRoom,
+    ratePer1000Won: note.ratePer1000Won,
+    paidDeduction: note.paidDeduction,
+    visitedAt: note.visitedAt,
+    visitorCount: note.visitorCount,
+    foodBasis: note.foodBasis,
+    interiorBasis: note.interiorBasis,
   };
 }
 
@@ -285,6 +312,23 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
 
+  // 붙여넣기로 일괄 입력(2026-08-27) - 점포개발자가 남기는 "경쟁점 설명" 텍스트를 결정적으로
+  // (AI 아님, competitorNoteParse.ts) 파싱해 미리보기로 보여주고, 하나씩 골라 폼에 채운다.
+  // 자동저장은 하지 않는다 - 기존 흐름과 동일하게 사람이 폼에서 검토 후 "저장"을 눌러야 한다.
+  const [pasteText, setPasteText] = useState("");
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [parsedNotes, setParsedNotes] = useState<ParsedCompetitorNote[]>([]);
+  const [prefill, setPrefill] = useState<Competitor | null>(null);
+
+  function handleParsePaste() {
+    setParsedNotes(parseCompetitorNotes(pasteText));
+  }
+
+  function handleFillFromParsed(note: ParsedCompetitorNote) {
+    setPrefill(applyParsedNote(blankCompetitor(candidateCode), note));
+    setEditingId("new");
+  }
+
   useEffect(() => {
     getModelSettings().then((s) => {
       if (s) setSettings(s);
@@ -323,25 +367,79 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   }
 
   const editingCompetitor =
-    editingId === "new" ? blankCompetitor(candidateCode) : competitors.find((c) => c.id === editingId) ?? null;
+    editingId === "new" ? (prefill ?? blankCompetitor(candidateCode)) : competitors.find((c) => c.id === editingId) ?? null;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁점</h2>
           <p className="mt-1 text-sm text-[#8a8072]">이 후보지 반경 내 경쟁점 정보를 입력합니다.</p>
         </div>
         {editingId === null && (
-          <button
-            type="button"
-            onClick={() => setEditingId("new")}
-            className="app-btn-primary rounded-lg px-4 py-2 text-sm print:hidden"
-          >
-            + 경쟁점 추가
-          </button>
+          <div className="flex gap-2 print:hidden">
+            <button
+              type="button"
+              onClick={() => setPasteOpen((v) => !v)}
+              className="app-btn-outline rounded-lg px-4 py-2 text-sm"
+            >
+              {pasteOpen ? "붙여넣기 닫기" : "붙여넣기로 일괄 입력"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPrefill(null);
+                setEditingId("new");
+              }}
+              className="app-btn-primary rounded-lg px-4 py-2 text-sm"
+            >
+              + 경쟁점 추가
+            </button>
+          </div>
         )}
       </div>
+
+      {pasteOpen && editingId === null && (
+        <section className={sectionClass}>
+          <h3 className={sectionTitleClass}>경쟁점 설명 붙여넣기</h3>
+          <p className="mt-1 text-xs text-[#8a8072]">
+            점포개발자가 남긴 &ldquo;경쟁점 설명&rdquo; 텍스트를 통째로 붙여넣으면 매장명·사양·존구성·방문기록·종합평가를
+            자동으로 나눠 인식합니다(AI 아닌 텍스트 매칭). 자동으로 저장되지 않으니, 매장을 하나씩 골라 폼에 채운 뒤
+            직접 검토하고 저장해주세요. 적용대수·거리·경쟁력 점수는 판단이 필요해 자동으로 채우지 않습니다.
+          </p>
+          <TextAreaField label="붙여넣기" value={pasteText} onChange={setPasteText} rows={8} />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={handleParsePaste} className="app-btn-primary rounded-lg px-4 py-2 text-sm">
+              분석
+            </button>
+            {parsedNotes.length > 0 && <span className="text-xs text-[#8a8072]">{parsedNotes.length}곳 인식됨</span>}
+          </div>
+          {parsedNotes.length > 0 && (
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {parsedNotes.map((note, i) => (
+                <div key={`${note.name}_${i}`} className="app-card-sm rounded-lg p-3 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">{note.name}</p>
+                      <p className="mt-0.5 text-[#8a8072]">
+                        전체 {note.totalPcCount ?? "-"}대 · {note.cpu ?? "-"} · {note.vgaBase ?? "-"}
+                      </p>
+                      <p className="mt-0.5 text-[#8a8072]">방문 {note.visitedAt ?? "-"} · {note.visitorCount ?? "-"}명</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleFillFromParsed(note)}
+                      className="app-btn-outline shrink-0 rounded-md px-2 py-1 text-[11px]"
+                    >
+                      폼에 채우기
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {error && (
         <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
@@ -385,9 +483,13 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
         <CompetitorForm
           initial={editingCompetitor}
           actor={user?.email ?? null}
-          onCancel={() => setEditingId(null)}
+          onCancel={() => {
+            setEditingId(null);
+            setPrefill(null);
+          }}
           onSaved={async () => {
             setEditingId(null);
+            setPrefill(null);
             await load();
           }}
         />

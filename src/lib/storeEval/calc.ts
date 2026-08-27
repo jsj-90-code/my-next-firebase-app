@@ -1452,18 +1452,35 @@ export function computeAaBaselineRevenue(
   return Math.round(appliedPc * (total / 10));
 }
 
-/** 13_신규후보지판정!AC열 "자동평가" 그대로. */
+/**
+ * 13_신규후보지판정!AC열 "자동평가"를 확장한 것 — 원본은 기준(2,000만원) 이상/미달 2단계뿐이었는데,
+ * 2026-08-27 사용자 요청으로 1,000/1,500/2,000만원 3단계 기준매출과 비교해 어느 구간인지 판정한다
+ * (실측기반 예상월매출을 그대로 3개 기준선과 비교하는 것뿐 - 산식 자체는 안 바뀜).
+ */
 export function judgeAaGrade(input: {
   plannedOpenMonth: number | null;
   measuredForecastRevenue: number | null;
-  aaBaselineRevenue: number | null;
+  aaBaselineRevenue2000: number | null;
+  aaBaselineRevenue1500: number | null;
+  aaBaselineRevenue1000: number | null;
   expectedUtilization: number | null;
   maxReviewUtilization: number;
-}): "오픈월 입력 필요" | "실측자료 부족" | "데이터 재검토" | "AA" | "AA 미달" {
+}): "오픈월 입력 필요" | "실측자료 부족" | "데이터 재검토" | "2,000만원 이상" | "1,500만원 이상" | "1,000만원 이상" | "1,000만원 미달" {
   if (input.plannedOpenMonth == null) return "오픈월 입력 필요";
-  if (input.measuredForecastRevenue == null || input.aaBaselineRevenue == null) return "실측자료 부족";
+  if (
+    input.measuredForecastRevenue == null ||
+    input.aaBaselineRevenue2000 == null ||
+    input.aaBaselineRevenue1500 == null ||
+    input.aaBaselineRevenue1000 == null
+  ) {
+    return "실측자료 부족";
+  }
   if (input.expectedUtilization != null && input.expectedUtilization > input.maxReviewUtilization) return "데이터 재검토";
-  return input.measuredForecastRevenue >= input.aaBaselineRevenue ? "AA" : "AA 미달";
+  const r = input.measuredForecastRevenue;
+  if (r >= input.aaBaselineRevenue2000) return "2,000만원 이상";
+  if (r >= input.aaBaselineRevenue1500) return "1,500만원 이상";
+  if (r >= input.aaBaselineRevenue1000) return "1,000만원 이상";
+  return "1,000만원 미달";
 }
 
 // ---------------------------------------------------------------------------

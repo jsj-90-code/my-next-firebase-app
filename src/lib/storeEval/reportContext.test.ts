@@ -61,7 +61,9 @@ function baseResult(overrides: Partial<EvaluationResult> = {}): EvaluationResult
     measuredForecastMonthlyRevenue: 26_900_000,
     measuredForecastNeedsReview: false,
     aaBaselineRevenue: 56_600_000,
-    aaJudgement: "AA 미달",
+    aaBaselineRevenue1500: 45_000_000,
+    aaBaselineRevenue1000: 33_500_000,
+    aaJudgement: "1,000만원 미달",
     ...overrides,
   };
 }

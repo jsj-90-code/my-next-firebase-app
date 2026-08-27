@@ -4,7 +4,8 @@
 // competitors + locationEvaluation + modelSettings(폴백 포함) + existingStores(referenceMarketDemand)를
 // 모아 evaluateCandidate 한 번 호출 -> saveEvaluationResult로 스냅샷 저장 -> 화면 표시.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
@@ -22,6 +23,7 @@ import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { sectionClass, sectionTitleClass } from "./formFields";
+import { ReportCard } from "./ReportCard";
 
 function judgementStyle(j: FinalJudgement | null): string {
   if (j === "평가 완료") return "app-badge-ok";
@@ -169,6 +171,29 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // 분석 카드 이미지(1차 초안, 2026-08-27) - 위에서 이미 계산·표시 중인 값만 그대로 옮겨 담는다.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [cardExporting, setCardExporting] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
+
+  async function handleExportCardImage() {
+    const node = cardRef.current;
+    if (!node) return;
+    setCardExporting(true);
+    setCardError(null);
+    try {
+      const dataUrl = await toPng(node, { pixelRatio: 2, backgroundColor: undefined });
+      const link = document.createElement("a");
+      link.download = `${candidateCode}_분석카드.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      setCardError(err instanceof Error ? err.message : "이미지 저장 중 오류가 발생했습니다.");
+    } finally {
+      setCardExporting(false);
+    }
+  }
 
   useEffect(() => {
     // 전환 후에는 storeCode가 candidateCode와 달라질 수 있으므로, 문서ID 직접 조회가 아니라
@@ -480,17 +505,27 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       </section>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>AA 기준매출 판정 (참고용, 미검증)</h3>
+        <h3 className={sectionTitleClass}>선투자 프로모션 기준매출 판정 (참고용, 미검증)</h3>
         <p className="mt-1 text-xs text-[#8a8072]">
-          예상 오픈월부터 10개월간 &ldquo;순수익 2,000만원 대당 일매출목표&rdquo; 평균과 위 미검증 실측기반 예상월매출을
-          비교하는 등급 판정입니다. 최종운영판정과 무관하며, 출점 여부 결정에는 쓰지 않습니다.
+          예상 오픈월부터 10개월간 &ldquo;순수익 2,000/1,500/1,000만원 대당 일매출목표&rdquo; 평균과 위 미검증 실측기반
+          예상월매출을 비교하는 3단계 등급 판정입니다(1,500만원은 2,000/1,000만원 실측표의 월별 평균). PC대수는 100대
+          상한이 적용됩니다(100대 초과여도 100대 기준으로 계산). 최종운영판정과 무관하며, 출점 여부 결정에는 쓰지
+          않습니다.
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ResultCard label="AA 기준매출" value={formatWon(result.aaBaselineRevenue)} />
+          <ResultCard label="2,000만원 기준매출" value={formatWon(result.aaBaselineRevenue)} />
+          <ResultCard label="1,500만원 기준매출" value={formatWon(result.aaBaselineRevenue1500)} />
+          <ResultCard label="1,000만원 기준매출" value={formatWon(result.aaBaselineRevenue1000)} />
           <ResultCard
             label="자동평가"
             value={result.aaJudgement ?? "-"}
-            hint={result.aaJudgement === "AA" ? "기준 이상" : result.aaJudgement === "AA 미달" ? "기준 미달" : undefined}
+            hint={
+              result.aaJudgement === "1,000만원 미달"
+                ? "1,000만원 기준 미달"
+                : result.aaJudgement?.endsWith("이상")
+                  ? "해당 기준 이상 달성"
+                  : undefined
+            }
           />
         </div>
       </section>
@@ -567,6 +602,42 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             </button>
           </div>
         )}
+      </section>
+
+      <section className={`${sectionClass} print:hidden`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className={sectionTitleClass}>분석 카드 이미지 (1차 초안)</h3>
+            <p className="mt-1 text-xs text-[#8a8072]">
+              위에 이미 계산된 값(V62 최종예상월매출·상권/경쟁 지표·인근 경쟁점)만으로 만든 요약 카드입니다. 손익(원가·회수기간)은
+              아직 우리 시스템에 없는 데이터라 포함하지 않았습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={cardExporting}
+            onClick={handleExportCardImage}
+            className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {cardExporting ? "저장 중..." : "PNG로 저장"}
+          </button>
+        </div>
+        {cardError && <p className="app-badge app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{cardError}</p>}
+        <div className="mt-4 overflow-x-auto">
+          <div ref={cardRef} className="inline-block">
+            <ReportCard
+              result={result}
+              candidate={{
+                name: candidateForReport?.name ?? result.candidateName,
+                address: candidateForReport?.address ?? result.address,
+                expectedPcCount: candidateForReport?.expectedPcCount ?? result.expectedPcCount,
+                hourlyRate: candidateForReport?.hourlyRate ?? result.hourlyRate,
+              }}
+              competitors={competitorsForReport}
+              summarySection={reportDraft?.summarySection}
+            />
+          </div>
+        </div>
       </section>
 
       <details className="app-card rounded-2xl p-4 text-sm print:hidden">

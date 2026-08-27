@@ -284,8 +284,14 @@ export type ModelSettings = {
   // "신규점 실측예측" 공통계수 (08_계산기준!C50/C51)
   measuredForecastProductRatio: number; // 0.5 — 기본 상품매출비율(이 파이프라인 전용, 다른 상품비율과 별개)
   measuredForecastMaxReviewUtilization: number; // 0.5 — 초과 시 "데이터 재검토"
-  // AA 기준매출 — 08_계산기준!C54:E65 "AA 월별기준"을 그대로 옮긴 표. month는 1~12.
+  // AA 기준매출 — 08_계산기준!C54:E65 "AA 월별기준"을 그대로 옮긴 표(순수익 2,000만원 대당). month는 1~12.
   aaMonthlyTargets: { month: number; dailyRevenuePerPcTarget: number; daysInMonth: number }[];
+  // 2026-08-27 추가 — 사용자가 준 "순수익 1,000만원 대당목표(일)" 표(2,000만원 표와 같은 원본 시트
+  // 구조, 실측치). 1,500만원은 별도 원본표가 없어 2,000만원/1,000만원 월별 값의 단순평균으로
+  // 계산한다(settings.ts defaultModelSettings 참고, 지어낸 계수 아님 — 사용자가 준 두 실측표의
+  // 산술평균).
+  aaMonthlyTargets1000: { month: number; dailyRevenuePerPcTarget: number; daysInMonth: number }[];
+  aaMonthlyTargets1500: { month: number; dailyRevenuePerPcTarget: number; daysInMonth: number }[];
   aaMaxPcCount: number; // 100 — MIN(예상PC대수,100)
   // 08_계산기준의 상권/경쟁력 계수 (하드코딩 금지 대상)
   marketCharacterThreshold: { downtown: number; mixed: number }; // 8배/4배
@@ -421,7 +427,19 @@ export type EvaluationResult = {
 
   // 요청사항 4 — AA 기준매출(오픈월부터 10개월 순수익 2,000만원 대당 일매출목표 평균)
   aaBaselineRevenue: number | null;
-  aaJudgement: "오픈월 입력 필요" | "실측자료 부족" | "데이터 재검토" | "AA" | "AA 미달" | null;
+  // 2026-08-27 추가 — 1,500만원/1,000만원 기준매출(같은 계산, 다른 월별표). aaBaselineRevenue는
+  // 계속 2,000만원 기준을 가리킨다(기존 화면 문구 "AA 기준매출"과의 연결 유지).
+  aaBaselineRevenue1500: number | null;
+  aaBaselineRevenue1000: number | null;
+  aaJudgement:
+    | "오픈월 입력 필요"
+    | "실측자료 부족"
+    | "데이터 재검토"
+    | "2,000만원 이상"
+    | "1,500만원 이상"
+    | "1,000만원 이상"
+    | "1,000만원 미달"
+    | null;
 };
 
 // ---- 기존 가맹점 검증 (6.기존 가맹점 검증 화면) ----

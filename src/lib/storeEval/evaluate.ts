@@ -42,6 +42,7 @@ import {
   predictEmpiricalRevenue,
   toEmpiricalSample,
 } from "./calc";
+import { defaultModelSettings } from "./settings";
 import type {
   CandidateInput,
   Competitor,
@@ -186,12 +187,28 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const expectedUtilization = computeExpectedUtilization(expectedOccupiedSeats, c.expectedPcCount);
   const measuredForecast = computeMeasuredForecast(expectedOccupiedSeats, c.hourlyRate, settings.measuredForecastProductRatio, c.expectedPcCount);
 
-  // ---- AA 기준매출 (요청사항 4) ----
+  // ---- AA 기준매출 (요청사항 4) — 2,000/1,500/1,000만원 3단계, 전부 같은 산식(PC대수 100대 상한
+  // 포함)이고 월별기준표만 다르다. 1,500만원표는 defaultModelSettings에 없을 수 있는 옛 저장값
+  // 대비 폴백을 둔다(신규 필드라 기존 Firestore 문서엔 없을 수 있음).
   const aaBaselineRevenue = computeAaBaselineRevenue(c.expectedPcCount, c.plannedOpenMonth, settings.aaMonthlyTargets, settings.aaMaxPcCount);
+  const aaBaselineRevenue1500 = computeAaBaselineRevenue(
+    c.expectedPcCount,
+    c.plannedOpenMonth,
+    settings.aaMonthlyTargets1500 ?? defaultModelSettings().aaMonthlyTargets1500,
+    settings.aaMaxPcCount,
+  );
+  const aaBaselineRevenue1000 = computeAaBaselineRevenue(
+    c.expectedPcCount,
+    c.plannedOpenMonth,
+    settings.aaMonthlyTargets1000 ?? defaultModelSettings().aaMonthlyTargets1000,
+    settings.aaMaxPcCount,
+  );
   const aaJudgement = judgeAaGrade({
     plannedOpenMonth: c.plannedOpenMonth,
     measuredForecastRevenue: measuredForecast?.monthlyRevenue ?? null,
-    aaBaselineRevenue,
+    aaBaselineRevenue2000: aaBaselineRevenue,
+    aaBaselineRevenue1500,
+    aaBaselineRevenue1000,
     expectedUtilization,
     maxReviewUtilization: settings.measuredForecastMaxReviewUtilization,
   });
@@ -241,6 +258,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     measuredForecastNeedsReview: aaJudgement === "데이터 재검토",
 
     aaBaselineRevenue,
+    aaBaselineRevenue1500,
+    aaBaselineRevenue1000,
     aaJudgement,
   };
 
