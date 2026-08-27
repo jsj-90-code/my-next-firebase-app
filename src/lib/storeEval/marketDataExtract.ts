@@ -515,13 +515,17 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
     const normLabel = normalizeLabel(label);
 
     if (currentTable === "지하철") {
-      // "노선명 역명 | 2023년값 2024년값 2025년값" 모양의 역 데이터 행만 받는다(라벨이 정확히
-      // 두 토큰) — 안내문·표 헤더·연도행("2023 2024 2025")은 토큰 수가 안 맞아 자연히 무시된다.
+      // "노선명 역명 | 2023년값 2024년값 2025년값" 모양의 역 데이터 행만 받는다 — 안내문·표
+      // 헤더·연도행("2023 2024 2025")은 값 칸이 없거나(라벨만 있음) 라벨 자체가 없어 자연히
+      // 무시된다. 라벨은 원래 "정확히 두 토큰"(노선명+역명, 예: "수인선 호구포역")만 받았는데,
+      // 노선명 자체에 공백이 들어가는 경우(예: "도시철도 7호선 신중동" = "도시철도 7호선"+"신중동")
+      // 3토큰짜리 역명도 실제로 있어서(2026-08-27, 부천 신중동 리포트로 발견) 2~4토큰까지 허용한다.
       // "선택 영역"도 공백이 하나 있어 우연히 "두 토큰"이 되는데, 이건 뒤에 이어지는 "교통시설
       // 현황(시군구 기준)" 표("선택 영역 | 1 | 22")라 명시적으로 제외해야 한다(실측 중 발견한
-      // 버그: 제외 안 하면 역 개수까지 승하차 인원에 더해져 버림).
+      // 버그: 제외 안 하면 역 개수까지 승하차 인원에 더해져 버림). 그 표의 다른 지역 행("중1동 15 61"
+      // 등)은 라벨이 1토큰뿐이라 아래 범위(2~4)에 안 걸려 자연히 제외된다.
       const labelTokens = label.split(" ").filter(Boolean);
-      if (labelTokens.length === 2 && !normLabel.includes("선택영역") && values.length >= 2) {
+      if (labelTokens.length >= 2 && labelTokens.length <= 4 && !normLabel.includes("선택영역") && values.length >= 2) {
         const latest = parseNumberLoose(values[values.length - 1]);
         if (latest != null) subwayRidersSum = (subwayRidersSum ?? 0) + latest;
       }

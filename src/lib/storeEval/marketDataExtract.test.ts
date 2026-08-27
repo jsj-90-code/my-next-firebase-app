@@ -517,6 +517,43 @@ describe("parseSosangongin365FullReport — 지하철 이용 현황: '선택 영
   });
 });
 
+// 2026-08-27 — 부천 중1동(신중동역) 리포트로 사용자가 실제로 붙여넣어 발견한 버그: 노선명 자체에
+// 공백이 들어가는 역("도시철도 7호선" + "신중동")은 라벨이 3토큰이 되는데, 예전 코드는 정확히
+// 2토큰("수인선"+"호구포역")만 받아서 통째로 무시됐다.
+const REAL_SB365_SUBWAY_MULTIWORD_LINE_EXCERPT = `
+교통시설 현황
+지하철 이용 현황
+단위 : 명
+
+*일부 환승역에서는 승객 수가 집계되지 않을 수 있습니다.*
+노선구분	역명	일평균 승하차 인원
+2023	2024	2025
+도시철도 7호선	신중동	28,449	29,739	30,057
+교통시설 현황 (시군구 기준)
+단위 : 개
+
+지역	지하철역	버스정류장
+선택 영역	1	36
+중1동	15	61
+부천시	15	1,488
+분석결과
+선택 영역 인근에는 지하철역 1개, 버스정류장 36개가 있습니다.
+`;
+
+describe("parseSosangongin365FullReport — 노선명에 공백이 있는 역명(2026-08-27)", () => {
+  it("'도시철도 7호선 신중동'처럼 라벨이 3토큰이어도 최신 연도 승하차 인원을 뽑는다", () => {
+    const pairs = parseSosangongin365FullReport(REAL_SB365_SUBWAY_MULTIWORD_LINE_EXCERPT);
+    expect(pairs.find((p) => p.label === "지하철승하차")?.value).toBe("30057");
+  });
+
+  it("'교통시설 현황(시군구 기준)' 표의 다른 지역 행(중1동/부천시)이 섞여 들어오면 안 된다", () => {
+    const pairs = parseSosangongin365FullReport(REAL_SB365_SUBWAY_MULTIWORD_LINE_EXCERPT);
+    const subwayPairs = pairs.filter((p) => p.label === "지하철승하차");
+    expect(subwayPairs).toHaveLength(1);
+    expect(subwayPairs[0].value).toBe("30057");
+  });
+});
+
 describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 골라 4개 지표를 한 번에 매칭", () => {
   it("리포트 전체 붙여넣기 한 번으로 유동인구/직장인구/세대수/업소수가 모두 매칭된다(500m)", () => {
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
