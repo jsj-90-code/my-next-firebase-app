@@ -103,7 +103,6 @@ function blankStore(): ExistingStore {
     age1km_80plus: null,
     floating500Avg: null,
     floating500Male: null,
-    floating500Female: null,
     floating500_10s: null,
     floating500_20s: null,
     floating500_30s: null,

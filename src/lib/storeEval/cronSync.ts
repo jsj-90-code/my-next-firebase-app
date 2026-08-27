@@ -191,7 +191,6 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       age1km_80plus: toNumber(s["반경1km_80세이상"]),
       floating500Avg: toNumber(s["유동500_일평균"]),
       floating500Male: toNumber(s["유동500_남성"]),
-      floating500Female: toNumber(s["유동500_여성"]),
       floating500_10s: toNumber(s["유동500_10대"]),
       floating500_20s: toNumber(s["유동500_20대"]),
       floating500_30s: toNumber(s["유동500_30대"]),

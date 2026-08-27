@@ -14,10 +14,6 @@ export type DaouReportContextCandidate = Pick<
   | "pop500m"
   | "floating500Avg"
   | "facility500SubwayRiders"
-  | "facility500Households"
-  | "facility500HighSchool"
-  | "facility500MiddleSchool"
-  | "facility500ElementarySchool"
 >;
 export type DaouReportContextCompetitor = Pick<Competitor, "name" | "distanceM" | "investigationStatus">;
 
@@ -54,20 +50,12 @@ export function buildDaouReportContext({ candidate, competitors, result }: DaouR
   lines.push(`[후보지] ${candidate.name || "(이름 없음)"} / ${candidate.address || "(주소 없음)"}`);
 
   // 2026-08-25 — 상권등급(SS/S/A/B)은 다우오피스 보고서에 언급하지 않는다(사용자 확인).
-  // 반경500m 지하철승하차/세대수/학생수(고+중+초)는 소상공인365에서 이미 뽑아둔 값인데 있을
-  // 때만 "특이사항"으로 붙인다(0/null이면 노이즈만 되니 생략) - 상권 문장에 주소 대신 채울
-  // 실질적인 내용을 달라는 요청(2026-08-25) 반영.
+  // 반경500m 지하철승하차는 소상공인365에서 이미 뽑아둔 값인데 있을 때만 "특이사항"으로 붙인다
+  // (0/null이면 노이즈만 되니 생략) - 상권 문장에 주소 대신 채울 실질적인 내용을 달라는 요청
+  // (2026-08-25) 반영. 세대수/학생수는 2026-08-27에 필드 자체를 없앴다(인구수와 중복이라 판단).
   const specialNotes: string[] = [];
   if (candidate.facility500SubwayRiders) {
     specialNotes.push(`지하철 승하차인구(500m) 약 ${formatNumber(candidate.facility500SubwayRiders)}명`);
-  }
-  if (candidate.facility500Households) {
-    specialNotes.push(`세대수(500m) 약 ${formatNumber(candidate.facility500Households)}세대`);
-  }
-  const studentTotal =
-    (candidate.facility500HighSchool ?? 0) + (candidate.facility500MiddleSchool ?? 0) + (candidate.facility500ElementarySchool ?? 0);
-  if (studentTotal > 0) {
-    specialNotes.push(`반경500m 학생수(초중고 합) 약 ${formatNumber(studentTotal)}명`);
   }
 
   lines.push(

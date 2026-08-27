@@ -470,14 +470,14 @@ describe("parseSosangongin365FullReport — 학교시설(학교수/학생수) �
     expect(pairs.some((p) => p.value === "738" || p.value === "2,071")).toBe(false);
   });
 
-  it("SOSANGONGIN365_TABLE_VARIANTS로 반경별 facility 필드 키에 매칭된다", () => {
+  // 2026-08-27 — 학생수 필드(facility500/1kmHighSchool 등)는 삭제했다(이미 쓰는 age1km_10_19
+  // 등 연령인구와 중복이라 사용자 확인). "학교시설" 표 자체는 여전히 인식하지만(다른 표와 안
+  // 섞이게) 더 이상 어떤 CandidateInput 필드로도 매핑하지 않는다 — 매핑 테스트는 제거한다.
+  it("학교시설 표를 파싱해도 더 이상 CandidateInput 필드로 매핑되지 않는다", () => {
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
     const pairs = variant.extract(REAL_SB365_SCHOOL_EXCERPT);
     const result500 = extractFields(pairs, variant.buildSpecs("500", "500m"));
-    const result1km = extractFields(pairs, variant.buildSpecs("1km", "1km"));
-    expect(result500.find((r) => r.fieldKey === "facility500MiddleSchool")?.parsedValue).toBe(865);
-    expect(result500.find((r) => r.fieldKey === "facility500ElementarySchool")?.parsedValue).toBe(1375);
-    expect(result1km.find((r) => r.fieldKey === "facility1kmMiddleSchool")?.parsedValue).toBe(865);
+    expect(result500.find((r) => r.fieldKey === "facility500MiddleSchool")).toBeUndefined();
   });
 });
 
@@ -567,7 +567,7 @@ describe("parseSosangongin365FullReport — 노선명에 공백이 있는 역명
 });
 
 describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 골라 4개 지표를 한 번에 매칭", () => {
-  it("리포트 전체 붙여넣기 한 번으로 유동인구/직장인구/세대수/업소수가 모두 매칭된다(500m)", () => {
+  it("리포트 전체 붙여넣기 한 번으로 유동인구/직장인구/업소수가 매칭된다(500m)", () => {
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
     const pairs = variant.extract(REAL_SB365_FULL_REPORT_EXCERPT);
     const result = extractFields(pairs, variant.buildSpecs("500", "500m"));
@@ -575,7 +575,6 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     expect(result.find((r) => r.fieldKey === "floating500Male")?.parsedValue).toBe(34075);
     expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(4994);
     expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(3126);
-    expect(result.find((r) => r.fieldKey === "facility500Households")?.parsedValue).toBe(6956);
     // 소상공인365 "업소수"는 등록 사업체 집계 성격이라 "인허가" 쪽에 자동 매칭한다. "실영업"은
     // 사용자가 네이버 로드뷰로 직접 확인하는 값이라(500m은 V62 핵심값이기도 함) 자동추출 대상이
     // 아니다(500m/1km 둘 다 후보에서 제외).
@@ -583,12 +582,13 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     expect(result.some((r) => r.fieldKey === "operatingPcStores500m")).toBe(false);
   });
 
+  // 2026-08-27 — 유동인구(1km)·세대수는 삭제했다(반경이 넓어 수요계산에 못 쓰거나 인구수와
+  // 중복이라 사용자 확인). 1km에서도 여전히 매칭되는 직장인구/업소수만 확인한다.
   it("반경을 1km로 바꾸면 1km 전용 필드 키로 매칭된다", () => {
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
     const pairs = variant.extract(REAL_SB365_FULL_REPORT_EXCERPT);
     const result = extractFields(pairs, variant.buildSpecs("1km", "1km"));
-    expect(result.find((r) => r.fieldKey === "floating1kmAvg")?.parsedValue).toBe(65634);
-    expect(result.find((r) => r.fieldKey === "facility1kmHouseholds")?.parsedValue).toBe(6956);
+    expect(result.find((r) => r.fieldKey === "floating1kmAvg")).toBeUndefined();
     expect(result.find((r) => r.fieldKey === "licensedPcStores1km")?.parsedValue).toBe(2);
     expect(result.some((r) => r.fieldKey === "operatingPcStores1km")).toBe(false);
   });

@@ -71,7 +71,6 @@ export type CandidateInput = {
 
   floating500Avg: number | null;
   floating500Male: number | null;
-  floating500Female: number | null;
   floating500_10s: number | null;
   floating500_20s: number | null;
   floating500_30s: number | null;
@@ -92,16 +91,6 @@ export type CandidateInput = {
   licensedPcStores1km: number | null;
   operatingPcStores1km: number | null;
 
-  floating1kmAvg: number | null;
-  floating1kmMale: number | null;
-  floating1kmFemale: number | null;
-  floating1km_10s: number | null;
-  floating1km_20s: number | null;
-  floating1km_30s: number | null;
-  floating1km_40s: number | null;
-  floating1km_50s: number | null;
-  floating1km_60plus: number | null;
-
   employ500Total: number | null; // 직장500_전체
   employ500Male: number | null;
   employ500Female: number | null;
@@ -109,16 +98,12 @@ export type CandidateInput = {
   employ1kmMale: number | null;
   employ1kmFemale: number | null;
 
-  facility500HighSchool: number | null; // 시설500_고등학생
-  facility500MiddleSchool: number | null;
-  facility500ElementarySchool: number | null;
+  // 2026-08-27 — 유동인구(1km)·세대수·학생수는 삭제했다(사용자 확인): 유동인구1km은 반경이 넓어
+  // 실제 상권 밖 유동인구까지 잡혀서 애초에 수요 계산에 못 쓰고, 세대수·학생수는 이미 쓰는
+  // 인구수(pop500m/pop1km/age1km_*)와 중복이라 앞으로도 쓸 일이 없다고 판단했다. 면적(area1kmKm2)·
+  // 직장인구·지하철승하차는 나중에 산식을 보강할 때 쓸 여지가 있어 남겨둔다.
   facility500SubwayRiders: number | null; // 시설500_지하철승하차
-  facility500Households: number | null; // 시설500_세대수
-  facility1kmHighSchool: number | null;
-  facility1kmMiddleSchool: number | null;
-  facility1kmElementarySchool: number | null;
   facility1kmSubwayRiders: number | null;
-  facility1kmHouseholds: number | null;
 
   // 자사 시설/사양 (경쟁력 점수 입력)
   // 2026-08-27 추가 — 사양점수 산식을 VGA70%+모니터30%에서 CPU/VGA/RAM/모니터 4항목 평균으로
@@ -537,7 +522,6 @@ export type ExistingStore = {
   age1km_80plus: number | null;
   floating500Avg: number | null;
   floating500Male: number | null;
-  floating500Female: number | null;
   floating500_10s: number | null;
   floating500_20s: number | null;
   floating500_30s: number | null;

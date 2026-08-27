@@ -86,7 +86,6 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "age1km_80plus", label: "1km 80세 이상" },
   { key: "floating500Avg", label: "유동인구 평균(500m)" },
   { key: "floating500Male", label: "유동인구 남(500m)" },
-  { key: "floating500Female", label: "유동인구 여(500m)" },
   { key: "floating500_10s", label: "유동 10대(500m)" },
   { key: "floating500_20s", label: "유동 20대(500m)" },
   { key: "floating500_30s", label: "유동 30대(500m)" },
@@ -97,31 +96,14 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "operatingPcStores500m", label: "실영업 PC방업소수(500m)" },
   { key: "licensedPcStores1km", label: "인허가 PC방업소수(1km)" },
   { key: "operatingPcStores1km", label: "실영업 PC방업소수(1km)" },
-  { key: "floating1kmAvg", label: "유동인구 평균(1km)" },
-  { key: "floating1kmMale", label: "유동인구 남(1km)" },
-  { key: "floating1kmFemale", label: "유동인구 여(1km)" },
-  { key: "floating1km_10s", label: "유동 10대(1km)" },
-  { key: "floating1km_20s", label: "유동 20대(1km)" },
-  { key: "floating1km_30s", label: "유동 30대(1km)" },
-  { key: "floating1km_40s", label: "유동 40대(1km)" },
-  { key: "floating1km_50s", label: "유동 50대(1km)" },
-  { key: "floating1km_60plus", label: "유동 60대이상(1km)" },
   { key: "employ500Total", label: "직장인구 전체(500m)" },
   { key: "employ500Male", label: "직장인구 남(500m)" },
   { key: "employ500Female", label: "직장인구 여(500m)" },
   { key: "employ1kmTotal", label: "직장인구 전체(1km)" },
   { key: "employ1kmMale", label: "직장인구 남(1km)" },
   { key: "employ1kmFemale", label: "직장인구 여(1km)" },
-  { key: "facility500HighSchool", label: "고등학생 수(500m)" },
-  { key: "facility500MiddleSchool", label: "중학생 수(500m)" },
-  { key: "facility500ElementarySchool", label: "초등학생 수(500m)" },
   { key: "facility500SubwayRiders", label: "지하철 승하차(500m)" },
-  { key: "facility500Households", label: "세대수(500m)" },
-  { key: "facility1kmHighSchool", label: "고등학생 수(1km)" },
-  { key: "facility1kmMiddleSchool", label: "중학생 수(1km)" },
-  { key: "facility1kmElementarySchool", label: "초등학생 수(1km)" },
   { key: "facility1kmSubwayRiders", label: "지하철 승하차(1km)" },
-  { key: "facility1kmHouseholds", label: "세대수(1km)" },
   { key: "ownGameZoneCount", label: "게임존 수" },
   { key: "ownRoom1", label: "1인룸 수" },
   { key: "ownRoom2", label: "2인룸 수" },
@@ -534,7 +516,6 @@ export function BasicInfoTab({
         <div className={`${gridClass} mt-4`}>
           <NumberField label="유동인구 평균" value={form.floating500Avg} onChange={(v) => set("floating500Avg", v)} />
           <NumberField label="유동인구 남" value={form.floating500Male} onChange={(v) => set("floating500Male", v)} />
-          <NumberField label="유동인구 여" value={form.floating500Female} onChange={(v) => set("floating500Female", v)} />
           <NumberField label="유동 10대" value={form.floating500_10s} onChange={(v) => set("floating500_10s", v)} />
           <NumberField label="유동 20대" value={form.floating500_20s} onChange={(v) => set("floating500_20s", v)} />
           <NumberField label="유동 30대" value={form.floating500_30s} onChange={(v) => set("floating500_30s", v)} />
@@ -579,26 +560,19 @@ export function BasicInfoTab({
         </div>
       </section>
 
-      {/* 2026-08-24 (5차) — 소상공인365 참고자료(유동인구 1km/직장인구/시설정보) 세 카드를
-          하나로 합침(사용자 요청: "반경 하나에 전체 복붙 한 번이면 되는데 따로 있을 필요 없음").
+      {/* 2026-08-24 (5차) — 소상공인365 참고자료(직장인구/시설정보) 카드를 하나로 합침(사용자
+          요청: "반경 하나에 전체 복붙 한 번이면 되는데 따로 있을 필요 없음").
           calc.ts 어떤 함수도 이 값들을 읽지 않는다(기존 V62 산식·계수 불변 원칙) — 그래서 카드
           자체는 합쳐도 되지만, 핵심 계산에 쓰이는 위 "유동인구(반경 500m)"/"경쟁 카운트" 섹션과
-          헷갈리지 않도록 이 통합 카드 전체에 "참고자료" 배지를 유지한다. */}
+          헷갈리지 않도록 이 통합 카드 전체에 "참고자료" 배지를 유지한다.
+          2026-08-27 — 유동인구(1km)·세대수·학생수 필드는 삭제했다(수요 계산에 못 쓰거나 이미
+          쓰는 값과 중복이라 사용자 확인). */}
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>소상공인365 참고자료 (유동인구 1km · 직장인구 · 시설정보)</h3>
+        <h3 className={sectionTitleClass}>소상공인365 참고자료 (직장인구 · 시설정보)</h3>
         <p className="mt-1 text-xs text-[#8a8072]">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
 
-        <p className="mt-4 text-xs font-medium text-[#8a8072]">유동인구 (1km)</p>
+        <p className="mt-4 text-xs font-medium text-[#8a8072]">PC방업소수 (1km)</p>
         <div className={`${gridClass} mt-2`}>
-          <NumberField label="유동인구 평균" value={form.floating1kmAvg} onChange={(v) => set("floating1kmAvg", v)} />
-          <NumberField label="유동인구 남" value={form.floating1kmMale} onChange={(v) => set("floating1kmMale", v)} />
-          <NumberField label="유동인구 여" value={form.floating1kmFemale} onChange={(v) => set("floating1kmFemale", v)} />
-          <NumberField label="유동 10대" value={form.floating1km_10s} onChange={(v) => set("floating1km_10s", v)} />
-          <NumberField label="유동 20대" value={form.floating1km_20s} onChange={(v) => set("floating1km_20s", v)} />
-          <NumberField label="유동 30대" value={form.floating1km_30s} onChange={(v) => set("floating1km_30s", v)} />
-          <NumberField label="유동 40대" value={form.floating1km_40s} onChange={(v) => set("floating1km_40s", v)} />
-          <NumberField label="유동 50대" value={form.floating1km_50s} onChange={(v) => set("floating1km_50s", v)} />
-          <NumberField label="유동 60대 이상" value={form.floating1km_60plus} onChange={(v) => set("floating1km_60plus", v)} />
           <NumberField
             label="인허가 PC방업소수(1km)"
             value={form.licensedPcStores1km}
@@ -631,26 +605,18 @@ export function BasicInfoTab({
 
         <p className="mt-6 text-xs font-medium text-[#8a8072]">시설정보 (500m / 1km)</p>
         <div className={`${gridClass} mt-2`}>
-          <NumberField label="고등학생 수(500m)" value={form.facility500HighSchool} onChange={(v) => set("facility500HighSchool", v)} />
-          <NumberField label="중학생 수(500m)" value={form.facility500MiddleSchool} onChange={(v) => set("facility500MiddleSchool", v)} />
-          <NumberField label="초등학생 수(500m)" value={form.facility500ElementarySchool} onChange={(v) => set("facility500ElementarySchool", v)} />
           <NumberField
             label="지하철 승하차(500m)"
             value={form.facility500SubwayRiders}
             onChange={(v) => set("facility500SubwayRiders", v)}
             hint="소상공인365 '지하철 이용 현황' 자동추출(반경 내 역이 여러 개면 합산) — 역 없는 지역은 공란"
           />
-          <NumberField label="세대수(500m)" value={form.facility500Households} onChange={(v) => set("facility500Households", v)} />
-          <NumberField label="고등학생 수(1km)" value={form.facility1kmHighSchool} onChange={(v) => set("facility1kmHighSchool", v)} />
-          <NumberField label="중학생 수(1km)" value={form.facility1kmMiddleSchool} onChange={(v) => set("facility1kmMiddleSchool", v)} />
-          <NumberField label="초등학생 수(1km)" value={form.facility1kmElementarySchool} onChange={(v) => set("facility1kmElementarySchool", v)} />
           <NumberField
             label="지하철 승하차(1km)"
             value={form.facility1kmSubwayRiders}
             onChange={(v) => set("facility1kmSubwayRiders", v)}
             hint="소상공인365 '지하철 이용 현황' 자동추출(반경 내 역이 여러 개면 합산) — 역 없는 지역은 공란"
           />
-          <NumberField label="세대수(1km)" value={form.facility1kmHouseholds} onChange={(v) => set("facility1kmHouseholds", v)} />
         </div>
       </section>
 

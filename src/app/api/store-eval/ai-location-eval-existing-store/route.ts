@@ -174,17 +174,11 @@ export async function POST(request: Request) {
     address,
     roadAddress: address,
     floating500Avg: store.floating500Avg,
-    floating1kmAvg: null,
     employ500Total: null,
     employ1kmTotal: null,
-    facility500Households: null,
-    facility1kmHouseholds: null,
     licensedPcStores500m: store.licensedPcStores500m,
     licensedPcStores1km: null,
     facility500SubwayRiders: null,
-    facility500HighSchool: null,
-    facility500MiddleSchool: null,
-    facility500ElementarySchool: null,
   };
 
   const contextText = buildLocationEvalContext({ candidate: contextCandidate, competitors, demandPoints, adminDongReference });

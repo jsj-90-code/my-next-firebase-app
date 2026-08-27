@@ -9,10 +9,6 @@ function baseCandidate(overrides: Partial<DaouReportContextCandidate> = {}): Dao
     pop500m: 1000,
     floating500Avg: 1000,
     facility500SubwayRiders: null,
-    facility500Households: null,
-    facility500HighSchool: null,
-    facility500MiddleSchool: null,
-    facility500ElementarySchool: null,
     ...overrides,
   };
 }
@@ -118,16 +114,14 @@ describe("buildDaouReportContext", () => {
     expect(text).toContain("63,000,000원");
   });
 
-  it("반경500m 특이사항(지하철·세대수·학생수)이 있으면 포함하고, 없으면 생략한다", () => {
+  it("반경500m 특이사항(지하철)이 있으면 포함하고, 없으면 생략한다", () => {
     const withNotes = buildDaouReportContext({
-      candidate: baseCandidate({ facility500SubwayRiders: 30693, facility500Households: 12073, facility500HighSchool: 0, facility500MiddleSchool: 952, facility500ElementarySchool: 787 }),
+      candidate: baseCandidate({ facility500SubwayRiders: 30693 }),
       competitors: [],
       result: baseResult(),
     });
     expect(withNotes).toContain("특이사항");
     expect(withNotes).toContain("지하철 승하차인구(500m) 약 30,693명");
-    expect(withNotes).toContain("세대수(500m) 약 12,073세대");
-    expect(withNotes).toContain("반경500m 학생수(초중고 합) 약 1,739명");
 
     const withoutNotes = buildDaouReportContext({
       candidate: baseCandidate(),

@@ -446,7 +446,6 @@ export async function convertCandidateToExistingStore(input: {
     age1km_80plus: c.age1km_80plus,
     floating500Avg: c.floating500Avg,
     floating500Male: c.floating500Male,
-    floating500Female: c.floating500Female,
     floating500_10s: c.floating500_10s,
     floating500_20s: c.floating500_20s,
     floating500_30s: c.floating500_30s,

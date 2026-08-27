@@ -307,10 +307,6 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             pop500m: candidateForReport.pop500m,
             floating500Avg: candidateForReport.floating500Avg,
             facility500SubwayRiders: candidateForReport.facility500SubwayRiders,
-            facility500Households: candidateForReport.facility500Households,
-            facility500HighSchool: candidateForReport.facility500HighSchool,
-            facility500MiddleSchool: candidateForReport.facility500MiddleSchool,
-            facility500ElementarySchool: candidateForReport.facility500ElementarySchool,
           },
           competitors: competitorsForReport.map((c) => ({
             name: c.name,

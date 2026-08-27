@@ -15,17 +15,11 @@ export type LocationEvalContextCandidate = Pick<
   | "address"
   | "roadAddress"
   | "floating500Avg"
-  | "floating1kmAvg"
   | "employ500Total"
   | "employ1kmTotal"
-  | "facility500Households"
-  | "facility1kmHouseholds"
   | "licensedPcStores500m"
   | "licensedPcStores1km"
   | "facility500SubwayRiders"
-  | "facility500HighSchool"
-  | "facility500MiddleSchool"
-  | "facility500ElementarySchool"
 >;
 
 const TOP_N = 8;
@@ -75,23 +69,11 @@ function adminDongSummary(ref: AdminDongReference | null): string {
 function marketDataSummary(candidate: LocationEvalContextCandidate): string {
   const lines: string[] = [];
   if (candidate.floating500Avg != null) lines.push(`유동인구 500m 일평균 ${fmt(candidate.floating500Avg, "명")}`);
-  if (candidate.floating1kmAvg != null) lines.push(`유동인구 1km 일평균 ${fmt(candidate.floating1kmAvg, "명")}`);
   if (candidate.employ500Total != null) lines.push(`직장인구 500m ${fmt(candidate.employ500Total, "명")}`);
   if (candidate.employ1kmTotal != null) lines.push(`직장인구 1km ${fmt(candidate.employ1kmTotal, "명")}`);
-  if (candidate.facility500Households != null) lines.push(`세대수 500m ${fmt(candidate.facility500Households, "세대")}`);
-  if (candidate.facility1kmHouseholds != null) lines.push(`세대수 1km ${fmt(candidate.facility1kmHouseholds, "세대")}`);
   if (candidate.licensedPcStores500m != null) lines.push(`인허가 PC방업소수 500m ${fmt(candidate.licensedPcStores500m, "개")}`);
   if (candidate.licensedPcStores1km != null) lines.push(`인허가 PC방업소수 1km ${fmt(candidate.licensedPcStores1km, "개")}`);
   if (candidate.facility500SubwayRiders != null) lines.push(`지하철 승하차 500m ${fmt(candidate.facility500SubwayRiders, "명")}`);
-  if (
-    candidate.facility500HighSchool != null ||
-    candidate.facility500MiddleSchool != null ||
-    candidate.facility500ElementarySchool != null
-  ) {
-    lines.push(
-      `학생수 500m 고${fmt(candidate.facility500HighSchool)}/중${fmt(candidate.facility500MiddleSchool)}/초${fmt(candidate.facility500ElementarySchool)}`,
-    );
-  }
   return lines.length ? lines.join("\n") : "소상공인365/SGIS 참고자료 없음(아직 미수집)";
 }
 

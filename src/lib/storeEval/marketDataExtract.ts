@@ -385,14 +385,16 @@ export function parseSosangongin365TrendLatest(text: string, rowLabelHint?: stri
   return null;
 }
 
+// 2026-08-27 — 유동인구(1km)는 삭제했다(사용자 확인: 반경이 넓어 실제 상권 밖 유동인구까지 잡혀서
+// 수요 계산에 못 씀). 500m 유동인구만 계속 자동추출한다. floating500Female도 같이 뺐다 — 수요
+// 계산은 남성비율만 쓰고 여성은 1-남성비율로 자동 계산돼서 굳이 따로 저장할 필요가 없었다.
 function floatingSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
-  const prefix = radiusKey === "500" ? "floating500" : "floating1km";
+  if (radiusKey === "1km") return [];
   return [
-    { key: `${prefix}Avg`, displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["유동인구:전체"], kind: "count" },
-    { key: `${prefix}Male`, displayLabel: `유동인구 남(${displayRadius})`, matchLabels: ["유동인구:남성"], kind: "count" },
-    { key: `${prefix}Female`, displayLabel: `유동인구 여(${displayRadius})`, matchLabels: ["유동인구:여성"], kind: "count" },
+    { key: "floating500Avg", displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["유동인구:전체"], kind: "count" },
+    { key: "floating500Male", displayLabel: `유동인구 남(${displayRadius})`, matchLabels: ["유동인구:남성"], kind: "count" },
     ...FLOATING_DECADE_BANDS.map((b) => ({
-      key: `${prefix}_${b.suffix}`,
+      key: `floating500_${b.suffix}`,
       displayLabel: `유동 ${b.label}(${displayRadius})`,
       matchLabels: b.matches.map((m) => `유동인구:${m}`),
       kind: "count" as const,
@@ -406,17 +408,6 @@ function employSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFie
     { key: `${prefix}Total`, displayLabel: `직장인구 전체(${displayRadius})`, matchLabels: ["직장인구:전체"], kind: "count" },
     { key: `${prefix}Male`, displayLabel: `직장인구 남(${displayRadius})`, matchLabels: ["직장인구:남성"], kind: "count" },
     { key: `${prefix}Female`, displayLabel: `직장인구 여(${displayRadius})`, matchLabels: ["직장인구:여성"], kind: "count" },
-  ];
-}
-
-function householdsSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
-  return [
-    {
-      key: radiusKey === "500" ? "facility500Households" : "facility1kmHouseholds",
-      displayLabel: `세대수(${displayRadius})`,
-      matchLabels: ["세대수"],
-      kind: "count",
-    },
   ];
 }
 
@@ -436,8 +427,10 @@ function pcStoreSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFie
 }
 
 // 2026-08-24 (5차) — 실제 리포트의 "학교시설 (학교수/학생수)" 표에서 확인: 대학교/고등학교/
-// 중학교/초등학교/유치원 5개 컬럼 순서. CandidateInput엔 고등/중/초등학생 수 필드만 있어(대학교·
-// 유치원 대응 필드 없음) 그 3개만 spec으로 노출한다.
+// 중학교/초등학교/유치원 5개 컬럼 순서. 아래 파싱 로직(행 길이 검증)이 여전히 이 개수를 참조한다.
+// 2026-08-27: 학생수는 age1km_10_19 등 이미 쓰는 연령인구와 중복이라 spec(facilitySchoolSpecs)은
+// 삭제했다 — 이 표 자체는 계속 인식하되(여기서 값을 못 뽑는 다른 표와 안 섞이게), CandidateInput
+// 필드로는 매핑하지 않는다.
 const SB365_SCHOOL_CATEGORIES: { key: string; matches: string[] }[] = [
   { key: "대학교", matches: ["대학교"] },
   { key: "고등학교", matches: ["고등학교"] },
@@ -445,20 +438,6 @@ const SB365_SCHOOL_CATEGORIES: { key: string; matches: string[] }[] = [
   { key: "초등학교", matches: ["초등학교"] },
   { key: "유치원", matches: ["유치원"] },
 ];
-
-function facilitySchoolSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
-  const prefix = radiusKey === "500" ? "facility500" : "facility1km";
-  return [
-    { key: `${prefix}HighSchool`, displayLabel: `고등학생 수(${displayRadius})`, matchLabels: ["학교시설:고등학교"], kind: "count" },
-    { key: `${prefix}MiddleSchool`, displayLabel: `중학생 수(${displayRadius})`, matchLabels: ["학교시설:중학교"], kind: "count" },
-    {
-      key: `${prefix}ElementarySchool`,
-      displayLabel: `초등학생 수(${displayRadius})`,
-      matchLabels: ["학교시설:초등학교"],
-      kind: "count",
-    },
-  ];
-}
 
 // 2026-08-24 (5차) — 인천 남동구 논현2동(지하철역 있는 실제 후보지) 리포트로 확인: "지하철 이용
 // 현황" 표만 다른 표와 완전히 다른 모양이다 — "선택 영역" 표기가 아예 없고, 노선명+역명이 라벨로
@@ -602,9 +581,7 @@ export const SOSANGONGIN365_TABLE_VARIANTS: Sosangongin365TableVariant[] = [
     buildSpecs: (radiusKey, displayRadius) => [
       ...floatingSpecs(radiusKey, displayRadius),
       ...employSpecs(radiusKey, displayRadius),
-      ...householdsSpec(radiusKey, displayRadius),
       ...pcStoreSpec(radiusKey, displayRadius),
-      ...facilitySchoolSpecs(radiusKey, displayRadius),
       ...facilitySubwaySpecs(radiusKey, displayRadius),
     ],
     extract: parseSosangongin365FullReport,
