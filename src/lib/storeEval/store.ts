@@ -117,6 +117,14 @@ export async function saveCandidate(candidate: CandidateInput, actor: string | n
   await writeAuditLog({ entityType: "candidate", entityId: candidate.code, action: before ? "수정" : "생성", before, after: candidate, actor });
 }
 
+/**
+ * 후보지 본체(storeEvalCandidates)만 지운다. candidateCode로 딸려 있는 storeEvalResults/
+ * storeEvalAdminDongReferences/storeEvalDemandPoints/storeEvalMarketDataUploads는 firestore.rules가
+ * 클라이언트 delete를 의도적으로 막아둬서(재계산 이력 보존, 서버 전용 쓰기) 여기서 지울 수 없다 —
+ * 화면(candidates/page.tsx)은 이 함수 대신 전체 컬렉션을 함께 지우는
+ * POST /api/store-eval/delete-candidate(firebase-admin)를 쓴다. 이 함수는 다른 용도로 후보지
+ * 본체만 지워야 할 때를 위해 남겨둔다.
+ */
 export async function deleteCandidate(code: string, actor: string | null): Promise<void> {
   const before = await getCandidate(code);
   await deleteDoc(doc(requireDb(), CANDIDATES, code));

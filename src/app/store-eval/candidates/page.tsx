@@ -1,13 +1,15 @@
 "use client";
 
 // 2. 신규후보지 입력 - 후보지 목록 화면.
-// listCandidates/generateNextCandidateCode/duplicateCandidate/deleteCandidate 전부 store.ts 함수를 그대로 사용한다.
+// listCandidates/generateNextCandidateCode/duplicateCandidate는 store.ts 함수를 그대로 쓴다. 삭제는
+// 경쟁점·수요거점·업로드이력·행정동참고자료·입지동선평가·최종결과까지 함께 지워야 해서(고아 데이터
+// 방지) firebase-admin으로 보안규칙을 우회하는 /api/store-eval/delete-candidate를 대신 쓴다.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { deleteCandidate, duplicateCandidate, listCandidates } from "@/lib/storeEval/store";
+import { duplicateCandidate, listCandidates } from "@/lib/storeEval/store";
 import type { CandidateInput, ReviewStatus } from "@/lib/storeEval/types";
 import { formatDateTime } from "@/lib/storeEval/format";
 
@@ -65,11 +67,20 @@ export default function CandidateListPage() {
   }
 
   async function handleDelete(code: string) {
-    if (!confirm(`${code} 후보지를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!confirm(`${code} 후보지를 삭제하시겠습니까? 경쟁점·입지동선평가·최종결과 등 딸린 데이터도 함께 지워지며, 되돌릴 수 없습니다.`)) return;
     setBusyCode(code);
     setError(null);
     try {
-      await deleteCandidate(code, user?.email ?? null);
+      const token = await user?.getIdToken();
+      const response = await fetch("/api/store-eval/delete-candidate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ candidateCode: code }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error ?? "후보지를 삭제하지 못했습니다.");
+      }
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "후보지를 삭제하지 못했습니다.");
