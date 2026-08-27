@@ -616,6 +616,21 @@ export function computeInteriorScore(input: {
 }
 
 /**
+ * 2026-08-28 추가 — 종합사양(모니터) 점수도 먹거리/인테리어와 같은 패턴으로 세분화한다(사용자 요청).
+ * CPU/메모리/주변기기 중 하나라도 채우면 평균(0.5점 단위 반올림)을 쓰고, 셋 다 비어 있으면 기존처럼
+ * 종합 직접입력값(legacyScore=ownMonitorScore/monitorScore)을 그대로 쓴다. 결과는 computeSpecScore의
+ * monitorScore 파라미터로 그대로 넘어간다(computeSpecScore 시그니처 자체는 그대로 둔다).
+ */
+export function computeGeneralSpecScore(input: {
+  cpuScore: number | null;
+  ramScore: number | null;
+  peripheralScore: number | null;
+  legacyScore: number | null;
+}): number | null {
+  return averageFilledScores([input.cpuScore, input.ramScore, input.peripheralScore], input.legacyScore);
+}
+
+/**
  * 경쟁점 한 곳의 경쟁력점수 5개 구성요소를 계산한다.
  * 사양/좌석/입지는 VGA·존구성(1인룸/2인룸/팀룸/커플존 — VIP존/프렌즈존은 경쟁점 조사 대상 제외)·
  * 층수+엘리베이터로 자동 계산하고, 조사수준이 간략/외관만이면 미입력 항목을 기본값(2.0/1.5)으로
@@ -627,9 +642,15 @@ export function computeCompetitorScores(
 ): { spec: number | null; seat: number | null; food: number | null; interior: number | null; location: number | null; total: number | null } {
   const { kinds, rooms } = computeZoneComposition([c.room1, c.room2, c.teamRoom, c.coupleZone]);
   const hasPremium = (c.premiumZone ?? 0) > 0;
+  const generalSpecScore = computeGeneralSpecScore({
+    cpuScore: c.specCpuScore,
+    ramScore: c.specRamScore,
+    peripheralScore: c.specPeripheralScore,
+    legacyScore: c.monitorScore,
+  });
   const spec = applySurveyLevelDefault(
     computeSpecScore(
-      { cpu: c.cpu, vgaBase: c.vgaBase, vgaTop: c.vgaTop, ram: c.ram, monitorScore: c.monitorScore, bonus: hasPremium ? PREMIUM_ZONE_BONUS : 0 },
+      { cpu: c.cpu, vgaBase: c.vgaBase, vgaTop: c.vgaTop, ram: c.ram, monitorScore: generalSpecScore, bonus: hasPremium ? PREMIUM_ZONE_BONUS : 0 },
       settings,
     ),
     c.surveyLevel,
@@ -1503,6 +1524,9 @@ export function computeExistingStoreMeasuredForecast(
     | "ownFoodBrand"
     | "ownInteriorLevelScore"
     | "ownInteriorConditionScore"
+    | "ownSpecCpuScore"
+    | "ownSpecRamScore"
+    | "ownSpecPeripheralScore"
   >,
   competitors: Competitor[],
   settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "demandCaptureTable" | "measuredForecastProductRatio" | "foodBrandScores">,
@@ -1542,13 +1566,19 @@ export function computeExistingStoreMeasuredForecast(
     [store.ownRoom1, store.ownRoom2, store.ownTeamRoom, store.ownCoupleZone, store.ownVipZone],
     [store.ownFriendsZone],
   );
+  const ownGeneralSpecScore = computeGeneralSpecScore({
+    cpuScore: store.ownSpecCpuScore,
+    ramScore: store.ownSpecRamScore,
+    peripheralScore: store.ownSpecPeripheralScore,
+    legacyScore: facility.ownMonitorScore,
+  });
   const ownSpecScore = computeSpecScore(
     {
       cpu: store.ownCpu,
       vgaBase: store.ownVgaBase,
       vgaTop: store.ownVgaTop,
       ram: store.ownRam,
-      monitorScore: facility.ownMonitorScore,
+      monitorScore: ownGeneralSpecScore,
       bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
     },
     settings,

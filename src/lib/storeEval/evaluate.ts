@@ -24,6 +24,7 @@ import {
   computeFinalJudgement,
   computeFoodScore,
   computeInteriorScore,
+  computeGeneralSpecScore,
   computeIpPerDemand,
   computeLocationCompositeScore,
   computeLocationScoreFromFacts,
@@ -81,13 +82,19 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     [c.ownRoom1, c.ownRoom2, ownFacility.ownTeamRoom, ownFacility.ownCoupleZone, ownFacility.ownVipZone],
     [ownFacility.ownFriendsZone],
   );
+  const ownGeneralSpecScore = computeGeneralSpecScore({
+    cpuScore: c.ownSpecCpuScore,
+    ramScore: c.ownSpecRamScore,
+    peripheralScore: c.ownSpecPeripheralScore,
+    legacyScore: ownFacility.ownMonitorScore,
+  });
   const ownSpecScore = computeSpecScore(
     {
       cpu: c.ownCpu,
       vgaBase: c.ownVgaBase,
       vgaTop: c.ownVgaTop,
       ram: c.ownRam,
-      monitorScore: ownFacility.ownMonitorScore,
+      monitorScore: ownGeneralSpecScore,
       bonus: ownFacility.ownGameZoneCount * GAME_ZONE_BONUS,
     },
     settings,

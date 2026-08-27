@@ -8,6 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   applyStandardOwnFacilityDefaults,
   computeFoodScore,
+  computeGeneralSpecScore,
   computeInteriorScore,
   computeLocationScoreFromFacts,
   computeSeatScore,
@@ -277,6 +278,12 @@ export function BasicInfoTab({
       [form.ownRoom1, form.ownRoom2, facility.ownTeamRoom, facility.ownCoupleZone, facility.ownVipZone],
       [facility.ownFriendsZone],
     );
+    const generalSpecScore = computeGeneralSpecScore({
+      cpuScore: form.ownSpecCpuScore,
+      ramScore: form.ownSpecRamScore,
+      peripheralScore: form.ownSpecPeripheralScore,
+      legacyScore: facility.ownMonitorScore,
+    });
     return {
       spec: computeSpecScore(
         {
@@ -284,7 +291,7 @@ export function BasicInfoTab({
           vgaBase: form.ownVgaBase,
           vgaTop: form.ownVgaTop,
           ram: form.ownRam,
-          monitorScore: facility.ownMonitorScore,
+          monitorScore: generalSpecScore,
           bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
         },
         settings,
@@ -297,6 +304,7 @@ export function BasicInfoTab({
         conditionScore: form.ownInteriorConditionScore,
         legacyScore: facility.ownInteriorScore,
       }),
+      generalSpec: generalSpecScore,
       // 참고용 제안값 — 사양점수 자동계산엔 안 들어가고, 종합사양(모니터) 점수를 사람이 매길 때
       // 참고하라고 화면에만 보여준다(2026-08-27, CPU/RAM 자동가중치 원복 이후).
       cpuSuggestion: scoreFromCpu(form.ownCpu),
@@ -309,6 +317,9 @@ export function BasicInfoTab({
     form.ownVgaTop,
     form.ownGameZoneCount,
     form.ownMonitorScore,
+    form.ownSpecCpuScore,
+    form.ownSpecRamScore,
+    form.ownSpecPeripheralScore,
     form.ownRoom1,
     form.ownRoom2,
     form.ownTeamRoom,
@@ -661,17 +672,40 @@ export function BasicInfoTab({
           <ComputedField label="사양 점수 (자동)" value={computedScores.spec} hint="VGA(+게임존 가산) 70% + 종합사양(모니터) 30%" />
           <ComputedField label="좌석 점수 (자동)" value={computedScores.seat} hint="존 다양성 50%+수용력 50%" />
           <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
+        </div>
+
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">종합사양 (모니터·CPU·메모리·주변기기)</h4>
+        <div className={`${gridClass} mt-3`}>
           <ScoreSelectField
-            label="종합사양 점수 (모니터·CPU·메모리·주변기기)"
-            value={form.ownMonitorScore}
-            onChange={(v) => set("ownMonitorScore", v)}
-            hint={
-              `모니터 화질·CPU·메모리·주변기기(키보드/마우스/헤드셋)를 종합해서 직접 1~5점 평가 · 비우면 표준값 4 적용` +
-              (computedScores.cpuSuggestion != null || computedScores.ramSuggestion != null
-                ? ` · 참고: CPU${computedScores.cpuSuggestion ?? "-"}점/RAM${computedScores.ramSuggestion ?? "-"}점(자동제안, 참고만)`
-                : "")
-            }
+            label="CPU 점수"
+            value={form.ownSpecCpuScore}
+            onChange={(v) => set("ownSpecCpuScore", v)}
+            step={0.5}
+            hint={`CPU 성능${computedScores.cpuSuggestion != null ? ` · 참고: 자동제안 ${computedScores.cpuSuggestion}점` : ""}`}
           />
+          <ScoreSelectField
+            label="메모리 점수"
+            value={form.ownSpecRamScore}
+            onChange={(v) => set("ownSpecRamScore", v)}
+            step={0.5}
+            hint={`RAM 용량/속도${computedScores.ramSuggestion != null ? ` · 참고: 자동제안 ${computedScores.ramSuggestion}점` : ""}`}
+          />
+          <ScoreSelectField
+            label="주변기기 점수"
+            value={form.ownSpecPeripheralScore}
+            onChange={(v) => set("ownSpecPeripheralScore", v)}
+            step={0.5}
+            hint="키보드/마우스/헤드셋 상태"
+          />
+          {form.ownSpecCpuScore == null && form.ownSpecRamScore == null && form.ownSpecPeripheralScore == null && (
+            <ScoreSelectField
+              label="종합사양 점수 (직접입력)"
+              value={form.ownMonitorScore}
+              onChange={(v) => set("ownMonitorScore", v)}
+              hint="위 세부항목을 셋 다 안 채웠을 때 직접 평가(모니터 화질 포함 종합) · 비우면 표준값 4 적용"
+            />
+          )}
+          <ComputedField label="종합사양 점수 (최종)" value={computedScores.generalSpec} />
         </div>
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">먹거리</h4>

@@ -28,6 +28,7 @@ import {
   computeExpectedUtilization,
   computeFinalJudgement,
   computeFoodScore,
+  computeGeneralSpecScore,
   computeInteriorScore,
   computeCompetitorAppliedPcCount,
   computeFloatingRawDemand,
@@ -421,6 +422,18 @@ describe("computeInteriorScore (인테리어 수준+매장관리상태 평균, 2
   });
 });
 
+describe("computeGeneralSpecScore (CPU/메모리/주변기기 평균, 2026-08-28 추가 — computeInteriorScore와 같은 패턴)", () => {
+  it("셋 다 있으면 평균(0.5점 단위 반올림)", () => {
+    expect(computeGeneralSpecScore({ cpuScore: 4, ramScore: 3, peripheralScore: 3.5, legacyScore: null })).toBe(3.5);
+  });
+  it("일부만 있으면 채워진 것만 평균", () => {
+    expect(computeGeneralSpecScore({ cpuScore: 4, ramScore: null, peripheralScore: null, legacyScore: null })).toBe(4);
+  });
+  it("셋 다 없으면 직접입력값(legacyScore=ownMonitorScore)으로 폴백 — 기존 40개 매장은 항상 이 경로", () => {
+    expect(computeGeneralSpecScore({ cpuScore: null, ramScore: null, peripheralScore: null, legacyScore: 4 })).toBe(4);
+  });
+});
+
 describe("computeZoneComposition/computeSeatScore (좌석점수 = 다양성 50% + 수용력 50%)", () => {
   it("자사 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15) → 종류수5·독립룸수10 → 4.0점", () => {
     const { kinds, rooms } = computeZoneComposition([0, 0, 2, 3, 5], [15]);
@@ -723,6 +736,9 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
       interiorConditionScore: null,
       monitorScore: null,
       monitorBasis: null,
+      specCpuScore: null,
+      specRamScore: null,
+      specPeripheralScore: null,
       room1: null,
       room2: null,
       teamRoom: null,
@@ -857,6 +873,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       ownFoodBrand: null,
       ownInteriorLevelScore: null,
       ownInteriorConditionScore: null,
+      ownSpecCpuScore: null,
+      ownSpecRamScore: null,
+      ownSpecPeripheralScore: null,
       ...overrides,
     };
   }
@@ -898,6 +917,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       interiorConditionScore: null,
       monitorScore: 3,
       monitorBasis: null,
+      specCpuScore: null,
+      specRamScore: null,
+      specPeripheralScore: null,
       room1: null,
       room2: null,
       teamRoom: null,

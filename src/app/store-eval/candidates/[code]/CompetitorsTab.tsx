@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { computeCompetitorInvestigationSummary, computeCompetitorScores } from "@/lib/storeEval/calc";
+import { computeCompetitorInvestigationSummary, computeCompetitorScores, computeGeneralSpecScore } from "@/lib/storeEval/calc";
 import { parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
@@ -90,6 +90,9 @@ function blankCompetitor(candidateCode: string): Competitor {
     interiorConditionScore: null,
     monitorScore: null,
     monitorBasis: null,
+    specCpuScore: null,
+    specRamScore: null,
+    specPeripheralScore: null,
     room1: null,
     room2: null,
     teamRoom: null,
@@ -189,6 +192,16 @@ function CompetitorForm({
   }, []);
 
   const computed = useMemo(() => computeCompetitorScores(form, settings), [form, settings]);
+  const computedGeneralSpecScore = useMemo(
+    () =>
+      computeGeneralSpecScore({
+        cpuScore: form.specCpuScore,
+        ramScore: form.specRamScore,
+        peripheralScore: form.specPeripheralScore,
+        legacyScore: form.monitorScore,
+      }),
+    [form.specCpuScore, form.specRamScore, form.specPeripheralScore, form.monitorScore],
+  );
 
   function set<K extends keyof Competitor>(key: K, value: Competitor[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -299,7 +312,18 @@ function CompetitorForm({
           />
         )}
         <ComputedField label="인테리어 점수 (최종)" value={computed.interior} />
-        <ScoreSelectField label="모니터 점수" value={form.monitorScore} onChange={(v) => set("monitorScore", v)} hint="모니터·CPU·RAM·주변기기를 종합해 직접 평가" />
+        <ScoreSelectField label="CPU 점수" value={form.specCpuScore} onChange={(v) => set("specCpuScore", v)} step={0.5} hint="CPU 성능" />
+        <ScoreSelectField label="메모리 점수" value={form.specRamScore} onChange={(v) => set("specRamScore", v)} step={0.5} hint="RAM 용량/속도" />
+        <ScoreSelectField label="주변기기 점수" value={form.specPeripheralScore} onChange={(v) => set("specPeripheralScore", v)} step={0.5} hint="키보드/마우스/헤드셋 상태" />
+        {form.specCpuScore == null && form.specRamScore == null && form.specPeripheralScore == null && (
+          <ScoreSelectField
+            label="종합사양 점수 (직접입력)"
+            value={form.monitorScore}
+            onChange={(v) => set("monitorScore", v)}
+            hint="위 세부항목을 셋 다 안 채웠을 때 직접 평가(모니터·CPU·RAM·주변기기 종합)"
+          />
+        )}
+        <ComputedField label="종합사양 점수 (최종)" value={computedGeneralSpecScore} />
       </div>
       <p className="mt-2 text-xs text-[#8a8072]">종합 경쟁력점수: {computed.total ?? "-"}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
