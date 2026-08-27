@@ -109,7 +109,6 @@ function blankStore(): ExistingStore {
     floating500_40s: null,
     floating500_50s: null,
     floating500_60plus: null,
-    licensedPcStores500m: null,
     operatingPcStores500m: null,
     originCandidateCode: null,
     predictedAtConversion: null,

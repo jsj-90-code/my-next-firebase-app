@@ -51,7 +51,6 @@ function blankCompetitor(candidateCode: string): Competitor {
     name: "",
     surveyLevel: null,
     investigationStatus: "조사완료",
-    address: null,
     distanceM: null,
     floor: null,
     groundLevel: null,
@@ -219,7 +218,6 @@ function CompetitorForm({
           required
         />
         <SelectField label="조사수준" value={form.surveyLevel} onChange={(v) => set("surveyLevel", v)} options={SURVEY_LEVEL_OPTIONS} />
-        <TextField label="주소" value={form.address ?? ""} onChange={(v) => set("address", v || null)} />
         <NumberField label="거리(m)" value={form.distanceM} onChange={(v) => set("distanceM", v)} />
         <NumberField label="층수" value={form.floor} onChange={(v) => set("floor", v)} allowNegative />
         <SelectField label="지상/지하" value={form.groundLevel} onChange={(v) => set("groundLevel", v)} options={GROUND_LEVEL_OPTIONS} />
@@ -562,7 +560,6 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-medium text-[#171310] dark:text-[#f2ede2]">{c.name || "(이름 없음)"}</p>
-                  <p className="mt-0.5 text-xs text-[#8a8072]">{c.address || "주소 미입력"}</p>
                 </div>
                 <span
                   className={`app-badge shrink-0 ${

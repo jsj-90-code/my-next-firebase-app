@@ -132,7 +132,6 @@ async function main() {
       floating500_40s: toNumber(s["유동500_40대"]),
       floating500_50s: toNumber(s["유동500_50대"]),
       floating500_60plus: toNumber(s["유동500_60대이상"]),
-      licensedPcStores500m: toNumber(s["인허가_PC방업소수_500m"]),
       operatingPcStores500m: toNumber(s["실영업_PC방업소수_500m"]),
       updatedAt: Date.now(),
     };
@@ -183,7 +182,6 @@ async function main() {
       name,
       surveyLevel: toText(c["조사수준"]) || "상세",
       investigationStatus: "조사완료",
-      address: toText(c["경쟁점주소"]),
       distanceM: toNumber(c["거리_m"]),
       floor: toNumber(c["점포층수"]),
       groundLevel: toText(c["지상/지하"]),

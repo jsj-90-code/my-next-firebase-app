@@ -411,20 +411,11 @@ function employSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFie
   ];
 }
 
-function pcStoreSpec(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
-  // 2026-08-24 (5차) — 사용자 확인: 소상공인365 "업소수"는 등록된 사업체 집계 성격이라 "인허가"
-  // 쪽에 대응시켜야 맞다("실영업"은 네이버 로드뷰로 실제 영업 중인지 사용자가 직접 확인해서 넣는
-  // 값 — 500m은 V62 공식(computeCompetitorIp)의 핵심값이기도 해서 자동 덮어쓰면 안 됨). 그래서
-  // "실영업 PC방업소수"는 이 자동추출 대상에서 빼고(500m/1km 둘 다), "인허가"만 자동추출한다.
-  return [
-    {
-      key: radiusKey === "500" ? "licensedPcStores500m" : "licensedPcStores1km",
-      displayLabel: `인허가 PC방업소수(${displayRadius})`,
-      matchLabels: ["업소수"],
-      kind: "count",
-    },
-  ];
-}
+// 2026-08-27 — 인허가 PC방업소수(licensedPcStores500m/1km) 자동추출은 삭제했다(사용자 확인:
+// 계산에도 안 쓰이고 자동추출이라 검증도 안 된 값이었음). "실영업 PC방업소수"는 원래부터 이
+// 자동추출 대상이 아니었다(네이버 로드뷰로 직접 확인해서 입력하는 값, 500m은 V62 공식의
+// 핵심값이라 자동 덮어쓰면 안 됨) — 그래서 소상공인365 "업소수" 표는 이제 이 파일에서 매칭
+// 대상이 아예 없다.
 
 // 2026-08-24 (5차) — 실제 리포트의 "학교시설 (학교수/학생수)" 표에서 확인: 대학교/고등학교/
 // 중학교/초등학교/유치원 5개 컬럼 순서. 아래 파싱 로직(행 길이 검증)이 여전히 이 개수를 참조한다.
@@ -581,7 +572,6 @@ export const SOSANGONGIN365_TABLE_VARIANTS: Sosangongin365TableVariant[] = [
     buildSpecs: (radiusKey, displayRadius) => [
       ...floatingSpecs(radiusKey, displayRadius),
       ...employSpecs(radiusKey, displayRadius),
-      ...pcStoreSpec(radiusKey, displayRadius),
       ...facilitySubwaySpecs(radiusKey, displayRadius),
     ],
     extract: parseSosangongin365FullReport,

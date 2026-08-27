@@ -158,7 +158,6 @@ export async function POST(request: Request) {
         // 05_경쟁점정보 워크플로 상 이 값은 "실사 진행 여부"라 자동수집 직후엔 화면에서 "확인 필요"로
         // 안내하고 실제 필드값은 전부 null로 남긴다(지어내지 않음) — investigationStatus는 사용자가
         // 실사 후 직접 바꾸는 게 맞아 여기서는 조사완료로 두지 않고 명시적으로 표시한다.
-        address: null,
         distanceM,
         floor: null,
         groundLevel: null,

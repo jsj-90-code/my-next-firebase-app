@@ -176,8 +176,8 @@ export async function POST(request: Request) {
     floating500Avg: store.floating500Avg,
     employ500Total: null,
     employ1kmTotal: null,
-    licensedPcStores500m: store.licensedPcStores500m,
-    licensedPcStores1km: null,
+    operatingPcStores500m: store.operatingPcStores500m,
+    operatingPcStores1km: null,
     facility500SubwayRiders: null,
   };
 

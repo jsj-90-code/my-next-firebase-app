@@ -43,11 +43,9 @@ function baseCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput 
     floating500_40s: null,
     floating500_50s: null,
     floating500_60plus: null,
-    licensedPcStores500m: null,
     operatingPcStores500m: null,
     commercialDataYearMonth: null,
     businessCountAsOfDate: null,
-    licensedPcStores1km: null,
     operatingPcStores1km: null,
     employ500Total: null,
     employ500Male: null,
@@ -86,7 +84,6 @@ function competitor(overrides: Partial<Competitor>): Competitor {
     name: "경쟁점",
     surveyLevel: null,
     investigationStatus: "조사완료",
-    address: null,
     distanceM: null,
     floor: null,
     groundLevel: null,
@@ -203,14 +200,14 @@ describe("buildLocationEvalContext", () => {
       fetchedAt: 0,
     };
     const text = buildLocationEvalContext({
-      candidate: baseCandidate({ floating500Avg: 5000, licensedPcStores500m: 3 }),
+      candidate: baseCandidate({ floating500Avg: 5000, operatingPcStores500m: 3 }),
       competitors: [],
       demandPoints: [],
       adminDongReference: ref,
     });
     expect(text).toContain("역삼동(2024년 기준) 총인구 12,345명");
     expect(text).toContain("유동인구 500m 일평균 5,000명");
-    expect(text).toContain("인허가 PC방업소수 500m 3개");
+    expect(text).toContain("실영업 PC방업소수 500m 3개");
     // 채워지지 않은 필드는 지어내지 않고 아예 줄 자체를 안 만든다.
     expect(text).not.toContain("직장인구 500m");
   });

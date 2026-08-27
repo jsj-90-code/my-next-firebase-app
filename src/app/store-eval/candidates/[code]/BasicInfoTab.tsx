@@ -92,9 +92,7 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "floating500_40s", label: "유동 40대(500m)" },
   { key: "floating500_50s", label: "유동 50대(500m)" },
   { key: "floating500_60plus", label: "유동 60대이상(500m)" },
-  { key: "licensedPcStores500m", label: "인허가 PC방업소수(500m)" },
   { key: "operatingPcStores500m", label: "실영업 PC방업소수(500m)" },
-  { key: "licensedPcStores1km", label: "인허가 PC방업소수(1km)" },
   { key: "operatingPcStores1km", label: "실영업 PC방업소수(1km)" },
   { key: "employ500Total", label: "직장인구 전체(500m)" },
   { key: "employ500Male", label: "직장인구 남(500m)" },
@@ -537,25 +535,18 @@ export function BasicInfoTab({
           />
           <TextField label="업소수_기준시점" value={form.businessCountAsOfDate ?? ""} onChange={(v) => set("businessCountAsOfDate", v || null)} manualOnly />
           <NumberField
-            label="인허가 PC방업소수"
-            value={form.licensedPcStores500m}
-            onChange={(v) => set("licensedPcStores500m", v)}
-            hint="기존 인허가 PC방 수(후보점 제외) — 소상공인365 '업소수'(등록 사업체 집계) 자동추출"
-          />
-          <NumberField
             label="실영업 PC방업소수"
             value={form.operatingPcStores500m}
             onChange={(v) => set("operatingPcStores500m", v)}
-            hint="네이버 로드뷰 등으로 실제 영업 중인지 직접 확인해서 입력"
+            hint="네이버 로드뷰 등으로 실제 영업 중인지 직접 확인해서 입력 — 경쟁IP 계산의 핵심값"
             manualOnly
           />
-          {/* 2026-08-25 추가 — "기존 인허가 PC방 수"(후보점 제외, 산식 입력값)와 "후보점 입점 후
-              예상 총 PC방 수"(참고용, +1)를 혼동하지 않도록 별도 읽기전용 필드로 분리해 보여준다.
-              저장하지 않는다 — 위 값 + 1을 매번 다시 계산할 뿐이다. */}
+          {/* 2026-08-25 추가, 2026-08-27 — 인허가 PC방업소수(자동추출, 계산엔 안 씀) 삭제하면서
+              기준을 실영업(계산 입력값)으로 바꿨다. */}
           <ComputedField
             label="후보점 포함 예상 총 PC방 수(500m)"
-            value={form.licensedPcStores500m == null ? null : form.licensedPcStores500m + 1}
-            hint="참고용 — 인허가 PC방업소수 + 1(이 후보점 자신). 산식 입력값 아님."
+            value={form.operatingPcStores500m == null ? null : form.operatingPcStores500m + 1}
+            hint="참고용 — 실영업 PC방업소수 + 1(이 후보점 자신). 산식 입력값 아님."
           />
         </div>
       </section>
@@ -574,22 +565,11 @@ export function BasicInfoTab({
         <p className="mt-4 text-xs font-medium text-[#8a8072]">PC방업소수 (1km)</p>
         <div className={`${gridClass} mt-2`}>
           <NumberField
-            label="인허가 PC방업소수(1km)"
-            value={form.licensedPcStores1km}
-            onChange={(v) => set("licensedPcStores1km", v)}
-            hint="기존 인허가 PC방 수(후보점 제외)"
-          />
-          <NumberField
             label="실영업 PC방업소수(1km)"
             value={form.operatingPcStores1km}
             onChange={(v) => set("operatingPcStores1km", v)}
             hint="네이버 로드뷰 등으로 직접 확인해서 입력(자동추출 안 함)"
             manualOnly
-          />
-          <ComputedField
-            label="후보점 포함 예상 총 PC방 수(1km)"
-            value={form.licensedPcStores1km == null ? null : form.licensedPcStores1km + 1}
-            hint="참고용 — 인허가 PC방업소수(1km) + 1. 산식 입력값 아님."
           />
         </div>
 

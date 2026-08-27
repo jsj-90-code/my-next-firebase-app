@@ -78,17 +78,18 @@ export type CandidateInput = {
   floating500_50s: number | null;
   floating500_60plus: number | null;
 
-  licensedPcStores500m: number | null; // 인허가_PC방업소수_500m
+  // 2026-08-27 — 인허가 PC방업소수(500m/1km)는 삭제했다(사용자 확인: 계산에도 안 쓰이고
+  // 소상공인365 자동추출이라 직접 검증도 안 된 값이라 "실영업"만 남기면 충분함). 실영업(직접
+  // 확인해서 입력)은 500m이 경쟁IP 계산의 핵심값이라 그대로 둔다.
   operatingPcStores500m: number | null; // 실영업_PC방업소수_500m
 
   // 2026-08-24 (2단계) 추가 — 소상공인365 상권분석 원본에서만 채울 수 있는 항목(공식 API 없음,
-  // 반자동 업로드-추출 전용, /store-eval/candidates 상권자료 자동화 참고). 위 500m 값들은 기존과
-  // 동일하게 calc.ts(computeFloatingRawDemand/computeCompetitorIp)가 읽지만, 이 블록의 1km 버전과
-  // 직장/시설 항목은 전부 참고자료일 뿐이다 — calc.ts 어떤 함수도 이 아래 필드를 읽지 않는다
-  // (기존 V62 산식·계수 불변 원칙, 사용자 요청사항).
+  // 반자동 업로드-추출 전용, /store-eval/candidates 상권자료 자동화 참고). 위 500m 값은 기존과
+  // 동일하게 calc.ts(computeFloatingRawDemand/computeCompetitorIp)가 읽지만, 이 블록의 직장/시설
+  // 항목은 전부 참고자료일 뿐이다 — calc.ts 어떤 함수도 이 아래 필드를 읽지 않는다(기존 V62
+  // 산식·계수 불변 원칙, 사용자 요청사항).
   commercialDataYearMonth: string | null; // 상권_기준연월
   businessCountAsOfDate: string | null; // 업소수_기준시점
-  licensedPcStores1km: number | null;
   operatingPcStores1km: number | null;
 
   employ500Total: number | null; // 직장500_전체
@@ -169,7 +170,9 @@ export type Competitor = {
   // 기존 문서에 남아 있는 surveyState 값은 store.ts의 migrateCompetitorInvestigationStatus로
   // 읽어올 때 investigationStatus로 옮겨 담는다(마이그레이션, 기존 데이터 손실 없음).
   investigationStatus: CompetitorInvestigationStatus;
-  address: string | null;
+  // 2026-08-27 삭제 — 주소는 자동입력(카카오 수집·붙여넣기 파서 둘 다 항상 null)되는 값이 없어
+  // 항상 사람이 직접 타이핑해야 했는데 실제로 거의 안 채워졌다(사용자 확인) — distanceM(자동
+  // 계산)이 이미 "얼마나 가까운지"를 알려주니 굳이 주소까지 몰라도 됨.
   distanceM: number | null;
   floor: number | null;
   groundLevel: GroundLevel | null;
@@ -533,7 +536,6 @@ export type ExistingStore = {
   floating500_40s: number | null;
   floating500_50s: number | null;
   floating500_60plus: number | null;
-  licensedPcStores500m: number | null;
   operatingPcStores500m: number | null;
 
   // 2026-08-21 추가 — "후보지평가 → 오픈 → 실제매출로 검증" 흐름을 실제로 잇기 위한 필드.

@@ -575,21 +575,20 @@ describe("SOSANGONGIN365_TABLE_VARIANTS — 표 종류 선택 없이 반경만 �
     expect(result.find((r) => r.fieldKey === "floating500Male")?.parsedValue).toBe(34075);
     expect(result.find((r) => r.fieldKey === "employ500Total")?.parsedValue).toBe(4994);
     expect(result.find((r) => r.fieldKey === "employ500Female")?.parsedValue).toBe(3126);
-    // 소상공인365 "업소수"는 등록 사업체 집계 성격이라 "인허가" 쪽에 자동 매칭한다. "실영업"은
-    // 사용자가 네이버 로드뷰로 직접 확인하는 값이라(500m은 V62 핵심값이기도 함) 자동추출 대상이
-    // 아니다(500m/1km 둘 다 후보에서 제외).
-    expect(result.find((r) => r.fieldKey === "licensedPcStores500m")?.parsedValue).toBe(2);
+    // 2026-08-27 — 인허가 PC방업소수(자동추출, 계산엔 안 씀) 자체를 삭제했다(사용자 확인). "실영업"은
+    // 사용자가 네이버 로드뷰로 직접 확인하는 값이라(500m은 V62 핵심값이기도 함) 여전히 자동추출
+    // 대상이 아니다 — 그래서 이제 "업소수" 표는 500m/1km 둘 다 아무 필드에도 안 매칭된다.
     expect(result.some((r) => r.fieldKey === "operatingPcStores500m")).toBe(false);
   });
 
-  // 2026-08-27 — 유동인구(1km)·세대수는 삭제했다(반경이 넓어 수요계산에 못 쓰거나 인구수와
-  // 중복이라 사용자 확인). 1km에서도 여전히 매칭되는 직장인구/업소수만 확인한다.
+  // 2026-08-27 — 유동인구(1km)·세대수·인허가업소수는 삭제했다(반경이 넓어 수요계산에 못 쓰거나
+  // 인구수와 중복이거나 계산에 안 쓰이고 검증도 안 된 값이라 사용자 확인). 1km에서도 여전히
+  // 매칭되는 직장인구만 확인한다.
   it("반경을 1km로 바꾸면 1km 전용 필드 키로 매칭된다", () => {
     const variant = SOSANGONGIN365_TABLE_VARIANTS[0];
     const pairs = variant.extract(REAL_SB365_FULL_REPORT_EXCERPT);
     const result = extractFields(pairs, variant.buildSpecs("1km", "1km"));
     expect(result.find((r) => r.fieldKey === "floating1kmAvg")).toBeUndefined();
-    expect(result.find((r) => r.fieldKey === "licensedPcStores1km")?.parsedValue).toBe(2);
     expect(result.some((r) => r.fieldKey === "operatingPcStores1km")).toBe(false);
   });
 

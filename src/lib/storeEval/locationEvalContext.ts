@@ -17,8 +17,8 @@ export type LocationEvalContextCandidate = Pick<
   | "floating500Avg"
   | "employ500Total"
   | "employ1kmTotal"
-  | "licensedPcStores500m"
-  | "licensedPcStores1km"
+  | "operatingPcStores500m"
+  | "operatingPcStores1km"
   | "facility500SubwayRiders"
 >;
 
@@ -71,8 +71,8 @@ function marketDataSummary(candidate: LocationEvalContextCandidate): string {
   if (candidate.floating500Avg != null) lines.push(`유동인구 500m 일평균 ${fmt(candidate.floating500Avg, "명")}`);
   if (candidate.employ500Total != null) lines.push(`직장인구 500m ${fmt(candidate.employ500Total, "명")}`);
   if (candidate.employ1kmTotal != null) lines.push(`직장인구 1km ${fmt(candidate.employ1kmTotal, "명")}`);
-  if (candidate.licensedPcStores500m != null) lines.push(`인허가 PC방업소수 500m ${fmt(candidate.licensedPcStores500m, "개")}`);
-  if (candidate.licensedPcStores1km != null) lines.push(`인허가 PC방업소수 1km ${fmt(candidate.licensedPcStores1km, "개")}`);
+  if (candidate.operatingPcStores500m != null) lines.push(`실영업 PC방업소수 500m ${fmt(candidate.operatingPcStores500m, "개")}`);
+  if (candidate.operatingPcStores1km != null) lines.push(`실영업 PC방업소수 1km ${fmt(candidate.operatingPcStores1km, "개")}`);
   if (candidate.facility500SubwayRiders != null) lines.push(`지하철 승하차 500m ${fmt(candidate.facility500SubwayRiders, "명")}`);
   return lines.length ? lines.join("\n") : "소상공인365/SGIS 참고자료 없음(아직 미수집)";
 }

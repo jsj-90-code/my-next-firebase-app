@@ -452,7 +452,6 @@ export async function convertCandidateToExistingStore(input: {
     floating500_40s: c.floating500_40s,
     floating500_50s: c.floating500_50s,
     floating500_60plus: c.floating500_60plus,
-    licensedPcStores500m: c.licensedPcStores500m,
     operatingPcStores500m: c.operatingPcStores500m,
     createdAt: now,
     updatedAt: now,
