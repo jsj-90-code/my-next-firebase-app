@@ -41,14 +41,22 @@ function parseCountLike(text: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** "4인1개 5인4개" 같은 "N개"들을 전부 더한다("없음"이면 0). */
+/**
+ * 존/룸 개수를 두 가지 표기 방식으로 더한다("없음"이면 0):
+ * - "4인1개 5인4개"(구 형식) - "N개"를 전부 더함
+ * - "40 (3인 1, 4인 8, 5인 1)"(신 형식, 2026-08-27) - 괄호 앞 숫자는 좌석 합계(3×1+4×8+5×1=40)라
+ *   존/룸 "개수"가 아니다. 괄호 안 "N인 M" 쌍에서 M(그 크기의 룸 개수)만 더한다.
+ * 둘 다 없으면(괄호도 "개"도 없는 단순 숫자) 그 숫자를 그대로 개수로 본다(기존 동작 유지).
+ */
 function sumGaeCounts(text: string | null): number | null {
   if (text == null) return null;
   const trimmed = text.trim();
   if (trimmed === "" || trimmed.includes("없음")) return 0;
-  const matches = [...trimmed.matchAll(/(\d+)\s*개/g)];
-  if (matches.length === 0) return parseCountLike(text);
-  return matches.reduce((sum, m) => sum + Number(m[1]), 0);
+  const gaeMatches = [...trimmed.matchAll(/(\d+)\s*개/g)];
+  if (gaeMatches.length > 0) return gaeMatches.reduce((sum, m) => sum + Number(m[1]), 0);
+  const inMatches = [...trimmed.matchAll(/\d+\s*인\s*(\d+)/g)];
+  if (inMatches.length > 0) return inMatches.reduce((sum, m) => sum + Number(m[1]), 0);
+  return parseCountLike(text);
 }
 
 /** "26년 3월23일 오전 11시30분 9명 이용중" -> {visitedAt: "2026-03-23 11:30", visitorCount: 9} */
@@ -99,17 +107,23 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
   const ram = matchLine(block, /RAM\s*[:：]\s*(.+)/);
   const monitor = matchLine(block, /모니터\s*[:：]\s*(.+)/);
 
-  const premiumZone = parseCountLike(matchLine(block, /프리미엄석\s*[:：]?\s*(.+)/));
-  const coupleZone = parseCountLike(matchLine(block, /커플석\s*[:：]?\s*(.+)/));
+  const premiumZone = sumGaeCounts(matchLine(block, /프리미엄석\s*[:：]?\s*(.+)/));
+  const coupleZone = sumGaeCounts(matchLine(block, /커플석\s*[:：]?\s*(.+)/));
   const room1 = parseCountLike(matchLine(block, /1인석\s*[:：]?\s*(.+)/));
   const room2 = parseCountLike(matchLine(block, /2인석\s*[:：]?\s*(.+)/));
   const teamRoom = sumGaeCounts(matchLine(block, /팀룸\s*[:：]?\s*(.+)/));
 
+  // "방문일시 고객수" 순서가 형식마다 다르다 - 구형식은 "26년 3월23일 오전 11시30분 9명 이용중"
+  // (날짜 먼저), 신형식은 "56명 (4시 30분)"(인원 먼저, 날짜 자체가 없음) - 라벨 뒤 전체를 그대로
+  // parseVisitLine에 넘기면 두 형식 다 정규식이 알아서 필요한 조각만 뽑아온다.
   const { visitedAt, visitorCount } = parseVisitLine(matchLine(block, /방문\s*일시\s*고객수\s*[:：]\s*(.+)/));
   const interiorLevel = matchLine(block, /인테리어\s*수준\s*[:：]\s*(.+)/);
   const manageLevel = matchLine(block, /매장\s*관리\s*상태[^:：\n]*[:：]\s*(.+)/);
-  const foodBasis = matchLine(block, /먹거리\s*브랜드\s*[:：]\s*(.+)/);
-  const ratePer1000Won = parseRatePer1000Won(matchLine(block, /1,?000원\s*시간\s*[:：]\s*(.+)/));
+  // "먹거리 브랜드"(구형식)와 "먹거리 수준, 브랜드"(신형식, 값이 브랜드명이 아니라 "중" 같은 수준일
+  // 수도 있음) 둘 다 받는다 - "먹거리"와 콜론 사이에 어떤 텍스트가 와도 매칭한다.
+  const foodBasis = matchLine(block, /먹거리[^:：\n]*[:：]\s*(.+)/);
+  // "1,000원 시간"(구형식, 붙여씀)과 "1,000 원 시간"(신형식, 띄어씀) 둘 다 받는다.
+  const ratePer1000Won = parseRatePer1000Won(matchLine(block, /1,?000\s*원\s*시간\s*[:：]\s*(.+)/));
   const paidDeduction = matchLine(block, /유료차감\s*[:：]\s*(.+)/);
 
   const summaryM = block.match(/종합\s*평가\s*[:：]?\s*([\s\S]*)$/);
@@ -149,9 +163,12 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
   };
 }
 
-/** 붙여넣은 텍스트 전체에서 "- 매장명 : X" 줄마다 새 경쟁점 블록으로 나눠 각각 파싱한다. */
+/**
+ * 붙여넣은 텍스트 전체에서 "- 매장명 : X"(구형식) 또는 "■ 매장명: X"(신형식, 2026-08-27) 줄마다
+ * 새 경쟁점 블록으로 나눠 각각 파싱한다.
+ */
 export function parseCompetitorNotes(text: string): ParsedCompetitorNote[] {
-  const markerRe = /^[ \t]*-?\s*매장명\s*[:：]/gm;
+  const markerRe = /^[ \t]*(?:■\s*|-\s*)?매장명\s*[:：]/gm;
   const starts: number[] = [];
   let m: RegExpExecArray | null;
   while ((m = markerRe.exec(text)) !== null) {

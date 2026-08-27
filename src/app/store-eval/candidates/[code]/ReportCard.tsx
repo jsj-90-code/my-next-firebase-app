@@ -116,9 +116,15 @@ export function ReportCard({
           <h3 className="mt-0.5 text-lg font-bold">{candidate.name}</h3>
           <p className="mt-0.5 text-xs text-[#8a8072]">{candidate.address}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${gradeBadgeStyle(result.aaJudgement)}`}>
-          {result.aaJudgement ?? "-"}
-        </span>
+        {/* 2026-08-27: "데이터 재검토"는 사용자 요청으로 배지에서 뺐다 — 경쟁점이 많은 상권은
+            주요 경쟁점만 실사하는 게 정상 업무 프로세스라(핑봇 전수조회 자체가 거의 불가능),
+            이 상태가 예외적 문제가 아니라 흔한 정상 상태다. 값 자체(aaJudgement)는 그대로 두고
+            카드 배지 표시에서만 이 경우를 생략한다. */}
+        {result.aaJudgement && result.aaJudgement !== "데이터 재검토" && (
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${gradeBadgeStyle(result.aaJudgement)}`}>
+            {result.aaJudgement}
+          </span>
+        )}
       </div>
 
       <div className="mt-4 rounded-xl bg-[#171310] p-4 text-white dark:bg-[#f2ede2] dark:text-[#171310]">

@@ -196,3 +196,129 @@ describe("parseCompetitorNotes", () => {
     expect(parseCompetitorNotes("아무 상관 없는 텍스트")).toEqual([]);
   });
 });
+
+// 2026-08-27 (2차) — 사용자가 "이렇게 의견 주면 복붙 안 된다"며 준 두 번째 형식. 매장명 마커가
+// "- 매장명 :"이 아니라 "■ 매장명:"이고, "스펙"/"좌석"/"종합평가" 소제목 아래 번호가 "1)" 식이며,
+// 팀룸/커플석이 "40 (3인 1, 4인 8, 5인 1)"처럼 좌석합계+괄호 안 룸별 개수로 표기되고, 방문기록도
+// "56명 (4시 30분)"처럼 날짜 없이 인원이 먼저 온다.
+const REAL_PASTE_FORMAT2 = `■ 매장명: 스타일PC방 신중동점
+
+- 전체 대수 : 194대
+
+- 스펙
+ 1) CPU: i5 14세대
+ 2) VGA: 3070
+ 3) RAM : 32
+ 4) 모니터 : 32 lcd 240hz
+
+- 좌석
+ 1) 프리미엄석: 없음
+ 2) 커플석: 36
+ 3) 1인석: 1
+ 4) 팀룸: 없음
+ 5) 나머지 전체 일반석
+
+- 종합평가
+ 1) 방문일시 고객수: 56명 (4시 30분)
+ 2) 인테리어 수준: 중
+ 3) 매장 관리 상태 (청결, 친절 등): 중
+ 4) 먹거리 수준, 브랜드: 중
+ 5) 1,000 원 시간: 50분
+ 6) 유료차감: 있음
+
+■ 매장명: 블록버스터PC방
+
+- 전체 대수 : 230대
+
+- 스펙
+ 1) CPU: i5 14세대
+ 2) VGA: 5060
+ 3) RAM : 32
+ 4) 모니터 : 32 lcd 240hz
+
+- 좌석
+ 1) 프리미엄석: 없음
+ 2) 커플석: 24
+ 3) 1인석: 2
+ 4) 팀룸: 40 (3인 1, 4인 8, 5인 1)
+ 5) 나머지 전체 일반석
+
+- 종합평가
+ 1) 방문일시 고객수: 92명 (6시 30분)
+ 2) 인테리어 수준: 중상
+ 3) 매장 관리 상태 (청결, 친절 등): 중
+ 4) 먹거리 수준, 브랜드: 중상
+ 5) 1,000 원 시간: 50분
+ 6) 유료차감: 있음
+
+■ 매장명: 아즈텍PC방
+
+- 전체 대수 : 130대
+
+- 스펙
+ 1) CPU: i5 14세대
+ 2) VGA: 5060
+ 3) RAM : 32
+ 4) 모니터 : 32 lcd 240hz
+
+- 좌석
+ 1) 프리미엄석: 없음
+ 2) 커플석: 43 (2인 11, 3인 7)
+ 3) 1인석: 1
+ 4) 팀룸: 20 (5인 4)
+ 5) 나머지 전체 일반석
+
+- 종합평가
+ 1) 방문일시 고객수: 43명 (5시)
+ 2) 인테리어 수준: 중상
+ 3) 매장 관리 상태 (청결, 친절 등): 중
+ 4) 먹거리 수준, 브랜드: 중하
+ 5) 1,000 원 시간: 50분
+ 6) 유료차감: 있음`;
+
+describe("parseCompetitorNotes — 2번째 원문 형식(■ 매장명 마커, 좌석 괄호표기, 신형식)", () => {
+  it("■ 매장명 마커로 3곳을 각각 분리한다", () => {
+    const entries = parseCompetitorNotes(REAL_PASTE_FORMAT2);
+    expect(entries.map((e) => e.name)).toEqual(["스타일PC방 신중동점", "블록버스터PC방", "아즈텍PC방"]);
+  });
+
+  it("스타일PC방 신중동점 - 괄호 없는 단순 숫자, 날짜 없는 방문기록, '먹거리 수준, 브랜드' 라벨", () => {
+    const [e] = parseCompetitorNotes(REAL_PASTE_FORMAT2);
+    expect(e.totalPcCount).toBe(194);
+    expect(e.cpu).toBe("i5 14세대");
+    expect(e.vgaBase).toBe("3070");
+    expect(e.premiumZone).toBe(0);
+    expect(e.coupleZone).toBe(36); // 괄호 breakdown 없음 -> 단순 숫자 그대로
+    expect(e.room1).toBe(1);
+    expect(e.teamRoom).toBe(0); // 없음
+    expect(e.visitedAt).toBeNull(); // 날짜 정보 자체가 없어 지어내지 않음
+    expect(e.visitorCount).toBe(56);
+    expect(e.foodBasis).toBe("중"); // "먹거리 수준, 브랜드" 라벨도 매칭됨
+    expect(e.ratePer1000Won).toBe(50); // "1,000 원 시간"(띄어쓰기)도 매칭됨
+    expect(e.paidDeduction).toBe("있음");
+    expect(e.interiorBasis).toContain("인테리어 수준: 중");
+    expect(e.interiorBasis).toContain("관리상태: 중");
+  });
+
+  it("블록버스터PC방 - '40 (3인 1, 4인 8, 5인 1)'에서 좌석합계(40)가 아니라 룸 개수 합(10)을 뽑는다", () => {
+    const entries = parseCompetitorNotes(REAL_PASTE_FORMAT2);
+    const e = entries[1];
+    expect(e.totalPcCount).toBe(230);
+    expect(e.coupleZone).toBe(24);
+    expect(e.room1).toBe(2);
+    expect(e.teamRoom).toBe(10); // 1+8+1, 40이 아님
+    expect(e.visitorCount).toBe(92);
+    expect(e.foodBasis).toBe("중상");
+  });
+
+  it("아즈텍PC방 - 커플석도 '43 (2인 11, 3인 7)'에서 룸 개수 합(18)을 뽑는다, 분 없는 시각도 안전하게 처리", () => {
+    const entries = parseCompetitorNotes(REAL_PASTE_FORMAT2);
+    const e = entries[2];
+    expect(e.totalPcCount).toBe(130);
+    expect(e.coupleZone).toBe(18); // 11+7, 43이 아님
+    expect(e.teamRoom).toBe(4); // 5인 4
+    expect(e.visitorCount).toBe(43);
+    expect(e.visitedAt).toBeNull();
+    expect(e.foodBasis).toBe("중하");
+  });
+});
