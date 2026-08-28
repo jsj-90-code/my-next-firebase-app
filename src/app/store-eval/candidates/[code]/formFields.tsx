@@ -229,6 +229,51 @@ export function ScoreSelectField({
   );
 }
 
+/**
+ * 2026-08-28 추가 — 인테리어·좌석·관리 세부 4항목의 1~5점 산정 기준(사용자 요청으로 명문화).
+ * "4.0=블랙라벨 기준점"이라는 하드웨어 채점(scoreFromVga 등)과 같은 앵커 원칙을 그대로 따른다.
+ * candidates/BasicInfoTab.tsx, existing-stores/ExistingStoreProfileTab.tsx, CompetitorsTab.tsx
+ * 3곳에서 동일하게 재사용한다.
+ */
+export function InteriorScoringGuide() {
+  return (
+    <div className="app-card-sm col-span-full mt-3 rounded-lg px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+      <p>
+        <strong>좌석·존구성</strong>(내부비중 50%, 가장 중요) — 5.0=특화존 6종 이상(블랙라벨보다 풍부) · 4.5=특화존
+        5종+넉넉한 규모 · <strong>4.0(기준점)=팀룸·2인룸·커플존·1인룸·프렌즈존/VIP존 등 블랙라벨 표준 구성과
+        동급(특화존 4~5종)</strong> · 3.0~3.5=특화존 2~3종만 있음 · 2.0~2.5=특화존 1종, 대부분 일반석 ·
+        1.0~1.5=특화존 사실상 없음(일반석 위주). 칸막이만 있는 좌석은 독립룸으로 인정하지 않고, 이름만 나눈
+        구역(성인존·게이밍존 등)은 특화존으로 인정하지 않습니다 — 실제 공간이나 이용목적이 구분돼야 합니다.
+      </p>
+      <p className="mt-2">
+        <strong>최신성·디자인</strong>(마감·컨셉) — 5.0=최근 1~2년 내 리뉴얼·최신 트렌드 ·
+        <strong>4.0(기준점)=3~5년 이내, 무난하고 깔끔함</strong> · 3.0=5년 이상 경과, 다소 평범 ·
+        2.0=마감재 노후화 눈에 띔 · 1.0=매우 낡음, 리뉴얼 시급.
+      </p>
+      <p className="mt-2">
+        <strong>청결·관리상태</strong>(청결도·노후도) — 5.0=매우 청결, 파손 없음 ·
+        <strong>4.0(기준점)=전반적으로 양호, 특별한 하자 없음</strong> · 3.0=보통, 일부 사용감/얼룩 ·
+        2.0=관리 미흡(먼지·얼룩, 일부 파손) · 1.0=관리 매우 부실(악취·오염·파손 심함).
+      </p>
+      <p className="mt-2">
+        <strong>편의성</strong>(냄새·조명·화장실·편의시설) — 5.0=냄새 없음·조명 쾌적·화장실 매우 깨끗 ·
+        <strong>4.0(기준점)=기본 편의시설 갖춤, 큰 불편 없음</strong> · 3.0=일부 불편(화장실 관리 미흡 등) ·
+        2.0=여러 불편 요소 · 1.0=심각한 불편(악취 등).
+      </p>
+    </div>
+  );
+}
+
+/** 먹거리 점수(직접입력, 브랜드없음/미정일 때만)의 1~5점 산정 기준. */
+export function FoodScoringGuide() {
+  return (
+    <p className="col-span-full mt-2 text-[11px] leading-4 text-[#8a8072]">
+      브랜드없음/미정일 때 직접입력 기준 — 5=브랜드 있는 경쟁점보다 우위 · 4(기준점)=우리 매장(쉐프앤클릭) 수준 ·
+      3=약간 열위 · 2=열위 · 1=확실히 열위.
+    </p>
+  );
+}
+
 /** 자동계산된 값을 읽기전용으로 보여준다 (사양/좌석/입지 점수 등 - 점포평가.gs 자동계산 열). */
 export function ComputedField({ label, value, hint }: { label: string; value: number | null; hint?: string }) {
   return (

@@ -45,6 +45,8 @@ import {
   BooleanSelectField,
   ComputedField,
   DateField,
+  FoodScoringGuide,
+  InteriorScoringGuide,
   NumberField,
   SelectField,
   ScoreSelectField,
@@ -720,21 +722,21 @@ export function BasicInfoTab({
           )}
           <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} />
         </div>
+        {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && <FoodScoringGuide />}
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어·좌석·관리</h4>
         <p className="mt-1 text-xs text-[#8a8072]">
-          좌석·존구성이 가장 중요합니다(내부비중 50%). 칸막이만 있는 좌석은 독립룸으로 인정하지
-          않고, 성인존·게이밍존처럼 명칭만 나눈 구역은 특화존으로 인정하지 않습니다 — 실제 공간이나
-          이용목적이 구분돼야 합니다. 참고: 자동판정 특화존 종류수 {computedScores.zoneKindsSuggestion}종
+          참고: 자동판정 특화존 종류수 {computedScores.zoneKindsSuggestion}종
           (다양성 기준 {computedScores.zoneDiversitySuggestion}점 상당).
         </p>
+        <InteriorScoringGuide />
         <div className={`${gridClass} mt-3`}>
           <ScoreSelectField
             label="좌석·존구성"
             value={form.ownSeatZoneScore}
             onChange={(v) => set("ownSeatZoneScore", v)}
             step={0.5}
-            hint="4.0=팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등 블랙라벨과 동급 · rubric표 참고"
+            hint="4.0=팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등 블랙라벨과 동급 · 위 기준표 참고"
           />
           <ScoreSelectField label="최신성·디자인" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
           <ScoreSelectField label="청결·관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />

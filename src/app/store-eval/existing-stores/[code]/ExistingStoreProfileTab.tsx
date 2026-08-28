@@ -25,6 +25,8 @@ import { getModelSettings, upsertExistingStore } from "@/lib/storeEval/store";
 import type { ExistingStore, FoodBrand, GroundLevel, ModelSettings } from "@/lib/storeEval/types";
 import {
   ComputedField,
+  FoodScoringGuide,
+  InteriorScoringGuide,
   NumberField,
   ScoreSelectField,
   SelectField,
@@ -286,15 +288,17 @@ export function ExistingStoreProfileTab({
           )}
           <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} />
         </div>
+        {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && <FoodScoringGuide />}
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어·좌석·관리</h4>
+        <InteriorScoringGuide />
         <div className={`${gridClass} mt-3`}>
           <ScoreSelectField
             label="좌석·존구성"
             value={form.ownSeatZoneScore}
             onChange={(v) => set("ownSeatZoneScore", v)}
             step={0.5}
-            hint="4.0=팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등 블랙라벨과 동급 · rubric표 참고"
+            hint="4.0=팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등 블랙라벨과 동급 · 위 기준표 참고"
           />
           <ScoreSelectField label="최신성·디자인" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
           <ScoreSelectField label="청결·관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />

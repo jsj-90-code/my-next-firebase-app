@@ -14,6 +14,8 @@ import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSe
 import {
   BooleanSelectField,
   ComputedField,
+  FoodScoringGuide,
+  InteriorScoringGuide,
   NumberField,
   ScoreSelectField,
   SelectField,
@@ -298,12 +300,14 @@ function CompetitorForm({
           />
         )}
         <ComputedField label="먹거리 점수 (최종)" value={computed.food} />
+        {(form.foodBrand == null || form.foodBrand === "브랜드없음") && <FoodScoringGuide />}
+        <InteriorScoringGuide />
         <ScoreSelectField
           label="좌석·존구성"
           value={form.seatZoneScore}
           onChange={(v) => set("seatZoneScore", v)}
           step={0.5}
-          hint="4.0=블랙라벨과 동급(팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등) · 칸막이만 있으면 독립룸 미인정"
+          hint="4.0=블랙라벨과 동급(팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등) · 위 기준표 참고"
         />
         <ScoreSelectField label="최신성·디자인" value={form.interiorLevelScore} onChange={(v) => set("interiorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
         <ScoreSelectField label="청결·관리상태" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="청결도·노후도" />
