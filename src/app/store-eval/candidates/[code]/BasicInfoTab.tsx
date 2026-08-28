@@ -13,6 +13,10 @@ import {
   computeSpecScore,
   computeZoneComposition,
   GAME_ZONE_BONUS,
+  scoreFromCpuSpec,
+  scoreFromMonitorSpec,
+  scoreFromRamSpec,
+  scoreFromVgaSpec,
   scoreFromZoneDiversity,
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
@@ -295,6 +299,13 @@ export function BasicInfoTab({
         },
         settings,
       ),
+      // 2026-08-28 추가 — "하드웨어 점수(자동)"가 GPU/CPU/RAM/모니터 중 뭘로 어떻게 나왔는지
+      // 사용자가 직접 보고 싶다는 요청으로, computeSpecScore 내부에서 쓰는 것과 동일한 함수를
+      // 그대로 한 번 더 호출해 항목별 점수만 따로 노출한다(가중합산 로직 자체는 그대로 재사용).
+      vgaScore: scoreFromVgaSpec(form.ownVgaBase, form.ownVgaTop, form.ownVgaTop2, facility.ownGameZoneCount * GAME_ZONE_BONUS),
+      cpuScore: scoreFromCpuSpec(form.ownCpu, form.ownCpuTop1, form.ownCpuTop2),
+      ramScore: scoreFromRamSpec(form.ownRam, form.ownRamTop),
+      monitorScore: scoreFromMonitorSpec(form.ownMonitorBase, form.ownMonitorTop),
       location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
       food: computeFoodScore({ brand: form.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings),
       interior: computeInteriorSeatManagementScore(
@@ -691,6 +702,10 @@ export function BasicInfoTab({
         </p>
         <div className={`${gridClass} mt-4`}>
           <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%(+게임존 가산)" />
+          <ComputedField label="└ GPU 점수" value={computedScores.vgaScore} hint="게임존 가산 포함" />
+          <ComputedField label="└ CPU 점수" value={computedScores.cpuScore} />
+          <ComputedField label="└ RAM 점수" value={computedScores.ramScore} />
+          <ComputedField label="└ 모니터 점수" value={computedScores.monitorScore} />
           <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
         </div>
 

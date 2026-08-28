@@ -6,7 +6,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { computeCompetitorInvestigationSummary, computeCompetitorScores } from "@/lib/storeEval/calc";
+import {
+  computeCompetitorInvestigationSummary,
+  computeCompetitorScores,
+  PREMIUM_ZONE_BONUS,
+  scoreFromCpuSpec,
+  scoreFromMonitorSpec,
+  scoreFromRamSpec,
+  scoreFromVgaSpec,
+} from "@/lib/storeEval/calc";
 import { parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
@@ -197,6 +205,18 @@ function CompetitorForm({
   }, []);
 
   const computed = useMemo(() => computeCompetitorScores(form, settings), [form, settings]);
+  // 2026-08-28 추가 — "하드웨어 점수(자동)"만 봐서는 GPU/CPU/RAM/모니터 중 뭐가 어떻게 들어갔는지
+  // 알 수 없다는 요청으로, computeCompetitorScores 내부와 동일한 항목별 함수를 그대로 한 번 더
+  // 호출해 항목별 점수만 따로 보여준다(가중합산 로직 자체는 재사용, 새 산식 아님).
+  const hardwareBreakdown = useMemo(() => {
+    const bonus = (form.premiumZone ?? 0) > 0 ? PREMIUM_ZONE_BONUS : 0;
+    return {
+      vgaScore: scoreFromVgaSpec(form.vgaBase, form.vgaTop, form.vgaTop2, bonus),
+      cpuScore: scoreFromCpuSpec(form.cpu, form.cpuTop1, form.cpuTop2),
+      ramScore: scoreFromRamSpec(form.ram, form.ramTop),
+      monitorScore: scoreFromMonitorSpec(form.monitorBase, form.monitorTop),
+    };
+  }, [form.vgaBase, form.vgaTop, form.vgaTop2, form.cpu, form.cpuTop1, form.cpuTop2, form.ram, form.ramTop, form.monitorBase, form.monitorTop, form.premiumZone]);
 
   function set<K extends keyof Competitor>(key: K, value: Competitor[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -283,6 +303,10 @@ function CompetitorForm({
       </p>
       <div className={`${gridClass} mt-3`}>
         <ComputedField label="하드웨어 점수 (자동)" value={computed.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%+프리미엄존 가산" />
+        <ComputedField label="└ GPU 점수" value={hardwareBreakdown.vgaScore} hint="프리미엄존 가산 포함" />
+        <ComputedField label="└ CPU 점수" value={hardwareBreakdown.cpuScore} />
+        <ComputedField label="└ RAM 점수" value={hardwareBreakdown.ramScore} />
+        <ComputedField label="└ 모니터 점수" value={hardwareBreakdown.monitorScore} />
         <ComputedField label="입지 점수 (자동)" value={computed.location} hint="층수+엘리베이터+지상/지하" />
         <SelectField
           label="먹거리 브랜드"

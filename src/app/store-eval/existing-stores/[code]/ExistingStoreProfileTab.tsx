@@ -19,6 +19,10 @@ import {
   computeSpecScore,
   EXISTING_STORE_FACILITY_DEFAULTS,
   GAME_ZONE_BONUS,
+  scoreFromCpuSpec,
+  scoreFromMonitorSpec,
+  scoreFromRamSpec,
+  scoreFromVgaSpec,
 } from "@/lib/storeEval/calc";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { getModelSettings, upsertExistingStore } from "@/lib/storeEval/store";
@@ -100,6 +104,10 @@ export function ExistingStoreProfileTab({
         },
         settings,
       ),
+      vgaScore: scoreFromVgaSpec(form.ownVgaBase, form.ownVgaTop, form.ownVgaTop2, facility.ownGameZoneCount * GAME_ZONE_BONUS),
+      cpuScore: scoreFromCpuSpec(form.ownCpu, form.ownCpuTop1, form.ownCpuTop2),
+      ramScore: scoreFromRamSpec(form.ownRam, form.ownRamTop),
+      monitorScore: scoreFromMonitorSpec(form.ownMonitorBase, form.ownMonitorTop),
       location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
       food: computeFoodScore({ brand: form.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings),
       interior: computeInteriorSeatManagementScore(
@@ -259,6 +267,10 @@ export function ExistingStoreProfileTab({
         </p>
         <div className={`${gridClass} mt-4`}>
           <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%(+게임존 가산)" />
+          <ComputedField label="└ GPU 점수" value={computedScores.vgaScore} hint="게임존 가산 포함" />
+          <ComputedField label="└ CPU 점수" value={computedScores.cpuScore} />
+          <ComputedField label="└ RAM 점수" value={computedScores.ramScore} />
+          <ComputedField label="└ 모니터 점수" value={computedScores.monitorScore} />
           <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
           <SelectField label="지상/지하" value={form.groundLevel} onChange={(v) => set("groundLevel", v)} options={GROUND_LEVEL_OPTIONS} />
           <NumberField label="점포층수" value={form.floor} onChange={(v) => set("floor", v)} allowNegative />
