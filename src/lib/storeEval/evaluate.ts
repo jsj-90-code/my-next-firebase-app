@@ -23,8 +23,7 @@ import {
   computeExpectedUtilization,
   computeFinalJudgement,
   computeFoodScore,
-  computeInteriorScore,
-  computeGeneralSpecScore,
+  computeInteriorSeatManagementScore,
   computeIpPerDemand,
   computeLocationCompositeScore,
   computeLocationScoreFromFacts,
@@ -32,11 +31,9 @@ import {
   computeMarketGrade,
   computeImpliedUtilizationFromRevenue,
   computeMeasuredForecast,
-  computeSeatScore,
   computeSpecScore,
   computeV61Fallback,
   computeV62Final,
-  computeZoneComposition,
   empiricalFeaturesFor,
   fitEmpiricalRevenueModel,
   GAME_ZONE_BONUS,
@@ -78,38 +75,37 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // "비우면 표준 N개 적용" 근거, docs/data-issues.md 2026-08-21 갱신). 1인룸/2인룸은 표준값이
   // 없어(비우면 그대로 0) 대상이 아니다.
   const ownFacility = applyStandardOwnFacilityDefaults(c);
-  const { kinds: ownKinds, rooms: ownRooms } = computeZoneComposition(
-    [c.ownRoom1, c.ownRoom2, ownFacility.ownTeamRoom, ownFacility.ownCoupleZone, ownFacility.ownVipZone],
-    [ownFacility.ownFriendsZone],
-  );
-  const ownGeneralSpecScore = computeGeneralSpecScore({
-    cpuScore: c.ownSpecCpuScore,
-    ramScore: c.ownSpecRamScore,
-    peripheralScore: c.ownSpecPeripheralScore,
-    legacyScore: ownFacility.ownMonitorScore,
-  });
   const ownSpecScore = computeSpecScore(
     {
-      cpu: c.ownCpu,
       vgaBase: c.ownVgaBase,
       vgaTop: c.ownVgaTop,
+      vgaTop2: c.ownVgaTop2,
+      cpu: c.ownCpu,
+      cpuTop1: c.ownCpuTop1,
+      cpuTop2: c.ownCpuTop2,
       ram: c.ownRam,
-      monitorScore: ownGeneralSpecScore,
+      ramTop: c.ownRamTop,
+      monitorBase: c.ownMonitorBase,
+      monitorTop: c.ownMonitorTop,
       bonus: ownFacility.ownGameZoneCount * GAME_ZONE_BONUS,
     },
     settings,
   );
-  const ownSeatScore = computeSeatScore(ownKinds, ownRooms);
   const ownLocationScore = computeLocationScoreFromFacts(c.floor, c.groundLevel, c.hasElevator);
   const ownFoodScore = computeFoodScore({ brand: c.ownFoodBrand, legacyScore: ownFacility.ownFoodScore }, settings);
-  const ownInteriorScore = computeInteriorScore({
-    levelScore: c.ownInteriorLevelScore,
-    conditionScore: c.ownInteriorConditionScore,
-    legacyScore: ownFacility.ownInteriorScore,
-  });
+  const ownInteriorScore = computeInteriorSeatManagementScore(
+    {
+      seatZoneScore: c.ownSeatZoneScore,
+      freshnessScore: c.ownInteriorLevelScore,
+      cleanlinessScore: c.ownInteriorConditionScore,
+      comfortScore: c.ownComfortScore,
+      legacyScore: ownFacility.ownInteriorScore,
+    },
+    settings,
+  );
 
   const ownCompetitivenessScore = computeCompetitivenessScore(
-    { spec: ownSpecScore, seat: ownSeatScore, food: ownFoodScore, interior: ownInteriorScore, location: ownLocationScore },
+    { spec: ownSpecScore, food: ownFoodScore, interior: ownInteriorScore, location: ownLocationScore },
     settings,
   );
   const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);

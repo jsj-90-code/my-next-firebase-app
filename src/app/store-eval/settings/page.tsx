@@ -238,12 +238,11 @@ export default function StoreEvalSettingsPage() {
   }
 
   const specWeightSum = form ? form.specWeights.vga + form.specWeights.monitor + form.specWeights.ram + form.specWeights.cpu : 1;
+  const interiorWeightSum = form
+    ? form.interiorWeights.seatZone + form.interiorWeights.freshness + form.interiorWeights.cleanliness + form.interiorWeights.comfort
+    : 1;
   const competitivenessWeightSum = form
-    ? form.competitivenessWeights.spec +
-      form.competitivenessWeights.seat +
-      form.competitivenessWeights.food +
-      form.competitivenessWeights.interior +
-      form.competitivenessWeights.location
+    ? form.competitivenessWeights.spec + form.competitivenessWeights.food + form.competitivenessWeights.interior + form.competitivenessWeights.location
     : 1;
   const locationWeightSum = form
     ? form.locationCompositeWeights.withinMarket +
@@ -262,13 +261,13 @@ export default function StoreEvalSettingsPage() {
   // 할인율이라 0~-1 범위를 벗어나면 실수로 보고 막는다.
   function validationErrors(f: ModelSettings): string[] {
     const errors: string[] = [];
-    const specSum = sumWarning(f.specWeights.vga + f.specWeights.monitor + f.specWeights.ram + f.specWeights.cpu, "사양(VGA/모니터/RAM/CPU)");
+    const specSum = sumWarning(f.specWeights.vga + f.specWeights.monitor + f.specWeights.ram + f.specWeights.cpu, "하드웨어(GPU/모니터/RAM/CPU)");
+    const interiorSum = sumWarning(
+      f.interiorWeights.seatZone + f.interiorWeights.freshness + f.interiorWeights.cleanliness + f.interiorWeights.comfort,
+      "인테리어·좌석·관리(좌석존구성/최신성/청결관리/편의성)",
+    );
     const compSum = sumWarning(
-      f.competitivenessWeights.spec +
-        f.competitivenessWeights.seat +
-        f.competitivenessWeights.food +
-        f.competitivenessWeights.interior +
-        f.competitivenessWeights.location,
+      f.competitivenessWeights.spec + f.competitivenessWeights.food + f.competitivenessWeights.interior + f.competitivenessWeights.location,
       "경쟁력",
     );
     const locSum = sumWarning(
@@ -278,7 +277,7 @@ export default function StoreEvalSettingsPage() {
         f.locationCompositeWeights.visibility,
       "입지동선종합점수",
     );
-    for (const w of [specSum, compSum, locSum]) if (w) errors.push(w);
+    for (const w of [specSum, interiorSum, compSum, locSum]) if (w) errors.push(w);
     for (const [label, v] of Object.entries(f.inflowAdjustment)) {
       if (v > 0 || v < -1) errors.push(`외부유입 보정률 - ${label}은(는) 0~-100%(-1~0) 범위여야 합니다. 현재: ${(v * 100).toFixed(1)}%`);
     }
@@ -508,20 +507,20 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       <Section
-        title="경쟁력 가중치 / 사양 가중치"
-        description="자사_경쟁력점수(BM) = 사양×spec + 좌석×seat + 먹거리×food + 인테리어×interior + 입지×location"
-        warning={sumWarning(competitivenessWeightSum, "경쟁력") ?? sumWarning(specWeightSum, "사양(VGA/모니터/RAM/CPU)")}
+        title="경쟁력 가중치 / 하드웨어 가중치"
+        description="자사_경쟁력점수(BM) = 하드웨어×spec + 인테리어·좌석·관리×interior + 먹거리×food + 입지×location (2026-08-28 전면개편 — 좌석·존구성은 더 이상 독립 배점이 아니라 인테리어 항목의 세부 비중으로 흡수됨)"
+        warning={sumWarning(competitivenessWeightSum, "경쟁력") ?? sumWarning(specWeightSum, "하드웨어(GPU/모니터/RAM/CPU)")}
       >
         <NumberInput
-          label="경쟁력 가중치 - 사양"
+          label="경쟁력 가중치 - 하드웨어"
           value={form.competitivenessWeights.spec}
           onChange={(v) => updateGroup("competitivenessWeights", "spec", v)}
           readOnly={readOnly}
         />
         <NumberInput
-          label="경쟁력 가중치 - 좌석"
-          value={form.competitivenessWeights.seat}
-          onChange={(v) => updateGroup("competitivenessWeights", "seat", v)}
+          label="경쟁력 가중치 - 인테리어·좌석·관리"
+          value={form.competitivenessWeights.interior}
+          onChange={(v) => updateGroup("competitivenessWeights", "interior", v)}
           readOnly={readOnly}
         />
         <NumberInput
@@ -531,28 +530,66 @@ export default function StoreEvalSettingsPage() {
           readOnly={readOnly}
         />
         <NumberInput
-          label="경쟁력 가중치 - 인테리어"
-          value={form.competitivenessWeights.interior}
-          onChange={(v) => updateGroup("competitivenessWeights", "interior", v)}
-          readOnly={readOnly}
-        />
-        <NumberInput
           label="경쟁력 가중치 - 입지"
           value={form.competitivenessWeights.location}
           onChange={(v) => updateGroup("competitivenessWeights", "location", v)}
           readOnly={readOnly}
         />
         <div className="hidden md:block" aria-hidden />
+        <div className="hidden md:block" aria-hidden />
         <NumberInput
-          label="사양 가중치 - VGA"
+          label="하드웨어 가중치 - GPU"
           value={form.specWeights.vga}
           onChange={(v) => updateGroup("specWeights", "vga", v)}
           readOnly={readOnly}
         />
         <NumberInput
-          label="사양 가중치 - 모니터"
+          label="하드웨어 가중치 - 모니터"
           value={form.specWeights.monitor}
           onChange={(v) => updateGroup("specWeights", "monitor", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="하드웨어 가중치 - CPU"
+          value={form.specWeights.cpu}
+          onChange={(v) => updateGroup("specWeights", "cpu", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="하드웨어 가중치 - RAM"
+          value={form.specWeights.ram}
+          onChange={(v) => updateGroup("specWeights", "ram", v)}
+          readOnly={readOnly}
+        />
+      </Section>
+
+      <Section
+        title="인테리어·좌석·관리 세부 가중치"
+        description="인테리어점수 = 좌석·존구성×seatZone + 최신성·디자인×freshness + 청결·관리상태×cleanliness + 편의성×comfort (2026-08-28 신규 — 좌석·존구성이 PC방 선택의 1순위라는 판단으로 50% 배정)"
+        warning={sumWarning(interiorWeightSum, "인테리어·좌석·관리(좌석존구성/최신성/청결관리/편의성)")}
+      >
+        <NumberInput
+          label="인테리어 가중치 - 좌석·존구성"
+          value={form.interiorWeights.seatZone}
+          onChange={(v) => updateGroup("interiorWeights", "seatZone", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="인테리어 가중치 - 최신성·디자인"
+          value={form.interiorWeights.freshness}
+          onChange={(v) => updateGroup("interiorWeights", "freshness", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="인테리어 가중치 - 청결·관리상태"
+          value={form.interiorWeights.cleanliness}
+          onChange={(v) => updateGroup("interiorWeights", "cleanliness", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="인테리어 가중치 - 편의성"
+          value={form.interiorWeights.comfort}
+          onChange={(v) => updateGroup("interiorWeights", "comfort", v)}
           readOnly={readOnly}
         />
       </Section>

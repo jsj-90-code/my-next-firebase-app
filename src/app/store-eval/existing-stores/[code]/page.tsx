@@ -1,26 +1,42 @@
 "use client";
 
-// 기존 가맹점 상세 화면 — 2026-08-27 추가. 지금은 입지동선평가(AI 재평가 포함) 한 탭만 있다.
-// 후보지 상세(candidates/[code]/page.tsx)의 LocationEvalTab을 그대로 재사용한다 — 컴포넌트
-// 자체가 candidateCode(=originCandidateCode ?? storeCode)만 있으면 동작하도록 이미 일반화돼
-// 있어서, existingStoreCode prop 하나만 추가로 넘기면 순수 레거시 매장(후보지 문서 없음)도
-// AI 초안 생성이 된다(/api/store-eval/ai-location-eval-existing-store).
-// 나머지 기본정보/실적 편집은 그대로 existing-stores 목록 화면에서 한다 — 여긴 새로 안 옮긴다.
+// 기존 가맹점 상세 화면 — 2026-08-27 추가, 2026-08-28 탭 구조로 확장(사용자 요청: 기존 가맹점의
+// 하드웨어·수요·경쟁점정보도 웹에서 편집 가능하게). candidates/[code]/page.tsx와 같은 탭 패턴
+// (URL query ?tab=)을 쓴다. 경쟁점 탭은 이미 candidateCode 문자열만 받는 범용 컴포넌트인
+// CompetitorsTab을 그대로 재사용한다(LocationEvalTab을 이미 같은 방식으로 재사용 중인 것과 동일).
+// 나머지 운영상태/월매출/회원스냅샷 편집은 그대로 existing-stores 목록 화면에서 한다 — 여긴 안 옮긴다.
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { getExistingStore } from "@/lib/storeEval/store";
 import type { ExistingStore } from "@/lib/storeEval/types";
+import { CompetitorsTab } from "../../candidates/[code]/CompetitorsTab";
 import { LocationEvalTab } from "../../candidates/[code]/LocationEvalTab";
+import { ExistingStoreProfileTab } from "./ExistingStoreProfileTab";
+
+const TABS = [
+  { key: "basic", label: "기본정보" },
+  { key: "competitors", label: "경쟁점" },
+  { key: "location", label: "입지동선평가" },
+] as const;
+type TabKey = (typeof TABS)[number]["key"];
 
 export default function ExistingStoreDetailPage() {
   const params = useParams<{ code: string }>();
   const code = decodeURIComponent(params.code);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user } = useAuth();
 
   const [store, setStore] = useState<ExistingStore | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const requestedTab = searchParams.get("tab") ?? "";
+  const activeTab = (TABS.some((t) => t.key === requestedTab) ? requestedTab : "basic") as TabKey;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +58,12 @@ export default function ExistingStoreDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  function setTab(tab: TabKey) {
+    const qs = new URLSearchParams(searchParams.toString());
+    qs.set("tab", tab);
+    router.replace(`${pathname}?${qs.toString()}`);
+  }
 
   if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
 
@@ -71,19 +93,42 @@ export default function ExistingStoreDetailPage() {
         </h1>
         {store.originCandidateCode && (
           <p className="mt-1 text-xs text-[#8a8072]">
-            후보지 {store.originCandidateCode}에서 전환된 매장입니다 — 그 후보지의 경쟁점·수요거점 데이터를 그대로 씁니다.
+            후보지 {store.originCandidateCode}에서 전환된 매장입니다 — 그 후보지의 경쟁점·입지평가 데이터를 그대로 씁니다.
           </p>
         )}
       </div>
 
-      <LocationEvalTab
-        candidateCode={lookupCode}
-        candidateName={store.storeName}
-        candidateAddress={store.address ?? ""}
-        candidateLat={null}
-        candidateLng={null}
-        existingStoreCode={store.storeCode}
-      />
+      <nav className="flex gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08]">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setTab(tab.key)}
+            className={`px-3 py-2 ${
+              activeTab === tab.key
+                ? "border-b-2 border-[#171310] font-medium text-[#171310] dark:border-[#f2ede2] dark:text-[#f2ede2]"
+                : "text-[#8a8072]"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === "basic" && (
+        <ExistingStoreProfileTab store={store} actor={user?.email ?? null} onSaved={(updated) => setStore(updated)} />
+      )}
+      {activeTab === "competitors" && <CompetitorsTab candidateCode={lookupCode} />}
+      {activeTab === "location" && (
+        <LocationEvalTab
+          candidateCode={lookupCode}
+          candidateName={store.storeName}
+          candidateAddress={store.address ?? ""}
+          candidateLat={null}
+          candidateLng={null}
+          existingStoreCode={store.storeCode}
+        />
+      )}
     </div>
   );
 }

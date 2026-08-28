@@ -116,10 +116,18 @@ export type CandidateInput = {
   // 자사 시설/사양 (경쟁력 점수 입력)
   // 2026-08-27 추가 — 사양점수 산식을 VGA70%+모니터30%에서 CPU/VGA/RAM/모니터 4항목 평균으로
   // 바꾸면서, 경쟁점(cpu/ram 필드 있음)과 같은 기준으로 자사도 평가하려면 필요해졌다.
-  ownCpu: string | null;
-  ownRam: string | null;
+  // 2026-08-28 (2차) — 한 매장에 여러 사양이 섞여 있을 때(대부분 기본급, 일부 좌석만 상위급)를
+  // 반영하기 위해 GPU/CPU는 기본+특화 2단계, RAM은 기본+특화 1단계로 늘렸다(calc.ts
+  // combineHardwareTiers: 기본80%+특화들 균등분배20%). 시트 컬럼도 "자사_VGA_기본/특화1/특화2"
+  // 식으로 실제 존재한다(cronSync.ts).
+  ownCpu: string | null; // CPU 기본
+  ownCpuTop1: string | null;
+  ownCpuTop2: string | null;
+  ownRam: string | null; // RAM 기본
+  ownRamTop: string | null;
   ownVgaBase: string | null;
-  ownVgaTop: string | null;
+  ownVgaTop: string | null; // VGA 특화1
+  ownVgaTop2: string | null;
   ownGameZoneCount: number | null;
   ownRoom1: number | null; // 1인룸
   ownRoom2: number | null; // 2인룸
@@ -127,23 +135,19 @@ export type CandidateInput = {
   ownCoupleZone: number | null;
   ownVipZone: number | null;
   ownFriendsZone: number | null;
-  // 경쟁력점수 5개 구성요소 중 사양/좌석/입지는 원본 Apps Script(점포평가.gs)가 VGA·존구성·
-  // 층수+엘리베이터로부터 자동 계산하는 값이라(CANDIDATE_AUTO) 여기 CandidateInput에는 없다 —
-  // calc.ts의 computeSpecScore/computeSeatScore/computeLocationScoreFromFacts로 매번 파생하고
-  // CandidateComputed에 결과를 담는다. 먹거리/인테리어/모니터평가는 원본에서도 평가자가 1~5점을
-  // 직접 입력하는 항목이라 그대로 둔다.
+  // 경쟁력점수 4개 구성요소(2026-08-28 전면개편: 하드웨어30%+인테리어·좌석·관리40%+먹거리20%+
+  // 입지10%) 중 하드웨어/입지는 원본 Apps Script(점포평가.gs)가 VGA·층수+엘리베이터로부터 자동
+  // 계산하는 값이라(CANDIDATE_AUTO) 여기 CandidateInput에는 없다 — calc.ts의
+  // computeSpecScore/computeLocationScoreFromFacts로 매번 파생하고 CandidateComputed에 결과를
+  // 담는다. 먹거리/인테리어(좌석·관리 포함)는 평가자가 rubric표를 보고 직접 1~5점을 입력하는
+  // 항목이라 그대로 둔다.
   ownFoodScore: number | null; // 1~5 - 먹거리 브랜드가 "브랜드없음"이거나 안 정했을 때 쓰는 직접입력값(폴백)
-  ownInteriorScore: number | null; // 1~5 - 세부항목을 하나도 안 채웠을 때 쓰는 종합 직접입력값(폴백)
-  ownMonitorScore: number | null; // 1~5 - 아래 세부항목(CPU/메모리/주변기기)을 하나도 안 채웠을 때
-  // 쓰는 종합 직접입력값(폴백). 모니터 화질뿐 아니라 CPU·RAM·주변기기(키보드/마우스/헤드셋)까지
-  // 종합해 평가자가 정성적으로 매기는 "종합사양" 항목이다.
-  // 2026-08-28 추가 — 종합사양 점수도 먹거리/인테리어와 같은 패턴으로 세분화(사용자 요청). 하나라도
-  // 채우면 평균(0.5점 단위)을 쓰고, 셋 다 비어 있으면 위 ownMonitorScore 직접입력값을 그대로 쓴다
-  // (calc.ts computeGeneralSpecScore). ownMonitorScore 자체는 "모니터 화질 위주 직접입력 폴백"으로
-  // 그대로 남긴다(정보 손실 없음).
-  ownSpecCpuScore: number | null; // CPU 성능
-  ownSpecRamScore: number | null; // 메모리(RAM) 용량/속도
-  ownSpecPeripheralScore: number | null; // 주변기기(키보드/마우스/헤드셋) 상태
+  ownInteriorScore: number | null; // 1~5 - 아래 세부항목(좌석·존구성/최신성/청결관리/편의성)을 하나도
+  // 안 채웠을 때 쓰는 종합 직접입력값(폴백)
+  // 2026-08-28 (2차) — 모니터도 이제 GPU/CPU처럼 모델텍스트(주사율 Hz)에서 자동채점한다
+  // (calc.ts scoreFromMonitor/scoreFromMonitorSpec) — 예전엔 사람이 1~5점을 직접 입력했다.
+  ownMonitorBase: string | null;
+  ownMonitorTop: string | null;
 
   // 2026-08-27 추가 — 먹거리 1점 차이로 예상매출이 크게 흔들린다는 지적(사용자 확인)에 따라, "조사자
   // 감으로 1~5점 찍기" 대신 실제로 매장이 쓰는 먹거리 브랜드를 기준으로 점수를 매긴다(최신 PC방은
@@ -151,10 +155,18 @@ export type CandidateInput = {
   // 점수는 settings.foodBrandScores에서 읽는다(calc.ts computeFoodScore). "브랜드없음"이거나 안
   // 정했으면 위 ownFoodScore 직접입력값(조사자 판단 또는 점포개발자 의견)을 그대로 쓴다.
   ownFoodBrand: FoodBrand | null;
-  // 인테리어는 세부항목 평균으로 정교화한다(사양점수와 같은 방식). 하나라도 채우면 평균(0.5점 단위)을
-  // 쓰고, 둘 다 비어 있으면 위 ownInteriorScore 직접입력값을 그대로 쓴다(calc.ts computeInteriorScore).
-  ownInteriorLevelScore: number | null; // 인테리어 수준(마감·컨셉 퀄리티)
-  ownInteriorConditionScore: number | null; // 매장관리상태(청결도·노후도)
+  // 2026-08-28 전면개편 — "인테리어·좌석구성·관리"(경쟁력점수의 40%)를 세부항목 4개의 가중평균으로
+  // 정교화한다(좌석·존구성50%+최신성·디자인25%+청결·관리상태15%+냄새·조명·화장실·편의성10%,
+  // calc.ts computeInteriorSeatManagementScore). 좌석·존구성은 팀룸/커플존/2인룸 등 존 개수를
+  // 세는 자동계산이 아니라, 평가자가 rubric표(칸막이만 있는 좌석은 독립룸 미인정 등)를 보고 직접
+  // 판단해 0.5점 단위로 입력한다(먹거리와 같은 이유 — 조사서 표현마다 사람 판단이 필요해 자동화가
+  // 어렵다). 하나라도 채우면 가중평균을 쓰고, 넷 다 비어 있으면 위 ownInteriorScore 직접입력값을
+  // 그대로 쓴다. 최신성·청결관리는 기존 세부항목(ownInteriorLevelScore/ownInteriorConditionScore)을
+  // 그대로 재사용한다.
+  ownSeatZoneScore: number | null; // 좌석·존구성(팀룸·커플존·1인룸 등 특화존 종류/완성도, rubric 기반)
+  ownInteriorLevelScore: number | null; // 최신성·디자인
+  ownInteriorConditionScore: number | null; // 청결·관리상태
+  ownComfortScore: number | null; // 냄새·조명·화장실·편의성
 
   createdAt: number;
   updatedAt: number;
@@ -179,10 +191,12 @@ export type CandidateComputed = {
   competitorIpBasis: string | null; // 경쟁IP_근거
   ownZoneTypeCount: number | null; // 자사_존종류수 (일반석1 + 개수>0인 존 종류 수)
   ownPrivateRoomCount: number | null; // 자사_독립룸수 (1인룸+2인룸+팀룸+커플존+VIP존 개수의 단순 합계 — 프렌즈존 제외)
-  ownSpecScore: number | null; // 자사_점수_사양 (VGA 70%+모니터 30%+게임존 가산, computeSpecScore)
-  ownSeatScore: number | null; // 자사_점수_좌석 (다양성50%+수용력50%, computeSeatScore)
+  ownSpecScore: number | null; // 자사_점수_하드웨어 (GPU40%+모니터25%+CPU20%+RAM15%+게임존 가산, computeSpecScore)
+  // 2026-08-28 — 좌석은 더 이상 독립 배점이 아니다(인테리어 항목의 세부 50%로 흡수,
+  // computeInteriorSeatManagementScore) — 이 타입 자체가 실제로는 안 쓰이는 문서용이라(바로
+  // 아래 주석 참고) ownSeatScore 필드는 그냥 제거한다.
   ownLocationScore: number | null; // 자사_점수_입지 (층수+엘리베이터, computeLocationScoreFromFacts)
-  ownCompetitivenessScore: number | null; // 자사_경쟁력점수 (BM) = 5개 점수 가중합
+  ownCompetitivenessScore: number | null; // 자사_경쟁력점수 (BM) = 하드웨어30%+인테리어·좌석·관리40%+먹거리20%+입지10% 가중합
   competitorAvgCompetitiveness: number | null; // 경쟁점_평균경쟁력
   competitivenessGap: number | null; // 경쟁력격차 (BO)
 };
@@ -206,11 +220,19 @@ export type Competitor = {
   totalPcCount: number | null; // 전체대수 (실사값)
   appliedPcCount: number | null; // 적용대수 - 실사값 없으면 대체값(§3.2)을 조사 후 여기 채운다
   hasElevator: boolean | null;
-  cpu: string | null;
+  // 2026-08-28 (2차) — CandidateInput.ownCpu 등과 동일 이유로 기본+특화 다단계로 늘렸다
+  // (calc.ts combineHardwareTiers). monitor는 monitorBase로 이름을 바꿨다(다른 항목과 Base/Top
+  // 네이밍 통일 — cronSync가 매번 문서를 전체 재구성하므로 마이그레이션 이슈 없음).
+  cpu: string | null; // CPU 기본
+  cpuTop1: string | null;
+  cpuTop2: string | null;
   vgaBase: string | null;
-  vgaTop: string | null;
-  ram: string | null;
-  monitor: string | null;
+  vgaTop: string | null; // VGA 특화1
+  vgaTop2: string | null;
+  ram: string | null; // RAM 기본
+  ramTop: string | null;
+  monitorBase: string | null;
+  monitorTop: string | null;
   ratePer1000Won: number | null; // 1000원당분
   hourlyRateConverted: number | null; // 시간당환산요금
   paidDeduction: string | null; // 유료차감
@@ -221,24 +243,22 @@ export type Competitor = {
   pingbotUtilization: number | null; // 핑봇_가동률
   pingbotPeriod: string | null;
   renovationYear: number | null;
-  // 사양/좌석/입지 점수는 CandidateInput과 같은 이유로 자동 계산(계산결과는 저장하지 않고
-  // calc.ts의 computeSpecScore/computeSeatScore/computeLocationScoreFromFacts로 매번 파생한다).
-  // 먹거리/인테리어/모니터는 원본에서도 조사자가 1~5점을 직접 입력한다.
+  // 하드웨어/입지 점수는 CandidateInput과 같은 이유로 자동 계산(계산결과는 저장하지 않고
+  // calc.ts의 computeSpecScore/computeLocationScoreFromFacts로 매번 파생한다). 먹거리/인테리어
+  // (좌석·관리 포함)는 조사자가 rubric표를 보고 1~5점을 직접 입력한다.
   foodScore: number | null; // 1~5 - 먹거리 브랜드가 "브랜드없음"이거나 안 정했을 때 쓰는 직접입력값(폴백)
   foodBasis: string | null;
-  interiorScore: number | null; // 세부항목을 하나도 안 채웠을 때 쓰는 종합 직접입력값(폴백)
+  interiorScore: number | null; // 세부항목(좌석·존구성/최신성/청결관리/편의성)을 하나도 안 채웠을 때 쓰는 종합 직접입력값(폴백)
   interiorBasis: string | null;
-  monitorScore: number | null; // CPU·RAM·주변기기까지 종합한 "종합사양" - CandidateInput.ownMonitorScore와 동일
   monitorBasis: string | null;
   // 2026-08-27 추가 — CandidateInput.ownFoodBrand/ownInteriorLevelScore 등과 같은 이유/규칙(선택
-  // 항목). calc.ts computeFoodScore/computeInteriorScore 참고.
+  // 항목). calc.ts computeFoodScore/computeInteriorSeatManagementScore 참고.
   foodBrand: FoodBrand | null;
-  interiorLevelScore: number | null; // 인테리어 수준(마감·컨셉 퀄리티)
-  interiorConditionScore: number | null; // 매장관리상태(청결도·노후도)
-  // 2026-08-28 추가 — CandidateInput.ownSpecCpuScore 등과 동일(calc.ts computeGeneralSpecScore 참고).
-  specCpuScore: number | null;
-  specRamScore: number | null;
-  specPeripheralScore: number | null;
+  interiorLevelScore: number | null; // 최신성·디자인
+  interiorConditionScore: number | null; // 청결·관리상태
+  // 2026-08-28 전면개편 — CandidateInput.ownSeatZoneScore/ownComfortScore와 동일.
+  seatZoneScore: number | null; // 좌석·존구성(rubric 기반 직접입력)
+  comfortScore: number | null; // 냄새·조명·화장실·편의성
   room1: number | null;
   room2: number | null;
   teamRoom: number | null;
@@ -333,15 +353,26 @@ export type ModelSettings = {
   // 2026-08-27 (2차) — 상대평가(상위10/30/60% 백분위)에서 절대평가로 바꿨다(사용자 확정, calc.ts
   // computeMarketGrade 주석 참고). 값은 그 상대평가가 쓰던 실제 경계값을 반올림한 고정 금액이다.
   marketGradeAbsoluteThresholds: { SS: number; S: number; A: number };
-  competitivenessWeights: { spec: number; seat: number; food: number; interior: number; location: number }; // 25/30/20/15/10%
+  // 2026-08-28 전면개편 — 기존 "사양25%+좌석30%+먹거리20%+인테리어15%+입지10%" 5분류를
+  // "하드웨어30%+인테리어·좌석·관리40%+먹거리20%+입지10%" 4분류로 재편했다(사용자 확정).
+  // 좌석·존구성은 더 이상 독립 배점이 아니라 interiorWeights.seatZone(40%의 세부 50%)으로
+  // 흡수됐다. 입지는 "예상수요점유율" 쪽 수요중복도와 중복 반영을 최소화하려고 의도적으로 10%만
+  // 유지한다(수요중복도 자체는 아직 범위 밖, 후속 과제).
+  competitivenessWeights: { spec: number; food: number; interior: number; location: number };
   // 2026-08-27 추가 — 먹거리 점수를 조사자 감이 아니라 실제 사용 브랜드 기준으로 매기기 위한
   // 브랜드별 점수표(calc.ts computeFoodScore). "브랜드없음"은 표에 없다 — 그 경우 직접입력값을
   // 그대로 쓴다. 기본값은 사용자가 확정한 실측치가 아니라 임의 초안이라 설정 화면에서 조정한다.
   foodBrandScores: Record<Exclude<FoodBrand, "브랜드없음">, number>;
-  // CPU/RAM 슬롯은 2026-08-27에 자동공식(세대·용량 환산)으로 실험했다가 LOOCV 정확도가
-  // 원본(VGA70%+모니터30%)보다 나빠져 가중치 0으로 원복했다(computeSpecScore 주석 참고).
-  // CPU/RAM은 대신 "모니터"(종합사양) 항목에 평가자가 정성적으로 참고해 반영한다.
+  // 2026-08-28 전면개편 — 하드웨어점수(옛 "사양점수") 내부비중을 GPU40%/모니터25%/CPU20%/RAM15%로
+  // 재확정했다(사용자 제공 기준표). scoreFromVga/scoreFromCpu/scoreFromRam의 앵커값도 블랙라벨
+  // 현재 표준(RTX5060·울트라5 225F·16GB=각 4점) 기준으로 같이 재보정했다(calc.ts 주석 참고).
+  // 주변기기(마우스/키보드/헤드셋)는 이번 기준표에서 하드웨어 배점 대상이 아니다(사용자 확인).
   specWeights: { vga: number; monitor: number; ram: number; cpu: number };
+  // 2026-08-28 신규 — "인테리어·좌석·관리"(경쟁력점수의 40%) 내부비중. 좌석·존구성이 가장
+  // 중요하다는 사용자 판단(팀룸·2인룸 등 존 구성이 PC방 선택의 1순위)에 따라 50%로 가장 크게
+  // 잡는다(calc.ts computeInteriorSeatManagementScore). 나머지는 최신성·디자인25%+청결·관리
+  // 상태15%+냄새·조명·화장실·편의성10%.
+  interiorWeights: { seatZone: number; freshness: number; cleanliness: number; comfort: number };
   // 09_입지동선평가!H열(입지동선종합점수) = 상권내위치×0.3 + 주요동선×0.3 + 선점경쟁×0.25 + 접근가시성×0.15
   locationCompositeWeights: { withinMarket: number; flow: number; preemption: number; visibility: number };
   brandFilter: string; // "블랙라벨"
@@ -545,9 +576,13 @@ export type ExistingStore = {
   demographicsYear: number | null;
   renovationYear: number | null; // 자사_리뉴얼연도 (후보지 단계에는 없고 기존점에만 있음)
   ownCpu: string | null; // 2026-08-27 추가 - CandidateInput.ownCpu와 동일
+  ownCpuTop1: string | null;
+  ownCpuTop2: string | null;
   ownRam: string | null;
+  ownRamTop: string | null;
   ownVgaBase: string | null;
   ownVgaTop: string | null;
+  ownVgaTop2: string | null;
   ownGameZoneCount: number | null;
   ownRoom1: number | null;
   ownRoom2: number | null;
@@ -557,16 +592,17 @@ export type ExistingStore = {
   ownFriendsZone: number | null;
   ownFoodScore: number | null;
   ownInteriorScore: number | null;
-  ownMonitorScore: number | null;
+  // 2026-08-28 (2차) — 모니터도 GPU/CPU처럼 모델텍스트(주사율 Hz) 자동채점으로 전환.
+  ownMonitorBase: string | null;
+  ownMonitorTop: string | null;
   // 2026-08-27 추가 — CandidateInput과 동일(계산 함수 하나 공유). computeExistingStoreMeasuredForecast에서만
   // 쓰이고, 얼려둔 competitivenessScore/ownDemand 스냅샷 자체는 바뀌지 않는다.
   ownFoodBrand: FoodBrand | null;
   ownInteriorLevelScore: number | null;
   ownInteriorConditionScore: number | null;
-  // 2026-08-28 추가 — CandidateInput.ownSpecCpuScore 등과 동일.
-  ownSpecCpuScore: number | null;
-  ownSpecRamScore: number | null;
-  ownSpecPeripheralScore: number | null;
+  // 2026-08-28 전면개편 — CandidateInput.ownSeatZoneScore/ownComfortScore와 동일.
+  ownSeatZoneScore: number | null;
+  ownComfortScore: number | null;
   pop500m: number | null;
   area1kmKm2: number | null;
   pop1km: number | null;

@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { computeCompetitorInvestigationSummary, computeCompetitorScores, computeGeneralSpecScore } from "@/lib/storeEval/calc";
+import { computeCompetitorInvestigationSummary, computeCompetitorScores } from "@/lib/storeEval/calc";
 import { parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
@@ -67,10 +67,15 @@ function blankCompetitor(candidateCode: string): Competitor {
     appliedPcCount: null,
     hasElevator: null,
     cpu: null,
+    cpuTop1: null,
+    cpuTop2: null,
     vgaBase: null,
     vgaTop: null,
+    vgaTop2: null,
     ram: null,
-    monitor: null,
+    ramTop: null,
+    monitorBase: null,
+    monitorTop: null,
     ratePer1000Won: null,
     hourlyRateConverted: null,
     paidDeduction: null,
@@ -88,11 +93,9 @@ function blankCompetitor(candidateCode: string): Competitor {
     interiorBasis: null,
     interiorLevelScore: null,
     interiorConditionScore: null,
-    monitorScore: null,
     monitorBasis: null,
-    specCpuScore: null,
-    specRamScore: null,
-    specPeripheralScore: null,
+    seatZoneScore: null,
+    comfortScore: null,
     room1: null,
     room2: null,
     teamRoom: null,
@@ -121,7 +124,7 @@ function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: 
     cpu: note.cpu,
     vgaBase: note.vgaBase,
     ram: note.ram,
-    monitor: note.monitor,
+    monitorBase: note.monitor,
     premiumZone: note.premiumZone,
     coupleZone: note.coupleZone,
     room1: note.room1,
@@ -192,16 +195,6 @@ function CompetitorForm({
   }, []);
 
   const computed = useMemo(() => computeCompetitorScores(form, settings), [form, settings]);
-  const computedGeneralSpecScore = useMemo(
-    () =>
-      computeGeneralSpecScore({
-        cpuScore: form.specCpuScore,
-        ramScore: form.specRamScore,
-        peripheralScore: form.specPeripheralScore,
-        legacyScore: form.monitorScore,
-      }),
-    [form.specCpuScore, form.specRamScore, form.specPeripheralScore, form.monitorScore],
-  );
 
   function set<K extends keyof Competitor>(key: K, value: Competitor[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -253,11 +246,16 @@ function CompetitorForm({
       <div className={`${gridClass} mt-3`}>
         <NumberField label="전체대수" value={form.totalPcCount} onChange={(v) => set("totalPcCount", v)} />
         <NumberField label="적용대수" value={form.appliedPcCount} onChange={(v) => set("appliedPcCount", v)} hint="실사값 없으면 대체값을 조사 후 입력" />
-        <TextField label="CPU" value={form.cpu ?? ""} onChange={(v) => set("cpu", v || null)} />
         <TextField label="VGA 기본" value={form.vgaBase ?? ""} onChange={(v) => set("vgaBase", v || null)} />
-        <TextField label="VGA 최고" value={form.vgaTop ?? ""} onChange={(v) => set("vgaTop", v || null)} />
-        <TextField label="RAM" value={form.ram ?? ""} onChange={(v) => set("ram", v || null)} />
-        <TextField label="모니터" value={form.monitor ?? ""} onChange={(v) => set("monitor", v || null)} />
+        <TextField label="VGA 특화1" value={form.vgaTop ?? ""} onChange={(v) => set("vgaTop", v || null)} />
+        <TextField label="VGA 특화2" value={form.vgaTop2 ?? ""} onChange={(v) => set("vgaTop2", v || null)} />
+        <TextField label="CPU 기본" value={form.cpu ?? ""} onChange={(v) => set("cpu", v || null)} />
+        <TextField label="CPU 특화1" value={form.cpuTop1 ?? ""} onChange={(v) => set("cpuTop1", v || null)} />
+        <TextField label="CPU 특화2" value={form.cpuTop2 ?? ""} onChange={(v) => set("cpuTop2", v || null)} />
+        <TextField label="RAM 기본" value={form.ram ?? ""} onChange={(v) => set("ram", v || null)} />
+        <TextField label="RAM 특화" value={form.ramTop ?? ""} onChange={(v) => set("ramTop", v || null)} />
+        <TextField label="모니터 기본" value={form.monitorBase ?? ""} onChange={(v) => set("monitorBase", v || null)} hint="주사율(Hz)에서 자동채점" />
+        <TextField label="모니터 특화" value={form.monitorTop ?? ""} onChange={(v) => set("monitorTop", v || null)} />
         <NumberField label="1000원당분" value={form.ratePer1000Won} onChange={(v) => set("ratePer1000Won", v)} />
         <NumberField label="시간당환산요금" value={form.hourlyRateConverted} onChange={(v) => set("hourlyRateConverted", v)} />
         <TextField label="유료차감" value={form.paidDeduction ?? ""} onChange={(v) => set("paidDeduction", v || null)} />
@@ -278,12 +276,11 @@ function CompetitorForm({
         경쟁력 점수 및 평가근거
       </h4>
       <p className="mt-1 text-xs text-[#8a8072]">
-        사양·좌석·입지 점수는 위 VGA·존구성·층수+엘리베이터로부터 자동 계산됩니다. 조사수준이
+        하드웨어·입지 점수는 위 VGA/CPU/RAM/모니터·층수+엘리베이터로부터 자동 계산됩니다. 조사수준이
         간략/외관만이면 미입력 항목은 기본값(2.0/1.5)으로 채워집니다.
       </p>
       <div className={`${gridClass} mt-3`}>
-        <ComputedField label="사양 점수 (자동)" value={computed.spec} hint="VGA 70%+모니터 30%+프리미엄존 가산" />
-        <ComputedField label="좌석 점수 (자동)" value={computed.seat} hint="존 다양성 50%+수용력 50%" />
+        <ComputedField label="하드웨어 점수 (자동)" value={computed.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%+프리미엄존 가산" />
         <ComputedField label="입지 점수 (자동)" value={computed.location} hint="층수+엘리베이터+지상/지하" />
         <SelectField
           label="먹거리 브랜드"
@@ -301,34 +298,30 @@ function CompetitorForm({
           />
         )}
         <ComputedField label="먹거리 점수 (최종)" value={computed.food} />
-        <ScoreSelectField label="인테리어 수준" value={form.interiorLevelScore} onChange={(v) => set("interiorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
-        <ScoreSelectField label="매장관리상태" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="청결도·노후도" />
-        {form.interiorLevelScore == null && form.interiorConditionScore == null && (
+        <ScoreSelectField
+          label="좌석·존구성"
+          value={form.seatZoneScore}
+          onChange={(v) => set("seatZoneScore", v)}
+          step={0.5}
+          hint="4.0=블랙라벨과 동급(팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등) · 칸막이만 있으면 독립룸 미인정"
+        />
+        <ScoreSelectField label="최신성·디자인" value={form.interiorLevelScore} onChange={(v) => set("interiorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
+        <ScoreSelectField label="청결·관리상태" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="청결도·노후도" />
+        <ScoreSelectField label="편의성" value={form.comfortScore} onChange={(v) => set("comfortScore", v)} step={0.5} hint="냄새·조명·화장실·편의시설" />
+        {form.seatZoneScore == null && form.interiorLevelScore == null && form.interiorConditionScore == null && form.comfortScore == null && (
           <ScoreSelectField
-            label="인테리어 점수 (직접입력)"
+            label="인테리어·좌석·관리 점수 (직접입력)"
             value={form.interiorScore}
             onChange={(v) => set("interiorScore", v)}
-            hint="위 세부항목을 둘 다 안 채웠을 때 직접 평가"
+            hint="위 세부항목을 넷 다 안 채웠을 때 직접 평가"
           />
         )}
-        <ComputedField label="인테리어 점수 (최종)" value={computed.interior} />
-        <ScoreSelectField label="CPU 점수" value={form.specCpuScore} onChange={(v) => set("specCpuScore", v)} step={0.5} hint="CPU 성능" />
-        <ScoreSelectField label="메모리 점수" value={form.specRamScore} onChange={(v) => set("specRamScore", v)} step={0.5} hint="RAM 용량/속도" />
-        <ScoreSelectField label="주변기기 점수" value={form.specPeripheralScore} onChange={(v) => set("specPeripheralScore", v)} step={0.5} hint="키보드/마우스/헤드셋 상태" />
-        {form.specCpuScore == null && form.specRamScore == null && form.specPeripheralScore == null && (
-          <ScoreSelectField
-            label="종합사양 점수 (직접입력)"
-            value={form.monitorScore}
-            onChange={(v) => set("monitorScore", v)}
-            hint="위 세부항목을 셋 다 안 채웠을 때 직접 평가(모니터·CPU·RAM·주변기기 종합)"
-          />
-        )}
-        <ComputedField label="종합사양 점수 (최종)" value={computedGeneralSpecScore} />
+        <ComputedField label="인테리어·좌석·관리 점수 (최종)" value={computed.interior} />
       </div>
       <p className="mt-2 text-xs text-[#8a8072]">종합 경쟁력점수: {computed.total ?? "-"}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <TextAreaField label="먹거리 근거" value={form.foodBasis ?? ""} onChange={(v) => set("foodBasis", v || null)} rows={2} />
-        <TextAreaField label="인테리어 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
+        <TextAreaField label="인테리어·좌석·관리 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
         <TextAreaField label="모니터 근거" value={form.monitorBasis ?? ""} onChange={(v) => set("monitorBasis", v || null)} rows={2} />
       </div>
 

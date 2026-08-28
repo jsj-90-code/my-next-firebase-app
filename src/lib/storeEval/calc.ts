@@ -307,16 +307,25 @@ export function computeCompetitorAppliedPcCount(
 // 대체했었다 — 원본 코드 확보로 이 부분은 자동계산으로 되돌린다.)
 // ---------------------------------------------------------------------------
 
-/** scoreFromVga_: VGA 모델명 4자리 숫자의 천단위 → 5(50번대~)/시리즈값(20~40번대)/1(그 미만). */
+/**
+ * 2026-08-28 재보정 — 블랙라벨 현재 표준 GPU(RTX 5060)를 4점 앵커로 고정하는 사용자 기준표에
+ * 맞춰 재계산한다. 4자리 모델번호에서 세대(천단위, 예: 5060→5)와 티어(끝 2자리, 예: 5060→60)를
+ * 함께 보고 `4 + (세대-5) + 티어가산(80번대+1/70번대+0.5/그외 0)`으로 점수화한다.
+ * RTX5060=4(앵커) · RTX5070=4.5 · RTX5080/5090=5 · RTX4060=3 · RTX3060=2 · RTX2060이하=1로
+ * 대체로 사용자 기준표와 맞아떨어지지만, RTX3070처럼 세대는 낮아도 티어가 높아 실제 체감성능이
+ * 비슷한 예외 사례(기준표는 3점, 이 식은 2.5점)는 정확히 못 잡을 수 있다 — 실제 사례로 어긋나면
+ * 조정 필요(scoreFromCpu/scoreFromRam과 같은 근사치 원칙).
+ */
 export function scoreFromVga(text: string | null): number | null {
   if (!text) return null;
   const cleaned = text.toUpperCase().replace(/\s/g, "");
   const m = cleaned.match(/(\d{4})/);
   if (!m) return null;
-  const series = Math.floor(Number(m[1]) / 1000);
-  if (series >= 5) return 5;
-  if (series >= 2) return series;
-  return 1;
+  const num = Number(m[1]);
+  const generation = Math.floor(num / 1000);
+  const tier = num % 100;
+  const tierBonus = tier >= 80 ? 1 : tier >= 70 ? 0.5 : 0;
+  return Math.min(5, Math.max(1, 4 + (generation - 5) + tierBonus));
 }
 
 /** clampRating_: 1~5 범위로 보정. 범위 밖·비숫자는 null(가중합에서 제외). */
@@ -325,23 +334,89 @@ export function clampRating(v: number | null): number | null {
   return Math.min(5, Math.max(1, Math.round(v * 10) / 10));
 }
 
-/** scoreFromSpec_: VGA 기본·최고 평균 + 가산(상한 5). 기본/최고 중 하나만 있어도 계산한다. */
-export function scoreFromVgaSpec(vgaBase: string | null, vgaTop: string | null, bonus: number): number | null {
-  const b = scoreFromVga(vgaBase);
-  const t = scoreFromVga(vgaTop);
-  if (b == null && t == null) return null;
-  const base = b == null ? (t as number) : t == null ? b : (b + t) / 2;
-  return Math.round(Math.min(5, base + bonus) * 100) / 100;
+/**
+ * 2026-08-28 신설 — 매장 한 곳에 여러 사양이 섞여 있을 때(대부분 기본급, 일부 좌석만 상위급)
+ * "기본사양 80% + 특화사양들(있는 만큼 균등분배) 20%"로 결합한다(사용자 확정 원칙 — 일부 좌석만
+ * 업그레이드됐다고 매장 전체를 그 사양으로 보지 않는다. 정확한 적용대수를 모르므로 대수 비율
+ * 대신 이 고정비율을 쓴다). 특화가 없으면 기본 그대로, 기본이 없고 특화만 있으면(드문 데이터
+ * 이슈) 특화들만 단순평균한다 — 확정 대신 최선의 근사치일 뿐, 별도 신뢰도 플래그 인프라는 없다.
+ * GPU/CPU/RAM/모니터 4항목 모두 이 함수로 결합한다(예: 특화 2개면 20%/2=10%씩 — 기본 RTX4060
+ * 3.5점+특화1 RTX5060 4.0점+특화2 RTX5070 4.5점 → 3.5*.8+4.0*.1+4.5*.1=3.65점).
+ */
+export function combineHardwareTiers(base: number | null, specialtyTiers: (number | null)[]): number | null {
+  const specialty = specialtyTiers.filter((v): v is number => v != null);
+  if (base == null) {
+    if (specialty.length === 0) return null;
+    return specialty.reduce((a, b) => a + b, 0) / specialty.length;
+  }
+  if (specialty.length === 0) return base;
+  const specialtyAvg = specialty.reduce((a, b) => a + b, 0) / specialty.length;
+  return base * 0.8 + specialtyAvg * 0.2;
 }
 
 /**
- * 2026-08-27 추가 — CPU 세대 → 1~5점. "N세대"라고 쓰인 텍스트("i5 14세대")나 인텔 데스크탑 5자리
- * 모델번호("14400","14400F","12400")에서 세대(앞 2자리)를 뽑는다. 14세대=4점 기준, 세대가 1
- * 낮아질 때마다 1점씩 낮춘다(사용자 확정: "14400을 4점으로 하고, 세대별로 1점씩 다운그레이드").
- * 모델명에서 세대를 못 뽑으면 null(지어내지 않음 — 사람이 직접 입력).
+ * scoreFromSpec_: GPU 기본/특화1/특화2를 combineHardwareTiers로 결합 후 가산(상한 5).
+ * 2026-08-28: 예전엔 기본+최고를 단순평균했는데, "일부 좌석만 업그레이드" 원칙에 맞춰
+ * combineHardwareTiers(기본80%+특화20%)로 통일했다.
+ */
+export function scoreFromVgaSpec(vgaBase: string | null, vgaTop: string | null, vgaTop2: string | null, bonus: number): number | null {
+  const combined = combineHardwareTiers(scoreFromVga(vgaBase), [scoreFromVga(vgaTop), scoreFromVga(vgaTop2)]);
+  if (combined == null) return null;
+  return Math.round(Math.min(5, combined + bonus) * 100) / 100;
+}
+
+/** CPU 기본/특화1/특화2를 combineHardwareTiers로 결합(2026-08-28 신설, GPU와 같은 원칙). */
+export function scoreFromCpuSpec(cpuBase: string | null, cpuTop1: string | null, cpuTop2: string | null): number | null {
+  return combineHardwareTiers(scoreFromCpu(cpuBase), [scoreFromCpu(cpuTop1), scoreFromCpu(cpuTop2)]);
+}
+
+/** RAM 기본/특화를 combineHardwareTiers로 결합(2026-08-28 신설, GPU와 같은 원칙). */
+export function scoreFromRamSpec(ramBase: string | null, ramTop: string | null): number | null {
+  return combineHardwareTiers(scoreFromRam(ramBase), [scoreFromRam(ramTop)]);
+}
+
+/**
+ * 2026-08-28 신설 — 모니터도 GPU/CPU/RAM처럼 모델텍스트(주사율 Hz)에서 자동으로 점수를 뽑는다
+ * (그전까진 평가자가 1~5점을 직접 입력했다). 블랙라벨 현재 표준 240Hz를 4점 앵커로 고정한다
+ * (scoreFromVga/scoreFromCpu와 같은 원칙). 크기·브랜드(BenQ 등)는 텍스트로 다양해 정확한 파싱이
+ * 어려워 반영하지 않는다 — Hz만으로 판단하는 근사치다.
+ */
+export function scoreFromMonitor(text: string | null): number | null {
+  if (!text) return null;
+  const m = text.match(/(\d{2,3})\s*hz/i);
+  if (!m) return null;
+  const hz = Number(m[1]);
+  if (hz >= 280) return 5;
+  if (hz >= 240) return 4;
+  if (hz >= 180) return 3;
+  if (hz >= 144) return 2;
+  return 1;
+}
+
+/** 모니터 기본/특화를 combineHardwareTiers로 결합(2026-08-28 신설). */
+export function scoreFromMonitorSpec(monitorBase: string | null, monitorTop: string | null): number | null {
+  return combineHardwareTiers(scoreFromMonitor(monitorBase), [scoreFromMonitor(monitorTop)]);
+}
+
+/**
+ * 2026-08-27 추가, 2026-08-28 확장 — CPU → 1~5점.
+ * 1) 인텔 코어 울트라 신형 네이밍("울트라5 225F", "Ultra 7 265K")을 먼저 인식한다 — 블랙라벨
+ *    현재 표준인 울트라5 200번대(225F)를 4점 앵커로 고정하고, 티어(5/7/9)가 한 단계 오를 때마다
+ *    +1, 모델 앞자리(시리즈, 예: 225→2)가 200번대보다 낮으면(구형) -1 한다.
+ * 2) "N세대"라고 쓰인 텍스트("i5 14세대")나 인텔 구형 데스크탑 5자리 모델번호("14400","12400")는
+ *    기존대로 세대(앞 2자리)를 뽑는다. 14세대=4점 기준, 세대가 1 낮아질 때마다 1점씩 낮춘다
+ *    (사용자 확정: "14400을 4점으로 하고, 세대별로 1점씩 다운그레이드").
+ * 어느 쪽으로도 못 뽑으면 null(지어내지 않음 — 사람이 직접 입력).
  */
 export function scoreFromCpu(text: string | null): number | null {
   if (!text) return null;
+  const ultraM = text.match(/(?:울트라|ultra)\s*([579])\s+(\d{3})/i);
+  if (ultraM) {
+    const tier = Number(ultraM[1]); // 5/7/9
+    const tierRank = tier === 5 ? 1 : tier === 7 ? 2 : 3;
+    const series = Math.floor(Number(ultraM[2]) / 100); // 225 → 2
+    return Math.min(5, Math.max(1, 4 + (tierRank - 1) + (series - 2)));
+  }
   const genLabelM = text.match(/(\d{1,2})\s*세대/);
   const generation = genLabelM ? Number(genLabelM[1]) : text.match(/(\d{2})\d{3}/)?.[1];
   if (generation == null) return null;
@@ -349,10 +424,10 @@ export function scoreFromCpu(text: string | null): number | null {
 }
 
 /**
- * 2026-08-27 추가 — RAM 용량(GB) → 1~5점. 16GB=중(3점, 기준) · 32GB=중상(4점, 한 단계 위)
- * (사용자 확정치 2개). 그 외 용량은 16GB 대비 2배씩 늘어날 때마다 1단계씩 올라간다고 확장
- * 해석했다(예: 8GB=2점/64GB=5점) — 이 확장 구간은 사용자가 준 두 값 사이 규칙을 추정한 것이라
- * 실제 사례로 어긋나면 조정이 필요하다.
+ * 2026-08-27 추가, 2026-08-28 재보정 — RAM 용량(GB) → 1~5점. 사용자 기준표(32GB이상=5,
+ * 16GB=4, 8GB=2, 8GB미만=1)를 그대로 표로 옮겼다. "3점(16GB이나 일부 혼합·저속)"은 한 대의
+ * 용량 텍스트만으로는 판단할 수 없는 혼합구성 전용 등급이라 자동채점에서는 나오지 않는다
+ * (그런 경우엔 사람이 직접 사양점수를 조정해야 한다).
  */
 export function scoreFromRam(text: string | null): number | null {
   if (!text) return null;
@@ -360,42 +435,53 @@ export function scoreFromRam(text: string | null): number | null {
   if (!m) return null;
   const gb = Number(m[1]);
   if (gb <= 0) return null;
-  const tier = Math.round(Math.log2(gb / 16));
-  return Math.min(5, Math.max(1, 3 + tier));
+  if (gb >= 32) return 5;
+  if (gb >= 16) return 4;
+  if (gb >= 8) return 2;
+  return 1;
 }
 
 /**
- * 사양점수 — CPU/VGA/RAM/모니터 4항목의 가중평균. 가중치는 settings.specWeights에서 읽는다.
+ * 하드웨어점수(구 "사양점수") — GPU/모니터/CPU/RAM 4항목의 가중평균(settings.specWeights).
  * 값이 있는 항목만 평균에 넣고, 그 항목들의 가중치 합으로 재정규화한다(전부 없으면 null) —
  * 데이터가 없다고 억지로 중간값을 채우지 않는다.
  *
- * 2026-08-27: 한때 CPU/RAM을 자동공식(세대·용량 환산, scoreFromCpu/scoreFromRam)으로 독립
- * 가중치를 줘 봤으나(단순평균·50/30/10/10 가중평균 둘 다) LOOCV 정확도가 원본(VGA70%+모니터30%,
- * MAPE 11.6%)보다 나빠져 원복했다(사용자 확정) — 옛 매장이 최신 CPU 기준으로 불리해지는 구조적
- * 문제도 있었다. 지금 기본 설정은 ram:0/cpu:0이라 사실상 VGA70%+모니터30%와 동일하게 동작한다.
- * CPU/RAM은 이제 "모니터"(→종합사양) 항목에 평가자가 정성적으로 참고해 반영한다. scoreFromCpu/
- * scoreFromRam 함수와 이 가중치 슬롯은 나중에 시간 보정 구조가 갖춰지면 다시 켤 수 있도록 남겨둔다.
- * (자사 쪽 "빈 칸이면 4점" 기본값은 applyStandardOwnFacilityDefaults의 monitorScore 기본값을
- * 통해 자연히 적용된다 - 모니터만 있어도 그 값이 그대로 사양점수가 되므로 별도 처리 불필요).
+ * 2026-08-27: 한때 CPU/RAM을 자동공식으로 독립 가중치를 줘 봤으나 LOOCV 정확도가 원본(VGA70%+
+ * 모니터30%)보다 나빠져 원복한 적이 있다. 2026-08-28: 사용자가 하드웨어 내부비중을 GPU40%/
+ * 모니터25%/CPU20%/RAM15%로 다시 확정해 재도입한다(경쟁력점수 상위 배점도 사양25%→하드웨어30%로
+ * 같이 조정됨, competitivenessWeights 참고. 주변기기는 이번 기준표에서 하드웨어 배점 대상에서
+ * 제외하기로 확정 — 마우스/키보드/헤드셋 필드 자체가 없다) — scoreFromVga/scoreFromCpu의
+ * 앵커값도 블랙라벨 현재 표준(RTX5060·울트라5 225F·16GB=각 4점) 기준으로 재보정했으므로, 지난번
+ * 원복의 원인이었던 "구형매장이 최신 CPU 기준으로 불리해지는 문제"는 줄어들 것으로 기대하지만,
+ * 배포 후 실제 데이터로 재검증이 필요하다(Firebase 연결 문제로 이번 세션엔 직접 백테스트를 못
+ * 돌렸다 — 다음 세션에서 /store-eval/validation 재확인 권장). 정확도가 나빠지면 settings.ts의
+ * specWeights를 이전 값({vga:0.7,monitor:0.3,ram:0,cpu:0})으로 되돌리면 된다.
+ * 2026-08-28 (2차) — GPU/CPU/RAM/모니터 전부 "기본/특화" 다단계 텍스트 입력으로 통일했다
+ * (combineHardwareTiers 참고). 모니터도 이제 자동채점이라 수동 점수 입력 자체가 없어졌다.
  * @param bonus 자사: 게임존수 × GAME_ZONE_BONUS(0.2) / 경쟁점: 프리미엄존 유(1) × 0.5, 무(0) × 0.5
  */
 export function computeSpecScore(
   input: {
-    cpu: string | null;
     vgaBase: string | null;
     vgaTop: string | null;
+    vgaTop2: string | null;
+    cpu: string | null;
+    cpuTop1: string | null;
+    cpuTop2: string | null;
     ram: string | null;
-    monitorScore: number | null;
+    ramTop: string | null;
+    monitorBase: string | null;
+    monitorTop: string | null;
     bonus: number;
   },
   settings: Pick<ModelSettings, "specWeights">,
 ): number | null {
   const w = settings.specWeights;
   const items = [
-    { score: scoreFromVgaSpec(input.vgaBase, input.vgaTop, input.bonus), weight: w.vga },
-    { score: clampRating(input.monitorScore), weight: w.monitor },
-    { score: scoreFromRam(input.ram), weight: w.ram },
-    { score: scoreFromCpu(input.cpu), weight: w.cpu },
+    { score: scoreFromVgaSpec(input.vgaBase, input.vgaTop, input.vgaTop2, input.bonus), weight: w.vga },
+    { score: scoreFromMonitorSpec(input.monitorBase, input.monitorTop), weight: w.monitor },
+    { score: scoreFromRamSpec(input.ram, input.ramTop), weight: w.ram },
+    { score: scoreFromCpuSpec(input.cpu, input.cpuTop1, input.cpuTop2), weight: w.cpu },
   ].filter((i): i is { score: number; weight: number } => i.score != null);
   if (items.length === 0) return null;
   const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
@@ -433,27 +519,18 @@ export function computeZoneComposition(roomZoneCounts: (number | null)[], openZo
   return { kinds, rooms };
 }
 
-/** scoreFromDiversity_: 다양성 점수(종류수). 자사 표준 5종(일반석+팀룸+커플존+VIP존+프렌즈존) = 4점. */
+/**
+ * 2026-08-28 — 좌석·존구성이 경쟁력점수 공식 산출(computeInteriorSeatManagementScore)에서
+ * 평가자 직접입력(rubric표 기반)으로 바뀌면서, 이 함수는 더 이상 점수 계산에 쓰이지 않는다.
+ * 화면에서 "자동 판정: 특화존 N종" 같은 참고용 힌트를 보여줄 때만 쓴다(kinds-1 = 일반석 제외
+ * 특화존 종류수).
+ */
 export function scoreFromZoneDiversity(kinds: number): number {
   if (kinds >= 7) return 5;
   if (kinds >= 5) return 4;
   if (kinds >= 3) return 3;
   if (kinds >= 2) return 2;
   return 1;
-}
-
-/** scoreFromCapacity_: 수용력 점수(독립룸수). 자사 표준 10개(팀룸2+커플존3+VIP존5) = 4점. */
-export function scoreFromZoneCapacity(rooms: number): number {
-  if (rooms >= 15) return 5;
-  if (rooms >= 8) return 4;
-  if (rooms >= 4) return 3;
-  if (rooms >= 2) return 2;
-  return 1;
-}
-
-/** scoreFromZoneComposition_: 좌석점수 = 다양성 50% + 수용력 50%. */
-export function computeSeatScore(kinds: number, rooms: number): number {
-  return Math.round((scoreFromZoneDiversity(kinds) * 0.5 + scoreFromZoneCapacity(rooms) * 0.5) * 100) / 100;
 }
 
 /**
@@ -465,8 +542,9 @@ export function computeSeatScore(kinds: number, rooms: number): number {
  * 4→5로 올렸다(원본 시트의 "빈칸이면 4" 규칙을 웹에서 재조정 — 원본과 다른 값이라는 점 인지).
  * 이 5점 기본값은 "신규후보지(아직 안 열린 우리 매장)"에만 쓴다 — EXISTING_STORE_FACILITY_DEFAULTS
  * 주석 참고, 기존 가맹점 백테스트엔 안 쓴다.
- * monitorScore는 그대로 4 — 사양점수(VGA70%+모니터30%)가 이 값을 통해 자연히 "중상(4점)"
- * 기본값을 얻는다(모니터만 남아 그 값이 곧 사양점수가 됨, 별도 "사양 기본값" 코드 불필요).
+ * 2026-08-28 — 모니터가 수동 1~5점에서 모델텍스트 자동채점(combineHardwareTiers)으로 바뀌면서
+ * "비어있으면 표준값 4"라는 개념 자체가 없어졌다(GPU/CPU/RAM처럼 비어있으면 그냥 항목에서
+ * 제외되고 나머지 가중치로 재정규화된다) — 그래서 monitorScore 기본값도 제거했다.
  */
 export const STANDARD_OWN_FACILITY_DEFAULTS = {
   gameZoneCount: 3,
@@ -476,7 +554,6 @@ export const STANDARD_OWN_FACILITY_DEFAULTS = {
   friendsZone: 15,
   foodScore: 5,
   interiorScore: 5,
-  monitorScore: 4,
 };
 
 /**
@@ -502,7 +579,6 @@ export type StandardOwnFacilityInput = {
   ownFriendsZone: number | null;
   ownFoodScore: number | null;
   ownInteriorScore: number | null;
-  ownMonitorScore: number | null;
 };
 
 export function applyStandardOwnFacilityDefaults(
@@ -516,7 +592,6 @@ export function applyStandardOwnFacilityDefaults(
   ownFriendsZone: number;
   ownFoodScore: number;
   ownInteriorScore: number;
-  ownMonitorScore: number;
 } {
   const d = defaults;
   return {
@@ -527,7 +602,6 @@ export function applyStandardOwnFacilityDefaults(
     ownFriendsZone: input.ownFriendsZone ?? d.friendsZone,
     ownFoodScore: input.ownFoodScore ?? d.foodScore,
     ownInteriorScore: input.ownInteriorScore ?? d.interiorScore,
-    ownMonitorScore: input.ownMonitorScore ?? d.monitorScore,
   };
 }
 
@@ -558,36 +632,34 @@ export function computeLocationScoreFromFacts(
 // ---------------------------------------------------------------------------
 
 /**
- * 종합 경쟁력점수 = 사양25% + 좌석30% + 먹거리20% + 인테리어15% + 입지10% (08_계산기준).
- * 사양·좌석·입지는 computeSpecScore/computeSeatScore/computeLocationScoreFromFacts로 자동
- * 계산한 값을 넣는다. 먹거리·인테리어는 원본에서도 평가자가 1~5점을 직접 입력하는 항목이다.
+ * 종합 경쟁력점수 = 하드웨어30% + 인테리어·좌석구성·관리40% + 먹거리20% + 입지10%
+ * (2026-08-28 전면개편, 사용자 확정 — 기존 "사양25%+좌석30%+먹거리20%+인테리어15%+입지10%"
+ * 5분류를 4분류로 재편했다. 좌석·존구성은 더 이상 독립 배점이 아니라 "인테리어·좌석·관리"
+ * 항목의 세부 50% 비중으로 흡수됐다(computeInteriorSeatManagementScore). 입지는 "예상수요
+ * 점유율" 쪽 수요중복도와 중복 반영을 최소화하기 위해 의도적으로 10%만 유지한다(범위 밖 후속
+ * 과제). 하드웨어·입지는 computeSpecScore/computeLocationScoreFromFacts로 자동 계산한 값을
+ * 넣는다. 먹거리·인테리어(좌석·관리 포함)는 평가자가 rubric표를 보고 직접 입력한 세부점수의
+ * 가중평균이다.
  */
 export function computeCompetitivenessScore(
-  scores: { spec: number | null; seat: number | null; food: number | null; interior: number | null; location: number | null },
+  scores: { spec: number | null; food: number | null; interior: number | null; location: number | null },
   settings: Pick<ModelSettings, "competitivenessWeights">,
 ): number | null {
-  const { spec, seat, food, interior, location } = scores;
-  if (spec == null || seat == null || food == null || interior == null || location == null) return null;
+  const { spec, food, interior, location } = scores;
+  if (spec == null || food == null || interior == null || location == null) return null;
   const w = settings.competitivenessWeights;
-  return spec * w.spec + seat * w.seat + food * w.food + interior * w.interior + location * w.location;
+  return spec * w.spec + food * w.food + interior * w.interior + location * w.location;
 }
 
 /**
- * 2026-08-27 추가 — 먹거리(20%)·인테리어(15%)가 종합 경쟁력점수의 35%를 차지하는데 입력이
- * "평가자 감으로 1~5점 중 하나 고르기"뿐이라 1점 차이(=배점의 20%)만으로 예상매출이 크게
- * 흔들린다는 지적(사용자 확인)에 따라 정교화한다.
+ * 2026-08-27 추가, 2026-08-28 확장 — 먹거리·인테리어가 종합 경쟁력점수의 큰 비중을 차지하는데
+ * 입력이 "평가자 감으로 1~5점 중 하나 고르기"뿐이라 1점 차이만으로 예상매출이 크게 흔들린다는
+ * 지적(사용자 확인)에 따라 정교화한다.
  *
  * 먹거리는 조리방식 기반 세분화 대신(최신 PC방은 다 인덕션이라 변별력이 없다는 사용자 지적)
  * 실제 사용 브랜드 기준으로 매긴다 — settings.foodBrandScores에서 브랜드별 점수를 읽고,
  * "브랜드없음"이거나 안 정했으면 조사자 직접입력값(legacyScore, 점포개발자 의견 등)을 그대로
  * 쓴다.
- *
- * 인테리어는 사양점수(computeSpecScore)와 같은 방식 — 세부항목(인테리어 수준·매장관리상태)
- * 평균 — 으로 정교화한다. 하나라도 채우면 평균(0.5점 단위 반올림)을 쓰고, 둘 다 비어 있으면
- * 기존처럼 종합 직접입력값(legacyScore)을 그대로 쓴다.
- *
- * 둘 다 기존 40개 매장은 새 필드가 없어 항상 폴백을 타므로 competitivenessScore 스냅샷/LOOCV에는
- * 영향이 없다.
  */
 function averageFilledScores(subs: (number | null)[], legacyScore: number | null): number | null {
   const filled = subs.filter((v): v is number => v != null);
@@ -607,67 +679,86 @@ export function computeFoodScore(
   return input.legacyScore;
 }
 
-export function computeInteriorScore(input: {
-  levelScore: number | null;
-  conditionScore: number | null;
-  legacyScore: number | null;
-}): number | null {
-  return averageFilledScores([input.levelScore, input.conditionScore], input.legacyScore);
-}
-
 /**
- * 2026-08-28 추가 — 종합사양(모니터) 점수도 먹거리/인테리어와 같은 패턴으로 세분화한다(사용자 요청).
- * CPU/메모리/주변기기 중 하나라도 채우면 평균(0.5점 단위 반올림)을 쓰고, 셋 다 비어 있으면 기존처럼
- * 종합 직접입력값(legacyScore=ownMonitorScore/monitorScore)을 그대로 쓴다. 결과는 computeSpecScore의
- * monitorScore 파라미터로 그대로 넘어간다(computeSpecScore 시그니처 자체는 그대로 둔다).
+ * 2026-08-28 추가 — 좌석·존구성 점수. 사용자가 준 rubric(칸막이만 있는 좌석은 독립룸으로
+ * 인정 안 함·명칭만 나눈 존은 미인정 등, 조사서 표현마다 사람 판단이 필요)이 자동 계산으로
+ * 재현하기 어려운 정성적 기준이라, 먹거리와 같은 방식(평가자가 rubric표를 보고 0.5점 단위 직접
+ * 입력)으로 처리한다 — 존 개수 필드(room1/teamRoom 등)는 그대로 남겨 참고용 힌트로만 쓴다.
+ * 인테리어·좌석·관리(경쟁력점수의 40%) 항목은 이 좌석점수(50%)+최신성(25%, 기존
+ * interiorLevelScore 재사용)+청결관리(15%, 기존 interiorConditionScore 재사용)+편의성(10%,
+ * 신규)의 가중평균이다(computeInteriorSeatManagementScore).
  */
-export function computeGeneralSpecScore(input: {
-  cpuScore: number | null;
-  ramScore: number | null;
-  peripheralScore: number | null;
-  legacyScore: number | null;
-}): number | null {
-  return averageFilledScores([input.cpuScore, input.ramScore, input.peripheralScore], input.legacyScore);
+export function computeInteriorSeatManagementScore(
+  input: {
+    seatZoneScore: number | null;
+    freshnessScore: number | null; // 최신성·디자인 (= ownInteriorLevelScore/interiorLevelScore)
+    cleanlinessScore: number | null; // 청결·관리상태 (= ownInteriorConditionScore/interiorConditionScore)
+    comfortScore: number | null; // 냄새·조명·화장실·편의성
+    legacyScore: number | null; // 넷 다 비었을 때 폴백 (= ownInteriorScore/interiorScore)
+  },
+  settings: Pick<ModelSettings, "interiorWeights">,
+): number | null {
+  const w = settings.interiorWeights;
+  const items = [
+    { score: clampRating(input.seatZoneScore), weight: w.seatZone },
+    { score: clampRating(input.freshnessScore), weight: w.freshness },
+    { score: clampRating(input.cleanlinessScore), weight: w.cleanliness },
+    { score: clampRating(input.comfortScore), weight: w.comfort },
+  ].filter((i): i is { score: number; weight: number } => i.score != null);
+  if (items.length === 0) return input.legacyScore;
+  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
+  if (totalWeight === 0) return input.legacyScore;
+  const avg = items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight;
+  return Math.round(avg * 2) / 2;
 }
 
 /**
- * 경쟁점 한 곳의 경쟁력점수 5개 구성요소를 계산한다.
- * 사양/좌석/입지는 VGA·존구성(1인룸/2인룸/팀룸/커플존 — VIP존/프렌즈존은 경쟁점 조사 대상 제외)·
- * 층수+엘리베이터로 자동 계산하고, 조사수준이 간략/외관만이면 미입력 항목을 기본값(2.0/1.5)으로
- * 채운다(applySurveyLevelDefault). 먹거리/인테리어는 조사자 직접 입력을 그대로 쓴다.
+ * 경쟁점 한 곳의 경쟁력점수 4개 구성요소를 계산한다.
+ * 하드웨어/입지는 VGA·층수+엘리베이터로 자동 계산하고, 조사수준이 간략/외관만이면 미입력
+ * 항목을 기본값(2.0/1.5)으로 채운다(applySurveyLevelDefault). 먹거리/인테리어(좌석·관리 포함)는
+ * 조사자 직접 입력을 그대로 쓴다.
  */
 export function computeCompetitorScores(
   c: Competitor,
-  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "foodBrandScores">,
-): { spec: number | null; seat: number | null; food: number | null; interior: number | null; location: number | null; total: number | null } {
-  const { kinds, rooms } = computeZoneComposition([c.room1, c.room2, c.teamRoom, c.coupleZone]);
+  settings: Pick<ModelSettings, "specWeights" | "interiorWeights" | "competitivenessWeights" | "foodBrandScores">,
+): { spec: number | null; food: number | null; interior: number | null; location: number | null; total: number | null } {
   const hasPremium = (c.premiumZone ?? 0) > 0;
-  const generalSpecScore = computeGeneralSpecScore({
-    cpuScore: c.specCpuScore,
-    ramScore: c.specRamScore,
-    peripheralScore: c.specPeripheralScore,
-    legacyScore: c.monitorScore,
-  });
   const spec = applySurveyLevelDefault(
     computeSpecScore(
-      { cpu: c.cpu, vgaBase: c.vgaBase, vgaTop: c.vgaTop, ram: c.ram, monitorScore: generalSpecScore, bonus: hasPremium ? PREMIUM_ZONE_BONUS : 0 },
+      {
+        vgaBase: c.vgaBase,
+        vgaTop: c.vgaTop,
+        vgaTop2: c.vgaTop2,
+        cpu: c.cpu,
+        cpuTop1: c.cpuTop1,
+        cpuTop2: c.cpuTop2,
+        ram: c.ram,
+        ramTop: c.ramTop,
+        monitorBase: c.monitorBase,
+        monitorTop: c.monitorTop,
+        bonus: hasPremium ? PREMIUM_ZONE_BONUS : 0,
+      },
       settings,
     ),
     c.surveyLevel,
     c.investigationStatus,
   );
-  const seat = applySurveyLevelDefault(computeSeatScore(kinds, rooms), c.surveyLevel, c.investigationStatus);
   const food = applySurveyLevelDefault(
     computeFoodScore({ brand: c.foodBrand, legacyScore: c.foodScore }, settings),
     c.surveyLevel,
     c.investigationStatus,
   );
   const interior = applySurveyLevelDefault(
-    computeInteriorScore({
-      levelScore: c.interiorLevelScore,
-      conditionScore: c.interiorConditionScore,
-      legacyScore: c.interiorScore,
-    }),
+    computeInteriorSeatManagementScore(
+      {
+        seatZoneScore: c.seatZoneScore,
+        freshnessScore: c.interiorLevelScore,
+        cleanlinessScore: c.interiorConditionScore,
+        comfortScore: c.comfortScore,
+        legacyScore: c.interiorScore,
+      },
+      settings,
+    ),
     c.surveyLevel,
     c.investigationStatus,
   );
@@ -676,14 +767,14 @@ export function computeCompetitorScores(
     c.surveyLevel,
     c.investigationStatus,
   );
-  const total = computeCompetitivenessScore({ spec, seat, food, interior, location }, settings);
-  return { spec, seat, food, interior, location, total };
+  const total = computeCompetitivenessScore({ spec, food, interior, location }, settings);
+  return { spec, food, interior, location, total };
 }
 
 /** 경쟁점_평균경쟁력 = 경쟁점들의 경쟁력점수를 적용대수로 가중평균. */
 export function computeCompetitorAvgCompetitiveness(
   competitors: Competitor[],
-  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "foodBrandScores">,
+  settings: Pick<ModelSettings, "specWeights" | "interiorWeights" | "competitivenessWeights" | "foodBrandScores">,
 ): number | null {
   const scored = competitors
     .map((c) => ({
@@ -1508,9 +1599,13 @@ export function computeExistingStoreMeasuredForecast(
     | "hasElevator"
     | "hourlyRate"
     | "ownCpu"
+    | "ownCpuTop1"
+    | "ownCpuTop2"
     | "ownRam"
+    | "ownRamTop"
     | "ownVgaBase"
     | "ownVgaTop"
+    | "ownVgaTop2"
     | "ownGameZoneCount"
     | "ownRoom1"
     | "ownRoom2"
@@ -1520,16 +1615,19 @@ export function computeExistingStoreMeasuredForecast(
     | "ownFriendsZone"
     | "ownFoodScore"
     | "ownInteriorScore"
-    | "ownMonitorScore"
+    | "ownMonitorBase"
+    | "ownMonitorTop"
     | "ownFoodBrand"
     | "ownInteriorLevelScore"
     | "ownInteriorConditionScore"
-    | "ownSpecCpuScore"
-    | "ownSpecRamScore"
-    | "ownSpecPeripheralScore"
+    | "ownSeatZoneScore"
+    | "ownComfortScore"
   >,
   competitors: Competitor[],
-  settings: Pick<ModelSettings, "specWeights" | "competitivenessWeights" | "demandCaptureTable" | "measuredForecastProductRatio" | "foodBrandScores">,
+  settings: Pick<
+    ModelSettings,
+    "specWeights" | "interiorWeights" | "competitivenessWeights" | "demandCaptureTable" | "measuredForecastProductRatio" | "foodBrandScores"
+  >,
 ): ExistingStoreMeasuredForecastResult {
   const base: ExistingStoreMeasuredForecastResult = {
     storeCode: store.storeCode,
@@ -1561,38 +1659,40 @@ export function computeExistingStoreMeasuredForecast(
 
   // 기존 가맹점 백테스트는 신규후보지용 5점 기본값이 아니라 원본 시트 규칙(빈칸이면 4)을 쓴다
   // (EXISTING_STORE_FACILITY_DEFAULTS 주석 참고 — 과거 실적에 새 기준을 소급 적용하지 않는다).
+  // 2026-08-28: 좌석·존구성 점수가 자동계산(존개수)에서 평가자 직접입력으로 바뀌면서 위
+  // 존구성 필드들은 더 이상 점수 계산에 쓰이지 않지만, "자사 시설 정보가 완비됐는지"를 보는
+  // 이 함수의 제외조건(바로 위)에는 그대로 남겨둔다(표본 구성을 임의로 바꾸지 않기 위함).
   const facility = applyStandardOwnFacilityDefaults(store, EXISTING_STORE_FACILITY_DEFAULTS);
-  const { kinds, rooms } = computeZoneComposition(
-    [store.ownRoom1, store.ownRoom2, store.ownTeamRoom, store.ownCoupleZone, store.ownVipZone],
-    [store.ownFriendsZone],
-  );
-  const ownGeneralSpecScore = computeGeneralSpecScore({
-    cpuScore: store.ownSpecCpuScore,
-    ramScore: store.ownSpecRamScore,
-    peripheralScore: store.ownSpecPeripheralScore,
-    legacyScore: facility.ownMonitorScore,
-  });
   const ownSpecScore = computeSpecScore(
     {
-      cpu: store.ownCpu,
       vgaBase: store.ownVgaBase,
       vgaTop: store.ownVgaTop,
+      vgaTop2: store.ownVgaTop2,
+      cpu: store.ownCpu,
+      cpuTop1: store.ownCpuTop1,
+      cpuTop2: store.ownCpuTop2,
       ram: store.ownRam,
-      monitorScore: ownGeneralSpecScore,
+      ramTop: store.ownRamTop,
+      monitorBase: store.ownMonitorBase,
+      monitorTop: store.ownMonitorTop,
       bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
     },
     settings,
   );
-  const ownSeatScore = computeSeatScore(kinds, rooms);
   const ownLocationScore = computeLocationScoreFromFacts(store.floor, store.groundLevel, store.hasElevator);
   const ownFoodScore = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
-  const ownInteriorScore = computeInteriorScore({
-    levelScore: store.ownInteriorLevelScore,
-    conditionScore: store.ownInteriorConditionScore,
-    legacyScore: facility.ownInteriorScore,
-  });
+  const ownInteriorScore = computeInteriorSeatManagementScore(
+    {
+      seatZoneScore: store.ownSeatZoneScore,
+      freshnessScore: store.ownInteriorLevelScore,
+      cleanlinessScore: store.ownInteriorConditionScore,
+      comfortScore: store.ownComfortScore,
+      legacyScore: facility.ownInteriorScore,
+    },
+    settings,
+  );
   const ownCompetitivenessScore = computeCompetitivenessScore(
-    { spec: ownSpecScore, seat: ownSeatScore, food: ownFoodScore, interior: ownInteriorScore, location: ownLocationScore },
+    { spec: ownSpecScore, food: ownFoodScore, interior: ownInteriorScore, location: ownLocationScore },
     settings,
   );
   const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);

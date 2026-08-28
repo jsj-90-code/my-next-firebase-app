@@ -27,6 +27,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { defaultModelSettings } from "./settings";
 import type {
   AdminDongReference,
   CandidateInput,
@@ -260,7 +261,10 @@ export async function saveEvaluationResult(result: EvaluationResult, actor: stri
 // ---------------------------------------------------------------------------
 export async function getModelSettings(): Promise<ModelSettings | null> {
   const snap = await getDoc(doc(requireDb(), SETTINGS, "current"));
-  return snap.exists() ? (snap.data() as ModelSettings) : null;
+  if (!snap.exists()) return null;
+  // 2026-08-28 — interiorWeights처럼 새로 추가된 필드가 아예 없는 옛 Firestore 문서를 만나도
+  // 죽지 않도록 기본값과 얕은 병합한다(문서에 있는 값은 그대로 쓰고, 없는 최상위 필드만 기본값).
+  return { ...defaultModelSettings(), ...(snap.data() as ModelSettings) };
 }
 
 export async function saveModelSettings(settings: ModelSettings, actor: string | null, reason: string | null = null): Promise<void> {
@@ -413,9 +417,13 @@ export async function convertCandidateToExistingStore(input: {
     demographicsYear: c.demographicsYear,
     renovationYear: null,
     ownCpu: c.ownCpu,
+    ownCpuTop1: c.ownCpuTop1,
+    ownCpuTop2: c.ownCpuTop2,
     ownRam: c.ownRam,
+    ownRamTop: c.ownRamTop,
     ownVgaBase: c.ownVgaBase,
     ownVgaTop: c.ownVgaTop,
+    ownVgaTop2: c.ownVgaTop2,
     ownGameZoneCount: c.ownGameZoneCount,
     ownRoom1: c.ownRoom1,
     ownRoom2: c.ownRoom2,
@@ -430,13 +438,13 @@ export async function convertCandidateToExistingStore(input: {
     // 비교했을 때 어떤지"가 목적이라, 전환 출처와 무관하게 전부 원본 규칙을 따라야 한다.
     ownFoodScore: c.ownFoodScore,
     ownInteriorScore: c.ownInteriorScore,
-    ownMonitorScore: c.ownMonitorScore,
+    ownMonitorBase: c.ownMonitorBase,
+    ownMonitorTop: c.ownMonitorTop,
     ownFoodBrand: c.ownFoodBrand,
     ownInteriorLevelScore: c.ownInteriorLevelScore,
     ownInteriorConditionScore: c.ownInteriorConditionScore,
-    ownSpecCpuScore: c.ownSpecCpuScore,
-    ownSpecRamScore: c.ownSpecRamScore,
-    ownSpecPeripheralScore: c.ownSpecPeripheralScore,
+    ownSeatZoneScore: c.ownSeatZoneScore,
+    ownComfortScore: c.ownComfortScore,
     pop500m: c.pop500m,
     area1kmKm2: c.area1kmKm2,
     pop1km: c.pop1km,

@@ -161,8 +161,20 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       evaluationPcCount: toNumber(s["평가기준_PC대수"]),
       demographicsYear: toNumber(s["상권데이터기준연도"]),
       renovationYear: toNumber(s["자사_리뉴얼연도"]),
+      // 2026-08-28 (2차) — 실제 시트 컬럼이 기본/특화1/특화2(GPU·CPU)·기본/특화(RAM·모니터)로
+      // 세분화됨(사용자 확정). 일부 좌석만 업그레이드된 경우를 반영하기 위해 calc.ts
+      // combineHardwareTiers(기본80%+특화균등분배20%)로 결합한다. 모니터는 더 이상 숫자 평가가
+      // 아니라 텍스트(주사율 Hz)에서 자동채점한다(scoreFromMonitor).
       ownVgaBase: toText(s["자사_VGA_기본"]),
-      ownVgaTop: toText(s["자사_VGA_최고"]),
+      ownVgaTop: toText(s["자사_VGA_특화1"]),
+      ownVgaTop2: toText(s["자사_VGA_특화2"]),
+      ownCpu: toText(s["자사_CPU_기본"]),
+      ownCpuTop1: toText(s["자사_CPU_특화1"]),
+      ownCpuTop2: toText(s["자사_CPU_특화2"]),
+      ownRam: toText(s["자사_RAM_기본"]),
+      ownRamTop: toText(s["자사_RAM_특화"]),
+      ownMonitorBase: toText(s["자사_모니터_기본"]),
+      ownMonitorTop: toText(s["자사_모니터_특화"]),
       ownGameZoneCount: toNumber(s["자사_게임존수"]),
       ownRoom1: toNumber(s["자사_1인룸"]),
       ownRoom2: toNumber(s["자사_2인룸"]),
@@ -172,7 +184,6 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       ownFriendsZone: toNumber(s["자사_프렌즈존"]),
       ownFoodScore: toNumber(s["자사_먹거리평가"]),
       ownInteriorScore: toNumber(s["자사_인테리어평가"]),
-      ownMonitorScore: toNumber(s["자사_모니터평가"]),
       pop500m: toNumber(s["반경500m_총인구"]),
       area1kmKm2: toNumber(s["반경1km_조회면적_km2"]),
       pop1km: toNumber(s["반경1km_총인구"]),
@@ -244,11 +255,20 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       totalPcCount: toNumber(c["전체대수"]),
       appliedPcCount: toNumber(c["적용대수"]) ?? toNumber(c["전체대수"]),
       hasElevator: toBool(c["엘리베이터"]),
-      cpu: toText(c["CPU"]),
+      // 2026-08-28 (3차) — 05_경쟁점정보도 01_점포기본정보와 같은 기본/특화1/특화2(GPU·CPU)·
+      // 기본/특화(RAM·모니터) 구조로 늘렸다(사용자 확정). 시트는 이미 "자사_" 접두어 없이
+      // "VGA_기본"/"VGA_최고" 식으로 쓰고 있었으므로, 같은 접두어 없는 관례를 유지하되 "최고"는
+      // "특화1"로 통일했다 — 컬럼 헤더명이 다르면 아래 문자열만 바꾸면 된다.
+      cpu: toText(c["CPU_기본"]),
+      cpuTop1: toText(c["CPU_특화1"]),
+      cpuTop2: toText(c["CPU_특화2"]),
       vgaBase: toText(c["VGA_기본"]),
-      vgaTop: toText(c["VGA_최고"]),
-      ram: toText(c["RAM"]),
-      monitor: toText(c["모니터"]),
+      vgaTop: toText(c["VGA_특화1"]),
+      vgaTop2: toText(c["VGA_특화2"]),
+      ram: toText(c["RAM_기본"]),
+      ramTop: toText(c["RAM_특화"]),
+      monitorBase: toText(c["모니터_기본"]),
+      monitorTop: toText(c["모니터_특화"]),
       ratePer1000Won: toNumber(c["1000원당분"]),
       hourlyRateConverted: toNumber(c["시간당환산요금"]),
       paidDeduction: toText(c["유료차감"]),
@@ -265,7 +285,6 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       foodBasis: toText(c["먹거리근거"]),
       interiorScore: toNumber(c["인테리어평가"]),
       interiorBasis: toText(c["인테리어근거"]),
-      monitorScore: toNumber(c["모니터평가"]),
       monitorBasis: toText(c["모니터근거"]),
       room1: toNumber(c["1인룸"]),
       room2: toNumber(c["2인룸"]),
@@ -277,7 +296,11 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       updatedAt: Date.now(),
     };
     if (!isSameData(existingCompByid.get(id), competitor)) {
-      await writer.set(db.collection("storeEvalCompetitors").doc(id), competitor);
+      // 2026-08-28 — merge:true로 변경. 예전엔 전체 덮어쓰기라 매일 이 동기화가 돌 때마다
+      // foodBrand/interiorLevelScore/seatZoneScore/comfortScore/source/lat/lng처럼 시트에 없고
+      // 웹에서만 입력하는 필드가 조용히 지워지는 위험이 있었다(발견된 버그, 이번에 같이 수정).
+      // 시트 원본 필드(위 competitor 객체가 명시한 것들)는 그대로 덮어쓰고, 명시 안 된 필드만 보존된다.
+      await writer.set(db.collection("storeEvalCompetitors").doc(id), competitor, true);
       compWritten++;
     }
   }

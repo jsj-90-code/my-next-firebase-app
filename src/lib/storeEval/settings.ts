@@ -96,17 +96,25 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 2026-08-27 (2차) — 상대평가(상위10/30/60%)를 절대평가로 바꿨다(사용자 확정). 값은 그
     // 상대평가가 실제로 쓰던 경계값(기존 40개 매장 상권수요 분포)을 반올림한 고정 금액이다.
     marketGradeAbsoluteThresholds: { SS: 12000, S: 7500, A: 4800 },
-    competitivenessWeights: { spec: 0.25, seat: 0.3, food: 0.2, interior: 0.15, location: 0.1 },
+    // 2026-08-28 전면개편 — 기존 "사양25%+좌석30%+먹거리20%+인테리어15%+입지10%"에서
+    // "하드웨어30%+인테리어·좌석·관리40%+먹거리20%+입지10%"로 재편(사용자 확정, types.ts
+    // ModelSettings.competitivenessWeights 주석 참고).
+    competitivenessWeights: { spec: 0.3, food: 0.2, interior: 0.4, location: 0.1 },
     // 2026-08-27 추가 — 먹거리를 브랜드 기준으로 매기기로 하며(사용자 확인) 임시로 잡은 초안값.
     // 쉐프앤클릭은 블랙라벨 자체 브랜드라 "자사 표준" 취급으로 5(상), 비바쿡·PC토랑은 흔히 쓰이는
     // 외부 브랜드라 4, 그 외 잘 안 알려진 브랜드는 3으로 뒀다 — 실측 근거는 없으니 설정 화면에서
     // 반드시 검토·조정할 것.
     foodBrandScores: { 쉐프앤클릭: 5, 비바쿡: 4, PC토랑: 4, 기타브랜드: 3 },
     // 2026-08-27 — CPU/RAM을 자동공식(세대·용량 환산)으로 분리 가중치를 줬더니 LOOCV 정확도가
-    // 원본(11.6%)보다 나빠져 원복했다(사용자 확정). CPU/RAM은 이제 "모니터" 항목(종합사양 점수,
-    // 평가자가 CPU/RAM까지 참고해서 직접 1~5점 입력)에 정성적으로 녹아들고, 자동계산 가중치는
-    // 0으로 꺼둔다 — 나중에 시간 보정 구조가 갖춰지면 다시 켤 수 있게 필드/함수는 남겨둔다.
-    specWeights: { vga: 0.7, monitor: 0.3, ram: 0, cpu: 0 },
+    // 원본(11.6%)보다 나빠져 원복했었다. 2026-08-28 재도입 — 사용자가 하드웨어 내부비중을
+    // GPU40%/모니터25%/CPU20%/RAM15%로 확정하고, scoreFromVga/scoreFromCpu의 앵커값 자체를
+    // 블랙라벨 현재 표준(RTX5060·울트라5 225F=각 4점) 기준으로 재보정했다(calc.ts 주석 참고).
+    // 정확도가 나빠지면 이 값을 {vga:0.7,monitor:0.3,ram:0,cpu:0}으로 되돌리면 된다.
+    specWeights: { vga: 0.4, monitor: 0.25, ram: 0.15, cpu: 0.2 },
+    // 2026-08-28 신규 — "인테리어·좌석·관리" 내부비중. 좌석·존구성이 PC방 선택의 1순위라는
+    // 사용자 판단으로 50%가 가장 크고, 나머지는 최신성·디자인25%+청결·관리상태15%+
+    // 냄새·조명·화장실·편의성10%.
+    interiorWeights: { seatZone: 0.5, freshness: 0.25, cleanliness: 0.15, comfort: 0.1 },
     locationCompositeWeights: { withinMarket: 0.3, flow: 0.3, preemption: 0.25, visibility: 0.15 },
     brandFilter: "블랙라벨",
     saturationThreshold: 7,

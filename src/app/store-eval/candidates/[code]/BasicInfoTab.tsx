@@ -8,15 +8,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   applyStandardOwnFacilityDefaults,
   computeFoodScore,
-  computeGeneralSpecScore,
-  computeInteriorScore,
+  computeInteriorSeatManagementScore,
   computeLocationScoreFromFacts,
-  computeSeatScore,
   computeSpecScore,
   computeZoneComposition,
   GAME_ZONE_BONUS,
-  scoreFromCpu,
-  scoreFromRam,
+  scoreFromZoneDiversity,
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
 import { MarketDataUploadPanel } from "@/components/storeEval/MarketDataUploadPanel";
@@ -274,52 +271,56 @@ export function BasicInfoTab({
     // 비어있는 자사 시설 입력값은 회사 표준 존 구성으로 계산한다(evaluate.ts와 동일 규칙 —
     // 결과 탭에서 최종 계산할 때와 이 미리보기가 다르게 보이지 않도록 맞춘다).
     const facility = applyStandardOwnFacilityDefaults(form);
-    const { kinds, rooms } = computeZoneComposition(
+    const { kinds } = computeZoneComposition(
       [form.ownRoom1, form.ownRoom2, facility.ownTeamRoom, facility.ownCoupleZone, facility.ownVipZone],
       [facility.ownFriendsZone],
     );
-    const generalSpecScore = computeGeneralSpecScore({
-      cpuScore: form.ownSpecCpuScore,
-      ramScore: form.ownSpecRamScore,
-      peripheralScore: form.ownSpecPeripheralScore,
-      legacyScore: facility.ownMonitorScore,
-    });
     return {
       spec: computeSpecScore(
         {
-          cpu: form.ownCpu,
           vgaBase: form.ownVgaBase,
           vgaTop: form.ownVgaTop,
+          vgaTop2: form.ownVgaTop2,
+          cpu: form.ownCpu,
+          cpuTop1: form.ownCpuTop1,
+          cpuTop2: form.ownCpuTop2,
           ram: form.ownRam,
-          monitorScore: generalSpecScore,
+          ramTop: form.ownRamTop,
+          monitorBase: form.ownMonitorBase,
+          monitorTop: form.ownMonitorTop,
           bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
         },
         settings,
       ),
-      seat: computeSeatScore(kinds, rooms),
       location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
       food: computeFoodScore({ brand: form.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings),
-      interior: computeInteriorScore({
-        levelScore: form.ownInteriorLevelScore,
-        conditionScore: form.ownInteriorConditionScore,
-        legacyScore: facility.ownInteriorScore,
-      }),
-      generalSpec: generalSpecScore,
-      // 참고용 제안값 — 사양점수 자동계산엔 안 들어가고, 종합사양(모니터) 점수를 사람이 매길 때
-      // 참고하라고 화면에만 보여준다(2026-08-27, CPU/RAM 자동가중치 원복 이후).
-      cpuSuggestion: scoreFromCpu(form.ownCpu),
-      ramSuggestion: scoreFromRam(form.ownRam),
+      interior: computeInteriorSeatManagementScore(
+        {
+          seatZoneScore: form.ownSeatZoneScore,
+          freshnessScore: form.ownInteriorLevelScore,
+          cleanlinessScore: form.ownInteriorConditionScore,
+          comfortScore: form.ownComfortScore,
+          legacyScore: form.ownInteriorScore,
+        },
+        settings,
+      ),
+      // 참고용 힌트 — 실제 계산엔 안 들어가고 화면에만 보여준다. 특화존 종류수(zoneKindsSuggestion)는
+      // 일반석 제외(kinds-1) — 좌석·존구성 rubric의 "4.0=블랙라벨과 동급(5종)" 기준과 비교해보라는 힌트다.
+      zoneKindsSuggestion: kinds - 1,
+      zoneDiversitySuggestion: scoreFromZoneDiversity(kinds),
     };
   }, [
     form.ownCpu,
+    form.ownCpuTop1,
+    form.ownCpuTop2,
     form.ownRam,
+    form.ownRamTop,
     form.ownVgaBase,
     form.ownVgaTop,
+    form.ownVgaTop2,
+    form.ownMonitorBase,
+    form.ownMonitorTop,
     form.ownGameZoneCount,
-    form.ownMonitorScore,
-    form.ownSpecCpuScore,
-    form.ownSpecRamScore,
-    form.ownSpecPeripheralScore,
     form.ownRoom1,
     form.ownRoom2,
     form.ownTeamRoom,
@@ -331,8 +332,10 @@ export function BasicInfoTab({
     form.hasElevator,
     form.ownFoodBrand,
     form.ownFoodScore,
+    form.ownSeatZoneScore,
     form.ownInteriorLevelScore,
     form.ownInteriorConditionScore,
+    form.ownComfortScore,
     form.ownInteriorScore,
     settings,
   ]);
@@ -636,21 +639,30 @@ export function BasicInfoTab({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>
+        <p className="mt-1 text-xs text-[#8a8072]">
+          GPU/CPU/RAM/모니터 모두 "기본"(대부분 좌석의 대표사양)과 "특화"(일부 좌석만 업그레이드된
+          사양) 텍스트를 각각 입력합니다. 일부 좌석만 업그레이드됐다면 매장 전체를 그 사양으로 보지
+          않고 기본80%+특화(균등분배)20%로 계산합니다.
+        </p>
         <div className={`${gridClass} mt-4`}>
+          <TextField label="VGA 기본" value={form.ownVgaBase ?? ""} onChange={(v) => set("ownVgaBase", v || null)} />
+          <TextField label="VGA 특화1" value={form.ownVgaTop ?? ""} onChange={(v) => set("ownVgaTop", v || null)} hint="일부 좌석만 업그레이드된 사양 · 없으면 비움" />
+          <TextField label="VGA 특화2" value={form.ownVgaTop2 ?? ""} onChange={(v) => set("ownVgaTop2", v || null)} hint="없으면 비움" />
           <TextField
-            label="CPU"
+            label="CPU 기본"
             value={form.ownCpu ?? ""}
             onChange={(v) => set("ownCpu", v || null)}
-            hint="예: 14400F, i5 14세대 — 참고용 기록(사양점수엔 자동 반영 안 됨, 아래 종합사양 점수에 참고)"
+            hint="예: 14400F, 울트라5 225F — 하드웨어점수 20%에 자동 반영"
           />
+          <TextField label="CPU 특화1" value={form.ownCpuTop1 ?? ""} onChange={(v) => set("ownCpuTop1", v || null)} hint="없으면 비움" />
+          <TextField label="CPU 특화2" value={form.ownCpuTop2 ?? ""} onChange={(v) => set("ownCpuTop2", v || null)} hint="없으면 비움" />
           <TextField
-            label="RAM"
+            label="RAM 기본"
             value={form.ownRam ?? ""}
             onChange={(v) => set("ownRam", v || null)}
-            hint="예: 16G, 32G — 참고용 기록(사양점수엔 자동 반영 안 됨)"
+            hint="예: 16G, 32G — 하드웨어점수 15%에 자동 반영"
           />
-          <TextField label="VGA 기본사양" value={form.ownVgaBase ?? ""} onChange={(v) => set("ownVgaBase", v || null)} />
-          <TextField label="VGA 최고사양" value={form.ownVgaTop ?? ""} onChange={(v) => set("ownVgaTop", v || null)} hint="없으면 비움 (표준값 없음)" />
+          <TextField label="RAM 특화" value={form.ownRamTop ?? ""} onChange={(v) => set("ownRamTop", v || null)} hint="없으면 비움" />
           <NumberField label="게임존 수" value={form.ownGameZoneCount} onChange={(v) => set("ownGameZoneCount", v)} hint="비우면 표준 3종 적용" />
           <NumberField label="1인룸 수" value={form.ownRoom1} onChange={(v) => set("ownRoom1", v)} />
           <NumberField label="2인룸 수" value={form.ownRoom2} onChange={(v) => set("ownRoom2", v)} />
@@ -664,48 +676,24 @@ export function BasicInfoTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁력 점수</h3>
         <p className="mt-1 text-xs text-[#8a8072]">
-          사양·좌석·입지 점수는 위에 입력한 VGA·존구성·층수+엘리베이터로부터 원본 Apps Script(점포평가.gs)
-          그대로 자동 계산됩니다. 종합 경쟁력점수 가중합(사양25%·좌석30%·먹거리20%·인테리어15%·입지10%)은
-          원본 계수 그대로 적용됩니다.
+          하드웨어·입지 점수는 위에 입력한 VGA·층수+엘리베이터로부터 자동 계산됩니다. 종합 경쟁력점수
+          가중합(하드웨어30%·인테리어·좌석·관리40%·먹거리20%·입지10%, 2026-08-28 전면개편)은 운영설정
+          화면의 계수를 따릅니다.
         </p>
         <div className={`${gridClass} mt-4`}>
-          <ComputedField label="사양 점수 (자동)" value={computedScores.spec} hint="VGA(+게임존 가산) 70% + 종합사양(모니터) 30%" />
-          <ComputedField label="좌석 점수 (자동)" value={computedScores.seat} hint="존 다양성 50%+수용력 50%" />
+          <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%(+게임존 가산)" />
           <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
         </div>
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">종합사양 (모니터·CPU·메모리·주변기기)</h4>
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">하드웨어 - 모니터</h4>
         <div className={`${gridClass} mt-3`}>
-          <ScoreSelectField
-            label="CPU 점수"
-            value={form.ownSpecCpuScore}
-            onChange={(v) => set("ownSpecCpuScore", v)}
-            step={0.5}
-            hint={`CPU 성능${computedScores.cpuSuggestion != null ? ` · 참고: 자동제안 ${computedScores.cpuSuggestion}점` : ""}`}
+          <TextField
+            label="모니터 기본"
+            value={form.ownMonitorBase ?? ""}
+            onChange={(v) => set("ownMonitorBase", v || null)}
+            hint="예: 240Hz, BenQ XL2540X 280Hz — 주사율(Hz)에서 자동채점(240Hz=4점 앵커)"
           />
-          <ScoreSelectField
-            label="메모리 점수"
-            value={form.ownSpecRamScore}
-            onChange={(v) => set("ownSpecRamScore", v)}
-            step={0.5}
-            hint={`RAM 용량/속도${computedScores.ramSuggestion != null ? ` · 참고: 자동제안 ${computedScores.ramSuggestion}점` : ""}`}
-          />
-          <ScoreSelectField
-            label="주변기기 점수"
-            value={form.ownSpecPeripheralScore}
-            onChange={(v) => set("ownSpecPeripheralScore", v)}
-            step={0.5}
-            hint="키보드/마우스/헤드셋 상태"
-          />
-          {form.ownSpecCpuScore == null && form.ownSpecRamScore == null && form.ownSpecPeripheralScore == null && (
-            <ScoreSelectField
-              label="종합사양 점수 (직접입력)"
-              value={form.ownMonitorScore}
-              onChange={(v) => set("ownMonitorScore", v)}
-              hint="위 세부항목을 셋 다 안 채웠을 때 직접 평가(모니터 화질 포함 종합) · 비우면 표준값 4 적용"
-            />
-          )}
-          <ComputedField label="종합사양 점수 (최종)" value={computedScores.generalSpec} />
+          <TextField label="모니터 특화" value={form.ownMonitorTop ?? ""} onChange={(v) => set("ownMonitorTop", v || null)} hint="없으면 비움" />
         </div>
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">먹거리</h4>
@@ -726,19 +714,33 @@ export function BasicInfoTab({
           <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} />
         </div>
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어</h4>
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어·좌석·관리</h4>
+        <p className="mt-1 text-xs text-[#8a8072]">
+          좌석·존구성이 가장 중요합니다(내부비중 50%). 칸막이만 있는 좌석은 독립룸으로 인정하지
+          않고, 성인존·게이밍존처럼 명칭만 나눈 구역은 특화존으로 인정하지 않습니다 — 실제 공간이나
+          이용목적이 구분돼야 합니다. 참고: 자동판정 특화존 종류수 {computedScores.zoneKindsSuggestion}종
+          (다양성 기준 {computedScores.zoneDiversitySuggestion}점 상당).
+        </p>
         <div className={`${gridClass} mt-3`}>
-          <ScoreSelectField label="인테리어 수준" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
-          <ScoreSelectField label="매장관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />
-          {form.ownInteriorLevelScore == null && form.ownInteriorConditionScore == null && (
+          <ScoreSelectField
+            label="좌석·존구성"
+            value={form.ownSeatZoneScore}
+            onChange={(v) => set("ownSeatZoneScore", v)}
+            step={0.5}
+            hint="4.0=팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등 블랙라벨과 동급 · rubric표 참고"
+          />
+          <ScoreSelectField label="최신성·디자인" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
+          <ScoreSelectField label="청결·관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />
+          <ScoreSelectField label="편의성" value={form.ownComfortScore} onChange={(v) => set("ownComfortScore", v)} step={0.5} hint="냄새·조명·화장실·편의시설" />
+          {form.ownSeatZoneScore == null && form.ownInteriorLevelScore == null && form.ownInteriorConditionScore == null && form.ownComfortScore == null && (
             <ScoreSelectField
-              label="인테리어 점수 (직접입력)"
+              label="인테리어·좌석·관리 점수 (직접입력)"
               value={form.ownInteriorScore}
               onChange={(v) => set("ownInteriorScore", v)}
-              hint="위 세부항목을 둘 다 안 채웠을 때 직접 평가 · 비우면 표준값 5(상) 적용"
+              hint="위 세부항목을 넷 다 안 채웠을 때 직접 평가 · 비우면 표준값 5(상) 적용"
             />
           )}
-          <ComputedField label="인테리어 점수 (최종)" value={computedScores.interior} />
+          <ComputedField label="인테리어·좌석·관리 점수 (최종)" value={computedScores.interior} />
         </div>
       </section>
 

@@ -28,8 +28,8 @@ import {
   computeExpectedUtilization,
   computeFinalJudgement,
   computeFoodScore,
-  computeGeneralSpecScore,
-  computeInteriorScore,
+  computeInteriorSeatManagementScore,
+  combineHardwareTiers,
   computeCompetitorAppliedPcCount,
   computeFloatingRawDemand,
   computeImpliedUtilizationFromRevenue,
@@ -39,7 +39,6 @@ import {
   computeMarketDemand,
   computeMarketGrade,
   computeMeasuredForecast,
-  computeSeatScore,
   computeSpecScore,
   computeV61Fallback,
   computeV62Final,
@@ -60,8 +59,14 @@ import {
   runCohortValidation,
   runLeaveOneOutValidation,
   scoreFromCpu,
+  scoreFromCpuSpec,
+  scoreFromMonitor,
+  scoreFromMonitorSpec,
   scoreFromRam,
+  scoreFromRamSpec,
   scoreFromVga,
+  scoreFromVgaSpec,
+  scoreFromZoneDiversity,
   summarizeValidation,
   summarizeValidationRows,
   toV61TrainingStore,
@@ -322,14 +327,7 @@ describe("입력완성도/최종운영판정 (13_신규후보지판정 T/U열 �
 // scoreFromZoneComposition_/scoreFromAccess_를 그대로 포팅한 함수들의 골든 테스트다.
 // 예시 값은 .gs 코드 주석(V37/V13 변경이력)에 실사례로 적힌 값을 그대로 옮겼다.
 
-describe("scoreFromVga (VGA 모델명 → 사양점수)", () => {
-  it.each([
-    ["RTX 4060", 4],
-    ["2060", 2],
-    ["GTX 1660", 1],
-  ])("%s → %d점", (text, expected) => {
-    expect(scoreFromVga(text)).toBe(expected);
-  });
+describe("scoreFromVga (모델명이 없으면 null)", () => {
   it("모델명이 없으면 null", () => {
     expect(scoreFromVga(null)).toBeNull();
   });
@@ -361,35 +359,157 @@ describe("scoreFromCpu (2026-08-27 추가 — 세대 기반 CPU 점수, 14세대
   });
 });
 
-describe("scoreFromRam (2026-08-27 추가 — 16GB=중(3점) 기준, 2배당 1단계)", () => {
-  it("사용자 확정 앵커 2개", () => {
-    expect(scoreFromRam("16G")).toBe(3);
-    expect(scoreFromRam("32G")).toBe(4);
-  });
-  it("2배씩 늘어날 때마다 1단계씩 확장 해석", () => {
-    expect(scoreFromRam("8G")).toBe(2);
-    expect(scoreFromRam("64G")).toBe(5);
-  });
+describe("scoreFromRam (텍스트가 없거나 단위를 못 뽑으면 null)", () => {
   it("텍스트가 없거나 단위를 못 뽑으면 null", () => {
     expect(scoreFromRam(null)).toBeNull();
     expect(scoreFromRam("많음")).toBeNull();
   });
 });
 
-describe("computeSpecScore (VGA70%+모니터30%, 원본 산식 그대로 — 2026-08-27에 CPU/RAM 자동가중치를 실험했다가 LOOCV 정확도가 나빠져 원복함. CPU/RAM 필드는 남아있지만 기본 specWeights가 ram:0/cpu:0라 계산엔 영향 없음)", () => {
-  it("VGA만 있으면 VGA 점수 그대로", () => {
-    expect(computeSpecScore({ cpu: null, vgaBase: "RTX 4060", vgaTop: null, ram: null, monitorScore: null, bonus: 0 }, settings)).toBe(4);
+describe("scoreFromVga (GPU, 2026-08-28 재보정 — RTX5060=4점 앵커)", () => {
+  it("RTX5060은 앵커값 4점 그대로", () => {
+    expect(scoreFromVga("RTX 5060")).toBe(4);
+  });
+  it("RTX5070은 세대는 같고 티어만 높아 4.5점", () => {
+    expect(scoreFromVga("RTX 5070")).toBe(4.5);
+  });
+  it("RTX5080은 티어가 더 높아 5점", () => {
+    expect(scoreFromVga("RTX 5080")).toBe(5);
+  });
+  it("RTX4060은 한 세대 아래라 3점", () => {
+    expect(scoreFromVga("RTX 4060")).toBe(3);
+  });
+  it("RTX3060은 두 세대 아래라 2점", () => {
+    expect(scoreFromVga("RTX 3060")).toBe(2);
+  });
+  it("RTX2060은 세 세대 아래라 1점(하한 clamp)", () => {
+    expect(scoreFromVga("RTX 2060")).toBe(1);
+  });
+});
+
+describe("scoreFromCpu (2026-08-28 확장 — 울트라 신형 네이밍 + 기존 세대 파싱)", () => {
+  it("울트라5 225F(블랙라벨 현재 표준)는 앵커값 4점", () => {
+    expect(scoreFromCpu("울트라5 225F")).toBe(4);
+  });
+  it("울트라7은 같은 200번대에서 티어가 높아 5점(clamp)", () => {
+    expect(scoreFromCpu("Ultra 7 265K")).toBe(5);
+  });
+  it("울트라5 100번대(구형)는 한 단계 아래라 3점", () => {
+    expect(scoreFromCpu("울트라5 125H")).toBe(3);
+  });
+  it("기존 i5-14400(14세대)은 그대로 4점", () => {
+    expect(scoreFromCpu("14400")).toBe(4);
+  });
+  it("세대/모델을 못 뽑으면 null", () => {
+    expect(scoreFromCpu("잘모름")).toBeNull();
+    expect(scoreFromCpu(null)).toBeNull();
+  });
+});
+
+describe("scoreFromRam (2026-08-28 재보정 — 16GB=4점 앵커, 사용자 기준표)", () => {
+  it("32GB 이상은 5점", () => {
+    expect(scoreFromRam("32G")).toBe(5);
+  });
+  it("16GB는 앵커값 4점", () => {
+    expect(scoreFromRam("16G")).toBe(4);
+  });
+  it("8GB는 2점(3점은 혼합구성 전용이라 자동채점에서 안 나옴)", () => {
+    expect(scoreFromRam("8G")).toBe(2);
+  });
+  it("8GB 미만은 1점", () => {
+    expect(scoreFromRam("4G")).toBe(1);
+  });
+});
+
+describe("combineHardwareTiers (기본80%+특화들 균등분배20%, 2026-08-28 신설 — 일부 좌석만 업그레이드된 경우)", () => {
+  it("1종류(특화 없음)면 기본 그대로", () => {
+    expect(combineHardwareTiers(3.5, [])).toBe(3.5);
+  });
+  it("2종류(기본+특화1개) — 사용자 예시(GPU 기본3.5·특화4.0→3.6점)", () => {
+    expect(combineHardwareTiers(3.5, [4.0])).toBeCloseTo(3.6, 4);
+  });
+  it("3종류(기본+특화2개) — 사용자 예시(CPU 기본3.5·특화4.0·특화4.5→3.65점)", () => {
+    expect(combineHardwareTiers(3.5, [4.0, 4.5])).toBeCloseTo(3.65, 4);
+  });
+  it("기본이 없고 특화만 있으면(드문 데이터 이슈) 특화들만 단순평균", () => {
+    expect(combineHardwareTiers(null, [4.0, 5.0])).toBe(4.5);
+  });
+  it("전부 없으면 null", () => {
+    expect(combineHardwareTiers(null, [])).toBeNull();
+  });
+});
+
+describe("scoreFromMonitor (모니터 Hz, 2026-08-28 신설 — 240Hz=4점 앵커)", () => {
+  it("240Hz는 앵커값 4점", () => {
+    expect(scoreFromMonitor("240Hz")).toBe(4);
+  });
+  it("280Hz 이상은 5점", () => {
+    expect(scoreFromMonitor("300Hz")).toBe(5);
+  });
+  it("180~239Hz는 3점", () => {
+    expect(scoreFromMonitor("200Hz")).toBe(3);
+  });
+  it("144~179Hz는 2점", () => {
+    expect(scoreFromMonitor("165Hz")).toBe(2);
+  });
+  it("144Hz 미만은 1점", () => {
+    expect(scoreFromMonitor("120Hz")).toBe(1);
+  });
+  it("Hz를 못 뽑거나 텍스트가 없으면 null", () => {
+    expect(scoreFromMonitor("BenQ XL2540X")).toBeNull();
+    expect(scoreFromMonitor(null)).toBeNull();
+  });
+});
+
+describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpec (기본/특화 결합, 2026-08-28 재설계)", () => {
+  it("GPU — 기본만 있으면 기본 그대로(+가산)", () => {
+    expect(scoreFromVgaSpec("RTX 5060", null, null, 0.6)).toBeCloseTo(4.6, 2);
+  });
+  it("GPU — 기본+특화1(2종류) combineHardwareTiers로 결합", () => {
+    // RTX4060=3, RTX5060=4 → 3*.8+4*.2=3.2
+    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", null, 0)).toBeCloseTo(3.2, 2);
+  });
+  it("GPU — 기본+특화1+특화2(3종류)", () => {
+    // RTX4060=3, RTX5060=4, RTX5070=4.5 → 3*.8+(4+4.5)/2*.2=2.4+0.85=3.25
+    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", "RTX 5070", 0)).toBeCloseTo(3.25, 2);
+  });
+  it("CPU — 기본+특화1(14400=4, 13400=3) → 4*.8+3*.2=3.8", () => {
+    expect(scoreFromCpuSpec("14400", "13400", null)).toBeCloseTo(3.8, 2);
+  });
+  it("RAM — 기본+특화(16G=4, 32G=5) → 4*.8+5*.2=4.2", () => {
+    expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(4.2, 2);
+  });
+  it("모니터 — 기본+특화(240Hz=4, 300Hz=5) → 4*.8+5*.2=4.2", () => {
+    expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(4.2, 2);
+  });
+  it("전부 없으면 null", () => {
+    expect(scoreFromVgaSpec(null, null, null, 0)).toBeNull();
+    expect(scoreFromCpuSpec(null, null, null)).toBeNull();
+    expect(scoreFromRamSpec(null, null)).toBeNull();
+    expect(scoreFromMonitorSpec(null, null)).toBeNull();
+  });
+});
+
+describe("computeSpecScore (하드웨어점수 = GPU40%+모니터25%+CPU20%+RAM15%, 2026-08-28 전면개편)", () => {
+  const blankItems = { vgaBase: null, vgaTop: null, vgaTop2: null, cpu: null, cpuTop1: null, cpuTop2: null, ram: null, ramTop: null, monitorBase: null, monitorTop: null };
+  it("GPU만 있으면 GPU 점수 그대로", () => {
+    expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060", bonus: 0 }, settings)).toBe(3);
   });
   it("모니터만 있으면 모니터 점수 그대로", () => {
-    expect(computeSpecScore({ cpu: null, vgaBase: null, vgaTop: null, ram: null, monitorScore: 5, bonus: 0 }, settings)).toBe(5);
+    expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz", bonus: 0 }, settings)).toBe(5);
   });
-  it("VGA+모니터 있으면 70/30 가중평균 — CPU/RAM이 같이 입력돼 있어도 가중치0이라 무시된다", () => {
-    // VGA 4060+게임존3종(4.6점)*.7 + 모니터 5점*.3 = 3.22+1.5 = 4.72
-    // (CPU 14400/RAM 32G도 넣었지만 weight=0이라 결과에 영향 없음을 같이 확인)
-    expect(computeSpecScore({ cpu: "14400", vgaBase: "RTX 4060", vgaTop: null, ram: "32G", monitorScore: 5, bonus: 3 * GAME_ZONE_BONUS }, settings)).toBeCloseTo(4.72, 2);
+  it("GPU+CPU+RAM+모니터가 다 있으면 40/20/15/25 가중평균", () => {
+    // GPU: RTX4060(3점)+게임존3종 가산(0.6)=3.6 / CPU: 14400(4점) / RAM: 32G(5점) / 모니터: 240Hz(4점)
+    // 3.6*.4 + 4*.25 + 5*.15 + 4*.2 = 1.44+1+0.75+0.8 = 3.99
+    expect(
+      computeSpecScore(
+        { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null, bonus: 3 * GAME_ZONE_BONUS },
+        settings,
+      ),
+    ).toBeCloseTo(3.99, 2);
   });
   it("전부 없으면 null(지어내지 않음)", () => {
-    expect(computeSpecScore({ cpu: null, vgaBase: null, vgaTop: null, ram: null, monitorScore: null, bonus: 0 }, settings)).toBeNull();
+    expect(computeSpecScore({ ...blankItems, bonus: 0 }, settings)).toBeNull();
   });
 });
 
@@ -409,43 +529,46 @@ describe("computeFoodScore (먹거리 브랜드 기준, 2026-08-27 추가)", () 
   });
 });
 
-describe("computeInteriorScore (인테리어 수준+매장관리상태 평균, 2026-08-27 추가)", () => {
-  it("두 세부항목이 다 있으면 평균(0.5점 단위 반올림)", () => {
-    expect(computeInteriorScore({ levelScore: 4, conditionScore: 3, legacyScore: null })).toBe(3.5);
-    expect(computeInteriorScore({ levelScore: 4, conditionScore: 4.5, legacyScore: null })).toBe(4.5); // 4.25→반올림
+describe("computeInteriorSeatManagementScore (좌석존구성50%+최신성25%+청결관리15%+편의성10%, 2026-08-28 전면개편)", () => {
+  const interiorWeights = { seatZone: 0.5, freshness: 0.25, cleanliness: 0.15, comfort: 0.1 };
+  it("넷 다 있으면 가중평균(0.5점 단위 반올림)", () => {
+    // 4*.5 + 3*.25 + 3*.15 + 2*.1 = 2+0.75+0.45+0.2 = 3.4 → 0.5단위 반올림하면 3.5
+    expect(
+      computeInteriorSeatManagementScore(
+        { seatZoneScore: 4, freshnessScore: 3, cleanlinessScore: 3, comfortScore: 2, legacyScore: null },
+        { interiorWeights },
+      ),
+    ).toBeCloseTo(3.5, 2);
   });
-  it("하나만 있으면 그 값 그대로", () => {
-    expect(computeInteriorScore({ levelScore: 3.5, conditionScore: null, legacyScore: null })).toBe(3.5);
+  it("일부만 있으면 채워진 항목의 가중치로 재정규화", () => {
+    expect(
+      computeInteriorSeatManagementScore(
+        { seatZoneScore: 4, freshnessScore: null, cleanlinessScore: null, comfortScore: null, legacyScore: null },
+        { interiorWeights },
+      ),
+    ).toBe(4);
   });
-  it("둘 다 없으면 직접입력값(legacyScore)으로 폴백 — 기존 40개 매장은 항상 이 경로", () => {
-    expect(computeInteriorScore({ levelScore: null, conditionScore: null, legacyScore: 4 })).toBe(4);
+  it("넷 다 없으면 직접입력값(legacyScore)으로 폴백 — 기존 40개 매장은 항상 이 경로", () => {
+    expect(
+      computeInteriorSeatManagementScore(
+        { seatZoneScore: null, freshnessScore: null, cleanlinessScore: null, comfortScore: null, legacyScore: 4 },
+        { interiorWeights },
+      ),
+    ).toBe(4);
   });
 });
 
-describe("computeGeneralSpecScore (CPU/메모리/주변기기 평균, 2026-08-28 추가 — computeInteriorScore와 같은 패턴)", () => {
-  it("셋 다 있으면 평균(0.5점 단위 반올림)", () => {
-    expect(computeGeneralSpecScore({ cpuScore: 4, ramScore: 3, peripheralScore: 3.5, legacyScore: null })).toBe(3.5);
-  });
-  it("일부만 있으면 채워진 것만 평균", () => {
-    expect(computeGeneralSpecScore({ cpuScore: 4, ramScore: null, peripheralScore: null, legacyScore: null })).toBe(4);
-  });
-  it("셋 다 없으면 직접입력값(legacyScore=ownMonitorScore)으로 폴백 — 기존 40개 매장은 항상 이 경로", () => {
-    expect(computeGeneralSpecScore({ cpuScore: null, ramScore: null, peripheralScore: null, legacyScore: 4 })).toBe(4);
-  });
-});
-
-describe("computeZoneComposition/computeSeatScore (좌석점수 = 다양성 50% + 수용력 50%)", () => {
-  it("자사 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15) → 종류수5·독립룸수10 → 4.0점", () => {
+describe("computeZoneComposition/scoreFromZoneDiversity (2026-08-28 — 좌석점수 자동계산에서 빠지고, 화면 참고용 힌트로만 쓰임)", () => {
+  it("자사 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15) → 종류수5(일반석 포함)", () => {
     const { kinds, rooms } = computeZoneComposition([0, 0, 2, 3, 5], [15]);
     expect(kinds).toBe(5); // 일반석1 + 팀룸/커플존/VIP존/프렌즈존 4종
     expect(rooms).toBe(10); // 2+3+5, 프렌즈존은 제외 (가중치 없이 단순 합계)
-    expect(computeSeatScore(kinds, rooms)).toBe(4.0);
+    expect(scoreFromZoneDiversity(kinds)).toBe(4); // 참고용 힌트(일반석 포함 kinds 기준, 특화존 자체는 kinds-1=4종)
   });
-  it("경쟁점 팀룸 8개(1종) vs 자사 3종(각1개) — 둘 다 반영", () => {
+  it("경쟁점 팀룸 8개(1종)", () => {
     const rival = computeZoneComposition([0, 0, 8, 0]);
     expect(rival.kinds).toBe(2);
     expect(rival.rooms).toBe(8);
-    expect(computeSeatScore(rival.kinds, rival.rooms)).toBeCloseTo((2 * 0.5 + 4 * 0.5), 2);
   });
 });
 
@@ -458,11 +581,11 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     ownFriendsZone: null,
     ownFoodScore: null,
     ownInteriorScore: null,
-    ownMonitorScore: null,
   };
-  it("전부 비어있으면 표준값(게임존3·팀룸2·커플존3·VIP존5·프렌즈존15·먹거리/인테리어5점·모니터4점)을 적용한다", () => {
+  it("전부 비어있으면 표준값(게임존3·팀룸2·커플존3·VIP존5·프렌즈존15·먹거리/인테리어5점)을 적용한다", () => {
     // 2026-08-27: 오픈 초기 기준 먹거리/인테리어는 "상"(5점)이 더 현실적이라는 사용자 확인으로
-    // 4→5로 올렸다(원본 시트 "빈칸이면 4" 규칙과 달라진 값 — 의도된 재조정).
+    // 4→5로 올렸다(원본 시트 "빈칸이면 4" 규칙과 달라진 값 — 의도된 재조정). 2026-08-28(2차):
+    // 모니터가 텍스트 자동채점으로 바뀌며 "표준값 4" 폴백 자체가 없어져 반환값에서 빠졌다.
     expect(applyStandardOwnFacilityDefaults(blank)).toEqual({
       ownGameZoneCount: 3,
       ownTeamRoom: 2,
@@ -471,7 +594,6 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
       ownFriendsZone: 15,
       ownFoodScore: 5,
       ownInteriorScore: 5,
-      ownMonitorScore: 4,
     });
   });
   it("실제 값이 입력돼 있으면 표준값으로 덮어쓰지 않는다", () => {
@@ -482,35 +604,38 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     expect(result.ownFoodScore).toBe(2);
     expect(result.ownVipZone).toBe(5); // 나머지 비어있는 항목은 여전히 표준값
   });
-  it("신중동점(N001) 실사례 — 원본 VGA70%+모니터30% 산식 기준으로는 사양4.70·좌석4.00·경쟁력4.18이었다(시트 04_점포평가요약 스냅샷). CPU/RAM은 참고 필드일 뿐 가중치가 0이라 사양점수는 원본과 그대로 4.70이 나온다. food/interior 표준값만 2026-08-27에 4→5로 재조정돼 경쟁력점수는 원본(4.18)과 달라진다(의도된 변경, 사용자 확정).", () => {
+  it("신중동점(N001) 실사례 — 2026-08-28 (2차) 모니터가 텍스트 자동채점으로 바뀌며 표준값(4점) 폴백이 없어짐(GPU만 있으면 GPU 가중치로만 재정규화)", () => {
     const facility = applyStandardOwnFacilityDefaults(blank);
-    const { kinds, rooms } = computeZoneComposition(
-      [0, 0, facility.ownTeamRoom, facility.ownCoupleZone, facility.ownVipZone],
-      [facility.ownFriendsZone],
-    );
     const spec = computeSpecScore(
       {
-        cpu: null,
         vgaBase: "RTX 5060",
         vgaTop: null,
+        vgaTop2: null,
+        cpu: null,
+        cpuTop1: null,
+        cpuTop2: null,
         ram: null,
-        monitorScore: facility.ownMonitorScore,
+        ramTop: null,
+        monitorBase: null,
+        monitorTop: null,
         bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
       },
       settings,
     );
-    const seat = computeSeatScore(kinds, rooms);
-    // VGA(5.0)*.7 + 모니터(4)*.3 = 3.5+1.2 = 4.7 — 원본 산식과 동일
-    expect(spec).toBeCloseTo(4.7, 2);
-    expect(seat).toBeCloseTo(4.0, 2); // 좌석점수는 이번 변경과 무관, 그대로
+    // GPU: RTX5060(4점,앵커)+게임존3종 가산(0.6)=4.6 — CPU/RAM/모니터 전부 비어서 GPU 가중치만으로 재정규화
+    expect(spec).toBeCloseTo(4.6, 2);
+    const interior = computeInteriorSeatManagementScore(
+      { seatZoneScore: null, freshnessScore: null, cleanlinessScore: null, comfortScore: null, legacyScore: facility.ownInteriorScore },
+      settings,
+    );
+    expect(interior).toBe(5); // 세부항목 전부 비어서 표준값(5) 폴백
     const competitivenessSettings = { competitivenessWeights: defaultModelSettings().competitivenessWeights };
     const total = computeCompetitivenessScore(
-      { spec, seat, food: facility.ownFoodScore, interior: facility.ownInteriorScore, location: computeLocationScoreFromFacts(1, "지하", false) },
+      { spec, food: facility.ownFoodScore, interior, location: computeLocationScoreFromFacts(1, "지하", false) },
       competitivenessSettings,
     );
-    // spec은 원본과 동일(4.7) + food/interior 4→5(표준값 재조정)만 반영된 값:
-    // 4.7*.25+4.0*.3+5*.2+5*.15+4.0*.1 = 4.525
-    expect(total).toBeCloseTo(4.525, 3);
+    // 4.6*.3 + 5*.2 + 5*.4 + 4*.1 = 1.38+1+2+0.4 = 4.78
+    expect(total).toBeCloseTo(4.78, 2);
   });
 });
 
@@ -713,10 +838,15 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
       appliedPcCount: null,
       hasElevator: null,
       cpu: null,
+      cpuTop1: null,
+      cpuTop2: null,
       vgaBase: null,
       vgaTop: null,
+      vgaTop2: null,
       ram: null,
-      monitor: null,
+      ramTop: null,
+      monitorBase: null,
+      monitorTop: null,
       ratePer1000Won: null,
       hourlyRateConverted: null,
       paidDeduction: null,
@@ -734,11 +864,9 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
       interiorBasis: null,
       interiorLevelScore: null,
       interiorConditionScore: null,
-      monitorScore: null,
       monitorBasis: null,
-      specCpuScore: null,
-      specRamScore: null,
-      specPeripheralScore: null,
+      seatZoneScore: null,
+      comfortScore: null,
       room1: null,
       room2: null,
       teamRoom: null,
@@ -857,9 +985,13 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       hasElevator: false,
       hourlyRate: 1300,
       ownCpu: null,
+      ownCpuTop1: null,
+      ownCpuTop2: null,
       ownRam: null,
+      ownRamTop: null,
       ownVgaBase: "RTX 5060",
       ownVgaTop: null,
+      ownVgaTop2: null,
       ownGameZoneCount: 3,
       ownRoom1: 0,
       ownRoom2: 0,
@@ -869,13 +1001,13 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       ownFriendsZone: 15,
       ownFoodScore: 4,
       ownInteriorScore: 4,
-      ownMonitorScore: 4,
+      ownMonitorBase: "240Hz", // scoreFromMonitor 앵커=4점(기존 ownMonitorScore:4와 동일 결과)
+      ownMonitorTop: null,
       ownFoodBrand: null,
       ownInteriorLevelScore: null,
       ownInteriorConditionScore: null,
-      ownSpecCpuScore: null,
-      ownSpecRamScore: null,
-      ownSpecPeripheralScore: null,
+      ownSeatZoneScore: null,
+      ownComfortScore: null,
       ...overrides,
     };
   }
@@ -894,10 +1026,15 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       appliedPcCount: 100,
       hasElevator: null,
       cpu: null,
+      cpuTop1: null,
+      cpuTop2: null,
       vgaBase: null,
       vgaTop: null,
+      vgaTop2: null,
       ram: null,
-      monitor: null,
+      ramTop: null,
+      monitorBase: "200Hz", // scoreFromMonitor("200Hz")=3점(기존 monitorScore:3과 동일 결과)
+      monitorTop: null,
       ratePer1000Won: null,
       hourlyRateConverted: null,
       paidDeduction: null,
@@ -915,11 +1052,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       interiorBasis: null,
       interiorLevelScore: null,
       interiorConditionScore: null,
-      monitorScore: 3,
       monitorBasis: null,
-      specCpuScore: null,
-      specRamScore: null,
-      specPeripheralScore: null,
+      seatZoneScore: null,
+      comfortScore: null,
       room1: null,
       room2: null,
       teamRoom: null,
@@ -938,17 +1073,17 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     expect(result.measuredForecastMonthlyRevenue).toBeNull();
   });
 
-  it("먹거리/인테리어/모니터평가(평가자 직접입력)가 없으면 원본 시트 규칙(빈칸이면 4점)으로 채우고 표본에서 빼지 않는다 — 실데이터 26곳 전부 이 3개가 비어 있었음(2026-08-21 확인). 2026-08-27에 신규후보지 기본값은 4→5로 올렸지만, 기존 가맹점 백테스트는 과거 실적에 새 기준을 소급 적용하면 안 되므로 EXISTING_STORE_FACILITY_DEFAULTS(원본 그대로 4/4)를 따로 쓴다.", () => {
+  it("먹거리/인테리어평가(평가자 직접입력)가 없으면 원본 시트 규칙(빈칸이면 4점)으로 채우고 표본에서 빼지 않는다 — 실데이터 26곳 전부 이 항목들이 비어 있었음(2026-08-21 확인). 2026-08-27에 신규후보지 기본값은 4→5로 올렸지만, 기존 가맹점 백테스트는 과거 실적에 새 기준을 소급 적용하면 안 되므로 EXISTING_STORE_FACILITY_DEFAULTS(원본 그대로 4/4)를 따로 쓴다. 모니터는 2026-08-28(2차)부터 텍스트 자동채점이라 비어있으면 표준값 대신 그냥 하드웨어점수 가중치에서 제외된다.", () => {
     const result = computeExistingStoreMeasuredForecast(
-      baseStore({ ownFoodScore: null, ownInteriorScore: null, ownMonitorScore: null }),
+      baseStore({ ownFoodScore: null, ownInteriorScore: null, ownMonitorBase: null }),
       [competitor()],
       settings,
     );
     expect(result.excludedReason).toBeNull();
-    // spec: VGA(5.0)*.7+모니터(4)*.3=4.7(CPU/RAM은 참고필드일 뿐 가중치0이라 무관)
-    // seat=4.0 food=4 interior=4 location=4.0 (기존 가맹점은 원본 규칙대로 4/4)
-    // → 4.7*.25+4.0*.3+4*.2+4*.15+4*.1 = 4.175
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.175, 3);
+    // hardware(spec): GPU(RTX5060=4)+게임존3종 가산(0.6)=4.6 — CPU/RAM/모니터 없어서 GPU 가중치만
+    // 재정규화. food=4 interior=4 location=4.0(기존 가맹점은 원본 규칙대로 4/4)
+    // → 4.6*.3+4*.2+4*.4+4*.1 = 4.18
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.18, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -969,11 +1104,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const competitors = [competitor()];
     const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
     expect(result.excludedReason).toBeNull();
-    // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합은 신중동점 실사례와
-    // 같다. 사양점수는 원본 그대로(VGA5.0*.7+모니터4*.3=4.7, CPU/RAM은 참고필드일 뿐 가중치0이라
-    // 무관)라 ownCompetitivenessScore도 원본 산식 값 4.18과 동일하게 4.175가 나온다
-    // (4.7*.25+4*.3+4*.2+4*.15+4*.1=4.175).
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.175, 3);
+    // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합. 하드웨어점수는
+    // GPU(RTX5060=4)+게임존3종 가산(0.6)=4.6, 모니터(4) — (4.6*.4+4*.25)/(0.4+0.25)=4.37,
+    // food=4 interior=4 location=4 → 4.37*.3+4*.2+4*.4+4*.1 = 4.111
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.111, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
