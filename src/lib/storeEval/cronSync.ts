@@ -258,19 +258,20 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       appliedPcCount: toNumber(c["적용대수"]) ?? toNumber(c["전체대수"]),
       hasElevator: toBool(c["엘리베이터"]),
       // 2026-08-28 (3차) — 05_경쟁점정보도 01_점포기본정보와 같은 기본/특화1/특화2(GPU·CPU)·
-      // 기본/특화(RAM·모니터) 구조로 늘렸다(사용자 확정). 시트는 이미 "자사_" 접두어 없이
-      // "VGA_기본"/"VGA_최고" 식으로 쓰고 있었으므로, 같은 접두어 없는 관례를 유지하되 "최고"는
-      // "특화1"로 통일했다 — 컬럼 헤더명이 다르면 아래 문자열만 바꾸면 된다.
-      cpu: toText(c["CPU_기본"]),
-      cpuTop1: toText(c["CPU_특화1"]),
-      cpuTop2: toText(c["CPU_특화2"]),
-      vgaBase: toText(c["VGA_기본"]),
-      vgaTop: toText(c["VGA_특화1"]),
-      vgaTop2: toText(c["VGA_특화2"]),
-      ram: toText(c["RAM_기본"]),
-      ramTop: toText(c["RAM_특화"]),
-      monitorBase: toText(c["모니터_기본"]),
-      monitorTop: toText(c["모니터_특화"]),
+      // 기본/특화(RAM·모니터) 구조로 늘렸다(사용자 확정).
+      // 2026-08-28 (4차) — 실제 시트 헤더를 읽어보니 "CPU_기본"이 아니라 "CPU 기본"(밑줄 아님,
+      // 공백)이었다(추측으로 밑줄을 썼다가 실측 데이터로 확인·수정 — 이 오타 때문에 매번 동기화가
+      // 돌 때마다 사양 칸이 전부 공란으로 덮어써지고 있었다, 사용자 발견).
+      cpu: toText(c["CPU 기본"]),
+      cpuTop1: toText(c["CPU 특화1"]),
+      cpuTop2: toText(c["CPU 특화2"]),
+      vgaBase: toText(c["VGA 기본"]),
+      vgaTop: toText(c["VGA 특화1"]),
+      vgaTop2: toText(c["VGA 특화2"]),
+      ram: toText(c["RAM 기본"]),
+      ramTop: toText(c["RAM 특화"]),
+      monitorBase: toText(c["모니터 기본"]),
+      monitorTop: toText(c["모니터 특화"]),
       ratePer1000Won: toNumber(c["1000원당분"]),
       hourlyRateConverted: toNumber(c["시간당환산요금"]),
       paidDeduction: toText(c["유료차감"]),
