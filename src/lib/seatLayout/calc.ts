@@ -1,7 +1,7 @@
 // 아이센스 PC방 좌석배치도 작업 툴 - 계산 로직
 // 앱스크립트 v15 Index.html의 계산 함수들을 순수 함수로 이식.
 
-import { BEZEL_MAP, getZoneTypeLabel, PC_SPEC_FIELDS } from "./constants";
+import { BEZEL_MAP, DESK_SIZE_OPTIONS, getZoneTypeLabel, PC_SPEC_FIELDS } from "./constants";
 import type {
   DeskZone,
   DeskSize,
@@ -57,35 +57,68 @@ export type DeskCardGroup = {
 // 그룹핑과 무관하게 항상 원본 zones 배열을 그대로 쓴다.
 export function groupDeskZonesForCard(zones: DeskZone[]): DeskCardGroup[] {
   const order: string[] = [];
-  const map = new Map<string, DeskCardGroup & { names: string[] }>();
+  const map = new Map<
+    string,
+    {
+      names: string[];
+      seats: number;
+      color: string;
+      desk: string;
+      cooler: string;
+      partition: string;
+      monitorArm: string;
+      chair: string;
+      qtyByDeskSize: Map<DeskSize, number>;
+    }
+  >();
   zones.forEach((z) => {
-    const sizeText = getZoneSizeEntries(z)
-      .map((e) => `${e.deskSize} x${e.qty}`)
-      .join(", ");
-    const key = [baseZoneName(z.name), z.desk, sizeText, z.cooler, z.partition, z.monitorArm, z.chair].join(" ");
+    const entries = getZoneSizeEntries(z);
+    // 병합 키에는 "어떤 사이즈를 쓰는지"만 반영하고 좌석 수(qty)는 넣지 않는다 — 그렇지 않으면
+    // 사양은 완전히 같은데 좌석 수만 다른 같은 계열 존(예: VIP존A 5석/VIP존B 3석, 둘 다
+    // 950mm)이 카드로 안 합쳐지는 문제가 생긴다. 화면에 보여줄 사이즈 텍스트는 아래에서 그룹
+    // 전체 수량을 합산해 다시 만든다.
+    const sizeSignature = Array.from(new Set(entries.map((e) => e.deskSize))).sort().join(",");
+    const key = [baseZoneName(z.name), z.desk, sizeSignature, z.cooler, z.partition, z.monitorArm, z.chair].join(
+      " ",
+    );
     let g = map.get(key);
     if (!g) {
       g = {
         names: [],
-        name: "",
         seats: 0,
         color: z.color,
         desk: z.desk || "",
-        sizeText,
         cooler: z.cooler || "",
         partition: z.partition || "",
         monitorArm: z.monitorArm || "",
         chair: z.chair || "",
+        qtyByDeskSize: new Map(),
       };
       map.set(key, g);
       order.push(key);
     }
+    entries.forEach((e) => {
+      g!.qtyByDeskSize.set(e.deskSize, (g!.qtyByDeskSize.get(e.deskSize) || 0) + e.qty);
+    });
     g.names.push(z.name);
     g.seats += Number(z.seats) || 0;
   });
   return order.map((key) => {
     const g = map.get(key)!;
-    return { ...g, name: mergeZoneDisplayNames(g.names) };
+    const sizeText = DESK_SIZE_OPTIONS.filter((s) => g.qtyByDeskSize.has(s))
+      .map((s) => `${s} x${g.qtyByDeskSize.get(s)}`)
+      .join(", ");
+    return {
+      name: mergeZoneDisplayNames(g.names),
+      seats: g.seats,
+      color: g.color,
+      desk: g.desk,
+      sizeText,
+      cooler: g.cooler,
+      partition: g.partition,
+      monitorArm: g.monitorArm,
+      chair: g.chair,
+    };
   });
 }
 
@@ -260,6 +293,12 @@ export function splitMouseValue(value: string): string[] {
 // 카운터 PC(직원용)에는 지급하지 않는 마우스 — 정규화된(별칭 치환 후) 제품명 기준.
 const COUNTER_EXCLUDED_MOUSE = "ROCCAT PURE SEL 유선 화이트";
 
+// 카운터 PC는 모니터암(아센암/관절암) 없이 모니터 스탠드를 쓰고, 직원이 헤드셋도 착용하지 않고,
+// 무선충전기(+그 충전기용 어답터)도 두지 않으므로 이 필드들은 [ 주변기기 ] 집계에서 뺀다.
+// computePcOrderSummary의 일반 항목 루프와 [ 주변기기 ] 제목 옆 안내문이 항상 같은 기준을
+// 쓰도록 여기 한 곳에서만 관리한다.
+const COUNTER_EXCLUDED_FIELD_IDS = new Set<PcSpecFieldId>(["monitorArm", "headset", "charger"]);
+
 function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
   const map = new Map<string, number>();
   pcZones.forEach((z) => {
@@ -367,6 +406,8 @@ export function resolveAdapterValue(z: PcZone, pcDefaults: PcSpecValues, def: st
   return normalizeFieldValue("adapter", pcDefaults.adapter ?? def);
 }
 
+// 카운터 PC는 무선충전기 자체를 두지 않으므로(charger 집계에서도 제외) 그 충전기용 어답터도
+// 필요 없어 집계에서 뺀다.
 function computeAdapterRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: string): OrderSummaryRow[] {
   const map = new Map<string, number>();
   pcZones.forEach((z) => {
@@ -376,10 +417,6 @@ function computeAdapterRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: st
     if (!value || SKIP_ORDER_VALUES.has(value)) return;
     map.set(value, (map.get(value) ?? 0) + qty);
   });
-  const counterValue = normalizeFieldValue("adapter", pcDefaults.adapter ?? def);
-  if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
-    map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
-  }
   return Array.from(map.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([value, qty]) => ({ field: "어답터", value, qty }));
@@ -409,9 +446,7 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
       if (!value || SKIP_ORDER_VALUES.has(value)) return;
       map.set(value, (map.get(value) ?? 0) + qty);
     });
-    // 카운터 PC는 모니터암(아센암/관절암) 없이 모니터 스탠드를 쓰고, 직원이 헤드셋도 착용하지
-    // 않고, 무선충전기도 두지 않으므로 모니터암/헤드셋/충전기 집계에서는 뺀다.
-    if (f.id !== "monitorArm" && f.id !== "headset" && f.id !== "charger") {
+    if (!COUNTER_EXCLUDED_FIELD_IDS.has(f.id)) {
       const counterValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
       if (counterValue && !SKIP_ORDER_VALUES.has(counterValue)) {
         map.set(counterValue, (map.get(counterValue) ?? 0) + COUNTER_PC_QTY);
@@ -422,6 +457,15 @@ export function computePcOrderSummary(pcZones: PcZone[], pcDefaults: PcSpecValue
       .forEach(([value, qty]) => rows.push({ field: f.label, value, qty }));
   });
   return applySpareStock(rows);
+}
+
+// [ 주변기기 ] 제목 옆에 보여줄 안내문. computePcOrderSummary/computeAdapterRows/computeMouseRows가
+// 실제로 카운터PC/대체PC를 어떻게 다루는지와 항상 같은 기준(COUNTER_EXCLUDED_FIELD_IDS 등)을
+// 재사용해서 만든다 — 로직이 바뀌면 이 문구도 같이 바뀐다.
+export function computePeripheralsExclusionNote(): string {
+  const excludedLabels = PC_SPEC_FIELDS.filter((f) => COUNTER_EXCLUDED_FIELD_IDS.has(f.id)).map((f) => f.label);
+  const counterExcluded = [...excludedLabels, "어답터", "로켓마우스"].join(", ");
+  return `(카운터PC: ${counterExcluded} 미포함 / 대체PC: 주변기기 전체 미포함)`;
 }
 
 export type PcSetRow = {

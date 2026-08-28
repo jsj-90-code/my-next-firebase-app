@@ -14,6 +14,7 @@ import {
   computeLegendGeometry,
   computePcOrderSummary,
   computePcSetSummary,
+  computePeripheralsExclusionNote,
   computePcTotal,
   getContrastText,
   groupDeskZonesForCard,
@@ -422,7 +423,7 @@ export function renderPcFloorplanImage(
   // 붙어도 이 박스 제목에는 항상 "멀티존"만 표시한다.
   const defaultSpecLabel = "(멀티존)";
 
-  const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad");
+  const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad" && f.id !== "case");
   const defHeaderH = 34;
   const defLineH = 25;
   const defBoxH = defHeaderH + Math.ceil(DEFAULT_BOX_FIELDS.length / 2) * defLineH + 10;
@@ -713,10 +714,16 @@ export function renderOrderSummaryImage(
   c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, y);
   y += baseMainTitleH - 6;
 
-  function drawSectionTitle(text: string) {
+  function drawSectionTitle(text: string, note?: string) {
     c.fillStyle = "#2A2520";
     c.font = titleFont;
     c.fillText(text, marginX, y + 22 * shrink);
+    if (note) {
+      const titleW = c.measureText(text).width;
+      c.fillStyle = "#8a8072";
+      c.font = `${Math.max(11, Math.round(15 * shrink))}px sans-serif`;
+      c.fillText(note, marginX + titleW + 12 * shrink, y + 22 * shrink);
+    }
     y += titleH;
   }
 
@@ -783,7 +790,7 @@ export function renderOrderSummaryImage(
   // [ 주변기기 ] — 의자(책상 존 기준) + 모니터암/키보드/마우스/헤드셋/스피커/모니터/CASE 등
   // (PC 존 기준, 카운터 PC 1대분 포함) 사양별 실제 주문 수량. 표가 길어질 수 있어 베젤 사이즈
   // 표처럼 좌/우 2단으로 나눠 그린다.
-  drawSectionTitle("[ 주변기기 ]");
+  drawSectionTitle("[ 주변기기 ]", computePeripheralsExclusionNote());
   const pcOrderTableRows = pcOrderRows.map((r) => [r.field, r.value, `${r.qty} EA`, r.note ?? "-"]);
   const pcOrderTitles = ["항목", "제품", "수량", "비고"];
   const pcOrderHalf = Math.ceil(pcOrderTableRows.length / 2);
