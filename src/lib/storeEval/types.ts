@@ -129,7 +129,13 @@ export type CandidateInput = {
   ownVgaTop: string | null; // VGA 특화1
   ownVgaTop2: string | null;
   ownGameZoneCount: number | null;
-  ownRoom1: number | null; // 1인룸
+  // 2026-08-28 (3차) — 그동안 "1인석"(칸막이·듀얼모니터만 있는 개방형 좌석)과 "1인룸"(벽으로
+  // 막힌 독립 공간)이 시트에서 구분 안 됐는데, 사용자가 "자사_1인석" 컬럼을 새로 추가하며
+  // 분리했다. 좌석·존구성 rubric의 "칸막이만 있으면 독립룸 미인정" 원칙과 일치시켜, 1인석은
+  // 참고용으로만 기록하고 좌석점수 자동계산(computeZoneComposition)에는 넣지 않는다(어차피
+  // 좌석점수는 이제 수동 rubric 입력이라 참고자료일 뿐).
+  ownSingleSeatCount: number | null; // 1인석(개방형, 독립룸 아님)
+  ownRoom1: number | null; // 1인룸(벽으로 막힌 독립 공간)
   ownRoom2: number | null; // 2인룸
   ownTeamRoom: number | null;
   ownCoupleZone: number | null;
@@ -584,6 +590,8 @@ export type ExistingStore = {
   ownVgaTop: string | null;
   ownVgaTop2: string | null;
   ownGameZoneCount: number | null;
+  // 2026-08-28 (3차) — CandidateInput.ownSingleSeatCount와 동일(1인석 vs 1인룸 구분).
+  ownSingleSeatCount: number | null;
   ownRoom1: number | null;
   ownRoom2: number | null;
   ownTeamRoom: number | null;

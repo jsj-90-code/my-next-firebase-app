@@ -87,6 +87,7 @@ function blankCandidate(code: string): CandidateInput {
     ownVgaTop: null,
     ownVgaTop2: null,
     ownGameZoneCount: null,
+    ownSingleSeatCount: null,
     ownRoom1: null,
     ownRoom2: null,
     ownTeamRoom: null,

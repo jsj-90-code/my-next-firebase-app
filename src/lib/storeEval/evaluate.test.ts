@@ -71,6 +71,7 @@ function emptyCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput
     ownVgaTop: null,
     ownVgaTop2: null,
     ownGameZoneCount: 1,
+    ownSingleSeatCount: null,
     ownRoom1: 0,
     ownRoom2: 0,
     ownTeamRoom: 2,

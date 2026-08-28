@@ -113,6 +113,7 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "facility500SubwayRiders", label: "지하철 승하차(500m)" },
   { key: "facility1kmSubwayRiders", label: "지하철 승하차(1km)" },
   { key: "ownGameZoneCount", label: "게임존 수" },
+  { key: "ownSingleSeatCount", label: "1인석 수" },
   { key: "ownRoom1", label: "1인룸 수" },
   { key: "ownRoom2", label: "2인룸 수" },
   { key: "ownTeamRoom", label: "팀룸 수" },
@@ -664,7 +665,13 @@ export function BasicInfoTab({
           />
           <TextField label="RAM 특화" value={form.ownRamTop ?? ""} onChange={(v) => set("ownRamTop", v || null)} hint="없으면 비움" />
           <NumberField label="게임존 수" value={form.ownGameZoneCount} onChange={(v) => set("ownGameZoneCount", v)} hint="비우면 표준 3종 적용" />
-          <NumberField label="1인룸 수" value={form.ownRoom1} onChange={(v) => set("ownRoom1", v)} />
+          <NumberField
+            label="1인석 수"
+            value={form.ownSingleSeatCount}
+            onChange={(v) => set("ownSingleSeatCount", v)}
+            hint="칸막이·듀얼모니터만 있는 개방형 좌석(독립룸 아님) · 참고용, 좌석점수 자동계산엔 안 들어감"
+          />
+          <NumberField label="1인룸 수" value={form.ownRoom1} onChange={(v) => set("ownRoom1", v)} hint="벽으로 막힌 독립 공간" />
           <NumberField label="2인룸 수" value={form.ownRoom2} onChange={(v) => set("ownRoom2", v)} />
           <NumberField label="팀룸 수" value={form.ownTeamRoom} onChange={(v) => set("ownTeamRoom", v)} hint="비우면 표준 2개 적용" />
           <NumberField label="커플존 수" value={form.ownCoupleZone} onChange={(v) => set("ownCoupleZone", v)} hint="비우면 표준 3개 적용" />

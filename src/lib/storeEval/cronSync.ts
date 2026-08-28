@@ -176,6 +176,8 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       ownMonitorBase: toText(s["자사_모니터_기본"]),
       ownMonitorTop: toText(s["자사_모니터_특화"]),
       ownGameZoneCount: toNumber(s["자사_게임존수"]),
+      // 2026-08-28 (3차) — "자사_1인석"(개방형 좌석) 컬럼 신설, 기존 "자사_1인룸"(독립 공간)과 분리.
+      ownSingleSeatCount: toNumber(s["자사_1인석"]),
       ownRoom1: toNumber(s["자사_1인룸"]),
       ownRoom2: toNumber(s["자사_2인룸"]),
       ownTeamRoom: toNumber(s["자사_팀룸"]),
