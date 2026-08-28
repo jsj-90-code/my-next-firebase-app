@@ -382,7 +382,13 @@ export function scoreFromRamSpec(ramBase: string | null, ramTop: string | null):
  * 공백 무시하고 부분일치로 찾는다). 표에 없는 모델은 그대로 null(사람이 직접 확인 필요) —
  * 아직 사용자 확인 전이라 비어있다. 여기 채우면 자동으로 scoreFromMonitor가 참고한다.
  */
-export const MONITOR_MODEL_HZ_TABLE: Record<string, number> = {};
+export const MONITOR_MODEL_HZ_TABLE: Record<string, number> = {
+  "2546K": 240, // 벤큐 2546K (사용자 확인, 2026-08-28)
+  "2746K": 240, // 벤큐 2746K
+  GP750: 240, // LG울트라기어 GP750
+  GP850: 165, // LG울트라기어 GP850
+  DELL: 360, // DELL(모델명 없이 브랜드만 확인 — 매장에서 쓰는 DELL 모니터가 이 사양뿐이라는 전제)
+};
 
 /**
  * 2026-08-28 신설 — 모니터도 GPU/CPU/RAM처럼 모델텍스트(주사율 Hz)에서 자동으로 점수를 뽑는다

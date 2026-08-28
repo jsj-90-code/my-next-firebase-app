@@ -475,6 +475,11 @@ describe("scoreFromMonitor (모니터 Hz, 2026-08-28 신설 — 240Hz=4점 앵�
   it("사전에도 없는 모델명이면 null(지어내지 않음)", () => {
     expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750", {})).toBeNull();
   });
+  it("기본 MONITOR_MODEL_HZ_TABLE(사용자 확인, 2026-08-28)로 실제 매장 문구를 채점한다", () => {
+    // 전대후문점 실사례: 벤큐2546K(240)+벤큐2746K(240)+GP750(240)+GP850(165) 평균=221.25Hz → 3점
+    expect(scoreFromMonitor("벤큐 2546K, 벤큐 2746K, LG울트라기어 GP750, LG울트라기어 GP850")).toBe(3);
+    expect(scoreFromMonitor("DELL")).toBe(5); // 360Hz
+  });
 });
 
 describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpec (기본/특화 결합, 2026-08-28 재설계)", () => {
