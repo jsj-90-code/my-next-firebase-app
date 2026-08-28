@@ -296,7 +296,8 @@ function CompetitorForm({
             label="먹거리 점수 (직접입력)"
             value={form.foodScore}
             onChange={(v) => set("foodScore", v)}
-            hint="브랜드없음/미정일 때 직접 평가"
+            step={0.5}
+            hint="브랜드없음/미정일 때 직접 평가 · 아래 기준표 참고"
           />
         )}
         <ComputedField label="먹거리 점수 (최종)" value={computed.food} />

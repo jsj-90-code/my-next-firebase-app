@@ -270,7 +270,7 @@ export function ExistingStoreProfileTab({
             label="모니터 기본"
             value={form.ownMonitorBase ?? ""}
             onChange={(v) => set("ownMonitorBase", v || null)}
-            hint="예: 240Hz, BenQ XL2540X 280Hz — 주사율(Hz)에서 자동채점(240Hz=4점 앵커)"
+            hint="예: 240Hz, BenQ XL2540X 280Hz — 주사율(Hz)에서 자동채점(240Hz 단독=3.5점, 특화 조합 있으면 4점대)"
           />
           <TextField label="모니터 특화" value={form.ownMonitorTop ?? ""} onChange={(v) => set("ownMonitorTop", v || null)} hint="없으면 비움" />
         </div>
@@ -283,7 +283,8 @@ export function ExistingStoreProfileTab({
               label="먹거리 점수 (직접입력)"
               value={form.ownFoodScore}
               onChange={(v) => set("ownFoodScore", v)}
-              hint="브랜드없음/미정일 때 직접 평가 · 비우면 표준값 4 적용"
+              step={0.5}
+              hint="브랜드없음/미정일 때 직접 평가 · 비우면 표준값 4 적용 · 아래 기준표 참고"
             />
           )}
           <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} />

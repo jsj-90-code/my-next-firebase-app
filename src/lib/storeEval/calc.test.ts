@@ -439,33 +439,39 @@ describe("combineHardwareTiers (기본80%+특화들 균등분배20%, 2026-08-28 
   });
 });
 
-describe("scoreFromMonitor (모니터 Hz, 2026-08-28 신설 — 240Hz=4점 앵커)", () => {
-  it("240Hz는 앵커값 4점", () => {
-    expect(scoreFromMonitor("240Hz")).toBe(4);
+describe("scoreFromMonitor (모니터 Hz, 2026-08-28(2차) 사용자 확정 전체 구간표로 재보정)", () => {
+  it("360Hz 이상은 5점", () => {
+    expect(scoreFromMonitor("360Hz")).toBe(5);
   });
-  it("280Hz 이상은 5점", () => {
-    expect(scoreFromMonitor("300Hz")).toBe(5);
+  it("300~359Hz는 4.5점", () => {
+    expect(scoreFromMonitor("300Hz")).toBe(4.5);
+  });
+  it("240~299Hz(기본만, 특화 없음)는 3.5점", () => {
+    expect(scoreFromMonitor("240Hz")).toBe(3.5);
   });
   it("180~239Hz는 3점", () => {
     expect(scoreFromMonitor("200Hz")).toBe(3);
   });
-  it("144~179Hz는 2점", () => {
-    expect(scoreFromMonitor("165Hz")).toBe(2);
+  it("144~179Hz는 2.5점", () => {
+    expect(scoreFromMonitor("165Hz")).toBe(2.5);
   });
-  it("144Hz 미만은 1점", () => {
-    expect(scoreFromMonitor("120Hz")).toBe(1);
+  it("120~143Hz는 2점", () => {
+    expect(scoreFromMonitor("120Hz")).toBe(2);
+  });
+  it("120Hz 미만은 1.5점", () => {
+    expect(scoreFromMonitor("100Hz")).toBe(1.5);
   });
   it("Hz를 못 뽑거나 텍스트가 없으면(모델 사전에도 없으면) null", () => {
     expect(scoreFromMonitor("BenQ XL2540X")).toBeNull();
     expect(scoreFromMonitor(null)).toBeNull();
   });
   it("한 줄에 Hz가 여러 개면 평균 낸다", () => {
-    // (240+300)/2 = 270Hz → 240~279 구간이 아니라 280 미만이라 4점
-    expect(scoreFromMonitor("240Hz, 300Hz")).toBe(4);
+    // (240+300)/2 = 270Hz → 240~299 구간이라 3.5점
+    expect(scoreFromMonitor("240Hz, 300Hz")).toBe(3.5);
   });
   it("Hz가 없으면 모델명 사전(MONITOR_MODEL_HZ_TABLE)에서 찾는다(대소문자·공백 무시, 부분일치)", () => {
     const table = { "2546K": 240, "27GP850": 165 };
-    expect(scoreFromMonitor("벤큐 2546K", table)).toBe(4); // 240Hz로 매칭
+    expect(scoreFromMonitor("벤큐 2546K", table)).toBe(3.5); // 240Hz로 매칭
   });
   it("콤마로 여러 모델이 나열돼 있으면 매칭된 모델들의 Hz를 평균한다", () => {
     const table = { "2546K": 240, "27GP850": 165 };
@@ -500,8 +506,8 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
   it("RAM — 기본+특화(16G=4, 32G=5) → 4*.8+5*.2=4.2", () => {
     expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(4.2, 2);
   });
-  it("모니터 — 기본+특화(240Hz=4, 300Hz=5) → 4*.8+5*.2=4.2", () => {
-    expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(4.2, 2);
+  it("모니터 — 기본+특화(240Hz=3.5, 300Hz=4.5) → 3.5*.8+4.5*.2=3.7", () => {
+    expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(3.7, 2);
   });
   it("전부 없으면 null", () => {
     expect(scoreFromVgaSpec(null, null, null, 0)).toBeNull();
@@ -517,17 +523,17 @@ describe("computeSpecScore (하드웨어점수 = GPU40%+모니터25%+CPU20%+RAM1
     expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060", bonus: 0 }, settings)).toBe(3);
   });
   it("모니터만 있으면 모니터 점수 그대로", () => {
-    expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz", bonus: 0 }, settings)).toBe(5);
+    expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz", bonus: 0 }, settings)).toBe(4.5);
   });
   it("GPU+CPU+RAM+모니터가 다 있으면 40/20/15/25 가중평균", () => {
-    // GPU: RTX4060(3점)+게임존3종 가산(0.6)=3.6 / CPU: 14400(4점) / RAM: 32G(5점) / 모니터: 240Hz(4점)
-    // 3.6*.4 + 4*.25 + 5*.15 + 4*.2 = 1.44+1+0.75+0.8 = 3.99
+    // GPU: RTX4060(3점)+게임존3종 가산(0.6)=3.6 / CPU: 14400(4점) / RAM: 32G(5점) / 모니터: 240Hz(3.5점)
+    // 3.6*.4 + 3.5*.25 + 5*.15 + 4*.2 = 1.44+0.875+0.75+0.8 = 3.865
     expect(
       computeSpecScore(
         { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null, bonus: 3 * GAME_ZONE_BONUS },
         settings,
       ),
-    ).toBeCloseTo(3.99, 2);
+    ).toBeCloseTo(3.865, 2);
   });
   it("전부 없으면 null(지어내지 않음)", () => {
     expect(computeSpecScore({ ...blankItems, bonus: 0 }, settings)).toBeNull();
@@ -1022,7 +1028,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       ownFriendsZone: 15,
       ownFoodScore: 4,
       ownInteriorScore: 4,
-      ownMonitorBase: "240Hz", // scoreFromMonitor 앵커=4점(기존 ownMonitorScore:4와 동일 결과)
+      ownMonitorBase: "240Hz", // scoreFromMonitor 2026-08-28(2차) 재보정 = 3.5점
       ownMonitorTop: null,
       ownFoodBrand: null,
       ownInteriorLevelScore: null,
@@ -1126,9 +1132,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
     expect(result.excludedReason).toBeNull();
     // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합. 하드웨어점수는
-    // GPU(RTX5060=4)+게임존3종 가산(0.6)=4.6, 모니터(4) — (4.6*.4+4*.25)/(0.4+0.25)=4.37,
-    // food=4 interior=4 location=4 → 4.37*.3+4*.2+4*.4+4*.1 = 4.111
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.111, 3);
+    // GPU(RTX5060=4)+게임존3종 가산(0.6)=4.6, 모니터(240Hz=3.5, 2026-08-28(2차) 재보정) —
+    // (4.6*.4+3.5*.25)/(0.4+0.25)=4.177, food=4 interior=4 location=4
+    // → 4.177*.3+4*.2+4*.4+4*.1 = 4.053
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.053, 2);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);

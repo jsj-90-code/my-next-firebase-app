@@ -391,12 +391,17 @@ export const MONITOR_MODEL_HZ_TABLE: Record<string, number> = {
 };
 
 /**
- * 2026-08-28 신설 — 모니터도 GPU/CPU/RAM처럼 모델텍스트(주사율 Hz)에서 자동으로 점수를 뽑는다
- * (그전까진 평가자가 1~5점을 직접 입력했다). 블랙라벨 현재 표준 240Hz를 4점 앵커로 고정한다
- * (scoreFromVga/scoreFromCpu와 같은 원칙). 텍스트에 Hz가 명시돼 있으면 그대로 쓰고, 없으면
- * MONITOR_MODEL_HZ_TABLE에서 모델명을 찾는다(한 줄에 여러 모델이 콤마로 나열돼 있으면 매칭된
- * 모델들의 Hz를 평균한다). 크기·브랜드 자체는 점수에 반영하지 않는다 — Hz(또는 Hz로 환산된 표
- * 값)만으로 판단하는 근사치다.
+ * 2026-08-28 신설, 2026-08-28(2차) 재보정 — 모니터도 GPU/CPU/RAM처럼 모델텍스트(주사율 Hz)에서
+ * 자동으로 점수를 뽑는다(그전까진 평가자가 1~5점을 직접 입력했다). 텍스트에 Hz가 명시돼 있으면
+ * 그대로 쓰고, 없으면 MONITOR_MODEL_HZ_TABLE에서 모델명을 찾는다(한 줄에 여러 모델이 콤마로
+ * 나열돼 있으면 매칭된 모델들의 Hz를 평균한다). 크기·브랜드 자체는 점수에 반영하지 않는다 —
+ * Hz(또는 Hz로 환산된 표 값)만으로 판단하는 근사치다.
+ * 2026-08-28(2차) — 사용자 확정 전체 구간표로 재보정(순수 Hz 기준, "기본"만 있을 때의 점수):
+ * 360Hz+=5.0 · 300Hz+=4.5 · 240Hz+=3.5 · 180Hz+=3.0 · 144Hz+=2.5 · 120Hz+=2.0 · 그 미만=1.5.
+ * "240 기본+BenQ Zowie/울트라와이드 등 특화조합=4.0"처럼 기본+특화 조합에서만 나오는 점수는 이
+ * 함수가 아니라 combineHardwareTiers(기본80%+특화20%)가 만들어낸다 — 특화 사양이 좋을수록
+ * 자연히 4.0 근처로 올라가지만 정확히 4.0에 맞아떨어지진 않을 수 있다(다른 하드웨어 항목과 같은
+ * 근사치 원칙, 실제 사례로 어긋나면 조정 필요).
  */
 export function scoreFromMonitor(text: string | null, modelHzTable: Record<string, number> = MONITOR_MODEL_HZ_TABLE): number | null {
   if (!text) return null;
@@ -412,11 +417,13 @@ export function scoreFromMonitor(text: string | null, modelHzTable: Record<strin
     if (matchedHz.length > 0) hz = matchedHz.reduce((a, b) => a + b, 0) / matchedHz.length;
   }
   if (hz == null) return null;
-  if (hz >= 280) return 5;
-  if (hz >= 240) return 4;
+  if (hz >= 360) return 5;
+  if (hz >= 300) return 4.5;
+  if (hz >= 240) return 3.5;
   if (hz >= 180) return 3;
-  if (hz >= 144) return 2;
-  return 1;
+  if (hz >= 144) return 2.5;
+  if (hz >= 120) return 2;
+  return 1.5;
 }
 
 /** 모니터 기본/특화를 combineHardwareTiers로 결합(2026-08-28 신설). */
