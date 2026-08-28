@@ -376,16 +376,36 @@ export function scoreFromRamSpec(ramBase: string | null, ramTop: string | null):
 }
 
 /**
+ * 2026-08-28 (3차) 추가 — 실제 매장 데이터를 보니 "모니터 특화" 필드에 Hz 없이 모델명만 적히는
+ * 경우가 많다(예: "벤큐 2546K, LG울트라기어 GP750" — 심지어 콤마로 여러 모델을 한 줄에 나열).
+ * 실측 Hz를 지어낼 수 없으므로, 사용자가 실제로 확인한 모델만 이 표에 채운다(키는 대소문자·
+ * 공백 무시하고 부분일치로 찾는다). 표에 없는 모델은 그대로 null(사람이 직접 확인 필요) —
+ * 아직 사용자 확인 전이라 비어있다. 여기 채우면 자동으로 scoreFromMonitor가 참고한다.
+ */
+export const MONITOR_MODEL_HZ_TABLE: Record<string, number> = {};
+
+/**
  * 2026-08-28 신설 — 모니터도 GPU/CPU/RAM처럼 모델텍스트(주사율 Hz)에서 자동으로 점수를 뽑는다
  * (그전까진 평가자가 1~5점을 직접 입력했다). 블랙라벨 현재 표준 240Hz를 4점 앵커로 고정한다
- * (scoreFromVga/scoreFromCpu와 같은 원칙). 크기·브랜드(BenQ 등)는 텍스트로 다양해 정확한 파싱이
- * 어려워 반영하지 않는다 — Hz만으로 판단하는 근사치다.
+ * (scoreFromVga/scoreFromCpu와 같은 원칙). 텍스트에 Hz가 명시돼 있으면 그대로 쓰고, 없으면
+ * MONITOR_MODEL_HZ_TABLE에서 모델명을 찾는다(한 줄에 여러 모델이 콤마로 나열돼 있으면 매칭된
+ * 모델들의 Hz를 평균한다). 크기·브랜드 자체는 점수에 반영하지 않는다 — Hz(또는 Hz로 환산된 표
+ * 값)만으로 판단하는 근사치다.
  */
-export function scoreFromMonitor(text: string | null): number | null {
+export function scoreFromMonitor(text: string | null, modelHzTable: Record<string, number> = MONITOR_MODEL_HZ_TABLE): number | null {
   if (!text) return null;
-  const m = text.match(/(\d{2,3})\s*hz/i);
-  if (!m) return null;
-  const hz = Number(m[1]);
+  const hzMatches = [...text.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
+  let hz: number | null = null;
+  if (hzMatches.length > 0) {
+    hz = hzMatches.reduce((a, b) => a + b, 0) / hzMatches.length;
+  } else {
+    const normalized = text.replace(/\s/g, "").toUpperCase();
+    const matchedHz = Object.entries(modelHzTable)
+      .filter(([model]) => normalized.includes(model.replace(/\s/g, "").toUpperCase()))
+      .map(([, modelHz]) => modelHz);
+    if (matchedHz.length > 0) hz = matchedHz.reduce((a, b) => a + b, 0) / matchedHz.length;
+  }
+  if (hz == null) return null;
   if (hz >= 280) return 5;
   if (hz >= 240) return 4;
   if (hz >= 180) return 3;

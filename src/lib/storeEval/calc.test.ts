@@ -455,9 +455,25 @@ describe("scoreFromMonitor (모니터 Hz, 2026-08-28 신설 — 240Hz=4점 앵�
   it("144Hz 미만은 1점", () => {
     expect(scoreFromMonitor("120Hz")).toBe(1);
   });
-  it("Hz를 못 뽑거나 텍스트가 없으면 null", () => {
+  it("Hz를 못 뽑거나 텍스트가 없으면(모델 사전에도 없으면) null", () => {
     expect(scoreFromMonitor("BenQ XL2540X")).toBeNull();
     expect(scoreFromMonitor(null)).toBeNull();
+  });
+  it("한 줄에 Hz가 여러 개면 평균 낸다", () => {
+    // (240+300)/2 = 270Hz → 240~279 구간이 아니라 280 미만이라 4점
+    expect(scoreFromMonitor("240Hz, 300Hz")).toBe(4);
+  });
+  it("Hz가 없으면 모델명 사전(MONITOR_MODEL_HZ_TABLE)에서 찾는다(대소문자·공백 무시, 부분일치)", () => {
+    const table = { "2546K": 240, "27GP850": 165 };
+    expect(scoreFromMonitor("벤큐 2546K", table)).toBe(4); // 240Hz로 매칭
+  });
+  it("콤마로 여러 모델이 나열돼 있으면 매칭된 모델들의 Hz를 평균한다", () => {
+    const table = { "2546K": 240, "27GP850": 165 };
+    // 매칭: 2546K(240)+27GP850(165) → 평균 202.5Hz → 180~239 구간=3점 (GP750은 표에 없어 무시)
+    expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750, LG 27GP850", table)).toBe(3);
+  });
+  it("사전에도 없는 모델명이면 null(지어내지 않음)", () => {
+    expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750", {})).toBeNull();
   });
 });
 
