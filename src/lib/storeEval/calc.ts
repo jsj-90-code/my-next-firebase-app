@@ -386,10 +386,10 @@ export function combineHardwareTiers(base: number | null, specialtyTiers: (numbe
  * 2026-08-28: 예전엔 기본+최고를 단순평균했는데, "일부 좌석만 업그레이드" 원칙에 맞춰
  * combineHardwareTiers(기본80%+특화20%)로 통일했다.
  */
-export function scoreFromVgaSpec(vgaBase: string | null, vgaTop: string | null, vgaTop2: string | null, bonus: number): number | null {
+export function scoreFromVgaSpec(vgaBase: string | null, vgaTop: string | null, vgaTop2: string | null): number | null {
   const combined = combineHardwareTiers(scoreFromVga(vgaBase), [scoreFromVga(vgaTop), scoreFromVga(vgaTop2)]);
   if (combined == null) return null;
-  return Math.round(Math.min(5, combined + bonus) * 100) / 100;
+  return Math.round(combined * 100) / 100;
 }
 
 /** CPU 기본/특화1/특화2를 combineHardwareTiers로 결합(2026-08-28 신설, GPU와 같은 원칙). */
@@ -519,7 +519,8 @@ export function scoreFromRam(text: string | null): number | null {
  * specWeights를 이전 값({vga:0.7,monitor:0.3,ram:0,cpu:0})으로 되돌리면 된다.
  * 2026-08-28 (2차) — GPU/CPU/RAM/모니터 전부 "기본/특화" 다단계 텍스트 입력으로 통일했다
  * (combineHardwareTiers 참고). 모니터도 이제 자동채점이라 수동 점수 입력 자체가 없어졌다.
- * @param bonus 자사: 게임존수 × GAME_ZONE_BONUS(0.2) / 경쟁점: 프리미엄존 유(1) × 0.5, 무(0) × 0.5
+ * 2026-08-30 — 게임존/프리미엄존 가산점(bonus 파라미터)을 폐지했다(사용자 확정). 일부 좌석만
+ * 고사양이면 이미 특화1/특화2 사양 컬럼이 그 차이를 반영하므로 별도 가산은 이중 반영이었다.
  */
 export function computeSpecScore(
   input: {
@@ -533,13 +534,12 @@ export function computeSpecScore(
     ramTop: string | null;
     monitorBase: string | null;
     monitorTop: string | null;
-    bonus: number;
   },
   settings: Pick<ModelSettings, "specWeights">,
 ): number | null {
   const w = settings.specWeights;
   const items = [
-    { score: scoreFromVgaSpec(input.vgaBase, input.vgaTop, input.vgaTop2, input.bonus), weight: w.vga },
+    { score: scoreFromVgaSpec(input.vgaBase, input.vgaTop, input.vgaTop2), weight: w.vga },
     { score: scoreFromMonitorSpec(input.monitorBase, input.monitorTop), weight: w.monitor },
     { score: scoreFromRamSpec(input.ram, input.ramTop), weight: w.ram },
     { score: scoreFromCpuSpec(input.cpu, input.cpuTop1, input.cpuTop2), weight: w.cpu },
@@ -549,9 +549,6 @@ export function computeSpecScore(
   if (totalWeight === 0) return null;
   return Math.round((items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight) * 100) / 100;
 }
-
-/** 자사 게임존 사양 가산: 게임존 수 × GAME_ZONE_BONUS(0.2). */
-export const GAME_ZONE_BONUS = 0.2;
 
 /**
  * summarizeZones_: 존 개수 집계.
@@ -606,7 +603,6 @@ export function scoreFromZoneDiversity(kinds: number): number {
  * 제외되고 나머지 가중치로 재정규화된다) — 그래서 monitorScore 기본값도 제거했다.
  */
 export const STANDARD_OWN_FACILITY_DEFAULTS = {
-  gameZoneCount: 3,
   teamRoom: 2,
   coupleZone: 3,
   vipZone: 5,
@@ -631,7 +627,6 @@ export const EXISTING_STORE_FACILITY_DEFAULTS = {
 };
 
 export type StandardOwnFacilityInput = {
-  ownGameZoneCount: number | null;
   ownTeamRoom: number | null;
   ownCoupleZone: number | null;
   ownVipZone: number | null;
@@ -644,7 +639,6 @@ export function applyStandardOwnFacilityDefaults(
   input: StandardOwnFacilityInput,
   defaults: typeof STANDARD_OWN_FACILITY_DEFAULTS = STANDARD_OWN_FACILITY_DEFAULTS,
 ): {
-  ownGameZoneCount: number;
   ownTeamRoom: number;
   ownCoupleZone: number;
   ownVipZone: number;
@@ -654,7 +648,6 @@ export function applyStandardOwnFacilityDefaults(
 } {
   const d = defaults;
   return {
-    ownGameZoneCount: input.ownGameZoneCount ?? d.gameZoneCount,
     ownTeamRoom: input.ownTeamRoom ?? d.teamRoom,
     ownCoupleZone: input.ownCoupleZone ?? d.coupleZone,
     ownVipZone: input.ownVipZone ?? d.vipZone,
@@ -797,7 +790,6 @@ export function computeCompetitorScores(
         ramTop: c.ramTop,
         monitorBase: c.monitorBase,
         monitorTop: c.monitorTop,
-        bonus: 0,
       },
       settings,
     ),
@@ -1667,7 +1659,6 @@ export function computeExistingStoreMeasuredForecast(
     | "ownVgaBase"
     | "ownVgaTop"
     | "ownVgaTop2"
-    | "ownGameZoneCount"
     | "ownRoom1"
     | "ownRoom2"
     | "ownTeamRoom"
@@ -1711,7 +1702,7 @@ export function computeExistingStoreMeasuredForecast(
   // 평가(1~5점, 평가자 직접입력 항목)는 원본 시트에도 "공백이면 표준값 4" 규칙이 있어
   // applyStandardOwnFacilityDefaults로 채운다(아래에서 store.ownFoodScore 등 원본이 아니라
   // facility.* 채워진 값을 쓴다) — 단, 어떤 기본값을 쓰는지는 후보지와 다르다, 바로 아래 참고.
-  if (store.ownVgaBase == null || store.ownGameZoneCount == null || store.ownTeamRoom == null || store.ownCoupleZone == null || store.ownVipZone == null || store.ownFriendsZone == null) {
+  if (store.ownVgaBase == null || store.ownTeamRoom == null || store.ownCoupleZone == null || store.ownVipZone == null || store.ownFriendsZone == null) {
     return { ...base, excludedReason: "데이터 부족(자사 존구성/VGA 미완비)" };
   }
   if (competitors.length === 0) {
@@ -1736,7 +1727,6 @@ export function computeExistingStoreMeasuredForecast(
       ramTop: store.ownRamTop,
       monitorBase: store.ownMonitorBase,
       monitorTop: store.ownMonitorTop,
-      bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
     },
     settings,
   );
@@ -1842,7 +1832,6 @@ export function computeExistingStoreDemandEvaluation(
     | "ownVgaBase"
     | "ownVgaTop"
     | "ownVgaTop2"
-    | "ownGameZoneCount"
     | "ownRoom1"
     | "ownRoom2"
     | "ownTeamRoom"
@@ -1881,7 +1870,6 @@ export function computeExistingStoreDemandEvaluation(
   // 물리적 시설 사실(존구성/VGA)이 없으면 추측하지 않고 제외한다 — computeExistingStoreMeasuredForecast와 동일 기준.
   if (
     store.ownVgaBase == null ||
-    store.ownGameZoneCount == null ||
     store.ownTeamRoom == null ||
     store.ownCoupleZone == null ||
     store.ownVipZone == null ||
@@ -1905,7 +1893,6 @@ export function computeExistingStoreDemandEvaluation(
       ramTop: store.ownRamTop,
       monitorBase: store.ownMonitorBase,
       monitorTop: store.ownMonitorTop,
-      bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
     },
     settings,
   );

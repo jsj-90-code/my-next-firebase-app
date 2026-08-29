@@ -50,7 +50,6 @@ import {
   diagnoseLoocvSensitivity,
   fitEmpiricalRevenueModel,
   fitNonnegativeRidgeRegression,
-  GAME_ZONE_BONUS,
   getV62Rate,
   isCoreEligibleForV61Training,
   isEligibleForV61Training,
@@ -490,16 +489,16 @@ describe("scoreFromMonitor (모니터 Hz, 2026-08-28(2차) 사용자 확정 전�
 });
 
 describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpec (기본/특화 결합, 2026-08-28 재설계)", () => {
-  it("GPU — 기본만 있으면 기본 그대로(+가산)", () => {
-    expect(scoreFromVgaSpec("RTX 5060", null, null, 0.6)).toBeCloseTo(4.6, 2);
+  it("GPU — 기본만 있으면 기본 그대로", () => {
+    expect(scoreFromVgaSpec("RTX 5060", null, null)).toBeCloseTo(4, 2);
   });
   it("GPU — 기본+특화1(2종류) combineHardwareTiers로 결합", () => {
     // RTX4060=3, RTX5060=4 → 3*.8+4*.2=3.2
-    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", null, 0)).toBeCloseTo(3.2, 2);
+    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", null)).toBeCloseTo(3.2, 2);
   });
   it("GPU — 기본+특화1+특화2(3종류)", () => {
     // RTX4060=3, RTX5060=4, RTX5070=4.5 → 3*.8+(4+4.5)/2*.2=2.4+0.85=3.25
-    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", "RTX 5070", 0)).toBeCloseTo(3.25, 2);
+    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", "RTX 5070")).toBeCloseTo(3.25, 2);
   });
   it("CPU — 기본+특화1(14400=4, 13400=3) → 4*.8+3*.2=3.8", () => {
     expect(scoreFromCpuSpec("14400", "13400", null)).toBeCloseTo(3.8, 2);
@@ -511,7 +510,7 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
     expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(3.7, 2);
   });
   it("전부 없으면 null", () => {
-    expect(scoreFromVgaSpec(null, null, null, 0)).toBeNull();
+    expect(scoreFromVgaSpec(null, null, null)).toBeNull();
     expect(scoreFromCpuSpec(null, null, null)).toBeNull();
     expect(scoreFromRamSpec(null, null)).toBeNull();
     expect(scoreFromMonitorSpec(null, null)).toBeNull();
@@ -521,23 +520,23 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
 describe("computeSpecScore (하드웨어점수 = GPU40%+모니터25%+CPU20%+RAM15%, 2026-08-28 전면개편)", () => {
   const blankItems = { vgaBase: null, vgaTop: null, vgaTop2: null, cpu: null, cpuTop1: null, cpuTop2: null, ram: null, ramTop: null, monitorBase: null, monitorTop: null };
   it("GPU만 있으면 GPU 점수 그대로", () => {
-    expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060", bonus: 0 }, settings)).toBe(3);
+    expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060" }, settings)).toBe(3);
   });
   it("모니터만 있으면 모니터 점수 그대로", () => {
-    expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz", bonus: 0 }, settings)).toBe(4.5);
+    expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz" }, settings)).toBe(4.5);
   });
   it("GPU+CPU+RAM+모니터가 다 있으면 40/20/15/25 가중평균", () => {
-    // GPU: RTX4060(3점)+게임존3종 가산(0.6)=3.6 / CPU: 14400(4점) / RAM: 32G(5점) / 모니터: 240Hz(3.5점)
-    // 3.6*.4 + 3.5*.25 + 5*.15 + 4*.2 = 1.44+0.875+0.75+0.8 = 3.865
+    // GPU: RTX4060(3점, 2026-08-30 게임존 가산 폐지) / CPU: 14400(4점) / RAM: 32G(5점) / 모니터: 240Hz(3.5점)
+    // 3*.4 + 3.5*.25 + 5*.15 + 4*.2 = 1.2+0.875+0.75+0.8 = 3.625
     expect(
       computeSpecScore(
-        { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null, bonus: 3 * GAME_ZONE_BONUS },
+        { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null },
         settings,
       ),
-    ).toBeCloseTo(3.865, 2);
+    ).toBeCloseTo(3.625, 2);
   });
   it("전부 없으면 null(지어내지 않음)", () => {
-    expect(computeSpecScore({ ...blankItems, bonus: 0 }, settings)).toBeNull();
+    expect(computeSpecScore(blankItems, settings)).toBeNull();
   });
 });
 
@@ -602,7 +601,6 @@ describe("computeZoneComposition/scoreFromZoneDiversity (2026-08-28 — 좌석�
 
 describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: 비우면 표준값 적용, 2026-08-21)", () => {
   const blank = {
-    ownGameZoneCount: null,
     ownTeamRoom: null,
     ownCoupleZone: null,
     ownVipZone: null,
@@ -610,12 +608,12 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     ownFoodScore: null,
     ownInteriorScore: null,
   };
-  it("전부 비어있으면 표준값(게임존3·팀룸2·커플존3·VIP존5·프렌즈존15·먹거리/인테리어5점)을 적용한다", () => {
+  it("전부 비어있으면 표준값(팀룸2·커플존3·VIP존5·프렌즈존15·먹거리/인테리어5점)을 적용한다", () => {
     // 2026-08-27: 오픈 초기 기준 먹거리/인테리어는 "상"(5점)이 더 현실적이라는 사용자 확인으로
     // 4→5로 올렸다(원본 시트 "빈칸이면 4" 규칙과 달라진 값 — 의도된 재조정). 2026-08-28(2차):
     // 모니터가 텍스트 자동채점으로 바뀌며 "표준값 4" 폴백 자체가 없어져 반환값에서 빠졌다.
+    // 2026-08-30: 게임존 가산점 폐지로 ownGameZoneCount/gameZoneCount 필드 자체를 없앴다.
     expect(applyStandardOwnFacilityDefaults(blank)).toEqual({
-      ownGameZoneCount: 3,
       ownTeamRoom: 2,
       ownCoupleZone: 3,
       ownVipZone: 5,
@@ -625,9 +623,8 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     });
   });
   it("실제 값이 입력돼 있으면 표준값으로 덮어쓰지 않는다", () => {
-    const real = { ...blank, ownGameZoneCount: 1, ownTeamRoom: 0, ownFoodScore: 2 };
+    const real = { ...blank, ownTeamRoom: 0, ownFoodScore: 2 };
     const result = applyStandardOwnFacilityDefaults(real);
-    expect(result.ownGameZoneCount).toBe(1);
     expect(result.ownTeamRoom).toBe(0); // 0은 "값 있음"이므로 표준값(2)으로 안 바뀐다
     expect(result.ownFoodScore).toBe(2);
     expect(result.ownVipZone).toBe(5); // 나머지 비어있는 항목은 여전히 표준값
@@ -646,12 +643,11 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
         ramTop: null,
         monitorBase: null,
         monitorTop: null,
-        bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
       },
       settings,
     );
-    // GPU: RTX5060(4점,앵커)+게임존3종 가산(0.6)=4.6 — CPU/RAM/모니터 전부 비어서 GPU 가중치만으로 재정규화
-    expect(spec).toBeCloseTo(4.6, 2);
+    // GPU: RTX5060(4점, 앵커, 2026-08-30 게임존 가산 폐지) — CPU/RAM/모니터 전부 비어서 GPU 가중치만으로 재정규화
+    expect(spec).toBeCloseTo(4, 2);
     const interior = computeInteriorSeatManagementScore(
       { seatZoneScore: null, freshnessScore: null, cleanlinessScore: null, comfortScore: null, legacyScore: facility.ownInteriorScore },
       settings,
@@ -662,8 +658,8 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
       { spec, food: facility.ownFoodScore, interior, location: computeLocationScoreFromFacts(1, "지하", false) },
       competitivenessSettings,
     );
-    // 4.6*.3 + 5*.2 + 5*.4 + 4*.1 = 1.38+1+2+0.4 = 4.78
-    expect(total).toBeCloseTo(4.78, 2);
+    // 4*.3 + 5*.2 + 5*.4 + 4*.1 = 1.2+1+2+0.4 = 4.6
+    expect(total).toBeCloseTo(4.6, 2);
   });
 });
 
@@ -1019,7 +1015,6 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       ownVgaBase: "RTX 5060",
       ownVgaTop: null,
       ownVgaTop2: null,
-      ownGameZoneCount: 3,
       ownRoom1: 0,
       ownRoom2: 0,
       ownTeamRoom: 2,
@@ -1106,10 +1101,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       settings,
     );
     expect(result.excludedReason).toBeNull();
-    // hardware(spec): GPU(RTX5060=4)+게임존3종 가산(0.6)=4.6 — CPU/RAM/모니터 없어서 GPU 가중치만
-    // 재정규화. food=4 interior=4 location=4.0(기존 가맹점은 원본 규칙대로 4/4)
-    // → 4.6*.3+4*.2+4*.4+4*.1 = 4.18
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.18, 3);
+    // hardware(spec): GPU(RTX5060=4, 2026-08-30 게임존 가산 폐지) — CPU/RAM/모니터 없어서 GPU
+    // 가중치만 재정규화. food=4 interior=4 location=4.0(기존 가맹점은 원본 규칙대로 4/4)
+    // → 4*.3+4*.2+4*.4+4*.1 = 4.0
+    expect(result.ownCompetitivenessScore).toBeCloseTo(4.0, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -1131,10 +1126,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
     expect(result.excludedReason).toBeNull();
     // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합. 하드웨어점수는
-    // GPU(RTX5060=4)+게임존3종 가산(0.6)=4.6, 모니터(240Hz=3.5, 2026-08-28(2차) 재보정) —
-    // (4.6*.4+3.5*.25)/(0.4+0.25)=4.177, food=4 interior=4 location=4
-    // → 4.177*.3+4*.2+4*.4+4*.1 = 4.053
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.053, 2);
+    // GPU(RTX5060=4, 2026-08-30 게임존 가산 폐지), 모니터(240Hz=3.5, 2026-08-28(2차) 재보정) —
+    // (4*.4+3.5*.25)/(0.4+0.25)=3.808, food=4 interior=4 location=4
+    // → 3.808*.3+4*.2+4*.4+4*.1 = 3.942
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.942, 2);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
@@ -1191,7 +1186,6 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
       ownVgaBase: "RTX 5060",
       ownVgaTop: null,
       ownVgaTop2: null,
-      ownGameZoneCount: 3,
       ownRoom1: 0,
       ownRoom2: 0,
       ownTeamRoom: 2,

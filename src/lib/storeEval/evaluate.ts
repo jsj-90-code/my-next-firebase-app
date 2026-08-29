@@ -36,7 +36,6 @@ import {
   computeV62Final,
   empiricalFeaturesFor,
   fitEmpiricalRevenueModel,
-  GAME_ZONE_BONUS,
   getV62Rate,
   judgeAaGrade,
   lookupDemandCapture,
@@ -87,7 +86,6 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       ramTop: c.ownRamTop,
       monitorBase: c.ownMonitorBase,
       monitorTop: c.ownMonitorTop,
-      bonus: ownFacility.ownGameZoneCount * GAME_ZONE_BONUS,
     },
     settings,
   );

@@ -12,7 +12,6 @@ import {
   computeLocationScoreFromFacts,
   computeSpecScore,
   computeZoneComposition,
-  GAME_ZONE_BONUS,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
@@ -118,7 +117,6 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "employ1kmFemale", label: "직장인구 여(1km)" },
   { key: "facility500SubwayRiders", label: "지하철 승하차(500m)" },
   { key: "facility1kmSubwayRiders", label: "지하철 승하차(1km)" },
-  { key: "ownGameZoneCount", label: "게임존 수" },
   { key: "ownSingleSeatCount", label: "1인석 수" },
   { key: "ownRoom1", label: "1인룸 수" },
   { key: "ownRoom2", label: "2인룸 수" },
@@ -295,14 +293,13 @@ export function BasicInfoTab({
           ramTop: form.ownRamTop,
           monitorBase: form.ownMonitorBase,
           monitorTop: form.ownMonitorTop,
-          bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
         },
         settings,
       ),
       // 2026-08-28 추가 — "하드웨어 점수(자동)"가 GPU/CPU/RAM/모니터 중 뭘로 어떻게 나왔는지
       // 사용자가 직접 보고 싶다는 요청으로, computeSpecScore 내부에서 쓰는 것과 동일한 함수를
       // 그대로 한 번 더 호출해 항목별 점수만 따로 노출한다(가중합산 로직 자체는 그대로 재사용).
-      vgaScore: scoreFromVgaSpec(form.ownVgaBase, form.ownVgaTop, form.ownVgaTop2, facility.ownGameZoneCount * GAME_ZONE_BONUS),
+      vgaScore: scoreFromVgaSpec(form.ownVgaBase, form.ownVgaTop, form.ownVgaTop2),
       cpuScore: scoreFromCpuSpec(form.ownCpu, form.ownCpuTop1, form.ownCpuTop2),
       ramScore: scoreFromRamSpec(form.ownRam, form.ownRamTop),
       monitorScore: scoreFromMonitorSpec(form.ownMonitorBase, form.ownMonitorTop),
@@ -334,7 +331,6 @@ export function BasicInfoTab({
     form.ownVgaTop2,
     form.ownMonitorBase,
     form.ownMonitorTop,
-    form.ownGameZoneCount,
     form.ownRoom1,
     form.ownRoom2,
     form.ownTeamRoom,
@@ -677,7 +673,6 @@ export function BasicInfoTab({
             hint="예: 16G, 32G — 하드웨어점수 15%에 자동 반영"
           />
           <TextField label="RAM 특화" value={form.ownRamTop ?? ""} onChange={(v) => set("ownRamTop", v || null)} hint="없으면 비움" />
-          <NumberField label="게임존 수" value={form.ownGameZoneCount} onChange={(v) => set("ownGameZoneCount", v)} hint="비우면 표준 3종 적용" />
           <NumberField
             label="1인석 수"
             value={form.ownSingleSeatCount}
@@ -701,8 +696,8 @@ export function BasicInfoTab({
           화면의 계수를 따릅니다.
         </p>
         <div className={`${gridClass} mt-4`}>
-          <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%(+게임존 가산)" />
-          <ComputedField label="└ GPU 점수" value={computedScores.vgaScore} hint="게임존 가산 포함" />
+          <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%" />
+          <ComputedField label="└ GPU 점수" value={computedScores.vgaScore} />
           <ComputedField label="└ CPU 점수" value={computedScores.cpuScore} />
           <ComputedField label="└ RAM 점수" value={computedScores.ramScore} />
           <ComputedField label="└ 모니터 점수" value={computedScores.monitorScore} />

@@ -182,7 +182,9 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       ownRamTop: toText(s["자사_RAM_특화"]),
       ownMonitorBase: toText(s["자사_모니터_기본"]),
       ownMonitorTop: toText(s["자사_모니터_특화"]),
-      ownGameZoneCount: toNumber(s["자사_게임존수"]),
+      // 2026-08-30 — 자사_게임존수(하드웨어 가산점 컬럼) 삭제(사용자 확정). 게임존은 인테리어
+      // 특화가 아니라 하드웨어 특화 좌석인데, 하드웨어는 특화1/특화2 컬럼으로 이미 별도 평가되므로
+      // 가산은 이중 반영이었다(프리미엄존 가산 폐지와 같은 이유, calc.ts computeSpecScore 참고).
       // 2026-08-28 (3차) — "자사_1인석"(개방형 좌석) 컬럼 신설, 기존 "자사_1인룸"(독립 공간)과 분리.
       ownSingleSeatCount: toNumber(s["자사_1인석"]),
       ownRoom1: toNumber(s["자사_1인룸"]),

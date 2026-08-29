@@ -82,7 +82,6 @@ function blankStore(): ExistingStore {
     ownVgaBase: null,
     ownVgaTop: null,
     ownVgaTop2: null,
-    ownGameZoneCount: null,
     ownSingleSeatCount: null,
     ownRoom1: null,
     ownRoom2: null,

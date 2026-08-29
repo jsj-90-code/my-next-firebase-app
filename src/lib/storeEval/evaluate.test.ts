@@ -70,7 +70,6 @@ function emptyCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput
     ownVgaBase: null,
     ownVgaTop: null,
     ownVgaTop2: null,
-    ownGameZoneCount: 1,
     ownSingleSeatCount: null,
     ownRoom1: 0,
     ownRoom2: 0,
@@ -221,7 +220,6 @@ describe("evaluateCandidate 배선 검증", () => {
 
   it("자사 시설 입력값이 비어있으면 표준 존 구성(2026-08-21)으로 계산해 실제 입력값과 같은 결과를 낸다", () => {
     const blankFacility = {
-      ownGameZoneCount: null,
       ownRoom1: 0,
       ownRoom2: 0,
       ownTeamRoom: null,
@@ -232,7 +230,6 @@ describe("evaluateCandidate 배선 검증", () => {
       ownInteriorScore: null,
     };
     const standardFacility = {
-      ownGameZoneCount: 3,
       ownRoom1: 0,
       ownRoom2: 0,
       ownTeamRoom: 2,

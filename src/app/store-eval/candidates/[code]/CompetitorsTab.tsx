@@ -208,7 +208,7 @@ function CompetitorForm({
   const hardwareBreakdown = useMemo(() => {
     // 2026-08-30 — 프리미엄존 가산점 폐지(calc.ts computeCompetitorScores 주석 참고).
     return {
-      vgaScore: scoreFromVgaSpec(form.vgaBase, form.vgaTop, form.vgaTop2, 0),
+      vgaScore: scoreFromVgaSpec(form.vgaBase, form.vgaTop, form.vgaTop2),
       cpuScore: scoreFromCpuSpec(form.cpu, form.cpuTop1, form.cpuTop2),
       ramScore: scoreFromRamSpec(form.ram, form.ramTop),
       monitorScore: scoreFromMonitorSpec(form.monitorBase, form.monitorTop),

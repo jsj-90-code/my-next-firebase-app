@@ -18,7 +18,6 @@ import {
   computeLocationScoreFromFacts,
   computeSpecScore,
   EXISTING_STORE_FACILITY_DEFAULTS,
-  GAME_ZONE_BONUS,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
@@ -100,11 +99,10 @@ export function ExistingStoreProfileTab({
           ramTop: form.ownRamTop,
           monitorBase: form.ownMonitorBase,
           monitorTop: form.ownMonitorTop,
-          bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
         },
         settings,
       ),
-      vgaScore: scoreFromVgaSpec(form.ownVgaBase, form.ownVgaTop, form.ownVgaTop2, facility.ownGameZoneCount * GAME_ZONE_BONUS),
+      vgaScore: scoreFromVgaSpec(form.ownVgaBase, form.ownVgaTop, form.ownVgaTop2),
       cpuScore: scoreFromCpuSpec(form.ownCpu, form.ownCpuTop1, form.ownCpuTop2),
       ramScore: scoreFromRamSpec(form.ownRam, form.ownRamTop),
       monitorScore: scoreFromMonitorSpec(form.ownMonitorBase, form.ownMonitorTop),
@@ -132,7 +130,6 @@ export function ExistingStoreProfileTab({
     form.ownVgaTop2,
     form.ownMonitorBase,
     form.ownMonitorTop,
-    form.ownGameZoneCount,
     form.floor,
     form.groundLevel,
     form.hasElevator,
@@ -243,7 +240,6 @@ export function ExistingStoreProfileTab({
           <TextField label="CPU 특화2" value={form.ownCpuTop2 ?? ""} onChange={(v) => set("ownCpuTop2", v || null)} hint="없으면 비움" />
           <TextField label="RAM 기본" value={form.ownRam ?? ""} onChange={(v) => set("ownRam", v || null)} hint="예: 16G, 32G — 하드웨어점수 15%에 자동 반영" />
           <TextField label="RAM 특화" value={form.ownRamTop ?? ""} onChange={(v) => set("ownRamTop", v || null)} hint="없으면 비움" />
-          <NumberField label="게임존 수" value={form.ownGameZoneCount} onChange={(v) => set("ownGameZoneCount", v)} hint="비우면 표준 3종 적용" />
           <NumberField
             label="1인석 수"
             value={form.ownSingleSeatCount}
@@ -266,8 +262,8 @@ export function ExistingStoreProfileTab({
           가맹점 백테스트는 신규후보지용 표준값(5점)이 아니라 원본 시트 규칙(빈칸이면 4점)을 씁니다.
         </p>
         <div className={`${gridClass} mt-4`}>
-          <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%(+게임존 가산)" />
-          <ComputedField label="└ GPU 점수" value={computedScores.vgaScore} hint="게임존 가산 포함" />
+          <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%" />
+          <ComputedField label="└ GPU 점수" value={computedScores.vgaScore} />
           <ComputedField label="└ CPU 점수" value={computedScores.cpuScore} />
           <ComputedField label="└ RAM 점수" value={computedScores.ramScore} />
           <ComputedField label="└ 모니터 점수" value={computedScores.monitorScore} />

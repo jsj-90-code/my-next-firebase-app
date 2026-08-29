@@ -424,7 +424,6 @@ export async function convertCandidateToExistingStore(input: {
     ownVgaBase: c.ownVgaBase,
     ownVgaTop: c.ownVgaTop,
     ownVgaTop2: c.ownVgaTop2,
-    ownGameZoneCount: c.ownGameZoneCount,
     ownSingleSeatCount: c.ownSingleSeatCount,
     ownRoom1: c.ownRoom1,
     ownRoom2: c.ownRoom2,
