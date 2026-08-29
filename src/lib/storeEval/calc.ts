@@ -1647,6 +1647,7 @@ export function computeExistingStoreMeasuredForecast(
     ExistingStore,
     | "storeCode"
     | "pcCount"
+    | "evaluationPcCount"
     | "floor"
     | "groundLevel"
     | "hasElevator"
@@ -1764,10 +1765,14 @@ export function computeExistingStoreMeasuredForecast(
     };
   }
 
+  // 2026-08-30 — 오픈 후 좌석을 늘린 매장은 evaluationPcCount(평가기준 대수, 01_점포기본정보
+  // K열)로 계산해야 한다. 그동안 이 함수만 현재 pcCount를 그대로 써서 buildV61TrainingStores/
+  // computeExistingStoreDemandEvaluation과 어긋나 있었다(사용자 발견).
+  const resolvedPcCount = store.evaluationPcCount ?? store.pcCount;
   const capture = lookupDemandCapture(competitivenessGap, settings.demandCaptureTable);
   const expectedOccupiedSeats = computeExpectedOccupiedSeats(occupied.seats, capture?.captureRate ?? null, capture?.growthRate ?? null);
-  const expectedUtilization = computeExpectedUtilization(expectedOccupiedSeats, store.pcCount);
-  const forecast = computeMeasuredForecast(expectedOccupiedSeats, store.hourlyRate, settings.measuredForecastProductRatio, store.pcCount);
+  const expectedUtilization = computeExpectedUtilization(expectedOccupiedSeats, resolvedPcCount);
+  const forecast = computeMeasuredForecast(expectedOccupiedSeats, store.hourlyRate, settings.measuredForecastProductRatio, resolvedPcCount);
 
   return {
     storeCode: store.storeCode,
@@ -2437,21 +2442,27 @@ export function runCohortValidation(
       // 비교할 실적 자체가 없는데 예측 숫자만 표에 떠 있으면 "이 매장도 평가되고 있다"는
       // 오해를 준다(요청사항: 오픈달 매출로 평가하면 안 된다).
       predictedRevenueAvg = null;
-    } else if (fullModel && s.pcCount && s.hourlyRate != null && s.ownDemand != null && s.competitivenessScore != null) {
-      const pred = predictEmpiricalRevenue(
-        fullModel,
-        empiricalFeaturesFor({
-          hourlyRate: s.hourlyRate,
-          ownDemand: s.ownDemand,
-          pcCount: s.pcCount,
-          competitivenessScore: s.competitivenessScore,
-          specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
-        }),
-        s.pcCount,
-        ridgeWeight,
-        baselineWeight,
-      );
-      predictedRevenueAvg = pred?.monthlyRevenue ?? null;
+    } else if (fullModel) {
+      // 2026-08-30 — 완전 외부 검증군(조기 코호트)도 toV61TrainingStore와 동일하게
+      // evaluationPcCount(평가기준 대수)를 우선 써야 한다. 그동안 여기만 현재 pcCount를 그대로
+      // 써서, 오픈 후 좌석을 늘린 조기검증 매장의 예측이 실제보다 왜곡돼 있었다(사용자 발견).
+      const resolvedPcCount = s.evaluationPcCount ?? s.pcCount;
+      if (resolvedPcCount && s.hourlyRate != null && s.ownDemand != null && s.competitivenessScore != null) {
+        const pred = predictEmpiricalRevenue(
+          fullModel,
+          empiricalFeaturesFor({
+            hourlyRate: s.hourlyRate,
+            ownDemand: s.ownDemand,
+            pcCount: resolvedPcCount,
+            competitivenessScore: s.competitivenessScore,
+            specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
+          }),
+          resolvedPcCount,
+          ridgeWeight,
+          baselineWeight,
+        );
+        predictedRevenueAvg = pred?.monthlyRevenue ?? null;
+      }
     }
 
     // 요청사항 2 — 외부유입 제한 보정: V62예측 = V61예측 × (1+보정률). 오차·방향·오차구간은

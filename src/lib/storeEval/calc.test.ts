@@ -1003,6 +1003,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     return {
       storeCode: "S1",
       pcCount: 100,
+      evaluationPcCount: null,
       floor: 1,
       groundLevel: "지하" as const,
       hasElevator: false,
@@ -1164,6 +1165,14 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       expect(result.competitorCoverageRatio).toBeCloseTo(0.2, 4);
       expect(result.isLowCoverageReliability).toBe(true);
     });
+  });
+
+  it("evaluationPcCount(평가기준 대수)를 우선 쓴다 — 오픈 후 증설한 매장을 현재 pcCount로 계산하면 안 됨(2026-08-30 발견)", () => {
+    const competitors = [competitor()];
+    const expanded = computeExistingStoreMeasuredForecast(baseStore({ pcCount: 200, evaluationPcCount: 100 }), competitors, settings);
+    const notExpanded = computeExistingStoreMeasuredForecast(baseStore({ pcCount: 100, evaluationPcCount: null }), competitors, settings);
+    expect(expanded.expectedUtilization).toBeCloseTo(notExpanded.expectedUtilization!, 6);
+    expect(expanded.measuredForecastMonthlyRevenue).toBe(notExpanded.measuredForecastMonthlyRevenue);
   });
 });
 
@@ -1661,6 +1670,19 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
     expect(early.includedInCoreAccuracy).toBe(false);
     expect(early.predictedRevenueAvg).not.toBeNull(); // 전체 학습모형으로 예측은 된다
     expect(early.includedInEarlyValidation).toBe(true);
+  });
+
+  it("조기검증(완전 외부검증) 매장도 evaluationPcCount를 우선 써서 예측한다 — 오픈 후 증설한 매장의 현재 pcCount로 왜곡되면 안 됨(2026-08-30 발견)", () => {
+    const expanded = makeStore({ storeCode: "E3", storeName: "증설점포", completedMonths: 7, pcCount: 200, evaluationPcCount: 100 });
+    const notExpanded = makeStore({ storeCode: "E4", storeName: "비교점포", completedMonths: 7, pcCount: 100, evaluationPcCount: null });
+    const { rows } = runCohortValidation([...coreStores, expanded, notExpanded], {
+      v61Training: defaultModelSettings().v61Training,
+      inflowAdjustment: defaultModelSettings().inflowAdjustment,
+    });
+    const e = rows.find((r) => r.storeCode === "E3")!;
+    const n = rows.find((r) => r.storeCode === "E4")!;
+    // evaluationPcCount(100)가 실제로 쓰였다면, pcCount만 다른(200 vs 100) 두 매장의 예측이 같아야 한다.
+    expect(e.predictedRevenueAvg).toBeCloseTo(n.predictedRevenueAvg!, 0);
   });
 
   it("정상 조기검증 매장은 includedInEarlyValidation=true, 핵심표본은 false다(배타적)", () => {
