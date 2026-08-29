@@ -219,7 +219,7 @@ async function main() {
       // 삭제했다(예측 계산에 안 쓰임, 사용자 확인). 더 이상 여기서 읽지 않는다.
       pingbotUtilization: toPercentNumber(c["핑봇_가동률"]),
       pingbotPeriod: toText(c["핑봇_조회기간"]),
-      renovationYear: toNumber(c["리뉴얼연도"]),
+      // 2026-08-30 — 경쟁점 리뉴얼연도 컬럼도 시트에서 삭제(인테리어평가로 대체, 사용자 확인).
       foodScore: toNumber(c["먹거리평가"]),
       foodBasis: toText(c["먹거리근거"]),
       interiorScore: toNumber(c["인테리어평가"]),

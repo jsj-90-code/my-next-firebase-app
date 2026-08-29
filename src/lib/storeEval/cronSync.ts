@@ -280,7 +280,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       // 여기서 읽지 않는다 — 안 읽어야 웹에서 수동입력한 값이 매 동기화마다 null로 안 덮어써진다.
       pingbotUtilization: toPercentNumber(c["핑봇_가동률"]),
       pingbotPeriod: toText(c["핑봇_조회기간"]),
-      renovationYear: toNumber(c["리뉴얼연도"]),
+      // 2026-08-30 — 경쟁점 리뉴얼연도 컬럼도 시트에서 삭제(인테리어평가로 대체, 사용자 확인).
       foodScore: toNumber(c["먹거리평가"]),
       foodBasis: toText(c["먹거리근거"]),
       interiorScore: toNumber(c["인테리어평가"]),
