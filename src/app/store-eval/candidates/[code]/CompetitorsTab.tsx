@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+  computeCompetitorAppliedPcCount,
   computeCompetitorInvestigationSummary,
   computeCompetitorScores,
   scoreFromCpuSpec,
@@ -177,6 +178,24 @@ function validate(form: Competitor): string[] {
   if (form.measuredSeatRate != null && form.measuredSeatRate > 100) errors.push("실측착석률은 100을 넘을 수 없습니다.");
   if (form.pingbotUtilization != null && form.pingbotUtilization > 100) errors.push("핑봇_가동률은 100을 넘을 수 없습니다.");
   return errors;
+}
+
+/**
+ * 2026-08-30 추가 — "상세" 조사수준은 간략/외관만과 달리 미입력 항목을 기본값(2.0/1.5)으로
+ * 채워주지 않는다(applySurveyLevelDefault 참고). 그래서 상세인데 대수나 평가항목 중 하나라도
+ * 완전히 비면, 화면에 별도 경고 없이 그 경쟁점이 계산에서 조용히 빠진다(사용자 질문으로 발견).
+ * 여기서 그 두 경우를 미리 감지해 카드에 경고 배지로 보여준다.
+ */
+function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): string[] {
+  if (c.surveyLevel !== "상세") return [];
+  const warnings: string[] = [];
+  if (computeCompetitorAppliedPcCount(c) == null) {
+    warnings.push("대수 누락 → 경쟁IP·점유율 계산에서 제외됨");
+  }
+  if (computeCompetitorScores(c, settings).total == null) {
+    warnings.push("평가항목 누락(하드웨어·먹거리·인테리어·입지 중 하나) → 경쟁력점수 평균에서 제외됨");
+  }
+  return warnings;
 }
 
 function CompetitorForm({
@@ -634,7 +653,9 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {competitors.map((c) => (
+          {competitors.map((c) => {
+            const dataWarnings = detectCompetitorDataWarnings(c, settings);
+            return (
             <div key={c.id} className={sectionClass}>
               <div className="flex items-start justify-between gap-2">
                 <div>
@@ -652,6 +673,15 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                   {SURVEY_STATE_OPTIONS.find((o) => o.value === c.investigationStatus)?.label ?? c.investigationStatus}
                 </span>
               </div>
+              {dataWarnings.length > 0 && (
+                <div className="mt-2 flex flex-col gap-1">
+                  {dataWarnings.map((w) => (
+                    <span key={w} className="app-badge app-badge-danger w-fit text-[11px]">
+                      ⚠ {w}
+                    </span>
+                  ))}
+                </div>
+              )}
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">
                 <div>
                   <dt className="inline text-[#8a8072]">거리 </dt>
@@ -688,7 +718,8 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
