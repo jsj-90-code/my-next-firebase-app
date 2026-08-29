@@ -97,7 +97,7 @@ export const DEFAULT_FLOATING_AGE_COMPOSITION: AgeBandPopulation = {
 };
 export const DEFAULT_FLOATING_MALE_RATIO = 0.55;
 
-export function computeFloatingRawDemand(c: CandidateInput): number | null {
+export function computeFloatingRawDemand(c: MarketDemandInput): number | null {
   const flow = c.floating500Avg;
   if (flow == null || flow <= 0) return null;
   const ageSum = floatingAgeSum(c);
@@ -124,7 +124,7 @@ export function computeFloatingRawDemand(c: CandidateInput): number | null {
 }
 
 /** 08_계산기준: "연령별 입력 합계가 총인구의 50% 이상일 때만 계산". */
-export function computeResidentRawDemand(c: CandidateInput): number | null {
+export function computeResidentRawDemand(c: MarketDemandInput): number | null {
   if (c.pop1km == null || c.pop1km <= 0 || c.male1kmRatio == null) return null;
   const ageSum =
     (c.age1km_0_9 ?? 0) +
@@ -174,8 +174,35 @@ export type MarketDemandResult = {
   marketDemand: number | null;
 };
 
+// 2026-08-30 — CandidateInput 전체가 아니라 실제로 쓰는 인구/유동인구 필드만 Pick으로 좁혔다.
+// ExistingStore도 01_점포기본정보에서 같은 필드명으로 이 값들을 동기화받으므로(cronSync.ts),
+// 기존 가맹점 쪽에서도 이 함수를 그대로 재사용할 수 있다(computeExistingStoreDemandEvaluation).
+export type MarketDemandInput = Pick<
+  CandidateInput,
+  | "floating500Avg"
+  | "pop500m"
+  | "floating500Male"
+  | "floating500_10s"
+  | "floating500_20s"
+  | "floating500_30s"
+  | "floating500_40s"
+  | "floating500_50s"
+  | "floating500_60plus"
+  | "pop1km"
+  | "male1kmRatio"
+  | "age1km_0_9"
+  | "age1km_10_19"
+  | "age1km_20_29"
+  | "age1km_30_39"
+  | "age1km_40_49"
+  | "age1km_50_59"
+  | "age1km_60_69"
+  | "age1km_70_79"
+  | "age1km_80plus"
+>;
+
 /** 08_계산기준: "선택된 원수요 × 상권성격별 유효율" (번화가/혼합→유동원수요, 주거중심→주거원수요). */
-export function computeMarketDemand(c: CandidateInput, settings: Pick<ModelSettings, "marketCharacterThreshold" | "marketDemandEffectiveRate">): MarketDemandResult {
+export function computeMarketDemand(c: MarketDemandInput, settings: Pick<ModelSettings, "marketCharacterThreshold" | "marketDemandEffectiveRate">): MarketDemandResult {
   const marketCharacter = computeMarketCharacter(c.floating500Avg, c.pop500m, settings);
   const floatingDemand = computeFloatingRawDemand(c);
   const residentDemand = computeResidentRawDemand(c);
@@ -1767,6 +1794,155 @@ export function computeExistingStoreMeasuredForecast(
     expectedOccupiedSeats,
     expectedUtilization,
     measuredForecastMonthlyRevenue: forecast?.monthlyRevenue ?? null,
+  };
+}
+
+export type ExistingStoreDemandEvaluationResult = {
+  storeCode: string;
+  excludedReason: string | null;
+  ownCompetitivenessScore: number | null;
+  competitorAvgCompetitiveness: number | null;
+  competitivenessGap: number | null;
+  marketCharacter: MarketCharacter | null;
+  marketDemand: number | null;
+  competitorIp: number;
+  ownDemand: number | null;
+};
+
+/**
+ * 2026-08-30 신설 — 기존 가맹점의 ExistingStore.competitivenessScore/ownDemand를 원본 입력값
+ * (VGA/CPU/RAM/모니터/인테리어/인구·유동인구)에서 매번 다시 계산한다. evaluateCandidate가
+ * 신규후보지에 하는 "원수요 × 경쟁력격차 확보율" 조합을 기존 가맹점에도 그대로 적용한 것 —
+ * computeExistingStoreMeasuredForecast(경쟁점 핑봇 실측 기반)와 달리 핑봇 데이터가 하나도
+ * 없어도 값을 낸다(사용자 확정: "산식에서 핑봇가동률은 필수가 아니고, 기본버전은 핑봇가동률
+ * 없이 매출예상하고, 핑봇가동률 뜨는 애들은 별도산식으로 2차 평가(참고자료)" — 이 함수가 그
+ * "기본버전", computeExistingStoreMeasuredForecast가 그 "2차 평가"에 해당한다).
+ *
+ * 발견 경위: ExistingStore.competitivenessScore/ownDemand는 최초 마이그레이션 때 04_점포평가
+ * 요약 스냅샷에서 한 번 박제된 캐시값이라, 이후 01/05 시트에서 자사·경쟁점 원본입력을 아무리
+ * 갱신해도 검증화면(runCohortValidation)의 예측에 전혀 반영되지 않고 있었다(2026-08-30 발견 —
+ * 광주첨단점 캐시값 4.275 vs 원본입력 재계산값 4.127). cronSync.ts가 이 함수 결과로 그 캐시값을
+ * 매 동기화마다 다시 써서 항상 최신 원본입력을 반영하게 한다.
+ */
+export function computeExistingStoreDemandEvaluation(
+  store: Pick<
+    ExistingStore,
+    | "storeCode"
+    | "pcCount"
+    | "evaluationPcCount"
+    | "operatingPcStores500m"
+    | "floor"
+    | "groundLevel"
+    | "hasElevator"
+    | "ownCpu"
+    | "ownCpuTop1"
+    | "ownCpuTop2"
+    | "ownRam"
+    | "ownRamTop"
+    | "ownVgaBase"
+    | "ownVgaTop"
+    | "ownVgaTop2"
+    | "ownGameZoneCount"
+    | "ownRoom1"
+    | "ownRoom2"
+    | "ownTeamRoom"
+    | "ownCoupleZone"
+    | "ownVipZone"
+    | "ownFriendsZone"
+    | "ownFoodScore"
+    | "ownInteriorScore"
+    | "ownMonitorBase"
+    | "ownMonitorTop"
+    | "ownFoodBrand"
+    | "ownInteriorLevelScore"
+    | "ownInteriorConditionScore"
+    | "ownSeatZoneScore"
+    | "ownComfortScore"
+  > &
+    MarketDemandInput,
+  competitors: Competitor[],
+  settings: Pick<
+    ModelSettings,
+    "specWeights" | "interiorWeights" | "competitivenessWeights" | "foodBrandScores" | "marketCharacterThreshold" | "marketDemandEffectiveRate"
+  >,
+): ExistingStoreDemandEvaluationResult {
+  const base: ExistingStoreDemandEvaluationResult = {
+    storeCode: store.storeCode,
+    excludedReason: null,
+    ownCompetitivenessScore: null,
+    competitorAvgCompetitiveness: null,
+    competitivenessGap: null,
+    marketCharacter: null,
+    marketDemand: null,
+    competitorIp: 0,
+    ownDemand: null,
+  };
+
+  // 물리적 시설 사실(존구성/VGA)이 없으면 추측하지 않고 제외한다 — computeExistingStoreMeasuredForecast와 동일 기준.
+  if (
+    store.ownVgaBase == null ||
+    store.ownGameZoneCount == null ||
+    store.ownTeamRoom == null ||
+    store.ownCoupleZone == null ||
+    store.ownVipZone == null ||
+    store.ownFriendsZone == null
+  ) {
+    return { ...base, excludedReason: "데이터 부족(자사 존구성/VGA 미완비)" };
+  }
+
+  // 기존 가맹점 백테스트는 신규후보지용 5점 기본값이 아니라 원본 시트 규칙(빈칸이면 4)을 쓴다
+  // (EXISTING_STORE_FACILITY_DEFAULTS — 과거 실적에 새 기준을 소급 적용하지 않는다).
+  const facility = applyStandardOwnFacilityDefaults(store, EXISTING_STORE_FACILITY_DEFAULTS);
+  const ownSpecScore = computeSpecScore(
+    {
+      vgaBase: store.ownVgaBase,
+      vgaTop: store.ownVgaTop,
+      vgaTop2: store.ownVgaTop2,
+      cpu: store.ownCpu,
+      cpuTop1: store.ownCpuTop1,
+      cpuTop2: store.ownCpuTop2,
+      ram: store.ownRam,
+      ramTop: store.ownRamTop,
+      monitorBase: store.ownMonitorBase,
+      monitorTop: store.ownMonitorTop,
+      bonus: facility.ownGameZoneCount * GAME_ZONE_BONUS,
+    },
+    settings,
+  );
+  const ownLocationScore = computeLocationScoreFromFacts(store.floor, store.groundLevel, store.hasElevator);
+  const ownFoodScore = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
+  const ownInteriorScore = computeInteriorSeatManagementScore(
+    {
+      seatZoneScore: store.ownSeatZoneScore,
+      freshnessScore: store.ownInteriorLevelScore,
+      cleanlinessScore: store.ownInteriorConditionScore,
+      comfortScore: store.ownComfortScore,
+      legacyScore: facility.ownInteriorScore,
+    },
+    settings,
+  );
+  const ownCompetitivenessScore = computeCompetitivenessScore(
+    { spec: ownSpecScore, food: ownFoodScore, interior: ownInteriorScore, location: ownLocationScore },
+    settings,
+  );
+  const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);
+  const competitivenessGap = computeCompetitivenessGap(ownCompetitivenessScore, competitorAvgCompetitiveness);
+
+  const { marketCharacter, marketDemand } = computeMarketDemand(store, settings);
+  const competitorIp = computeCompetitorIp(competitors, store.operatingPcStores500m);
+  const ownPcCount = store.evaluationPcCount ?? store.pcCount;
+  const ownDemand = computeExpectedOwnDemand(marketDemand, ownPcCount, competitivenessGap, competitorIp);
+
+  return {
+    storeCode: store.storeCode,
+    excludedReason: null,
+    ownCompetitivenessScore,
+    competitorAvgCompetitiveness,
+    competitivenessGap,
+    marketCharacter,
+    marketDemand,
+    competitorIp,
+    ownDemand,
   };
 }
 

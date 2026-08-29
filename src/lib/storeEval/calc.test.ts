@@ -16,6 +16,7 @@ import {
   computeCompetitorOccupiedSeats,
   computeCompetitivenessScore,
   computeDataCompleteness,
+  computeExistingStoreDemandEvaluation,
   computeExistingStoreMeasuredForecast,
   computeOperationalStatus,
   computeSpecialDemandScore,
@@ -1168,6 +1169,158 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       expect(result.competitorCoverageRatio).toBeCloseTo(0.2, 4);
       expect(result.isLowCoverageReliability).toBe(true);
     });
+  });
+});
+
+describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실측 불필요한 기본 매출예상 경로)", () => {
+  const settings = defaultModelSettings();
+  function baseStore(overrides: Partial<Parameters<typeof computeExistingStoreDemandEvaluation>[0]> = {}) {
+    return {
+      storeCode: "S1",
+      pcCount: 100,
+      evaluationPcCount: null,
+      operatingPcStores500m: null,
+      floor: 1,
+      groundLevel: "지하" as const,
+      hasElevator: false,
+      ownCpu: null,
+      ownCpuTop1: null,
+      ownCpuTop2: null,
+      ownRam: null,
+      ownRamTop: null,
+      ownVgaBase: "RTX 5060",
+      ownVgaTop: null,
+      ownVgaTop2: null,
+      ownGameZoneCount: 3,
+      ownRoom1: 0,
+      ownRoom2: 0,
+      ownTeamRoom: 2,
+      ownCoupleZone: 3,
+      ownVipZone: 5,
+      ownFriendsZone: 15,
+      ownFoodScore: 4,
+      ownInteriorScore: 4,
+      ownMonitorBase: "240Hz",
+      ownMonitorTop: null,
+      ownFoodBrand: null,
+      ownInteriorLevelScore: null,
+      ownInteriorConditionScore: null,
+      ownSeatZoneScore: null,
+      ownComfortScore: null,
+      // 인구/유동인구 — 번화가 기준(유동500 ÷ 인구500 >= downtown 임계값)이 되도록 유동을 크게 잡는다.
+      floating500Avg: 50000,
+      pop500m: 3000,
+      floating500Male: 27500,
+      floating500_10s: null,
+      floating500_20s: null,
+      floating500_30s: null,
+      floating500_40s: null,
+      floating500_50s: null,
+      floating500_60plus: null,
+      pop1km: null,
+      male1kmRatio: null,
+      age1km_0_9: null,
+      age1km_10_19: null,
+      age1km_20_29: null,
+      age1km_30_39: null,
+      age1km_40_49: null,
+      age1km_50_59: null,
+      age1km_60_69: null,
+      age1km_70_79: null,
+      age1km_80plus: null,
+      ...overrides,
+    };
+  }
+  function competitor(overrides: Partial<Parameters<typeof computeExistingStoreDemandEvaluation>[1][number]> = {}) {
+    return {
+      id: "c1",
+      candidateCode: "S1",
+      name: "경쟁점",
+      surveyLevel: "상세" as const,
+      investigationStatus: "조사완료" as const,
+      address: null,
+      distanceM: null,
+      floor: null,
+      groundLevel: null,
+      totalPcCount: 100,
+      appliedPcCount: 100,
+      hasElevator: null,
+      cpu: null,
+      cpuTop1: null,
+      cpuTop2: null,
+      vgaBase: null,
+      vgaTop: null,
+      vgaTop2: null,
+      ram: null,
+      ramTop: null,
+      monitorBase: "200Hz",
+      monitorTop: null,
+      ratePer1000Won: null,
+      hourlyRateConverted: null,
+      paidDeduction: null,
+      visitedAt: null,
+      visitedDow: null,
+      visitorCount: null,
+      // 핑봇 실측이 아예 없어도(가동률 미측정) 이 함수는 값을 내야 한다 — 그게 이 함수의 존재 이유.
+      measuredSeatRate: null,
+      pingbotUtilization: null,
+      pingbotPeriod: null,
+      renovationYear: null,
+      foodScore: 3,
+      foodBasis: null,
+      foodBrand: null,
+      interiorScore: 3,
+      interiorBasis: null,
+      interiorLevelScore: null,
+      interiorConditionScore: null,
+      monitorBasis: null,
+      seatZoneScore: null,
+      comfortScore: null,
+      singleSeatCount: null,
+      room1: null,
+      room2: null,
+      teamRoom: null,
+      coupleZone: null,
+      createdAt: 0,
+      updatedAt: 0,
+      ...overrides,
+    };
+  }
+
+  it("경쟁점 핑봇 실측이 하나도 없어도 ownDemand/경쟁력점수를 계산한다(산식에서 핑봇은 필수가 아님, 사용자 확정)", () => {
+    const result = computeExistingStoreDemandEvaluation(baseStore(), [competitor()], settings);
+    expect(result.excludedReason).toBeNull();
+    expect(result.ownCompetitivenessScore).not.toBeNull();
+    expect(result.marketDemand).not.toBeNull();
+    expect(result.ownDemand).not.toBeNull();
+  });
+
+  it("자사 존구성/VGA가 미완비면(물리적 시설 사실) 표준값으로 채우지 않고 데이터 부족으로 제외한다", () => {
+    const result = computeExistingStoreDemandEvaluation(baseStore({ ownVgaBase: null }), [competitor()], settings);
+    expect(result.excludedReason).toBe("데이터 부족(자사 존구성/VGA 미완비)");
+    expect(result.ownDemand).toBeNull();
+  });
+
+  it("경쟁점이 하나도 없어도 제외하지 않는다(computeExistingStoreMeasuredForecast와 달리 경쟁점 실측 자체가 필수 아님) — 경쟁력격차는 1.0(동급) 기본값으로 계산된다", () => {
+    const result = computeExistingStoreDemandEvaluation(baseStore(), [], settings);
+    expect(result.excludedReason).toBeNull();
+    expect(result.competitivenessGap).toBe(1.0);
+    expect(result.ownDemand).not.toBeNull();
+  });
+
+  it("evaluate.ts(evaluateCandidate)와 동일한 조합(원수요×경쟁력격차 확보율)으로 재계산값과 일치한다", () => {
+    const competitors = [competitor()];
+    const result = computeExistingStoreDemandEvaluation(baseStore(), competitors, settings);
+    expect(result.excludedReason).toBeNull();
+
+    const { marketDemand } = computeMarketDemand(baseStore(), settings);
+    expect(result.marketDemand).toBe(marketDemand);
+
+    const competitorIp = computeCompetitorAppliedPcCount(competitor()) ?? 0;
+    expect(result.competitorIp).toBe(competitorIp);
+
+    const expectedOwnDemand = computeExpectedOwnDemand(marketDemand, 100, result.competitivenessGap, result.competitorIp);
+    expect(result.ownDemand).toBe(expectedOwnDemand);
   });
 });
 

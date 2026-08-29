@@ -13,7 +13,9 @@
 import { google } from "googleapis";
 import type { Firestore } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import { computeStabilizedPerformance } from "./calc";
+import { computeExistingStoreDemandEvaluation, computeStabilizedPerformance } from "./calc";
+import { defaultModelSettings } from "./settings";
+import type { Competitor, ExistingStore, ModelSettings } from "./types";
 // scripts/migrateFullExistingStoreProfiles.mjs, scripts/syncSalesFromRevenueSheet.mjs와 셀 파싱/
 // dirty-check 로직을 하나로 합친다(tsconfig allowJs) — 예전엔 세 곳에 거의 동일하게 복붙돼 있어서
 // 핑봇_가동률 퍼센트 파싱 버그가 한쪽만 고쳐지고 이 파일엔 남아있던 사고가 있었다(2026-08-22,
@@ -117,6 +119,7 @@ export type ProfileMigrationSummary = {
   targetStoreCount: number;
   profileUpdated: number;
   competitorsWritten: number;
+  competitivenessRecalculated: number;
   locationEvalUpdated: number;
   memberSnapshotsWritten: number;
   suspiciousOpenDates: string[];
@@ -134,17 +137,24 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   // 넷 다 서로 의존하지 않는 읽기라 순차 await 대신 병렬로 실행한다(2026-08-24, Cron 함수
   // 실행시간 제한 안에서 여유를 늘림). 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존
   // 경쟁점·입지평가·회원스냅샷 데이터도 미리 읽어둔다.
-  const [storesSnap, competitorsSnap, locationsSnap, membersSnap] = await Promise.all([
+  const [storesSnap, competitorsSnap, locationsSnap, membersSnap, settingsSnap] = await Promise.all([
     db.collection("storeEvalExistingStores").get(),
     db.collection("storeEvalCompetitors").get(),
     db.collection("storeEvalLocationEvaluations").get(),
     db.collection("storeEvalExistingStoreMembers").get(),
+    db.collection("storeEvalSettings").doc("current").get(),
   ]);
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, d.data()]));
   const existingLocByCode = new Map(locationsSnap.docs.map((d) => [d.id, d.data()]));
   const existingMemberById = new Map(membersSnap.docs.map((d) => [d.id, d.data()]));
+  const settings: ModelSettings = settingsSnap.exists
+    ? { ...defaultModelSettings(), ...(settingsSnap.data() as ModelSettings) }
+    : { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
+  // 경쟁력점수/자사수요 재계산(아래)에 쓸, 매장별 "현재 유효한" 경쟁점 목록 — 05 루프를 도는
+  // 동안 시트값+기존 문서(웹 전용 필드 보존)를 합쳐서 채운다.
+  const competitorsByStoreCode = new Map<string, Competitor[]>();
 
   // ---- 01_점포기본정보 ----
   const stores01 = await readSheetAsObjects(sheets, "01_점포기본정보", "A1:CQ1000");
@@ -304,6 +314,33 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       await writer.set(db.collection("storeEvalCompetitors").doc(id), competitor, true);
       compWritten++;
     }
+    // merge 후 실제로 Firestore에 남을 값(웹 전용 필드는 기존 문서 값 보존) — 아래 경쟁력점수
+    // 재계산에 쓴다. dirty 여부와 무관하게 항상 채운다(안 바뀐 경쟁점도 계산엔 포함돼야 함).
+    const mergedCompetitor = { ...existingCompByid.get(id), ...competitor } as unknown as Competitor;
+    const list = competitorsByStoreCode.get(code) ?? [];
+    list.push(mergedCompetitor);
+    competitorsByStoreCode.set(code, list);
+  }
+
+  // ---- 경쟁력점수/자사수요 재계산 ----
+  // 2026-08-30 신설 — ExistingStore.competitivenessScore/ownDemand는 최초 마이그레이션 때
+  // 04_점포평가요약 스냅샷에서 한 번 박제된 캐시값이라, 01/05 시트에서 자사·경쟁점 원본입력을
+  // 아무리 갱신해도 검증화면(runCohortValidation) 예측에 전혀 반영되지 않고 있었다(발견 경위는
+  // calc.ts computeExistingStoreDemandEvaluation 주석 참고). 핑봇 실측 데이터 유무와 무관하게
+  // (사용자 확정: "산식에서 핑봇가동률은 필수가 아니다") 매 동기화마다 원본입력 기준으로 다시
+  // 계산해 캐시값을 항상 최신으로 맞춘다.
+  let competitivenessRecalculated = 0;
+  for (const code of storeCodes) {
+    const store = storeDataByCode.get(code);
+    if (!store) continue;
+    const competitors = competitorsByStoreCode.get(code) ?? [];
+    const evalResult = computeExistingStoreDemandEvaluation(store as unknown as ExistingStore, competitors, settings);
+    const patch = { competitivenessScore: evalResult.ownCompetitivenessScore, ownDemand: evalResult.ownDemand };
+    if (!isSameData(store, patch)) {
+      await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);
+      storeDataByCode.set(code, { ...store, ...patch });
+      competitivenessRecalculated++;
+    }
   }
 
   // ---- 09_입지동선평가 ----
@@ -392,6 +429,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     targetStoreCount: storeCodes.size,
     profileUpdated,
     competitorsWritten: compWritten,
+    competitivenessRecalculated,
     locationEvalUpdated: locUpdated,
     memberSnapshotsWritten: memberWritten,
     suspiciousOpenDates,
