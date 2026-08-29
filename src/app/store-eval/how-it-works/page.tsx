@@ -130,6 +130,10 @@ export default function HowItWorksPage() {
 
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">1단계 수요 × 2단계 몫 비율 = &ldquo;우리 매장으로 올 손님 수&rdquo;</p>
+              <p className="mt-1 text-xs text-[#8a8072]">
+                이 숫자는 화면에 참고용으로 계속 보여드리지만, 3단계 계산에는 안 씁니다 — 3단계는 1단계 동네 수요와 이
+                동네 경쟁 정도를 각각 따로 넘겨줍니다(바로 아래 참고).
+              </p>
             </div>
           </div>
         </div>
@@ -144,13 +148,22 @@ export default function HowItWorksPage() {
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
               이미 문을 열어서 실제로 장사하고 있는 다른 가맹점들의 <strong>진짜 매출 기록</strong>이 있습니다. 컴퓨터가
-              이 기록들을 보고 &ldquo;손님 수, 시간당 요금, 매장 경쟁력 점수가 이 정도면 매출이 보통 이만큼 나오더라&rdquo;는
-              패턴을 스스로 찾아냅니다. (참고할 매장이 너무 적으면, 이 패턴 찾기 대신 미리 정해둔 계산식을 대신 씁니다.)
+              이 기록들을 보고 &ldquo;이 동네 수요가 이 정도고, 주변에 경쟁이 이만큼 있고, 시간당 요금이랑 매장 경쟁력
+              점수가 이 정도면 매출이 보통 이만큼 나오더라&rdquo;는 패턴을 스스로 찾아냅니다. (참고할 매장이 너무 적으면,
+              이 패턴 찾기 대신 미리 정해둔 계산식을 대신 씁니다.)
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-              이 패턴에 우리 후보지의 숫자(손님 수, 시간당 요금, 경쟁력 점수)를 넣으면 <strong>기본 예상 매출</strong>이
-              나옵니다.
+              이 패턴에 우리 후보지의 숫자 4가지 — <strong>1단계에서 구한 동네 수요</strong>, <strong>주변 경쟁 정도</strong>,
+              <strong>시간당 요금</strong>, <strong>경쟁력 점수</strong> — 를 넣으면 <strong>기본 예상 매출</strong>이 나옵니다.
+            </p>
+
+            <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
+              (2026-08-30 바뀜) 예전에는 &ldquo;2단계에서 이미 몫까지 나눈 손님 수&rdquo; 하나로 뭉쳐서 넣었는데, 실제
+              매출 기록과 비교해보니 이 숫자 하나로는 설명이 거의 안 됐습니다. 알고 보니 &ldquo;경쟁이 많으면 무조건
+              나쁘다&rdquo;는 가정 자체가 틀렸던 거예요 — 오히려 경쟁이 많은 동네일수록 상권 자체가 커서 매출이 더 높은
+              경우가 많았습니다. 그래서 이제는 &ldquo;동네 수요&rdquo;와 &ldquo;경쟁 정도&rdquo;를 따로따로 알려주고,
+              둘의 관계를 컴퓨터가 실제 매출 기록을 보면서 직접 찾아내게 바꿨습니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
