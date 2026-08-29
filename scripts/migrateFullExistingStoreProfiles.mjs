@@ -225,7 +225,7 @@ async function main() {
       foodBasis: toText(c["먹거리근거"]),
       interiorScore: toNumber(c["인테리어평가"]),
       interiorBasis: toText(c["인테리어근거"]),
-      monitorBasis: toText(c["모니터근거"]),
+      // 2026-08-30 — 모니터근거 컬럼도 시트에서 삭제(cronSync.ts와 동일 이유).
       singleSeatCount: toNumber(c["1인석"]),
       room1: toNumber(c["1인룸"]),
       room2: toNumber(c["2인룸"]),
