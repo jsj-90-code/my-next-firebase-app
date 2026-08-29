@@ -120,7 +120,6 @@ export type ProfileMigrationSummary = {
   profileUpdated: number;
   competitorsWritten: number;
   competitivenessRecalculated: number;
-  locationEvalUpdated: number;
   memberSnapshotsWritten: number;
   suspiciousOpenDates: string[];
 };
@@ -134,20 +133,18 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   const writer = new BatchWriter(db);
   const suspiciousOpenDates: string[] = [];
 
-  // 넷 다 서로 의존하지 않는 읽기라 순차 await 대신 병렬로 실행한다(2026-08-24, Cron 함수
+  // 셋 다 서로 의존하지 않는 읽기라 순차 await 대신 병렬로 실행한다(2026-08-24, Cron 함수
   // 실행시간 제한 안에서 여유를 늘림). 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존
-  // 경쟁점·입지평가·회원스냅샷 데이터도 미리 읽어둔다.
-  const [storesSnap, competitorsSnap, locationsSnap, membersSnap, settingsSnap] = await Promise.all([
+  // 경쟁점·회원스냅샷 데이터도 미리 읽어둔다.
+  const [storesSnap, competitorsSnap, membersSnap, settingsSnap] = await Promise.all([
     db.collection("storeEvalExistingStores").get(),
     db.collection("storeEvalCompetitors").get(),
-    db.collection("storeEvalLocationEvaluations").get(),
     db.collection("storeEvalExistingStoreMembers").get(),
     db.collection("storeEvalSettings").doc("current").get(),
   ]);
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, d.data()]));
-  const existingLocByCode = new Map(locationsSnap.docs.map((d) => [d.id, d.data()]));
   const existingMemberById = new Map(membersSnap.docs.map((d) => [d.id, d.data()]));
   const settings: ModelSettings = settingsSnap.exists
     ? { ...defaultModelSettings(), ...(settingsSnap.data() as ModelSettings) }
@@ -343,47 +340,12 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     }
   }
 
-  // ---- 09_입지동선평가 ----
-  const loc09 = await readSheetAsObjects(sheets, "09_입지동선평가", "A1:P200");
-  let locUpdated = 0;
-  for (const l of loc09) {
-    const code = toText(l["점포코드"]);
-    if (!code || !storeCodes.has(code)) continue;
-    const doc = {
-      candidateCode: code,
-      name: toText(l["점포명"]),
-      address: toText(l["주소"]) ?? "",
-      locationScore: toNumber(l["상권내위치점수"]),
-      flowScore: toNumber(l["주요동선점수"]),
-      preemptionScore: toNumber(l["선점경쟁점수"]),
-      visibilityScore: toNumber(l["접근가시성점수"]),
-      mapMemo: toText(l["지도판단메모"]),
-      attractionScore: toNumber(l["상권흡인력점수"]),
-      specialDemandType: toText(l["특수수요유형"]),
-      specialDemandIntensity: toText(l["특수수요강도"]),
-      inflowRestriction: toText(l["외부유입제한"]),
-      demandLeakageRisk: toText(l["수요이탈위험"]),
-      marketStructureMemo: toText(l["상권구조메모"]),
-      brandType: toText(l["브랜드구분"]),
-      updatedAt: Date.now(),
-      updatedBy: "cron-sync",
-    };
-    let changed = false;
-    if (!isSameData(existingLocByCode.get(code), doc)) {
-      await writer.set(db.collection("storeEvalLocationEvaluations").doc(code), doc, true);
-      changed = true;
-    }
-    const specialDemandPatch = { specialDemandType: doc.specialDemandType, specialDemandIntensity: doc.specialDemandIntensity };
-    if (!isSameData(storeDataByCode.get(code), specialDemandPatch)) {
-      await writer.set(
-        db.collection("storeEvalExistingStores").doc(code),
-        { ...specialDemandPatch, updatedAt: Date.now() },
-        true,
-      );
-      changed = true;
-    }
-    if (changed) locUpdated++;
-  }
+  // 2026-08-30 — "09_입지동선평가 → storeEvalLocationEvaluations" 동기화 섹션을 제거했다(사용자
+  // 확인: 입지동선평가는 이제 웹에서 AI로 자동 생성 → LocationEvalTab의 검토·적용·저장 흐름으로
+  // Firestore에 직접 쓴다). 이 시트를 계속 읽었다면, 웹에서 새로 갱신한 값을 이 탭의 옛 스냅샷이
+  // 다시 덮어쓰는 역주행 위험이 있었다 — 실제로 09시트 데이터가 전부 `updatedBy: "migration-script"`
+  // 스냅샷이었음을 확인했다(사용자가 그 뒤로 웹에서 갱신한 값은 시트에 반영 안 됨). 09_입지동선평가
+  // 시트 탭 자체도 삭제한다.
 
   // ---- 03_회원정보입력 ----
   const members03 = await readSheetAsObjects(sheets, "03_회원정보입력", "A1:T1000");
@@ -430,7 +392,6 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     profileUpdated,
     competitorsWritten: compWritten,
     competitivenessRecalculated,
-    locationEvalUpdated: locUpdated,
     memberSnapshotsWritten: memberWritten,
     suspiciousOpenDates,
   };

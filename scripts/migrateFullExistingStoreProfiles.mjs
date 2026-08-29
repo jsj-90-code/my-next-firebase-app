@@ -248,48 +248,10 @@ async function main() {
   }
   console.log(`05_경쟁점정보 → storeEvalCompetitors: ${compCounter.summary()}`);
 
-  // ---- 09_입지동선평가: 전체 필드 (브랜드/외부유입 외 나머지도) ----
-  // 값이 실제로 안 바뀌었으면 쓰지 않는다(Firestore 쓰기 할당량 절약, 2026-08-22).
-  const existingLocationMap = await loadCollectionMap(db, "storeEvalLocationEvaluations");
-  const loc09 = await readSheetAsObjects("09_입지동선평가", "A1:P200");
-  const locCounter = makeWriteCounter();
-  for (const l of loc09) {
-    const code = toText(l["점포코드"]);
-    if (!code || !storeCodes.has(code)) continue;
-    const doc = {
-      candidateCode: code,
-      name: toText(l["점포명"]),
-      address: toText(l["주소"]) ?? "",
-      locationScore: toNumber(l["상권내위치점수"]),
-      flowScore: toNumber(l["주요동선점수"]),
-      preemptionScore: toNumber(l["선점경쟁점수"]),
-      visibilityScore: toNumber(l["접근가시성점수"]),
-      mapMemo: toText(l["지도판단메모"]),
-      attractionScore: toNumber(l["상권흡인력점수"]),
-      specialDemandType: toText(l["특수수요유형"]),
-      specialDemandIntensity: toText(l["특수수요강도"]),
-      inflowRestriction: toText(l["외부유입제한"]),
-      demandLeakageRisk: toText(l["수요이탈위험"]),
-      marketStructureMemo: toText(l["상권구조메모"]),
-      brandType: toText(l["브랜드구분"]),
-      updatedAt: Date.now(),
-      updatedBy: "migration-script",
-    };
-    const locDirty = needsWrite(existingLocationMap.get(code), doc, { merge: true });
-    locCounter.mark(locDirty);
-    if (locDirty) {
-      await db.collection("storeEvalLocationEvaluations").doc(code).set(doc, { merge: true });
-      existingLocationMap.set(code, { ...existingLocationMap.get(code), ...doc });
-    }
-    // V61 학습 4번째 피처(특수수요점수)에 쓰도록 storeEvalExistingStores에도 복제해 둔다
-    // (calc.ts buildV61TrainingStores가 ExistingStore만 보고 순수함수로 남게 하기 위함).
-    const specialDemandPatch = { specialDemandType: doc.specialDemandType, specialDemandIntensity: doc.specialDemandIntensity };
-    if (needsWrite(storeDataByCode.get(code), specialDemandPatch, { merge: true })) {
-      await db.collection("storeEvalExistingStores").doc(code).set({ ...specialDemandPatch, updatedAt: Date.now() }, { merge: true });
-      storeDataByCode.set(code, { ...storeDataByCode.get(code), ...specialDemandPatch });
-    }
-  }
-  console.log(`09_입지동선평가 → storeEvalLocationEvaluations (+ storeEvalExistingStores 특수수요 복제): ${locCounter.summary()}`);
+  // 2026-08-30 — "09_입지동선평가 → storeEvalLocationEvaluations" 마이그레이션 섹션 제거(cronSync.ts와
+  // 동일한 이유 — 입지동선평가는 이제 웹에서 AI로 자동 생성해 Firestore에 직접 쓴다. 이 시트를 계속
+  // 읽으면 웹에서 새로 갱신한 값을 옛 스냅샷이 덮어쓰는 역주행 위험이 있다). 09_입지동선평가 시트
+  // 탭 자체도 삭제했다.
 
   // ---- 03_회원정보입력: 스냅샷 그대로 누적 ----
   // 값이 실제로 안 바뀌었으면 쓰지 않는다(Firestore 쓰기 할당량 절약, 2026-08-22).
