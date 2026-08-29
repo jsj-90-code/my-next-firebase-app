@@ -93,6 +93,7 @@ function blankCandidate(code: string): CandidateInput {
     ownCoupleZone: null,
     ownVipZone: null,
     ownFriendsZone: null,
+    ownFirstClassZone: null,
     ownFoodScore: null,
     ownInteriorScore: null,
     ownMonitorBase: null,

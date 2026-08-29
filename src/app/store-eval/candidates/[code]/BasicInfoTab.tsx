@@ -124,6 +124,7 @@ const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
   { key: "ownCoupleZone", label: "커플존 수" },
   { key: "ownVipZone", label: "VIP존 수" },
   { key: "ownFriendsZone", label: "프렌즈존 수" },
+  { key: "ownFirstClassZone", label: "퍼스트클래스존 수" },
 ];
 
 function validate(form: CandidateInput): string[] {
@@ -685,6 +686,12 @@ export function BasicInfoTab({
           <NumberField label="커플존 수" value={form.ownCoupleZone} onChange={(v) => set("ownCoupleZone", v)} hint="비우면 표준 3개 적용" />
           <NumberField label="VIP존 수" value={form.ownVipZone} onChange={(v) => set("ownVipZone", v)} hint="비우면 표준 5개 적용" />
           <NumberField label="프렌즈존 수" value={form.ownFriendsZone} onChange={(v) => set("ownFriendsZone", v)} hint="비우면 표준 15개 적용" />
+          <NumberField
+            label="퍼스트클래스존 수"
+            value={form.ownFirstClassZone}
+            onChange={(v) => set("ownFirstClassZone", v)}
+            hint="팀룸형+파우더룸, 방당 약 10좌석 · 자동 산식엔 안 들어감, 인테리어평가 매길 때 참고"
+          />
         </div>
       </section>
 

@@ -89,6 +89,7 @@ function blankStore(): ExistingStore {
     ownCoupleZone: null,
     ownVipZone: null,
     ownFriendsZone: null,
+    ownFirstClassZone: null,
     ownFoodScore: null,
     ownInteriorScore: null,
     ownMonitorBase: null,

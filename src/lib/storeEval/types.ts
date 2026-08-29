@@ -140,6 +140,11 @@ export type CandidateInput = {
   ownCoupleZone: number | null;
   ownVipZone: number | null;
   ownFriendsZone: number | null;
+  // 2026-08-30 추가 — 팀룸처럼 룸 형태지만 안에 파우더룸이 있고 한 방에 약 10좌석이 들어가는
+  // 고급 컨셉존("퍼스트클래스존", 지금은 신규 출점에 안 씀 — 과거 매장 평가용). 자동 산식에는
+  // 안 쓴다(좌석·존구성 점수는 이미 rubric 직접입력) — 평가자가 인테리어평가 점수를 매길 때
+  // 참고하는 원본 사실 기록용이다(사용자 확인).
+  ownFirstClassZone: number | null;
   // 경쟁력점수 4개 구성요소(2026-08-28 전면개편: 하드웨어30%+인테리어·좌석·관리40%+먹거리20%+
   // 입지10%) 중 하드웨어/입지는 원본 Apps Script(점포평가.gs)가 VGA·층수+엘리베이터로부터 자동
   // 계산하는 값이라(CANDIDATE_AUTO) 여기 CandidateInput에는 없다 — calc.ts의
@@ -600,6 +605,11 @@ export type ExistingStore = {
   ownCoupleZone: number | null;
   ownVipZone: number | null;
   ownFriendsZone: number | null;
+  // 2026-08-30 추가 — 팀룸처럼 룸 형태지만 안에 파우더룸이 있고 한 방에 약 10좌석이 들어가는
+  // 고급 컨셉존("퍼스트클래스존", 지금은 신규 출점에 안 씀 — 과거 매장 평가용). 자동 산식에는
+  // 안 쓴다(좌석·존구성 점수는 이미 rubric 직접입력) — 평가자가 인테리어평가 점수를 매길 때
+  // 참고하는 원본 사실 기록용이다(사용자 확인).
+  ownFirstClassZone: number | null;
   ownFoodScore: number | null;
   ownInteriorScore: number | null;
   // 2026-08-28 (2차) — 모니터도 GPU/CPU처럼 모델텍스트(주사율 Hz) 자동채점으로 전환.

@@ -193,6 +193,9 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       ownCoupleZone: toNumber(s["자사_커플존"]),
       ownVipZone: toNumber(s["자사_VIP존"]),
       ownFriendsZone: toNumber(s["자사_프렌즈존"]),
+      // 2026-08-30 추가 — 팀룸형 고급 컨셉존(파우더룸 포함, 방당 약 10좌석). 자동 산식엔 안 쓰고
+      // 평가자가 인테리어평가 매길 때 참고하는 사실 기록용(사용자 확인).
+      ownFirstClassZone: toNumber(s["자사_퍼스트클래스존"]),
       ownFoodScore: toNumber(s["자사_먹거리평가"]),
       ownInteriorScore: toNumber(s["자사_인테리어평가"]),
       pop500m: toNumber(s["반경500m_총인구"]),

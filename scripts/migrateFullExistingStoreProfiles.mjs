@@ -117,6 +117,7 @@ async function main() {
       ownCoupleZone: toNumber(s["자사_커플존"]),
       ownVipZone: toNumber(s["자사_VIP존"]),
       ownFriendsZone: toNumber(s["자사_프렌즈존"]),
+      ownFirstClassZone: toNumber(s["자사_퍼스트클래스존"]),
       ownFoodScore: toNumber(s["자사_먹거리평가"]),
       ownInteriorScore: toNumber(s["자사_인테리어평가"]),
       pop500m: toNumber(s["반경500m_총인구"]),
