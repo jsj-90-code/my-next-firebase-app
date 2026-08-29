@@ -168,7 +168,7 @@ export function ExistingStoreProfileTab({
             label="자사수요"
             value={form.ownDemand}
             onChange={(v) => set("ownDemand", v)}
-            hint="04_점포평가요약!예측_자사수요 (PC대수로 나눠 특징치로 쓰임)"
+            hint="04_점포평가요약!예측_자사수요 (점유율 적용 후 값, 화면 표시용 — 학습 특징치는 marketDemand/competitorIp를 따로 씀)"
           />
           <NumberField label="참고상권수요" value={form.referenceMarketDemand} onChange={(v) => set("referenceMarketDemand", v)} />
         </div>

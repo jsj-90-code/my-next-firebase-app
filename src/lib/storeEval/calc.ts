@@ -1315,7 +1315,8 @@ export function isEligibleForV61Training(store: {
   pcCount: number | null;
   evaluationPcCount?: number | null;
   hourlyRate: number | null;
-  ownDemand: number | null;
+  marketDemand: number | null;
+  competitorIp: number | null;
   competitivenessScore: number | null;
   actualMonthlyRevenueAvg: number | null;
 }): boolean {
@@ -1328,7 +1329,8 @@ export function isEligibleForV61Training(store: {
   const resolvedPcCount = store.evaluationPcCount ?? store.pcCount;
   if (!resolvedPcCount || resolvedPcCount <= 0) return false;
   if (store.hourlyRate == null || store.hourlyRate <= 0) return false;
-  if (store.ownDemand == null || store.ownDemand <= 0) return false;
+  if (store.marketDemand == null || store.marketDemand <= 0) return false;
+  if (store.competitorIp == null) return false;
   if (store.competitivenessScore == null) return false;
   if (store.actualMonthlyRevenueAvg == null || store.actualMonthlyRevenueAvg <= 0) return false;
   return true;
@@ -1343,7 +1345,8 @@ export function buildV61TrainingStores(stores: ExistingStore[]): V61TrainingStor
     // 한다 - 현재 pcCount로 나누면 실제보다 낮게 왜곡된다(2026-08-22 확인).
     pcCount: (s.evaluationPcCount ?? s.pcCount) as number,
     hourlyRate: s.hourlyRate as number,
-    ownDemand: s.ownDemand as number,
+    marketDemand: s.marketDemand as number,
+    competitorIp: s.competitorIp as number,
     competitivenessScore: s.competitivenessScore as number,
     actualMonthlyRevenueAvg: s.actualMonthlyRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
@@ -1355,7 +1358,8 @@ export type V61TrainingStore = {
   storeName: string;
   pcCount: number;
   hourlyRate: number;
-  ownDemand: number; // 예측_자사수요 (총량, PC당이 아님 — 아래에서 pcCount로 나눈다)
+  marketDemand: number; // 점유율 적용 전 원수요(총량, PC당 아님) — 2026-08-30부터 ownDemand 대신 이걸 씀
+  competitorIp: number; // 경쟁IP(총량, PC당 아님)
   competitivenessScore: number;
   actualMonthlyRevenueAvg: number;
   specialDemandScore: number; // 0~3, computeSpecialDemandScore
@@ -1373,26 +1377,35 @@ export type V61TrainingStore = {
  */
 export function toEmpiricalSample(store: V61TrainingStore): EmpiricalRevenueSample {
   return {
-    featuresRaw: [
-      Math.log(Math.max(1, store.hourlyRate)),
-      Math.log(Math.max(0.1, store.ownDemand / store.pcCount)),
-      store.competitivenessScore,
-    ],
+    featuresRaw: empiricalFeaturesFor(store),
     revenuePerPc: store.actualMonthlyRevenueAvg / store.pcCount,
   };
 }
 
-/** 특정 매장의 학습 특징치를 모형 입력 형태로 변환 (예측 시에도 동일 특징을 써야 한다). */
+/**
+ * 특정 매장의 학습 특징치를 모형 입력 형태로 변환 (예측 시에도 동일 특징을 써야 한다).
+ *
+ * 2026-08-30 개편 — 예전엔 "예측_자사수요"(marketDemand ÷ (자사+경쟁IP)로 미리 나눈 점유율
+ * 적용값)를 특징치 하나로 넣었는데, 실제매출과의 상관계수가 -0.02(사실상 무관)라 비음수
+ * 릿지회귀가 이 특징의 계수를 0으로 눌러버려 점유율 산식이 예측에 전혀 기여하지 못하고 있었다
+ * (사용자와 진단, 학습표본 26개로 계수 직접 확인). 원인은 "경쟁점이 많으면 나눠서 깎는다"는
+ * 가정 자체였다 — 실측으로는 경쟁IP가 매출과 오히려 양의 상관(+0.25, 경쟁이 많은 곳=상권 자체가
+ * 큰 곳이라는 신호로 보임). 그래서 marketDemand(나누기 전 원수요)와 competitorIp(경쟁강도)를
+ * 별도 특징치로 분리해 회귀가 부호·가중치를 직접 학습하게 했다 — LOOCV 재검증 결과 MAPE
+ * 10.75%→10.44%로 개선(±10%/±20% 적중률은 표본 26개라 그대로, 사용자 확인 후 반영).
+ */
 export function empiricalFeaturesFor(input: {
   hourlyRate: number;
-  ownDemand: number;
+  marketDemand: number;
+  competitorIp: number;
   pcCount: number;
   competitivenessScore: number;
   specialDemandScore?: number;
 }): number[] {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
-    Math.log(Math.max(0.1, input.ownDemand / input.pcCount)),
+    Math.log(Math.max(0.1, input.marketDemand / input.pcCount)),
+    Math.log(1 + input.competitorIp / input.pcCount),
     input.competitivenessScore,
   ];
 }
@@ -2033,6 +2046,8 @@ export type ValidationStoreInput = {
   evaluationPcCount?: number | null; // ExistingStore.evaluationPcCount와 동일 — 있으면 pcCount 대신 이걸로 학습/예측
   hourlyRate: number | null;
   ownDemand: number | null;
+  marketDemand: number | null; // 2026-08-30 추가 — empiricalFeaturesFor 학습 특징치(점유율 적용 전 원수요)
+  competitorIp: number | null; // 2026-08-30 추가 — empiricalFeaturesFor 학습 특징치(경쟁IP)
   competitivenessScore: number | null;
   actualRevenueAvg: number | null; // 완료월 평균 실제매출 (누적평균매출)
   specialDemandType?: string | null; // 09_입지동선평가!특수수요유형 (대학가/군부대/산업단지 등)
@@ -2387,7 +2402,8 @@ export function isCoreEligibleForV61Training(s: ValidationStoreInput): boolean {
     resolvedPcCount != null &&
     resolvedPcCount > 0 &&
     s.hourlyRate != null &&
-    s.ownDemand != null &&
+    s.marketDemand != null &&
+    s.competitorIp != null &&
     s.competitivenessScore != null &&
     s.actualRevenueAvg != null &&
     s.actualRevenueAvg > 0
@@ -2401,7 +2417,8 @@ export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
     storeName: s.storeName,
     pcCount: (s.evaluationPcCount ?? s.pcCount) as number,
     hourlyRate: s.hourlyRate as number,
-    ownDemand: s.ownDemand as number,
+    marketDemand: s.marketDemand as number,
+    competitorIp: s.competitorIp as number,
     competitivenessScore: s.competitivenessScore as number,
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
@@ -2447,12 +2464,13 @@ export function runCohortValidation(
       // evaluationPcCount(평가기준 대수)를 우선 써야 한다. 그동안 여기만 현재 pcCount를 그대로
       // 써서, 오픈 후 좌석을 늘린 조기검증 매장의 예측이 실제보다 왜곡돼 있었다(사용자 발견).
       const resolvedPcCount = s.evaluationPcCount ?? s.pcCount;
-      if (resolvedPcCount && s.hourlyRate != null && s.ownDemand != null && s.competitivenessScore != null) {
+      if (resolvedPcCount && s.hourlyRate != null && s.marketDemand != null && s.competitorIp != null && s.competitivenessScore != null) {
         const pred = predictEmpiricalRevenue(
           fullModel,
           empiricalFeaturesFor({
             hourlyRate: s.hourlyRate,
-            ownDemand: s.ownDemand,
+            marketDemand: s.marketDemand,
+            competitorIp: s.competitorIp,
             pcCount: resolvedPcCount,
             competitivenessScore: s.competitivenessScore,
             specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),

@@ -48,6 +48,7 @@ import {
   applyStandardOwnFacilityDefaults,
   describeNotVerifiableReason,
   diagnoseLoocvSensitivity,
+  empiricalFeaturesFor,
   fitEmpiricalRevenueModel,
   fitNonnegativeRidgeRegression,
   getV62Rate,
@@ -69,6 +70,7 @@ import {
   scoreFromZoneDiversity,
   summarizeValidation,
   summarizeValidationRows,
+  toEmpiricalSample,
   toV61TrainingStore,
   type EmpiricalRevenueSample,
   type V61TrainingStore,
@@ -1401,6 +1403,43 @@ describe("computeSpecialDemandScore (10_오차원인분석 근거 — 대학가�
   });
 });
 
+describe("empiricalFeaturesFor / toEmpiricalSample (2026-08-30 개편 — 점유율 적용 자사수요 대신 marketDemand·competitorIp 분리)", () => {
+  it("4개 특징치를 순서대로 반환한다: log(요금), log(marketDemand/PC), log(1+competitorIp/PC), 경쟁력점수", () => {
+    const features = empiricalFeaturesFor({
+      hourlyRate: 1300,
+      marketDemand: 200000,
+      competitorIp: 300,
+      pcCount: 100,
+      competitivenessScore: 4,
+    });
+    expect(features).toHaveLength(4);
+    expect(features[0]).toBeCloseTo(Math.log(1300), 6);
+    expect(features[1]).toBeCloseTo(Math.log(200000 / 100), 6);
+    expect(features[2]).toBeCloseTo(Math.log(1 + 300 / 100), 6);
+    expect(features[3]).toBe(4);
+  });
+  it("competitorIp가 0이어도(독점매장) log(1+0)=0이 나온다 — 나눗셈으로 인한 예외 없음", () => {
+    const features = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 0, pcCount: 100, competitivenessScore: 4 });
+    expect(features[2]).toBe(0);
+  });
+  it("toEmpiricalSample도 empiricalFeaturesFor와 동일한 특징치를 만든다(중복 로직 없음)", () => {
+    const store: V61TrainingStore = {
+      storeCode: "S",
+      storeName: "점포",
+      pcCount: 100,
+      hourlyRate: 1300,
+      marketDemand: 200000,
+      competitorIp: 300,
+      competitivenessScore: 4,
+      actualMonthlyRevenueAvg: 60000000,
+      specialDemandScore: 0,
+    };
+    const sample = toEmpiricalSample(store);
+    expect(sample.featuresRaw).toEqual(empiricalFeaturesFor(store));
+    expect(sample.revenuePerPc).toBe(600000);
+  });
+});
+
 describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·정상영업·산식학습제외 아님)", () => {
   const base = {
     brandType: "블랙라벨",
@@ -1408,7 +1447,8 @@ describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·정�
     excludedFromModel: false,
     pcCount: 100,
     hourlyRate: 1200,
-    ownDemand: 2000,
+    marketDemand: 2000,
+    competitorIp: 500,
     competitivenessScore: 4,
     actualMonthlyRevenueAvg: 60000000,
   };
@@ -1449,7 +1489,8 @@ describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선
     brandType: "블랙라벨" as const,
     validationUse: "사용" as const,
     hourlyRate: 1200,
-    ownDemand: 300000,
+    marketDemand: 300000,
+    competitorIp: 500,
     competitivenessScore: 4,
     actualMonthlyRevenueAvg: 83129382,
     completedMonths: 12,
@@ -1482,6 +1523,8 @@ describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선
       evaluationPcCount: 108,
       hourlyRate: 1200,
       ownDemand: 300000,
+      marketDemand: 300000,
+      competitorIp: 500,
       competitivenessScore: 4,
       actualRevenueAvg: 83129382,
     };
@@ -1502,6 +1545,8 @@ describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선
       evaluationPcCount: 0,
       hourlyRate: 1200,
       ownDemand: 300000,
+      marketDemand: 300000,
+      competitorIp: 500,
       competitivenessScore: 4,
       actualRevenueAvg: 83129382,
     };
@@ -1597,7 +1642,8 @@ describe("runLeaveOneOutValidation (자기 자신을 뺀 학습으로 예측 —
       storeName: `점포${i}`,
       pcCount: 100,
       hourlyRate: 1200 + i * 20,
-      ownDemand: (2000 + i * 100) * 100,
+      marketDemand: (2000 + i * 100) * 100,
+      competitorIp: 500,
       competitivenessScore: 3.5 + (i % 5) * 0.2,
       actualMonthlyRevenueAvg: 55000000 + i * 1000000,
       specialDemandScore: 0,
@@ -1613,7 +1659,8 @@ describe("runLeaveOneOutValidation (자기 자신을 뺀 학습으로 예측 —
       storeName: `점포${i}`,
       pcCount: 100,
       hourlyRate: 1200,
-      ownDemand: 200000,
+      marketDemand: 200000,
+      competitorIp: 500,
       competitivenessScore: 4,
       actualMonthlyRevenueAvg: 55000000,
       specialDemandScore: 0,
@@ -1637,7 +1684,9 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
       postOpenIssueReason: null,
       pcCount: 100,
       hourlyRate: 1300,
-      ownDemand: 200000,
+      ownDemand: null,
+      marketDemand: 200000,
+      competitorIp: 500,
       competitivenessScore: 4,
       actualRevenueAvg: 60000000,
       ...overrides,
@@ -1649,7 +1698,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
       storeCode: `C${i}`,
       storeName: `핵심${i}`,
       hourlyRate: 1200 + i * 20,
-      ownDemand: (2000 + i * 100) * 100,
+      marketDemand: (2000 + i * 100) * 100,
       competitivenessScore: 3.5 + (i % 5) * 0.2,
       actualRevenueAvg: 55000000 + i * 1000000,
     }),
@@ -1817,7 +1866,9 @@ describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스�
       postOpenIssueReason: null,
       pcCount: 100,
       hourlyRate: 1300,
-      ownDemand: 200000,
+      ownDemand: null,
+      marketDemand: 200000,
+      competitorIp: 500,
       competitivenessScore: 4,
       actualRevenueAvg: 60000000,
       ...overrides,
@@ -1828,7 +1879,7 @@ describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스�
       storeCode: `N${i}`,
       storeName: `정상${i}`,
       hourlyRate: 1200 + i * 20,
-      ownDemand: (2000 + i * 100) * 100,
+      marketDemand: (2000 + i * 100) * 100,
       competitivenessScore: 3.5 + (i % 5) * 0.2,
       actualRevenueAvg: 55000000 + i * 1000000,
     }),
@@ -1837,7 +1888,7 @@ describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스�
     storeCode: "OUT1",
     storeName: "이상치점",
     hourlyRate: 3200,
-    ownDemand: 60000,
+    marketDemand: 60000,
     competitivenessScore: 1,
     actualRevenueAvg: 95000000,
   });
@@ -1850,8 +1901,8 @@ describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스�
     const diag = diagnoseLoocvSensitivity("N0", [...normalStores, outlier], settings)!;
     expect(diag).not.toBeNull();
     expect(diag.sampleCountWithout).toBe(diag.sampleCountWith - 1);
-    expect(diag.coefficientsWith).toHaveLength(3);
-    expect(diag.coefficientsWithout).toHaveLength(3);
+    expect(diag.coefficientsWith).toHaveLength(4);
+    expect(diag.coefficientsWithout).toHaveLength(4);
     const lo = Math.min(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     const hi = Math.max(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     expect(diag.blendedPrediction!).toBeGreaterThanOrEqual(lo);
@@ -1889,6 +1940,8 @@ describe('매장별 비교표의 "LOOCV 고변동 점포" 표시 (buildParityCom
       pcCount: 100,
       hourlyRate: 1300,
       ownDemand: 200000,
+      marketDemand: 200000,
+      competitorIp: 500,
       competitivenessScore: 4,
       actualRevenueAvg: 60000000,
       sheetV61Predicted: 58000000,
@@ -2126,6 +2179,8 @@ describe("buildParityComparisonRows (요청사항 — sheetParity vs loocvValida
       pcCount: 100,
       hourlyRate: 1300,
       ownDemand: 200000,
+      marketDemand: 200000,
+      competitorIp: 500,
       competitivenessScore: 4,
       actualRevenueAvg: 60000000,
       sheetV61Predicted: 58000000,

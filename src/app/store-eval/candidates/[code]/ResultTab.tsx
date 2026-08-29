@@ -59,11 +59,14 @@ function ResultCard({ label, value, emphasis, hint }: { label: string; value: st
 // 매출이 어떻게 나온건지 이해가 안 된다"고 확인해서, 실제 계산에 쓰인 숫자를 그대로 따라가며
 // 보여주는 단계별 표로 바꾼다(evaluate.ts가 predictEmpiricalRevenue의 중간값을 그대로 넘겨준 것 -
 // 새 계산 없음).
-// 순서가 evaluate.ts의 featureLabels(["시간당요금", "자사수요/PC대수", "경쟁력점수"])와 반드시
-// 일치해야 한다 - 표시 단위(원/명/점)를 요인별로 다르게 포맷하기 위한 것뿐, 값 자체는 그대로다.
+// 순서가 evaluate.ts의 featureLabels(["시간당요금", "상권수요/PC대수", "경쟁IP/PC대수", "경쟁력점수"])와
+// 반드시 일치해야 한다 - 표시 단위(원/명/대/점)를 요인별로 다르게 포맷하기 위한 것뿐, 값 자체는 그대로다.
+// 2026-08-30 — "자사수요/PC대수"(점유율 적용값) 대신 "상권수요/PC대수"(점유율 적용 전)로,
+// "경쟁IP/PC대수"가 새로 추가됐다(empiricalFeaturesFor 주석 참고).
 const FEATURE_REAL_VALUE_FORMATTERS = [
   (v: number) => formatWon(v),
   (v: number) => `${formatScore(v, 1)}명`,
+  (v: number) => `${formatScore(v, 2)}대`,
   (v: number) => `${formatScore(v, 2)}점`,
 ];
 

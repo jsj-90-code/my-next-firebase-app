@@ -67,6 +67,8 @@ function blankStore(): ExistingStore {
     validationUse: null,
     hourlyRate: null,
     ownDemand: null,
+    marketDemand: null,
+    competitorIp: null,
     competitivenessScore: null,
     actualMonthlyRevenueAvg: null,
     completedMonths: 0,

@@ -409,6 +409,8 @@ export async function convertCandidateToExistingStore(input: {
     validationUse: null,
     hourlyRate: c.hourlyRate,
     ownDemand: null, // 실측 가동률이 쌓이기 전까지는 계산하지 않는다 (04_점포평가요약!예측_자사수요와 동일 산식 필요)
+    marketDemand: null,
+    competitorIp: null,
     competitivenessScore: null,
     actualMonthlyRevenueAvg: null,
     completedMonths: 0,

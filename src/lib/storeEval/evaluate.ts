@@ -119,10 +119,11 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   let v61Baseline: number | null = null;
   let v61IsFallback = true;
   let v61TrainedModelExplain: V61TrainedModelExplain | null = null;
-  if (trainedModel && c.expectedPcCount && c.hourlyRate != null && expectedOwnDemand != null && ownCompetitivenessScore != null) {
+  if (trainedModel && c.expectedPcCount && c.hourlyRate != null && marketDemand != null && ownCompetitivenessScore != null) {
     const featuresRaw = empiricalFeaturesFor({
       hourlyRate: c.hourlyRate,
-      ownDemand: expectedOwnDemand,
+      marketDemand,
+      competitorIp,
       pcCount: c.expectedPcCount,
       competitivenessScore: ownCompetitivenessScore,
     });
@@ -138,8 +139,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       v61IsFallback = false;
       v61TrainedModelExplain = {
         sampleCount: trainedModel.sampleCount,
-        featureLabels: ["시간당요금", "자사수요/PC대수", "경쟁력점수"],
-        featureRealValues: [c.hourlyRate, expectedOwnDemand / c.expectedPcCount, ownCompetitivenessScore],
+        featureLabels: ["시간당요금", "상권수요/PC대수", "경쟁IP/PC대수", "경쟁력점수"],
+        featureRealValues: [c.hourlyRate, marketDemand / c.expectedPcCount, competitorIp / c.expectedPcCount, ownCompetitivenessScore],
         featureModelValues: featuresRaw,
         featureMeans: trainedModel.featureMeans,
         featureSds: trainedModel.featureSds,

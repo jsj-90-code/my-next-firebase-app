@@ -433,7 +433,7 @@ export type FinalJudgement =
 // 따라갈 수 있게 한다. v61IsFallback=true(학습표본 부족)일 때는 null.
 export type V61TrainedModelExplain = {
   sampleCount: number;
-  featureLabels: string[]; // ["시간당요금", "자사수요/PC대수", "경쟁력점수"]
+  featureLabels: string[]; // ["시간당요금", "상권수요/PC대수", "경쟁IP/PC대수", "경쟁력점수"] (2026-08-30 개편)
   featureRealValues: number[]; // 사람이 읽는 실제값(요금 원, 수요/PC 명, 경쟁력점수)
   featureModelValues: number[]; // 학습에 실제로 들어간 값(요금·수요/PC는 로그 변환됨) = empiricalFeaturesFor 결과
   featureMeans: number[]; // featureModelValues 기준 학습표본 평균
@@ -569,7 +569,16 @@ export type ExistingStore = {
   brandType: BrandType | null; // 09_입지동선평가!P열(브랜드구분) — 블랙라벨만 학습에 사용
   validationUse: "사용" | "제외" | null; // 04_점포평가요약!검증사용여부 (참고용 - 최종 필터는 위 3조건으로 직접 판정)
   hourlyRate: number | null; // 01_점포기본정보!자사_요금표_시간당
-  ownDemand: number | null; // 04_점포평가요약!예측_자사수요 (PC대수로 나눠 특징치로 쓴다)
+  ownDemand: number | null; // 04_점포평가요약!예측_자사수요 (점유율 적용 후 값 — 표시용, 2026-08-30부터 학습 특징치로는 안 씀)
+  // 2026-08-30 추가 — ownDemand(marketDemand÷(자사+경쟁IP) 나눈 값)의 실제매출 상관계수가 거의
+  // 0(-0.02)이라 릿지회귀가 계수를 0으로 눌러버려 점유율 산식이 예측에 전혀 기여를 못 했다
+  // (사용자와 진단, 릿지 계수 직접 확인으로 발견). "경쟁점이 많으면 나눠서 깎는다"는 가정 자체가
+  // 틀렸을 수 있다 — 실측 상관은 오히려 양(+0.25, 경쟁이 많은 곳=상권 자체가 큰 곳). 그래서
+  // marketDemand(나누기 전 원수요)와 competitorIp(경쟁강도)를 분리된 별도 특징치로 넣어 회귀가
+  // 직접 부호·가중치를 학습하게 한다(calc.ts empiricalFeaturesFor). ownDemand는 화면 표시용으로
+  // 그대로 유지.
+  marketDemand: number | null; // computeExistingStoreDemandEvaluation 결과 그대로 캐시(점유율 적용 전 원수요)
+  competitorIp: number | null; // computeExistingStoreDemandEvaluation 결과 그대로 캐시(경쟁IP)
   competitivenessScore: number | null; // 04_점포평가요약!자사_경쟁력점수 (=01_점포기본정보와 동일)
   actualMonthlyRevenueAvg: number | null; // 04_점포평가요약!누적평균매출 — 학습 타깃(실제매출), 오픈 2개월차~최신 완료월 평균
 

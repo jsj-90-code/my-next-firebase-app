@@ -338,7 +338,14 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     if (!store) continue;
     const competitors = competitorsByStoreCode.get(code) ?? [];
     const evalResult = computeExistingStoreDemandEvaluation(store as unknown as ExistingStore, competitors, settings);
-    const patch = { competitivenessScore: evalResult.ownCompetitivenessScore, ownDemand: evalResult.ownDemand };
+    // 2026-08-30 — marketDemand/competitorIp도 같이 캐시한다(calc.ts empiricalFeaturesFor가
+    // ownDemand 대신 이 둘을 분리된 학습 특징치로 쓰게 바뀜, empiricalFeaturesFor 주석 참고).
+    const patch = {
+      competitivenessScore: evalResult.ownCompetitivenessScore,
+      ownDemand: evalResult.ownDemand,
+      marketDemand: evalResult.marketDemand,
+      competitorIp: evalResult.competitorIp,
+    };
     if (!isSameData(store, patch)) {
       await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);
       storeDataByCode.set(code, { ...store, ...patch });

@@ -142,6 +142,8 @@ async function loadValidationData(): Promise<{
         evaluationPcCount: s.evaluationPcCount,
         hourlyRate: s.hourlyRate,
         ownDemand: s.ownDemand,
+        marketDemand: s.marketDemand,
+        competitorIp: s.competitorIp,
         competitivenessScore: s.competitivenessScore,
         actualRevenueAvg: s.actualMonthlyRevenueAvg,
         specialDemandType: s.specialDemandType,
