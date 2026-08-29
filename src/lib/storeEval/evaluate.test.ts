@@ -137,12 +137,11 @@ const competitor: Competitor = {
   monitorBasis: null,
   seatZoneScore: null,
   comfortScore: null,
+  singleSeatCount: null,
   room1: 0,
   room2: 0,
   teamRoom: 0,
   coupleZone: 0,
-  premiumZone: 0,
-  premiumSpec: null,
   createdAt: 0,
   updatedAt: 0,
 };

@@ -525,8 +525,6 @@ export function computeSpecScore(
 
 /** 자사 게임존 사양 가산: 게임존 수 × GAME_ZONE_BONUS(0.2). */
 export const GAME_ZONE_BONUS = 0.2;
-/** 경쟁점 프리미엄존 사양 가산: 유(존재) 시 +0.5. */
-export const PREMIUM_ZONE_BONUS = 0.5;
 
 /**
  * summarizeZones_: 존 개수 집계.
@@ -756,7 +754,9 @@ export function computeCompetitorScores(
   c: Competitor,
   settings: Pick<ModelSettings, "specWeights" | "interiorWeights" | "competitivenessWeights" | "foodBrandScores">,
 ): { spec: number | null; food: number | null; interior: number | null; location: number | null; total: number | null } {
-  const hasPremium = (c.premiumZone ?? 0) > 0;
+  // 2026-08-30 — 프리미엄존 가산점 폐지(사용자 확정). 일부 좌석만 고사양이면 이미 특화1/특화2
+  // 사양 컬럼(combineHardwareTiers)이 그 차이를 반영하므로, 프리미엄존 유무로 따로 +0.5를 더하면
+  // 이중 반영이었다. 05_경쟁점정보의 프리미엄존/프리미엄사양 컬럼 자체도 시트에서 삭제했다.
   const spec = applySurveyLevelDefault(
     computeSpecScore(
       {
@@ -770,7 +770,7 @@ export function computeCompetitorScores(
         ramTop: c.ramTop,
         monitorBase: c.monitorBase,
         monitorTop: c.monitorTop,
-        bonus: hasPremium ? PREMIUM_ZONE_BONUS : 0,
+        bonus: 0,
       },
       settings,
     ),

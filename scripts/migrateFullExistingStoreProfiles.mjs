@@ -95,9 +95,22 @@ async function main() {
       evaluationPcCount: toNumber(s["평가기준_PC대수"]),
       demographicsYear: toNumber(s["상권데이터기준연도"]),
       renovationYear: toNumber(s["자사_리뉴얼연도"]),
+      // 2026-08-28 (2차) — 실제 시트 컬럼이 기본/특화1/특화2(GPU·CPU)·기본/특화(RAM·모니터)로
+      // 세분화됨(사용자 확정, cronSync.ts와 동일하게 맞춤). 모니터는 텍스트(주사율 Hz)에서
+      // 자동채점한다(scoreFromMonitor) — ownMonitorScore 수동값은 더 이상 안 읽는다.
       ownVgaBase: toText(s["자사_VGA_기본"]),
-      ownVgaTop: toText(s["자사_VGA_최고"]),
+      ownVgaTop: toText(s["자사_VGA_특화1"]),
+      ownVgaTop2: toText(s["자사_VGA_특화2"]),
+      ownCpu: toText(s["자사_CPU_기본"]),
+      ownCpuTop1: toText(s["자사_CPU_특화1"]),
+      ownCpuTop2: toText(s["자사_CPU_특화2"]),
+      ownRam: toText(s["자사_RAM_기본"]),
+      ownRamTop: toText(s["자사_RAM_특화"]),
+      ownMonitorBase: toText(s["자사_모니터_기본"]),
+      ownMonitorTop: toText(s["자사_모니터_특화"]),
       ownGameZoneCount: toNumber(s["자사_게임존수"]),
+      // 2026-08-28 (3차) — "자사_1인석"(개방형 좌석) 컬럼 신설, 기존 "자사_1인룸"(독립 공간)과 분리.
+      ownSingleSeatCount: toNumber(s["자사_1인석"]),
       ownRoom1: toNumber(s["자사_1인룸"]),
       ownRoom2: toNumber(s["자사_2인룸"]),
       ownTeamRoom: toNumber(s["자사_팀룸"]),
@@ -106,7 +119,6 @@ async function main() {
       ownFriendsZone: toNumber(s["자사_프렌즈존"]),
       ownFoodScore: toNumber(s["자사_먹거리평가"]),
       ownInteriorScore: toNumber(s["자사_인테리어평가"]),
-      ownMonitorScore: toNumber(s["자사_모니터평가"]),
       pop500m: toNumber(s["반경500m_총인구"]),
       area1kmKm2: toNumber(s["반경1km_조회면적_km2"]),
       pop1km: toNumber(s["반경1km_총인구"]),
@@ -125,7 +137,6 @@ async function main() {
       age1km_80plus: toNumber(s["반경1km_80세이상"]),
       floating500Avg: toNumber(s["유동500_일평균"]),
       floating500Male: toNumber(s["유동500_남성"]),
-      floating500Female: toNumber(s["유동500_여성"]),
       floating500_10s: toNumber(s["유동500_10대"]),
       floating500_20s: toNumber(s["유동500_20대"]),
       floating500_30s: toNumber(s["유동500_30대"]),
@@ -182,24 +193,30 @@ async function main() {
       name,
       surveyLevel: toText(c["조사수준"]) || "상세",
       investigationStatus: "조사완료",
+      address: toText(c["경쟁점주소"]),
       distanceM: toNumber(c["거리_m"]),
       floor: toNumber(c["점포층수"]),
       groundLevel: toText(c["지상/지하"]),
       totalPcCount: toNumber(c["전체대수"]),
-      appliedPcCount: toNumber(c["적용대수"]) ?? toNumber(c["전체대수"]),
+      appliedPcCount: toNumber(c["전체대수"]),
       hasElevator: toBool(c["엘리베이터"]),
-      cpu: toText(c["CPU"]),
-      vgaBase: toText(c["VGA_기본"]),
-      vgaTop: toText(c["VGA_최고"]),
-      ram: toText(c["RAM"]),
-      monitor: toText(c["모니터"]),
+      // 2026-08-28(3~4차) — 기본/특화1/특화2(GPU·CPU)·기본/특화(RAM·모니터) 구조, 실제 헤더는
+      // "CPU 기본"(공백, 밑줄 아님). cronSync.ts와 동일하게 맞춤.
+      cpu: toText(c["CPU 기본"]),
+      cpuTop1: toText(c["CPU 특화1"]),
+      cpuTop2: toText(c["CPU 특화2"]),
+      vgaBase: toText(c["VGA 기본"]),
+      vgaTop: toText(c["VGA 특화1"]),
+      vgaTop2: toText(c["VGA 특화2"]),
+      ram: toText(c["RAM 기본"]),
+      ramTop: toText(c["RAM 특화"]),
+      monitorBase: toText(c["모니터 기본"]),
+      monitorTop: toText(c["모니터 특화"]),
       ratePer1000Won: toNumber(c["1000원당분"]),
       hourlyRateConverted: toNumber(c["시간당환산요금"]),
       paidDeduction: toText(c["유료차감"]),
-      visitedAt: toText(c["방문일시"]),
-      visitedDow: toText(c["방문요일"]),
-      visitorCount: toNumber(c["이용객수"]),
-      measuredSeatRate: toPercentNumber(c["실측착석률"]),
+      // 2026-08-30 — 방문일시/방문요일/이용객수/실측착석률은 05_경쟁점정보에서 컬럼 자체를
+      // 삭제했다(예측 계산에 안 쓰임, 사용자 확인). 더 이상 여기서 읽지 않는다.
       pingbotUtilization: toPercentNumber(c["핑봇_가동률"]),
       pingbotPeriod: toText(c["핑봇_조회기간"]),
       renovationYear: toNumber(c["리뉴얼연도"]),
@@ -207,22 +224,26 @@ async function main() {
       foodBasis: toText(c["먹거리근거"]),
       interiorScore: toNumber(c["인테리어평가"]),
       interiorBasis: toText(c["인테리어근거"]),
-      monitorScore: toNumber(c["모니터평가"]),
       monitorBasis: toText(c["모니터근거"]),
+      singleSeatCount: toNumber(c["1인석"]),
       room1: toNumber(c["1인룸"]),
       room2: toNumber(c["2인룸"]),
       teamRoom: toNumber(c["팀룸"]),
       coupleZone: toNumber(c["커플존"]),
-      premiumZone: toBool(c["프리미엄존"]) ? 1 : 0,
-      premiumSpec: toText(c["프리미엄사양"]) != null,
+      // 2026-08-30 — 프리미엄존/프리미엄사양 컬럼 삭제(사용자 확정). 특화1/특화2 사양 컬럼이
+      // 이미 "일부 좌석만 고사양"을 반영하므로 더 이상 안 읽는다.
       createdAt: existingCompetitorMap.get(id)?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
     };
-    const dirty = needsWrite(existingCompetitorMap.get(id), competitor, { merge: false, ignoreKeys: ["updatedAt"] });
+    // 2026-08-30 — merge:false(전체 덮어쓰기)였던 걸 cronSync.ts와 동일하게 merge:true로 바꿨다.
+    // 예전 방식은 foodBrand/interiorLevelScore/seatZoneScore/comfortScore/source/lat/lng처럼
+    // 시트에 없고 웹에서만 입력하는 필드를 이 스크립트를 돌릴 때마다 조용히 지웠다(cronSync.ts
+    // 2026-08-28 주석과 동일한 버그, 이 파일엔 안 옮겨져 있었다).
+    const dirty = needsWrite(existingCompetitorMap.get(id), competitor, { merge: true });
     compCounter.mark(dirty);
     if (dirty) {
-      await db.collection("storeEvalCompetitors").doc(id).set(competitor);
-      existingCompetitorMap.set(id, competitor);
+      await db.collection("storeEvalCompetitors").doc(id).set(competitor, { merge: true });
+      existingCompetitorMap.set(id, { ...existingCompetitorMap.get(id), ...competitor });
     }
   }
   console.log(`05_경쟁점정보 → storeEvalCompetitors: ${compCounter.summary()}`);

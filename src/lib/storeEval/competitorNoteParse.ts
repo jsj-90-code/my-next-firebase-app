@@ -13,7 +13,6 @@ export type ParsedCompetitorNote = {
   vgaBase: string | null;
   ram: string | null;
   monitor: string | null;
-  premiumZone: number | null;
   coupleZone: number | null;
   room1: number | null; // 1인석 -> 1인룸 수 (근사 매핑, 사람이 검토)
   room2: number | null; // 2인석 -> 2인룸 수 (근사 매핑, 사람이 검토)
@@ -108,7 +107,6 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
   const ram = matchLine(block, /RAM\s*[:：]\s*(.+)/);
   const monitor = matchLine(block, /모니터\s*[:：]\s*(.+)/);
 
-  const premiumZone = sumGaeCounts(matchLine(block, /프리미엄석\s*[:：]?\s*(.+)/));
   const coupleZone = sumGaeCounts(matchLine(block, /커플석\s*[:：]?\s*(.+)/));
   const room1 = parseCountLike(matchLine(block, /1인석\s*[:：]?\s*(.+)/));
   const room2 = parseCountLike(matchLine(block, /2인석\s*[:：]?\s*(.+)/));
@@ -149,7 +147,6 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
     vgaBase,
     ram,
     monitor,
-    premiumZone,
     coupleZone,
     room1,
     room2,

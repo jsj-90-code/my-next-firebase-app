@@ -275,12 +275,9 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       ratePer1000Won: toNumber(c["1000원당분"]),
       hourlyRateConverted: toNumber(c["시간당환산요금"]),
       paidDeduction: toText(c["유료차감"]),
-      visitedAt: toText(c["방문일시"]),
-      visitedDow: toText(c["방문요일"]),
-      visitorCount: toNumber(c["이용객수"]),
-      // 퍼센트 서식 셀("14.1%")은 toNumber로는 NaN → null이 된다(2026-08-21 발견, 여기서는
-      // 2026-08-22까지 안 고쳐져 있었음 - migrateFullExistingStoreProfiles.mjs와 동일하게 수정).
-      measuredSeatRate: toPercentNumber(c["실측착석률"]),
+      // 2026-08-30 — 방문일시/방문요일/이용객수/실측착석률은 05_경쟁점정보에서 컬럼 자체를
+      // 삭제했다(예측 계산에 안 쓰임, 사용자 확인 — types.ts Competitor 주석 참고). 더 이상
+      // 여기서 읽지 않는다 — 안 읽어야 웹에서 수동입력한 값이 매 동기화마다 null로 안 덮어써진다.
       pingbotUtilization: toPercentNumber(c["핑봇_가동률"]),
       pingbotPeriod: toText(c["핑봇_조회기간"]),
       renovationYear: toNumber(c["리뉴얼연도"]),
@@ -289,12 +286,13 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       interiorScore: toNumber(c["인테리어평가"]),
       interiorBasis: toText(c["인테리어근거"]),
       monitorBasis: toText(c["모니터근거"]),
+      singleSeatCount: toNumber(c["1인석"]),
       room1: toNumber(c["1인룸"]),
       room2: toNumber(c["2인룸"]),
       teamRoom: toNumber(c["팀룸"]),
       coupleZone: toNumber(c["커플존"]),
-      premiumZone: toBool(c["프리미엄존"]) ? 1 : 0,
-      premiumSpec: toText(c["프리미엄사양"]) != null,
+      // 2026-08-30 — 프리미엄존/프리미엄사양 컬럼 삭제(사용자 확정, calc.ts 주석 참고). 특화1/특화2
+      // 사양 컬럼이 이미 "일부 좌석만 고사양"을 반영하므로 더 이상 안 읽는다.
       createdAt: (existingCompByid.get(id)?.createdAt as number | undefined) ?? Date.now(),
       updatedAt: Date.now(),
     };

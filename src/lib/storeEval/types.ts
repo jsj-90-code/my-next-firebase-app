@@ -242,6 +242,9 @@ export type Competitor = {
   ratePer1000Won: number | null; // 1000원당분
   hourlyRateConverted: number | null; // 시간당환산요금
   paidDeduction: string | null; // 유료차감
+  // 2026-08-30 — 05_경쟁점정보에서 방문일시/방문요일/이용객수/실측착석률 컬럼을 삭제했다(예측
+  // 계산에 안 쓰임, 사용자 확인). 필드 자체는 웹에서 수동입력용으로 남기고, cronSync.ts는 이제
+  // 이 넷을 시트에서 읽지 않는다(값을 계속 null로 덮어쓰지 않기 위함).
   visitedAt: string | null;
   visitedDow: string | null;
   visitorCount: number | null;
@@ -265,12 +268,13 @@ export type Competitor = {
   // 2026-08-28 전면개편 — CandidateInput.ownSeatZoneScore/ownComfortScore와 동일.
   seatZoneScore: number | null; // 좌석·존구성(rubric 기반 직접입력)
   comfortScore: number | null; // 냄새·조명·화장실·편의성
+  // 2026-08-30 추가 — CandidateInput.ownSingleSeatCount와 동일(1인석 vs 1인룸 구분). 05_경쟁점정보에
+  // "1인석" 컬럼이 새로 생겨 room1(1인룸, 독립공간)과 분리해서 받는다.
+  singleSeatCount: number | null; // 1인석(개방형, 독립룸 아님)
   room1: number | null;
   room2: number | null;
   teamRoom: number | null;
   coupleZone: number | null;
-  premiumZone: number | null; // 프리미엄존 개수(원본은 유/무이나 웹은 개수 입력 - 0보다 크면 "유"로 취급)
-  premiumSpec: boolean | null;
   // 2026-08-24 추가 — 카카오 Local API로 자동수집된 PC방 경쟁점 표시용(선택 필드, 기존 수동입력
   // 경쟁점엔 없음/null). lat/lng은 자동수집분만 채워지며, V62 계산 어디에도 쓰이지 않는다
   // (경쟁력 산식은 여전히 실사값 기반 필드만 읽는다).

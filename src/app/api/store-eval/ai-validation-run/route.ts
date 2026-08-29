@@ -127,12 +127,11 @@ export async function POST(request: Request) {
       monitorBasis: null,
       seatZoneScore: null,
       comfortScore: null,
+      singleSeatCount: null,
       room1: null,
       room2: null,
       teamRoom: null,
       coupleZone: null,
-      premiumZone: null,
-      premiumSpec: null,
       createdAt: now,
       updatedAt: now,
     }));

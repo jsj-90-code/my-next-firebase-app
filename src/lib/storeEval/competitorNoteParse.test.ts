@@ -156,7 +156,6 @@ describe("parseCompetitorNotes", () => {
     expect(e.vgaBase).toBe("4060");
     expect(e.ram).toBe("16G");
     expect(e.monitor).toBe("평면32인치 240Hz");
-    expect(e.premiumZone).toBe(0);
     expect(e.coupleZone).toBe(0);
     expect(e.room1).toBe(0);
     expect(e.teamRoom).toBe(5); // 4인1개+5인4개
@@ -287,7 +286,6 @@ describe("parseCompetitorNotes — 2번째 원문 형식(■ 매장명 마커, �
     expect(e.totalPcCount).toBe(194);
     expect(e.cpu).toBe("i5 14세대");
     expect(e.vgaBase).toBe("3070");
-    expect(e.premiumZone).toBe(0);
     expect(e.coupleZone).toBe(36); // 괄호 breakdown 없음 -> 단순 숫자 그대로
     expect(e.room1).toBe(1);
     expect(e.teamRoom).toBe(0); // 없음

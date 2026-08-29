@@ -9,7 +9,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   computeCompetitorInvestigationSummary,
   computeCompetitorScores,
-  PREMIUM_ZONE_BONUS,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
@@ -106,12 +105,11 @@ function blankCompetitor(candidateCode: string): Competitor {
     monitorBasis: null,
     seatZoneScore: null,
     comfortScore: null,
+    singleSeatCount: null,
     room1: null,
     room2: null,
     teamRoom: null,
     coupleZone: null,
-    premiumZone: null,
-    premiumSpec: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -135,7 +133,6 @@ function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: 
     vgaBase: note.vgaBase,
     ram: note.ram,
     monitorBase: note.monitor,
-    premiumZone: note.premiumZone,
     coupleZone: note.coupleZone,
     room1: note.room1,
     room2: note.room2,
@@ -160,11 +157,11 @@ const NUMERIC_FIELDS: { key: keyof Competitor; label: string }[] = [
   { key: "measuredSeatRate", label: "실측착석률" },
   { key: "pingbotUtilization", label: "핑봇_가동률" },
   { key: "renovationYear", label: "리뉴얼연도" },
+  { key: "singleSeatCount", label: "1인석 수" },
   { key: "room1", label: "1인룸 수" },
   { key: "room2", label: "2인룸 수" },
   { key: "teamRoom", label: "팀룸 수" },
   { key: "coupleZone", label: "커플존 수" },
-  { key: "premiumZone", label: "프리미엄존 수" },
 ];
 
 function validate(form: Competitor): string[] {
@@ -209,14 +206,14 @@ function CompetitorForm({
   // 알 수 없다는 요청으로, computeCompetitorScores 내부와 동일한 항목별 함수를 그대로 한 번 더
   // 호출해 항목별 점수만 따로 보여준다(가중합산 로직 자체는 재사용, 새 산식 아님).
   const hardwareBreakdown = useMemo(() => {
-    const bonus = (form.premiumZone ?? 0) > 0 ? PREMIUM_ZONE_BONUS : 0;
+    // 2026-08-30 — 프리미엄존 가산점 폐지(calc.ts computeCompetitorScores 주석 참고).
     return {
-      vgaScore: scoreFromVgaSpec(form.vgaBase, form.vgaTop, form.vgaTop2, bonus),
+      vgaScore: scoreFromVgaSpec(form.vgaBase, form.vgaTop, form.vgaTop2, 0),
       cpuScore: scoreFromCpuSpec(form.cpu, form.cpuTop1, form.cpuTop2),
       ramScore: scoreFromRamSpec(form.ram, form.ramTop),
       monitorScore: scoreFromMonitorSpec(form.monitorBase, form.monitorTop),
     };
-  }, [form.vgaBase, form.vgaTop, form.vgaTop2, form.cpu, form.cpuTop1, form.cpuTop2, form.ram, form.ramTop, form.monitorBase, form.monitorTop, form.premiumZone]);
+  }, [form.vgaBase, form.vgaTop, form.vgaTop2, form.cpu, form.cpuTop1, form.cpuTop2, form.ram, form.ramTop, form.monitorBase, form.monitorTop]);
 
   function set<K extends keyof Competitor>(key: K, value: Competitor[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -356,12 +353,11 @@ function CompetitorForm({
 
       <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">존 구성</h4>
       <div className={`${gridClass} mt-3`}>
+        <NumberField label="1인석 수" value={form.singleSeatCount} onChange={(v) => set("singleSeatCount", v)} />
         <NumberField label="1인룸 수" value={form.room1} onChange={(v) => set("room1", v)} />
         <NumberField label="2인룸 수" value={form.room2} onChange={(v) => set("room2", v)} />
         <NumberField label="팀룸 수" value={form.teamRoom} onChange={(v) => set("teamRoom", v)} />
         <NumberField label="커플존 수" value={form.coupleZone} onChange={(v) => set("coupleZone", v)} />
-        <NumberField label="프리미엄존 수" value={form.premiumZone} onChange={(v) => set("premiumZone", v)} />
-        <BooleanSelectField label="프리미엄 사양 여부" value={form.premiumSpec} onChange={(v) => set("premiumSpec", v)} />
       </div>
 
       {errors.length > 0 && (
