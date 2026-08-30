@@ -236,8 +236,9 @@ describe("evaluateCandidate 배선 검증", () => {
       ownCoupleZone: 3,
       ownVipZone: 5,
       ownFriendsZone: 15,
-      // 2026-08-27: 표준값이 4→5(먹거리/인테리어)로 재조정됨 - STANDARD_OWN_FACILITY_DEFAULTS와 맞춘다.
-      ownFoodScore: 5,
+      // 2026-08-27: 표준값이 4→5(먹거리/인테리어)로 재조정됐다가, 2026-08-30 먹거리만 다시
+      // 5→4로(§11 쉐프앤클릭 기준점=4.0과 맞춤) - STANDARD_OWN_FACILITY_DEFAULTS와 맞춘다.
+      ownFoodScore: 4,
       ownInteriorScore: 5,
     };
     const blankResult = evaluateCandidate({

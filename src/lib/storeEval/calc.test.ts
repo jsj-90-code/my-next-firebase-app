@@ -726,17 +726,20 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     ownFoodScore: null,
     ownInteriorScore: null,
   };
-  it("전부 비어있으면 표준값(팀룸2·커플존3·VIP존5·프렌즈존15·먹거리/인테리어5점)을 적용한다", () => {
+  it("전부 비어있으면 표준값(팀룸2·커플존3·VIP존5·프렌즈존15·먹거리4점·인테리어5점)을 적용한다", () => {
     // 2026-08-27: 오픈 초기 기준 먹거리/인테리어는 "상"(5점)이 더 현실적이라는 사용자 확인으로
     // 4→5로 올렸다(원본 시트 "빈칸이면 4" 규칙과 달라진 값 — 의도된 재조정). 2026-08-28(2차):
     // 모니터가 텍스트 자동채점으로 바뀌며 "표준값 4" 폴백 자체가 없어져 반환값에서 빠졌다.
     // 2026-08-30: 게임존 가산점 폐지로 ownGameZoneCount/gameZoneCount 필드 자체를 없앴다.
+    // 2026-08-30(2차) — 먹거리는 5→4로 다시 내렸다. 경쟁력 평가 기준 최종본 §11이 "쉐프앤클릭
+    // (자사 대부분 매장이 쓰는 자체 브랜드)=4.0"을 기준점으로 확정해서, 브랜드 미지정 신규후보지가
+    // 그보다 높은 5점을 기본으로 받는 게 새 기준과 모순이었다(사용자 지적). 인테리어는 그대로 5점.
     expect(applyStandardOwnFacilityDefaults(blank)).toEqual({
       ownTeamRoom: 2,
       ownCoupleZone: 3,
       ownVipZone: 5,
       ownFriendsZone: 15,
-      ownFoodScore: 5,
+      ownFoodScore: 4,
       ownInteriorScore: 5,
     });
   });
@@ -776,8 +779,8 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
       { spec, food: facility.ownFoodScore, interior, location: computeLocationScoreFromFacts(1, "지하", false) },
       competitivenessSettings,
     );
-    // 4*.3 + 5*.2 + 5*.4 + 4*.1 = 1.2+1+2+0.4 = 4.6
-    expect(total).toBeCloseTo(4.6, 2);
+    // 4*.3 + 4*.2 + 5*.4 + 4*.1 = 1.2+0.8+2+0.4 = 4.4 (먹거리 표준값 2026-08-30부터 5→4)
+    expect(total).toBeCloseTo(4.4, 2);
   });
 });
 

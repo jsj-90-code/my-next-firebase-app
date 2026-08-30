@@ -759,7 +759,7 @@ export function BasicInfoTab({
               value={form.ownFoodScore}
               onChange={(v) => set("ownFoodScore", v)}
               step={0.5}
-              hint="브랜드없음/미정일 때 직접 평가 · 비우면 표준값 5(상) 적용 · 아래 기준표 참고"
+              hint="브랜드없음/미정일 때 직접 평가 · 비우면 표준값 4(쉐프앤클릭 기준점) 적용 · 아래 기준표 참고"
             />
           )}
           <ComputedField label="먹거리 점수 (최종)" value={computedScores.food} />
