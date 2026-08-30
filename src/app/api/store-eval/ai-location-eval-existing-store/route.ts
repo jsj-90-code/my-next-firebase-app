@@ -123,6 +123,9 @@ export async function POST(request: Request) {
         room2: null,
         teamRoom: null,
         coupleZone: null,
+        vipZone: null,
+        friendsZone: null,
+        firstClassZone: null,
         createdAt: now,
         updatedAt: now,
       }));

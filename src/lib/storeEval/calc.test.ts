@@ -33,6 +33,7 @@ import {
   combineHardwareTiers,
   computeCompetitorAppliedPcCount,
   computeFloatingRawDemand,
+  computeFreshnessFromYear,
   computeImpliedUtilizationFromRevenue,
   computeLocationCompositeScore,
   computeLocationScoreFromFacts,
@@ -40,11 +41,16 @@ import {
   computeMarketDemand,
   computeMarketGrade,
   computeMeasuredForecast,
+  computeOwnLocationScore,
+  computeSingleSeatBonus,
   computeSpecScore,
   computeV61Fallback,
   computeV62Final,
   computeValidationRow,
-  computeZoneComposition,
+  computeZoneAchievement,
+  computeZoneScore,
+  resolveFreshnessScore,
+  resolveSeatZoneScore,
   applyStandardOwnFacilityDefaults,
   describeNotVerifiableReason,
   diagnoseLoocvSensitivity,
@@ -67,7 +73,6 @@ import {
   scoreFromRamSpec,
   scoreFromVga,
   scoreFromVgaSpec,
-  scoreFromZoneDiversity,
   summarizeValidation,
   summarizeValidationRows,
   toEmpiricalSample,
@@ -352,9 +357,9 @@ describe("scoreFromCpu (2026-08-27 추가 — 세대 기반 CPU 점수, 14세대
   it("4자리 구형 모델번호(9세대 이하, 예: i5-9400)는 5자리 패턴에 안 걸려 null - 지어내지 않는다", () => {
     expect(scoreFromCpu("i5-9400")).toBeNull();
   });
-  it("세대를 못 뽑으면(AMD 등) null - 지어내지 않는다", () => {
-    expect(scoreFromCpu("ryzen 9600")).toBeNull();
+  it("세대/모델 패턴을 못 뽑으면 null - 지어내지 않는다", () => {
     expect(scoreFromCpu("울트라5 시리즈2 225F")).toBeNull();
+    expect(scoreFromCpu("알수없음")).toBeNull();
   });
   it("텍스트가 없으면 null", () => {
     expect(scoreFromCpu(null)).toBeNull();
@@ -365,6 +370,24 @@ describe("scoreFromRam (텍스트가 없거나 단위를 못 뽑으면 null)", (
   it("텍스트가 없거나 단위를 못 뽑으면 null", () => {
     expect(scoreFromRam(null)).toBeNull();
     expect(scoreFromRam("많음")).toBeNull();
+  });
+});
+
+describe("scoreFromCpu/scoreFromVga AMD 환산 (경쟁력 평가 기준 최종본 §14, 2026-08-30)", () => {
+  it("라이젠 5000번대(Zen3)는 11세대 인텔 동급 → 1점", () => {
+    expect(scoreFromCpu("Ryzen 5 5600")).toBe(1);
+  });
+  it("라이젠 7000번대(Zen4)는 13세대 인텔 동급 → 3점", () => {
+    expect(scoreFromCpu("라이젠7 7700X")).toBe(3);
+  });
+  it("라이젠 9000번대(Zen5)는 14세대 인텔 동급(현재 앵커) → 4점", () => {
+    expect(scoreFromCpu("ryzen 9600")).toBe(4);
+  });
+  it("라데온 RX6600은 RTX3060 동급 → 2점", () => {
+    expect(scoreFromVga("RX 6600")).toBe(2);
+  });
+  it("라데온 RX7600은 RTX4060 동급(RTX5060 앵커보다 한 세대 아래) → 3점", () => {
+    expect(scoreFromVga("RX 7600")).toBe(3);
   });
 });
 
@@ -408,18 +431,19 @@ describe("scoreFromCpu (2026-08-28 확장 — 울트라 신형 네이밍 + 기�
   });
 });
 
-describe("scoreFromRam (2026-08-28 재보정 — 16GB=4점 앵커, 사용자 기준표)", () => {
-  it("32GB 이상은 5점", () => {
-    expect(scoreFromRam("32G")).toBe(5);
+describe("scoreFromRam (2026-08-30 재보정 — 경쟁력 평가 기준 최종본 §9)", () => {
+  it("64GB 이상은 5점", () => {
+    expect(scoreFromRam("64G")).toBe(5);
   });
-  it("16GB는 앵커값 4점", () => {
-    expect(scoreFromRam("16G")).toBe(4);
+  it("32GB는 4.5점", () => {
+    expect(scoreFromRam("32G")).toBe(4.5);
   });
-  it("8GB는 2점(3점은 혼합구성 전용이라 자동채점에서 안 나옴)", () => {
-    expect(scoreFromRam("8G")).toBe(2);
+  it("16GB는 3.5점", () => {
+    expect(scoreFromRam("16G")).toBe(3.5);
   });
-  it("8GB 미만은 1점", () => {
-    expect(scoreFromRam("4G")).toBe(1);
+  it("8GB 이하는 1.5점", () => {
+    expect(scoreFromRam("8G")).toBe(1.5);
+    expect(scoreFromRam("4G")).toBe(1.5);
   });
 });
 
@@ -441,21 +465,29 @@ describe("combineHardwareTiers (기본80%+특화들 균등분배20%, 2026-08-28 
   });
 });
 
-describe("scoreFromMonitor (모니터 Hz, 2026-08-28(2차) 사용자 확정 전체 구간표로 재보정)", () => {
-  it("360Hz 이상은 5점", () => {
-    expect(scoreFromMonitor("360Hz")).toBe(5);
+describe("scoreFromMonitor (모니터, 2026-08-30 재보정 — 경쟁력 평가 기준 최종본 §10)", () => {
+  it("400Hz 이상은 5점", () => {
+    expect(scoreFromMonitor("400Hz")).toBe(5);
+  });
+  it("360~399Hz는 4.75점", () => {
+    expect(scoreFromMonitor("360Hz")).toBe(4.75);
   });
   it("300~359Hz는 4.5점", () => {
     expect(scoreFromMonitor("300Hz")).toBe(4.5);
   });
-  it("240~299Hz(기본만, 특화 없음)는 3.5점", () => {
+  it("241~299Hz는 4점", () => {
+    expect(scoreFromMonitor("280Hz")).toBe(4);
+  });
+  it("201~240Hz(32인치FHD240Hz 기준점 포함)는 3.5점", () => {
     expect(scoreFromMonitor("240Hz")).toBe(3.5);
+    expect(scoreFromMonitor("200Hz")).not.toBe(3.5); // 200은 아래 구간
   });
-  it("180~239Hz는 3점", () => {
-    expect(scoreFromMonitor("200Hz")).toBe(3);
+  it("166~200Hz는 3.25점", () => {
+    expect(scoreFromMonitor("200Hz")).toBe(3.25);
   });
-  it("144~179Hz는 2.5점", () => {
-    expect(scoreFromMonitor("165Hz")).toBe(2.5);
+  it("144~165Hz(32인치FHD144-165Hz 기준점)는 3점", () => {
+    expect(scoreFromMonitor("165Hz")).toBe(3);
+    expect(scoreFromMonitor("144Hz")).toBe(3);
   });
   it("120~143Hz는 2점", () => {
     expect(scoreFromMonitor("120Hz")).toBe(2);
@@ -467,9 +499,25 @@ describe("scoreFromMonitor (모니터 Hz, 2026-08-28(2차) 사용자 확정 전�
     expect(scoreFromMonitor("BenQ XL2540X")).toBeNull();
     expect(scoreFromMonitor(null)).toBeNull();
   });
+  it("OLED·4K·UHD는 Hz와 무관하게 고정 5점", () => {
+    expect(scoreFromMonitor("144Hz OLED")).toBe(5);
+    expect(scoreFromMonitor("4K 60Hz")).toBe(5);
+  });
+  it("같은 Hz라도 QHD/WQHD면 +1.0(최대 5) — 27인치QHD165Hz=4.0 기준점", () => {
+    expect(scoreFromMonitor("165Hz QHD")).toBe(4); // 32인치FHD165Hz(3.0)+1.0
+    expect(scoreFromMonitor("165Hz FHD")).toBe(3); // FHD 명시는 가산 없음
+  });
+  it("34인치는 LG가 아니면 WQHD로 간주해 가산한다", () => {
+    expect(scoreFromMonitor("34인치 165Hz")).toBe(4); // 3.0+1.0
+    expect(scoreFromMonitor("LG 34인치 165Hz")).toBe(3); // LG는 가산 없음(§10 자사 34인치 예외)
+  });
+  it("BenQ ZOWIE는 계산값과 4.5 중 큰 값(특화 사양 하한)", () => {
+    expect(scoreFromMonitor("BenQ ZOWIE 165Hz")).toBe(4.5); // 3.0보다 4.5가 큼
+    expect(scoreFromMonitor("BenQ ZOWIE 400Hz")).toBe(5); // 5.0이 4.5보다 큼
+  });
   it("한 줄에 Hz가 여러 개면 평균 낸다", () => {
-    // (240+300)/2 = 270Hz → 240~299 구간이라 3.5점
-    expect(scoreFromMonitor("240Hz, 300Hz")).toBe(3.5);
+    // (240+300)/2 = 270Hz → 241~299 구간=4점
+    expect(scoreFromMonitor("240Hz, 300Hz")).toBe(4);
   });
   it("Hz가 없으면 모델명 사전(MONITOR_MODEL_HZ_TABLE)에서 찾는다(대소문자·공백 무시, 부분일치)", () => {
     const table = { "2546K": 240, "27GP850": 165 };
@@ -477,16 +525,16 @@ describe("scoreFromMonitor (모니터 Hz, 2026-08-28(2차) 사용자 확정 전�
   });
   it("콤마로 여러 모델이 나열돼 있으면 매칭된 모델들의 Hz를 평균한다", () => {
     const table = { "2546K": 240, "27GP850": 165 };
-    // 매칭: 2546K(240)+27GP850(165) → 평균 202.5Hz → 180~239 구간=3점 (GP750은 표에 없어 무시)
-    expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750, LG 27GP850", table)).toBe(3);
+    // 매칭: 2546K(240)+27GP850(165) → 평균 202.5Hz → 201~240 구간=3.5점 (GP750은 표에 없어 무시)
+    expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750, LG 27GP850", table)).toBe(3.5);
   });
   it("사전에도 없는 모델명이면 null(지어내지 않음)", () => {
     expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750", {})).toBeNull();
   });
   it("기본 MONITOR_MODEL_HZ_TABLE(사용자 확인, 2026-08-28)로 실제 매장 문구를 채점한다", () => {
-    // 전대후문점 실사례: 벤큐2546K(240)+벤큐2746K(240)+GP750(240)+GP850(165) 평균=221.25Hz → 3점
-    expect(scoreFromMonitor("벤큐 2546K, 벤큐 2746K, LG울트라기어 GP750, LG울트라기어 GP850")).toBe(3);
-    expect(scoreFromMonitor("DELL")).toBe(5); // 360Hz
+    // 전대후문점 실사례: 벤큐2546K(240)+벤큐2746K(240)+GP750(240)+GP850(165) 평균=221.25Hz → 3.5점
+    expect(scoreFromMonitor("벤큐 2546K, 벤큐 2746K, LG울트라기어 GP750, LG울트라기어 GP850")).toBe(3.5);
+    expect(scoreFromMonitor("DELL")).toBe(4.75); // 360Hz
   });
 });
 
@@ -505,8 +553,8 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
   it("CPU — 기본+특화1(14400=4, 13400=3) → 4*.8+3*.2=3.8", () => {
     expect(scoreFromCpuSpec("14400", "13400", null)).toBeCloseTo(3.8, 2);
   });
-  it("RAM — 기본+특화(16G=4, 32G=5) → 4*.8+5*.2=4.2", () => {
-    expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(4.2, 2);
+  it("RAM — 기본+특화(16G=3.5, 32G=4.5) → 3.5*.8+4.5*.2=3.7", () => {
+    expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(3.7, 2);
   });
   it("모니터 — 기본+특화(240Hz=3.5, 300Hz=4.5) → 3.5*.8+4.5*.2=3.7", () => {
     expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(3.7, 2);
@@ -522,29 +570,33 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
 describe("computeSpecScore (하드웨어점수 = GPU40%+모니터25%+CPU20%+RAM15%, 2026-08-28 전면개편)", () => {
   const blankItems = { vgaBase: null, vgaTop: null, vgaTop2: null, cpu: null, cpuTop1: null, cpuTop2: null, ram: null, ramTop: null, monitorBase: null, monitorTop: null };
   it("GPU만 있으면 GPU 점수 그대로", () => {
-    expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060" }, settings)).toBe(3);
+    expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060" }, settings)).toBeCloseTo(3, 10);
   });
   it("모니터만 있으면 모니터 점수 그대로", () => {
     expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz" }, settings)).toBe(4.5);
   });
   it("GPU+CPU+RAM+모니터가 다 있으면 40/20/15/25 가중평균", () => {
-    // GPU: RTX4060(3점, 2026-08-30 게임존 가산 폐지) / CPU: 14400(4점) / RAM: 32G(5점) / 모니터: 240Hz(3.5점)
-    // 3*.4 + 3.5*.25 + 5*.15 + 4*.2 = 1.2+0.875+0.75+0.8 = 3.625
+    // GPU: RTX4060(3점) / CPU: 14400(4점) / RAM: 32G(2026-08-30 재보정 4.5점) / 모니터: 240Hz(3.5점)
+    // 3*.4 + 3.5*.25 + 4.5*.15 + 4*.2 = 1.2+0.875+0.675+0.8 = 3.55
     expect(
       computeSpecScore(
         { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null },
         settings,
       ),
-    ).toBeCloseTo(3.625, 2);
+    ).toBeCloseTo(3.55, 2);
   });
   it("전부 없으면 null(지어내지 않음)", () => {
     expect(computeSpecScore(blankItems, settings)).toBeNull();
   });
 });
 
-describe("computeFoodScore (먹거리 브랜드 기준, 2026-08-27 추가)", () => {
-  it("브랜드가 있으면 settings.foodBrandScores 값을 그대로 쓴다(직접입력값 무시)", () => {
-    expect(computeFoodScore({ brand: "쉐프앤클릭", legacyScore: 2 }, settings)).toBe(settings.foodBrandScores.쉐프앤클릭);
+describe("computeFoodScore (먹거리 브랜드 기준, 2026-08-30 우선순위 반전 — 경쟁력 평가 기준 최종본 §11)", () => {
+  it("직접입력값이 있으면 브랜드 프리셋보다 우선한다(사용자 확인: 확인된 경우에만 가감)", () => {
+    expect(computeFoodScore({ brand: "쉐프앤클릭", legacyScore: 2 }, settings)).toBe(2);
+    expect(computeFoodScore({ brand: "비바쿡", legacyScore: 4.5 }, settings)).toBe(4.5);
+  });
+  it("직접입력값이 없으면 브랜드 프리셋을 쓴다", () => {
+    expect(computeFoodScore({ brand: "쉐프앤클릭", legacyScore: null }, settings)).toBe(settings.foodBrandScores.쉐프앤클릭);
     expect(computeFoodScore({ brand: "비바쿡", legacyScore: null }, settings)).toBe(settings.foodBrandScores.비바쿡);
   });
   it("브랜드없음이면 직접입력값(legacyScore)을 쓴다", () => {
@@ -558,16 +610,94 @@ describe("computeFoodScore (먹거리 브랜드 기준, 2026-08-27 추가)", () 
   });
 });
 
+describe("computeFreshnessFromYear/resolveFreshnessScore (경쟁력 평가 기준 최종본 §7, 2026-08-30)", () => {
+  const thisYear = new Date().getFullYear();
+  it("리뉴얼연도 기준 연차별 점수", () => {
+    expect(computeFreshnessFromYear(thisYear, null)).toBe(5.0); // 0년(1년 이하)
+    expect(computeFreshnessFromYear(thisYear - 2, null)).toBe(4.5); // 2년
+    expect(computeFreshnessFromYear(thisYear - 3, null)).toBe(4.0); // 3년
+    expect(computeFreshnessFromYear(thisYear - 4, null)).toBe(3.5); // 4년
+    expect(computeFreshnessFromYear(thisYear - 6, null)).toBe(3.0); // 6년
+    expect(computeFreshnessFromYear(thisYear - 7, null)).toBe(2.5); // 6년 초과
+  });
+  it("리뉴얼연도가 없으면 오픈일에서 연도를 뽑는다", () => {
+    expect(computeFreshnessFromYear(null, `${thisYear - 1}-05-01`)).toBe(5.0);
+  });
+  it("리뉴얼연도가 있으면 오픈일보다 우선한다", () => {
+    expect(computeFreshnessFromYear(thisYear, `${thisYear - 10}-01-01`)).toBe(5.0);
+  });
+  it("둘 다 없으면 null", () => {
+    expect(computeFreshnessFromYear(null, null)).toBeNull();
+  });
+  it("직접입력(조사자 확인값)이 있으면 연도 계산보다 우선한다", () => {
+    expect(resolveFreshnessScore(2, thisYear, null)).toBe(2); // 새 건물이어도 직접 확인한 노후도가 우선
+  });
+  it("직접입력이 없으면 연도 기반 자동계산으로 폴백", () => {
+    expect(resolveFreshnessScore(null, thisYear - 6, null)).toBe(3.0);
+  });
+});
+
+describe("computeZoneScore/computeZoneAchievement/computeSingleSeatBonus (경쟁력 평가 기준 최종본 §3~6, 2026-08-30)", () => {
+  const blankCounts = { teamRoom: null, room2: null, coupleZone: null, vipZone: null, friendsZone: null, singleSeatCount: null, room1: null, firstClassZone: null };
+  it("주요 존 가산점 환산 예시값과 일치한다(팀룸2개+0.50, 커플존4개+0.40, VIP존5개+0.30, 프렌즈존10개+0.40)", () => {
+    expect(computeZoneScore({ ...blankCounts, teamRoom: 2 })).toBeCloseTo(2.0 + 0.5, 6);
+    expect(computeZoneScore({ ...blankCounts, coupleZone: 4 })).toBeCloseTo(2.0 + 0.4, 6);
+    expect(computeZoneScore({ ...blankCounts, vipZone: 5 })).toBeCloseTo(2.0 + 0.3, 6);
+    expect(computeZoneScore({ ...blankCounts, friendsZone: 10 })).toBeCloseTo(2.0 + 0.4, 6);
+    expect(computeZoneScore({ ...blankCounts, room2: 2 })).toBeCloseTo(2.0 + 0.4, 6); // 2인룸 2개 기준 +0.40
+  });
+  it("팀룸 1개는 +0.25, 3개 이상은 150%까지만 반영돼 최대 +0.75", () => {
+    expect(computeZoneScore({ ...blankCounts, teamRoom: 1 })).toBeCloseTo(2.0 + 0.25, 6);
+    expect(computeZoneScore({ ...blankCounts, teamRoom: 3 })).toBeCloseTo(2.0 + 0.75, 6);
+    expect(computeZoneScore({ ...blankCounts, teamRoom: 10 })).toBeCloseTo(2.0 + 0.75, 6); // 상한 클램프
+  });
+  it("1인 특화 가산점 — 1인석 10개 +0.1, 1인룸 5개 +0.2, 합산 최대 +0.2", () => {
+    expect(computeSingleSeatBonus(10, 0)).toBeCloseTo(0.1, 6);
+    expect(computeSingleSeatBonus(0, 5)).toBeCloseTo(0.2, 6);
+    expect(computeSingleSeatBonus(10, 5)).toBeCloseTo(0.2, 6); // 0.1+0.2=0.3이지만 상한 0.2로 클램프
+  });
+  it("퍼스트클래스존 보유 시 +0.5, 여러 개라도 최대 +0.5", () => {
+    expect(computeZoneScore({ ...blankCounts, firstClassZone: 1 })).toBeCloseTo(2.5, 6);
+    expect(computeZoneScore({ ...blankCounts, firstClassZone: 3 })).toBeCloseTo(2.5, 6);
+  });
+  it("모든 존이 만점이면 상한 5점으로 클램프", () => {
+    expect(computeZoneScore({ teamRoom: 3, room2: 3, coupleZone: 6, vipZone: 8, friendsZone: 15, singleSeatCount: 10, room1: 5, firstClassZone: 1 })).toBe(5);
+  });
+  it("존 개수가 전부 없으면 null(레거시 직접입력 폴백 대상)", () => {
+    expect(computeZoneScore(blankCounts)).toBeNull();
+  });
+  it("resolveSeatZoneScore — 하나라도 채워지면 자동계산, 전부 없으면 legacy 직접입력으로 폴백", () => {
+    expect(resolveSeatZoneScore({ ...blankCounts, teamRoom: 2 }, 3)).toBeCloseTo(2.5, 6); // 자동계산이 legacy(3)보다 우선
+    expect(resolveSeatZoneScore(blankCounts, 3)).toBe(3);
+    expect(resolveSeatZoneScore(blankCounts, null)).toBeNull();
+  });
+});
+
+describe("computeOwnLocationScore (경쟁력 평가 기준 최종본 §12 — 자사/후보지 입지점수, 2026-08-30)", () => {
+  const facts = { floor: 1, groundLevel: "지하" as const, hasElevator: false }; // computeLocationScoreFromFacts → 4
+  it("09_입지동선평가가 있으면 4요소 조합을 쓴다", () => {
+    const loc = { locationScore: 4, flowScore: 4, preemptionScore: 3, visibilityScore: 4 };
+    expect(computeOwnLocationScore(loc, facts, settings)).toBeCloseTo(3.75, 2); // 기존 computeLocationCompositeScore 테스트와 동일 사례
+  });
+  it("09_입지동선평가가 없으면 층수+엘리베이터 자동계산으로 폴백한다", () => {
+    expect(computeOwnLocationScore(null, facts, settings)).toBe(4);
+  });
+  it("09_입지동선평가가 일부만 채워져 있으면(미완성) 폴백한다", () => {
+    const loc = { locationScore: 4, flowScore: null, preemptionScore: 3, visibilityScore: 4 };
+    expect(computeOwnLocationScore(loc, facts, settings)).toBe(4);
+  });
+});
+
 describe("computeInteriorSeatManagementScore (좌석존구성50%+최신성25%+청결관리15%+편의성10%, 2026-08-28 전면개편)", () => {
   const interiorWeights = { seatZone: 0.5, freshness: 0.25, cleanliness: 0.15, comfort: 0.1 };
-  it("넷 다 있으면 가중평균(0.5점 단위 반올림)", () => {
-    // 4*.5 + 3*.25 + 3*.15 + 2*.1 = 2+0.75+0.45+0.2 = 3.4 → 0.5단위 반올림하면 3.5
+  it("넷 다 있으면 가중평균(2026-08-30부터 반올림 금지 — §15)", () => {
+    // 4*.5 + 3*.25 + 3*.15 + 2*.1 = 2+0.75+0.45+0.2 = 3.4 (반올림 없음)
     expect(
       computeInteriorSeatManagementScore(
         { seatZoneScore: 4, freshnessScore: 3, cleanlinessScore: 3, comfortScore: 2, legacyScore: null },
         { interiorWeights },
       ),
-    ).toBeCloseTo(3.5, 2);
+    ).toBeCloseTo(3.4, 2);
   });
   it("일부만 있으면 채워진 항목의 가중치로 재정규화", () => {
     expect(
@@ -584,20 +714,6 @@ describe("computeInteriorSeatManagementScore (좌석존구성50%+최신성25%+�
         { interiorWeights },
       ),
     ).toBe(4);
-  });
-});
-
-describe("computeZoneComposition/scoreFromZoneDiversity (2026-08-28 — 좌석점수 자동계산에서 빠지고, 화면 참고용 힌트로만 쓰임)", () => {
-  it("자사 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15) → 종류수5(일반석 포함)", () => {
-    const { kinds, rooms } = computeZoneComposition([0, 0, 2, 3, 5], [15]);
-    expect(kinds).toBe(5); // 일반석1 + 팀룸/커플존/VIP존/프렌즈존 4종
-    expect(rooms).toBe(10); // 2+3+5, 프렌즈존은 제외 (가중치 없이 단순 합계)
-    expect(scoreFromZoneDiversity(kinds)).toBe(4); // 참고용 힌트(일반석 포함 kinds 기준, 특화존 자체는 kinds-1=4종)
-  });
-  it("경쟁점 팀룸 8개(1종)", () => {
-    const rival = computeZoneComposition([0, 0, 8, 0]);
-    expect(rival.kinds).toBe(2);
-    expect(rival.rooms).toBe(8);
   });
 });
 
@@ -1024,6 +1140,8 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       ownCoupleZone: 3,
       ownVipZone: 5,
       ownFriendsZone: 15,
+      ownFirstClassZone: null,
+      ownSingleSeatCount: null,
       ownFoodScore: 4,
       ownInteriorScore: 4,
       ownMonitorBase: "240Hz", // scoreFromMonitor 2026-08-28(2차) 재보정 = 3.5점
@@ -1092,7 +1210,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
   }
 
   it("존구성/VGA가 하나라도 없으면(물리적 시설 사실) 표준값으로 채우지 않고 데이터 부족으로 제외한다", () => {
-    const result = computeExistingStoreMeasuredForecast(baseStore({ ownVgaBase: null }), [competitor()], settings);
+    const result = computeExistingStoreMeasuredForecast(baseStore({ ownVgaBase: null }), [competitor()], null, settings);
     expect(result.excludedReason).toBe("데이터 부족(자사 존구성/VGA 미완비)");
     expect(result.measuredForecastMonthlyRevenue).toBeNull();
   });
@@ -1101,17 +1219,19 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const result = computeExistingStoreMeasuredForecast(
       baseStore({ ownFoodScore: null, ownInteriorScore: null, ownMonitorBase: null }),
       [competitor()],
+      null,
       settings,
     );
     expect(result.excludedReason).toBeNull();
-    // hardware(spec): GPU(RTX5060=4, 2026-08-30 게임존 가산 폐지) — CPU/RAM/모니터 없어서 GPU
-    // 가중치만 재정규화. food=4 interior=4 location=4.0(기존 가맹점은 원본 규칙대로 4/4)
-    // → 4*.3+4*.2+4*.4+4*.1 = 4.0
-    expect(result.ownCompetitivenessScore).toBeCloseTo(4.0, 3);
+    // hardware(spec): GPU(RTX5060=4) — CPU/RAM/모니터 없어서 GPU 가중치만 재정규화. food=4
+    // (원본 규칙대로 4). interior는 2026-08-30부터 존 개수(팀룸2·커플존3·VIP존5·프렌즈존15)로
+    // 자동계산됨(§3~6) — achievement=.25+0+.15+.15+.30=.85 → 2.0+.85*2=3.7. location=4.0
+    // → 4*.3+4*.2+3.7*.4+4*.1 = 3.88
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.88, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
-    const result = computeExistingStoreMeasuredForecast(baseStore(), [], settings);
+    const result = computeExistingStoreMeasuredForecast(baseStore(), [], null, settings);
     expect(result.excludedReason).toBe("경쟁점 정보 없음");
   });
 
@@ -1119,6 +1239,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const result = computeExistingStoreMeasuredForecast(
       baseStore(),
       [competitor({ pingbotUtilization: null, measuredSeatRate: 28.9 })],
+      null,
       settings,
     );
     expect(result.excludedReason).toBe("경쟁점 실측 데이터 부족(핑봇 실측 없음)");
@@ -1126,13 +1247,13 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
 
   it("입력이 완비되면 evaluate.ts와 동일한 조합으로 계산하고, 각 단계 출력이 재조합값과 일치한다", () => {
     const competitors = [competitor()];
-    const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
+    const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, null, settings);
     expect(result.excludedReason).toBeNull();
     // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합. 하드웨어점수는
-    // GPU(RTX5060=4, 2026-08-30 게임존 가산 폐지), 모니터(240Hz=3.5, 2026-08-28(2차) 재보정) —
-    // (4*.4+3.5*.25)/(0.4+0.25)=3.808, food=4 interior=4 location=4
-    // → 3.808*.3+4*.2+4*.4+4*.1 = 3.942
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.942, 2);
+    // GPU(RTX5060=4), 모니터(240Hz=3.5) — (4*.4+3.5*.25)/(0.4+0.25)=3.808. food=4.
+    // interior는 존 개수 자동계산(§3~6)으로 3.7(위 테스트와 동일 계산). location=4
+    // → 3.808*.3+4*.2+3.7*.4+4*.1 = 3.822
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.822, 2);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
@@ -1150,7 +1271,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
 
   describe("경쟁점 핑봇 커버율(원본 CONFIG.MODEL.최소커버율=0.70과 같은 개념, 2026-08-22 추가 — 표본 제외 기준이 아니라 참고 신뢰도)", () => {
     it("경쟁점 전부 핑봇 실측이면 커버율 100%, 낮은신뢰도 아님", () => {
-      const result = computeExistingStoreMeasuredForecast(baseStore(), [competitor(), competitor({ id: "c2" })], settings);
+      const result = computeExistingStoreMeasuredForecast(baseStore(), [competitor(), competitor({ id: "c2" })], null, settings);
       expect(result.competitorCoverageRatio).toBe(1);
       expect(result.isLowCoverageReliability).toBe(false);
     });
@@ -1162,7 +1283,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
         competitor({ id: "c4", pingbotUtilization: null, measuredSeatRate: null }),
         competitor({ id: "c5", pingbotUtilization: null, measuredSeatRate: null }),
       ];
-      const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, settings);
+      const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, null, settings);
       expect(result.excludedReason).toBeNull();
       expect(result.competitorCoverageRatio).toBeCloseTo(0.2, 4);
       expect(result.isLowCoverageReliability).toBe(true);
@@ -1171,8 +1292,8 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
 
   it("evaluationPcCount(평가기준 대수)를 우선 쓴다 — 오픈 후 증설한 매장을 현재 pcCount로 계산하면 안 됨(2026-08-30 발견)", () => {
     const competitors = [competitor()];
-    const expanded = computeExistingStoreMeasuredForecast(baseStore({ pcCount: 200, evaluationPcCount: 100 }), competitors, settings);
-    const notExpanded = computeExistingStoreMeasuredForecast(baseStore({ pcCount: 100, evaluationPcCount: null }), competitors, settings);
+    const expanded = computeExistingStoreMeasuredForecast(baseStore({ pcCount: 200, evaluationPcCount: 100 }), competitors, null, settings);
+    const notExpanded = computeExistingStoreMeasuredForecast(baseStore({ pcCount: 100, evaluationPcCount: null }), competitors, null, settings);
     expect(expanded.expectedUtilization).toBeCloseTo(notExpanded.expectedUtilization!, 6);
     expect(expanded.measuredForecastMonthlyRevenue).toBe(notExpanded.measuredForecastMonthlyRevenue);
   });
@@ -1203,6 +1324,8 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
       ownCoupleZone: 3,
       ownVipZone: 5,
       ownFriendsZone: 15,
+      ownFirstClassZone: null,
+      ownSingleSeatCount: null,
       ownFoodScore: 4,
       ownInteriorScore: 4,
       ownMonitorBase: "240Hz",
@@ -1293,7 +1416,7 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
   }
 
   it("경쟁점 핑봇 실측이 하나도 없어도 ownDemand/경쟁력점수를 계산한다(산식에서 핑봇은 필수가 아님, 사용자 확정)", () => {
-    const result = computeExistingStoreDemandEvaluation(baseStore(), [competitor()], settings);
+    const result = computeExistingStoreDemandEvaluation(baseStore(), [competitor()], null, settings);
     expect(result.excludedReason).toBeNull();
     expect(result.ownCompetitivenessScore).not.toBeNull();
     expect(result.marketDemand).not.toBeNull();
@@ -1301,13 +1424,13 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
   });
 
   it("자사 존구성/VGA가 미완비면(물리적 시설 사실) 표준값으로 채우지 않고 데이터 부족으로 제외한다", () => {
-    const result = computeExistingStoreDemandEvaluation(baseStore({ ownVgaBase: null }), [competitor()], settings);
+    const result = computeExistingStoreDemandEvaluation(baseStore({ ownVgaBase: null }), [competitor()], null, settings);
     expect(result.excludedReason).toBe("데이터 부족(자사 존구성/VGA 미완비)");
     expect(result.ownDemand).toBeNull();
   });
 
   it("경쟁점이 하나도 없어도 제외하지 않는다(computeExistingStoreMeasuredForecast와 달리 경쟁점 실측 자체가 필수 아님) — 경쟁력격차는 1.0(동급) 기본값으로 계산된다", () => {
-    const result = computeExistingStoreDemandEvaluation(baseStore(), [], settings);
+    const result = computeExistingStoreDemandEvaluation(baseStore(), [], null, settings);
     expect(result.excludedReason).toBeNull();
     expect(result.competitivenessGap).toBe(1.0);
     expect(result.ownDemand).not.toBeNull();
@@ -1315,7 +1438,7 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
 
   it("evaluate.ts(evaluateCandidate)와 동일한 조합(원수요×경쟁력격차 확보율)으로 재계산값과 일치한다", () => {
     const competitors = [competitor()];
-    const result = computeExistingStoreDemandEvaluation(baseStore(), competitors, settings);
+    const result = computeExistingStoreDemandEvaluation(baseStore(), competitors, null, settings);
     expect(result.excludedReason).toBeNull();
 
     const { marketDemand } = computeMarketDemand(baseStore(), settings);

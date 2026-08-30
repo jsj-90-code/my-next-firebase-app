@@ -39,7 +39,7 @@ import {
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { getLocationEvaluation, getModelSettings, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
-import type { Competitor, ExistingStore, ModelSettings } from "@/lib/storeEval/types";
+import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 
 // 기존 Google Sheet 참고 결과 (06_검증대시보드, docs/model-spec.md 근거). 코드에서 재계산하지
 //않고 시트에 이미 확정된 값을 그대로 옮겨 참고용으로만 비교한다 - 우리 쪽 산정식이 아니다.
@@ -104,6 +104,7 @@ type LoadState =
       settings: ModelSettings;
       existingStoresByCode: Map<string, ExistingStore>;
       competitorsByCode: Map<string, Competitor[]>;
+      locationEvaluationsByCode: Map<string, LocationEvaluation | null>;
     };
 
 async function loadValidationData(): Promise<{
@@ -111,6 +112,7 @@ async function loadValidationData(): Promise<{
   settings: ModelSettings;
   existingStoresByCode: Map<string, ExistingStore>;
   competitorsByCode: Map<string, Competitor[]>;
+  locationEvaluationsByCode: Map<string, LocationEvaluation | null>;
 } | null> {
   const [stores, settingsDoc] = await Promise.all([listExistingStores(), getModelSettings()]);
   if (stores.length === 0) return null;
@@ -118,6 +120,9 @@ async function loadValidationData(): Promise<{
 
   const existingStoresByCode = new Map(stores.map((s) => [s.storeCode, s]));
   const competitorsByCode = new Map<string, Competitor[]>();
+  // 2026-08-30(§12) — computeExistingStoreMeasuredForecast가 이제 loc을 받으므로(자사 입지10%
+  // 컴포넌트), 이 루프에서 어차피 매장마다 한 번씩 조회하는 loc을 재사용할 수 있게 저장해둔다.
+  const locationEvaluationsByCode = new Map<string, LocationEvaluation | null>();
 
   const inputs: ValidationStoreInput[] = await Promise.all(
     stores.map(async (s) => {
@@ -126,6 +131,7 @@ async function loadValidationData(): Promise<{
       const lookupCode = s.originCandidateCode ?? s.storeCode;
       const [loc, competitors] = await Promise.all([getLocationEvaluation(lookupCode), listCompetitors(lookupCode)]);
       competitorsByCode.set(s.storeCode, competitors);
+      locationEvaluationsByCode.set(s.storeCode, loc);
       return {
         storeCode: s.storeCode,
         storeName: s.storeName,
@@ -160,7 +166,7 @@ async function loadValidationData(): Promise<{
   );
 
   const { rows } = runCohortValidation(inputs, settings);
-  return { rows, settings, existingStoresByCode, competitorsByCode };
+  return { rows, settings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode };
 }
 
 const COHORT_LABELS: Record<TenureCohort, string> = {
@@ -666,6 +672,7 @@ export default function ValidationPage() {
                 settings: data.settings,
                 existingStoresByCode: data.existingStoresByCode,
                 competitorsByCode: data.competitorsByCode,
+                locationEvaluationsByCode: data.locationEvaluationsByCode,
               }
             : { status: "empty" },
         );
@@ -682,7 +689,7 @@ export default function ValidationPage() {
 
   const computed = useMemo(() => {
     if (state.status !== "ready") return null;
-    const { rows, settings, existingStoresByCode, competitorsByCode } = state;
+    const { rows, settings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode } = state;
 
     const targets = {
       mape: settings.targetMAE,
@@ -706,7 +713,8 @@ export default function ValidationPage() {
     const measuredForecastResults = coreRows.map((r) => {
       const store = existingStoresByCode.get(r.storeCode);
       const competitors = competitorsByCode.get(r.storeCode) ?? [];
-      const forecast = store ? computeExistingStoreMeasuredForecast(store, competitors, settings) : null;
+      const loc = locationEvaluationsByCode.get(r.storeCode) ?? null;
+      const forecast = store ? computeExistingStoreMeasuredForecast(store, competitors, loc, settings) : null;
       return { row: r, forecast };
     });
     const measuredForecastExcluded = measuredForecastResults.filter((m) => !m.forecast || m.forecast.excludedReason != null);

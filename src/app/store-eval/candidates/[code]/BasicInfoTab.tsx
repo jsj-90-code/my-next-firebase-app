@@ -9,14 +9,13 @@ import {
   applyStandardOwnFacilityDefaults,
   computeFoodScore,
   computeInteriorSeatManagementScore,
-  computeLocationScoreFromFacts,
+  computeOwnLocationScore,
+  computeZoneScore,
   computeSpecScore,
-  computeZoneComposition,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
   scoreFromVgaSpec,
-  scoreFromZoneDiversity,
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
 import { MarketDataUploadPanel } from "@/components/storeEval/MarketDataUploadPanel";
@@ -26,6 +25,7 @@ import {
   generateNextCandidateCode,
   getAdminDongReference,
   getCandidate,
+  getLocationEvaluation,
   getModelSettings,
   listCompetitors,
   listDemandPoints,
@@ -40,6 +40,7 @@ import type {
   DemandPoint,
   FoodBrand,
   GroundLevel,
+  LocationEvaluation,
   MarketDataUpload,
   ModelSettings,
   ReviewStatus,
@@ -62,8 +63,11 @@ import {
 // 2026-08-27 추가 — 먹거리 브랜드 선택지(사용자 확인). "브랜드없음"이면 직접 1~5점을 입력한다.
 const FOOD_BRAND_OPTIONS: { value: FoodBrand; label: string }[] = [
   { value: "쉐프앤클릭", label: "쉐프앤클릭 (블랙라벨 자체)" },
-  { value: "비바쿡", label: "비바쿡" },
+  { value: "한끼의품격", label: "한끼의품격" },
+  { value: "XOXO", label: "XOXO" },
   { value: "PC토랑", label: "PC토랑" },
+  { value: "비바쿡", label: "비바쿡" },
+  { value: "농심", label: "농심" },
   { value: "기타브랜드", label: "기타 브랜드" },
   { value: "브랜드없음", label: "브랜드없음 (직접입력)" },
 ];
@@ -163,6 +167,9 @@ export function BasicInfoTab({
   const [message, setMessage] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+  // 2026-08-30(경쟁력 평가 기준 최종본 §12) — "입지 점수 (자동)" 미리보기가 이제 09_입지동선평가
+  // 4요소 조합을 우선 쓰므로(computeOwnLocationScore), 이 탭에서도 그 값을 읽어둔다.
+  const [locationEvaluation, setLocationEvaluation] = useState<LocationEvaluation | null>(null);
 
   // 상권자료 자동수집 1단계(2026-08-24) — 주소→좌표, 행정구역 참고자료, 경쟁점/수요거점 자동수집.
   const [collecting, setCollecting] = useState(false);
@@ -193,6 +200,12 @@ export function BasicInfoTab({
       if (s) setSettings(s);
     });
   }, []);
+
+  useEffect(() => {
+    if (candidate.code === "new" || authLoading || !user) return;
+    getLocationEvaluation(candidate.code).then(setLocationEvaluation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidate.code, authLoading, user]);
 
   useEffect(() => {
     // Firebase Auth 세션 복원(onAuthStateChanged)이 끝나기 전에 Firestore를 읽으면 request.auth가
@@ -277,10 +290,17 @@ export function BasicInfoTab({
     // 비어있는 자사 시설 입력값은 회사 표준 존 구성으로 계산한다(evaluate.ts와 동일 규칙 —
     // 결과 탭에서 최종 계산할 때와 이 미리보기가 다르게 보이지 않도록 맞춘다).
     const facility = applyStandardOwnFacilityDefaults(form);
-    const { kinds } = computeZoneComposition(
-      [form.ownRoom1, form.ownRoom2, facility.ownTeamRoom, facility.ownCoupleZone, facility.ownVipZone],
-      [facility.ownFriendsZone],
-    );
+    // 2026-08-30(§3~6) — 좌석·존구성 점수를 존 개수 기반 결정론적 공식으로 자동계산한다.
+    const seatZoneAuto = computeZoneScore({
+      teamRoom: facility.ownTeamRoom,
+      room2: form.ownRoom2,
+      coupleZone: facility.ownCoupleZone,
+      vipZone: facility.ownVipZone,
+      friendsZone: facility.ownFriendsZone,
+      singleSeatCount: form.ownSingleSeatCount,
+      room1: form.ownRoom1,
+      firstClassZone: form.ownFirstClassZone,
+    });
     return {
       spec: computeSpecScore(
         {
@@ -304,11 +324,12 @@ export function BasicInfoTab({
       cpuScore: scoreFromCpuSpec(form.ownCpu, form.ownCpuTop1, form.ownCpuTop2),
       ramScore: scoreFromRamSpec(form.ownRam, form.ownRamTop),
       monitorScore: scoreFromMonitorSpec(form.ownMonitorBase, form.ownMonitorTop),
-      location: computeLocationScoreFromFacts(form.floor, form.groundLevel, form.hasElevator),
+      location: computeOwnLocationScore(locationEvaluation, form, settings),
       food: computeFoodScore({ brand: form.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings),
+      seatZoneAuto,
       interior: computeInteriorSeatManagementScore(
         {
-          seatZoneScore: form.ownSeatZoneScore,
+          seatZoneScore: seatZoneAuto ?? form.ownSeatZoneScore,
           freshnessScore: form.ownInteriorLevelScore,
           cleanlinessScore: form.ownInteriorConditionScore,
           comfortScore: form.ownComfortScore,
@@ -316,10 +337,6 @@ export function BasicInfoTab({
         },
         settings,
       ),
-      // 참고용 힌트 — 실제 계산엔 안 들어가고 화면에만 보여준다. 특화존 종류수(zoneKindsSuggestion)는
-      // 일반석 제외(kinds-1) — 좌석·존구성 rubric의 "4.0=블랙라벨과 동급(5종)" 기준과 비교해보라는 힌트다.
-      zoneKindsSuggestion: kinds - 1,
-      zoneDiversitySuggestion: scoreFromZoneDiversity(kinds),
     };
   }, [
     form.ownCpu,
@@ -338,6 +355,8 @@ export function BasicInfoTab({
     form.ownCoupleZone,
     form.ownVipZone,
     form.ownFriendsZone,
+    form.ownFirstClassZone,
+    form.ownSingleSeatCount,
     form.floor,
     form.groundLevel,
     form.hasElevator,
@@ -348,6 +367,7 @@ export function BasicInfoTab({
     form.ownInteriorConditionScore,
     form.ownComfortScore,
     form.ownInteriorScore,
+    locationEvaluation,
     settings,
   ]);
 
@@ -708,7 +728,11 @@ export function BasicInfoTab({
           <ComputedField label="└ CPU 점수" value={computedScores.cpuScore} />
           <ComputedField label="└ RAM 점수" value={computedScores.ramScore} />
           <ComputedField label="└ 모니터 점수" value={computedScores.monitorScore} />
-          <ComputedField label="입지 점수 (자동)" value={computedScores.location} hint="층수+엘리베이터+지상/지하" />
+          <ComputedField
+            label="입지 점수 (자동)"
+            value={computedScores.location}
+            hint={locationEvaluation ? "09_입지동선평가(상권내위치·주요동선·선점경쟁·접근가시성)" : "층수+엘리베이터+지상/지하 (입지동선평가 전 임시값)"}
+          />
         </div>
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">하드웨어 - 모니터</h4>
@@ -743,23 +767,27 @@ export function BasicInfoTab({
         {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && <FoodScoringGuide />}
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어·좌석·관리</h4>
-        <p className="mt-1 text-xs text-[#8a8072]">
-          참고: 자동판정 특화존 종류수 {computedScores.zoneKindsSuggestion}종
-          (다양성 기준 {computedScores.zoneDiversitySuggestion}점 상당).
-        </p>
         <InteriorScoringGuide />
         <div className={`${gridClass} mt-3`}>
-          <ScoreSelectField
-            label="좌석·존구성"
-            value={form.ownSeatZoneScore}
-            onChange={(v) => set("ownSeatZoneScore", v)}
-            step={0.5}
-            hint="4.0=팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등 블랙라벨과 동급 · 위 기준표 참고"
-          />
+          {computedScores.seatZoneAuto != null ? (
+            <ComputedField
+              label="좌석·존구성 (자동)"
+              value={computedScores.seatZoneAuto}
+              hint="팀룸·2인룸·커플존·VIP존·프렌즈존·1인석·1인룸·퍼스트클래스존 개수로 자동계산"
+            />
+          ) : (
+            <ScoreSelectField
+              label="좌석·존구성 (직접입력)"
+              value={form.ownSeatZoneScore}
+              onChange={(v) => set("ownSeatZoneScore", v)}
+              step={0.5}
+              hint="위 존 개수를 하나도 안 채웠을 때만 직접 평가 · 위 기준표 참고"
+            />
+          )}
           <ScoreSelectField label="최신성·디자인" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
           <ScoreSelectField label="청결·관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />
           <ScoreSelectField label="편의성" value={form.ownComfortScore} onChange={(v) => set("ownComfortScore", v)} step={0.5} hint="냄새·조명·화장실·편의시설" />
-          {form.ownSeatZoneScore == null && form.ownInteriorLevelScore == null && form.ownInteriorConditionScore == null && form.ownComfortScore == null && (
+          {computedScores.seatZoneAuto == null && form.ownSeatZoneScore == null && form.ownInteriorLevelScore == null && form.ownInteriorConditionScore == null && form.ownComfortScore == null && (
             <ScoreSelectField
               label="인테리어·좌석·관리 점수 (직접입력)"
               value={form.ownInteriorScore}

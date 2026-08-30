@@ -10,6 +10,8 @@ import {
   computeCompetitorAppliedPcCount,
   computeCompetitorInvestigationSummary,
   computeCompetitorScores,
+  computeFreshnessFromYear,
+  computeZoneScore,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
@@ -21,6 +23,7 @@ import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } f
 import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
 import {
   BooleanSelectField,
+  CompetitorInteriorFallbackGuide,
   ComputedField,
   FoodScoringGuide,
   InteriorScoringGuide,
@@ -37,8 +40,11 @@ import {
 // 2026-08-27 추가 — 먹거리 브랜드 선택지(사용자 확인). "브랜드없음"이면 직접 1~5점을 입력한다.
 const FOOD_BRAND_OPTIONS: { value: FoodBrand; label: string }[] = [
   { value: "쉐프앤클릭", label: "쉐프앤클릭 (블랙라벨 자체)" },
-  { value: "비바쿡", label: "비바쿡" },
+  { value: "한끼의품격", label: "한끼의품격" },
+  { value: "XOXO", label: "XOXO" },
   { value: "PC토랑", label: "PC토랑" },
+  { value: "비바쿡", label: "비바쿡" },
+  { value: "농심", label: "농심" },
   { value: "기타브랜드", label: "기타 브랜드" },
   { value: "브랜드없음", label: "브랜드없음 (직접입력)" },
 ];
@@ -111,6 +117,9 @@ function blankCompetitor(candidateCode: string): Competitor {
     room2: null,
     teamRoom: null,
     coupleZone: null,
+    vipZone: null,
+    friendsZone: null,
+    firstClassZone: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -163,6 +172,9 @@ const NUMERIC_FIELDS: { key: keyof Competitor; label: string }[] = [
   { key: "room2", label: "2인룸 수" },
   { key: "teamRoom", label: "팀룸 수" },
   { key: "coupleZone", label: "커플존 수" },
+  { key: "vipZone", label: "VIP존 수" },
+  { key: "friendsZone", label: "프렌즈존 수" },
+  { key: "firstClassZone", label: "퍼스트클래스존 수" },
 ];
 
 function validate(form: Competitor): string[] {
@@ -221,6 +233,22 @@ function CompetitorForm({
   }, []);
 
   const computed = useMemo(() => computeCompetitorScores(form, settings), [form, settings]);
+  // 2026-08-30(§2·§3~6) — 화면에서 "자동계산됐는지"를 판단하는 데 쓴다(computed.interior 자체는
+  // 이미 이 값 또는 legacy seatZoneScore를 반영해 계산돼 있음, computeCompetitorScores 참고).
+  const zoneScoreAuto = useMemo(
+    () =>
+      computeZoneScore({
+        teamRoom: form.teamRoom,
+        room2: form.room2,
+        coupleZone: form.coupleZone,
+        vipZone: form.vipZone,
+        friendsZone: form.friendsZone,
+        singleSeatCount: form.singleSeatCount,
+        room1: form.room1,
+        firstClassZone: form.firstClassZone,
+      }),
+    [form.teamRoom, form.room2, form.coupleZone, form.vipZone, form.friendsZone, form.singleSeatCount, form.room1, form.firstClassZone],
+  );
   // 2026-08-28 추가 — "하드웨어 점수(자동)"만 봐서는 GPU/CPU/RAM/모니터 중 뭐가 어떻게 들어갔는지
   // 알 수 없다는 요청으로, computeCompetitorScores 내부와 동일한 항목별 함수를 그대로 한 번 더
   // 호출해 항목별 점수만 따로 보여준다(가중합산 로직 자체는 재사용, 새 산식 아님).
@@ -318,8 +346,8 @@ function CompetitorForm({
         간략/외관만이면 미입력 항목은 기본값(2.0/1.5)으로 채워집니다.
       </p>
       <div className={`${gridClass} mt-3`}>
-        <ComputedField label="하드웨어 점수 (자동)" value={computed.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%+프리미엄존 가산" />
-        <ComputedField label="└ GPU 점수" value={hardwareBreakdown.vgaScore} hint="프리미엄존 가산 포함" />
+        <ComputedField label="하드웨어 점수 (자동)" value={computed.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%" />
+        <ComputedField label="└ GPU 점수" value={hardwareBreakdown.vgaScore} />
         <ComputedField label="└ CPU 점수" value={hardwareBreakdown.cpuScore} />
         <ComputedField label="└ RAM 점수" value={hardwareBreakdown.ramScore} />
         <ComputedField label="└ 모니터 점수" value={hardwareBreakdown.monitorScore} />
@@ -343,17 +371,37 @@ function CompetitorForm({
         <ComputedField label="먹거리 점수 (최종)" value={computed.food} />
         {(form.foodBrand == null || form.foodBrand === "브랜드없음") && <FoodScoringGuide />}
         <InteriorScoringGuide />
-        <ScoreSelectField
-          label="좌석·존구성"
-          value={form.seatZoneScore}
-          onChange={(v) => set("seatZoneScore", v)}
-          step={0.5}
-          hint="4.0=블랙라벨과 동급(팀룸·2인룸·커플존·1인룸·프렌즈/VIP존 등) · 위 기준표 참고"
+        {zoneScoreAuto != null ? (
+          <ComputedField
+            label="좌석·존구성 (자동)"
+            value={zoneScoreAuto}
+            hint="팀룸·2인룸·커플존·VIP존·프렌즈존·1인석·1인룸·퍼스트클래스존 개수로 자동계산"
+          />
+        ) : (
+          <ScoreSelectField
+            label="좌석·존구성 (직접입력)"
+            value={form.seatZoneScore}
+            onChange={(v) => set("seatZoneScore", v)}
+            step={0.5}
+            hint="아래 존 개수를 하나도 안 채웠을 때(간략/외관만 조사) 조사자 종합평가"
+          />
+        )}
+        {zoneScoreAuto == null && <CompetitorInteriorFallbackGuide />}
+        <ComputedField
+          label="최신성·디자인 (자동, 직접입력 없을 때)"
+          value={computeFreshnessFromYear(form.renovationYear, null)}
+          hint="리뉴얼연도 기준(§7)"
         />
-        <ScoreSelectField label="최신성·디자인" value={form.interiorLevelScore} onChange={(v) => set("interiorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
+        <ScoreSelectField
+          label="최신성·디자인 (직접입력)"
+          value={form.interiorLevelScore}
+          onChange={(v) => set("interiorLevelScore", v)}
+          step={0.5}
+          hint="실제 시설 노후도를 확인했으면 자동계산보다 우선 · 비우면 위 자동계산값 사용"
+        />
         <ScoreSelectField label="청결·관리상태" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="청결도·노후도" />
         <ScoreSelectField label="편의성" value={form.comfortScore} onChange={(v) => set("comfortScore", v)} step={0.5} hint="냄새·조명·화장실·편의시설" />
-        {form.seatZoneScore == null && form.interiorLevelScore == null && form.interiorConditionScore == null && form.comfortScore == null && (
+        {zoneScoreAuto == null && form.seatZoneScore == null && form.interiorLevelScore == null && form.interiorConditionScore == null && form.comfortScore == null && (
           <ScoreSelectField
             label="인테리어·좌석·관리 점수 (직접입력)"
             value={form.interiorScore}
@@ -377,6 +425,14 @@ function CompetitorForm({
         <NumberField label="2인룸 수" value={form.room2} onChange={(v) => set("room2", v)} />
         <NumberField label="팀룸 수" value={form.teamRoom} onChange={(v) => set("teamRoom", v)} />
         <NumberField label="커플존 수" value={form.coupleZone} onChange={(v) => set("coupleZone", v)} />
+        <NumberField label="VIP존 수" value={form.vipZone} onChange={(v) => set("vipZone", v)} hint="웹 전용 입력 — 시트에는 컬럼 없음" />
+        <NumberField label="프렌즈존 수" value={form.friendsZone} onChange={(v) => set("friendsZone", v)} hint="웹 전용 입력 — 시트에는 컬럼 없음" />
+        <NumberField
+          label="퍼스트클래스존 수"
+          value={form.firstClassZone}
+          onChange={(v) => set("firstClassZone", v)}
+          hint="팀룸형+파우더룸 고급존 · 웹 전용 입력 — 시트에는 컬럼 없음"
+        />
       </div>
 
       {errors.length > 0 && (

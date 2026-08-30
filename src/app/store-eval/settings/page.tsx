@@ -51,8 +51,11 @@ const FIELD_LABELS: Record<string, string> = {
   "specWeights.vga": "사양 가중치 - VGA",
   "specWeights.monitor": "사양 가중치 - 모니터",
   "foodBrandScores.쉐프앤클릭": "먹거리 브랜드 점수 - 쉐프앤클릭",
-  "foodBrandScores.비바쿡": "먹거리 브랜드 점수 - 비바쿡",
+  "foodBrandScores.한끼의품격": "먹거리 브랜드 점수 - 한끼의품격",
+  "foodBrandScores.XOXO": "먹거리 브랜드 점수 - XOXO",
   "foodBrandScores.PC토랑": "먹거리 브랜드 점수 - PC토랑",
+  "foodBrandScores.비바쿡": "먹거리 브랜드 점수 - 비바쿡",
+  "foodBrandScores.농심": "먹거리 브랜드 점수 - 농심",
   "foodBrandScores.기타브랜드": "먹거리 브랜드 점수 - 기타브랜드",
   "locationCompositeWeights.withinMarket": "입지동선 가중치 - 상권내위치",
   "locationCompositeWeights.flow": "입지동선 가중치 - 주요동선",
@@ -596,12 +599,30 @@ export default function StoreEvalSettingsPage() {
 
       <Section
         title="먹거리 브랜드별 점수"
-        description="브랜드가 정해진 매장은 이 점수를 그대로 쓴다(브랜드없음이면 직접입력값 사용). 실측 근거 없는 초안값이니 필요시 조정할 것 - 2026-08-27 추가."
+        description="브랜드명만 확인되면 이 기본값을 쓴다(직접입력값이 있으면 그게 우선). 브랜드만으로 4점 이상 주지 않는 게 원칙 - 2026-08-30 경쟁력 평가 기준 최종본 §11."
       >
         <NumberInput
-          label="쉐프앤클릭 (블랙라벨 자체)"
+          label="쉐프앤클릭 (블랙라벨 자체, 최신 우수 운영매장 수준)"
           value={form.foodBrandScores.쉐프앤클릭}
           onChange={(v) => updateGroup("foodBrandScores", "쉐프앤클릭", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="한끼의품격"
+          value={form.foodBrandScores.한끼의품격}
+          onChange={(v) => updateGroup("foodBrandScores", "한끼의품격", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="XOXO"
+          value={form.foodBrandScores.XOXO}
+          onChange={(v) => updateGroup("foodBrandScores", "XOXO", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="PC토랑"
+          value={form.foodBrandScores.PC토랑}
+          onChange={(v) => updateGroup("foodBrandScores", "PC토랑", v)}
           readOnly={readOnly}
         />
         <NumberInput
@@ -611,9 +632,9 @@ export default function StoreEvalSettingsPage() {
           readOnly={readOnly}
         />
         <NumberInput
-          label="PC토랑"
-          value={form.foodBrandScores.PC토랑}
-          onChange={(v) => updateGroup("foodBrandScores", "PC토랑", v)}
+          label="농심"
+          value={form.foodBrandScores.농심}
+          onChange={(v) => updateGroup("foodBrandScores", "농심", v)}
           readOnly={readOnly}
         />
         <NumberInput

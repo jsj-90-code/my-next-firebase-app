@@ -15,7 +15,7 @@ import type { Firestore } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { computeExistingStoreDemandEvaluation, computeStabilizedPerformance } from "./calc";
 import { defaultModelSettings } from "./settings";
-import type { Competitor, ExistingStore, ModelSettings } from "./types";
+import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "./types";
 // scripts/migrateFullExistingStoreProfiles.mjs, scripts/syncSalesFromRevenueSheet.mjs와 셀 파싱/
 // dirty-check 로직을 하나로 합친다(tsconfig allowJs) — 예전엔 세 곳에 거의 동일하게 복붙돼 있어서
 // 핑봇_가동률 퍼센트 파싱 버그가 한쪽만 고쳐지고 이 파일엔 남아있던 사고가 있었다(2026-08-22,
@@ -136,16 +136,22 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   // 셋 다 서로 의존하지 않는 읽기라 순차 await 대신 병렬로 실행한다(2026-08-24, Cron 함수
   // 실행시간 제한 안에서 여유를 늘림). 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존
   // 경쟁점·회원스냅샷 데이터도 미리 읽어둔다.
-  const [storesSnap, competitorsSnap, membersSnap, settingsSnap] = await Promise.all([
+  const [storesSnap, competitorsSnap, membersSnap, settingsSnap, locationEvalsSnap] = await Promise.all([
     db.collection("storeEvalExistingStores").get(),
     db.collection("storeEvalCompetitors").get(),
     db.collection("storeEvalExistingStoreMembers").get(),
     db.collection("storeEvalSettings").doc("current").get(),
+    // 2026-08-30(경쟁력 평가 기준 최종본 §12) — 자사 "입지10%" 컴포넌트가 09_입지동선평가(4요소
+    // 조합)를 쓰도록 바뀌면서, 아래 경쟁력점수 재계산 루프가 매장별 LocationEvaluation도 필요해졌다.
+    // 이 컬렉션은 09_입지동선평가 시트 동기화가 끊긴 뒤로 웹(AI 평가 화면)에서만 쓰이므로, 시트를
+    // 다시 읽지 않고 Firestore 컬렉션을 통째로 한 번 읽어 맵으로 만든다(매장 133곳 순회 전 1회 조회).
+    db.collection("storeEvalLocationEvaluations").get(),
   ]);
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, d.data()]));
   const existingMemberById = new Map(membersSnap.docs.map((d) => [d.id, d.data()]));
+  const locationEvalByCandidateCode = new Map(locationEvalsSnap.docs.map((d) => [d.id, d.data() as LocationEvaluation]));
   const settings: ModelSettings = settingsSnap.exists
     ? { ...defaultModelSettings(), ...(settingsSnap.data() as ModelSettings) }
     : { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
@@ -334,10 +340,11 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   // 계산해 캐시값을 항상 최신으로 맞춘다.
   let competitivenessRecalculated = 0;
   for (const code of storeCodes) {
-    const store = storeDataByCode.get(code);
+    const store = storeDataByCode.get(code) as unknown as ExistingStore | undefined;
     if (!store) continue;
     const competitors = competitorsByStoreCode.get(code) ?? [];
-    const evalResult = computeExistingStoreDemandEvaluation(store as unknown as ExistingStore, competitors, settings);
+    const loc = locationEvalByCandidateCode.get(store.originCandidateCode ?? code) ?? null;
+    const evalResult = computeExistingStoreDemandEvaluation(store, competitors, loc, settings);
     // 2026-08-30 — marketDemand/competitorIp도 같이 캐시한다(calc.ts empiricalFeaturesFor가
     // ownDemand 대신 이 둘을 분리된 학습 특징치로 쓰게 바뀜, empiricalFeaturesFor 주석 참고).
     const patch = {

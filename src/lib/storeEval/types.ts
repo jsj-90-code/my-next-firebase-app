@@ -34,7 +34,9 @@ export type SpecialDemandType = "없음" | "대학가" | "군부대" | "산업�
  * 분류(사용자 확인). 쉐프앤클릭은 블랙라벨 자체 먹거리 브랜드, 비바쿡·PC토랑은 그 외 흔한
  * 외부 먹거리 브랜드다. 브랜드별 점수는 settings.foodBrandScores에서 조정한다.
  */
-export type FoodBrand = "쉐프앤클릭" | "비바쿡" | "PC토랑" | "기타브랜드" | "브랜드없음";
+// 2026-08-30(경쟁력 평가 기준 최종본 §11) — 한끼의품격/XOXO/농심 추가(브랜드명만 확인되면 기본
+// 3.0 취급, settings.foodBrandScores 참고).
+export type FoodBrand = "쉐프앤클릭" | "한끼의품격" | "XOXO" | "PC토랑" | "비바쿡" | "농심" | "기타브랜드" | "브랜드없음";
 export type SpecialDemandIntensity = "없음" | "낮음" | "보통" | "높음";
 
 // ---- 07_신규후보지 : 신규 후보지 입력 ----
@@ -130,9 +132,8 @@ export type CandidateInput = {
   ownVgaTop2: string | null;
   // 2026-08-28 (3차) — 그동안 "1인석"(칸막이·듀얼모니터만 있는 개방형 좌석)과 "1인룸"(벽으로
   // 막힌 독립 공간)이 시트에서 구분 안 됐는데, 사용자가 "자사_1인석" 컬럼을 새로 추가하며
-  // 분리했다. 좌석·존구성 rubric의 "칸막이만 있으면 독립룸 미인정" 원칙과 일치시켜, 1인석은
-  // 참고용으로만 기록하고 좌석점수 자동계산(computeZoneComposition)에는 넣지 않는다(어차피
-  // 좌석점수는 이제 수동 rubric 입력이라 참고자료일 뿐).
+  // 분리했다. 2026-08-30부터 computeZoneScore(calc.ts)가 이 값과 ownRoom1로 1인 특화 가산점을
+  // 계산한다(§4 — "하나라도 있으면 +0.2" 방식 폐기, 개수 비례로 교체).
   ownSingleSeatCount: number | null; // 1인석(개방형, 독립룸 아님)
   ownRoom1: number | null; // 1인룸(벽으로 막힌 독립 공간)
   ownRoom2: number | null; // 2인룸
@@ -141,16 +142,15 @@ export type CandidateInput = {
   ownVipZone: number | null;
   ownFriendsZone: number | null;
   // 2026-08-30 추가 — 팀룸처럼 룸 형태지만 안에 파우더룸이 있고 한 방에 약 10좌석이 들어가는
-  // 고급 컨셉존("퍼스트클래스존", 지금은 신규 출점에 안 씀 — 과거 매장 평가용). 자동 산식에는
-  // 안 쓴다(좌석·존구성 점수는 이미 rubric 직접입력) — 평가자가 인테리어평가 점수를 매길 때
-  // 참고하는 원본 사실 기록용이다(사용자 확인).
+  // 고급 컨셉존("퍼스트클래스존", 지금은 신규 출점에 안 씀 — 과거 매장 평가용). 보유(>0)하면
+  // 좌석·존구성 점수에 +0.5 가산한다(§5, calc.ts computeZoneScore) — 여러 개더라도 현재는 최대 +0.5.
   ownFirstClassZone: number | null;
-  // 경쟁력점수 4개 구성요소(2026-08-28 전면개편: 하드웨어30%+인테리어·좌석·관리40%+먹거리20%+
-  // 입지10%) 중 하드웨어/입지는 원본 Apps Script(점포평가.gs)가 VGA·층수+엘리베이터로부터 자동
-  // 계산하는 값이라(CANDIDATE_AUTO) 여기 CandidateInput에는 없다 — calc.ts의
-  // computeSpecScore/computeLocationScoreFromFacts로 매번 파생하고 CandidateComputed에 결과를
-  // 담는다. 먹거리/인테리어(좌석·관리 포함)는 평가자가 rubric표를 보고 직접 1~5점을 입력하는
-  // 항목이라 그대로 둔다.
+  // 경쟁력점수 4개 구성요소(하드웨어30%+인테리어·좌석·관리40%+먹거리20%+입지10%) 중 하드웨어는
+  // VGA·CPU·RAM·모니터 텍스트에서, 입지는 09_입지동선평가(4요소 조합, 없으면 층수+엘리베이터
+  // 폴백)로부터 자동 계산하는 값이라(CANDIDATE_AUTO) 여기 CandidateInput에는 없다 — calc.ts의
+  // computeSpecScore/computeOwnLocationScore로 매번 파생하고 CandidateComputed에 결과를 담는다.
+  // 먹거리는 브랜드 기본값+직접입력 override, 인테리어(좌석·관리 포함)는 좌석·존구성만 존 개수
+  // 자동계산이고 나머지 세부항목은 평가자가 rubric표를 보고 직접 1~5점을 입력한다.
   ownFoodScore: number | null; // 1~5 - 먹거리 브랜드가 "브랜드없음"이거나 안 정했을 때 쓰는 직접입력값(폴백)
   ownInteriorScore: number | null; // 1~5 - 아래 세부항목(좌석·존구성/최신성/청결관리/편의성)을 하나도
   // 안 채웠을 때 쓰는 종합 직접입력값(폴백)
@@ -162,18 +162,18 @@ export type CandidateInput = {
   // 2026-08-27 추가 — 먹거리 1점 차이로 예상매출이 크게 흔들린다는 지적(사용자 확인)에 따라, "조사자
   // 감으로 1~5점 찍기" 대신 실제로 매장이 쓰는 먹거리 브랜드를 기준으로 점수를 매긴다(최신 PC방은
   // 조리방식이 다 인덕션 등으로 비슷해 조리방식 자체는 변별력이 없다는 판단, 사용자 확인). 브랜드별
-  // 점수는 settings.foodBrandScores에서 읽는다(calc.ts computeFoodScore). "브랜드없음"이거나 안
-  // 정했으면 위 ownFoodScore 직접입력값(조사자 판단 또는 점포개발자 의견)을 그대로 쓴다.
+  // 기본값은 settings.foodBrandScores에서 읽는다(calc.ts computeFoodScore). 2026-08-30부터 위
+  // ownFoodScore 직접입력값이 있으면(조사자가 메뉴 구성·완성도·운영상태를 실제로 확인한 경우) 그
+  // 값이 브랜드 기본값보다 우선한다(§11 "브랜드만으로 4점 이상 주지 않는다") — 우선순위 반전.
   ownFoodBrand: FoodBrand | null;
-  // 2026-08-28 전면개편 — "인테리어·좌석구성·관리"(경쟁력점수의 40%)를 세부항목 4개의 가중평균으로
-  // 정교화한다(좌석·존구성50%+최신성·디자인25%+청결·관리상태15%+냄새·조명·화장실·편의성10%,
-  // calc.ts computeInteriorSeatManagementScore). 좌석·존구성은 팀룸/커플존/2인룸 등 존 개수를
-  // 세는 자동계산이 아니라, 평가자가 rubric표(칸막이만 있는 좌석은 독립룸 미인정 등)를 보고 직접
-  // 판단해 0.5점 단위로 입력한다(먹거리와 같은 이유 — 조사서 표현마다 사람 판단이 필요해 자동화가
-  // 어렵다). 하나라도 채우면 가중평균을 쓰고, 넷 다 비어 있으면 위 ownInteriorScore 직접입력값을
-  // 그대로 쓴다. 최신성·청결관리는 기존 세부항목(ownInteriorLevelScore/ownInteriorConditionScore)을
-  // 그대로 재사용한다.
-  ownSeatZoneScore: number | null; // 좌석·존구성(팀룸·커플존·1인룸 등 특화존 종류/완성도, rubric 기반)
+  // 2026-08-28 전면개편, 2026-08-30 재개편 — "인테리어·좌석구성·관리"(경쟁력점수의 40%)를 세부항목
+  // 4개의 가중평균으로 정교화한다(좌석·존구성50%+최신성·디자인25%+청결·관리상태15%+냄새·조명·
+  // 화장실·편의성10%, calc.ts computeInteriorSeatManagementScore). 좌석·존구성은 2026-08-30부터
+  // 팀룸/2인룸/커플존/VIP존/프렌즈존/1인석/1인룸/퍼스트클래스존 개수로 자동계산한다(§3~6,
+  // calc.ts computeZoneScore) — 존 개수가 전혀 없을 때만(레거시 데이터 등) 아래 직접입력값으로
+  // 폴백한다(resolveSeatZoneScore). 최신성·청결관리는 기존 세부항목(ownInteriorLevelScore/
+  // ownInteriorConditionScore)을 그대로 재사용한다.
+  ownSeatZoneScore: number | null; // 좌석·존구성 직접입력 폴백(존 개수 정보가 전혀 없을 때만 사용)
   ownInteriorLevelScore: number | null; // 최신성·디자인
   ownInteriorConditionScore: number | null; // 청결·관리상태
   ownComfortScore: number | null; // 냄새·조명·화장실·편의성
@@ -269,8 +269,10 @@ export type Competitor = {
   foodBrand: FoodBrand | null;
   interiorLevelScore: number | null; // 최신성·디자인
   interiorConditionScore: number | null; // 청결·관리상태
-  // 2026-08-28 전면개편 — CandidateInput.ownSeatZoneScore/ownComfortScore와 동일.
-  seatZoneScore: number | null; // 좌석·존구성(rubric 기반 직접입력)
+  // 2026-08-28 전면개편, 2026-08-30 재개편 — CandidateInput.ownSeatZoneScore와 동일 개념. 존
+  // 개수(teamRoom~firstClassZone)로 자동계산 가능하면 그 값을 쓰고, 조사수준이 간략/외관만이라
+  // 개수 자체를 모르면(전부 null) 이 직접입력값(조사자 종합평가)으로 폴백한다(§2, resolveSeatZoneScore).
+  seatZoneScore: number | null; // 좌석·존구성 직접입력 폴백(존 개수 정보가 전혀 없을 때만 사용)
   comfortScore: number | null; // 냄새·조명·화장실·편의성
   // 2026-08-30 추가 — CandidateInput.ownSingleSeatCount와 동일(1인석 vs 1인룸 구분). 05_경쟁점정보에
   // "1인석" 컬럼이 새로 생겨 room1(1인룸, 독립공간)과 분리해서 받는다.
@@ -279,6 +281,15 @@ export type Competitor = {
   room2: number | null;
   teamRoom: number | null;
   coupleZone: number | null;
+  // 2026-08-30 (경쟁력 평가 기준 최종본) 추가 — CandidateInput.ownVipZone/ownFriendsZone/
+  // ownFirstClassZone과 동일 개념. 05_경쟁점정보 시트에는 대응 컬럼이 없어(서비스계정이 읽기전용
+  // 권한이라 컬럼을 새로 추가할 수 없음) 웹 전용 입력 필드다(source/lat/lng과 같은 패턴) —
+  // cronSync.ts는 이 필드들을 시트에서 읽지 않으므로 CompetitorsTab에서 직접 입력한 값이 매일
+  // 자동동기화로 지워지지 않는다. computeZoneScore(calc.ts)가 이 셋 중 하나라도 채워지면 좌석·
+  // 존구성 점수를 자동계산하고, 전부 비어 있으면 기존 seatZoneScore 직접입력으로 폴백한다.
+  vipZone: number | null;
+  friendsZone: number | null;
+  firstClassZone: number | null;
   // 2026-08-24 추가 — 카카오 Local API로 자동수집된 PC방 경쟁점 표시용(선택 필드, 기존 수동입력
   // 경쟁점엔 없음/null). lat/lng은 자동수집분만 채워지며, V62 계산 어디에도 쓰이지 않는다
   // (경쟁력 산식은 여전히 실사값 기반 필드만 읽는다).

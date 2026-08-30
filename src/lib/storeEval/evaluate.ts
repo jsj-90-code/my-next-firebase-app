@@ -26,11 +26,12 @@ import {
   computeInteriorSeatManagementScore,
   computeIpPerDemand,
   computeLocationCompositeScore,
-  computeLocationScoreFromFacts,
   computeMarketDemand,
   computeMarketGrade,
   computeImpliedUtilizationFromRevenue,
   computeMeasuredForecast,
+  computeOwnLocationScore,
+  resolveSeatZoneScore,
   computeSpecScore,
   computeV61Fallback,
   computeV62Final,
@@ -89,11 +90,27 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     },
     settings,
   );
-  const ownLocationScore = computeLocationScoreFromFacts(c.floor, c.groundLevel, c.hasElevator);
+  // 2026-08-30(경쟁력 평가 기준 최종본 §12) — 자사/후보지의 입지10% 컴포넌트는 09_입지동선평가
+  // (4요소 조합)가 있으면 그걸 쓰고, 없으면 층수+엘리베이터 자동계산으로 폴백한다(경쟁점은 기존
+  // 방식 유지 — computeCompetitorScores 참고).
+  const ownLocationScore = computeOwnLocationScore(loc, c, settings);
   const ownFoodScore = computeFoodScore({ brand: c.ownFoodBrand, legacyScore: ownFacility.ownFoodScore }, settings);
   const ownInteriorScore = computeInteriorSeatManagementScore(
     {
-      seatZoneScore: c.ownSeatZoneScore,
+      // §3~6 — 존 개수로 자동계산 가능하면 그 값을, 전혀 없으면 기존 종합평가 직접입력으로 폴백.
+      seatZoneScore: resolveSeatZoneScore(
+        {
+          teamRoom: ownFacility.ownTeamRoom,
+          room2: c.ownRoom2,
+          coupleZone: ownFacility.ownCoupleZone,
+          vipZone: ownFacility.ownVipZone,
+          friendsZone: ownFacility.ownFriendsZone,
+          singleSeatCount: c.ownSingleSeatCount,
+          room1: c.ownRoom1,
+          firstClassZone: c.ownFirstClassZone,
+        },
+        c.ownSeatZoneScore,
+      ),
       freshnessScore: c.ownInteriorLevelScore,
       cleanlinessScore: c.ownInteriorConditionScore,
       comfortScore: c.ownComfortScore,

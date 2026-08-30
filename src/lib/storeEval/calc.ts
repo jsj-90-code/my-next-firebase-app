@@ -22,6 +22,7 @@ import type {
   FoodBrand,
   GroundLevel,
   InflowRestriction,
+  LocationEvaluation,
   ModelSettings,
   CompletionStatus,
   FinalJudgement,
@@ -343,22 +344,57 @@ export function computeCompetitorAppliedPcCount(
  * 비슷한 예외 사례(기준표는 3점, 이 식은 2.5점)는 정확히 못 잡을 수 있다 — 실제 사례로 어긋나면
  * 조정 필요(scoreFromCpu/scoreFromRam과 같은 근사치 원칙).
  */
+/**
+ * 2026-08-30(경쟁력 평가 기준 최종본 §14) 추가 — "AMD GPU는 가장 유사한 NVIDIA 모델로 환산".
+ * AMD Radeon RX 모델명 → 동급 NVIDIA 모델번호 매핑(근사치, 세대별 성능 포지셔닝 기준). 실제
+ * 매장에 AMD GPU가 거의 없어(기존 앵커가 전부 RTX 기준) 실측 검증은 못 했다 — 어긋나는 사례가
+ * 나오면 이 표를 조정할 것.
+ */
+export const AMD_GPU_TO_NVIDIA_EQUIVALENT: Record<string, number> = {
+  "5500": 1650,
+  "5600": 2060,
+  "5700": 2070,
+  "6600": 3060,
+  "6650": 3060,
+  "6700": 3070,
+  "6750": 3070,
+  "6800": 3080,
+  "6900": 3090,
+  "7600": 4060,
+  "7700": 4070,
+  "7800": 4070,
+  "7900": 4080,
+};
+
 export function scoreFromVga(text: string | null): number | null {
   if (!text) return null;
   const cleaned = text.toUpperCase().replace(/\s/g, "");
-  const m = cleaned.match(/(\d{4})/);
-  if (!m) return null;
-  const num = Number(m[1]);
+  const amdM = cleaned.match(/(?:RX|라데온|RADEON)(\d{3,4})/);
+  let num: number | null = null;
+  if (amdM) {
+    const rxNum = amdM[1];
+    num = AMD_GPU_TO_NVIDIA_EQUIVALENT[rxNum] ?? null;
+  }
+  if (num == null) {
+    const m = cleaned.match(/(\d{4})/);
+    if (!m) return null;
+    num = Number(m[1]);
+  }
   const generation = Math.floor(num / 1000);
   const tier = num % 100;
   const tierBonus = tier >= 80 ? 1 : tier >= 70 ? 0.5 : 0;
   return Math.min(5, Math.max(1, 4 + (generation - 5) + tierBonus));
 }
 
-/** clampRating_: 1~5 범위로 보정. 범위 밖·비숫자는 null(가중합에서 제외). */
+/**
+ * clampRating_: 1~5 범위로 보정. 범위 밖·비숫자는 null(가중합에서 제외).
+ * 2026-08-30(§15) — 0.1단위 반올림을 제거했다. 직접입력 평가값(0.5단위)에는 원래도 no-op이었지만,
+ * computeZoneScore의 계산값이 이 함수를 거치면서 조용히 반올림되는 걸 막기 위함(§15 "내부 가중
+ * 계산값은 반올림 금지").
+ */
 export function clampRating(v: number | null): number | null {
   if (v == null || Number.isNaN(v) || v <= 0) return null;
-  return Math.min(5, Math.max(1, Math.round(v * 10) / 10));
+  return Math.min(5, Math.max(1, v));
 }
 
 /**
@@ -387,9 +423,9 @@ export function combineHardwareTiers(base: number | null, specialtyTiers: (numbe
  * combineHardwareTiers(기본80%+특화20%)로 통일했다.
  */
 export function scoreFromVgaSpec(vgaBase: string | null, vgaTop: string | null, vgaTop2: string | null): number | null {
-  const combined = combineHardwareTiers(scoreFromVga(vgaBase), [scoreFromVga(vgaTop), scoreFromVga(vgaTop2)]);
-  if (combined == null) return null;
-  return Math.round(combined * 100) / 100;
+  // 2026-08-30(경쟁력 평가 기준 최종본 §15) — "내부 가중 계산값은 반올림 금지"이므로 소수 2자리
+  // 반올림을 제거했다. combineHardwareTiers의 raw 결합값을 그대로 반환한다.
+  return combineHardwareTiers(scoreFromVga(vgaBase), [scoreFromVga(vgaTop), scoreFromVga(vgaTop2)]);
 }
 
 /** CPU 기본/특화1/특화2를 combineHardwareTiers로 결합(2026-08-28 신설, GPU와 같은 원칙). */
@@ -431,8 +467,20 @@ export const MONITOR_MODEL_HZ_TABLE: Record<string, number> = {
  * 자연히 4.0 근처로 올라가지만 정확히 4.0에 맞아떨어지진 않을 수 있다(다른 하드웨어 항목과 같은
  * 근사치 원칙, 실제 사례로 어긋나면 조정 필요).
  */
+/**
+ * 2026-08-30(경쟁력 평가 기준 최종본 §10) 재보정 — 순수 Hz 구간표를 스펙이 명시한 6개 기준점에
+ * 맞춰 다시 잡았다(32인치FHD144-165Hz=3.0/180-200Hz=3.25/240Hz=3.5/27인치QHD165Hz=4.0 등).
+ * 27인치QHD165Hz=4.0은 "같은 165Hz라도 QHD면 32인치FHD165Hz(3.0)보다 +1.0"으로 역산된다 —
+ * 아래 해상도 가산 로직이 정확히 그 값을 만들어내는지 테스트로 검증해둔다.
+ * 해상도/브랜드는 텍스트에 명시적으로 적혀 있을 때만 인식한다 — "27인치 165Hz면 QHD로 간주"처럼
+ * 자사/경쟁점 구분과 인치수 문맥이 필요한 세부 기본가정까지는 이 순수 텍스트 함수에서 재현하지
+ * 않는다(데이터 입력 시점에 조사자가 실제 해상도를 직접 적도록 안내 — 34인치만 예외로 별도 처리,
+ * LG가 아니면 WQHD가 사실상 표준이라 근사가 안전하다).
+ */
 export function scoreFromMonitor(text: string | null, modelHzTable: Record<string, number> = MONITOR_MODEL_HZ_TABLE): number | null {
   if (!text) return null;
+  const upper = text.toUpperCase();
+  if (/4K|UHD|OLED/.test(upper)) return 5; // §10: OLED·4K 고정 최고점
   const hzMatches = [...text.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
   let hz: number | null = null;
   if (hzMatches.length > 0) {
@@ -445,13 +493,25 @@ export function scoreFromMonitor(text: string | null, modelHzTable: Record<strin
     if (matchedHz.length > 0) hz = matchedHz.reduce((a, b) => a + b, 0) / matchedHz.length;
   }
   if (hz == null) return null;
-  if (hz >= 360) return 5;
-  if (hz >= 300) return 4.5;
-  if (hz >= 240) return 3.5;
-  if (hz >= 180) return 3;
-  if (hz >= 144) return 2.5;
-  if (hz >= 120) return 2;
-  return 1.5;
+
+  let score: number;
+  if (hz >= 400) score = 5;
+  else if (hz >= 360) score = 4.75;
+  else if (hz >= 300) score = 4.5;
+  else if (hz >= 241) score = 4;
+  else if (hz >= 201) score = 3.5;
+  else if (hz >= 166) score = 3.25;
+  else if (hz >= 144) score = 3;
+  else if (hz >= 120) score = 2;
+  else score = 1.5;
+
+  const mentionsFhd = /FHD/.test(upper);
+  const mentionsQhd = !mentionsFhd && /QHD/.test(upper); // WQHD도 "QHD" 부분일치로 함께 잡힘
+  const assume34InchWqhd = !mentionsFhd && !mentionsQhd && /34\s*(인치|IN)/.test(upper) && !/LG/.test(upper);
+  if (mentionsQhd || assume34InchWqhd) score = Math.min(5, score + 1);
+  if (/ZOWIE/.test(upper)) score = Math.max(score, 4.5); // §10: BenQ ZOWIE=특화 사양 하한 보장
+
+  return score;
 }
 
 /** 모니터 기본/특화를 combineHardwareTiers로 결합(2026-08-28 신설). */
@@ -469,6 +529,24 @@ export function scoreFromMonitorSpec(monitorBase: string | null, monitorTop: str
  *    (사용자 확정: "14400을 4점으로 하고, 세대별로 1점씩 다운그레이드").
  * 어느 쪽으로도 못 뽑으면 null(지어내지 않음 — 사람이 직접 입력).
  */
+/**
+ * 2026-08-30(경쟁력 평가 기준 최종본 §14) — "AMD CPU는 가장 유사한 Intel 모델로 환산". 라이젠
+ * 모델번호 앞자리(세대/시리즈)를 인텔 세대로 근사 환산한다(근사치 — AMD GPU 표와 같은 이유로
+ * 실측 검증은 못 했다). 티어(3/5/7/9)는 인텔 레거시 세대 산식과 동일하게 무시한다(기존
+ * scoreFromCpu의 "N세대" 분기도 i5/i7 구분 없이 세대만 본다).
+ */
+export const AMD_RYZEN_SERIES_TO_INTEL_GEN: Record<number, number> = {
+  1: 7,
+  2: 8,
+  3: 9,
+  4: 10,
+  5: 11,
+  6: 12,
+  7: 13,
+  8: 14,
+  9: 14,
+};
+
 export function scoreFromCpu(text: string | null): number | null {
   if (!text) return null;
   const ultraM = text.match(/(?:울트라|ultra)\s*([579])\s+(\d{3})/i);
@@ -477,6 +555,11 @@ export function scoreFromCpu(text: string | null): number | null {
     const tierRank = tier === 5 ? 1 : tier === 7 ? 2 : 3;
     const series = Math.floor(Number(ultraM[2]) / 100); // 225 → 2
     return Math.min(5, Math.max(1, 4 + (tierRank - 1) + (series - 2)));
+  }
+  const ryzenM = text.match(/(?:ryzen|라이젠)\s*[3579]?\s*(\d)\d{3}/i);
+  if (ryzenM) {
+    const equivalentGen = AMD_RYZEN_SERIES_TO_INTEL_GEN[Number(ryzenM[1])];
+    if (equivalentGen != null) return Math.min(5, Math.max(1, equivalentGen - 10));
   }
   const genLabelM = text.match(/(\d{1,2})\s*세대/);
   const generation = genLabelM ? Number(genLabelM[1]) : text.match(/(\d{2})\d{3}/)?.[1];
@@ -496,10 +579,11 @@ export function scoreFromRam(text: string | null): number | null {
   if (!m) return null;
   const gb = Number(m[1]);
   if (gb <= 0) return null;
-  if (gb >= 32) return 5;
-  if (gb >= 16) return 4;
-  if (gb >= 8) return 2;
-  return 1;
+  // 2026-08-30(경쟁력 평가 기준 최종본 §9) — 8GB이하1.5/16GB3.5/32GB4.5/64GB이상5.0으로 교체.
+  if (gb >= 64) return 5;
+  if (gb >= 32) return 4.5;
+  if (gb >= 16) return 3.5;
+  return 1.5;
 }
 
 /**
@@ -547,46 +631,9 @@ export function computeSpecScore(
   if (items.length === 0) return null;
   const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
   if (totalWeight === 0) return null;
-  return Math.round((items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight) * 100) / 100;
-}
-
-/**
- * summarizeZones_: 존 개수 집계.
- *   종류수 = 일반석(1) + 개수>0인 존 종류 수
- *   독립룸수 = 룸형 존(1인룸/2인룸/팀룸/커플존/VIP존, 프렌즈존 제외) 개수의 단순 합계
- * ⚠️ 종전 웹 구현은 팀룸×2+커플존×3+VIP존×5 라는 가중치를 임의로 지어냈었다(data-issues.md #7).
- * 원본 코드에는 그런 가중치가 없고 그냥 개수를 더한다 — 이 함수로 교체한다.
- * @param roomZoneCounts 룸형 존 개수 목록(1인룸/2인룸/팀룸/커플존/VIP존 — 자사는 전부, 경쟁점은 VIP존 제외)
- * @param openZoneCounts 파티션형 존 개수 목록(프렌즈존 — 종류수에는 포함, 독립룸수에서는 제외)
- */
-export function computeZoneComposition(roomZoneCounts: (number | null)[], openZoneCounts: (number | null)[] = []): { kinds: number; rooms: number } {
-  let kinds = 1; // 일반석
-  let rooms = 0;
-  for (const n of roomZoneCounts) {
-    const v = n ?? 0;
-    if (v > 0) {
-      kinds++;
-      rooms += v;
-    }
-  }
-  for (const n of openZoneCounts) {
-    if ((n ?? 0) > 0) kinds++;
-  }
-  return { kinds, rooms };
-}
-
-/**
- * 2026-08-28 — 좌석·존구성이 경쟁력점수 공식 산출(computeInteriorSeatManagementScore)에서
- * 평가자 직접입력(rubric표 기반)으로 바뀌면서, 이 함수는 더 이상 점수 계산에 쓰이지 않는다.
- * 화면에서 "자동 판정: 특화존 N종" 같은 참고용 힌트를 보여줄 때만 쓴다(kinds-1 = 일반석 제외
- * 특화존 종류수).
- */
-export function scoreFromZoneDiversity(kinds: number): number {
-  if (kinds >= 7) return 5;
-  if (kinds >= 5) return 4;
-  if (kinds >= 3) return 3;
-  if (kinds >= 2) return 2;
-  return 1;
+  // 2026-08-30(경쟁력 평가 기준 최종본 §15) — "하드웨어 종합점수는 반올림 금지"로 확정돼 소수 2자리
+  // 반올림을 제거했다. raw 가중평균을 그대로 반환한다.
+  return items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight;
 }
 
 /**
@@ -709,36 +756,127 @@ export function computeCompetitivenessScore(
  * 지적(사용자 확인)에 따라 정교화한다.
  *
  * 먹거리는 조리방식 기반 세분화 대신(최신 PC방은 다 인덕션이라 변별력이 없다는 사용자 지적)
- * 실제 사용 브랜드 기준으로 매긴다 — settings.foodBrandScores에서 브랜드별 점수를 읽고,
- * "브랜드없음"이거나 안 정했으면 조사자 직접입력값(legacyScore, 점포개발자 의견 등)을 그대로
- * 쓴다.
+ * 실제 사용 브랜드 기준으로 매긴다 — settings.foodBrandScores에서 브랜드별 점수를 읽는다.
+ *
+ * 2026-08-30(경쟁력 평가 기준 최종본 §11) — 우선순위 반전(사용자 확인): "브랜드만으로 4점 이상
+ * 주지 않으며, 메뉴 수·완성도·운영 상태가 확인된 경우에만 가감한다" — 즉 조사자가 실제로 확인한
+ * 직접입력값이 있으면 브랜드 프리셋보다 그 값을 우선한다. 브랜드는 직접입력이 없을 때 쓰는
+ * 기본값일 뿐이다(예전엔 반대로 브랜드가 항상 이겼다).
  */
-function averageFilledScores(subs: (number | null)[], legacyScore: number | null): number | null {
-  const filled = subs.filter((v): v is number => v != null);
-  if (filled.length === 0) return legacyScore;
-  const avg = filled.reduce((a, b) => a + b, 0) / filled.length;
-  return Math.round(avg * 2) / 2;
-}
-
 export function computeFoodScore(
   input: { brand: FoodBrand | null; legacyScore: number | null },
   settings: Pick<ModelSettings, "foodBrandScores">,
 ): number | null {
+  if (input.legacyScore != null) return input.legacyScore;
   if (input.brand != null && input.brand !== "브랜드없음") {
     const preset = settings.foodBrandScores[input.brand];
     if (preset != null) return preset;
   }
-  return input.legacyScore;
+  return null;
 }
 
 /**
- * 2026-08-28 추가 — 좌석·존구성 점수. 사용자가 준 rubric(칸막이만 있는 좌석은 독립룸으로
- * 인정 안 함·명칭만 나눈 존은 미인정 등, 조사서 표현마다 사람 판단이 필요)이 자동 계산으로
- * 재현하기 어려운 정성적 기준이라, 먹거리와 같은 방식(평가자가 rubric표를 보고 0.5점 단위 직접
- * 입력)으로 처리한다 — 존 개수 필드(room1/teamRoom 등)는 그대로 남겨 참고용 힌트로만 쓴다.
- * 인테리어·좌석·관리(경쟁력점수의 40%) 항목은 이 좌석점수(50%)+최신성(25%, 기존
- * interiorLevelScore 재사용)+청결관리(15%, 기존 interiorConditionScore 재사용)+편의성(10%,
- * 신규)의 가중평균이다(computeInteriorSeatManagementScore).
+ * 2026-08-30(경쟁력 평가 기준 최종본 §3~6) 신설 — 좌석·존구성 점수를 존 개수 기반 결정론적
+ * 공식으로 계산한다. 2026-08-28엔 "칸막이만 있는 좌석은 독립룸 미인정" 같은 판단이 자동화하기
+ * 어렵다고 보고 평가자 직접입력(rubric)으로 처리했었는데, 최종본이 그 판단 기준 자체를 명시적
+ * 공식으로 확정해줘서 이제 자동계산으로 바꾼다(직접입력 필드는 존 개수를 전혀 모를 때의 폴백으로
+ * 남긴다 — 아래 `resolveSeatZoneScore` 참고).
+ *
+ * 존달성도 = MIN(팀룸/2,1.5)*0.25 + MIN(2인룸/2,1.5)*0.20 + MIN(커플존/4,1.5)*0.20
+ *          + MIN(VIP존/5,1.5)*0.15 + MIN(프렌즈존/10,1.5)*0.20   (값 없으면 0)
+ * 스펙의 "주요 존 가산점 환산"(팀룸2개+0.50, 커플존4개+0.40, VIP존5개+0.30, 프렌즈존10개+0.40)은
+ * 이 achievement×2를 곱한 값과 정확히 일치 — 예: 팀룸2개→MIN(1,1.5)*0.25*2=0.50.
+ */
+export function computeZoneAchievement(counts: {
+  teamRoom: number | null;
+  room2: number | null;
+  coupleZone: number | null;
+  vipZone: number | null;
+  friendsZone: number | null;
+}): number {
+  const ratio = (count: number | null, base: number) => Math.min((count ?? 0) / base, 1.5);
+  return (
+    ratio(counts.teamRoom, 2) * 0.25 +
+    ratio(counts.room2, 2) * 0.2 +
+    ratio(counts.coupleZone, 4) * 0.2 +
+    ratio(counts.vipZone, 5) * 0.15 +
+    ratio(counts.friendsZone, 10) * 0.2
+  );
+}
+
+/**
+ * 1인 특화 가산점(§4) — "하나라도 있으면 +0.2" 방식 폐기, 개수 비례로 교체.
+ * MIN(0.2, MIN(1인석/10,1)*0.1 + MIN(1인룸/5,1)*0.2).
+ */
+export function computeSingleSeatBonus(singleSeatCount: number | null, room1: number | null): number {
+  const seatPart = Math.min((singleSeatCount ?? 0) / 10, 1) * 0.1;
+  const roomPart = Math.min((room1 ?? 0) / 5, 1) * 0.2;
+  return Math.min(0.2, seatPart + roomPart);
+}
+
+export type ZoneCounts = {
+  teamRoom: number | null;
+  room2: number | null;
+  coupleZone: number | null;
+  vipZone: number | null;
+  friendsZone: number | null;
+  singleSeatCount: number | null;
+  room1: number | null;
+  firstClassZone: number | null;
+};
+
+/**
+ * 좌석·존구성 점수(§3~5 최종 공식) = CLAMP(2.0 + 존달성도×2 + 1인가산 + 퍼스트클래스존가산, 1, 5).
+ * 퍼스트클래스존은 개수와 무관하게 있으면(>0) +0.5(§5: "여러 개더라도 현재는 최대 +0.5").
+ * 8개 필드가 전부 null(존 개수 정보 자체가 없음 — 조사 안 함)이면 null을 돌려줘, 호출부가 기존
+ * 수동입력(seatZoneScore)으로 폴백하게 한다. 하나라도 채워져 있으면 나머지는 0으로 간주한다
+ * (실제로 "그 존이 0개"라는 뜻이지 미조사가 아니므로).
+ */
+export function computeZoneScore(counts: ZoneCounts): number | null {
+  const allNull = Object.values(counts).every((v) => v == null);
+  if (allNull) return null;
+  const achievement = computeZoneAchievement(counts);
+  const singleSeatBonus = computeSingleSeatBonus(counts.singleSeatCount, counts.room1);
+  const firstClassBonus = (counts.firstClassZone ?? 0) > 0 ? 0.5 : 0;
+  const raw = 2.0 + achievement * 2 + singleSeatBonus + firstClassBonus;
+  return Math.min(5, Math.max(1, raw));
+}
+
+/** 존 개수로 자동계산이 가능하면 그 값을, 정보가 아예 없으면(§2 "구성요소별 정보 없으면") 조사자 종합평가로 폴백. */
+export function resolveSeatZoneScore(counts: ZoneCounts, legacySeatZoneScore: number | null): number | null {
+  return computeZoneScore(counts) ?? legacySeatZoneScore;
+}
+
+/**
+ * 2026-08-30(경쟁력 평가 기준 최종본 §7) 신설 — 최신성점수를 리뉴얼연도(우선) 또는 오픈일에서
+ * 자동계산한다. ≤1년:5.0 / ≤2년:4.5 / ≤3년:4.0 / ≤4년:3.5 / ≤6년:3.0 / 6년초과:2.5.
+ * 연 단위로만 계산한다(리뉴얼연도 자체가 연도 숫자뿐이라 월 단위 정밀도가 없음 — 오픈일도 같은
+ * 정밀도로 맞춘다).
+ */
+export function computeFreshnessFromYear(renovationYear: number | null, openedAt: string | null): number | null {
+  const year = renovationYear ?? (openedAt ? new Date(openedAt).getFullYear() : null);
+  if (year == null || Number.isNaN(year)) return null;
+  const age = new Date().getFullYear() - year;
+  if (age <= 1) return 5.0;
+  if (age <= 2) return 4.5;
+  if (age <= 3) return 4.0;
+  if (age <= 4) return 3.5;
+  if (age <= 6) return 3.0;
+  return 2.5;
+}
+
+/**
+ * §7 "직접 조사에서 실제 시설 노후도가 확인되면 연도보다 조사 결과를 우선한다" — 조사자 직접입력
+ * (manualScore)이 있으면 그 값을 쓰고, 없을 때만 연도 기반 자동계산으로 폴백한다.
+ */
+export function resolveFreshnessScore(manualScore: number | null, renovationYear: number | null, openedAt: string | null): number | null {
+  return manualScore ?? computeFreshnessFromYear(renovationYear, openedAt);
+}
+
+/**
+ * 2026-08-28 추가 — 인테리어·좌석·관리(경쟁력점수의 40%) = 좌석점수(50%, 위 computeZoneScore
+ * 결과 또는 legacy 직접입력)+최신성(25%, ownInteriorLevelScore 재사용)+청결관리(15%,
+ * ownInteriorConditionScore 재사용)+편의성(10%)의 가중평균.
  */
 export function computeInteriorSeatManagementScore(
   input: {
@@ -760,8 +898,8 @@ export function computeInteriorSeatManagementScore(
   if (items.length === 0) return input.legacyScore;
   const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
   if (totalWeight === 0) return input.legacyScore;
-  const avg = items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight;
-  return Math.round(avg * 2) / 2;
+  // 2026-08-30(§15) — "인테리어 종합점수는 반올림 금지"로 확정돼 0.5단위 반올림을 제거했다.
+  return items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight;
 }
 
 /**
@@ -804,8 +942,25 @@ export function computeCompetitorScores(
   const interior = applySurveyLevelDefault(
     computeInteriorSeatManagementScore(
       {
-        seatZoneScore: c.seatZoneScore,
-        freshnessScore: c.interiorLevelScore,
+        // 2026-08-30(§2·§3~6) — 존 개수(팀룸/2인룸/커플존/VIP존/프렌즈존/1인석/1인룸/퍼스트클래스존)가
+        // 하나라도 조사돼 있으면 결정론적 공식으로 자동계산하고, 전혀 없으면(간략/외관만 조사)
+        // 기존 종합평가 직접입력(seatZoneScore)으로 폴백한다(경쟁점 입지점수는 사용자 확인에 따라
+        // 기존 층수+엘리베이터 자동계산을 그대로 유지 — 아래 location 참고).
+        seatZoneScore: resolveSeatZoneScore(
+          {
+            teamRoom: c.teamRoom,
+            room2: c.room2,
+            coupleZone: c.coupleZone,
+            vipZone: c.vipZone,
+            friendsZone: c.friendsZone,
+            singleSeatCount: c.singleSeatCount,
+            room1: c.room1,
+            firstClassZone: c.firstClassZone,
+          },
+          c.seatZoneScore,
+        ),
+        // 2026-08-30(§7) — 리뉴얼연도로 자동계산, 직접입력(interiorLevelScore)이 있으면 그게 우선.
+        freshnessScore: resolveFreshnessScore(c.interiorLevelScore, c.renovationYear, null),
         cleanlinessScore: c.interiorConditionScore,
         comfortScore: c.comfortScore,
         legacyScore: c.interiorScore,
@@ -853,7 +1008,13 @@ export function computeCompetitivenessGap(ownScore: number | null, competitorAvg
 // 09_입지동선평가!H열 (입지동선종합점수)
 // ---------------------------------------------------------------------------
 
-/** ROUND(상권내위치×0.3 + 주요동선×0.3 + 선점경쟁×0.25 + 접근가시성×0.15, 2). */
+/**
+ * 상권내위치×0.3 + 주요동선×0.3 + 선점경쟁×0.25 + 접근가시성×0.15.
+ * 2026-08-30(경쟁력 평가 기준 최종본 §12·§15) — "입지 종합점수는 반올림 금지"로 확정돼 소수 2자리
+ * 반올림을 제거했다. 이 함수는 이제 두 곳에서 쓰인다: ① 09_입지동선평가!H열(V62 외부유입 판정용,
+ * 기존 용도) ② 자사/후보지 경쟁력점수의 "입지10%" 컴포넌트(§12, 신규 — computeOwnLocationScore
+ * 참고, 경쟁점은 사용자 확인에 따라 기존 층수+엘리베이터 자동계산을 그대로 쓴다).
+ */
 export function computeLocationCompositeScore(
   scores: { withinMarket: number | null; flow: number | null; preemption: number | null; visibility: number | null },
   settings: Pick<ModelSettings, "locationCompositeWeights">,
@@ -861,8 +1022,29 @@ export function computeLocationCompositeScore(
   const { withinMarket, flow, preemption, visibility } = scores;
   if (withinMarket == null || flow == null || preemption == null || visibility == null) return null;
   const w = settings.locationCompositeWeights;
-  const value = withinMarket * w.withinMarket + flow * w.flow + preemption * w.preemption + visibility * w.visibility;
-  return Math.round(value * 100) / 100;
+  return withinMarket * w.withinMarket + flow * w.flow + preemption * w.preemption + visibility * w.visibility;
+}
+
+/**
+ * 2026-08-30(§12) 신설 — 자사/후보지의 "경쟁력점수 입지10%" 컴포넌트. 09_입지동선평가(4요소
+ * 조합)가 있으면 그걸 쓰고, 아직 없으면(레거시 매장·후보지평가 초기 단계) 기존 층수+엘리베이터
+ * 자동계산으로 폴백한다 — 폴백이 없으면 09_입지동선평가를 하기 전까지 경쟁력점수 전체가 null이
+ * 되어 V61/V62 예측이 멈춘다(92곳 레거시 매장은 애초에 이 평가 자체가 없는 경우가 많음).
+ * 경쟁점은 이 함수를 쓰지 않는다(사용자 확인: 경쟁점은 기존 방식 유지, computeCompetitorScores
+ * 참고).
+ */
+export function computeOwnLocationScore(
+  loc: { locationScore: number | null; flowScore: number | null; preemptionScore: number | null; visibilityScore: number | null } | null,
+  facts: { floor: number | null; groundLevel: GroundLevel | null; hasElevator: boolean | null },
+  settings: Pick<ModelSettings, "locationCompositeWeights">,
+): number | null {
+  const composite = loc
+    ? computeLocationCompositeScore(
+        { withinMarket: loc.locationScore, flow: loc.flowScore, preemption: loc.preemptionScore, visibility: loc.visibilityScore },
+        settings,
+      )
+    : null;
+  return composite ?? computeLocationScoreFromFacts(facts.floor, facts.groundLevel, facts.hasElevator);
 }
 
 /**
@@ -1665,6 +1847,8 @@ export function computeExistingStoreMeasuredForecast(
     | "groundLevel"
     | "hasElevator"
     | "hourlyRate"
+    | "openedAt"
+    | "renovationYear"
     | "ownCpu"
     | "ownCpuTop1"
     | "ownCpuTop2"
@@ -1679,6 +1863,8 @@ export function computeExistingStoreMeasuredForecast(
     | "ownCoupleZone"
     | "ownVipZone"
     | "ownFriendsZone"
+    | "ownFirstClassZone"
+    | "ownSingleSeatCount"
     | "ownFoodScore"
     | "ownInteriorScore"
     | "ownMonitorBase"
@@ -1690,9 +1876,16 @@ export function computeExistingStoreMeasuredForecast(
     | "ownComfortScore"
   >,
   competitors: Competitor[],
+  loc: Pick<LocationEvaluation, "locationScore" | "flowScore" | "preemptionScore" | "visibilityScore"> | null,
   settings: Pick<
     ModelSettings,
-    "specWeights" | "interiorWeights" | "competitivenessWeights" | "demandCaptureTable" | "measuredForecastProductRatio" | "foodBrandScores"
+    | "specWeights"
+    | "interiorWeights"
+    | "competitivenessWeights"
+    | "demandCaptureTable"
+    | "measuredForecastProductRatio"
+    | "foodBrandScores"
+    | "locationCompositeWeights"
   >,
 ): ExistingStoreMeasuredForecastResult {
   const base: ExistingStoreMeasuredForecastResult = {
@@ -1744,12 +1937,25 @@ export function computeExistingStoreMeasuredForecast(
     },
     settings,
   );
-  const ownLocationScore = computeLocationScoreFromFacts(store.floor, store.groundLevel, store.hasElevator);
+  const ownLocationScore = computeOwnLocationScore(loc, store, settings);
   const ownFoodScore = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
   const ownInteriorScore = computeInteriorSeatManagementScore(
     {
-      seatZoneScore: store.ownSeatZoneScore,
-      freshnessScore: store.ownInteriorLevelScore,
+      seatZoneScore: resolveSeatZoneScore(
+        {
+          teamRoom: facility.ownTeamRoom,
+          room2: store.ownRoom2,
+          coupleZone: facility.ownCoupleZone,
+          vipZone: facility.ownVipZone,
+          friendsZone: facility.ownFriendsZone,
+          singleSeatCount: store.ownSingleSeatCount,
+          room1: store.ownRoom1,
+          firstClassZone: store.ownFirstClassZone,
+        },
+        store.ownSeatZoneScore,
+      ),
+      // 2026-08-30(§7) — 리뉴얼연도/오픈일로 자동계산, 직접입력이 있으면 그게 우선.
+      freshnessScore: resolveFreshnessScore(store.ownInteriorLevelScore, store.renovationYear, store.openedAt),
       cleanlinessScore: store.ownInteriorConditionScore,
       comfortScore: store.ownComfortScore,
       legacyScore: facility.ownInteriorScore,
@@ -1842,6 +2048,8 @@ export function computeExistingStoreDemandEvaluation(
     | "floor"
     | "groundLevel"
     | "hasElevator"
+    | "openedAt"
+    | "renovationYear"
     | "ownCpu"
     | "ownCpuTop1"
     | "ownCpuTop2"
@@ -1856,6 +2064,8 @@ export function computeExistingStoreDemandEvaluation(
     | "ownCoupleZone"
     | "ownVipZone"
     | "ownFriendsZone"
+    | "ownFirstClassZone"
+    | "ownSingleSeatCount"
     | "ownFoodScore"
     | "ownInteriorScore"
     | "ownMonitorBase"
@@ -1868,9 +2078,16 @@ export function computeExistingStoreDemandEvaluation(
   > &
     MarketDemandInput,
   competitors: Competitor[],
+  loc: Pick<LocationEvaluation, "locationScore" | "flowScore" | "preemptionScore" | "visibilityScore"> | null,
   settings: Pick<
     ModelSettings,
-    "specWeights" | "interiorWeights" | "competitivenessWeights" | "foodBrandScores" | "marketCharacterThreshold" | "marketDemandEffectiveRate"
+    | "specWeights"
+    | "interiorWeights"
+    | "competitivenessWeights"
+    | "foodBrandScores"
+    | "marketCharacterThreshold"
+    | "marketDemandEffectiveRate"
+    | "locationCompositeWeights"
   >,
 ): ExistingStoreDemandEvaluationResult {
   const base: ExistingStoreDemandEvaluationResult = {
@@ -1914,12 +2131,25 @@ export function computeExistingStoreDemandEvaluation(
     },
     settings,
   );
-  const ownLocationScore = computeLocationScoreFromFacts(store.floor, store.groundLevel, store.hasElevator);
+  const ownLocationScore = computeOwnLocationScore(loc, store, settings);
   const ownFoodScore = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
   const ownInteriorScore = computeInteriorSeatManagementScore(
     {
-      seatZoneScore: store.ownSeatZoneScore,
-      freshnessScore: store.ownInteriorLevelScore,
+      seatZoneScore: resolveSeatZoneScore(
+        {
+          teamRoom: facility.ownTeamRoom,
+          room2: store.ownRoom2,
+          coupleZone: facility.ownCoupleZone,
+          vipZone: facility.ownVipZone,
+          friendsZone: facility.ownFriendsZone,
+          singleSeatCount: store.ownSingleSeatCount,
+          room1: store.ownRoom1,
+          firstClassZone: store.ownFirstClassZone,
+        },
+        store.ownSeatZoneScore,
+      ),
+      // 2026-08-30(§7) — 리뉴얼연도/오픈일로 자동계산, 직접입력이 있으면 그게 우선.
+      freshnessScore: resolveFreshnessScore(store.ownInteriorLevelScore, store.renovationYear, store.openedAt),
       cleanlinessScore: store.ownInteriorConditionScore,
       comfortScore: store.ownComfortScore,
       legacyScore: facility.ownInteriorScore,
