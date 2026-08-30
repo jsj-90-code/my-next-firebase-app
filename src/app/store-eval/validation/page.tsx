@@ -898,23 +898,31 @@ export default function ValidationPage() {
         </p>
       </div>
 
-      <HeadlineStatusBanner summary={coreSummary} />
+      <HeadlineStatusBanner summary={combinedSummary} />
 
       {/* 요청사항 — "처음 보는 사람도 이해할 수 있게": 결론만 평문으로 먼저 보여주고, 표도
           전문 컬럼(브랜드/운영상태/데이터완성도/우선추정원인 등) 없이 매장명·실제매출·예측매출·
           오차율·적중여부만 남긴다. 아래 전문가용 상세 데이터와 계산 결과는 완전히 동일하다 —
-          보여주는 범위만 줄인 것이지 새 계산은 하나도 없다. */}
+          보여주는 범위만 줄인 것이지 새 계산은 하나도 없다.
+          2026-08-30 — 사용자 요청으로 헤드라인을 "12개월 이상만"(coreSummary)에서
+          "정식검증+조기검증 통합"(combinedSummary, 12개월 미만 정상영업점까지 포함)으로 바꿨다.
+          단, "정식검증"이라는 공식 명칭 자체(12개월 완료 기준)는 그대로 두고 아래 "자세히 보기"의
+          1/2/3번 항목에서 계속 구분해 보여준다 — 학습표본 자격(12개월 완료)은 안 바뀌었다, 이건
+          어디까지나 "예측 대상 표시 범위"만 넓힌 것이다. */}
       <section className="space-y-3">
         <p className="text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-          12개월 이상 정상 운영 중인 블랙라벨 매장 <b>{coreSummary.sampleCount}곳</b>으로 확인한 결과,{" "}
-          <b>{coreRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct <= 0.1).length}곳</b>(
-          {formatPercent(coreSummary.within10PctRatio)})은 모델 예측이 실제 매출과 <b>10% 이내</b>로 맞았습니다. 나머지{" "}
-          {coreRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
-          전체 평균으로는 실제 매출과 <b>{formatPercent(coreSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
+          정상 운영 중인 블랙라벨 매장(12개월 이상 정식검증 {coreSummary.sampleCount}곳 + 12개월 미만 조기검증{" "}
+          {combinedSummary.sampleCount - coreSummary.sampleCount}곳 = <b>{combinedSummary.sampleCount}곳</b>)으로 확인한 결과,{" "}
+          <b>{combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct <= 0.1).length}곳</b>(
+          {formatPercent(combinedSummary.within10PctRatio)})은 모델 예측이 실제 매출과 <b>10% 이내</b>로 맞았습니다. 나머지{" "}
+          {combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
+          전체 평균으로는 실제 매출과 <b>{formatPercent(combinedSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
         </p>
         <p className="text-xs text-[#8a8072]">
-          아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 위 통계는 이 중 "12개월 이상" 매장만 대상으로 계산한
-          공식 검증 결과이고, 12개월 미만 매장은 아직 운영 기간이 짧아 참고용으로만 같이 보여드립니다.
+          아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 위 통계는 이 중 "12개월 이상"(정식검증)과 "12개월
+          미만·정상영업"(조기검증) 매장을 합친 결과이고, 학습표본 자체는 여전히 12개월 완료 매장만 씁니다(조기검증 매장은
+          예측만 받을 뿐 학습엔 안 쓰임). 12개월 이상만 본 "공식 정식검증" 수치는 아래 "자세히 보기 → 1번" 항목에서 따로
+          확인할 수 있습니다.
         </p>
         <SimpleResultTable rows={blackLabelRows} />
       </section>
