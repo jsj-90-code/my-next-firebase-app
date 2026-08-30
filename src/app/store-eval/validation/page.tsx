@@ -434,6 +434,57 @@ function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
   );
 }
 
+// 2026-08-30 — "10퍼 얼마 20퍼얼마 적중률을 가시성 좋게 보고 싶다"는 요청으로 추가. 계산은
+// 전부 이미 있던 summarizeValidationRows/bucketizeErrors(calc.ts) 결과 그대로 쓰고, 이 컴포넌트는
+// 그 값을 막대그래프로 보여주기만 한다 — 새 계산 없음. 예전엔 이 버킷 표(오차구간/점포수/비율)가
+// 아래 "자세히 보기(전문가용)" 안에 텍스트 테이블로만 있어서 눈에 잘 안 띄었다 — 헤드라인 바로
+// 아래, 접히지 않는 위치에 막대그래프로 다시 보여준다.
+const ERROR_BUCKET_COLORS = [
+  "var(--sl-ok)",
+  "var(--sl-ok)",
+  "var(--sl-warn)",
+  "var(--sl-warn)",
+  "var(--sl-danger)",
+  "var(--sl-danger)",
+];
+
+function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
+  return (
+    <div className="app-card rounded-2xl p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">오차 구간별 적중률 (10%p 단위)</h3>
+        <p className="text-xs text-[#8a8072]">{summary.sampleCount}곳 기준</p>
+      </div>
+      <div className="mt-4 space-y-3">
+        {summary.buckets.map((b, i) => (
+          <div key={b.label}>
+            <div className="flex items-baseline justify-between gap-3 text-xs">
+              <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{b.label}</span>
+              <span className="whitespace-nowrap text-[#5c5346] dark:text-[#c9bfae]">
+                {b.count}곳 · <span className="font-semibold">{formatPercent(b.ratio)}</span>
+              </span>
+            </div>
+            <div className="mt-1 h-3 w-full overflow-hidden rounded-full bg-[#171310]/[0.08] dark:bg-white/[0.12]">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${Math.min(100, b.ratio * 100)}%`, background: ERROR_BUCKET_COLORS[i] }}
+              />
+            </div>
+            {b.storeNames.length > 0 && (
+              <p className="mt-0.5 text-[10px] text-[#8a8072]">{b.storeNames.join(", ")}</p>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2 text-xs">
+        <span className="app-badge app-badge-ok px-2.5 py-1">누적 ±10% 이내 {formatPercent(summary.within10PctRatio)}</span>
+        <span className="app-badge app-badge-warn px-2.5 py-1">누적 ±20% 이내 {formatPercent(summary.within20PctRatio)}</span>
+        <span className="app-badge app-badge-danger px-2.5 py-1">20% 초과 {formatPercent(summary.over20PctRatio)}</span>
+      </div>
+    </div>
+  );
+}
+
 /**
  * 처음 보는 사람을 위한 용어 설명. <details>로 만들어 기본은 펼쳐두되(요청사항: 처음 보는
  * 사람도 이해할 수 있게) 익숙한 사용자는 클릭 한 번으로 접을 수 있다. 판정/계산 로직과는
@@ -924,6 +975,9 @@ export default function ValidationPage() {
           예측만 받을 뿐 학습엔 안 쓰임). 12개월 이상만 본 "공식 정식검증" 수치는 아래 "자세히 보기 → 1번" 항목에서 따로
           확인할 수 있습니다.
         </p>
+
+        <ErrorBucketChart summary={combinedSummary} />
+
         <SimpleResultTable rows={blackLabelRows} />
       </section>
 
