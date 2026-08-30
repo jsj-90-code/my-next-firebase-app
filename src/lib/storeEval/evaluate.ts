@@ -13,11 +13,14 @@ import {
   buildV61TrainingStores,
   computeAaBaselineRevenue,
   computeBoundedSales,
+  computeCapacityOverflowRevenueBonus,
   computeCompetitivenessGap,
+  computeCompetitorAppliedPcCount,
   computeCompetitorAvgCompetitiveness,
   computeCompetitorIp,
   computeCompetitivenessScore,
   computeCompetitorOccupiedSeats,
+  computeCompetitorScores,
   computeCompletionStatus,
   computeExpectedOccupiedSeats,
   computeExpectedOwnDemand,
@@ -32,6 +35,7 @@ import {
   computeImpliedUtilizationFromRevenue,
   computeMeasuredForecast,
   computeOwnLocationScore,
+  redistributeCapacityConstrainedDemand,
   resolveSeatZoneScore,
   computeSpecScore,
   computeV61Fallback,
@@ -193,8 +197,30 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const brandType = loc?.brandType ?? null;
 
   const v62Rate = getV62Rate(inflowRestriction, settings);
-  const v62FinalBeforeCap = computeV62Final(v61Baseline, v62Rate);
+  const v62RegressionOnly = computeV62Final(v61Baseline, v62Rate);
+
+  // 2026-08-30(사용자 확인: "경쟁점도 상한 넘는 경우 있을 거 아냐, 그럼 그 초과분은 자사로
+  // 와야지") — 경쟁점별로 PC대수×경쟁력점수 비례배분 후, 개별 경쟁점이 자기 물리적 상한을
+  // 넘겨 못 받는 수요를 자사로 재배분한다. redistributeCapacityConstrainedDemand 주석 참고.
+  const competitorCapacityInputs = competitors.map((comp) => ({
+    pcCount: computeCompetitorAppliedPcCount(comp),
+    competitivenessScore: computeCompetitorScores(comp, settings).total,
+  }));
+  const demandRedistribution = redistributeCapacityConstrainedDemand(
+    marketDemand,
+    { pcCount: c.expectedPcCount, competitivenessScore: ownCompetitivenessScore },
+    competitorCapacityInputs,
+    settings,
+  );
+  const extraCustomersFromCompetitorOverflow =
+    demandRedistribution.ownDemandAfterRedistribution != null && demandRedistribution.ownDemandBeforeRedistribution != null
+      ? demandRedistribution.ownDemandAfterRedistribution - demandRedistribution.ownDemandBeforeRedistribution
+      : 0;
+  const competitorOverflowRevenueBonus = computeCapacityOverflowRevenueBonus(extraCustomersFromCompetitorOverflow, c.hourlyRate, settings);
+  const v62FinalBeforeCap = v62RegressionOnly != null ? v62RegressionOnly + competitorOverflowRevenueBonus : null;
+
   // 2026-08-30(사용자 확인) — 물리적 가동률 상한(기본 55%). applyCapacityCeiling 주석 참고.
+  // 위 보너스를 더한 뒤에도 자사 상한은 다시 확인한다(이중 안전장치).
   const capacity = applyCapacityCeiling(v62FinalBeforeCap, c.hourlyRate, c.expectedPcCount, settings);
   const v62Final = capacity.cappedRevenue;
   const { conservativeSales, upperSales } = computeBoundedSales(v62Final, settings);
@@ -276,6 +302,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     v62Final,
     v62FinalBeforeCap,
     capacityCapped: capacity.capacityCapped,
+    competitorOverflowRevenueBonus,
     conservativeSales,
     upperSales,
     marketDemand,

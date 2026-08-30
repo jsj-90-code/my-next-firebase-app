@@ -453,6 +453,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             가동률이 전부 20~49%였음).
           </p>
         )}
+        {result.competitorOverflowRevenueBonus > 0 && (
+          <p className="app-badge mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
+            경쟁점이 자기 물리적 상한을 넘겨 못 받는 수요 일부가 자사로 재배분됐습니다 (+
+            {formatWon(result.competitorOverflowRevenueBonus)}, 고객 1명 월평균 방문 {settingsUsed.customerVisitsPerMonth}회·1회
+            {settingsUsed.customerSessionHours}시간 기준).
+          </p>
+        )}
         <details className="mt-3">
           <summary className="cursor-pointer text-xs font-medium text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]">
             세부 계산값 보기 (V61 기본예측 · V62 보정률 · 보수/상한 참고범위)
@@ -463,6 +470,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             <ResultCard label="보수판단매출 (85%)" value={formatWon(result.conservativeSales)} />
             <ResultCard label="상한참고매출 (115%)" value={formatWon(result.upperSales)} />
             {result.capacityCapped && <ResultCard label="가동률 상한 적용 전 원래 예측" value={formatWon(result.v62FinalBeforeCap)} />}
+            {result.competitorOverflowRevenueBonus > 0 && (
+              <ResultCard label="경쟁점 초과수요 재배분 보너스" value={formatWon(result.competitorOverflowRevenueBonus)} />
+            )}
           </div>
         </details>
       </section>

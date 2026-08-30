@@ -90,6 +90,9 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 환산가동률(24시간 평균)이 전부 20~49%(최대 48.7%)였던 걸 근거로 55%로 잡았다 - 최대관측치에
     // 여유를 좀 둔 값(calc.ts applyCapacityCeiling 참고).
     v62MaxUtilizationRate: 0.55,
+    // 2026-08-30 추가(사용자 확인 실측치) — 고객 1명 월평균 방문횟수 3.7회, 1회 평균 이용시간 3시간.
+    customerVisitsPerMonth: 3.7,
+    customerSessionHours: 3,
     // 08_계산기준!C54:E65 "AA 월별기준" 그대로 (순수익 2,000만원 대당 일매출목표·일수)
     aaMonthlyTargets: AA_MONTHLY_TARGETS_2000,
     aaMonthlyTargets1000: AA_MONTHLY_TARGETS_1000,

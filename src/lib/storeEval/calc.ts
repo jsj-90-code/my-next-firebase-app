@@ -1152,6 +1152,100 @@ export function applyCapacityCeiling(
   return { cappedRevenue: capped?.monthlyRevenue ?? revenue, capacityCapped: true, impliedUtilizationBeforeCap };
 }
 
+/**
+ * 2026-08-30 신설(사용자 확인) — PC 1대가 물리적 상한(v62MaxUtilizationRate) 안에서 한 달에
+ * 받을 수 있는 "서로 다른 고객 수". 좌석-시간 예산(24시간×30일×상한)을 방문 1회당 이용시간으로
+ * 나누면 "받을 수 있는 방문횟수"가 나오고, 그걸 고객 1명의 월평균 방문횟수로 다시 나누면 고객
+ * 수가 된다. (예: 55%·3시간·3.7회 → PC 1대당 월 35.68명.)
+ */
+export function computeMaxCustomersPerPc(utilizationCap: number, customerVisitsPerMonth: number, customerSessionHours: number): number {
+  if (customerVisitsPerMonth <= 0 || customerSessionHours <= 0) return 0;
+  const maxSeatHoursPerMonth = 24 * 30 * utilizationCap;
+  const maxVisitsPerMonth = maxSeatHoursPerMonth / customerSessionHours;
+  return maxVisitsPerMonth / customerVisitsPerMonth;
+}
+
+export type CapacityRedistributionResult = {
+  ownDemandBeforeRedistribution: number | null;
+  ownDemandAfterRedistribution: number | null;
+  competitorOverflowTotal: number; // 경쟁점들이 자체 상한을 넘겨 못 받는 총 수요(자사로 재배분된 양)
+  ownCapacityLimited: boolean; // 재배분해도 자사 상한을 넘어 일부를 못 받았는지
+};
+
+/**
+ * 2026-08-30 신설(사용자 확인: "경쟁점도 상한 넘는 경우 있을 거 아냐, 그럼 그 초과분은 자사로
+ * 와야지 — 대신 자사도 상한 있겠지만"). 지금까지의 수요배분(computeExpectedOwnDemand)은
+ * "경쟁점 전체"를 하나의 집계값(경쟁IP 합계)으로만 다뤄서, 개별 경쟁점이 자기 PC대수로 감당
+ * 못할 만큼 수요를 배정받는 경우를 걸러내지 못했다. 이 함수는 경쟁점별로 PC대수×경쟁력점수
+ * ("pull")에 비례해 상권수요를 먼저 나눠보고, 개별 경쟁점의 배정량이 자기 물리적 상한
+ * (computeMaxCustomersPerPc × 그 경쟁점 PC대수)을 넘으면 초과분을 자사 쪽으로 넘긴다. 자사도
+ * 같은 상한을 넘지 않도록 마지막에 클램프한다.
+ *
+ * 한계: 경쟁점이 여럿이고 그중 일부만 상한을 넘을 때, 초과분을 "자사"에게만 몰아주고 상한이
+ * 남아있는 다른 경쟁점들에게는 재분배하지 않는다(이 앱은 경쟁점 매출을 예측하지 않으므로,
+ * 자사 예측에 필요한 만큼만 단순화했다 — 관측된 marketDemand 원본과 우리 몫만 정확하면 된다).
+ */
+export function redistributeCapacityConstrainedDemand(
+  marketDemand: number | null,
+  own: { pcCount: number | null; competitivenessScore: number | null },
+  competitors: { pcCount: number | null; competitivenessScore: number | null }[],
+  settings: Pick<ModelSettings, "v62MaxUtilizationRate" | "customerVisitsPerMonth" | "customerSessionHours">,
+): CapacityRedistributionResult {
+  const empty: CapacityRedistributionResult = {
+    ownDemandBeforeRedistribution: null,
+    ownDemandAfterRedistribution: null,
+    competitorOverflowTotal: 0,
+    ownCapacityLimited: false,
+  };
+  if (marketDemand == null || !own.pcCount || own.competitivenessScore == null) return empty;
+
+  const maxPerPc = computeMaxCustomersPerPc(settings.v62MaxUtilizationRate, settings.customerVisitsPerMonth, settings.customerSessionHours);
+  const ownPull = own.pcCount * own.competitivenessScore;
+  const validCompetitors = competitors.filter(
+    (c): c is { pcCount: number; competitivenessScore: number } => c.pcCount != null && c.pcCount > 0 && c.competitivenessScore != null && c.competitivenessScore > 0,
+  );
+  const competitorPulls = validCompetitors.map((c) => ({ pcCount: c.pcCount, pull: c.pcCount * c.competitivenessScore }));
+  const totalPull = ownPull + competitorPulls.reduce((sum, c) => sum + c.pull, 0);
+  if (totalPull <= 0) return empty;
+
+  const ownShareBefore = (marketDemand * ownPull) / totalPull;
+  let overflow = 0;
+  for (const c of competitorPulls) {
+    const share = (marketDemand * c.pull) / totalPull;
+    const capacity = c.pcCount * maxPerPc;
+    if (share > capacity) overflow += share - capacity;
+  }
+
+  const ownCapacity = own.pcCount * maxPerPc;
+  const ownShareAfterRaw = ownShareBefore + overflow;
+  const ownShareAfter = Math.min(ownShareAfterRaw, ownCapacity);
+
+  return {
+    ownDemandBeforeRedistribution: Math.round(ownShareBefore),
+    ownDemandAfterRedistribution: Math.round(ownShareAfter),
+    competitorOverflowTotal: Math.round(overflow),
+    ownCapacityLimited: ownShareAfterRaw > ownCapacity,
+  };
+}
+
+/**
+ * 2026-08-30 신설 — redistributeCapacityConstrainedDemand가 넘겨준 "추가로 받게 된 고객 수"를
+ * 매출로 환산해 V62Final에 더한다(방문횟수×이용시간×시간당요금÷(1-상품비율), computeMeasuredForecast
+ * 와 동일한 물리 공식). 이 보너스를 더한 뒤에도 applyCapacityCeiling으로 자사 상한을 다시 확인한다
+ * (redistributeCapacityConstrainedDemand의 "명" 단위 상한과 이 revenue 상한은 같은 가정에서
+ * 유도돼 수학적으로 일치하지만, 이중 안전장치로 한 번 더 클램프한다).
+ */
+export function computeCapacityOverflowRevenueBonus(
+  extraCustomers: number,
+  hourlyRate: number | null,
+  settings: Pick<ModelSettings, "customerVisitsPerMonth" | "customerSessionHours" | "measuredForecastProductRatio">,
+): number {
+  if (extraCustomers <= 0 || hourlyRate == null) return 0;
+  const extraVisits = extraCustomers * settings.customerVisitsPerMonth;
+  const extraHours = extraVisits * settings.customerSessionHours;
+  return Math.round((extraHours * hourlyRate) / (1 - settings.measuredForecastProductRatio));
+}
+
 export function computeBoundedSales(v62Final: number | null, settings: Pick<ModelSettings, "lowerBoundFactor" | "upperBoundFactor">) {
   if (v62Final == null) return { conservativeSales: null, upperSales: null };
   return {

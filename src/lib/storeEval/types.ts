@@ -369,6 +369,11 @@ export type ModelSettings = {
   // 깎는다(적중률 위해 계수를 역산하는 것과는 성격이 다름 — 실측 데이터에 맞추는 게 아니라
   // 물리적으로 불가능한 값을 거르는 것). calc.ts applyCapacityCeiling 참고.
   v62MaxUtilizationRate: number; // 0.55
+  // 2026-08-30 추가(사용자 확인 실측치) — 경쟁점도 자사와 같은 물리적 가동률 상한을 갖는다고 보고,
+  // 경쟁점이 상한을 넘겨 못 받는 수요(초과분)를 자사 쪽으로 재배분할 때 쓰는 "방문객 수 ↔ 가동률"
+  // 환산계수. calc.ts computeMaxCustomersPerPc/redistributeCapacityConstrainedDemand 참고.
+  customerVisitsPerMonth: number; // 3.7 — 고객 1명의 월평균 방문횟수
+  customerSessionHours: number; // 3 — 1회 방문당 평균 이용시간(시간)
   // AA 기준매출 — 08_계산기준!C54:E65 "AA 월별기준"을 그대로 옮긴 표(순수익 2,000만원 대당). month는 1~12.
   aaMonthlyTargets: { month: number; dailyRevenuePerPcTarget: number; daysInMonth: number }[];
   // 2026-08-27 추가 — 사용자가 준 "순수익 1,000만원 대당목표(일)" 표(2,000만원 표와 같은 원본 시트
@@ -486,6 +491,7 @@ export type EvaluationResult = {
   v62Final: number | null; // V62 최종예상월매출 (가동률 상한 적용 후 — settings.v62MaxUtilizationRate 참고)
   v62FinalBeforeCap: number | null; // 상한 적용 전 원래 예측값(참고용, 상한 안 걸리면 v62Final과 동일)
   capacityCapped: boolean; // true면 가동률 상한에 걸려 v62Final이 깎였다는 뜻
+  competitorOverflowRevenueBonus: number; // 경쟁점이 자기 상한을 넘겨 못 받은 수요를 자사로 재배분한 매출(0이면 해당 없음)
   conservativeSales: number | null; // 보수판단매출 85%
   upperSales: number | null; // 상한참고매출 115%
   marketDemand: number | null;

@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyCapacityCeiling,
   bucketizeErrors,
+  computeCapacityOverflowRevenueBonus,
+  computeMaxCustomersPerPc,
   buildParityComparisonRows,
   buildV61TrainingStores,
   classifyErrorCause,
@@ -50,6 +52,7 @@ import {
   computeValidationRow,
   computeZoneAchievement,
   computeZoneScore,
+  redistributeCapacityConstrainedDemand,
   resolveFreshnessScore,
   resolveSeatZoneScore,
   applyStandardOwnFacilityDefaults,
@@ -1148,6 +1151,52 @@ describe("applyCapacityCeiling (2026-08-30 신설 — V61/V62 물리적 가동�
     const result = applyCapacityCeiling(100_000_000, null, 100, capSettings);
     expect(result.capacityCapped).toBe(false);
     expect(result.cappedRevenue).toBe(100_000_000);
+  });
+});
+
+describe("computeMaxCustomersPerPc/redistributeCapacityConstrainedDemand/computeCapacityOverflowRevenueBonus (2026-08-30 신설 — 경쟁점 초과수요 재배분, 사용자 확인 실측치)", () => {
+  const redistSettings = { v62MaxUtilizationRate: 0.55, customerVisitsPerMonth: 3.7, customerSessionHours: 3 };
+  it("PC 1대당 월 최대 고객수(55%·3시간·3.7회) ≈ 35.68명", () => {
+    expect(computeMaxCustomersPerPc(0.55, 3.7, 3)).toBeCloseTo(35.68, 1);
+  });
+  it("경쟁점이 자기 상한 안에 있으면 재배분이 안 일어난다", () => {
+    const result = redistributeCapacityConstrainedDemand(1000, { pcCount: 100, competitivenessScore: 4 }, [{ pcCount: 50, competitivenessScore: 4 }], redistSettings);
+    expect(result.competitorOverflowTotal).toBe(0);
+    expect(result.ownDemandAfterRedistribution).toBe(result.ownDemandBeforeRedistribution);
+    expect(result.ownCapacityLimited).toBe(false);
+  });
+  it("작은 고득점 경쟁점이 상한을 넘으면 초과분이 자사로 넘어온다(자사는 여유 있음)", () => {
+    const result = redistributeCapacityConstrainedDemand(10000, { pcCount: 300, competitivenessScore: 4 }, [{ pcCount: 2, competitivenessScore: 5 }], redistSettings);
+    expect(result.competitorOverflowTotal).toBeGreaterThan(0);
+    expect(result.ownDemandAfterRedistribution!).toBeGreaterThan(result.ownDemandBeforeRedistribution!);
+    expect(result.ownCapacityLimited).toBe(false);
+  });
+  it("초과분을 받아도 자사 상한을 넘으면 자사 상한에서 클램프된다", () => {
+    const result = redistributeCapacityConstrainedDemand(100000, { pcCount: 100, competitivenessScore: 4 }, [{ pcCount: 5, competitivenessScore: 5 }], redistSettings);
+    expect(result.competitorOverflowTotal).toBeGreaterThan(0);
+    expect(result.ownCapacityLimited).toBe(true);
+    // 자사 상한(100대×35.68 ≈ 3568명)을 넘지 않아야 한다.
+    expect(result.ownDemandAfterRedistribution!).toBeLessThanOrEqual(Math.round(100 * computeMaxCustomersPerPc(0.55, 3.7, 3)) + 1);
+  });
+  it("입력값이 없으면 전부 null(재배분 없음)로 처리한다", () => {
+    const result = redistributeCapacityConstrainedDemand(null, { pcCount: 100, competitivenessScore: 4 }, [], redistSettings);
+    expect(result.ownDemandBeforeRedistribution).toBeNull();
+    expect(result.ownDemandAfterRedistribution).toBeNull();
+    expect(result.competitorOverflowTotal).toBe(0);
+  });
+  it("경쟁점이 하나도 없으면(전부 자사 몫) 재배분도 없다", () => {
+    const result = redistributeCapacityConstrainedDemand(1000, { pcCount: 100, competitivenessScore: 4 }, [], redistSettings);
+    expect(result.competitorOverflowTotal).toBe(0);
+    expect(result.ownDemandBeforeRedistribution).toBe(1000);
+  });
+  it("추가 고객 수를 매출로 환산한다(방문횟수×이용시간×요금÷(1-상품비율))", () => {
+    const bonus = computeCapacityOverflowRevenueBonus(10, 1500, { customerVisitsPerMonth: 3.7, customerSessionHours: 3, measuredForecastProductRatio: 0.5 });
+    // 10명 × 3.7회 × 3시간 × 1500원 ÷ 0.5 = 333,000원
+    expect(bonus).toBe(Math.round((10 * 3.7 * 3 * 1500) / 0.5));
+  });
+  it("추가 고객이 0 이하이거나 요금이 없으면 보너스 0", () => {
+    expect(computeCapacityOverflowRevenueBonus(0, 1500, { customerVisitsPerMonth: 3.7, customerSessionHours: 3, measuredForecastProductRatio: 0.5 })).toBe(0);
+    expect(computeCapacityOverflowRevenueBonus(10, null, { customerVisitsPerMonth: 3.7, customerSessionHours: 3, measuredForecastProductRatio: 0.5 })).toBe(0);
   });
 });
 
