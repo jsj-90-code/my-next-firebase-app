@@ -86,6 +86,10 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     ],
     measuredForecastProductRatio: 0.5,
     measuredForecastMaxReviewUtilization: 0.5,
+    // 2026-08-30 추가(사용자 확인) — V61/V62 예측매출의 물리적 가동률 상한. 정식검증 26곳 실측
+    // 환산가동률(24시간 평균)이 전부 20~49%(최대 48.7%)였던 걸 근거로 55%로 잡았다 - 최대관측치에
+    // 여유를 좀 둔 값(calc.ts applyCapacityCeiling 참고).
+    v62MaxUtilizationRate: 0.55,
     // 08_계산기준!C54:E65 "AA 월별기준" 그대로 (순수익 2,000만원 대당 일매출목표·일수)
     aaMonthlyTargets: AA_MONTHLY_TARGETS_2000,
     aaMonthlyTargets1000: AA_MONTHLY_TARGETS_1000,

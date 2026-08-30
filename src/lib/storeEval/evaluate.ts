@@ -8,6 +8,7 @@
 // 모자랄 때만 폴백을 쓰고, 그 사실을 result.v61IsFallback/v61ModelLabel로 화면에 명시한다.
 
 import {
+  applyCapacityCeiling,
   applyStandardOwnFacilityDefaults,
   buildV61TrainingStores,
   computeAaBaselineRevenue,
@@ -192,7 +193,10 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const brandType = loc?.brandType ?? null;
 
   const v62Rate = getV62Rate(inflowRestriction, settings);
-  const v62Final = computeV62Final(v61Baseline, v62Rate);
+  const v62FinalBeforeCap = computeV62Final(v61Baseline, v62Rate);
+  // 2026-08-30(사용자 확인) — 물리적 가동률 상한(기본 55%). applyCapacityCeiling 주석 참고.
+  const capacity = applyCapacityCeiling(v62FinalBeforeCap, c.hourlyRate, c.expectedPcCount, settings);
+  const v62Final = capacity.cappedRevenue;
   const { conservativeSales, upperSales } = computeBoundedSales(v62Final, settings);
 
   const completionStatus = computeCompletionStatus({
@@ -270,6 +274,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     inflowRestriction,
     v62Rate,
     v62Final,
+    v62FinalBeforeCap,
+    capacityCapped: capacity.capacityCapped,
     conservativeSales,
     upperSales,
     marketDemand,

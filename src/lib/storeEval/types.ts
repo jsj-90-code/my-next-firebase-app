@@ -363,6 +363,12 @@ export type ModelSettings = {
   // "신규점 실측예측" 공통계수 (08_계산기준!C50/C51)
   measuredForecastProductRatio: number; // 0.5 — 기본 상품매출비율(이 파이프라인 전용, 다른 상품비율과 별개)
   measuredForecastMaxReviewUtilization: number; // 0.5 — 초과 시 "데이터 재검토"
+  // 2026-08-30 추가(사용자 확인) — V61/V62 예측매출의 물리적 가동률 상한. 정식검증 26곳 실측
+  // 환산가동률(24시간 평균)이 전부 20~49%였는데(최대 48.7%), V61/V62는 회귀 예측이라 이 범위를
+  // 벗어난 극단값을 걸러줄 물리적 제약이 없었다. v62Final이 이 상한 넘게 나오면 상한에 맞춰
+  // 깎는다(적중률 위해 계수를 역산하는 것과는 성격이 다름 — 실측 데이터에 맞추는 게 아니라
+  // 물리적으로 불가능한 값을 거르는 것). calc.ts applyCapacityCeiling 참고.
+  v62MaxUtilizationRate: number; // 0.55
   // AA 기준매출 — 08_계산기준!C54:E65 "AA 월별기준"을 그대로 옮긴 표(순수익 2,000만원 대당). month는 1~12.
   aaMonthlyTargets: { month: number; dailyRevenuePerPcTarget: number; daysInMonth: number }[];
   // 2026-08-27 추가 — 사용자가 준 "순수익 1,000만원 대당목표(일)" 표(2,000만원 표와 같은 원본 시트
@@ -477,7 +483,9 @@ export type EvaluationResult = {
   locationScore: number | null; // 입지동선종합점수
   inflowRestriction: InflowRestriction | null;
   v62Rate: number | null; // V62 보정률
-  v62Final: number | null; // V62 최종예상월매출
+  v62Final: number | null; // V62 최종예상월매출 (가동률 상한 적용 후 — settings.v62MaxUtilizationRate 참고)
+  v62FinalBeforeCap: number | null; // 상한 적용 전 원래 예측값(참고용, 상한 안 걸리면 v62Final과 동일)
+  capacityCapped: boolean; // true면 가동률 상한에 걸려 v62Final이 깎였다는 뜻
   conservativeSales: number | null; // 보수판단매출 85%
   upperSales: number | null; // 상한참고매출 115%
   marketDemand: number | null;

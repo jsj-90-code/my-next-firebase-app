@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  applyCapacityCeiling,
   bucketizeErrors,
   buildParityComparisonRows,
   buildV61TrainingStores,
@@ -1118,6 +1119,38 @@ describe("computeImpliedUtilizationFromRevenue (2026-08-27, computeMeasuredForec
   });
 });
 
+describe("applyCapacityCeiling (2026-08-30 신설 — V61/V62 물리적 가동률 상한, 사용자 확인)", () => {
+  const capSettings = { v62MaxUtilizationRate: 0.55, measuredForecastProductRatio: 0.5 };
+  it("가동률이 상한 이하면 그대로 반환한다(안 깎임)", () => {
+    // 300,000,000원 → computeImpliedUtilizationFromRevenue로 역산하면 100대 기준 약 96% — 상한 밑
+    // 예시가 되도록 낮은 매출을 쓴다.
+    const lowRevenue = 80_000_000; // 100대·1500원 기준 implied ≈ 25.7%
+    const result = applyCapacityCeiling(lowRevenue, 1500, 100, capSettings);
+    expect(result.capacityCapped).toBe(false);
+    expect(result.cappedRevenue).toBe(lowRevenue);
+  });
+  it("가동률이 상한을 넘으면 상한에 해당하는 매출로 깎는다", () => {
+    const highRevenue = 300_000_000; // 100대 기준 implied > 55%
+    const result = applyCapacityCeiling(highRevenue, 1500, 100, capSettings);
+    expect(result.capacityCapped).toBe(true);
+    expect(result.cappedRevenue).toBeLessThan(highRevenue);
+    // 깎인 매출을 다시 역산하면 정확히 상한(55%)이어야 한다.
+    const impliedAfterCap = computeImpliedUtilizationFromRevenue(result.cappedRevenue, 1500, 0.5, 100);
+    expect(impliedAfterCap).toBeCloseTo(0.55, 3);
+  });
+  it("정확히 상한과 같으면 안 깎인다(경계값)", () => {
+    const capped = computeMeasuredForecast(100 * 0.55, 1500, 0.5, 100);
+    const result = applyCapacityCeiling(capped!.monthlyRevenue, 1500, 100, capSettings);
+    expect(result.capacityCapped).toBe(false);
+  });
+  it("입력값이 없으면 원본을 그대로 반환하고 안 깎인 것으로 처리한다", () => {
+    expect(applyCapacityCeiling(null, 1500, 100, capSettings)).toEqual({ cappedRevenue: null, capacityCapped: false, impliedUtilizationBeforeCap: null });
+    const result = applyCapacityCeiling(100_000_000, null, 100, capSettings);
+    expect(result.capacityCapped).toBe(false);
+    expect(result.cappedRevenue).toBe(100_000_000);
+  });
+});
+
 describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 예상월매출 백테스트, 2026-08-21)", () => {
   const settings = defaultModelSettings();
   function baseStore(overrides: Partial<Parameters<typeof computeExistingStoreMeasuredForecast>[0]> = {}) {
@@ -1831,7 +1864,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
   );
 
   it("핵심표본은 리브-원-아웃으로 예측하고 includedInCoreAccuracy=true다", () => {
-    const { rows } = runCohortValidation(coreStores, { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
+    const { rows } = runCohortValidation(coreStores, { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     expect(rows.every((r) => r.includedInCoreAccuracy)).toBe(true);
     expect(rows.every((r) => r.predictedRevenueAvg != null)).toBe(true);
     expect(rows.every((r) => r.cohort === "정식 검증군")).toBe(true);
@@ -1839,7 +1872,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("12개월 미완료 매장은 학습에 전혀 안 쓰이고(완전 외부검증) 코호트로 분류된다", () => {
     const earlyStore = makeStore({ storeCode: "E1", storeName: "조기점포", completedMonths: 7 });
-    const { rows } = runCohortValidation([...coreStores, earlyStore], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
+    const { rows } = runCohortValidation([...coreStores, earlyStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     const early = rows.find((r) => r.storeCode === "E1")!;
     expect(early.cohort).toBe("조기 검증 B");
     expect(early.includedInCoreAccuracy).toBe(false);
@@ -1887,7 +1920,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("사후 운영이슈 점포는 핵심 정확도에서 제외되고 사유가 남는다", () => {
     const anomalyStore = makeStore({ storeCode: "A1", storeName: "이슈점포", isPostOpenIssue: true, postOpenIssueReason: "오픈 후 운영관리 문제" });
-    const { rows } = runCohortValidation([...coreStores, anomalyStore], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
+    const { rows } = runCohortValidation([...coreStores, anomalyStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     const anomaly = rows.find((r) => r.storeCode === "A1")!;
     expect(anomaly.includedInCoreAccuracy).toBe(false);
     expect(anomaly.exclusionReason).toContain("운영관리 문제");
@@ -1895,7 +1928,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("영업 1~2개월 매장은 참고용으로 분류되고 핵심 정확도에서 빠진다", () => {
     const refStore = makeStore({ storeCode: "R1", storeName: "참고점포", completedMonths: 1 });
-    const { rows } = runCohortValidation([...coreStores, refStore], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
+    const { rows } = runCohortValidation([...coreStores, refStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     const ref = rows.find((r) => r.storeCode === "R1")!;
     expect(ref.cohort).toBe("참고용");
     expect(ref.includedInCoreAccuracy).toBe(false);
@@ -1904,7 +1937,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("오픈 당월(완료월 0개) 매장은 예측값도 아예 내지 않는다 — 오픈달 매출로 평가하지 않는다", () => {
     const justOpened = makeStore({ storeCode: "J1", storeName: "오픈당월점포", completedMonths: 0, actualRevenueAvg: null });
-    const { rows } = runCohortValidation([...coreStores, justOpened], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
+    const { rows } = runCohortValidation([...coreStores, justOpened], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     const j = rows.find((r) => r.storeCode === "J1")!;
     expect(j.cohort).toBe("제외");
     expect(j.predictedRevenueAvg).toBeNull();
@@ -1913,7 +1946,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("브랜드 미확인 매장은 핵심 정확도에서 제외되고 사유가 남는다", () => {
     const unknownBrand = makeStore({ storeCode: "U1", storeName: "미확인점포", brand: null });
-    const { rows } = runCohortValidation([...coreStores, unknownBrand], { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment });
+    const { rows } = runCohortValidation([...coreStores, unknownBrand], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     const u = rows.find((r) => r.storeCode === "U1")!;
     expect(u.includedInCoreAccuracy).toBe(false);
     expect(u.exclusionReason).toContain("브랜드 미확인");
@@ -1921,7 +1954,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("요청사항 2 — 외부유입제한이 있으면 V62예측이 V61예측×(1+보정률)로 줄어들고 오차도 그 값 기준으로 계산된다", () => {
     const strongInflow = makeStore({ storeCode: "F1", storeName: "외부유입강함점", inflowRestriction: "강함" });
-    const settings = { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment };
+    const settings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
     const { rows } = runCohortValidation([...coreStores, strongInflow], settings);
     const f = rows.find((r) => r.storeCode === "F1")!;
     expect(f.predictedRevenueAvg).not.toBeNull();
@@ -1932,7 +1965,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("외부유입제한이 없으면(null) V62=V61 그대로다", () => {
     const noInflow = makeStore({ storeCode: "F2", storeName: "외부유입없음점", inflowRestriction: null });
-    const settings = { v61Training: defaultModelSettings().v61Training, inflowAdjustment: defaultModelSettings().inflowAdjustment };
+    const settings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
     const { rows } = runCohortValidation([...coreStores, noInflow], settings);
     const f = rows.find((r) => r.storeCode === "F2")!;
     expect(f.v62PredictedRevenueAvg).toBe(f.predictedRevenueAvg);

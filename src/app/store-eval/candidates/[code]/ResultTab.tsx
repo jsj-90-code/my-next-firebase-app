@@ -446,6 +446,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="mt-4">
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
         </div>
+        {result.capacityCapped && (
+          <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
+            가동률 물리적 상한({formatPercent(settingsUsed.v62MaxUtilizationRate)})에 걸려 예측값을 조정했습니다. 원래 예측은{" "}
+            {formatWon(result.v62FinalBeforeCap)}였습니다 — 이 PC대수로는 그만큼 매출을 낼 수 없다고 판단했습니다(정식검증 26곳 실측
+            가동률이 전부 20~49%였음).
+          </p>
+        )}
         <details className="mt-3">
           <summary className="cursor-pointer text-xs font-medium text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]">
             세부 계산값 보기 (V61 기본예측 · V62 보정률 · 보수/상한 참고범위)
@@ -455,6 +462,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             <ResultCard label="V62 보정률" value={formatPercent(result.v62Rate)} />
             <ResultCard label="보수판단매출 (85%)" value={formatWon(result.conservativeSales)} />
             <ResultCard label="상한참고매출 (115%)" value={formatWon(result.upperSales)} />
+            {result.capacityCapped && <ResultCard label="가동률 상한 적용 전 원래 예측" value={formatWon(result.v62FinalBeforeCap)} />}
           </div>
         </details>
       </section>

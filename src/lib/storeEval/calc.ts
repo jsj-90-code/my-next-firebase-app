@@ -1118,6 +1118,40 @@ export function computeV62Final(v61: number | null, v62Rate: number | null): num
   return Math.round(v61 * (1 + v62Rate));
 }
 
+export type CapacityCeilingResult = {
+  cappedRevenue: number | null;
+  capacityCapped: boolean;
+  impliedUtilizationBeforeCap: number | null;
+};
+
+/**
+ * 2026-08-30 신설(사용자 확인) — V61/V62 예측매출의 물리적 가동률 상한. 정식검증 26곳의 실측
+ * 환산가동률(24시간 평균, computeImpliedUtilizationFromRevenue)이 전부 20~49%였는데(최대
+ * 48.7%), V61/V62는 회귀 예측이라 이 범위를 벗어난 극단값을 걸러줄 물리적 제약이 없었다(과거
+ * 발견 사례: 어떤 후보지에서 예상 평균가동좌석이 계획 PC대수를 넘어 가동률 125.9%가 나온 적
+ * 있음). 예측매출을 이 상한(settings.v62MaxUtilizationRate, 기본 0.55)이 함의하는 가동률로
+ * 환산했을 때 넘으면, 정확히 상한 가동률에 해당하는 매출로 깎는다 — computeMeasuredForecast와
+ * 같은 공식(가동좌석×24시간×30일×요금÷(1-상품비율))의 역/정방향을 그대로 재사용해 새 계수를
+ * 만들지 않는다.
+ * "적중률 위해 계수를 역산해서 실제매출에 맞추는 것"과는 성격이 다르다 — 실측값을 보고 조정하는
+ * 게 아니라, 매장 대수로 물리적으로 낼 수 없는 값을 거르는 것뿐이다(사용자 확인). 이 자사 매출을
+ * 못 넘게 막는 것 자체가 "넘치는 수요는 자사가 못 가져가고 시장(경쟁점)에 남는다"는 의미를 이미
+ * 담고 있어, 경쟁점 쪽 수치를 별도로 계산하지 않는다(이 앱은 애초에 경쟁점 매출을 예측하지 않음).
+ */
+export function applyCapacityCeiling(
+  revenue: number | null,
+  hourlyRate: number | null,
+  pcCount: number | null,
+  settings: Pick<ModelSettings, "v62MaxUtilizationRate" | "measuredForecastProductRatio">,
+): CapacityCeilingResult {
+  const impliedUtilizationBeforeCap = computeImpliedUtilizationFromRevenue(revenue, hourlyRate, settings.measuredForecastProductRatio, pcCount);
+  if (revenue == null || impliedUtilizationBeforeCap == null || impliedUtilizationBeforeCap <= settings.v62MaxUtilizationRate) {
+    return { cappedRevenue: revenue, capacityCapped: false, impliedUtilizationBeforeCap };
+  }
+  const capped = computeMeasuredForecast((pcCount as number) * settings.v62MaxUtilizationRate, hourlyRate, settings.measuredForecastProductRatio, pcCount);
+  return { cappedRevenue: capped?.monthlyRevenue ?? revenue, capacityCapped: true, impliedUtilizationBeforeCap };
+}
+
 export function computeBoundedSales(v62Final: number | null, settings: Pick<ModelSettings, "lowerBoundFactor" | "upperBoundFactor">) {
   if (v62Final == null) return { conservativeSales: null, upperSales: null };
   return {
@@ -2667,7 +2701,7 @@ export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
  */
 export function runCohortValidation(
   stores: ValidationStoreInput[],
-  settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
+  settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">,
 ): { rows: ValidationStoreRow[] } {
   const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
 
@@ -2721,7 +2755,10 @@ export function runCohortValidation(
     // 전부 이 V62 값 기준으로 계산한다(V61 그대로 비교하면 강한 외부유입제한 매장의 오차가
     // 실제보다 부풀려 보인다). inflowRestriction이 없으면(null/undefined) 보정 없이 V61=V62.
     const v62Rate = getV62Rate(s.inflowRestriction ?? null, settings) ?? 0;
-    const v62PredictedRevenueAvg = predictedRevenueAvg != null ? computeV62Final(predictedRevenueAvg, v62Rate) : null;
+    const v62Raw = predictedRevenueAvg != null ? computeV62Final(predictedRevenueAvg, v62Rate) : null;
+    // 2026-08-30(사용자 확인) — 후보지 평가(evaluate.ts)와 동일한 물리적 가동률 상한을 여기(백테스트
+    // 예측)에도 일관되게 적용한다. 실측 26곳 전부 20~49%였으니 대체로 영향 없고, 극단 외삽만 걸린다.
+    const v62PredictedRevenueAvg = applyCapacityCeiling(v62Raw, s.hourlyRate, s.evaluationPcCount ?? s.pcCount, settings).cappedRevenue;
 
     const errorAmount =
       v62PredictedRevenueAvg != null && s.actualRevenueAvg != null ? v62PredictedRevenueAvg - s.actualRevenueAvg : null;

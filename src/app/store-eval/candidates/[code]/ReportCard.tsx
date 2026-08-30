@@ -115,6 +115,11 @@ export function ReportCard({
         <p className="mt-1 text-[10px] text-white/60 dark:text-[#171310]/60">
           2,000만원 기준 {formatWon(result.aaBaselineRevenue)} · 상권등급 {result.marketGrade ?? "-"} · {result.marketCharacter ?? "-"}
         </p>
+        {result.capacityCapped && (
+          <p className="mt-1 text-[10px] text-amber-300 dark:text-amber-700">
+            가동률 물리적 상한 적용됨(원래 예측 {formatWon(result.v62FinalBeforeCap)})
+          </p>
+        )}
       </div>
 
       <ReasoningChain result={result} hourlyRate={candidate.hourlyRate} expectedPcCount={candidate.expectedPcCount} />
