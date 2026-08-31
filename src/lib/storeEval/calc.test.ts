@@ -32,7 +32,7 @@ import {
   computeExpectedUtilization,
   computeFinalJudgement,
   computeFoodScore,
-  computeInteriorSeatManagementScore,
+  computeFacilityScore,
   combineHardwareTiers,
   computeCompetitorAppliedPcCount,
   computeFloatingRawDemand,
@@ -45,16 +45,19 @@ import {
   computeMarketGrade,
   computeMeasuredForecast,
   computeOwnLocationScore,
-  computeSingleSeatBonus,
   computeSpecScore,
   computeV61Fallback,
   computeV62Final,
   computeValidationRow,
-  computeZoneAchievement,
-  computeZoneScore,
+  computeZoneDiversityScore,
+  computeSpecialtySeatRatio,
+  computeZoneCapacityScore,
+  computeZoneCompositionScore,
+  computeCompetitorZoneComposition,
+  computeOwnZoneComposition,
   redistributeCapacityConstrainedDemand,
   resolveFreshnessScore,
-  resolveSeatZoneScore,
+  resolveZoneCompositionScore,
   applyStandardOwnFacilityDefaults,
   describeNotVerifiableReason,
   diagnoseLoocvSensitivity,
@@ -641,39 +644,70 @@ describe("computeFreshnessFromYear/resolveFreshnessScore (경쟁력 평가 기�
   });
 });
 
-describe("computeZoneScore/computeZoneAchievement/computeSingleSeatBonus (경쟁력 평가 기준 최종본 §3~6, 2026-08-30)", () => {
+describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대로 이식, 이전 존달성도 공식 폐기)", () => {
   const blankCounts = { teamRoom: null, room2: null, coupleZone: null, vipZone: null, friendsZone: null, singleSeatCount: null, room1: null, firstClassZone: null };
-  it("주요 존 가산점 환산 예시값과 일치한다(팀룸2개+0.50, 커플존4개+0.40, VIP존5개+0.30, 프렌즈존10개+0.40)", () => {
-    expect(computeZoneScore({ ...blankCounts, teamRoom: 2 })).toBeCloseTo(2.0 + 0.5, 6);
-    expect(computeZoneScore({ ...blankCounts, coupleZone: 4 })).toBeCloseTo(2.0 + 0.4, 6);
-    expect(computeZoneScore({ ...blankCounts, vipZone: 5 })).toBeCloseTo(2.0 + 0.3, 6);
-    expect(computeZoneScore({ ...blankCounts, friendsZone: 10 })).toBeCloseTo(2.0 + 0.4, 6);
-    expect(computeZoneScore({ ...blankCounts, room2: 2 })).toBeCloseTo(2.0 + 0.4, 6); // 2인룸 2개 기준 +0.40
+
+  it("computeZoneDiversityScore — d=0이면 1, else MIN(5,1+(1+d)*0.5)", () => {
+    expect(computeZoneDiversityScore(0)).toBe(1);
+    expect(computeZoneDiversityScore(1)).toBe(2);
+    expect(computeZoneDiversityScore(2)).toBe(2.5);
+    expect(computeZoneDiversityScore(3)).toBe(3);
+    expect(computeZoneDiversityScore(4)).toBe(3.5);
+    expect(computeZoneDiversityScore(8)).toBe(5); // 상한 클램프
   });
-  it("팀룸 1개는 +0.25, 3개 이상은 150%까지만 반영돼 최대 +0.75", () => {
-    expect(computeZoneScore({ ...blankCounts, teamRoom: 1 })).toBeCloseTo(2.0 + 0.25, 6);
-    expect(computeZoneScore({ ...blankCounts, teamRoom: 3 })).toBeCloseTo(2.0 + 0.75, 6);
-    expect(computeZoneScore({ ...blankCounts, teamRoom: 10 })).toBeCloseTo(2.0 + 0.75, 6); // 상한 클램프
+
+  it("computeSpecialtySeatRatio — 환산좌석수/PC대수, 팀룸총좌석수 없으면 개수×5 추정", () => {
+    // 1인석2×1+1인룸1×1+2인룸1×2+팀룸2개(추정10)+커플존1×2 = 2+1+2+10+2=17, /100=0.17
+    const counts = { ...blankCounts, singleSeatCount: 2, room1: 1, room2: 1, teamRoom: 2, coupleZone: 1 };
+    expect(computeSpecialtySeatRatio(counts, null, null, 100)).toBeCloseTo(0.17, 6);
+    // 팀룸총좌석수를 직접 12로 지정하면 추정(10) 대신 그 값을 쓴다
+    expect(computeSpecialtySeatRatio(counts, 12, null, 100)).toBeCloseTo(0.19, 6);
+    // 경쟁점 전용 일반2인석(×1) 가산
+    expect(computeSpecialtySeatRatio(counts, null, 3, 100)).toBeCloseTo(0.2, 6);
+    expect(computeSpecialtySeatRatio(counts, null, null, 0)).toBeNull();
+    expect(computeSpecialtySeatRatio(counts, null, null, null)).toBeNull();
   });
-  it("1인 특화 가산점 — 1인석 10개 +0.1, 1인룸 5개 +0.2, 합산 최대 +0.2", () => {
-    expect(computeSingleSeatBonus(10, 0)).toBeCloseTo(0.1, 6);
-    expect(computeSingleSeatBonus(0, 5)).toBeCloseTo(0.2, 6);
-    expect(computeSingleSeatBonus(10, 5)).toBeCloseTo(0.2, 6); // 0.1+0.2=0.3이지만 상한 0.2로 클램프
+
+  it("computeZoneCapacityScore — 비율 구간화 <10%→1,<20%→2,<30%→3,<50%→4,else→5", () => {
+    expect(computeZoneCapacityScore(0.05)).toBe(1);
+    expect(computeZoneCapacityScore(0.15)).toBe(2);
+    expect(computeZoneCapacityScore(0.25)).toBe(3);
+    expect(computeZoneCapacityScore(0.45)).toBe(4);
+    expect(computeZoneCapacityScore(0.9)).toBe(5);
+    expect(computeZoneCapacityScore(null)).toBeNull();
   });
-  it("퍼스트클래스존 보유 시 +0.5, 여러 개라도 최대 +0.5", () => {
-    expect(computeZoneScore({ ...blankCounts, firstClassZone: 1 })).toBeCloseTo(2.5, 6);
-    expect(computeZoneScore({ ...blankCounts, firstClassZone: 3 })).toBeCloseTo(2.5, 6);
+
+  it("computeZoneCompositionScore — 존다양성*0.7+존수용력*0.3, 반올림 없음", () => {
+    expect(computeZoneCompositionScore(2, 1)).toBeCloseTo(2 * 0.7 + 1 * 0.3, 6);
+    expect(computeZoneCompositionScore(null, 1)).toBeNull();
   });
-  it("모든 존이 만점이면 상한 5점으로 클램프", () => {
-    expect(computeZoneScore({ teamRoom: 3, room2: 3, coupleZone: 6, vipZone: 8, friendsZone: 15, singleSeatCount: 10, room1: 5, firstClassZone: 1 })).toBe(5);
+
+  it("computeCompetitorZoneComposition — 미기재는 0 취급(가드 없음), 일반2인석 존재시 다양성 +0.5", () => {
+    const zeroZones = computeCompetitorZoneComposition({ counts: blankCounts, regularCoupleSeatCount: null, teamRoomTotalSeats: null, totalPcCount: 100 });
+    expect(zeroZones.diversity).toBe(1); // d=0
+    expect(zeroZones.capacity).toBe(1); // ratio=0
+    const withRegularCouple = computeCompetitorZoneComposition({
+      counts: { ...blankCounts, teamRoom: 1 },
+      regularCoupleSeatCount: 2,
+      teamRoomTotalSeats: null,
+      totalPcCount: 100,
+    });
+    expect(withRegularCouple.diversity).toBe(computeZoneDiversityScore(1.5)); // 팀룸(1) + 일반2인석 보너스(0.5)
   });
-  it("존 개수가 전부 없으면 null(레거시 직접입력 폴백 대상)", () => {
-    expect(computeZoneScore(blankCounts)).toBeNull();
+
+  it("computeOwnZoneComposition — 8개 존유형 중 하나라도 완전 미기재면 전체 null(자사 전용 가드)", () => {
+    const partial = { ...blankCounts, teamRoom: 2 }; // 나머지 7개는 null(미기재)
+    expect(computeOwnZoneComposition({ counts: partial, teamRoomTotalSeats: null, totalPcCount: 100 }).composition).toBeNull();
+    const allFilled = { singleSeatCount: 0, room1: 0, room2: 0, teamRoom: 2, coupleZone: 0, vipZone: 0, friendsZone: 0, firstClassZone: 0 };
+    const result = computeOwnZoneComposition({ counts: allFilled, teamRoomTotalSeats: null, totalPcCount: 100 });
+    expect(result.diversity).toBe(2); // d=1(팀룸만)
+    expect(result.composition).not.toBeNull();
   });
-  it("resolveSeatZoneScore — 하나라도 채워지면 자동계산, 전부 없으면 legacy 직접입력으로 폴백", () => {
-    expect(resolveSeatZoneScore({ ...blankCounts, teamRoom: 2 }, 3)).toBeCloseTo(2.5, 6); // 자동계산이 legacy(3)보다 우선
-    expect(resolveSeatZoneScore(blankCounts, 3)).toBe(3);
-    expect(resolveSeatZoneScore(blankCounts, null)).toBeNull();
+
+  it("resolveZoneCompositionScore — 자동계산 우선, null이면 legacy 직접입력으로 폴백", () => {
+    expect(resolveZoneCompositionScore(2.5, 3)).toBe(2.5);
+    expect(resolveZoneCompositionScore(null, 3)).toBe(3);
+    expect(resolveZoneCompositionScore(null, null)).toBeNull();
   });
 });
 
@@ -692,59 +726,50 @@ describe("computeOwnLocationScore (경쟁력 평가 기준 최종본 §12 — �
   });
 });
 
-describe("computeInteriorSeatManagementScore (좌석존구성50%+최신성25%+청결관리15%+편의성10%, 2026-08-28 전면개편)", () => {
-  const interiorWeights = { seatZone: 0.5, freshness: 0.25, cleanliness: 0.15, comfort: 0.1 };
-  it("넷 다 있으면 가중평균(2026-08-30부터 반올림 금지 — §15)", () => {
-    // 4*.5 + 3*.25 + 3*.15 + 2*.1 = 2+0.75+0.45+0.2 = 3.4 (반올림 없음)
-    expect(
-      computeInteriorSeatManagementScore(
-        { seatZoneScore: 4, freshnessScore: 3, cleanlinessScore: 3, comfortScore: 2, legacyScore: null },
-        { interiorWeights },
-      ),
-    ).toBeCloseTo(3.4, 2);
+describe("computeFacilityScore (존구성50%+인테리어30%+관리20%, 2026-08-31 전면 교체 — 옛 computeInteriorSeatManagementScore 폐기)", () => {
+  const facilityWeights = { zoneComposition: 0.5, interior: 0.3, management: 0.2 };
+  it("셋 다 있으면 가중합(반올림 없음)", () => {
+    // 3*0.5 + 4*0.3 + 2*0.2 = 1.5+1.2+0.4 = 3.1
+    expect(computeFacilityScore({ zoneComposition: 3, interiorScore: 4, managementScore: 2 }, { facilityWeights })).toBeCloseTo(3.1, 6);
   });
-  it("일부만 있으면 채워진 항목의 가중치로 재정규화", () => {
-    expect(
-      computeInteriorSeatManagementScore(
-        { seatZoneScore: 4, freshnessScore: null, cleanlinessScore: null, comfortScore: null, legacyScore: null },
-        { interiorWeights },
-      ),
-    ).toBe(4);
-  });
-  it("넷 다 없으면 직접입력값(legacyScore)으로 폴백 — 기존 40개 매장은 항상 이 경로", () => {
-    expect(
-      computeInteriorSeatManagementScore(
-        { seatZoneScore: null, freshnessScore: null, cleanlinessScore: null, comfortScore: null, legacyScore: 4 },
-        { interiorWeights },
-      ),
-    ).toBe(4);
+  it("하나라도 없으면 전체 null — 관리점수가 더 이상 인테리어로 자동 대체되지 않는다", () => {
+    expect(computeFacilityScore({ zoneComposition: 3, interiorScore: 4, managementScore: null }, { facilityWeights })).toBeNull();
+    expect(computeFacilityScore({ zoneComposition: null, interiorScore: 4, managementScore: 2 }, { facilityWeights })).toBeNull();
+    expect(computeFacilityScore({ zoneComposition: 3, interiorScore: null, managementScore: 2 }, { facilityWeights })).toBeNull();
   });
 });
 
-describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: 비우면 표준값 적용, 2026-08-21)", () => {
+describe("applyStandardOwnFacilityDefaults (신규후보지 표준 존구성, 2026-08-31 갱신)", () => {
   const blank = {
+    ownSingleSeatCount: null,
+    ownRoom1: null,
+    ownRoom2: null,
     ownTeamRoom: null,
     ownCoupleZone: null,
     ownVipZone: null,
     ownFriendsZone: null,
+    ownFirstClassZone: null,
     ownFoodScore: null,
     ownInteriorScore: null,
+    ownManagementScore: null,
   };
-  it("전부 비어있으면 표준값(팀룸2·커플존3·VIP존5·프렌즈존15·먹거리4점·인테리어5점)을 적용한다", () => {
-    // 2026-08-27: 오픈 초기 기준 먹거리/인테리어는 "상"(5점)이 더 현실적이라는 사용자 확인으로
-    // 4→5로 올렸다(원본 시트 "빈칸이면 4" 규칙과 달라진 값 — 의도된 재조정). 2026-08-28(2차):
-    // 모니터가 텍스트 자동채점으로 바뀌며 "표준값 4" 폴백 자체가 없어져 반환값에서 빠졌다.
-    // 2026-08-30: 게임존 가산점 폐지로 ownGameZoneCount/gameZoneCount 필드 자체를 없앴다.
-    // 2026-08-30(2차) — 먹거리는 5→4로 다시 내렸다. 경쟁력 평가 기준 최종본 §11이 "쉐프앤클릭
-    // (자사 대부분 매장이 쓰는 자체 브랜드)=4.0"을 기준점으로 확정해서, 브랜드 미지정 신규후보지가
-    // 그보다 높은 5점을 기본으로 받는 게 새 기준과 모순이었다(사용자 지적). 인테리어는 그대로 5점.
+  it("전부 비어있으면 표준값(팀룸2·2인룸2·커플존4·VIP존5·프렌즈존15·먹거리4점·인테리어4점·관리4점)을 적용한다", () => {
+    // 2026-08-31 — 사용자가 준 "신규매장 블랙라벨 기본값" 표(세리머니팀룸2개=10석/2인룸2개=4석/
+    // 커플존4조=8석/VIP존5석/프렌즈존15석)로 갱신. coupleZone 3→4, room2 신설(2). 1인석/1인룸/
+    // 퍼스트클래스존은 표에 없는 항목이라 0(없음)으로 간주. 인테리어/관리는 "경쟁력 평가 기준
+    // 최종본" §3 "자사 신규오픈 기준값 각각 4점"에 맞춰 인테리어도 5→4로 정정.
     expect(applyStandardOwnFacilityDefaults(blank)).toEqual({
+      ownSingleSeatCount: 0,
+      ownRoom1: 0,
+      ownRoom2: 2,
       ownTeamRoom: 2,
-      ownCoupleZone: 3,
+      ownCoupleZone: 4,
       ownVipZone: 5,
       ownFriendsZone: 15,
+      ownFirstClassZone: 0,
       ownFoodScore: 4,
-      ownInteriorScore: 5,
+      ownInteriorScore: 4,
+      ownManagementScore: 4,
     });
   });
   it("실제 값이 입력돼 있으면 표준값으로 덮어쓰지 않는다", () => {
@@ -754,7 +779,7 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
     expect(result.ownFoodScore).toBe(2);
     expect(result.ownVipZone).toBe(5); // 나머지 비어있는 항목은 여전히 표준값
   });
-  it("신중동점(N001) 실사례 — 2026-08-28 (2차) 모니터가 텍스트 자동채점으로 바뀌며 표준값(4점) 폴백이 없어짐(GPU만 있으면 GPU 가중치로만 재정규화)", () => {
+  it("신중동점(N001) 실사례 — GPU만 있으면 GPU 가중치로만 재정규화, 시설점수는 표준값(존구성+인테리어4+관리4)으로 계산", () => {
     const facility = applyStandardOwnFacilityDefaults(blank);
     const spec = computeSpecScore(
       {
@@ -771,20 +796,33 @@ describe("applyStandardOwnFacilityDefaults (07_신규후보지 헤더 메모: �
       },
       settings,
     );
-    // GPU: RTX5060(4점, 앵커, 2026-08-30 게임존 가산 폐지) — CPU/RAM/모니터 전부 비어서 GPU 가중치만으로 재정규화
+    // GPU: RTX5060(4점, 앵커) — CPU/RAM/모니터 전부 비어서 GPU 가중치만으로 재정규화
     expect(spec).toBeCloseTo(4, 2);
-    const interior = computeInteriorSeatManagementScore(
-      { seatZoneScore: null, freshnessScore: null, cleanlinessScore: null, comfortScore: null, legacyScore: facility.ownInteriorScore },
+    const zoneComposition = computeOwnZoneComposition({
+      counts: {
+        singleSeatCount: facility.ownSingleSeatCount,
+        room1: facility.ownRoom1,
+        room2: facility.ownRoom2,
+        teamRoom: facility.ownTeamRoom,
+        coupleZone: facility.ownCoupleZone,
+        vipZone: facility.ownVipZone,
+        friendsZone: facility.ownFriendsZone,
+        firstClassZone: facility.ownFirstClassZone,
+      },
+      teamRoomTotalSeats: null,
+      totalPcCount: 86,
+    }).composition;
+    const interior = computeFacilityScore(
+      { zoneComposition, interiorScore: facility.ownInteriorScore, managementScore: facility.ownManagementScore },
       settings,
     );
-    expect(interior).toBe(5); // 세부항목 전부 비어서 표준값(5) 폴백
     const competitivenessSettings = { competitivenessWeights: defaultModelSettings().competitivenessWeights };
     const total = computeCompetitivenessScore(
       { spec, food: facility.ownFoodScore, interior, location: computeLocationScoreFromFacts(1, "지하", false) },
       competitivenessSettings,
     );
-    // 4*.3 + 4*.2 + 5*.4 + 4*.1 = 1.2+0.8+2+0.4 = 4.4 (먹거리 표준값 2026-08-30부터 5→4)
-    expect(total).toBeCloseTo(4.4, 2);
+    // spec4*.3 + food4*.2 + interior*.4 + location4*.1 — interior는 표준 존구성 기반 실측값
+    expect(total).toBeCloseTo(spec * 0.3 + facility.ownFoodScore * 0.2 + (interior as number) * 0.4 + 4 * 0.1, 6);
   });
 });
 
@@ -1309,10 +1347,12 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     );
     expect(result.excludedReason).toBeNull();
     // hardware(spec): GPU(RTX5060=4) — CPU/RAM/모니터 없어서 GPU 가중치만 재정규화. food=4
-    // (원본 규칙대로 4). interior는 2026-08-30부터 존 개수(팀룸2·커플존3·VIP존5·프렌즈존15)로
-    // 자동계산됨(§3~6) — achievement=.25+0+.15+.15+.30=.85 → 2.0+.85*2=3.7. location=4.0
-    // → 4*.3+4*.2+3.7*.4+4*.1 = 3.88
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.88, 3);
+    // (원본 규칙대로 4). 2026-08-31 — 존구성은 새 산식(존다양성×0.7+존수용력×0.3)으로 자동계산:
+    // 표준존구성(팀룸2·커플존3·VIP존5·프렌즈존15, 나머지0)에서 존다양성=4종류→3.5,
+    // 특화좌석비율=(팀룸2×5+커플존3×2+VIP5+프렌즈15)/100=0.36→존수용력4 → 존구성=3.5*.7+4*.3=3.65.
+    // interior(facility) = 존구성3.65*.5+인테리어4(표준값)*.3+관리4(표준값)*.2 = 3.825. location=4.0
+    // → 4*.3+4*.2+3.825*.4+4*.1 = 3.93
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.93, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -1336,9 +1376,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     expect(result.excludedReason).toBeNull();
     // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합. 하드웨어점수는
     // GPU(RTX5060=4), 모니터(240Hz=3.5) — (4*.4+3.5*.25)/(0.4+0.25)=3.808. food=4.
-    // interior는 존 개수 자동계산(§3~6)으로 3.7(위 테스트와 동일 계산). location=4
-    // → 3.808*.3+4*.2+3.7*.4+4*.1 = 3.822
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.822, 2);
+    // interior(facility)는 위 테스트와 동일 존구성(3.65)+인테리어4(직접입력, 표준값과 동일)+
+    // 관리4(표준값) = 3.65*.5+4*.3+4*.2 = 3.825. location=4
+    // → 3.808*.3+4*.2+3.825*.4+4*.1 = 3.8723
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.8723, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);

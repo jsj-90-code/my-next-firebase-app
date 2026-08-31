@@ -653,13 +653,25 @@ export function computeSpecScore(
  * "비어있으면 표준값 4"라는 개념 자체가 없어졌다(GPU/CPU/RAM처럼 비어있으면 그냥 항목에서
  * 제외되고 나머지 가중치로 재정규화된다) — 그래서 monitorScore 기본값도 제거했다.
  */
+// 2026-08-31 갱신 — 사용자가 "신규매장 블랙라벨 기본값" 표(세리머니팀룸 5인실×2개=10석/2인룸
+// 2개=4석/커플존 4조=8석/VIP존 5석/프렌즈존 15석, 합계 5종 42석)로 존구성 표준값을 확정했다.
+// coupleZone 3→4로 변경, room2(2인룸) 표준값 신설. singleSeatCount/room1/firstClassZone은 표에
+// 없는 항목이라 신규매장 표준 구성엔 0(없음)으로 간주한다. interiorScore/managementScore는
+// "경쟁력 평가 기준 최종본" §3의 "자사 신규오픈 인테리어·관리 기준값 각각 4점"에 맞춰 4로 통일
+// (interiorScore는 기존 5였던 것을 정정 — 기존가맹점 쪽(EXISTING_STORE_FACILITY_DEFAULTS)은
+// 이미 4였음). managementScore는 새 시설점수 산식(존구성50%+인테리어30%+관리20%)의 독립 입력.
 export const STANDARD_OWN_FACILITY_DEFAULTS = {
+  singleSeatCount: 0,
+  room1: 0,
+  room2: 2,
   teamRoom: 2,
-  coupleZone: 3,
+  coupleZone: 4,
   vipZone: 5,
   friendsZone: 15,
+  firstClassZone: 0,
   foodScore: 4,
-  interiorScore: 5,
+  interiorScore: 4,
+  managementScore: 4,
 };
 
 /**
@@ -671,40 +683,67 @@ export const STANDARD_OWN_FACILITY_DEFAULTS = {
  * 옛 매장을 불리하게 만든다고 지적했던 것과 같은 종류의 문제 — 신규 기준을 과거 데이터에
  * 소급하면 안 된다). 기존 가맹점 백테스트는 원본 규칙 그대로 4/4/4를 쓴다.
  */
+// 2026-08-31 — 존구성 표준값(coupleZone4/room2 2 등)은 "신규매장 전용" 확정이라 기존가맹점
+// 백테스트엔 적용하지 않는다(사용자 확정). teamRoom/coupleZone/vipZone/friendsZone은 기존
+// LOOCV로 이미 검증된 원래 값(2/3/5/15)을 그대로 유지 — room2/singleSeatCount/firstClassZone은
+// 원래 기본값 자체가 없던 항목이라 중립값 0으로 신설한다(과거 데이터 소급 영향 없음).
 export const EXISTING_STORE_FACILITY_DEFAULTS = {
-  ...STANDARD_OWN_FACILITY_DEFAULTS,
+  singleSeatCount: 0,
+  room1: 0,
+  room2: 0,
+  teamRoom: 2,
+  coupleZone: 3,
+  vipZone: 5,
+  friendsZone: 15,
+  firstClassZone: 0,
   foodScore: 4,
   interiorScore: 4,
+  managementScore: 4,
 };
 
 export type StandardOwnFacilityInput = {
+  ownSingleSeatCount: number | null;
+  ownRoom1: number | null;
+  ownRoom2: number | null;
   ownTeamRoom: number | null;
   ownCoupleZone: number | null;
   ownVipZone: number | null;
   ownFriendsZone: number | null;
+  ownFirstClassZone: number | null;
   ownFoodScore: number | null;
   ownInteriorScore: number | null;
+  ownManagementScore: number | null;
 };
 
 export function applyStandardOwnFacilityDefaults(
   input: StandardOwnFacilityInput,
   defaults: typeof STANDARD_OWN_FACILITY_DEFAULTS = STANDARD_OWN_FACILITY_DEFAULTS,
 ): {
+  ownSingleSeatCount: number;
+  ownRoom1: number;
+  ownRoom2: number;
   ownTeamRoom: number;
   ownCoupleZone: number;
   ownVipZone: number;
   ownFriendsZone: number;
+  ownFirstClassZone: number;
   ownFoodScore: number;
   ownInteriorScore: number;
+  ownManagementScore: number;
 } {
   const d = defaults;
   return {
+    ownSingleSeatCount: input.ownSingleSeatCount ?? d.singleSeatCount,
+    ownRoom1: input.ownRoom1 ?? d.room1,
+    ownRoom2: input.ownRoom2 ?? d.room2,
     ownTeamRoom: input.ownTeamRoom ?? d.teamRoom,
     ownCoupleZone: input.ownCoupleZone ?? d.coupleZone,
     ownVipZone: input.ownVipZone ?? d.vipZone,
     ownFriendsZone: input.ownFriendsZone ?? d.friendsZone,
+    ownFirstClassZone: input.ownFirstClassZone ?? d.firstClassZone,
     ownFoodScore: input.ownFoodScore ?? d.foodScore,
     ownInteriorScore: input.ownInteriorScore ?? d.interiorScore,
+    ownManagementScore: input.ownManagementScore ?? d.managementScore,
   };
 }
 
@@ -738,7 +777,8 @@ export function computeLocationScoreFromFacts(
  * 종합 경쟁력점수 = 하드웨어30% + 인테리어·좌석구성·관리40% + 먹거리20% + 입지10%
  * (2026-08-28 전면개편, 사용자 확정 — 기존 "사양25%+좌석30%+먹거리20%+인테리어15%+입지10%"
  * 5분류를 4분류로 재편했다. 좌석·존구성은 더 이상 독립 배점이 아니라 "인테리어·좌석·관리"
- * 항목의 세부 50% 비중으로 흡수됐다(computeInteriorSeatManagementScore). 입지는 "예상수요
+ * 항목의 세부 50% 비중으로 흡수됐다(2026-08-31부터 computeFacilityScore, 옛
+ * computeInteriorSeatManagementScore 대체). 입지는 "예상수요
  * 점유율" 쪽 수요중복도와 중복 반영을 최소화하기 위해 의도적으로 10%만 유지한다(범위 밖 후속
  * 과제). 하드웨어·입지는 computeSpecScore/computeLocationScoreFromFacts로 자동 계산한 값을
  * 넣는다. 먹거리·인테리어(좌석·관리 포함)는 평가자가 rubric표를 보고 직접 입력한 세부점수의
@@ -780,75 +820,128 @@ export function computeFoodScore(
 }
 
 /**
- * 2026-08-30(경쟁력 평가 기준 최종본 §3~6) 신설 — 좌석·존구성 점수를 존 개수 기반 결정론적
- * 공식으로 계산한다. 2026-08-28엔 "칸막이만 있는 좌석은 독립룸 미인정" 같은 판단이 자동화하기
- * 어렵다고 보고 평가자 직접입력(rubric)으로 처리했었는데, 최종본이 그 판단 기준 자체를 명시적
- * 공식으로 확정해줘서 이제 자동계산으로 바꾼다(직접입력 필드는 존 개수를 전혀 모를 때의 폴백으로
- * 남긴다 — 아래 `resolveSeatZoneScore` 참고).
+ * 2026-08-31 전면 재설계 — GPT를 통해 사용자가 새로 만든 05_경쟁점정보/01_점포기본정보 시트의
+ * 존다양성·존수용력·존구성 셀 수식을 Sheets API로 직접 읽어(값이 아니라 수식) 그대로 이식했다
+ * ("이전 버전 존 계산식으로 되돌리지 마" 요구사항 — 2026-08-30까지 쓰던 "존달성도"(개수÷기준개수
+ * 가중합) 공식은 완전히 폐기, 아래는 그것과 다른 새 공식이다).
  *
- * 존달성도 = MIN(팀룸/2,1.5)*0.25 + MIN(2인룸/2,1.5)*0.20 + MIN(커플존/4,1.5)*0.20
- *          + MIN(VIP존/5,1.5)*0.15 + MIN(프렌즈존/10,1.5)*0.20   (값 없으면 0)
- * 스펙의 "주요 존 가산점 환산"(팀룸2개+0.50, 커플존4개+0.40, VIP존5개+0.30, 프렌즈존10개+0.40)은
- * 이 achievement×2를 곱한 값과 정확히 일치 — 예: 팀룸2개→MIN(1,1.5)*0.25*2=0.50.
+ * 존다양성점수 = "존이 하나라도 있는 유형의 개수"(distinct type count, 개수 크기는 안 봄) 기반.
+ *   d = COUNTIF(8개 존유형,">0") [+ 경쟁점만: 일반2인석>0이면 +0.5]
+ *   d==0 → 1,  else → MIN(5, 1+(1+d)*0.5)
+ * 특화좌석비율 = 환산좌석수 ÷ (평가기준/적용 PC대수). 환산: 1인석×1+1인룸×1+2인룸×2+
+ *   [팀룸총좌석수 있으면 그값, 없으면 팀룸개수×5(추정)]+커플존×2+VIP×1+프렌즈존×1+퍼스트클래스×1
+ *   [+ 경쟁점만: 일반2인석×1]. PC대수 0 이하면 null.
+ * 존수용력점수 = 특화좌석비율 구간화: <10%→1, <20%→2, <30%→3, <50%→4, else→5.
+ * 존구성점수 = 존다양성*0.7 + 존수용력*0.3 (반올림 없음).
+ *
+ * 자사(own)는 시트 수식에 `COUNTA(8개 존유형)<8 → 공백` 가드가 있다 — 8개 중 하나라도 완전히
+ * 미기재(진짜 blank, 0 아님)면 존다양성부터 존구성까지 전체가 계산되지 않는다(정상 조사된 매장은
+ * "없으면 0"으로 8칸이 다 채워지므로 실무에선 거의 항상 통과한다 — 이 가드는 "아직 아예 조사
+ * 안 한 매장"을 걸러내기 위한 것). 경쟁점은 이 가드가 없다(미기재=0 취급).
  */
-export function computeZoneAchievement(counts: {
-  teamRoom: number | null;
-  room2: number | null;
-  coupleZone: number | null;
-  vipZone: number | null;
-  friendsZone: number | null;
-}): number {
-  const ratio = (count: number | null, base: number) => Math.min((count ?? 0) / base, 1.5);
-  return (
-    ratio(counts.teamRoom, 2) * 0.25 +
-    ratio(counts.room2, 2) * 0.2 +
-    ratio(counts.coupleZone, 4) * 0.2 +
-    ratio(counts.vipZone, 5) * 0.15 +
-    ratio(counts.friendsZone, 10) * 0.2
-  );
-}
-
-/**
- * 1인 특화 가산점(§4) — "하나라도 있으면 +0.2" 방식 폐기, 개수 비례로 교체.
- * MIN(0.2, MIN(1인석/10,1)*0.1 + MIN(1인룸/5,1)*0.2).
- */
-export function computeSingleSeatBonus(singleSeatCount: number | null, room1: number | null): number {
-  const seatPart = Math.min((singleSeatCount ?? 0) / 10, 1) * 0.1;
-  const roomPart = Math.min((room1 ?? 0) / 5, 1) * 0.2;
-  return Math.min(0.2, seatPart + roomPart);
-}
-
-export type ZoneCounts = {
-  teamRoom: number | null;
-  room2: number | null;
-  coupleZone: number | null;
-  vipZone: number | null;
-  friendsZone: number | null;
+export type ZoneCompositionCounts = {
   singleSeatCount: number | null;
   room1: number | null;
+  room2: number | null;
+  teamRoom: number | null;
+  coupleZone: number | null;
+  vipZone: number | null;
+  friendsZone: number | null;
   firstClassZone: number | null;
 };
 
-/**
- * 좌석·존구성 점수(§3~5 최종 공식) = CLAMP(2.0 + 존달성도×2 + 1인가산 + 퍼스트클래스존가산, 1, 5).
- * 퍼스트클래스존은 개수와 무관하게 있으면(>0) +0.5(§5: "여러 개더라도 현재는 최대 +0.5").
- * 8개 필드가 전부 null(존 개수 정보 자체가 없음 — 조사 안 함)이면 null을 돌려줘, 호출부가 기존
- * 수동입력(seatZoneScore)으로 폴백하게 한다. 하나라도 채워져 있으면 나머지는 0으로 간주한다
- * (실제로 "그 존이 0개"라는 뜻이지 미조사가 아니므로).
- */
-export function computeZoneScore(counts: ZoneCounts): number | null {
-  const allNull = Object.values(counts).every((v) => v == null);
-  if (allNull) return null;
-  const achievement = computeZoneAchievement(counts);
-  const singleSeatBonus = computeSingleSeatBonus(counts.singleSeatCount, counts.room1);
-  const firstClassBonus = (counts.firstClassZone ?? 0) > 0 ? 0.5 : 0;
-  const raw = 2.0 + achievement * 2 + singleSeatBonus + firstClassBonus;
-  return Math.min(5, Math.max(1, raw));
+const ZONE_COMPOSITION_KEYS: (keyof ZoneCompositionCounts)[] = [
+  "singleSeatCount",
+  "room1",
+  "room2",
+  "teamRoom",
+  "coupleZone",
+  "vipZone",
+  "friendsZone",
+  "firstClassZone",
+];
+
+function countDistinctZoneTypes(counts: ZoneCompositionCounts): number {
+  return ZONE_COMPOSITION_KEYS.filter((k) => (counts[k] ?? 0) > 0).length;
 }
 
-/** 존 개수로 자동계산이 가능하면 그 값을, 정보가 아예 없으면(§2 "구성요소별 정보 없으면") 조사자 종합평가로 폴백. */
-export function resolveSeatZoneScore(counts: ZoneCounts, legacySeatZoneScore: number | null): number | null {
-  return computeZoneScore(counts) ?? legacySeatZoneScore;
+export function computeZoneDiversityScore(distinctTypeCount: number): number {
+  if (distinctTypeCount <= 0) return 1;
+  return Math.min(5, 1 + (1 + distinctTypeCount) * 0.5);
+}
+
+function convertedZoneSeats(counts: ZoneCompositionCounts, teamRoomTotalSeats: number | null, regularCoupleSeatCount: number | null): number {
+  const teamRoomSeats = teamRoomTotalSeats ?? (counts.teamRoom ?? 0) * 5;
+  return (
+    (counts.singleSeatCount ?? 0) * 1 +
+    (counts.room1 ?? 0) * 1 +
+    (counts.room2 ?? 0) * 2 +
+    teamRoomSeats +
+    (counts.coupleZone ?? 0) * 2 +
+    (counts.vipZone ?? 0) * 1 +
+    (counts.friendsZone ?? 0) * 1 +
+    (counts.firstClassZone ?? 0) * 1 +
+    (regularCoupleSeatCount ?? 0) * 1
+  );
+}
+
+export function computeSpecialtySeatRatio(
+  counts: ZoneCompositionCounts,
+  teamRoomTotalSeats: number | null,
+  regularCoupleSeatCount: number | null,
+  totalPcCount: number | null,
+): number | null {
+  if (totalPcCount == null || totalPcCount <= 0) return null;
+  return convertedZoneSeats(counts, teamRoomTotalSeats, regularCoupleSeatCount) / totalPcCount;
+}
+
+export function computeZoneCapacityScore(ratio: number | null): number | null {
+  if (ratio == null) return null;
+  if (ratio < 0.1) return 1;
+  if (ratio < 0.2) return 2;
+  if (ratio < 0.3) return 3;
+  if (ratio < 0.5) return 4;
+  return 5;
+}
+
+export function computeZoneCompositionScore(diversity: number | null, capacity: number | null): number | null {
+  if (diversity == null || capacity == null) return null;
+  return diversity * 0.7 + capacity * 0.3;
+}
+
+export type ZoneCompositionResult = { diversity: number | null; ratio: number | null; capacity: number | null; composition: number | null };
+
+/** 경쟁점 존구성 — 미기재 가드 없음(0 취급), 일반2인석 반영. */
+export function computeCompetitorZoneComposition(input: {
+  counts: ZoneCompositionCounts;
+  regularCoupleSeatCount: number | null;
+  teamRoomTotalSeats: number | null;
+  totalPcCount: number | null;
+}): ZoneCompositionResult {
+  const distinct = countDistinctZoneTypes(input.counts) + ((input.regularCoupleSeatCount ?? 0) > 0 ? 0.5 : 0);
+  const diversity = computeZoneDiversityScore(distinct);
+  const ratio = computeSpecialtySeatRatio(input.counts, input.teamRoomTotalSeats, input.regularCoupleSeatCount, input.totalPcCount);
+  const capacity = computeZoneCapacityScore(ratio);
+  return { diversity, ratio, capacity, composition: computeZoneCompositionScore(diversity, capacity) };
+}
+
+/** 자사 존구성 — 8개 존유형 중 하나라도 완전 미기재면 전체 null(§가드). 일반2인석 항목 없음. */
+export function computeOwnZoneComposition(input: {
+  counts: ZoneCompositionCounts;
+  teamRoomTotalSeats: number | null;
+  totalPcCount: number | null;
+}): ZoneCompositionResult {
+  const allFilled = ZONE_COMPOSITION_KEYS.every((k) => input.counts[k] != null);
+  if (!allFilled) return { diversity: null, ratio: null, capacity: null, composition: null };
+  const diversity = computeZoneDiversityScore(countDistinctZoneTypes(input.counts));
+  const ratio = computeSpecialtySeatRatio(input.counts, input.teamRoomTotalSeats, null, input.totalPcCount);
+  const capacity = computeZoneCapacityScore(ratio);
+  return { diversity, ratio, capacity, composition: computeZoneCompositionScore(diversity, capacity) };
+}
+
+/** 존구성 자동계산이 가능하면 그 값을, 정보가 아예 없으면 조사자 종합평가(legacy)로 폴백. */
+export function resolveZoneCompositionScore(composition: number | null, legacySeatZoneScore: number | null): number | null {
+  return composition ?? legacySeatZoneScore;
 }
 
 /**
@@ -878,32 +971,22 @@ export function resolveFreshnessScore(manualScore: number | null, renovationYear
 }
 
 /**
- * 2026-08-28 추가 — 인테리어·좌석·관리(경쟁력점수의 40%) = 좌석점수(50%, 위 computeZoneScore
- * 결과 또는 legacy 직접입력)+최신성(25%, ownInteriorLevelScore 재사용)+청결관리(15%,
- * ownInteriorConditionScore 재사용)+편의성(10%)의 가중평균.
+ * 2026-08-31 전면 교체 — "인테리어·좌석·관리"(경쟁력점수의 40%) 버킷의 내부 계산을 새 시트
+ * 수식대로 재구현했다: 공간시설종합점수 = 존구성*0.5 + 인테리어(raw)*0.3 + 관리*0.2 (반올림 없음).
+ * 옛 `computeInteriorSeatManagementScore`(좌석zone70%+최신성5%+청결15%+편의10% 블렌딩)는 완전히
+ * 폐기 — 새 시트 산식엔 최신성/청결/편의성이 전혀 안 들어간다(§ 최종식 확인). 인테리어는 더 이상
+ * 내부적으로 쪼개 블렌딩하지 않고 raw 입력값을 그대로 쓴다. 관리점수는 자사=상수4, 경쟁점=완전
+ * 독립 수동입력(더 이상 인테리어에서 파생/폴백 안 됨 — 셋 중 하나라도 없으면 전체 null).
+ * `settings.facilityWeights`(옛 `interiorWeights` 대체)로 50/30/20 비중을 설정값으로 노출한다.
  */
-export function computeInteriorSeatManagementScore(
-  input: {
-    seatZoneScore: number | null;
-    freshnessScore: number | null; // 최신성·디자인 (= ownInteriorLevelScore/interiorLevelScore)
-    cleanlinessScore: number | null; // 청결·관리상태 (= ownInteriorConditionScore/interiorConditionScore)
-    comfortScore: number | null; // 냄새·조명·화장실·편의성
-    legacyScore: number | null; // 넷 다 비었을 때 폴백 (= ownInteriorScore/interiorScore)
-  },
-  settings: Pick<ModelSettings, "interiorWeights">,
+export function computeFacilityScore(
+  input: { zoneComposition: number | null; interiorScore: number | null; managementScore: number | null },
+  settings: Pick<ModelSettings, "facilityWeights">,
 ): number | null {
-  const w = settings.interiorWeights;
-  const items = [
-    { score: clampRating(input.seatZoneScore), weight: w.seatZone },
-    { score: clampRating(input.freshnessScore), weight: w.freshness },
-    { score: clampRating(input.cleanlinessScore), weight: w.cleanliness },
-    { score: clampRating(input.comfortScore), weight: w.comfort },
-  ].filter((i): i is { score: number; weight: number } => i.score != null);
-  if (items.length === 0) return input.legacyScore;
-  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
-  if (totalWeight === 0) return input.legacyScore;
-  // 2026-08-30(§15) — "인테리어 종합점수는 반올림 금지"로 확정돼 0.5단위 반올림을 제거했다.
-  return items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight;
+  const { zoneComposition, interiorScore, managementScore } = input;
+  if (zoneComposition == null || interiorScore == null || managementScore == null) return null;
+  const w = settings.facilityWeights;
+  return zoneComposition * w.zoneComposition + interiorScore * w.interior + managementScore * w.management;
 }
 
 /**
@@ -914,7 +997,7 @@ export function computeInteriorSeatManagementScore(
  */
 export function computeCompetitorScores(
   c: Competitor,
-  settings: Pick<ModelSettings, "specWeights" | "interiorWeights" | "competitivenessWeights" | "foodBrandScores">,
+  settings: Pick<ModelSettings, "specWeights" | "facilityWeights" | "competitivenessWeights" | "foodBrandScores">,
 ): { spec: number | null; food: number | null; interior: number | null; location: number | null; total: number | null } {
   // 2026-08-30 — 프리미엄존 가산점 폐지(사용자 확정). 일부 좌석만 고사양이면 이미 특화1/특화2
   // 사양 컬럼(combineHardwareTiers)이 그 차이를 반영하므로, 프리미엄존 유무로 따로 +0.5를 더하면
@@ -943,31 +1026,35 @@ export function computeCompetitorScores(
     c.surveyLevel,
     c.investigationStatus,
   );
+  // 2026-08-31 — 존구성/인테리어/관리 3항목 결합(computeFacilityScore)으로 전면 교체. 존구성은
+  // 새 공식(computeCompetitorZoneComposition)으로 자동계산하고, 전혀 조사 안 됐으면(간략/외관만)
+  // 기존 종합평가 직접입력(seatZoneScore)으로 폴백한다. 관리점수는 더 이상 인테리어에서 파생되지
+  // 않는 완전 독립 수동입력이다(경쟁점 입지점수는 기존 층수+엘리베이터 자동계산 그대로 — 아래
+  // location 참고).
+  const zoneComposition = resolveZoneCompositionScore(
+    computeCompetitorZoneComposition({
+      counts: {
+        singleSeatCount: c.singleSeatCount,
+        room1: c.room1,
+        room2: c.room2,
+        teamRoom: c.teamRoom,
+        coupleZone: c.coupleZone,
+        vipZone: c.vipZone,
+        friendsZone: c.friendsZone,
+        firstClassZone: c.firstClassZone,
+      },
+      regularCoupleSeatCount: c.regularCoupleSeatCount,
+      teamRoomTotalSeats: c.teamRoomTotalSeats,
+      totalPcCount: computeCompetitorAppliedPcCount(c),
+    }).composition,
+    c.seatZoneScore,
+  );
   const interior = applySurveyLevelDefault(
-    computeInteriorSeatManagementScore(
+    computeFacilityScore(
       {
-        // 2026-08-30(§2·§3~6) — 존 개수(팀룸/2인룸/커플존/VIP존/프렌즈존/1인석/1인룸/퍼스트클래스존)가
-        // 하나라도 조사돼 있으면 결정론적 공식으로 자동계산하고, 전혀 없으면(간략/외관만 조사)
-        // 기존 종합평가 직접입력(seatZoneScore)으로 폴백한다(경쟁점 입지점수는 사용자 확인에 따라
-        // 기존 층수+엘리베이터 자동계산을 그대로 유지 — 아래 location 참고).
-        seatZoneScore: resolveSeatZoneScore(
-          {
-            teamRoom: c.teamRoom,
-            room2: c.room2,
-            coupleZone: c.coupleZone,
-            vipZone: c.vipZone,
-            friendsZone: c.friendsZone,
-            singleSeatCount: c.singleSeatCount,
-            room1: c.room1,
-            firstClassZone: c.firstClassZone,
-          },
-          c.seatZoneScore,
-        ),
-        // 2026-08-30(§7) — 리뉴얼연도로 자동계산, 직접입력(interiorLevelScore)이 있으면 그게 우선.
-        freshnessScore: resolveFreshnessScore(c.interiorLevelScore, c.renovationYear, null),
-        cleanlinessScore: c.interiorConditionScore,
-        comfortScore: c.comfortScore,
-        legacyScore: c.interiorScore,
+        zoneComposition,
+        interiorScore: c.interiorScore,
+        managementScore: c.managementScore,
       },
       settings,
     ),
@@ -986,7 +1073,7 @@ export function computeCompetitorScores(
 /** 경쟁점_평균경쟁력 = 경쟁점들의 경쟁력점수를 적용대수로 가중평균. */
 export function computeCompetitorAvgCompetitiveness(
   competitors: Competitor[],
-  settings: Pick<ModelSettings, "specWeights" | "interiorWeights" | "competitivenessWeights" | "foodBrandScores">,
+  settings: Pick<ModelSettings, "specWeights" | "facilityWeights" | "competitivenessWeights" | "foodBrandScores">,
 ): number | null {
   const scored = competitors
     .map((c) => ({
@@ -1997,22 +2084,21 @@ export function computeExistingStoreMeasuredForecast(
     | "ownFriendsZone"
     | "ownFirstClassZone"
     | "ownSingleSeatCount"
+    | "ownTeamRoomTotalSeats"
     | "ownFoodScore"
     | "ownInteriorScore"
+    | "ownManagementScore"
     | "ownMonitorBase"
     | "ownMonitorTop"
     | "ownFoodBrand"
-    | "ownInteriorLevelScore"
-    | "ownInteriorConditionScore"
     | "ownSeatZoneScore"
-    | "ownComfortScore"
   >,
   competitors: Competitor[],
   loc: Pick<LocationEvaluation, "locationScore" | "flowScore" | "preemptionScore" | "visibilityScore"> | null,
   settings: Pick<
     ModelSettings,
     | "specWeights"
-    | "interiorWeights"
+    | "facilityWeights"
     | "competitivenessWeights"
     | "demandCaptureTable"
     | "measuredForecastProductRatio"
@@ -2071,26 +2157,28 @@ export function computeExistingStoreMeasuredForecast(
   );
   const ownLocationScore = computeOwnLocationScore(loc, store, settings);
   const ownFoodScore = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
-  const ownInteriorScore = computeInteriorSeatManagementScore(
+  const ownZoneComposition = resolveZoneCompositionScore(
+    computeOwnZoneComposition({
+      counts: {
+        singleSeatCount: facility.ownSingleSeatCount,
+        room1: facility.ownRoom1,
+        room2: facility.ownRoom2,
+        teamRoom: facility.ownTeamRoom,
+        coupleZone: facility.ownCoupleZone,
+        vipZone: facility.ownVipZone,
+        friendsZone: facility.ownFriendsZone,
+        firstClassZone: facility.ownFirstClassZone,
+      },
+      teamRoomTotalSeats: store.ownTeamRoomTotalSeats,
+      totalPcCount: store.evaluationPcCount ?? store.pcCount,
+    }).composition,
+    store.ownSeatZoneScore,
+  );
+  const ownInteriorScore = computeFacilityScore(
     {
-      seatZoneScore: resolveSeatZoneScore(
-        {
-          teamRoom: facility.ownTeamRoom,
-          room2: store.ownRoom2,
-          coupleZone: facility.ownCoupleZone,
-          vipZone: facility.ownVipZone,
-          friendsZone: facility.ownFriendsZone,
-          singleSeatCount: store.ownSingleSeatCount,
-          room1: store.ownRoom1,
-          firstClassZone: store.ownFirstClassZone,
-        },
-        store.ownSeatZoneScore,
-      ),
-      // 2026-08-30(§7) — 리뉴얼연도/오픈일로 자동계산, 직접입력이 있으면 그게 우선.
-      freshnessScore: resolveFreshnessScore(store.ownInteriorLevelScore, store.renovationYear, store.openedAt),
-      cleanlinessScore: store.ownInteriorConditionScore,
-      comfortScore: store.ownComfortScore,
-      legacyScore: facility.ownInteriorScore,
+      zoneComposition: ownZoneComposition,
+      interiorScore: facility.ownInteriorScore,
+      managementScore: facility.ownManagementScore,
     },
     settings,
   );
@@ -2198,15 +2286,14 @@ export function computeExistingStoreDemandEvaluation(
     | "ownFriendsZone"
     | "ownFirstClassZone"
     | "ownSingleSeatCount"
+    | "ownTeamRoomTotalSeats"
     | "ownFoodScore"
     | "ownInteriorScore"
+    | "ownManagementScore"
     | "ownMonitorBase"
     | "ownMonitorTop"
     | "ownFoodBrand"
-    | "ownInteriorLevelScore"
-    | "ownInteriorConditionScore"
     | "ownSeatZoneScore"
-    | "ownComfortScore"
   > &
     MarketDemandInput,
   competitors: Competitor[],
@@ -2214,7 +2301,7 @@ export function computeExistingStoreDemandEvaluation(
   settings: Pick<
     ModelSettings,
     | "specWeights"
-    | "interiorWeights"
+    | "facilityWeights"
     | "competitivenessWeights"
     | "foodBrandScores"
     | "marketCharacterThreshold"
@@ -2265,26 +2352,28 @@ export function computeExistingStoreDemandEvaluation(
   );
   const ownLocationScore = computeOwnLocationScore(loc, store, settings);
   const ownFoodScore = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
-  const ownInteriorScore = computeInteriorSeatManagementScore(
+  const ownZoneComposition = resolveZoneCompositionScore(
+    computeOwnZoneComposition({
+      counts: {
+        singleSeatCount: facility.ownSingleSeatCount,
+        room1: facility.ownRoom1,
+        room2: facility.ownRoom2,
+        teamRoom: facility.ownTeamRoom,
+        coupleZone: facility.ownCoupleZone,
+        vipZone: facility.ownVipZone,
+        friendsZone: facility.ownFriendsZone,
+        firstClassZone: facility.ownFirstClassZone,
+      },
+      teamRoomTotalSeats: store.ownTeamRoomTotalSeats,
+      totalPcCount: store.evaluationPcCount ?? store.pcCount,
+    }).composition,
+    store.ownSeatZoneScore,
+  );
+  const ownInteriorScore = computeFacilityScore(
     {
-      seatZoneScore: resolveSeatZoneScore(
-        {
-          teamRoom: facility.ownTeamRoom,
-          room2: store.ownRoom2,
-          coupleZone: facility.ownCoupleZone,
-          vipZone: facility.ownVipZone,
-          friendsZone: facility.ownFriendsZone,
-          singleSeatCount: store.ownSingleSeatCount,
-          room1: store.ownRoom1,
-          firstClassZone: store.ownFirstClassZone,
-        },
-        store.ownSeatZoneScore,
-      ),
-      // 2026-08-30(§7) — 리뉴얼연도/오픈일로 자동계산, 직접입력이 있으면 그게 우선.
-      freshnessScore: resolveFreshnessScore(store.ownInteriorLevelScore, store.renovationYear, store.openedAt),
-      cleanlinessScore: store.ownInteriorConditionScore,
-      comfortScore: store.ownComfortScore,
-      legacyScore: facility.ownInteriorScore,
+      zoneComposition: ownZoneComposition,
+      interiorScore: facility.ownInteriorScore,
+      managementScore: facility.ownManagementScore,
     },
     settings,
   );

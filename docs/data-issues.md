@@ -2,6 +2,82 @@
 
 > `reference/점포평가_V62_원본.xlsx` 전수 분석 중 발견된, 임의로 추측해서 채우지 않고 남겨둔 항목들이다. 각 항목에 확인한 시트/셀 근거를 남긴다.
 
+## 2026-08-31 갱신 — 시설 평가(존구성·인테리어·관리) 산식 전면 개편(GPT를 통한 시트 재설계 반영)
+
+사용자가 GPT를 통해 Google Sheet(01_점포기본정보/05_경쟁점정보)의 시설 평가 구조를 재설계했다.
+핵심: ① 경쟁점 "관리점수"가 인테리어와 완전히 독립된 수동입력값으로 전환(189곳 재검토, 인테리어
+62곳/관리 84곳 변경), ② 존다양성·존수용력·존구성 산식이 통째로 새로 바뀜, ③ 팀룸을 "개수"와
+"총좌석수"로 분리, ④ 일반2인석(경쟁점 전용) 신설. Sheets API로 라이브 시트 헤더+셀 수식을 직접
+읽어(값이 아니라 수식 자체) 그대로 이식했다 — "이전 존 계산식으로 되돌리지 말 것" 요구사항 때문에
+사용자 서술보다 실제 시트 수식을 우선 신뢰했다.
+
+**Phase 1(오늘 완료, 코드 전체) — Firestore 불필요, 순수 코드 변경**:
+- `calc.ts`: `computeZoneAchievement`/`computeZoneScore`(개수÷기준개수 가중합 방식, 옛 산식)를
+  완전히 폐기하고 `computeZoneDiversityScore`/`computeSpecialtySeatRatio`/`computeZoneCapacityScore`/
+  `computeZoneCompositionScore`/`computeOwnZoneComposition`/`computeCompetitorZoneComposition`으로
+  교체. 존다양성=distinct 존유형 개수 기반(`d==0→1, else MIN(5,1+(1+d)*0.5)`), 특화좌석비율=환산
+  좌석수÷PC대수(팀룸은 총좌석수 우선, 없으면 개수×5 추정), 존수용력=비율 구간화, 존구성=다양성×0.7+
+  수용력×0.3. 자사는 8개 존유형 중 하나라도 완전 미기재면 전체 null(시트 COUNTA 가드 이식), 경쟁점은
+  가드 없음(미기재=0). `computeInteriorSeatManagementScore`(좌석zone70%+최신성5%+청결15%+편의10%
+  블렌딩)를 `computeFacilityScore`(존구성50%+인테리어30%+관리20%, 최신성/청결/편의성 완전 제외)로
+  교체 — 최신성·청결·편의성 관련 필드(ownInteriorLevelScore 등)는 계산에서 빠졌지만 필드/UI는
+  이력 보존을 위해 남겨둠(이미 값 있는 매장만 표시).
+- 발견: 현재 sync 스크립트가 청결/편의성/최신성 관련 필드를 애초에 시트에서 읽어온 적이 없어서,
+  "관리점수가 인테리어를 그대로 참조"하는 것처럼 보인 현상의 실체는 관리 필드 자체가 한 번도
+  채워진 적이 없어 인테리어값이 대신 그 자리를 채워온 것이었다(코드에 "복사" 로직이 있던 게 아님).
+- `types.ts`: `Competitor.managementScore`(독립 관리점수)/`regularCoupleSeatCount`(일반2인석)/
+  `teamRoomTotalSeats`+`Basis` 신설, `vipZone`/`friendsZone`/`firstClassZone`은 시트에 컬럼이 새로
+  생겨(AP/AQ/AR) 웹 전용 입력에서 시트 동기화 대상으로 승격. `CandidateInput`/`ExistingStore`에
+  `ownTeamRoomTotalSeats`+`Basis`/`ownManagementScore` 신설.
+- `settings.ts`: `interiorWeights`(좌석70%+최신성5%+청결15%+편의10%) 폐기 →
+  `facilityWeights: {zoneComposition:0.5, interior:0.3, management:0.2}` 신설(시트 수식 그대로).
+  상위 경쟁력점수 가중치(스펙30%+인테리어그룹40%+먹거리20%+입지10%)는 안 바뀜 — 사용자가 "50/30/20은
+  시설 항목 내부 비율이지 전체 경쟁력 비율이 아니다"라고 명시.
+- `STANDARD_OWN_FACILITY_DEFAULTS`(신규후보지 전용) 갱신 — 사용자가 준 "신규매장 블랙라벨 기본값"
+  표(세리머니팀룸 5인실×2개=10석/2인룸2개=4석/커플존4조=8석/VIP존5석/프렌즈존15석, 합계5종42석)로
+  `teamRoom:2`(유지)/`room2:2`(신규)/`coupleZone:3→4`/`vipZone:5`(유지)/`friendsZone:15`(유지) 갱신,
+  `interiorScore:5→4`·`managementScore:4`(신규) 정정("경쟁력 평가 기준 최종본" §3 "신규오픈 기준값
+  각 4점"). **`EXISTING_STORE_FACILITY_DEFAULTS`(기존가맹점)는 사용자 확정에 따라 존카운트 표를
+  적용하지 않음** — teamRoom2/coupleZone3/vipZone5/friendsZone15(원래 LOOCV로 검증된 값) 그대로,
+  room2/singleSeatCount/firstClassZone만 중립값 0으로 신설(과거 데이터 소급 영향 없음).
+- 마이그레이션 스크립트(`migrateFullExistingStoreProfiles.mjs`+`cronSync.ts`, 완전히 동일하게 유지):
+  05시트에서 `매장관리점수`/`VIP존`/`프렌즈존`/`퍼스트클래스존`/`일반2인석`/`팀룸좌석수`+`근거` 추가
+  동기화, 01시트에서 `자사_팀룸좌석수`+`근거` 추가 동기화.
+- UI(`BasicInfoTab.tsx`/`CompetitorsTab.tsx`/`ExistingStoreProfileTab.tsx`): "관리점수"(경쟁점만
+  직접입력, 자사는 표준값 4 표시)/"일반2인석"(경쟁점 전용)/"팀룸 총좌석수" 입력 필드 신설. 최신성·
+  청결·편의성 입력 필드는 이미 값이 있는 매장만 조건부 표시(계산 미반영 안내 문구 추가), `formFields.tsx`의
+  `InteriorScoringGuide`를 새 3항목(존구성/인테리어/관리, 하2·중하2.5·중3·중상3.5·상4.5) 기준으로 재작성.
+- 검증: `npm run build`/`npx vitest run`(399개, calc.test.ts 존구성 describe 전면 재작성 +
+  computeExistingStoreMeasuredForecast 기대값 재계산 + evaluate.test.ts 표준존구성 비교 테스트 갱신)
+  전부 통과.
+- **07_신규후보지 시트는 손대지 않음** — 실측 결과 BF(자사_인테리어평가)에서 시트가 끝나고
+  존구성/관리/시설종합 열 자체가 없음(신규후보지는 웹 CandidateInput에서 직접 입력, 시트 동기화
+  대상 아님) — calc.ts 산식 교체만으로 자동 반영됨, 07 전용 코드 불필요.
+- **Sheets 연동은 읽기 전용**(`spreadsheets.readonly`) — 사용자가 참고용으로 요청한 "신규매장 표준
+  존구성 표"를 시트에 직접 적어달라는 요청은 코드로 처리 불가, 필요시 텍스트만 만들어주고 실제 입력은
+  사용자가 진행하기로 함.
+
+**Phase 2(Firestore 할당량 복구 후, 오늘 미실행)**:
+1. 마이그레이션 스크립트 재실행(01/05 신규 필드 동기화, diff 기반이라 안전).
+2. 명명된 예외 처리(전부 Firestore 데이터 패치, 코드 로직 아님 — 기존 메커니즘 재사용):
+   - 하안금당사거리·울산삼산·평택소사벌(자사 신규후보지, 존카운트 전부 0) — "실제 존 없음이 확정된
+     게 아니므로 임의 구성 넣지 말 것" 요구사항에 따라, 사용자 확정대로 **0→null로 패치**해
+     기존 `applyStandardOwnFacilityDefaults` 표준값 폴백이 자연스럽게 적용되게 한다(새 필드/배지
+     불필요, 이미 있는 메커니즘 재사용).
+   - 진월점 — "이번 블랙라벨 평가 대상 아님", 기존 `brandType` 메커니즘으로 처리(코드 변경 불필요).
+   - 검단사거리점 — 이미 처리됨(2026-08-22, 재확인만).
+   - 김포구래 스타디움/카사/옵티멈존 — 개설 이후 추가된 경쟁점이라 개설 당시 평가자료에 소급 추가
+     하지 않음. `Competitor`에 개설일 필드 자체가 없어 코드로 강제할 방법이 없다 — 운영 절차로만
+     기록(사람이 데이터 입력 시 주의).
+   - 이름 유사 경쟁점 자동병합 금지 — 현재 코드에 자동병합 로직 자체가 없음(재확인 완료, 이미 안전).
+3. **요청 8·9번(매출모델 재계산 + 전후비교, 완료검증)은 Firestore 실데이터가 있어야 실행 가능** —
+   할당량 복구 후 정식검증 26곳으로 산식 변경 전/후 `runCohortValidation` 결과를 나란히 비교해
+   ±10%/±20%/MAPE 변화를 있는 그대로 보고할 것. 목표 미달이어도 점포별 보정값·계절지수·임의계수
+   추가 금지(기존 원칙 그대로). 시트-Firestore 가맹점코드/상권/경쟁점 대조(누락·중복)도 함께 확인.
+4. PC대수 70대 추정값의 출처/메모 보존(요청 5번) — 현재 `Competitor.appliedPcCount`/`totalPcCount`에
+   근거 텍스트 필드 자체가 없다는 게 이번에 재확인됨. 코드 인프라가 없어 이번 범위에서 미해결로
+   남김 — 필요시 별도 작업으로 진행.
+
 ## 2026-08-31 갱신 — 회사PC 동기화 후 검증 재확인 + Firestore 할당량 재발 + 신규후보지 모니터 기본값 등록
 
 **회사PC↔집컴 동기화**: 홈 PC(8/30) 세션이 만든 20개 커밋이 origin/main에 이미 push돼 있었는데 이

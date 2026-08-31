@@ -241,9 +241,7 @@ export default function StoreEvalSettingsPage() {
   }
 
   const specWeightSum = form ? form.specWeights.vga + form.specWeights.monitor + form.specWeights.ram + form.specWeights.cpu : 1;
-  const interiorWeightSum = form
-    ? form.interiorWeights.seatZone + form.interiorWeights.freshness + form.interiorWeights.cleanliness + form.interiorWeights.comfort
-    : 1;
+  const facilityWeightSum = form ? form.facilityWeights.zoneComposition + form.facilityWeights.interior + form.facilityWeights.management : 1;
   const competitivenessWeightSum = form
     ? form.competitivenessWeights.spec + form.competitivenessWeights.food + form.competitivenessWeights.interior + form.competitivenessWeights.location
     : 1;
@@ -265,9 +263,9 @@ export default function StoreEvalSettingsPage() {
   function validationErrors(f: ModelSettings): string[] {
     const errors: string[] = [];
     const specSum = sumWarning(f.specWeights.vga + f.specWeights.monitor + f.specWeights.ram + f.specWeights.cpu, "하드웨어(GPU/모니터/RAM/CPU)");
-    const interiorSum = sumWarning(
-      f.interiorWeights.seatZone + f.interiorWeights.freshness + f.interiorWeights.cleanliness + f.interiorWeights.comfort,
-      "인테리어·좌석·관리(좌석존구성/최신성/청결관리/편의성)",
+    const facilitySum = sumWarning(
+      f.facilityWeights.zoneComposition + f.facilityWeights.interior + f.facilityWeights.management,
+      "시설(존구성/인테리어/관리)",
     );
     const compSum = sumWarning(
       f.competitivenessWeights.spec + f.competitivenessWeights.food + f.competitivenessWeights.interior + f.competitivenessWeights.location,
@@ -280,7 +278,7 @@ export default function StoreEvalSettingsPage() {
         f.locationCompositeWeights.visibility,
       "입지동선종합점수",
     );
-    for (const w of [specSum, interiorSum, compSum, locSum]) if (w) errors.push(w);
+    for (const w of [specSum, facilitySum, compSum, locSum]) if (w) errors.push(w);
     for (const [label, v] of Object.entries(f.inflowAdjustment)) {
       if (v > 0 || v < -1) errors.push(`외부유입 보정률 - ${label}은(는) 0~-100%(-1~0) 범위여야 합니다. 현재: ${(v * 100).toFixed(1)}%`);
     }
@@ -567,32 +565,26 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       <Section
-        title="인테리어·좌석·관리 세부 가중치"
-        description="인테리어점수 = 좌석·존구성×seatZone + 최신성·디자인×freshness + 청결·관리상태×cleanliness + 편의성×comfort (2026-08-28 신규 — 좌석·존구성이 PC방 선택의 1순위라는 판단으로 50% 배정)"
-        warning={sumWarning(interiorWeightSum, "인테리어·좌석·관리(좌석존구성/최신성/청결관리/편의성)")}
+        title="시설(인테리어·좌석·관리) 세부 가중치"
+        description="시설종합점수 = 존구성×zoneComposition + 인테리어×interior + 관리×management (2026-08-31 산식 개편 — 시트 수식 그대로 이식, 최신성/청결/편의성은 더 이상 반영 안 함)"
+        warning={sumWarning(facilityWeightSum, "시설(존구성/인테리어/관리)")}
       >
         <NumberInput
-          label="인테리어 가중치 - 좌석·존구성"
-          value={form.interiorWeights.seatZone}
-          onChange={(v) => updateGroup("interiorWeights", "seatZone", v)}
+          label="시설 가중치 - 존구성"
+          value={form.facilityWeights.zoneComposition}
+          onChange={(v) => updateGroup("facilityWeights", "zoneComposition", v)}
           readOnly={readOnly}
         />
         <NumberInput
-          label="인테리어 가중치 - 최신성·디자인"
-          value={form.interiorWeights.freshness}
-          onChange={(v) => updateGroup("interiorWeights", "freshness", v)}
+          label="시설 가중치 - 인테리어"
+          value={form.facilityWeights.interior}
+          onChange={(v) => updateGroup("facilityWeights", "interior", v)}
           readOnly={readOnly}
         />
         <NumberInput
-          label="인테리어 가중치 - 청결·관리상태"
-          value={form.interiorWeights.cleanliness}
-          onChange={(v) => updateGroup("interiorWeights", "cleanliness", v)}
-          readOnly={readOnly}
-        />
-        <NumberInput
-          label="인테리어 가중치 - 편의성"
-          value={form.interiorWeights.comfort}
-          onChange={(v) => updateGroup("interiorWeights", "comfort", v)}
+          label="시설 가중치 - 관리"
+          value={form.facilityWeights.management}
+          onChange={(v) => updateGroup("facilityWeights", "management", v)}
           readOnly={readOnly}
         />
       </Section>

@@ -10,8 +10,8 @@ import {
   computeCompetitorAppliedPcCount,
   computeCompetitorInvestigationSummary,
   computeCompetitorScores,
+  computeCompetitorZoneComposition,
   computeFreshnessFromYear,
-  computeZoneScore,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
@@ -120,6 +120,10 @@ function blankCompetitor(candidateCode: string): Competitor {
     vipZone: null,
     friendsZone: null,
     firstClassZone: null,
+    managementScore: null,
+    regularCoupleSeatCount: null,
+    teamRoomTotalSeats: null,
+    teamRoomTotalSeatsBasis: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -237,17 +241,36 @@ function CompetitorForm({
   // 이미 이 값 또는 legacy seatZoneScore를 반영해 계산돼 있음, computeCompetitorScores 참고).
   const zoneScoreAuto = useMemo(
     () =>
-      computeZoneScore({
-        teamRoom: form.teamRoom,
-        room2: form.room2,
-        coupleZone: form.coupleZone,
-        vipZone: form.vipZone,
-        friendsZone: form.friendsZone,
-        singleSeatCount: form.singleSeatCount,
-        room1: form.room1,
-        firstClassZone: form.firstClassZone,
-      }),
-    [form.teamRoom, form.room2, form.coupleZone, form.vipZone, form.friendsZone, form.singleSeatCount, form.room1, form.firstClassZone],
+      computeCompetitorZoneComposition({
+        counts: {
+          teamRoom: form.teamRoom,
+          room2: form.room2,
+          coupleZone: form.coupleZone,
+          vipZone: form.vipZone,
+          friendsZone: form.friendsZone,
+          singleSeatCount: form.singleSeatCount,
+          room1: form.room1,
+          firstClassZone: form.firstClassZone,
+        },
+        regularCoupleSeatCount: form.regularCoupleSeatCount,
+        teamRoomTotalSeats: form.teamRoomTotalSeats,
+        totalPcCount: computeCompetitorAppliedPcCount(form),
+      }).composition,
+    [
+      form.teamRoom,
+      form.room2,
+      form.coupleZone,
+      form.vipZone,
+      form.friendsZone,
+      form.singleSeatCount,
+      form.room1,
+      form.firstClassZone,
+      form.regularCoupleSeatCount,
+      form.teamRoomTotalSeats,
+      form.totalPcCount,
+      form.appliedPcCount,
+      form.surveyLevel,
+    ],
   );
   // 2026-08-28 추가 — "하드웨어 점수(자동)"만 봐서는 GPU/CPU/RAM/모니터 중 뭐가 어떻게 들어갔는지
   // 알 수 없다는 요청으로, computeCompetitorScores 내부와 동일한 항목별 함수를 그대로 한 번 더
@@ -373,13 +396,13 @@ function CompetitorForm({
         <InteriorScoringGuide />
         {zoneScoreAuto != null ? (
           <ComputedField
-            label="좌석·존구성 (자동)"
+            label="존구성 점수 (자동)"
             value={zoneScoreAuto}
-            hint="팀룸·2인룸·커플존·VIP존·프렌즈존·1인석·1인룸·퍼스트클래스존 개수로 자동계산"
+            hint="팀룸·2인룸·커플존·VIP존·프렌즈존·일반2인석·1인석·1인룸·퍼스트클래스존 개수로 자동계산"
           />
         ) : (
           <ScoreSelectField
-            label="좌석·존구성 (직접입력)"
+            label="존구성 점수 (직접입력)"
             value={form.seatZoneScore}
             onChange={(v) => set("seatZoneScore", v)}
             step={0.5}
@@ -387,34 +410,40 @@ function CompetitorForm({
           />
         )}
         {zoneScoreAuto == null && <CompetitorInteriorFallbackGuide />}
-        <ComputedField
-          label="최신성·디자인 (자동, 직접입력 없을 때)"
-          value={computeFreshnessFromYear(form.renovationYear, null)}
-          hint="리뉴얼연도 기준(§7)"
+        <ScoreSelectField
+          label="인테리어 점수"
+          value={form.interiorScore}
+          onChange={(v) => set("interiorScore", v)}
+          step={0.5}
+          hint="비우면 조사수준별 기본값(간략2.0/외관만1.5) · 위 기준표 참고"
         />
         <ScoreSelectField
-          label="최신성·디자인 (직접입력)"
-          value={form.interiorLevelScore}
-          onChange={(v) => set("interiorLevelScore", v)}
+          label="관리 점수"
+          value={form.managementScore}
+          onChange={(v) => set("managementScore", v)}
           step={0.5}
-          hint="실제 시설 노후도를 확인했으면 자동계산보다 우선 · 비우면 위 자동계산값 사용"
+          hint="인테리어와 완전히 독립된 평가값(더 이상 인테리어로 자동 대체되지 않음) · 위 기준표 참고"
         />
-        <ScoreSelectField label="청결·관리상태" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="청결도·노후도" />
-        <ScoreSelectField label="편의성" value={form.comfortScore} onChange={(v) => set("comfortScore", v)} step={0.5} hint="냄새·조명·화장실·편의시설" />
-        {zoneScoreAuto == null && form.seatZoneScore == null && form.interiorLevelScore == null && form.interiorConditionScore == null && form.comfortScore == null && (
-          <ScoreSelectField
-            label="인테리어·좌석·관리 점수 (직접입력)"
-            value={form.interiorScore}
-            onChange={(v) => set("interiorScore", v)}
-            hint="위 세부항목을 넷 다 안 채웠을 때 직접 평가"
-          />
-        )}
         <ComputedField label="인테리어·좌석·관리 점수 (최종)" value={computed.interior} />
       </div>
+      {(form.interiorLevelScore != null || form.interiorConditionScore != null || form.comfortScore != null) && (
+        <>
+          <p className="mt-3 text-xs text-[#8a8072]">
+            아래 세부항목은 2026-08-31 산식 개편 이후 계산에는 더 이상 쓰이지 않습니다(이미 입력된 값이
+            있어 이력으로만 표시합니다).
+          </p>
+          <div className={`${gridClass} mt-2`}>
+            <ComputedField label="최신성·디자인 자동값(참고)" value={computeFreshnessFromYear(form.renovationYear, null)} hint="리뉴얼연도 기준, 계산 미반영" />
+            <ScoreSelectField label="최신성·디자인 (참고용)" value={form.interiorLevelScore} onChange={(v) => set("interiorLevelScore", v)} step={0.5} hint="계산 미반영" />
+            <ScoreSelectField label="청결·관리상태 (참고용)" value={form.interiorConditionScore} onChange={(v) => set("interiorConditionScore", v)} step={0.5} hint="계산 미반영" />
+            <ScoreSelectField label="편의성 (참고용)" value={form.comfortScore} onChange={(v) => set("comfortScore", v)} step={0.5} hint="계산 미반영" />
+          </div>
+        </>
+      )}
       <p className="mt-2 text-xs text-[#8a8072]">종합 경쟁력점수: {computed.total ?? "-"}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <TextAreaField label="먹거리 근거" value={form.foodBasis ?? ""} onChange={(v) => set("foodBasis", v || null)} rows={2} />
-        <TextAreaField label="인테리어·좌석·관리 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
+        <TextAreaField label="인테리어 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
         <TextAreaField label="모니터 근거" value={form.monitorBasis ?? ""} onChange={(v) => set("monitorBasis", v || null)} rows={2} />
       </div>
 
@@ -424,15 +453,17 @@ function CompetitorForm({
         <NumberField label="1인룸 수" value={form.room1} onChange={(v) => set("room1", v)} />
         <NumberField label="2인룸 수" value={form.room2} onChange={(v) => set("room2", v)} />
         <NumberField label="팀룸 수" value={form.teamRoom} onChange={(v) => set("teamRoom", v)} />
-        <NumberField label="커플존 수" value={form.coupleZone} onChange={(v) => set("coupleZone", v)} />
-        <NumberField label="VIP존 수" value={form.vipZone} onChange={(v) => set("vipZone", v)} hint="웹 전용 입력 — 시트에는 컬럼 없음" />
-        <NumberField label="프렌즈존 수" value={form.friendsZone} onChange={(v) => set("friendsZone", v)} hint="웹 전용 입력 — 시트에는 컬럼 없음" />
         <NumberField
-          label="퍼스트클래스존 수"
-          value={form.firstClassZone}
-          onChange={(v) => set("firstClassZone", v)}
-          hint="팀룸형+파우더룸 고급존 · 웹 전용 입력 — 시트에는 컬럼 없음"
+          label="팀룸 총좌석수"
+          value={form.teamRoomTotalSeats}
+          onChange={(v) => set("teamRoomTotalSeats", v)}
+          hint="비우면 팀룸 수×5석으로 추정"
         />
+        <NumberField label="커플존 수" value={form.coupleZone} onChange={(v) => set("coupleZone", v)} hint="전용 커플존('조' 단위, 환산좌석수=조수×2)" />
+        <NumberField label="일반2인석 수" value={form.regularCoupleSeatCount} onChange={(v) => set("regularCoupleSeatCount", v)} hint="전용 커플존과 별개 · '조' 단위, 환산좌석수=조수×1" />
+        <NumberField label="VIP존 수" value={form.vipZone} onChange={(v) => set("vipZone", v)} />
+        <NumberField label="프렌즈존 수" value={form.friendsZone} onChange={(v) => set("friendsZone", v)} />
+        <NumberField label="퍼스트클래스존 수" value={form.firstClassZone} onChange={(v) => set("firstClassZone", v)} hint="팀룸형+파우더룸 고급존" />
       </div>
 
       {errors.length > 0 && (

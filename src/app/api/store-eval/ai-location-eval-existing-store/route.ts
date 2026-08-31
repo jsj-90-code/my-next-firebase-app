@@ -126,6 +126,10 @@ export async function POST(request: Request) {
         vipZone: null,
         friendsZone: null,
         firstClassZone: null,
+        managementScore: null,
+        regularCoupleSeatCount: null,
+        teamRoomTotalSeats: null,
+        teamRoomTotalSeatsBasis: null,
         createdAt: now,
         updatedAt: now,
       }));

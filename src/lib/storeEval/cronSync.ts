@@ -202,6 +202,11 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       // 2026-08-30 추가 — 팀룸형 고급 컨셉존(파우더룸 포함, 방당 약 10좌석). 자동 산식엔 안 쓰고
       // 평가자가 인테리어평가 매길 때 참고하는 사실 기록용(사용자 확인).
       ownFirstClassZone: toNumber(s["자사_퍼스트클래스존"]),
+      // 2026-08-31(시설 평가 산식 개편) — 팀룸 "개수"와 별개로 "총좌석수" 직접입력을 읽는다(01시트
+      // BY/BZ, 신설 컬럼, migrateFullExistingStoreProfiles.mjs와 동일). 관리점수는 시트 수식상
+      // 자사는 항상 상수 4라 시트에서 읽어올 값이 없다(표준값으로 채움).
+      ownTeamRoomTotalSeats: toNumber(s["자사_팀룸좌석수"]),
+      ownTeamRoomTotalSeatsBasis: toText(s["자사_팀룸좌석근거"]),
       ownFoodScore: toNumber(s["자사_먹거리평가"]),
       ownInteriorScore: toNumber(s["자사_인테리어평가"]),
       pop500m: toNumber(s["반경500m_총인구"]),
@@ -303,15 +308,23 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       foodBasis: toText(c["먹거리근거"]),
       interiorScore: toNumber(c["인테리어평가"]),
       interiorBasis: toText(c["인테리어근거"]),
-      // 2026-08-30 — 모니터근거 컬럼도 시트에서 삭제(사용자 확인). 더 이상 안 읽는다 — 안 읽어야
-      // 웹에서 수동입력한 값이 매 동기화마다 null로 안 덮어써진다.
+      // 2026-08-31(시설 평가 산식 개편) — 관리점수가 더 이상 인테리어에서 파생되지 않는 완전
+      // 독립값이 됐다(189곳 재검토, 사용자 확정, migrateFullExistingStoreProfiles.mjs와 동일).
+      // VIP존/프렌즈존/퍼스트클래스존은 이번에 시트에 컬럼이 새로 생겨(AP/AQ/AR) 동기화 대상으로
+      // 승격(예전엔 웹 전용 입력이었음).
+      managementScore: toNumber(c["매장관리점수"]),
       singleSeatCount: toNumber(c["1인석"]),
       room1: toNumber(c["1인룸"]),
       room2: toNumber(c["2인룸"]),
       teamRoom: toNumber(c["팀룸"]),
       coupleZone: toNumber(c["커플존"]),
-      // 2026-08-30 — 프리미엄존/프리미엄사양 컬럼 삭제(사용자 확정, calc.ts 주석 참고). 특화1/특화2
-      // 사양 컬럼이 이미 "일부 좌석만 고사양"을 반영하므로 더 이상 안 읽는다.
+      vipZone: toNumber(c["VIP존"]),
+      friendsZone: toNumber(c["프렌즈존"]),
+      firstClassZone: toNumber(c["퍼스트클래스존"]),
+      // 2026-08-31 신설 — 일반2인석(전용 커플존과 별개, '조' 단위)과 팀룸 총좌석수(개수와 분리).
+      regularCoupleSeatCount: toNumber(c["일반2인석"]),
+      teamRoomTotalSeats: toNumber(c["팀룸좌석수"]),
+      teamRoomTotalSeatsBasis: toText(c["팀룸좌석근거"]),
       createdAt: (existingCompByid.get(id)?.createdAt as number | undefined) ?? Date.now(),
       updatedAt: Date.now(),
     };

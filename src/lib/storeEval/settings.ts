@@ -118,15 +118,11 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 블랙라벨 현재 표준(RTX5060·울트라5 225F=각 4점) 기준으로 재보정했다(calc.ts 주석 참고).
     // 정확도가 나빠지면 이 값을 {vga:0.7,monitor:0.3,ram:0,cpu:0}으로 되돌리면 된다.
     specWeights: { vga: 0.4, monitor: 0.25, ram: 0.15, cpu: 0.2 },
-    // 2026-08-28 신규, 2026-08-30 재조정 — "인테리어·좌석·관리" 내부비중. 좌석·존구성이 PC방
-    // 선택의 1순위라는 사용자 판단으로 원래도 50%가 가장 컸는데, 최신성점수 자동계산(§7,
-    // computeFreshnessFromYear) 도입 후 정식검증 26곳 백테스트에서 원인 분리 스윕을 해보니
-    // freshness 비중이 클수록 ±10% 적중률이 나빠졌다(26개뿐인 학습표본에 새 신호가 노이즈로
-    // 작용 — 2026-08-20 특수수요 4번째 피처 롤백과 동일 패턴). §7 자체는 유지하되(완전히
-    // 0으로 만들지 않음) 비중만 25%→5%로 줄이고 그만큼 좌석·존구성을 50%→70%로 올렸다(사용자
-    // 확정). 청결·관리15%+편의성10%는 그대로. 효과 실측: ±10% 46.2%→53.8%, MAPE 12.5%→12.4%
-    // (±20%는 73.1%로 변화 없음 — 다른 지표 희생 없이 개선, docs/data-issues.md 참고).
-    interiorWeights: { seatZone: 0.7, freshness: 0.05, cleanliness: 0.15, comfort: 0.1 },
+    // 2026-08-31 전면 교체(옛 interiorWeights 대체) — GPT를 통해 사용자가 재설계한 05_경쟁점정보/
+    // 01_점포기본정보 시트의 "공간시설종합점수" 셀 수식을 Sheets API로 직접 읽어 그대로 이식했다
+    // (존구성50%+인테리어30%+관리20%). 최신성/청결/편의성은 새 산식에서 완전히 빠졌다 — 옛
+    // interiorWeights(좌석70%+최신성5%+청결15%+편의10%)는 폐기.
+    facilityWeights: { zoneComposition: 0.5, interior: 0.3, management: 0.2 },
     locationCompositeWeights: { withinMarket: 0.3, flow: 0.3, preemption: 0.25, visibility: 0.15 },
     brandFilter: "블랙라벨",
     saturationThreshold: 7,

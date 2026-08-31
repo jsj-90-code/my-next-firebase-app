@@ -7,10 +7,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   applyStandardOwnFacilityDefaults,
+  computeFacilityScore,
   computeFoodScore,
-  computeInteriorSeatManagementScore,
   computeOwnLocationScore,
-  computeZoneScore,
+  computeOwnZoneComposition,
+  resolveZoneCompositionScore,
   computeSpecScore,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
@@ -290,17 +291,24 @@ export function BasicInfoTab({
     // 비어있는 자사 시설 입력값은 회사 표준 존 구성으로 계산한다(evaluate.ts와 동일 규칙 —
     // 결과 탭에서 최종 계산할 때와 이 미리보기가 다르게 보이지 않도록 맞춘다).
     const facility = applyStandardOwnFacilityDefaults(form);
-    // 2026-08-30(§3~6) — 좌석·존구성 점수를 존 개수 기반 결정론적 공식으로 자동계산한다.
-    const seatZoneAuto = computeZoneScore({
-      teamRoom: facility.ownTeamRoom,
-      room2: form.ownRoom2,
-      coupleZone: facility.ownCoupleZone,
-      vipZone: facility.ownVipZone,
-      friendsZone: facility.ownFriendsZone,
-      singleSeatCount: form.ownSingleSeatCount,
-      room1: form.ownRoom1,
-      firstClassZone: form.ownFirstClassZone,
-    });
+    // 2026-08-31 — 존구성 점수를 새 시트 산식(존다양성×0.7+존수용력×0.3)으로 자동계산한다.
+    const zoneComposition = resolveZoneCompositionScore(
+      computeOwnZoneComposition({
+        counts: {
+          singleSeatCount: facility.ownSingleSeatCount,
+          room1: facility.ownRoom1,
+          room2: facility.ownRoom2,
+          teamRoom: facility.ownTeamRoom,
+          coupleZone: facility.ownCoupleZone,
+          vipZone: facility.ownVipZone,
+          friendsZone: facility.ownFriendsZone,
+          firstClassZone: facility.ownFirstClassZone,
+        },
+        teamRoomTotalSeats: form.ownTeamRoomTotalSeats,
+        totalPcCount: form.expectedPcCount,
+      }).composition,
+      form.ownSeatZoneScore,
+    );
     return {
       spec: computeSpecScore(
         {
@@ -326,14 +334,12 @@ export function BasicInfoTab({
       monitorScore: scoreFromMonitorSpec(form.ownMonitorBase, form.ownMonitorTop),
       location: computeOwnLocationScore(locationEvaluation, form, settings),
       food: computeFoodScore({ brand: form.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings),
-      seatZoneAuto,
-      interior: computeInteriorSeatManagementScore(
+      zoneComposition,
+      interior: computeFacilityScore(
         {
-          seatZoneScore: seatZoneAuto ?? form.ownSeatZoneScore,
-          freshnessScore: form.ownInteriorLevelScore,
-          cleanlinessScore: form.ownInteriorConditionScore,
-          comfortScore: form.ownComfortScore,
-          legacyScore: form.ownInteriorScore,
+          zoneComposition,
+          interiorScore: facility.ownInteriorScore,
+          managementScore: facility.ownManagementScore,
         },
         settings,
       ),
@@ -357,16 +363,16 @@ export function BasicInfoTab({
     form.ownFriendsZone,
     form.ownFirstClassZone,
     form.ownSingleSeatCount,
+    form.ownTeamRoomTotalSeats,
+    form.expectedPcCount,
     form.floor,
     form.groundLevel,
     form.hasElevator,
     form.ownFoodBrand,
     form.ownFoodScore,
     form.ownSeatZoneScore,
-    form.ownInteriorLevelScore,
-    form.ownInteriorConditionScore,
-    form.ownComfortScore,
     form.ownInteriorScore,
+    form.ownManagementScore,
     locationEvaluation,
     settings,
   ]);
@@ -701,9 +707,15 @@ export function BasicInfoTab({
             hint="칸막이·듀얼모니터만 있는 개방형 좌석(독립룸 아님) · 참고용, 좌석점수 자동계산엔 안 들어감"
           />
           <NumberField label="1인룸 수" value={form.ownRoom1} onChange={(v) => set("ownRoom1", v)} hint="벽으로 막힌 독립 공간" />
-          <NumberField label="2인룸 수" value={form.ownRoom2} onChange={(v) => set("ownRoom2", v)} />
+          <NumberField label="2인룸 수" value={form.ownRoom2} onChange={(v) => set("ownRoom2", v)} hint="비우면 표준 2개 적용" />
           <NumberField label="팀룸 수" value={form.ownTeamRoom} onChange={(v) => set("ownTeamRoom", v)} hint="비우면 표준 2개 적용" />
-          <NumberField label="커플존 수" value={form.ownCoupleZone} onChange={(v) => set("ownCoupleZone", v)} hint="비우면 표준 3개 적용" />
+          <NumberField
+            label="팀룸 총좌석수"
+            value={form.ownTeamRoomTotalSeats}
+            onChange={(v) => set("ownTeamRoomTotalSeats", v)}
+            hint="비우면 팀룸 수×5석으로 추정"
+          />
+          <NumberField label="커플존 수" value={form.ownCoupleZone} onChange={(v) => set("ownCoupleZone", v)} hint="비우면 표준 4개 적용" />
           <NumberField label="VIP존 수" value={form.ownVipZone} onChange={(v) => set("ownVipZone", v)} hint="비우면 표준 5개 적용" />
           <NumberField label="프렌즈존 수" value={form.ownFriendsZone} onChange={(v) => set("ownFriendsZone", v)} hint="비우면 표준 15개 적용" />
           <NumberField
@@ -767,36 +779,49 @@ export function BasicInfoTab({
         {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && <FoodScoringGuide />}
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어·좌석·관리</h4>
+        <p className="mt-1 text-xs text-[#8a8072]">
+          시설종합점수 = 존구성×50% + 인테리어×30% + 관리×20% (2026-08-31 산식 개편, 반올림 없음).
+        </p>
         <InteriorScoringGuide />
         <div className={`${gridClass} mt-3`}>
-          {computedScores.seatZoneAuto != null ? (
+          {computedScores.zoneComposition != null ? (
             <ComputedField
-              label="좌석·존구성 (자동)"
-              value={computedScores.seatZoneAuto}
-              hint="팀룸·2인룸·커플존·VIP존·프렌즈존·1인석·1인룸·퍼스트클래스존 개수로 자동계산"
+              label="존구성 점수 (자동)"
+              value={computedScores.zoneComposition}
+              hint="팀룸·2인룸·커플존·VIP존·프렌즈존·1인석·1인룸·퍼스트클래스존 존다양성×70%+존수용력×30%"
             />
           ) : (
             <ScoreSelectField
-              label="좌석·존구성 (직접입력)"
+              label="존구성 점수 (직접입력)"
               value={form.ownSeatZoneScore}
               onChange={(v) => set("ownSeatZoneScore", v)}
               step={0.5}
               hint="위 존 개수를 하나도 안 채웠을 때만 직접 평가 · 위 기준표 참고"
             />
           )}
-          <ScoreSelectField label="최신성·디자인" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="마감·컨셉 퀄리티" />
-          <ScoreSelectField label="청결·관리상태" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="청결도·노후도" />
-          <ScoreSelectField label="편의성" value={form.ownComfortScore} onChange={(v) => set("ownComfortScore", v)} step={0.5} hint="냄새·조명·화장실·편의시설" />
-          {computedScores.seatZoneAuto == null && form.ownSeatZoneScore == null && form.ownInteriorLevelScore == null && form.ownInteriorConditionScore == null && form.ownComfortScore == null && (
-            <ScoreSelectField
-              label="인테리어·좌석·관리 점수 (직접입력)"
-              value={form.ownInteriorScore}
-              onChange={(v) => set("ownInteriorScore", v)}
-              hint="위 세부항목을 넷 다 안 채웠을 때 직접 평가 · 비우면 표준값 5(상) 적용"
-            />
-          )}
+          <ScoreSelectField
+            label="인테리어 점수"
+            value={form.ownInteriorScore}
+            onChange={(v) => set("ownInteriorScore", v)}
+            step={0.5}
+            hint="비우면 표준값 4(신규오픈 기준) 적용 · 위 기준표 참고"
+          />
+          <ComputedField label="관리 점수" value={form.ownManagementScore ?? 4} hint="자사는 표준값 4(신규오픈 기준)" />
           <ComputedField label="인테리어·좌석·관리 점수 (최종)" value={computedScores.interior} />
         </div>
+        {(form.ownInteriorLevelScore != null || form.ownInteriorConditionScore != null || form.ownComfortScore != null) && (
+          <>
+            <p className="mt-3 text-xs text-[#8a8072]">
+              아래 세부항목은 2026-08-31 산식 개편 이후 계산에는 더 이상 쓰이지 않습니다(이미 입력된
+              값이 있어 이력으로만 표시합니다).
+            </p>
+            <div className={`${gridClass} mt-2`}>
+              <ScoreSelectField label="최신성·디자인 (참고용)" value={form.ownInteriorLevelScore} onChange={(v) => set("ownInteriorLevelScore", v)} step={0.5} hint="계산 미반영" />
+              <ScoreSelectField label="청결·관리상태 (참고용)" value={form.ownInteriorConditionScore} onChange={(v) => set("ownInteriorConditionScore", v)} step={0.5} hint="계산 미반영" />
+              <ScoreSelectField label="편의성 (참고용)" value={form.ownComfortScore} onChange={(v) => set("ownComfortScore", v)} step={0.5} hint="계산 미반영" />
+            </div>
+          </>
+        )}
       </section>
 
       {errors.length > 0 && (

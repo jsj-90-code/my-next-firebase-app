@@ -434,6 +434,9 @@ export async function convertCandidateToExistingStore(input: {
     ownVipZone: c.ownVipZone,
     ownFriendsZone: c.ownFriendsZone,
     ownFirstClassZone: c.ownFirstClassZone,
+    ownTeamRoomTotalSeats: c.ownTeamRoomTotalSeats,
+    ownTeamRoomTotalSeatsBasis: c.ownTeamRoomTotalSeatsBasis,
+    ownManagementScore: c.ownManagementScore,
     // 2026-08-27 확인 — 후보지에서 빈칸이던 값(null)은 여기서도 null 그대로 넘어온다. 후보지
     // 평가 때는 빈칸이 5점(신규후보지 기본값)으로 계산됐지만, 전환 후 이 매장을 백테스트할 땐
     // EXISTING_STORE_FACILITY_DEFAULTS(4점, 원본 시트 규칙)로 채워진다 — 의도된 것이다. 백테스트는

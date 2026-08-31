@@ -94,8 +94,11 @@ function blankCandidate(code: string): CandidateInput {
     ownVipZone: null,
     ownFriendsZone: null,
     ownFirstClassZone: null,
+    ownTeamRoomTotalSeats: null,
+    ownTeamRoomTotalSeatsBasis: null,
     ownFoodScore: null,
     ownInteriorScore: null,
+    ownManagementScore: null,
     // 2026-08-31 사용자 확정 — 최신매장 표준 모니터 스펙 기본값(신규 후보지 생성 시에만 채움,
     // 이미 값이 있는 매장/경쟁점에는 영향 없음). scoreFromMonitorSpec 기준 3.7점(기본 3.5×80%+
     // 특화 4.5×20%) — 정확히 4.0은 combineHardwareTiers(기본80%+특화20%) 공식의 수학적 상한

@@ -25,9 +25,9 @@ import {
   computeExpectedOccupiedSeats,
   computeExpectedOwnDemand,
   computeExpectedUtilization,
+  computeFacilityScore,
   computeFinalJudgement,
   computeFoodScore,
-  computeInteriorSeatManagementScore,
   computeIpPerDemand,
   computeLocationCompositeScore,
   computeMarketDemand,
@@ -35,8 +35,9 @@ import {
   computeImpliedUtilizationFromRevenue,
   computeMeasuredForecast,
   computeOwnLocationScore,
+  computeOwnZoneComposition,
   redistributeCapacityConstrainedDemand,
-  resolveSeatZoneScore,
+  resolveZoneCompositionScore,
   computeSpecScore,
   computeV61Fallback,
   computeV62Final,
@@ -100,26 +101,31 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // 방식 유지 — computeCompetitorScores 참고).
   const ownLocationScore = computeOwnLocationScore(loc, c, settings);
   const ownFoodScore = computeFoodScore({ brand: c.ownFoodBrand, legacyScore: ownFacility.ownFoodScore }, settings);
-  const ownInteriorScore = computeInteriorSeatManagementScore(
+  // 2026-08-31 — 존구성/인테리어/관리 3항목 결합(computeFacilityScore)으로 전면 교체(§ 시설평가
+  // 산식 개편). 존구성은 새 공식(computeOwnZoneComposition)으로 자동계산하고, 전혀 조사 안 됐으면
+  // 기존 종합평가 직접입력(ownSeatZoneScore)으로 폴백한다.
+  const ownZoneComposition = resolveZoneCompositionScore(
+    computeOwnZoneComposition({
+      counts: {
+        singleSeatCount: ownFacility.ownSingleSeatCount,
+        room1: ownFacility.ownRoom1,
+        room2: ownFacility.ownRoom2,
+        teamRoom: ownFacility.ownTeamRoom,
+        coupleZone: ownFacility.ownCoupleZone,
+        vipZone: ownFacility.ownVipZone,
+        friendsZone: ownFacility.ownFriendsZone,
+        firstClassZone: ownFacility.ownFirstClassZone,
+      },
+      teamRoomTotalSeats: c.ownTeamRoomTotalSeats,
+      totalPcCount: c.expectedPcCount,
+    }).composition,
+    c.ownSeatZoneScore,
+  );
+  const ownInteriorScore = computeFacilityScore(
     {
-      // §3~6 — 존 개수로 자동계산 가능하면 그 값을, 전혀 없으면 기존 종합평가 직접입력으로 폴백.
-      seatZoneScore: resolveSeatZoneScore(
-        {
-          teamRoom: ownFacility.ownTeamRoom,
-          room2: c.ownRoom2,
-          coupleZone: ownFacility.ownCoupleZone,
-          vipZone: ownFacility.ownVipZone,
-          friendsZone: ownFacility.ownFriendsZone,
-          singleSeatCount: c.ownSingleSeatCount,
-          room1: c.ownRoom1,
-          firstClassZone: c.ownFirstClassZone,
-        },
-        c.ownSeatZoneScore,
-      ),
-      freshnessScore: c.ownInteriorLevelScore,
-      cleanlinessScore: c.ownInteriorConditionScore,
-      comfortScore: c.ownComfortScore,
-      legacyScore: ownFacility.ownInteriorScore,
+      zoneComposition: ownZoneComposition,
+      interiorScore: ownFacility.ownInteriorScore,
+      managementScore: ownFacility.ownManagementScore,
     },
     settings,
   );

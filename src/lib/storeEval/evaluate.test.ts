@@ -233,13 +233,15 @@ describe("evaluateCandidate 배선 검증", () => {
       ownRoom1: 0,
       ownRoom2: 0,
       ownTeamRoom: 2,
-      ownCoupleZone: 3,
+      // 2026-08-31 — "신규매장 블랙라벨 기본값" 표로 갱신(coupleZone 3→4), 인테리어/관리는
+      // "경쟁력 평가 기준 최종본" §3 신규오픈 기준값(각 4점)에 맞춰 STANDARD_OWN_FACILITY_
+      // DEFAULTS와 동일하게 맞춘다.
+      ownCoupleZone: 4,
       ownVipZone: 5,
       ownFriendsZone: 15,
-      // 2026-08-27: 표준값이 4→5(먹거리/인테리어)로 재조정됐다가, 2026-08-30 먹거리만 다시
-      // 5→4로(§11 쉐프앤클릭 기준점=4.0과 맞춤) - STANDARD_OWN_FACILITY_DEFAULTS와 맞춘다.
       ownFoodScore: 4,
-      ownInteriorScore: 5,
+      ownInteriorScore: 4,
+      ownManagementScore: 4,
     };
     const blankResult = evaluateCandidate({
       candidate: emptyCandidate(blankFacility),

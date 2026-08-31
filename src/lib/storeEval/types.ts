@@ -145,6 +145,11 @@ export type CandidateInput = {
   // 고급 컨셉존("퍼스트클래스존", 지금은 신규 출점에 안 씀 — 과거 매장 평가용). 보유(>0)하면
   // 좌석·존구성 점수에 +0.5 가산한다(§5, calc.ts computeZoneScore) — 여러 개더라도 현재는 최대 +0.5.
   ownFirstClassZone: number | null;
+  // 2026-08-31(시설 평가 산식 개편) — 팀룸 "개수"(ownTeamRoom)와 별개로 "총좌석수"를 직접 입력할
+  // 수 있게 분리했다(01시트 BY/BZ에 대응). 값이 있으면 그대로 쓰고, 없으면 개수×5석으로 추정한다
+  // (calc.ts computeSpecialtySeatRatio). 근거 텍스트는 UI 참고용이며 계산엔 안 쓴다.
+  ownTeamRoomTotalSeats: number | null;
+  ownTeamRoomTotalSeatsBasis: string | null;
   // 경쟁력점수 4개 구성요소(하드웨어30%+인테리어·좌석·관리40%+먹거리20%+입지10%) 중 하드웨어는
   // VGA·CPU·RAM·모니터 텍스트에서, 입지는 09_입지동선평가(4요소 조합, 없으면 층수+엘리베이터
   // 폴백)로부터 자동 계산하는 값이라(CANDIDATE_AUTO) 여기 CandidateInput에는 없다 — calc.ts의
@@ -152,8 +157,11 @@ export type CandidateInput = {
   // 먹거리는 브랜드 기본값+직접입력 override, 인테리어(좌석·관리 포함)는 좌석·존구성만 존 개수
   // 자동계산이고 나머지 세부항목은 평가자가 rubric표를 보고 직접 1~5점을 입력한다.
   ownFoodScore: number | null; // 1~5 - 먹거리 브랜드가 "브랜드없음"이거나 안 정했을 때 쓰는 직접입력값(폴백)
-  ownInteriorScore: number | null; // 1~5 - 아래 세부항목(좌석·존구성/최신성/청결관리/편의성)을 하나도
-  // 안 채웠을 때 쓰는 종합 직접입력값(폴백)
+  ownInteriorScore: number | null; // 1~5 - 시설종합점수 산식의 "인테리어"(raw) 입력값. 2026-08-31부터
+  // 더 이상 최신성/청결/편의성과 블렌딩하지 않고 이 값을 그대로 쓴다(비면 표준값 4).
+  // 2026-08-31 신설 — 시설종합점수(존구성50%+인테리어30%+관리20%)의 독립 입력값. 자사는 표준값
+  // 4(신규오픈 기준값, "경쟁력 평가 기준 최종본" §3) — 아직 직접입력 UI는 없고 표준값으로만 채움.
+  ownManagementScore: number | null;
   // 2026-08-28 (2차) — 모니터도 이제 GPU/CPU처럼 모델텍스트(주사율 Hz)에서 자동채점한다
   // (calc.ts scoreFromMonitor/scoreFromMonitorSpec) — 예전엔 사람이 1~5점을 직접 입력했다.
   ownMonitorBase: string | null;
@@ -166,17 +174,16 @@ export type CandidateInput = {
   // ownFoodScore 직접입력값이 있으면(조사자가 메뉴 구성·완성도·운영상태를 실제로 확인한 경우) 그
   // 값이 브랜드 기본값보다 우선한다(§11 "브랜드만으로 4점 이상 주지 않는다") — 우선순위 반전.
   ownFoodBrand: FoodBrand | null;
-  // 2026-08-28 전면개편, 2026-08-30 재개편 — "인테리어·좌석구성·관리"(경쟁력점수의 40%)를 세부항목
-  // 4개의 가중평균으로 정교화한다(좌석·존구성50%+최신성·디자인25%+청결·관리상태15%+냄새·조명·
-  // 화장실·편의성10%, calc.ts computeInteriorSeatManagementScore). 좌석·존구성은 2026-08-30부터
-  // 팀룸/2인룸/커플존/VIP존/프렌즈존/1인석/1인룸/퍼스트클래스존 개수로 자동계산한다(§3~6,
-  // calc.ts computeZoneScore) — 존 개수가 전혀 없을 때만(레거시 데이터 등) 아래 직접입력값으로
-  // 폴백한다(resolveSeatZoneScore). 최신성·청결관리는 기존 세부항목(ownInteriorLevelScore/
-  // ownInteriorConditionScore)을 그대로 재사용한다.
+  // 2026-08-31 재개편 — "인테리어·좌석구성·관리"(경쟁력점수의 40%) = 존구성50%+인테리어30%+관리20%
+  // (calc.ts computeFacilityScore). 존구성은 8개 존유형(1인석/1인룸/2인룸/팀룸/커플존/VIP존/
+  // 프렌즈존/퍼스트클래스존) 개수로 자동계산한다(calc.ts computeOwnZoneComposition) — 존 개수가
+  // 전혀 없을 때만 아래 직접입력값으로 폴백한다(resolveZoneCompositionScore).
   ownSeatZoneScore: number | null; // 좌석·존구성 직접입력 폴백(존 개수 정보가 전혀 없을 때만 사용)
-  ownInteriorLevelScore: number | null; // 최신성·디자인
-  ownInteriorConditionScore: number | null; // 청결·관리상태
-  ownComfortScore: number | null; // 냄새·조명·화장실·편의성
+  // 2026-08-31부터 시설종합점수 계산엔 더 이상 안 쓰인다(최신성/청결/편의성이 새 산식에서 빠짐) —
+  // 기존 입력 이력 보존을 위해 필드는 남겨두고, UI에서도 이미 값이 있는 매장만 계속 보여준다.
+  ownInteriorLevelScore: number | null; // 최신성·디자인 (계산 미반영, 참고용)
+  ownInteriorConditionScore: number | null; // 청결·관리상태 (계산 미반영, 참고용)
+  ownComfortScore: number | null; // 냄새·조명·화장실·편의성 (계산 미반영, 참고용)
 
   createdAt: number;
   updatedAt: number;
@@ -261,9 +268,12 @@ export type Competitor = {
   // (좌석·관리 포함)는 조사자가 rubric표를 보고 1~5점을 직접 입력한다.
   foodScore: number | null; // 1~5 - 먹거리 브랜드가 "브랜드없음"이거나 안 정했을 때 쓰는 직접입력값(폴백)
   foodBasis: string | null;
-  interiorScore: number | null; // 세부항목(좌석·존구성/최신성/청결관리/편의성)을 하나도 안 채웠을 때 쓰는 종합 직접입력값(폴백)
+  interiorScore: number | null; // 시설종합점수 산식의 "인테리어"(raw) 입력값 — 2026-08-31부터 최신성/청결/편의성과 블렌딩하지 않는다
   interiorBasis: string | null;
   monitorBasis: string | null;
+  // 2026-08-31 신설 — "경쟁력 평가 기준 최종본" 재검토(189곳)로 관리점수가 인테리어에서 완전히
+  // 독립됐다. 더 이상 인테리어 값으로 폴백/대체하지 않는다 — 없으면 시설종합점수 전체가 null.
+  managementScore: number | null;
   // 2026-08-27 추가 — CandidateInput.ownFoodBrand/ownInteriorLevelScore 등과 같은 이유/규칙(선택
   // 항목). calc.ts computeFoodScore/computeInteriorSeatManagementScore 참고.
   foodBrand: FoodBrand | null;
@@ -282,14 +292,18 @@ export type Competitor = {
   teamRoom: number | null;
   coupleZone: number | null;
   // 2026-08-30 (경쟁력 평가 기준 최종본) 추가 — CandidateInput.ownVipZone/ownFriendsZone/
-  // ownFirstClassZone과 동일 개념. 05_경쟁점정보 시트에는 대응 컬럼이 없어(서비스계정이 읽기전용
-  // 권한이라 컬럼을 새로 추가할 수 없음) 웹 전용 입력 필드다(source/lat/lng과 같은 패턴) —
-  // cronSync.ts는 이 필드들을 시트에서 읽지 않으므로 CompetitorsTab에서 직접 입력한 값이 매일
-  // 자동동기화로 지워지지 않는다. computeZoneScore(calc.ts)가 이 셋 중 하나라도 채워지면 좌석·
-  // 존구성 점수를 자동계산하고, 전부 비어 있으면 기존 seatZoneScore 직접입력으로 폴백한다.
+  // ownFirstClassZone과 동일 개념. 2026-08-31 갱신: 05_경쟁점정보 시트에 이 3개 컬럼이 새로
+  // 생겨서(AP·AQ·AR) 이제 시트 동기화 대상이다(원래는 컬럼이 없어 웹 전용 입력이었다).
   vipZone: number | null;
   friendsZone: number | null;
   firstClassZone: number | null;
+  // 2026-08-31 신설 — 경쟁점 전용(자사엔 없음). 전용 커플존(coupleZone)과 별개 항목, "조" 단위,
+  // 환산좌석수는 조수×1(존다양성 가산엔 +0.5). calc.ts computeCompetitorZoneComposition 참고.
+  regularCoupleSeatCount: number | null; // 일반2인석
+  // 2026-08-31 신설 — 팀룸 "개수"(teamRoom)와 별개로 "총좌석수"를 직접 입력할 수 있게 분리
+  // (05시트 AT/AU). 값이 있으면 그대로, 없으면 개수×5석 추정(calc.ts computeSpecialtySeatRatio).
+  teamRoomTotalSeats: number | null;
+  teamRoomTotalSeatsBasis: string | null;
   // 2026-08-24 추가 — 카카오 Local API로 자동수집된 PC방 경쟁점 표시용(선택 필드, 기존 수동입력
   // 경쟁점엔 없음/null). lat/lng은 자동수집분만 채워지며, V62 계산 어디에도 쓰이지 않는다
   // (경쟁력 산식은 여전히 실사값 기반 필드만 읽는다).
@@ -404,11 +418,10 @@ export type ModelSettings = {
   // 현재 표준(RTX5060·울트라5 225F·16GB=각 4점) 기준으로 같이 재보정했다(calc.ts 주석 참고).
   // 주변기기(마우스/키보드/헤드셋)는 이번 기준표에서 하드웨어 배점 대상이 아니다(사용자 확인).
   specWeights: { vga: number; monitor: number; ram: number; cpu: number };
-  // 2026-08-28 신규 — "인테리어·좌석·관리"(경쟁력점수의 40%) 내부비중. 좌석·존구성이 가장
-  // 중요하다는 사용자 판단(팀룸·2인룸 등 존 구성이 PC방 선택의 1순위)에 따라 50%로 가장 크게
-  // 잡는다(calc.ts computeInteriorSeatManagementScore). 나머지는 최신성·디자인25%+청결·관리
-  // 상태15%+냄새·조명·화장실·편의성10%.
-  interiorWeights: { seatZone: number; freshness: number; cleanliness: number; comfort: number };
+  // 2026-08-31 전면 교체(옛 interiorWeights 대체) — "인테리어·좌석·관리"(경쟁력점수의 40%)
+  // 내부비중. 시트에서 그대로 이식한 값(존구성50%+인테리어30%+관리20%) — 최신성/청결/편의성은
+  // 새 산식에서 완전히 빠졌다(calc.ts computeFacilityScore).
+  facilityWeights: { zoneComposition: number; interior: number; management: number };
   // 09_입지동선평가!H열(입지동선종합점수) = 상권내위치×0.3 + 주요동선×0.3 + 선점경쟁×0.25 + 접근가시성×0.15
   locationCompositeWeights: { withinMarket: number; flow: number; preemption: number; visibility: number };
   brandFilter: string; // "블랙라벨"
@@ -644,14 +657,21 @@ export type ExistingStore = {
   // 안 쓴다(좌석·존구성 점수는 이미 rubric 직접입력) — 평가자가 인테리어평가 점수를 매길 때
   // 참고하는 원본 사실 기록용이다(사용자 확인).
   ownFirstClassZone: number | null;
+  // 2026-08-31 신설 — CandidateInput.ownTeamRoomTotalSeats와 동일(01시트 BY/BZ).
+  ownTeamRoomTotalSeats: number | null;
+  ownTeamRoomTotalSeatsBasis: string | null;
   ownFoodScore: number | null;
   ownInteriorScore: number | null;
+  // 2026-08-31 신설 — CandidateInput.ownManagementScore와 동일. 기존가맹점은 표준값 4(원본 시트
+  // 규칙 소급, EXISTING_STORE_FACILITY_DEFAULTS).
+  ownManagementScore: number | null;
   // 2026-08-28 (2차) — 모니터도 GPU/CPU처럼 모델텍스트(주사율 Hz) 자동채점으로 전환.
   ownMonitorBase: string | null;
   ownMonitorTop: string | null;
   // 2026-08-27 추가 — CandidateInput과 동일(계산 함수 하나 공유). computeExistingStoreMeasuredForecast에서만
   // 쓰이고, 얼려둔 competitivenessScore/ownDemand 스냅샷 자체는 바뀌지 않는다.
   ownFoodBrand: FoodBrand | null;
+  // 2026-08-31부터 시설종합점수 계산엔 더 이상 안 쓰인다(참고용, 이력 보존).
   ownInteriorLevelScore: number | null;
   ownInteriorConditionScore: number | null;
   // 2026-08-28 전면개편 — CandidateInput.ownSeatZoneScore/ownComfortScore와 동일.
