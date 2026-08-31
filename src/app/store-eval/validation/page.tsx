@@ -38,7 +38,7 @@ import {
 } from "@/lib/storeEval/calc";
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getLocationEvaluation, getModelSettings, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
+import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores } from "@/lib/storeEval/store";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 
 // 기존 Google Sheet 참고 결과 (06_검증대시보드, docs/model-spec.md 근거). 코드에서 재계산하지
@@ -114,22 +114,39 @@ async function loadValidationData(): Promise<{
   competitorsByCode: Map<string, Competitor[]>;
   locationEvaluationsByCode: Map<string, LocationEvaluation | null>;
 } | null> {
-  const [stores, settingsDoc] = await Promise.all([listExistingStores(), getModelSettings()]);
+  // 2026-08-31 — 매장별로 경쟁점/입지평가를 개별 where 쿼리하던 방식(133곳 x 2 = 260회 이상)을
+  // 컬렉션 전체를 한 번씩만 읽는 방식으로 교체했다(cronSync.ts가 이미 쓰고 있던 것과 동일한
+  // 패턴). 이 화면을 열 때마다 Firestore 일일 읽기 할당량을 크게 소모하고 있었던 게 원인으로
+  // 확인돼 급하게 고쳤다 - 계산 로직은 전혀 안 바꾸고 데이터 조회 방식만 바꾼다.
+  const [stores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
+    listExistingStores(),
+    getModelSettings(),
+    listAllCompetitors(),
+    listAllLocationEvaluations(),
+  ]);
   if (stores.length === 0) return null;
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
 
   const existingStoresByCode = new Map(stores.map((s) => [s.storeCode, s]));
+  const allCompetitorsByCandidateCode = new Map<string, Competitor[]>();
+  for (const c of allCompetitors) {
+    const list = allCompetitorsByCandidateCode.get(c.candidateCode) ?? [];
+    list.push(c);
+    allCompetitorsByCandidateCode.set(c.candidateCode, list);
+  }
+  const allLocationEvaluationsByCandidateCode = new Map(allLocationEvaluations.map((l) => [l.candidateCode, l]));
+
   const competitorsByCode = new Map<string, Competitor[]>();
   // 2026-08-30(§12) — computeExistingStoreMeasuredForecast가 이제 loc을 받으므로(자사 입지10%
   // 컴포넌트), 이 루프에서 어차피 매장마다 한 번씩 조회하는 loc을 재사용할 수 있게 저장해둔다.
   const locationEvaluationsByCode = new Map<string, LocationEvaluation | null>();
 
-  const inputs: ValidationStoreInput[] = await Promise.all(
-    stores.map(async (s) => {
+  const inputs: ValidationStoreInput[] = stores.map((s) => {
       // 전환 시 실제 가맹점코드가 후보지코드와 달라질 수 있다(2026-08-22 확인) - 경쟁점/입지평가는
       // 후보지코드(candidateCode)로 저장돼 있으므로, originCandidateCode가 있으면 그걸로 찾는다.
       const lookupCode = s.originCandidateCode ?? s.storeCode;
-      const [loc, competitors] = await Promise.all([getLocationEvaluation(lookupCode), listCompetitors(lookupCode)]);
+      const loc = allLocationEvaluationsByCandidateCode.get(lookupCode) ?? null;
+      const competitors = allCompetitorsByCandidateCode.get(lookupCode) ?? [];
       competitorsByCode.set(s.storeCode, competitors);
       locationEvaluationsByCode.set(s.storeCode, loc);
       return {
@@ -162,8 +179,7 @@ async function loadValidationData(): Promise<{
         competitorSummary: computeCompetitorInvestigationSummary(competitors),
         sheetV61Predicted: s.v61Predicted,
       };
-    }),
-  );
+    });
 
   const { rows } = runCohortValidation(inputs, settings);
   return { rows, settings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode };
@@ -439,24 +455,37 @@ function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
 // 그 값을 막대그래프로 보여주기만 한다 — 새 계산 없음. 예전엔 이 버킷 표(오차구간/점포수/비율)가
 // 아래 "자세히 보기(전문가용)" 안에 텍스트 테이블로만 있어서 눈에 잘 안 띄었다 — 헤드라인 바로
 // 아래, 접히지 않는 위치에 막대그래프로 다시 보여준다.
-const ERROR_BUCKET_COLORS = [
-  "var(--sl-ok)",
-  "var(--sl-ok)",
-  "var(--sl-warn)",
-  "var(--sl-warn)",
-  "var(--sl-danger)",
-  "var(--sl-danger)",
-];
+// 누적 4단계(10%/20%/30% 이내 + 30% 초과) 전용 색상.
+const ERROR_BUCKET_COLORS = ["var(--sl-ok)", "var(--sl-ok)", "var(--sl-warn)", "var(--sl-danger)"];
+
+// 2026-08-31 — 요청사항: 오차구간을 개별(±5%/5~10%/...) 대신 "10%p 단위 이내 누적 몇 곳"으로
+// 보여주는 게 한눈에 들어온다는 사용자 피드백. summary.buckets(기존 discrete 6구간, 새 계산 없음)를
+// 그대로 재구성만 한다 - calc.ts는 건드리지 않는다. buckets는 [±5, 5~10, 10~15, 15~20, 20~30, 30초과]
+// 순서로 고정돼 있음(bucketizeErrors 참고).
+function buildCumulativeErrorBands(summary: ValidationSummary2): { label: string; count: number; ratio: number; storeNames: string[] }[] {
+  const [b0, b1, b2, b3, b4, b5] = summary.buckets;
+  const n = summary.sampleCount;
+  const within10 = { count: b0.count + b1.count, storeNames: [...b0.storeNames, ...b1.storeNames] };
+  const within20 = { count: within10.count + b2.count + b3.count, storeNames: [...within10.storeNames, ...b2.storeNames, ...b3.storeNames] };
+  const within30 = { count: within20.count + b4.count, storeNames: [...within20.storeNames, ...b4.storeNames] };
+  return [
+    { label: "10% 이내", ...within10, ratio: n ? within10.count / n : 0 },
+    { label: "20% 이내", ...within20, ratio: n ? within20.count / n : 0 },
+    { label: "30% 이내", ...within30, ratio: n ? within30.count / n : 0 },
+    { label: "30% 초과", count: b5.count, ratio: b5.ratio, storeNames: b5.storeNames },
+  ];
+}
 
 function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
+  const bands = buildCumulativeErrorBands(summary);
   return (
     <div className="app-card rounded-2xl p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">오차 구간별 적중률 (10%p 단위)</h3>
+        <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">오차 구간별 적중률 (10%p 단위 누적)</h3>
         <p className="text-xs text-[#8a8072]">{summary.sampleCount}곳 기준</p>
       </div>
       <div className="mt-4 space-y-3">
-        {summary.buckets.map((b, i) => (
+        {bands.map((b, i) => (
           <div key={b.label}>
             <div className="flex items-baseline justify-between gap-3 text-xs">
               <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{b.label}</span>
@@ -475,11 +504,6 @@ function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
             )}
           </div>
         ))}
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-        <span className="app-badge app-badge-ok px-2.5 py-1">누적 ±10% 이내 {formatPercent(summary.within10PctRatio)}</span>
-        <span className="app-badge app-badge-warn px-2.5 py-1">누적 ±20% 이내 {formatPercent(summary.within20PctRatio)}</span>
-        <span className="app-badge app-badge-danger px-2.5 py-1">20% 초과 {formatPercent(summary.over20PctRatio)}</span>
       </div>
     </div>
   );

@@ -490,6 +490,13 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
     const code = String(row[0]).trim();
     if (storeCodes.has(code)) continue;
     if (String(row[4] ?? "").trim() !== "정상") continue;
+    // 2026-08-31(사용자 확정) — 블랙라벨만 평가 대상이라 리그(확인필요) 매장은 이제 자동등록도
+    // 하지 않는다. 이 필터가 없으면 리그 매장을 Firestore에서 지워도 다음 크론이 그대로
+    // 재등록해버린다(리그 92곳 일괄삭제 작업의 전제조건).
+    if (!isBlackLabelByCode.get(code)) {
+      autoRegisterSkipped.push(code);
+      continue;
+    }
 
     const storeName = String(row[1] ?? "").trim();
     const pcCount = toNumber(row[2]);

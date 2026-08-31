@@ -96,8 +96,12 @@ function blankCandidate(code: string): CandidateInput {
     ownFirstClassZone: null,
     ownFoodScore: null,
     ownInteriorScore: null,
-    ownMonitorBase: null,
-    ownMonitorTop: null,
+    // 2026-08-31 사용자 확정 — 최신매장 표준 모니터 스펙 기본값(신규 후보지 생성 시에만 채움,
+    // 이미 값이 있는 매장/경쟁점에는 영향 없음). scoreFromMonitorSpec 기준 3.7점(기본 3.5×80%+
+    // 특화 4.5×20%) — 정확히 4.0은 combineHardwareTiers(기본80%+특화20%) 공식의 수학적 상한
+    // (특화 만점이어도 3.8)이라 도달 불가능, 공식 자체 재설계는 검증 인프라(LOOCV) 복구 후 별도 논의.
+    ownMonitorBase: "제이씨현 32인치 FHD 240Hz",
+    ownMonitorTop: "QNIX IPS 27인치 FHD 300Hz, BenQ ZOWIE XL2540X+ 24.1인치 FHD 280Hz, 비트엠 34인치 WWQHD 165Hz, 비트엠 27인치 FHD 240Hz",
     ownFoodBrand: null,
     ownInteriorLevelScore: null,
     ownInteriorConditionScore: null,
