@@ -267,45 +267,10 @@ async function main() {
   // 읽으면 웹에서 새로 갱신한 값을 옛 스냅샷이 덮어쓰는 역주행 위험이 있다). 09_입지동선평가 시트
   // 탭 자체도 삭제했다.
 
-  // ---- 03_회원정보입력: 스냅샷 그대로 누적 ----
-  // 값이 실제로 안 바뀌었으면 쓰지 않는다(Firestore 쓰기 할당량 절약, 2026-08-22).
-  const existingMemberMap = await loadCollectionMap(db, "storeEvalExistingStoreMembers");
-  const members03 = await readSheetAsObjects("03_회원정보입력", "A1:T1000");
-  const memberCounter = makeWriteCounter();
-  for (const m of members03) {
-    const code = toText(m["가맹점코드"]);
-    if (!code || !storeCodes.has(code)) continue;
-    const snapshotDate = toDateStr(m["회원자료기준일"]);
-    if (!snapshotDate) continue;
-    const snapshot = {
-      storeCode: code,
-      snapshotDate,
-      totalMembersReported: toNumber(m["총회원수_집계"]),
-      age7under_male: toNumber(m["7세이하_남"]),
-      age7under_female: toNumber(m["7세이하_여"]),
-      age8to13_male: toNumber(m["8~13세_남"]),
-      age8to13_female: toNumber(m["8~13세_여"]),
-      age14to19_male: toNumber(m["14~19세_남"]),
-      age14to19_female: toNumber(m["14~19세_여"]),
-      age20to30_male: toNumber(m["20~30세_남"]),
-      age20to30_female: toNumber(m["20~30세_여"]),
-      age31to45_male: toNumber(m["31~45세_남"]),
-      age31to45_female: toNumber(m["31~45세_여"]),
-      age46plus_male: toNumber(m["46세이상_남"]),
-      age46plus_female: toNumber(m["46세이상_여"]),
-      enteredBy: toText(m["입력자"]),
-      memo: toText(m["메모"]),
-      updatedAt: Date.now(),
-    };
-    const memberId = `${code}_${snapshotDate}`;
-    const memberDirty = needsWrite(existingMemberMap.get(memberId), snapshot, { merge: false });
-    memberCounter.mark(memberDirty);
-    if (memberDirty) {
-      await db.collection("storeEvalExistingStoreMembers").doc(memberId).set(snapshot);
-      existingMemberMap.set(memberId, snapshot);
-    }
-  }
-  console.log(`03_회원정보입력 → storeEvalExistingStoreMembers: ${memberCounter.summary()}`);
+  // 2026-08-31 — "03_회원정보입력 → storeEvalExistingStoreMembers" 마이그레이션 섹션 제거(사용자
+  // 확인: 이 컬렉션을 다시 읽는 화면이 앱 어디에도 없어 Firestore 다이어트 대상으로 전부 삭제했다
+  // — 이 동기화가 남아있으면 다음 실행 때 그대로 되살아나 삭제가 무의미해진다, cronSync.ts와
+  // 동일하게 제거).
 
   console.log("\n전체 마이그레이션 완료");
 }

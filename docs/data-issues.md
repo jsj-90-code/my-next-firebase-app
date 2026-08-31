@@ -153,6 +153,16 @@
   삭제, `storeEvalExistingStoreMembers` 38건 전체 삭제, 리그 92곳 매장 + 매출기록 5,379건 캐스케이드
   삭제(경쟁점/입지평가는 원래 0건 — 리그 매장은 앱 평가 플로우 자체를 안 거쳐서 없었음). 스크립트는
   실행 후 삭제, 커밋 안 함.
+- **버그 발견/수정 — 회원스냅샷 삭제가 다음 동기화에 그대로 되살아남**: 삭제 직후
+  `migrateFullExistingStoreProfiles.mjs`(신규 필드 재동기화 목적)를 돌렸더니 삭제한 38건이
+  그대로 다시 써졌다 — "03_회원정보입력 → storeEvalExistingStoreMembers" 동기화가
+  `cronSync.ts`(매일 06:00 KST)와 `migrateFullExistingStoreProfiles.mjs` 양쪽에 그대로 남아있었기
+  때문(리그 매장 자동등록과 동일한 패턴의 재발). 사용자 확정: **동기화 코드 자체를 양쪽 파일에서
+  전부 제거**하고 38건 재삭제 완료. `ProfileMigrationSummary.memberSnapshotsWritten` 필드도 함께
+  제거. **주의: 이 컬렉션에 수동으로 쓰는 "회원 스냅샷 추가" 버튼(`existing-stores/page.tsx`,
+  `listExistingStoreMembers`/`upsertExistingStoreMember` 경로)은 이번에 안 건드렸다** — 시트
+  자동동기화만 껐을 뿐, 12개월 미만 매장 위주로 직원이 수동 입력하는 기능 자체는 그대로 살아있다.
+  `npm run build`/`npx vitest run`(403개) 통과 확인.
 
 ## 2026-08-30 갱신(당일 마지막) — 블랙라벨 41곳 입지동선평가 AI 일괄 재실행 + competitorIp 품질가중 검토 기각 + 검증화면 오차구간 시각화
 

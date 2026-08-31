@@ -120,11 +120,10 @@ export type ProfileMigrationSummary = {
   profileUpdated: number;
   competitorsWritten: number;
   competitivenessRecalculated: number;
-  memberSnapshotsWritten: number;
   suspiciousOpenDates: string[];
 };
 
-/** 01/05/09/03 시트 → Firestore 전체 마이그레이션 (scripts/migrateFullExistingStoreProfiles.mjs와 동일 로직). */
+/** 01/05/09 시트 → Firestore 전체 마이그레이션 (scripts/migrateFullExistingStoreProfiles.mjs와 동일 로직). */
 export async function runFullProfileMigration(): Promise<ProfileMigrationSummary> {
   if (!adminDb) throw new Error("Firebase Admin이 초기화되지 않았습니다(FIREBASE_CLIENT_EMAIL/PRIVATE_KEY 확인).");
   const sheets = getSheetsClient();
@@ -133,13 +132,15 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   const writer = new BatchWriter(db);
   const suspiciousOpenDates: string[] = [];
 
+  // 2026-08-31 — "03_회원정보입력 → storeEvalExistingStoreMembers" 동기화 섹션을 완전히 제거했다
+  // (사용자 확인: 이 컬렉션을 다시 읽는 화면이 앱 어디에도 없어 Firestore 다이어트 대상으로 전부
+  // 삭제했는데, 이 동기화가 남아있으면 다음 실행 때 그대로 되살아나 삭제가 무의미해진다).
   // 셋 다 서로 의존하지 않는 읽기라 순차 await 대신 병렬로 실행한다(2026-08-24, Cron 함수
-  // 실행시간 제한 안에서 여유를 늘림). 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존
-  // 경쟁점·회원스냅샷 데이터도 미리 읽어둔다.
-  const [storesSnap, competitorsSnap, membersSnap, settingsSnap, locationEvalsSnap] = await Promise.all([
+  // 실행시간 제한 안에서 여유를 늘림). 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존 경쟁점
+  // 데이터도 미리 읽어둔다.
+  const [storesSnap, competitorsSnap, settingsSnap, locationEvalsSnap] = await Promise.all([
     db.collection("storeEvalExistingStores").get(),
     db.collection("storeEvalCompetitors").get(),
-    db.collection("storeEvalExistingStoreMembers").get(),
     db.collection("storeEvalSettings").doc("current").get(),
     // 2026-08-30(경쟁력 평가 기준 최종본 §12) — 자사 "입지10%" 컴포넌트가 09_입지동선평가(4요소
     // 조합)를 쓰도록 바뀌면서, 아래 경쟁력점수 재계산 루프가 매장별 LocationEvaluation도 필요해졌다.
@@ -150,7 +151,6 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, d.data()]));
-  const existingMemberById = new Map(membersSnap.docs.map((d) => [d.id, d.data()]));
   const locationEvalByCandidateCode = new Map(locationEvalsSnap.docs.map((d) => [d.id, d.data() as LocationEvaluation]));
   const settings: ModelSettings = settingsSnap.exists
     ? { ...defaultModelSettings(), ...(settingsSnap.data() as ModelSettings) }
@@ -380,44 +380,6 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   // 스냅샷이었음을 확인했다(사용자가 그 뒤로 웹에서 갱신한 값은 시트에 반영 안 됨). 09_입지동선평가
   // 시트 탭 자체도 삭제한다.
 
-  // ---- 03_회원정보입력 ----
-  const members03 = await readSheetAsObjects(sheets, "03_회원정보입력", "A1:T1000");
-  let memberWritten = 0;
-  for (const m of members03) {
-    const code = toText(m["가맹점코드"]);
-    if (!code || !storeCodes.has(code)) continue;
-    const snapshotDate = toDateStr(m["회원자료기준일"]);
-    if (!snapshotDate) continue;
-    const snapshot = {
-      storeCode: code,
-      snapshotDate,
-      totalMembersReported: toNumber(m["총회원수_집계"]),
-      age7under_male: toNumber(m["7세이하_남"]),
-      age7under_female: toNumber(m["7세이하_여"]),
-      age8to13_male: toNumber(m["8~13세_남"]),
-      age8to13_female: toNumber(m["8~13세_여"]),
-      age14to19_male: toNumber(m["14~19세_남"]),
-      age14to19_female: toNumber(m["14~19세_여"]),
-      age20to30_male: toNumber(m["20~30세_남"]),
-      age20to30_female: toNumber(m["20~30세_여"]),
-      age31to45_male: toNumber(m["31~45세_남"]),
-      age31to45_female: toNumber(m["31~45세_여"]),
-      age46plus_male: toNumber(m["46세이상_남"]),
-      age46plus_female: toNumber(m["46세이상_여"]),
-      enteredBy: toText(m["입력자"]),
-      memo: toText(m["메모"]),
-      updatedAt: Date.now(),
-    };
-    const memberId = `${code}_${snapshotDate}`;
-    // 값이 안 바뀌어도 매번 다시 쓰던 버그 - migrateFullExistingStoreProfiles.mjs는
-    // 2026-08-22에 diff 기반으로 고쳤는데 이 파일은 그대로 남아있었다(파일 상단 "완전히
-    // 동일" 주석과 어긋남). 나머지 섹션(경쟁점·입지평가·매출)과 동일하게 diff 체크를 추가한다.
-    if (!isSameData(existingMemberById.get(memberId), snapshot)) {
-      await writer.set(db.collection("storeEvalExistingStoreMembers").doc(memberId), snapshot);
-      memberWritten++;
-    }
-  }
-
   await writer.finish();
 
   return {
@@ -425,7 +387,6 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     profileUpdated,
     competitorsWritten: compWritten,
     competitivenessRecalculated,
-    memberSnapshotsWritten: memberWritten,
     suspiciousOpenDates,
   };
 }
