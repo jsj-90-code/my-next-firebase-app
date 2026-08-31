@@ -327,6 +327,25 @@ export function computeCompetitorAppliedPcCount(
   return null;
 }
 
+/**
+ * 2026-08-31 신설 — 요청사항 5번 "간략·외관조사의 PC대수 70대 역시 추정값이므로 출처와 메모를
+ * 보존해줘"에 대응. 새 Firestore 필드를 만들지 않고 위 computeCompetitorAppliedPcCount와 완전히
+ * 같은 입력으로 "그 숫자가 실측인지 추정인지"를 매번 다시 설명하는 순수함수로 둔다 — 이 프로젝트의
+ * "계산결과는 저장하지 않고 매번 재계산" 원칙과 동일한 이유(값을 따로 저장하면 나중에 surveyLevel
+ * 등 원본이 바뀌어도 메모만 낡은 채로 남을 위험이 있다).
+ */
+export function describeAppliedPcCountBasis(
+  c: Pick<Competitor, "totalPcCount" | "appliedPcCount" | "surveyLevel"> & { investigationStatus?: CompetitorInvestigationStatus },
+): string | null {
+  if (c.investigationStatus === "경쟁점없음") return "확인된 독점상권(경쟁점 없음, 0대)";
+  if (c.appliedPcCount != null) return "실측값(적용대수 직접입력)";
+  if (c.totalPcCount != null) return "실측값(전체대수)";
+  if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return `추정값(조사수준=${c.surveyLevel}, 간략_기본대수 70대 적용)`;
+  if (c.investigationStatus === "노후저경쟁력미조사") return "추정값(노후·저경쟁력 미조사, 간략_기본대수 70대 적용)";
+  if (c.investigationStatus === "오픈예정") return "추정값(오픈예정, 간략_기본대수 70대 적용)";
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // 3.3 자동 채점 — VGA 사양 / 존구성(좌석) / 층수+엘리베이터(입지)
 // 원본 Apps Script(점포평가.gs)의 scoreFromVga_ / summarizeZones_ /

@@ -35,6 +35,7 @@ import {
   computeFacilityScore,
   combineHardwareTiers,
   computeCompetitorAppliedPcCount,
+  describeAppliedPcCountBasis,
   computeFloatingRawDemand,
   computeFreshnessFromYear,
   computeImpliedUtilizationFromRevenue,
@@ -1006,6 +1007,28 @@ describe("computeCompetitorAppliedPcCount — 오픈예정 경쟁점 처리(2026
   });
   it("PC대수를 모르면 노후저경쟁력미조사와 동일하게 간략_기본대수(70)로 채운다", () => {
     expect(computeCompetitorAppliedPcCount({ totalPcCount: null, appliedPcCount: null, surveyLevel: null, investigationStatus: "오픈예정" })).toBe(70);
+  });
+});
+
+describe("describeAppliedPcCountBasis (2026-08-31 신설 — 70대 추정값의 출처/메모 보존, 요청사항 5)", () => {
+  it("적용대수/전체대수가 실측으로 있으면 실측값이라고 밝힌다", () => {
+    expect(describeAppliedPcCountBasis({ totalPcCount: 100, appliedPcCount: 90, surveyLevel: "상세" })).toBe("실측값(적용대수 직접입력)");
+    expect(describeAppliedPcCountBasis({ totalPcCount: 100, appliedPcCount: null, surveyLevel: "상세" })).toBe("실측값(전체대수)");
+  });
+  it("간략/외관만 조사이고 대수를 모르면 70대 추정값임을 밝힌다", () => {
+    expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: "간략" })).toBe("추정값(조사수준=간략, 간략_기본대수 70대 적용)");
+    expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: "외관만" })).toBe("추정값(조사수준=외관만, 간략_기본대수 70대 적용)");
+  });
+  it("경쟁점없음/오픈예정도 각각의 사유로 설명한다", () => {
+    expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: null, investigationStatus: "경쟁점없음" })).toBe(
+      "확인된 독점상권(경쟁점 없음, 0대)",
+    );
+    expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: null, investigationStatus: "오픈예정" })).toBe(
+      "추정값(오픈예정, 간략_기본대수 70대 적용)",
+    );
+  });
+  it("아무 근거도 없으면 null", () => {
+    expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: "상세" })).toBeNull();
   });
 });
 

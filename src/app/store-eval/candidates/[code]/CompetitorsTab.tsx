@@ -12,6 +12,7 @@ import {
   computeCompetitorScores,
   computeCompetitorZoneComposition,
   computeFreshnessFromYear,
+  describeAppliedPcCountBasis,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
@@ -335,6 +336,12 @@ function CompetitorForm({
       <div className={`${gridClass} mt-3`}>
         <NumberField label="전체대수" value={form.totalPcCount} onChange={(v) => set("totalPcCount", v)} />
         <NumberField label="적용대수" value={form.appliedPcCount} onChange={(v) => set("appliedPcCount", v)} hint="실사값 없으면 대체값을 조사 후 입력" />
+        <div className="col-span-full sm:col-span-1">
+          <p className="text-xs font-medium text-[#8a8072]">적용대수 출처</p>
+          <p className="app-card-sm mt-1 rounded-md px-2.5 py-1.5 text-sm text-[#5c5346] dark:text-[#c9bfae]">
+            {describeAppliedPcCountBasis(form) ?? "-"}
+          </p>
+        </div>
         <TextField label="VGA 기본" value={form.vgaBase ?? ""} onChange={(v) => set("vgaBase", v || null)} />
         <TextField label="VGA 특화1" value={form.vgaTop ?? ""} onChange={(v) => set("vgaTop", v || null)} />
         <TextField label="VGA 특화2" value={form.vgaTop2 ?? ""} onChange={(v) => set("vgaTop2", v || null)} />
