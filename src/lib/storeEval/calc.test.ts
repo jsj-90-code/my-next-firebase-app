@@ -1683,8 +1683,8 @@ describe("computeSpecialDemandScore (10_오차원인분석 근거 — 대학가�
   });
 });
 
-describe("empiricalFeaturesFor / toEmpiricalSample (2026-08-30 개편 — 점유율 적용 자사수요 대신 marketDemand·competitorIp 분리)", () => {
-  it("4개 특징치를 순서대로 반환한다: log(요금), log(marketDemand/PC), log(1+competitorIp/PC), 경쟁력점수", () => {
+describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-01 개편 — competitorIp 피처 제거, 3개로 축소)", () => {
+  it("3개 특징치를 순서대로 반환한다: log(요금), log(marketDemand/PC), 경쟁력점수", () => {
     const features = empiricalFeaturesFor({
       hourlyRate: 1300,
       marketDemand: 200000,
@@ -1692,15 +1692,15 @@ describe("empiricalFeaturesFor / toEmpiricalSample (2026-08-30 개편 — 점유
       pcCount: 100,
       competitivenessScore: 4,
     });
-    expect(features).toHaveLength(4);
+    expect(features).toHaveLength(3);
     expect(features[0]).toBeCloseTo(Math.log(1300), 6);
     expect(features[1]).toBeCloseTo(Math.log(200000 / 100), 6);
-    expect(features[2]).toBeCloseTo(Math.log(1 + 300 / 100), 6);
-    expect(features[3]).toBe(4);
+    expect(features[2]).toBe(4);
   });
-  it("competitorIp가 0이어도(독점매장) log(1+0)=0이 나온다 — 나눗셈으로 인한 예외 없음", () => {
-    const features = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 0, pcCount: 100, competitivenessScore: 4 });
-    expect(features[2]).toBe(0);
+  it("competitorIp 값이 달라져도 결과가 바뀌지 않는다 — 2026-09-01부로 학습 피처에서 완전히 빠짐(리브원아웃 검증으로 확정)", () => {
+    const withCompetitor = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4 });
+    const withoutCompetitor = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 0, pcCount: 100, competitivenessScore: 4 });
+    expect(withCompetitor).toEqual(withoutCompetitor);
   });
   it("toEmpiricalSample도 empiricalFeaturesFor와 동일한 특징치를 만든다(중복 로직 없음)", () => {
     const store: V61TrainingStore = {
@@ -2181,8 +2181,8 @@ describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스�
     const diag = diagnoseLoocvSensitivity("N0", [...normalStores, outlier], settings)!;
     expect(diag).not.toBeNull();
     expect(diag.sampleCountWithout).toBe(diag.sampleCountWith - 1);
-    expect(diag.coefficientsWith).toHaveLength(4);
-    expect(diag.coefficientsWithout).toHaveLength(4);
+    expect(diag.coefficientsWith).toHaveLength(3);
+    expect(diag.coefficientsWithout).toHaveLength(3);
     const lo = Math.min(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     const hi = Math.max(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     expect(diag.blendedPrediction!).toBeGreaterThanOrEqual(lo);

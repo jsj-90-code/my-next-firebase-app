@@ -1838,6 +1838,16 @@ export function toEmpiricalSample(store: V61TrainingStore): EmpiricalRevenueSamp
  * 큰 곳이라는 신호로 보임). 그래서 marketDemand(나누기 전 원수요)와 competitorIp(경쟁강도)를
  * 별도 특징치로 분리해 회귀가 부호·가중치를 직접 학습하게 했다 — LOOCV 재검증 결과 MAPE
  * 10.75%→10.44%로 개선(±10%/±20% 적중률은 표본 26개라 그대로, 사용자 확인 후 반영).
+ *
+ * 2026-09-01 재개편 — "연속 수요배분"(GPT 제안 중력모형) 실험 도중 대조군으로
+ * log(1+competitorIp/PC) 피처를 아예 빼봤더니 정식검증 26곳 MAPE 13.41%→12.74%, ±10%
+ * 38.5%→46.2%, ±20% 69.2%→80.8%(목표 75% 최초 통과)로 뚜렷하게 개선됨을 리브원아웃으로
+ * 확인했다(사용자 승인 후 반영). 원인: competitorIp와 marketDemand의 상관계수가 0.69로 상당히
+ * 겹쳐서, 26개뿐인 표본에 유사한 정보를 담은 피처 2개를 같이 넣는 게 "경쟁점 정보가 무의미해서"가
+ * 아니라 "중복 정보로 분산만 키우는" 과적합 요인이었다(경쟁IP 단독의 실제매출 상관은 여전히
+ * +0.16~0.20으로 존재). 경쟁점 데이터 자체(하드웨어/시설/먹거리/입지 점수, 화면 표시, 신규후보지
+ * 폴백식·실측기반 예상월매출)는 이 변경과 무관하게 그대로 유지 — 이 4번째였던 학습 피처 하나만
+ * 빠진다. 학습표본이 늘어나면(현재 12개월 미달 매장이 순차 편입) 재검증 필요.
  */
 export function empiricalFeaturesFor(input: {
   hourlyRate: number;
@@ -1850,7 +1860,6 @@ export function empiricalFeaturesFor(input: {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
     Math.log(Math.max(0.1, input.marketDemand / input.pcCount)),
-    Math.log(1 + input.competitorIp / input.pcCount),
     input.competitivenessScore,
   ];
 }
