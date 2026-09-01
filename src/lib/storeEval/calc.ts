@@ -533,9 +533,32 @@ export function scoreFromMonitor(text: string | null, modelHzTable: Record<strin
   return score;
 }
 
-/** 모니터 기본/특화를 combineHardwareTiers로 결합(2026-08-28 신설). */
+// 2026-09-01 재설계(사용자 확정) — 모니터는 GPU/CPU와 달리 특화 슬롯이 "특화1/특화2" 고정 2칸이
+// 아니라 한 텍스트에 콤마로 여러 모델을 나열하는 방식이라, combineHardwareTiers의 공용 80/20
+// 결합을 그대로 쓰면 두 가지 문제가 있었다: ① 나열된 모델 전체를 하나의 문자열로 뭉쳐 Hz를
+// 평균내다 보니 FHD/QHD 판정 같은 문맥 보정이 모델별로 안 먹혔고(예: "비트엠 34인치 WWQHD"가
+// 다른 모델의 "FHD" 표기에 가려져 QHD 가산을 못 받음), ② 특화 항목을 정직하게 많이 적을수록
+// (기본과 같은 사양까지 포함) 평균이 끌어내려져 "특화를 더 갖췄는데 점수가 낮아지는" 역설이
+// 생겼다. 사용자가 확정한 원칙("특화는 반드시 기본보다 높아야 한다")을 그대로 코드화해서 해결:
+// 콤마로 나눠 모델별로 각각 채점하고, 기본과 같거나 낮은 항목은 "특화 자격 없음"으로 평균에서
+// 제외한다(정직하게 다 적어도 손해 안 봄). 결합비는 GPU/CPU/RAM과 공유하는 combineHardwareTiers의
+// 80/20을 그대로 쓰지 않고 모니터 전용 65/35로 조정했다 — 실측 좌석별 모니터 배치 데이터가 없어
+// 정확한 커버리지 비율을 계산할 근거는 없지만(기존 80/20도 같은 한계의 근사치), 특화 사양이
+// 여러 종류(3개 이상) 확인되면 "일부 좌석만"이라는 기존 가정보다 커버리지가 넓다고 보는 게
+// 합리적이라는 판단(GPU/CPU/RAM은 손대지 않아 기존 검증된 정확도에 영향 없음).
+const MONITOR_SPECIALTY_WEIGHT = 0.35;
+
 export function scoreFromMonitorSpec(monitorBase: string | null, monitorTop: string | null): number | null {
-  return combineHardwareTiers(scoreFromMonitor(monitorBase), [scoreFromMonitor(monitorTop)]);
+  const base = scoreFromMonitor(monitorBase);
+  if (!monitorTop) return base;
+  const qualifying = monitorTop
+    .split(",")
+    .map((part) => scoreFromMonitor(part.trim()))
+    .filter((score): score is number => score != null && (base == null || score > base));
+  if (qualifying.length === 0) return base;
+  const specialtyAvg = qualifying.reduce((a, b) => a + b, 0) / qualifying.length;
+  if (base == null) return specialtyAvg;
+  return base * (1 - MONITOR_SPECIALTY_WEIGHT) + specialtyAvg * MONITOR_SPECIALTY_WEIGHT;
 }
 
 /**

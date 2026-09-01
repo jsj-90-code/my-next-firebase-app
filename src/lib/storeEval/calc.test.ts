@@ -564,8 +564,16 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
   it("RAM — 기본+특화(16G=3.5, 32G=4.5) → 3.5*.8+4.5*.2=3.7", () => {
     expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(3.7, 2);
   });
-  it("모니터 — 기본+특화(240Hz=3.5, 300Hz=4.5) → 3.5*.8+4.5*.2=3.7", () => {
-    expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(3.7, 2);
+  it("모니터 — 기본+특화(240Hz=3.5, 300Hz=4.5) → 3.5*.65+4.5*.35=3.85(2026-09-01 모니터 전용 65/35 재설계)", () => {
+    expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(3.85, 2);
+  });
+  it("모니터 — 콤마로 나열된 특화 중 기본과 같거나 낮은 항목은 제외하고 평균(정직하게 다 적어도 손해 안 봄)", () => {
+    // 기본 240Hz=3.5, 특화: 300Hz=4.5(자격O)/280Hz=4.0(자격O)/240Hz=3.5(기본과 동점 → 자격 없음, 제외)
+    // 자격 있는 두 개(4.5, 4.0) 평균=4.25 -> 3.5*.65+4.25*.35=3.7625
+    expect(scoreFromMonitorSpec("240Hz", "300Hz, 280Hz, 240Hz")).toBeCloseTo(3.5 * 0.65 + 4.25 * 0.35, 2);
+  });
+  it("모니터 — 특화가 전부 기본 이하이면 특화 자격 없음, 기본 그대로", () => {
+    expect(scoreFromMonitorSpec("300Hz", "240Hz, 200Hz")).toBeCloseTo(4.5, 2);
   });
   it("전부 없으면 null", () => {
     expect(scoreFromVgaSpec(null, null, null)).toBeNull();
