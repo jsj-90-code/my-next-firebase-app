@@ -21,7 +21,6 @@ import {
   computeOwnZoneComposition,
   computeSpecScore,
   EXISTING_STORE_FACILITY_DEFAULTS,
-  lookupDemandCapture,
   resolveZoneCompositionScore,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
@@ -203,7 +202,15 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
   const demandEval = useMemo(() => computeExistingStoreDemandEvaluation(store, competitors, loc, settings), [store, competitors, loc, settings]);
   const competitorAvg = useMemo(() => computeCompetitorAvgCompetitiveness(competitors, settings), [competitors, settings]);
   const gap = useMemo(() => computeCompetitivenessGap(own.total, competitorAvg), [own.total, competitorAvg]);
-  const capture = useMemo(() => lookupDemandCapture(gap, settings.demandCaptureTable), [gap, settings.demandCaptureTable]);
+  // 2026-09-01 버그 수정 — 원래 여기서 lookupDemandCapture(6단계 계단식 구간표)를 따로 조회해
+  // "수요확보율"로 보여줬는데, 실제 ownDemand는 그 표가 아니라 computeExpectedOwnDemand(PC대수
+  // 비율 기반, 경쟁점 0곳이면 100%)로 계산된 값이라 서로 안 맞았다(독점상권에서 계단식은 55%인데
+  // 실제 ownDemand는 100% 기준으로 계산되는 모순 — 사용자 지적으로 발견). ownDemand/marketDemand로
+  // 역산해서 "실제로 적용된" 점유율을 그대로 보여준다(새 계산 아님, 이미 나온 값을 나눈 것뿐).
+  const effectiveShare =
+    demandEval.marketDemand != null && demandEval.marketDemand > 0 && demandEval.ownDemand != null
+      ? demandEval.ownDemand / demandEval.marketDemand
+      : null;
 
   if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
 
@@ -323,16 +330,17 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
             <p className="mt-0.5 text-base font-semibold">{gap != null ? gap.toFixed(2) : "-"}</p>
           </div>
           <div>
-            <p className="text-xs text-[#8a8072]">수요확보율</p>
-            <p className="mt-0.5 text-base font-semibold">{capture ? formatPercent(capture.captureRate) : "-"}</p>
+            <p className="text-xs text-[#8a8072]">수요확보율(자사수요÷상권수요)</p>
+            <p className="mt-0.5 text-base font-semibold">{effectiveShare != null ? formatPercent(effectiveShare) : "-"}</p>
           </div>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-[#8a8072]">
-          상권수요 <b>{formatNumber(demandEval.marketDemand)}명</b> 중, 자사·경쟁점 격차({gap != null ? gap.toFixed(2) : "-"})로 산출된 확보율(
-          {capture ? formatPercent(capture.captureRate) : "-"})이 적용되어 자사수요 <b>{formatNumber(demandEval.ownDemand)}명</b>이 계산됩니다. 이
-          자사수요가 V61 학습모형의 핵심 특징치 중 하나(log(상권수요/PC))로 그대로 들어가 최종 예상월매출에 반영됩니다 — 정확한 예측매출·산식
-          단계별 근거는 <span className="font-medium">검증(/store-eval/validation)</span> 화면에서 이 매장을 펼쳐보면 확인할 수 있습니다. (참고 —
-          실제 평균매출: {formatWon(store.actualMonthlyRevenueAvg)})
+          상권수요 <b>{formatNumber(demandEval.marketDemand)}명</b> 중, 자사·경쟁점 격차({gap != null ? gap.toFixed(2) : "-"})와 PC대수 비율로 산출된
+          확보율({effectiveShare != null ? formatPercent(effectiveShare) : "-"} — 경쟁점이 0곳이면 100%)이 적용되어 참고용 자사수요{" "}
+          <b>{formatNumber(demandEval.ownDemand)}명</b>이 계산됩니다. 다만 실제 V61 매출예측 모형은 이 자사수요가 아니라 상권수요 원값(log(상권수요÷PC))과
+          자사 경쟁력점수만을 학습 피처로 사용합니다 — 정확한 예측매출·산식 단계별 근거는{" "}
+          <span className="font-medium">검증(/store-eval/validation)</span> 화면에서 이 매장을 펼쳐보면 확인할 수 있습니다. (참고 — 실제 평균매출:{" "}
+          {formatWon(store.actualMonthlyRevenueAvg)})
         </p>
       </section>
     </div>
