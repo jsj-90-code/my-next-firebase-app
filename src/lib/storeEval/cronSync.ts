@@ -203,12 +203,16 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       // 평가자가 인테리어평가 매길 때 참고하는 사실 기록용(사용자 확인).
       ownFirstClassZone: toNumber(s["자사_퍼스트클래스존"]),
       // 2026-08-31(시설 평가 산식 개편) — 팀룸 "개수"와 별개로 "총좌석수" 직접입력을 읽는다(01시트
-      // BY/BZ, 신설 컬럼, migrateFullExistingStoreProfiles.mjs와 동일). 관리점수는 시트 수식상
-      // 자사는 항상 상수 4라 시트에서 읽어올 값이 없다(표준값으로 채움).
+      // BY/BZ, 신설 컬럼, migrateFullExistingStoreProfiles.mjs와 동일).
       ownTeamRoomTotalSeats: toNumber(s["자사_팀룸좌석수"]),
       ownTeamRoomTotalSeatsBasis: toText(s["자사_팀룸좌석근거"]),
       ownFoodScore: toNumber(s["자사_먹거리평가"]),
       ownInteriorScore: toNumber(s["자사_인테리어평가"]),
+      // 2026-09-01 버그 수정 — "관리점수는 시트 수식상 자사는 항상 상수 4라 읽어올 값이 없다"는
+      // 옛 전제가 더 이상 맞지 않는다. 01시트에 "자사_매장관리점수" 컬럼이 실제로 생겼으므로
+      // 읽어와야 한다(applyStandardOwnFacilityDefaults가 이 값이 있으면 우선 쓰고, 없을 때만
+      // 표준값 4로 폴백하도록 이미 짜여 있었는데 정작 이 필드를 아무도 채워준 적이 없었다).
+      ownManagementScore: toNumber(s["자사_매장관리점수"]),
       pop500m: toNumber(s["반경500m_총인구"]),
       area1kmKm2: toNumber(s["반경1km_조회면적_km2"]),
       pop1km: toNumber(s["반경1km_총인구"]),
@@ -312,7 +316,9 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       // 독립값이 됐다(189곳 재검토, 사용자 확정, migrateFullExistingStoreProfiles.mjs와 동일).
       // VIP존/프렌즈존/퍼스트클래스존은 이번에 시트에 컬럼이 새로 생겨(AP/AQ/AR) 동기화 대상으로
       // 승격(예전엔 웹 전용 입력이었음).
-      managementScore: toNumber(c["매장관리점수"]),
+      // 2026-09-01 버그 수정 — 실제 시트 헤더는 "매장관리점수"가 아니라 "경쟁점_매장관리점수"였다
+      // (컬럼명 불일치로 상세조사 경쟁점 142곳 전부 이 값이 null 처리되고 있었음, 사용자 확인 후 발견).
+      managementScore: toNumber(c["경쟁점_매장관리점수"]),
       singleSeatCount: toNumber(c["1인석"]),
       room1: toNumber(c["1인룸"]),
       room2: toNumber(c["2인룸"]),

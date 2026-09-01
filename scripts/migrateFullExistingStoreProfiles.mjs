@@ -119,12 +119,16 @@ async function main() {
       ownFriendsZone: toNumber(s["자사_프렌즈존"]),
       ownFirstClassZone: toNumber(s["자사_퍼스트클래스존"]),
       // 2026-08-31(시설 평가 산식 개편) — 팀룸 "개수"와 별개로 "총좌석수" 직접입력을 읽는다(01시트
-      // BY/BZ, 신설 컬럼). 관리점수는 시트 수식상 자사는 항상 상수 4라 시트에서 읽어올 값 자체가
-      // 없다(applyStandardOwnFacilityDefaults가 표준값 4로 채운다) — 여기서는 null 그대로 둔다.
+      // BY/BZ, 신설 컬럼).
       ownTeamRoomTotalSeats: toNumber(s["자사_팀룸좌석수"]),
       ownTeamRoomTotalSeatsBasis: toText(s["자사_팀룸좌석근거"]),
       ownFoodScore: toNumber(s["자사_먹거리평가"]),
       ownInteriorScore: toNumber(s["자사_인테리어평가"]),
+      // 2026-09-01 버그 수정 — "관리점수는 시트 수식상 자사는 항상 상수 4라 읽어올 값이 없다"는
+      // 옛 전제가 더 이상 맞지 않는다(01시트에 "자사_매장관리점수" 컬럼이 실제로 생김, cronSync.ts와
+      // 동일). applyStandardOwnFacilityDefaults가 이 값이 있으면 우선 쓰도록 이미 짜여 있었는데
+      // 아무도 채워준 적이 없었다.
+      ownManagementScore: toNumber(s["자사_매장관리점수"]),
       pop500m: toNumber(s["반경500m_총인구"]),
       area1kmKm2: toNumber(s["반경1km_조회면적_km2"]),
       pop1km: toNumber(s["반경1km_총인구"]),
@@ -233,7 +237,9 @@ async function main() {
       // 2026-08-31(시설 평가 산식 개편) — 관리점수가 더 이상 인테리어에서 파생되지 않는 완전
       // 독립값이 됐다(189곳 재검토, 사용자 확정). VIP존/프렌즈존/퍼스트클래스존은 이번에 시트에
       // 컬럼이 새로 생겨(AP/AQ/AR) 시트 동기화 대상으로 승격(예전엔 웹 전용 입력이었음).
-      managementScore: toNumber(c["매장관리점수"]),
+      // 2026-09-01 버그 수정 — 실제 시트 헤더는 "매장관리점수"가 아니라 "경쟁점_매장관리점수"였다
+      // (컬럼명 불일치로 상세조사 경쟁점 142곳 전부 이 값이 null 처리되고 있었음, cronSync.ts와 동일).
+      managementScore: toNumber(c["경쟁점_매장관리점수"]),
       singleSeatCount: toNumber(c["1인석"]),
       room1: toNumber(c["1인룸"]),
       room2: toNumber(c["2인룸"]),
