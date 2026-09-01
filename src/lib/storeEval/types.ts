@@ -342,7 +342,11 @@ export type LocationEvaluation = {
   specialDemandType: SpecialDemandType | null;
   specialDemandIntensity: SpecialDemandIntensity | null;
   inflowRestriction: InflowRestriction | null; // 외부유입제한 - V62 보정률 직결
-  demandLeakageRisk: InflowRestriction | null; // 수요이탈위험
+  // (레거시) 구 수요이탈위험 — 애초에 계산에 안 쓰이던 참고 기록용 항목이었는데, 정의 자체도
+  // 방향이 애매했다(코인노래방·롯데리아 등 인근 업종이 "수요를 뺏는다"고만 가정했지만 실제로는
+  // 같이 놀러다니는 동선이라 오히려 유리할 수 있음, 2026-09-01 사용자 지적으로 입력 대상에서
+  // 제외). 이력 보존용으로 타입에만 남긴다.
+  demandLeakageRisk: InflowRestriction | null;
   marketStructureMemo: string | null;
   brandType: BrandType | null;
   updatedAt: number;

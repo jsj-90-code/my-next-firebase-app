@@ -266,7 +266,6 @@ export function LocationEvalTab({
               specialDemandType: form.specialDemandType,
               specialDemandIntensity: form.specialDemandIntensity,
               inflowRestriction: form.inflowRestriction,
-              demandLeakageRisk: form.demandLeakageRisk,
               marketStructureMemo: form.marketStructureMemo,
             }}
             onApply={handleApplyAiPatch}
@@ -340,13 +339,6 @@ export function LocationEvalTab({
             onChange={(v) => set("inflowRestriction", v)}
             options={INFLOW_RESTRICTION_OPTIONS}
             hint="이 상권이 주변 동네에서 손님을 끌어오기 얼마나 어려운지 — 강할수록(이 동네 주민 수요에만 의존할수록) 예상매출을 더 낮춰서 계산합니다."
-          />
-          <SelectField
-            label="수요이탈위험"
-            value={form.demandLeakageRisk}
-            onChange={(v) => set("demandLeakageRisk", v)}
-            options={INFLOW_RESTRICTION_OPTIONS}
-            hint="온라인 게임방 앱, 스터디카페 등 다른 여가수단으로 수요 자체가 빠질 위험. 현재는 참고 기록용이며 V62 계산에는 반영되지 않습니다."
           />
           <SelectField
             label="브랜드구분"

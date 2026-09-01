@@ -19,7 +19,6 @@ export type LocationEvalAiFields = {
   specialDemandType: SpecialDemandType | null;
   specialDemandIntensity: SpecialDemandIntensity | null;
   inflowRestriction: InflowRestriction | null;
-  demandLeakageRisk: InflowRestriction | null;
   marketStructureMemo: string | null;
 };
 
@@ -51,7 +50,6 @@ const FIELD_META: FieldMeta[] = [
     options: ["없음", "낮음", "보통", "높음"].map((v) => ({ value: v, label: v })),
   },
   { key: "inflowRestriction", label: "외부유입제한", options: ["없음", "보통", "강함"].map((v) => ({ value: v, label: v })) },
-  { key: "demandLeakageRisk", label: "수요이탈위험", options: ["없음", "보통", "강함"].map((v) => ({ value: v, label: v })) },
   { key: "marketStructureMemo", label: "상권구조메모" },
 ];
 

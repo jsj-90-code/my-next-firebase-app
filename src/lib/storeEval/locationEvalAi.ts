@@ -20,6 +20,9 @@ const INFLOW_LEVELS: InflowRestriction[] = ["없음", "보통", "강함"];
 // 2026-09-01 재설계 — flowScore/attractionScore를 AI 채점 대상에서 제외했다(47개 매장 실측
 // 상관분석 결과 locationScore와 87%/72% 동점 — 사실상 같은 질문을 3번 물었던 것으로 확인,
 // LocationEvaluation.locationScore 주석 참고). locationScore가 이제 "상권위치·동선점수"(통합)다.
+// demandLeakageRisk(수요이탈위험)도 같은 날 제외 — 애초에 계산에 안 쓰이던 참고용이었는데
+// 정의 자체가 애매했다(인근 코인노래방·패스트푸드 등을 "수요를 뺏는 경쟁"으로만 가정했지만
+// 실제로는 같이 놀러다니는 동선이라 오히려 유리할 수 있음, 사용자 지적).
 export const LOCATION_EVAL_FIELD_KEYS = [
   "locationScore",
   "preemptionScore",
@@ -27,7 +30,6 @@ export const LOCATION_EVAL_FIELD_KEYS = [
   "specialDemandType",
   "specialDemandIntensity",
   "inflowRestriction",
-  "demandLeakageRisk",
   "marketStructureMemo",
 ] as const;
 export type LocationEvalFieldKey = (typeof LOCATION_EVAL_FIELD_KEYS)[number];
@@ -71,7 +73,6 @@ const FIELD_SCHEMAS: Record<LocationEvalFieldKey, ReturnType<typeof scoreProp> |
     INFLOW_LEVELS,
     "외부유입제한 — 이 상권이 주변 동네에서 손님을 끌어오기 얼마나 어려운가(강할수록 이 동네 주민 수요에만 의존)",
   ),
-  demandLeakageRisk: enumProp(INFLOW_LEVELS, "수요이탈위험 — 온라인/타 여가수단 등으로 수요 자체가 빠질 위험"),
   marketStructureMemo: textProp("상권구조에 대한 자유서술 메모(1~2문장)"),
 };
 
@@ -101,7 +102,7 @@ const SYSTEM_PROMPT =
   "판단할 항목:\n" +
   "- 상권위치·동선점수/선점경쟁점수/접근가시성점수(1~5점, 공식 채점기준표 없음 — 각 항목 설명 참고)\n" +
   "- 특수수요유형·강도(대학가/군부대/산업단지/관광유흥 등 특수 수요원이 있는가)\n" +
-  "- 외부유입제한·수요이탈위험(없음/보통/강함)\n" +
+  "- 외부유입제한(없음/보통/강함)\n" +
   "- 상권구조메모(자유서술)\n\n" +
   "중요 — 2026-09-01 실측 검토로 확인된 문제이니 반드시 지킬 것:\n" +
   "1. '상권위치·동선점수'는 유동인구 수치가 아니라 순수 위치/동선 판단입니다. 인구·상권 규모는 이미 " +
@@ -132,7 +133,7 @@ function isLocationEvalDraft(input: unknown): input is LocationEvalDraft {
       if (!SPECIAL_DEMAND_TYPES.includes(v as SpecialDemandType)) return false;
     } else if (key === "specialDemandIntensity") {
       if (!SPECIAL_DEMAND_INTENSITIES.includes(v as SpecialDemandIntensity)) return false;
-    } else if (key === "inflowRestriction" || key === "demandLeakageRisk") {
+    } else if (key === "inflowRestriction") {
       if (!INFLOW_LEVELS.includes(v as InflowRestriction)) return false;
     } else {
       if (typeof v !== "number" || v < 1 || v > 5) return false;
