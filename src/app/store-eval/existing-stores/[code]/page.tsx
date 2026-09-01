@@ -15,11 +15,13 @@ import type { ExistingStore } from "@/lib/storeEval/types";
 import { CompetitorsTab } from "../../candidates/[code]/CompetitorsTab";
 import { LocationEvalTab } from "../../candidates/[code]/LocationEvalTab";
 import { ExistingStoreProfileTab } from "./ExistingStoreProfileTab";
+import { ScorecardTab } from "./ScorecardTab";
 
 const TABS = [
   { key: "basic", label: "기본정보" },
   { key: "competitors", label: "경쟁점" },
   { key: "location", label: "입지동선평가" },
+  { key: "scorecard", label: "평가 비교" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
@@ -129,6 +131,7 @@ export default function ExistingStoreDetailPage() {
           existingStoreCode={store.storeCode}
         />
       )}
+      {activeTab === "scorecard" && <ScorecardTab store={store} candidateCode={lookupCode} />}
     </div>
   );
 }
