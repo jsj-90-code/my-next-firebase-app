@@ -443,8 +443,8 @@ describe("scoreFromRam (2026-08-30 재보정 — 경쟁력 평가 기준 최종�
   it("64GB 이상은 5점", () => {
     expect(scoreFromRam("64G")).toBe(5);
   });
-  it("32GB는 4.5점", () => {
-    expect(scoreFromRam("32G")).toBe(4.5);
+  it("32GB는 4점(2026-09-01 재확정, 4.5→4.0)", () => {
+    expect(scoreFromRam("32G")).toBe(4);
   });
   it("16GB는 3.5점", () => {
     expect(scoreFromRam("16G")).toBe(3.5);
@@ -561,8 +561,8 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
   it("CPU — 기본+특화1(14400=4, 13400=3) → 4*.8+3*.2=3.8", () => {
     expect(scoreFromCpuSpec("14400", "13400", null)).toBeCloseTo(3.8, 2);
   });
-  it("RAM — 기본+특화(16G=3.5, 32G=4.5) → 3.5*.8+4.5*.2=3.7", () => {
-    expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(3.7, 2);
+  it("RAM — 기본+특화(16G=3.5, 32G=4점 2026-09-01 재확정) → 3.5*.8+4*.2=3.6", () => {
+    expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(3.6, 2);
   });
   it("모니터 — 기본+특화(240Hz=3.5, 300Hz=4.5) → 3.5*.65+4.5*.35=3.85(2026-09-01 모니터 전용 65/35 재설계)", () => {
     expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(3.85, 2);
@@ -592,14 +592,14 @@ describe("computeSpecScore (하드웨어점수 = GPU40%+모니터25%+CPU20%+RAM1
     expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz" }, settings)).toBe(4.5);
   });
   it("GPU+CPU+RAM+모니터가 다 있으면 40/20/15/25 가중평균", () => {
-    // GPU: RTX4060(3점) / CPU: 14400(4점) / RAM: 32G(2026-08-30 재보정 4.5점) / 모니터: 240Hz(3.5점)
-    // 3*.4 + 3.5*.25 + 4.5*.15 + 4*.2 = 1.2+0.875+0.675+0.8 = 3.55
+    // GPU: RTX4060(3점) / CPU: 14400(4점) / RAM: 32G(2026-09-01 재확정 4점) / 모니터: 240Hz(3.5점)
+    // 3*.4 + 3.5*.25 + 4*.15 + 4*.2 = 1.2+0.875+0.6+0.8 = 3.475
     expect(
       computeSpecScore(
         { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null },
         settings,
       ),
-    ).toBeCloseTo(3.55, 2);
+    ).toBeCloseTo(3.475, 2);
   });
   it("전부 없으면 null(지어내지 않음)", () => {
     expect(computeSpecScore(blankItems, settings)).toBeNull();

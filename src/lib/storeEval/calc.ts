@@ -622,8 +622,10 @@ export function scoreFromRam(text: string | null): number | null {
   const gb = Number(m[1]);
   if (gb <= 0) return null;
   // 2026-08-30(경쟁력 평가 기준 최종본 §9) — 8GB이하1.5/16GB3.5/32GB4.5/64GB이상5.0으로 교체.
+  // 2026-09-01(사용자 재확정) — 32GB를 4.5→4.0으로 정정("16GB 3.5점, 32GB 4점" 기준). 8GB이하/
+  // 16GB/64GB이상은 그대로.
   if (gb >= 64) return 5;
-  if (gb >= 32) return 4.5;
+  if (gb >= 32) return 4;
   if (gb >= 16) return 3.5;
   return 1.5;
 }
