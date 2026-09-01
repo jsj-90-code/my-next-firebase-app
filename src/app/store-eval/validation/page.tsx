@@ -465,13 +465,16 @@ const ERROR_BUCKET_COLORS = ["var(--sl-ok)", "var(--sl-ok)", "var(--sl-warn)", "
 function buildCumulativeErrorBands(summary: ValidationSummary2): { label: string; count: number; ratio: number; storeNames: string[] }[] {
   const [b0, b1, b2, b3, b4, b5] = summary.buckets;
   const n = summary.sampleCount;
-  const within10 = { count: b0.count + b1.count, storeNames: [...b0.storeNames, ...b1.storeNames] };
-  const within20 = { count: within10.count + b2.count + b3.count, storeNames: [...within10.storeNames, ...b2.storeNames, ...b3.storeNames] };
-  const within30 = { count: within20.count + b4.count, storeNames: [...within20.storeNames, ...b4.storeNames] };
+  const within10Count = b0.count + b1.count;
+  const within20Count = within10Count + b2.count + b3.count;
+  const within30Count = within20Count + b4.count;
+  // 2026-09-01 — count/ratio(달성률)는 그대로 누적으로 두되, storeNames는 각 구간에 "새로
+  // 추가되는 매장만" 보여주도록 수정했다(사용자 지적: "20% 리스트에 10% 매장까지 또 나온다").
+  // 예전엔 하위 구간 매장을 계속 합쳐서 보여줘 중복이었다.
   return [
-    { label: "10% 이내", ...within10, ratio: n ? within10.count / n : 0 },
-    { label: "20% 이내", ...within20, ratio: n ? within20.count / n : 0 },
-    { label: "30% 이내", ...within30, ratio: n ? within30.count / n : 0 },
+    { label: "10% 이내", count: within10Count, ratio: n ? within10Count / n : 0, storeNames: [...b0.storeNames, ...b1.storeNames] },
+    { label: "20% 이내", count: within20Count, ratio: n ? within20Count / n : 0, storeNames: [...b2.storeNames, ...b3.storeNames] },
+    { label: "30% 이내", count: within30Count, ratio: n ? within30Count / n : 0, storeNames: [...b4.storeNames] },
     { label: "30% 초과", count: b5.count, ratio: b5.ratio, storeNames: b5.storeNames },
   ];
 }
