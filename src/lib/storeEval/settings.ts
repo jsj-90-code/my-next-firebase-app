@@ -106,7 +106,13 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 2026-08-28 전면개편 — 기존 "사양25%+좌석30%+먹거리20%+인테리어15%+입지10%"에서
     // "하드웨어30%+인테리어·좌석·관리40%+먹거리20%+입지10%"로 재편(사용자 확정, types.ts
     // ModelSettings.competitivenessWeights 주석 참고).
-    competitivenessWeights: { spec: 0.3, food: 0.2, interior: 0.4, location: 0.1 },
+    // 2026-09-01(6차) — GPT 독립 재평가(기존 DB값·실제매출 미참고)로 40개 매장 입지동선평가를
+    // 교체한 뒤 그리드서치(정식검증 26곳, LOOCV): 입지비중을 5%→25%로 올릴수록 MAPE
+    // 14.39%→14.24%, 중앙값 14.91%→14.19%로 단조개선, ±20% 적중률도 61.5%→73.1%로 개선(±10%는
+    // 20% 부근까지는 유지되다 25%에서 하락). 10%→15%로 상향(사용자 요청 "입지 퍼센트를 좀
+    // 올리고"와 방향 일치, 과도한 25%는 ±10%가 나빠져 보류). spec/food/interior는 기존 비율
+    // (30/20/40) 유지한 채 (1-0.15)/(0.3+0.2+0.4)로 재정규화.
+    competitivenessWeights: { spec: 0.3 * (0.85 / 0.9), food: 0.2 * (0.85 / 0.9), interior: 0.4 * (0.85 / 0.9), location: 0.15 },
     // 2026-08-30(경쟁력 평가 기준 최종본 §11) 재보정 — "브랜드명만 확인된 경우 기본 3.0, 브랜드만
     // 으로 4점 이상 주지 않는다"로 확정. 쉐프앤클릭만 "최신 우수 운영매장 수준"(4.0) 앵커로 예외.
     // 실제 메뉴 구성·완성도·운영상태를 확인한 직접입력값이 있으면 이 프리셋보다 그 값이 우선한다
@@ -125,6 +131,8 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     facilityWeights: { zoneComposition: 0.5, interior: 0.3, management: 0.2 },
     // 2026-09-01 재설계 — 옛 상권내위치30%+주요동선30%를 "상권위치·동선" 하나로 통합(60%),
     // 나머지는 그대로. 비율 자체는 나중에 재검토 예정(types.ts LocationEvaluation 주석 참고).
+    // 2026-09-01(6차) — 그리드서치(50/30/20, 50/25/25, 45/35/20, 70/20/10 등 8종) 결과 60/25/15
+    // 대비 유의미한 개선 없음(전부 MAPE 14.2~14.5% 범위, 표본 26곳으로는 구분 불가) — 그대로 유지.
     locationCompositeWeights: { marketPositionFlow: 0.6, preemption: 0.25, visibility: 0.15 },
     brandFilter: "블랙라벨",
     saturationThreshold: 7,

@@ -830,8 +830,9 @@ describe("applyStandardOwnFacilityDefaults (신규후보지 표준 존구성, 20
       { spec, food: facility.ownFoodScore, interior, location: computeLocationScoreFromFacts(1, "지하", false) },
       competitivenessSettings,
     );
-    // spec4*.3 + food4*.2 + interior*.4 + location4*.1 — interior는 표준 존구성 기반 실측값
-    expect(total).toBeCloseTo(spec * 0.3 + facility.ownFoodScore * 0.2 + (interior as number) * 0.4 + 4 * 0.1, 6);
+    // 2026-09-01(6차) 입지비중 10%→15% 재보정 — spec/food/interior는 (0.85/0.9)로 재정규화.
+    const w = defaultModelSettings().competitivenessWeights;
+    expect(total).toBeCloseTo(spec * w.spec + facility.ownFoodScore * w.food + (interior as number) * w.interior + 4 * w.location, 6);
   });
 });
 
@@ -1382,8 +1383,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     // 표준존구성(팀룸2·커플존3·VIP존5·프렌즈존15, 나머지0)에서 존다양성=4종류→3.5,
     // 특화좌석비율=(팀룸2×5+커플존3×2+VIP5+프렌즈15)/100=0.36→존수용력4 → 존구성=3.5*.7+4*.3=3.65.
     // interior(facility) = 존구성3.65*.5+인테리어4(표준값)*.3+관리4(표준값)*.2 = 3.825. location=4.0
-    // → 4*.3+4*.2+3.825*.4+4*.1 = 3.93
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.93, 3);
+    // 2026-09-01(6차) 입지비중 10%→15%: spec/food/interior는 (0.85/0.9)로 재정규화.
+    // → 4*.28333+4*.18889+3.825*.37778+4*.15 = 3.93389
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.9339, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -1409,8 +1411,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     // GPU(RTX5060=4), 모니터(240Hz=3.5) — (4*.4+3.5*.25)/(0.4+0.25)=3.808. food=4.
     // interior(facility)는 위 테스트와 동일 존구성(3.65)+인테리어4(직접입력, 표준값과 동일)+
     // 관리4(표준값) = 3.65*.5+4*.3+4*.2 = 3.825. location=4
-    // → 3.808*.3+4*.2+3.825*.4+4*.1 = 3.8723
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.8723, 3);
+    // 2026-09-01(6차) 입지비중 10%→15%: spec/food/interior는 (0.85/0.9)로 재정규화.
+    // → 3.808*.28333+4*.18889+3.825*.37778+4*.15 = 3.87940
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.8794, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
