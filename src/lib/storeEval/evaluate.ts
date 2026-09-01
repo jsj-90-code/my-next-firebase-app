@@ -140,7 +140,12 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // ---- V61: 실측 학습모형 우선, 표본 부족 시에만 폴백 ----
   const trainingStores = buildV61TrainingStores(existingStores);
   const trainingSamples = trainingStores.map(toEmpiricalSample);
-  const trainedModel = fitEmpiricalRevenueModel(trainingSamples, settings.v61Training.ridgeLambda, settings.v61Training.minSampleCount);
+  const trainedModel = fitEmpiricalRevenueModel(
+    trainingSamples,
+    settings.v61Training.ridgeLambda,
+    settings.v61Training.minSampleCount,
+    settings.v61Training.minHourlyRateCoef,
+  );
 
   const expectedOwnDemand = computeExpectedOwnDemand(marketDemand, c.expectedPcCount, competitivenessGap, competitorIp);
 

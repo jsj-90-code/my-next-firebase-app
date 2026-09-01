@@ -1659,7 +1659,12 @@ export function fitNonnegativeRidgeRegression(z: number[][], yCentered: number[]
 }
 
 /** fitEmpiricalRevenueModel_: 표준화 후 비음수 릿지회귀로 학습. 최소 학습표본 미달이면 null. */
-export function fitEmpiricalRevenueModel(samples: EmpiricalRevenueSample[], lambda: number, minSamples: number): EmpiricalRevenueModel | null {
+export function fitEmpiricalRevenueModel(
+  samples: EmpiricalRevenueSample[],
+  lambda: number,
+  minSamples: number,
+  minHourlyRateCoef = 0,
+): EmpiricalRevenueModel | null {
   if (samples.length < minSamples) return null;
   const p = samples[0].featuresRaw.length;
   const n = samples.length;
@@ -1683,6 +1688,12 @@ export function fitEmpiricalRevenueModel(samples: EmpiricalRevenueSample[], lamb
     lambda,
   );
   if (!coefficients) return null;
+
+  // 2026-09-02 — 시간당요금(featuresRaw[0])이 경쟁력점수와 얽혀 있어 비음수 릿지회귀가 요금
+  // 계수를 0으로 잘라버리는 경우가 있다("요금을 올려도 예상매출이 전혀 안 움직인다" 문제,
+  // 사용자 발견). 통계적으로는 정직한 결과지만 "요금 인상이 매출에 최소한의 영향은 준다"는
+  // 사업 상식과 맞지 않아, 하한선 아래면 하한선으로 올린다.
+  if (coefficients[0] < minHourlyRateCoef) coefficients[0] = minHourlyRateCoef;
 
   return {
     sampleCount: n,
@@ -1895,10 +1906,11 @@ export function runLeaveOneOutValidation(
   ridgeWeight: number,
   baselineWeight: number,
   minSampleCount: number,
+  minHourlyRateCoef = 0,
 ): LeaveOneOutResult {
   const rows: LeaveOneOutRow[] = stores.map((store) => {
     const trainSamples = stores.filter((s) => s.storeCode !== store.storeCode).map(toEmpiricalSample);
-    const model = fitEmpiricalRevenueModel(trainSamples, lambda, minSampleCount);
+    const model = fitEmpiricalRevenueModel(trainSamples, lambda, minSampleCount, minHourlyRateCoef);
     const prediction = model
       ? predictEmpiricalRevenue(model, empiricalFeaturesFor(store), store.pcCount, ridgeWeight, baselineWeight)
       : null;
@@ -2941,17 +2953,17 @@ export function runCohortValidation(
   stores: ValidationStoreInput[],
   settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">,
 ): { rows: ValidationStoreRow[] } {
-  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
+  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minHourlyRateCoef } = settings.v61Training;
 
   const coreStores = stores.filter(isCoreEligibleForV61Training);
   const coreTraining = coreStores.map(toV61TrainingStore);
 
   // 리브-원-아웃: 핵심 학습표본끼리는 서로를 빼고 학습·예측한다(데이터 누출 방지).
-  const loo = runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount);
+  const loo = runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minHourlyRateCoef);
   const looByCode = new Map(loo.rows.map((r) => [r.storeCode, r.predictedRevenue]));
 
   // 완전 외부 검증군 예측용 - 핵심 학습표본 전체로 학습한 단일 모형.
-  const fullModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount);
+  const fullModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minHourlyRateCoef);
 
   const rows: ValidationStoreRow[] = stores.map((s) => {
     const cohort = classifyTenureCohort(s.completedMonths);
@@ -3202,7 +3214,7 @@ export function diagnoseLoocvSensitivity(
   stores: ValidationStoreInput[],
   settings: Pick<ModelSettings, "v61Training">,
 ): LoocvSensitivityDiagnostic | null {
-  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
+  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minHourlyRateCoef } = settings.v61Training;
   const coreTraining = stores.filter(isCoreEligibleForV61Training).map(toV61TrainingStore);
   const target = coreTraining.find((s) => s.storeCode === storeCode);
   if (!target) return null;
@@ -3210,8 +3222,8 @@ export function diagnoseLoocvSensitivity(
   const withoutTraining = coreTraining.filter((s) => s.storeCode !== storeCode);
   const featuresRaw = empiricalFeaturesFor(target);
 
-  const withModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount);
-  const withoutModel = fitEmpiricalRevenueModel(withoutTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount);
+  const withModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minHourlyRateCoef);
+  const withoutModel = fitEmpiricalRevenueModel(withoutTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minHourlyRateCoef);
 
   const ridgeOnly = withoutModel ? predictEmpiricalRevenue(withoutModel, featuresRaw, target.pcCount, 1, 0) : null;
   const baselineOnly = withoutModel ? predictEmpiricalRevenue(withoutModel, featuresRaw, target.pcCount, 0, 1) : null;

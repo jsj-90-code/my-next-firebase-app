@@ -386,6 +386,11 @@ export type ModelSettings = {
     ridgeWeight: number; // 0.60 — 릿지회귀 예측 가중치
     baselineWeight: number; // 0.40 — 대당월매출 중앙값 가중치
     minSampleCount: number; // 12 — 미달이면 v61Fallback을 쓴다
+    // 2026-09-02 추가(사용자 확인) — 시간당요금이 경쟁력점수와 상관계수 0.53으로 얽혀 있어
+    // 비음수 릿지회귀가 요금 계수를 0으로 잘라버렸다(신규후보지에서 요금을 바꿔도 예상매출이
+    // 전혀 안 움직이는 문제로 발견). 계수가 이 값 미만이면 이 값으로 올린다 — "요금 인상이
+    // 매출에 최소한의 영향은 준다"는 사업 상식을 강제하는 하한선. fitEmpiricalRevenueModel 참고.
+    minHourlyRateCoef: number; // 0.05
   };
   // 13_신규후보지판정 "경쟁력격차 → 예상수요확보율/신규수요증가율" 룩업표 (08_계산기준!B44:D49).
   // gapLowerBound는 오름차순이며, 실제 격차가 그 값 이상인 것 중 가장 큰 하한을 적용한다(LOOKUP과 동일).

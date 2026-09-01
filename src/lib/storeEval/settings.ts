@@ -73,7 +73,12 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
       competitivenessCoef: 158536.9275523547,
     },
     // 08_계산기준!VALIDATION 그대로 (릿지람다1·회귀가중치0.6·기준모형가중치0.4·최소학습표본12)
-    v61Training: { ridgeLambda: 1, ridgeWeight: 0.6, baselineWeight: 0.4, minSampleCount: 12 },
+    // 2026-09-02 minHourlyRateCoef 추가(사용자 확인) — 시간당요금이 경쟁력점수와 상관계수
+    // 0.53으로 얽혀 비음수 릿지회귀가 요금 계수를 0으로 잘라버렸던 문제(신규후보지에서 요금을
+    // 바꿔도 예상매출이 전혀 안 움직임) 수정. LOOCV 그리드서치(정식검증 26곳) 결과 0.08이
+    // MAPE·중앙값·±10%·±20% 전부 0(적용 전)이나 0.05보다 같거나 낫다(fitEmpiricalRevenueModel
+    // 주석 참고) — 0.1 이상부터는 다시 나빠져 0.08로 확정.
+    v61Training: { ridgeLambda: 1, ridgeWeight: 0.6, baselineWeight: 0.4, minSampleCount: 12, minHourlyRateCoef: 0.08 },
     // 08_계산기준!B44:D49 "신규점 실측예측" 룩업표 — 사용자가 채팅으로 직접 확인해 준 값이며
     // reference/점포평가_최신본.xlsx!08_계산기준 행44~49와 정확히 일치함을 확인했다(2026-08-20).
     demandCaptureTable: [
