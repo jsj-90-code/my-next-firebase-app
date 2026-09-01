@@ -27,7 +27,9 @@ import {
   CompetitorInteriorFallbackGuide,
   ComputedField,
   FoodScoringGuide,
+  HardwareScoringGuide,
   InteriorScoringGuide,
+  MonitorTextField,
   NumberField,
   ScoreSelectField,
   SelectField,
@@ -350,12 +352,13 @@ function CompetitorForm({
         <TextField label="CPU 특화2" value={form.cpuTop2 ?? ""} onChange={(v) => set("cpuTop2", v || null)} />
         <TextField label="RAM 기본" value={form.ram ?? ""} onChange={(v) => set("ram", v || null)} />
         <TextField label="RAM 특화" value={form.ramTop ?? ""} onChange={(v) => set("ramTop", v || null)} />
-        <TextField label="모니터 기본" value={form.monitorBase ?? ""} onChange={(v) => set("monitorBase", v || null)} hint="주사율(Hz)에서 자동채점" />
-        <TextField label="모니터 특화" value={form.monitorTop ?? ""} onChange={(v) => set("monitorTop", v || null)} />
+        <MonitorTextField label="모니터 기본" value={form.monitorBase ?? ""} onChange={(v) => set("monitorBase", v || null)} hint="클릭하면 자주 쓰는 모델 목록이 뜹니다 · 직접 입력도 가능" />
+        <MonitorTextField label="모니터 특화" value={form.monitorTop ?? ""} onChange={(v) => set("monitorTop", v || null)} hint="콤마로 여러 모델 나열 가능" />
         <NumberField label="1000원당분" value={form.ratePer1000Won} onChange={(v) => set("ratePer1000Won", v)} />
         <NumberField label="시간당환산요금" value={form.hourlyRateConverted} onChange={(v) => set("hourlyRateConverted", v)} />
         <TextField label="유료차감" value={form.paidDeduction ?? ""} onChange={(v) => set("paidDeduction", v || null)} />
       </div>
+      <HardwareScoringGuide />
 
       <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">실측</h4>
       <div className={`${gridClass} mt-3`}>

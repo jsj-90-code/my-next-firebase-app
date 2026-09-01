@@ -32,7 +32,9 @@ import type { ExistingStore, FoodBrand, GroundLevel, LocationEvaluation, ModelSe
 import {
   ComputedField,
   FoodScoringGuide,
+  HardwareScoringGuide,
   InteriorScoringGuide,
+  MonitorTextField,
   NumberField,
   ScoreSelectField,
   SelectField,
@@ -330,14 +332,15 @@ export function ExistingStoreProfileTab({
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">하드웨어 - 모니터</h4>
         <div className={`${gridClass} mt-3`}>
-          <TextField
+          <MonitorTextField
             label="모니터 기본"
             value={form.ownMonitorBase ?? ""}
             onChange={(v) => set("ownMonitorBase", v || null)}
-            hint="예: 240Hz, BenQ XL2540X 280Hz — 주사율(Hz)에서 자동채점(240Hz 단독=3.5점, 특화 조합 있으면 4점대)"
+            hint="클릭하면 자주 쓰는 모델 목록이 뜹니다 · 직접 입력도 가능(주사율 Hz 기준 자동채점)"
           />
-          <TextField label="모니터 특화" value={form.ownMonitorTop ?? ""} onChange={(v) => set("ownMonitorTop", v || null)} hint="없으면 비움" />
+          <MonitorTextField label="모니터 특화" value={form.ownMonitorTop ?? ""} onChange={(v) => set("ownMonitorTop", v || null)} hint="콤마로 여러 모델 나열 가능 · 없으면 비움" />
         </div>
+        <HardwareScoringGuide />
 
         <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">먹거리</h4>
         <div className={`${gridClass} mt-3`}>

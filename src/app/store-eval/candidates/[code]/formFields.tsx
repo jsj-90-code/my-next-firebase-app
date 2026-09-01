@@ -3,6 +3,7 @@
 // 점포평가 상세 화면(기본정보/경쟁점/입지동선평가)에서 공유하는 폼 필드 컴포넌트.
 // 스타일은 globals.css의 app-theme(따뜻한 크림/테라코타 "블루프린트 용지" 톤)을 그대로 따른다.
 
+import { useId } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 
 const inputClass = "app-input w-full px-2.5 py-1.5 text-sm";
@@ -73,6 +74,51 @@ export function TextField({
         onChange={(e) => onChange(e.target.value)}
         className={inputClass}
       />
+    </FieldWrap>
+  );
+}
+
+// 2026-09-01 신설 — 모니터 텍스트를 직접 입력할 때 "벤큐 27 FHD 240"처럼 브랜드 키워드(ZOWIE 등)를
+// 빠뜨리면 자동채점이 조용히 낮은 점수로 떨어지는 문제(사용자 지적)를 완화한다. 커스텀 드롭다운을
+// 새로 만드는 대신 브라우저 네이티브 <datalist>를 붙여서, 목록에서 골라 넣으면 항상 정확한 인식
+// 문구가 그대로 들어가고, 목록에 없는 모델은 여전히 자유 입력이 가능하다(강제 아님).
+export const MONITOR_PRESET_OPTIONS = [
+  "제이씨현 32인치 FHD 240Hz",
+  "QNIX IPS 27인치 FHD 300Hz",
+  "QNIX Nano IPS 27인치 QHD 165Hz",
+  "BenQ ZOWIE XL2540X+ 24.1인치 FHD 280Hz",
+  "BenQ ZOWIE XL2566K 24.5인치 FHD 360Hz",
+  "비트엠 34인치 WWQHD 165Hz",
+  "비트엠 27인치 FHD 240Hz",
+  "LG 울트라기어 GP750 240Hz",
+  "LG 울트라기어 GP850 165Hz",
+  "LG 울트라와이드 34WP65C 160Hz QHD",
+  "벤큐 2546K 240Hz",
+  "벤큐 2746K 240Hz",
+  "삼성 Odyssey G4 240Hz",
+  "DELL 360Hz",
+];
+
+export function MonitorTextField({
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  hint?: string;
+}) {
+  const listId = useId();
+  return (
+    <FieldWrap label={label} hint={hint}>
+      <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={inputClass} list={listId} placeholder="목록에서 선택하거나 직접 입력" />
+      <datalist id={listId}>
+        {MONITOR_PRESET_OPTIONS.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
     </FieldWrap>
   );
 }
@@ -273,6 +319,43 @@ export function CompetitorInteriorFallbackGuide() {
       2.0=존 구성 거의 없음, 노후·관리 부족 · 1.0=시설 노후·청결 불량·차별화 없음. 중상·중하는 0.5점 단위.
       듀얼모니터는 독립존으로 구성됐을 때만 인정, 단순 칸막이는 1인룸 아님.
     </p>
+  );
+}
+
+/**
+ * 2026-09-01 신설(사용자 요청 — "기준을 자꾸 바꿔대서 나조차 헷갈린다") — GPU/CPU/RAM/모니터
+ * 자동채점 기준을 한 곳에 모아 보여준다. 새 계산 로직 아님, calc.ts의 scoreFromVga/scoreFromCpu/
+ * scoreFromRam/scoreFromMonitor/combineHardwareTiers/scoreFromMonitorSpec를 문서화한 것뿐이라
+ * 산식이 바뀌면 이 텍스트도 같이 갱신해야 한다.
+ */
+export function HardwareScoringGuide() {
+  return (
+    <div className="app-card-sm col-span-full mt-3 rounded-lg px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+      <p>
+        <strong>GPU</strong> — 모델명 4자리 숫자 기준. RTX 5060=4.0(기준점), 천단위(세대)가 1 오를 때마다 +1(예: RTX
+        4060=3.0, RTX 6060=5.0), 뒤 2자리가 80 이상이면 +1·70 이상이면 +0.5(예: RTX 5080=5.0). 라데온(RX)은 자동으로
+        동급 RTX로 환산.
+      </p>
+      <p className="mt-2">
+        <strong>CPU</strong> — 인텔 코어 울트라(예: "울트라5 225F")는 200번대=4.0(기준점), 티어(5→7→9) 한 단계당 +1,
+        시리즈 앞자리가 200번대보다 낮으면 -1. 구형 표기("14세대", "14400" 등)는 14세대=4.0(기준점) 기준 세대 1당
+        ±1. 라이젠은 세대 환산 후 동일 규칙.
+      </p>
+      <p className="mt-2">
+        <strong>RAM</strong> — 8GB 이하=1.5 · 16GB=3.5 · 32GB=4.0 · 64GB 이상=5.0.
+      </p>
+      <p className="mt-2">
+        <strong>모니터</strong> — 주사율(Hz) 기준: 120Hz 미만=1.5 · 120~143=2.0 · 144~165=3.0 · 166~200=3.25 ·
+        201~240=3.5 · 241~299=4.0 · 300~359=4.5 · 360~399=4.75 · 400 이상=5.0. QHD/WQHD 해상도면 +1.0(최대 5.0).
+        OLED·4K는 무조건 5.0. <strong>"ZOWIE"라는 단어가 텍스트에 있어야</strong> BenQ ZOWIE 계열이 최소 4.5점으로
+        인식됩니다(예: "벤큐 27 FHD 240"은 그냥 3.5점, "BenQ ZOWIE XL2566K 240Hz"라고 적어야 4.5점) — 아래 입력칸을
+        클릭하면 자주 쓰는 모델 목록이 나오니 거기서 고르면 실수를 줄일 수 있습니다.
+      </p>
+      <p className="mt-2 text-[11px] text-[#8a8072]">
+        위 4항목 모두 "기본"(대부분 좌석) + "특화"(일부 좌석만 업그레이드) 텍스트를 따로 입력하면 기본80%+특화20%로
+        결합합니다(모니터만 기본65%+특화35%, 콤마로 여러 모델 나열 가능·기본과 같거나 낮은 특화는 자동 제외).
+      </p>
+    </div>
   );
 }
 
