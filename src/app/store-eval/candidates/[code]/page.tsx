@@ -78,12 +78,17 @@ function blankCandidate(code: string): CandidateInput {
     employ1kmFemale: null,
     facility500SubwayRiders: null,
     facility1kmSubwayRiders: null,
-    ownCpu: null,
+    // 2026-09-01 사용자 확정 — 모니터와 동일한 원칙으로 GPU/CPU/RAM "기본사양"도 신규 후보지 생성
+    // 시 자동으로 채워둔다(scoreFromVga/scoreFromCpu의 앵커값과 동일한 "블랙라벨 현재 표준" 실제
+    // 구매 사양 — RTX5060/울트라5 225F/16GB, calc.ts computeSpecScore 주석 참고). 일반 텍스트
+    // 입력란 그대로라 저장 전 언제든 직접 수정 가능하다(특화1/특화2는 매장마다 실제로 다를 수
+    // 있어 자동으로 안 채움 — 필요하면 직접 입력).
+    ownCpu: "울트라5 225F",
     ownCpuTop1: null,
     ownCpuTop2: null,
-    ownRam: null,
+    ownRam: "16GB",
     ownRamTop: null,
-    ownVgaBase: null,
+    ownVgaBase: "RTX 5060",
     ownVgaTop: null,
     ownVgaTop2: null,
     ownSingleSeatCount: null,
