@@ -3,25 +3,21 @@
 // 돌려 사람 점수와 비교한다. 순수 함수만 담는다 — Firestore/Gemini 호출은 호출부(검증 러너
 // API 라우트)에서 하고, 여기는 "비교"와 "집계"만 한다.
 //
-// 정답지가 있는 5개 필드(상권내위치/주요동선/선점경쟁/접근가시성/상권흡인력)만 비교 대상이다 —
-// 특수수요유형 등 나머지 판단 필드는 정답이라 할 게 없어(원본 스프레드시트에도 채점기준표가
-// 없음, docs/data-issues.md #2) 비교하지 않는다.
+// 정답지가 있는 3개 필드(상권위치·동선/선점경쟁/접근가시성)만 비교 대상이다 — 특수수요유형 등
+// 나머지 판단 필드는 정답이라 할 게 없어(원본 스프레드시트에도 채점기준표가 없음,
+// docs/data-issues.md #2) 비교하지 않는다.
+//
+// 2026-09-01 재설계 — flowScore/attractionScore는 locationScore로 통합돼 더 이상 AI 채점 대상이
+// 아니다(LocationEvaluation.locationScore 주석 참고). 옛 정답지(사람이 매긴 값)의 locationScore는
+// "상권내위치"만 뜻했지만, 지금부터는 같은 필드가 "상권위치·동선"(통합) 의미로 비교된다.
 
-export const SCORE_FIELD_KEYS = [
-  "locationScore",
-  "flowScore",
-  "preemptionScore",
-  "visibilityScore",
-  "attractionScore",
-] as const;
+export const SCORE_FIELD_KEYS = ["locationScore", "preemptionScore", "visibilityScore"] as const;
 export type ScoreFieldKey = (typeof SCORE_FIELD_KEYS)[number];
 
 export const SCORE_FIELD_LABELS: Record<ScoreFieldKey, string> = {
-  locationScore: "상권내위치점수",
-  flowScore: "주요동선점수",
+  locationScore: "상권위치·동선점수",
   preemptionScore: "선점경쟁점수",
   visibilityScore: "접근가시성점수",
-  attractionScore: "상권흡인력점수",
 };
 
 export type ScoreComparisonRow = {

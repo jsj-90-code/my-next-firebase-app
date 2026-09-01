@@ -57,8 +57,7 @@ const FIELD_LABELS: Record<string, string> = {
   "foodBrandScores.비바쿡": "먹거리 브랜드 점수 - 비바쿡",
   "foodBrandScores.농심": "먹거리 브랜드 점수 - 농심",
   "foodBrandScores.기타브랜드": "먹거리 브랜드 점수 - 기타브랜드",
-  "locationCompositeWeights.withinMarket": "입지동선 가중치 - 상권내위치",
-  "locationCompositeWeights.flow": "입지동선 가중치 - 주요동선",
+  "locationCompositeWeights.marketPositionFlow": "입지동선 가중치 - 상권위치·동선(통합)",
   "locationCompositeWeights.preemption": "입지동선 가중치 - 선점경쟁",
   "locationCompositeWeights.visibility": "입지동선 가중치 - 접근가시성",
   brandFilter: "브랜드 필터",
@@ -246,10 +245,7 @@ export default function StoreEvalSettingsPage() {
     ? form.competitivenessWeights.spec + form.competitivenessWeights.food + form.competitivenessWeights.interior + form.competitivenessWeights.location
     : 1;
   const locationWeightSum = form
-    ? form.locationCompositeWeights.withinMarket +
-      form.locationCompositeWeights.flow +
-      form.locationCompositeWeights.preemption +
-      form.locationCompositeWeights.visibility
+    ? form.locationCompositeWeights.marketPositionFlow + form.locationCompositeWeights.preemption + form.locationCompositeWeights.visibility
     : 1;
 
   function sumWarning(sum: number, label: string): string | null {
@@ -272,10 +268,7 @@ export default function StoreEvalSettingsPage() {
       "경쟁력",
     );
     const locSum = sumWarning(
-      f.locationCompositeWeights.withinMarket +
-        f.locationCompositeWeights.flow +
-        f.locationCompositeWeights.preemption +
-        f.locationCompositeWeights.visibility,
+      f.locationCompositeWeights.marketPositionFlow + f.locationCompositeWeights.preemption + f.locationCompositeWeights.visibility,
       "입지동선종합점수",
     );
     for (const w of [specSum, facilitySum, compSum, locSum]) if (w) errors.push(w);
@@ -639,19 +632,13 @@ export default function StoreEvalSettingsPage() {
 
       <Section
         title="입지동선종합점수 가중치"
-        description="09_입지동선평가!H열 = 상권내위치×withinMarket + 주요동선×flow + 선점경쟁×preemption + 접근가시성×visibility"
+        description="09_입지동선평가!H열 = 상권위치·동선×marketPositionFlow + 선점경쟁×preemption + 접근가시성×visibility (2026-09-01 재설계 — 상권내위치/주요동선/상권흡인력 통합)"
         warning={sumWarning(locationWeightSum, "입지동선종합점수")}
       >
         <NumberInput
-          label="상권내위치"
-          value={form.locationCompositeWeights.withinMarket}
-          onChange={(v) => updateGroup("locationCompositeWeights", "withinMarket", v)}
-          readOnly={readOnly}
-        />
-        <NumberInput
-          label="주요동선"
-          value={form.locationCompositeWeights.flow}
-          onChange={(v) => updateGroup("locationCompositeWeights", "flow", v)}
+          label="상권위치·동선(통합)"
+          value={form.locationCompositeWeights.marketPositionFlow}
+          onChange={(v) => updateGroup("locationCompositeWeights", "marketPositionFlow", v)}
           readOnly={readOnly}
         />
         <NumberInput

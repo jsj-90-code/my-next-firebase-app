@@ -123,7 +123,9 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // (존구성50%+인테리어30%+관리20%). 최신성/청결/편의성은 새 산식에서 완전히 빠졌다 — 옛
     // interiorWeights(좌석70%+최신성5%+청결15%+편의10%)는 폐기.
     facilityWeights: { zoneComposition: 0.5, interior: 0.3, management: 0.2 },
-    locationCompositeWeights: { withinMarket: 0.3, flow: 0.3, preemption: 0.25, visibility: 0.15 },
+    // 2026-09-01 재설계 — 옛 상권내위치30%+주요동선30%를 "상권위치·동선" 하나로 통합(60%),
+    // 나머지는 그대로. 비율 자체는 나중에 재검토 예정(types.ts LocationEvaluation 주석 참고).
+    locationCompositeWeights: { marketPositionFlow: 0.6, preemption: 0.25, visibility: 0.15 },
     brandFilter: "블랙라벨",
     saturationThreshold: 7,
   };

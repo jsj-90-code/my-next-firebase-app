@@ -195,7 +195,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
 
   const locationScore = loc
     ? computeLocationCompositeScore(
-        { withinMarket: loc.locationScore, flow: loc.flowScore, preemption: loc.preemptionScore, visibility: loc.visibilityScore },
+        { marketPositionFlow: loc.locationScore, preemption: loc.preemptionScore, visibility: loc.visibilityScore },
         settings,
       )
     : null;

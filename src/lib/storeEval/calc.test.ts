@@ -283,9 +283,9 @@ describe("computeMarketGrade (절대평가로 변경, 2026-08-27 2차)", () => {
   });
 });
 
-describe("입지동선종합점수 (09_입지동선평가!H열: 0.3/0.3/0.25/0.15)", () => {
-  it("상권내위치4, 주요동선4, 선점경쟁3, 접근가시성4 → 3.75 (실사례 코멘트 기준)", () => {
-    const score = computeLocationCompositeScore({ withinMarket: 4, flow: 4, preemption: 3, visibility: 4 }, settings);
+describe("입지동선종합점수 (09_입지동선평가!H열, 2026-09-01 재설계: 0.6/0.25/0.15)", () => {
+  it("상권위치·동선4(구 상권내위치4+주요동선4 통합), 선점경쟁3, 접근가시성4 → 3.75 (구 산식과 동일 결과)", () => {
+    const score = computeLocationCompositeScore({ marketPositionFlow: 4, preemption: 3, visibility: 4 }, settings);
     expect(score).toBeCloseTo(3.75, 2);
   });
 });
@@ -720,17 +720,17 @@ describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대
   });
 });
 
-describe("computeOwnLocationScore (경쟁력 평가 기준 최종본 §12 — 자사/후보지 입지점수, 2026-08-30)", () => {
+describe("computeOwnLocationScore (경쟁력 평가 기준 최종본 §12 — 자사/후보지 입지점수, 2026-09-01 재설계: 3요소)", () => {
   const facts = { floor: 1, groundLevel: "지하" as const, hasElevator: false }; // computeLocationScoreFromFacts → 4
-  it("09_입지동선평가가 있으면 4요소 조합을 쓴다", () => {
-    const loc = { locationScore: 4, flowScore: 4, preemptionScore: 3, visibilityScore: 4 };
+  it("09_입지동선평가가 있으면 3요소 조합을 쓴다", () => {
+    const loc = { locationScore: 4, preemptionScore: 3, visibilityScore: 4 };
     expect(computeOwnLocationScore(loc, facts, settings)).toBeCloseTo(3.75, 2); // 기존 computeLocationCompositeScore 테스트와 동일 사례
   });
   it("09_입지동선평가가 없으면 층수+엘리베이터 자동계산으로 폴백한다", () => {
     expect(computeOwnLocationScore(null, facts, settings)).toBe(4);
   });
   it("09_입지동선평가가 일부만 채워져 있으면(미완성) 폴백한다", () => {
-    const loc = { locationScore: 4, flowScore: null, preemptionScore: 3, visibilityScore: 4 };
+    const loc = { locationScore: 4, preemptionScore: null, visibilityScore: 4 };
     expect(computeOwnLocationScore(loc, facts, settings)).toBe(4);
   });
 });

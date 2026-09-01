@@ -14,10 +14,8 @@ type Score = 1 | 2 | 3 | 4 | 5;
 
 export type LocationEvalAiFields = {
   locationScore: Score | null;
-  flowScore: Score | null;
   preemptionScore: Score | null;
   visibilityScore: Score | null;
-  attractionScore: Score | null;
   specialDemandType: SpecialDemandType | null;
   specialDemandIntensity: SpecialDemandIntensity | null;
   inflowRestriction: InflowRestriction | null;
@@ -39,11 +37,9 @@ type FieldMeta = {
 };
 
 const FIELD_META: FieldMeta[] = [
-  { key: "locationScore", label: "상권내위치점수" },
-  { key: "flowScore", label: "주요동선점수" },
+  { key: "locationScore", label: "상권위치·동선점수" },
   { key: "preemptionScore", label: "선점경쟁점수" },
   { key: "visibilityScore", label: "접근가시성점수" },
-  { key: "attractionScore", label: "상권흡인력점수" },
   {
     key: "specialDemandType",
     label: "특수수요유형",

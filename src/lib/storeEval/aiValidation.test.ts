@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compareLocationScores, summarizeAccuracy, type StoreValidationResult } from "./aiValidation";
 
-const GROUND = { locationScore: 5, flowScore: 5, preemptionScore: 2, visibilityScore: 3, attractionScore: 4 };
+const GROUND = { locationScore: 5, preemptionScore: 2, visibilityScore: 3 };
 
 describe("compareLocationScores", () => {
   it("점수가 정확히 같으면 diff=0, withinOne=true", () => {
@@ -10,10 +10,9 @@ describe("compareLocationScores", () => {
   });
 
   it("±1 이내 차이는 withinOne=true", () => {
-    const ai = { ...GROUND, locationScore: 4, attractionScore: 5 };
+    const ai = { ...GROUND, locationScore: 4 };
     const rows = compareLocationScores(GROUND, ai);
     expect(rows.find((r) => r.field === "locationScore")!.withinOne).toBe(true);
-    expect(rows.find((r) => r.field === "attractionScore")!.withinOne).toBe(true);
   });
 
   it("2점 이상 차이는 withinOne=false", () => {
@@ -52,16 +51,16 @@ describe("summarizeAccuracy", () => {
   });
 
   it("전체 매장×필드 쌍 중 within1 비율을 정확히 집계한다", () => {
-    // 매장 1: 전부 정확히 맞음(5/5) / 매장 2: 1개만 2점 이상 차이(4/5)
+    // 매장 1: 전부 정확히 맞음(3/3) / 매장 2: 1개만 2점 이상 차이(2/3)
     const results = [
       result("A", GROUND),
       result("B", { ...GROUND, preemptionScore: 5 }), // |2-5|=3, 벗어남
     ];
     const summary = summarizeAccuracy(results);
     expect(summary.storeCount).toBe(2);
-    expect(summary.totalPairs).toBe(10);
-    expect(summary.withinOneCount).toBe(9);
-    expect(summary.withinOneRatio).toBeCloseTo(0.9);
+    expect(summary.totalPairs).toBe(6);
+    expect(summary.withinOneCount).toBe(5);
+    expect(summary.withinOneRatio).toBeCloseTo(5 / 6);
     expect(summary.perField.preemptionScore.total).toBe(2);
     expect(summary.perField.preemptionScore.withinOne).toBe(1);
     expect(summary.perField.preemptionScore.ratio).toBeCloseTo(0.5);

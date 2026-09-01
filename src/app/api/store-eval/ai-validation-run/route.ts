@@ -37,7 +37,9 @@ async function getVerifiedUserId(request: Request) {
 
 type RequestBody = { storeCode?: string };
 
-const SCORE_FIELD_KEYS = ["locationScore", "flowScore", "preemptionScore", "visibilityScore", "attractionScore"] as const;
+// 2026-09-01 재설계 — flowScore/attractionScore가 locationScore로 통합돼 AI 채점 대상에서
+// 빠졌다(aiValidation.ts 주석 참고).
+const SCORE_FIELD_KEYS = ["locationScore", "preemptionScore", "visibilityScore"] as const;
 
 export async function POST(request: Request) {
   const userId = await getVerifiedUserId(request);

@@ -1144,38 +1144,40 @@ export function computeCompetitivenessGap(ownScore: number | null, competitorAvg
 // ---------------------------------------------------------------------------
 
 /**
- * 상권내위치×0.3 + 주요동선×0.3 + 선점경쟁×0.25 + 접근가시성×0.15.
- * 2026-08-30(경쟁력 평가 기준 최종본 §12·§15) — "입지 종합점수는 반올림 금지"로 확정돼 소수 2자리
- * 반올림을 제거했다. 이 함수는 이제 두 곳에서 쓰인다: ① 09_입지동선평가!H열(V62 외부유입 판정용,
- * 기존 용도) ② 자사/후보지 경쟁력점수의 "입지10%" 컴포넌트(§12, 신규 — computeOwnLocationScore
- * 참고, 경쟁점은 사용자 확인에 따라 기존 층수+엘리베이터 자동계산을 그대로 쓴다).
+ * 상권위치·동선×0.6 + 선점경쟁×0.25 + 접근가시성×0.15 (2026-09-01 재설계 — 옛 4요소 중
+ * 상권내위치·주요동선·상권흡인력을 하나로 통합, LocationEvaluation.locationScore 주석 참고).
+ * 비율(60/25/15)은 옛 30%+30%를 그대로 합친 임시값 — 재검토는 나중에 별도로 한다.
+ * "입지 종합점수는 반올림 금지"(2026-08-30) 원칙 유지. 이 함수는 두 곳에서 쓰인다: ①
+ * 09_입지동선평가!H열(V62 외부유입 판정용, 기존 용도) ② 자사/후보지 경쟁력점수의 "입지10%"
+ * 컴포넌트(computeOwnLocationScore 참고, 경쟁점은 사용자 확인에 따라 기존 층수+엘리베이터
+ * 자동계산을 그대로 쓴다).
  */
 export function computeLocationCompositeScore(
-  scores: { withinMarket: number | null; flow: number | null; preemption: number | null; visibility: number | null },
+  scores: { marketPositionFlow: number | null; preemption: number | null; visibility: number | null },
   settings: Pick<ModelSettings, "locationCompositeWeights">,
 ): number | null {
-  const { withinMarket, flow, preemption, visibility } = scores;
-  if (withinMarket == null || flow == null || preemption == null || visibility == null) return null;
+  const { marketPositionFlow, preemption, visibility } = scores;
+  if (marketPositionFlow == null || preemption == null || visibility == null) return null;
   const w = settings.locationCompositeWeights;
-  return withinMarket * w.withinMarket + flow * w.flow + preemption * w.preemption + visibility * w.visibility;
+  return marketPositionFlow * w.marketPositionFlow + preemption * w.preemption + visibility * w.visibility;
 }
 
 /**
- * 2026-08-30(§12) 신설 — 자사/후보지의 "경쟁력점수 입지10%" 컴포넌트. 09_입지동선평가(4요소
- * 조합)가 있으면 그걸 쓰고, 아직 없으면(레거시 매장·후보지평가 초기 단계) 기존 층수+엘리베이터
- * 자동계산으로 폴백한다 — 폴백이 없으면 09_입지동선평가를 하기 전까지 경쟁력점수 전체가 null이
- * 되어 V61/V62 예측이 멈춘다(92곳 레거시 매장은 애초에 이 평가 자체가 없는 경우가 많음).
- * 경쟁점은 이 함수를 쓰지 않는다(사용자 확인: 경쟁점은 기존 방식 유지, computeCompetitorScores
- * 참고).
+ * 2026-08-30(§12) 신설 — 자사/후보지의 "경쟁력점수 입지10%" 컴포넌트. 09_입지동선평가(3요소
+ * 조합, 2026-09-01 재설계)가 있으면 그걸 쓰고, 아직 없으면(레거시 매장·후보지평가 초기 단계)
+ * 기존 층수+엘리베이터 자동계산으로 폴백한다 — 폴백이 없으면 09_입지동선평가를 하기 전까지
+ * 경쟁력점수 전체가 null이 되어 V61/V62 예측이 멈춘다(92곳 레거시 매장은 애초에 이 평가 자체가
+ * 없는 경우가 많음). 경쟁점은 이 함수를 쓰지 않는다(사용자 확인: 경쟁점은 기존 방식 유지,
+ * computeCompetitorScores 참고).
  */
 export function computeOwnLocationScore(
-  loc: { locationScore: number | null; flowScore: number | null; preemptionScore: number | null; visibilityScore: number | null } | null,
+  loc: { locationScore: number | null; preemptionScore: number | null; visibilityScore: number | null } | null,
   facts: { floor: number | null; groundLevel: GroundLevel | null; hasElevator: boolean | null },
   settings: Pick<ModelSettings, "locationCompositeWeights">,
 ): number | null {
   const composite = loc
     ? computeLocationCompositeScore(
-        { withinMarket: loc.locationScore, flow: loc.flowScore, preemption: loc.preemptionScore, visibility: loc.visibilityScore },
+        { marketPositionFlow: loc.locationScore, preemption: loc.preemptionScore, visibility: loc.visibilityScore },
         settings,
       )
     : null;
@@ -2147,7 +2149,7 @@ export function computeExistingStoreMeasuredForecast(
     | "ownSeatZoneScore"
   >,
   competitors: Competitor[],
-  loc: Pick<LocationEvaluation, "locationScore" | "flowScore" | "preemptionScore" | "visibilityScore"> | null,
+  loc: Pick<LocationEvaluation, "locationScore" | "preemptionScore" | "visibilityScore"> | null,
   settings: Pick<
     ModelSettings,
     | "specWeights"
@@ -2350,7 +2352,7 @@ export function computeExistingStoreDemandEvaluation(
   > &
     MarketDemandInput,
   competitors: Competitor[],
-  loc: Pick<LocationEvaluation, "locationScore" | "flowScore" | "preemptionScore" | "visibilityScore"> | null,
+  loc: Pick<LocationEvaluation, "locationScore" | "preemptionScore" | "visibilityScore"> | null,
   settings: Pick<
     ModelSettings,
     | "specWeights"

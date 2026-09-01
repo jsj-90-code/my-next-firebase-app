@@ -320,13 +320,25 @@ export type LocationEvaluation = {
   candidateCode: string;
   name: string;
   address: string;
-  locationScore: 1 | 2 | 3 | 4 | 5 | null; // 상권내위치점수
-  flowScore: 1 | 2 | 3 | 4 | 5 | null; // 주요동선점수
-  preemptionScore: 1 | 2 | 3 | 4 | 5 | null; // 선점경쟁점수
-  visibilityScore: 1 | 2 | 3 | 4 | 5 | null; // 접근가시성점수
+  // 2026-09-01 재설계(사용자 확인) — 47개 매장 실측 상관분석 결과 locationScore/flowScore/
+  // attractionScore가 87%/72%/72% 동점·상관계수 0.57~0.81로 사실상 하나의 판단을 3번 물은
+  // 것으로 확인돼 통합했다. locationScore가 "상권위치·동선점수"(둘을 합친 단일 판단)로 의미가
+  // 바뀐다 — 값 자체(1~5)는 그대로 재사용해 기존 47개 매장 데이터를 소급 폐기하지 않는다.
+  locationScore: 1 | 2 | 3 | 4 | 5 | null; // 상권위치·동선점수(통합, 구 상권내위치점수)
+  // 아래 2개는 더 이상 입력 요구/AI 채점 대상이 아니다(이력 보존용, 계산에도 안 씀 — 원래도
+  // flowScore는 계산에 들어갔었지만 locationScore와 사실상 동일값이라 통합 후엔 중복이었다).
+  flowScore: 1 | 2 | 3 | 4 | 5 | null; // (레거시) 구 주요동선점수 — locationScore로 통합됨
+  // 선점경쟁점수는 실측 상관분석 결과 경쟁점 개수/PC대수와 상관계수 -0.51~-0.64로, "경쟁점이
+  // 더 좋은 자리를 선점했는지"가 아니라 "경쟁점이 몇 곳인가"의 대리지표로 매겨지고 있었다(2026-09-01
+  // 발견). 이미 competitorIp로 따로 계산되는 값과 중복이라, "개수와 무관하게 특정 경쟁점이 명백히
+  // 더 좋은 자리를 차지했는가"만 판단하도록 AI 프롬프트/입력 힌트를 재정의했다(값 범위는 그대로).
+  preemptionScore: 1 | 2 | 3 | 4 | 5 | null; // 선점경쟁점수(재정의 — 경쟁점 개수 아님)
+  visibilityScore: 1 | 2 | 3 | 4 | 5 | null; // 접근가시성점수(변경 없음)
   // 입지동선종합점수는 자동계산이라 저장하지 않고 calc.ts에서 매번 파생한다.
   mapMemo: string | null; // 지도판단메모
-  attractionScore: 1 | 2 | 3 | 4 | 5 | null; // 상권흡인력점수
+  // (레거시) 구 상권흡인력점수 — locationScore로 통합됨. 더 이상 입력 요구/AI 채점 대상 아님,
+  // 이미 별도로 계산되는 정량 지표(marketDemand/상권등급)와도 역할이 겹쳤다(2026-09-01 확인).
+  attractionScore: 1 | 2 | 3 | 4 | 5 | null;
   specialDemandType: SpecialDemandType | null;
   specialDemandIntensity: SpecialDemandIntensity | null;
   inflowRestriction: InflowRestriction | null; // 외부유입제한 - V62 보정률 직결
@@ -422,8 +434,13 @@ export type ModelSettings = {
   // 내부비중. 시트에서 그대로 이식한 값(존구성50%+인테리어30%+관리20%) — 최신성/청결/편의성은
   // 새 산식에서 완전히 빠졌다(calc.ts computeFacilityScore).
   facilityWeights: { zoneComposition: number; interior: number; management: number };
-  // 09_입지동선평가!H열(입지동선종합점수) = 상권내위치×0.3 + 주요동선×0.3 + 선점경쟁×0.25 + 접근가시성×0.15
-  locationCompositeWeights: { withinMarket: number; flow: number; preemption: number; visibility: number };
+  // 2026-09-01 재설계(사용자 확인) — 옛 4항목(상권내위치×0.3+주요동선×0.3+선점경쟁×0.25+
+  // 접근가시성×0.15)에서 상권내위치·주요동선·상권흡인력을 "상권위치·동선점수"로 통합했다(실측
+  // 상관분석 결과 3개가 사실상 하나였음, LocationEvaluation.locationScore 주석 참고). 비율은
+  // 일단 옛 30%+30%=60%를 그대로 합친 값(marketPositionFlow 60%)을 임시로 쓴다 — "값을 제대로
+  // 넣을 수 있는 구조"부터 만들고 비율 자체(60/25/15가 최선인지)는 나중에 별도로 재검토하기로
+  // 사용자와 확정했다.
+  locationCompositeWeights: { marketPositionFlow: number; preemption: number; visibility: number };
   brandFilter: string; // "블랙라벨"
   saturationThreshold: number; // IP당수요 < 7 => 포화 주의
   updatedAt: number;

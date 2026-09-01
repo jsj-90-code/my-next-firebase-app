@@ -129,8 +129,7 @@ export function LocationEvalTab({
     if (!form || !settings) return null;
     return computeLocationCompositeScore(
       {
-        withinMarket: form.locationScore,
-        flow: form.flowScore,
+        marketPositionFlow: form.locationScore,
         preemption: form.preemptionScore,
         visibility: form.visibilityScore,
       },
@@ -262,10 +261,8 @@ export function LocationEvalTab({
             draft={aiDraft}
             currentValues={{
               locationScore: form.locationScore,
-              flowScore: form.flowScore,
               preemptionScore: form.preemptionScore,
               visibilityScore: form.visibilityScore,
-              attractionScore: form.attractionScore,
               specialDemandType: form.specialDemandType,
               specialDemandIntensity: form.specialDemandIntensity,
               inflowRestriction: form.inflowRestriction,
@@ -275,24 +272,23 @@ export function LocationEvalTab({
             onApply={handleApplyAiPatch}
           />
         )}
+        <p className="mt-1 text-xs text-[#8a8072]">
+          2026-09-01 재설계 — 상권내위치·주요동선·상권흡인력 3개 항목이 실측 검토 결과 87%·72% 동점으로
+          사실상 같은 판단이었어서 "상권위치·동선점수" 하나로 통합했습니다. 선점경쟁점수도 경쟁점 개수와
+          혼동되던 문제를 바로잡아 "특정 경쟁점이 더 좋은 자리를 차지했는가"만 보도록 재정의했습니다.
+        </p>
         <div className={`${gridClass} mt-4`}>
           <ScoreSelectField
-            label="상권내위치점수"
+            label="상권위치·동선점수"
             value={form.locationScore}
             onChange={(v) => set("locationScore", v as LocationEvaluation["locationScore"])}
-            hint="유동인구가 몰리는 상권(역세권/먹자골목 등)의 중심부에 가까울수록 높은 점수."
-          />
-          <ScoreSelectField
-            label="주요동선점수"
-            value={form.flowScore}
-            onChange={(v) => set("flowScore", v as LocationEvaluation["flowScore"])}
-            hint="사람들이 실제로 많이 지나다니는 이동경로(역 출구, 큰 도로, 버스정류장 앞 등)에 있을수록 높은 점수."
+            hint="상권(동네) 전체에서 중심가에 가깝고(변두리1~2점·중심가4~5점), 동시에 사람이 실제로 걷는 동선(역 출구·대로변) 위에 있을수록 높은 점수. 인구수는 이미 따로 계산되니 고려하지 말 것."
           />
           <ScoreSelectField
             label="선점경쟁점수"
             value={form.preemptionScore}
             onChange={(v) => set("preemptionScore", v as LocationEvaluation["preemptionScore"])}
-            hint="주변 경쟁 PC방이 이미 더 좋은 자리를 선점하고 있어서 이 후보지가 불리할수록 낮은 점수."
+            hint="경쟁점 '개수'가 아니라, 특정 경쟁점이 이 후보지보다 명백히 더 좋은 자리(역출구 코너 등)를 차지했을 때만 낮은 점수. 경쟁점이 많아도 다 애매한 자리면 감점하지 말 것."
           />
           <ScoreSelectField
             label="접근가시성점수"
@@ -303,9 +299,9 @@ export function LocationEvalTab({
         </div>
 
         <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
-          <p className="text-xs text-[#8a8072]">입지동선종합점수 실시간 미리보기 (저장하지 않음, 4개 점수 입력 시 계산)</p>
+          <p className="text-xs text-[#8a8072]">입지동선종합점수 실시간 미리보기 (저장하지 않음, 3개 점수 입력 시 계산)</p>
           <p className="mt-1 text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">
-            {compositePreview != null ? formatScore(compositePreview) : "- (4개 점수를 모두 입력하세요)"}
+            {compositePreview != null ? formatScore(compositePreview) : "- (3개 점수를 모두 입력하세요)"}
           </p>
         </div>
 
@@ -315,14 +311,8 @@ export function LocationEvalTab({
       </section>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>상권흡인력 / 특수수요</h3>
+        <h3 className={sectionTitleClass}>특수수요</h3>
         <div className={`${gridClass} mt-4`}>
-          <ScoreSelectField
-            label="상권흡인력점수"
-            value={form.attractionScore}
-            onChange={(v) => set("attractionScore", v as LocationEvaluation["attractionScore"])}
-            hint="이 상권 자체가 사람을 끌어모으는 힘(전체적인 상권 규모·활력)이 클수록 높은 점수."
-          />
           <SelectField
             label="특수수요유형"
             value={form.specialDemandType}

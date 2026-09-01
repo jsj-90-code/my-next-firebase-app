@@ -17,12 +17,13 @@ const SPECIAL_DEMAND_TYPES: SpecialDemandType[] = ["없음", "대학가", "군�
 const SPECIAL_DEMAND_INTENSITIES: SpecialDemandIntensity[] = ["없음", "낮음", "보통", "높음"];
 const INFLOW_LEVELS: InflowRestriction[] = ["없음", "보통", "강함"];
 
+// 2026-09-01 재설계 — flowScore/attractionScore를 AI 채점 대상에서 제외했다(47개 매장 실측
+// 상관분석 결과 locationScore와 87%/72% 동점 — 사실상 같은 질문을 3번 물었던 것으로 확인,
+// LocationEvaluation.locationScore 주석 참고). locationScore가 이제 "상권위치·동선점수"(통합)다.
 export const LOCATION_EVAL_FIELD_KEYS = [
   "locationScore",
-  "flowScore",
   "preemptionScore",
   "visibilityScore",
-  "attractionScore",
   "specialDemandType",
   "specialDemandIntensity",
   "inflowRestriction",
@@ -51,11 +52,19 @@ function confidenceProp(description: string) {
 }
 
 const FIELD_SCHEMAS: Record<LocationEvalFieldKey, ReturnType<typeof scoreProp> | ReturnType<typeof enumProp> | ReturnType<typeof textProp>> = {
-  locationScore: scoreProp("상권내위치점수 — 유동인구가 몰리는 상권 중심부에 가까운가"),
-  flowScore: scoreProp("주요동선점수 — 실제로 사람이 많이 지나는 이동경로(역 출구/큰 도로 등)에 있는가"),
-  preemptionScore: scoreProp("선점경쟁점수 — 경쟁 PC방이 더 좋은 자리를 이미 선점해서 불리한가(불리할수록 낮은 점수)"),
+  locationScore: scoreProp(
+    "상권위치·동선점수 — 이 지점이 상권(동네) 전체에서 핵심부/중심가에 가깝고(변두리=1~2점, 중심가=4~5점), " +
+      "동시에 사람이 실제로 걸어다니는 동선(역 출구, 버스정류장 앞, 대로변) 위에 있는가를 종합 판단. " +
+      "유동인구·상권 규모 같은 인구 수치는 이미 다른 정량 지표로 따로 계산되니 여기서 다시 고려하지 말 것 " +
+      "— 순수하게 '위치·동선'만 볼 것.",
+  ),
+  preemptionScore: scoreProp(
+    "선점경쟁점수 — 경쟁 PC방의 '개수'가 아니라, 그중 특정 경쟁점이 이 후보지보다 명백히 더 좋은 자리" +
+      "(역 출구 바로 앞, 코너 자리, 상권 초입 등)를 이미 차지하고 있는지만 판단. 경쟁점이 여러 곳이어도 " +
+      "다들 애매한 자리면 감점하지 말고, 경쟁점이 1곳뿐이어도 그곳이 명백히 더 좋은 자리면 감점할 것" +
+      "(불리할수록 낮은 점수). 경쟁점 수 자체는 다른 곳에서 이미 따로 집계된다.",
+  ),
   visibilityScore: scoreProp("접근가시성점수 — 간판/입구가 잘 보이고 들어가기 쉬운가(층수/계단·엘리베이터 포함)"),
-  attractionScore: scoreProp("상권흡인력점수 — 이 상권 자체가 사람을 끌어모으는 힘"),
   specialDemandType: enumProp(SPECIAL_DEMAND_TYPES, "특수수요유형"),
   specialDemandIntensity: enumProp(SPECIAL_DEMAND_INTENSITIES, "특수수요강도"),
   inflowRestriction: enumProp(
@@ -80,7 +89,7 @@ const RESPONSE_SCHEMA = {
       properties: Object.fromEntries(LOCATION_EVAL_FIELD_KEYS.map((k) => [k, confidenceProp(`${k} 신뢰도`)])),
       required: LOCATION_EVAL_FIELD_KEYS as unknown as string[],
     },
-    rationale: { type: Type.STRING, description: "5개 점수 + 판단 필드 전체에 대한 근거를 한국어로 종합 서술" },
+    rationale: { type: Type.STRING, description: "3개 점수 + 판단 필드 전체에 대한 근거를 한국어로 종합 서술" },
   },
   required: ["fields", "confidence", "rationale"],
 };
@@ -90,10 +99,16 @@ const SYSTEM_PROMPT =
   "(경쟁점·수요거점 거리, 행정동 인구통계, 소상공인365 참고자료, 지도 이미지)가 주어집니다. 이것만으로" +
   "부족한 부분(상권 성격, 실제 동선, 특수수요 등)은 웹 검색으로 그 주소를 직접 조사해서 보완하세요.\n\n" +
   "판단할 항목:\n" +
-  "- 상권내위치/주요동선/선점경쟁/접근가시성/상권흡인력 점수(1~5점, 공식 채점기준표 없음)\n" +
+  "- 상권위치·동선점수/선점경쟁점수/접근가시성점수(1~5점, 공식 채점기준표 없음 — 각 항목 설명 참고)\n" +
   "- 특수수요유형·강도(대학가/군부대/산업단지/관광유흥 등 특수 수요원이 있는가)\n" +
   "- 외부유입제한·수요이탈위험(없음/보통/강함)\n" +
   "- 상권구조메모(자유서술)\n\n" +
+  "중요 — 2026-09-01 실측 검토로 확인된 문제이니 반드시 지킬 것:\n" +
+  "1. '상권위치·동선점수'는 유동인구 수치가 아니라 순수 위치/동선 판단입니다. 인구·상권 규모는 이미 " +
+  "다른 정량 데이터로 따로 계산되므로 이 점수에서 다시 반영하면 안 됩니다.\n" +
+  "2. '선점경쟁점수'는 경쟁점 개수와 절대 혼동하지 마세요. 경쟁점이 8곳이어도 다들 애매한 자리면 " +
+  "감점하지 말고(예: 3~4점), 경쟁점이 1곳뿐이어도 그곳이 역 출구 바로 앞 같은 명백한 요지면 감점하세요" +
+  "(예: 1~2점). 경쟁점 수는 다른 지표로 이미 따로 계산되니 여기서 다시 세지 마세요.\n\n" +
   "확실하지 않은 부분은 추측해서 극단적인 값을 주지 말고 중간값(점수는 3점, 유형/강도는 '없음' 또는 " +
   "'보통') 쪽으로 보수적으로 판단하세요. 근거를 전혀 못 찾은 항목은 null로 남기고 절대 지어내지 마세요.";
 
