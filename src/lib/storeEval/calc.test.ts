@@ -13,6 +13,7 @@ import {
   buildV61TrainingStores,
   classifyErrorCause,
   classifyTenureCohort,
+  CORE_VALIDATION_MIN_MONTHS,
   computeAaBaselineRevenue,
   computeBoundedSales,
   computeCompetitorInvestigationSummary,
@@ -1845,21 +1846,20 @@ describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선
 });
 
 describe("classifyTenureCohort (재직기간 코호트 분류)", () => {
+  // 2026-09-02 — CORE_VALIDATION_MIN_MONTHS가 12 → 1로 바뀌어(사용자 확정: 12개월 미만 매장도
+  // 정상 평가 대상) 완료월수 1개월 이상은 전부 정식 검증군이 된다. 조기검증 구간은 이 상수를
+  // 다시 올릴 때만 쓰이므로, 상수 기준으로 테스트해서 값이 바뀌어도 의도가 유지되게 한다.
   it.each([
+    [CORE_VALIDATION_MIN_MONTHS, "정식 검증군"],
     [12, "정식 검증군"],
     [15, "정식 검증군"],
-    [9, "조기 검증 A"],
-    [11, "조기 검증 A"],
-    [6, "조기 검증 B"],
-    [8, "조기 검증 B"],
-    [3, "조기 검증 C"],
-    [5, "조기 검증 C"],
-    [1, "참고용"],
-    [2, "참고용"],
     [0, "제외"],
     [null, "제외"],
   ])("%s개월 → %s", (months, expected) => {
     expect(classifyTenureCohort(months)).toBe(expected);
+  });
+  it("완료월수가 정식검증 최소값 미만이면 정식 검증군이 아니다", () => {
+    expect(classifyTenureCohort(CORE_VALIDATION_MIN_MONTHS - 1)).not.toBe("정식 검증군");
   });
 });
 
@@ -2001,14 +2001,18 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
     expect(rows.every((r) => r.cohort === "정식 검증군")).toBe(true);
   });
 
-  it("12개월 미완료 매장은 학습에 전혀 안 쓰이고(완전 외부검증) 코호트로 분류된다", () => {
+  // 2026-09-02 — CORE_VALIDATION_MIN_MONTHS가 1로 내려가면서 12개월 미완료 매장도 정식검증
+  // 대상이 됐다(사용자 확정). 예전엔 "조기검증(완전 외부검증)"으로 빠졌던 매장이 이제 핵심표본에
+  // 포함되고 리브-원-아웃 학습에도 참여한다.
+  it("완료월수가 정식검증 최소값 이상이면(12개월 미완료라도) 핵심표본에 포함된다", () => {
     const earlyStore = makeStore({ storeCode: "E1", storeName: "조기점포", completedMonths: 7 });
     const { rows } = runCohortValidation([...coreStores, earlyStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     const early = rows.find((r) => r.storeCode === "E1")!;
-    expect(early.cohort).toBe("조기 검증 B");
-    expect(early.includedInCoreAccuracy).toBe(false);
-    expect(early.predictedRevenueAvg).not.toBeNull(); // 전체 학습모형으로 예측은 된다
-    expect(early.includedInEarlyValidation).toBe(true);
+    expect(early.cohort).toBe("정식 검증군");
+    expect(early.includedInCoreAccuracy).toBe(true);
+    expect(early.predictedRevenueAvg).not.toBeNull();
+    // 정식검증과 조기검증은 여전히 배타적이다.
+    expect(early.includedInEarlyValidation).toBe(false);
   });
 
   it("조기검증(완전 외부검증) 매장도 evaluationPcCount를 우선 써서 예측한다 — 오픈 후 증설한 매장의 현재 pcCount로 왜곡되면 안 됨(2026-08-30 발견)", () => {
@@ -2032,7 +2036,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
     expect(rows.every((r) => r.includedInEarlyValidation === false)).toBe(true);
   });
 
-  it("사후 운영이슈 조기검증 매장은 조기검증 집계에서도 빠진다", () => {
+  it("사후 운영이슈 매장은 완료월수와 무관하게 정식·조기 집계에서 모두 빠진다", () => {
     const earlyIssue = makeStore({
       storeCode: "E2",
       storeName: "조기이슈점포",
@@ -2045,7 +2049,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
       inflowAdjustment: defaultModelSettings().inflowAdjustment,
     });
     const e = rows.find((r) => r.storeCode === "E2")!;
-    expect(e.cohort).toBe("조기 검증 B");
+    expect(e.includedInCoreAccuracy).toBe(false);
     expect(e.includedInEarlyValidation).toBe(false);
   });
 
@@ -2057,13 +2061,16 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
     expect(anomaly.exclusionReason).toContain("운영관리 문제");
   });
 
-  it("영업 1~2개월 매장은 참고용으로 분류되고 핵심 정확도에서 빠진다", () => {
+  // 2026-09-02 — 완료 1개월 매장도 정식검증 대상이 됐다(CORE_VALIDATION_MIN_MONTHS=1).
+  // 실제매출이 한 달치뿐이라 오픈 프로모션 효과가 섞일 수 있다는 건 알고 감수한 선택
+  // (사용자 확정: "12개월 미만인 매장도 정상으로 평가해").
+  it("영업 1개월 매장도 정식검증 대상에 포함된다", () => {
     const refStore = makeStore({ storeCode: "R1", storeName: "참고점포", completedMonths: 1 });
     const { rows } = runCohortValidation([...coreStores, refStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
     const ref = rows.find((r) => r.storeCode === "R1")!;
-    expect(ref.cohort).toBe("참고용");
-    expect(ref.includedInCoreAccuracy).toBe(false);
-    expect(ref.exclusionReason).toContain("참고자료");
+    expect(ref.cohort).toBe("정식 검증군");
+    expect(ref.includedInCoreAccuracy).toBe(true);
+    expect(ref.absoluteErrorPct).not.toBeNull();
   });
 
   it("오픈 당월(완료월 0개) 매장은 예측값도 아예 내지 않는다 — 오픈달 매출로 평가하지 않는다", () => {

@@ -2569,14 +2569,31 @@ export function judgeAaGrade(input: {
 
 export type TenureCohort = "정식 검증군" | "조기 검증 A" | "조기 검증 B" | "조기 검증 C" | "참고용" | "제외";
 
+/**
+ * 정식 검증군(공식 적중률 지표 + V61 학습표본) 최소 완료월수.
+ *
+ * 2026-09-02 12 → 1로 변경(사용자 확정: "12개월 미만인 매장도 정상으로 평가해. 어차피
+ * 비슷비슷함. 매출변화 10% 안밖으로 본다"). 실측으로 전제를 확인했다 — 12개월 미만 11곳의
+ * 대당월매출 평균이 704,281원으로 12개월 이상 26곳(619,837원)보다 +13.6%였다(신규매장이 최신
+ * 사양이라 오히려 높은 쪽, 사용자가 말한 "10% 안팎" 범위와 대체로 일치).
+ *
+ * ⚠️ 지표는 나빠 보이게 된다 — 표본이 26곳→37곳으로 늘면서 MAPE 11.03%→11.74%(추천계수 적용
+ * 기준). 특히 완료 1~2개월 매장은 실제매출이 한 달치뿐이라 오픈 프로모션 효과가 섞여 있다
+ * (문산점 1개월, 대당 886,366원으로 전체 최고치). 6개월+로 끊으면 30곳/MAPE 10.48%로 모든
+ * 지표가 더 좋지만, "지표 대상은 전체 매장이어야 한다"는 사용자 판단에 따라 1개월로 둔다.
+ * 이 값만 바꾸면 코호트 기준과 학습표본 자격이 함께 움직인다(두 곳에서 이 상수를 참조).
+ */
+export const CORE_VALIDATION_MIN_MONTHS = 1;
+
 /** 완료된 월 수(오픈 후 실제매출이 확정된 달의 개수) 기준 코호트 분류. */
 export function classifyTenureCohort(completedMonths: number | null): TenureCohort {
   if (completedMonths == null || completedMonths <= 0) return "제외";
-  if (completedMonths >= 12) return "정식 검증군";
+  if (completedMonths >= CORE_VALIDATION_MIN_MONTHS) return "정식 검증군";
+  // 아래 조기검증 구간은 CORE_VALIDATION_MIN_MONTHS를 다시 올릴 때만 쓰인다(현재 1이라 도달 불가).
   if (completedMonths >= 9) return "조기 검증 A";
   if (completedMonths >= 6) return "조기 검증 B";
   if (completedMonths >= 3) return "조기 검증 C";
-  return "참고용"; // 1~2개월
+  return "참고용";
 }
 
 export type ValidationStoreInput = {
@@ -2935,7 +2952,11 @@ export function summarizeValidationRows(
   };
 }
 
-/** V61 학습표본 자격(12개월 완료·블랙라벨·정상영업·산식학습제외 아님·핵심 입력값 존재). */
+/**
+ * V61 학습표본 자격(CORE_VALIDATION_MIN_MONTHS 이상 완료·블랙라벨·정상영업·산식학습제외
+ * 아님·핵심 입력값 존재). 2026-09-02부터 최소 완료월수가 12 → 1로 바뀌었다
+ * (CORE_VALIDATION_MIN_MONTHS 주석 참고).
+ */
 export function isCoreEligibleForV61Training(s: ValidationStoreInput): boolean {
   // toV61TrainingStore가 실제로 쓰는 값은 evaluationPcCount ?? pcCount이므로 그 해석된 값이
   // 양수인지 확인해야 한다 — 그냥 pcCount != null만 보면 evaluationPcCount:0인 매장이 통과해
@@ -2945,7 +2966,7 @@ export function isCoreEligibleForV61Training(s: ValidationStoreInput): boolean {
     s.brand === "블랙라벨" &&
     !s.isPostOpenIssue &&
     s.franchiseStatus === "정상" &&
-    s.completedMonths >= 12 &&
+    s.completedMonths >= CORE_VALIDATION_MIN_MONTHS &&
     resolvedPcCount != null &&
     resolvedPcCount > 0 &&
     s.hourlyRate != null &&

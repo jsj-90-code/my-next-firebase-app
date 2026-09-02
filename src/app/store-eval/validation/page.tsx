@@ -6,8 +6,8 @@
 // 데이터를 모아서 calc.ts가 요구하는 입력 형태로 가공하고, 계산 결과를 표/카드로 보여주는 것뿐이다.
 //
 // 2026-08-20 갱신: v61Predicted(스프레드시트에서 그대로 복사한 캐시값)를 더 이상 쓰지 않는다.
-// 12개월 완료·블랙라벨·정상영업·산식학습제외 아닌 표본은 리브-원-아웃으로, 그 외 전부
-// (12개월 미완료·브랜드 미확인·사후 운영이슈 등)는 학습에 전혀 쓰이지 않은 완전 외부 검증군으로
+// 완료월 CORE_VALIDATION_MIN_MONTHS 이상·블랙라벨·정상영업·산식학습제외 아닌 표본은 리브-원-아웃으로,
+// 그 외 전부(브랜드 미확인·사후 운영이슈 등)는 학습에 전혀 쓰이지 않은 완전 외부 검증군으로
 // runCohortValidation이 직접 예측한다(calc.ts). V62(외부유입 보정)는 이제 runCohortValidation
 // 내부에서 실제 09_입지동선평가!외부유입제한 값으로 계산한다(예전엔 이 화면에서 "없음" 취급으로
 // 방치돼 있던 죽은 코드였다 - 실제 반영으로 고쳤다).
@@ -23,6 +23,7 @@ import {
   summarizeValidation,
   summarizeValidationRows,
   computeCompetitorInvestigationSummary,
+  CORE_VALIDATION_MIN_MONTHS,
   type CompetitorInvestigationSummaryStatus,
   type DataCompletenessGrade,
   type ErrorCauseCode,
@@ -67,7 +68,7 @@ const ERROR_CAUSE_LABELS: Record<ErrorCauseCode, string> = {
 
 const OPERATIONAL_STATUS_LABELS: Record<OperationalStatus, string> = {
   normal: "정상",
-  early: "초기(12개월 미만)",
+  early: "초기(완료월 부족)",
   post_open_issue: "사후 운영이슈",
   abnormal: "비정상영업",
 };
@@ -186,12 +187,14 @@ async function loadValidationData(): Promise<{
   return { rows, settings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode };
 }
 
+// 2026-09-02 — 정식 검증군 기준이 12개월 → 1개월로 바뀌었다(calc.ts CORE_VALIDATION_MIN_MONTHS,
+// 사용자 확정). 조기검증 구간 라벨은 그 상수를 다시 올릴 때만 쓰인다(현재 도달 불가).
 const COHORT_LABELS: Record<TenureCohort, string> = {
-  "정식 검증군": "정식 검증군 (12개월 이상)",
+  "정식 검증군": `정식 검증군 (${CORE_VALIDATION_MIN_MONTHS}개월 이상)`,
   "조기 검증 A": "조기 검증 A (9~11개월)",
   "조기 검증 B": "조기 검증 B (6~8개월)",
   "조기 검증 C": "조기 검증 C (3~5개월)",
-  참고용: "참고용 (1~2개월)",
+  참고용: "참고용 (완료월 부족)",
   제외: "제외 (완료월 없음)",
 };
 
@@ -545,8 +548,9 @@ function GlossarySection() {
             검증이 아니라 "이관이 제대로 됐는지" 확인용입니다.
           </li>
           <li>
-            <b>코호트(정식검증/조기검증)</b> — 오픈한 지 얼마나 됐는지로 나눈 그룹. 12개월 이상 운영한 매장만 "정식검증", 그
-            미만은 "조기검증"입니다.
+            <b>코호트(정식검증)</b> — 오픈한 지 얼마나 됐는지로 나눈 그룹. 2026-09-02부터 실제매출이 확정된 달이{" "}
+            {CORE_VALIDATION_MIN_MONTHS}개월 이상인 정상영업 블랙라벨 매장은 전부 "정식검증" 대상입니다(이전에는 12개월
+            이상만 정식검증, 그 미만은 "조기검증"으로 따로 집계했습니다).
           </li>
           <li>
             <b>MAPE(평균절대오차율)</b> — 예측이 실제매출과 평균적으로 몇 % 차이 나는지. 낮을수록 좋습니다.
@@ -577,23 +581,23 @@ function AccuracyBadge({ absoluteErrorPct }: { absoluteErrorPct: number | null }
   return <span className="app-badge app-badge-danger">차이 큼</span>;
 }
 
-/** "12개월 이상 운영"(정식검증 대상) 여부 배지 — classifyTenureCohort(calc.ts) 기준 그대로. */
+/** 정식검증 대상 여부 배지 — classifyTenureCohort(calc.ts) 기준 그대로. */
 function TenureBadge({ cohort }: { cohort: ValidationStoreRow["cohort"] }) {
   const isFormal = cohort === "정식 검증군";
   return (
     <span className={`app-badge ${isFormal ? "app-badge-info" : "app-badge-neutral"}`}>
-      {isFormal ? "12개월 이상" : "12개월 미만"}
+      {isFormal ? "정식검증 대상" : "검증 제외"}
     </span>
   );
 }
 
 /**
- * 처음 보는 사람을 위한 "결론만" 표 — 블랙라벨 전체 매장을 매장명·운영기간(12개월 이상 여부)·
- * 실제매출·예측매출·오차율·적중 여부만으로 보여준다(브랜드·운영상태·데이터완성도 등 전문 컬럼은
- * 아래 "자세히 보기"의 코호트별 상세표에만 남겨둔다). 계산은 하지 않고 이미 계산된
- * ValidationStoreRow 필드를 그대로 옮겨 보여줄 뿐이다. 12개월 미만 매장은 정식검증 표본이
- * 아니라서 위 요약 문단의 통계(적중률 등)에는 안 들어가지만, 이 표에는 참고용으로 같이 보여준다
- * (요청사항 2026-08-22: "12개월 미만 매장도 같이 넣고 12개월 이상 여부를 표기해달라").
+ * 처음 보는 사람을 위한 "결론만" 표 — 블랙라벨 전체 매장을 매장명·운영기간·실제매출·예측매출·
+ * 오차율·적중 여부만으로 보여준다(브랜드·운영상태·데이터완성도 등 전문 컬럼은 아래 "자세히
+ * 보기"의 코호트별 상세표에만 남겨둔다). 계산은 하지 않고 이미 계산된 ValidationStoreRow
+ * 필드를 그대로 옮겨 보여줄 뿐이다. 2026-09-02부터 실제매출이 1개월이라도 확정된 정상영업
+ * 블랙라벨 매장은 전부 정식검증 표본이라, 이 표의 매장 대부분이 위 요약 통계에도 포함된다
+ * (calc.ts CORE_VALIDATION_MIN_MONTHS 참고).
  */
 function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
   const sorted = [...rows].sort((a, b) => {
@@ -984,24 +988,25 @@ export default function ValidationPage() {
           오차율·적중여부만 남긴다. 아래 전문가용 상세 데이터와 계산 결과는 완전히 동일하다 —
           보여주는 범위만 줄인 것이지 새 계산은 하나도 없다.
           2026-08-30 — 사용자 요청으로 헤드라인을 "12개월 이상만"(coreSummary)에서
-          "정식검증+조기검증 통합"(combinedSummary, 12개월 미만 정상영업점까지 포함)으로 바꿨다.
-          단, "정식검증"이라는 공식 명칭 자체(12개월 완료 기준)는 그대로 두고 아래 "자세히 보기"의
-          1/2/3번 항목에서 계속 구분해 보여준다 — 학습표본 자격(12개월 완료)은 안 바뀌었다, 이건
-          어디까지나 "예측 대상 표시 범위"만 넓힌 것이다. */}
+          "정식검증+조기검증 통합"(combinedSummary)으로 바꿨다.
+          2026-09-02 — 사용자 확정("12개월 미만인 매장도 정상으로 평가해, 어차피 비슷비슷함")에 따라
+          정식검증 기준 자체를 12개월 → 1개월로 내렸다(calc.ts CORE_VALIDATION_MIN_MONTHS). 이제
+          학습표본 자격도 같은 기준이라 조기검증 집계는 비게 되고, coreSummary와 combinedSummary가
+          같은 매장 집합이 된다. */}
       <section className="space-y-3">
         <p className="text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-          정상 운영 중인 블랙라벨 매장(12개월 이상 정식검증 {coreSummary.sampleCount}곳 + 12개월 미만 조기검증{" "}
-          {combinedSummary.sampleCount - coreSummary.sampleCount}곳 = <b>{combinedSummary.sampleCount}곳</b>)으로 확인한 결과,{" "}
+          정상 운영 중인 블랙라벨 매장(실제매출이 {CORE_VALIDATION_MIN_MONTHS}개월 이상 확정된{" "}
+          <b>{combinedSummary.sampleCount}곳</b>)으로 확인한 결과,{" "}
           <b>{combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct <= 0.1).length}곳</b>(
           {formatPercent(combinedSummary.within10PctRatio)})은 모델 예측이 실제 매출과 <b>10% 이내</b>로 맞았습니다. 나머지{" "}
           {combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
           전체 평균으로는 실제 매출과 <b>{formatPercent(combinedSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
         </p>
         <p className="text-xs text-[#8a8072]">
-          아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 위 통계는 이 중 "12개월 이상"(정식검증)과 "12개월
-          미만·정상영업"(조기검증) 매장을 합친 결과이고, 학습표본 자체는 여전히 12개월 완료 매장만 씁니다(조기검증 매장은
-          예측만 받을 뿐 학습엔 안 쓰임). 12개월 이상만 본 "공식 정식검증" 수치는 아래 "자세히 보기 → 1번" 항목에서 따로
-          확인할 수 있습니다.
+          아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 2026-09-02부터 실제매출이{" "}
+          {CORE_VALIDATION_MIN_MONTHS}개월이라도 확정된 정상영업 매장은 전부 정식검증 표본이자 학습표본입니다(예전에는
+          12개월 이상만 정식검증). 완료월이 1~2개월인 매장은 오픈 프로모션 효과가 섞여 있을 수 있다는 점은 감안해서
+          보셔야 합니다.
         </p>
 
         <ErrorBucketChart summary={combinedSummary} />
@@ -1035,7 +1040,7 @@ export default function ValidationPage() {
         <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">검증 결과 요약</h2>
         <ul className="mt-3 space-y-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
           <li>
-            12개월 완료 블랙라벨: {fullTenureRows.length}곳 / 공식 정식검증 포함: {coreSummary.sampleCount}곳
+            정식검증 코호트 블랙라벨: {fullTenureRows.length}곳 / 공식 정식검증 포함: {coreSummary.sampleCount}곳
           </li>
           {fullTenureExcluded.length > 0 && (
             <li className="text-xs text-[#8a8072]">
@@ -1075,8 +1080,12 @@ export default function ValidationPage() {
           여기가 이 화면의 핵심입니다 — 신규 후보지를 예측할 때와 가장 비슷한 조건으로 측정한 <b>진짜 모델 성능</b>입니다.
         </p>
       </div>
-      <SummaryBlock title="1. 12개월 완료 정상영업점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
-      <SummaryBlock title="2. 12개월 미완료 정상영업점 조기 적중률 (조기검증, 완전 외부 검증군)" summary={computed.earlySummary} benchmark={REFERENCE_BENCHMARK.조기검증} />
+      <SummaryBlock title="1. 정상영업점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
+      <SummaryBlock
+        title="2. 조기검증 적중률 (2026-09-02부터 정식검증에 통합 — 표본 0곳)"
+        summary={computed.earlySummary}
+        benchmark={REFERENCE_BENCHMARK.조기검증}
+      />
       <SummaryBlock title="3. 정식검증+조기검증 통합 적중률" summary={combinedSummary} benchmark={REFERENCE_BENCHMARK.통합} />
       <SummaryBlock title="4. 사후 운영이슈·참고용 점포까지 포함한 참고 적중률" summary={computed.referenceSummary} />
 
@@ -1123,7 +1132,8 @@ export default function ValidationPage() {
         <h3 className="font-semibold text-[#171310] dark:text-[#f2ede2]">차이 원인 점검표</h3>
         <ul className="mt-2 space-y-1.5 text-[#5c5346] dark:text-[#c9bfae]">
           <li>
-            <b>학습대상 점포 차이</b>: 없음 — 시트·웹 모두 블랙라벨·정상영업·산식학습제외 아님·12개월 완료 26곳을 학습에 쓴다.
+            <b>학습대상 점포 차이</b>: 있음 — 시트는 12개월 완료 26곳으로 학습했지만, 웹은 2026-09-02부터 완료월{" "}
+            {CORE_VALIDATION_MIN_MONTHS}개월 이상 매장까지 학습에 쓴다(calc.ts CORE_VALIDATION_MIN_MONTHS).
           </li>
           <li>
             <b>검증점포 학습 제외 여부</b>: 있음(핵심 원인) — 시트는 26곳 전체로 학습한 단일 모형이 자기 자신을 예측(인샘플), 웹은

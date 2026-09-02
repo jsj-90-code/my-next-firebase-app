@@ -83,17 +83,23 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 2026-09-02(4차) minMarketDemandCoef/minCompetitivenessGapCoef 추가(사용자 확인: "경쟁점
     // 경쟁력은 반드시 평가 항목에 들어가야 한다") — empiricalFeaturesFor 4번째 피처(경쟁력점수×
     // log(경쟁력격차)) 재도입 + GPT 입지동선평가 데이터를 기존매장 competitivenessScore에도
-    // 반영(백필)한 뒤, 3개 하한선을 좌표하강 방식으로 그리드서치(순수 MAPE 최소화 기준, 사용자
-    // 확인) — hourly=0.03/demand=0.04/gap=0.04에서 수렴(정식검증 26곳 MAPE 11.03%, 이 세션
-    // 최저치). fitEmpiricalRevenueModel 주석 참고.
+    // 반영(백필)한 뒤, 3개 하한선을 좌표하강 방식으로 그리드서치(순수 MAPE 최소화 기준).
+    // 2026-09-02(5차) 재조정 — 정식 검증군을 12개월+ 26곳에서 1개월+ 37곳으로 확대
+    // (CORE_VALIDATION_MIN_MONTHS 주석 참고)하면서 최적 계수가 이동했다. 37곳 기준 2D
+    // 그리드서치 결과 수요 0.04→0 / 격차 0.04→0.06이 최적(MAPE 12.10%→11.74%, 중앙값
+    // 11.44%→10.75%, ±10% 43.2%→45.9%, 최대오차 26.2%→24.7%, 범위 25.8%p→24.1%p —
+    // ±20%만 81.1%→78.4%로 하락). 사용자가 처음 제시한 방향("수요 비중 낮추고 경쟁력격차
+    // 비중 높이기")과 일치하며, 26곳 코호트에서는 반대로 나왔던 게 표본 확대로 뒤집힌 것이다.
+    // 독점매장 우려(격차↑가 독점을 더 깎는다)는 수요↓가 상쇄해서 순효과가 거의 없음을 확인했다
+    // (독점 3곳 평균오차 14.3%→14.4%, 과소예측이던 탕정역·광주각화는 각 1%p 개선).
     v61Training: {
       ridgeLambda: 1,
       ridgeWeight: 0.6,
       baselineWeight: 0.4,
       minSampleCount: 12,
       minHourlyRateCoef: 0.03,
-      minMarketDemandCoef: 0.04,
-      minCompetitivenessGapCoef: 0.04,
+      minMarketDemandCoef: 0,
+      minCompetitivenessGapCoef: 0.06,
     },
     // 08_계산기준!B44:D49 "신규점 실측예측" 룩업표 — 사용자가 채팅으로 직접 확인해 준 값이며
     // reference/점포평가_최신본.xlsx!08_계산기준 행44~49와 정확히 일치함을 확인했다(2026-08-20).
