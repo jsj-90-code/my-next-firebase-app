@@ -45,3 +45,8 @@ next-env.d.ts
 
 # 기밀 원본 데이터(가맹점 실매출 등) - 분석용으로만 로컬에 두고 git에는 올리지 않는다.
 /reference/
+
+# 1회성 라이브 검증 스크립트(관리자 자격증명으로 실서비스 Firestore를 읽는다) — 커밋 금지
+src/lib/storeEval/_liveCheck.test.ts
+live-check-out.txt
+exp-out.txt
