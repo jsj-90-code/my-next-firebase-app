@@ -73,6 +73,8 @@ const FEATURE_REAL_VALUE_FORMATTERS = [
   (v: number) => `${formatScore(v, 1)}명`,
   (v: number) => `${formatScore(v, 2)}점`,
   (v: number) => `${formatScore(v, 2)}배`,
+  // 2026-09-03 — 5번째 피처(배후수요형 특수상권 더미)는 0/1이라 숫자보다 예/아니오가 읽기 쉽다.
+  (v: number) => (v >= 0.5 ? "해당" : "해당없음"),
 ];
 
 function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61TrainedModelExplain; v61Baseline: number | null }) {

@@ -1689,7 +1689,7 @@ describe("computeSpecialDemandScore (10_오차원인분석 근거 — 대학가�
 });
 
 describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-03 개편 — 2번째 피처를 IP당수요로 교체)", () => {
-  it("4개 특징치를 순서대로 반환한다: log(요금), log(IP당수요), 경쟁력점수, 경쟁력점수×log(격차)", () => {
+  it("5개 특징치를 순서대로 반환한다: log(요금), log(IP당수요), 경쟁력점수, 경쟁력점수×log(격차), 배후수요더미", () => {
     const features = empiricalFeaturesFor({
       hourlyRate: 1300,
       marketDemand: 200000,
@@ -1697,13 +1697,28 @@ describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-03 개편 — 2번�
       pcCount: 100,
       competitivenessScore: 4,
       competitivenessGap: 1.5,
+      specialDemandType: "군부대",
     });
-    expect(features).toHaveLength(4);
+    expect(features).toHaveLength(5);
     expect(features[0]).toBeCloseTo(Math.log(1300), 6);
     // IP당수요 = 상권수요 ÷ (자사PC + 경쟁IP) — 자사PC만으로 나누던 것에서 바뀌었다.
     expect(features[1]).toBeCloseTo(Math.log(200000 / (100 + 300)), 6);
     expect(features[2]).toBe(4);
     expect(features[3]).toBeCloseTo(4 * Math.log(1.5), 6);
+    expect(features[4]).toBe(1);
+  });
+  // 2026-09-03 — 배후수요형(군부대·산업단지)만 1이고 나머지는 전부 0이다. 대학가는 편향의
+  // 방향이 매장마다 갈려서(부경대 +5.8%, 청주대 +14.3%) 이 더미에 넣지 않았다 —
+  // calc.ts isBackingDemandMarket 주석 참고.
+  it("배후수요더미는 군부대·산업단지만 1이다", () => {
+    const feat = (type: string | null) =>
+      empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4, specialDemandType: type })[4];
+    expect(feat("군부대")).toBe(1);
+    expect(feat("산업단지")).toBe(1);
+    expect(feat("대학가")).toBe(0);
+    expect(feat("관광·유흥")).toBe(0);
+    expect(feat("기타")).toBe(0);
+    expect(feat(null)).toBe(0);
   });
   it("경쟁력격차가 없으면 1(중립)로 취급 — 상호작용항이 0", () => {
     const features = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4 });
@@ -2211,8 +2226,9 @@ describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스�
     const diag = diagnoseLoocvSensitivity("N0", [...normalStores, outlier], settings)!;
     expect(diag).not.toBeNull();
     expect(diag.sampleCountWithout).toBe(diag.sampleCountWith - 1);
-    expect(diag.coefficientsWith).toHaveLength(4);
-    expect(diag.coefficientsWithout).toHaveLength(4);
+    // 2026-09-03 — 배후수요형 특수상권 더미가 5번째 피처로 추가되면서 4 → 5.
+    expect(diag.coefficientsWith).toHaveLength(5);
+    expect(diag.coefficientsWithout).toHaveLength(5);
     const lo = Math.min(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     const hi = Math.max(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     expect(diag.blendedPrediction!).toBeGreaterThanOrEqual(lo);

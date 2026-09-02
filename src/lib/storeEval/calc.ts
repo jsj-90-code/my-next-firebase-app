@@ -1766,6 +1766,34 @@ export function predictEmpiricalRevenue(
 const SPECIAL_DEMAND_TYPES_WITH_EVIDENCE = new Set(["대학가", "군부대", "산업단지"]);
 const SPECIAL_DEMAND_INTENSITY_SCORE: Record<string, number> = { 없음: 0, 낮음: 1, 보통: 2, 높음: 3 };
 
+/**
+ * 2026-09-03 신설 — "배후수요형" 특수상권(군부대·산업단지) 판정.
+ *
+ * 배경: 번화가 매장 과소예측(-4.19%)의 원인을 추적하다 **오차의 원천이 상권성격이 아니라
+ * 특수수요라는 걸 찾았다.** 정식검증 37곳을 특수수요 보유 여부로 갈라보면 —
+ *   - 특수수요 없음 27곳: 평균편향 **+0.2%**, 평균절대오차 10.42% (사실상 편향 없음)
+ *   - 대학가 5곳: 평균편향 -5.5%
+ *   - **군부대·산업단지 5곳: 평균편향 -14.3%** (금촌역 -23.5%, 문산 -18.4%, 탕정역 -20.8%,
+ *     시흥정왕 -12.2%, 광주첨단 +3.6%)
+ * 즉 모델은 평범한 상권은 이미 잘 맞히고, 오차 대부분이 특수수요 매장에서 나온다.
+ *
+ * 왜 강도 점수(computeSpecialDemandScore, 0~3)가 아니라 이진 더미인가: 유형별로 **편향의
+ * 방향이 다르다**. 군부대/높음 -20.97%, 산업단지/보통 -20.77%인데 기타/높음은 +8.59%로 반대다.
+ * 하나의 스칼라로 뭉치면 서로 상쇄돼 효과가 사라진다 — 2026-08-20에 특수수요점수를 5번째
+ * 피처로 넣었다가 실패했던 게 바로 이 이유였다(그땐 원인을 몰랐다). 대학가(-5.5%)까지 더미로
+ * 따로 넣는 안도 시험했지만 200회 재추출에서 MAPE 73/200으로 오히려 나빠져 기각했다 —
+ * 대학가는 부경대 +5.8%, 청주대 +14.3%처럼 방향이 갈려서 군부대·산업단지만큼 일관되지 않다.
+ *
+ * 주의: 이 그룹은 37곳 중 **5곳뿐**이다. LOOCV 각 fold에서 4곳으로 계수를 추정하는 셈이라
+ * 과적합 위험이 크고, 재추출 검증도 같은 5곳을 반복 사용하므로 진짜 외부검증이 아니다.
+ * 그래서 계수 하한선을 편향을 완전히 상쇄하는 0.1이 아니라 보수적인 0.05로 뒀다
+ * (settings.v61Training.minBackingDemandCoef 주석 참고). 군부대·산업단지 매장이 새로
+ * 생기면 반드시 재검증할 것.
+ */
+export function isBackingDemandMarket(specialDemandType: string | null | undefined): boolean {
+  return specialDemandType === "군부대" || specialDemandType === "산업단지";
+}
+
 export function computeSpecialDemandScore(
   type: string | null | undefined,
   intensity: string | null | undefined,
@@ -1817,6 +1845,7 @@ export function buildV61TrainingStores(stores: ExistingStore[]): V61TrainingStor
     competitivenessScore: s.competitivenessScore as number,
     // 2026-09-02 추가 — 없으면(백필 전) 1(중립, 격차 없음 취급)로 폴백.
     competitivenessGap: s.competitivenessGap ?? 1,
+    specialDemandType: s.specialDemandType ?? null,
     actualMonthlyRevenueAvg: s.actualMonthlyRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
   }));
@@ -1831,6 +1860,10 @@ export type V61TrainingStore = {
   competitorIp: number; // 경쟁IP(총량, PC당 아님)
   competitivenessScore: number;
   competitivenessGap: number; // 2026-09-02 추가 — empiricalFeaturesFor 4번째 피처(경쟁점 반영), 1=중립
+  // 2026-09-03 추가 — empiricalFeaturesFor 5번째 피처(배후수요형 특수상권 더미)에 쓴다.
+  // 점수(0~3)가 아니라 원본 유형 문자열을 그대로 나르는 이유는 isBackingDemandMarket 주석 참고
+  // (유형별로 편향의 방향이 달라서 스칼라로 뭉치면 상쇄된다).
+  specialDemandType: string | null;
   actualMonthlyRevenueAvg: number;
   specialDemandScore: number; // 0~3, computeSpecialDemandScore
 };
@@ -1910,18 +1943,27 @@ export function empiricalFeaturesFor(input: {
   competitivenessScore: number;
   competitivenessGap?: number | null;
   specialDemandScore?: number;
+  specialDemandType?: string | null;
 }): number[] {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
     Math.log(Math.max(0.1, input.marketDemand / (input.pcCount + input.competitorIp))),
     input.competitivenessScore,
     input.competitivenessScore * Math.log(Math.max(0.1, input.competitivenessGap ?? 1)),
+    // 2026-09-03 — 배후수요형 특수상권(군부대·산업단지) 더미. isBackingDemandMarket 주석 참고.
+    isBackingDemandMarket(input.specialDemandType) ? 1 : 0,
   ];
 }
 
-/** empiricalFeaturesFor 순서([요금, IP당수요, 경쟁력점수, 경쟁력점수×log(격차)])에 맞춘 계수 하한선 배열. */
+/** empiricalFeaturesFor 순서([요금, IP당수요, 경쟁력점수, 경쟁력점수×log(격차), 배후수요더미])에 맞춘 계수 하한선 배열. */
 export function buildMinCoefficients(v61Training: ModelSettings["v61Training"]): number[] {
-  return [v61Training.minHourlyRateCoef, v61Training.minMarketDemandCoef, 0, v61Training.minCompetitivenessGapCoef];
+  return [
+    v61Training.minHourlyRateCoef,
+    v61Training.minMarketDemandCoef,
+    0,
+    v61Training.minCompetitivenessGapCoef,
+    v61Training.minBackingDemandCoef,
+  ];
 }
 
 export type LeaveOneOutRow = {
@@ -3008,6 +3050,7 @@ export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
     competitorIp: s.competitorIp as number,
     competitivenessScore: s.competitivenessScore as number,
     competitivenessGap: s.competitivenessGap ?? 1,
+    specialDemandType: s.specialDemandType ?? null,
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
   };
@@ -3062,7 +3105,11 @@ export function runCohortValidation(
             competitorIp: s.competitorIp,
             pcCount: resolvedPcCount,
             competitivenessScore: s.competitivenessScore,
+            // 2026-09-03 — competitivenessGap이 여기만 빠져 있었다(핵심표본은 toV61TrainingStore를
+            // 거쳐서 정상이었지만, 이 외부검증군 경로는 격차를 못 넘겨 4번째 피처가 항상 0이었다).
+            competitivenessGap: s.competitivenessGap,
             specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
+            specialDemandType: s.specialDemandType,
           }),
           resolvedPcCount,
           ridgeWeight,

@@ -44,6 +44,7 @@ import {
   computeV62Final,
   empiricalFeaturesFor,
   fitEmpiricalRevenueModel,
+  isBackingDemandMarket,
   getV62Rate,
   judgeAaGrade,
   lookupDemandCapture,
@@ -161,6 +162,9 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       pcCount: c.expectedPcCount,
       competitivenessScore: ownCompetitivenessScore,
       competitivenessGap,
+      // 특수수요는 CandidateInput이 아니라 09_입지동선평가(LocationEvaluation)에 있다 —
+      // 이미 입지동선평가 탭에서 입력받는 값이라 새 입력 필드가 필요 없다.
+      specialDemandType: loc?.specialDemandType ?? null,
     });
     const prediction = predictEmpiricalRevenue(
       trainedModel,
@@ -177,12 +181,19 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
         // 2026-09-03 — 2번째 피처가 "상권수요/자사PC"에서 "IP당수요(상권수요/(자사PC+경쟁IP))"로
         // 바뀌었다(calc.ts empiricalFeaturesFor 주석 참고). 라벨과 실제값 둘 다 같이 고쳐야 한다 —
         // 예전에 이 배열이 실제 피처 구성과 어긋난 채 몇 달간 방치된 적이 있다.
-        featureLabels: ["시간당요금", "IP당수요(상권수요/(자사PC+경쟁IP))", "경쟁력점수", "경쟁력점수×경쟁력격차"],
+        featureLabels: [
+          "시간당요금",
+          "IP당수요(상권수요/(자사PC+경쟁IP))",
+          "경쟁력점수",
+          "경쟁력점수×경쟁력격차",
+          "배후수요상권(군부대·산업단지)",
+        ],
         featureRealValues: [
           c.hourlyRate,
           marketDemand / (c.expectedPcCount + competitorIp),
           ownCompetitivenessScore,
           competitivenessGap ?? 1,
+          isBackingDemandMarket(loc?.specialDemandType) ? 1 : 0,
         ],
         featureModelValues: featuresRaw,
         featureMeans: trainedModel.featureMeans,

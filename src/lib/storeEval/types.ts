@@ -400,6 +400,9 @@ export type ModelSettings = {
     // 사업 판단으로 반드시 반영하기 위한 하한선. 비음수 릿지회귀가 이 피처를 0으로 자르지
     // 못하게 막는다 — 즉 격차가 불리하면 반드시 매출이 최소한은 깎이게 한다.
     minCompetitivenessGapCoef: number;
+    // 2026-09-03 추가 — 5번째 피처(배후수요형 특수상권 더미)의 계수 하한선.
+    // calc.ts isBackingDemandMarket 주석 참고.
+    minBackingDemandCoef: number;
   };
   // 13_신규후보지판정 "경쟁력격차 → 예상수요확보율/신규수요증가율" 룩업표 (08_계산기준!B44:D49).
   // gapLowerBound는 오름차순이며, 실제 격차가 그 값 이상인 것 중 가장 큰 하한을 적용한다(LOOKUP과 동일).
