@@ -1384,9 +1384,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     // 표준존구성(팀룸2·커플존3·VIP존5·프렌즈존15, 나머지0)에서 존다양성=4종류→3.5,
     // 특화좌석비율=(팀룸2×5+커플존3×2+VIP5+프렌즈15)/100=0.36→존수용력4 → 존구성=3.5*.7+4*.3=3.65.
     // interior(facility) = 존구성3.65*.5+인테리어4(표준값)*.3+관리4(표준값)*.2 = 3.825. location=4.0
-    // 2026-09-02(7차) 입지비중 15%→25%: spec/food/interior는 (0.75/0.9)로 재정규화.
-    // → 4*.25+4*.16667+3.825*.33333+4*.25 = 3.94167
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.9417, 3);
+    // 2026-09-03(8차) 하드:시설:입지를 30:40:30 → 20:50:20으로 재배분(먹거리 16.667% 유지):
+    // 하드 18.5185% / 먹거리 16.6667% / 시설 46.2963% / 입지 18.5185%
+    // → 4*.185185+4*.166667+3.825*.462963+4*.185185 = 3.91898
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.919, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -1412,9 +1413,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     // GPU(RTX5060=4), 모니터(240Hz=3.5) — (4*.4+3.5*.25)/(0.4+0.25)=3.808. food=4.
     // interior(facility)는 위 테스트와 동일 존구성(3.65)+인테리어4(직접입력, 표준값과 동일)+
     // 관리4(표준값) = 3.65*.5+4*.3+4*.2 = 3.825. location=4
-    // 2026-09-02(7차) 입지비중 15%→25%: spec/food/interior는 (0.75/0.9)로 재정규화.
-    // → 3.808*.25+4*.16667+3.825*.33333+4*.25 = 3.89359
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.8936, 3);
+    // 2026-09-03(8차) 하드:시설:입지 20:50:20 재배분(먹거리 16.667% 유지):
+    // → 3.808*.185185+4*.166667+3.825*.462963+4*.185185 = 3.88337
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.8834, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
@@ -1687,8 +1688,8 @@ describe("computeSpecialDemandScore (10_오차원인분석 근거 — 대학가�
   });
 });
 
-describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-02 개편 — 경쟁력격차 상호작용항 4번째로 재도입)", () => {
-  it("4개 특징치를 순서대로 반환한다: log(요금), log(marketDemand/PC), 경쟁력점수, 경쟁력점수×log(격차)", () => {
+describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-03 개편 — 2번째 피처를 IP당수요로 교체)", () => {
+  it("4개 특징치를 순서대로 반환한다: log(요금), log(IP당수요), 경쟁력점수, 경쟁력점수×log(격차)", () => {
     const features = empiricalFeaturesFor({
       hourlyRate: 1300,
       marketDemand: 200000,
@@ -1699,7 +1700,8 @@ describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-02 개편 — 경쟁
     });
     expect(features).toHaveLength(4);
     expect(features[0]).toBeCloseTo(Math.log(1300), 6);
-    expect(features[1]).toBeCloseTo(Math.log(200000 / 100), 6);
+    // IP당수요 = 상권수요 ÷ (자사PC + 경쟁IP) — 자사PC만으로 나누던 것에서 바뀌었다.
+    expect(features[1]).toBeCloseTo(Math.log(200000 / (100 + 300)), 6);
     expect(features[2]).toBe(4);
     expect(features[3]).toBeCloseTo(4 * Math.log(1.5), 6);
   });
@@ -1707,10 +1709,21 @@ describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-02 개편 — 경쟁
     const features = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4 });
     expect(features[3]).toBe(0);
   });
-  it("competitorIp 값이 달라져도 결과가 바뀌지 않는다 — 2026-09-01부로 학습 피처에서 완전히 빠짐(리브원아웃 검증으로 확정)", () => {
+  // 2026-09-03 — 예전엔 "competitorIp가 달라져도 결과가 안 바뀐다"를 검증했다(2026-09-01에 경쟁IP
+  // 피처를 뺀 뒤의 상태). 이제는 반대로, 경쟁IP가 IP당수요의 분모로 다시 들어왔으므로 경쟁점이
+  // 많을수록 2번째 피처가 작아져야 한다("상권수요를 경쟁점과 나눠 갖는다"는 구조).
+  it("경쟁IP가 크면 IP당수요 피처가 작아진다 — 경쟁점이 수요를 나눠 가져가는 구조", () => {
     const withCompetitor = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4 });
-    const withoutCompetitor = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 0, pcCount: 100, competitivenessScore: 4 });
-    expect(withCompetitor).toEqual(withoutCompetitor);
+    const monopoly = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 0, pcCount: 100, competitivenessScore: 4 });
+    expect(withCompetitor[1]).toBeLessThan(monopoly[1]);
+    // 경쟁IP 말고 나머지 3개 피처는 영향받지 않는다.
+    expect(withCompetitor[0]).toBe(monopoly[0]);
+    expect(withCompetitor[2]).toBe(monopoly[2]);
+    expect(withCompetitor[3]).toBe(monopoly[3]);
+  });
+  it("경쟁점이 없으면(경쟁IP 0) IP당수요는 상권수요/자사PC와 같다", () => {
+    const monopoly = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 0, pcCount: 100, competitivenessScore: 4 });
+    expect(monopoly[1]).toBeCloseTo(Math.log(200000 / 100), 6);
   });
   it("toEmpiricalSample도 empiricalFeaturesFor와 동일한 특징치를 만든다(중복 로직 없음)", () => {
     const store: V61TrainingStore = {

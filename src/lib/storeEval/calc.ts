@@ -1879,6 +1879,25 @@ export function toEmpiricalSample(store: V61TrainingStore): EmpiricalRevenueSamp
 // 실측기반 대체)과 잔차 역산(상관계수 0.09~0.25, 유의수준 미달)까지 확인한 결과 통계적으로는
 // 뚜렷한 개선을 못 찾았으나, "경쟁점 경쟁력은 반드시 평가 항목에 들어가야 한다"는 사업 판단에
 // 따라(요금계수 하한선과 동일한 원칙 — 통계적 최적보다 사업 상식 우선) 4번째 피처로 재도입한다.
+// 2026-09-03 — 2번째 피처를 log(상권수요/자사PC)에서 log(상권수요/(자사PC+경쟁IP))로 바꿨다
+// (= 08_계산기준의 "IP당수요", computeIpPerDemand와 같은 식). 사용자 요청("수요 산식을 바꾸고
+// 연계해서 경쟁점 점수 비중을 조정해 오차율 상한/하한 간격을 줄여보자")으로 실데이터 37곳에
+// 5가지 수요식 × 계수하한선 × 경쟁력비중 조합 2,700개를 LOOCV로 돌린 결과다.
+//
+// 발견: 이 변경 전까지 **수요 피처의 회귀계수가 정확히 0이었다**(하한선을 풀고 자유 적합해도 0).
+// 실측 상관계수가 상권수요/PC 0.116, 점유율 -0.054로 37표본 유의수준(0.33)에 한참 못 미쳐
+// 비음수 릿지가 이 피처를 통째로 버리고 있었다 — 그래서 그동안 수요 산식을 어떻게 바꿔도
+// 예측이 소수점 둘째 자리까지 똑같았다. minMarketDemandCoef 하한선(0.03)을 함께 걸어야
+// 수요가 실제로 예측에 참여한다. "경쟁점과 수요를 나눠 갖는다"는 구조를 반영해야 한다는
+// 사용자의 오랜 요구를, 통계가 아니라 계수 하한선(사업 판단)으로 강제 반영한 것이다.
+//
+// 결과(정식검증 37곳): MAPE 11.74%→11.56%, ±10% 43.2%→46.0%, ±20% 78.4%→81.1%,
+// 표준편차 13.88%→13.70%, **오차폭 48.35%→46.67%**(하한 -24.74%→-24.18%, 상한 23.61%→22.48%).
+// 중앙절대오차만 10.75%→12.23%로 나빠진다 — 양끝 매장이 좁혀지는 대신 중간 매장이 밀리는
+// 트레이드오프이며, 2,700개 조합 중 6개 지표가 하나도 안 나빠지는 조합은 없었다(사용자 확정:
+// 오차폭 축소 우선). 28곳 무작위추출 LOOCV 300회에서 오차폭 292/300·MAPE 241/300으로 개선돼
+// 표본이 흔들려도 유지되는 것까지 확인했다.
+//
 // 형태는 자사경쟁력×log(경쟁력격차) 상호작용(9가지 중 LOOCV MAPE가 근소하게 가장 낫던 형태,
 // 13.94%→13.76%) — 격차가 1(중립)이면 log(1)=0이라 자연스럽게 영향이 0이 된다. 비음수
 // 릿지회귀가 계수를 0으로 자르는 걸 막기 위해 fitEmpiricalRevenueModel에 최소 계수 하한선을
@@ -1894,13 +1913,13 @@ export function empiricalFeaturesFor(input: {
 }): number[] {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
-    Math.log(Math.max(0.1, input.marketDemand / input.pcCount)),
+    Math.log(Math.max(0.1, input.marketDemand / (input.pcCount + input.competitorIp))),
     input.competitivenessScore,
     input.competitivenessScore * Math.log(Math.max(0.1, input.competitivenessGap ?? 1)),
   ];
 }
 
-/** empiricalFeaturesFor 순서([요금, 상권수요/PC, 경쟁력점수, 경쟁력점수×log(격차)])에 맞춘 계수 하한선 배열. */
+/** empiricalFeaturesFor 순서([요금, IP당수요, 경쟁력점수, 경쟁력점수×log(격차)])에 맞춘 계수 하한선 배열. */
 export function buildMinCoefficients(v61Training: ModelSettings["v61Training"]): number[] {
   return [v61Training.minHourlyRateCoef, v61Training.minMarketDemandCoef, 0, v61Training.minCompetitivenessGapCoef];
 }

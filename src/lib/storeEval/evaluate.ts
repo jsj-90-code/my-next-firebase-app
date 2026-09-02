@@ -174,8 +174,16 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       v61IsFallback = false;
       v61TrainedModelExplain = {
         sampleCount: trainedModel.sampleCount,
-        featureLabels: ["시간당요금", "상권수요/PC대수", "경쟁력점수", "경쟁력점수×경쟁력격차"],
-        featureRealValues: [c.hourlyRate, marketDemand / c.expectedPcCount, ownCompetitivenessScore, competitivenessGap ?? 1],
+        // 2026-09-03 — 2번째 피처가 "상권수요/자사PC"에서 "IP당수요(상권수요/(자사PC+경쟁IP))"로
+        // 바뀌었다(calc.ts empiricalFeaturesFor 주석 참고). 라벨과 실제값 둘 다 같이 고쳐야 한다 —
+        // 예전에 이 배열이 실제 피처 구성과 어긋난 채 몇 달간 방치된 적이 있다.
+        featureLabels: ["시간당요금", "IP당수요(상권수요/(자사PC+경쟁IP))", "경쟁력점수", "경쟁력점수×경쟁력격차"],
+        featureRealValues: [
+          c.hourlyRate,
+          marketDemand / (c.expectedPcCount + competitorIp),
+          ownCompetitivenessScore,
+          competitivenessGap ?? 1,
+        ],
         featureModelValues: featuresRaw,
         featureMeans: trainedModel.featureMeans,
         featureSds: trainedModel.featureSds,
