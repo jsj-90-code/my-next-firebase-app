@@ -1686,19 +1686,25 @@ describe("computeSpecialDemandScore (10_오차원인분석 근거 — 대학가�
   });
 });
 
-describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-01 개편 — competitorIp 피처 제거, 3개로 축소)", () => {
-  it("3개 특징치를 순서대로 반환한다: log(요금), log(marketDemand/PC), 경쟁력점수", () => {
+describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-02 개편 — 경쟁력격차 상호작용항 4번째로 재도입)", () => {
+  it("4개 특징치를 순서대로 반환한다: log(요금), log(marketDemand/PC), 경쟁력점수, 경쟁력점수×log(격차)", () => {
     const features = empiricalFeaturesFor({
       hourlyRate: 1300,
       marketDemand: 200000,
       competitorIp: 300,
       pcCount: 100,
       competitivenessScore: 4,
+      competitivenessGap: 1.5,
     });
-    expect(features).toHaveLength(3);
+    expect(features).toHaveLength(4);
     expect(features[0]).toBeCloseTo(Math.log(1300), 6);
     expect(features[1]).toBeCloseTo(Math.log(200000 / 100), 6);
     expect(features[2]).toBe(4);
+    expect(features[3]).toBeCloseTo(4 * Math.log(1.5), 6);
+  });
+  it("경쟁력격차가 없으면 1(중립)로 취급 — 상호작용항이 0", () => {
+    const features = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4 });
+    expect(features[3]).toBe(0);
   });
   it("competitorIp 값이 달라져도 결과가 바뀌지 않는다 — 2026-09-01부로 학습 피처에서 완전히 빠짐(리브원아웃 검증으로 확정)", () => {
     const withCompetitor = empiricalFeaturesFor({ hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4 });
@@ -1714,6 +1720,7 @@ describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-01 개편 — compet
       marketDemand: 200000,
       competitorIp: 300,
       competitivenessScore: 4,
+      competitivenessGap: 1,
       actualMonthlyRevenueAvg: 60000000,
       specialDemandScore: 0,
     };
@@ -2184,8 +2191,8 @@ describe("diagnoseLoocvSensitivity / LOOCV 고변동 점포 진단 (1회성 스�
     const diag = diagnoseLoocvSensitivity("N0", [...normalStores, outlier], settings)!;
     expect(diag).not.toBeNull();
     expect(diag.sampleCountWithout).toBe(diag.sampleCountWith - 1);
-    expect(diag.coefficientsWith).toHaveLength(3);
-    expect(diag.coefficientsWithout).toHaveLength(3);
+    expect(diag.coefficientsWith).toHaveLength(4);
+    expect(diag.coefficientsWithout).toHaveLength(4);
     const lo = Math.min(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     const hi = Math.max(diag.ridgeOnlyPrediction!, diag.baselineOnlyPrediction!);
     expect(diag.blendedPrediction!).toBeGreaterThanOrEqual(lo);

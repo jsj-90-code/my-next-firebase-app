@@ -1669,7 +1669,7 @@ export function fitEmpiricalRevenueModel(
   samples: EmpiricalRevenueSample[],
   lambda: number,
   minSamples: number,
-  minHourlyRateCoef = 0,
+  minCoefficients: number[] = [],
 ): EmpiricalRevenueModel | null {
   if (samples.length < minSamples) return null;
   const p = samples[0].featuresRaw.length;
@@ -1695,11 +1695,14 @@ export function fitEmpiricalRevenueModel(
   );
   if (!coefficients) return null;
 
-  // 2026-09-02 — 시간당요금(featuresRaw[0])이 경쟁력점수와 얽혀 있어 비음수 릿지회귀가 요금
-  // 계수를 0으로 잘라버리는 경우가 있다("요금을 올려도 예상매출이 전혀 안 움직인다" 문제,
-  // 사용자 발견). 통계적으로는 정직한 결과지만 "요금 인상이 매출에 최소한의 영향은 준다"는
-  // 사업 상식과 맞지 않아, 하한선 아래면 하한선으로 올린다.
-  if (coefficients[0] < minHourlyRateCoef) coefficients[0] = minHourlyRateCoef;
+  // 2026-09-02 — 특정 피처(시간당요금 등)가 다른 피처와 얽혀 있어 비음수 릿지회귀가 계수를
+  // 0으로 잘라버리는 경우가 있다("요금을 올려도 예상매출이 전혀 안 움직인다" 문제, 사용자 발견 —
+  // 경쟁력격차 피처도 같은 이유로 하한선이 필요해 최소요금계수 하나만 두던 걸 배열로 일반화했다).
+  // 통계적으로는 정직한 결과지만 사업 상식과 맞지 않는 피처들에 최소 반영률을 강제한다.
+  for (let j = 0; j < coefficients.length; j++) {
+    const floor = minCoefficients[j] ?? 0;
+    if (coefficients[j] < floor) coefficients[j] = floor;
+  }
 
   return {
     sampleCount: n,
@@ -1812,6 +1815,8 @@ export function buildV61TrainingStores(stores: ExistingStore[]): V61TrainingStor
     marketDemand: s.marketDemand as number,
     competitorIp: s.competitorIp as number,
     competitivenessScore: s.competitivenessScore as number,
+    // 2026-09-02 추가 — 없으면(백필 전) 1(중립, 격차 없음 취급)로 폴백.
+    competitivenessGap: s.competitivenessGap ?? 1,
     actualMonthlyRevenueAvg: s.actualMonthlyRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
   }));
@@ -1825,6 +1830,7 @@ export type V61TrainingStore = {
   marketDemand: number; // 점유율 적용 전 원수요(총량, PC당 아님) — 2026-08-30부터 ownDemand 대신 이걸 씀
   competitorIp: number; // 경쟁IP(총량, PC당 아님)
   competitivenessScore: number;
+  competitivenessGap: number; // 2026-09-02 추가 — empiricalFeaturesFor 4번째 피처(경쟁점 반영), 1=중립
   actualMonthlyRevenueAvg: number;
   specialDemandScore: number; // 0~3, computeSpecialDemandScore
 };
@@ -1868,19 +1874,35 @@ export function toEmpiricalSample(store: V61TrainingStore): EmpiricalRevenueSamp
  * 폴백식·실측기반 예상월매출)는 이 변경과 무관하게 그대로 유지 — 이 4번째였던 학습 피처 하나만
  * 빠진다. 학습표본이 늘어나면(현재 12개월 미달 매장이 순차 편입) 재검증 필요.
  */
+// 2026-09-02(4차) — 경쟁점 데이터를 학습 피처에서 완전히 배제하는 게 맞는지 사용자가 재검토
+// 요청. 9가지 방식(단순추가·사후보정·상세경쟁점만·교체·상호작용 5종·비선형변환·캡처수요 구조·
+// 실측기반 대체)과 잔차 역산(상관계수 0.09~0.25, 유의수준 미달)까지 확인한 결과 통계적으로는
+// 뚜렷한 개선을 못 찾았으나, "경쟁점 경쟁력은 반드시 평가 항목에 들어가야 한다"는 사업 판단에
+// 따라(요금계수 하한선과 동일한 원칙 — 통계적 최적보다 사업 상식 우선) 4번째 피처로 재도입한다.
+// 형태는 자사경쟁력×log(경쟁력격차) 상호작용(9가지 중 LOOCV MAPE가 근소하게 가장 낫던 형태,
+// 13.94%→13.76%) — 격차가 1(중립)이면 log(1)=0이라 자연스럽게 영향이 0이 된다. 비음수
+// 릿지회귀가 계수를 0으로 자르는 걸 막기 위해 fitEmpiricalRevenueModel에 최소 계수 하한선을
+// 함께 둔다(minCompetitivenessGapCoef).
 export function empiricalFeaturesFor(input: {
   hourlyRate: number;
   marketDemand: number;
   competitorIp: number;
   pcCount: number;
   competitivenessScore: number;
+  competitivenessGap?: number | null;
   specialDemandScore?: number;
 }): number[] {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
     Math.log(Math.max(0.1, input.marketDemand / input.pcCount)),
     input.competitivenessScore,
+    input.competitivenessScore * Math.log(Math.max(0.1, input.competitivenessGap ?? 1)),
   ];
+}
+
+/** empiricalFeaturesFor 순서([요금, 상권수요/PC, 경쟁력점수, 경쟁력점수×log(격차)])에 맞춘 계수 하한선 배열. */
+export function buildMinCoefficients(v61Training: ModelSettings["v61Training"]): number[] {
+  return [v61Training.minHourlyRateCoef, v61Training.minMarketDemandCoef, 0, v61Training.minCompetitivenessGapCoef];
 }
 
 export type LeaveOneOutRow = {
@@ -1912,11 +1934,11 @@ export function runLeaveOneOutValidation(
   ridgeWeight: number,
   baselineWeight: number,
   minSampleCount: number,
-  minHourlyRateCoef = 0,
+  minCoefficients: number[] = [],
 ): LeaveOneOutResult {
   const rows: LeaveOneOutRow[] = stores.map((store) => {
     const trainSamples = stores.filter((s) => s.storeCode !== store.storeCode).map(toEmpiricalSample);
-    const model = fitEmpiricalRevenueModel(trainSamples, lambda, minSampleCount, minHourlyRateCoef);
+    const model = fitEmpiricalRevenueModel(trainSamples, lambda, minSampleCount, minCoefficients);
     const prediction = model
       ? predictEmpiricalRevenue(model, empiricalFeaturesFor(store), store.pcCount, ridgeWeight, baselineWeight)
       : null;
@@ -2573,6 +2595,7 @@ export type ValidationStoreInput = {
   marketDemand: number | null; // 2026-08-30 추가 — empiricalFeaturesFor 학습 특징치(점유율 적용 전 원수요)
   competitorIp: number | null; // 2026-08-30 추가 — empiricalFeaturesFor 학습 특징치(경쟁IP)
   competitivenessScore: number | null;
+  competitivenessGap?: number | null; // 2026-09-02 추가 — empiricalFeaturesFor 4번째 학습 피처(경쟁점 반영)
   actualRevenueAvg: number | null; // 완료월 평균 실제매출 (누적평균매출)
   specialDemandType?: string | null; // 09_입지동선평가!특수수요유형 (대학가/군부대/산업단지 등)
   specialDemandIntensity?: string | null; // 특수수요강도 (없음/낮음/보통/높음)
@@ -2944,6 +2967,7 @@ export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
     marketDemand: s.marketDemand as number,
     competitorIp: s.competitorIp as number,
     competitivenessScore: s.competitivenessScore as number,
+    competitivenessGap: s.competitivenessGap ?? 1,
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
   };
@@ -2959,17 +2983,18 @@ export function runCohortValidation(
   stores: ValidationStoreInput[],
   settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">,
 ): { rows: ValidationStoreRow[] } {
-  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minHourlyRateCoef } = settings.v61Training;
+  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
+  const minCoefficients = buildMinCoefficients(settings.v61Training);
 
   const coreStores = stores.filter(isCoreEligibleForV61Training);
   const coreTraining = coreStores.map(toV61TrainingStore);
 
   // 리브-원-아웃: 핵심 학습표본끼리는 서로를 빼고 학습·예측한다(데이터 누출 방지).
-  const loo = runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minHourlyRateCoef);
+  const loo = runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minCoefficients);
   const looByCode = new Map(loo.rows.map((r) => [r.storeCode, r.predictedRevenue]));
 
   // 완전 외부 검증군 예측용 - 핵심 학습표본 전체로 학습한 단일 모형.
-  const fullModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minHourlyRateCoef);
+  const fullModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minCoefficients);
 
   const rows: ValidationStoreRow[] = stores.map((s) => {
     const cohort = classifyTenureCohort(s.completedMonths);
@@ -3220,7 +3245,8 @@ export function diagnoseLoocvSensitivity(
   stores: ValidationStoreInput[],
   settings: Pick<ModelSettings, "v61Training">,
 ): LoocvSensitivityDiagnostic | null {
-  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minHourlyRateCoef } = settings.v61Training;
+  const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
+  const minCoefficients = buildMinCoefficients(settings.v61Training);
   const coreTraining = stores.filter(isCoreEligibleForV61Training).map(toV61TrainingStore);
   const target = coreTraining.find((s) => s.storeCode === storeCode);
   if (!target) return null;
@@ -3228,8 +3254,8 @@ export function diagnoseLoocvSensitivity(
   const withoutTraining = coreTraining.filter((s) => s.storeCode !== storeCode);
   const featuresRaw = empiricalFeaturesFor(target);
 
-  const withModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minHourlyRateCoef);
-  const withoutModel = fitEmpiricalRevenueModel(withoutTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minHourlyRateCoef);
+  const withModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minCoefficients);
+  const withoutModel = fitEmpiricalRevenueModel(withoutTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minCoefficients);
 
   const ridgeOnly = withoutModel ? predictEmpiricalRevenue(withoutModel, featuresRaw, target.pcCount, 1, 0) : null;
   const baselineOnly = withoutModel ? predictEmpiricalRevenue(withoutModel, featuresRaw, target.pcCount, 0, 1) : null;

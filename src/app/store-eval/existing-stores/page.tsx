@@ -70,6 +70,7 @@ function blankStore(): ExistingStore {
     marketDemand: null,
     competitorIp: null,
     competitivenessScore: null,
+    competitivenessGap: null,
     actualMonthlyRevenueAvg: null,
     completedMonths: 0,
     address: null,

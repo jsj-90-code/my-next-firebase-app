@@ -390,7 +390,16 @@ export type ModelSettings = {
     // 비음수 릿지회귀가 요금 계수를 0으로 잘라버렸다(신규후보지에서 요금을 바꿔도 예상매출이
     // 전혀 안 움직이는 문제로 발견). 계수가 이 값 미만이면 이 값으로 올린다 — "요금 인상이
     // 매출에 최소한의 영향은 준다"는 사업 상식을 강제하는 하한선. fitEmpiricalRevenueModel 참고.
-    minHourlyRateCoef: number; // 0.05
+    minHourlyRateCoef: number; // 0.04
+    // 2026-09-02(4차) 추가 — empiricalFeaturesFor 4번째 피처(자사경쟁력×log(경쟁력격차))를
+    // 넣으면서, 상관관계 때문에 2번째 피처(상권수요/PC)의 계수가 0으로 잘리는 부작용이 관측돼
+    // (신규후보지 상권데이터를 바꿔도 매출이 안 움직이는 문제 재발 방지) 같이 하한선을 둔다.
+    minMarketDemandCoef: number;
+    // 2026-09-02(4차) 추가(사용자 확인: "경쟁점 경쟁력은 반드시 평가 항목에 들어가야 한다") —
+    // 통계적으로는 유의미한 개선을 못 찾았지만(9가지 방식 다 실패, 잔차상관도 유의수준 미달)
+    // 사업 판단으로 반드시 반영하기 위한 하한선. 비음수 릿지회귀가 이 피처를 0으로 자르지
+    // 못하게 막는다 — 즉 격차가 불리하면 반드시 매출이 최소한은 깎이게 한다.
+    minCompetitivenessGapCoef: number;
   };
   // 13_신규후보지판정 "경쟁력격차 → 예상수요확보율/신규수요증가율" 룩업표 (08_계산기준!B44:D49).
   // gapLowerBound는 오름차순이며, 실제 격차가 그 값 이상인 것 중 가장 큰 하한을 적용한다(LOOKUP과 동일).
@@ -644,6 +653,11 @@ export type ExistingStore = {
   marketDemand: number | null; // computeExistingStoreDemandEvaluation 결과 그대로 캐시(점유율 적용 전 원수요)
   competitorIp: number | null; // computeExistingStoreDemandEvaluation 결과 그대로 캐시(경쟁IP)
   competitivenessScore: number | null; // 04_점포평가요약!자사_경쟁력점수 (=01_점포기본정보와 동일)
+  // 2026-09-02 추가(사용자 확인) — V61 4번째 학습 피처(자사경쟁력×log(경쟁력격차) 상호작용)에
+  // 쓰기 위해 새로 저장한다. computeCompetitivenessGap(ownCompetitivenessScore,
+  // competitorAvgCompetitiveness) 결과를 스냅샷으로 캐시(경쟁점 목록 변경 시 재계산 필요 —
+  // scripts/backfillCompetitivenessGap.mjs로 백필).
+  competitivenessGap: number | null;
   actualMonthlyRevenueAvg: number | null; // 04_점포평가요약!누적평균매출 — 학습 타깃(실제매출), 오픈 2개월차~최신 완료월 평균
 
   // 2026-08-20 추가 — 12개월 미완료 매장까지 포함한 코호트 검증(요청사항, calc.ts runCohortValidation) 입력.

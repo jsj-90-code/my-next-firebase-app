@@ -13,7 +13,7 @@
 import { google } from "googleapis";
 import type { Firestore } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import { computeExistingStoreDemandEvaluation, computeStabilizedPerformance } from "./calc";
+import { computeCompetitorAvgCompetitiveness, computeCompetitivenessGap, computeExistingStoreDemandEvaluation, computeStabilizedPerformance } from "./calc";
 import { defaultModelSettings } from "./settings";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "./types";
 // scripts/migrateFullExistingStoreProfiles.mjs, scripts/syncSalesFromRevenueSheet.mjs와 셀 파싱/
@@ -364,6 +364,11 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     const competitors = competitorsByStoreCode.get(code) ?? [];
     const loc = locationEvalByCandidateCode.get(store.originCandidateCode ?? code) ?? null;
     const evalResult = computeExistingStoreDemandEvaluation(store, competitors, loc, settings);
+    // 2026-09-02(4차) — empiricalFeaturesFor 4번째 학습 피처(자사경쟁력×log(경쟁력격차))에 쓰기
+    // 위해 competitivenessGap도 같이 캐시한다(사용자 확인: "경쟁점 경쟁력은 반드시 평가 항목에
+    // 들어가야 한다").
+    const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);
+    const competitivenessGap = computeCompetitivenessGap(evalResult.ownCompetitivenessScore, competitorAvgCompetitiveness);
     // 2026-08-30 — marketDemand/competitorIp도 같이 캐시한다(calc.ts empiricalFeaturesFor가
     // ownDemand 대신 이 둘을 분리된 학습 특징치로 쓰게 바뀜, empiricalFeaturesFor 주석 참고).
     const patch = {
@@ -371,6 +376,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       ownDemand: evalResult.ownDemand,
       marketDemand: evalResult.marketDemand,
       competitorIp: evalResult.competitorIp,
+      competitivenessGap,
     };
     if (!isSameData(store, patch)) {
       await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);

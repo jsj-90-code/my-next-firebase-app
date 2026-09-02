@@ -412,6 +412,7 @@ export async function convertCandidateToExistingStore(input: {
     marketDemand: null,
     competitorIp: null,
     competitivenessScore: null,
+    competitivenessGap: null,
     actualMonthlyRevenueAvg: null,
     completedMonths: 0,
     address: c.address,

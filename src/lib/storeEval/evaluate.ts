@@ -10,6 +10,7 @@
 import {
   applyCapacityCeiling,
   applyStandardOwnFacilityDefaults,
+  buildMinCoefficients,
   buildV61TrainingStores,
   computeAaBaselineRevenue,
   computeBoundedSales,
@@ -144,7 +145,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     trainingSamples,
     settings.v61Training.ridgeLambda,
     settings.v61Training.minSampleCount,
-    settings.v61Training.minHourlyRateCoef,
+    buildMinCoefficients(settings.v61Training),
   );
 
   const expectedOwnDemand = computeExpectedOwnDemand(marketDemand, c.expectedPcCount, competitivenessGap, competitorIp);
@@ -159,6 +160,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       competitorIp,
       pcCount: c.expectedPcCount,
       competitivenessScore: ownCompetitivenessScore,
+      competitivenessGap,
     });
     const prediction = predictEmpiricalRevenue(
       trainedModel,
@@ -172,8 +174,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       v61IsFallback = false;
       v61TrainedModelExplain = {
         sampleCount: trainedModel.sampleCount,
-        featureLabels: ["시간당요금", "상권수요/PC대수", "경쟁IP/PC대수", "경쟁력점수"],
-        featureRealValues: [c.hourlyRate, marketDemand / c.expectedPcCount, competitorIp / c.expectedPcCount, ownCompetitivenessScore],
+        featureLabels: ["시간당요금", "상권수요/PC대수", "경쟁력점수", "경쟁력점수×경쟁력격차"],
+        featureRealValues: [c.hourlyRate, marketDemand / c.expectedPcCount, ownCompetitivenessScore, competitivenessGap ?? 1],
         featureModelValues: featuresRaw,
         featureMeans: trainedModel.featureMeans,
         featureSds: trainedModel.featureSds,

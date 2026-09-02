@@ -80,7 +80,21 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 따라 "적중률(임계값 통과) 위주"가 아니라 "전체 매장 오차크기(MAPE) 최소화" 기준으로 재선정 —
     // 세밀한 그리드서치 결과 0.04가 순수 MAPE 최적점(11.23%, 0.08은 11.68%). 대신 중앙값(10.39%,
     // 목표10% 미달)·±10%(46.2%, 0.08은 50.0%)는 0.08보다 못하다 — 목표치 자체는 별도 재검토 예정.
-    v61Training: { ridgeLambda: 1, ridgeWeight: 0.6, baselineWeight: 0.4, minSampleCount: 12, minHourlyRateCoef: 0.04 },
+    // 2026-09-02(4차) minMarketDemandCoef/minCompetitivenessGapCoef 추가(사용자 확인: "경쟁점
+    // 경쟁력은 반드시 평가 항목에 들어가야 한다") — empiricalFeaturesFor 4번째 피처(경쟁력점수×
+    // log(경쟁력격차)) 재도입 + GPT 입지동선평가 데이터를 기존매장 competitivenessScore에도
+    // 반영(백필)한 뒤, 3개 하한선을 좌표하강 방식으로 그리드서치(순수 MAPE 최소화 기준, 사용자
+    // 확인) — hourly=0.03/demand=0.04/gap=0.04에서 수렴(정식검증 26곳 MAPE 11.03%, 이 세션
+    // 최저치). fitEmpiricalRevenueModel 주석 참고.
+    v61Training: {
+      ridgeLambda: 1,
+      ridgeWeight: 0.6,
+      baselineWeight: 0.4,
+      minSampleCount: 12,
+      minHourlyRateCoef: 0.03,
+      minMarketDemandCoef: 0.04,
+      minCompetitivenessGapCoef: 0.04,
+    },
     // 08_계산기준!B44:D49 "신규점 실측예측" 룩업표 — 사용자가 채팅으로 직접 확인해 준 값이며
     // reference/점포평가_최신본.xlsx!08_계산기준 행44~49와 정확히 일치함을 확인했다(2026-08-20).
     demandCaptureTable: [
