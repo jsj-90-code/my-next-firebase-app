@@ -68,6 +68,9 @@ const ERROR_CAUSE_LABELS: Record<ErrorCauseCode, string> = {
 
 const OPERATIONAL_STATUS_LABELS: Record<OperationalStatus, string> = {
   normal: "정상",
+  // 2026-09-02 이후 이 상태는 "완료월 1개월 미만 등으로 정식 검증군에 못 든 매장"을 뜻한다
+  // (calc.ts computeOperationalStatus는 cohort로만 판정하므로 12개월과 무관하다). 12개월
+  // 미만 표기는 운영기간 열의 TenureBadge가 따로 담당한다.
   early: "초기(완료월 부족)",
   post_open_issue: "사후 운영이슈",
   abnormal: "비정상영업",
@@ -550,7 +553,9 @@ function GlossarySection() {
           <li>
             <b>코호트(정식검증)</b> — 오픈한 지 얼마나 됐는지로 나눈 그룹. 2026-09-02부터 실제매출이 확정된 달이{" "}
             {CORE_VALIDATION_MIN_MONTHS}개월 이상인 정상영업 블랙라벨 매장은 전부 "정식검증" 대상입니다(이전에는 12개월
-            이상만 정식검증, 그 미만은 "조기검증"으로 따로 집계했습니다).
+            이상만 정식검증, 그 미만은 "조기검증"으로 따로 집계했습니다). 다만 아래 표의 <b>운영기간</b> 열에는 12개월
+            완료 여부를 계속 표시합니다 — 집계에서 빼지는 않지만, 오픈 프로모션 효과가 아직 섞여 있을 수 있는 매장을 눈으로
+            구분하기 위해서입니다.
           </li>
           <li>
             <b>MAPE(평균절대오차율)</b> — 예측이 실제매출과 평균적으로 몇 % 차이 나는지. 낮을수록 좋습니다.
@@ -581,12 +586,32 @@ function AccuracyBadge({ absoluteErrorPct }: { absoluteErrorPct: number | null }
   return <span className="app-badge app-badge-danger">차이 큼</span>;
 }
 
-/** 정식검증 대상 여부 배지 — classifyTenureCohort(calc.ts) 기준 그대로. */
-function TenureBadge({ cohort }: { cohort: ValidationStoreRow["cohort"] }) {
+/**
+ * 운영기간 배지.
+ *
+ * 2026-09-02에 정식검증 기준이 12개월 → 1개월로 내려갔지만, 사용자 요청("검증탭에 12개월 미만
+ * 매장 표기하는 건 유지해")에 따라 **12개월 완료 여부 표기는 그대로 남긴다**. 이제 이 표기는
+ * 정식검증 포함/제외를 가르는 기준이 아니라, "오픈 프로모션 효과가 아직 섞여 있을 수 있는
+ * 매장"을 눈으로 구분하기 위한 참고 표시다. 정식검증에서 실제로 빠진 매장은 옆의 "검증 제외"
+ * 배지로 따로 알려준다(사후 운영이슈 등).
+ */
+const FULL_TENURE_MONTHS = 12;
+
+function TenureBadge({
+  cohort,
+  completedMonths,
+}: {
+  cohort: ValidationStoreRow["cohort"];
+  completedMonths: number;
+}) {
+  const isFullTenure = completedMonths >= FULL_TENURE_MONTHS;
   const isFormal = cohort === "정식 검증군";
   return (
-    <span className={`app-badge ${isFormal ? "app-badge-info" : "app-badge-neutral"}`}>
-      {isFormal ? "정식검증 대상" : "검증 제외"}
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <span className={`app-badge ${isFullTenure ? "app-badge-info" : "app-badge-warn"}`}>
+        {isFullTenure ? `${FULL_TENURE_MONTHS}개월 이상` : `${FULL_TENURE_MONTHS}개월 미만 (${completedMonths}개월)`}
+      </span>
+      {!isFormal && <span className="app-badge app-badge-neutral">검증 제외</span>}
     </span>
   );
 }
@@ -624,7 +649,7 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
             <tr key={r.storeCode} className="text-[#171310] dark:text-[#f2ede2]">
               <td className="px-3 py-2 font-medium">{r.storeName}</td>
               <td className="px-3 py-2">
-                <TenureBadge cohort={r.cohort} />
+                <TenureBadge cohort={r.cohort} completedMonths={r.completedMonths} />
               </td>
               <td className="px-3 py-2">{formatWon(r.actualRevenueAvg)}</td>
               <td className="px-3 py-2">{formatWon(r.v62PredictedRevenueAvg)}</td>
