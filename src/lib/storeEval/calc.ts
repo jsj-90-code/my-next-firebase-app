@@ -309,10 +309,16 @@ export function applySurveyLevelDefault(
   return null;
 }
 
+// 2026-09-02(사용자 확인) — 실측 PC대수가 있는 경쟁점 194곳 분포(최소61·25%ile90·중앙값107·
+// 최대400)를 확인해보니 기존 기본값 70이 분포 최소값보다도 낮은 과소추정이었다. 25%ile(보수적
+// 추정)에 해당하는 90으로 상향.
+export const DEFAULT_UNSURVEYED_PC_COUNT = 90;
+
 /**
  * 간략_기본대수: 조사수준이 간략/외관만이거나 investigationStatus가 "노후저경쟁력미조사"이면
- * 대수를 70대로 간주한다(경쟁점이 실제로 존재한다는 업무 판단은 보존하되, 실사 없이 지어낸
- * 값이라는 걸 잊지 않는다). "경쟁점없음"은 0(경쟁점 자체가 없음), 그 외 값 누락은 null(집계 제외).
+ * 대수를 DEFAULT_UNSURVEYED_PC_COUNT대로 간주한다(경쟁점이 실제로 존재한다는 업무 판단은
+ * 보존하되, 실사 없이 지어낸 값이라는 걸 잊지 않는다). "경쟁점없음"은 0(경쟁점 자체가 없음),
+ * 그 외 값 누락은 null(집계 제외).
  */
 export function computeCompetitorAppliedPcCount(
   c: Pick<Competitor, "totalPcCount" | "appliedPcCount" | "surveyLevel"> & { investigationStatus?: CompetitorInvestigationStatus },
@@ -320,10 +326,10 @@ export function computeCompetitorAppliedPcCount(
   if (c.investigationStatus === "경쟁점없음") return 0;
   if (c.appliedPcCount != null) return c.appliedPcCount;
   if (c.totalPcCount != null) return c.totalPcCount;
-  if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return 70;
+  if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return DEFAULT_UNSURVEYED_PC_COUNT;
   // 노후저경쟁력미조사와 오픈예정(2026-08-27) 둘 다 "존재는 하지만 실사 못 함" 케이스라 같은
   // 기본값(간략_기본대수)으로 채운다 - PC대수가 알려져 있으면 위에서 이미 그 값을 썼을 것이다.
-  if (c.investigationStatus === "노후저경쟁력미조사" || c.investigationStatus === "오픈예정") return 70;
+  if (c.investigationStatus === "노후저경쟁력미조사" || c.investigationStatus === "오픈예정") return DEFAULT_UNSURVEYED_PC_COUNT;
   return null;
 }
 
@@ -340,9 +346,9 @@ export function describeAppliedPcCountBasis(
   if (c.investigationStatus === "경쟁점없음") return "확인된 독점상권(경쟁점 없음, 0대)";
   if (c.appliedPcCount != null) return "실측값(적용대수 직접입력)";
   if (c.totalPcCount != null) return "실측값(전체대수)";
-  if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return `추정값(조사수준=${c.surveyLevel}, 간략_기본대수 70대 적용)`;
-  if (c.investigationStatus === "노후저경쟁력미조사") return "추정값(노후·저경쟁력 미조사, 간략_기본대수 70대 적용)";
-  if (c.investigationStatus === "오픈예정") return "추정값(오픈예정, 간략_기본대수 70대 적용)";
+  if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return `추정값(조사수준=${c.surveyLevel}, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
+  if (c.investigationStatus === "노후저경쟁력미조사") return `추정값(노후·저경쟁력 미조사, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
+  if (c.investigationStatus === "오픈예정") return `추정값(오픈예정, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
   return null;
 }
 
