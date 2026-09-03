@@ -4,7 +4,12 @@
 
 export type ReviewStatus = "진행" | "보류" | "종료" | "완료";
 export type GroundLevel = "지상" | "지하";
-export type SurveyLevel = "상세" | "간략" | "외관만";
+// 2026-09-03 — "외관만"을 폐지하고 "간략"으로 통합했다(사용자 확정). 계산상 두 단계가 완전히
+// 동일해졌기 때문이다: 미입력 항목 기본점수 2.5(SURVEY_LEVEL_DEFAULT_SCORE), PC대수 기본값
+// 90대(computeCompetitorAppliedPcCount), 조사 신뢰도 집계에서도 둘 다 lightCount로 합산
+// (computeCompetitorInvestigationSummary는 "상세"만 따로 센다). 기존 "외관만" 29곳은 "간략"으로
+// 일괄 전환했고, 예측값은 전혀 바뀌지 않았다.
+export type SurveyLevel = "상세" | "간략";
 // 원본 시트에는 없는 워크플로 상태값. 05_경쟁점정보에 "경쟁점 없음"과 "노후·저경쟁력 미조사"를
 // 구분하는 필드가 없어(docs/data-issues.md #3), 사용자 승인 하에 웹에서만 신규로 추가한다.
 //
@@ -280,7 +285,7 @@ export type Competitor = {
   interiorLevelScore: number | null; // 최신성·디자인
   interiorConditionScore: number | null; // 청결·관리상태
   // 2026-08-28 전면개편, 2026-08-30 재개편 — CandidateInput.ownSeatZoneScore와 동일 개념. 존
-  // 개수(teamRoom~firstClassZone)로 자동계산 가능하면 그 값을 쓰고, 조사수준이 간략/외관만이라
+  // 개수(teamRoom~firstClassZone)로 자동계산 가능하면 그 값을 쓰고, 조사수준이 "간략"이라
   // 개수 자체를 모르면(전부 null) 이 직접입력값(조사자 종합평가)으로 폴백한다(§2, resolveSeatZoneScore).
   seatZoneScore: number | null; // 좌석·존구성 직접입력 폴백(존 개수 정보가 전혀 없을 때만 사용)
   comfortScore: number | null; // 냄새·조명·화장실·편의성

@@ -26,6 +26,7 @@ import type {
   ModelSettings,
   CompletionStatus,
   FinalJudgement,
+  SurveyLevel,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -304,30 +305,33 @@ export function computeIpPerDemand(marketDemand: number | null, ownPcCount: numb
  *    외관만 29곳은 관리 0%·층수 3%로 거의 전부 비어 **종합점수가 3종뿐(사실상 기본값 그 자체)**
  *    이다. 게다가 신규후보지에 딸린 경쟁점 58곳 중 간략은 4곳뿐이라, 1.5와 2.0의 차이가
  *    후보지 예상매출에 만드는 차이가 실질적으로 0이었다. 그래서 한 값으로 통일했다.
- *    (조사수준 자체는 화면의 조사 신뢰도 집계 computeCompetitorInvestigationSummary에서
- *     계속 구분해 쓰므로 필드를 없애지는 않는다 — 점수 기본값만 통일한 것이다.)
  *
- * 영향: 기존 37곳 백테스트는 사실상 무영향(MAPE 11.25%→11.23%, ±20% 86.5% 동일) —
+ * 그리고 값이 같아진 이상 조사수준을 두 단계로 유지할 이유도 없어서(사용자 확정
+ * "외관만을 없애면 되는 거 아닌가") **"외관만"을 폐지하고 "간략"으로 통합**했다 — 기본대수
+ * (90대)와 조사 신뢰도 집계(둘 다 lightCount)까지 이미 완전히 같았다. 기존 "외관만" 29곳은
+ * "간략"으로 일괄 전환했고 예측값은 전혀 바뀌지 않았다. types.ts SurveyLevel 주석 참고.
+ *
+ * 영향: 기존 37곳 백테스트는 사실상 무영향(MAPE 11.25%→11.21%, ±20%는 86.5%→89.2%로 개선) —
  * 기존 가맹점 경쟁점은 이미 실측이 잘 돼 있어 기본값이 채워질 자리가 거의 없기 때문이다.
  * 반면 신규후보지 예상매출은 1~8% 내려간다(미조사 경쟁점 비중이 클수록 크게).
  */
-export const SURVEY_LEVEL_DEFAULT_SCORE: Record<"간략" | "외관만", number> = { 간략: 2.5, 외관만: 2.5 };
+export const SURVEY_LEVEL_DEFAULT_SCORE: Record<"간략", number> = { 간략: 2.5 };
 
 /**
- * applySurveyLevelDefault: 조사수준이 간략/외관만이면 미입력 항목을 기본값으로 채운다.
- * investigationStatus가 "노후저경쟁력미조사"이면 조사수준이 비어 있어도 "외관만"과 동일하게
- * 취급한다 — 노후·저경쟁력이라 상세조사를 생략했다는 업무 판단을 반영한다(요청사항 5).
+ * applySurveyLevelDefault: 조사수준이 "간략"이면 미입력 항목을 기본값으로 채운다.
+ * investigationStatus가 "노후저경쟁력미조사"이면 조사수준이 비어 있어도 동일하게 취급한다 —
+ * 노후·저경쟁력이라 상세조사를 생략했다는 업무 판단을 반영한다(요청사항 5).
  * "값 누락"(조사완료인데 값이 비어 있는 경우)은 이 함수에서 채우지 않고 그대로 null을 돌려준다
  * — 평균값·0점으로 단순 치환하지 않기 위함이다.
  */
 export function applySurveyLevelDefault(
   score: number | null,
-  surveyLevel: "상세" | "간략" | "외관만" | null,
+  surveyLevel: SurveyLevel | null,
   investigationStatus?: CompetitorInvestigationStatus,
 ): number | null {
   if (score != null) return score;
-  if (surveyLevel === "간략" || surveyLevel === "외관만") return SURVEY_LEVEL_DEFAULT_SCORE[surveyLevel];
-  if (surveyLevel == null && investigationStatus === "노후저경쟁력미조사") return SURVEY_LEVEL_DEFAULT_SCORE["외관만"];
+  if (surveyLevel === "간략") return SURVEY_LEVEL_DEFAULT_SCORE["간략"];
+  if (surveyLevel == null && investigationStatus === "노후저경쟁력미조사") return SURVEY_LEVEL_DEFAULT_SCORE["간략"];
   return null;
 }
 
@@ -337,7 +341,7 @@ export function applySurveyLevelDefault(
 export const DEFAULT_UNSURVEYED_PC_COUNT = 90;
 
 /**
- * 간략_기본대수: 조사수준이 간략/외관만이거나 investigationStatus가 "노후저경쟁력미조사"이면
+ * 간략_기본대수: 조사수준이 "간략"이거나 investigationStatus가 "노후저경쟁력미조사"이면
  * 대수를 DEFAULT_UNSURVEYED_PC_COUNT대로 간주한다(경쟁점이 실제로 존재한다는 업무 판단은
  * 보존하되, 실사 없이 지어낸 값이라는 걸 잊지 않는다). "경쟁점없음"은 0(경쟁점 자체가 없음),
  * 그 외 값 누락은 null(집계 제외).
@@ -348,7 +352,7 @@ export function computeCompetitorAppliedPcCount(
   if (c.investigationStatus === "경쟁점없음") return 0;
   if (c.appliedPcCount != null) return c.appliedPcCount;
   if (c.totalPcCount != null) return c.totalPcCount;
-  if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return DEFAULT_UNSURVEYED_PC_COUNT;
+  if (c.surveyLevel === "간략") return DEFAULT_UNSURVEYED_PC_COUNT;
   // 노후저경쟁력미조사와 오픈예정(2026-08-27) 둘 다 "존재는 하지만 실사 못 함" 케이스라 같은
   // 기본값(간략_기본대수)으로 채운다 - PC대수가 알려져 있으면 위에서 이미 그 값을 썼을 것이다.
   if (c.investigationStatus === "노후저경쟁력미조사" || c.investigationStatus === "오픈예정") return DEFAULT_UNSURVEYED_PC_COUNT;
@@ -368,7 +372,7 @@ export function describeAppliedPcCountBasis(
   if (c.investigationStatus === "경쟁점없음") return "확인된 독점상권(경쟁점 없음, 0대)";
   if (c.appliedPcCount != null) return "실측값(적용대수 직접입력)";
   if (c.totalPcCount != null) return "실측값(전체대수)";
-  if (c.surveyLevel === "간략" || c.surveyLevel === "외관만") return `추정값(조사수준=${c.surveyLevel}, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
+  if (c.surveyLevel === "간략") return `추정값(조사수준=간략, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
   if (c.investigationStatus === "노후저경쟁력미조사") return `추정값(노후·저경쟁력 미조사, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
   if (c.investigationStatus === "오픈예정") return `추정값(오픈예정, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
   return null;
@@ -1081,7 +1085,7 @@ export function computeFacilityScore(
 
 /**
  * 경쟁점 한 곳의 경쟁력점수 4개 구성요소를 계산한다.
- * 하드웨어/입지는 VGA·층수+엘리베이터로 자동 계산하고, 조사수준이 간략/외관만이면 미입력
+ * 하드웨어/입지는 VGA·층수+엘리베이터로 자동 계산하고, 조사수준이 "간략"이면 미입력
  * 항목을 기본값(2.0/1.5)으로 채운다(applySurveyLevelDefault). 먹거리/인테리어(좌석·관리 포함)는
  * 조사자 직접 입력을 그대로 쓴다.
  */
@@ -1117,7 +1121,7 @@ export function computeCompetitorScores(
     c.investigationStatus,
   );
   // 2026-08-31 — 존구성/인테리어/관리 3항목 결합(computeFacilityScore)으로 전면 교체. 존구성은
-  // 새 공식(computeCompetitorZoneComposition)으로 자동계산하고, 전혀 조사 안 됐으면(간략/외관만)
+  // 새 공식(computeCompetitorZoneComposition)으로 자동계산하고, 전혀 조사 안 됐으면(간략)
   // 기존 종합평가 직접입력(seatZoneScore)으로 폴백한다. 관리점수는 더 이상 인테리어에서 파생되지
   // 않는 완전 독립 수동입력이다(경쟁점 입지점수는 기존 층수+엘리베이터 자동계산 그대로 — 아래
   // location 참고).
@@ -2753,7 +2757,7 @@ export type CompetitorDataReliability = "high" | "medium" | "low";
 export type CompetitorInvestigationSummary = {
   totalCount: number;
   detailedCount: number; // surveyLevel="상세"로 조사완료된 경쟁점 수
-  lightCount: number; // 조사완료됐지만 간략/외관만인 경쟁점 수
+  lightCount: number; // 조사완료됐지만 간략 조사인 경쟁점 수
   uninvestigatedCount: number; // 경쟁점없음/노후저경쟁력미조사
   status: CompetitorInvestigationSummaryStatus;
   detailedRatio: number | null; // detailedCount / totalCount

@@ -54,8 +54,9 @@ const FOOD_BRAND_OPTIONS: { value: FoodBrand; label: string }[] = [
 
 const SURVEY_LEVEL_OPTIONS: { value: SurveyLevel; label: string }[] = [
   { value: "상세", label: "상세" },
-  { value: "간략", label: "간략" },
-  { value: "외관만", label: "외관만" },
+  // 2026-09-03 — "외관만"을 폐지하고 "간략"으로 통합했다(계산상 완전히 동일했다,
+  // calc.ts SURVEY_LEVEL_DEFAULT_SCORE 주석 참고).
+  { value: "간략", label: "간략 (외관만 본 경우 포함)" },
 ];
 
 const SURVEY_STATE_OPTIONS: { value: CompetitorSurveyState; label: string }[] = [
@@ -200,7 +201,7 @@ function validate(form: Competitor): string[] {
 }
 
 /**
- * 2026-08-30 추가 — "상세" 조사수준은 간략/외관만과 달리 미입력 항목을 기본값(2.0/1.5)으로
+ * 2026-08-30 추가 — "상세" 조사수준은 "간략"과 달리 미입력 항목을 기본값(2.5)으로
  * 채워주지 않는다(applySurveyLevelDefault 참고). 그래서 상세인데 대수나 평가항목 중 하나라도
  * 완전히 비면, 화면에 별도 경고 없이 그 경쟁점이 계산에서 조용히 빠진다(사용자 질문으로 발견).
  *
@@ -402,7 +403,7 @@ function CompetitorForm({
       </h4>
       <p className="mt-1 text-xs text-[#8a8072]">
         하드웨어·입지 점수는 위 VGA/CPU/RAM/모니터·층수+엘리베이터로부터 자동 계산됩니다. 조사수준이
-        간략/외관만이면 미입력 항목은 기본값(2.0/1.5)으로 채워집니다.
+        &quot;간략&quot;이면 미입력 항목은 기본값 2.5점으로 채워집니다(실측 경쟁점 154곳 종합점수 분포의 25%ile 기준).
       </p>
       <div className={`${gridClass} mt-3`}>
         <ComputedField label="하드웨어 점수 (자동)" value={computed.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%" />
@@ -442,7 +443,7 @@ function CompetitorForm({
             value={form.seatZoneScore}
             onChange={(v) => set("seatZoneScore", v)}
             step={0.5}
-            hint="아래 존 개수를 하나도 안 채웠을 때(간략/외관만 조사) 조사자 종합평가"
+            hint="아래 존 개수를 하나도 안 채웠을 때(간략 조사) 조사자 종합평가"
           />
         )}
         {zoneScoreAuto == null && <CompetitorInteriorFallbackGuide />}
@@ -451,7 +452,7 @@ function CompetitorForm({
           value={form.interiorScore}
           onChange={(v) => set("interiorScore", v)}
           step={0.5}
-          hint="비우면 조사수준별 기본값(간략2.0/외관만1.5) · 위 기준표 참고"
+          hint="비우면 간략조사 기본값 2.5점 · 위 기준표 참고"
         />
         <ScoreSelectField
           label="관리 점수"

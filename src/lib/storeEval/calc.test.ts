@@ -1037,9 +1037,9 @@ describe("describeAppliedPcCountBasis (2026-08-31 신설 — 90대 추정값의 
     expect(describeAppliedPcCountBasis({ totalPcCount: 100, appliedPcCount: 90, surveyLevel: "상세" })).toBe("실측값(적용대수 직접입력)");
     expect(describeAppliedPcCountBasis({ totalPcCount: 100, appliedPcCount: null, surveyLevel: "상세" })).toBe("실측값(전체대수)");
   });
-  it("간략/외관만 조사이고 대수를 모르면 90대 추정값임을 밝힌다", () => {
+  it("간략 조사이고 대수를 모르면 90대 추정값임을 밝힌다", () => {
     expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: "간략" })).toBe("추정값(조사수준=간략, 간략_기본대수 90대 적용)");
-    expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: "외관만" })).toBe("추정값(조사수준=외관만, 간략_기본대수 90대 적용)");
+    expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: "간략" })).toBe("추정값(조사수준=간략, 간략_기본대수 90대 적용)");
   });
   it("경쟁점없음/오픈예정도 각각의 사유로 설명한다", () => {
     expect(describeAppliedPcCountBasis({ totalPcCount: null, appliedPcCount: null, surveyLevel: null, investigationStatus: "경쟁점없음" })).toBe(
@@ -2347,9 +2347,9 @@ describe("computeCompetitorInvestigationSummary (요청사항 4 — 경쟁점 �
     ]);
     expect(summary.status).toBe("mixed");
   });
-  it("간이/외관만이면 light, 상세조사 없으면 신뢰도는 medium 이하", () => {
+  it("간략조사면 light, 상세조사 없으면 신뢰도는 medium 이하", () => {
     const summary = computeCompetitorInvestigationSummary([
-      { investigationStatus: "조사완료", surveyLevel: "외관만" },
+      { investigationStatus: "조사완료", surveyLevel: "간략" },
       { investigationStatus: "경쟁점없음", surveyLevel: null },
     ]);
     expect(summary.status).toBe("light");
