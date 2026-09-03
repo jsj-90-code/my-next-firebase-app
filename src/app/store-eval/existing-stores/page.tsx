@@ -7,7 +7,7 @@
 // 그대로 사용한다(src/lib/storeEval/store.ts).
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime, formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import {
@@ -204,6 +204,7 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
   const [sales, setSales] = useState<ExistingStoreMonthlySales[]>([]);
   const [members, setMembers] = useState<ExistingStoreMemberSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [yearMonth, setYearMonth] = useState("");
   const [pcSales, setPcSales] = useState<number | null>(null);
   const [productSales, setProductSales] = useState<number | null>(null);
@@ -213,18 +214,32 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
   const [editStore, setEditStore] = useState<ExistingStore>(store);
   const [linkCandidateCode, setLinkCandidateCode] = useState("");
   const [linkMessage, setLinkMessage] = useState<string | null>(null);
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
-    const [s, m] = await Promise.all([listExistingStoreSales(store.storeCode), listExistingStoreMembers(store.storeCode)]);
-    setSales(s.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth)));
-    setMembers(m.sort((a, b) => b.snapshotDate.localeCompare(a.snapshotDate)));
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [s, m] = await Promise.all([listExistingStoreSales(store.storeCode), listExistingStoreMembers(store.storeCode)]);
+      if (sequence !== loadSequence.current) return;
+      setSales(s.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth)));
+      setMembers(m.sort((a, b) => b.snapshotDate.localeCompare(a.snapshotDate)));
+    } catch (error) {
+      if (sequence === loadSequence.current) {
+        setLoadError(error instanceof Error ? error.message : "매출·회원 기록을 불러오지 못했습니다.");
+      }
+    } finally {
+      if (sequence === loadSequence.current) setLoading(false);
+    }
   }, [store.storeCode]);
 
   useEffect(() => {
     load();
     setEditStore(store);
+    return () => {
+      loadSequence.current++;
+    };
   }, [load, store]);
 
   async function saveSales() {
@@ -313,6 +328,14 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
 
   return (
     <div className="app-card-sm mt-3 rounded-xl p-4">
+      {loadError && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void load()} className="underline">
+            다시 불러오기
+          </button>
+        </div>
+      )}
       {store.predictedAtConversion ? (
         <div className="app-card mb-4 rounded-lg p-3">
           <h4 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
@@ -407,19 +430,34 @@ export default function ExistingStoresPage() {
   const { user } = useAuth();
   const [stores, setStores] = useState<ExistingStore[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
-    const list = await listExistingStores();
-    setStores(list.sort((a, b) => (b.openedAt ?? "").localeCompare(a.openedAt ?? "")));
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const list = await listExistingStores();
+      if (sequence !== loadSequence.current) return;
+      setStores(list.sort((a, b) => (b.openedAt ?? "").localeCompare(a.openedAt ?? "")));
+    } catch (error) {
+      if (sequence === loadSequence.current) {
+        setLoadError(error instanceof Error ? error.message : "가맹점 목록을 불러오지 못했습니다.");
+      }
+    } finally {
+      if (sequence === loadSequence.current) setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     load();
+    return () => {
+      loadSequence.current++;
+    };
   }, [load]);
 
   // 요청사항 — 이 화면은 블랙라벨 매장만 보여준다. 브랜드는 매출DB!지점명 배경색(노란색=
@@ -476,6 +514,15 @@ export default function ExistingStoresPage() {
             await load();
           }}
         />
+      )}
+
+      {loadError && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">
+          <span>{loadError}</span>
+          <button type="button" onClick={() => void load()} className="underline">
+            다시 불러오기
+          </button>
+        </div>
       )}
 
       {loading ? (

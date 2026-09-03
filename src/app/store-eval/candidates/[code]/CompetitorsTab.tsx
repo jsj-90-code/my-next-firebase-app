@@ -4,7 +4,7 @@
 // Competitor 타입의 필드 전부를 폼에 반영하고, investigationStatus(신규 워크플로 필드)로
 // "경쟁점 데이터 없음"과 "노후·저경쟁력 미조사"를 구분한다(docs/data-issues.md #3).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   computeCompetitorAppliedPcCount,
@@ -534,6 +534,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   const { user } = useAuth();
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [loading, setLoading] = useState(true);
+  const loadSequence = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -594,20 +595,24 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   }, []);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setError(null);
     try {
       const list = await listCompetitors(candidateCode);
-      setCompetitors(list);
+      if (sequence === loadSequence.current) setCompetitors(list);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "경쟁점 목록을 불러오지 못했습니다.");
+      if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "경쟁점 목록을 불러오지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [candidateCode]);
 
   useEffect(() => {
     load();
+    return () => {
+      loadSequence.current++;
+    };
   }, [load]);
 
   async function handleDelete(id: string) {

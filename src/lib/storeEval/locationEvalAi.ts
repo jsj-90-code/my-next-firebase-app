@@ -147,16 +147,22 @@ function isLocationEvalDraft(input: unknown): input is LocationEvalDraft {
  * 실패 시 사람이 읽을 수 있는 메시지의 Error를 던진다 — 호출부(API 라우트/검증 러너)가 각자
  * 맥락에 맞게 처리한다(예: 라우트는 502 JSON, 검증 러너는 해당 매장을 "실패"로 기록).
  */
-export async function runLocationEvalDraft(input: { contextText: string; mapImageBase64?: string | null }): Promise<LocationEvalDraft> {
+export async function runLocationEvalDraft(input: {
+  contextText: string;
+  mapImageBase64?: string | null;
+  mapImageMimeType?: "image/png" | "image/jpeg" | "image/webp" | null;
+}): Promise<LocationEvalDraft> {
   const client = getLocationEvalGeminiClient();
   if (!client) throw new Error("GEMINI_API_KEY_LOCATION_EVAL가 설정되지 않았습니다.");
 
   const model = getLocationEvalGeminiModel();
-  const { contextText, mapImageBase64 } = input;
+  const { contextText, mapImageBase64, mapImageMimeType } = input;
 
   // 1단계 — 웹검색 조사(자유서술). 지도 이미지가 있으면 함께 준다.
   const researchParts: object[] = [];
-  if (mapImageBase64) researchParts.push({ inlineData: { mimeType: "image/png", data: mapImageBase64 } });
+  if (mapImageBase64) {
+    researchParts.push({ inlineData: { mimeType: mapImageMimeType ?? "image/png", data: mapImageBase64 } });
+  }
   researchParts.push({
     text:
       `아래는 이미 수집된 사실 자료입니다.\n\n${contextText}\n\n` +

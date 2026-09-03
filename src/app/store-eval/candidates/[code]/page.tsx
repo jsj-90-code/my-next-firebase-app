@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getCandidate } from "@/lib/storeEval/store";
 import type { CandidateInput } from "@/lib/storeEval/types";
@@ -135,6 +135,7 @@ export default function CandidateDetailPage() {
   const [persisted, setPersisted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadSequence = useRef(0);
 
   // 코드가 아직 발급되지 않은 draft 상태에서는 기본정보 탭만 허용한다 — 경쟁점/입지동선평가는
   // 실제 후보지코드가 있어야 candidateCode로 하위 문서를 저장할 수 있기 때문이다.
@@ -142,15 +143,19 @@ export default function CandidateDetailPage() {
   const activeTab = (!persisted ? "basic" : ["basic", "competitors", "location", "result"].includes(requestedTab) ? requestedTab : "basic") as TabKey;
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setError(null);
     try {
       if (isNewDraft) {
-        setCandidate(blankCandidate(NEW_DRAFT_CODE));
-        setPersisted(false);
+        if (sequence === loadSequence.current) {
+          setCandidate(blankCandidate(NEW_DRAFT_CODE));
+          setPersisted(false);
+        }
         return;
       }
       const existing = await getCandidate(code);
+      if (sequence !== loadSequence.current) return;
       if (existing) {
         setCandidate(existing);
         setPersisted(true);
@@ -158,15 +163,18 @@ export default function CandidateDetailPage() {
         setError("해당 후보지를 찾을 수 없습니다.");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "후보지를 불러오지 못했습니다.");
+      if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "후보지를 불러오지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, isNewDraft]);
 
   useEffect(() => {
     load();
+    return () => {
+      loadSequence.current++;
+    };
   }, [load]);
 
   function setTab(tab: TabKey) {

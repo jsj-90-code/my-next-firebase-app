@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
+import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { geocodeAddress, searchByCategory, searchByKeyword } from "@/lib/kakao";
 import { fetchAdminDongPopulation, geocodeToAdminDong } from "@/lib/sgis";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
@@ -23,18 +24,6 @@ import type { AdminDongReference, Competitor, DemandPoint, LocationEvaluation } 
 // ai-location-eval과 같은 패턴으로 "매장 1곳 = API 호출 1번"을 유지하고, 클라이언트(검증 화면)가
 // 매장 목록을 순차로 반복 호출한다.
 
-async function getVerifiedUserId(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token || !adminAuth) return null;
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    return decoded.uid;
-  } catch {
-    return null;
-  }
-}
-
 type RequestBody = { storeCode?: string };
 
 // 2026-09-01 재설계 — flowScore/attractionScore가 locationScore로 통합돼 AI 채점 대상에서
@@ -42,8 +31,8 @@ type RequestBody = { storeCode?: string };
 const SCORE_FIELD_KEYS = ["locationScore", "preemptionScore", "visibilityScore"] as const;
 
 export async function POST(request: Request) {
-  const userId = await getVerifiedUserId(request);
-  if (!userId) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const user = await getVerifiedCompanyUser(request);
+  if (!user) return NextResponse.json({ error: "회사 계정 로그인이 필요합니다." }, { status: 401 });
   if (!adminDb) return NextResponse.json({ error: "Firebase Admin이 초기화되지 않았습니다." }, { status: 500 });
 
   let body: RequestBody;

@@ -26,6 +26,7 @@ export default function CandidateListPage() {
   const [candidates, setCandidates] = useState<CandidateInput[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [busyCode, setBusyCode] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
@@ -57,6 +58,7 @@ export default function CandidateListPage() {
   async function handleDuplicate(code: string) {
     setBusyCode(code);
     setError(null);
+    setWarning(null);
     try {
       const copy = await duplicateCandidate(code, user?.email ?? null);
       router.push(`/store-eval/candidates/${copy.code}`);
@@ -70,6 +72,7 @@ export default function CandidateListPage() {
     if (!confirm(`${code} 후보지를 삭제하시겠습니까? 경쟁점·입지동선평가·최종결과 등 딸린 데이터도 함께 지워지며, 되돌릴 수 없습니다.`)) return;
     setBusyCode(code);
     setError(null);
+    setWarning(null);
     try {
       const token = await user?.getIdToken();
       const response = await fetch("/api/store-eval/delete-candidate", {
@@ -81,7 +84,9 @@ export default function CandidateListPage() {
         const body = await response.json().catch(() => null);
         throw new Error(body?.error ?? "후보지를 삭제하지 못했습니다.");
       }
+      const body = (await response.json().catch(() => null)) as { auditWarning?: string | null } | null;
       await load();
+      if (body?.auditWarning) setWarning(body.auditWarning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "후보지를 삭제하지 못했습니다.");
     } finally {
@@ -118,6 +123,7 @@ export default function CandidateListPage() {
       {error && (
         <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
+      {warning && <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">{warning}</p>}
 
       {/* 2026-08-25 추가 — 후보지가 늘어나면서 코드/이름/주소로 바로 찾을 방법이 없었다. 서버
           쪽 검색 없이(목록이 크지 않음) 클라이언트에서 이미 불러온 목록을 그대로 필터링한다. */}

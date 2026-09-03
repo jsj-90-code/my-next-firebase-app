@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
+import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
+import { fetchKakaoMapImage } from "@/lib/server/kakaoMapImage";
 import { buildLocationEvalContext } from "@/lib/storeEval/locationEvalContext";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
 import type { AdminDongReference, CandidateInput, Competitor, DemandPoint } from "@/lib/storeEval/types";
@@ -9,27 +11,15 @@ import type { AdminDongReference, CandidateInput, Competitor, DemandPoint } from
 // AI채점검증)도 같은 함수를 공유한다. 이 라우트는 인증 + Firestore 조회 + 지도 이미지 확보만
 // 담당하는 얇은 레이어다.
 
-async function getVerifiedUserId(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token || !adminAuth) return null;
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    return decoded.uid;
-  } catch {
-    return null;
-  }
-}
-
 type AiLocationEvalBody = {
   candidateCode?: string;
   mapImageUrl?: string;
 };
 
 export async function POST(request: Request) {
-  const userId = await getVerifiedUserId(request);
-  if (!userId) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const user = await getVerifiedCompanyUser(request);
+  if (!user) {
+    return NextResponse.json({ error: "회사 계정 로그인이 필요합니다." }, { status: 401 });
   }
   if (!adminDb) {
     return NextResponse.json({ error: "Firebase Admin이 초기화되지 않았습니다." }, { status: 500 });
@@ -71,20 +61,20 @@ export async function POST(request: Request) {
   // 직접 fetch한다 — 브라우저 canvas/fetch는 카카오 CDN이 CORS 헤더를 안 주면 픽셀을 못 읽지만
   // 서버↔서버 요청은 그 제약이 없다. 실패해도 전체 요청을 막지 않고 텍스트만으로 진행한다.
   let mapImageBase64: string | null = null;
+  let mapImageMimeType: "image/png" | "image/jpeg" | "image/webp" | null = null;
   const warnings: string[] = [];
   if (body.mapImageUrl) {
     try {
-      const imgRes = await fetch(body.mapImageUrl);
-      if (!imgRes.ok) throw new Error(`HTTP ${imgRes.status}`);
-      const buf = Buffer.from(await imgRes.arrayBuffer());
-      mapImageBase64 = buf.toString("base64");
+      const image = await fetchKakaoMapImage(body.mapImageUrl);
+      mapImageBase64 = image.buffer.toString("base64");
+      mapImageMimeType = image.mimeType;
     } catch (err) {
       warnings.push(`지도 이미지를 불러오지 못해 텍스트 정보만으로 진행합니다: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   try {
-    const draft = await runLocationEvalDraft({ contextText, mapImageBase64 });
+    const draft = await runLocationEvalDraft({ contextText, mapImageBase64, mapImageMimeType });
     return NextResponse.json({ ...draft, warnings });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Gemini API 요청에 실패했습니다.";

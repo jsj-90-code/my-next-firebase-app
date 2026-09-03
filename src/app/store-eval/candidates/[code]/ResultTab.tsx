@@ -172,6 +172,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 사용자가 반드시 직접 입력하게 한다.
   const [newStoreCode, setNewStoreCode] = useState("");
   const [existingStoreCodes, setExistingStoreCodes] = useState<Set<string>>(new Set());
+  const runSequence = useRef(0);
 
   // 다우오피스 평가기록 보고서 초안 - candidate/competitors는 원래 run() 안에서 계산만 하고
   // 버렸는데, 보고서 컨텍스트를 만들려면 화면에 떠 있는 것과 같은 값이 필요해 여기 같이 담아둔다.
@@ -257,6 +258,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   }
 
   const run = useCallback(async () => {
+    const sequence = ++runSequence.current;
     setLoading(true);
     setError(null);
     try {
@@ -271,10 +273,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         getModelSettings(),
       ]);
       const settings: ModelSettings = modelSettingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };
+      if (sequence !== runSequence.current) return;
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
 
       const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores });
       await saveEvaluationResult(evaluated, user?.email ?? null);
+      if (sequence !== runSequence.current) return;
       setResult(evaluated);
       setSettingsUsed(settings);
       setCandidateForReport(candidate);
@@ -282,15 +286,18 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       setReportDraft(null);
       setReportError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "최종결과를 계산하지 못했습니다.");
+      if (sequence === runSequence.current) setError(err instanceof Error ? err.message : "최종결과를 계산하지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (sequence === runSequence.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidateCode]);
 
   useEffect(() => {
     run();
+    return () => {
+      runSequence.current++;
+    };
   }, [run]);
 
   // 다우오피스에 기입할 보고서 텍스트 초안 - AI(Gemini)가 자연스럽게 문장을 쓰게 한다(요청사항,

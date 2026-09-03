@@ -3,7 +3,7 @@
 // 탭3 입지동선평가 - "4. 입지동선 평가" 화면 요구사항.
 // LocationEvaluation 타입 필드 전부 + 종합점수 실시간 미리보기(calc.ts, 저장하지 않음).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { LocationEvalAiReviewPanel, type LocationEvalAiDraft, type LocationEvalAiFields } from "@/components/storeEval/LocationEvalAiReviewPanel";
 import { computeLocationCompositeScore } from "@/lib/storeEval/calc";
@@ -101,24 +101,31 @@ export function LocationEvalTab({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiDraft, setAiDraft] = useState<LocationEvalAiDraft | null>(null);
+  const loadSequence = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setError(null);
     try {
       const [existing, modelSettings] = await Promise.all([getLocationEvaluation(candidateCode), getModelSettings()]);
-      setForm(existing ?? blankLocationEvaluation(candidateCode, candidateName, candidateAddress));
-      setSettings(modelSettings ?? defaultModelSettings());
+      if (sequence === loadSequence.current) {
+        setForm(existing ?? blankLocationEvaluation(candidateCode, candidateName, candidateAddress));
+        setSettings(modelSettings ?? defaultModelSettings());
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "입지동선평가를 불러오지 못했습니다.");
+      if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "입지동선평가를 불러오지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidateCode]);
 
   useEffect(() => {
     load();
+    return () => {
+      loadSequence.current++;
+    };
   }, [load]);
 
   function set<K extends keyof LocationEvaluation>(key: K, value: LocationEvaluation[K]) {

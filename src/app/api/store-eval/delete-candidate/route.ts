@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
+import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 
 // 후보지 삭제 - 관련 컬렉션(경쟁점·수요거점·소상공인365 업로드이력·행정동참고자료·입지동선평가·
 // 최종결과)까지 함께 지운다. storeEvalDemandPoints/storeEvalMarketDataUploads/
@@ -17,20 +18,9 @@ const BY_ID_COLLECTIONS = [
 ];
 const BY_FIELD_COLLECTIONS = ["storeEvalCompetitors", "storeEvalDemandPoints", "storeEvalMarketDataUploads"];
 
-async function getVerifiedUser(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token || !adminAuth) return null;
-  try {
-    return await adminAuth.verifyIdToken(token);
-  } catch {
-    return null;
-  }
-}
-
 export async function POST(request: Request) {
-  const user = await getVerifiedUser(request);
-  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const user = await getVerifiedCompanyUser(request);
+  if (!user) return NextResponse.json({ error: "회사 계정 로그인이 필요합니다." }, { status: 401 });
   if (!adminDb) return NextResponse.json({ error: "Firebase Admin이 초기화되지 않았습니다." }, { status: 500 });
 
   let body: { candidateCode?: string };
@@ -65,20 +55,26 @@ export async function POST(request: Request) {
   const candidateRef = adminDb.collection("storeEvalCandidates").doc(candidateCode);
   const before = (await candidateRef.get()).data() ?? null;
 
-  const batch = adminDb.batch();
+  const refs = [];
   for (const col of BY_ID_COLLECTIONS) {
-    batch.delete(adminDb.collection(col).doc(candidateCode));
+    refs.push(adminDb.collection(col).doc(candidateCode));
   }
   for (const col of BY_FIELD_COLLECTIONS) {
     const snap = await adminDb.collection(col).where("candidateCode", "==", candidateCode).get();
-    snap.docs.forEach((d) => batch.delete(d.ref));
+    refs.push(...snap.docs.map((d) => d.ref));
   }
-  await batch.commit();
 
-  await adminDb
-    .collection("storeEvalAuditLog")
-    .doc(`candidate_${candidateCode}_${Date.now()}`)
-    .set({
+  // Firestore write batch 한도(500개)를 넘는 후보지도 삭제할 수 있도록 나눈다.
+  for (let offset = 0; offset < refs.length; offset += 500) {
+    const batch = adminDb.batch();
+    refs.slice(offset, offset + 500).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  // 실제 삭제가 끝난 뒤 기록한다. 로그만 실패해도 이미 완료된 삭제를 실패로 오인하지 않게 한다.
+  let auditWarning: string | null = null;
+  try {
+    await adminDb.collection("storeEvalAuditLog").doc(`candidate_${candidateCode}_${Date.now()}`).set({
       entityType: "candidate",
       entityId: candidateCode,
       action: "삭제",
@@ -87,6 +83,9 @@ export async function POST(request: Request) {
       actor: user.email ?? null,
       at: Date.now(),
     });
+  } catch (error) {
+    auditWarning = `삭제는 완료됐지만 감사 로그 저장에 실패했습니다: ${error instanceof Error ? error.message : String(error)}`;
+  }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, auditWarning });
 }

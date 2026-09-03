@@ -3,7 +3,7 @@
 // 탭1 기본정보 - "2. 신규후보지 입력" 화면 요구사항.
 // CandidateInput 타입의 실제 필드 전부를 폼으로 구성한다 (필드를 빼거나 추가하지 않는다).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   applyStandardOwnFacilityDefaults,
@@ -184,14 +184,17 @@ export function BasicInfoTab({
   const [autoCompetitors, setAutoCompetitors] = useState<Competitor[]>([]);
   // 2단계(2026-08-24) — SGIS/소상공인365 반자동 업로드 이력.
   const [marketDataUploads, setMarketDataUploads] = useState<MarketDataUpload[]>([]);
+  const marketLoadSequence = useRef(0);
 
   const loadMarketData = useCallback(async (code: string) => {
+    const sequence = ++marketLoadSequence.current;
     const [adminDong, points, comps, uploads] = await Promise.all([
       getAdminDongReference(code),
       listDemandPoints(code),
       listCompetitors(code),
       listMarketDataUploads(code),
     ]);
+    if (sequence !== marketLoadSequence.current) return;
     setAdminDongRef(adminDong);
     setDemandPoints(points);
     setAutoCompetitors(comps.filter((c) => c.source === "kakao"));
@@ -199,22 +202,49 @@ export function BasicInfoTab({
   }, []);
 
   useEffect(() => {
-    getModelSettings().then((s) => {
-      if (s) setSettings(s);
-    });
+    let cancelled = false;
+    getModelSettings()
+      .then((s) => {
+        if (!cancelled && s) setSettings(s);
+      })
+      .catch(() => {
+        // 기본 설정을 유지한다. 이 조회 실패가 기본정보 입력 전체를 막으면 안 된다.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     if (candidate.code === "new" || authLoading || !user) return;
-    getLocationEvaluation(candidate.code).then(setLocationEvaluation);
+    getLocationEvaluation(candidate.code)
+      .then((value) => {
+        if (!cancelled) setLocationEvaluation(value);
+      })
+      .catch((error) => {
+        if (!cancelled) setCollectError(error instanceof Error ? error.message : "입지평가 자료를 불러오지 못했습니다.");
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate.code, authLoading, user]);
 
   useEffect(() => {
+    let active = true;
     // Firebase Auth 세션 복원(onAuthStateChanged)이 끝나기 전에 Firestore를 읽으면 request.auth가
     // 아직 없어 "Missing or insufficient permissions"가 뜬다(핫리로드 직후 재현되는 레이스
     // 컨디션, 2026-08-24 확인) — authLoading이 끝나고 로그인된 사용자가 있을 때만 조회한다.
-    if (candidate.code !== "new" && !authLoading && user) loadMarketData(candidate.code);
+    if (candidate.code !== "new" && !authLoading && user) {
+      loadMarketData(candidate.code).catch((error) => {
+        if (active) setCollectError(error instanceof Error ? error.message : "상권자료를 불러오지 못했습니다.");
+      });
+    }
+    return () => {
+      active = false;
+      marketLoadSequence.current++;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate.code, authLoading, user]);
 

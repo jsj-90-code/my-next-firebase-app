@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
+import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { geocodeAddress, searchByCategory, searchByKeyword } from "@/lib/kakao";
 import { fetchAdminDongPopulation, geocodeToAdminDong } from "@/lib/sgis";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
@@ -18,23 +19,11 @@ import type { AdminDongReference, Competitor, DemandPoint, ExistingStore } from 
 //     같은 방식으로 카카오/SGIS를 즉석 조회한다(저장은 안 함).
 // 저장은 이 라우트에서 하지 않는다 — LocationEvalTab의 기존 검토·적용·저장 흐름을 그대로 탄다.
 
-async function getVerifiedUserId(request: Request) {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token || !adminAuth) return null;
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    return decoded.uid;
-  } catch {
-    return null;
-  }
-}
-
 type RequestBody = { storeCode?: string };
 
 export async function POST(request: Request) {
-  const userId = await getVerifiedUserId(request);
-  if (!userId) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const user = await getVerifiedCompanyUser(request);
+  if (!user) return NextResponse.json({ error: "회사 계정 로그인이 필요합니다." }, { status: 401 });
   if (!adminDb) return NextResponse.json({ error: "Firebase Admin이 초기화되지 않았습니다." }, { status: 500 });
 
   let body: RequestBody;
@@ -60,7 +49,7 @@ export async function POST(request: Request) {
   ]);
 
   let competitors: Competitor[] = storedCompetitorsSnap.docs.map((d) => d.data() as Competitor);
-  let demandPoints: DemandPoint[] = storedDemandPointsSnap.docs.map((d) => d.data() as DemandPoint);
+  const demandPoints: DemandPoint[] = storedDemandPointsSnap.docs.map((d) => d.data() as DemandPoint);
   let adminDongReference: AdminDongReference | null = storedAdminDongSnap.exists ? (storedAdminDongSnap.data() as AdminDongReference) : null;
   const warnings: string[] = [];
 

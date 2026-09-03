@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { geocodeAddress, searchByCategory, searchByKeyword, type KakaoPlace } from "@/lib/kakao";
 import { fetchAdminDongPopulation, geocodeToAdminDong } from "@/lib/sgis";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
+import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { DEMAND_POINT_TARGETS, NEARBY_PC_RADIUS_M } from "@/lib/storeEval/demandPointTargets";
 import { findNearbyCandidates, haversineDistanceMeters } from "@/lib/storeEval/geo";
 import type { Competitor, DemandPoint, DemandPointCategory } from "@/lib/storeEval/types";
@@ -14,18 +15,6 @@ import type { Competitor, DemandPoint, DemandPointCategory } from "@/lib/storeEv
 // AI가 추정한 값은 하나도 없다(그 부분은 3단계 Gemini 라우트에서 별도로 다룬다).
 
 const DUPLICATE_RADIUS_M = 100;
-
-async function getVerifiedUserId(request: Request): Promise<string | null> {
-  const authHeader = request.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token || !adminAuth) return null;
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    return decoded.uid;
-  } catch {
-    return null;
-  }
-}
 
 function placeToDemandPoint(
   place: KakaoPlace,
@@ -51,8 +40,8 @@ function placeToDemandPoint(
 }
 
 export async function POST(request: Request) {
-  const userId = await getVerifiedUserId(request);
-  if (!userId) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  const user = await getVerifiedCompanyUser(request);
+  if (!user) return NextResponse.json({ error: "회사 계정 로그인이 필요합니다." }, { status: 401 });
   if (!adminDb) return NextResponse.json({ error: "Firebase Admin이 초기화되지 않았습니다." }, { status: 500 });
 
   let body: { candidateCode?: string };

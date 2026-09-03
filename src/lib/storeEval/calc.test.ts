@@ -845,7 +845,7 @@ describe("applyStandardOwnFacilityDefaults (신규후보지 표준 존구성, 20
     );
     // 2026-09-01(6차) 입지비중 10%→15% 재보정 — spec/food/interior는 (0.85/0.9)로 재정규화.
     const w = defaultModelSettings().competitivenessWeights;
-    expect(total).toBeCloseTo(spec * w.spec + facility.ownFoodScore * w.food + (interior as number) * w.interior + 4 * w.location, 6);
+    expect(total).toBeCloseTo(spec! * w.spec + facility.ownFoodScore * w.food + interior! * w.interior + 4 * w.location, 6);
   });
 });
 
@@ -1094,6 +1094,7 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
       foodBrand: null,
       interiorScore: null,
       interiorBasis: null,
+      managementScore: null,
       interiorLevelScore: null,
       interiorConditionScore: null,
       monitorBasis: null,
@@ -1104,6 +1105,12 @@ describe("computeCompetitorOccupiedSeats (경쟁점 실가동좌석 — 요청�
       room2: null,
       teamRoom: null,
       coupleZone: null,
+      vipZone: null,
+      friendsZone: null,
+      firstClassZone: null,
+      regularCoupleSeatCount: null,
+      teamRoomTotalSeats: null,
+      teamRoomTotalSeatsBasis: null,
       createdAt: 0,
       updatedAt: 0,
       ...overrides,
@@ -1294,6 +1301,8 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       groundLevel: "지하" as const,
       hasElevator: false,
       hourlyRate: 1300,
+      openedAt: null,
+      renovationYear: null,
       ownCpu: null,
       ownCpuTop1: null,
       ownCpuTop2: null,
@@ -1310,8 +1319,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       ownFriendsZone: 15,
       ownFirstClassZone: null,
       ownSingleSeatCount: null,
+      ownTeamRoomTotalSeats: null,
       ownFoodScore: 4,
       ownInteriorScore: 4,
+      ownManagementScore: null,
       ownMonitorBase: "240Hz", // scoreFromMonitor 2026-08-28(2차) 재보정 = 3.5점
       ownMonitorTop: null,
       ownFoodBrand: null,
@@ -1361,6 +1372,7 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       foodBrand: null,
       interiorScore: 3,
       interiorBasis: null,
+      managementScore: 3,
       interiorLevelScore: null,
       interiorConditionScore: null,
       monitorBasis: null,
@@ -1371,6 +1383,12 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
       room2: null,
       teamRoom: null,
       coupleZone: null,
+      vipZone: null,
+      friendsZone: null,
+      firstClassZone: null,
+      regularCoupleSeatCount: null,
+      teamRoomTotalSeats: null,
+      teamRoomTotalSeatsBasis: null,
       createdAt: 0,
       updatedAt: 0,
       ...overrides,
@@ -1484,6 +1502,8 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
       floor: 1,
       groundLevel: "지하" as const,
       hasElevator: false,
+      openedAt: null,
+      renovationYear: null,
       ownCpu: null,
       ownCpuTop1: null,
       ownCpuTop2: null,
@@ -1500,8 +1520,10 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
       ownFriendsZone: 15,
       ownFirstClassZone: null,
       ownSingleSeatCount: null,
+      ownTeamRoomTotalSeats: null,
       ownFoodScore: 4,
       ownInteriorScore: 4,
+      ownManagementScore: null,
       ownMonitorBase: "240Hz",
       ownMonitorTop: null,
       ownFoodBrand: null,
@@ -1573,6 +1595,7 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
       foodBrand: null,
       interiorScore: 3,
       interiorBasis: null,
+      managementScore: 3,
       interiorLevelScore: null,
       interiorConditionScore: null,
       monitorBasis: null,
@@ -1583,6 +1606,12 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
       room2: null,
       teamRoom: null,
       coupleZone: null,
+      vipZone: null,
+      friendsZone: null,
+      firstClassZone: null,
+      regularCoupleSeatCount: null,
+      teamRoomTotalSeats: null,
+      teamRoomTotalSeatsBasis: null,
       createdAt: 0,
       updatedAt: 0,
       ...overrides,
@@ -1762,6 +1791,7 @@ describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-03 개편 — 2번�
       competitorIp: 300,
       competitivenessScore: 4,
       competitivenessGap: 1,
+      specialDemandType: null,
       actualMonthlyRevenueAvg: 60000000,
       specialDemandScore: 0,
     };
@@ -1983,6 +2013,8 @@ describe("runLeaveOneOutValidation (자기 자신을 뺀 학습으로 예측 —
       marketDemand: (2000 + i * 100) * 100,
       competitorIp: 500,
       competitivenessScore: 3.5 + (i % 5) * 0.2,
+      competitivenessGap: 1,
+      specialDemandType: null,
       actualMonthlyRevenueAvg: 55000000 + i * 1000000,
       specialDemandScore: 0,
     }));
@@ -2000,6 +2032,8 @@ describe("runLeaveOneOutValidation (자기 자신을 뺀 학습으로 예측 —
       marketDemand: 200000,
       competitorIp: 500,
       competitivenessScore: 4,
+      competitivenessGap: 1,
+      specialDemandType: null,
       actualMonthlyRevenueAvg: 55000000,
       specialDemandScore: 0,
     }));
@@ -2043,7 +2077,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
   );
 
   it("핵심표본은 리브-원-아웃으로 예측하고 includedInCoreAccuracy=true다", () => {
-    const { rows } = runCohortValidation(coreStores, { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+    const { rows } = runCohortValidation(coreStores, defaultModelSettings());
     expect(rows.every((r) => r.includedInCoreAccuracy)).toBe(true);
     expect(rows.every((r) => r.predictedRevenueAvg != null)).toBe(true);
     expect(rows.every((r) => r.cohort === "정식 검증군")).toBe(true);
@@ -2054,7 +2088,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
   // 포함되고 리브-원-아웃 학습에도 참여한다.
   it("완료월수가 정식검증 최소값 이상이면(12개월 미완료라도) 핵심표본에 포함된다", () => {
     const earlyStore = makeStore({ storeCode: "E1", storeName: "조기점포", completedMonths: 7 });
-    const { rows } = runCohortValidation([...coreStores, earlyStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+    const { rows } = runCohortValidation([...coreStores, earlyStore], defaultModelSettings());
     const early = rows.find((r) => r.storeCode === "E1")!;
     expect(early.cohort).toBe("정식 검증군");
     expect(early.includedInCoreAccuracy).toBe(true);
@@ -2076,10 +2110,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
   it("조기검증(완전 외부검증) 매장도 evaluationPcCount를 우선 써서 예측한다 — 오픈 후 증설한 매장의 현재 pcCount로 왜곡되면 안 됨(2026-08-30 발견)", () => {
     const expanded = makeStore({ storeCode: "E3", storeName: "증설점포", completedMonths: 7, pcCount: 200, evaluationPcCount: 100 });
     const notExpanded = makeStore({ storeCode: "E4", storeName: "비교점포", completedMonths: 7, pcCount: 100, evaluationPcCount: null });
-    const { rows } = runCohortValidation([...coreStores, expanded, notExpanded], {
-      v61Training: defaultModelSettings().v61Training,
-      inflowAdjustment: defaultModelSettings().inflowAdjustment,
-    });
+    const { rows } = runCohortValidation([...coreStores, expanded, notExpanded], defaultModelSettings());
     const e = rows.find((r) => r.storeCode === "E3")!;
     const n = rows.find((r) => r.storeCode === "E4")!;
     // evaluationPcCount(100)가 실제로 쓰였다면, pcCount만 다른(200 vs 100) 두 매장의 예측이 같아야 한다.
@@ -2087,10 +2118,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
   });
 
   it("정상 조기검증 매장은 includedInEarlyValidation=true, 핵심표본은 false다(배타적)", () => {
-    const { rows } = runCohortValidation(coreStores, {
-      v61Training: defaultModelSettings().v61Training,
-      inflowAdjustment: defaultModelSettings().inflowAdjustment,
-    });
+    const { rows } = runCohortValidation(coreStores, defaultModelSettings());
     expect(rows.every((r) => r.includedInEarlyValidation === false)).toBe(true);
   });
 
@@ -2102,10 +2130,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
       isPostOpenIssue: true,
       postOpenIssueReason: "오픈 후 경쟁점 가격전쟁",
     });
-    const { rows } = runCohortValidation([...coreStores, earlyIssue], {
-      v61Training: defaultModelSettings().v61Training,
-      inflowAdjustment: defaultModelSettings().inflowAdjustment,
-    });
+    const { rows } = runCohortValidation([...coreStores, earlyIssue], defaultModelSettings());
     const e = rows.find((r) => r.storeCode === "E2")!;
     expect(e.includedInCoreAccuracy).toBe(false);
     expect(e.includedInEarlyValidation).toBe(false);
@@ -2113,7 +2138,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("사후 운영이슈 점포는 핵심 정확도에서 제외되고 사유가 남는다", () => {
     const anomalyStore = makeStore({ storeCode: "A1", storeName: "이슈점포", isPostOpenIssue: true, postOpenIssueReason: "오픈 후 운영관리 문제" });
-    const { rows } = runCohortValidation([...coreStores, anomalyStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+    const { rows } = runCohortValidation([...coreStores, anomalyStore], defaultModelSettings());
     const anomaly = rows.find((r) => r.storeCode === "A1")!;
     expect(anomaly.includedInCoreAccuracy).toBe(false);
     expect(anomaly.exclusionReason).toContain("운영관리 문제");
@@ -2124,7 +2149,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
   // (사용자 확정: "12개월 미만인 매장도 정상으로 평가해").
   it("영업 1개월 매장도 정식검증 대상에 포함된다", () => {
     const refStore = makeStore({ storeCode: "R1", storeName: "참고점포", completedMonths: 1 });
-    const { rows } = runCohortValidation([...coreStores, refStore], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+    const { rows } = runCohortValidation([...coreStores, refStore], defaultModelSettings());
     const ref = rows.find((r) => r.storeCode === "R1")!;
     expect(ref.cohort).toBe("정식 검증군");
     expect(ref.includedInCoreAccuracy).toBe(true);
@@ -2133,7 +2158,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("오픈 당월(완료월 0개) 매장은 예측값도 아예 내지 않는다 — 오픈달 매출로 평가하지 않는다", () => {
     const justOpened = makeStore({ storeCode: "J1", storeName: "오픈당월점포", completedMonths: 0, actualRevenueAvg: null });
-    const { rows } = runCohortValidation([...coreStores, justOpened], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+    const { rows } = runCohortValidation([...coreStores, justOpened], defaultModelSettings());
     const j = rows.find((r) => r.storeCode === "J1")!;
     expect(j.cohort).toBe("제외");
     expect(j.predictedRevenueAvg).toBeNull();
@@ -2142,7 +2167,7 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
 
   it("브랜드 미확인 매장은 핵심 정확도에서 제외되고 사유가 남는다", () => {
     const unknownBrand = makeStore({ storeCode: "U1", storeName: "미확인점포", brand: null });
-    const { rows } = runCohortValidation([...coreStores, unknownBrand], { ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+    const { rows } = runCohortValidation([...coreStores, unknownBrand], defaultModelSettings());
     const u = rows.find((r) => r.storeCode === "U1")!;
     expect(u.includedInCoreAccuracy).toBe(false);
     expect(u.exclusionReason).toContain("브랜드 미확인");

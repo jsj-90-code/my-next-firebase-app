@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getExistingStore } from "@/lib/storeEval/store";
 import type { ExistingStore } from "@/lib/storeEval/types";
@@ -36,29 +36,35 @@ export default function ExistingStoreDetailPage() {
   const [store, setStore] = useState<ExistingStore | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadSequence = useRef(0);
 
   const requestedTab = searchParams.get("tab") ?? "";
   const activeTab = (TABS.some((t) => t.key === requestedTab) ? requestedTab : "basic") as TabKey;
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setError(null);
     try {
       const existing = await getExistingStore(code);
+      if (sequence !== loadSequence.current) return;
       if (existing) {
         setStore(existing);
       } else {
         setError("해당 가맹점을 찾을 수 없습니다.");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "가맹점 정보를 불러오지 못했습니다.");
+      if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "가맹점 정보를 불러오지 못했습니다.");
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }, [code]);
 
   useEffect(() => {
     load();
+    return () => {
+      loadSequence.current++;
+    };
   }, [load]);
 
   function setTab(tab: TabKey) {
