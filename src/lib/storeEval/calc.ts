@@ -1861,7 +1861,13 @@ export function isEligibleForV61Training(store: {
 }): boolean {
   if (store.brandType !== "블랙라벨") return false;
   if (store.excludedFromModel) return false;
-  if (store.franchiseStatus !== "정상") return false;
+  // 2026-09-03 — franchiseStatus 필터를 제거했다(사용자 확정: 증평점은 "실제 해지했으나 평가는
+  // 동일하게 해야겠지"). 계약이 끝난 것과 그 매장이 영업한 기간의 실적이 왜곡됐다는 건 별개다 —
+  // 잘 안 돼서 해지된 매장을 표본에서 빼면 **생존 편향**이 생겨 신규 후보지 예측이 낙관적으로
+  // 기울고, 지표도 실제보다 좋아 보인다. 실적이 왜곡된 매장(경쟁점 가격전쟁·운영관리 문제 등)은
+  // excludedFromModel(사후 운영이슈) 플래그로 이미 따로 관리하므로, 그 판단만 남기고 계약 상태는
+  // 자격 판정에서 뺀다. isCoreEligibleForV61Training도 같은 이유로 함께 바꿨다.
+  // 실제 영향: 증평점 1곳만 새로 들어온다(검단사거리점은 excludedFromModel=true라 계속 제외).
   // 학습에 실제로 쓰이는 값은 evaluationPcCount ?? pcCount (buildV61TrainingStores와 동일 규칙) —
   // evaluationPcCount가 0으로 들어오면 대당매출이 Infinity가 되어 회귀 전체를 오염시키므로
   // 반드시 이 "해석된" 값으로 양수 검사를 해야 한다(2026-08-24 확인).
@@ -3070,7 +3076,7 @@ export function isCoreEligibleForV61Training(s: ValidationStoreInput): boolean {
   return (
     s.brand === "블랙라벨" &&
     !s.isPostOpenIssue &&
-    s.franchiseStatus === "정상" &&
+    // 2026-09-03 — franchiseStatus 조건 제거(생존 편향 방지). isEligibleForV61Training 주석 참고.
     s.completedMonths >= CORE_VALIDATION_MIN_MONTHS &&
     resolvedPcCount != null &&
     resolvedPcCount > 0 &&
@@ -3185,7 +3191,9 @@ export function runCohortValidation(
     if (cohort === "참고용") exclusionReason = "영업기간 1~2개월 — 참고자료로만 표시(핵심 정확도 제외)";
     else if (cohort === "제외") exclusionReason = "완료된 실제매출 월이 없음";
     else if (s.isPostOpenIssue) exclusionReason = `사후 운영이슈: ${s.postOpenIssueReason ?? "사유 미기재"}`;
-    else if (s.franchiseStatus !== "정상") exclusionReason = `정상영업 아님(${s.franchiseStatus ?? "확인필요"})`;
+    // 2026-09-03 — 가맹해지·폐점이어도 더 이상 제외 사유가 아니다(생존 편향 방지,
+    // isEligibleForV61Training 주석 참고). 다만 계약 상태는 사람이 볼 때 중요한 맥락이라
+    // 제외가 아닌 "참고 표시"로 남긴다.
     else if (s.brand == null) exclusionReason = "브랜드 미확인(09_입지동선평가에 행 없음)";
     else if (s.brand !== "블랙라벨") exclusionReason = `브랜드=${s.brand} (블랙라벨 아님)`;
     else if (!isCore) exclusionReason = `영업기간 미달(완료 ${s.completedMonths}개월, ${cohort}) — 완전 외부 검증군으로 예측`;

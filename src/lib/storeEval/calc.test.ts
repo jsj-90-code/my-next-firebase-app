@@ -1792,8 +1792,16 @@ describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·정�
   it("산식학습제외면 false", () => {
     expect(isEligibleForV61Training({ ...base, excludedFromModel: true })).toBe(false);
   });
-  it("정상영업이 아니면 false", () => {
-    expect(isEligibleForV61Training({ ...base, franchiseStatus: "가맹해지" })).toBe(false);
+  // 2026-09-03 — 예전엔 "정상영업이 아니면 false"였다. 계약이 끝난 것과 그 매장이 영업한
+  // 기간의 실적이 왜곡됐다는 건 별개이고, 잘 안 돼서 해지된 매장을 빼면 생존 편향이 생겨
+  // 신규 후보지 예측이 낙관적으로 기운다(사용자 확정: 증평점은 "실제 해지했으나 평가는
+  // 동일하게"). 실적이 왜곡된 매장은 excludedFromModel로 따로 관리한다.
+  it("가맹해지·폐점이어도 학습 대상에서 빼지 않는다 — 생존 편향 방지", () => {
+    expect(isEligibleForV61Training({ ...base, franchiseStatus: "가맹해지" })).toBe(true);
+    expect(isEligibleForV61Training({ ...base, franchiseStatus: "폐점(인허가문제)" })).toBe(true);
+  });
+  it("실적이 왜곡된 매장은 여전히 excludedFromModel로 뺀다(계약상태와 무관)", () => {
+    expect(isEligibleForV61Training({ ...base, franchiseStatus: "가맹해지", excludedFromModel: true })).toBe(false);
   });
   it("evaluationPcCount가 0이면 false — pcCount는 양수여도 실제 학습에 쓰이는 값(evaluationPcCount)이 0이면 대당매출이 Infinity가 되므로 제외해야 한다(2026-08-24)", () => {
     expect(isEligibleForV61Training({ ...base, evaluationPcCount: 0 })).toBe(false);
