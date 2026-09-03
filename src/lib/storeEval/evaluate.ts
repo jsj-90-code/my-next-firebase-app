@@ -67,7 +67,7 @@ export type EvaluateContext = {
   competitors: Competitor[];
   locationEvaluation: LocationEvaluation | null;
   settings: ModelSettings;
-  /** V61 실측 학습모형의 학습표본 원천 - 블랙라벨·정상영업·산식학습제외 아닌 기존 가맹점 전체를 넘긴다. */
+  /** V61 실측 학습모형의 학습표본 원천 - 블랙라벨·산식학습제외 아닌 기존 가맹점 전체를 넘긴다. */
   existingStores: ExistingStore[];
 };
 

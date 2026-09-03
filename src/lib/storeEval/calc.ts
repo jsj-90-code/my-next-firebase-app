@@ -1641,7 +1641,7 @@ export function summarizeValidation(rows: ValidationComputedRow[], settings: Mod
 //
 // ⚠️ 알고리즘 자체는 원본 Apps Script를 확보해 정확히 포팅했지만(이 파일의 함수들),
 // 학습에 필요한 기존 가맹점 특징 데이터(자사_요금표_시간당·예측_자사수요/PC·자사_경쟁력점수를
-// 12개월 완료·정상영업·산식학습제외 아닌 표본마다 계산해 둔 값)는 아직 앱에 없다
+// 완료월 기준 충족·산식학습제외 아닌 표본마다 계산해 둔 값)는 아직 앱에 없다
 // (README.md §4 — 기존 가맹점 매출DB 연동조차 자동화되지 않은 상태). 따라서 evaluate.ts는
 // 이 함수들을 아직 연결하지 않고 computeV61Fallback(폴백 회귀식)을 계속 쓴다. 기존 가맹점의
 // 위 세 특징치를 모을 수 있게 되면 evaluate.ts에서 fitEmpiricalRevenueModel/predictEmpiricalRevenue로
@@ -1846,7 +1846,7 @@ export function computeSpecialDemandScore(
   return SPECIAL_DEMAND_INTENSITY_SCORE[intensity ?? "없음"] ?? 0;
 }
 
-/** V61 학습 대상 판정: 블랙라벨 + 정상영업 + 산식학습제외 아님 + 학습 특징치 4종 모두 존재. */
+/** V61 학습 대상 판정: 블랙라벨 + 산식학습제외 아님 + 학습 특징치 모두 존재. 계약 상태는 제외 조건이 아니다. */
 export function isEligibleForV61Training(store: {
   brandType: string | null;
   franchiseStatus: string | null;
@@ -2930,7 +2930,6 @@ export function describeNotVerifiableReason(row: {
   if (row.actualRevenueAvg == null || row.cohort === "제외") return "완료된 실제매출 월 없음";
   if (row.brand == null) return "입지동선평가 미작성";
   if (row.brand !== "블랙라벨") return "타 브랜드";
-  if (row.franchiseStatus !== "정상") return "정상영업 아님";
   if (row.dataCompleteness.grade === "excluded") return "데이터 완성도 미달";
   if (!row.dataCompleteness.hasCoreInputs) return "예측 입력값 부족";
   if (row.v62PredictedRevenueAvg == null) return "V62 예측값 없음";
@@ -3064,7 +3063,7 @@ export function summarizeValidationRows(
 }
 
 /**
- * V61 학습표본 자격(CORE_VALIDATION_MIN_MONTHS 이상 완료·블랙라벨·정상영업·산식학습제외
+ * V61 학습표본 자격(CORE_VALIDATION_MIN_MONTHS 이상 완료·블랙라벨·산식학습제외
  * 아님·핵심 입력값 존재). 2026-09-02부터 최소 완료월수가 12 → 1로 바뀌었다
  * (CORE_VALIDATION_MIN_MONTHS 주석 참고).
  */
@@ -3108,8 +3107,8 @@ export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
 
 /**
  * 요청사항 1~5 — 12개월 미완료 매장까지 포함한 전체 검증.
- * 데이터 누출 방지(요청사항 4): 학습표본(12개월 완료·블랙라벨·정상영업·산식학습제외 아님)은
- * 리브-원-아웃으로, 그 외 전부(영업기간 미달·브랜드 미확인·사후 운영이슈·가맹해지 등)는
+ * 데이터 누출 방지(요청사항 4): 학습표본(완료월 기준 충족·블랙라벨·산식학습제외 아님)은
+ * 리브-원-아웃으로, 그 외 전부(영업기간 미달·브랜드 미확인·사후 운영이슈 등)는
  * "학습에 전혀 쓰이지 않은" 완전 외부 검증군으로 취급해 학습표본 전체로 학습한 모형으로 예측한다.
  */
 export function runCohortValidation(
@@ -3222,12 +3221,12 @@ export function runCohortValidation(
     });
 
     // 조기검증 포함조건: 완료개월 3~11개월(코호트 A/B/C) + 실제/예측 존재 + 블랙라벨 +
-    // 학습제외 아님(사후 운영이슈 아님) + 정상영업. 정식검증(isCore)과는 배타적이다.
+    // 학습제외 아님(사후 운영이슈 아님). 계약 상태는 제외 조건이 아니다.
+    // 정식검증(isCore)과는 배타적이다.
     const includedInEarlyValidation =
       !isCore &&
       (cohort === "조기 검증 A" || cohort === "조기 검증 B" || cohort === "조기 검증 C") &&
       !s.isPostOpenIssue &&
-      s.franchiseStatus === "정상" &&
       s.actualRevenueAvg != null &&
       v62PredictedRevenueAvg != null;
 

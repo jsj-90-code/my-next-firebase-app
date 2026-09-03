@@ -6,7 +6,7 @@
 // 데이터를 모아서 calc.ts가 요구하는 입력 형태로 가공하고, 계산 결과를 표/카드로 보여주는 것뿐이다.
 //
 // 2026-08-20 갱신: v61Predicted(스프레드시트에서 그대로 복사한 캐시값)를 더 이상 쓰지 않는다.
-// 완료월 CORE_VALIDATION_MIN_MONTHS 이상·블랙라벨·정상영업·산식학습제외 아닌 표본은 리브-원-아웃으로,
+// 완료월 CORE_VALIDATION_MIN_MONTHS 이상·블랙라벨·산식학습제외 아닌 표본은 리브-원-아웃으로,
 // 그 외 전부(브랜드 미확인·사후 운영이슈 등)는 학습에 전혀 쓰이지 않은 완전 외부 검증군으로
 // runCohortValidation이 직접 예측한다(calc.ts). V62(외부유입 보정)는 이제 runCohortValidation
 // 내부에서 실제 09_입지동선평가!외부유입제한 값으로 계산한다(예전엔 이 화면에서 "없음" 취급으로
@@ -552,7 +552,7 @@ function GlossarySection() {
           </li>
           <li>
             <b>코호트(정식검증)</b> — 오픈한 지 얼마나 됐는지로 나눈 그룹. 2026-09-02부터 실제매출이 확정된 달이{" "}
-            {CORE_VALIDATION_MIN_MONTHS}개월 이상인 정상영업 블랙라벨 매장은 전부 "정식검증" 대상입니다(이전에는 12개월
+            {CORE_VALIDATION_MIN_MONTHS}개월 이상인 블랙라벨 매장은 계약 상태와 무관하게 전부 "정식검증" 대상입니다(이전에는 12개월
             이상만 정식검증, 그 미만은 "조기검증"으로 따로 집계했습니다). 다만 아래 표의 <b>운영기간</b> 열에는 12개월
             완료 여부를 계속 표시합니다 — 집계에서 빼지는 않지만, 오픈 프로모션 효과가 아직 섞여 있을 수 있는 매장을 눈으로
             구분하기 위해서입니다.
@@ -620,7 +620,7 @@ function TenureBadge({
  * 처음 보는 사람을 위한 "결론만" 표 — 블랙라벨 전체 매장을 매장명·운영기간·실제매출·예측매출·
  * 오차율·적중 여부만으로 보여준다(브랜드·운영상태·데이터완성도 등 전문 컬럼은 아래 "자세히
  * 보기"의 코호트별 상세표에만 남겨둔다). 계산은 하지 않고 이미 계산된 ValidationStoreRow
- * 필드를 그대로 옮겨 보여줄 뿐이다. 2026-09-02부터 실제매출이 1개월이라도 확정된 정상영업
+ * 필드를 그대로 옮겨 보여줄 뿐이다. 2026-09-02부터 실제매출이 1개월이라도 확정된
  * 블랙라벨 매장은 전부 정식검증 표본이라, 이 표의 매장 대부분이 위 요약 통계에도 포함된다
  * (calc.ts CORE_VALIDATION_MIN_MONTHS 참고).
  */
@@ -848,13 +848,12 @@ export default function ValidationPage() {
       .filter((m) => m.absoluteErrorPct != null);
     const measuredForecastSummary = summarizeValidationRows(measuredForecastIncluded, targets);
     // 요청사항 1 — 조기검증 포함조건: 완료개월 3~11개월(코호트 A/B/C) + 실제/예측 존재 + 블랙라벨
-    // + 학습제외 아님(사후 운영이슈 아님) + 정상영업.
+    // + 학습제외 아님(사후 운영이슈 아님). 계약 상태는 제외 조건이 아니다.
     const earlyNormalRows = blackLabelRows.filter(
       (r) =>
         !r.includedInCoreAccuracy &&
         (r.cohort === "조기 검증 A" || r.cohort === "조기 검증 B" || r.cohort === "조기 검증 C") &&
         !r.isPostOpenIssue &&
-        r.franchiseStatus === "정상" &&
         r.actualRevenueAvg != null &&
         r.v62PredictedRevenueAvg != null,
     );
@@ -1020,7 +1019,7 @@ export default function ValidationPage() {
           같은 매장 집합이 된다. */}
       <section className="space-y-3">
         <p className="text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-          정상 운영 중인 블랙라벨 매장(실제매출이 {CORE_VALIDATION_MIN_MONTHS}개월 이상 확정된{" "}
+          블랙라벨 매장(실제매출이 {CORE_VALIDATION_MIN_MONTHS}개월 이상 확정되고 산식학습제외가 아닌{" "}
           <b>{combinedSummary.sampleCount}곳</b>)으로 확인한 결과,{" "}
           <b>{combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct <= 0.1).length}곳</b>(
           {formatPercent(combinedSummary.within10PctRatio)})은 모델 예측이 실제 매출과 <b>10% 이내</b>로 맞았습니다. 나머지{" "}
@@ -1029,7 +1028,7 @@ export default function ValidationPage() {
         </p>
         <p className="text-xs text-[#8a8072]">
           아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 2026-09-02부터 실제매출이{" "}
-          {CORE_VALIDATION_MIN_MONTHS}개월이라도 확정된 정상영업 매장은 전부 정식검증 표본이자 학습표본입니다(예전에는
+          {CORE_VALIDATION_MIN_MONTHS}개월이라도 확정된 매장은 계약 상태와 무관하게 전부 정식검증 표본이자 학습표본입니다(예전에는
           12개월 이상만 정식검증). 완료월이 1~2개월인 매장은 오픈 프로모션 효과가 섞여 있을 수 있다는 점은 감안해서
           보셔야 합니다.
         </p>
@@ -1105,7 +1104,7 @@ export default function ValidationPage() {
           여기가 이 화면의 핵심입니다 — 신규 후보지를 예측할 때와 가장 비슷한 조건으로 측정한 <b>진짜 모델 성능</b>입니다.
         </p>
       </div>
-      <SummaryBlock title="1. 정상영업점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
+      <SummaryBlock title="1. 학습대상점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
       <SummaryBlock
         title="2. 조기검증 적중률 (2026-09-02부터 정식검증에 통합 — 표본 0곳)"
         summary={computed.earlySummary}

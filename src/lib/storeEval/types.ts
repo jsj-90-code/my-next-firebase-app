@@ -384,7 +384,7 @@ export type ModelSettings = {
     competitivenessCoef: number;
   };
   // V61 "실측 학습모형" — 08_계산기준 "신규점 실측예측"/12_운영판정 VALIDATION 설정 그대로.
-  // 학습 표본은 ExistingStore(브랜드=블랙라벨·정상영업·산식학습제외 아님) + 실제 매출로 매번
+  // 학습 표본은 ExistingStore(브랜드=블랙라벨·산식학습제외 아님) + 실제 매출로 매번
   // calc.ts의 fitEmpiricalRevenueModel이 다시 학습한다 — 계수를 여기 하드코딩하지 않는다.
   v61Training: {
     ridgeLambda: number; // 1
@@ -646,7 +646,7 @@ export type ExistingStore = {
 
   // 2026-08-20 추가 — V61 실측 학습모형(비음수 릿지회귀)의 학습 특징치.
   // 01_점포기본정보/04_점포평가요약에서 그대로 가져온다(추정하지 않음). 이 넷이 모두 있고
-  // brandType=블랙라벨·franchiseStatus=정상·excludedFromModel=false인 점포만 학습 대상이다.
+  // brandType=블랙라벨·excludedFromModel=false인 점포만 학습 대상이다. 계약 상태는 제외 조건이 아니다.
   brandType: BrandType | null; // 09_입지동선평가!P열(브랜드구분) — 블랙라벨만 학습에 사용
   validationUse: "사용" | "제외" | null; // 04_점포평가요약!검증사용여부 (참고용 - 최종 필터는 위 3조건으로 직접 판정)
   hourlyRate: number | null; // 01_점포기본정보!자사_요금표_시간당

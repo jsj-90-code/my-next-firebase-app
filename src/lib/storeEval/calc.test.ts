@@ -1771,7 +1771,7 @@ describe("empiricalFeaturesFor / toEmpiricalSample (2026-09-03 개편 — 2번�
   });
 });
 
-describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·정상영업·산식학습제외 아님)", () => {
+describe("isEligibleForV61Training (학습 대상 판정 — 블랙라벨·산식학습제외 아님)", () => {
   const base = {
     brandType: "블랙라벨",
     franchiseStatus: "정상",
@@ -2063,6 +2063,16 @@ describe("runCohortValidation (12개월 미완료 매장까지 포함한 전체 
     expect(early.includedInEarlyValidation).toBe(false);
   });
 
+  it("가맹해지 매장도 정식검증 리브-원-아웃 표본에 포함한다 — 계약상태는 참고 맥락만 유지", () => {
+    const terminated = makeStore({ storeCode: "T1", storeName: "해지점포", franchiseStatus: "가맹해지" });
+    const { rows } = runCohortValidation([...coreStores, terminated], defaultModelSettings());
+    const row = rows.find((r) => r.storeCode === "T1")!;
+    expect(row.includedInCoreAccuracy).toBe(true);
+    expect(row.predictedRevenueAvg).not.toBeNull();
+    expect(row.exclusionReason).toBeNull();
+    expect(row.operationalStatus).toBe("abnormal");
+  });
+
   it("조기검증(완전 외부검증) 매장도 evaluationPcCount를 우선 써서 예측한다 — 오픈 후 증설한 매장의 현재 pcCount로 왜곡되면 안 됨(2026-08-30 발견)", () => {
     const expanded = makeStore({ storeCode: "E3", storeName: "증설점포", completedMonths: 7, pcCount: 200, evaluationPcCount: 100 });
     const notExpanded = makeStore({ storeCode: "E4", storeName: "비교점포", completedMonths: 7, pcCount: 100, evaluationPcCount: null });
@@ -2178,8 +2188,8 @@ describe('describeNotVerifiableReason ("검증 불가(실적 없음)" 세분화 
   it("브랜드가 블랙라벨이 아니면 타 브랜드", () => {
     expect(describeNotVerifiableReason({ ...base, brand: "리그PC방" })).toBe("타 브랜드");
   });
-  it("정상영업이 아니면 정상영업 아님", () => {
-    expect(describeNotVerifiableReason({ ...base, franchiseStatus: "가맹해지" })).toBe("정상영업 아님");
+  it("가맹해지는 검증불가 사유가 아니며 실제 누락 사유를 계속 찾는다", () => {
+    expect(describeNotVerifiableReason({ ...base, franchiseStatus: "가맹해지", v62PredictedRevenueAvg: null })).toBe("V62 예측값 없음");
   });
   it("데이터완성도가 excluded면 데이터 완성도 미달", () => {
     expect(describeNotVerifiableReason({ ...base, dataCompleteness: { ...complete, grade: "excluded", score: 50 } })).toBe("데이터 완성도 미달");
