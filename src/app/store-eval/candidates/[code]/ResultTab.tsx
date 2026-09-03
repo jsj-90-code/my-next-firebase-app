@@ -173,6 +173,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const [newStoreCode, setNewStoreCode] = useState("");
   const [existingStoreCodes, setExistingStoreCodes] = useState<Set<string>>(new Set());
   const runSequence = useRef(0);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
 
   // 다우오피스 평가기록 보고서 초안 - candidate/competitors는 원래 run() 안에서 계산만 하고
   // 버렸는데, 보고서 컨텍스트를 만들려면 화면에 떠 있는 것과 같은 값이 필요해 여기 같이 담아둔다.
@@ -277,7 +278,18 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
 
       const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores });
-      await saveEvaluationResult(evaluated, user?.email ?? null);
+      // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
+      // 들어오더라도 새 결과가 항상 마지막에 저장되어 Firestore 최종값이 뒤집히지 않는다.
+      const saveTask = saveQueue.current
+        .catch(() => undefined)
+        .then(async () => {
+          if (sequence !== runSequence.current) return false;
+          await saveEvaluationResult(evaluated, user?.email ?? null);
+          return true;
+        });
+      saveQueue.current = saveTask.then(() => undefined, () => undefined);
+      const saved = await saveTask;
+      if (!saved) return;
       if (sequence !== runSequence.current) return;
       setResult(evaluated);
       setSettingsUsed(settings);
