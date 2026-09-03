@@ -387,9 +387,9 @@ export type ModelSettings = {
   // 학습 표본은 ExistingStore(브랜드=블랙라벨·산식학습제외 아님) + 실제 매출로 매번
   // calc.ts의 fitEmpiricalRevenueModel이 다시 학습한다 — 계수를 여기 하드코딩하지 않는다.
   v61Training: {
-    ridgeLambda: number; // 1
-    ridgeWeight: number; // 0.60 — 릿지회귀 예측 가중치
-    baselineWeight: number; // 0.40 — 대당월매출 중앙값 가중치
+    ridgeLambda: number; // 10 — 38곳 LOOCV + 부분표본 재검증으로 선정
+    ridgeWeight: number; // 0.80 — 릿지회귀 예측 가중치
+    baselineWeight: number; // 0.20 — 대당월매출 중앙값 가중치
     minSampleCount: number; // 12 — 미달이면 v61Fallback을 쓴다
     // 2026-09-02 추가(사용자 확인) — 시간당요금이 경쟁력점수와 상관계수 0.53으로 얽혀 있어
     // 비음수 릿지회귀가 요금 계수를 0으로 잘라버렸다(신규후보지에서 요금을 바꿔도 예상매출이

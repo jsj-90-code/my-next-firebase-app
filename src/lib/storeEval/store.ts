@@ -27,7 +27,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { defaultModelSettings } from "./settings";
+import { mergeModelSettings } from "./settings";
 import type {
   AdminDongReference,
   CandidateInput,
@@ -262,9 +262,8 @@ export async function saveEvaluationResult(result: EvaluationResult, actor: stri
 export async function getModelSettings(): Promise<ModelSettings | null> {
   const snap = await getDoc(doc(requireDb(), SETTINGS, "current"));
   if (!snap.exists()) return null;
-  // 2026-08-28 — interiorWeights처럼 새로 추가된 필드가 아예 없는 옛 Firestore 문서를 만나도
-  // 죽지 않도록 기본값과 얕은 병합한다(문서에 있는 값은 그대로 쓰고, 없는 최상위 필드만 기본값).
-  return { ...defaultModelSettings(), ...(snap.data() as ModelSettings) };
+  // 새 중첩 필드가 없는 옛 Firestore 문서도 안전하게 읽도록 기본값과 깊게 병합한다.
+  return mergeModelSettings(snap.data() as Partial<ModelSettings>);
 }
 
 export async function saveModelSettings(settings: ModelSettings, actor: string | null, reason: string | null = null): Promise<void> {

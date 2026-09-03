@@ -72,7 +72,7 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
       demandPerPcCoef: 390.05461852333895,
       competitivenessCoef: 158536.9275523547,
     },
-    // 08_계산기준!VALIDATION 그대로 (릿지람다1·회귀가중치0.6·기준모형가중치0.4·최소학습표본12)
+    // 08_계산기준!VALIDATION에서 시작한 설정(최소학습표본12). λ와 혼합비율은 아래 실측 재검증으로 갱신했다.
     // 2026-09-02 minHourlyRateCoef 추가(사용자 확인) — 시간당요금이 경쟁력점수와 상관계수
     // 0.53으로 얽혀 비음수 릿지회귀가 요금 계수를 0으로 잘라버렸던 문제(신규후보지에서 요금을
     // 바꿔도 예상매출이 전혀 안 움직임) 수정.
@@ -93,9 +93,13 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 독점매장 우려(격차↑가 독점을 더 깎는다)는 수요↓가 상쇄해서 순효과가 거의 없음을 확인했다
     // (독점 3곳 평균오차 14.3%→14.4%, 과소예측이던 탕정역·광주각화는 각 1%p 개선).
     v61Training: {
-      ridgeLambda: 1,
-      ridgeWeight: 0.6,
-      baselineWeight: 0.4,
+      // 2026-09-03 — 정상 학습표본 38곳 확장 후 재탐색. λ=10, 회귀80%/중앙값20%가 기존
+      // λ=1, 60/40 대비 MAPE 12.02→11.46%, 중앙오차 12.54→12.24%, ±10% 39.5→42.1%,
+      // ±20% 86.8% 유지, 최악 오차폭 60.8→58.0%p로 전 지표 개선/유지. 28곳 무작위 부분표본
+      // 300회에서도 MAPE 254회·중앙오차 198회·오차폭 276회 우세해 전체표본 맞춤이 아님을 확인했다.
+      ridgeLambda: 10,
+      ridgeWeight: 0.8,
+      baselineWeight: 0.2,
       minSampleCount: 12,
       minHourlyRateCoef: 0.03,
       // 2026-09-03 — 0에서 0.03으로. 이 하한선이 없으면 비음수 릿지가 수요 피처의 계수를 정확히
@@ -201,4 +205,32 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     brandFilter: "블랙라벨",
     saturationThreshold: 7,
   };
+}
+
+/**
+ * Firestore에 예전 형식의 설정 문서가 남아 있어도 새 중첩 필드의 기본값을 보존한다.
+ * 객체는 재귀 병합하고 배열은 저장된 배열 전체로 교체한다. 얕은 병합을 쓰면 v61Training의
+ * 일부 필드만 저장된 문서가 min* 계수 전부를 지워 예측값을 바꾸는 문제가 있다.
+ */
+export function mergeModelSettings(stored?: Partial<ModelSettings> | null): ModelSettings {
+  const defaults: ModelSettings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
+  const merge = (base: unknown, override: unknown): unknown => {
+    if (override === undefined) return base;
+    if (
+      base !== null &&
+      override !== null &&
+      typeof base === "object" &&
+      typeof override === "object" &&
+      !Array.isArray(base) &&
+      !Array.isArray(override)
+    ) {
+      const result = { ...(base as Record<string, unknown>) };
+      for (const [key, value] of Object.entries(override as Record<string, unknown>)) {
+        result[key] = merge(result[key], value);
+      }
+      return result;
+    }
+    return override;
+  };
+  return merge(defaults, stored ?? {}) as ModelSettings;
 }

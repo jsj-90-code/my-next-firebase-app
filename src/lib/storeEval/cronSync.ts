@@ -14,7 +14,7 @@ import { google } from "googleapis";
 import type { Firestore } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { computeCompetitorAvgCompetitiveness, computeCompetitivenessGap, computeExistingStoreDemandEvaluation, computeStabilizedPerformance } from "./calc";
-import { defaultModelSettings } from "./settings";
+import { mergeModelSettings } from "./settings";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "./types";
 // scripts/migrateFullExistingStoreProfiles.mjs, scripts/syncSalesFromRevenueSheet.mjs와 셀 파싱/
 // dirty-check 로직을 하나로 합친다(tsconfig allowJs) — 예전엔 세 곳에 거의 동일하게 복붙돼 있어서
@@ -152,9 +152,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, d.data()]));
   const locationEvalByCandidateCode = new Map(locationEvalsSnap.docs.map((d) => [d.id, d.data() as LocationEvaluation]));
-  const settings: ModelSettings = settingsSnap.exists
-    ? { ...defaultModelSettings(), ...(settingsSnap.data() as ModelSettings) }
-    : { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
+  const settings: ModelSettings = mergeModelSettings(settingsSnap.exists ? (settingsSnap.data() as Partial<ModelSettings>) : null);
   // 경쟁력점수/자사수요 재계산(아래)에 쓸, 매장별 "현재 유효한" 경쟁점 목록 — 05 루프를 도는
   // 동안 시트값+기존 문서(웹 전용 필드 보존)를 합쳐서 채운다.
   const competitorsByStoreCode = new Map<string, Competitor[]>();
