@@ -203,7 +203,12 @@ function validate(form: Competitor): string[] {
  * 2026-08-30 추가 — "상세" 조사수준은 간략/외관만과 달리 미입력 항목을 기본값(2.0/1.5)으로
  * 채워주지 않는다(applySurveyLevelDefault 참고). 그래서 상세인데 대수나 평가항목 중 하나라도
  * 완전히 비면, 화면에 별도 경고 없이 그 경쟁점이 계산에서 조용히 빠진다(사용자 질문으로 발견).
- * 여기서 그 두 경우를 미리 감지해 카드에 경고 배지로 보여준다.
+ *
+ * 2026-09-03 개편 — calc.ts computeFacilityScore가 "하나라도 없으면 null" 대신 "있는 항목만
+ * 재정규화"로 바뀌면서, 시설 세부항목이 비어도 종합점수가 나온다. 그러면 total==null 조건만
+ * 보던 이 경고가 **사라져서 빈 항목을 아무도 모르게 된다**. 그래서 총점 기준이 아니라
+ * **개별 항목 기준**으로 무엇이 비었는지 짚어주도록 바꿨다. 문구도 "제외됨"이 아니라
+ * "나머지 항목으로만 계산됨"이 정확하다(이제 진짜로 빠지는 건 4개 버킷이 전부 빌 때뿐).
  */
 function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): string[] {
   if (c.surveyLevel !== "상세") return [];
@@ -211,8 +216,29 @@ function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): s
   if (computeCompetitorAppliedPcCount(c) == null) {
     warnings.push("대수 누락 → 경쟁IP·점유율 계산에서 제외됨");
   }
-  if (computeCompetitorScores(c, settings).total == null) {
-    warnings.push("평가항목 누락(하드웨어·먹거리·인테리어·입지 중 하나) → 경쟁력점수 평균에서 제외됨");
+  const scores = computeCompetitorScores(c, settings);
+  if (scores.total == null) {
+    warnings.push("평가항목 전부 누락 → 경쟁력점수 평균에서 제외됨(경쟁점 없는 것과 같게 취급)");
+  } else {
+    // 4개 버킷 중 빈 것
+    const emptyBuckets = [
+      scores.spec == null ? "하드웨어" : null,
+      scores.food == null ? "먹거리" : null,
+      scores.interior == null ? "시설" : null,
+      scores.location == null ? "입지" : null,
+    ].filter((x): x is string => x != null);
+    if (emptyBuckets.length > 0) {
+      warnings.push(`${emptyBuckets.join("·")} 미입력 → 나머지 항목으로만 경쟁력점수를 계산함`);
+    }
+    // 시설 버킷은 계산은 되지만 세부 3항목 중 빈 게 있으면 그것도 알려준다(2026-08-31에 신설된
+    // 매장관리점수가 그 전에 조사된 경쟁점들에서 통째로 비어 있는 사례가 실제로 많다).
+    const emptyFacility = [
+      c.interiorScore == null ? "인테리어점수" : null,
+      c.managementScore == null ? "매장관리점수" : null,
+    ].filter((x): x is string => x != null);
+    if (scores.interior != null && emptyFacility.length > 0) {
+      warnings.push(`${emptyFacility.join("·")} 미입력 → 시설점수를 나머지 항목으로만 계산함`);
+    }
   }
   return warnings;
 }
@@ -772,8 +798,13 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
               </div>
               {dataWarnings.length > 0 && (
                 <div className="mt-2 flex flex-col gap-1">
+                  {/* 계산에서 아예 빠지는 경우(빨강)와 일부 항목만 비어 나머지로 계산되는
+                      경우(주황)를 색으로 구분한다 — 둘의 심각도가 다르다(2026-09-03). */}
                   {dataWarnings.map((w) => (
-                    <span key={w} className="app-badge app-badge-danger w-fit text-[11px]">
+                    <span
+                      key={w}
+                      className={`app-badge w-fit text-[11px] ${w.includes("제외됨") ? "app-badge-danger" : "app-badge-warn"}`}
+                    >
                       ⚠ {w}
                     </span>
                   ))}
