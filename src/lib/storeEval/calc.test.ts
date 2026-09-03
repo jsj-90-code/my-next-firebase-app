@@ -742,10 +742,22 @@ describe("computeFacilityScore (존구성50%+인테리어30%+관리20%, 2026-08-
     // 3*0.5 + 4*0.3 + 2*0.2 = 1.5+1.2+0.4 = 3.1
     expect(computeFacilityScore({ zoneComposition: 3, interiorScore: 4, managementScore: 2 }, { facilityWeights })).toBeCloseTo(3.1, 6);
   });
-  it("하나라도 없으면 전체 null — 관리점수가 더 이상 인테리어로 자동 대체되지 않는다", () => {
-    expect(computeFacilityScore({ zoneComposition: 3, interiorScore: 4, managementScore: null }, { facilityWeights })).toBeNull();
-    expect(computeFacilityScore({ zoneComposition: null, interiorScore: 4, managementScore: 2 }, { facilityWeights })).toBeNull();
-    expect(computeFacilityScore({ zoneComposition: 3, interiorScore: null, managementScore: 2 }, { facilityWeights })).toBeNull();
+  // 2026-09-03 — 예전엔 "하나라도 없으면 전체 null"이었으나, 그 규칙이 경쟁점 한 곳을 통째로
+  // 무효화하고 결국 "경쟁점 없음(격차 1.00)"으로 둔갑시키는 부작용을 냈다(후보지 5곳에서 실제
+  // 발생, 예상매출이 5~13% 낮게 나오고 있었음). computeSpecScore와 동일하게 있는 항목만으로
+  // 가중치를 재정규화하도록 바꿨다 — calc.ts computeFacilityScore 주석 참고.
+  it("일부만 있으면 있는 항목끼리 가중치를 재정규화한다", () => {
+    // 관리점수 없음 → 존구성0.5+인테리어0.3=0.8로 재정규화: (3*0.5 + 4*0.3)/0.8 = 3.375
+    expect(computeFacilityScore({ zoneComposition: 3, interiorScore: 4, managementScore: null }, { facilityWeights })).toBeCloseTo(3.375, 6);
+    // 존구성 없음 → (4*0.3 + 2*0.2)/0.5 = 3.2
+    expect(computeFacilityScore({ zoneComposition: null, interiorScore: 4, managementScore: 2 }, { facilityWeights })).toBeCloseTo(3.2, 6);
+    // 인테리어 없음 → (3*0.5 + 2*0.2)/0.7 = 2.714285...
+    expect(computeFacilityScore({ zoneComposition: 3, interiorScore: null, managementScore: 2 }, { facilityWeights })).toBeCloseTo(1.9 / 0.7, 6);
+    // 하나만 있으면 그 값 자체가 된다.
+    expect(computeFacilityScore({ zoneComposition: null, interiorScore: 4, managementScore: null }, { facilityWeights })).toBeCloseTo(4, 6);
+  });
+  it("셋 다 없을 때만 null이다", () => {
+    expect(computeFacilityScore({ zoneComposition: null, interiorScore: null, managementScore: null }, { facilityWeights })).toBeNull();
   });
 });
 

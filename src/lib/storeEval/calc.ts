@@ -1026,17 +1026,35 @@ export function resolveFreshnessScore(manualScore: number | null, renovationYear
  * 옛 `computeInteriorSeatManagementScore`(좌석zone70%+최신성5%+청결15%+편의10% 블렌딩)는 완전히
  * 폐기 — 새 시트 산식엔 최신성/청결/편의성이 전혀 안 들어간다(§ 최종식 확인). 인테리어는 더 이상
  * 내부적으로 쪼개 블렌딩하지 않고 raw 입력값을 그대로 쓴다. 관리점수는 자사=상수4, 경쟁점=완전
- * 독립 수동입력(더 이상 인테리어에서 파생/폴백 안 됨 — 셋 중 하나라도 없으면 전체 null).
+ * 독립 수동입력(더 이상 인테리어에서 파생/폴백 안 됨).
  * `settings.facilityWeights`(옛 `interiorWeights` 대체)로 50/30/20 비중을 설정값으로 노출한다.
+ *
+ * 2026-09-03 수정 — 예전엔 셋 중 **하나라도** 없으면 전체를 null로 만들었는데, 그게 실제로
+ * 심각한 부작용을 냈다: 시설점수가 null이면 경쟁력점수(computeCompetitivenessScore)가 null이 되고,
+ * 그러면 그 경쟁점이 경쟁력격차 계산(computeCompetitorAvgCompetitiveness)에서 통째로 빠진다.
+ * 경쟁점이 전부 이렇게 빠지면 격차가 1.00(= 경쟁점 없음)이 되어 **경쟁점이 있는 후보지가
+ * 독점 상권으로 둔갑한다.** 실제로 후보지 9곳을 점검해보니 N001~N004·N012 다섯 곳이 이 상태였고
+ * (상세조사를 마친 경쟁점인데 시설 3항목 중 하나만 비어 무효화된 경우 포함), 예상매출이
+ * 5~13% 낮게 나오고 있었다.
+ *
+ * 그래서 computeSpecScore가 이미 쓰던 방식(있는 항목만으로 가중치 재정규화)과 동일하게 맞췄다 —
+ * 셋 다 없을 때만 null이다. "한 항목 미입력"과 "아예 조사 안 됨"을 구분하는 게 원래 의도였는데,
+ * 전자를 후자처럼 취급하는 바람에 오히려 정보가 통째로 버려지고 있었다.
  */
 export function computeFacilityScore(
   input: { zoneComposition: number | null; interiorScore: number | null; managementScore: number | null },
   settings: Pick<ModelSettings, "facilityWeights">,
 ): number | null {
-  const { zoneComposition, interiorScore, managementScore } = input;
-  if (zoneComposition == null || interiorScore == null || managementScore == null) return null;
   const w = settings.facilityWeights;
-  return zoneComposition * w.zoneComposition + interiorScore * w.interior + managementScore * w.management;
+  const items = [
+    { score: input.zoneComposition, weight: w.zoneComposition },
+    { score: input.interiorScore, weight: w.interior },
+    { score: input.managementScore, weight: w.management },
+  ].filter((i): i is { score: number; weight: number } => i.score != null);
+  if (items.length === 0) return null;
+  const totalWeight = items.reduce((sum, i) => sum + i.weight, 0);
+  if (totalWeight === 0) return null;
+  return items.reduce((sum, i) => sum + i.score * i.weight, 0) / totalWeight;
 }
 
 /**
