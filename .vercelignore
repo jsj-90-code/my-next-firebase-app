@@ -5,7 +5,6 @@ node_modules
 .local-tools
 reference
 docs
-scripts
 **/*.test.ts
 **/*.tmp.*
 *.log
