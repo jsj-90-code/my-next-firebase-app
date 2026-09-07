@@ -13,7 +13,9 @@
 import { google } from "googleapis";
 import type { Firestore } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import { computeCompetitorAvgCompetitiveness, computeCompetitivenessGap, computeExistingStoreDemandEvaluation, computeStabilizedPerformance } from "./calc";
+import { computeStabilizedPerformance } from "./calc";
+import { existingStoreEvaluationPatch, existingStoreSourceCode } from "./existingStoreEvaluation";
+import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { mergeModelSettings } from "./settings";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "./types";
 // scripts/migrateFullExistingStoreProfiles.mjs, scripts/syncSalesFromRevenueSheet.mjs와 셀 파싱/
@@ -150,12 +152,9 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   ]);
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
-  const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, d.data()]));
+  const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, migrateCompetitorInvestigationStatus(d.data())]));
   const locationEvalByCandidateCode = new Map(locationEvalsSnap.docs.map((d) => [d.id, d.data() as LocationEvaluation]));
   const settings: ModelSettings = mergeModelSettings(settingsSnap.exists ? (settingsSnap.data() as Partial<ModelSettings>) : null);
-  // 경쟁력점수/자사수요 재계산(아래)에 쓸, 매장별 "현재 유효한" 경쟁점 목록 — 05 루프를 도는
-  // 동안 시트값+기존 문서(웹 전용 필드 보존)를 합쳐서 채운다.
-  const competitorsByStoreCode = new Map<string, Competitor[]>();
 
   // ---- 01_점포기본정보 ----
   const stores01 = await readSheetAsObjects(sheets, "01_점포기본정보", "A1:CQ1000");
@@ -248,6 +247,8 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       await writer.set(db.collection("storeEvalExistingStores").doc(code), patch, true);
       profileUpdated++;
     }
+    // Recalculate derived fields from the profile written in this same sync.
+    storeDataByCode.set(code, { ...storeDataByCode.get(code), ...patch });
   }
 
   // ---- 05_경쟁점정보 ----
@@ -271,7 +272,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     const id = seenCount === 0 ? baseKey : `${baseKey}_${seenCount}`;
     const competitor = {
       id,
-      candidateCode: code,
+      candidateCode: existingStoreSourceCode({ ...storeDataByCode.get(code), storeCode: code } as ExistingStore),
       name,
       surveyLevel: toText(c["조사수준"]) || "상세",
       investigationStatus: "조사완료",
@@ -343,9 +344,16 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     // merge 후 실제로 Firestore에 남을 값(웹 전용 필드는 기존 문서 값 보존) — 아래 경쟁력점수
     // 재계산에 쓴다. dirty 여부와 무관하게 항상 채운다(안 바뀐 경쟁점도 계산엔 포함돼야 함).
     const mergedCompetitor = { ...existingCompByid.get(id), ...competitor } as unknown as Competitor;
-    const list = competitorsByStoreCode.get(code) ?? [];
-    list.push(mergedCompetitor);
-    competitorsByStoreCode.set(code, list);
+    existingCompByid.set(id, mergedCompetitor);
+  }
+
+  // Include web-created competitors too, exactly as the evaluation screens do.
+  const competitorsByCandidateCode = new Map<string, Competitor[]>();
+  for (const data of existingCompByid.values()) {
+    const competitor = data as Competitor;
+    const list = competitorsByCandidateCode.get(competitor.candidateCode) ?? [];
+    list.push(competitor);
+    competitorsByCandidateCode.set(competitor.candidateCode, list);
   }
 
   // ---- 경쟁력점수/자사수요 재계산 ----
@@ -359,23 +367,15 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   for (const code of storeCodes) {
     const store = storeDataByCode.get(code) as unknown as ExistingStore | undefined;
     if (!store) continue;
-    const competitors = competitorsByStoreCode.get(code) ?? [];
-    const loc = locationEvalByCandidateCode.get(store.originCandidateCode ?? code) ?? null;
-    const evalResult = computeExistingStoreDemandEvaluation(store, competitors, loc, settings);
+    const lookupCode = existingStoreSourceCode({ ...store, storeCode: code });
+    const competitors = competitorsByCandidateCode.get(lookupCode) ?? [];
+    const loc = locationEvalByCandidateCode.get(lookupCode) ?? null;
     // 2026-09-02(4차) — empiricalFeaturesFor 4번째 학습 피처(자사경쟁력×log(경쟁력격차))에 쓰기
     // 위해 competitivenessGap도 같이 캐시한다(사용자 확인: "경쟁점 경쟁력은 반드시 평가 항목에
     // 들어가야 한다").
-    const competitorAvgCompetitiveness = computeCompetitorAvgCompetitiveness(competitors, settings);
-    const competitivenessGap = computeCompetitivenessGap(evalResult.ownCompetitivenessScore, competitorAvgCompetitiveness);
     // 2026-08-30 — marketDemand/competitorIp도 같이 캐시한다(calc.ts empiricalFeaturesFor가
     // ownDemand 대신 이 둘을 분리된 학습 특징치로 쓰게 바뀜, empiricalFeaturesFor 주석 참고).
-    const patch = {
-      competitivenessScore: evalResult.ownCompetitivenessScore,
-      ownDemand: evalResult.ownDemand,
-      marketDemand: evalResult.marketDemand,
-      competitorIp: evalResult.competitorIp,
-      competitivenessGap,
-    };
+    const patch = existingStoreEvaluationPatch(store, competitors, loc, settings);
     if (!isSameData(store, patch)) {
       await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);
       storeDataByCode.set(code, { ...store, ...patch });

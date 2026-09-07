@@ -18,6 +18,7 @@ import {
   listCompetitors,
   listExistingStores,
   listAllLocationEvaluations,
+  listAllCompetitors,
   saveEvaluationResult,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
@@ -268,18 +269,19 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (!candidate) {
         throw new Error("후보지 기본정보가 없습니다. [기본정보] 탭에서 먼저 저장해주세요.");
       }
-      const [competitors, locationEvaluation, existingStores, modelSettingsDoc, trainingLocationEvaluations] = await Promise.all([
-        listCompetitors(candidateCode),
-        getLocationEvaluation(candidateCode),
+      const [existingStores, modelSettingsDoc, trainingLocationEvaluations, trainingCompetitors] = await Promise.all([
         listExistingStores(),
         getModelSettings(),
         listAllLocationEvaluations(),
+        listAllCompetitors(),
       ]);
+      const competitors = trainingCompetitors.filter((competitor) => competitor.candidateCode === candidateCode);
+      const locationEvaluation = trainingLocationEvaluations.find((location) => location.candidateCode === candidateCode) ?? null;
       const settings: ModelSettings = modelSettingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };
       if (sequence !== runSequence.current) return;
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
 
-      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations });
+      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors });
       // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
       // 들어오더라도 새 결과가 항상 마지막에 저장되어 Firestore 최종값이 뒤집히지 않는다.
       const saveTask = saveQueue.current

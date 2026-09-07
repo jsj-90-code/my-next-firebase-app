@@ -52,6 +52,7 @@ import {
   toEmpiricalSample,
 } from "./calc";
 import { defaultModelSettings } from "./settings";
+import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import type {
   CandidateInput,
   Competitor,
@@ -70,7 +71,9 @@ export type EvaluateContext = {
   /** V61 실측 학습모형의 학습표본 원천 - 블랙라벨·산식학습제외 아닌 기존 가맹점 전체를 넘긴다. */
   existingStores: ExistingStore[];
   /** 학습용 기존점의 입지평가. 후보지 한 곳의 평가를 다른 점포에 재사용하지 않는다. */
-  trainingLocationEvaluations?: LocationEvaluation[];
+  trainingLocationEvaluations: LocationEvaluation[];
+  /** Complete competitor collection for rebuilding existing-store derived inputs. */
+  trainingCompetitors: Competitor[];
 };
 
 export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
@@ -143,7 +146,10 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
 
   // ---- V61: 실측 학습모형 우선, 표본 부족 시에만 폴백 ----
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
-  const trainingStores = buildV61TrainingStores(existingStores, ctx.trainingLocationEvaluations, settings);
+  const refreshedStores = prepareExistingStoresForEvaluation(
+    existingStores, ctx.trainingCompetitors, ctx.trainingLocationEvaluations, settings,
+  );
+  const trainingStores = buildV61TrainingStores(refreshedStores, ctx.trainingLocationEvaluations, settings);
   const trainingSamples = trainingStores.map(toEmpiricalSample);
   const trainedModel = fitEmpiricalRevenueModel(
     trainingSamples,

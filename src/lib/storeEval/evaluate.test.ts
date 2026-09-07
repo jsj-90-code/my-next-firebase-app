@@ -181,11 +181,14 @@ describe("evaluateCandidate 배선 검증", () => {
     const activeSettings = {...settings, v61Training:{...settings.v61Training, modelVariant:"visibility-inflow" as const, minVisibilityCoef:.05, ridgeLambda:10, ridgeWeight:1, baselineWeight:0}};
     const existingStores = Array.from({length:16}, (_,i) => ({
       storeCode:`S${i}`, originCandidateCode:`L${i}`, storeName:`매장${i}`, brandType:"블랙라벨", excludedFromModel:false, completedMonths:12,
+      ownVgaBase:"RTX 5060", ownMonitorBase:"240Hz", ownFoodScore:4, ownInteriorScore:4,
+      ownTeamRoom:2, ownCoupleZone:3, ownVipZone:5, ownFriendsZone:15, floating500Male:92686,
+      floor:3, groundLevel:"지상", hasElevator:true, floating500Avg:166062, pop500m:10338,
       pcCount:100+i, hourlyRate:1200+i*20, marketDemand:4000+i*50, competitorIp:300, competitivenessScore:3+i/20,
       actualMonthlyRevenueAvg:40000000+i*1000000,
     } as ExistingStore));
     const trainingLocationEvaluations = existingStores.map((s,i) => ({...locationEval, candidateCode:s.originCandidateCode!, visibilityScore:(i%5+1) as LocationEvaluation["visibilityScore"], inflowRestriction:"강함" as const}));
-    const result = evaluateCandidate({candidate:emptyCandidate(), competitors:[competitor], locationEvaluation:locationEval, settings:activeSettings, existingStores, trainingLocationEvaluations});
+    const result = evaluateCandidate({candidate:emptyCandidate(), competitors:[competitor], locationEvaluation:locationEval, settings:activeSettings, existingStores, trainingLocationEvaluations, trainingCompetitors: []});
     expect(result.v61IsFallback).toBe(false);
     expect(result.v61ModelLabel).toContain("가시성");
     const explain=result.v61TrainedModelExplain!;
@@ -193,7 +196,7 @@ describe("evaluateCandidate 배선 검증", () => {
     expect(explain.featureLabels[5]).toBe("접근가시성");
     expect(explain.featureRealValues[5]).toBe(4);
     expect(explain.yMean).toBeCloseTo(existingStores.reduce((sum,s) => sum+Math.log(s.actualMonthlyRevenueAvg!/s.pcCount!/.8),0)/16, 10);
-    const missing = evaluateCandidate({candidate:emptyCandidate(), competitors:[competitor], locationEvaluation:{...locationEval, visibilityScore:null}, settings:activeSettings, existingStores, trainingLocationEvaluations});
+    const missing = evaluateCandidate({candidate:emptyCandidate(), competitors:[competitor], locationEvaluation:{...locationEval, visibilityScore:null}, settings:activeSettings, existingStores, trainingLocationEvaluations, trainingCompetitors: []});
     expect(missing.v61IsFallback).toBe(true);
     expect(missing.v61TrainedModelExplain).toBeNull();
   });
@@ -204,7 +207,7 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: locationEval,
       settings,
-      existingStores: [],
+      existingStores: [], trainingCompetitors: [], trainingLocationEvaluations: [],
     });
     expect(result.candidateCode).toBe("N001");
     expect(result.marketCharacter).toBe("번화가"); // 유동500=166062 / 거주500=10338 → 16배
@@ -221,7 +224,7 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: null,
       settings,
-      existingStores: [],
+      existingStores: [], trainingCompetitors: [], trainingLocationEvaluations: [],
     });
     expect(result.completionStatus).toBe("09 입지평가 필요");
     expect(result.finalJudgement).toBe("09 입지평가 필요");
@@ -233,7 +236,7 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: { ...locationEval, brandType: "리그PC방" },
       settings,
-      existingStores: [],
+      existingStores: [], trainingCompetitors: [], trainingLocationEvaluations: [],
     });
     expect(result.completionStatus).toBe("브랜드 확인 필요");
   });
@@ -244,7 +247,7 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [],
       locationEvaluation: locationEval,
       settings,
-      existingStores: [],
+      existingStores: [], trainingCompetitors: [], trainingLocationEvaluations: [],
     });
     // (실영업 5 - 1) * 100 = 400
     expect(result.competitorIp).toBe(400);
@@ -280,14 +283,14 @@ describe("evaluateCandidate 배선 검증", () => {
       competitors: [competitor],
       locationEvaluation: locationEval,
       settings,
-      existingStores: [],
+      existingStores: [], trainingCompetitors: [], trainingLocationEvaluations: [],
     });
     const explicitResult = evaluateCandidate({
       candidate: emptyCandidate(standardFacility),
       competitors: [competitor],
       locationEvaluation: locationEval,
       settings,
-      existingStores: [],
+      existingStores: [], trainingCompetitors: [], trainingLocationEvaluations: [],
     });
     expect(blankResult.competitivenessGap).toBeCloseTo(explicitResult.competitivenessGap ?? 0, 6);
     expect(blankResult.v62Final).toBe(explicitResult.v62Final);

@@ -149,12 +149,7 @@ export async function duplicateCandidate(sourceCode: string, actor: string | nul
  * 2026-08-20: Competitor.surveyState 필드를 investigationStatus로 개명했다. 개명 전에 저장된
  * 문서는 investigationStatus가 없고 surveyState만 있으므로, 읽어올 때 옮겨 담아 하위호환한다.
  */
-function migrateCompetitorInvestigationStatus(data: Record<string, unknown>): Competitor {
-  if (data.investigationStatus == null && data.surveyState != null) {
-    return { ...data, investigationStatus: data.surveyState } as Competitor;
-  }
-  return data as Competitor;
-}
+import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 
 export async function listCompetitors(candidateCode: string): Promise<Competitor[]> {
   const snap = await getDocs(query(collection(requireDb(), COMPETITORS), where("candidateCode", "==", candidateCode)));

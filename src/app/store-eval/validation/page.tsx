@@ -13,6 +13,7 @@
 // 방치돼 있던 죽은 코드였다 - 실제 반영으로 고쳤다).
 
 import { useEffect, useMemo, useState } from "react";
+import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import {
   buildParityComparisonRows,
   computeExistingStoreMeasuredForecast,
@@ -122,14 +123,15 @@ async function loadValidationData(): Promise<{
   // 컬렉션 전체를 한 번씩만 읽는 방식으로 교체했다(cronSync.ts가 이미 쓰고 있던 것과 동일한
   // 패턴). 이 화면을 열 때마다 Firestore 일일 읽기 할당량을 크게 소모하고 있었던 게 원인으로
   // 확인돼 급하게 고쳤다 - 계산 로직은 전혀 안 바꾸고 데이터 조회 방식만 바꾼다.
-  const [stores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
     listExistingStores(),
     getModelSettings(),
     listAllCompetitors(),
     listAllLocationEvaluations(),
   ]);
-  if (stores.length === 0) return null;
+  if (storedStores.length === 0) return null;
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
+  const stores = prepareExistingStoresForEvaluation(storedStores, allCompetitors, allLocationEvaluations, settings);
 
   const existingStoresByCode = new Map(stores.map((s) => [s.storeCode, s]));
   const allCompetitorsByCandidateCode = new Map<string, Competitor[]>();
@@ -148,7 +150,7 @@ async function loadValidationData(): Promise<{
   const inputs: ValidationStoreInput[] = stores.map((s) => {
       // 전환 시 실제 가맹점코드가 후보지코드와 달라질 수 있다(2026-08-22 확인) - 경쟁점/입지평가는
       // 후보지코드(candidateCode)로 저장돼 있으므로, originCandidateCode가 있으면 그걸로 찾는다.
-      const lookupCode = s.originCandidateCode ?? s.storeCode;
+      const lookupCode = existingStoreSourceCode(s);
       const loc = allLocationEvaluationsByCandidateCode.get(lookupCode) ?? null;
       const competitors = allCompetitorsByCandidateCode.get(lookupCode) ?? [];
       competitorsByCode.set(s.storeCode, competitors);
