@@ -199,7 +199,7 @@ async function main() {
     const id = seenCount === 0 ? baseKey : `${baseKey}_${seenCount}`;
     const competitor = {
       id,
-      candidateCode: code,
+      candidateCode: storeDataByCode.get(code)?.originCandidateCode ?? code,
       name,
       surveyLevel: toText(c["조사수준"]) || "상세",
       investigationStatus: "조사완료",

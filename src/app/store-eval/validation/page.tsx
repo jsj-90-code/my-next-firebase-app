@@ -13,6 +13,7 @@
 // 방치돼 있던 죽은 코드였다 - 실제 반영으로 고쳤다).
 
 import { useEffect, useMemo, useState } from "react";
+import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import {
   buildParityComparisonRows,
@@ -1047,6 +1048,7 @@ export default function ValidationPage() {
         </p>
       )}
       <GlossarySection />
+      <PriceScenarioPanel baselines={state.rows.map(row=>({id:row.storeCode,label:row.storeName,revenue:row.v62PredictedRevenueAvg,hourlyRate:row.hourlyRate}))} productRatio={state.settings.measuredForecastProductRatio} />
 
       <details className="app-card rounded-2xl p-5">
         <summary className="cursor-pointer text-base font-semibold text-[#171310] dark:text-[#f2ede2]">

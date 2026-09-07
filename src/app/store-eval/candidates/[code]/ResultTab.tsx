@@ -26,6 +26,7 @@ import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, Mode
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { sectionClass, sectionTitleClass } from "./formFields";
 import { ReportCard } from "./ReportCard";
+import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 
 function judgementStyle(j: FinalJudgement | null): string {
   if (j === "평가 완료") return "app-badge-ok";
@@ -489,6 +490,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="mt-4">
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
         </div>
+        <PriceScenarioPanel baselines={[{id:candidateCode,label:candidateForReport?.name ?? candidateCode,revenue:result.v62Final,hourlyRate:result.hourlyRate}]} productRatio={settingsUsed.measuredForecastProductRatio} />
         {result.capacityCapped && (
           <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
             가동률 물리적 상한({formatPercent(settingsUsed.v62MaxUtilizationRate)})에 걸려 예측값을 조정했습니다. 원래 예측은{" "}
