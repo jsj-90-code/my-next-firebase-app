@@ -17,6 +17,7 @@ import {
   getModelSettings,
   listCompetitors,
   listExistingStores,
+  listAllLocationEvaluations,
   saveEvaluationResult,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
@@ -97,8 +98,9 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
     <div>
       <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">§4.1 V61 기본예측(학습모형)</p>
       <p className="mt-1">
-        기존 가맹점 {explain.sampleCount}곳의 실제 매출 데이터로 학습한 통계모형(비음수 릿지회귀)입니다. 이 후보지의 조건 3가지를 넣으면
+        기존 가맹점 {explain.sampleCount}곳의 실제 매출 데이터로 학습한 통계모형(비음수 릿지회귀)입니다. 이 후보지의 조건 {explain.featureLabels.length}가지를 넣으면
         아래 표처럼 계산됩니다.
+        {explain.featureLabels.length === 6 && " 학습할 때 실제 매출에서 외부유입 제한의 차감을 분리하고, 최종 V62에서 해당 후보지의 제한을 적용합니다."}
       </p>
 
       <div className="mt-2 overflow-x-auto">
@@ -150,8 +152,8 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
         <b>{formatWon(v61Baseline)}</b>
       </p>
       <p className="mt-1 text-[11px] text-[#8a8072]">
-        학습된 가중치(계수)는 항상 0 이상입니다(비음수 릿지회귀) — 세 조건 중 어느 것도 매출을 깎는 방향으로 작용하지 않고, 학습평균보다
-        낫다는 요인만 매출을 끌어올립니다. 학습표본이 바뀌면(가맹점 추가·갱신) 평균·표준편차·가중치도 같이 바뀝니다.
+        학습된 가중치(계수)는 항상 0 이상입니다(비음수 릿지회귀). 각 입력이 학습평균보다 높으면 예측을 올리고, 낮으면 내리는 방향으로 작용합니다.
+        학습표본이 바뀌면(가맹점 추가·갱신) 평균·표준편차·가중치도 같이 바뀝니다.
       </p>
     </div>
   );
@@ -266,17 +268,18 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (!candidate) {
         throw new Error("후보지 기본정보가 없습니다. [기본정보] 탭에서 먼저 저장해주세요.");
       }
-      const [competitors, locationEvaluation, existingStores, modelSettingsDoc] = await Promise.all([
+      const [competitors, locationEvaluation, existingStores, modelSettingsDoc, trainingLocationEvaluations] = await Promise.all([
         listCompetitors(candidateCode),
         getLocationEvaluation(candidateCode),
         listExistingStores(),
         getModelSettings(),
+        listAllLocationEvaluations(),
       ]);
       const settings: ModelSettings = modelSettingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };
       if (sequence !== runSequence.current) return;
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
 
-      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores });
+      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations });
       // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
       // 들어오더라도 새 결과가 항상 마지막에 저장되어 Firestore 최종값이 뒤집히지 않는다.
       const saveTask = saveQueue.current

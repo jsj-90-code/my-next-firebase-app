@@ -177,6 +177,7 @@ async function loadValidationData(): Promise<{
         specialDemandType: s.specialDemandType,
         specialDemandIntensity: s.specialDemandIntensity,
         inflowRestriction: loc?.inflowRestriction ?? null,
+        visibilityScore: loc?.visibilityScore ?? null,
         hasLocationEvaluation: loc != null,
         floor: s.floor,
         groundLevel: s.groundLevel,
@@ -397,7 +398,7 @@ function LoocvDiagnosticBlock({ diagnostic }: { diagnostic: LoocvSensitivityDiag
     <div className="rounded-xl border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
       <h4 className="font-semibold">{diagnostic.storeName} — LOOCV 고변동 원인 진단(참고용, 계수 임의 수정 없음)</h4>
       <ul className="mt-2 space-y-1 text-xs">
-        <li>입력 특징값(log요금·log수요/PC·경쟁력점수): {diagnostic.featuresRaw.map((v) => v.toFixed(4)).join(", ")}</li>
+        <li>입력 특징값(log요금·log IP당수요·경쟁력·경쟁력격차 상호작용·배후수요{diagnostic.featuresRaw.length === 6 ? "·접근가시성" : ""}): {diagnostic.featuresRaw.map((v) => v.toFixed(4)).join(", ")}</li>
         <li>
           학습표본 수: 포함 {diagnostic.sampleCountWith}곳 / 제외(리브-원-아웃) {diagnostic.sampleCountWithout}곳
         </li>
@@ -405,7 +406,7 @@ function LoocvDiagnosticBlock({ diagnostic }: { diagnostic: LoocvSensitivityDiag
         <li>회귀계수(제외): {diagnostic.coefficientsWithout?.map(fmtNum).join(", ") ?? "-"}</li>
         <li>ridge 단독 예측: {formatWon(diagnostic.ridgeOnlyPrediction)}</li>
         <li>baseline(중앙값) 단독 예측: {formatWon(diagnostic.baselineOnlyPrediction)}</li>
-        <li>0.6/0.4 혼합 예측(제외 학습모형 기준): {formatWon(diagnostic.blendedPrediction)}</li>
+        <li>현재 설정 비중의 예측(외부유입 차감 전·제외 학습모형): {formatWon(diagnostic.blendedPrediction)}</li>
         <li>
           학습범위 이탈 여부: {diagnostic.isOutOfTrainingRange ? "예 — 이 매장을 빼면 나머지 표본 범위 밖의 값이 된다" : "아니오"}
         </li>
@@ -1037,6 +1038,12 @@ export default function ValidationPage() {
         <SimpleResultTable rows={blackLabelRows} />
       </section>
 
+      {settings.v61Training.modelVariant === "visibility-inflow" && (
+        <p className="app-card rounded-xl p-4 text-sm">
+          접근가시성 포함 모형 적용 중 · 외부유입 차감 전 매출로 학습한 뒤 각 점포의 제한을 적용합니다.
+          아래 적중률은 각 점포를 학습에서 제외한 재검증 결과이며, 새 점포의 적중률을 보장하지 않습니다.
+        </p>
+      )}
       <GlossarySection />
 
       <details className="app-card rounded-2xl p-5">

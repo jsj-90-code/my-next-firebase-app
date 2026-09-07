@@ -1715,8 +1715,10 @@ export function fitEmpiricalRevenueModel(
   minSamples: number,
   minCoefficients: number[] = [],
 ): EmpiricalRevenueModel | null {
-  if (samples.length < minSamples) return null;
+  if (samples.length < minSamples || samples.length === 0) return null;
   const p = samples[0].featuresRaw.length;
+  if (samples.some(s => s.featuresRaw.length !== p || !s.featuresRaw.every(Number.isFinite)
+    || !Number.isFinite(s.revenuePerPc) || s.revenuePerPc <= 0)) return null;
   const n = samples.length;
 
   const featureMeans: number[] = [];
@@ -1777,7 +1779,8 @@ export function predictEmpiricalRevenue(
   // model 인자를 그대로 갖고 있어 여기서 다시 안 돌려준다 - 중복 방지.
   explain: { z: number[]; logPerPc: number; ridgeRevenue: number; baselineRevenue: number };
 } | null {
-  if (!pcCount) return null;
+  if (!Number.isFinite(pcCount) || pcCount <= 0 || featuresRaw.length !== model.coefficients.length
+    || !featuresRaw.every(Number.isFinite)) return null;
   const z = featuresRaw.map((v, j) => (v - model.featureMeans[j]) / model.featureSds[j]);
   const logPerPc = model.yMean + z.reduce((s, v, j) => s + v * model.coefficients[j], 0);
   const ridgeRevenue = Math.exp(logPerPc) * pcCount;
@@ -1882,8 +1885,17 @@ export function isEligibleForV61Training(store: {
 }
 
 /** ExistingStore 목록에서 V61 학습에 실제로 쓸 수 있는 표본만 골라 학습 입력 형태로 만든다. */
-export function buildV61TrainingStores(stores: ExistingStore[]): V61TrainingStore[] {
-  return stores.filter(isEligibleForV61Training).map((s) => ({
+export function buildV61TrainingStores(
+  stores: ExistingStore[],
+  locations: LocationEvaluation[] = [],
+  settings?: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
+): V61TrainingStore[] {
+  const useVisibility = settings?.v61Training.modelVariant === "visibility-inflow";
+  const locationsByCode = new Map(locations.map(l => [l.candidateCode, l]));
+  return stores.filter(isEligibleForV61Training)
+    .filter(s => !useVisibility || ((s.completedMonths ?? 0) >= CORE_VALIDATION_MIN_MONTHS
+      && isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.visibilityScore)))
+    .map((s) => ({
     storeCode: s.storeCode,
     storeName: s.storeName,
     // 오픈 후 좌석을 늘린 매장은 evaluationPcCount(오픈 초기 대수)로 대당매출을 계산해야
@@ -1898,10 +1910,17 @@ export function buildV61TrainingStores(stores: ExistingStore[]): V61TrainingStor
     specialDemandType: s.specialDemandType ?? null,
     actualMonthlyRevenueAvg: s.actualMonthlyRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
+    ...(useVisibility ? {
+      visibilityScore: locationsByCode.get(s.originCandidateCode ?? s.storeCode)!.visibilityScore!,
+      trainingRevenueFactor: 1 + (getV62Rate(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.inflowRestriction ?? null, settings!) ?? 0),
+    } : {}),
   }));
 }
 
 export type V61TrainingStore = {
+  visibilityScore?: number;
+  /** 실매출에 이미 반영된 외부유입 차감을 학습 목표에서 분리하기 위한 배율. */
+  trainingRevenueFactor?: number;
   storeCode: string;
   storeName: string;
   pcCount: number;
@@ -1931,7 +1950,7 @@ export type V61TrainingStore = {
 export function toEmpiricalSample(store: V61TrainingStore): EmpiricalRevenueSample {
   return {
     featuresRaw: empiricalFeaturesFor(store),
-    revenuePerPc: store.actualMonthlyRevenueAvg / store.pcCount,
+    revenuePerPc: store.actualMonthlyRevenueAvg / store.pcCount / (store.trainingRevenueFactor ?? 1),
   };
 }
 
@@ -1985,7 +2004,12 @@ export function toEmpiricalSample(store: V61TrainingStore): EmpiricalRevenueSamp
 // 13.94%→13.76%) — 격차가 1(중립)이면 log(1)=0이라 자연스럽게 영향이 0이 된다. 비음수
 // 릿지회귀가 계수를 0으로 자르는 걸 막기 위해 fitEmpiricalRevenueModel에 최소 계수 하한선을
 // 함께 둔다(minCompetitivenessGapCoef).
+export function isValidVisibilityScore(score: unknown): score is number {
+  return typeof score === "number" && Number.isInteger(score) && score >= 1 && score <= 5;
+}
+
 export function empiricalFeaturesFor(input: {
+  visibilityScore?: number | null;
   hourlyRate: number;
   marketDemand: number;
   competitorIp: number;
@@ -2002,6 +2026,7 @@ export function empiricalFeaturesFor(input: {
     input.competitivenessScore * Math.log(Math.max(0.1, input.competitivenessGap ?? 1)),
     // 2026-09-03 — 배후수요형 특수상권(군부대·산업단지) 더미. isBackingDemandMarket 주석 참고.
     isBackingDemandMarket(input.specialDemandType) ? 1 : 0,
+    ...(isValidVisibilityScore(input.visibilityScore) ? [input.visibilityScore] : []),
   ];
 }
 
@@ -2013,6 +2038,7 @@ export function buildMinCoefficients(v61Training: ModelSettings["v61Training"]):
     0,
     v61Training.minCompetitivenessGapCoef,
     v61Training.minBackingDemandCoef,
+    ...(v61Training.modelVariant === "visibility-inflow" ? [v61Training.minVisibilityCoef ?? .05] : []),
   ];
 }
 
@@ -2708,6 +2734,7 @@ export function classifyTenureCohort(completedMonths: number | null): TenureCoho
 }
 
 export type ValidationStoreInput = {
+  visibilityScore?: number | null;
   storeCode: string;
   storeName: string;
   brand: string | null; // null = 브랜드 미확인 (09_입지동선평가에 행 없음)
@@ -3089,7 +3116,10 @@ export function isCoreEligibleForV61Training(s: ValidationStoreInput): boolean {
 }
 
 /** 학습표본 자격이 있는 매장을 V61 학습 입력 형태로 변환한다(runCohortValidation/diagnoseLoocvSensitivity 공용). */
-export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
+export function toV61TrainingStore(
+  s: ValidationStoreInput,
+  settings?: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
+): V61TrainingStore {
   return {
     storeCode: s.storeCode,
     storeName: s.storeName,
@@ -3102,6 +3132,10 @@ export function toV61TrainingStore(s: ValidationStoreInput): V61TrainingStore {
     specialDemandType: s.specialDemandType ?? null,
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
+    ...(settings?.v61Training.modelVariant === "visibility-inflow" ? {
+      visibilityScore: s.visibilityScore ?? undefined,
+      trainingRevenueFactor: 1 + (getV62Rate(s.inflowRestriction ?? null, settings) ?? 0),
+    } : {}),
   };
 }
 
@@ -3118,8 +3152,10 @@ export function runCohortValidation(
   const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
   const minCoefficients = buildMinCoefficients(settings.v61Training);
 
-  const coreStores = stores.filter(isCoreEligibleForV61Training);
-  const coreTraining = coreStores.map(toV61TrainingStore);
+  const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
+  const coreStores = stores.filter(isCoreEligibleForV61Training)
+    .filter(s => !useVisibility || isValidVisibilityScore(s.visibilityScore));
+  const coreTraining = coreStores.map(s => toV61TrainingStore(s, settings));
 
   // 리브-원-아웃: 핵심 학습표본끼리는 서로를 빼고 학습·예측한다(데이터 누출 방지).
   const loo = runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minCoefficients);
@@ -3130,7 +3166,8 @@ export function runCohortValidation(
 
   const rows: ValidationStoreRow[] = stores.map((s) => {
     const cohort = classifyTenureCohort(s.completedMonths);
-    const isCore = isCoreEligibleForV61Training(s);
+    const hasRequiredVisibility = !useVisibility || isValidVisibilityScore(s.visibilityScore);
+    const isCore = isCoreEligibleForV61Training(s) && hasRequiredVisibility;
 
     let predictedRevenueAvg: number | null = null;
     if (isCore) {
@@ -3140,7 +3177,7 @@ export function runCohortValidation(
       // 비교할 실적 자체가 없는데 예측 숫자만 표에 떠 있으면 "이 매장도 평가되고 있다"는
       // 오해를 준다(요청사항: 오픈달 매출로 평가하면 안 된다).
       predictedRevenueAvg = null;
-    } else if (fullModel) {
+    } else if (fullModel && hasRequiredVisibility) {
       // 2026-08-30 — 완전 외부 검증군(조기 코호트)도 toV61TrainingStore와 동일하게
       // evaluationPcCount(평가기준 대수)를 우선 써야 한다. 그동안 여기만 현재 pcCount를 그대로
       // 써서, 오픈 후 좌석을 늘린 조기검증 매장의 예측이 실제보다 왜곡돼 있었다(사용자 발견).
@@ -3159,6 +3196,7 @@ export function runCohortValidation(
             competitivenessGap: s.competitivenessGap,
             specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
             specialDemandType: s.specialDemandType,
+            visibilityScore: useVisibility ? s.visibilityScore : undefined,
           }),
           resolvedPcCount,
           ridgeWeight,
@@ -3195,6 +3233,7 @@ export function runCohortValidation(
     // 제외가 아닌 "참고 표시"로 남긴다.
     else if (s.brand == null) exclusionReason = "브랜드 미확인(09_입지동선평가에 행 없음)";
     else if (s.brand !== "블랙라벨") exclusionReason = `브랜드=${s.brand} (블랙라벨 아님)`;
+    else if (!hasRequiredVisibility) exclusionReason = "접근가시성 미평가 — 입지동선평가 입력 필요";
     else if (!isCore) exclusionReason = `영업기간 미달(완료 ${s.completedMonths}개월, ${cohort}) — 완전 외부 검증군으로 예측`;
 
     const operationalStatus = computeOperationalStatus({ franchiseStatus: s.franchiseStatus, isPostOpenIssue: s.isPostOpenIssue, cohort });
@@ -3381,11 +3420,15 @@ export type LoocvSensitivityDiagnostic = {
 export function diagnoseLoocvSensitivity(
   storeCode: string,
   stores: ValidationStoreInput[],
-  settings: Pick<ModelSettings, "v61Training">,
+  settings: Pick<ModelSettings, "v61Training"> & Partial<Pick<ModelSettings, "inflowAdjustment">>,
 ): LoocvSensitivityDiagnostic | null {
   const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
   const minCoefficients = buildMinCoefficients(settings.v61Training);
-  const coreTraining = stores.filter(isCoreEligibleForV61Training).map(toV61TrainingStore);
+  if (settings.v61Training.modelVariant === "visibility-inflow" && !settings.inflowAdjustment) return null;
+  const trainingSettings = settings.inflowAdjustment ? { ...settings, inflowAdjustment: settings.inflowAdjustment } : undefined;
+  const coreTraining = stores.filter(isCoreEligibleForV61Training)
+    .filter(s => settings.v61Training.modelVariant !== "visibility-inflow" || isValidVisibilityScore(s.visibilityScore))
+    .map(s => toV61TrainingStore(s, trainingSettings));
   const target = coreTraining.find((s) => s.storeCode === storeCode);
   if (!target) return null;
 

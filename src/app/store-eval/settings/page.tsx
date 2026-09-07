@@ -354,6 +354,14 @@ export default function StoreEvalSettingsPage() {
         </p>
       )}
 
+      {form.v61Training.modelVariant === "visibility-inflow" && (
+        <p className="app-card rounded-xl p-4 text-sm">
+          적용 모형: 접근가시성 포함 · 외부유입 차감 전 매출로 학습.
+          회귀 비중 {Math.round(form.v61Training.ridgeWeight * 100)}%, 중앙값 비중 {Math.round(form.v61Training.baselineWeight * 100)}%.
+          입지동선평가의 접근가시성이 있어야 이 모형으로 평가됩니다.
+        </p>
+      )}
+
       <Section title="외부유입 보정률 / 상하한 계수" description="09_입지동선평가의 외부유입제한 값에 따라 V62 보정률이 정해집니다.">
         <NumberInput
           label="보정률 - 없음"

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateCandidate } from "./evaluate";
 import { defaultModelSettings } from "./settings";
-import type { CandidateInput, Competitor, LocationEvaluation } from "./types";
+import type { CandidateInput, Competitor, ExistingStore, LocationEvaluation } from "./types";
 
 const settings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
 
@@ -177,6 +177,27 @@ const locationEval: LocationEvaluation = {
 };
 
 describe("evaluateCandidate 배선 검증", () => {
+  it("가시성 모형에서 점포별 입지평가를 학습하고 결과 설명도 6개 특징과 일치한다", () => {
+    const activeSettings = {...settings, v61Training:{...settings.v61Training, modelVariant:"visibility-inflow" as const, minVisibilityCoef:.05, ridgeLambda:10, ridgeWeight:1, baselineWeight:0}};
+    const existingStores = Array.from({length:16}, (_,i) => ({
+      storeCode:`S${i}`, originCandidateCode:`L${i}`, storeName:`매장${i}`, brandType:"블랙라벨", excludedFromModel:false, completedMonths:12,
+      pcCount:100+i, hourlyRate:1200+i*20, marketDemand:4000+i*50, competitorIp:300, competitivenessScore:3+i/20,
+      actualMonthlyRevenueAvg:40000000+i*1000000,
+    } as ExistingStore));
+    const trainingLocationEvaluations = existingStores.map((s,i) => ({...locationEval, candidateCode:s.originCandidateCode!, visibilityScore:(i%5+1) as LocationEvaluation["visibilityScore"], inflowRestriction:"강함" as const}));
+    const result = evaluateCandidate({candidate:emptyCandidate(), competitors:[competitor], locationEvaluation:locationEval, settings:activeSettings, existingStores, trainingLocationEvaluations});
+    expect(result.v61IsFallback).toBe(false);
+    expect(result.v61ModelLabel).toContain("가시성");
+    const explain=result.v61TrainedModelExplain!;
+    for(const values of [explain.featureLabels, explain.featureRealValues, explain.featureModelValues, explain.featureMeans, explain.featureSds, explain.coefficients]) expect(values).toHaveLength(6);
+    expect(explain.featureLabels[5]).toBe("접근가시성");
+    expect(explain.featureRealValues[5]).toBe(4);
+    expect(explain.yMean).toBeCloseTo(existingStores.reduce((sum,s) => sum+Math.log(s.actualMonthlyRevenueAvg!/s.pcCount!/.8),0)/16, 10);
+    const missing = evaluateCandidate({candidate:emptyCandidate(), competitors:[competitor], locationEvaluation:{...locationEval, visibilityScore:null}, settings:activeSettings, existingStores, trainingLocationEvaluations});
+    expect(missing.v61IsFallback).toBe(true);
+    expect(missing.v61TrainedModelExplain).toBeNull();
+  });
+
   it("09/05 입력이 모두 있으면 완료까지 계산된다", () => {
     const result = evaluateCandidate({
       candidate: emptyCandidate(),

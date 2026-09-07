@@ -69,6 +69,8 @@ export type EvaluateContext = {
   settings: ModelSettings;
   /** V61 실측 학습모형의 학습표본 원천 - 블랙라벨·산식학습제외 아닌 기존 가맹점 전체를 넘긴다. */
   existingStores: ExistingStore[];
+  /** 학습용 기존점의 입지평가. 후보지 한 곳의 평가를 다른 점포에 재사용하지 않는다. */
+  trainingLocationEvaluations?: LocationEvaluation[];
 };
 
 export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
@@ -140,7 +142,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const competitivenessGap = computeCompetitivenessGap(ownCompetitivenessScore, competitorAvgCompetitiveness);
 
   // ---- V61: 실측 학습모형 우선, 표본 부족 시에만 폴백 ----
-  const trainingStores = buildV61TrainingStores(existingStores);
+  const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
+  const trainingStores = buildV61TrainingStores(existingStores, ctx.trainingLocationEvaluations, settings);
   const trainingSamples = trainingStores.map(toEmpiricalSample);
   const trainedModel = fitEmpiricalRevenueModel(
     trainingSamples,
@@ -165,6 +168,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       // 특수수요는 CandidateInput이 아니라 09_입지동선평가(LocationEvaluation)에 있다 —
       // 이미 입지동선평가 탭에서 입력받는 값이라 새 입력 필드가 필요 없다.
       specialDemandType: loc?.specialDemandType ?? null,
+      visibilityScore: useVisibility ? loc?.visibilityScore : undefined,
     });
     const prediction = predictEmpiricalRevenue(
       trainedModel,
@@ -187,6 +191,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
           "경쟁력점수",
           "경쟁력점수×경쟁력격차",
           "배후수요상권(군부대·산업단지)",
+          ...(useVisibility ? ["접근가시성"] : []),
         ],
         featureRealValues: [
           c.hourlyRate,
@@ -194,6 +199,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
           ownCompetitivenessScore,
           competitivenessGap ?? 1,
           isBackingDemandMarket(loc?.specialDemandType) ? 1 : 0,
+          ...(useVisibility ? [loc!.visibilityScore!] : []),
         ],
         featureModelValues: featuresRaw,
         featureMeans: trainedModel.featureMeans,
@@ -324,7 +330,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     hourlyRate: c.hourlyRate,
     v61Baseline,
     v61IsFallback,
-    v61ModelLabel: v61IsFallback ? "임시 근사치·검증 전" : "V61 실측 학습모형",
+    v61ModelLabel: v61IsFallback ? "임시 근사치·검증 전" : useVisibility ? "V61 가시성 학습모형·외부유입 정합" : "V61 실측 학습모형",
     v61TrainingSampleCount: trainingStores.length,
     v61ValidationMeanAbsError: null, // 후보지 평가 화면에서는 채우지 않는다 - 검증 화면(validation/page.tsx)에서 별도 계산
     v61TrainedModelExplain,
