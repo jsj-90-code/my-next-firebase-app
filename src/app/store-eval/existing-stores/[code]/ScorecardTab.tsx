@@ -181,20 +181,53 @@ function ItemValueScore({ value, score }: { value: string | null; score: number 
   );
 }
 
+type ScorecardLoadResult = {
+  candidateCode: string;
+  settings: ModelSettings;
+  loc: LocationEvaluation | null;
+  competitors: Competitor[];
+  error: string | null;
+};
+
+const SCORECARD_DEFAULT_SETTINGS: ModelSettings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
+const NO_COMPETITORS: Competitor[] = [];
+
 export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; candidateCode: string }) {
-  const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
-  const [loc, setLoc] = useState<LocationEvaluation | null>(null);
-  const [competitors, setCompetitors] = useState<Competitor[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadResult, setLoadResult] = useState<ScorecardLoadResult | null>(null);
+  const activeLoadResult = loadResult?.candidateCode === candidateCode ? loadResult : null;
+  const settings = activeLoadResult?.settings ?? SCORECARD_DEFAULT_SETTINGS;
+  const loc = activeLoadResult?.loc ?? null;
+  const competitors = activeLoadResult?.competitors ?? NO_COMPETITORS;
+  const loading = activeLoadResult == null;
 
   useEffect(() => {
-    setLoading(true);
-    Promise.all([getModelSettings(), getLocationEvaluation(candidateCode), listCompetitors(candidateCode)]).then(([s, l, c]) => {
-      if (s) setSettings(s);
-      setLoc(l);
-      setCompetitors(c);
-      setLoading(false);
-    });
+    let cancelled = false;
+
+    void Promise.all([getModelSettings(), getLocationEvaluation(candidateCode), listCompetitors(candidateCode)])
+      .then(([modelSettings, locationEvaluation, loadedCompetitors]) => {
+        if (cancelled) return;
+        setLoadResult({
+          candidateCode,
+          settings: modelSettings ?? SCORECARD_DEFAULT_SETTINGS,
+          loc: locationEvaluation,
+          competitors: loadedCompetitors,
+          error: null,
+        });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadResult({
+          candidateCode,
+          settings: SCORECARD_DEFAULT_SETTINGS,
+          loc: null,
+          competitors: [],
+          error: err instanceof Error ? err.message : "평가자료를 불러오지 못했습니다.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [candidateCode]);
 
   const own = useMemo(() => computeOwnBreakdown(store, settings, loc), [store, settings, loc]);
@@ -213,12 +246,13 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
       : null;
 
   if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
+  if (activeLoadResult.error) return <p className="text-sm text-red-600">{activeLoadResult.error}</p>;
 
   return (
     <div className="flex flex-col gap-6">
       <section className="app-card rounded-xl p-4">
         <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">자사 — {store.storeName}</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">항목값 옆 괄호 안 숫자가 그 항목의 환산 점수입니다. 편집은 "기본정보" 탭에서 합니다.</p>
+        <p className="mt-1 text-xs text-[#8a8072]">항목값 옆 괄호 안 숫자가 그 항목의 환산 점수입니다. 편집은 ‘기본정보’ 탭에서 합니다.</p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>

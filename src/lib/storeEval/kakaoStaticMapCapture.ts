@@ -13,10 +13,17 @@
 // 던지지 않는다 — 지도 이미지는 "있으면 좋은" 부가 컨텍스트고, 없어도 텍스트 컨텍스트만으로
 // AI 초안 생성 전체 흐름이 막히면 안 된다.
 
-declare global {
-  interface Window {
-    kakao?: any;
-  }
+type KakaoMaps = {
+  load(callback: () => void): void;
+  LatLng: new (lat: number, lng: number) => object;
+  StaticMap?: new (
+    container: HTMLElement,
+    options: { center: object; level: number },
+  ) => object;
+};
+
+function getKakaoMaps(): KakaoMaps | undefined {
+  return (window as unknown as { kakao?: { maps?: KakaoMaps } }).kakao?.maps;
 }
 
 const SDK_SCRIPT_ID = "kakao-maps-sdk-script";
@@ -25,7 +32,7 @@ const IMG_POLL_TIMEOUT_MS = 3000;
 
 function loadKakaoSdk(jsKey: string): Promise<boolean> {
   return new Promise((resolve) => {
-    if (window.kakao?.maps) {
+    if (getKakaoMaps()) {
       resolve(true);
       return;
     }
@@ -37,11 +44,12 @@ function loadKakaoSdk(jsKey: string): Promise<boolean> {
       document.head.appendChild(script);
     }
     script.addEventListener("load", () => {
-      if (!window.kakao?.maps) {
+      const maps = getKakaoMaps();
+      if (!maps) {
         resolve(false);
         return;
       }
-      window.kakao.maps.load(() => resolve(true));
+      maps.load(() => resolve(true));
     });
     script.addEventListener("error", () => resolve(false));
   });
@@ -73,16 +81,16 @@ export async function captureKakaoStaticMapUrl(lat: number, lng: number, level =
 
   try {
     const loaded = await loadKakaoSdk(jsKey);
-    if (!loaded || !window.kakao?.maps?.StaticMap) return null;
+    const maps = getKakaoMaps();
+    if (!loaded || !maps?.StaticMap) return null;
 
     const container = document.createElement("div");
     container.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:640px;height:400px;";
     document.body.appendChild(container);
 
     try {
-      const kakao = window.kakao;
-      new kakao.maps.StaticMap(container, {
-        center: new kakao.maps.LatLng(lat, lng),
+      new maps.StaticMap(container, {
+        center: new maps.LatLng(lat, lng),
         level,
       });
       return await waitForImageSrc(container);

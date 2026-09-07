@@ -10,7 +10,31 @@ function getKakaoRestKey(): string | null {
   return process.env.KAKAO_REST_API_KEY || null;
 }
 
-async function kakaoGet(path: string, params: Record<string, string>): Promise<any> {
+type KakaoLocalResponse<TDocument> = {
+  documents?: TDocument[];
+  meta?: { is_end?: boolean };
+};
+
+type KakaoAddressDocument = {
+  x?: string;
+  y?: string;
+  address?: { address_name?: string | null } | null;
+  road_address?: { address_name?: string | null; building_name?: string | null } | null;
+};
+
+type KakaoPlaceDocument = {
+  id?: string;
+  place_name?: string;
+  category_group_code?: string;
+  x?: string;
+  y?: string;
+  distance?: string;
+};
+
+async function kakaoGet<TDocument>(
+  path: string,
+  params: Record<string, string>,
+): Promise<KakaoLocalResponse<TDocument>> {
   const key = getKakaoRestKey();
   if (!key) throw new Error("KAKAO_REST_API_KEY가 설정되지 않았습니다.");
   const url = `${KAKAO_LOCAL_BASE}${path}?${new URLSearchParams(params).toString()}`;
@@ -19,7 +43,7 @@ async function kakaoGet(path: string, params: Record<string, string>): Promise<a
     const text = await res.text().catch(() => "");
     throw new Error(`카카오 API 요청 실패 (${res.status}): ${text.slice(0, 200)}`);
   }
-  return res.json();
+  return (await res.json()) as KakaoLocalResponse<TDocument>;
 }
 
 export type GeocodeResult = {
@@ -31,7 +55,7 @@ export type GeocodeResult = {
 };
 
 async function geocodeAddressExact(trimmed: string): Promise<GeocodeResult | null> {
-  const data = await kakaoGet("/search/address.json", { query: trimmed });
+  const data = await kakaoGet<KakaoAddressDocument>("/search/address.json", { query: trimmed });
   const doc = data?.documents?.[0];
   if (!doc) return null;
   const road = doc.road_address;
@@ -76,9 +100,9 @@ export type KakaoPlace = {
   distanceM: number | null; // 카카오가 반경검색 시 계산해주는 직선거리(요청에 x/y/radius를 줬을 때만 채워짐)
 };
 
-function parsePlaceDocuments(data: any): KakaoPlace[] {
+function parsePlaceDocuments(data: KakaoLocalResponse<KakaoPlaceDocument>): KakaoPlace[] {
   const docs = data?.documents ?? [];
-  return docs.map((d: any) => ({
+  return docs.map((d) => ({
     id: String(d.id),
     name: String(d.place_name ?? ""),
     categoryGroupCode: d.category_group_code || null,
@@ -92,7 +116,7 @@ function parsePlaceDocuments(data: any): KakaoPlace[] {
 export async function searchByCategory(lat: number, lng: number, categoryGroupCode: string, radiusM: number): Promise<KakaoPlace[]> {
   const results: KakaoPlace[] = [];
   for (let page = 1; page <= 3; page++) {
-    const data = await kakaoGet("/search/category.json", {
+    const data = await kakaoGet<KakaoPlaceDocument>("/search/category.json", {
       category_group_code: categoryGroupCode,
       x: String(lng),
       y: String(lat),
@@ -110,7 +134,7 @@ export async function searchByCategory(lat: number, lng: number, categoryGroupCo
 export async function searchByKeyword(lat: number, lng: number, keyword: string, radiusM: number): Promise<KakaoPlace[]> {
   const results: KakaoPlace[] = [];
   for (let page = 1; page <= 3; page++) {
-    const data = await kakaoGet("/search/keyword.json", {
+    const data = await kakaoGet<KakaoPlaceDocument>("/search/keyword.json", {
       query: keyword,
       x: String(lng),
       y: String(lat),

@@ -3,7 +3,7 @@
 // 탭3 입지동선평가 - "4. 입지동선 평가" 화면 요구사항.
 // LocationEvaluation 타입 필드 전부 + 종합점수 실시간 미리보기(calc.ts, 저장하지 않음).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { LocationEvalAiReviewPanel, type LocationEvalAiDraft, type LocationEvalAiFields } from "@/components/storeEval/LocationEvalAiReviewPanel";
 import { computeLocationCompositeScore } from "@/lib/storeEval/calc";
@@ -49,6 +49,13 @@ const BRAND_TYPE_OPTIONS: { value: BrandType; label: string }[] = [
   { value: "확인필요", label: "확인필요" },
 ];
 
+type LocationEvalLoadResult = {
+  requestKey: string;
+  form: LocationEvaluation | null;
+  settings: Pick<ModelSettings, "locationCompositeWeights"> | null;
+  error: string | null;
+};
+
 function blankLocationEvaluation(candidateCode: string, name: string, address: string): LocationEvaluation {
   return {
     candidateCode,
@@ -92,44 +99,54 @@ export function LocationEvalTab({
   existingStoreCode?: string;
 }) {
   const { user } = useAuth();
-  const [form, setForm] = useState<LocationEvaluation | null>(null);
-  const [settings, setSettings] = useState<Pick<ModelSettings, "locationCompositeWeights"> | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const requestKey = JSON.stringify([candidateCode, candidateName, candidateAddress]);
+  const [loadResult, setLoadResult] = useState<LocationEvalLoadResult | null>(null);
+  const [saveError, setSaveError] = useState<{ requestKey: string; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiDraft, setAiDraft] = useState<LocationEvalAiDraft | null>(null);
-  const loadSequence = useRef(0);
-
-  const load = useCallback(async () => {
-    const sequence = ++loadSequence.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const [existing, modelSettings] = await Promise.all([getLocationEvaluation(candidateCode), getModelSettings()]);
-      if (sequence === loadSequence.current) {
-        setForm(existing ?? blankLocationEvaluation(candidateCode, candidateName, candidateAddress));
-        setSettings(modelSettings ?? defaultModelSettings());
-      }
-    } catch (err) {
-      if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "입지동선평가를 불러오지 못했습니다.");
-    } finally {
-      if (sequence === loadSequence.current) setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateCode]);
+  const activeLoadResult = loadResult?.requestKey === requestKey ? loadResult : null;
+  const form = activeLoadResult?.form ?? null;
+  const settings = activeLoadResult?.settings ?? null;
+  const loading = activeLoadResult == null;
+  const error = activeLoadResult?.error ?? (saveError?.requestKey === requestKey ? saveError.message : null);
 
   useEffect(() => {
-    load();
+    let cancelled = false;
+
+    void Promise.all([getLocationEvaluation(candidateCode), getModelSettings()])
+      .then(([existing, modelSettings]) => {
+        if (cancelled) return;
+        setLoadResult({
+          requestKey,
+          form: existing ?? blankLocationEvaluation(candidateCode, candidateName, candidateAddress),
+          settings: modelSettings ?? defaultModelSettings(),
+          error: null,
+        });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadResult({
+          requestKey,
+          form: null,
+          settings: null,
+          error: err instanceof Error ? err.message : "입지동선평가를 불러오지 못했습니다.",
+        });
+      });
+
     return () => {
-      loadSequence.current++;
+      cancelled = true;
     };
-  }, [load]);
+  }, [candidateAddress, candidateCode, candidateName, requestKey]);
 
   function set<K extends keyof LocationEvaluation>(key: K, value: LocationEvaluation[K]) {
-    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setLoadResult((prev) =>
+      prev?.requestKey === requestKey && prev.form
+        ? { ...prev, form: { ...prev.form, [key]: value } }
+        : prev,
+    );
   }
 
   const compositePreview = useMemo(() => {
@@ -147,15 +164,18 @@ export function LocationEvalTab({
   async function handleSave() {
     if (!form) return;
     setMessage(null);
-    setError(null);
+    setSaveError(null);
     setSaving(true);
     try {
       const toSave: LocationEvaluation = { ...form, candidateCode, name: candidateName, address: candidateAddress };
       await saveLocationEvaluation(toSave, user?.email ?? null);
-      setForm(toSave);
+      setLoadResult((prev) => (prev?.requestKey === requestKey ? { ...prev, form: toSave } : prev));
       setMessage("저장했습니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.");
+      setSaveError({
+        requestKey,
+        message: err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.",
+      });
     } finally {
       setSaving(false);
     }
@@ -207,15 +227,18 @@ export function LocationEvalTab({
   }
 
   function handleApplyAiPatch(patch: Partial<LocationEvalAiFields>, rationale: string) {
-    setForm((prev) => {
-      if (!prev) return prev;
+    setLoadResult((prev) => {
+      if (prev?.requestKey !== requestKey || !prev.form) return prev;
       // 기존에 사람이 적어둔 메모를 지우지 않고 AI 초안을 뒤에 덧붙인다(2026-08-24, 덮어쓰기 버그 수정).
-      const existingMemo = prev.mapMemo?.trim();
+      const existingMemo = prev.form.mapMemo?.trim();
       const aiNote = `AI 초안: ${rationale}`;
       return {
         ...prev,
-        ...patch,
-        mapMemo: existingMemo ? `${existingMemo}\n\n${aiNote}` : aiNote,
+        form: {
+          ...prev.form,
+          ...patch,
+          mapMemo: existingMemo ? `${existingMemo}\n\n${aiNote}` : aiNote,
+        },
       };
     });
     setAiDraft(null);
@@ -280,8 +303,8 @@ export function LocationEvalTab({
         )}
         <p className="mt-1 text-xs text-[#8a8072]">
           2026-09-01 재설계 — 상권내위치·주요동선·상권흡인력 3개 항목이 실측 검토 결과 87%·72% 동점으로
-          사실상 같은 판단이었어서 "상권위치·동선점수" 하나로 통합했습니다. 선점경쟁점수도 경쟁점 개수와
-          혼동되던 문제를 바로잡아 "특정 경쟁점이 더 좋은 자리를 차지했는가"만 보도록 재정의했습니다.
+          사실상 같은 판단이었어서 ‘상권위치·동선점수’ 하나로 통합했습니다. 선점경쟁점수도 경쟁점 개수와
+          혼동되던 문제를 바로잡아 ‘특정 경쟁점이 더 좋은 자리를 차지했는가’만 보도록 재정의했습니다.
         </p>
         <div className={`${gridClass} mt-4`}>
           <ScoreSelectField

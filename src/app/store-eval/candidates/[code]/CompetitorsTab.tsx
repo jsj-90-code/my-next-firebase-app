@@ -4,7 +4,7 @@
 // Competitor 타입의 필드 전부를 폼에 반영하고, investigationStatus(신규 워크플로 필드)로
 // "경쟁점 데이터 없음"과 "노후·저경쟁력 미조사"를 구분한다(docs/data-issues.md #3).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   computeCompetitorAppliedPcCount,
@@ -269,39 +269,21 @@ function CompetitorForm({
   const computed = useMemo(() => computeCompetitorScores(form, settings), [form, settings]);
   // 2026-08-30(§2·§3~6) — 화면에서 "자동계산됐는지"를 판단하는 데 쓴다(computed.interior 자체는
   // 이미 이 값 또는 legacy seatZoneScore를 반영해 계산돼 있음, computeCompetitorScores 참고).
-  const zoneScoreAuto = useMemo(
-    () =>
-      computeCompetitorZoneComposition({
-        counts: {
-          teamRoom: form.teamRoom,
-          room2: form.room2,
-          coupleZone: form.coupleZone,
-          vipZone: form.vipZone,
-          friendsZone: form.friendsZone,
-          singleSeatCount: form.singleSeatCount,
-          room1: form.room1,
-          firstClassZone: form.firstClassZone,
-        },
-        regularCoupleSeatCount: form.regularCoupleSeatCount,
-        teamRoomTotalSeats: form.teamRoomTotalSeats,
-        totalPcCount: computeCompetitorAppliedPcCount(form),
-      }).composition,
-    [
-      form.teamRoom,
-      form.room2,
-      form.coupleZone,
-      form.vipZone,
-      form.friendsZone,
-      form.singleSeatCount,
-      form.room1,
-      form.firstClassZone,
-      form.regularCoupleSeatCount,
-      form.teamRoomTotalSeats,
-      form.totalPcCount,
-      form.appliedPcCount,
-      form.surveyLevel,
-    ],
-  );
+  const zoneScoreAuto = computeCompetitorZoneComposition({
+    counts: {
+      teamRoom: form.teamRoom,
+      room2: form.room2,
+      coupleZone: form.coupleZone,
+      vipZone: form.vipZone,
+      friendsZone: form.friendsZone,
+      singleSeatCount: form.singleSeatCount,
+      room1: form.room1,
+      firstClassZone: form.firstClassZone,
+    },
+    regularCoupleSeatCount: form.regularCoupleSeatCount,
+    teamRoomTotalSeats: form.teamRoomTotalSeats,
+    totalPcCount: computeCompetitorAppliedPcCount(form),
+  }).composition;
   // 2026-08-28 추가 — "하드웨어 점수(자동)"만 봐서는 GPU/CPU/RAM/모니터 중 뭐가 어떻게 들어갔는지
   // 알 수 없다는 요청으로, computeCompetitorScores 내부와 동일한 항목별 함수를 그대로 한 번 더
   // 호출해 항목별 점수만 따로 보여준다(가중합산 로직 자체는 재사용, 새 산식 아님).
@@ -530,15 +512,25 @@ function CompetitorForm({
   );
 }
 
+type CompetitorLoadResult = {
+  requestKey: string;
+  competitors: Competitor[];
+  error: string | null;
+};
+
 export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   const { user } = useAuth();
-  const [competitors, setCompetitors] = useState<Competitor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const loadSequence = useRef(0);
-  const [error, setError] = useState<string | null>(null);
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const requestKey = JSON.stringify([candidateCode, reloadVersion]);
+  const [loadResult, setLoadResult] = useState<CompetitorLoadResult | null>(null);
+  const [mutationError, setMutationError] = useState<{ candidateCode: string; message: string } | null>(null);
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+  const activeLoadResult = loadResult?.requestKey === requestKey ? loadResult : null;
+  const competitors = activeLoadResult?.competitors ?? [];
+  const loading = activeLoadResult == null;
+  const error = activeLoadResult?.error ?? (mutationError?.candidateCode === candidateCode ? mutationError.message : null);
 
   // 붙여넣기로 일괄 입력(2026-08-27) - 점포개발자가 남기는 "경쟁점 설명" 텍스트를 결정적으로
   // (AI 아님, competitorNoteParse.ts) 파싱해 미리보기로 보여주고, 하나씩 골라 폼에 채운다.
@@ -594,36 +586,40 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
     });
   }, []);
 
-  const load = useCallback(async () => {
-    const sequence = ++loadSequence.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await listCompetitors(candidateCode);
-      if (sequence === loadSequence.current) setCompetitors(list);
-    } catch (err) {
-      if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "경쟁점 목록을 불러오지 못했습니다.");
-    } finally {
-      if (sequence === loadSequence.current) setLoading(false);
-    }
-  }, [candidateCode]);
-
   useEffect(() => {
-    load();
+    let cancelled = false;
+
+    void listCompetitors(candidateCode)
+      .then((competitors) => {
+        if (cancelled) return;
+        setLoadResult({ requestKey, competitors, error: null });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadResult({
+          requestKey,
+          competitors: [],
+          error: err instanceof Error ? err.message : "경쟁점 목록을 불러오지 못했습니다.",
+        });
+      });
+
     return () => {
-      loadSequence.current++;
+      cancelled = true;
     };
-  }, [load]);
+  }, [candidateCode, requestKey]);
 
   async function handleDelete(id: string) {
     if (!confirm("이 경쟁점을 삭제하시겠습니까?")) return;
     setBusyId(id);
-    setError(null);
+    setMutationError(null);
     try {
       await deleteCompetitor(id, user?.email ?? null);
-      await load();
+      setReloadVersion((version) => version + 1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "삭제 중 오류가 발생했습니다.");
+      setMutationError({
+        candidateCode,
+        message: err instanceof Error ? err.message : "삭제 중 오류가 발생했습니다.",
+      });
     } finally {
       setBusyId(null);
     }
@@ -766,10 +762,11 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
             setEditingId(null);
             setPrefill(null);
           }}
-          onSaved={async () => {
+          onSaved={() => {
             setEditingId(null);
             setPrefill(null);
-            await load();
+            setMutationError(null);
+            setReloadVersion((version) => version + 1);
           }}
         />
       )}

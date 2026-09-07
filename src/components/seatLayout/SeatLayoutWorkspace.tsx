@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -245,11 +245,12 @@ export function SeatLayoutWorkspace() {
   // 도면이 이미 올라온 뒤에는 매장명/업로드 입력 UI를 한 줄 요약으로 접어서, 화면 스크롤 길이를 줄인다.
   // 도면이 없을 땐(첫 설정) 펼쳐서 보여준다.
   const [uploadPanelOpen, setUploadPanelOpen] = useState(true);
-  useEffect(() => {
-    // 도면이 생기면 접고, 없어지면(새 프로젝트 등으로) 다시 펼친다 — 반대 방향이 없으면
-    // "도면 업로드됨" 요약 문구만 남고 파일 입력창은 다시 못 여는 상태가 된다.
+  const [uploadPanelImage, setUploadPanelImage] = useState(imgEl);
+  // 도면이 바뀔 때만 기본 펼침 상태를 맞추고, 같은 도면에서는 수동 토글을 유지한다.
+  if (uploadPanelImage !== imgEl) {
+    setUploadPanelImage(imgEl);
     setUploadPanelOpen(!imgEl);
-  }, [imgEl]);
+  }
   // 방금 업로드한 원본 화질 도면 (세션 동안만 메모리에 유지, Firestore에는 저장 안 함).
   // AI 좌석 인식은 화질이 중요해서, Firestore 저장용으로 압축한 이미지가 아니라 이걸로 잘라낸다.
   const [rawFloorPlanDataUrl, setRawFloorPlanDataUrl] = useState<string | null>(null);
@@ -509,25 +510,29 @@ export function SeatLayoutWorkspace() {
   // 구역이 선택된 상태에서 Enter를 누르면(양쪽을 번갈아 드래그로 다 조정한 뒤) 그 구역을
   // 최종 위치로 다시 인식하고 수정 폼을 띄운다. 다른 입력창에 포커스가 있거나 폼이 이미
   // 열려있을 때는 무시한다.
+  const onZoneKeyDown = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    if (formOpen) return;
+    if (activeTab === "seatNumber") return;
+    if (selectedZoneIndex === null) return;
+    const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    const z = activeZones[selectedZoneIndex];
+    if (!z) return;
+    e.preventDefault();
+    const rect: NormalizedRect = { x: z.x, y: z.y, w: z.w, h: z.h };
+    setDirtyZoneIndex((cur) => (cur === selectedZoneIndex ? null : cur));
+    editZone(selectedZoneIndex);
+    void runRecognize(rect, activeTab);
+  });
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Enter") return;
-      if (formOpen) return;
-      if (activeTab === "seatNumber") return;
-      if (selectedZoneIndex === null) return;
-      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
-      const z = activeZones[selectedZoneIndex];
-      if (!z) return;
-      e.preventDefault();
-      const rect: NormalizedRect = { x: z.x, y: z.y, w: z.w, h: z.h };
-      setDirtyZoneIndex((cur) => (cur === selectedZoneIndex ? null : cur));
-      editZone(selectedZoneIndex);
-      void runRecognize(rect, activeTab);
+      onZoneKeyDown(e);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [formOpen, selectedZoneIndex, activeTab, activeZones]);
+  }, []);
 
   // ---------------- 존 박스 선택/이동/크기조절 히트테스트 (캔버스 픽셀 좌표 기준) ----------------
   function rectToPx(rect: NormalizedRect, canvas: HTMLCanvasElement) {
@@ -1636,7 +1641,7 @@ export function SeatLayoutWorkspace() {
       ctx.fillStyle = "rgba(242, 152, 1, 0.12)";
       ctx.fillRect(x, y, w, h);
     }
-  }, [pdfCropSource, cropRect]);
+  }, [pdfCropSource, cropRect, cropTarget]);
 
   function handleCropCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     const canvas = cropCanvasRef.current;
@@ -2739,7 +2744,7 @@ export function SeatLayoutWorkspace() {
                 </div>
                 <p className="text-xs text-[#8a8072]">
                   기본은 직접 입력입니다 — 오른쪽에서 책상 도면과 피난안내도를 나란히 보면서
-                  아래 칸에 존별 번호를 적어주세요. "AI로 자동 채워보기"는 참고용이며, 이미
+                  아래 칸에 존별 번호를 적어주세요. &quot;AI로 자동 채워보기&quot;는 참고용이며, 이미
                   직접 입력한 존은 덮어쓰지 않습니다.
                 </p>
                 {seatNumberWarnings.map((w, i) => (

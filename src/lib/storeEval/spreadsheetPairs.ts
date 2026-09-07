@@ -12,8 +12,8 @@ import type { LabelValuePair } from "./marketDataExtract";
 function cellText(value: ExcelJS.CellValue): string {
   if (value == null) return "";
   if (typeof value === "object") {
-    if ("text" in value && typeof (value as any).text === "string") return (value as any).text;
-    if ("result" in value) return String((value as any).result ?? "");
+    if ("text" in value && typeof value.text === "string") return value.text;
+    if ("result" in value) return String(value.result ?? "");
     if (value instanceof Date) return value.toISOString().slice(0, 10);
     return "";
   }

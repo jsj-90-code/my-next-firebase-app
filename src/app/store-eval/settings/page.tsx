@@ -5,7 +5,7 @@
 // 변경 이력을 보여주는 것만 담당한다. 진짜 권한 강제는 firestore.rules에서 하고,
 // 여기서는 관리자가 아니면 입력을 readOnly로 만들고 저장 버튼을 숨기는 UX만 처리한다.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
@@ -210,22 +210,24 @@ export default function StoreEvalSettingsPage() {
     };
   }, []);
 
+  const loadHistory = useCallback(() => {
+    return listModelSettingsHistory()
+      .then((h) => setHistory(h))
+      .catch((err: unknown) => {
+        setHistoryError(err instanceof Error ? err.message : "변경 이력을 불러오지 못했습니다.");
+      })
+      .finally(() => setHistoryLoading(false));
+  }, []);
+
   async function reloadHistory() {
     setHistoryLoading(true);
     setHistoryError(null);
-    try {
-      const h = await listModelSettingsHistory();
-      setHistory(h);
-    } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : "변경 이력을 불러오지 못했습니다.");
-    } finally {
-      setHistoryLoading(false);
-    }
+    await loadHistory();
   }
 
   useEffect(() => {
-    reloadHistory();
-  }, []);
+    void loadHistory();
+  }, [loadHistory]);
 
   function updateTop<K extends keyof ModelSettings>(field: K, value: ModelSettings[K]) {
     setForm((f) => (f ? { ...f, [field]: value } : f));

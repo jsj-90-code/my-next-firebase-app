@@ -9,10 +9,40 @@ import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
 import type { DemandPointCategory } from "@/lib/storeEval/types";
 
-declare global {
-  interface Window {
-    kakao?: any;
-  }
+type KakaoLatLng = {
+  getLat(): number;
+  getLng(): number;
+};
+
+type KakaoMap = object;
+
+type KakaoMarker = {
+  getPosition(): KakaoLatLng;
+  setMap(map: KakaoMap): void;
+  setPosition(position: KakaoLatLng): void;
+};
+
+type KakaoCustomOverlay = {
+  setMap(map: KakaoMap): void;
+};
+
+type KakaoMaps = {
+  load(callback: () => void): void;
+  LatLng: new (lat: number, lng: number) => KakaoLatLng;
+  Map: new (container: HTMLDivElement, options: { center: KakaoLatLng; level: number }) => KakaoMap;
+  Marker: new (options: { position: KakaoLatLng; draggable: boolean }) => KakaoMarker;
+  CustomOverlay: new (options: {
+    position: KakaoLatLng;
+    content: HTMLElement;
+    yAnchor: number;
+  }) => KakaoCustomOverlay;
+  event: {
+    addListener(target: KakaoMarker, eventName: "dragend", handler: () => void): void;
+  };
+};
+
+function getKakaoMaps() {
+  return (window as unknown as { kakao?: { maps?: KakaoMaps } }).kakao?.maps;
 }
 
 export type MapPoint = {
@@ -51,26 +81,28 @@ export function CandidateMap({
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const [mapsReady, setMapsReady] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const markerRef = useRef<any>(null);
+  const markerRef = useRef<KakaoMarker>(null);
   const [pendingPosition, setPendingPosition] = useState<{ lat: number; lng: number } | null>(null);
 
   const jsKey = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY;
 
   useEffect(() => {
-    if (!sdkLoaded || !window.kakao?.maps) return;
-    window.kakao.maps.load(() => setMapsReady(true));
+    const maps = getKakaoMaps();
+    if (!sdkLoaded || !maps) return;
+    maps.load(() => setMapsReady(true));
   }, [sdkLoaded]);
 
   useEffect(() => {
     if (!mapsReady || !containerRef.current) return;
-    const kakao = window.kakao;
-    const center = new kakao.maps.LatLng(lat, lng);
-    const map = new kakao.maps.Map(containerRef.current, { center, level: 4 });
+    const maps = getKakaoMaps();
+    if (!maps) return;
+    const center = new maps.LatLng(lat, lng);
+    const map = new maps.Map(containerRef.current, { center, level: 4 });
 
-    const marker = new kakao.maps.Marker({ position: center, draggable: true });
+    const marker = new maps.Marker({ position: center, draggable: true });
     marker.setMap(map);
     markerRef.current = marker;
-    kakao.maps.event.addListener(marker, "dragend", () => {
+    maps.event.addListener(marker, "dragend", () => {
       const pos = marker.getPosition();
       setPendingPosition({ lat: pos.getLat(), lng: pos.getLng() });
     });
@@ -82,15 +114,14 @@ export function CandidateMap({
         `background:${CATEGORY_COLORS[p.category] ?? "#71717a"};color:white;font-size:11px;white-space:nowrap;` +
         `box-shadow:0 1px 2px rgba(0,0,0,0.3);`;
       overlayEl.textContent = p.name;
-      const overlay = new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(p.lat, p.lng),
+      const overlay = new maps.CustomOverlay({
+        position: new maps.LatLng(p.lat, p.lng),
         content: overlayEl,
         yAnchor: 1.4,
       });
       overlay.setMap(map);
     }
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapsReady, lat, lng, points]);
 
   if (!jsKey) {
@@ -127,7 +158,8 @@ export function CandidateMap({
           <button
             type="button"
             onClick={() => {
-              markerRef.current?.setPosition(new window.kakao.maps.LatLng(lat, lng));
+              const maps = getKakaoMaps();
+              if (maps) markerRef.current?.setPosition(new maps.LatLng(lat, lng));
               setPendingPosition(null);
             }}
             className="rounded-md border border-[var(--sl-info)]/40 px-2 py-1 font-semibold text-[var(--sl-info)] hover:bg-[var(--sl-info-soft)]"

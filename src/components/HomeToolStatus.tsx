@@ -20,16 +20,18 @@ function relativeTime(ts: number): string {
 
 export function HomeToolStatus({ tool }: { tool: "seat-layout" | "store-eval" }) {
   const { user } = useAuth();
-  const [latest, setLatest] = useState<number | null>(null);
-  const [state, setState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const requestKey = user ? `${user.uid}:${tool}` : null;
+  const [result, setResult] = useState<{
+    requestKey: string;
+    state: "loaded" | "error";
+    latest: number | null;
+  } | null>(null);
 
   useEffect(() => {
-    if (!user) {
-      setState("idle");
-      return;
-    }
+    if (requestKey == null) return;
+
+    const activeRequestKey = requestKey;
     let cancelled = false;
-    setState("loading");
     async function load() {
       try {
         const updatedAts =
@@ -41,29 +43,28 @@ export function HomeToolStatus({ tool }: { tool: "seat-layout" | "store-eval" })
           null,
         );
         if (!cancelled) {
-          setLatest(max);
-          setState("loaded");
+          setResult({ requestKey: activeRequestKey, state: "loaded", latest: max });
         }
       } catch {
-        if (!cancelled) setState("error");
+        if (!cancelled) setResult({ requestKey: activeRequestKey, state: "error", latest: null });
       }
     }
-    load();
+    void load();
     return () => {
       cancelled = true;
     };
-  }, [tool, user]);
+  }, [requestKey, tool]);
 
   const recentLabel =
-    state === "loading"
-      ? "확인 중..."
-      : state === "error"
-        ? "-"
-        : state === "idle"
-          ? "로그인 필요"
-          : latest == null
+    requestKey == null
+      ? "로그인 필요"
+      : result?.requestKey !== requestKey
+        ? "확인 중..."
+        : result.state === "error"
+          ? "-"
+          : result.latest == null
             ? "아직 없음"
-            : relativeTime(latest);
+            : relativeTime(result.latest);
 
   return (
     <div className="flex border-t border-[#171310]/[0.08] font-mono text-[10.5px] dark:border-white/[0.08]">

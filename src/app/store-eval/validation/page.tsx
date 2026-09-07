@@ -540,7 +540,7 @@ function GlossarySection() {
             <b>V61</b> — 기본 매출 예측 모델(요금·예상수요·경쟁력점수로 예측)
           </li>
           <li>
-            <b>V62</b> — V61에 "외부유입 제한" 보정까지 더한 최종 예측치(실제 후보지 평가에 쓰는 값)
+            <b>V62</b> — V61에 “외부유입 제한” 보정까지 더한 최종 예측치(실제 후보지 평가에 쓰는 값)
           </li>
           <li>
             <b>리브원아웃 교차검증(LOOCV)</b> — 한 매장을 학습 데이터에서 빼고, 마치 처음 보는 신규 매장인 것처럼 그 매장의 매출을
@@ -548,12 +548,12 @@ function GlossarySection() {
           </li>
           <li>
             <b>V62 운영 결과(시트 재현)</b> — 원본 구글시트가 예전에 계산해둔 값을 웹이 똑같이 재현하는지 확인하는 것. 모델 성능
-            검증이 아니라 "이관이 제대로 됐는지" 확인용입니다.
+            검증이 아니라 “이관이 제대로 됐는지” 확인용입니다.
           </li>
           <li>
             <b>코호트(정식검증)</b> — 오픈한 지 얼마나 됐는지로 나눈 그룹. 2026-09-02부터 실제매출이 확정된 달이{" "}
-            {CORE_VALIDATION_MIN_MONTHS}개월 이상인 블랙라벨 매장은 계약 상태와 무관하게 전부 "정식검증" 대상입니다(이전에는 12개월
-            이상만 정식검증, 그 미만은 "조기검증"으로 따로 집계했습니다). 다만 아래 표의 <b>운영기간</b> 열에는 12개월
+            {CORE_VALIDATION_MIN_MONTHS}개월 이상인 블랙라벨 매장은 계약 상태와 무관하게 전부 “정식검증” 대상입니다(이전에는 12개월
+            이상만 정식검증, 그 미만은 “조기검증”으로 따로 집계했습니다). 다만 아래 표의 <b>운영기간</b> 열에는 12개월
             완료 여부를 계속 표시합니다 — 집계에서 빼지는 않지만, 오픈 프로모션 효과가 아직 섞여 있을 수 있는 매장을 눈으로
             구분하기 위해서입니다.
           </li>
@@ -969,7 +969,6 @@ export default function ValidationPage() {
 
   const {
     coreSummary,
-    coreRows,
     blackLabelRows,
     combinedSummary,
     byCohort,
@@ -1001,7 +1000,7 @@ export default function ValidationPage() {
         </p>
         <p className="mt-1 text-xs text-[#8a8072]">
           블랙라벨 매장만 검증하며{excludedNonBlackLabelCount > 0 ? `, 리그PC방·브랜드 미확인 ${excludedNonBlackLabelCount}곳은 이 화면에서 제외됩니다.` : "."}{" "}
-          계산 방식(리브원아웃 교차검증 등)의 자세한 설명은 아래 용어 설명과 "자세히 보기"를 참고하세요.
+          계산 방식(리브원아웃 교차검증 등)의 자세한 설명은 아래 용어 설명과 “자세히 보기”를 참고하세요.
         </p>
       </div>
 
@@ -1049,10 +1048,10 @@ export default function ValidationPage() {
       <section className="rounded-xl border border-[var(--sl-info)]/30 bg-[var(--sl-info-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
         <h3 className="font-semibold">웹 V62와 시트 V62 차이 원인 확인 결과</h3>
         <p className="mt-1">
-          아래 <b>"V62 운영 결과"</b>는 시트에 저장된 V61 캐시값 그대로 재현한 결과, <b>"리브원아웃 교차검증"</b>은 매 매장을 학습에서
+          아래 <b>“V62 운영 결과”</b>는 시트에 저장된 V61 캐시값 그대로 재현한 결과, <b>“리브원아웃 교차검증”</b>은 매 매장을 학습에서
           뺀 뒤 다시 학습해 예측한 결과입니다. 두 값의 차이는 계산 버그가 아니라 <b>검증점포를 학습에 포함했는지 여부</b>(시트=전체 26곳으로
           학습한 모형이 자기 자신을 예측 / 웹=리브-원-아웃으로 자기 자신을 뺀 모형이 예측)에서 대부분 설명됩니다. 나머지 항목(입력
-          특징값·결측값 처리·릿지계수/lambda·외부유입 보정 순서·반올림 시점)은 점검 결과 동일했습니다 — 아래 "차이 원인 점검표" 참고.
+          특징값·결측값 처리·릿지계수/lambda·외부유입 보정 순서·반올림 시점)은 점검 결과 동일했습니다 — 아래 “차이 원인 점검표” 참고.
           리브원아웃 교차검증 구현 자체에는 문제가 없다고 확인했으므로, <b>모델 검증 적중률(공식 성능)은 리브원아웃 교차검증을 사용</b>하고
           V62 운영 결과(시트 재현 적중률)는 이관(마이그레이션) 검증용으로만 남겨둡니다. 실제 신규후보지 평가에 쓰는 예상매출은 항상
           V62 운영 결과이며, 리브원아웃 교차검증 값은 신규후보지 운영 예상매출로 쓰지 않습니다.
@@ -1132,7 +1131,7 @@ export default function ValidationPage() {
         <div>
           <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 비교표 — V62 운영 결과 vs 리브원아웃 교차검증</h2>
           <p className="mt-1 text-xs text-[#8a8072]">
-            정식검증+조기검증 대상 매장만. "차이 발생 단계"는 V61 예측 → 외부유입 보정률 → 반올림 순으로 처음 어긋난 지점을 표시합니다.
+            정식검증+조기검증 대상 매장만. “차이 발생 단계”는 V61 예측 → 외부유입 보정률 → 반올림 순으로 처음 어긋난 지점을 표시합니다.
           </p>
         </div>
         <ParityComparisonTable rows={parityRows} />
@@ -1236,7 +1235,7 @@ export default function ValidationPage() {
             </table>
             <p className="px-3 py-2 text-xs text-[#8a8072]">
               경쟁점 핑봇 커버율 = 조사된 경쟁점 중 핑봇 기간평균 가동률이 있는 비율. 70% 미만이면
-              "낮음"으로 표시합니다(원본 점포평가.gs의 최소커버율 0.70 기준 — 원본도 이 값으로 표본을
+              “낮음”으로 표시합니다(원본 점포평가.gs의 최소커버율 0.70 기준 — 원본도 이 값으로 표본을
               거르지 않고 참고 신뢰도로만 씁니다).
             </p>
           </div>
@@ -1252,7 +1251,7 @@ export default function ValidationPage() {
         <section className="rounded-xl border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
           <h3 className="font-semibold">목표 미달성 — 정확도가 나온 것처럼 표시하지 않습니다</h3>
           <p className="mt-1">
-            점포별 표의 "우선 추정 원인" 열은 확정 진단이 아니라 검토 우선순위 참고용입니다. 오차가 큰 점포는 아래 표에서 절대오차율이
+            점포별 표의 “우선 추정 원인” 열은 확정 진단이 아니라 검토 우선순위 참고용입니다. 오차가 큰 점포는 아래 표에서 절대오차율이
             큰 순서로 직접 확인하고, 필요하면 docs/data-issues.md에 원인 분석을 추가로 기록해주세요.
           </p>
         </section>

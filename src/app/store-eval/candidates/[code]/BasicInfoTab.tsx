@@ -155,15 +155,21 @@ function validate(form: CandidateInput): string[] {
   return errors;
 }
 
-export function BasicInfoTab({
-  candidate,
-  actor,
-  onSaved,
-}: {
+type BasicInfoTabProps = {
   candidate: CandidateInput;
   actor: string | null;
   onSaved: (c: CandidateInput) => void;
-}) {
+};
+
+export function BasicInfoTab(props: BasicInfoTabProps) {
+  return <BasicInfoTabForm key={props.candidate.code} {...props} />;
+}
+
+function BasicInfoTabForm({
+  candidate,
+  actor,
+  onSaved,
+}: BasicInfoTabProps) {
   const { user, loading: authLoading } = useAuth();
   const [form, setForm] = useState<CandidateInput>(candidate);
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
@@ -186,7 +192,7 @@ export function BasicInfoTab({
   const [marketDataUploads, setMarketDataUploads] = useState<MarketDataUpload[]>([]);
   const marketLoadSequence = useRef(0);
 
-  const loadMarketData = useCallback(async (code: string) => {
+  const loadMarketData = useCallback(async (code: string, isCancelled: () => boolean = () => false) => {
     const sequence = ++marketLoadSequence.current;
     const [adminDong, points, comps, uploads] = await Promise.all([
       getAdminDongReference(code),
@@ -194,7 +200,7 @@ export function BasicInfoTab({
       listCompetitors(code),
       listMarketDataUploads(code),
     ]);
-    if (sequence !== marketLoadSequence.current) return;
+    if (isCancelled() || sequence !== marketLoadSequence.current) return;
     setAdminDongRef(adminDong);
     setDemandPoints(points);
     setAutoCompetitors(comps.filter((c) => c.source === "kakao"));
@@ -228,25 +234,22 @@ export function BasicInfoTab({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidate.code, authLoading, user]);
 
   useEffect(() => {
-    let active = true;
+    let cancelled = false;
     // Firebase Auth 세션 복원(onAuthStateChanged)이 끝나기 전에 Firestore를 읽으면 request.auth가
     // 아직 없어 "Missing or insufficient permissions"가 뜬다(핫리로드 직후 재현되는 레이스
     // 컨디션, 2026-08-24 확인) — authLoading이 끝나고 로그인된 사용자가 있을 때만 조회한다.
     if (candidate.code !== "new" && !authLoading && user) {
-      loadMarketData(candidate.code).catch((error) => {
-        if (active) setCollectError(error instanceof Error ? error.message : "상권자료를 불러오지 못했습니다.");
+      loadMarketData(candidate.code, () => cancelled).catch((error) => {
+        if (!cancelled) setCollectError(error instanceof Error ? error.message : "상권자료를 불러오지 못했습니다.");
       });
     }
     return () => {
-      active = false;
-      marketLoadSequence.current++;
+      cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidate.code, authLoading, user]);
+  }, [candidate.code, authLoading, loadMarketData, user]);
 
   async function handleCollectMarketData() {
     if (form.code === "new") {
@@ -319,7 +322,7 @@ export function BasicInfoTab({
     [demandPoints, autoCompetitors],
   );
 
-  const computedScores = useMemo(() => {
+  const computedScores = (() => {
     // 비어있는 자사 시설 입력값은 회사 표준 존 구성으로 계산한다(evaluate.ts와 동일 규칙 —
     // 결과 탭에서 최종 계산할 때와 이 미리보기가 다르게 보이지 않도록 맞춘다).
     const facility = applyStandardOwnFacilityDefaults(form);
@@ -376,47 +379,7 @@ export function BasicInfoTab({
         settings,
       ),
     };
-  }, [
-    form.ownCpu,
-    form.ownCpuTop1,
-    form.ownCpuTop2,
-    form.ownRam,
-    form.ownRamTop,
-    form.ownVgaBase,
-    form.ownVgaTop,
-    form.ownVgaTop2,
-    form.ownMonitorBase,
-    form.ownMonitorTop,
-    form.ownRoom1,
-    form.ownRoom2,
-    form.ownTeamRoom,
-    form.ownCoupleZone,
-    form.ownVipZone,
-    form.ownFriendsZone,
-    form.ownFirstClassZone,
-    form.ownSingleSeatCount,
-    form.ownTeamRoomTotalSeats,
-    form.expectedPcCount,
-    form.floor,
-    form.groundLevel,
-    form.hasElevator,
-    form.ownFoodBrand,
-    form.ownFoodScore,
-    form.ownSeatZoneScore,
-    form.ownInteriorScore,
-    form.ownManagementScore,
-    locationEvaluation,
-    settings,
-  ]);
-
-  // 후보지코드(=candidate.code)가 바뀔 때만 폼을 리셋한다. 저장 후 부모가 candidate를 갱신해도
-  // 사용자가 입력 중인 값을 덮어쓰지 않기 위해 candidate 전체가 아니라 code에만 반응한다.
-  useEffect(() => {
-    setForm(candidate);
-    setMessage(null);
-    setErrors([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidate.code]);
+  })();
 
   function set<K extends keyof CandidateInput>(key: K, value: CandidateInput[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -709,7 +672,7 @@ export function BasicInfoTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>
         <p className="mt-1 text-xs text-[#8a8072]">
-          GPU/CPU/RAM/모니터 모두 "기본"(대부분 좌석의 대표사양)과 "특화"(일부 좌석만 업그레이드된
+          GPU/CPU/RAM/모니터 모두 “기본”(대부분 좌석의 대표사양)과 “특화”(일부 좌석만 업그레이드된
           사양) 텍스트를 각각 입력합니다. 일부 좌석만 업그레이드됐다면 매장 전체를 그 사양으로 보지
           않고 기본80%+특화(균등분배)20%로 계산합니다.
         </p>

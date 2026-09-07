@@ -125,15 +125,19 @@ function blankCandidate(code: string): CandidateInput {
 export default function CandidateDetailPage() {
   const params = useParams<{ code: string }>();
   const code = decodeURIComponent(params.code);
+  return <CandidateDetail key={code} code={code} />;
+}
+
+function CandidateDetail({ code }: { code: string }) {
   const isNewDraft = code === NEW_DRAFT_CODE;
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
 
-  const [candidate, setCandidate] = useState<CandidateInput | null>(null);
+  const [candidate, setCandidate] = useState<CandidateInput | null>(() => isNewDraft ? blankCandidate(NEW_DRAFT_CODE) : null);
   const [persisted, setPersisted] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isNewDraft);
   const [error, setError] = useState<string | null>(null);
   const loadSequence = useRef(0);
 
@@ -142,19 +146,10 @@ export default function CandidateDetailPage() {
   const requestedTab = searchParams.get("tab") ?? "";
   const activeTab = (!persisted ? "basic" : ["basic", "competitors", "location", "result"].includes(requestedTab) ? requestedTab : "basic") as TabKey;
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
+    if (isNewDraft) return;
     const sequence = ++loadSequence.current;
-    setLoading(true);
-    setError(null);
-    try {
-      if (isNewDraft) {
-        if (sequence === loadSequence.current) {
-          setCandidate(blankCandidate(NEW_DRAFT_CODE));
-          setPersisted(false);
-        }
-        return;
-      }
-      const existing = await getCandidate(code);
+    return getCandidate(code).then((existing) => {
       if (sequence !== loadSequence.current) return;
       if (existing) {
         setCandidate(existing);
@@ -162,18 +157,18 @@ export default function CandidateDetailPage() {
       } else {
         setError("해당 후보지를 찾을 수 없습니다.");
       }
-    } catch (err) {
+    }).catch((err: unknown) => {
       if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "후보지를 불러오지 못했습니다.");
-    } finally {
+    }).finally(() => {
       if (sequence === loadSequence.current) setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    });
   }, [code, isNewDraft]);
 
   useEffect(() => {
+    const sequenceCounter = loadSequence;
     load();
     return () => {
-      loadSequence.current++;
+      sequenceCounter.current++;
     };
   }, [load]);
 

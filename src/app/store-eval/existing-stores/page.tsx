@@ -41,10 +41,6 @@ const BRAND_OPTIONS = [
   { value: "리그PC방", label: "리그PC방" },
   { value: "확인필요", label: "확인필요" },
 ];
-const GROUND_LEVEL_OPTIONS = [
-  { value: "지상", label: "지상" },
-  { value: "지하", label: "지하" },
-];
 
 function blankStore(): ExistingStore {
   const now = Date.now();
@@ -215,32 +211,47 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
   const [linkCandidateCode, setLinkCandidateCode] = useState("");
   const [linkMessage, setLinkMessage] = useState<string | null>(null);
   const loadSequence = useRef(0);
+  const [previousStore, setPreviousStore] = useState(store);
 
-  const load = useCallback(async () => {
-    const sequence = ++loadSequence.current;
+  // 부모가 새 매장 자료를 전달하면 기존처럼 편집값과 조회 상태를 초기화한다.
+  if (previousStore !== store) {
+    setPreviousStore(store);
+    setEditStore(store);
     setLoading(true);
     setLoadError(null);
-    try {
-      const [s, m] = await Promise.all([listExistingStoreSales(store.storeCode), listExistingStoreMembers(store.storeCode)]);
-      if (sequence !== loadSequence.current) return;
-      setSales(s.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth)));
-      setMembers(m.sort((a, b) => b.snapshotDate.localeCompare(a.snapshotDate)));
-    } catch (error) {
-      if (sequence === loadSequence.current) {
-        setLoadError(error instanceof Error ? error.message : "매출·회원 기록을 불러오지 못했습니다.");
-      }
-    } finally {
-      if (sequence === loadSequence.current) setLoading(false);
-    }
+  }
+
+  const fetchRecords = useCallback(() => {
+    const sequence = ++loadSequence.current;
+    return Promise.all([listExistingStoreSales(store.storeCode), listExistingStoreMembers(store.storeCode)])
+      .then(([s, m]) => {
+        if (sequence !== loadSequence.current) return;
+        setSales(s.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth)));
+        setMembers(m.sort((a, b) => b.snapshotDate.localeCompare(a.snapshotDate)));
+      })
+      .catch((error: unknown) => {
+        if (sequence === loadSequence.current) {
+          setLoadError(error instanceof Error ? error.message : "매출·회원 기록을 불러오지 못했습니다.");
+        }
+      })
+      .finally(() => {
+        if (sequence === loadSequence.current) setLoading(false);
+      });
   }, [store.storeCode]);
 
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    return fetchRecords();
+  }, [fetchRecords]);
+
   useEffect(() => {
-    load();
-    setEditStore(store);
+    const sequenceCounter = loadSequence;
+    void fetchRecords();
     return () => {
-      loadSequence.current++;
+      sequenceCounter.current++;
     };
-  }, [load, store]);
+  }, [fetchRecords, store]);
 
   async function saveSales() {
     if (!yearMonth) return;
@@ -436,29 +447,33 @@ export default function ExistingStoresPage() {
   const [search, setSearch] = useState("");
   const loadSequence = useRef(0);
 
-  const load = useCallback(async () => {
+  const fetchStores = useCallback(() => {
     const sequence = ++loadSequence.current;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const list = await listExistingStores();
+    return listExistingStores().then((list) => {
       if (sequence !== loadSequence.current) return;
       setStores(list.sort((a, b) => (b.openedAt ?? "").localeCompare(a.openedAt ?? "")));
-    } catch (error) {
+    }).catch((error: unknown) => {
       if (sequence === loadSequence.current) {
         setLoadError(error instanceof Error ? error.message : "가맹점 목록을 불러오지 못했습니다.");
       }
-    } finally {
+    }).finally(() => {
       if (sequence === loadSequence.current) setLoading(false);
-    }
+    });
   }, []);
 
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
+    return fetchStores();
+  }, [fetchStores]);
+
   useEffect(() => {
-    load();
+    const sequenceCounter = loadSequence;
+    void fetchStores();
     return () => {
-      loadSequence.current++;
+      sequenceCounter.current++;
     };
-  }, [load]);
+  }, [fetchStores]);
 
   // 요청사항 — 이 화면은 블랙라벨 매장만 보여준다. 브랜드는 매출DB!지점명 배경색(노란색=
   // 블랙라벨)으로 cron-sync가 채운 brandType 필드를 그대로 쓴다(추측하지 않음, 이미 존재하는

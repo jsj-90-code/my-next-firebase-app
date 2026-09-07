@@ -92,7 +92,7 @@ import {
   type ValidationStoreInput,
   type ValidationStoreRow,
 } from "./calc";
-import type { CandidateInput } from "./types";
+import type { CandidateInput, ExistingStore } from "./types";
 import { defaultModelSettings } from "./settings";
 
 const settings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
@@ -1866,15 +1866,19 @@ describe("buildV61TrainingStores/toV61TrainingStore — evaluationPcCount 우선
     specialDemandType: null,
     specialDemandIntensity: null,
     hasElevator: true,
-  };
+  } satisfies Partial<ExistingStore>;
 
   it("evaluationPcCount가 있으면 pcCount 대신 그걸 쓴다 — 현재 168대이지만 오픈 초기 108대로 학습", () => {
-    const [trained] = buildV61TrainingStores([{ ...baseExistingStore, evaluationPcCount: 108 } as any]);
+    const [trained] = buildV61TrainingStores([
+      { ...baseExistingStore, evaluationPcCount: 108 } as ExistingStore,
+    ]);
     expect(trained.pcCount).toBe(108);
   });
 
   it("evaluationPcCount가 없으면 현재 pcCount로 폴백한다(대부분의 매장)", () => {
-    const [trained] = buildV61TrainingStores([{ ...baseExistingStore, evaluationPcCount: null } as any]);
+    const [trained] = buildV61TrainingStores([
+      { ...baseExistingStore, evaluationPcCount: null } as ExistingStore,
+    ]);
     expect(trained.pcCount).toBe(168);
   });
 

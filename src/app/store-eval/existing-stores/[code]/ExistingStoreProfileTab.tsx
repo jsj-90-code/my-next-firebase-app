@@ -60,15 +60,22 @@ const GROUND_LEVEL_OPTIONS: { value: GroundLevel; label: string }[] = [
   { value: "지하", label: "지하" },
 ];
 
-export function ExistingStoreProfileTab({
-  store,
-  actor,
-  onSaved,
-}: {
+type ExistingStoreProfileTabProps = {
   store: ExistingStore;
   actor: string | null;
   onSaved: (updated: ExistingStore) => void;
-}) {
+};
+
+export function ExistingStoreProfileTab(props: ExistingStoreProfileTabProps) {
+  // 같은 매장의 갱신은 입력을 보존하고, 매장 전환 시 편집 상태 전체를 초기화한다.
+  return <ExistingStoreProfileEditor key={props.store.storeCode} {...props} />;
+}
+
+function ExistingStoreProfileEditor({
+  store,
+  actor,
+  onSaved,
+}: ExistingStoreProfileTabProps) {
   const [form, setForm] = useState<ExistingStore>(store);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
   // 2026-08-30(경쟁력 평가 기준 최종본 §12) — 입지 점수(자동)가 09_입지동선평가를 우선 쓰므로 조회.
@@ -86,14 +93,6 @@ export function ExistingStoreProfileTab({
     const lookupCode = store.originCandidateCode ?? store.storeCode;
     getLocationEvaluation(lookupCode).then(setLocationEvaluation);
   }, [store.originCandidateCode, store.storeCode]);
-
-  // 상세화면에서 다른 가맹점으로 이동할 때만 폼을 리셋한다(BasicInfoTab과 동일 원칙 — 저장 후
-  // 부모가 store를 갱신해도 입력 중인 값을 덮어쓰지 않는다).
-  useEffect(() => {
-    setForm(store);
-    setMessage(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.storeCode]);
 
   function set<K extends keyof ExistingStore>(key: K, value: ExistingStore[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -151,39 +150,7 @@ export function ExistingStoreProfileTab({
         settings,
       ),
     };
-  }, [
-    form.ownCpu,
-    form.ownCpuTop1,
-    form.ownCpuTop2,
-    form.ownRam,
-    form.ownRamTop,
-    form.ownVgaBase,
-    form.ownVgaTop,
-    form.ownVgaTop2,
-    form.ownMonitorBase,
-    form.ownMonitorTop,
-    form.ownRoom1,
-    form.ownRoom2,
-    form.ownTeamRoom,
-    form.ownCoupleZone,
-    form.ownVipZone,
-    form.ownFriendsZone,
-    form.ownFirstClassZone,
-    form.ownSingleSeatCount,
-    form.ownTeamRoomTotalSeats,
-    form.evaluationPcCount,
-    form.pcCount,
-    form.floor,
-    form.groundLevel,
-    form.hasElevator,
-    form.ownFoodBrand,
-    form.ownFoodScore,
-    form.ownSeatZoneScore,
-    form.ownInteriorScore,
-    form.ownManagementScore,
-    locationEvaluation,
-    settings,
-  ]);
+  }, [form, locationEvaluation, settings]);
 
   async function handleSave() {
     setSaving(true);
@@ -264,7 +231,7 @@ export function ExistingStoreProfileTab({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>
         <p className="mt-1 text-xs text-[#8a8072]">
-          GPU/CPU/RAM/모니터 모두 "기본"(대부분 좌석의 대표사양)과 "특화"(일부 좌석만 업그레이드된
+          GPU/CPU/RAM/모니터 모두 “기본”(대부분 좌석의 대표사양)과 “특화”(일부 좌석만 업그레이드된
           사양) 텍스트를 각각 입력합니다. 일부 좌석만 업그레이드됐다면 매장 전체를 그 사양으로 보지
           않고 기본80%+특화(균등분배)20%로 계산합니다.
         </p>

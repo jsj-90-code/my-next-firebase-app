@@ -31,17 +31,17 @@ export default function CandidateListPage() {
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await listCandidates();
-      setCandidates(list);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "후보지 목록을 불러오지 못했습니다.");
-    } finally {
-      setLoading(false);
-    }
+  const load = useCallback(() => {
+    return listCandidates()
+      .then((list) => {
+        setCandidates(list);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "후보지 목록을 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -85,6 +85,8 @@ export default function CandidateListPage() {
         throw new Error(body?.error ?? "후보지를 삭제하지 못했습니다.");
       }
       const body = (await response.json().catch(() => null)) as { auditWarning?: string | null } | null;
+      setLoading(true);
+      setError(null);
       await load();
       if (body?.auditWarning) setWarning(body.auditWarning);
     } catch (err) {

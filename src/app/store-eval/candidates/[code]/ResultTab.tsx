@@ -4,7 +4,7 @@
 // competitors + locationEvaluation + modelSettings(폴백 포함) + existingStores(referenceMarketDemand)를
 // 모아 evaluateCandidate 한 번 호출 -> saveEvaluationResult로 스냅샷 저장 -> 화면 표시.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
@@ -162,6 +162,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const [result, setResult] = useState<EvaluationResult | null>(null);
   const [settingsUsed, setSettingsUsed] = useState<ModelSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const requestKey = useMemo(() => ({ candidateCode }), [candidateCode]);
+  const [completedRequest, setCompletedRequest] = useState<typeof requestKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [alreadyExisting, setAlreadyExisting] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -260,10 +262,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
   const run = useCallback(async () => {
     const sequence = ++runSequence.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const candidate = await getCandidate(candidateCode);
+    return getCandidate(candidateCode).then(async (candidate) => {
       if (!candidate) {
         throw new Error("후보지 기본정보가 없습니다. [기본정보] 탭에서 먼저 저장해주세요.");
       }
@@ -297,18 +296,31 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       setCompetitorsForReport(competitors);
       setReportDraft(null);
       setReportError(null);
-    } catch (err) {
-      if (sequence === runSequence.current) setError(err instanceof Error ? err.message : "최종결과를 계산하지 못했습니다.");
-    } finally {
-      if (sequence === runSequence.current) setLoading(false);
-    }
+      setError(null);
+      setCompletedRequest(requestKey);
+      setLoading(false);
+    }).catch((err: unknown) => {
+      if (sequence === runSequence.current) {
+        setError(err instanceof Error ? err.message : "최종결과를 계산하지 못했습니다.");
+        setCompletedRequest(requestKey);
+        setLoading(false);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidateCode]);
+  }, [candidateCode, requestKey]);
+
+  function handleRecalculate() {
+    setLoading(true);
+    setError(null);
+    void run();
+  }
 
   useEffect(() => {
+    // 숫자 스냅샷이 아니라 공유 카운터를 잡아 수동 재계산까지 함께 무효화한다.
+    const sequenceCounter = runSequence;
     run();
     return () => {
-      runSequence.current++;
+      sequenceCounter.current++;
     };
   }, [run]);
 
@@ -362,7 +374,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       .catch(() => setReportError("클립보드 복사에 실패했습니다. 직접 선택해서 복사해주세요."));
   }
 
-  if (loading) return <p className="text-sm text-[#8a8072]">계산 중...</p>;
+  if (loading || completedRequest !== requestKey) return <p className="text-sm text-[#8a8072]">계산 중...</p>;
 
   if (error) {
     return (
@@ -370,7 +382,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
         <button
           type="button"
-          onClick={run}
+          onClick={handleRecalculate}
           className="app-btn-outline w-fit rounded-lg px-4 py-2 text-sm"
         >
           다시 시도
@@ -391,7 +403,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={run}
+            onClick={handleRecalculate}
             className="app-btn-outline rounded-lg px-4 py-2 text-sm"
           >
             다시 계산

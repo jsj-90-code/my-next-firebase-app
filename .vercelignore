@@ -1,0 +1,11 @@
+# Keep local credentials, analysis material, and test artifacts out of deployment uploads.
+.env*
+.git
+node_modules
+.local-tools
+reference
+docs
+scripts
+**/*.test.ts
+**/*.tmp.*
+*.log

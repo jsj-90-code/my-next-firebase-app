@@ -28,6 +28,10 @@ type TabKey = (typeof TABS)[number]["key"];
 export default function ExistingStoreDetailPage() {
   const params = useParams<{ code: string }>();
   const code = decodeURIComponent(params.code);
+  return <ExistingStoreDetail key={code} code={code} />;
+}
+
+function ExistingStoreDetail({ code }: { code: string }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -41,29 +45,27 @@ export default function ExistingStoreDetailPage() {
   const requestedTab = searchParams.get("tab") ?? "";
   const activeTab = (TABS.some((t) => t.key === requestedTab) ? requestedTab : "basic") as TabKey;
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     const sequence = ++loadSequence.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const existing = await getExistingStore(code);
+    return getExistingStore(code).then((existing) => {
       if (sequence !== loadSequence.current) return;
       if (existing) {
         setStore(existing);
       } else {
         setError("해당 가맹점을 찾을 수 없습니다.");
       }
-    } catch (err) {
+    }).catch((err: unknown) => {
       if (sequence === loadSequence.current) setError(err instanceof Error ? err.message : "가맹점 정보를 불러오지 못했습니다.");
-    } finally {
+    }).finally(() => {
       if (sequence === loadSequence.current) setLoading(false);
-    }
+    });
   }, [code]);
 
   useEffect(() => {
+    const sequenceCounter = loadSequence;
     load();
     return () => {
-      loadSequence.current++;
+      sequenceCounter.current++;
     };
   }, [load]);
 
