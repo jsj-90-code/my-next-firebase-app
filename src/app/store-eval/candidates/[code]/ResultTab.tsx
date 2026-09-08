@@ -17,6 +17,7 @@ import {
   getModelSettings,
   listCompetitors,
   listExistingStores,
+  listExistingStoreSales,
   listAllLocationEvaluations,
   listAllCompetitors,
   saveEvaluationResult,
@@ -270,11 +271,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (!candidate) {
         throw new Error("후보지 기본정보가 없습니다. [기본정보] 탭에서 먼저 저장해주세요.");
       }
-      const [existingStores, modelSettingsDoc, trainingLocationEvaluations, trainingCompetitors] = await Promise.all([
+      const [existingStores, modelSettingsDoc, trainingLocationEvaluations, trainingCompetitors, trainingSales] = await Promise.all([
         listExistingStores(),
         getModelSettings(),
         listAllLocationEvaluations(),
         listAllCompetitors(),
+        listExistingStoreSales(),
       ]);
       const competitors = trainingCompetitors.filter((competitor) => competitor.candidateCode === candidateCode);
       const locationEvaluation = trainingLocationEvaluations.find((location) => location.candidateCode === candidateCode) ?? null;
@@ -282,7 +284,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (sequence !== runSequence.current) return;
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
 
-      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors });
+      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales });
       // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
       // 들어오더라도 새 결과가 항상 마지막에 저장되어 Firestore 최종값이 뒤집히지 않는다.
       const saveTask = saveQueue.current
@@ -478,8 +480,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         </div>
         {result.v61IsFallback && (
           <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
-            학습표본이 최소 기준({settingsUsed.v61Training.minSampleCount}곳)에 못 미쳐 임시 폴백 회귀식을 썼습니다. 실제 후보지 판단에
-            그대로 쓰지 말고, 기존 가맹점 학습 데이터가 채워진 뒤 다시 계산해주세요.
+            {result.modelVersion.endsWith("-usage-v1")
+              ? "PC·먹거리 학습자료 또는 후보지 필수 입력이 부족해 매출을 계산하지 못했습니다. 요금·입지평가·기존점 월별 매출을 확인해주세요."
+              : `학습표본이 최소 기준(${settingsUsed.v61Training.minSampleCount}곳)에 못 미쳐 임시 폴백 회귀식을 썼습니다.`}
           </p>
         )}
         {/* 2026-08-25 — V61 기본예측/V62 보정률/보수판단/상한참고를 V62 최종예상월매출과 나란히
@@ -490,12 +493,15 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="mt-4">
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
         </div>
-        <PriceScenarioPanel baselines={[{id:candidateCode,label:candidateForReport?.name ?? candidateCode,revenue:result.v62Final,hourlyRate:result.hourlyRate}]} productRatio={settingsUsed.measuredForecastProductRatio} />
+        {result.revenueBreakdown && <p className="mt-2 text-sm leading-6">
+          PC {formatWon(result.revenueBreakdown.pcRevenue)} + 먹거리 {formatWon(result.revenueBreakdown.productRevenue)}
+          <br />예상 PC 이용시간 {formatNumber(Math.round(result.revenueBreakdown.pcHours))}시간 × 시간당 {formatWon(result.hourlyRate)}
+        </p>}
+        <PriceScenarioPanel baselines={[{id:candidateCode,label:candidateForReport?.name ?? candidateCode,revenue:result.v62Final,hourlyRate:result.hourlyRate,pcRevenue:result.revenueBreakdown?.pcRevenue,productRevenue:result.revenueBreakdown?.productRevenue}]} productRatio={settingsUsed.measuredForecastProductRatio} />
         {result.capacityCapped && (
           <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
             가동률 물리적 상한({formatPercent(settingsUsed.v62MaxUtilizationRate)})에 걸려 예측값을 조정했습니다. 원래 예측은{" "}
-            {formatWon(result.v62FinalBeforeCap)}였습니다 — 이 PC대수로는 그만큼 매출을 낼 수 없다고 판단했습니다(정식검증 26곳 실측
-            가동률이 전부 20~49%였음).
+            {formatWon(result.v62FinalBeforeCap)}였습니다. PC 이용시간을 좌석대수 × 720시간 × 설정 가동률 이내로 제한합니다.
           </p>
         )}
         {result.competitorOverflowRevenueBonus > 0 && (
@@ -706,7 +712,14 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       <details className="app-card rounded-2xl p-4 text-sm print:hidden">
         <summary className="cursor-pointer font-medium text-[#5c5346] dark:text-[#c9bfae]">적용된 산식과 계수 보기</summary>
         <div className="mt-4 flex flex-col gap-4 text-xs leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-          {result.v61IsFallback ? (
+          {result.modelVersion.endsWith("-usage-v1") ? (
+            <div>
+              <p className="font-semibold">요금 반영 산식</p>
+              <p>PC매출 = 예상 PC 이용시간 × 시간당요금. 먹거리 매출을 별도로 예측해 합산합니다.
+                외부유입 보정과 경쟁점 초과수요를 이용시간에 반영한 뒤 좌석 가동률 상한을 적용합니다.</p>
+              <p>학습 이용시간은 과거 PC매출을 현재 등록 요금으로 나눈 추정값입니다. 요금 변경에 따른 고객 증감은 별도 가정하지 않습니다.</p>
+            </div>
+          ) : result.v61IsFallback ? (
             <div>
               <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">§4.1 V61 기본예측(폴백 회귀식)</p>
               <p>
@@ -732,7 +745,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               외부유입제한 없음 {formatPercent(settingsUsed.inflowAdjustment.없음)} / 보통 {formatPercent(settingsUsed.inflowAdjustment.보통)} / 강함{" "}
               {formatPercent(settingsUsed.inflowAdjustment.강함)}
               <br />
-              V62 최종예상월매출 = ROUND(V61 × (1 + 보정률), 0)
+              {result.revenueBreakdown ? "최종예상월매출 = 보정·상한 적용 PC매출 + 보정된 먹거리 매출" : "V62 최종예상월매출 = ROUND(V61 × (1 + 보정률), 0)"}
               <br />
               보수판단매출 = V62 × {settingsUsed.lowerBoundFactor} / 상한참고매출 = V62 × {settingsUsed.upperBoundFactor}
             </p>

@@ -2734,6 +2734,7 @@ export function classifyTenureCohort(completedMonths: number | null): TenureCoho
 }
 
 export type ValidationStoreInput = {
+  extraPcHours?: number;
   visibilityScore?: number | null;
   storeCode: string;
   storeName: string;
@@ -2767,6 +2768,7 @@ export type ValidationStoreInput = {
 };
 
 export type ValidationStoreRow = ValidationStoreInput & {
+  revenueBreakdown?: import("./usageRevenue").UsageRevenueBreakdown;
   cohort: TenureCohort;
   predictedRevenueAvg: number | null; // V61(외부유입 보정 전, 리브-원-아웃 재학습 결과 — loocvValidation)
   v62Rate: number; // 이번 매장에 적용된 외부유입 보정률(0이면 보정 없음/미평가)
@@ -3148,6 +3150,10 @@ export function toV61TrainingStore(
 export function runCohortValidation(
   stores: ValidationStoreInput[],
   settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">,
+  revenueModel?: {
+    trainingStoreCodes: ReadonlySet<string>;
+    predict: (store: ValidationStoreInput) => import("./usageRevenue").UsageRevenueBreakdown | null;
+  },
 ): { rows: ValidationStoreRow[] } {
   const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
   const minCoefficients = buildMinCoefficients(settings.v61Training);
@@ -3158,19 +3164,23 @@ export function runCohortValidation(
   const coreTraining = coreStores.map(s => toV61TrainingStore(s, settings));
 
   // 리브-원-아웃: 핵심 학습표본끼리는 서로를 빼고 학습·예측한다(데이터 누출 방지).
-  const loo = runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minCoefficients);
+  const loo = revenueModel ? { rows: [] } : runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minCoefficients);
   const looByCode = new Map(loo.rows.map((r) => [r.storeCode, r.predictedRevenue]));
 
   // 완전 외부 검증군 예측용 - 핵심 학습표본 전체로 학습한 단일 모형.
-  const fullModel = fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minCoefficients);
+  const fullModel = revenueModel ? null : fitEmpiricalRevenueModel(coreTraining.map(toEmpiricalSample), ridgeLambda, minSampleCount, minCoefficients);
 
   const rows: ValidationStoreRow[] = stores.map((s) => {
     const cohort = classifyTenureCohort(s.completedMonths);
     const hasRequiredVisibility = !useVisibility || isValidVisibilityScore(s.visibilityScore);
-    const isCore = isCoreEligibleForV61Training(s) && hasRequiredVisibility;
+    const isCore = isCoreEligibleForV61Training(s) && hasRequiredVisibility
+      && (!revenueModel || revenueModel.trainingStoreCodes.has(s.storeCode));
+    const revenueBreakdown = revenueModel && cohort !== "제외" && hasRequiredVisibility ? revenueModel.predict(s) : null;
 
     let predictedRevenueAvg: number | null = null;
-    if (isCore) {
+    if (revenueModel) {
+      predictedRevenueAvg = revenueBreakdown?.baselineRevenue ?? null;
+    } else if (isCore) {
       predictedRevenueAvg = looByCode.get(s.storeCode) ?? null;
     } else if (cohort === "제외") {
       // 완료된 실제매출 월이 0개(오픈 당월이거나 그 이전)인 매장은 예측값도 아예 내지 않는다.
@@ -3213,7 +3223,8 @@ export function runCohortValidation(
     const v62Raw = predictedRevenueAvg != null ? computeV62Final(predictedRevenueAvg, v62Rate) : null;
     // 2026-08-30(사용자 확인) — 후보지 평가(evaluate.ts)와 동일한 물리적 가동률 상한을 여기(백테스트
     // 예측)에도 일관되게 적용한다. 실측 26곳 전부 20~49%였으니 대체로 영향 없고, 극단 외삽만 걸린다.
-    const v62PredictedRevenueAvg = applyCapacityCeiling(v62Raw, s.hourlyRate, s.evaluationPcCount ?? s.pcCount, settings).cappedRevenue;
+    const v62PredictedRevenueAvg = revenueModel ? revenueBreakdown?.monthlyRevenue ?? null
+      : applyCapacityCeiling(v62Raw, s.hourlyRate, s.evaluationPcCount ?? s.pcCount, settings).cappedRevenue;
 
     const errorAmount =
       v62PredictedRevenueAvg != null && s.actualRevenueAvg != null ? v62PredictedRevenueAvg - s.actualRevenueAvg : null;
@@ -3234,7 +3245,9 @@ export function runCohortValidation(
     else if (s.brand == null) exclusionReason = "브랜드 미확인(09_입지동선평가에 행 없음)";
     else if (s.brand !== "블랙라벨") exclusionReason = `브랜드=${s.brand} (블랙라벨 아님)`;
     else if (!hasRequiredVisibility) exclusionReason = "접근가시성 미평가 — 입지동선평가 입력 필요";
+    else if (revenueModel && !revenueModel.trainingStoreCodes.has(s.storeCode)) exclusionReason = "PC·먹거리 매출 구성 또는 기준요금 확인 필요 — 학습 제외";
     else if (!isCore) exclusionReason = `영업기간 미달(완료 ${s.completedMonths}개월, ${cohort}) — 완전 외부 검증군으로 예측`;
+    if (revenueModel && isCore && !revenueBreakdown) exclusionReason = "분리 모형 학습표본 부족 또는 예측 입력 확인 필요";
 
     const operationalStatus = computeOperationalStatus({ franchiseStatus: s.franchiseStatus, isPostOpenIssue: s.isPostOpenIssue, cohort });
     const dataCompleteness = computeDataCompleteness({
@@ -3271,6 +3284,7 @@ export function runCohortValidation(
 
     return {
       ...s,
+      ...(revenueBreakdown ? { revenueBreakdown } : {}),
       cohort,
       predictedRevenueAvg,
       v62Rate,

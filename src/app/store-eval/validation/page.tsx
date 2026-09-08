@@ -1,7 +1,7 @@
 "use client";
 
 // 6. 기존 가맹점 검증 화면.
-// 계산은 전부 src/lib/storeEval/calc.ts의 순수함수를 그대로 호출한다 - 이 파일에서 새로운
+// 계산은 calc.ts와 usageRevenue.ts의 공통 순수함수를 호출한다 - 이 파일에서 새로운
 // 산식을 만들지 않는다 (요청사항). 이 화면이 하는 일은: Firestore에서 기존 가맹점 원본
 // 데이터를 모아서 calc.ts가 요구하는 입력 형태로 가공하고, 계산 결과를 표/카드로 보여주는 것뿐이다.
 //
@@ -14,14 +14,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
+import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import {
   buildParityComparisonRows,
   computeExistingStoreMeasuredForecast,
   computeValidationRow,
   describeNotVerifiableReason,
-  diagnoseLoocvSensitivity,
-  runCohortValidation,
   summarizeValidation,
   summarizeValidationRows,
   computeCompetitorInvestigationSummary,
@@ -29,7 +28,6 @@ import {
   type CompetitorInvestigationSummaryStatus,
   type DataCompletenessGrade,
   type ErrorCauseCode,
-  type LoocvSensitivityDiagnostic,
   type OperationalStatus,
   type ParityComparisonRow,
   type TenureCohort,
@@ -41,7 +39,7 @@ import {
 } from "@/lib/storeEval/calc";
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores } from "@/lib/storeEval/store";
+import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores, listExistingStoreSales } from "@/lib/storeEval/store";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 
 // 기존 Google Sheet 참고 결과 (06_검증대시보드, docs/model-spec.md 근거). 코드에서 재계산하지
@@ -124,11 +122,12 @@ async function loadValidationData(): Promise<{
   // 컬렉션 전체를 한 번씩만 읽는 방식으로 교체했다(cronSync.ts가 이미 쓰고 있던 것과 동일한
   // 패턴). 이 화면을 열 때마다 Firestore 일일 읽기 할당량을 크게 소모하고 있었던 게 원인으로
   // 확인돼 급하게 고쳤다 - 계산 로직은 전혀 안 바꾸고 데이터 조회 방식만 바꾼다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, sales] = await Promise.all([
     listExistingStores(),
     getModelSettings(),
     listAllCompetitors(),
     listAllLocationEvaluations(),
+    listExistingStoreSales(),
   ]);
   if (storedStores.length === 0) return null;
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
@@ -174,6 +173,7 @@ async function loadValidationData(): Promise<{
         ownDemand: s.ownDemand,
         marketDemand: s.marketDemand,
         competitorIp: s.competitorIp,
+        extraPcHours: computeOverflowPcHours(s.marketDemand, {pcCount:s.evaluationPcCount ?? s.pcCount, competitivenessScore:s.competitivenessScore}, competitors, settings),
         competitivenessScore: s.competitivenessScore,
         competitivenessGap: s.competitivenessGap,
         actualRevenueAvg: s.actualMonthlyRevenueAvg,
@@ -190,7 +190,7 @@ async function loadValidationData(): Promise<{
       };
     });
 
-  const { rows } = runCohortValidation(inputs, settings);
+  const { rows } = runUsageCohortValidation(inputs, sales, settings);
   return { rows, settings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode };
 }
 
@@ -373,7 +373,7 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
               <td className="px-3 py-2 text-xs">{DIFF_STAGE_LABELS[r.diffStage]}</td>
               <td className="px-3 py-2 text-xs">
                 {r.isLoocvHighVariance && (
-                  <span className="app-badge app-badge-warn">LOOCV 고변동 점포</span>
+                  <span className="app-badge app-badge-warn">과거 산식과 차이 큼</span>
                 )}
               </td>
             </tr>
@@ -387,33 +387,6 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
           )}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-/**
- * "LOOCV 고변동 점포"(예: 시흥배곧점, ±30% 초과)의 원인을 그대로 보여주는 진단 블록. 계수·
- * 입력값을 수정하지 않고 diagnoseLoocvSensitivity 결과를 노출만 한다(1회성 스크립트 대체).
- */
-function LoocvDiagnosticBlock({ diagnostic }: { diagnostic: LoocvSensitivityDiagnostic }) {
-  const fmtNum = (v: number | null) => (v == null ? "-" : v.toFixed(4));
-  return (
-    <div className="rounded-xl border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
-      <h4 className="font-semibold">{diagnostic.storeName} — LOOCV 고변동 원인 진단(참고용, 계수 임의 수정 없음)</h4>
-      <ul className="mt-2 space-y-1 text-xs">
-        <li>입력 특징값(log요금·log IP당수요·경쟁력·경쟁력격차 상호작용·배후수요{diagnostic.featuresRaw.length === 6 ? "·접근가시성" : ""}): {diagnostic.featuresRaw.map((v) => v.toFixed(4)).join(", ")}</li>
-        <li>
-          학습표본 수: 포함 {diagnostic.sampleCountWith}곳 / 제외(리브-원-아웃) {diagnostic.sampleCountWithout}곳
-        </li>
-        <li>회귀계수(포함): {diagnostic.coefficientsWith?.map(fmtNum).join(", ") ?? "-"}</li>
-        <li>회귀계수(제외): {diagnostic.coefficientsWithout?.map(fmtNum).join(", ") ?? "-"}</li>
-        <li>ridge 단독 예측: {formatWon(diagnostic.ridgeOnlyPrediction)}</li>
-        <li>baseline(중앙값) 단독 예측: {formatWon(diagnostic.baselineOnlyPrediction)}</li>
-        <li>현재 설정 비중의 예측(외부유입 차감 전·제외 학습모형): {formatWon(diagnostic.blendedPrediction)}</li>
-        <li>
-          학습범위 이탈 여부: {diagnostic.isOutOfTrainingRange ? "예 — 이 매장을 빼면 나머지 표본 범위 밖의 값이 된다" : "아니오"}
-        </li>
-      </ul>
     </div>
   );
 }
@@ -541,7 +514,7 @@ function GlossarySection() {
         </p>
         <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
           <li>
-            <b>V61</b> — 기본 매출 예측 모델(요금·예상수요·경쟁력점수로 예측)
+            <b>V61</b> — PC 이용시간·먹거리 분리 예측(PC 이용시간 × 요금 + 먹거리 매출)
           </li>
           <li>
             <b>V62</b> — V61에 “외부유입 제한” 보정까지 더한 최종 예측치(실제 후보지 평가에 쓰는 값)
@@ -993,7 +966,6 @@ export default function ValidationPage() {
     settings,
   } = computed;
 
-  const loocvHighVarianceRows = parityRows.filter((r) => r.isLoocvHighVariance);
 
   return (
     <div className="space-y-10">
@@ -1043,12 +1015,13 @@ export default function ValidationPage() {
 
       {settings.v61Training.modelVariant === "visibility-inflow" && (
         <p className="app-card rounded-xl p-4 text-sm">
-          접근가시성 포함 모형 적용 중 · 외부유입 차감 전 매출로 학습한 뒤 각 점포의 제한을 적용합니다.
+          요금 직접 반영 모형 적용 중 · PC 이용시간 × 시간당요금 + 별도 예측 먹거리 매출로 계산합니다.
+          접근가시성과 외부유입 제한도 반영합니다.
           아래 적중률은 각 점포를 학습에서 제외한 재검증 결과이며, 새 점포의 적중률을 보장하지 않습니다.
         </p>
       )}
       <GlossarySection />
-      <PriceScenarioPanel baselines={state.rows.map(row=>({id:row.storeCode,label:row.storeName,revenue:row.v62PredictedRevenueAvg,hourlyRate:row.hourlyRate}))} productRatio={state.settings.measuredForecastProductRatio} />
+      <PriceScenarioPanel baselines={state.rows.map(row=>({id:row.storeCode,label:row.storeName,revenue:row.v62PredictedRevenueAvg,hourlyRate:row.hourlyRate,pcRevenue:row.revenueBreakdown?.pcRevenue,productRevenue:row.revenueBreakdown?.productRevenue}))} productRatio={state.settings.measuredForecastProductRatio} />
 
       <details className="app-card rounded-2xl p-5">
         <summary className="cursor-pointer text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
@@ -1060,12 +1033,9 @@ export default function ValidationPage() {
         <h3 className="font-semibold">웹 V62와 시트 V62 차이 원인 확인 결과</h3>
         <p className="mt-1">
           아래 <b>“V62 운영 결과”</b>는 시트에 저장된 V61 캐시값 그대로 재현한 결과, <b>“리브원아웃 교차검증”</b>은 매 매장을 학습에서
-          뺀 뒤 다시 학습해 예측한 결과입니다. 두 값의 차이는 계산 버그가 아니라 <b>검증점포를 학습에 포함했는지 여부</b>(시트=전체 26곳으로
-          학습한 모형이 자기 자신을 예측 / 웹=리브-원-아웃으로 자기 자신을 뺀 모형이 예측)에서 대부분 설명됩니다. 나머지 항목(입력
-          특징값·결측값 처리·릿지계수/lambda·외부유입 보정 순서·반올림 시점)은 점검 결과 동일했습니다 — 아래 “차이 원인 점검표” 참고.
-          리브원아웃 교차검증 구현 자체에는 문제가 없다고 확인했으므로, <b>모델 검증 적중률(공식 성능)은 리브원아웃 교차검증을 사용</b>하고
-          V62 운영 결과(시트 재현 적중률)는 이관(마이그레이션) 검증용으로만 남겨둡니다. 실제 신규후보지 평가에 쓰는 예상매출은 항상
-          V62 운영 결과이며, 리브원아웃 교차검증 값은 신규후보지 운영 예상매출로 쓰지 않습니다.
+          뺀 뒤 PC·먹거리 분리 모형으로 예측한 결과입니다. 사용한 산식과 학습대상이 모두 달라 단순한 반올림 차이로 볼 수 없습니다.
+          현재 후보지는 전체 적격 표본으로 학습한 분리 모형을 사용하고, 검증에서는 해당 점포를 학습에서 제외합니다.
+          현재 모형의 정확도는 리브원아웃 교차검증으로 확인하며, 과거 시트 결과는 이관 참고자료입니다.
         </p>
       </section>
 
@@ -1148,53 +1118,12 @@ export default function ValidationPage() {
         <ParityComparisonTable rows={parityRows} />
       </section>
 
-      {loocvHighVarianceRows.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">LOOCV 고변동 점포 진단</h2>
-          <p className="text-xs text-[#8a8072]">
-            V61 예측 단계에서 웹(리브원아웃 교차검증)과 시트(V62 운영 결과)의 차이가 {formatPercent(0.3)}를 넘는 매장입니다. 구현
-            오류가 아니라 이 매장을 학습에서 뺐을 때 모형이 크게 흔들린다는 신호이며, 계수나 입력값을 임의로 수정하지 않습니다.
-          </p>
-          {loocvHighVarianceRows.map((r) => {
-            const diagnostic = diagnoseLoocvSensitivity(r.storeCode, combinedRows, settings);
-            return diagnostic ? <LoocvDiagnosticBlock key={r.storeCode} diagnostic={diagnostic} /> : null;
-          })}
-        </section>
-      )}
-
       <section className="app-card rounded-xl p-4 text-sm leading-6">
-        <h3 className="font-semibold text-[#171310] dark:text-[#f2ede2]">차이 원인 점검표</h3>
-        <ul className="mt-2 space-y-1.5 text-[#5c5346] dark:text-[#c9bfae]">
-          <li>
-            <b>학습대상 점포 차이</b>: 있음 — 시트는 12개월 완료 26곳으로 학습했지만, 웹은 2026-09-02부터 완료월{" "}
-            {CORE_VALIDATION_MIN_MONTHS}개월 이상 매장까지 학습에 쓴다(calc.ts CORE_VALIDATION_MIN_MONTHS).
-          </li>
-          <li>
-            <b>검증점포 학습 제외 여부</b>: 있음(핵심 원인) — 시트는 26곳 전체로 학습한 단일 모형이 자기 자신을 예측(인샘플), 웹은
-            리브-원-아웃으로 자기 자신을 뺀 25곳 모형이 예측(완전 홀드아웃)한다. 웹이 시트보다 값이 더 크게 흔들리는 건 정상이다.
-          </li>
-          <li>
-            <b>입력 특징값 차이</b>: 없음 — 요금·자사수요/PC대수·경쟁력점수 3개 특징 모두 storeEvalExistingStores의 같은 필드를 쓴다.
-          </li>
-          <li>
-            <b>결측값 처리 차이</b>: 없음 — 둘 다 학습표본 최소개수(12) 미달이면 예측하지 않는다(임의로 채우지 않음).
-          </li>
-          <li>
-            <b>표준화 방식 차이</b>: 있음(부수 효과) — 웹 리브-원-아웃은 매번 25곳 기준으로 평균/표준편차를 다시 구하고, 시트는 26곳
-            고정 기준이다. 리브-원-아웃 방식상 불가피하며, 표본 하나 차이라 영향은 작다.
-          </li>
-          <li>
-            <b>릿지계수와 lambda 차이</b>: 없음 — ridgeLambda=1·ridgeWeight=0.6·baselineWeight=0.4·최소표본12 모두 08_계산기준
-            VALIDATION 값을 운영설정에서 그대로 쓴다.
-          </li>
-          <li>
-            <b>외부유입 보정 적용 순서</b>: 없음 — 둘 다 V62=V61×(1+보정률)을 V61 확정 이후에 적용하고, 보정률 조회 소스(09_입지동선평가!
-            외부유입제한)도 동일하다.
-          </li>
-          <li>
-            <b>반올림 시점 차이</b>: 없음 — 둘 다 V61을 반올림한 뒤 그 값으로 V62를 다시 반올림한다(이중 반올림이지만 시트·웹 동일).
-          </li>
-        </ul>
+        <h3 className="font-semibold">요금 반영 모형과 과거 시트의 차이</h3>
+        <p className="mt-2">현재 웹은 PC 이용시간과 먹거리 매출을 따로 학습하고, PC 이용시간에 입력 요금을 곱해 매출을 계산합니다.
+          검증 대상 점포는 두 모형의 학습에서 모두 제외합니다. 과거 시트는 다른 총매출 산식의 저장값이므로 차이가 생길 수 있습니다.</p>
+        <p>학습 이용시간은 과거 PC매출을 현재 등록 요금으로 나눈 추정값입니다. 당시 실효요금과의 차이는 후속 조정 과제입니다.</p>
+        <p>외부유입 보정은 두 항목에 적용하고 좌석 가동률 상한은 PC 이용시간에 적용합니다. 금액은 PC·먹거리별 원 단위 반올림 후 합산합니다.</p>
       </section>
 
       <section className="space-y-3 app-card rounded-2xl p-5">

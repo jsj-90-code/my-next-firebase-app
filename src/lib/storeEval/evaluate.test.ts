@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateCandidate } from "./evaluate";
 import { defaultModelSettings } from "./settings";
-import type { CandidateInput, Competitor, ExistingStore, LocationEvaluation } from "./types";
+import type { CandidateInput, Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
 
 const settings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
 
@@ -177,6 +177,36 @@ const locationEval: LocationEvaluation = {
 };
 
 describe("evaluateCandidate 배선 검증", () => {
+  it("요금 직접 반영 경로에서 PC매출만 비례하고 먹거리·이용시간·가동률은 유지된다", () => {
+    const activeSettings = {...settings, v61Training:{...settings.v61Training, modelVariant:"visibility-inflow" as const, ridgeWeight:1, baselineWeight:0}};
+    const existingStores = Array.from({length:16}, (_,i) => ({
+      storeCode:`S${i}`, originCandidateCode:`L${i}`, storeName:`매장${i}`, brandType:"블랙라벨", excludedFromModel:false,
+      openedAt:"2025-01-01", completedMonths:12,
+      ownVgaBase:"RTX 5060", ownMonitorBase:"240Hz", ownFoodScore:4, ownInteriorScore:4,
+      ownTeamRoom:2, ownCoupleZone:3, ownVipZone:5, ownFriendsZone:15, floating500Male:92686,
+      floor:3, groundLevel:"지상", hasElevator:true, floating500Avg:166062, pop500m:10338,
+      pcCount:100+i, hourlyRate:1200+i*20, actualMonthlyRevenueAvg:40000000+i*1000000,
+    } as ExistingStore));
+    const trainingLocationEvaluations = existingStores.map((s,i) => ({...locationEval, candidateCode:s.originCandidateCode!, visibilityScore:(i%5+1) as LocationEvaluation["visibilityScore"]}));
+    const trainingSales: ExistingStoreMonthlySales[] = existingStores.map(s => ({storeCode:s.storeCode, yearMonth:"2025-03",
+      pcSales:s.actualMonthlyRevenueAvg!*.6, productSales:s.actualMonthlyRevenueAvg!*.4, productRatio:null, utilizationRate:null, salesPerPcPerDay:null}));
+    const context = {competitors:[competitor], locationEvaluation:locationEval, settings:activeSettings, existingStores, trainingLocationEvaluations, trainingCompetitors:[], trainingSales};
+    const high = evaluateCandidate({...context, candidate:emptyCandidate({hourlyRate:1500})});
+    const low = evaluateCandidate({...context, candidate:emptyCandidate({hourlyRate:1000})});
+    expect(high.v61TrainingSampleCount).toBe(16);
+    expect(high.v61Baseline).not.toBeNull();
+    expect(high.revenueBreakdown).toBeDefined();
+    expect(low.revenueBreakdown).toBeDefined();
+    expect(low.revenueBreakdown!.pcHours).toBe(high.revenueBreakdown!.pcHours);
+    expect(low.revenueBreakdown!.productRevenue).toBe(high.revenueBreakdown!.productRevenue);
+    expect(Math.abs(low.revenueBreakdown!.pcRevenue-high.revenueBreakdown!.pcRevenue*2/3)).toBeLessThanOrEqual(1);
+    expect(low.v62Final).toBe(low.revenueBreakdown!.pcRevenue+low.revenueBreakdown!.productRevenue);
+    expect(low.v62ImpliedUtilization).toBe(high.v62ImpliedUtilization);
+    expect(low.modelVersion).toMatch(/-usage-v1$/);
+    const missing = evaluateCandidate({...context, trainingSales:[], candidate:emptyCandidate()});
+    expect(missing.v62Final).toBeNull();
+    expect(missing.v61ModelLabel).toContain("부족");
+  });
   it("가시성 모형에서 점포별 입지평가를 학습하고 결과 설명도 6개 특징과 일치한다", () => {
     const activeSettings = {...settings, v61Training:{...settings.v61Training, modelVariant:"visibility-inflow" as const, minVisibilityCoef:.05, ridgeLambda:10, ridgeWeight:1, baselineWeight:0}};
     const existingStores = Array.from({length:16}, (_,i) => ({

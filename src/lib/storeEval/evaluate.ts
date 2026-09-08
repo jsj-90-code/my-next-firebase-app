@@ -53,11 +53,13 @@ import {
 } from "./calc";
 import { defaultModelSettings } from "./settings";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
+import { attachRevenueParts, buildRevenuePartsByStore, fitUsageRevenueModel, predictUsageRevenue } from "./usageRevenue";
 import type {
   CandidateInput,
   Competitor,
   EvaluationResult,
   ExistingStore,
+  ExistingStoreMonthlySales,
   LocationEvaluation,
   ModelSettings,
   V61TrainedModelExplain,
@@ -74,6 +76,8 @@ export type EvaluateContext = {
   trainingLocationEvaluations: LocationEvaluation[];
   /** Complete competitor collection for rebuilding existing-store derived inputs. */
   trainingCompetitors: Competitor[];
+  /** Web callers supply monthly components to activate tariff-based revenue. Omit only for historical comparisons. */
+  trainingSales?: ExistingStoreMonthlySales[];
 };
 
 export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
@@ -151,7 +155,16 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   );
   const trainingStores = buildV61TrainingStores(refreshedStores, ctx.trainingLocationEvaluations, settings);
   const trainingSamples = trainingStores.map(toEmpiricalSample);
-  const trainedModel = fitEmpiricalRevenueModel(
+  const useUsageModel = ctx.trainingSales !== undefined;
+  const usageTraining = useUsageModel ? attachRevenueParts(trainingStores, buildRevenuePartsByStore(refreshedStores, ctx.trainingSales!)) : [];
+  const usageModel = useUsageModel ? fitUsageRevenueModel(usageTraining, settings) : null;
+  const usageFeatures = empiricalFeaturesFor({hourlyRate:c.hourlyRate??0,marketDemand:marketDemand??0,competitorIp,
+    pcCount:c.expectedPcCount??0,competitivenessScore:ownCompetitivenessScore??0,competitivenessGap,
+    specialDemandType:loc?.specialDemandType,visibilityScore:useVisibility?loc?.visibilityScore:undefined});
+  const usagePrediction = usageModel && c.hourlyRate != null && c.expectedPcCount
+    && marketDemand != null && ownCompetitivenessScore != null
+    ? predictUsageRevenue(usageModel,usageFeatures,c.expectedPcCount,c.hourlyRate,settings) : null;
+  const trainedModel = useUsageModel ? null : fitEmpiricalRevenueModel(
     trainingSamples,
     settings.v61Training.ridgeLambda,
     settings.v61Training.minSampleCount,
@@ -163,7 +176,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   let v61Baseline: number | null = null;
   let v61IsFallback = true;
   let v61TrainedModelExplain: V61TrainedModelExplain | null = null;
-  if (trainedModel && c.expectedPcCount && c.hourlyRate != null && marketDemand != null && ownCompetitivenessScore != null) {
+  if (!useUsageModel && trainedModel && c.expectedPcCount && c.hourlyRate != null && marketDemand != null && ownCompetitivenessScore != null) {
     const featuresRaw = empiricalFeaturesFor({
       hourlyRate: c.hourlyRate,
       marketDemand,
@@ -223,7 +236,11 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       };
     }
   }
-  if (v61Baseline == null) {
+  if (useUsageModel) {
+    v61Baseline = usagePrediction?.baselineRevenue ?? null;
+    v61IsFallback = !usagePrediction;
+  }
+  if (!useUsageModel && v61Baseline == null) {
     v61Baseline = computeV61Fallback(
       { expectedPcCount: c.expectedPcCount, hourlyRate: c.hourlyRate, marketDemand, competitivenessGap, competitorIp, ownCompetitivenessScore },
       settings,
@@ -258,14 +275,20 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   );
   const extraCustomersFromCompetitorOverflow =
     demandRedistribution.ownDemandAfterRedistribution != null && demandRedistribution.ownDemandBeforeRedistribution != null
-      ? demandRedistribution.ownDemandAfterRedistribution - demandRedistribution.ownDemandBeforeRedistribution
+      ? Math.max(0, demandRedistribution.ownDemandAfterRedistribution - demandRedistribution.ownDemandBeforeRedistribution)
       : 0;
-  const competitorOverflowRevenueBonus = computeCapacityOverflowRevenueBonus(extraCustomersFromCompetitorOverflow, c.hourlyRate, settings);
-  const v62FinalBeforeCap = v62RegressionOnly != null ? v62RegressionOnly + competitorOverflowRevenueBonus : null;
+  const usageFinal = usageModel && usagePrediction && c.expectedPcCount && c.hourlyRate != null
+    ? predictUsageRevenue(usageModel,usageFeatures,c.expectedPcCount,c.hourlyRate,settings,1+(v62Rate??0),
+      extraCustomersFromCompetitorOverflow*settings.customerVisitsPerMonth*settings.customerSessionHours) : null;
+  const competitorOverflowRevenueBonus = useUsageModel ? usageFinal?.overflowRevenue??0
+    : computeCapacityOverflowRevenueBonus(extraCustomersFromCompetitorOverflow, c.hourlyRate, settings);
+  const v62FinalBeforeCap = useUsageModel ? usageFinal?.revenueBeforeCap??null
+    : v62RegressionOnly != null ? v62RegressionOnly + competitorOverflowRevenueBonus : null;
 
   // 2026-08-30(사용자 확인) — 물리적 가동률 상한(기본 55%). applyCapacityCeiling 주석 참고.
   // 위 보너스를 더한 뒤에도 자사 상한은 다시 확인한다(이중 안전장치).
-  const capacity = applyCapacityCeiling(v62FinalBeforeCap, c.hourlyRate, c.expectedPcCount, settings);
+  const capacity = useUsageModel ? {cappedRevenue:usageFinal?.monthlyRevenue??null,capacityCapped:usageFinal?.capacityCapped??false}
+    : applyCapacityCeiling(v62FinalBeforeCap, c.hourlyRate, c.expectedPcCount, settings);
   const v62Final = capacity.cappedRevenue;
   const { conservativeSales, upperSales } = computeBoundedSales(v62Final, settings);
 
@@ -293,7 +316,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // 2026-08-27 — V62 최종예상월매출(v62Final, 위에서 이미 계산됨)을 같은 공식으로 거꾸로 풀어 "이
   // 매출이 나오려면 가동률이 몇%여야 하는가"를 구한다. 경쟁점 실측(핑봇) 데이터 품질과 무관하게
   // V62 자체와 항상 정합적이다(사용자 질문: "예상매출액 있으니 그걸로 가동률 환산하면 되잖아").
-  const v62ImpliedUtilization = computeImpliedUtilizationFromRevenue(
+  const v62ImpliedUtilization = useUsageModel ? (usageFinal&&c.expectedPcCount?usageFinal.pcHours/(720*c.expectedPcCount):null) : computeImpliedUtilizationFromRevenue(
     v62Final,
     c.hourlyRate,
     settings.measuredForecastProductRatio,
@@ -336,8 +359,9 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     hourlyRate: c.hourlyRate,
     v61Baseline,
     v61IsFallback,
-    v61ModelLabel: v61IsFallback ? "임시 근사치·검증 전" : useVisibility ? "V61 가시성 학습모형·외부유입 정합" : "V61 실측 학습모형",
-    v61TrainingSampleCount: trainingStores.length,
+    v61ModelLabel: useUsageModel ? (usageFinal?"PC 이용량·먹거리 분리 학습":"PC 이용량 학습자료 부족") : v61IsFallback ? "임시 근사치·검증 전" : useVisibility ? "V61 가시성 학습모형·외부유입 정합" : "V61 실측 학습모형",
+    v61TrainingSampleCount: useUsageModel ? usageTraining.length : trainingStores.length,
+    ...(usageFinal?{revenueBreakdown:usageFinal}:{}),
     v61ValidationMeanAbsError: null, // 후보지 평가 화면에서는 채우지 않는다 - 검증 화면(validation/page.tsx)에서 별도 계산
     v61TrainedModelExplain,
     locationScore,
@@ -360,7 +384,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     expectedOwnDemand,
     completionStatus,
     finalJudgement,
-    modelVersion: settings.modelVersion,
+    modelVersion: useUsageModel ? `${settings.modelVersion}-usage-v1` : settings.modelVersion,
     settingsSnapshotId: settings.id,
     calculatedAt: Date.now(),
 

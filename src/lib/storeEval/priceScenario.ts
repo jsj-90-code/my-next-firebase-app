@@ -8,13 +8,21 @@ export function computeFixedUsagePriceScenario(input: {
   const { pcRevenue, productRevenue, currentHourlyRate, nextHourlyRate } = input;
   if (![pcRevenue, productRevenue, currentHourlyRate, nextHourlyRate].every(Number.isFinite)
     || pcRevenue < 0 || productRevenue < 0 || currentHourlyRate <= 0 || nextHourlyRate < 0) return null;
-  const nextPcRevenue = pcRevenue * nextHourlyRate / currentHourlyRate;
-  return {
-    currentRevenue: Math.round(pcRevenue + productRevenue),
-    nextPcRevenue: Math.round(nextPcRevenue),
-    nextProductRevenue: Math.round(productRevenue),
-    nextRevenue: Math.round(nextPcRevenue + productRevenue),
-    revenueChange: Math.round(nextPcRevenue - pcRevenue),
-    pcRevenueChangeRatio: nextHourlyRate / currentHourlyRate - 1,
+  const rateRatio = nextHourlyRate / currentHourlyRate;
+  const currentPcRevenue = Math.round(pcRevenue);
+  const nextPcRevenue = Math.round(pcRevenue * rateRatio);
+  const nextProductRevenue = Math.round(productRevenue);
+  const result = {
+    currentRevenue: currentPcRevenue + nextProductRevenue,
+    nextPcRevenue,
+    nextProductRevenue,
+    nextRevenue: nextPcRevenue + nextProductRevenue,
+    revenueChange: nextPcRevenue - currentPcRevenue,
+    pcRevenueChangeRatio: rateRatio - 1,
   };
+  // Reject overflow and amounts beyond exact whole-won representation.
+  const { pcRevenueChangeRatio, ...amounts } = result;
+  if (!Number.isFinite(pcRevenueChangeRatio)
+    || !Object.values(amounts).every(Number.isSafeInteger)) return null;
+  return result;
 }

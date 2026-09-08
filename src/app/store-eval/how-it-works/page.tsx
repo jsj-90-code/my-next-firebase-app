@@ -147,15 +147,16 @@ export default function HowItWorksPage() {
             <h2 className={`${sectionTitleClass} text-base`}>그 손님들이 얼마를 써줄까? (진짜 매출로 바꾸기)</h2>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-              이미 문을 열어서 실제로 장사하고 있는 다른 가맹점들의 <strong>진짜 매출 기록</strong>이 있습니다. 컴퓨터가
-              이 기록들을 보고 &ldquo;이 동네 수요가 이 정도고, 주변에 경쟁이 이만큼 있고, 시간당 요금이랑 매장 경쟁력
-              점수가 이 정도면 매출이 보통 이만큼 나오더라&rdquo;는 패턴을 스스로 찾아냅니다. (참고할 매장이 너무 적으면,
-              이 패턴 찾기 대신 미리 정해둔 계산식을 대신 씁니다.)
+              다른 가맹점의 월별 기록에서 <strong>PC매출과 먹거리 매출을 나눠</strong> 봅니다.
+              PC매출을 등록된 시간당요금으로 나눠 이용시간을 추정하고, 비슷한 수요·경쟁·입지를 가진 매장에서
+              이용시간과 먹거리 매출이 얼마나 나오는지 각각 학습합니다. 참고할 자료가 부족하면 매출을 표시하지 않습니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-              이 패턴에 우리 후보지의 숫자 4가지 — <strong>1단계에서 구한 동네 수요</strong>, <strong>주변 경쟁 정도</strong>,
-              <strong>시간당 요금</strong>, <strong>경쟁력 점수</strong> — 를 넣으면 <strong>기본 예상 매출</strong>이 나옵니다.
+              후보지의 수요·경쟁력·입지를 넣어 예상 PC 이용시간과 먹거리 매출을 구합니다.
+              <strong>예상 PC 이용시간 × 입력한 시간당요금 + 먹거리 매출</strong>이 기본 예상 매출입니다.
+              다른 조건이 같다면 요금을 1,500원에서 1,000원으로 내릴 때 PC매출은 3분의 2가 되고 먹거리 매출은 유지됩니다.
+              할인으로 손님이 더 늘어나는 효과는 별도로 가정하지 않습니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">

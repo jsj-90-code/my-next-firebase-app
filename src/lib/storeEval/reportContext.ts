@@ -112,6 +112,10 @@ export function buildDaouReportContext({ candidate, competitors, result }: DaouR
       `시간당요금 ${formatWon(result.hourlyRate)}, V62 최종예상월매출 ${formatWon(result.v62Final)}`,
   );
 
+  if (result.revenueBreakdown) {
+    lines.push(`[요금 반영 근거] 예상 PC 이용시간 ${formatNumber(Math.round(result.revenueBreakdown.pcHours))}시간 × 시간당요금 ${formatWon(result.hourlyRate)} = PC매출 ${formatWon(result.revenueBreakdown.pcRevenue)}, ` +
+      `별도 예측 먹거리 매출 ${formatWon(result.revenueBreakdown.productRevenue)}를 합산. 학습 이용시간은 과거 PC매출과 현재 등록 요금으로 추정하며 할인으로 인한 고객 증가는 가정하지 않음.`);
+  }
   if (result.expectedUtilization != null) {
     lines.push(
       `[참고] 실측기반 예상가동률 ${formatPercent(result.expectedUtilization)} — 경쟁점 실가동좌석을 기반으로 한 별도 계산 경로이며 ` +

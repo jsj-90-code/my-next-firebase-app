@@ -21,4 +21,20 @@ describe("요금 변경 — 이용시간과 먹거리 매출 고정", () => {
   it.each([NaN,Infinity,-1])("변경요금 %s를 거부한다", nextHourlyRate => {
     expect(computeFixedUsagePriceScenario({...input,nextHourlyRate})).toBeNull();
   });
+  it("유한한 입력의 계산 결과가 넘치면 거부한다", () => {
+    expect(computeFixedUsagePriceScenario({...input, nextHourlyRate:1e308})).toBeNull();
+    expect(computeFixedUsagePriceScenario({...input, currentHourlyRate:Number.MIN_VALUE})).toBeNull();
+  });
+  it("원 단위 정확도를 보장할 수 없는 합계를 거부한다", () => {
+    expect(computeFixedUsagePriceScenario({...input, pcRevenue:Number.MAX_SAFE_INTEGER, nextHourlyRate:1500})).toBeNull();
+  });
+  it("요금 비율이 같으면 중간 곱셈이 넘칠 큰 요금도 계산한다", () => {
+    expect(computeFixedUsagePriceScenario({...input, currentHourlyRate:1e308, nextHourlyRate:1e308})?.nextRevenue).toBe(70_000_000);
+  });
+  it.each([1000,1500,2000])("소수 매출도 표시 구성 합계와 증감이 일치한다 (%s원)", nextHourlyRate => {
+    const result = computeFixedUsagePriceScenario({pcRevenue:0.5, productRevenue:0.5, currentHourlyRate:1000, nextHourlyRate})!;
+    expect(result.nextRevenue).toBe(result.nextPcRevenue + result.nextProductRevenue);
+    expect(result.revenueChange).toBe(result.nextRevenue - result.currentRevenue);
+    if (nextHourlyRate === 1000) expect(result.revenueChange).toBe(0);
+  });
 });

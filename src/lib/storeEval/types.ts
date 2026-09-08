@@ -532,6 +532,8 @@ export type V61TrainedModelExplain = {
 };
 
 export type EvaluationResult = {
+  /** PC usage and food revenue learned independently; no fitted tariff coefficient. */
+  revenueBreakdown?: import("./usageRevenue").UsageRevenueBreakdown;
   candidateCode: string;
   candidateName: string;
   address: string;
@@ -540,7 +542,7 @@ export type EvaluationResult = {
   hourlyRate: number | null;
   v61Baseline: number | null; // V61 기본예측(참고)
   v61IsFallback: boolean; // true면 학습표본 부족으로 폴백 회귀식 사용(화면에 "임시 근사치·검증 전"으로 표시)
-  v61ModelLabel: "V61 실측 학습모형" | "V61 가시성 학습모형·외부유입 정합" | "임시 근사치·검증 전"; // 화면 표시용 (요청사항 8)
+  v61ModelLabel: "V61 실측 학습모형" | "V61 가시성 학습모형·외부유입 정합" | "임시 근사치·검증 전" | "PC 이용량·먹거리 분리 학습" | "PC 이용량 학습자료 부족";
   v61TrainingSampleCount: number; // 학습에 실제로 쓰인 기존 가맹점 수
   v61ValidationMeanAbsError: number | null; // 학습모형의 leave-one-out 평균절대오차 (검증 전이면 null)
   v61TrainedModelExplain: V61TrainedModelExplain | null; // 학습모형 사용 시(v61IsFallback=false)에만 채워짐
