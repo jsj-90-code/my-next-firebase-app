@@ -2,8 +2,8 @@ import {describe,it,expect} from 'vitest';
 import {crossFittedCorrection} from './usageRevenue';
 
 describe('cross-fitted component correction',()=>{
- it('shrinks a consistent overprediction halfway and leaves an exact model alone',()=>{
-  expect(crossFittedCorrection([{predicted:120,actual:100},{predicted:240,actual:200}])).toBeCloseTo(11/12);
+ it('corrects a consistent overprediction and leaves an exact model alone',()=>{
+  expect(crossFittedCorrection([{predicted:120,actual:100},{predicted:240,actual:200}])).toBeCloseTo(5/6);
   expect(crossFittedCorrection([{predicted:100,actual:100}])).toBe(1);
  });
  it('weights by percentage error rather than store revenue and resists an extreme ratio',()=>{
