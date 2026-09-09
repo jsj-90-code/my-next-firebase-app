@@ -70,4 +70,27 @@ describe("tariff revenue model", () => {
     const rows = runUsageCohortValidation(stores, [], settings, asOf).rows;
     expect(rows.every(row => row.v62PredictedRevenueAvg === null && !row.includedInCoreAccuracy)).toBe(true);
   });
+
+  it("carries nonzero overflow through validation for both held-out and external targets", () => {
+    const config = { ...settings, v62MaxUtilizationRate: .01 };
+    const external = { ...stores[0], storeCode: "external", isPostOpenIssue: true };
+    const targets = [...stores, external].map(store => ({ ...store, extraPcHours: 500 }));
+    const actual = runUsageCohortValidation(targets, sales, config, asOf).rows;
+    const withoutOverflow = runUsageCohortValidation([...stores, external], sales, config, asOf).rows;
+    for (const code of ["S0", "external"]) {
+      const row = actual.find(row => row.storeCode === code)!;
+      const before = withoutOverflow.find(row => row.storeCode === code)!.revenueBreakdown!;
+      const result = row.revenueBreakdown!;
+      expect(result).toBeDefined();
+      expect(result.uncappedPcHours - before.uncappedPcHours).toBeCloseTo(500, 8);
+      expect(result.capacityCapped).toBe(true);
+      expect(result.pcHours).toBe(720);
+      expect(result.pcRevenue).toBe(before.pcRevenue);
+      expect(result.productRevenue).toBeGreaterThan(before.productRevenue);
+      expect(result.overflowRevenue).toBeGreaterThan(500 * row.hourlyRate!);
+      expect(row.v62PredictedRevenueAvg).toBe(result.pcRevenue + result.productRevenue);
+      expect(row.includedInCoreAccuracy).toBe(code === "S0");
+      expect(result.sampleCount).toBe(code === "S0" ? 15 : 16);
+    }
+  });
 });

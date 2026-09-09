@@ -1011,8 +1011,8 @@ export default function ValidationPage() {
 
         <ErrorBucketChart summary={combinedSummary} />
 
-        <RevenueComparisonTable rows={blackLabelRows} />
         <SimpleResultTable rows={blackLabelRows} />
+        <RevenueComparisonTable rows={blackLabelRows} />
       </section>
 
       {settings.v61Training.modelVariant === "visibility-inflow" && (

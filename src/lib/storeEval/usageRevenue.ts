@@ -9,6 +9,8 @@ export type UsageRevenueModel = {
   usage: EmpiricalRevenueModel;
   product: EmpiricalRevenueModel;
   sampleCount: number;
+  /** Cross-fitted component correction, already incorporated in each fitted intercept. */
+  calibration?: { usageFactor: number; productFactor: number; sampleCount: number };
 };
 export type UsageRevenueBreakdown = {
   pcHours: number;
@@ -63,7 +65,7 @@ export function attachRevenueParts(stores: V61TrainingStore[], parts: Map<string
       ? [{ ...store, ...part }] : [];
   });
 }
-export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">): UsageRevenueModel | null {
+function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">): UsageRevenueModel | null {
   const floors = buildMinCoefficients(settings.v61Training).slice(1);
   const fit = (kind: "usage" | "product") => fitEmpiricalRevenueModel(stores.map(store => ({
     featuresRaw: empiricalFeaturesFor(store).slice(1),
@@ -72,6 +74,50 @@ export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pic
   })), settings.v61Training.ridgeLambda, settings.v61Training.minSampleCount, floors);
   const usage = fit("usage"), product = fit("product");
   return usage && product ? { usage, product, sampleCount: stores.length } : null;
+}
+
+/** MAPE-optimal multiplicative correction, shrunk halfway to no correction. */
+export function crossFittedCorrection(pairs: { predicted: number; actual: number }[]): number {
+  if (!pairs.length || pairs.some(p => !Number.isFinite(p.predicted) || p.predicted <= 0
+    || !Number.isFinite(p.actual) || p.actual <= 0)) return 1;
+  const ratios = pairs.map(p => ({ value: p.actual / p.predicted, weight: p.predicted / p.actual }))
+    .sort((a, b) => a.value - b.value);
+  const halfWeight = ratios.reduce((sum, r) => sum + r.weight, 0) / 2;
+  let cumulative = 0;
+  for (const ratio of ratios) {
+    cumulative += ratio.weight;
+    if (cumulative >= halfWeight) return (1 + ratio.value) / 2;
+  }
+  return 1;
+}
+
+export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
+  calibrate = true): UsageRevenueModel | null {
+  const model = fitRawUsageRevenueModel(stores, settings);
+  if (!model || !calibrate || stores.length - 1 < settings.v61Training.minSampleCount) return model;
+  const usagePairs: { predicted: number; actual: number }[] = [];
+  const productPairs: { predicted: number; actual: number }[] = [];
+  for (const target of stores) {
+    // Outer validation removes its target before calling this function. Each inner target
+    // is also excluded here: its sales can influence the correction, never its prediction.
+    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings);
+    if (!inner) return model;
+    const features = empiricalFeaturesFor(target).slice(1);
+    const estimate = (part: EmpiricalRevenueModel) => predictEmpiricalRevenue(part, features, target.pcCount,
+      settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
+    const usage = estimate(inner.usage), product = estimate(inner.product);
+    if (!usage || !product) return model;
+    const unrounded = (value: NonNullable<typeof usage>) => value.explain.ridgeRevenue * settings.v61Training.ridgeWeight
+      + value.explain.baselineRevenue * settings.v61Training.baselineWeight;
+    const factor = target.trainingRevenueFactor ?? 1;
+    usagePairs.push({ predicted: unrounded(usage), actual: target.pcRevenueAvg / target.hourlyRate / factor });
+    productPairs.push({ predicted: unrounded(product), actual: target.productRevenueAvg / factor });
+  }
+  const usageFactor = crossFittedCorrection(usagePairs), productFactor = crossFittedCorrection(productPairs);
+  const corrected = (part: EmpiricalRevenueModel, factor: number): EmpiricalRevenueModel => ({ ...part,
+    yMean: part.yMean + Math.log(factor), perPcMedian: part.perPcMedian * factor });
+  return { ...model, usage: corrected(model.usage, usageFactor), product: corrected(model.product, productFactor),
+    calibration: { usageFactor, productFactor, sampleCount: stores.length } };
 }
 export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: number[], pcCount: number, hourlyRate: number, settings: Pick<ModelSettings, "v61Training" | "v62MaxUtilizationRate">, inflowFactor = 1, extraPcHours = 0): UsageRevenueBreakdown | null {
   if (!Number.isFinite(pcCount) || pcCount <= 0 || !Number.isFinite(settings.v62MaxUtilizationRate)

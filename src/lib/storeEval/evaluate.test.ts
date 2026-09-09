@@ -203,6 +203,20 @@ describe("evaluateCandidate 배선 검증", () => {
     expect(low.v62Final).toBe(low.revenueBreakdown!.pcRevenue+low.revenueBreakdown!.productRevenue);
     expect(low.v62ImpliedUtilization).toBe(high.v62ImpliedUtilization);
     expect(low.modelVersion).toMatch(/-usage-v1$/);
+    // The saved cohort never reaches the cap. Exercise candidate wiring at capacity.
+    const cappedContext = {...context, settings:{...activeSettings, v62MaxUtilizationRate:.01}};
+    const cappedHigh = evaluateCandidate({...cappedContext, candidate:emptyCandidate({hourlyRate:1500})});
+    const cappedLow = evaluateCandidate({...cappedContext, candidate:emptyCandidate({hourlyRate:1000})});
+    expect(cappedHigh.capacityCapped).toBe(true);
+    expect(cappedLow.capacityCapped).toBe(true);
+    expect(cappedHigh.revenueBreakdown!.pcHours).toBe(100 * 720 * .01);
+    expect(cappedLow.revenueBreakdown!.pcHours).toBe(cappedHigh.revenueBreakdown!.pcHours);
+    expect(cappedLow.revenueBreakdown!.productRevenue).toBe(cappedHigh.revenueBreakdown!.productRevenue);
+    expect(cappedLow.revenueBreakdown!.pcRevenue).toBe(cappedHigh.revenueBreakdown!.pcRevenue * 2 / 3);
+    expect(cappedLow.v62Final).toBe(cappedLow.revenueBreakdown!.pcRevenue + cappedLow.revenueBreakdown!.productRevenue);
+    expect(cappedLow.v62FinalBeforeCap).toBeGreaterThan(cappedLow.v62Final!);
+    expect(cappedLow.v62ImpliedUtilization).toBe(.01);
+    expect(cappedLow.conservativeSales).toBe(Math.round(cappedLow.v62Final! * .85));
     const missing = evaluateCandidate({...context, trainingSales:[], candidate:emptyCandidate()});
     expect(missing.v62Final).toBeNull();
     expect(missing.v61ModelLabel).toContain("부족");
