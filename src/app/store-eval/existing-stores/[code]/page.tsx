@@ -16,9 +16,11 @@ import { CompetitorsTab } from "../../candidates/[code]/CompetitorsTab";
 import { LocationEvalTab } from "../../candidates/[code]/LocationEvalTab";
 import { ExistingStoreProfileTab } from "./ExistingStoreProfileTab";
 import { ScorecardTab } from "./ScorecardTab";
+import { SalesTab } from "./SalesTab";
 
 const TABS = [
   { key: "basic", label: "기본정보" },
+  { key: "sales", label: "상세매출" },
   { key: "competitors", label: "경쟁점" },
   { key: "location", label: "입지동선평가" },
   { key: "scorecard", label: "평가 비교" },
@@ -108,7 +110,7 @@ function ExistingStoreDetail({ code }: { code: string }) {
         )}
       </div>
 
-      <nav className="flex gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08]">
+      <nav className="flex flex-wrap gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08]">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -129,6 +131,7 @@ function ExistingStoreDetail({ code }: { code: string }) {
         <ExistingStoreProfileTab store={store} actor={user?.email ?? null} onSaved={(updated) => setStore(updated)} />
       )}
       {activeTab === "competitors" && <CompetitorsTab candidateCode={lookupCode} />}
+      {activeTab === "sales" && <SalesTab key={store.storeCode} storeCode={store.storeCode} />}
       {activeTab === "location" && (
         <LocationEvalTab
           candidateCode={lookupCode}

@@ -7,6 +7,7 @@
 // 그대로 사용한다(src/lib/storeEval/store.ts).
 
 import Link from "next/link";
+import { SalesBreakdown } from "./SalesBreakdown";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime, formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
@@ -402,17 +403,8 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
           월매출 추가/수정
         </button>
       </div>
-      {!loading && (
-        <div className="mt-2 max-h-40 overflow-y-auto text-xs text-[#5c5346] dark:text-[#c9bfae]">
-          {sales.map((s) => (
-            <div key={s.yearMonth} className="flex justify-between border-b border-[#171310]/[0.08] py-1 dark:border-white/[0.08]">
-              <span>{s.yearMonth}</span>
-              <span className="font-mono tabular-nums">{formatWon((s.pcSales ?? 0) + (s.productSales ?? 0))}</span>
-            </div>
-          ))}
-          {sales.length === 0 && <p>기록 없음</p>}
-        </div>
-      )}
+      {loading ? <p role="status" className="mt-2 text-xs text-[#8a8072]">월별 매출을 불러오는 중...</p>
+        : !loadError && <SalesBreakdown sales={sales} />}
 
       <h4 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">회원 스냅샷 ({members.length}건) — 12개월 미만 매장 위주로 계속 갱신</h4>
       <div className="mt-2 flex flex-wrap items-end gap-2">
@@ -596,6 +588,9 @@ export default function ExistingStoresPage() {
                     <td className="px-3 py-2 font-mono tabular-nums">{formatWon(s.actualMonthlyRevenueAvg)}</td>
                     <td className="px-3 py-2">{s.franchiseStatus ?? "-"}</td>
                     <td className="px-3 py-2">
+                      <Link href={`/store-eval/existing-stores/${s.storeCode}?tab=sales`} className="mr-2 whitespace-nowrap text-xs underline">
+                        상세매출
+                      </Link>
                       <button
                         type="button"
                         onClick={() => setExpanded(expanded === s.storeCode ? null : s.storeCode)}

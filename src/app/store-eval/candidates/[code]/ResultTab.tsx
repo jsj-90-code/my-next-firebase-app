@@ -494,7 +494,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
         </div>
         {result.revenueBreakdown && <p className="mt-2 text-sm leading-6">
-          PC {formatWon(result.revenueBreakdown.pcRevenue)} + 먹거리 {formatWon(result.revenueBreakdown.productRevenue)}
+          PC {formatWon(result.revenueBreakdown.pcRevenue)} + 상품(먹거리) {formatWon(result.revenueBreakdown.productRevenue)}
+          {result.revenueBreakdown.monthlyRevenue > 0 && <>
+            <br />총매출 중 상품 비중 {formatPercent(result.revenueBreakdown.productRevenue / result.revenueBreakdown.monthlyRevenue)}
+          </>}
           <br />예상 PC 이용시간 {formatNumber(Math.round(result.revenueBreakdown.pcHours))}시간 × 시간당 {formatWon(result.hourlyRate)}
         </p>}
         <PriceScenarioPanel baselines={[{id:candidateCode,label:candidateForReport?.name ?? candidateCode,revenue:result.v62Final,hourlyRate:result.hourlyRate,pcRevenue:result.revenueBreakdown?.pcRevenue,productRevenue:result.revenueBreakdown?.productRevenue}]} productRatio={settingsUsed.measuredForecastProductRatio} />
