@@ -131,7 +131,7 @@ function ExistingStoreDetail({ code }: { code: string }) {
         <ExistingStoreProfileTab store={store} actor={user?.email ?? null} onSaved={(updated) => setStore(updated)} />
       )}
       {activeTab === "competitors" && <CompetitorsTab candidateCode={lookupCode} />}
-      {activeTab === "sales" && <SalesTab key={store.storeCode} storeCode={store.storeCode} />}
+      {activeTab === "sales" && <SalesTab key={`${store.storeCode}:${store.openedAt}`} storeCode={store.storeCode} openedAt={store.openedAt} />}
       {activeTab === "location" && (
         <LocationEvalTab
           candidateCode={lookupCode}

@@ -2768,6 +2768,7 @@ export type ValidationStoreInput = {
 };
 
 export type ValidationStoreRow = ValidationStoreInput & {
+  actualRevenueBreakdown?: import("./usageRevenue").RevenueParts;
   revenueBreakdown?: import("./usageRevenue").UsageRevenueBreakdown;
   cohort: TenureCohort;
   predictedRevenueAvg: number | null; // V61(외부유입 보정 전, 리브-원-아웃 재학습 결과 — loocvValidation)

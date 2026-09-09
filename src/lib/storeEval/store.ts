@@ -15,6 +15,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   getDoc,
   getDocs,
   orderBy,
@@ -28,6 +29,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { mergeModelSettings } from "./settings";
+import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import type {
   AdminDongReference,
   CandidateInput,
@@ -292,6 +294,21 @@ export async function listExistingStoreSales(storeCode?: string): Promise<Existi
   const base = collection(requireDb(), EXISTING_STORE_SALES);
   const snap = await getDocs(storeCode ? query(base, where("storeCode", "==", storeCode)) : base);
   return snap.docs.map((d) => d.data() as ExistingStoreMonthlySales);
+}
+
+/** Fetch only the 12 evaluation-month IDs per store; full history remains available for backups. */
+export async function listEvaluationSales(stores: Pick<ExistingStore, "storeCode" | "openedAt">[]): Promise<ExistingStoreMonthlySales[]> {
+  const ids = evaluationSalesIds(stores);
+  if (!ids.length) return [];
+  const base = collection(requireDb(), EXISTING_STORE_SALES);
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+  const rows: ExistingStoreMonthlySales[] = [];
+  for (let i = 0; i < chunks.length; i += 4) {
+    const snapshots = await Promise.all(chunks.slice(i, i + 4).map(chunk => getDocs(query(base, where(documentId(), "in", chunk)))));
+    for (const snapshot of snapshots) rows.push(...snapshot.docs.map(document => document.data() as ExistingStoreMonthlySales));
+  }
+  return rows;
 }
 
 export async function upsertExistingStoreSales(sales: ExistingStoreMonthlySales): Promise<void> {

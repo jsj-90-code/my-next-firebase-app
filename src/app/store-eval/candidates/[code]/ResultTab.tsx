@@ -17,7 +17,7 @@ import {
   getModelSettings,
   listCompetitors,
   listExistingStores,
-  listExistingStoreSales,
+  listEvaluationSales,
   listAllLocationEvaluations,
   listAllCompetitors,
   saveEvaluationResult,
@@ -271,13 +271,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (!candidate) {
         throw new Error("후보지 기본정보가 없습니다. [기본정보] 탭에서 먼저 저장해주세요.");
       }
-      const [existingStores, modelSettingsDoc, trainingLocationEvaluations, trainingCompetitors, trainingSales] = await Promise.all([
+      const [existingStores, modelSettingsDoc, trainingLocationEvaluations, trainingCompetitors] = await Promise.all([
         listExistingStores(),
         getModelSettings(),
         listAllLocationEvaluations(),
         listAllCompetitors(),
-        listExistingStoreSales(),
       ]);
+      const trainingSales = await listEvaluationSales(existingStores);
       const competitors = trainingCompetitors.filter((competitor) => competitor.candidateCode === candidateCode);
       const locationEvaluation = trainingLocationEvaluations.find((location) => location.candidateCode === candidateCode) ?? null;
       const settings: ModelSettings = modelSettingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };

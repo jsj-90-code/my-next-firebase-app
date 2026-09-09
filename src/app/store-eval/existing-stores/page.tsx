@@ -15,7 +15,7 @@ import {
   linkExistingStoreToCandidate,
   listExistingStoreMembers,
   listExistingStores,
-  listExistingStoreSales,
+  listEvaluationSales,
   upsertExistingStore,
   upsertExistingStoreMemberSnapshot,
   upsertExistingStoreSales,
@@ -224,7 +224,7 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
 
   const fetchRecords = useCallback(() => {
     const sequence = ++loadSequence.current;
-    return Promise.all([listExistingStoreSales(store.storeCode), listExistingStoreMembers(store.storeCode)])
+    return Promise.all([listEvaluationSales([{ storeCode: store.storeCode, openedAt: store.openedAt }]), listExistingStoreMembers(store.storeCode)])
       .then(([s, m]) => {
         if (sequence !== loadSequence.current) return;
         setSales(s.sort((a, b) => b.yearMonth.localeCompare(a.yearMonth)));
@@ -238,7 +238,7 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
       .finally(() => {
         if (sequence === loadSequence.current) setLoading(false);
       });
-  }, [store.storeCode]);
+  }, [store.storeCode, store.openedAt]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -404,7 +404,7 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
         </button>
       </div>
       {loading ? <p role="status" className="mt-2 text-xs text-[#8a8072]">월별 매출을 불러오는 중...</p>
-        : !loadError && <SalesBreakdown sales={sales} />}
+        : !loadError && <SalesBreakdown sales={sales} openedAt={store.openedAt} />}
 
       <h4 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">회원 스냅샷 ({members.length}건) — 12개월 미만 매장 위주로 계속 갱신</h4>
       <div className="mt-2 flex flex-wrap items-end gap-2">

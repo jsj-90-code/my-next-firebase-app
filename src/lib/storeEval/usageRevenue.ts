@@ -98,13 +98,14 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
 }
 /** Every validation target is excluded from both fitted components. Current tariff is a proxy for historical tariff. */
 export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date()) {
+  const parts = buildRevenuePartsByStore(stores, sales, asOf);
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const training = attachRevenueParts(stores.filter(isCoreEligibleForV61Training)
     .filter(store => !useVisibility || isValidVisibilityScore(store.visibilityScore))
-    .map(store => toV61TrainingStore(store, settings)), buildRevenuePartsByStore(stores, sales, asOf));
+    .map(store => toV61TrainingStore(store, settings)), parts);
   const trainingStoreCodes = new Set(training.map(store => store.storeCode));
   const fullModel = fitUsageRevenueModel(training, settings);
-  return runCohortValidation(stores, settings, {
+  const result = runCohortValidation(stores, settings, {
     trainingStoreCodes,
     predict(store) {
       const pcCount = store.evaluationPcCount ?? store.pcCount;
@@ -120,6 +121,12 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
       return predictUsageRevenue(model, features, pcCount, store.hourlyRate, settings, 1 + (getV62Rate(store.inflowRestriction ?? null, settings) ?? 0), store.extraPcHours ?? 0);
     },
   });
+  return { ...result, rows: result.rows.map(row => {
+    const actual = parts.get(row.storeCode);
+    // Show components only when their period matches the total used by validation.
+    return actual && row.actualRevenueAvg != null && Math.abs(actual.pcRevenueAvg + actual.productRevenueAvg - row.actualRevenueAvg) <= 1
+      ? { ...row, actualRevenueBreakdown: actual } : row;
+  }) };
 }
 export function computeOverflowPcHours(marketDemand: number | null, own: {
   pcCount: number | null;

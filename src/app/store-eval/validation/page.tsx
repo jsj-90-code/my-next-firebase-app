@@ -39,7 +39,8 @@ import {
 } from "@/lib/storeEval/calc";
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores, listExistingStoreSales } from "@/lib/storeEval/store";
+import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores, listEvaluationSales } from "@/lib/storeEval/store";
+import { RevenueComparisonTable } from "./RevenueComparisonTable";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 
 // 기존 Google Sheet 참고 결과 (06_검증대시보드, docs/model-spec.md 근거). 코드에서 재계산하지
@@ -122,14 +123,14 @@ async function loadValidationData(): Promise<{
   // 컬렉션 전체를 한 번씩만 읽는 방식으로 교체했다(cronSync.ts가 이미 쓰고 있던 것과 동일한
   // 패턴). 이 화면을 열 때마다 Firestore 일일 읽기 할당량을 크게 소모하고 있었던 게 원인으로
   // 확인돼 급하게 고쳤다 - 계산 로직은 전혀 안 바꾸고 데이터 조회 방식만 바꾼다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, sales] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
     listExistingStores(),
     getModelSettings(),
     listAllCompetitors(),
     listAllLocationEvaluations(),
-    listExistingStoreSales(),
   ]);
   if (storedStores.length === 0) return null;
+  const sales = await listEvaluationSales(storedStores);
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
   const stores = prepareExistingStoresForEvaluation(storedStores, allCompetitors, allLocationEvaluations, settings);
 
@@ -1010,6 +1011,7 @@ export default function ValidationPage() {
 
         <ErrorBucketChart summary={combinedSummary} />
 
+        <RevenueComparisonTable rows={blackLabelRows} />
         <SimpleResultTable rows={blackLabelRows} />
       </section>
 
