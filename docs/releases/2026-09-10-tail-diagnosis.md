@@ -107,7 +107,7 @@ Firestore 값이 시트의 정확히 2배인 2건(스타일pc방 36 vs 18, 블�
 
 ## 재현
 
-`src/lib/storeEval/_liveCheck.test.ts`(gitignore, 로컬 전용):
+`src/lib/storeEval/_liveCheck.test.ts`(저장소에 포함됨. 기본 `npm test`에서는 skip되고 STORE_EVAL_LIVE_CHECK=1 일 때만 실행):
 ```
-npx.cmd vitest run src/lib/storeEval/_liveCheck.test.ts --reporter=verbose --disable-console-intercept
+STORE_EVAL_LIVE_CHECK=1 npx.cmd vitest run src/lib/storeEval/_liveCheck.test.ts --reporter=verbose --disable-console-intercept
 ```

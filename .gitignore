@@ -47,7 +47,6 @@ next-env.d.ts
 /reference/
 
 # 1회성 라이브 검증 스크립트(관리자 자격증명으로 실서비스 Firestore를 읽는다) — 커밋 금지
-src/lib/storeEval/_liveCheck.test.ts
 live-check-out.txt
 exp-out.txt
 /.local-tools/

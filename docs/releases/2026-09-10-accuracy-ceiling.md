@@ -151,9 +151,9 @@ n=36에서 유의하려면 |r| > 0.33이 필요한데 최대가 0.211(여성 비
 
 ## 재현
 
-`src/lib/storeEval/_liveCheck.test.ts`(gitignore, 로컬 전용):
+`src/lib/storeEval/_liveCheck.test.ts`(저장소에 포함됨. 기본 `npm test`에서는 skip되고 STORE_EVAL_LIVE_CHECK=1 일 때만 실행):
 ```
-npx.cmd vitest run src/lib/storeEval/_liveCheck.test.ts --reporter=verbose --disable-console-intercept
+STORE_EVAL_LIVE_CHECK=1 npx.cmd vitest run src/lib/storeEval/_liveCheck.test.ts --reporter=verbose --disable-console-intercept
 ```
 정확도 지표는 반드시 `v62PredictedRevenueAvg` + `includedInCoreAccuracy`로 계산할 것
 (`predictedRevenueAvg`는 외부유입 보정 전 표시용이다 — 이 조사에서 한 번 틀렸다).
