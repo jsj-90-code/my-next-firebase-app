@@ -50,3 +50,6 @@ next-env.d.ts
 live-check-out.txt
 exp-out.txt
 /.local-tools/
+
+# Firestore 에뮬레이터 실행 로그 (npm run test:rules)
+firestore-debug.log
