@@ -18,6 +18,8 @@ export type UsageRevenueModel = {
   usageHasTariffFeature: boolean;
   /** 먹거리 모형도 log(요금)을 피처로 포함했는지. */
   productHasTariffFeature: boolean;
+  /** 먹거리를 PC대수당이 아니라 이용시간당 지출로 학습했는지(예측에서 곱하는 기준이 달라진다). */
+  productScalesWithHours: boolean;
 };
 
 /** 요금을 피처로 되돌릴 범위: false=현행(곱셈만), "usage"=이용시간만, "both"=먹거리까지. */
@@ -51,6 +53,36 @@ const TARIFF_COEF_LOWER_BOUND = -1;
  * 양쪽이 함께 돌아간다). 근거·재현: docs/releases/2026-09-10-tariff-refit.md
  */
 const TARIFF_FEATURE_DEFAULT: TariffFeatureMode = "usage";
+
+/** 등록요금으로 추정한 월평균 PC 이용시간 — 이용시간 모형의 학습 목표와 같은 값이다. */
+function usageHoursEstimate(store: UsageTrainingStore): number {
+  return store.pcRevenueAvg / store.hourlyRate;
+}
+
+/**
+ * 먹거리를 "PC대수당"이 아니라 **"이용시간당"** 지출로 학습할지.
+ *
+ * 왜 이런 선택지가 있나: 손님이 오래 머물수록 먹거리를 더 산다는 게 상식이고, 실제로 이 코드의
+ * 초과수요 계산은 이미 그렇게 가정하고 있다(`extraFood = food / hours * extraPcHours`).
+ * 그런데 정작 본 모형은 먹거리를 PC대수로 나눠 학습해서, 같은 파일 안에서 가정이 어긋나 있었다.
+ *
+ * 자사 먹거리평가는 37곳 전부 4.00점 상수라(자체 브랜드) 먹거리를 설명할 자사 측 변수가
+ * 아예 없다 — 그래서 "이용시간"이 유일하게 남은 물리적 설명이다.
+ *
+ * ⚠️ **2026-09-10 측정 결과: 중간은 좋아지고 꼬리가 터져서 기각(기본값 off).**
+ * 정식검증군 38곳 — 중앙값 9.11%→**7.31%**, ±10% 20→**23곳**으로 크게 좋아지는데,
+ * ±20%가 34→**32곳**으로 줄고 최악 매장이 26.9%→**39.6%**로 터진다. 사전 등록한 채택 조건
+ * ("±10% 개선 + ±20% 안 줄어듦")에 정확히 걸리는 형태다.
+ *
+ * 손상이 신생 매장에만 몰린 것도 아니다 — 완료월 12개월인 수원인계점이 −2.2%에서 +12.1%로
+ * 14%p 튀는 등, 잘 맞던 성숙 매장을 망가뜨린다(평균으로는 3개월 이상 −0.63%p로 좋아지지만
+ * 개별 진폭이 크다). 표본 38곳에서 진폭이 이 정도면 신규 후보지에서 어느 쪽으로 튈지 모른다.
+ *
+ * 다만 중앙값 1.8%p 개선은 큰 신호다 — **가설 자체가 틀린 게 아니라 지금 표본으로는 꼬리를
+ * 감당 못 하는 것**으로 본다. 표본이 45~50곳으로 늘면 다시 검정할 것(backlog B-1).
+ * 근거·재현: docs/releases/2026-09-10-product-scaling.md
+ */
+const PRODUCT_PER_HOUR_DEFAULT = false;
 export type UsageRevenueBreakdown = {
   pcHours: number;
   uncappedPcHours: number;
@@ -123,7 +155,8 @@ export function attachRevenueParts(stores: V61TrainingStore[], parts: Map<string
  * 근거·재현: docs/releases/2026-09-10-tariff-history.md
  */
 function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
-  tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT): UsageRevenueModel | null {
+  tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT,
+  productPerHour = PRODUCT_PER_HOUR_DEFAULT): UsageRevenueModel | null {
   const allFloors = buildMinCoefficients(settings.v61Training);
   // 요금 계수만 음수를 허용하고 나머지 하한선은 그대로 둔다.
   const withTariffFloors = [TARIFF_COEF_LOWER_BOUND, ...allFloors.slice(1)];
@@ -131,10 +164,14 @@ function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<Mo
     const withTariff = tariffFeature === "both" || (kind === "usage" && tariffFeature === "usage");
     return fitEmpiricalRevenueModel(stores.map(store => {
       const features = empiricalFeaturesFor(store);
+      // 먹거리를 "이용시간당 지출"로 학습할 때는 분모가 PC대수가 아니라 이용시간이다.
+      const denominator = kind === "product" && productPerHour
+        ? usageHoursEstimate(store)
+        : store.pcCount;
       return {
         featuresRaw: withTariff ? features : features.slice(1),
         revenuePerPc: (kind === "usage" ? store.pcRevenueAvg / store.hourlyRate : store.productRevenueAvg)
-          / store.pcCount / (store.trainingRevenueFactor ?? 1),
+          / denominator / (store.trainingRevenueFactor ?? 1),
       };
     }), settings.v61Training.ridgeLambda, settings.v61Training.minSampleCount,
       withTariff ? withTariffFloors : allFloors.slice(1));
@@ -142,7 +179,8 @@ function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<Mo
   const usage = fit("usage"), product = fit("product");
   return usage && product ? { usage, product, sampleCount: stores.length,
     usageHasTariffFeature: tariffFeature !== false,
-    productHasTariffFeature: tariffFeature === "both" } : null;
+    productHasTariffFeature: tariffFeature === "both",
+    productScalesWithHours: productPerHour } : null;
 }
 
 /**
@@ -168,28 +206,33 @@ export function crossFittedCorrection(pairs: { predicted: number; actual: number
 }
 
 export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
-  calibrate = true, tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT): UsageRevenueModel | null {
-  const model = fitRawUsageRevenueModel(stores, settings, tariffFeature);
+  calibrate = true, tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT,
+  productPerHour = PRODUCT_PER_HOUR_DEFAULT): UsageRevenueModel | null {
+  const model = fitRawUsageRevenueModel(stores, settings, tariffFeature, productPerHour);
   if (!model || !calibrate || stores.length - 1 < settings.v61Training.minSampleCount) return model;
   const usagePairs: { predicted: number; actual: number }[] = [];
   const productPairs: { predicted: number; actual: number }[] = [];
   for (const target of stores) {
     // Outer validation removes its target before calling this function. Each inner target
     // is also excluded here: its sales can influence the correction, never its prediction.
-    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings, tariffFeature);
+    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings, tariffFeature, productPerHour);
     if (!inner) return model;
     const full = empiricalFeaturesFor(target);
     const features = full.slice(1);
-    const estimate = (part: EmpiricalRevenueModel, withTariff = false) =>
-      predictEmpiricalRevenue(part, withTariff ? full : features, target.pcCount,
+    // 먹거리를 이용시간당으로 학습했으면 예측도 이용시간을 곱해야 단위가 맞는다.
+    const estimate = (part: EmpiricalRevenueModel, withTariff = false, perHour = false) =>
+      predictEmpiricalRevenue(part, withTariff ? full : features,
+        perHour ? usageHoursEstimate(target) : target.pcCount,
         settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
-    const usage = estimate(inner.usage, inner.usageHasTariffFeature), product = estimate(inner.product, inner.productHasTariffFeature);
+    const usage = estimate(inner.usage, inner.usageHasTariffFeature), product = estimate(inner.product, inner.productHasTariffFeature, inner.productScalesWithHours);
     if (!usage || !product) return model;
     const unrounded = (value: NonNullable<typeof usage>) => value.explain.ridgeRevenue * settings.v61Training.ridgeWeight
       + value.explain.baselineRevenue * settings.v61Training.baselineWeight;
     const factor = target.trainingRevenueFactor ?? 1;
     usagePairs.push({ predicted: unrounded(usage), actual: target.pcRevenueAvg / target.hourlyRate / factor });
     productPairs.push({ predicted: unrounded(product), actual: target.productRevenueAvg / factor });
+    // (먹거리를 이용시간당으로 학습해도 보정은 "예측 먹거리매출 대 실제 먹거리매출" 비율이라
+    //  분모가 무엇이든 같은 금액끼리 비교된다 — estimate가 이미 단위를 맞춰 곱해뒀다.)
   }
   const usageFactor = crossFittedCorrection(usagePairs), productFactor = crossFittedCorrection(productPairs);
   const corrected = (part: EmpiricalRevenueModel, factor: number): EmpiricalRevenueModel => ({ ...part,
@@ -203,13 +246,17 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
     || !Number.isFinite(hourlyRate) || hourlyRate < 0 || !Number.isFinite(inflowFactor) || inflowFactor <= 0
     || !Number.isFinite(extraPcHours) || extraPcHours < 0)
     return null;
-  const predict = (part: EmpiricalRevenueModel, withTariff = false) => {
-    const output = predictEmpiricalRevenue(part, withTariff ? featuresRaw : featuresRaw.slice(1), pcCount, settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
+  // `count`는 "무엇 하나당" 학습했는지에 맞춰야 한다 — 이용시간은 PC대수당, 먹거리는 설정에 따라
+  // PC대수당 또는 이용시간당이다. 그래서 이용시간을 먼저 구하고 먹거리에 그 값을 넘긴다.
+  const predict = (part: EmpiricalRevenueModel, withTariff: boolean, count: number) => {
+    const output = predictEmpiricalRevenue(part, withTariff ? featuresRaw : featuresRaw.slice(1), count, settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
     return output ? output.explain.ridgeRevenue * settings.v61Training.ridgeWeight + output.explain.baselineRevenue * settings.v61Training.baselineWeight : null;
   };
-  const hours = predict(model.usage, model.usageHasTariffFeature), food = predict(model.product, model.productHasTariffFeature);
-  if (hours == null || food == null || !Number.isFinite(hours) || hours <= 0 || !Number.isFinite(food) || food < 0)
-    return null;
+  const hours = predict(model.usage, model.usageHasTariffFeature, pcCount);
+  if (hours == null || !Number.isFinite(hours) || hours <= 0) return null;
+  const food = predict(model.product, model.productHasTariffFeature,
+    model.productScalesWithHours ? hours : pcCount);
+  if (food == null || !Number.isFinite(food) || food < 0) return null;
   const extraFood = food / hours * extraPcHours;
   const uncappedPcHours = hours * inflowFactor + extraPcHours;
   const pcHours = Math.min(uncappedPcHours, pcCount * 24 * 30 * settings.v62MaxUtilizationRate);
@@ -221,14 +268,14 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
   return [result.monthlyRevenue, result.revenueBeforeCap, result.baselineRevenue, result.overflowRevenue].every(Number.isSafeInteger) ? result : null;
 }
 /** Every validation target is excluded from both fitted components. Current tariff is a proxy for historical tariff. */
-export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date(), tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT) {
+export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date(), tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT, productPerHour = PRODUCT_PER_HOUR_DEFAULT) {
   const parts = buildRevenuePartsByStore(stores, sales, asOf);
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const training = attachRevenueParts(stores.filter(isCoreEligibleForV61Training)
     .filter(store => !useVisibility || isValidVisibilityScore(store.visibilityScore))
     .map(store => toV61TrainingStore(store, settings)), parts);
   const trainingStoreCodes = new Set(training.map(store => store.storeCode));
-  const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature);
+  const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature, productPerHour);
   const result = runCohortValidation(stores, settings, {
     trainingStoreCodes,
     predict(store) {
@@ -237,7 +284,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
         || store.competitorIp == null || store.competitivenessScore == null)
         return null;
       const model = trainingStoreCodes.has(store.storeCode)
-        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings, true, tariffFeature)
+        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings, true, tariffFeature, productPerHour)
         : fullModel;
       if (!model)
         return null;

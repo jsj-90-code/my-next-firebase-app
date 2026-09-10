@@ -793,6 +793,41 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
     {
       const withTariff = runUsageCohortValidation(inputs, salesRows, settings, new Date(), "usage");
       const withBoth = runUsageCohortValidation(inputs, salesRows, settings, new Date(), "both");
+
+      // ── 먹거리를 "PC대수당"이 아니라 "이용시간당" 지출로 학습해본다 ──────────────────
+      // 손님이 오래 머물수록 먹거리를 더 산다는 게 상식이고, 이 코드의 초과수요 계산은 이미
+      // 그렇게 가정한다(extraFood = food/hours × extraPcHours). 그런데 본 모형은 PC대수로
+      // 나눠 학습해 같은 파일 안에서 가정이 어긋나 있었다. 자사 먹거리평가가 37곳 전부 4.00점
+      // 상수라(자체 브랜드) 먹거리를 설명할 자사 측 변수가 없다는 점도 이 가설을 밀어준다.
+      console.log("\n먹거리 스케일 기준 검정 (PC대수당 vs 이용시간당)");
+      show("현행 (요금탄력성 채택본)", metrics(withTariff.rows));
+      show("먹거리를 이용시간당으로", metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), "usage", true).rows));
+      show("요금 미채택 + 이용시간당", metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), false, true).rows));
+
+      // 꼬리 손상이 어디로 갔는지 — 표본 1개월짜리 불안정 매장에 몰렸는지 본다.
+      {
+        const perHour = runUsageCohortValidation(inputs, salesRows, settings, new Date(), "usage", true).rows;
+        const errOf = (rs: typeof perHour) => new Map(rs
+          .filter((r) => r.includedInCoreAccuracy && r.v62PredictedRevenueAvg != null && (r.actualRevenueAvg ?? 0) > 0)
+          .map((r) => [r.storeCode, ((r.v62PredictedRevenueAvg! - r.actualRevenueAvg!) / r.actualRevenueAvg!) * 100]));
+        const a = errOf(withTariff.rows), b = errOf(perHour);
+        const moved = [...a.keys()]
+          .map((code) => {
+            const s = byCode.get(code)!;
+            return { name: s.storeName, months: s.completedMonths, before: a.get(code)!, after: b.get(code)!,
+              delta: Math.abs(b.get(code)!) - Math.abs(a.get(code)!) };
+          })
+          .sort((x, y) => y.delta - x.delta);
+        console.log("\n  악화 상위 6곳 (이용시간당으로 바꿨을 때)");
+        console.log("  매장            완료월   현행오차   변경후   증가분");
+        for (const m of moved.slice(0, 6)) {
+          console.log(`  ${String(m.name).padEnd(12)} ${String(m.months).padStart(5)} ${m.before.toFixed(1).padStart(9)} ${m.after.toFixed(1).padStart(8)} ${m.delta.toFixed(1).padStart(8)}`);
+        }
+        const young = moved.filter((m) => m.months <= 2);
+        const mature = moved.filter((m) => m.months > 2);
+        const avg = (xs: typeof moved) => xs.length ? (xs.reduce((s, m) => s + m.delta, 0) / xs.length).toFixed(2) : "-";
+        console.log(`  평균 증가분 — 완료월 1~2개월(${young.length}곳) ${avg(young)}%p / 3개월 이상(${mature.length}곳) ${avg(mature)}%p`);
+      }
       console.log("\n요금 재적합 (log(요금)을 피처로 복원 + 요금 계수만 비음수 제약 해제)");
       show("현행 (요금 곱셈, 지수 1.0)", now);
       show("재적합 — 이용시간만", metrics(withTariff.rows));
