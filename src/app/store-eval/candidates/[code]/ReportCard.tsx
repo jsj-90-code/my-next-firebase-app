@@ -29,7 +29,7 @@ function PercentBar({ label, value, hint }: { label: string; value: number | nul
         <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{formatPercent(value)}</span>
       </div>
       <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#171310]/[0.08] dark:bg-white/[0.12]">
-        <div className="h-full rounded-full bg-[#a4432c]" style={{ width: `${pct ?? 0}%` }} />
+        <div className="h-full rounded-full bg-[var(--sl-gold-ink)]" style={{ width: `${pct ?? 0}%` }} />
       </div>
       {hint && <p className="mt-0.5 text-[10px] text-[var(--sl-ink-soft)]">{hint}</p>}
     </div>
@@ -65,7 +65,7 @@ function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: Evalu
         ))}
         <div className="flex items-baseline justify-between text-[11px]">
           <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">V62 최종예상월매출</span>
-          <span className="font-bold text-[#a4432c]">{formatWon(result.v62Final)}</span>
+          <span className="font-bold text-[var(--sl-gold-ink)]">{formatWon(result.v62Final)}</span>
         </div>
       </div>
     </div>

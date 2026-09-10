@@ -32,10 +32,10 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
                 ← 홈으로
               </Link>
               <Link href="/store-eval" className="flex items-center gap-2 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-[18px] w-[18px] shrink-0 text-[#c05a2c]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-[18px] w-[18px] shrink-0 text-[var(--sl-gold)]">
                   <path d="M4 19V9l8-5 8 5v10 M4 19h16 M9 19v-6h6v6" />
                 </svg>
-                점포평가 <span className="text-[#c05a2c]">V62</span>
+                점포평가 <span className="text-[var(--sl-gold-ink)]">V62</span>
               </Link>
             </div>
             <nav className="app-tabbar flex flex-wrap gap-1 p-1 text-sm">
