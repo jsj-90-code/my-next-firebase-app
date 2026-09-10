@@ -11,7 +11,23 @@ export type UsageRevenueModel = {
   sampleCount: number;
   /** Cross-fitted component correction, already incorporated in each fitted intercept. */
   calibration?: { usageFactor: number; productFactor: number; sampleCount: number };
+  /**
+   * 이용시간 모형이 log(요금)을 피처로 포함해 적합됐는지. 예측할 때 같은 모양의 특징치를
+   * 넘겨야 하므로 모형에 실어 나른다(호출부가 플래그를 따로 들고 다니면 어긋난다).
+   */
+  usageHasTariffFeature: boolean;
+  /** 먹거리 모형도 log(요금)을 피처로 포함했는지. */
+  productHasTariffFeature: boolean;
 };
+
+/** 요금을 피처로 되돌릴 범위: false=현행(곱셈만), "usage"=이용시간만, "both"=먹거리까지. */
+export type TariffFeatureMode = false | "usage" | "both";
+
+/**
+ * 이용시간 모형에서 log(요금) 계수의 하한. 표준화 좌표라 |계수|가 1을 넘을 일이 없으므로
+ * 사실상 무제한이고, 데이터가 음수를 원하면 음수를 학습한다("요금 올리면 이용시간 준다").
+ */
+const TARIFF_COEF_LOWER_BOUND = -1;
 export type UsageRevenueBreakdown = {
   pcHours: number;
   uncappedPcHours: number;
@@ -83,15 +99,27 @@ export function attachRevenueParts(stores: V61TrainingStore[], parts: Map<string
  * 33→32곳으로 오히려 하나 준다. 요금 정정은 중간 구간을 조금 조일 뿐 적중률을 못 올린다.
  * 근거·재현: docs/releases/2026-09-10-tariff-history.md
  */
-function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">): UsageRevenueModel | null {
-  const floors = buildMinCoefficients(settings.v61Training).slice(1);
-  const fit = (kind: "usage" | "product") => fitEmpiricalRevenueModel(stores.map(store => ({
-    featuresRaw: empiricalFeaturesFor(store).slice(1),
-    revenuePerPc: (kind === "usage" ? store.pcRevenueAvg / store.hourlyRate : store.productRevenueAvg)
-      / store.pcCount / (store.trainingRevenueFactor ?? 1),
-  })), settings.v61Training.ridgeLambda, settings.v61Training.minSampleCount, floors);
+function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
+  tariffFeature: TariffFeatureMode = false): UsageRevenueModel | null {
+  const allFloors = buildMinCoefficients(settings.v61Training);
+  // 요금 계수만 음수를 허용하고 나머지 하한선은 그대로 둔다.
+  const withTariffFloors = [TARIFF_COEF_LOWER_BOUND, ...allFloors.slice(1)];
+  const fit = (kind: "usage" | "product") => {
+    const withTariff = tariffFeature === "both" || (kind === "usage" && tariffFeature === "usage");
+    return fitEmpiricalRevenueModel(stores.map(store => {
+      const features = empiricalFeaturesFor(store);
+      return {
+        featuresRaw: withTariff ? features : features.slice(1),
+        revenuePerPc: (kind === "usage" ? store.pcRevenueAvg / store.hourlyRate : store.productRevenueAvg)
+          / store.pcCount / (store.trainingRevenueFactor ?? 1),
+      };
+    }), settings.v61Training.ridgeLambda, settings.v61Training.minSampleCount,
+      withTariff ? withTariffFloors : allFloors.slice(1));
+  };
   const usage = fit("usage"), product = fit("product");
-  return usage && product ? { usage, product, sampleCount: stores.length } : null;
+  return usage && product ? { usage, product, sampleCount: stores.length,
+    usageHasTariffFeature: tariffFeature !== false,
+    productHasTariffFeature: tariffFeature === "both" } : null;
 }
 
 /**
@@ -117,20 +145,22 @@ export function crossFittedCorrection(pairs: { predicted: number; actual: number
 }
 
 export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
-  calibrate = true): UsageRevenueModel | null {
-  const model = fitRawUsageRevenueModel(stores, settings);
+  calibrate = true, tariffFeature: TariffFeatureMode = false): UsageRevenueModel | null {
+  const model = fitRawUsageRevenueModel(stores, settings, tariffFeature);
   if (!model || !calibrate || stores.length - 1 < settings.v61Training.minSampleCount) return model;
   const usagePairs: { predicted: number; actual: number }[] = [];
   const productPairs: { predicted: number; actual: number }[] = [];
   for (const target of stores) {
     // Outer validation removes its target before calling this function. Each inner target
     // is also excluded here: its sales can influence the correction, never its prediction.
-    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings);
+    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings, tariffFeature);
     if (!inner) return model;
-    const features = empiricalFeaturesFor(target).slice(1);
-    const estimate = (part: EmpiricalRevenueModel) => predictEmpiricalRevenue(part, features, target.pcCount,
-      settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
-    const usage = estimate(inner.usage), product = estimate(inner.product);
+    const full = empiricalFeaturesFor(target);
+    const features = full.slice(1);
+    const estimate = (part: EmpiricalRevenueModel, withTariff = false) =>
+      predictEmpiricalRevenue(part, withTariff ? full : features, target.pcCount,
+        settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
+    const usage = estimate(inner.usage, inner.usageHasTariffFeature), product = estimate(inner.product, inner.productHasTariffFeature);
     if (!usage || !product) return model;
     const unrounded = (value: NonNullable<typeof usage>) => value.explain.ridgeRevenue * settings.v61Training.ridgeWeight
       + value.explain.baselineRevenue * settings.v61Training.baselineWeight;
@@ -150,11 +180,11 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
     || !Number.isFinite(hourlyRate) || hourlyRate < 0 || !Number.isFinite(inflowFactor) || inflowFactor <= 0
     || !Number.isFinite(extraPcHours) || extraPcHours < 0)
     return null;
-  const predict = (part: EmpiricalRevenueModel) => {
-    const output = predictEmpiricalRevenue(part, featuresRaw.slice(1), pcCount, settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
+  const predict = (part: EmpiricalRevenueModel, withTariff = false) => {
+    const output = predictEmpiricalRevenue(part, withTariff ? featuresRaw : featuresRaw.slice(1), pcCount, settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
     return output ? output.explain.ridgeRevenue * settings.v61Training.ridgeWeight + output.explain.baselineRevenue * settings.v61Training.baselineWeight : null;
   };
-  const hours = predict(model.usage), food = predict(model.product);
+  const hours = predict(model.usage, model.usageHasTariffFeature), food = predict(model.product, model.productHasTariffFeature);
   if (hours == null || food == null || !Number.isFinite(hours) || hours <= 0 || !Number.isFinite(food) || food < 0)
     return null;
   const extraFood = food / hours * extraPcHours;
@@ -168,14 +198,14 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
   return [result.monthlyRevenue, result.revenueBeforeCap, result.baselineRevenue, result.overflowRevenue].every(Number.isSafeInteger) ? result : null;
 }
 /** Every validation target is excluded from both fitted components. Current tariff is a proxy for historical tariff. */
-export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date()) {
+export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date(), tariffFeature: TariffFeatureMode = false) {
   const parts = buildRevenuePartsByStore(stores, sales, asOf);
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const training = attachRevenueParts(stores.filter(isCoreEligibleForV61Training)
     .filter(store => !useVisibility || isValidVisibilityScore(store.visibilityScore))
     .map(store => toV61TrainingStore(store, settings)), parts);
   const trainingStoreCodes = new Set(training.map(store => store.storeCode));
-  const fullModel = fitUsageRevenueModel(training, settings);
+  const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature);
   const result = runCohortValidation(stores, settings, {
     trainingStoreCodes,
     predict(store) {
@@ -184,7 +214,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
         || store.competitorIp == null || store.competitivenessScore == null)
         return null;
       const model = trainingStoreCodes.has(store.storeCode)
-        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings)
+        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings, true, tariffFeature)
         : fullModel;
       if (!model)
         return null;

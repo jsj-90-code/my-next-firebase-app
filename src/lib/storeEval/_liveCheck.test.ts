@@ -16,7 +16,7 @@
 // 초과수요·가동률상한까지 반영된, 후보지에 실제로 내보내는 값)와 `includedInCoreAccuracy`를 쓴다.
 // `predictedRevenueAvg`는 보정 전 표시용이라 이걸로 재면 외부유입제한 매장이 통째로 어긋난다
 // (2026-09-10에 실제로 이걸로 틀려서 "버그를 찾았다"는 오진까지 냈다).
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { describe, it } from "vitest";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
@@ -27,9 +27,10 @@ import {
   isValidVisibilityScore,
   toV61TrainingStore,
   buildMinCoefficients,
+  empiricalFeaturesFor,
   type ValidationStoreInput,
 } from "./calc";
-import { computeOverflowPcHours, runUsageCohortValidation, buildRevenuePartsByStore, attachRevenueParts, fitUsageRevenueModel } from "./usageRevenue";
+import { computeOverflowPcHours, runUsageCohortValidation, buildRevenuePartsByStore, attachRevenueParts, fitUsageRevenueModel, predictUsageRevenue } from "./usageRevenue";
 import { defaultModelSettings, mergeModelSettings } from "./settings";
 import type {
   Competitor,
@@ -54,8 +55,29 @@ function loadEnvLocal() {
   }
 }
 
+/**
+ * Firestore 원본을 로컬에 캐시한다.
+ *
+ * 왜 필요한가: 이 하네스는 매 실행마다 4개 컬렉션을 통째로 읽는다(매출만 850건). 산식을
+ * 만지면서 열 번 스무 번 돌리면 **Firestore 일일 읽기 할당량(무료 50,000건)을 태운다** —
+ * 2026-09-10에 실제로 태워서 "Quota exceeded"가 났고, 같은 프로젝트를 쓰는 **실서비스 화면도
+ * 그날 하루 영향을 받는다**. 한 번 읽어 캐시해두고 재사용한다.
+ *
+ * 최신 데이터로 다시 읽으려면 STORE_EVAL_LIVE_REFRESH=1 을 준다.
+ */
+const CACHE_PATH = new URL("../../../.local-tools/liveCheck-cache.json", import.meta.url);
+
 async function loadAll() {
   loadEnvLocal();
+  if (!process.env.STORE_EVAL_LIVE_REFRESH) {
+    try {
+      const cached = JSON.parse(readFileSync(CACHE_PATH, "utf8"));
+      console.log(`[캐시] ${cached.capturedAt} 스냅샷 사용 (Firestore 읽기 0건). 새로 읽으려면 STORE_EVAL_LIVE_REFRESH=1`);
+      return buildInputs(cached.storedStores, cached.competitors, cached.locations, cached.salesRows, cached.settings);
+    } catch {
+      console.log("[캐시] 없음 — Firestore에서 읽어 캐시를 만든다.");
+    }
+  }
   const app = getApps().length
     ? getApps()[0]
     : initializeApp({
@@ -79,6 +101,24 @@ async function loadAll() {
     ? mergeModelSettings(settingsSnap.data() as Partial<ModelSettings>)
     : { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
 
+  try {
+    writeFileSync(CACHE_PATH, JSON.stringify({
+      capturedAt: new Date().toISOString(), storedStores, competitors, locations, salesRows, settings,
+    }));
+    console.log("[캐시] 저장 완료 — 다음 실행부터는 Firestore를 읽지 않는다.");
+  } catch (e) {
+    console.log("[캐시] 저장 실패(무시하고 진행):", String(e).slice(0, 120));
+  }
+  return buildInputs(storedStores, competitors, locations, salesRows, settings);
+}
+
+function buildInputs(
+  storedStores: ExistingStore[],
+  competitors: Competitor[],
+  locations: LocationEvaluation[],
+  salesRows: ExistingStoreMonthlySales[],
+  settings: ModelSettings,
+) {
   const stores = prepareExistingStoresForEvaluation(storedStores, competitors, locations, settings);
   const competitorsByCandidate = new Map<string, Competitor[]>();
   for (const c of competitors) {
@@ -251,7 +291,7 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
             ? (s.marketDemand / ((s.evaluationPcCount ?? s.pcCount)! + s.competitorIp)).toFixed(2)
             : "-",
           extra: Math.round(s.extraPcHours ?? 0),
-          nComp: s.competitorSummary?.total ?? 0,
+          nComp: s.competitorSummary?.totalCount ?? 0,
         };
       })
       .sort((a, b) => Math.abs(b.err) - Math.abs(a.err));
@@ -747,6 +787,58 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
         console.log(`  선택된 γ: 중앙값 ${med(chosenG).toFixed(2)}, 범위 ${Math.min(...chosenG).toFixed(2)}~${Math.max(...chosenG).toFixed(2)}`);
         console.log("  → 대조군도 비슷하게 좋아지면 β 결과는 '요금 탄력성'이 아니라 일반적인 예측 수축이다.");
       }
+    }
+
+    // ── 재적합 검정: log(요금)을 이용시간 모형 피처로 되돌리고 요금 계수만 음수 허용 ──────
+    {
+      const withTariff = runUsageCohortValidation(inputs, salesRows, settings, new Date(), "usage");
+      const withBoth = runUsageCohortValidation(inputs, salesRows, settings, new Date(), "both");
+      console.log("\n요금 재적합 (log(요금)을 피처로 복원 + 요금 계수만 비음수 제약 해제)");
+      show("현행 (요금 곱셈, 지수 1.0)", now);
+      show("재적합 — 이용시간만", metrics(withTariff.rows));
+      show("재적합 — 먹거리까지", metrics(withBoth.rows));
+
+      // 학습된 요금 계수와 그것이 뜻하는 탄력성
+      const useVis = settings.v61Training.modelVariant === "visibility-inflow";
+      const training = attachRevenueParts(
+        inputs.filter(isCoreEligibleForV61Training)
+          .filter((s) => !useVis || isValidVisibilityScore(s.visibilityScore))
+          .map((s) => toV61TrainingStore(s, settings)),
+        buildRevenuePartsByStore(inputs, salesRows),
+      );
+      const m1 = fitUsageRevenueModel(training, settings, true, "usage")!;
+      const c = m1.usage.coefficients[0];
+      const sd = m1.usage.featureSds[0];
+      // log(이용시간) = ... + c·(log요금 − 평균)/sd  →  이용시간 ∝ 요금^(c/sd)
+      // PC매출 = 이용시간 × 요금  →  PC매출 ∝ 요금^(1 + c/sd)
+      const elasticity = 1 + c / sd;
+      console.log(`  학습된 요금 계수 c=${c.toFixed(4)} (표준화 좌표, sd=${sd.toFixed(4)})`);
+      console.log(`  → 함의 탄력성 = 1 + c/sd = ${elasticity.toFixed(3)}  (1.0이면 현행과 동일, 0이면 요금 무반응)`);
+      const others = ["IP당수요", "경쟁력점수", "경쟁력x격차", "배후수요", "가시성"];
+      console.log(`  나머지 계수: ${m1.usage.coefficients.slice(1).map((v, i) => `${others[i] ?? i}=${v.toFixed(4)}`).join(" ")}`);
+
+      // 요금 시나리오가 여전히 반응하는지 — 모형은 고정하고 **그 매장의 요금만** 올려본다.
+      // (학습셋까지 같이 올리면 모형이 재학습돼 상쇄되므로 0%가 나온다 — 실제 사용 상황과 다르다.
+      //  실제로는 학습된 모형이 있고, 후보지의 계획 요금만 바꿔보는 것이다.)
+      const m0 = fitUsageRevenueModel(training, settings, true, false)!;
+      const m2 = fitUsageRevenueModel(training, settings, true, "both")!;
+      const respond = (model: typeof m0) => {
+        const deltas: number[] = [];
+        for (const s of inputs) {
+          if (!isCoreEligibleForV61Training(s)) continue;
+          const pc = s.evaluationPcCount ?? s.pcCount;
+          if (!pc || s.hourlyRate == null) continue;
+          const f = empiricalFeaturesFor(toV61TrainingStore(s, settings));
+          const fUp = empiricalFeaturesFor(toV61TrainingStore({ ...s, hourlyRate: s.hourlyRate * 1.1 }, settings));
+          const a = predictUsageRevenue(model, f, pc, s.hourlyRate, settings);
+          const b = predictUsageRevenue(model, fUp, pc, s.hourlyRate * 1.1, settings);
+          if (a && b) deltas.push((b.monthlyRevenue / a.monthlyRevenue - 1) * 100);
+        }
+        return deltas.reduce((x, y) => x + y, 0) / deltas.length;
+      };
+      console.log(`\n  요금 10% 인상 시 총매출 예측 변화 (모형 고정, 그 매장 요금만 변경)`);
+      console.log(`    현행 ${respond(m0).toFixed(2)}%  /  재적합(이용시간) ${respond(m1).toFixed(2)}%  /  재적합(먹거리까지) ${respond(m2).toFixed(2)}%`);
+      console.log("    (재적합 쪽이 0에 가까우면 요금 시나리오 기능이 죽은 것이다)");
     }
 
     const devs = [...rates.entries()]

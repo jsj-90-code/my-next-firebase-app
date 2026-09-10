@@ -1680,8 +1680,13 @@ function medianOf(values: number[]): number {
 /**
  * fitNonnegativeRidge_: 좌표하강법 비음수 릿지회귀.
  * 표본이 작을 때 상식과 반대 방향(계수 음수)의 계수가 생기지 않도록 0 이상으로 제한한다.
+ *
+ * 2026-09-10 — `lowerBounds`로 **계수별 하한**을 받을 수 있게 했다(기본값은 전부 0이라 기존
+ * 동작 그대로). 음수 하한을 주면 그 계수만 음수를 학습할 수 있다. 필요한 이유: 요금처럼
+ * "올리면 수요가 준다"가 상식인 피처는 비음수 제약이 오히려 상식과 반대다.
  */
-export function fitNonnegativeRidgeRegression(z: number[][], yCentered: number[], lambda: number): number[] | null {
+export function fitNonnegativeRidgeRegression(z: number[][], yCentered: number[], lambda: number,
+  lowerBounds: number[] = []): number[] | null {
   if (!z.length || !z[0].length) return null;
   const p = z[0].length;
   const beta = new Array(p).fill(0);
@@ -1699,7 +1704,7 @@ export function fitNonnegativeRidgeRegression(z: number[][], yCentered: number[]
         numerator += z[i][j] * residual;
         denominator += z[i][j] * z[i][j];
       }
-      const next = Math.max(0, denominator > 0 ? numerator / denominator : 0);
+      const next = Math.max(lowerBounds[j] ?? 0, denominator > 0 ? numerator / denominator : 0);
       maxDelta = Math.max(maxDelta, Math.abs(next - beta[j]));
       beta[j] = next;
     }
@@ -1734,10 +1739,14 @@ export function fitEmpiricalRevenueModel(
   const y = samples.map((s) => Math.log(s.revenuePerPc));
   const yMean = meanOf(y);
   const z = samples.map((s) => s.featuresRaw.map((v, j) => (v - featureMeans[j]) / featureSds[j]));
+  // 하한선이 음수인 피처(요금처럼 "올리면 수요가 준다"가 상식인 것)는 적합 단계에서부터
+  // 음수를 허용해야 한다. 양수 하한선은 예전처럼 0으로 두고 적합 뒤에 끌어올린다 — 그래야
+  // 기존 동작이 그대로 유지된다(2026-09-10).
   const coefficients = fitNonnegativeRidgeRegression(
     z,
     y.map((v) => v - yMean),
     lambda,
+    minCoefficients.map((v) => Math.min(0, v ?? 0)),
   );
   if (!coefficients) return null;
 
