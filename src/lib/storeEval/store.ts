@@ -203,9 +203,10 @@ export async function confirmDemandPoint(id: string): Promise<void> {
   await setDoc(doc(requireDb(), DEMAND_POINTS, id), { confirmed: true }, { merge: true });
 }
 
-export async function deleteDemandPoint(id: string): Promise<void> {
-  await deleteDoc(doc(requireDb(), DEMAND_POINTS, id));
-}
+// deleteDemandPoint는 2026-09-10에 제거했다 — 어디서도 호출되지 않았고, firestore.rules가
+// storeEvalDemandPoints의 클라이언트 delete를 의도적으로 막아둬서(위 deleteCandidate 주석 참고)
+// 호출했다면 권한 오류로 실패했을 함수다. 수요거점을 지워야 하면 후보지 단위로 지우는
+// POST /api/store-eval/delete-candidate(firebase-admin)를 쓴다.
 
 // ---------------------------------------------------------------------------
 // 상권자료 자동수집 2단계 — SGIS/소상공인365 반자동 업로드 이력(출처 추적, 불변 로그)
