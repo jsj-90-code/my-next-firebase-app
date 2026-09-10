@@ -246,7 +246,7 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
       : null;
 
   if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
-  if (activeLoadResult.error) return <p className="text-sm text-red-600">{activeLoadResult.error}</p>;
+  if (activeLoadResult.error) return <p className="text-sm text-red-700 dark:text-red-300">{activeLoadResult.error}</p>;
 
   return (
     <div className="flex flex-col gap-6">
