@@ -65,6 +65,23 @@ export function attachRevenueParts(stores: V61TrainingStore[], parts: Map<string
       ? [{ ...store, ...part }] : [];
   });
 }
+/**
+ * ⚠️ 2026-09-10 실험 결과: PC 학습목표를 `pcRevenueAvg / hourlyRate`(등록요금으로 추정한 이용시간)
+ * 대신 **실측 이용시간**(대수x24x일수x매출DB 월별 가동률)으로 바꿔봤으나 **악화해서 기각**했다.
+ * 정식검증군 38곳 MAPE 11.962%→12.567%, ±20% 33→29곳, 중앙값 10.35%→11.95%(±10%는 18곳 동일).
+ * 개선 17곳/악화 21곳으로 특정 매장 데이터 문제가 아니라 전반적으로 퍼진 악화였다.
+ *
+ * 이유: 지금 구조는 목표를 등록요금으로 나누고 예측할 때 같은 등록요금을 다시 곱하므로 **매출 오차를
+ * 직접 최소화**한다. 목표를 실측 이용시간으로 바꾸면 *이용시간* 정확도를 최소화하게 되고, 등록요금과
+ * 실효요금의 괴리(중앙값 8.8%)가 그대로 매출 오차로 새어 나온다. 지금 방식은 코호트 평균 실효/등록
+ * 비율을 계수에 흡수해 그 괴리를 완충하고 있다.
+ *
+ * 실측 가동률 자체는 순환값이 아니고 쓸 만한 자료다 — 다만 쓸 곳이 학습목표가 아니라 **등록요금
+ * 데이터 정정**이다. 요금이 완벽할 때의 상한을 재보니(순환 진단이라 모형 후보는 아님) MAPE는
+ * 11.96%→11.68%로 거의 그대로인데 중앙값이 10.35%→7.50%, ±10%가 18→21곳으로 개선됐다. 즉 요금
+ * 문제는 중간 구간에만 효과가 있고, 큰 오차(구미산동점 +40% 등)는 요금과 무관하다.
+ * 근거·재현: docs/releases/2026-09-10-tariff-history.md
+ */
 function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">): UsageRevenueModel | null {
   const floors = buildMinCoefficients(settings.v61Training).slice(1);
   const fit = (kind: "usage" | "product") => fitEmpiricalRevenueModel(stores.map(store => ({
