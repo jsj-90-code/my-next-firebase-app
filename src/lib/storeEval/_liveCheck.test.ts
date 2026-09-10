@@ -245,10 +245,10 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
   it("정식검증군 정확도와 요금 정정 상한", async () => {
     const { inputs, salesRows, settings } = await loadAll();
     const core = new Set(inputs.filter(isCoreEligibleForV61Training).map((s) => s.storeCode));
-    const show = (label: string, m: Metric) =>
+    const show = (label: string, m: Metric, note = "") =>
       console.log(
         `[${label}] n=${m.n}  MAPE ${m.mape.toFixed(3)}%  중앙값 ${m.median.toFixed(2)}%  ` +
-          `±10% ${m.hit10}/${m.n}  ±20% ${m.hit20}/${m.n}  최악 ${m.worst}`,
+          `±10% ${m.hit10}/${m.n}  ±20% ${m.hit20}/${m.n}  최악 ${m.worst}${note ? "  " + note : ""}`,
       );
 
     const now = metrics(runUsageCohortValidation(inputs, salesRows, settings).rows);
@@ -827,6 +827,77 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
         const mature = moved.filter((m) => m.months > 2);
         const avg = (xs: typeof moved) => xs.length ? (xs.reduce((s, m) => s + m.delta, 0) / xs.length).toFixed(2) : "-";
         console.log(`  평균 증가분 — 완료월 1~2개월(${young.length}곳) ${avg(young)}%p / 3개월 이상(${mature.length}곳) ${avg(mature)}%p`);
+
+      // ── 개점 초기 매장을 "학습에서만" 빼본다 ─────────────────────────────────────────
+      // 2026-09-02에 정식검증 하한이 12개월→1개월로 내려가면서, 완료월 1~2개월 매장이 평가
+      // 대상뿐 아니라 **학습 표본**에도 들어오게 됐다. 개점 직후는 오픈 프로모션·인지도 상승이
+      // 섞여 실적이 불안정하니 계수를 흐릴 수 있다. 평가 코호트는 38곳 그대로 두고 학습만
+      // 줄여서(리브원아웃이라 자기 자신은 어차피 빠져 있다) 다른 매장 예측이 좋아지는지 본다.
+      console.log("\n학습 표본 최소 완료월 검정 (평가 코호트 38곳 고정)");
+      for (const m of [1, 3, 6, 12]) {
+        const trained = inputs.filter((s) => (s.completedMonths ?? 0) >= m).length;
+        show(m === 1 ? "현행 (하한 1개월)" : "학습 하한 " + m + "개월",
+          metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, m).rows),
+          "학습후보 " + trained + "곳");
+      }
+
+
+      // 대조군: "어린 매장이라서" 좋아진 건지, "표본을 줄이면 뭐든 좋아지는" 건지 가른다.
+      // 같은 크기의 무작위 부분표본 40회를 돌려 실제 하한이 그 분포의 어디에 있는지 본다.
+      {
+        const codes = inputs.filter((s) => (s.completedMonths ?? 0) >= 1).map((s) => s.storeCode);
+        let seed = 20260910;
+        const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+        console.log("\n  무작위 부분표본 대조군 (같은 학습 크기, 200회)");
+        for (const [months, size] of [[3, 34], [6, 32], [12, 27]] as const) {
+          const actual = metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, months).rows);
+          const samples: { mape: number; hit10: number; hit20: number }[] = [];
+          for (let i = 0; i < 200; i += 1) {
+            const shuffled = [...codes];
+            for (let j = shuffled.length - 1; j > 0; j -= 1) {
+              const k = Math.floor(rand() * (j + 1));
+              [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
+            }
+            shuffled.length = size;
+            const m = metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, new Set(shuffled)).rows);
+            samples.push({ mape: m.mape, hit10: m.hit10, hit20: m.hit20 });
+          }
+          const mean = (f: (x: (typeof samples)[number]) => number) => samples.reduce((s, x) => s + f(x), 0) / samples.length;
+          const better = samples.filter((x) => x.mape <= actual.mape).length;
+          console.log(
+            "  학습 " + size + "곳 — 실제(하한 " + months + "개월) MAPE " + actual.mape.toFixed(3) + "% ±10% " + actual.hit10 +
+            " / 무작위 평균 MAPE " + mean((x) => x.mape).toFixed(3) + "% ±10% " + mean((x) => x.hit10).toFixed(1) +
+            " ±20% " + mean((x) => x.hit20).toFixed(1) + "  (무작위가 실제보다 좋았던 횟수 " + better + "/200)",
+          );
+        }
+      }
+
+
+      // 기전 확인: 어린 매장을 빼면 **어떤 계수가 달라지는지** 본다. 하한에 붙어 있던 계수가
+      // 떨어져 나오면 "어린 매장이 그 계수를 눌러왔다"는 설명이 되고, 아무것도 안 움직이면
+      // 우연히 표본이 좋아진 것에 가깝다.
+      {
+        const coefs = (m: number) => {
+          const model = runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, m).fullModel;
+          return model ? { usage: model.usage.coefficients, product: model.product.coefficients, n: model.sampleCount } : null;
+        };
+        const a = coefs(1), b = coefs(12);
+        if (a && b) {
+          console.log("\n  계수 변화 (학습 하한 1개월 n=" + a.n + " → 12개월 n=" + b.n + ")");
+          const names = ["log(요금)", "log(IP당수요)", "경쟁력점수", "경쟁력×격차", "배후수요더미", "가시성"];
+          for (const kind of ["usage", "product"] as const) {
+            const av = a[kind], bv = b[kind];
+            const offset = av.length === names.length ? 0 : 1;
+            console.log("  [" + (kind === "usage" ? "이용시간" : "먹거리") + "]");
+            for (let i = 0; i < av.length; i += 1) {
+              const d = bv[i] - av[i];
+              console.log("    " + names[i + offset].padEnd(14) + av[i].toFixed(4).padStart(9) + " → " +
+                bv[i].toFixed(4).padStart(9) + "   " + (d >= 0 ? "+" : "") + d.toFixed(4));
+            }
+          }
+        }
+      }
+
       }
       console.log("\n요금 재적합 (log(요금)을 피처로 복원 + 요금 계수만 비음수 제약 해제)");
       show("현행 (요금 곱셈, 지수 1.0)", now);

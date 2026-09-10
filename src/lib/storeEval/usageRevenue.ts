@@ -268,13 +268,41 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
   return [result.monthlyRevenue, result.revenueBeforeCap, result.baselineRevenue, result.overflowRevenue].every(Number.isSafeInteger) ? result : null;
 }
 /** Every validation target is excluded from both fitted components. Current tariff is a proxy for historical tariff. */
-export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date(), tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT, productPerHour = PRODUCT_PER_HOUR_DEFAULT) {
+export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date(), tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT, productPerHour = PRODUCT_PER_HOUR_DEFAULT,
+  /**
+   * 학습 표본에 넣을 최소 완료월. **1 = 현행(전부 학습)**.
+   *
+   * ⚠️ 2026-09-10 실험: 개점 1~2개월 매장을 학습에서만 빼봤으나 **기각**했다. 숫자만 보면
+   * 하한을 올릴수록 좋아지지만(12개월에서 MAPE 10.129%→9.645%, ±20% 34→36곳), 대조 실험이
+   * 이걸 뒤집는다.
+   * - **무작위 부분표본 200회 대조군**: ±10% 개선(20→21곳)은 같은 크기 무작위 표본의 평균
+   *   (21.1곳)이 그대로 재현한다. **나이 때문이 아니라 표본을 줄여서 생긴 값이다.**
+   * - **계수 변화**: 어린 매장을 빼면 계수가 더 잘 배우는 게 아니라 **하한선에 더 달라붙는다**
+   *   (이용시간 가시성 0.0660→0.0500, 먹거리 경쟁력×격차 0.0696→0.0600 — 둘 다 바닥). 즉
+   *   학습 34%를 버려서 얻는 건 "데이터가 정한 계수"가 아니라 "사람이 정한 하한선"이다.
+   * - 하한을 4개 값(1/3/6/12)에서 골랐으므로 다중비교 보정을 하면 p≈0.05가 사실상 유의하지 않다.
+   *
+   * 가설의 알맹이("완료월 1~2개월 매장은 학습 목표 자체가 1~2개월 평균이라 노이즈가 크다")는
+   * 여전히 맞다. 다만 해법은 **잘라내기가 아니라 표본 가중**이다 — backlog B-2 참조.
+   * 근거·재현: docs/releases/2026-09-10-training-age-cut.md
+   */
+  minTrainingCompletedMonths = 1,
+  /** 진단 전용: 주어지면 학습 표본을 이 코드 집합으로 제한한다(무작위 부분표본 대조군용). */
+  trainingSubset?: Set<string>) {
   const parts = buildRevenuePartsByStore(stores, sales, asOf);
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
-  const training = attachRevenueParts(stores.filter(isCoreEligibleForV61Training)
-    .filter(store => !useVisibility || isValidVisibilityScore(store.visibilityScore))
+  const coreEligible = stores.filter(isCoreEligibleForV61Training)
+    .filter(store => !useVisibility || isValidVisibilityScore(store.visibilityScore));
+  const training = attachRevenueParts(coreEligible
+    // 개점 직후 몇 달은 오픈 프로모션이 섞여 실적이 불안정하다. 그 매장을 **학습에서만** 뺄 수
+    // 있게 한다(평가 대상에서는 빼지 않는다 — 빼면 코호트가 달라져 before/after 비교가 안 된다).
+    .filter(store => store.completedMonths >= minTrainingCompletedMonths)
+    .filter(store => !trainingSubset || trainingSubset.has(store.storeCode))
     .map(store => toV61TrainingStore(store, settings)), parts);
-  const trainingStoreCodes = new Set(training.map(store => store.storeCode));
+  // 코호트 판정은 "학습 자격이 있는 매장" 전체로 유지한다. 학습에서 빠진 매장은 애초에 모형에
+  // 안 들어갔으므로 리브원아웃에서 자기 자신을 뺄 것도 없다(누출 없음).
+  const trainingStoreCodes = new Set(attachRevenueParts(coreEligible
+    .map(store => toV61TrainingStore(store, settings)), parts).map(store => store.storeCode));
   const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature, productPerHour);
   const result = runCohortValidation(stores, settings, {
     trainingStoreCodes,
@@ -292,7 +320,8 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
       return predictUsageRevenue(model, features, pcCount, store.hourlyRate, settings, 1 + (getV62Rate(store.inflowRestriction ?? null, settings) ?? 0), store.extraPcHours ?? 0);
     },
   });
-  return { ...result, rows: result.rows.map(row => {
+  // fullModel도 함께 돌려준다 — 진단 하네스가 계수를 들여다볼 때 학습 표본을 다시 만들 필요가 없다.
+  return { fullModel, ...result, rows: result.rows.map(row => {
     const actual = parts.get(row.storeCode);
     // Show components only when their period matches the total used by validation.
     return actual && row.actualRevenueAvg != null && Math.abs(actual.pcRevenueAvg + actual.productRevenueAvg - row.actualRevenueAvg) <= 1
