@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
+import { formatDate, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   convertCandidateToExistingStore,
@@ -67,7 +67,7 @@ function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySumm
   const band = v62Final != null && mae != null
     ? `${formatWon(Math.round(v62Final * (1 - mae)))} ~ ${formatWon(Math.round(v62Final * (1 + mae)))}`
     : null;
-  const when = new Date(accuracy.updatedAt).toISOString().slice(0, 10);
+  const when = formatDate(accuracy.updatedAt);
   return (
     <div className="app-card-sm mt-2 rounded-xl px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
       <b className="text-[#171310] dark:text-[#f2ede2]">이 모형의 실측 정확도</b> — 기존 가맹점{" "}
