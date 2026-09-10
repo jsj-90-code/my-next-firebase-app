@@ -19,10 +19,13 @@
 표시를 달 것. 앱에는 읽기 전용 권한만 있어 코드로 못 한다.
 근거: `docs/releases/2026-09-10-data-integrity-audit.md`
 
-### A-2. Firebase 콘솔에서 이메일/비밀번호 공급자 사용중지 검토
-`firestore.rules`에 `email_verified` 검사를 넣어 배포했으므로 구멍 자체는 막혔다. 다만 실사용
-계정 4개가 전부 구글 로그인이라 이 공급자를 꺼도 잃는 게 없고, 끄면 방어선이 하나 더 생긴다.
-근거: `docs/releases/2026-09-10-security-audit.md`
+### A-2. 안 쓰는 로그인 공급자 사용중지 — **완료(2026-09-10)**
+이메일/비밀번호와 **익명** 로그인을 Identity Platform API로 껐다(구글만 남음). 앱 코드에
+`signInAnonymously` 호출이 없고 팀 계정 4개가 전부 google.com이라 잃는 게 없다.
+검증: `accounts:signInWithPassword` → `PASSWORD_LOGIN_DISABLED`, 익명 가입 → `ADMIN_ONLY_OPERATION`.
+항상 실패하게 된 이메일 로그인 폼도 UI에서 제거했다.
+**되돌리기**: Firebase 콘솔 > Authentication > Sign-in method 에서 공급자를 켜고 `AuthForm.tsx`/
+`AuthContext.tsx`를 되돌린다.
 
 ### A-3. 후보지 경쟁점 "커플존" 입력 단위 — 완료(단위 확정), 개별 2건은 현장 확인 필요
 단위는 **'조'**로 확정했다(`CompetitorsTab.tsx` 힌트: "전용 커플존('조' 단위, 환산좌석수=조수×2)").
@@ -114,3 +117,5 @@ Firestore가 시트의 2배인 2건(스타일pc방 36 vs 18, 블록버스터PC�
 - ~~잔차에 남은 신호 탐색~~ — 입력 10개 중 시간당요금 하나만 유의(r=0.374). 지금은 반영 불가라
   B-1에 가설로 사전 등록했다.
 - ~~커플존 입력 단위(A-3)~~ — '조' 단위로 확정. 개별 2건의 2배 차이는 데이터로 판별 불가(현장 확인 필요).
+- ~~안 쓰는 로그인 공급자 끄기(A-2)~~ — 이메일/비밀번호·익명 둘 다 사용중지. 구글 전용이 됐고
+  계정 생성 경로 자체가 사라졌다. 이메일 로그인 UI도 제거.

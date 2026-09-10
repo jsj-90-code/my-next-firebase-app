@@ -11,7 +11,6 @@ import {
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   type User,
@@ -22,7 +21,7 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   configured: boolean;
-  signInWithEmail: (email: string, password: string) => Promise<void>;
+  // 이메일/비밀번호와 익명 로그인은 2026-09-10에 Firebase 공급자 자체를 껐다(구글 전용).
   signInWithGoogle: (opts?: { hostedDomain?: string }) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -50,10 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       configured,
-      async signInWithEmail(email, password) {
-        if (!auth) throw new Error("Firebase is not configured.");
-        await signInWithEmailAndPassword(auth, email, password);
-      },
       async signInWithGoogle(opts) {
         if (!auth) throw new Error("Firebase is not configured.");
         const provider = new GoogleAuthProvider();
