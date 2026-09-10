@@ -785,8 +785,17 @@ export type ExistingStore = {
 // 가맹점코드를 그대로 쓴다. 신규후보지든 기존 가맹점이든 "경쟁점 목록"이라는 의미가 같아서
 // storeEvalCompetitors 컬렉션을 그대로 공유한다 (중복 타입/컬렉션을 만들지 않음).
 
-// ---- 03_회원정보입력 : 기준일별 스냅샷 누적. calc.ts 계산에는 쓰지 않고(참고 데이터,
-// docs/data-issues.md #4) 12개월 미만 매장 위주로 계속 갱신한다.
+// ---- 회원 스냅샷(기준일별 누적). calc.ts 계산에는 쓰지 않는 참고 데이터다.
+//
+// 2026-09-10 기준 상태: 입력 경로는 **웹 화면뿐**이다(existing-stores/page.tsx의
+// upsertExistingStoreMemberSnapshot). 원래 원본이던 구글시트 `03_회원정보입력` 탭은
+// 동기화가 2026-08-31에 제거됐고(968180b) 탭 자체도 2026-09-10에 삭제됐다. Firestore
+// 컬렉션도 8/31 "Firestore 다이어트" 때 비워져 현재 0건이다 — 즉 기능은 살아 있으나
+// 데이터가 없는 상태다. 삭제 직전 시트 백업은 `.local-tools/backup-formula-03_*.json`.
+//
+// 오늘(2026-09-10) 상관분석에서 회원 규모·연령/성별 구성 모두 먹거리·총매출 오차와
+// 유의한 관계가 없음을 확인했다(최대 r=0.211, n=36 기준 |r|>0.33 필요). 예측 피처로
+// 되살리자는 제안이 오면 이 결과부터 확인할 것 — docs/releases/2026-09-10-accuracy-ceiling.md
 export type ExistingStoreMemberSnapshot = {
   storeCode: string;
   snapshotDate: string; // 회원자료기준일, "yyyy-MM-dd"
