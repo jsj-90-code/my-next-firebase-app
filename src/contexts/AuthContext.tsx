@@ -10,7 +10,6 @@ import {
 } from "react";
 import {
   GoogleAuthProvider,
-  createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -24,7 +23,6 @@ type AuthContextValue = {
   loading: boolean;
   configured: boolean;
   signInWithEmail: (email: string, password: string) => Promise<void>;
-  signUpWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: (opts?: { hostedDomain?: string }) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -55,10 +53,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signInWithEmail(email, password) {
         if (!auth) throw new Error("Firebase is not configured.");
         await signInWithEmailAndPassword(auth, email, password);
-      },
-      async signUpWithEmail(email, password) {
-        if (!auth) throw new Error("Firebase is not configured.");
-        await createUserWithEmailAndPassword(auth, email, password);
       },
       async signInWithGoogle(opts) {
         if (!auth) throw new Error("Firebase is not configured.");

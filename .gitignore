@@ -50,3 +50,4 @@ next-env.d.ts
 src/lib/storeEval/_liveCheck.test.ts
 live-check-out.txt
 exp-out.txt
+/.local-tools/

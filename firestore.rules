@@ -4,9 +4,18 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // 회사 구글 워크스페이스 계정(@isens.camp)으로 로그인한 팀원만 허용.
     // 클라이언트 쪽 도메인 검사를 우회해도 여기서 막히도록 서버(Firestore) 단에서 다시 확인한다.
+    //
+    // email_verified를 반드시 함께 본다(2026-09-10 보안감사에서 발견한 구멍을 막는 핵심 조건).
+    // 이 프로젝트는 Firebase Auth의 이메일/비밀번호 가입이 켜져 있어서, 공개된
+    // NEXT_PUBLIC_FIREBASE_API_KEY만 있으면 누구나 아무 비밀번호로 "무엇이든@isens.camp"
+    // 계정을 스스로 만들 수 있다. 도메인 문자열만 검사하면 그 계정이 그대로 통과해 41개 가맹점
+    // 매출 전체를 읽고 쓸 수 있었다. 메일함을 실제로 소유하지 않으면 email_verified가 참이 될 수
+    // 없으므로 이 조건 하나로 그 경로가 막힌다(구글 워크스페이스 로그인은 항상 참이라 팀원은 영향 없음 —
+    // 감사 시점 실사용 계정 4개 전부 google.com/인증완료).
     function isCompanyAccount() {
       return request.auth != null
         && request.auth.token.email != null
+        && request.auth.token.email_verified == true
         && request.auth.token.email.matches('.*@isens[.]camp$');
     }
 
@@ -101,8 +110,12 @@ service cloud.firestore {
       allow read, write: if isCompanyAccount();
     }
 
+    // 매출DB 미러(구글시트 원본의 사본). CLAUDE.md의 "매출DB 절대 삭제 금지"를 규칙 단에서도
+    // 강제한다 — 클라이언트 코드에 이 컬렉션을 지우는 경로가 애초에 없고(2026-09-10 확인),
+    // 동기화(cronSync)는 firebase-admin이라 보안규칙을 우회하므로 삭제 차단의 부작용이 없다.
     match /storeEvalExistingStoreSales/{salesId} {
-      allow read, write: if isCompanyAccount();
+      allow read, create, update: if isCompanyAccount();
+      allow delete: if false;
     }
 
     // 03_회원정보입력 스냅샷 - calc.ts 계산에는 안 쓰이는 참고 데이터지만
