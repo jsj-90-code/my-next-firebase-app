@@ -742,6 +742,8 @@ function MeasuredForecastSummaryBlock({ summary }: { summary: ValidationSummary2
 
 export default function ValidationPage() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  // 후보지 화면에 넘겨줄 정확도 요약을 저장하지 못했을 때의 사유(성공하면 null).
+  const [accuracyWriteError, setAccuracyWriteError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -920,7 +922,10 @@ export default function ValidationPage() {
   // 2026-09-10 — 이 화면은 어차피 정식검증군 전체 오차를 계산한다. 그 요약을 문서 1건으로
   // 남겨두면 후보지 결과 화면이 그걸 1건만 읽어 "이 모형이 얼마나 맞는지"를 보여줄 수 있다.
   // 후보지 화면에서 검증을 다시 돌리면 Firestore 읽기가 800건쯤 더 들기 때문에 요약을 거쳐 간다.
-  // 실패해도 화면은 그대로 동작해야 하므로 조용히 넘어간다(권한·규칙 미배포 등).
+  //
+  // 실패해도 이 화면은 그대로 동작해야 하지만 **조용히 넘어가면 안 된다** — 후보지 화면이
+  // "검증 화면을 한 번 열면 표시됩니다"라고 안내하므로, 쓰기가 막혀 있으면 사용자가 그 안내를
+  // 몇 번을 따라도 아무 일이 안 일어나는 막다른 길이 된다. 그래서 아래에 사유를 표시한다.
   useEffect(() => {
     if (!computed || computed.coreSummary.sampleCount === 0) return;
     const s = computed.coreSummary;
@@ -934,7 +939,10 @@ export default function ValidationPage() {
       within10PctRatio: s.within10PctRatio,
       within15PctRatio: s.within15PctRatio,
       within20PctRatio: s.within20PctRatio,
-    }).catch(() => {});
+    }).then(() => setAccuracyWriteError(null))
+      .catch((err: unknown) => {
+        setAccuracyWriteError(err instanceof Error ? err.message : "알 수 없는 오류");
+      });
   }, [computed]);
 
   if (state.status === "loading") {
@@ -1091,6 +1099,12 @@ export default function ValidationPage() {
           <li>
             20% 초과: {coreSummary.buckets[4].count + coreSummary.buckets[5].count}개 ({formatPercent(coreSummary.over20PctRatio)})
           </li>
+          {accuracyWriteError && (
+            <li className="font-semibold text-[var(--sl-warn)]">
+              후보지 화면에 넘길 정확도 요약을 저장하지 못했습니다 — {accuracyWriteError}.
+              후보지 결과 화면의 정확도 상자가 계속 비어 보인다면 이 때문입니다.
+            </li>
+          )}
           <li>최종 ±10% 적중률: {formatPercent(coreSummary.within10PctRatio)}</li>
           <li>평균 절대오차율: {formatPercent(coreSummary.meanAbsoluteErrorPct)}</li>
           <li>중앙값 절대오차율: {formatPercent(coreSummary.medianAbsoluteErrorPct)}</li>
