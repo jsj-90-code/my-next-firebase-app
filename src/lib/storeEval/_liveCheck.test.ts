@@ -990,6 +990,38 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
         }
 
 
+
+      // ── 비음수 제약을 요금 말고 **전부** 풀어본다 ──────────────────────────────────
+      // 2026-09-10에 요금 계수에만 음수를 허용했다. 다른 피처도 데이터는 음수를 원할 수 있다.
+      // (앞서 한 "하한선 제거" 실험은 하한을 0으로 내렸을 뿐 **비음수 제약은 그대로**였다 —
+      //  이건 다른 실험이다.)
+      console.log("\n비음수 제약 전면 해제 검정");
+      show("현행 (요금만 해제)", metrics(withTariff.rows));
+      {
+        const free = runUsageCohortValidation(inputs, salesRows, settings, new Date(),
+          undefined, undefined, 1, undefined, undefined, true);
+        show("전부 해제", metrics(free.rows));
+        const a = withTariff.fullModel, b = free.fullModel;
+        if (a && b) {
+          const names = ["log(요금)", "log(IP당수요)", "경쟁력점수", "경쟁력×격차", "배후수요더미", "가시성"];
+          console.log("  계수 변화 (움직인 것만)");
+          let negatives = 0;
+          for (const kind of ["usage", "product"] as const) {
+            const av = a[kind].coefficients, bv = b[kind].coefficients;
+            const offset = av.length === names.length ? 0 : 1;
+            for (let i = 0; i < av.length; i += 1) {
+              if (bv[i] < -1e-9) negatives += 1;
+              if (Math.abs(bv[i] - av[i]) > 1e-6) {
+                console.log("    [" + (kind === "usage" ? "이용시간" : "먹거리") + "] " + names[i + offset].padEnd(14) +
+                  av[i].toFixed(4).padStart(9) + " → " + bv[i].toFixed(4).padStart(9) +
+                  (bv[i] < -1e-9 ? "  ← 음수를 원한다" : ""));
+              }
+            }
+          }
+          console.log("  음수가 된 계수 개수: " + negatives);
+        }
+      }
+
       }
       console.log("\n요금 재적합 (log(요금)을 피처로 복원 + 요금 계수만 비음수 제약 해제)");
       // ⚠️ 2026-09-10에 "이용시간만"을 채택했으므로 **둘째 줄이 지금의 현행**이다.

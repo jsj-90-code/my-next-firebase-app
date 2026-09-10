@@ -211,8 +211,25 @@ const MONTH_WEIGHTING_DEFAULT: number | null = 2.46;
 function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
   tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT,
   productPerHour = PRODUCT_PER_HOUR_DEFAULT,
-  monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT): UsageRevenueModel | null {
-  const allFloors = buildMinCoefficients(settings.v61Training);
+  monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT,
+  /**
+   * 진단 전용: true면 **모든** 계수의 하한을 −1로 풀어 음수를 허용한다.
+   *
+   * ⚠️ **2026-09-10 측정 결과 — 이 질문은 닫혔다.** "요금 말고 다른 피처도 데이터는 음수를
+   * 원하지 않을까?"를 검정했는데, 전부 풀어줘도 **음수가 된 계수는 요금 하나뿐**이었다
+   * (이미 풀려 있던 것). 나머지는 전부 0에 가깝게 내려오되 양수를 유지했다 —
+   * IP당수요 0.0300→0.0053, 경쟁력×격차 0.0600→0.0373, 배후수요 0.0500→0.0303.
+   *
+   * 즉 계수들을 붙들고 있는 건 **비음수 제약이 아니라 하한선**이다. 부호 제약은 요금 말고
+   * 어디서도 걸리지 않는다. 정확도는 오히려 나빠진다(MAPE 9.881%→10.434%) — 하한선까지 함께
+   * 풀리면서 계수가 0으로 수축하기 때문이고, 이건 이미 알던 결과다.
+   *
+   * **다시 검정할 필요 없다.** 표본이 늘어 하한선을 걷어낼 수 있게 되면 그때 "하한선 제거"를
+   * 다시 보면 되고, 부호는 그때도 요금 말고 문제가 아닐 가능성이 높다.
+   */
+  freeAllSigns = false): UsageRevenueModel | null {
+  const rawFloors = buildMinCoefficients(settings.v61Training);
+  const allFloors = freeAllSigns ? rawFloors.map(() => TARIFF_COEF_LOWER_BOUND) : rawFloors;
   // 요금 계수만 음수를 허용하고 나머지 하한선은 그대로 둔다.
   const withTariffFloors = [TARIFF_COEF_LOWER_BOUND, ...allFloors.slice(1)];
   const fit = (kind: "usage" | "product") => {
@@ -264,15 +281,16 @@ export function crossFittedCorrection(pairs: { predicted: number; actual: number
 export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
   calibrate = true, tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT,
   productPerHour = PRODUCT_PER_HOUR_DEFAULT,
-  monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT): UsageRevenueModel | null {
-  const model = fitRawUsageRevenueModel(stores, settings, tariffFeature, productPerHour, monthWeighting);
+  monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT,
+  freeAllSigns = false): UsageRevenueModel | null {
+  const model = fitRawUsageRevenueModel(stores, settings, tariffFeature, productPerHour, monthWeighting, freeAllSigns);
   if (!model || !calibrate || stores.length - 1 < settings.v61Training.minSampleCount) return model;
   const usagePairs: { predicted: number; actual: number }[] = [];
   const productPairs: { predicted: number; actual: number }[] = [];
   for (const target of stores) {
     // Outer validation removes its target before calling this function. Each inner target
     // is also excluded here: its sales can influence the correction, never its prediction.
-    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings, tariffFeature, productPerHour, monthWeighting);
+    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings, tariffFeature, productPerHour, monthWeighting, freeAllSigns);
     if (!inner) return model;
     const full = empiricalFeaturesFor(target);
     const features = full.slice(1);
@@ -346,7 +364,9 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
   minTrainingCompletedMonths = 1,
   monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT,
   /** 진단 전용: 주어지면 학습 표본을 이 코드 집합으로 제한한다(무작위 부분표본 대조군용). */
-  trainingSubset?: Set<string>) {
+  trainingSubset?: Set<string>,
+  /** 진단 전용: 모든 계수의 비음수 제약을 푼다. */
+  freeAllSigns = false) {
   const parts = buildRevenuePartsByStore(stores, sales, asOf);
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const coreEligible = stores.filter(isCoreEligibleForV61Training)
@@ -361,7 +381,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
   // 안 들어갔으므로 리브원아웃에서 자기 자신을 뺄 것도 없다(누출 없음).
   const trainingStoreCodes = new Set(attachRevenueParts(coreEligible
     .map(store => toV61TrainingStore(store, settings)), parts).map(store => store.storeCode));
-  const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature, productPerHour, monthWeighting);
+  const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature, productPerHour, monthWeighting, freeAllSigns);
   const result = runCohortValidation(stores, settings, {
     trainingStoreCodes,
     predict(store) {
@@ -370,7 +390,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
         || store.competitorIp == null || store.competitivenessScore == null)
         return null;
       const model = trainingStoreCodes.has(store.storeCode)
-        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings, true, tariffFeature, productPerHour, monthWeighting)
+        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings, true, tariffFeature, productPerHour, monthWeighting, freeAllSigns)
         : fullModel;
       if (!model)
         return null;
