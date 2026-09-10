@@ -17,6 +17,7 @@
 | 로그인 공급자 | REST 호출로 직접 시도 | 비밀번호 `PASSWORD_LOGIN_DISABLED` / 익명 `ADMIN_ONLY_OPERATION` |
 | 계정 | Admin SDK 전수 | 4개(전부 `@isens.camp` + google.com + 인증완료) |
 | 프로덕션 화면 | 배포 번들에서 문자열 확인 | 새 구글 전용 로그인 배포됨, 옛 회원가입 UI 없음 |
+| API 라우트 13개 | 전부 인증 참조 확인 + 프로덕션에서 무인증 호출 | cron-sync·delete-candidate 둘 다 HTTP 401 |
 | cron 동기화 | `storeEvalSystemStatus/cronSync` | 06:16 KST `ok:true` |
 | 빌드·테스트·린트 | 로컬 | build 통과 / 469 passed·1 skipped / lint 0건 |
 
