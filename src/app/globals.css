@@ -7,6 +7,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* 보조 텍스트 색. .app-theme이 같은 값으로 다시 선언하지만, 테마 바깥 요소에서도
+     var()가 반드시 해석되게 하려면 루트에도 있어야 한다(없으면 색이 상속으로 흘러버린다). */
+  --sl-ink-soft: #6b6459;
 }
 
 @theme inline {
@@ -19,6 +22,9 @@
 :root.dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+  /* .app-theme 바깥(전역 오류 화면 등)에서도 해석되도록 여기에도 깔아둔다 —
+     .app-theme 안에서는 :root.dark .app-theme 규칙이 더 구체적이라 그대로 이긴다. */
+  --sl-ink-soft: #a39b8c;
 }
 
 body {

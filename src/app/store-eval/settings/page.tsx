@@ -111,7 +111,7 @@ function NumberInput({
         onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
         className={`app-input px-3 py-1.5 text-sm ${readOnly ? "opacity-60" : ""}`}
       />
-      {hint && <span className="text-xs text-[#8a8072]">{hint}</span>}
+      {hint && <span className="text-xs text-[var(--sl-ink-soft)]">{hint}</span>}
     </label>
   );
 }
@@ -139,7 +139,7 @@ function TextInput({
         onChange={(e) => onChange(e.target.value)}
         className={`app-input px-3 py-1.5 text-sm ${readOnly ? "opacity-60" : ""}`}
       />
-      {hint && <span className="text-xs text-[#8a8072]">{hint}</span>}
+      {hint && <span className="text-xs text-[var(--sl-ink-soft)]">{hint}</span>}
     </label>
   );
 }
@@ -158,7 +158,7 @@ function Section({
   return (
     <section className="app-card rounded-2xl p-5">
       <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h2>
-      {description && <p className="mt-1 text-xs leading-5 text-[#8a8072]">{description}</p>}
+      {description && <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">{description}</p>}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">{children}</div>
       {warning && <p className="app-badge app-badge-warn mt-3 w-full justify-start py-2 text-xs">⚠ {warning}</p>}
     </section>
@@ -320,7 +320,7 @@ export default function StoreEvalSettingsPage() {
   const readOnly = !isAdmin;
 
   if (loading || adminLoading) {
-    return <div className="py-16 text-center text-sm text-[#8a8072]">불러오는 중...</div>;
+    return <div className="py-16 text-center text-sm text-[var(--sl-ink-soft)]">불러오는 중...</div>;
   }
 
   if (loadError) {
@@ -337,7 +337,7 @@ export default function StoreEvalSettingsPage() {
     <div className="flex flex-col gap-6 pb-16">
       <div>
         <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">7. 운영설정</h1>
-        <p className="mt-1 text-sm text-[#8a8072]">
+        <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
           V61/V62 계산에 쓰이는 계수와 판정 기준을 관리합니다. 값을 바꾸면 이후의 모든 계산에 즉시 반영됩니다.
         </p>
       </div>
@@ -678,7 +678,7 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       {form.updatedAt > 0 && (
-        <p className="text-xs text-[#8a8072]">
+        <p className="text-xs text-[var(--sl-ink-soft)]">
           마지막 저장: {formatDateTime(form.updatedAt)}
           {form.updatedBy ? ` (${form.updatedBy})` : ""}
         </p>
@@ -714,11 +714,11 @@ export default function StoreEvalSettingsPage() {
       <section className="app-card rounded-2xl p-5">
         <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">변경 이력</h2>
         {historyLoading ? (
-          <p className="mt-3 text-sm text-[#8a8072]">불러오는 중...</p>
+          <p className="mt-3 text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>
         ) : historyError ? (
           <p className="mt-3 text-sm text-[var(--sl-danger)]">이력을 불러오지 못했습니다: {historyError}</p>
         ) : history.length === 0 ? (
-          <p className="mt-3 text-sm text-[#8a8072]">아직 변경 이력이 없습니다.</p>
+          <p className="mt-3 text-sm text-[var(--sl-ink-soft)]">아직 변경 이력이 없습니다.</p>
         ) : (
           <ul className="mt-4 flex flex-col gap-4">
             {history.map((entry) => {
@@ -727,11 +727,11 @@ export default function StoreEvalSettingsPage() {
                 <li key={entry.id} className="app-card-sm rounded-xl p-4">
                   <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
                     <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{formatDateTime(entry.changedAt)}</span>
-                    <span className="text-[#8a8072]">변경자: {entry.changedBy ?? "알수없음"}</span>
+                    <span className="text-[var(--sl-ink-soft)]">변경자: {entry.changedBy ?? "알수없음"}</span>
                   </div>
                   <p className="mt-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">사유: {entry.reason ?? "(기록 없음 — 이 필드 도입 이전 변경)"}</p>
                   {diffs.length === 0 ? (
-                    <p className="mt-2 text-xs text-[#8a8072]">변경된 값이 없습니다.</p>
+                    <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">변경된 값이 없습니다.</p>
                   ) : (
                     <ul className="mt-2 flex flex-col gap-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">
                       {diffs.map((d) => (

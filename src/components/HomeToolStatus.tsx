@@ -69,11 +69,11 @@ export function HomeToolStatus({ tool }: { tool: "seat-layout" | "store-eval" })
   return (
     <div className="flex border-t border-[#171310]/[0.08] font-mono text-[10.5px] dark:border-white/[0.08]">
       <div className="flex-1 border-r border-[#171310]/[0.08] px-3 py-2 dark:border-white/[0.08]">
-        <div className="text-[9px] uppercase tracking-wide text-[#8a8072]">Status</div>
+        <div className="text-[9px] uppercase tracking-wide text-[var(--sl-ink-soft)]">Status</div>
         <div className="mt-0.5 font-medium text-[var(--sl-ok)]">사용 가능</div>
       </div>
       <div className="flex-1 px-3 py-2">
-        <div className="text-[9px] uppercase tracking-wide text-[#8a8072]">최근 업데이트</div>
+        <div className="text-[9px] uppercase tracking-wide text-[var(--sl-ink-soft)]">최근 업데이트</div>
         <div className="mt-0.5 font-medium text-[#171310] dark:text-[#f2ede2]">{recentLabel}</div>
       </div>
     </div>

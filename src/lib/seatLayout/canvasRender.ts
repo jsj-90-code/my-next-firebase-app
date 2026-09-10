@@ -720,7 +720,9 @@ export function renderOrderSummaryImage(
     c.fillText(text, marginX, y + 22 * shrink);
     if (note) {
       const titleW = c.measureText(text).width;
-      c.fillStyle = "#8a8072";
+      // 항상 밝은 배경에 인쇄되는 산출물이라 테마 토큰을 못 쓴다. 값은 --sl-ink-soft의
+      // 밝은 모드 값과 맞춰둔다(옛 #8a8072는 흰 배경 대비 3.8:1로 본문 기준에 못 미쳤다).
+      c.fillStyle = "#6b6459";
       c.font = `${Math.max(11, Math.round(15 * shrink))}px sans-serif`;
       c.fillText(note, marginX + titleW + 12 * shrink, y + 22 * shrink);
     }

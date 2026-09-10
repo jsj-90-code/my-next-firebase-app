@@ -52,7 +52,7 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <div className="app-card mx-auto w-full max-w-xl rounded-2xl px-8 py-12 text-center text-[#8a8072]">
+      <div className="app-card mx-auto w-full max-w-xl rounded-2xl px-8 py-12 text-center text-[var(--sl-ink-soft)]">
         불러오는 중...
       </div>
     );
@@ -65,7 +65,7 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
   return (
     <div className="app-card mx-auto w-full max-w-xl rounded-2xl p-8 text-center">
       <h2 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">회사 계정 로그인이 필요합니다</h2>
-      <p className="mt-3 text-sm leading-6 text-[#8a8072]">
+      <p className="mt-3 text-sm leading-6 text-[var(--sl-ink-soft)]">
         이 도구는 회사 구글 계정(@{ALLOWED_EMAIL_DOMAIN})으로 로그인한 팀원만 사용할 수 있습니다.
       </p>
 

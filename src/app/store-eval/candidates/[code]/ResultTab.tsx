@@ -58,7 +58,7 @@ function judgementKind(j: FinalJudgement | null): "계산 상태" | "사업 판�
 function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySummary | null; v62Final: number | null }) {
   if (!accuracy || accuracy.sampleCount === 0) {
     return (
-      <p className="mt-2 text-xs leading-5 text-[#8a8072]">
+      <p className="mt-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
         이 모형의 실측 정확도는 아직 기록되지 않았습니다 — 검증 화면을 한 번 열면 여기에 표시됩니다.
       </p>
     );
@@ -85,7 +85,7 @@ function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySumm
       {accuracy.within15PctRatio != null && (
         <>
           <br />
-          <span className="text-[#8a8072]">
+          <span className="text-[var(--sl-ink-soft)]">
             아래 보수(85%)·상한(115%) 밴드는 고정값인데, 실측으로는 그 ±15% 안에{" "}
             {formatPercent(accuracy.within15PctRatio)}만 들어옵니다.
           </span>
@@ -98,9 +98,9 @@ function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySumm
 function ResultCard({ label, value, emphasis, hint }: { label: string; value: string; emphasis?: boolean; hint?: string }) {
   return (
     <div className={`rounded-xl p-4 ${emphasis ? "bg-[#171310] text-white dark:bg-[#f2ede2] dark:text-[#171310]" : "app-card"}`}>
-      <p className={`text-xs ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[#8a8072]"}`}>{label}</p>
+      <p className={`text-xs ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[var(--sl-ink-soft)]"}`}>{label}</p>
       <p className={`mt-1 font-semibold ${emphasis ? "text-2xl" : "text-lg"}`}>{value}</p>
-      {hint && <p className={`mt-1 text-[11px] ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[#8a8072]"}`}>{hint}</p>}
+      {hint && <p className={`mt-1 text-[11px] ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[var(--sl-ink-soft)]"}`}>{hint}</p>}
     </div>
   );
 }
@@ -157,7 +157,7 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[560px] border-collapse text-[11px]">
           <thead>
-            <tr className="border-b border-[#171310]/[0.08] text-left text-[#8a8072] dark:border-white/[0.08]">
+            <tr className="border-b border-[#171310]/[0.08] text-left text-[var(--sl-ink-soft)] dark:border-white/[0.08]">
               <th className="py-1 pr-2">요인</th>
               <th className="py-1 pr-2">이 후보지 값</th>
               <th className="py-1 pr-2">학습평균</th>
@@ -172,11 +172,11 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
               <tr key={r.label} className="border-b border-[#171310]/[0.06] dark:border-white/[0.06]">
                 <td className="py-1 pr-2 font-medium text-[#5c5346] dark:text-[#c9bfae]">
                   {r.label}
-                  {r.isLogTransformed && <span className="ml-1 text-[#8a8072]">(로그값 기준)</span>}
+                  {r.isLogTransformed && <span className="ml-1 text-[var(--sl-ink-soft)]">(로그값 기준)</span>}
                 </td>
                 <td className="py-1 pr-2">
                   {r.formattedRealValue}
-                  {r.isLogTransformed && <span className="ml-1 text-[#8a8072]">→ log {formatScore(r.modelValue, 3)}</span>}
+                  {r.isLogTransformed && <span className="ml-1 text-[var(--sl-ink-soft)]">→ log {formatScore(r.modelValue, 3)}</span>}
                 </td>
                 <td className="py-1 pr-2">{formatScore(r.mean, 3)}</td>
                 <td className="py-1 pr-2">{formatScore(r.sd, 3)}</td>
@@ -202,7 +202,7 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
         V61 기본예측 = 회귀예측매출×{formatPercent(explain.ridgeWeight, 0)} + 기준모형매출×{formatPercent(explain.baselineWeight, 0)} ={" "}
         <b>{formatWon(v61Baseline)}</b>
       </p>
-      <p className="mt-1 text-[11px] text-[#8a8072]">
+      <p className="mt-1 text-[11px] text-[var(--sl-ink-soft)]">
         학습된 가중치(계수)는 항상 0 이상입니다(비음수 릿지회귀). 각 입력이 학습평균보다 높으면 예측을 올리고, 낮으면 내리는 방향으로 작용합니다.
         학습표본이 바뀌면(가맹점 추가·갱신) 평균·표준편차·가중치도 같이 바뀝니다.
       </p>
@@ -436,7 +436,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       .catch(() => setReportError("클립보드 복사에 실패했습니다. 직접 선택해서 복사해주세요."));
   }
 
-  if (loading || completedRequest !== requestKey) return <p className="text-sm text-[#8a8072]">계산 중...</p>;
+  if (loading || completedRequest !== requestKey) return <p className="text-sm text-[var(--sl-ink-soft)]">계산 중...</p>;
 
   if (error) {
     return (
@@ -460,7 +460,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">최종평가 결과</h2>
-          <p className="mt-1 text-sm text-[#8a8072]">모델버전 {result.modelVersion} 기준 계산 결과입니다.</p>
+          <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">모델버전 {result.modelVersion} 기준 계산 결과입니다.</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -517,9 +517,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           )}
           최종운영판정: {result.finalJudgement ?? "-"}
         </span>
-        <span className="text-xs text-[#8a8072]">입력완성도: {result.completionStatus ?? "-"}</span>
+        <span className="text-xs text-[var(--sl-ink-soft)]">입력완성도: {result.completionStatus ?? "-"}</span>
       </div>
-      <p className="text-xs text-[#8a8072]">
+      <p className="text-xs text-[var(--sl-ink-soft)]">
         [계산 상태]는 아직 입력·계산이 덜 끝났다는 뜻이고, [사업 판정]이 떠야 실제 출점 판단에 참고할 수 있는 결과입니다.
       </p>
 
@@ -573,7 +573,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           </p>
         )}
         <details className="mt-3">
-          <summary className="cursor-pointer text-xs font-medium text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]">
+          <summary className="cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)] hover:text-[#171310] dark:hover:text-[#f2ede2]">
             세부 계산값 보기 (V61 기본예측 · V62 보정률 · 보수/상한 참고범위)
           </summary>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -639,7 +639,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>선투자 프로모션 기준매출 판정 (참고용)</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           예상 오픈월부터 10개월간 &ldquo;순수익 2,000/1,500/1,000만원 대당 일매출목표&rdquo; 평균과 위 V62 최종예상월매출을
           비교하는 3단계 등급 판정입니다(1,500만원은 2,000/1,000만원 실측표의 월별 평균). PC대수는 100대 상한이
           적용됩니다(100대 초과여도 100대 기준으로 계산). 선투자 프로모션 대상 판단용이라 최종운영판정과는 별개이고,
@@ -681,7 +681,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className={sectionTitleClass}>다우오피스 평가기록 초안</h3>
-            <p className="mt-1 text-xs text-[#8a8072]">
+            <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
               위 계산 결과만 근거로 AI(Gemini)가 [상권]/[경쟁]/[종합 의견] 문장을 씁니다. 다우오피스에 자동으로 기입하지 않으니,
               내용을 검토·수정한 뒤 직접 복사해서 붙여넣어주세요. 손익계산(투자비·회수기간 등)은 포함하지 않습니다.
             </p>
@@ -711,7 +711,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             ).map((section) => (
               <div key={section.key} className="app-card-sm rounded-xl p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-[#8a8072]">[{section.label}]</p>
+                  <p className="text-xs font-semibold text-[var(--sl-ink-soft)]">[{section.label}]</p>
                   <button
                     type="button"
                     onClick={() => handleCopy(section.key, section.text)}
@@ -743,7 +743,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className={sectionTitleClass}>분석 카드 이미지 (1차 초안)</h3>
-            <p className="mt-1 text-xs text-[#8a8072]">
+            <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
               위에 이미 계산된 값(V62 최종예상월매출·상권/경쟁 지표·인근 경쟁점)만으로 만든 요약 카드입니다. 손익(원가·회수기간)은
               아직 우리 시스템에 없는 데이터라 포함하지 않았습니다.
             </p>
@@ -796,7 +796,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
                 <br />
                 V61(폴백) = 예상PC대수 × MAX(0, 선형값)
               </p>
-              <p className="mt-1 text-[11px] text-[#8a8072]">
+              <p className="mt-1 text-[11px] text-[var(--sl-ink-soft)]">
                 기존 가맹점 학습표본이 최소 기준({settingsUsed.v61Training.minSampleCount}곳)에 못 미쳐, 아래 학습모형 대신 사람이 미리
                 정해둔 이 임시 근사식을 씁니다. docs/data-issues.md #1 참고.
               </p>

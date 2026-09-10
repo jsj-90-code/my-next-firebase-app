@@ -112,7 +112,7 @@ export function LocationEvalAiReviewPanel({
   return (
     <div className="mt-4 rounded-xl border border-[var(--sl-info)]/25 bg-[var(--sl-info-soft)] p-4">
       <h4 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">AI 제안 검토</h4>
-      <p className="mt-1 text-xs leading-5 text-[#8a8072]">
+      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
         신뢰도 {Math.round(CONFIDENCE_AUTO_APPLY_THRESHOLD * 100)}% 미만인 항목은 기본적으로 체크가 해제돼
         있습니다 — 값을 직접 확인·수정한 뒤 체크해주세요. 값은 체크 여부와 상관없이 바로 고칠 수 있습니다.
       </p>
@@ -128,7 +128,7 @@ export function LocationEvalAiReviewPanel({
       <div className="mt-3 overflow-x-auto rounded-lg border border-[#171310]/[0.08] dark:border-white/[0.08]">
         <table className="w-full text-xs">
           <thead className="bg-[#fffdf7] dark:bg-[#1c1912]">
-            <tr className="text-left text-[#8a8072]">
+            <tr className="text-left text-[var(--sl-ink-soft)]">
               <th className="w-8 px-2 py-1"></th>
               <th className="px-2 py-1">항목</th>
               <th className="px-2 py-1">현재값</th>
@@ -147,7 +147,7 @@ export function LocationEvalAiReviewPanel({
                     <input type="checkbox" checked={row.checked} onChange={(e) => updateRow(idx, { checked: e.target.checked })} />
                   </td>
                   <td className="px-2 py-1 align-top text-[#5c5346] dark:text-[#c9bfae]">{meta.label}</td>
-                  <td className="px-2 py-1 align-top text-[#8a8072]">{displayValue(currentValues[meta.key])}</td>
+                  <td className="px-2 py-1 align-top text-[var(--sl-ink-soft)]">{displayValue(currentValues[meta.key])}</td>
                   <td className="px-2 py-1 align-top">
                     {meta.options ? (
                       <select
@@ -184,7 +184,7 @@ export function LocationEvalAiReviewPanel({
                       </select>
                     )}
                   </td>
-                  <td className={`px-2 py-1 align-top ${lowConfidence ? "font-medium text-[var(--sl-warn)]" : "text-[#8a8072]"}`}>
+                  <td className={`px-2 py-1 align-top ${lowConfidence ? "font-medium text-[var(--sl-warn)]" : "text-[var(--sl-ink-soft)]"}`}>
                     {Math.round(confidence * 100)}%
                   </td>
                 </tr>
@@ -204,7 +204,7 @@ export function LocationEvalAiReviewPanel({
       )}
 
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-[11px] text-[#8a8072]">{appliedCount}개 항목 적용 예정</span>
+        <span className="text-[11px] text-[var(--sl-ink-soft)]">{appliedCount}개 항목 적용 예정</span>
         <button
           type="button"
           onClick={handleApply}

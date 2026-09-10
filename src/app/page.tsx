@@ -31,11 +31,11 @@ export default function Home() {
       <ThemeToggle className="app-btn-outline absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs sm:right-6 sm:top-6" />
       <main className="flex w-full max-w-2xl flex-col items-center gap-10 text-center">
         <div className="max-w-xl space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8a8072]">ISENS</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--sl-ink-soft)]">ISENS</p>
           <h1 className="text-4xl font-extrabold tracking-tight text-[#171310] dark:text-[#f2ede2]">
             아이센스 <span className="text-[#c05a2c]">사내 도구</span>
           </h1>
-          <p className="text-sm leading-6 text-[#8a8072]">회사 구글 계정으로 로그인한 뒤 아래 도구를 이용하세요.</p>
+          <p className="text-sm leading-6 text-[var(--sl-ink-soft)]">회사 구글 계정으로 로그인한 뒤 아래 도구를 이용하세요.</p>
         </div>
 
         <HomeAuthStatus />
@@ -60,7 +60,7 @@ export default function Home() {
                       →
                     </span>
                   </h2>
-                  <p className="mt-1 text-sm leading-6 text-[#8a8072]">{tool.description}</p>
+                  <p className="mt-1 text-sm leading-6 text-[var(--sl-ink-soft)]">{tool.description}</p>
                 </div>
               </div>
               <HomeToolStatus tool={tool.href === "/seat-layout" ? "seat-layout" : "store-eval"} />

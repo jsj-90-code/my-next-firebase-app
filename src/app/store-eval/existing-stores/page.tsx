@@ -161,7 +161,7 @@ function NewStoreForm({ onCancel, onSaved, actor }: { onCancel: () => void; onSa
   return (
     <section className={`${sectionClass} app-card`}>
       <h3 className={sectionTitleClass}>신규 가맹점 등록</h3>
-      <p className="mt-1 text-xs text-[#8a8072]">
+      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
         신규후보지 평가를 거쳐 오픈한 매장은 해당 후보지 화면의 &ldquo;기존 가맹점으로 전환&rdquo; 버튼을 쓰는 게 더 편합니다(경쟁점·입지평가를
         다시 입력할 필요가 없습니다). 이 폼은 평가 없이 바로 등록해야 하는 경우용입니다.
       </p>
@@ -191,7 +191,7 @@ function NewStoreForm({ onCancel, onSaved, actor }: { onCancel: () => void; onSa
 function StatBox({ label, value }: { label: string; value: string }) {
   return (
     <div className="app-card-sm rounded-md px-2.5 py-1.5">
-      <p className="text-[11px] text-[#8a8072]">{label}</p>
+      <p className="text-[11px] text-[var(--sl-ink-soft)]">{label}</p>
       <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{value}</p>
     </div>
   );
@@ -379,7 +379,7 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
           <button type="button" disabled={busy || !linkCandidateCode.trim()} onClick={handleLink} className="app-btn-outline h-fit rounded-md px-3 py-1.5 text-xs disabled:opacity-50">
             연결
           </button>
-          {linkMessage && <p className="text-xs text-[#8a8072]">{linkMessage}</p>}
+          {linkMessage && <p className="text-xs text-[var(--sl-ink-soft)]">{linkMessage}</p>}
         </div>
       )}
 
@@ -403,7 +403,7 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
           월매출 추가/수정
         </button>
       </div>
-      {loading ? <p role="status" className="mt-2 text-xs text-[#8a8072]">월별 매출을 불러오는 중...</p>
+      {loading ? <p role="status" className="mt-2 text-xs text-[var(--sl-ink-soft)]">월별 매출을 불러오는 중...</p>
         : !loadError && <SalesBreakdown sales={sales} openedAt={store.openedAt} />}
 
       <h4 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">회원 스냅샷 ({members.length}건) — 12개월 미만 매장 위주로 계속 갱신</h4>
@@ -533,7 +533,7 @@ export default function ExistingStoresPage() {
       )}
 
       {loading ? (
-        <p className="text-sm text-[#8a8072]">불러오는 중...</p>
+        <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>
       ) : (
         <div className="app-card-sm flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl px-4 py-3 text-sm">
           <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">블랙라벨 총 {blackLabelStores.length}개</span>
@@ -558,7 +558,7 @@ export default function ExistingStoresPage() {
         />
         <div className="app-card overflow-x-auto rounded-xl">
           <table className="w-full min-w-[900px] text-sm">
-            <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
+            <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
               <tr>
                 <th className="px-3 py-2">가맹점코드</th>
                 <th className="px-3 py-2">가맹점명</th>
@@ -611,7 +611,7 @@ export default function ExistingStoresPage() {
               ))}
               {visibleStores.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-3 py-6 text-center text-[#8a8072]">
+                  <td colSpan={9} className="px-3 py-6 text-center text-[var(--sl-ink-soft)]">
                     {stores.length === 0
                       ? "등록된 기존 가맹점이 없습니다."
                       : blackLabelStores.length === 0

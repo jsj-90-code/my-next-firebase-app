@@ -118,7 +118,7 @@ export default function AiValidationPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">AI 채점 검증</h1>
-        <p className="mt-1 text-sm text-[#8a8072]">
+        <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
           이미 문을 연 블랙라벨 매장은 오픈 전 사람이 직접 매긴 입지동선평가 점수(5개)가 정답지로
           남아있습니다. 같은 주소로 AI를 다시 돌려 사람 점수와 비교합니다(목표: ±1점 이내 80%).
           지도 이미지는 이 검증에서는 포함하지 않고 텍스트 컨텍스트+웹검색만 사용합니다. 결과는
@@ -128,7 +128,7 @@ export default function AiValidationPage() {
 
       <section className="app-card rounded-2xl p-5">
         <div className="flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-[#8a8072]">
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--sl-ink-soft)]">
             검증 매장 수
             <input
               type="number"
@@ -139,7 +139,7 @@ export default function AiValidationPage() {
               className="app-input w-24 px-2 py-1.5 text-sm"
             />
           </label>
-          <label className="flex items-center gap-2 text-xs font-medium text-[#8a8072]">
+          <label className="flex items-center gap-2 text-xs font-medium text-[var(--sl-ink-soft)]">
             <input
               type="checkbox"
               checked={runAll}
@@ -148,7 +148,7 @@ export default function AiValidationPage() {
             />
             전체 실행
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-[#8a8072]">
+          <label className="flex flex-col gap-1 text-xs font-medium text-[var(--sl-ink-soft)]">
             특정 매장만 재검증(코드/이름, 선택)
             <input
               type="text"
@@ -164,7 +164,7 @@ export default function AiValidationPage() {
           </button>
         </div>
         {progress && status === "running" && (
-          <p className="mt-3 text-xs text-[#8a8072]">
+          <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
             {progress.done}/{progress.total} 처리 중{progress.current ? ` (${progress.current})` : ""}... 매장당 30~45초 정도 걸립니다.
           </p>
         )}
@@ -177,7 +177,7 @@ export default function AiValidationPage() {
             <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">정확도 요약</h2>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <div className={`app-card-sm rounded-lg px-4 py-3 ${summary.withinOneRatio >= TARGET_RATIO ? "" : ""}`}>
-                <p className="text-xs text-[#8a8072]">전체 ±1점 이내 적중률 (목표 {TARGET_RATIO * 100}%)</p>
+                <p className="text-xs text-[var(--sl-ink-soft)]">전체 ±1점 이내 적중률 (목표 {TARGET_RATIO * 100}%)</p>
                 <p
                   className={`text-lg font-semibold tabular-nums ${
                     summary.withinOneRatio >= TARGET_RATIO ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"
@@ -186,7 +186,7 @@ export default function AiValidationPage() {
                   {(summary.withinOneRatio * 100).toFixed(1)}% ({summary.withinOneCount}/{summary.totalPairs})
                 </p>
               </div>
-              <p className="text-xs text-[#8a8072]">
+              <p className="text-xs text-[var(--sl-ink-soft)]">
                 성공 {summary.storeCount}곳 · 실패/스킵 {skippedResults.length}곳
               </p>
             </div>
@@ -195,7 +195,7 @@ export default function AiValidationPage() {
                 const f = summary.perField[key];
                 return (
                   <div key={key} className="app-card-sm rounded-lg px-3 py-2">
-                    <p className="text-[11px] text-[#8a8072]">{SCORE_FIELD_LABELS[key]}</p>
+                    <p className="text-[11px] text-[var(--sl-ink-soft)]">{SCORE_FIELD_LABELS[key]}</p>
                     <p className="text-sm font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">
                       {(f.ratio * 100).toFixed(0)}% ({f.withinOne}/{f.total})
                     </p>
@@ -211,7 +211,7 @@ export default function AiValidationPage() {
               <div className="app-card-sm mt-3 overflow-x-auto rounded-lg">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-left text-[#8a8072]">
+                    <tr className="text-left text-[var(--sl-ink-soft)]">
                       <th className="px-2 py-1.5">매장명</th>
                       <th className="px-2 py-1.5">주소</th>
                       {SCORE_FIELD_KEYS.map((key) => (
@@ -225,7 +225,7 @@ export default function AiValidationPage() {
                     {okResults.map((o) => (
                       <tr key={o.result.storeCode} className="border-t border-[#171310]/[0.08] dark:border-white/[0.08]">
                         <td className="px-2 py-1.5 text-[#5c5346] dark:text-[#c9bfae]">{o.result.storeName}</td>
-                        <td className="px-2 py-1.5 text-[#8a8072]">{o.result.address}</td>
+                        <td className="px-2 py-1.5 text-[var(--sl-ink-soft)]">{o.result.address}</td>
                         {o.result.rows.map((row) => (
                           <td
                             key={row.field}
@@ -245,7 +245,7 @@ export default function AiValidationPage() {
           {skippedResults.length > 0 && (
             <section className="app-card rounded-2xl p-5">
               <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">실패/스킵된 매장</h2>
-              <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-[#8a8072]">
+              <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-[var(--sl-ink-soft)]">
                 {skippedResults.map((o, i) => (
                   <li key={`${o.storeCode}_${i}`}>
                     {o.storeName} — {o.reason}

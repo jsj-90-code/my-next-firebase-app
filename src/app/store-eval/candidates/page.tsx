@@ -108,7 +108,7 @@ export default function CandidateListPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">신규후보지</h1>
-          <p className="mt-1 text-sm text-[#8a8072]">
+          <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
             신규 후보지를 등록하고, 경쟁점·입지동선평가를 거쳐 V62 최종판정을 확인합니다.
           </p>
         </div>
@@ -139,7 +139,7 @@ export default function CandidateListPage() {
 
       <div className="app-card overflow-x-auto rounded-2xl">
         <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-[#171310]/[0.08] bg-[#171310]/[0.02] text-xs uppercase tracking-wide text-[#8a8072] dark:border-white/[0.08] dark:bg-white/[0.02]">
+          <thead className="border-b border-[#171310]/[0.08] bg-[#171310]/[0.02] text-xs uppercase tracking-wide text-[var(--sl-ink-soft)] dark:border-white/[0.08] dark:bg-white/[0.02]">
             <tr>
               <th className="px-4 py-3">코드</th>
               <th className="px-4 py-3">이름</th>
@@ -152,26 +152,26 @@ export default function CandidateListPage() {
           <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-[#8a8072]">
+                <td colSpan={6} className="px-4 py-8 text-center text-[var(--sl-ink-soft)]">
                   불러오는 중...
                 </td>
               </tr>
             ) : candidates.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-[#8a8072]">
+                <td colSpan={6} className="px-4 py-8 text-center text-[var(--sl-ink-soft)]">
                   등록된 후보지가 없습니다. &ldquo;신규 후보지 등록&rdquo; 버튼으로 시작하세요.
                 </td>
               </tr>
             ) : filteredCandidates.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-[#8a8072]">
+                <td colSpan={6} className="px-4 py-8 text-center text-[var(--sl-ink-soft)]">
                   &ldquo;{search}&rdquo;와(과) 일치하는 후보지가 없습니다.
                 </td>
               </tr>
             ) : (
               filteredCandidates.map((c) => (
                 <tr key={c.code} className="app-row">
-                  <td className="px-4 py-3 font-mono text-xs tabular-nums text-[#8a8072]">{c.code}</td>
+                  <td className="px-4 py-3 font-mono text-xs tabular-nums text-[var(--sl-ink-soft)]">{c.code}</td>
                   <td className="px-4 py-3">
                     <Link
                       href={`/store-eval/candidates/${c.code}`}
@@ -191,7 +191,7 @@ export default function CandidateListPage() {
                       {c.reviewStatus}
                     </span>
                   </td>
-                  <td className="px-4 py-3 font-mono text-[#8a8072]">{formatDateTime(c.updatedAt)}</td>
+                  <td className="px-4 py-3 font-mono text-[var(--sl-ink-soft)]">{formatDateTime(c.updatedAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       <Link

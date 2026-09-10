@@ -168,7 +168,7 @@ export function CandidateMap({
           </button>
         </div>
       )}
-      <div className="flex flex-wrap gap-2 text-[11px] text-[#8a8072]">
+      <div className="flex flex-wrap gap-2 text-[11px] text-[var(--sl-ink-soft)]">
         {Object.entries(CATEGORY_COLORS).map(([label, color]) => (
           <span key={label} className="flex items-center gap-1">
             <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />

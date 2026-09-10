@@ -230,7 +230,7 @@ function ExistingStoreProfileEditor({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           GPU/CPU/RAM/모니터 모두 “기본”(대부분 좌석의 대표사양)과 “특화”(일부 좌석만 업그레이드된
           사양) 텍스트를 각각 입력합니다. 일부 좌석만 업그레이드됐다면 매장 전체를 그 사양으로 보지
           않고 기본80%+특화(균등분배)20%로 계산합니다.
@@ -278,7 +278,7 @@ function ExistingStoreProfileEditor({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁력 점수</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           하드웨어·입지 점수는 위에 입력한 VGA/CPU/RAM·층수+엘리베이터로부터 자동 계산됩니다. 기존
           가맹점 백테스트는 신규후보지용 표준값(5점)이 아니라 원본 시트 규칙(빈칸이면 4점)을 씁니다.
         </p>
@@ -297,7 +297,7 @@ function ExistingStoreProfileEditor({
           <NumberField label="점포층수" value={form.floor} onChange={(v) => set("floor", v)} allowNegative />
         </div>
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">하드웨어 - 모니터</h4>
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">하드웨어 - 모니터</h4>
         <div className={`${gridClass} mt-3`}>
           <MonitorTextField
             label="모니터 기본"
@@ -309,7 +309,7 @@ function ExistingStoreProfileEditor({
         </div>
         <HardwareScoringGuide />
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">먹거리</h4>
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">먹거리</h4>
         <div className={`${gridClass} mt-3`}>
           <SelectField label="먹거리 브랜드" value={form.ownFoodBrand} onChange={(v) => set("ownFoodBrand", v)} options={FOOD_BRAND_OPTIONS} />
           {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && (
@@ -325,7 +325,7 @@ function ExistingStoreProfileEditor({
         </div>
         {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && <FoodScoringGuide />}
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어·좌석·관리</h4>
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">인테리어·좌석·관리</h4>
         <InteriorScoringGuide />
         <div className={`${gridClass} mt-3`}>
           {computedScores.zoneComposition != null ? (
@@ -355,7 +355,7 @@ function ExistingStoreProfileEditor({
         </div>
         {(form.ownInteriorLevelScore != null || form.ownInteriorConditionScore != null || form.ownComfortScore != null) && (
           <>
-            <p className="mt-3 text-xs text-[#8a8072]">
+            <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
               아래 세부항목은 2026-08-31 산식 개편 이후 계산에는 더 이상 쓰이지 않습니다(이미 입력된
               값이 있어 이력으로만 표시합니다).
             </p>
@@ -370,7 +370,7 @@ function ExistingStoreProfileEditor({
         )}
       </section>
 
-      {message && <p className="text-sm text-[#8a8072]">{message}</p>}
+      {message && <p className="text-sm text-[var(--sl-ink-soft)]">{message}</p>}
       <div className="flex justify-end">
         <button type="button" disabled={saving} onClick={handleSave} className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">
           {saving ? "저장 중..." : "저장"}

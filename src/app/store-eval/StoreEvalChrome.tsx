@@ -27,7 +27,7 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
             <div className="flex items-center gap-3">
               <Link
                 href="/"
-                className="text-xs text-[#8a8072] transition hover:text-[#171310] dark:hover:text-[#f2ede2]"
+                className="text-xs text-[var(--sl-ink-soft)] transition hover:text-[#171310] dark:hover:text-[#f2ede2]"
               >
                 ← 홈으로
               </Link>

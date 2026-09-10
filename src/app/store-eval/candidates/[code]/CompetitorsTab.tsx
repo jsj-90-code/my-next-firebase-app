@@ -343,12 +343,12 @@ function CompetitorForm({
         <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
       </div>
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">시설/사양</h4>
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">시설/사양</h4>
       <div className={`${gridClass} mt-3`}>
         <NumberField label="전체대수" value={form.totalPcCount} onChange={(v) => set("totalPcCount", v)} />
         <NumberField label="적용대수" value={form.appliedPcCount} onChange={(v) => set("appliedPcCount", v)} hint="실사값 없으면 대체값을 조사 후 입력" />
         <div className="col-span-full sm:col-span-1">
-          <p className="text-xs font-medium text-[#8a8072]">적용대수 출처</p>
+          <p className="text-xs font-medium text-[var(--sl-ink-soft)]">적용대수 출처</p>
           <p className="app-card-sm mt-1 rounded-md px-2.5 py-1.5 text-sm text-[#5c5346] dark:text-[#c9bfae]">
             {describeAppliedPcCountBasis(form) ?? "-"}
           </p>
@@ -369,7 +369,7 @@ function CompetitorForm({
       </div>
       <HardwareScoringGuide />
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">실측</h4>
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">실측</h4>
       <div className={`${gridClass} mt-3`}>
         <TextField label="방문일시" value={form.visitedAt ?? ""} onChange={(v) => set("visitedAt", v || null)} placeholder="예: 2026-08-01 14:30" />
         <SelectField label="방문요일" value={form.visitedDow} onChange={(v) => set("visitedDow", v)} options={DOW_OPTIONS} />
@@ -380,10 +380,10 @@ function CompetitorForm({
         <NumberField label="리뉴얼연도" value={form.renovationYear} onChange={(v) => set("renovationYear", v)} step={1} />
       </div>
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">
         경쟁력 점수 및 평가근거
       </h4>
-      <p className="mt-1 text-xs text-[#8a8072]">
+      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
         하드웨어·입지 점수는 위 VGA/CPU/RAM/모니터·층수+엘리베이터로부터 자동 계산됩니다. 조사수준이
         &quot;간략&quot;이면 미입력 항목은 기본값 2.5점으로 채워집니다(실측 경쟁점 154곳 종합점수 분포의 25%ile 기준).
       </p>
@@ -447,7 +447,7 @@ function CompetitorForm({
       </div>
       {(form.interiorLevelScore != null || form.interiorConditionScore != null || form.comfortScore != null) && (
         <>
-          <p className="mt-3 text-xs text-[#8a8072]">
+          <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
             아래 세부항목은 2026-08-31 산식 개편 이후 계산에는 더 이상 쓰이지 않습니다(이미 입력된 값이
             있어 이력으로만 표시합니다).
           </p>
@@ -459,14 +459,14 @@ function CompetitorForm({
           </div>
         </>
       )}
-      <p className="mt-2 text-xs text-[#8a8072]">종합 경쟁력점수: {computed.total ?? "-"}</p>
+      <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">종합 경쟁력점수: {computed.total ?? "-"}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <TextAreaField label="먹거리 근거" value={form.foodBasis ?? ""} onChange={(v) => set("foodBasis", v || null)} rows={2} />
         <TextAreaField label="인테리어 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
         <TextAreaField label="모니터 근거" value={form.monitorBasis ?? ""} onChange={(v) => set("monitorBasis", v || null)} rows={2} />
       </div>
 
-      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">존 구성</h4>
+      <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">존 구성</h4>
       <div className={`${gridClass} mt-3`}>
         <NumberField label="1인석 수" value={form.singleSeatCount} onChange={(v) => set("singleSeatCount", v)} />
         <NumberField label="1인룸 수" value={form.room1} onChange={(v) => set("room1", v)} />
@@ -635,7 +635,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁점</h2>
-          <p className="mt-1 text-sm text-[#8a8072]">이 후보지 반경 내 경쟁점 정보를 입력합니다.</p>
+          <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">이 후보지 반경 내 경쟁점 정보를 입력합니다.</p>
         </div>
         {editingId === null && (
           <div className="flex gap-2 print:hidden">
@@ -663,7 +663,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
       {pasteOpen && editingId === null && (
         <section className={sectionClass}>
           <h3 className={sectionTitleClass}>경쟁점 설명 붙여넣기</h3>
-          <p className="mt-1 text-xs text-[#8a8072]">
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             점포개발자가 남긴 &ldquo;경쟁점 설명&rdquo; 텍스트를 통째로 붙여넣으면 매장명·사양·존구성·방문기록·종합평가를
             자동으로 나눠 인식합니다(AI 아닌 텍스트 매칭). 자동으로 저장되지 않으니, 매장을 하나씩 골라 폼에 채운 뒤
             직접 검토하고 저장해주세요. 적용대수·거리·경쟁력 점수는 판단이 필요해 자동으로 채우지 않습니다.
@@ -673,17 +673,17 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
             <button type="button" onClick={handleParsePaste} className="app-btn-primary rounded-lg px-4 py-2 text-sm">
               분석
             </button>
-            {parsedNotes.length > 0 && <span className="text-xs text-[#8a8072]">{parsedNotes.length}곳 인식됨</span>}
+            {parsedNotes.length > 0 && <span className="text-xs text-[var(--sl-ink-soft)]">{parsedNotes.length}곳 인식됨</span>}
           </div>
           {parsedNotes.length > 0 && (
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {parsedNotes.map((note, i) => (
                 <div key={`${note.name}_${i}`} className="app-card-sm rounded-lg p-3 text-xs">
                   <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">{note.name}</p>
-                  <p className="mt-0.5 text-[#8a8072]">
+                  <p className="mt-0.5 text-[var(--sl-ink-soft)]">
                     전체 {note.totalPcCount ?? "-"}대 · {note.cpu ?? "-"} · {note.vgaBase ?? "-"}
                   </p>
-                  <p className="mt-0.5 text-[#8a8072]">방문 {note.visitedAt ?? "-"} · {note.visitorCount ?? "-"}명</p>
+                  <p className="mt-0.5 text-[var(--sl-ink-soft)]">방문 {note.visitedAt ?? "-"} · {note.visitorCount ?? "-"}명</p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <select
                       value={mergeTargets[i] ?? "new"}
@@ -705,7 +705,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                       폼에 채우기
                     </button>
                   </div>
-                  <p className="mt-1 text-[10px] text-[#8a8072]">
+                  <p className="mt-1 text-[10px] text-[var(--sl-ink-soft)]">
                     이름이 자동으로 안 맞을 수 있어(예: &ldquo;탑스타pc방&rdquo; vs &ldquo;탑스타PC 울산삼산점&rdquo;) 병합할
                     기존 경쟁점을 직접 확인하고 골라주세요. 이미 이름이 똑같은 경쟁점이 있으면 기본으로 선택해둡니다.
                   </p>
@@ -772,9 +772,9 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
       )}
 
       {loading ? (
-        <p className="text-sm text-[#8a8072]">불러오는 중...</p>
+        <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>
       ) : competitors.length === 0 ? (
-        <p className="app-card rounded-2xl border-dashed px-4 py-8 text-center text-sm text-[#8a8072]">
+        <p className="app-card rounded-2xl border-dashed px-4 py-8 text-center text-sm text-[var(--sl-ink-soft)]">
           등록된 경쟁점이 없습니다.
         </p>
       ) : (
@@ -815,19 +815,19 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
               )}
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">
                 <div>
-                  <dt className="inline text-[#8a8072]">거리 </dt>
+                  <dt className="inline text-[var(--sl-ink-soft)]">거리 </dt>
                   <dd className="inline">{c.distanceM != null ? `${c.distanceM}m` : "-"}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-[#8a8072]">적용대수 </dt>
+                  <dt className="inline text-[var(--sl-ink-soft)]">적용대수 </dt>
                   <dd className="inline">{c.appliedPcCount ?? c.totalPcCount ?? "-"}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-[#8a8072]">조사수준 </dt>
+                  <dt className="inline text-[var(--sl-ink-soft)]">조사수준 </dt>
                   <dd className="inline">{c.surveyLevel ?? "-"}</dd>
                 </div>
                 <div>
-                  <dt className="inline text-[#8a8072]">경쟁력점수 </dt>
+                  <dt className="inline text-[var(--sl-ink-soft)]">경쟁력점수 </dt>
                   <dd className="inline">{computeCompetitorScores(c, settings).total ?? "-"}</dd>
                 </div>
               </dl>

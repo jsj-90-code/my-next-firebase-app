@@ -77,13 +77,13 @@ function ExistingStoreDetail({ code }: { code: string }) {
     router.replace(`${pathname}?${qs.toString()}`);
   }
 
-  if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
+  if (loading) return <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>;
 
   if (error) {
     return (
       <div className="flex flex-col gap-4">
         <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
-        <Link href="/store-eval/existing-stores" className="w-fit text-sm text-[#8a8072] underline">
+        <Link href="/store-eval/existing-stores" className="w-fit text-sm text-[var(--sl-ink-soft)] underline">
           목록으로 돌아가기
         </Link>
       </div>
@@ -97,14 +97,14 @@ function ExistingStoreDetail({ code }: { code: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Link href="/store-eval/existing-stores" className="text-xs text-[#8a8072] hover:underline">
+        <Link href="/store-eval/existing-stores" className="text-xs text-[var(--sl-ink-soft)] hover:underline">
           ← 기존 가맹점 목록
         </Link>
         <h1 className="mt-1 text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">
-          {store.storeName} <span className="font-mono text-sm text-[#8a8072]">{store.storeCode}</span>
+          {store.storeName} <span className="font-mono text-sm text-[var(--sl-ink-soft)]">{store.storeCode}</span>
         </h1>
         {store.originCandidateCode && (
-          <p className="mt-1 text-xs text-[#8a8072]">
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             후보지 {store.originCandidateCode}에서 전환된 매장입니다 — 그 후보지의 경쟁점·입지평가 데이터를 그대로 씁니다.
           </p>
         )}
@@ -119,7 +119,7 @@ function ExistingStoreDetail({ code }: { code: string }) {
             className={`px-3 py-2 ${
               activeTab === tab.key
                 ? "border-b-2 border-[#171310] font-medium text-[#171310] dark:border-[#f2ede2] dark:text-[#f2ede2]"
-                : "text-[#8a8072]"
+                : "text-[var(--sl-ink-soft)]"
             }`}
           >
             {tab.label}

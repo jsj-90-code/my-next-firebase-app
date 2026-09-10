@@ -33,7 +33,7 @@ export function AuthForm() {
   return (
     <div className="app-card w-full max-w-md rounded-2xl p-8">
       <h2 className="text-2xl font-semibold text-[#171310] dark:text-[#f2ede2]">로그인</h2>
-      <p className="mt-2 text-sm text-[#8a8072]">회사 구글 계정(@isens.camp)으로만 접속할 수 있습니다.</p>
+      <p className="mt-2 text-sm text-[var(--sl-ink-soft)]">회사 구글 계정(@isens.camp)으로만 접속할 수 있습니다.</p>
 
       <button
         type="button"
@@ -50,7 +50,7 @@ export function AuthForm() {
         </p>
       ) : null}
 
-      <p className="mt-6 text-center text-xs text-[#8a8072]">
+      <p className="mt-6 text-center text-xs text-[var(--sl-ink-soft)]">
         계정이 필요하면 관리자에게 요청하세요. 이 화면에서는 새 계정을 만들 수 없습니다.
       </p>
     </div>

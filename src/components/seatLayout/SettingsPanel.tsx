@@ -164,14 +164,14 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
           <button
             type="button"
             onClick={handleClose}
-            className="text-sm text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]"
+            className="text-sm text-[var(--sl-ink-soft)] hover:text-[#171310] dark:hover:text-[#f2ede2]"
           >
             닫기
           </button>
         </div>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-5 py-4">
-          <p className="text-xs text-[#8a8072]">
+          <p className="text-xs text-[var(--sl-ink-soft)]">
             여기서 바꾼 드롭다운 항목/기본값은 저장 즉시 모든 매장 작업에 공통으로 적용됩니다. (이미 저장된
             프로젝트의 값은 바뀌지 않습니다)
           </p>
@@ -215,7 +215,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
 
           <section>
             <h3 className="mb-2 font-semibold text-[#171310] dark:text-[#f2ede2]">존 유형별 기본값 재정의</h3>
-            <p className="mb-2 text-xs text-[#8a8072]">
+            <p className="mb-2 text-xs text-[var(--sl-ink-soft)]">
               특정 존 유형만 다른 기본값을 쓰고 싶을 때만 지정하세요. 비워두면(기본값 사용) 위 기본값을 그대로
               씁니다.
             </p>
@@ -234,14 +234,14 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
                       />
                       {t.label}
                     </span>
-                    <span className="text-xs text-[#8a8072]">
+                    <span className="text-xs text-[var(--sl-ink-soft)]">
                       {expandedType === t.key ? "▾ 접기" : "▸ 펼치기"}
                     </span>
                   </button>
                   {expandedType === t.key && (
                     <div className="space-y-3 border-t border-black/[0.06] px-3 py-3 dark:border-white/[0.08]">
                       <div>
-                        <p className="mb-1 text-xs font-semibold text-[#8a8072]">책상 탭</p>
+                        <p className="mb-1 text-xs font-semibold text-[var(--sl-ink-soft)]">책상 탭</p>
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                           {SPEC_FIELDS.map((f) => (
                             <TypeOverrideField
@@ -255,7 +255,7 @@ export function SettingsPanel({ settings, onClose, onSave }: Props) {
                         </div>
                       </div>
                       <div>
-                        <p className="mb-1 text-xs font-semibold text-[#8a8072]">PC 탭</p>
+                        <p className="mb-1 text-xs font-semibold text-[var(--sl-ink-soft)]">PC 탭</p>
                         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                           {PC_SPEC_FIELDS.map((f) => (
                             <TypeOverrideField
@@ -383,14 +383,14 @@ function OptionEditor({
                 type="button"
                 onClick={() => onRemove(opt)}
                 aria-label={`${opt} 삭제`}
-                className="text-[#8a8072] hover:text-[var(--sl-danger)]"
+                className="text-[var(--sl-ink-soft)] hover:text-[var(--sl-danger)]"
               >
                 ×
               </button>
             </span>
           ),
         )}
-        {!options.length && <span className="text-xs text-[#8a8072]">등록된 항목 없음</span>}
+        {!options.length && <span className="text-xs text-[var(--sl-ink-soft)]">등록된 항목 없음</span>}
       </div>
       <div className="mt-2 flex gap-1.5">
         <input
@@ -414,7 +414,7 @@ function OptionEditor({
         </button>
       </div>
       <div className="mt-2">
-        <label className="text-xs text-[#8a8072]">기본값</label>
+        <label className="text-xs text-[var(--sl-ink-soft)]">기본값</label>
         {freeDefault ? (
           <>
             <select
@@ -489,7 +489,7 @@ function TypeOverrideField({
   const showCustomInput = customMode || (!isKnown && !value);
   return (
     <div>
-      <label className="text-xs text-[#8a8072]">{label}</label>
+      <label className="text-xs text-[var(--sl-ink-soft)]">{label}</label>
       {freeText ? (
         <>
           <select

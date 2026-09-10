@@ -244,8 +244,8 @@ export function LocationEvalTab({
     setAiDraft(null);
   }
 
-  if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
-  if (!form) return <p className="text-sm text-[#8a8072]">데이터를 불러오지 못했습니다.</p>;
+  if (loading) return <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>;
+  if (!form) return <p className="text-sm text-[var(--sl-ink-soft)]">데이터를 불러오지 못했습니다.</p>;
 
   return (
     <div className="flex flex-col gap-6">
@@ -278,7 +278,7 @@ export function LocationEvalTab({
             {aiLoading ? "AI가 조사 중..." : "AI로 초안 채우기"}
           </button>
         </div>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           이미 수집된 경쟁점·수요거점·행정동통계·지도 이미지를 참고자료로 주고, 부족한 부분만 웹검색으로
           보완해서 5개 점수뿐 아니라 특수수요/외부유입제한/수요이탈위험/상권구조메모까지 초안을 제안합니다.
           자동저장되지 않으니 아래 승인화면에서 검토·수정 후 적용하고, 최종적으로 &ldquo;저장&rdquo;을 눌러주세요.
@@ -301,7 +301,7 @@ export function LocationEvalTab({
             onApply={handleApplyAiPatch}
           />
         )}
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           2026-09-01 재설계 — 상권내위치·주요동선·상권흡인력 3개 항목이 실측 검토 결과 87%·72% 동점으로
           사실상 같은 판단이었어서 ‘상권위치·동선점수’ 하나로 통합했습니다. 선점경쟁점수도 경쟁점 개수와
           혼동되던 문제를 바로잡아 ‘특정 경쟁점이 더 좋은 자리를 차지했는가’만 보도록 재정의했습니다.
@@ -328,7 +328,7 @@ export function LocationEvalTab({
         </div>
 
         <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
-          <p className="text-xs text-[#8a8072]">입지동선종합점수 실시간 미리보기 (저장하지 않음, 3개 점수 입력 시 계산)</p>
+          <p className="text-xs text-[var(--sl-ink-soft)]">입지동선종합점수 실시간 미리보기 (저장하지 않음, 3개 점수 입력 시 계산)</p>
           <p className="mt-1 text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">
             {compositePreview != null ? formatScore(compositePreview) : "- (3개 점수를 모두 입력하세요)"}
           </p>
@@ -361,7 +361,7 @@ export function LocationEvalTab({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>외부유입 / 브랜드</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">외부유입제한은 V62 보정률에 직결되는 핵심 항목입니다(강함 -20% / 보통 -3% / 없음 0%).</p>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">외부유입제한은 V62 보정률에 직결되는 핵심 항목입니다(강함 -20% / 보통 -3% / 없음 0%).</p>
         <div className={`${gridClass} mt-4`}>
           <SelectField
             label="외부유입제한"

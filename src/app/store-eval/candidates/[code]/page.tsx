@@ -180,14 +180,14 @@ function CandidateDetail({ code }: { code: string }) {
   }
 
   if (loading) {
-    return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
+    return <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>;
   }
 
   if (error) {
     return (
       <div className="flex flex-col gap-4">
         <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
-        <Link href="/store-eval/candidates" className="w-fit text-sm text-[#8a8072] underline">
+        <Link href="/store-eval/candidates" className="w-fit text-sm text-[var(--sl-ink-soft)] underline">
           목록으로 돌아가기
         </Link>
       </div>
@@ -200,12 +200,12 @@ function CandidateDetail({ code }: { code: string }) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <Link href="/store-eval/candidates" className="text-xs text-[#8a8072] hover:underline">
+          <Link href="/store-eval/candidates" className="text-xs text-[var(--sl-ink-soft)] hover:underline">
             ← 신규후보지 목록
           </Link>
           <h1 className="mt-1 text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">
             {candidate.name || "(이름 없음)"}{" "}
-            {!isNewDraft && <span className="font-mono text-sm text-[#8a8072]">{candidate.code}</span>}
+            {!isNewDraft && <span className="font-mono text-sm text-[var(--sl-ink-soft)]">{candidate.code}</span>}
           </h1>
         </div>
         {!persisted && (
@@ -230,7 +230,7 @@ function CandidateDetail({ code }: { code: string }) {
                   ? "border-[#c05a2c] text-[#171310] dark:text-[#f2ede2]"
                   : disabled
                     ? "cursor-not-allowed border-transparent text-[#c9bfae] dark:text-[#4a4438]"
-                    : "border-transparent text-[#8a8072] hover:text-[#171310] dark:hover:text-[#f2ede2]"
+                    : "border-transparent text-[var(--sl-ink-soft)] hover:text-[#171310] dark:hover:text-[#f2ede2]"
               }`}
             >
               {tab.label}

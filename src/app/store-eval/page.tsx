@@ -50,7 +50,7 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
   return (
     <div className="app-card relative overflow-hidden rounded-2xl p-4">
       <span className={`app-stripe-${tone} absolute inset-y-0 left-0 w-[3px]`} />
-      <p className="text-xs font-medium text-[#8a8072]">{label}</p>
+      <p className="text-xs font-medium text-[var(--sl-ink-soft)]">{label}</p>
       <p className={`mt-1 text-2xl font-bold tabular-nums ${toneTextClass}`}>{value.toLocaleString("ko-KR")}</p>
     </div>
   );
@@ -124,7 +124,7 @@ export default function StoreEvalDashboardPage() {
   }
 
   if (loading) {
-    return <div className="py-16 text-center text-sm text-[#8a8072]">불러오는 중...</div>;
+    return <div className="py-16 text-center text-sm text-[var(--sl-ink-soft)]">불러오는 중...</div>;
   }
 
   if (error) {
@@ -164,7 +164,7 @@ export default function StoreEvalDashboardPage() {
         </div>
 
         {candidates.length === 0 ? (
-          <div className="app-card rounded-2xl p-8 text-center text-sm text-[#8a8072]">
+          <div className="app-card rounded-2xl p-8 text-center text-sm text-[var(--sl-ink-soft)]">
             등록된 후보지가 없습니다.{" "}
             <Link href="/store-eval/candidates" className="font-medium text-[#171310] underline dark:text-[#f2ede2]">
               신규후보지 등록하러 가기 →
@@ -173,7 +173,7 @@ export default function StoreEvalDashboardPage() {
         ) : (
           <div className="app-card overflow-x-auto rounded-2xl">
             <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-[#171310]/[0.08] text-xs text-[#8a8072] dark:border-white/[0.08]">
+              <thead className="border-b border-[#171310]/[0.08] text-xs text-[var(--sl-ink-soft)] dark:border-white/[0.08]">
                 <tr>
                   <th className="px-4 py-3 font-medium">후보지코드</th>
                   <th className="px-4 py-3 font-medium">이름</th>
@@ -210,13 +210,13 @@ export default function StoreEvalDashboardPage() {
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">최근 평가 목록</h2>
         {recentResults.length === 0 ? (
-          <div className="app-card rounded-2xl p-8 text-center text-sm text-[#8a8072]">
+          <div className="app-card rounded-2xl p-8 text-center text-sm text-[var(--sl-ink-soft)]">
             아직 계산된 평가 결과가 없습니다.
           </div>
         ) : (
           <div className="app-card overflow-x-auto rounded-2xl">
             <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-[#171310]/[0.08] text-xs text-[#8a8072] dark:border-white/[0.08]">
+              <thead className="border-b border-[#171310]/[0.08] text-xs text-[var(--sl-ink-soft)] dark:border-white/[0.08]">
                 <tr>
                   <th className="px-4 py-3 font-medium">후보지</th>
                   <th className="px-4 py-3 font-medium">V62 최종예상월매출</th>
@@ -239,7 +239,7 @@ export default function StoreEvalDashboardPage() {
                     <td className="px-4 py-3">
                       <JudgementBadge result={result} />
                     </td>
-                    <td className="px-4 py-3 font-mono text-[#8a8072]">{formatDateTime(result.calculatedAt)}</td>
+                    <td className="px-4 py-3 font-mono text-[var(--sl-ink-soft)]">{formatDateTime(result.calculatedAt)}</td>
                   </tr>
                 ))}
               </tbody>

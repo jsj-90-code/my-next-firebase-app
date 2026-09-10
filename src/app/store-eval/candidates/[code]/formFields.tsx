@@ -7,7 +7,7 @@ import { useId } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 
 const inputClass = "app-input w-full px-2.5 py-1.5 text-sm";
-const labelClass = "text-xs font-medium text-[#8a8072]";
+const labelClass = "text-xs font-medium text-[var(--sl-ink-soft)]";
 
 export const sectionClass = "app-card rounded-2xl p-5";
 export const sectionTitleClass = "text-sm font-semibold text-[#171310] dark:text-[#f2ede2]";
@@ -43,7 +43,7 @@ export function FieldWrap({
         {manualOnly && <ManualBadge />}
       </span>
       {children}
-      {hint && <span className="text-[11px] leading-4 text-[#8a8072]">{hint}</span>}
+      {hint && <span className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">{hint}</span>}
     </label>
   );
 }
@@ -313,7 +313,7 @@ export function InteriorScoringGuide() {
  */
 export function CompetitorInteriorFallbackGuide() {
   return (
-    <p className="col-span-full mt-1 text-[11px] leading-4 text-[#8a8072]">
+    <p className="col-span-full mt-1 text-[11px] leading-4 text-[var(--sl-ink-soft)]">
       경쟁점 종합평가(존 개수를 모를 때만) — 5.0=팀룸·2인룸·커플존·VIP존·프렌즈존 등 다양하고 인테리어·관리·청결
       매우 우수 · 4.0=복수 특화존+최신 블랙라벨 평균 수준 · 3.0=일반석 중심+일부 특화좌석, 보통 수준 ·
       2.0=존 구성 거의 없음, 노후·관리 부족 · 1.0=시설 노후·청결 불량·차별화 없음. 중상·중하는 0.5점 단위.
@@ -351,7 +351,7 @@ export function HardwareScoringGuide() {
         인식됩니다(예: “벤큐 27 FHD 240”은 그냥 3.5점, “BenQ ZOWIE XL2566K 240Hz”라고 적어야 4.5점) — 아래 입력칸을
         클릭하면 자주 쓰는 모델 목록이 나오니 거기서 고르면 실수를 줄일 수 있습니다.
       </p>
-      <p className="mt-2 text-[11px] text-[#8a8072]">
+      <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">
         위 4항목 모두 “기본”(대부분 좌석) + “특화”(일부 좌석만 업그레이드) 텍스트를 따로 입력하면 기본80%+특화20%로
         결합합니다(모니터만 기본65%+특화35%, 콤마로 여러 모델 나열 가능·기본과 같거나 낮은 특화는 자동 제외).
       </p>
@@ -362,7 +362,7 @@ export function HardwareScoringGuide() {
 /** 먹거리 점수(직접입력, 브랜드없음/미정일 때만)의 0.5점 단위 산정 기준(사용자 확정 기준표). */
 export function FoodScoringGuide() {
   return (
-    <p className="col-span-full mt-2 text-[11px] leading-4 text-[#8a8072]">
+    <p className="col-span-full mt-2 text-[11px] leading-4 text-[var(--sl-ink-soft)]">
       브랜드없음/미정일 때 직접입력 기준 — 5.0=전문 외식매장 수준 · 4.5=쉐프앤클릭보다 명확하게 우수 · 4.0(기준점,
       쉐프앤클릭 적용 블랙라벨과 동급) · 3.5=자체브랜드/알려진 브랜드이며 메뉴·품질 중상 · 3.0=메뉴가 어느 정도
       있고 품질은 일반적인 PC방 수준 · 2.5=라면·냉동식품 중심 · 2.0=음료·간식 위주 · 1.5 이하=먹거리 운영이 거의

@@ -31,7 +31,7 @@ function PercentBar({ label, value, hint }: { label: string; value: number | nul
       <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#171310]/[0.08] dark:bg-white/[0.12]">
         <div className="h-full rounded-full bg-[#a4432c]" style={{ width: `${pct ?? 0}%` }} />
       </div>
-      {hint && <p className="mt-0.5 text-[10px] text-[#8a8072]">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[10px] text-[var(--sl-ink-soft)]">{hint}</p>}
     </div>
   );
 }
@@ -51,7 +51,7 @@ function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: Evalu
   ];
   return (
     <div className="mt-4 rounded-xl border border-[#171310]/[0.08] p-3 dark:border-white/[0.08]">
-      <p className="text-[10px] font-semibold text-[#8a8072]">매출 산정 근거</p>
+      <p className="text-[10px] font-semibold text-[var(--sl-ink-soft)]">매출 산정 근거</p>
       <div className="mt-2 flex flex-col gap-1.5">
         {steps.map((step) => (
           <div key={step.label}>
@@ -59,8 +59,8 @@ function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: Evalu
               <span className="text-[#5c5346] dark:text-[#c9bfae]">{step.label}</span>
               <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{step.value}</span>
             </div>
-            {step.hint && <p className="text-[9px] text-[#8a8072]">{step.hint}</p>}
-            <p className="mt-1 text-center text-[10px] text-[#8a8072]">↓</p>
+            {step.hint && <p className="text-[9px] text-[var(--sl-ink-soft)]">{step.hint}</p>}
+            <p className="mt-1 text-center text-[10px] text-[var(--sl-ink-soft)]">↓</p>
           </div>
         ))}
         <div className="flex items-baseline justify-between text-[11px]">
@@ -75,9 +75,9 @@ function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: Evalu
 function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg bg-[#171310]/[0.04] p-2.5 dark:bg-white/[0.06]">
-      <p className="text-[10px] text-[#8a8072]">{label}</p>
+      <p className="text-[10px] text-[var(--sl-ink-soft)]">{label}</p>
       <p className="mt-0.5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{value}</p>
-      {hint && <p className="mt-0.5 text-[9px] text-[#8a8072]">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[9px] text-[var(--sl-ink-soft)]">{hint}</p>}
     </div>
   );
 }
@@ -104,9 +104,9 @@ export function ReportCard({
       className="w-[420px] rounded-2xl border border-[#171310]/[0.08] bg-[#fbf7ee] p-5 text-[#171310] dark:border-white/[0.08] dark:bg-[#171310] dark:text-[#f2ede2]"
     >
       <div>
-        <p className="text-[10px] tracking-wide text-[#8a8072]">ISENS 점포평가 · V62</p>
+        <p className="text-[10px] tracking-wide text-[var(--sl-ink-soft)]">ISENS 점포평가 · V62</p>
         <h3 className="mt-0.5 text-lg font-bold">{candidate.name}</h3>
-        <p className="mt-0.5 text-xs text-[#8a8072]">{candidate.address}</p>
+        <p className="mt-0.5 text-xs text-[var(--sl-ink-soft)]">{candidate.address}</p>
       </div>
 
       <div className="mt-4 rounded-xl bg-[#171310] p-4 text-white dark:bg-[#f2ede2] dark:text-[#171310]">
@@ -163,7 +163,7 @@ export function ReportCard({
           등급 라벨 대신 세 기준선 실제 금액과 이 매장의 V62가 어디에 해당하는지를 함께 보여준다. */}
       {result.aaJudgement && result.aaJudgement !== "오픈월 입력 필요" && result.aaJudgement !== "실측자료 부족" && (
         <div className="mt-4">
-          <p className="text-[10px] font-semibold text-[#8a8072]">선투자 프로모션 기준매출</p>
+          <p className="text-[10px] font-semibold text-[var(--sl-ink-soft)]">선투자 프로모션 기준매출</p>
           <div className="mt-1.5 grid grid-cols-3 gap-1.5">
             {(
               [
@@ -179,7 +179,7 @@ export function ReportCard({
               return (
                 <div
                   key={tier}
-                  className={`rounded-lg p-2 text-center ${achieved ? "bg-[#2f6b4f] text-white" : "bg-[#171310]/[0.04] text-[#8a8072] dark:bg-white/[0.06]"}`}
+                  className={`rounded-lg p-2 text-center ${achieved ? "bg-[#2f6b4f] text-white" : "bg-[#171310]/[0.04] text-[var(--sl-ink-soft)] dark:bg-white/[0.06]"}`}
                 >
                   <p className="text-[9px] opacity-80">{tier.replace(" 이상", "")}</p>
                   <p className="mt-0.5 text-[11px] font-semibold">{formatWon(amount)}</p>
@@ -187,7 +187,7 @@ export function ReportCard({
               );
             })}
           </div>
-          <p className="mt-1 text-[9px] text-[#8a8072]">
+          <p className="mt-1 text-[9px] text-[var(--sl-ink-soft)]">
             {result.aaJudgement === "1,000만원 미달" ? "1,000만원 기준 미달" : `${result.aaJudgement} 달성`} · 출점 판단(V62)과는 별개 판정
           </p>
         </div>
@@ -195,12 +195,12 @@ export function ReportCard({
 
       {topCompetitors.length > 0 && (
         <div className="mt-4">
-          <p className="text-[10px] font-semibold text-[#8a8072]">인근 경쟁점</p>
+          <p className="text-[10px] font-semibold text-[var(--sl-ink-soft)]">인근 경쟁점</p>
           <div className="mt-1.5 flex flex-col gap-1.5">
             {topCompetitors.map((c) => (
               <div key={c.id} className="flex items-center justify-between rounded-lg bg-[#171310]/[0.04] px-2.5 py-1.5 text-[11px] dark:bg-white/[0.06]">
                 <span className="font-medium">{c.name}</span>
-                <span className="text-[#8a8072]">
+                <span className="text-[var(--sl-ink-soft)]">
                   {c.distanceM != null ? `${formatNumber(c.distanceM)}m` : "-"} · {c.investigationStatus}
                 </span>
               </div>
@@ -211,12 +211,12 @@ export function ReportCard({
 
       {summarySection && (
         <div className="mt-4 rounded-lg bg-[#171310]/[0.04] p-3 text-[11px] leading-relaxed dark:bg-white/[0.06]">
-          <p className="text-[10px] font-semibold text-[#8a8072]">종합 의견</p>
+          <p className="text-[10px] font-semibold text-[var(--sl-ink-soft)]">종합 의견</p>
           <p className="mt-1">{summarySection}</p>
         </div>
       )}
 
-      <p className="mt-4 text-right text-[9px] text-[#8a8072]">
+      <p className="mt-4 text-right text-[9px] text-[var(--sl-ink-soft)]">
         {candidate.hourlyRate ? `시간당 ${formatWon(candidate.hourlyRate)}` : ""}
         {candidate.expectedPcCount ? ` · 예상 PC ${candidate.expectedPcCount}대` : ""}
       </p>

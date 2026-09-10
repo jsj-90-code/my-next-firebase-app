@@ -128,14 +128,14 @@ export default function StoreEvalBackupPage() {
   }
 
   if (loading) {
-    return <div className="py-16 text-center text-sm text-[#8a8072]">불러오는 중...</div>;
+    return <div className="py-16 text-center text-sm text-[var(--sl-ink-soft)]">불러오는 중...</div>;
   }
 
   if (!isAdmin) {
     return (
       <div className="app-card rounded-2xl p-8 text-center">
         <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">접근 권한이 없습니다</h2>
-        <p className="mt-2 text-sm text-[#8a8072]">
+        <p className="mt-2 text-sm text-[var(--sl-ink-soft)]">
           데이터 백업/복원은 점포평가 시스템 관리자만 이용할 수 있습니다.
         </p>
       </div>
@@ -146,7 +146,7 @@ export default function StoreEvalBackupPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">데이터 백업 / 복원</h1>
-        <p className="mt-1 text-sm text-[#8a8072]">
+        <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
           신규후보지, 기존 가맹점, 매출, 경쟁점, 입지동선평가, 운영설정과 그 변경이력까지 전체 데이터를 다룹니다.
         </p>
       </div>
@@ -167,7 +167,7 @@ export default function StoreEvalBackupPage() {
 
       <section className="app-card rounded-2xl p-6">
         <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">복원</h2>
-        <p className="mt-1 text-xs leading-5 text-[#8a8072]">
+        <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
           백업 파일에 있는 문서만 지금 데이터 위에 덮어씁니다(병합) — 백업 파일에 없는 기존 데이터는 지우지 않습니다.
           실행 전 지금 상태를 자동으로 한 번 더 백업 다운로드합니다.
         </p>
@@ -183,20 +183,20 @@ export default function StoreEvalBackupPage() {
           }}
           className="mt-4 block w-full text-sm text-[#5c5346] file:mr-3 file:rounded-md file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
         />
-        {fileName && <p className="mt-2 text-xs text-[#8a8072]">선택한 파일: {fileName}</p>}
+        {fileName && <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">선택한 파일: {fileName}</p>}
 
         {restoreError && <p className="app-badge app-badge-danger mt-3 w-full justify-start py-2 text-sm">{restoreError}</p>}
 
-        {stage === "previewing" && <p className="mt-3 text-sm text-[#8a8072]">파일 확인 중...</p>}
+        {stage === "previewing" && <p className="mt-3 text-sm text-[var(--sl-ink-soft)]">파일 확인 중...</p>}
 
         {(stage === "ready" || stage === "restoring") && preview && payload && (
           <div className="mt-4 flex flex-col gap-3">
-            <p className="text-xs text-[#8a8072]">
+            <p className="text-xs text-[var(--sl-ink-soft)]">
               이 백업은 {new Date(payload.exportedAt).toLocaleString("ko-KR")}에 만들어졌습니다.
             </p>
             <div className="app-card-sm overflow-x-auto rounded-lg">
               <table className="w-full text-sm">
-                <thead className="text-left text-xs font-medium text-[#8a8072]">
+                <thead className="text-left text-xs font-medium text-[var(--sl-ink-soft)]">
                   <tr>
                     <th className="px-3 py-2">항목</th>
                     <th className="px-3 py-2">현재 보유</th>
@@ -208,7 +208,7 @@ export default function StoreEvalBackupPage() {
                   {preview.map((p) => (
                     <tr key={p.label}>
                       <td className="px-3 py-2 font-medium text-[#171310] dark:text-[#f2ede2]">{p.label}</td>
-                      <td className="px-3 py-2 text-[#8a8072]">{p.currentTotal === -1 ? "-" : `${p.currentTotal}건`}</td>
+                      <td className="px-3 py-2 text-[var(--sl-ink-soft)]">{p.currentTotal === -1 ? "-" : `${p.currentTotal}건`}</td>
                       <td className="px-3 py-2 text-[var(--sl-ok)]">{p.toAdd}건</td>
                       <td className="px-3 py-2 text-[var(--sl-warn)]">{p.toUpdate > 0 ? `${p.toUpdate}건` : "-"}</td>
                     </tr>
@@ -286,9 +286,9 @@ export default function StoreEvalBackupPage() {
           </button>
         </div>
         {log == null ? (
-          <p className="mt-3 text-sm text-[#8a8072]">&ldquo;불러오기&rdquo;를 눌러 지금까지의 복원 시도 이력을 확인하세요.</p>
+          <p className="mt-3 text-sm text-[var(--sl-ink-soft)]">&ldquo;불러오기&rdquo;를 눌러 지금까지의 복원 시도 이력을 확인하세요.</p>
         ) : log.length === 0 ? (
-          <p className="mt-3 text-sm text-[#8a8072]">아직 복원 이력이 없습니다.</p>
+          <p className="mt-3 text-sm text-[var(--sl-ink-soft)]">아직 복원 이력이 없습니다.</p>
         ) : (
           <ul className="mt-4 flex flex-col gap-3">
             {log.map((entry) => (
@@ -299,7 +299,7 @@ export default function StoreEvalBackupPage() {
                     {entry.success ? "성공" : "실패"}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-[#8a8072]">
+                <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
                   실행자: {entry.actor ?? "알수없음"} · 백업 시점: {entry.sourceExportedAt ? new Date(entry.sourceExportedAt).toLocaleString("ko-KR") : "-"}
                 </p>
                 {entry.success && entry.counts && (

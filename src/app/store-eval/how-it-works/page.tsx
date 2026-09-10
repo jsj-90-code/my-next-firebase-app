@@ -76,7 +76,7 @@ export default function HowItWorksPage() {
 
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">이렇게 나온 숫자 = &ldquo;이 상권 전체가 원하는 PC방 수요&rdquo;</p>
-              <p className="mt-1 text-xs text-[#8a8072]">
+              <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
                 아직 &ldquo;우리 매장 것&rdquo;이 아니에요. 이 동네에 있는 모든 PC방이 나눠 가질 파이 전체의 크기입니다.
               </p>
             </div>
@@ -107,7 +107,7 @@ export default function HowItWorksPage() {
                 <div key={row.label} className="grid grid-cols-[64px_1fr] items-center gap-3 text-sm sm:grid-cols-[64px_44px_1fr]">
                   <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{row.label}</span>
                   <span className="font-mono text-[#7a4fa0]">{row.pct}%</span>
-                  <span className="text-xs text-[#8a8072] sm:col-start-3">{row.desc}</span>
+                  <span className="text-xs text-[var(--sl-ink-soft)] sm:col-start-3">{row.desc}</span>
                 </div>
               ))}
             </div>
@@ -130,7 +130,7 @@ export default function HowItWorksPage() {
 
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">1단계 수요 × 2단계 몫 비율 = &ldquo;우리 매장으로 올 손님 수&rdquo;</p>
-              <p className="mt-1 text-xs text-[#8a8072]">
+              <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
                 이 숫자는 화면에 참고용으로 계속 보여드리지만, 3단계 계산에는 안 씁니다 — 3단계는 1단계 동네 수요와 이
                 동네 경쟁 정도를 각각 따로 넘겨줍니다(바로 아래 참고).
               </p>
@@ -174,22 +174,22 @@ export default function HowItWorksPage() {
 
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <div className="app-card-sm flex-1 rounded-lg px-4 py-3">
-                <p className="text-xs text-[#8a8072]">문제없음</p>
+                <p className="text-xs text-[var(--sl-ink-soft)]">문제없음</p>
                 <p className="mt-1 font-mono text-sm text-[#171310] dark:text-[#f2ede2]">그대로 (0%)</p>
               </div>
               <div className="app-card-sm flex-1 rounded-lg px-4 py-3">
-                <p className="text-xs text-[#8a8072]">보통</p>
+                <p className="text-xs text-[var(--sl-ink-soft)]">보통</p>
                 <p className="mt-1 font-mono text-sm text-[#171310] dark:text-[#f2ede2]">3% 깎음</p>
               </div>
               <div className="app-card-sm flex-1 rounded-lg px-4 py-3">
-                <p className="text-xs text-[#8a8072]">심함(손님 이탈 우려)</p>
+                <p className="text-xs text-[var(--sl-ink-soft)]">심함(손님 이탈 우려)</p>
                 <p className="mt-1 font-mono text-sm text-[#171310] dark:text-[#f2ede2]">20% 깎음</p>
               </div>
             </div>
 
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">이렇게 나온 최종 숫자 = &ldquo;예상 월매출&rdquo;</p>
-              <p className="mt-1 text-xs text-[#8a8072]">
+              <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
                 여기에 &ldquo;조금 낮춰 잡은 보수적인 예상치&rdquo;(85%)와 &ldquo;잘 되면 이 정도까지&rdquo;(115%)도 같이
                 보여줘서, 숫자 하나만 믿지 말고 범위로 판단하게 합니다.
               </p>

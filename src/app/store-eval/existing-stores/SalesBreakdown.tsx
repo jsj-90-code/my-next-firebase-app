@@ -17,7 +17,7 @@ export function SalesBreakdown({ sales, openedAt }: { sales: ExistingStoreMonthl
     <section className="mt-3 space-y-3" aria-label="PC·상품 상세매출">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">PC·상품 상세매출</h3>
-        <p className="text-xs text-[#8a8072]">{months.length ? `평가기간 ${months[0]} ~ ${months[11]} (오픈월 제외)` : "오픈일을 입력하면 평가기간 매출을 조회할 수 있습니다."}</p>
+        <p className="text-xs text-[var(--sl-ink-soft)]">{months.length ? `평가기간 ${months[0]} ~ ${months[11]} (오픈월 제외)` : "오픈일을 입력하면 평가기간 매출을 조회할 수 있습니다."}</p>
       </div>
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         {[
@@ -27,12 +27,12 @@ export function SalesBreakdown({ sales, openedAt }: { sales: ExistingStoreMonthl
           ["기간 상품 비중", formatPercent(summary.productShare)],
         ].map(([label, value]) => (
           <div key={label} className="app-card-sm rounded-lg p-3">
-            <p className="text-xs text-[#8a8072]">{label}</p>
+            <p className="text-xs text-[var(--sl-ink-soft)]">{label}</p>
             <p className="mt-1 font-semibold tabular-nums">{value}</p>
           </div>
         ))}
       </div>
-      <p className="text-xs text-[#8a8072]">
+      <p className="text-xs text-[var(--sl-ink-soft)]">
         평가기간 중 PC·상품 금액이 모두 있는 지난 {summary.count}개월 기준입니다. 현재월·미래월·금액 누락월은 요약에서 제외합니다.
         상품 비중은 상품매출 ÷ 총매출이며, 기간 비중은 합산 금액 기준입니다. 모형 비교 평균은 기존 가맹점 검증 화면에서 확인할 수 있습니다.
       </p>
@@ -53,11 +53,11 @@ export function SalesBreakdown({ sales, openedAt }: { sales: ExistingStoreMonthl
                 <td className="px-3 py-2">{formatPercent(values.productShare)}</td>
               </tr>;
             })}
-            {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-[#8a8072]">조회 기간의 매출 기록이 없습니다.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-[var(--sl-ink-soft)]">조회 기간의 매출 기록이 없습니다.</td></tr>}
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-[#8a8072]">매출DB에서 동기화한 월별 금액과 웹에서 입력한 기록을 표시합니다. 금액 누락 또는 총매출 0원의 비중은 ‘-’로 표시합니다.</p>
+      <p className="text-xs text-[var(--sl-ink-soft)]">매출DB에서 동기화한 월별 금액과 웹에서 입력한 기록을 표시합니다. 금액 누락 또는 총매출 0원의 비중은 ‘-’로 표시합니다.</p>
     </section>
   );
 }

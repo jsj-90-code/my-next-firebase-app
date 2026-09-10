@@ -167,7 +167,7 @@ function computeCompetitorBreakdown(c: Competitor, settings: ModelSettings) {
 }
 
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="whitespace-nowrap px-2 py-1.5 text-left text-xs font-medium text-[#8a8072]">{children}</th>;
+  return <th className="whitespace-nowrap px-2 py-1.5 text-left text-xs font-medium text-[var(--sl-ink-soft)]">{children}</th>;
 }
 function Td({ children, strong }: { children: React.ReactNode; strong?: boolean }) {
   return <td className={`whitespace-nowrap px-2 py-1.5 text-xs ${strong ? "font-semibold text-[#171310] dark:text-[#f2ede2]" : ""}`}>{children}</td>;
@@ -176,7 +176,7 @@ function ItemValueScore({ value, score }: { value: string | null; score: number 
   return (
     <Td>
       {fmt(value)}
-      {score != null && <span className="ml-1 text-[#8a8072]">({fmtScore(score)})</span>}
+      {score != null && <span className="ml-1 text-[var(--sl-ink-soft)]">({fmtScore(score)})</span>}
     </Td>
   );
 }
@@ -245,14 +245,14 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
       ? demandEval.ownDemand / demandEval.marketDemand
       : null;
 
-  if (loading) return <p className="text-sm text-[#8a8072]">불러오는 중...</p>;
+  if (loading) return <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>;
   if (activeLoadResult.error) return <p className="text-sm text-red-700 dark:text-red-300">{activeLoadResult.error}</p>;
 
   return (
     <div className="flex flex-col gap-6">
       <section className="app-card rounded-xl p-4">
         <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">자사 — {store.storeName}</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">항목값 옆 괄호 안 숫자가 그 항목의 환산 점수입니다. 편집은 ‘기본정보’ 탭에서 합니다.</p>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">항목값 옆 괄호 안 숫자가 그 항목의 환산 점수입니다. 편집은 ‘기본정보’ 탭에서 합니다.</p>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
@@ -297,7 +297,7 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
       <section className="app-card rounded-xl p-4">
         <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁점 {competitors.length}곳</h3>
         {competitors.length === 0 ? (
-          <p className="mt-2 text-xs text-[#8a8072]">등록된 경쟁점이 없습니다.</p>
+          <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">등록된 경쟁점이 없습니다.</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full border-collapse">
@@ -352,23 +352,23 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
         <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">점수가 매출에 미치는 영향</h3>
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
-            <p className="text-xs text-[#8a8072]">자사 경쟁력점수</p>
+            <p className="text-xs text-[var(--sl-ink-soft)]">자사 경쟁력점수</p>
             <p className="mt-0.5 text-base font-semibold">{fmtScore(own.total)}</p>
           </div>
           <div>
-            <p className="text-xs text-[#8a8072]">경쟁점 평균(대수가중)</p>
+            <p className="text-xs text-[var(--sl-ink-soft)]">경쟁점 평균(대수가중)</p>
             <p className="mt-0.5 text-base font-semibold">{fmtScore(competitorAvg)}</p>
           </div>
           <div>
-            <p className="text-xs text-[#8a8072]">경쟁력격차(자사÷경쟁점평균)</p>
+            <p className="text-xs text-[var(--sl-ink-soft)]">경쟁력격차(자사÷경쟁점평균)</p>
             <p className="mt-0.5 text-base font-semibold">{gap != null ? gap.toFixed(2) : "-"}</p>
           </div>
           <div>
-            <p className="text-xs text-[#8a8072]">수요확보율(자사수요÷상권수요)</p>
+            <p className="text-xs text-[var(--sl-ink-soft)]">수요확보율(자사수요÷상권수요)</p>
             <p className="mt-0.5 text-base font-semibold">{effectiveShare != null ? formatPercent(effectiveShare) : "-"}</p>
           </div>
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-[#8a8072]">
+        <p className="mt-3 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
           상권수요 <b>{formatNumber(demandEval.marketDemand)}명</b> 중, 자사·경쟁점 격차({gap != null ? gap.toFixed(2) : "-"})와 PC대수 비율로 산출된
           확보율({effectiveShare != null ? formatPercent(effectiveShare) : "-"} — 경쟁점이 0곳이면 100%)이 적용되어 참고용 자사수요{" "}
           <b>{formatNumber(demandEval.ownDemand)}명</b>이 계산됩니다. 다만 실제 V61 매출예측 모형은 이 자사수요가 아니라 상권수요 원값(log(상권수요÷PC))과

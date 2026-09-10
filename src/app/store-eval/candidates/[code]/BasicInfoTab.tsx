@@ -443,7 +443,7 @@ function BasicInfoTabForm({
           >
             {collecting ? "수집 중..." : "상권자료 수집"}
           </button>
-          <span className="text-xs text-[#8a8072]">
+          <span className="text-xs text-[var(--sl-ink-soft)]">
             주소로 좌표 확인 + 행정구역 참고자료 + 주변 경쟁점(PC방)·수요거점을 자동으로 모읍니다.
           </span>
         </div>
@@ -471,7 +471,7 @@ function BasicInfoTabForm({
             <FieldReadonly label="건물명" value={form.buildingName ?? "-"} />
             <FieldReadonly label="좌표" value={`${form.lat.toFixed(6)}, ${form.lng.toFixed(6)}`} />
           </div>
-          <p className="mt-3 text-xs text-[#8a8072]">
+          <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
             마커가 실제 출입구와 다르면 지도에서 드래그해 보정한 뒤 확정하세요 — 확정한 좌표가 모든 반경분석의 기준점이 됩니다.
           </p>
           <div className="mt-3">
@@ -485,7 +485,7 @@ function BasicInfoTabForm({
             </div>
           )}
           {(demandPoints.length > 0 || autoCompetitors.length > 0) && (
-            <p className="mt-2 text-xs text-[#8a8072]">
+            <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
               자동수집: 경쟁점(PC방) {autoCompetitors.length}건 · 수요거점 {demandPoints.length}건 — 경쟁점 탭에서 상세 확인/실사 상태 갱신이
               필요합니다. 군부대·산업단지·관광유흥·먹자상권은 이번 단계에서 자동수집 대상이 아닙니다.
             </p>
@@ -496,7 +496,7 @@ function BasicInfoTabForm({
       {form.lat != null && form.lng != null && (
         <section className={sectionClass}>
           <h3 className={sectionTitleClass}>SGIS·소상공인365 업로드 자동추출 (반경 500m/1km 통계)</h3>
-          <p className="mt-1 text-xs leading-5 text-[#8a8072]">
+          <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
             SGIS·소상공인365 모두 반경(500m/1km) 통계를 조회하는 공식 API가 없어(2026-08-24 확인) 직접 조회해야 합니다.
             SGIS는 PDF 보고서만 제공해 표를 복사해 붙여넣는 방식만 됩니다(엑셀 없음). 라벨을 찾아 자동으로 채워두지만,
             값이 다르면 자동확정하지 않고 표에서 직접 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요 — 그 뒤에도 이
@@ -534,7 +534,7 @@ function BasicInfoTabForm({
             />
           </div>
           {marketDataUploads.length > 0 && (
-            <div className="mt-4 text-xs text-[#8a8072]">
+            <div className="mt-4 text-xs text-[var(--sl-ink-soft)]">
               <strong>업로드 이력</strong>
               <ul className="mt-1 list-inside list-disc">
                 {marketDataUploads.slice(0, 5).map((u) => (
@@ -629,9 +629,9 @@ function BasicInfoTabForm({
           쓰는 값과 중복이라 사용자 확인). */}
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>소상공인365 참고자료 (직장인구 · 시설정보)</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
 
-        <p className="mt-4 text-xs font-medium text-[#8a8072]">PC방업소수 (1km)</p>
+        <p className="mt-4 text-xs font-medium text-[var(--sl-ink-soft)]">PC방업소수 (1km)</p>
         <div className={`${gridClass} mt-2`}>
           <NumberField
             label="실영업 PC방업소수(1km)"
@@ -642,7 +642,7 @@ function BasicInfoTabForm({
           />
         </div>
 
-        <p className="mt-6 text-xs font-medium text-[#8a8072]">직장인구 (500m / 1km)</p>
+        <p className="mt-6 text-xs font-medium text-[var(--sl-ink-soft)]">직장인구 (500m / 1km)</p>
         <div className={`${gridClass} mt-2`}>
           <NumberField label="직장인구 전체(500m)" value={form.employ500Total} onChange={(v) => set("employ500Total", v)} />
           <NumberField label="직장인구 남(500m)" value={form.employ500Male} onChange={(v) => set("employ500Male", v)} />
@@ -652,7 +652,7 @@ function BasicInfoTabForm({
           <NumberField label="직장인구 여(1km)" value={form.employ1kmFemale} onChange={(v) => set("employ1kmFemale", v)} />
         </div>
 
-        <p className="mt-6 text-xs font-medium text-[#8a8072]">시설정보 (500m / 1km)</p>
+        <p className="mt-6 text-xs font-medium text-[var(--sl-ink-soft)]">시설정보 (500m / 1km)</p>
         <div className={`${gridClass} mt-2`}>
           <NumberField
             label="지하철 승하차(500m)"
@@ -671,7 +671,7 @@ function BasicInfoTabForm({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           GPU/CPU/RAM/모니터 모두 “기본”(대부분 좌석의 대표사양)과 “특화”(일부 좌석만 업그레이드된
           사양) 텍스트를 각각 입력합니다. 일부 좌석만 업그레이드됐다면 매장 전체를 그 사양으로 보지
           않고 기본80%+특화(균등분배)20%로 계산합니다.
@@ -725,7 +725,7 @@ function BasicInfoTabForm({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁력 점수</h3>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           하드웨어·입지 점수는 위에 입력한 VGA·층수+엘리베이터로부터 자동 계산됩니다. 종합 경쟁력점수
           가중합(하드웨어30%·인테리어·좌석·관리40%·먹거리20%·입지10%, 2026-08-28 전면개편)은 운영설정
           화면의 계수를 따릅니다.
@@ -743,7 +743,7 @@ function BasicInfoTabForm({
           />
         </div>
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">하드웨어 - 모니터</h4>
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">하드웨어 - 모니터</h4>
         <div className={`${gridClass} mt-3`}>
           <MonitorTextField
             label="모니터 기본"
@@ -754,8 +754,8 @@ function BasicInfoTabForm({
           <MonitorTextField label="모니터 특화" value={form.ownMonitorTop ?? ""} onChange={(v) => set("ownMonitorTop", v || null)} hint="콤마로 여러 모델 나열 가능 · 없으면 비움" />
         </div>
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">먹거리</h4>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">먹거리</h4>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           조리방식은 최신 PC방이 대부분 인덕션이라 변별력이 없어, 실제 사용 브랜드를 기준으로 점수를
           매깁니다(브랜드별 점수는 설정 화면에서 조정). 브랜드없음이면 직접입력값을 씁니다.
         </p>
@@ -774,8 +774,8 @@ function BasicInfoTabForm({
         </div>
         {(form.ownFoodBrand == null || form.ownFoodBrand === "브랜드없음") && <FoodScoringGuide />}
 
-        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#8a8072]">인테리어·좌석·관리</h4>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">인테리어·좌석·관리</h4>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           시설종합점수 = 존구성×50% + 인테리어×30% + 관리×20% (2026-08-31 산식 개편, 반올림 없음).
         </p>
         <InteriorScoringGuide />
@@ -807,7 +807,7 @@ function BasicInfoTabForm({
         </div>
         {(form.ownInteriorLevelScore != null || form.ownInteriorConditionScore != null || form.ownComfortScore != null) && (
           <>
-            <p className="mt-3 text-xs text-[#8a8072]">
+            <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
               아래 세부항목은 2026-08-31 산식 개편 이후 계산에는 더 이상 쓰이지 않습니다(이미 입력된
               값이 있어 이력으로만 표시합니다).
             </p>
@@ -860,12 +860,12 @@ function BasicInfoTabForm({
 function FieldReadonly({ label, value }: { label: string; value: string }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-[#8a8072]">{label}</span>
+      <span className="text-xs font-medium text-[var(--sl-ink-soft)]">{label}</span>
       <input
         type="text"
         value={value}
         readOnly
-        className="app-card-sm w-full rounded-md px-2.5 py-1.5 text-sm text-[#8a8072]"
+        className="app-card-sm w-full rounded-md px-2.5 py-1.5 text-sm text-[var(--sl-ink-soft)]"
       />
     </label>
   );

@@ -188,7 +188,7 @@ export function MarketDataUploadPanel({
           {openLabel} ↗
         </a>
       </div>
-      <p className="mt-1 text-xs leading-5 text-[#8a8072]">{instructions}</p>
+      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">{instructions}</p>
 
       {tableVariants && (
         <div className="app-card-sm mt-3 flex flex-wrap items-center gap-3 rounded-lg p-2">
@@ -269,19 +269,19 @@ export function MarketDataUploadPanel({
         </div>
       )}
 
-      {busy && <p className="mt-2 text-xs text-[#8a8072]">파일을 읽는 중...</p>}
+      {busy && <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">파일을 읽는 중...</p>}
       {error && <p className="app-badge app-badge-warn mt-2 w-full justify-start py-1 text-xs">{error}</p>}
       {applyMessage && (
         <p className="app-badge app-badge-ok mt-2 w-full justify-start py-1 text-xs">{applyMessage}</p>
       )}
-      {fileInfo && <p className="mt-2 text-[11px] text-[#8a8072]">업로드 파일: {fileInfo.name}</p>}
+      {fileInfo && <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">업로드 파일: {fileInfo.name}</p>}
 
       {drafts && (
         <div className="mt-3">
           <div className="max-h-72 overflow-y-auto rounded-lg border border-[#171310]/[0.08] dark:border-white/[0.08]">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-[#fffdf7] dark:bg-[#1c1912]">
-                <tr className="text-left text-[#8a8072]">
+                <tr className="text-left text-[var(--sl-ink-soft)]">
                   <th className="w-8 px-2 py-1"></th>
                   <th className="px-2 py-1">항목</th>
                   <th className="px-2 py-1">원본 라벨(매칭)</th>
@@ -299,7 +299,7 @@ export function MarketDataUploadPanel({
                       />
                     </td>
                     <td className="px-2 py-1 text-[#5c5346] dark:text-[#c9bfae]">{d.displayLabel}</td>
-                    <td className="px-2 py-1 text-[#8a8072]">{d.matchedLabel ?? <span className="italic">매칭 안 됨</span>}</td>
+                    <td className="px-2 py-1 text-[var(--sl-ink-soft)]">{d.matchedLabel ?? <span className="italic">매칭 안 됨</span>}</td>
                     <td className="px-2 py-1">
                       <input
                         type="text"
@@ -314,7 +314,7 @@ export function MarketDataUploadPanel({
             </table>
           </div>
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-[11px] text-[#8a8072]">{appliedCount}개 항목 적용 예정</span>
+            <span className="text-[11px] text-[var(--sl-ink-soft)]">{appliedCount}개 항목 적용 예정</span>
             <button
               type="button"
               onClick={handleApply}

@@ -209,13 +209,13 @@ const COHORT_LABELS: Record<TenureCohort, string> = {
 function directionColor(direction: ValidationStoreRow["direction"]): string {
   if (direction === "과대예측") return "text-[var(--sl-danger)]";
   if (direction === "과소예측") return "text-[var(--sl-info)]";
-  return "text-[#8a8072]";
+  return "text-[var(--sl-ink-soft)]";
 }
 
 function SummaryCard({ title, value, passed, sub }: { title: string; value: string; passed?: boolean; sub?: string }) {
   return (
     <div className="app-card rounded-xl p-4">
-      <p className="text-xs font-medium text-[#8a8072]">{title}</p>
+      <p className="text-xs font-medium text-[var(--sl-ink-soft)]">{title}</p>
       <p className="mt-1 flex items-baseline gap-1.5 text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">
         {value}
         {passed !== undefined && (
@@ -224,7 +224,7 @@ function SummaryCard({ title, value, passed, sub }: { title: string; value: stri
           </span>
         )}
       </p>
-      {sub && <p className="mt-0.5 text-xs text-[#8a8072]">{sub}</p>}
+      {sub && <p className="mt-0.5 text-xs text-[var(--sl-ink-soft)]">{sub}</p>}
     </div>
   );
 }
@@ -241,7 +241,7 @@ function countBy<T extends string>(rows: ValidationStoreRow[], pick: (r: Validat
 function BreakdownCard({ title, rows, labels }: { title: string; rows: { key: string; count: number }[]; labels: Record<string, string> }) {
   return (
     <div className="app-card rounded-xl p-4">
-      <p className="text-xs font-medium text-[#8a8072]">{title}</p>
+      <p className="text-xs font-medium text-[var(--sl-ink-soft)]">{title}</p>
       <ul className="mt-2 space-y-1 text-sm text-[#171310] dark:text-[#f2ede2]">
         {rows.map((r) => (
           <li key={r.key} className="flex justify-between">
@@ -258,7 +258,7 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
       <table className="w-full min-w-[1600px] text-sm">
-        <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
+        <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
             <th className="px-3 py-2">점포명</th>
             <th className="px-3 py-2">브랜드</th>
@@ -296,12 +296,12 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
               </td>
               <td className="px-3 py-2">{r.includedInCoreAccuracy ? "예" : "아니오"}</td>
               <td className="px-3 py-2">{r.includedInEarlyValidation ? "예" : "아니오"}</td>
-              <td className="px-3 py-2 text-xs text-[#8a8072]">{r.exclusionReason ?? "-"}</td>
+              <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">{r.exclusionReason ?? "-"}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={15} className="px-3 py-6 text-center text-[#8a8072]">
+              <td colSpan={15} className="px-3 py-6 text-center text-[var(--sl-ink-soft)]">
                 해당 코호트에 점포가 없습니다.
               </td>
             </tr>
@@ -340,7 +340,7 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
       <table className="w-full min-w-[1700px] text-sm">
-        <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
+        <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
             <th className="px-3 py-2">점포명</th>
             <th className="px-3 py-2">실제매출</th>
@@ -381,7 +381,7 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={13} className="px-3 py-6 text-center text-[#8a8072]">
+              <td colSpan={13} className="px-3 py-6 text-center text-[var(--sl-ink-soft)]">
                 비교할 매장이 없습니다(시트 V61 캐시값이 있는 블랙라벨 매장만 대상).
               </td>
             </tr>
@@ -470,7 +470,7 @@ function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
     <div className="app-card rounded-2xl p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">오차 구간별 적중률 (10%p 단위 누적)</h3>
-        <p className="text-xs text-[#8a8072]">{summary.sampleCount}곳 기준</p>
+        <p className="text-xs text-[var(--sl-ink-soft)]">{summary.sampleCount}곳 기준</p>
       </div>
       <div className="mt-4 space-y-3">
         {bands.map((b, i) => (
@@ -488,7 +488,7 @@ function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
               />
             </div>
             {b.storeNames.length > 0 && (
-              <p className="mt-0.5 text-[10px] text-[#8a8072]">{b.storeNames.join(", ")}</p>
+              <p className="mt-0.5 text-[10px] text-[var(--sl-ink-soft)]">{b.storeNames.join(", ")}</p>
             )}
           </div>
         ))}
@@ -612,7 +612,7 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
       <table className="w-full min-w-[640px] text-sm">
-        <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
+        <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
             <th className="px-3 py-2">매장명</th>
             <th className="px-3 py-2">운영기간</th>
@@ -638,7 +638,7 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
                     "실적 없음"으로 오인되지 않도록, 이미 계산된 사유(describeNotVerifiableReason)를
                     바로 옆에 보여준다. 자세히 보기의 전문가용 표에만 있던 걸 여기로도 노출. */}
                 {r.absoluteErrorPct == null && r.errorCause === "not_verifiable" && (
-                  <span className="ml-1.5 text-[11px] text-[#8a8072]">({describeNotVerifiableReason(r)})</span>
+                  <span className="ml-1.5 text-[11px] text-[var(--sl-ink-soft)]">({describeNotVerifiableReason(r)})</span>
                 )}
               </td>
             </tr>
@@ -692,7 +692,7 @@ function SummaryBlock({ title, summary, benchmark }: { title: string; summary: V
       )}
       <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
         <table className="w-full min-w-[600px] text-sm">
-          <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
+          <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
             <tr>
               <th className="px-3 py-2">오차 구간</th>
               <th className="px-3 py-2">점포 수</th>
@@ -706,7 +706,7 @@ function SummaryBlock({ title, summary, benchmark }: { title: string; summary: V
                 <td className="px-3 py-2 font-medium">{b.label}</td>
                 <td className="px-3 py-2">{b.count}곳</td>
                 <td className="px-3 py-2">{formatPercent(b.ratio)}</td>
-                <td className="px-3 py-2 text-xs text-[#8a8072]">{b.storeNames.join(", ") || "-"}</td>
+                <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">{b.storeNames.join(", ") || "-"}</td>
               </tr>
             ))}
           </tbody>
@@ -1003,7 +1003,7 @@ export default function ValidationPage() {
         <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
           신규 매장 매출을 예측하는 모델이 얼마나 정확한지, 이미 운영 중인 블랙라벨 매장의 실제 매출과 비교해 확인하는 화면입니다.
         </p>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           블랙라벨 매장만 검증하며{excludedNonBlackLabelCount > 0 ? `, 리그PC방·브랜드 미확인 ${excludedNonBlackLabelCount}곳은 이 화면에서 제외됩니다.` : "."}{" "}
           계산 방식(리브원아웃 교차검증 등)의 자세한 설명은 아래 용어 설명과 “자세히 보기”를 참고하세요.
         </p>
@@ -1030,7 +1030,7 @@ export default function ValidationPage() {
           {combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
           전체 평균으로는 실제 매출과 <b>{formatPercent(combinedSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
         </p>
-        <p className="text-xs text-[#8a8072]">
+        <p className="text-xs text-[var(--sl-ink-soft)]">
           아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 2026-09-02부터 실제매출이{" "}
           {CORE_VALIDATION_MIN_MONTHS}개월이라도 확정된 매장은 계약 상태와 무관하게 전부 정식검증 표본이자 학습표본입니다(예전에는
           12개월 이상만 정식검증). 완료월이 1~2개월인 매장은 오픈 프로모션 효과가 섞여 있을 수 있다는 점은 감안해서
@@ -1077,7 +1077,7 @@ export default function ValidationPage() {
             정식검증 코호트 블랙라벨: {fullTenureRows.length}곳 / 공식 정식검증 포함: {coreSummary.sampleCount}곳
           </li>
           {fullTenureExcluded.length > 0 && (
-            <li className="text-xs text-[#8a8072]">
+            <li className="text-xs text-[var(--sl-ink-soft)]">
               {fullTenureExcluded.map((r) => `${r.storeName}(${r.exclusionReason})`).join(", ")}
             </li>
           )}
@@ -1116,7 +1116,7 @@ export default function ValidationPage() {
 
       <div>
         <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">모델 검증 적중률 (리브원아웃 교차검증 — 신규점포 일반화 성능 참고)</h2>
-        <p className="mt-1 text-xs text-[#8a8072]">
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           여기가 이 화면의 핵심입니다 — 신규 후보지를 예측할 때와 가장 비슷한 조건으로 측정한 <b>진짜 모델 성능</b>입니다.
         </p>
       </div>
@@ -1134,7 +1134,7 @@ export default function ValidationPage() {
           <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
             시트 재현 적중률 — V62 운영 결과 (이관 검증용, 공식 성능 아님)
           </h2>
-          <p className="mt-1 text-xs text-[#8a8072]">
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             시트에 저장된 V61 예측값(재계산 없이 그대로)에 외부유입 보정만 적용한 결과입니다. 실제 신규후보지 평가에 쓰는 예상매출이
             이 방식과 같습니다. 위 리브원아웃 교차검증과 절대 섞지 않습니다.
           </p>
@@ -1147,7 +1147,7 @@ export default function ValidationPage() {
       <section className="space-y-3">
         <div>
           <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 비교표 — V62 운영 결과 vs 리브원아웃 교차검증</h2>
-          <p className="mt-1 text-xs text-[#8a8072]">
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             정식검증+조기검증 대상 매장만. “차이 발생 단계”는 V61 예측 → 외부유입 보정률 → 반올림 순으로 처음 어긋난 지점을 표시합니다.
           </p>
         </div>
@@ -1171,7 +1171,7 @@ export default function ValidationPage() {
           시트에도 존재 목적이 문서화돼 있지 않고 지금까지 검증된 적이 없어서, V61/V62 같은 통과/미달 목표(목표 MAE 등)를 적용하지
           않고 수치만 그대로 보여줍니다 — 계속 쓸지 여부는 이 결과를 보고 판단해주세요.
         </p>
-        <p className="mt-2 text-xs text-[#8a8072]">
+        <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
           정식검증({coreSummary.sampleCount}곳) 중 자사 시설값이 완비되고 경쟁점 실측(핑봇)이 있는{" "}
           {measuredForecastIncluded.length}곳만 표본에 포함했습니다.
           {measuredForecastExcluded.length > 0 &&
@@ -1185,7 +1185,7 @@ export default function ValidationPage() {
         {measuredForecastIncluded.length > 0 && (
           <div className="mt-4 overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
             <table className="w-full min-w-[600px] text-sm">
-              <thead className="app-card-sm text-left text-xs font-medium text-[#8a8072]">
+              <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
                 <tr>
                   <th className="px-3 py-2">점포명</th>
                   <th className="px-3 py-2">실측기반 예상월매출</th>
@@ -1209,7 +1209,7 @@ export default function ValidationPage() {
                 ))}
               </tbody>
             </table>
-            <p className="px-3 py-2 text-xs text-[#8a8072]">
+            <p className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
               경쟁점 핑봇 커버율 = 조사된 경쟁점 중 핑봇 기간평균 가동률이 있는 비율. 70% 미만이면
               “낮음”으로 표시합니다(원본 점포평가.gs의 최소커버율 0.70 기준 — 원본도 이 값으로 표본을
               거르지 않고 참고 신뢰도로만 씁니다).

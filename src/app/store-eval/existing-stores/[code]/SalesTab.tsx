@@ -23,6 +23,6 @@ export function SalesTab({ storeCode, openedAt }: { storeCode: string; openedAt:
     <p>{error}</p>
     <button type="button" className="app-btn-outline mt-2 rounded-md px-3 py-2" onClick={() => { setError(null); setRecords(null); setAttempt(value => value + 1); }}>다시 불러오기</button>
   </div>;
-  if (records == null) return <p role="status" className="text-sm text-[#8a8072]">월별 매출을 불러오는 중...</p>;
+  if (records == null) return <p role="status" className="text-sm text-[var(--sl-ink-soft)]">월별 매출을 불러오는 중...</p>;
   return <div className="app-card rounded-xl p-4"><SalesBreakdown sales={records} openedAt={openedAt} /></div>;
 }

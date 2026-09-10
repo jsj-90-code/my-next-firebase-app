@@ -20,7 +20,7 @@ export function HomeAuthStatus() {
 
   if (loading) {
     return (
-      <div className="app-card w-full rounded-2xl px-6 py-4 text-sm text-[#8a8072]">로그인 상태 확인 중...</div>
+      <div className="app-card w-full rounded-2xl px-6 py-4 text-sm text-[var(--sl-ink-soft)]">로그인 상태 확인 중...</div>
     );
   }
 
@@ -28,7 +28,7 @@ export function HomeAuthStatus() {
     return (
       <div className="app-card flex w-full items-center justify-between gap-4 rounded-2xl px-5 py-4">
         <div className="text-left">
-          <p className="text-xs uppercase tracking-wide text-[#8a8072]">로그인됨</p>
+          <p className="text-xs uppercase tracking-wide text-[var(--sl-ink-soft)]">로그인됨</p>
           <p className="mt-0.5 text-sm font-medium text-[#171310] dark:text-[#f2ede2]">
             {user.displayName ?? user.email ?? "사용자"}
           </p>
