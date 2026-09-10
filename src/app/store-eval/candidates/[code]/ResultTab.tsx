@@ -521,8 +521,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <ResultCard label="V61 기본예측" value={formatWon(result.v61Baseline)} hint={result.v61ModelLabel} />
             <ResultCard label="V62 보정률" value={formatPercent(result.v62Rate)} />
-            <ResultCard label="보수판단매출 (85%)" value={formatWon(result.conservativeSales)} />
-            <ResultCard label="상한참고매출 (115%)" value={formatWon(result.upperSales)} />
+            {/* 2026-09-10 — "보수판단"이라는 이름 때문에 통계적 하한으로 오해할 수 있어 설명을 붙였다.
+                이 둘은 설정값(lowerBoundFactor/upperBoundFactor)을 곱한 고정 밴드이지 실측 신뢰구간이
+                아니다. 실제 이 모형이 얼마나 맞는지는 검증 화면에서 확인해야 한다. */}
+            <ResultCard label="보수판단매출 (85%)" value={formatWon(result.conservativeSales)}
+              hint="예측값 × 85% 고정 밴드 (실측 신뢰구간 아님)" />
+            <ResultCard label="상한참고매출 (115%)" value={formatWon(result.upperSales)}
+              hint="예측값 × 115% 고정 밴드 (실측 신뢰구간 아님)" />
             {result.capacityCapped && <ResultCard label="가동률 상한 적용 전 원래 예측" value={formatWon(result.v62FinalBeforeCap)} />}
             {result.competitorOverflowRevenueBonus > 0 && (
               <ResultCard label="경쟁점 초과수요 재배분 보너스" value={formatWon(result.competitorOverflowRevenueBonus)} />
