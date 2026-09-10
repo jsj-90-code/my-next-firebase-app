@@ -21,9 +21,10 @@ import {
   listAllLocationEvaluations,
   listAllCompetitors,
   saveEvaluationResult,
+  getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
-import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
+import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { sectionClass, sectionTitleClass } from "./formFields";
 import { ReportCard } from "./ReportCard";
@@ -45,6 +46,53 @@ const CALC_STATE_JUDGEMENTS: FinalJudgement[] = ["07 분석 필요", "09 입지�
 function judgementKind(j: FinalJudgement | null): "계산 상태" | "사업 판정" | null {
   if (j == null) return null;
   return CALC_STATE_JUDGEMENTS.includes(j) ? "계산 상태" : "사업 판정";
+}
+
+/**
+ * 이 모형이 실제로 얼마나 맞는지를 예상매출 바로 밑에 보여준다.
+ *
+ * 값은 검증화면이 남겨둔 요약 문서(storeEvalSystemStatus/accuracy) 하나에서 온다 — 여기서
+ * 검증을 다시 돌리면 Firestore 읽기가 800건쯤 더 들기 때문이다. 그래서 "언제 기준"인지도 함께
+ * 보여준다(검증화면을 연 시점에 갱신된다).
+ */
+function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySummary | null; v62Final: number | null }) {
+  if (!accuracy || accuracy.sampleCount === 0) {
+    return (
+      <p className="mt-2 text-xs leading-5 text-[#8a8072]">
+        이 모형의 실측 정확도는 아직 기록되지 않았습니다 — 검증 화면을 한 번 열면 여기에 표시됩니다.
+      </p>
+    );
+  }
+  const mae = accuracy.meanAbsoluteErrorPct;
+  const band = v62Final != null && mae != null
+    ? `${formatWon(Math.round(v62Final * (1 - mae)))} ~ ${formatWon(Math.round(v62Final * (1 + mae)))}`
+    : null;
+  const when = new Date(accuracy.updatedAt).toISOString().slice(0, 10);
+  return (
+    <div className="app-card-sm mt-2 rounded-xl px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+      <b className="text-[#171310] dark:text-[#f2ede2]">이 모형의 실측 정확도</b> — 기존 가맹점{" "}
+      {accuracy.sampleCount}곳을 하나씩 빼고 예측해본 결과입니다({when} 기준).
+      <br />
+      평균 오차 {formatPercent(mae)} · 중앙값 {formatPercent(accuracy.medianAbsoluteErrorPct)} ·{" "}
+      ±10% 안 {formatPercent(accuracy.within10PctRatio)} · ±20% 안 {formatPercent(accuracy.within20PctRatio)}
+      {band && (
+        <>
+          <br />
+          <b className="text-[#171310] dark:text-[#f2ede2]">평균 오차만큼 잡으면 {band}</b> 범위입니다.
+          위 숫자 하나로만 보지 마세요.
+        </>
+      )}
+      {accuracy.within15PctRatio != null && (
+        <>
+          <br />
+          <span className="text-[#8a8072]">
+            아래 보수(85%)·상한(115%) 밴드는 고정값인데, 실측으로는 그 ±15% 안에{" "}
+            {formatPercent(accuracy.within15PctRatio)}만 들어옵니다.
+          </span>
+        </>
+      )}
+    </div>
+  );
 }
 
 function ResultCard({ label, value, emphasis, hint }: { label: string; value: string; emphasis?: boolean; hint?: string }) {
@@ -179,6 +227,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 사용자가 반드시 직접 입력하게 한다.
   const [newStoreCode, setNewStoreCode] = useState("");
   const [existingStoreCodes, setExistingStoreCodes] = useState<Set<string>>(new Set());
+  // 검증화면이 남겨둔 모형 실측 정확도 요약 1건. 없으면(아직 검증화면을 안 열었으면) null이고
+  // 화면에는 안내만 뜬다. 읽기 1건이라 후보지 화면 비용에 사실상 영향이 없다.
+  const [accuracy, setAccuracy] = useState<ModelAccuracySummary | null>(null);
+  useEffect(() => {
+    getModelAccuracySummary().then(setAccuracy).catch(() => setAccuracy(null));
+  }, []);
   const runSequence = useRef(0);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
 
@@ -493,6 +547,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <div className="mt-4">
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
         </div>
+        {/* 2026-09-10 — 이 화면은 예상매출을 숫자 하나로만 보여줘서, 이 모형이 실제로 얼마나
+            맞는지 알 수 없었다. 검증화면이 남겨둔 요약 1건을 읽어 함께 보여준다(계산을 다시
+            돌리지 않으므로 Firestore 읽기는 1건뿐이다). 요약이 아직 없으면 안내만 띄운다. */}
+        <ModelAccuracyNote accuracy={accuracy} v62Final={result.v62Final} />
         {result.revenueBreakdown && <p className="mt-2 text-sm leading-6">
           PC {formatWon(result.revenueBreakdown.pcRevenue)} + 상품(먹거리) {formatWon(result.revenueBreakdown.productRevenue)}
           {result.revenueBreakdown.monthlyRevenue > 0 && <>

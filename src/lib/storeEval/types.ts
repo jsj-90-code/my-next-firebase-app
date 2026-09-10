@@ -785,6 +785,29 @@ export type ExistingStore = {
 // 가맹점코드를 그대로 쓴다. 신규후보지든 기존 가맹점이든 "경쟁점 목록"이라는 의미가 같아서
 // storeEvalCompetitors 컬렉션을 그대로 공유한다 (중복 타입/컬렉션을 만들지 않음).
 
+/**
+ * 모형의 실측 정확도 요약 — `storeEvalSystemStatus/accuracy` 문서 하나에만 저장한다.
+ *
+ * 왜 필요한가: 의사결정이 일어나는 곳은 후보지 결과 화면인데, 거기엔 예상매출 숫자만 있고
+ * "이 모형이 얼마나 맞는지"가 전혀 없다. 참고범위로 보이는 보수(85%)·상한(115%)은 설정값을
+ * 곱한 고정 밴드일 뿐 실측 신뢰구간이 아니다.
+ *
+ * 왜 이렇게 저장하나: 후보지 화면에서 검증을 다시 돌리면 Firestore 읽기가 800건쯤 더 든다.
+ * 검증화면은 어차피 그 계산을 하므로, 열릴 때 요약 1건만 남겨두고 후보지 화면은 그걸 1건
+ * 읽는다. 갱신은 누가 검증화면을 열 때 자동으로 된다(그래서 `updatedAt`을 같이 보여준다).
+ */
+export type ModelAccuracySummary = {
+  updatedAt: number;
+  updatedBy: string | null;
+  modelVersion: string | null; // 어떤 모형으로 잰 값인지 (산식이 바뀌면 낡은 값임을 알 수 있다)
+  sampleCount: number; // 정식검증군 매장 수
+  meanAbsoluteErrorPct: number | null;
+  medianAbsoluteErrorPct: number | null;
+  within10PctRatio: number | null;
+  within15PctRatio: number | null; // 보수/상한 밴드(±15%)가 실제로 덮는 비율
+  within20PctRatio: number | null;
+};
+
 // ---- 회원 스냅샷(기준일별 누적). calc.ts 계산에는 쓰지 않는 참고 데이터다.
 //
 // 2026-09-10 기준 상태: 입력 경로는 **웹 화면뿐**이다(existing-stores/page.tsx의

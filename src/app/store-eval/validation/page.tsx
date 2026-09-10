@@ -39,7 +39,7 @@ import {
 } from "@/lib/storeEval/calc";
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores, listEvaluationSales } from "@/lib/storeEval/store";
+import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores, listEvaluationSales, upsertModelAccuracySummary } from "@/lib/storeEval/store";
 import { RevenueComparisonTable } from "./RevenueComparisonTable";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 
@@ -916,6 +916,26 @@ export default function ValidationPage() {
       settings,
     };
   }, [state]);
+
+  // 2026-09-10 — 이 화면은 어차피 정식검증군 전체 오차를 계산한다. 그 요약을 문서 1건으로
+  // 남겨두면 후보지 결과 화면이 그걸 1건만 읽어 "이 모형이 얼마나 맞는지"를 보여줄 수 있다.
+  // 후보지 화면에서 검증을 다시 돌리면 Firestore 읽기가 800건쯤 더 들기 때문에 요약을 거쳐 간다.
+  // 실패해도 화면은 그대로 동작해야 하므로 조용히 넘어간다(권한·규칙 미배포 등).
+  useEffect(() => {
+    if (!computed || computed.coreSummary.sampleCount === 0) return;
+    const s = computed.coreSummary;
+    upsertModelAccuracySummary({
+      updatedAt: Date.now(),
+      updatedBy: null,
+      modelVersion: `${computed.settings.modelVersion}-usage-v1`,
+      sampleCount: s.sampleCount,
+      meanAbsoluteErrorPct: s.meanAbsoluteErrorPct,
+      medianAbsoluteErrorPct: s.medianAbsoluteErrorPct,
+      within10PctRatio: s.within10PctRatio,
+      within15PctRatio: s.within15PctRatio,
+      within20PctRatio: s.within20PctRatio,
+    }).catch(() => {});
+  }, [computed]);
 
   if (state.status === "loading") {
     return (

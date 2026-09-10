@@ -38,6 +38,7 @@ import type {
   EvaluationResult,
   ExistingStore,
   ExistingStoreMemberSnapshot,
+  ModelAccuracySummary,
   ExistingStoreMonthlySales,
   LocationEvaluation,
   MarketDataUpload,
@@ -633,6 +634,26 @@ export async function restoreFromBackup(
 export async function listRestoreLog(): Promise<RestoreLogEntry[]> {
   const snap = await getDocs(query(collection(requireDb(), RESTORE_LOG), orderBy("restoredAt", "desc")));
   return snap.docs.map((d) => d.data() as RestoreLogEntry);
+}
+
+// ---------------------------------------------------------------------------
+// 모형 실측 정확도 요약 (storeEvalSystemStatus/accuracy 문서 하나)
+//
+// 검증화면이 열릴 때마다 덮어쓰고, 후보지 결과 화면이 1건만 읽어 "이 모형이 얼마나 맞는지"를
+// 보여준다. 후보지 화면에서 검증을 다시 돌리면 읽기가 800건쯤 더 들기 때문에 요약을 거쳐 간다.
+// firestore.rules에서 이 문서(accuracy)만 회사계정 쓰기를 허용한다 — 같은 컬렉션의 cronSync
+// 문서는 firebase-admin(규칙 우회)만 쓰므로 영향이 없다.
+// ---------------------------------------------------------------------------
+const SYSTEM_STATUS = "storeEvalSystemStatus";
+const ACCURACY_DOC = "accuracy";
+
+export async function getModelAccuracySummary(): Promise<ModelAccuracySummary | null> {
+  const snap = await getDoc(doc(requireDb(), SYSTEM_STATUS, ACCURACY_DOC));
+  return snap.exists() ? (snap.data() as ModelAccuracySummary) : null;
+}
+
+export async function upsertModelAccuracySummary(summary: ModelAccuracySummary): Promise<void> {
+  await setDoc(doc(requireDb(), SYSTEM_STATUS, ACCURACY_DOC), sanitize(summary));
 }
 
 export { serverTimestamp };

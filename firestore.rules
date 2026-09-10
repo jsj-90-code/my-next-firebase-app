@@ -124,6 +124,16 @@ service cloud.firestore {
       allow read, write: if isCompanyAccount();
     }
 
+    // 시스템 상태 문서.
+    // - `cronSync`: 매일 크론이 firebase-admin으로 쓴다(규칙을 우회하므로 여기서 쓰기를 막아도 된다).
+    // - `accuracy`: 검증화면이 계산한 모형 실측 정확도 요약. 후보지 결과 화면이 이 1건만 읽어
+    //   "이 모형이 얼마나 맞는지"를 보여준다(후보지 화면에서 검증을 다시 돌리면 읽기가 800건쯤
+    //   더 들기 때문에 요약을 거쳐 간다). 이 문서에만 클라이언트 쓰기를 허용한다.
+    match /storeEvalSystemStatus/{docId} {
+      allow read: if isCompanyAccount();
+      allow write: if isCompanyAccount() && docId == "accuracy";
+    }
+
     // 수정·삭제·재계산 이력: 생성만 허용(불변 로그), 수정/삭제 금지.
     match /storeEvalAuditLog/{logId} {
       allow read, create: if isCompanyAccount();
