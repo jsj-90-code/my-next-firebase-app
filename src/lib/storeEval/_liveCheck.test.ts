@@ -411,86 +411,11 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
       show("하한선 전부 0 (순수 데이터 적합)", metrics(runUsageCohortValidation(inputs, salesRows, zeroFloors).rows));
     }
 
-    // ── 03_회원정보입력이 먹거리 매출을 설명하는가 (아직 모형에 안 쓰이는 자료) ──────────
-    {
-      const { google } = await import("googleapis");
-      const auth = new google.auth.JWT({
-        email: process.env.FIREBASE_CLIENT_EMAIL,
-        key: process.env.FIREBASE_PRIVATE_KEY!.split(BS + "n").join(String.fromCharCode(10)),
-        scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-      });
-      const api = google.sheets({ version: "v4", auth });
-      const res = await api.spreadsheets.values.get({
-        spreadsheetId: process.env.STORE_EVAL_SPREADSHEET_ID || "1Q5yCOL5IT_pT8lYKvtzhzPK3ihC0otVifQBNPi0SjRA",
-        range: "'03_회원정보입력'!A2:T1000",
-      });
-      const num = (v: unknown) => {
-        if (v == null || v === "") return null;
-        const n = Number(String(v).replace(/[,%\s]/g, ""));
-        return Number.isFinite(n) ? n : null;
-      };
-      type Member = { date: string; total: number; teen: number; young: number; mid: number; old: number; female: number };
-      const members = new Map<string, Member>();
-      for (const row of res.data.values ?? []) {
-        const code = String(row[0] ?? "").trim();
-        const date = String(row[2] ?? "").trim();
-        const total = num(row[3]);
-        const cells = Array.from({ length: 12 }, (_, i) => num(row[4 + i]) ?? 0);
-        const sum = cells.reduce((a, b) => a + b, 0);
-        if (!code || !total || sum <= 0) continue;
-        const prev = members.get(code);
-        if (prev && prev.date >= date) continue;
-        members.set(code, {
-          date, total,
-          teen: (cells[2] + cells[3] + cells[4] + cells[5]) / sum,   // 8~19세
-          young: (cells[6] + cells[7]) / sum,                        // 20~30세
-          mid: (cells[8] + cells[9]) / sum,                          // 31~45세
-          old: (cells[10] + cells[11]) / sum,                        // 46세이상
-          female: (cells[1] + cells[3] + cells[5] + cells[7] + cells[9] + cells[11]) / sum,
-        });
-      }
-      const pearson = (xs: number[], ys: number[]) => {
-        const n = xs.length;
-        const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
-        let sxy = 0, sxx = 0, syy = 0;
-        for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; syy += (ys[i] - my) ** 2; }
-        return sxy / Math.sqrt(sxx * syy);
-      };
-      const paired = decomp
-        .map((d) => {
-          const s = inputs.find((i) => i.storeName === d.name)!;
-          const m = members.get(s.storeCode);
-          const pc = s.evaluationPcCount ?? s.pcCount;
-          return m && pc ? { d, m, perPc: m.total / pc } : null;
-        })
-        .filter((x): x is NonNullable<typeof x> => x != null);
-      console.log(`\n회원자료 매칭 ${paired.length}/${decomp.length}곳 — 03_회원정보입력은 현재 모형에 안 쓰인다`);
-      const targets: [string, (p: (typeof paired)[number]) => number][] = [
-        ["먹거리 오차(부호)", (p) => p.d.prod],
-        ["실제 상품비중", (p) => p.d.prodShareActual],
-        ["총매출 오차(부호)", (p) => p.d.total],
-      ];
-      const signals: [string, (p: (typeof paired)[number]) => number][] = [
-        ["회원수/PC대수", (p) => p.perPc],
-        ["8~19세 비중", (p) => p.m.teen],
-        ["20~30세 비중", (p) => p.m.young],
-        ["31~45세 비중", (p) => p.m.mid],
-        ["46세+ 비중", (p) => p.m.old],
-        ["여성 비중", (p) => p.m.female],
-      ];
-      const crit = (1.96 / Math.sqrt(paired.length - 3));
-      const rCrit = (Math.exp(2 * crit) - 1) / (Math.exp(2 * crit) + 1);
-      console.log(`상관계수 (n=${paired.length}, 유의 기준 |r| > ${rCrit.toFixed(2)})`);
-      console.log("신호              " + targets.map((t) => t[0].padStart(18)).join(""));
-      for (const [sname, sf] of signals) {
-        const xs = paired.map(sf);
-        const line = targets.map(([, tf]) => {
-          const r = pearson(xs, paired.map(tf));
-          return `${(Math.abs(r) > rCrit ? "*" : " ")}${r.toFixed(3)}`.padStart(18);
-        });
-        console.log(sname.padEnd(16) + line.join(""));
-      }
-    }
+    // ── 03_회원정보입력 상관분석은 제거됨 ────────────────────────────────────────────
+    // 2026-09-10에 그 시트 탭 자체를 삭제해서 더 이상 읽을 수 없다(읽으려 하면 400 에러).
+    // 결론은 이미 났다: 회원 규모·연령/성별 구성 모두 먹거리·상품비중·총매출 오차와 유의한
+    // 상관이 없었다(n=36, 최대 r=0.211, 유의 기준 |r|>0.33).
+    // 근거: docs/releases/2026-09-10-accuracy-ceiling.md
 
     // ── 꼬리 매장 규명: 평가에 실제로 쓰인 월이 몇 개이고 어느 구간인가 ────────────────
     {
@@ -684,6 +609,144 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
       console.log(`  실효요금(역산)   ↔ 오차: ${rImp.toFixed(3)} ${Math.abs(rImp) > rCrit2 ? "*" : ""}`);
       console.log(`  등록/실효 괴리   ↔ 오차: ${rRatio.toFixed(3)} ${Math.abs(rRatio) > rCrit2 ? "*" : ""}`);
       console.log("  해석: 실효요금 쪽이 남으면 가격탄력성, 괴리 쪽만 남으면 요금 등록 오류.");
+    }
+
+    // ── 사전 등록 가설 검정: 요금 탄력성 β < 1.0 (backlog B-1) ────────────────────────
+    //
+    // 지금 구조는 `PC매출 = 예측이용시간 × 요금`으로 탄력성을 1.0에 고정한다. 잔차 분석에서
+    // 시간당요금만 유의한 신호였으므로(r=+0.374), β를 풀면 나아지는지 본다.
+    //
+    // 이건 **사후 재척도(post-hoc rescaling)** 검정이다 — 회귀계수를 다시 적합하지 않고
+    // 예측된 PC매출에 (요금/기준요금)^(β−1)만 곱한다. 제대로 하려면 학습 목표부터 바꿔
+    // 다시 적합해야 하므로, 여기서 개선이 없으면 가설은 사실상 죽은 것이고 개선이 있으면
+    // 본격 재적합을 해볼 가치가 있다는 뜻이다.
+    //
+    // β는 **리브원아웃으로 추정**한다 — 평가할 매장을 뺀 나머지에서만 β를 고르고, 그 β로
+    // 뺀 매장을 예측한다. 전체로 β를 한 번 추정해 같은 표본을 평가하면 과적합이다.
+    {
+      type P = { code: string; name: string; pc: number; product: number; actual: number; rate: number };
+      const pts: P[] = [];
+      for (const r of rows) {
+        const s = byCode.get(r.storeCode);
+        const b = (r as { revenueBreakdown?: { pcRevenue: number; productRevenue: number } | null }).revenueBreakdown;
+        if (!r.includedInCoreAccuracy || !b || !s?.hourlyRate || !(r.actualRevenueAvg ?? 0)) continue;
+        pts.push({ code: r.storeCode, name: r.storeName, pc: b.pcRevenue, product: b.productRevenue, actual: r.actualRevenueAvg!, rate: s.hourlyRate });
+      }
+      const geoMean = (xs: number[]) => Math.exp(xs.reduce((a, b) => a + Math.log(b), 0) / xs.length);
+      const errOf = (p: P, beta: number, ref: number) =>
+        (p.pc * Math.pow(p.rate / ref, beta - 1) + p.product - p.actual) / p.actual;
+
+      // 격자를 0까지 넓힌다. 최적값이 경계(0.5)에 붙으면 "요금 효과"가 아니라 다른 걸
+      // 잡고 있다는 신호이므로 경계를 없애고 봐야 한다.
+      const BETAS: number[] = [];
+      for (let b = 0.00; b <= 1.401; b += 0.02) BETAS.push(Number(b.toFixed(2)));
+
+      const looErrs: number[] = [];
+      const chosen: number[] = [];
+      for (const target of pts) {
+        const train = pts.filter((p) => p.code !== target.code);
+        const ref = geoMean(train.map((p) => p.rate));
+        let best = 1, bestScore = Infinity;
+        for (const beta of BETAS) {
+          // 학습군의 MAPE를 최소화하는 β (평가 대상은 제외돼 있다)
+          const score = train.reduce((a, p) => a + Math.abs(errOf(p, beta, ref)), 0) / train.length;
+          if (score < bestScore) { bestScore = score; best = beta; }
+        }
+        chosen.push(best);
+        looErrs.push(Math.abs(errOf(target, best, ref)) * 100);
+      }
+      const med = (xs: number[]) => { const v = [...xs].sort((a, b) => a - b); return v.length % 2 ? v[v.length >> 1] : (v[(v.length >> 1) - 1] + v[v.length >> 1]) / 2; };
+      const base = pts.map((p) => Math.abs((p.pc + p.product - p.actual) / p.actual) * 100);
+      const line = (label: string, xs: number[]) =>
+        console.log(`  ${label.padEnd(26)} MAPE ${(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(3)}%  중앙값 ${med(xs).toFixed(2)}%  ` +
+          `±10% ${xs.filter((x) => x <= 10).length}/${xs.length}  ±20% ${xs.filter((x) => x <= 20).length}/${xs.length}`);
+
+      console.log(`\n요금 탄력성 β 검정 (사후 재척도, β는 리브원아웃 추정, n=${pts.length})`);
+      line("현행 (β=1 고정)", base);
+      line("β 리브원아웃 추정", looErrs);
+      console.log(`  선택된 β: 중앙값 ${med(chosen).toFixed(2)}, 범위 ${Math.min(...chosen).toFixed(2)}~${Math.max(...chosen).toFixed(2)}`);
+
+      // 참고: 전체 표본으로 β를 하나 고르면 얼마나 되는지(과적합 상한 — 채택 근거로 쓰면 안 됨)
+      const refAll = geoMean(pts.map((p) => p.rate));
+      let bAll = 1, sAll = Infinity;
+      for (const beta of BETAS) {
+        const sc = pts.reduce((a, p) => a + Math.abs(errOf(p, beta, refAll)), 0) / pts.length;
+        if (sc < sAll) { sAll = sc; bAll = beta; }
+      }
+      line(`전체적합 β=${bAll.toFixed(2)} (과적합)`, pts.map((p) => Math.abs(errOf(p, bAll, refAll)) * 100));
+      console.log("  ↑ 마지막 줄은 같은 표본으로 β를 고르고 그 표본을 평가한 값이라 채택 근거가 될 수 없다.");
+
+      // β를 고정했을 때의 지표 곡선 — 최적값이 경계에 붙는 이유와 "쓸 만한 구간"을 보여준다.
+      // (아래 수치는 β를 데이터가 고른 게 아니라 내가 값을 박은 것이므로 채택 근거가 아니다.
+      //  어디쯤에서 요금 반응을 얼마나 남기며 정확도를 얻을 수 있는지 지형을 보는 용도다.)
+      console.log("\n  β 고정 시 지형 (β=1이 현행, β=0이면 요금이 예측에 전혀 반영 안 됨)");
+      console.log("   β     MAPE     중앙값   ±10%  ±20%");
+      for (const beta of [0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2]) {
+        const es = pts.map((p) => Math.abs(errOf(p, beta, geoMean(pts.map((q) => q.rate)))) * 100);
+        console.log(
+          `  ${beta.toFixed(1)}  ${(es.reduce((a, b) => a + b, 0) / es.length).toFixed(3)}%  ` +
+            `${med(es).toFixed(2)}%  ${String(es.filter((x) => x <= 10).length).padStart(4)}  ${String(es.filter((x) => x <= 20).length).padStart(4)}`,
+        );
+      }
+
+      // ── 결정적 구분: 진짜 탄력성인가, 요금 데이터가 나빠서인가 ──────────────────────
+      // 등록요금이 부정확하면(오늘 확인: 실효요금과 중앙값 8.8% 괴리) 그걸 곱할수록 잡음이
+      // 끼므로 β를 낮추는 게 이득이다. 그렇다면 "요금 데이터를 고쳐라"가 답이고, 진짜
+      // 탄력성이면 "산식에서 요금 비중을 낮춰라"가 답이다 — 완전히 다른 처방이다.
+      //
+      // 등록요금 대신 **실효요금**(가동률로 역산)으로 같은 지형을 그린다. 요금 데이터가
+      // 원인이었다면 실효요금에서는 최적 β가 1.0 쪽으로 돌아와야 한다.
+      {
+        const withImplied = pts
+          .map((p) => ({ p, imp: rates.get(p.code) ?? null }))
+          .filter((x): x is { p: P; imp: number } => x.imp != null);
+        const refI = geoMean(withImplied.map((x) => x.imp));
+        // 실효요금 기준으로 PC매출을 다시 세운다: 이용시간 × 실효요금 (이용시간 = pc/등록요금)
+        const errI = (x: { p: P; imp: number }, beta: number) => {
+          const hours = x.p.pc / x.p.rate;
+          return (hours * x.imp * Math.pow(x.imp / refI, beta - 1) + x.p.product - x.p.actual) / x.p.actual;
+        };
+        console.log(`\n  실효요금으로 바꿔 그린 같은 지형 (n=${withImplied.length})`);
+        console.log("   β     MAPE     중앙값   ±10%  ±20%");
+        for (const beta of [0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2]) {
+          const es = withImplied.map((x) => Math.abs(errI(x, beta)) * 100);
+          console.log(
+            `  ${beta.toFixed(1)}  ${(es.reduce((a, b) => a + b, 0) / es.length).toFixed(3)}%  ` +
+              `${med(es).toFixed(2)}%  ${String(es.filter((v) => v <= 10).length).padStart(4)}  ${String(es.filter((v) => v <= 20).length).padStart(4)}`,
+          );
+        }
+        console.log("  → 여기서도 β가 낮을수록 좋으면 '진짜 탄력성', β=1 근처가 최적이면 '요금 데이터 문제'.");
+      }
+
+      // ── 대조군: 요금과 무관한 순수 수축 ────────────────────────────────────────────
+      // 위 β 재척도는 "요금이 높으면 예측을 깎는" 것인데, 요금은 예측매출과 상관이 있으므로
+      // 사실은 그냥 "예측을 평균 쪽으로 수축"하는 효과일 수 있다. 요금을 안 쓰는 수축
+      //   pred' = M × (pred/M)^γ   (M = 학습군 예측의 기하평균)
+      // 을 같은 방식(γ를 리브원아웃 추정)으로 돌려 비교한다.
+      // 이쪽이 비슷하게 좋아지면 β 결과는 "요금 탄력성"이 아니라 일반적인 수축이다.
+      {
+        const GAMMAS: number[] = [];
+        for (let g = 0.40; g <= 1.401; g += 0.02) GAMMAS.push(Number(g.toFixed(2)));
+        const predOf = (p: P) => p.pc + p.product;
+        const shrunk = (p: P, gamma: number, M: number) => M * Math.pow(predOf(p) / M, gamma);
+        const errG = (p: P, gamma: number, M: number) => (shrunk(p, gamma, M) - p.actual) / p.actual;
+        const looG: number[] = [];
+        const chosenG: number[] = [];
+        for (const target of pts) {
+          const train = pts.filter((p) => p.code !== target.code);
+          const M = geoMean(train.map(predOf));
+          let best = 1, bestScore = Infinity;
+          for (const g of GAMMAS) {
+            const sc = train.reduce((a, p) => a + Math.abs(errG(p, g, M)), 0) / train.length;
+            if (sc < bestScore) { bestScore = sc; best = g; }
+          }
+          chosenG.push(best);
+          looG.push(Math.abs(errG(target, best, M)) * 100);
+        }
+        line("대조군: 요금 무관 순수수축", looG);
+        console.log(`  선택된 γ: 중앙값 ${med(chosenG).toFixed(2)}, 범위 ${Math.min(...chosenG).toFixed(2)}~${Math.max(...chosenG).toFixed(2)}`);
+        console.log("  → 대조군도 비슷하게 좋아지면 β 결과는 '요금 탄력성'이 아니라 일반적인 예측 수축이다.");
+      }
     }
 
     const devs = [...rates.entries()]
