@@ -859,7 +859,7 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
               [shuffled[j], shuffled[k]] = [shuffled[k], shuffled[j]];
             }
             shuffled.length = size;
-            const m = metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, new Set(shuffled)).rows);
+            const m = metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, undefined, new Set(shuffled)).rows);
             samples.push({ mape: m.mape, hit10: m.hit10, hit20: m.hit20 });
           }
           const mean = (f: (x: (typeof samples)[number]) => number) => samples.reduce((s, x) => s + f(x), 0) / samples.length;
@@ -898,10 +898,105 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
         }
       }
 
+
+      // ── 잘라내기 대신 "표본 가중" ────────────────────────────────────────────────────
+      // 학습 목표 y는 "월매출 m개월 평균"이라 m이 작을수록 그 자체가 시끄럽다(분산 ∝ 1/m).
+      // 잘라내면 데이터를 버리지만 가중하면 41곳을 다 쓰면서 시끄러운 목표만 눌러진다.
+      // w = m/(m+k) — k=0이면 순수 역분산(w ∝ m), k가 클수록 평평, null이면 현행(전부 1).
+      console.log("\n학습 표본 개월수 가중 검정 (w = m/(m+k), 평가 코호트 38곳 고정)");
+      {
+        const monthCounts = inputs
+          .map((s) => buildRevenuePartsByStore([s], salesRows).get(s.storeCode)?.monthCount)
+          .filter((m): m is number => m != null);
+        const hist = new Map<number, number>();
+        for (const m of monthCounts) hist.set(m, (hist.get(m) ?? 0) + 1);
+        console.log("  학습 목표 개월수 분포: " + [...hist.entries()].sort((a, b) => a[0] - b[0])
+          .map(([m, c]) => m + "개월 " + c + "곳").join(", "));
+      }
+      const unweighted = metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, null).rows);
+      show("가중 없음 (2026-09-10 이전)", unweighted);
+      for (const k of [0, 1, 2, 3, 6, 12]) {
+        show("k=" + k + (k === 0 ? " (순수 역분산 w∝m)" : ""),
+          metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, k).rows));
+      }
+
+
+      // k를 적중률 보고 고르면 아까 기각한 사후선택과 같아진다. 이론이 k의 정체를 알려주므로
+      // (k = σ²_월변동 / σ²_모형) 두 분산을 각각 **정확도와 무관하게** 재서 k를 정한다.
+      {
+        // ① σ²_월변동 — 한 매장 안에서 월별 총매출이 로그스케일로 얼마나 출렁이나.
+        const byStore = new Map<string, number[]>();
+        for (const row of salesRows) {
+          const total = (row.pcSales ?? 0) + (row.productSales ?? 0);
+          if (total > 0) byStore.set(row.storeCode, [...(byStore.get(row.storeCode) ?? []), Math.log(total)]);
+        }
+        const withinVars = [...byStore.values()].filter((v) => v.length >= 4).map((v) => {
+          const mu = v.reduce((s, x) => s + x, 0) / v.length;
+          return v.reduce((s, x) => s + (x - mu) ** 2, 0) / (v.length - 1);
+        }).sort((a, b) => a - b);
+        const monthVar = withinVars[Math.floor(withinVars.length / 2)];
+
+        // ② σ²_모형 — 현행 모형의 로그오차 분산에서 측정오차 몫을 뺀 나머지.
+        const logErrors = withTariff.rows
+          .filter((r) => r.includedInCoreAccuracy && r.v62PredictedRevenueAvg != null && (r.actualRevenueAvg ?? 0) > 0)
+          .map((r) => Math.log(r.v62PredictedRevenueAvg! / r.actualRevenueAvg!));
+        const eMu = logErrors.reduce((s, x) => s + x, 0) / logErrors.length;
+        const totalVar = logErrors.reduce((s, x) => s + (x - eMu) ** 2, 0) / (logErrors.length - 1);
+        // 목표가 m개월 평균이므로 측정오차 몫은 매장별 monthVar/m의 평균이다.
+        const measured = inputs
+          .map((s) => buildRevenuePartsByStore([s], salesRows).get(s.storeCode)?.monthCount)
+          .filter((m): m is number => m != null)
+          .map((m) => monthVar / m);
+        const measureVar = measured.reduce((s, x) => s + x, 0) / measured.length;
+        const modelVar = Math.max(totalVar - measureVar, 1e-6);
+
+        console.log("\n  k를 데이터로 측정 (정확도를 보지 않고)");
+        console.log("    σ²_월변동 (매장 내 월별 로그매출 분산, 중앙값, n=" + withinVars.length + ")  " + monthVar.toFixed(5));
+        console.log("    로그오차 총분산 " + totalVar.toFixed(5) + " − 측정오차 몫 " + measureVar.toFixed(5) +
+          " = σ²_모형 " + modelVar.toFixed(5));
+        const k = monthVar / modelVar;
+        console.log("    → k = " + k.toFixed(2));
+        show("데이터가 정한 k=" + k.toFixed(2),
+          metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, k).rows));
+        // 가설 A를 죽인 것과 같은 기전 검사: 계수가 하한선에서 **떨어져 나오면** 데이터가 더
+        // 말하게 된 것이고, 하한선에 **더 달라붙으면** 손으로 정한 기본값으로 후퇴한 것이다.
+        {
+          const a = runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, null).fullModel;
+          const b = runUsageCohortValidation(inputs, salesRows, settings, new Date(), undefined, undefined, 1, k).fullModel;
+          if (a && b) {
+            const names = ["log(요금)", "log(IP당수요)", "경쟁력점수", "경쟁력×격차", "배후수요더미", "가시성"];
+            let pinnedA = 0, pinnedB = 0;
+            console.log("    계수 변화 (가중 없음 → k=" + k.toFixed(2) + ")");
+            for (const kind of ["usage", "product"] as const) {
+              const av = a[kind].coefficients, bv = b[kind].coefficients;
+              const offset = av.length === names.length ? 0 : 1;
+              for (let i = 0; i < av.length; i += 1) {
+                // 하한선에 붙어 있는지: 소수 4자리에서 딱 떨어지는 하한값들과 비교
+                const atFloor = (v: number) => [0.03, 0.05, 0.06].some((f) => Math.abs(v - f) < 1e-6);
+                if (atFloor(av[i])) pinnedA += 1;
+                if (atFloor(bv[i])) pinnedB += 1;
+                if (Math.abs(bv[i] - av[i]) > 1e-6) {
+                  console.log("      [" + (kind === "usage" ? "이용시간" : "먹거리") + "] " + names[i + offset].padEnd(14) +
+                    av[i].toFixed(4).padStart(9) + " → " + bv[i].toFixed(4).padStart(9) +
+                    (atFloor(bv[i]) ? "  (하한선으로)" : atFloor(av[i]) ? "  (하한선에서 벗어남)" : ""));
+                }
+              }
+            }
+            console.log("    하한선에 붙은 계수 개수: " + pinnedA + " → " + pinnedB +
+              (pinnedB < pinnedA ? "  ✔ 데이터가 더 말하게 됨" : pinnedB > pinnedA ? "  ✘ 하한선으로 후퇴" : "  = 변화 없음"));
+          }
+      }
+
+        }
+
+
       }
       console.log("\n요금 재적합 (log(요금)을 피처로 복원 + 요금 계수만 비음수 제약 해제)");
-      show("현행 (요금 곱셈, 지수 1.0)", now);
-      show("재적합 — 이용시간만", metrics(withTariff.rows));
+      // ⚠️ 2026-09-10에 "이용시간만"을 채택했으므로 **둘째 줄이 지금의 현행**이다.
+      // 첫째 줄은 채택 전(요금을 곱하기만 하던 시절)과 비교하기 위한 대조군이다.
+      show("채택 전 대조군 (요금 곱셈, 탄력성 1.0 고정)",
+        metrics(runUsageCohortValidation(inputs, salesRows, settings, new Date(), false).rows));
+      show("이용시간만 ← 현행", metrics(withTariff.rows));
       show("재적합 — 먹거리까지", metrics(withBoth.rows));
 
       // 학습된 요금 계수와 그것이 뜻하는 탄력성

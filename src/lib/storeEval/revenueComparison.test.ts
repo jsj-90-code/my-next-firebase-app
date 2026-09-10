@@ -11,6 +11,6 @@ it("exposes only components matching the validation actual total and its existin
     { storeCode: "A", yearMonth: "2026-03", pcSales: 48, productSales: 52 },
   ] as ExistingStoreMonthlySales[];
   const run = (actualRevenueAvg: number) => runUsageCohortValidation([{ ...store, actualRevenueAvg }], sales, defaultModelSettings(), new Date("2026-09-01")).rows[0];
-  expect(run(100).actualRevenueBreakdown).toEqual({ pcRevenueAvg: 48, productRevenueAvg: 52 });
+  expect(run(100).actualRevenueBreakdown).toEqual({ pcRevenueAvg: 48, productRevenueAvg: 52, monthCount: 1 });
   expect(run(500).actualRevenueBreakdown).toBeUndefined();
 });

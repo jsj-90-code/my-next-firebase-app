@@ -3,6 +3,8 @@ import type { Competitor, ExistingStoreMonthlySales, ModelSettings } from "./typ
 export type RevenueParts = {
   pcRevenueAvg: number;
   productRevenueAvg: number;
+  /** 위 두 평균에 실제로 들어간 개월 수 — 학습 목표의 측정오차가 얼마나 큰지를 말해준다. */
+  monthCount: number;
 };
 export type UsageTrainingStore = V61TrainingStore & RevenueParts;
 export type UsageRevenueModel = {
@@ -123,7 +125,7 @@ export function buildRevenuePartsByStore(stores: {
     const pcRevenueAvg = selected.reduce((sum, row) => sum + row.pcSales!, 0) / selected.length;
     const productRevenueAvg = selected.reduce((sum, row) => sum + row.productSales!, 0) / selected.length;
     if (Number.isFinite(pcRevenueAvg) && Number.isFinite(productRevenueAvg) && pcRevenueAvg > 0 && productRevenueAvg > 0)
-      parts.set(store.storeCode, { pcRevenueAvg, productRevenueAvg });
+      parts.set(store.storeCode, { pcRevenueAvg, productRevenueAvg, monthCount: selected.length });
   }
   return parts;
 }
@@ -136,6 +138,58 @@ export function attachRevenueParts(stores: V61TrainingStore[], parts: Map<string
       ? [{ ...store, ...part }] : [];
   });
 }
+/**
+ * 학습 목표의 개월 수로 행 가중치를 정한다. `null`이면 전부 1(=가중 없음, 종전 동작).
+ *
+ * 근거: 학습 목표 y는 "월매출 m개월 평균"이다. 개월 수가 적을수록 그 평균 자체가 시끄럽다
+ * (분산 ∝ 1/m). 그런데 모형이 못 맞히는 부분에는 개월 수와 무관한 몫도 있으므로, 순수
+ * 역분산 가중(w ∝ m)은 12개월 매장을 1개월 매장의 12배로 밀어 과하다.
+ *
+ * 그래서 역분산 가중에 "개월 수로는 줄지 않는 오차"를 더한 형태를 쓴다.
+ *
+ *     w ∝ 1 / (σ²_모형 + σ²_월변동/m) ∝ 1 / (1 + k/m) = m / (m + k),   k = σ²_월변동 / σ²_모형
+ *
+ * 즉 **k는 임의로 돌리는 손잡이가 아니라 측정할 수 있는 값**이다 — 한 매장 안에서 월별 매출이
+ * 얼마나 출렁이는지를, 모형이 못 맞히는 정도로 나눈 비율.
+ *
+ * k가 **작을수록 평평**하고(k=1이면 1개월 매장 대 11개월 매장이 1:1.83), **클수록 순수
+ * 역분산**(w ∝ m, 1:11)에 가까워진다. `k = 0`은 순수 역분산으로 특수처리하고, `null`이면
+ * 아예 가중하지 않는다(현행).
+ */
+function monthWeightFor(monthCount: number, k: number | null): number {
+  if (k == null) return 1;
+  const m = Number.isFinite(monthCount) && monthCount > 0 ? monthCount : 1;
+  return k <= 0 ? m : m / (m + k);
+}
+
+/**
+ * 개월 수 가중의 기본값. **2026-09-10에 `null`(가중 없음) → `2.46`으로 바꿨다.**
+ *
+ * 왜: 학습 목표가 매장마다 1~11개월 평균이라 목표의 측정오차가 제각각인데(1개월 6곳, 11개월
+ * 27곳), 종전에는 전부 같은 무게로 학습했다. 1개월 평균 한 장을 11개월 평균과 동등하게 믿는
+ * 셈이었다.
+ *
+ * **2.46은 정확도를 보고 고른 값이 아니다.** 위 식이 말하는 k = σ²_월변동/σ²_모형을 그대로
+ * 측정했다 — 매장 내 월별 로그매출 분산 중앙값 0.02318(34곳), 모형 로그오차 총분산 0.01515에서
+ * 측정오차 몫 0.00573을 뺀 σ²_모형 0.00942. 0.02318/0.00942 = 2.46.
+ *
+ * 결과(정식검증군 38곳): MAPE 10.129%→**9.881%**, 중앙값 9.11%→9.02%, 최악 +26.9%→+26.0%,
+ * ±10% 20곳·±20% 34곳은 그대로. **나빠지는 지표가 없다.**
+ *
+ * ±10%가 안 늘어 사전 등록 조건("±10% 개선 + ±20% 안 줄어듦")은 문자로는 충족되지 않는다.
+ * 그래도 채택한 근거는 **기전**이다 — 같은 날 기각한 "어린 매장 잘라내기"는 계수를 하한선에
+ * 더 달라붙게 만들었는데(사람이 정한 기본값으로 후퇴), 이 변경은 반대로 하한선에 붙은 계수를
+ * 6개→5개로 **줄인다**(먹거리 가시성 0.0500→0.0537로 바닥에서 벗어남). 데이터를 버리지 않고
+ * 41곳을 다 쓰면서 데이터가 더 말하게 하는 방향이다.
+ *
+ * k에 민감하지 않다는 것도 확인했다 — k=1~12 구간에서 MAPE가 9.98~9.77%로 완만하다.
+ *
+ * ⚠️ 표본이 늘면 **다시 측정할 것**. 하네스의 "k를 데이터로 측정" 절이 위 세 숫자를 그대로
+ * 출력하므로 그 값으로 갈아끼우면 된다. 되돌리려면 `null`로 바꾼다.
+ * 근거·재현: docs/releases/2026-09-10-month-weighting.md
+ */
+const MONTH_WEIGHTING_DEFAULT: number | null = 2.46;
+
 /**
  * ⚠️ 2026-09-10 실험 결과: PC 학습목표를 `pcRevenueAvg / hourlyRate`(등록요금으로 추정한 이용시간)
  * 대신 **실측 이용시간**(대수x24x일수x매출DB 월별 가동률)으로 바꿔봤으나 **악화해서 기각**했다.
@@ -156,7 +210,8 @@ export function attachRevenueParts(stores: V61TrainingStore[], parts: Map<string
  */
 function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
   tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT,
-  productPerHour = PRODUCT_PER_HOUR_DEFAULT): UsageRevenueModel | null {
+  productPerHour = PRODUCT_PER_HOUR_DEFAULT,
+  monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT): UsageRevenueModel | null {
   const allFloors = buildMinCoefficients(settings.v61Training);
   // 요금 계수만 음수를 허용하고 나머지 하한선은 그대로 둔다.
   const withTariffFloors = [TARIFF_COEF_LOWER_BOUND, ...allFloors.slice(1)];
@@ -172,6 +227,7 @@ function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<Mo
         featuresRaw: withTariff ? features : features.slice(1),
         revenuePerPc: (kind === "usage" ? store.pcRevenueAvg / store.hourlyRate : store.productRevenueAvg)
           / denominator / (store.trainingRevenueFactor ?? 1),
+        weight: monthWeightFor(store.monthCount, monthWeighting),
       };
     }), settings.v61Training.ridgeLambda, settings.v61Training.minSampleCount,
       withTariff ? withTariffFloors : allFloors.slice(1));
@@ -207,15 +263,16 @@ export function crossFittedCorrection(pairs: { predicted: number; actual: number
 
 export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
   calibrate = true, tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT,
-  productPerHour = PRODUCT_PER_HOUR_DEFAULT): UsageRevenueModel | null {
-  const model = fitRawUsageRevenueModel(stores, settings, tariffFeature, productPerHour);
+  productPerHour = PRODUCT_PER_HOUR_DEFAULT,
+  monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT): UsageRevenueModel | null {
+  const model = fitRawUsageRevenueModel(stores, settings, tariffFeature, productPerHour, monthWeighting);
   if (!model || !calibrate || stores.length - 1 < settings.v61Training.minSampleCount) return model;
   const usagePairs: { predicted: number; actual: number }[] = [];
   const productPairs: { predicted: number; actual: number }[] = [];
   for (const target of stores) {
     // Outer validation removes its target before calling this function. Each inner target
     // is also excluded here: its sales can influence the correction, never its prediction.
-    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings, tariffFeature, productPerHour);
+    const inner = fitRawUsageRevenueModel(stores.filter(s => s.storeCode !== target.storeCode), settings, tariffFeature, productPerHour, monthWeighting);
     if (!inner) return model;
     const full = empiricalFeaturesFor(target);
     const features = full.slice(1);
@@ -287,6 +344,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
    * 근거·재현: docs/releases/2026-09-10-training-age-cut.md
    */
   minTrainingCompletedMonths = 1,
+  monthWeighting: number | null = MONTH_WEIGHTING_DEFAULT,
   /** 진단 전용: 주어지면 학습 표본을 이 코드 집합으로 제한한다(무작위 부분표본 대조군용). */
   trainingSubset?: Set<string>) {
   const parts = buildRevenuePartsByStore(stores, sales, asOf);
@@ -303,7 +361,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
   // 안 들어갔으므로 리브원아웃에서 자기 자신을 뺄 것도 없다(누출 없음).
   const trainingStoreCodes = new Set(attachRevenueParts(coreEligible
     .map(store => toV61TrainingStore(store, settings)), parts).map(store => store.storeCode));
-  const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature, productPerHour);
+  const fullModel = fitUsageRevenueModel(training, settings, true, tariffFeature, productPerHour, monthWeighting);
   const result = runCohortValidation(stores, settings, {
     trainingStoreCodes,
     predict(store) {
@@ -312,7 +370,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
         || store.competitorIp == null || store.competitivenessScore == null)
         return null;
       const model = trainingStoreCodes.has(store.storeCode)
-        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings, true, tariffFeature, productPerHour)
+        ? fitUsageRevenueModel(training.filter(row => row.storeCode !== store.storeCode), settings, true, tariffFeature, productPerHour, monthWeighting)
         : fullModel;
       if (!model)
         return null;

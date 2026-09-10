@@ -1656,6 +1656,11 @@ export function summarizeValidation(rows: ValidationComputedRow[], settings: Mod
 export type EmpiricalRevenueSample = {
   featuresRaw: number[];
   revenuePerPc: number; // 대당 월매출 (원)
+  /**
+   * 학습 가중치. 생략하면 1(= 종전과 완전히 동일하게 동작한다).
+   * 학습 목표가 몇 개월 평균인지처럼 **관측치마다 측정오차가 다를 때** 쓴다.
+   */
+  weight?: number;
 };
 
 export type EmpiricalRevenueModel = {
@@ -1666,10 +1671,6 @@ export type EmpiricalRevenueModel = {
   coefficients: number[]; // 표준화 좌표계의 비음수 계수
   perPcMedian: number; // 대당월매출 중앙값 (기준모형)
 };
-
-function meanOf(values: number[]): number {
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
 
 function medianOf(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -1686,10 +1687,12 @@ function medianOf(values: number[]): number {
  * "올리면 수요가 준다"가 상식인 피처는 비음수 제약이 오히려 상식과 반대다.
  */
 export function fitNonnegativeRidgeRegression(z: number[][], yCentered: number[], lambda: number,
-  lowerBounds: number[] = []): number[] | null {
+  lowerBounds: number[] = [], weights: number[] = []): number[] | null {
   if (!z.length || !z[0].length) return null;
   const p = z[0].length;
   const beta = new Array(p).fill(0);
+  // 가중치를 생략하면 전부 1 — 종전과 완전히 같은 계산이다.
+  const w = z.map((_, i) => weights[i] ?? 1);
 
   for (let iter = 0; iter < 1000; iter++) {
     let maxDelta = 0;
@@ -1701,8 +1704,8 @@ export function fitNonnegativeRidgeRegression(z: number[][], yCentered: number[]
         for (let k = 0; k < p; k++) {
           if (k !== j) residual -= z[i][k] * beta[k];
         }
-        numerator += z[i][j] * residual;
-        denominator += z[i][j] * z[i][j];
+        numerator += w[i] * z[i][j] * residual;
+        denominator += w[i] * z[i][j] * z[i][j];
       }
       const next = Math.max(lowerBounds[j] ?? 0, denominator > 0 ? numerator / denominator : 0);
       maxDelta = Math.max(maxDelta, Math.abs(next - beta[j]));
@@ -1726,18 +1729,25 @@ export function fitEmpiricalRevenueModel(
     || !Number.isFinite(s.revenuePerPc) || s.revenuePerPc <= 0)) return null;
   const n = samples.length;
 
+  // 가중치는 평균 1이 되게 정규화한다 — 그래야 lambda(정규화 세기)의 의미가 가중 여부와
+  // 무관하게 같은 자리에 남는다. 전부 생략하면 모두 1이라 종전 계산과 완전히 같다.
+  const rawWeights = samples.map((s) => (Number.isFinite(s.weight) && (s.weight ?? 1) > 0 ? s.weight! : 1));
+  const weightSum = rawWeights.reduce((sum, v) => sum + v, 0);
+  const weights = rawWeights.map((v) => (v * n) / weightSum);
+  const weightedMean = (col: number[]) => col.reduce((sum, v, i) => sum + weights[i] * v, 0) / n;
+
   const featureMeans: number[] = [];
   const featureSds: number[] = [];
   for (let j = 0; j < p; j++) {
     const col = samples.map((s) => s.featuresRaw[j]);
-    const mean = meanOf(col);
-    const sd = Math.sqrt(col.reduce((s, v) => s + (v - mean) ** 2, 0) / n) || 1;
+    const mean = weightedMean(col);
+    const sd = Math.sqrt(col.reduce((s, v, i) => s + weights[i] * (v - mean) ** 2, 0) / n) || 1;
     featureMeans.push(mean);
     featureSds.push(sd);
   }
 
   const y = samples.map((s) => Math.log(s.revenuePerPc));
-  const yMean = meanOf(y);
+  const yMean = weightedMean(y);
   const z = samples.map((s) => s.featuresRaw.map((v, j) => (v - featureMeans[j]) / featureSds[j]));
   // 하한선이 음수인 피처(요금처럼 "올리면 수요가 준다"가 상식인 것)는 적합 단계에서부터
   // 음수를 허용해야 한다. 양수 하한선은 예전처럼 0으로 두고 적합 뒤에 끌어올린다 — 그래야
@@ -1747,6 +1757,7 @@ export function fitEmpiricalRevenueModel(
     y.map((v) => v - yMean),
     lambda,
     minCoefficients.map((v) => Math.min(0, v ?? 0)),
+    weights,
   );
   if (!coefficients) return null;
 

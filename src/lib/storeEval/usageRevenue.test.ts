@@ -25,7 +25,7 @@ describe("tariff revenue model", () => {
   it("uses completed months and the same stabilized target period, rejecting incomplete components", () => {
     const rows = [sale("S0", "2026-01", 999, 999), sale("S0", "2026-02", 50, 50),
       sale("S0", "2026-03", 70, 30), sale("S0", "2026-09", 999, 999), sale("S0", "2026-13", 999, 999)];
-    expect(buildRevenuePartsByStore(stores, rows, asOf).get("S0")).toEqual({ pcRevenueAvg: 70, productRevenueAvg: 30 });
+    expect(buildRevenuePartsByStore(stores, rows, asOf).get("S0")).toEqual({ pcRevenueAvg: 70, productRevenueAvg: 30, monthCount: 1 });
     expect(buildRevenuePartsByStore(stores, [...rows, sale("S0", "2026-04", 40, null)], asOf).has("S0")).toBe(false);
     const parts = buildRevenuePartsByStore(stores, sales, asOf);
     expect(attachRevenueParts(stores.map(store => toV61TrainingStore(store, settings)), parts)).toHaveLength(16);
