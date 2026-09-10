@@ -28,6 +28,29 @@ export type TariffFeatureMode = false | "usage" | "both";
  * 사실상 무제한이고, 데이터가 음수를 원하면 음수를 학습한다("요금 올리면 이용시간 준다").
  */
 const TARIFF_COEF_LOWER_BOUND = -1;
+
+/**
+ * 요금 처리 방식의 기본값. **2026-09-10에 `false`(요금을 곱하기만) → `"usage"`로 바꿨다(사용자 확정).**
+ *
+ * 무엇이 바뀌나: 예전에는 `PC매출 = 예측이용시간 × 요금`이라 **요금 탄력성이 1.0으로 고정**돼
+ * 있었다("요금을 10% 올리면 매출도 10% 는다"). 이제 `log(요금)`이 이용시간 모형의 피처로 들어가고
+ * 그 계수만 음수를 허용하므로, `이용시간 ∝ 요금^(c/sd)` → `PC매출 ∝ 요금^(1 + c/sd)`가 되어
+ * **탄력성을 데이터가 정한다.**
+ *
+ * 왜 바꿨나: 정식검증군 38곳이 학습한 탄력성은 **0.405**였다. 요금이 비싼 매장이 그만큼 더 벌지
+ * 않는다는 뜻이고, 1.0이라는 값은 애초에 측정된 적 없는 편의상의 가정이었다.
+ * - 정확도: MAPE 10.857%→10.129%, 중앙값 9.30%→9.11%, ±20% 33→34곳 (±10%는 21→20곳)
+ * - 요금 시나리오: 요금 10% 인상 시 예측 변화 +4.72% → +1.86%. **약해진 게 아니라 실측에 맞게
+ *   고쳐진 것이다** — 예전 값은 인상 효과를 두 배 넘게 부풀리고 있었다.
+ *
+ * ±10%가 한 곳 줄어 사전 등록 조건("±10% 개선 + ±20% 안 줄어듦")에는 걸렸지만, 그 조건은
+ * "계수를 적중률에 맞춰 억지로 맞추는 것"을 막으려던 장치이고 이번은 **틀린 가정을 데이터로
+ * 교체한 것**이라 성격이 다르다고 판단해 사용자가 채택을 결정했다.
+ *
+ * 되돌리려면 이 값을 `false`로 바꾸면 된다(검증·후보지 예측이 같은 기본값을 쓰므로 한 곳만 바꾸면
+ * 양쪽이 함께 돌아간다). 근거·재현: docs/releases/2026-09-10-tariff-refit.md
+ */
+const TARIFF_FEATURE_DEFAULT: TariffFeatureMode = "usage";
 export type UsageRevenueBreakdown = {
   pcHours: number;
   uncappedPcHours: number;
@@ -100,7 +123,7 @@ export function attachRevenueParts(stores: V61TrainingStore[], parts: Map<string
  * 근거·재현: docs/releases/2026-09-10-tariff-history.md
  */
 function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
-  tariffFeature: TariffFeatureMode = false): UsageRevenueModel | null {
+  tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT): UsageRevenueModel | null {
   const allFloors = buildMinCoefficients(settings.v61Training);
   // 요금 계수만 음수를 허용하고 나머지 하한선은 그대로 둔다.
   const withTariffFloors = [TARIFF_COEF_LOWER_BOUND, ...allFloors.slice(1)];
@@ -145,7 +168,7 @@ export function crossFittedCorrection(pairs: { predicted: number; actual: number
 }
 
 export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<ModelSettings, "v61Training">,
-  calibrate = true, tariffFeature: TariffFeatureMode = false): UsageRevenueModel | null {
+  calibrate = true, tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT): UsageRevenueModel | null {
   const model = fitRawUsageRevenueModel(stores, settings, tariffFeature);
   if (!model || !calibrate || stores.length - 1 < settings.v61Training.minSampleCount) return model;
   const usagePairs: { predicted: number; actual: number }[] = [];
@@ -198,7 +221,7 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
   return [result.monthlyRevenue, result.revenueBeforeCap, result.baselineRevenue, result.overflowRevenue].every(Number.isSafeInteger) ? result : null;
 }
 /** Every validation target is excluded from both fitted components. Current tariff is a proxy for historical tariff. */
-export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date(), tariffFeature: TariffFeatureMode = false) {
+export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: ExistingStoreMonthlySales[], settings: Pick<ModelSettings, "v61Training" | "inflowAdjustment" | "v62MaxUtilizationRate" | "measuredForecastProductRatio">, asOf = new Date(), tariffFeature: TariffFeatureMode = TARIFF_FEATURE_DEFAULT) {
   const parts = buildRevenuePartsByStore(stores, sales, asOf);
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const training = attachRevenueParts(stores.filter(isCoreEligibleForV61Training)
