@@ -2514,8 +2514,9 @@ export function SeatLayoutWorkspace() {
               </button>
               <button
                 type="button"
+                disabled={busy}
                 onClick={deleteCurrentProject}
-                className="flex-1 rounded-lg border border-[var(--sl-danger)]/30 px-3 py-2 text-sm font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)]"
+                className="flex-1 rounded-lg border border-[var(--sl-danger)]/30 px-3 py-2 text-sm font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50"
               >
                 선택한 프로젝트 삭제
               </button>

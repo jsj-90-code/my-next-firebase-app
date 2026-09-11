@@ -215,6 +215,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const { user } = useAuth();
   const [result, setResult] = useState<EvaluationResult | null>(null);
   const [settingsUsed, setSettingsUsed] = useState<ModelSettings | null>(null);
+  // 운영설정 문서(storeEvalSettings/current)가 아예 없으면 기본 계수로 계산된다. 숫자는
+  // 똑같이 그럴듯하게 나오므로, 표시하지 않으면 사용자가 알 방법이 없다.
+  const [usedDefaultSettings, setUsedDefaultSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const requestKey = useMemo(() => ({ candidateCode }), [candidateCode]);
   const [completedRequest, setCompletedRequest] = useState<typeof requestKey | null>(null);
@@ -363,6 +366,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       const locationEvaluation = trainingLocationEvaluations.find((location) => location.candidateCode === candidateCode) ?? null;
       const settings: ModelSettings = modelSettingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };
       if (sequence !== runSequence.current) return;
+      setUsedDefaultSettings(modelSettingsDoc == null);
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
 
       const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales });
@@ -508,6 +512,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           </button>
         </div>
       </div>
+
+      {usedDefaultSettings && (
+        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+          운영설정이 저장돼 있지 않아 <strong>기본 계수</strong>로 계산했습니다. 아래 예상매출은 운영 기준값이
+          아닙니다 — [운영 설정] 화면에서 저장한 뒤 다시 확인하세요.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 print:hidden">
         {alreadyExisting ? (

@@ -107,6 +107,9 @@ type LoadState =
       status: "ready";
       rows: ValidationStoreRow[];
       settings: ModelSettings;
+      // 운영설정 문서가 없어 기본 계수로 계산한 경우. 이때는 적중률을 "공식 값"으로
+      // 저장하지 않는다 — 후보지 화면이 그 값을 그대로 보여주기 때문이다.
+      usedDefaultSettings: boolean;
       existingStoresByCode: Map<string, ExistingStore>;
       competitorsByCode: Map<string, Competitor[]>;
       locationEvaluationsByCode: Map<string, LocationEvaluation | null>;
@@ -115,6 +118,7 @@ type LoadState =
 async function loadValidationData(): Promise<{
   rows: ValidationStoreRow[];
   settings: ModelSettings;
+  usedDefaultSettings: boolean;
   existingStoresByCode: Map<string, ExistingStore>;
   competitorsByCode: Map<string, Competitor[]>;
   locationEvaluationsByCode: Map<string, LocationEvaluation | null>;
@@ -192,7 +196,7 @@ async function loadValidationData(): Promise<{
     });
 
   const { rows } = runUsageCohortValidation(inputs, sales, settings);
-  return { rows, settings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode };
+  return { rows, settings, usedDefaultSettings: settingsDoc == null, existingStoresByCode, competitorsByCode, locationEvaluationsByCode };
 }
 
 // 2026-09-02 — 정식 검증군 기준이 12개월 → 1개월로 바뀌었다(calc.ts CORE_VALIDATION_MIN_MONTHS,
@@ -758,6 +762,7 @@ export default function ValidationPage() {
                 status: "ready",
                 rows: data.rows,
                 settings: data.settings,
+                usedDefaultSettings: data.usedDefaultSettings,
                 existingStoresByCode: data.existingStoresByCode,
                 competitorsByCode: data.competitorsByCode,
                 locationEvaluationsByCode: data.locationEvaluationsByCode,
@@ -777,7 +782,7 @@ export default function ValidationPage() {
 
   const computed = useMemo(() => {
     if (state.status !== "ready") return null;
-    const { rows, settings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode } = state;
+    const { rows, settings, usedDefaultSettings, existingStoresByCode, competitorsByCode, locationEvaluationsByCode } = state;
 
     const targets = {
       mape: settings.targetMAE,
@@ -916,6 +921,7 @@ export default function ValidationPage() {
       completenessCounts,
       competitorStatusCounts,
       settings,
+      usedDefaultSettings,
     };
   }, [state]);
 
@@ -928,6 +934,10 @@ export default function ValidationPage() {
   // 몇 번을 따라도 아무 일이 안 일어나는 막다른 길이 된다. 그래서 아래에 사유를 표시한다.
   useEffect(() => {
     if (!computed || computed.coreSummary.sampleCount === 0) return;
+    // 2026-09-11 — 운영설정이 없어 기본 계수로 계산한 결과를 "공식 적중률"로 저장하면,
+    // 후보지 화면이 그 숫자를 그대로 사실처럼 보여준다. 그 경우엔 저장하지 않는다.
+    // 사유는 화면 맨 위 경고 배너가 이미 말해준다(여기서 setState를 부르면 렌더가 한 번 더 돈다).
+    if (computed.usedDefaultSettings) return;
     const s = computed.coreSummary;
     upsertModelAccuracySummary({
       updatedAt: Date.now(),
@@ -993,6 +1003,7 @@ export default function ValidationPage() {
     measuredForecastExcluded,
     measuredForecastSummary,
     settings,
+    usedDefaultSettings,
   } = computed;
 
 
@@ -1008,6 +1019,14 @@ export default function ValidationPage() {
           계산 방식(리브원아웃 교차검증 등)의 자세한 설명은 아래 용어 설명과 “자세히 보기”를 참고하세요.
         </p>
       </div>
+
+      {usedDefaultSettings && (
+        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+          운영설정(모형 계수)이 저장돼 있지 않아 <strong>기본 계수</strong>로 계산했습니다. 아래 적중률은 운영
+          기준값이 아니며, 후보지 화면에 넘기는 공식 적중률로도 저장하지 않았습니다 — [운영 설정] 화면에서
+          저장한 뒤 다시 열어주세요.
+        </p>
+      )}
 
       <HeadlineStatusBanner summary={combinedSummary} />
 
