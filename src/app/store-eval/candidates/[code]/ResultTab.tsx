@@ -555,6 +555,29 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         {convertMessage && <p className="text-xs text-[#5c5346] dark:text-[#c9bfae]">{convertMessage}</p>}
       </div>
 
+      {(() => {
+        // 2026-09-11 사용자 지적(호구포역) — 경쟁이 하나 늘어나는데 기존 사업자보다 가동률이
+        // 크게 높게 나오면 확인이 필요하다. 경쟁점 평균 가동률은 이미 계산된 두 값으로 낸다
+        // (실가동좌석 ÷ 경쟁IP). 산식은 건드리지 않고 **짚어주기만** 한다.
+        const ours = result.v62ImpliedUtilization;
+        const rivalSeats = result.competitorOccupiedSeats;
+        const rivalIp = result.competitorIp;
+        if (ours == null || rivalSeats == null || !rivalIp || rivalIp <= 0) return null;
+        const rivals = rivalSeats / rivalIp;
+        if (rivals <= 0) return null;
+        // 1.2배부터 짚는다. 경쟁점이 약하면 우리가 더 높은 게 정상이라 작은 차이는 넘긴다.
+        if (ours < rivals * 1.2) return null;
+        return (
+          <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm leading-6">
+            이 상권 경쟁점은 실측 가동률이 <strong>{formatPercent(rivals)}</strong>인데, 우리 예상은{" "}
+            <strong>{formatPercent(ours)}</strong>입니다({(ours / rivals).toFixed(2)}배).{" "}
+            <strong>우리가 들어가면 경쟁이 하나 늘어나는데 기존 경쟁점보다 더 높게 차는 셈</strong>이라,
+            경쟁점 실사값(PC대수·가동률)과 자사 계획 PC대수를 한 번 확인해주세요.
+            경쟁점이 실제로 많이 약하면 나올 수 있는 값이라 <strong>틀렸다는 뜻은 아닙니다.</strong>
+          </p>
+        );
+      })()}
+
       <div className="flex flex-wrap items-center gap-3">
         <span className={`app-badge text-sm ${judgementStyle(result.finalJudgement)}`}>
           {judgementKind(result.finalJudgement) && (
@@ -591,6 +614,14 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             않고 접이식으로만 옮긴다. */}
         <div className="mt-4">
           <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
+          {/* 2026-09-11 — V62가 **전제하는** 가동률. 아래 "예상 가동률"은 참고용 AA경로 값이라
+              (호구포역 24.5%) 출점 판단 기준인 V62의 전제(40.3%)와 다르다. 사용자가 "경쟁점이
+              30%인데 우리가 40%는 말이 안 된다"고 지적했을 때 그 40%가 화면 어디에도 없었다. */}
+          <ResultCard
+            label="V62가 전제하는 가동률"
+            value={formatPercent(result.v62ImpliedUtilization)}
+            hint="이 예상매출이 나오려면 좌석이 이만큼 차 있어야 한다는 뜻입니다"
+          />
         </div>
         {/* 2026-09-10 — 이 화면은 예상매출을 숫자 하나로만 보여줘서, 이 모형이 실제로 얼마나
             맞는지 알 수 없었다. 검증화면이 남겨둔 요약 1건을 읽어 함께 보여준다(계산을 다시
@@ -632,6 +663,15 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             <ResultCard label="상한참고매출 (115%)" value={formatWon(result.upperSales)}
               hint="예측값 × 115% 고정 밴드 (실측 신뢰구간 아님)" />
             {result.capacityCapped && <ResultCard label="가동률 상한 적용 전 원래 예측" value={formatWon(result.v62FinalBeforeCap)} />}
+            {/* 2026-09-11 — V62가 **전제하는** 가동률을 여기서 보여준다. 예전엔 화면에
+                "예상 가동률"이 하나 있었는데 그건 참고용 AA경로 값이라(호구포역 기준 24.5%)
+                출점 판단 기준인 V62의 전제(40.3%)와 달랐다. 사용자가 "경쟁점이 30%인데
+                우리가 40%는 말이 안 된다"고 지적했을 때, 그 40%가 화면 어디에도 없었다. */}
+            <ResultCard
+              label="V62가 전제하는 가동률"
+              value={formatPercent(result.v62ImpliedUtilization)}
+              hint="이 예상매출이 나오려면 좌석이 이만큼 차 있어야 한다는 뜻입니다"
+            />
             {result.competitorOverflowRevenueBonus > 0 && (
               <ResultCard label="경쟁점 초과수요 재배분 보너스" value={formatWon(result.competitorOverflowRevenueBonus)} />
             )}
