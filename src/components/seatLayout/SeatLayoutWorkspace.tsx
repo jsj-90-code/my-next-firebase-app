@@ -858,7 +858,12 @@ export function SeatLayoutWorkspace() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ imageBase64: base64, mimeType: "image/jpeg", mode: tab }),
       });
-      const data = await res.json();
+      // 이미지를 보내는 경로라 게이트웨이가 순수 텍스트("Request Entity Too Large")를 돌려줄
+      // 수 있다. res.json()을 그대로 쓰면 진짜 원인 대신 파싱 에러가 표시된다(readJsonOrText 주석 참고).
+      const data = await readJsonOrText<{
+        seats: number; deskSize: DeskSize | null;
+        sizeBreakdown: SizeBreakdownEntry[]; bagShelfCount: number;
+      }>(res);
       if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
 
       const seats: number = data.seats ?? 0;
@@ -931,17 +936,13 @@ export function SeatLayoutWorkspace() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ images }),
       });
-      const resData = await res.json();
+      // 위 주석대로 이 경로는 실제로 Too Large를 겪었다. 그때 res.json()을 쓰면 진짜 원인
+      // 대신 파싱 에러가 뜬다(readJsonOrText 주석 참고).
+      type SuggestedZone = { seats: number; x: number; y: number; w: number; h: number; type?: string };
+      const resData = await readJsonOrText<{ zones: SuggestedZone[] }>(res);
       if (!res.ok) throw new Error(resData.error ?? "구역 제안에 실패했습니다.");
 
-      const suggestions: {
-        seats: number;
-        x: number;
-        y: number;
-        w: number;
-        h: number;
-        type?: string;
-      }[] = resData.zones ?? [];
+      const suggestions: SuggestedZone[] = resData.zones ?? [];
       const startIdx = project.zones.length;
       // 파티션 두께/색이나 방 형태로 유형까지 확신 있게 추정된 구역은 실제 그 유형으로 만들고
       // (수동으로 그 유형 버튼을 눌러 그린 것과 동일하게 사양 기본값도 적용), 확신이 없는 구역은
@@ -1050,7 +1051,11 @@ export function SeatLayoutWorkspace() {
           zones: recognitionZones.map((z) => ({ name: z.name, seats: z.seats })),
         }),
       });
-      const data = await res.json();
+      // 여기도 이미지를 보낸다 — 텍스트 응답에 대비한다(readJsonOrText 주석 참고).
+      const data = await readJsonOrText<{
+        ranges: SeatNumberRangeEntry[]; warnings: string[];
+        unmatchedGroups: { ranges: string; count: number }[];
+      }>(res);
       if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
       const ranges: SeatNumberRangeEntry[] = data.ranges ?? [];
       const warnings: string[] = data.warnings ?? [];
@@ -1850,12 +1855,14 @@ export function SeatLayoutWorkspace() {
 
   // 서버가 항상 JSON을 준다고 가정하면 안 된다 — Vercel 게이트웨이가 요청 본문 크기 초과 시
   // "Request Entity Too Large" 같은 순수 텍스트를 돌려줘서 res.json()이 파싱 에러로 죽는다.
-  async function readJsonOrText(res: Response): Promise<{ error?: string; [k: string]: unknown }> {
+  async function readJsonOrText<T = Record<string, unknown>>(res: Response): Promise<Partial<T> & { error?: string }> {
     const text = await res.text();
     try {
       return JSON.parse(text);
     } catch {
-      return { error: text || `서버 오류 (HTTP ${res.status})` };
+      // 본문이 JSON이 아니면 그 텍스트 자체가 오류 메시지다(게이트웨이의 413/502 등).
+      // 나머지 필드는 없으므로 호출부는 전부 `?? 기본값`으로 받아야 한다.
+      return { error: text || `서버 오류 (HTTP ${res.status})` } as Partial<T> & { error: string };
     }
   }
 
@@ -1967,11 +1974,13 @@ export function SeatLayoutWorkspace() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ projectName: saved.name, zones: saved.zones }),
       });
-      const data = await res.json();
+      const data = await readJsonOrText<{ sheetTitle: string; spreadsheetUrl: string }>(res);
       if (!res.ok) throw new Error(data.error ?? "등록에 실패했습니다.");
       setStatusMsg(`통합발주서에 등록 완료! ("${data.sheetTitle}" 탭)`, "success");
-      setDeskOrderSheetUrl(data.spreadsheetUrl);
-      window.open(data.spreadsheetUrl, "_blank");
+      if (data.spreadsheetUrl) {
+        setDeskOrderSheetUrl(data.spreadsheetUrl);
+        window.open(data.spreadsheetUrl, "_blank");
+      }
     } catch (err) {
       setStatusMsg(`통합발주서 등록 실패: ${err instanceof Error ? err.message : err}`, "error");
     }
@@ -2069,11 +2078,13 @@ export function SeatLayoutWorkspace() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ projectName: saved.name, entries, storeInfo: storeInfoDraft }),
       });
-      const data = await res.json();
+      const data = await readJsonOrText<{ sheetTitle: string; spreadsheetUrl: string }>(res);
       if (!res.ok) throw new Error(data.error ?? "등록에 실패했습니다.");
       setStatusMsg(`좌석번호표 시트에 등록 완료! ("${data.sheetTitle}" 탭)`, "success");
-      setSeatNumberSheetUrl(data.spreadsheetUrl);
-      window.open(data.spreadsheetUrl, "_blank");
+      if (data.spreadsheetUrl) {
+        setSeatNumberSheetUrl(data.spreadsheetUrl);
+        window.open(data.spreadsheetUrl, "_blank");
+      }
     } catch (err) {
       setStatusMsg(`시트 등록 실패: ${err instanceof Error ? err.message : err}`, "error");
     }
