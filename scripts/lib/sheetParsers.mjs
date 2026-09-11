@@ -24,9 +24,14 @@ export function toPercentNumber(v) {
   return Number.isNaN(n) ? null : n;
 }
 
+// 시트는 "유/무"를 쓰지만, 셀을 체크박스로 바꾸면 Sheets API가 "TRUE"/"FALSE"를 준다.
+// 예전 목록엔 대문자 TRUE도 소문자 y도 없어서, 그런 셀은 전부 조용히 false가 됐다.
+// 참으로 읽을 표기만 넓힌다 — "무/없음/N/FALSE"는 그대로 false다.
+const TRUTHY = new Set(["유", "y", "true", "o", "예", "있음", "1"]);
+
 export function toBool(v) {
-  const s = String(v ?? "").trim();
-  return s === "유" || s === "Y" || s === "true";
+  if (typeof v === "boolean") return v;
+  return TRUTHY.has(String(v ?? "").trim().toLowerCase());
 }
 
 export function toText(v) {
@@ -34,12 +39,25 @@ export function toText(v) {
   return s === "" ? null : s;
 }
 
+// 날짜를 "로컬 달력 기준"으로 YYYY-MM-DD로 찍는다. toISOString()은 UTC라, KST(+9)에서
+// 로컬 자정으로 파싱된 날짜가 **하루 앞당겨진다**("2015. 9. 4" → "2015-09-03"). 오픈일이
+// 하루 밀리면 경과개월이 달라져 성숙도 보정까지 번진다.
+function formatLocalDate(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function toDateStr(v) {
   if (v == null || v === "") return null;
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : formatLocalDate(v);
   const s = String(v).trim();
+  if (!s) return null;
+  // "2015. 9. 4", "2015.9.4", "2015/9/4", "2015-09-04"는 문자열 그대로 조립한다 —
+  // Date를 거치지 않으니 시간대가 개입할 여지가 없다.
+  const m = s.match(/^(\d{4})\s*[.\/-]\s*(\d{1,2})\s*[.\/-]\s*(\d{1,2})/);
+  if (m) return `${m[1]}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[3])).padStart(2, "0")}`;
   const parsed = new Date(s);
-  return Number.isNaN(parsed.getTime()) ? s : parsed.toISOString().slice(0, 10);
+  return Number.isNaN(parsed.getTime()) ? s : formatLocalDate(parsed);
 }
 
 // 매출DB!오픈일 열은 "2015. 9. 4" 같은 점(.) 구분 표기라 01_점포기본정보(toDateStr)와 다른
@@ -48,10 +66,11 @@ export function parseKoreanDate(v) {
   if (v == null) return null;
   const s = String(v).trim();
   if (!s) return null;
-  const m = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/);
+  const m = s.match(/^(\d{4})\s*[.\/-]\s*(\d{1,2})\s*[.\/-]\s*(\d{1,2})/);
   if (m) return `${m[1]}-${String(Number(m[2])).padStart(2, "0")}-${String(Number(m[3])).padStart(2, "0")}`;
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  // toISOString()이 아니라 로컬 달력 기준 — 위 formatLocalDate 주석 참고.
+  return Number.isNaN(d.getTime()) ? null : formatLocalDate(d);
 }
 
 // 가맹점코드 앞 8자리(YYYYMMDD)는 보통 오픈일과 가깝다. 훨씬 크게 벌어지면 시트 오픈일이
