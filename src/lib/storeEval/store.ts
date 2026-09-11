@@ -90,12 +90,30 @@ export async function writeAuditLog(entry: Omit<AuditLogEntry, "id" | "at">): Pr
 // ---------------------------------------------------------------------------
 // 후보지코드 자동 생성 (N001 형식) - 트랜잭션 카운터로 동시 생성 충돌 방지
 // ---------------------------------------------------------------------------
+/** 이미 쓰이고 있는 후보지코드 중 가장 큰 번호. `N012` → 12. 형식이 다른 코드는 무시한다. */
+export function maxUsedCandidateNumber(codes: string[]): number {
+  let max = 0;
+  for (const code of codes) {
+    const m = /^N(\d+)$/.exec(code);
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max;
+}
+
 export async function generateNextCandidateCode(): Promise<string> {
+  // 2026-09-11 — 예전엔 카운터 문서 하나만 보고 번호를 발급했다. 그런데 이 카운터
+  // (storeEvalMeta/candidateCodeCounter)는 **백업 파일에 들어 있지 않다**. 백업으로 복원한
+  // 환경에서는 카운터가 0이라 N001부터 다시 발급되고, saveCandidate가 setDoc이라
+  // **기존 N001을 통째로 덮어쓴다**. 그래서 실제로 쓰이고 있는 코드도 같이 보고 더 큰 쪽에서
+  // 이어 발급한다. 정상 상황에서는 카운터가 항상 더 크므로 동작이 달라지지 않는다.
+  const usedMax = maxUsedCandidateNumber((await listCandidates()).map((c) => c.code));
   const counterRef = doc(requireDb(), META, "candidateCodeCounter");
   const next = await runTransaction(requireDb(), async (tx) => {
     const snap = await tx.get(counterRef);
     const current = snap.exists() ? ((snap.data().value as number) ?? 0) : 0;
-    const nextValue = current + 1;
+    const nextValue = Math.max(current, usedMax) + 1;
     tx.set(counterRef, { value: nextValue });
     return nextValue;
   });
