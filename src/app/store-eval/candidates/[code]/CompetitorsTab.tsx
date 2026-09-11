@@ -248,6 +248,20 @@ function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): s
   //
   // 경계 30%는 단위가 확실한 시트 동기화분 분포에서 잡았다 — 그쪽 최대가 25.3%라 오탐이 없다.
   // 값이 높다고 틀린 건 아니므로 저장은 막지 않고 경고로만 띄운다.
+  // 2026-09-11 — 두 요금 칸을 따로 입력하던 흔적. 실제 자료에서 87건 중 86건이 공식과
+  // 1원 이내로 맞고 어긋난 한 건은 자릿수 오타였다(옥스: 45분인데 46원). 이미 저장된 값은
+  // 폼을 열어야만 보이므로 목록에서 짚어준다. 정액제·할인으로 실제 다를 수 있어 막지는 않는다.
+  if (c.ratePer1000Won != null && c.ratePer1000Won > 0) {
+    const expected = Math.round(60000 / c.ratePer1000Won);
+    if (c.hourlyRateConverted == null) {
+      warnings.push(`시간당환산요금 비어 있음 → 1000원당 ${c.ratePer1000Won}분 기준 ${expected.toLocaleString("ko-KR")}원`);
+    } else if (Math.abs(c.hourlyRateConverted - expected) > Math.max(2, expected * 0.02)) {
+      warnings.push(
+        `시간당환산요금 ${c.hourlyRateConverted.toLocaleString("ko-KR")}원이 1000원당 ${c.ratePer1000Won}분 기준 ` +
+          `${expected.toLocaleString("ko-KR")}원과 다릅니다 → 정액제·할인 때문인지 확인해주세요`,
+      );
+    }
+  }
   const appliedPc = computeCompetitorAppliedPcCount(c);
   if (appliedPc != null && appliedPc > 0) {
     const coupleSeats = (c.coupleZone ?? 0) * 2 + (c.regularCoupleSeatCount ?? 0);
@@ -384,8 +398,30 @@ function CompetitorForm({
         <TextField label="RAM 특화" value={form.ramTop ?? ""} onChange={(v) => set("ramTop", v || null)} />
         <MonitorTextField label="모니터 기본" value={form.monitorBase ?? ""} onChange={(v) => set("monitorBase", v || null)} hint="클릭하면 자주 쓰는 모델 목록이 뜹니다 · 직접 입력도 가능" />
         <MonitorTextField label="모니터 특화" value={form.monitorTop ?? ""} onChange={(v) => set("monitorTop", v || null)} hint="콤마로 여러 모델 나열 가능" />
-        <NumberField label="1000원당분" value={form.ratePer1000Won} onChange={(v) => set("ratePer1000Won", v)} />
-        <NumberField label="시간당환산요금" value={form.hourlyRateConverted} onChange={(v) => set("hourlyRateConverted", v)} />
+        {/* 2026-09-11 — 두 칸을 따로 손으로 치고 있었다. 실제 자료에서 둘 다 있는 87건 중
+            86건(98.9%)이 `시간당요금 = 60000 / 1000원당분`과 1원 이내로 일치했고, 어긋난 한 건은
+            자릿수 오타였다(옥스: 45분인데 46원, 공식값 1,333원). 중복 입력이 오타를 만들고
+            49건은 아예 비어 있었다. 그래서 분을 넣으면 환산요금을 자동으로 채운다.
+            근거: docs/releases/2026-09-11-relative-tariff.md */}
+        <NumberField
+          label="1000원당분"
+          value={form.ratePer1000Won}
+          onChange={(v) => {
+            set("ratePer1000Won", v);
+            if (v != null && v > 0) set("hourlyRateConverted", Math.round(60000 / v));
+          }}
+          hint="입력하면 아래 시간당환산요금이 자동으로 채워집니다"
+        />
+        <NumberField
+          label="시간당환산요금"
+          value={form.hourlyRateConverted}
+          onChange={(v) => set("hourlyRateConverted", v)}
+          hint={
+            form.ratePer1000Won != null && form.ratePer1000Won > 0
+              ? `1000원당분 기준 ${Math.round(60000 / form.ratePer1000Won).toLocaleString("ko-KR")}원 · 정액제·할인 등으로 다르면 직접 고치세요`
+              : "1000원당분을 넣으면 자동 계산됩니다"
+          }
+        />
         <TextField label="유료차감" value={form.paidDeduction ?? ""} onChange={(v) => set("paidDeduction", v || null)} />
       </div>
       <HardwareScoringGuide />
