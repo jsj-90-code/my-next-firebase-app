@@ -69,3 +69,6 @@ src/**/_*.test.ts
 /.claude/
 /.mcp.json
 /skills-lock.json
+
+# 검증용으로 받아본 내보내기 이미지(2026-09-11 FHD 확인). 결과는 docs/review-needed에 적었다.
+/fhd-zoom-200.png
