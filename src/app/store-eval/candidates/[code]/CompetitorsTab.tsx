@@ -439,8 +439,20 @@ function CompetitorForm({
         <TextField label="방문일시" value={form.visitedAt ?? ""} onChange={(v) => set("visitedAt", v || null)} placeholder="예: 2026-08-01 14:30" />
         <SelectField label="방문요일" value={form.visitedDow} onChange={(v) => set("visitedDow", v)} options={DOW_OPTIONS} />
         <NumberField label="이용객수" value={form.visitorCount} onChange={(v) => set("visitorCount", v)} />
-        <NumberField label="실측착석률" value={form.measuredSeatRate} onChange={(v) => set("measuredSeatRate", v)} step={0.01} hint="0~1 사이 비율" />
-        <NumberField label="핑봇_가동률" value={form.pingbotUtilization} onChange={(v) => set("pingbotUtilization", v)} step={0.01} hint="0~1 사이 비율" />
+        <NumberField
+          label="실측착석률"
+          value={form.measuredSeatRate}
+          onChange={(v) => set("measuredSeatRate", v)}
+          step={0.1}
+          hint="퍼센트로 입력 (예: 32.5 = 32.5%). 0~1 소수로 넣어도 같게 인식합니다"
+        />
+        <NumberField
+          label="핑봇_가동률"
+          value={form.pingbotUtilization}
+          onChange={(v) => set("pingbotUtilization", v)}
+          step={0.1}
+          hint="퍼센트로 입력 (예: 30 = 30%). 0~1 소수로 넣어도 같게 인식합니다"
+        />
         <TextField label="핑봇_조회기간" value={form.pingbotPeriod ?? ""} onChange={(v) => set("pingbotPeriod", v || null)} />
         <NumberField label="리뉴얼연도" value={form.renovationYear} onChange={(v) => set("renovationYear", v)} step={1} />
       </div>
