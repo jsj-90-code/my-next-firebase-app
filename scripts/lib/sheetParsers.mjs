@@ -76,6 +76,23 @@ export function parseKoreanDate(v) {
 // 가맹점코드 앞 8자리(YYYYMMDD)는 보통 오픈일과 가깝다. 훨씬 크게 벌어지면 시트 오픈일이
 // 아직 정확히 입력 안 된 placeholder일 가능성이 높다(실사례: 문산점) — 이런 경우 openedAt을
 // 덮어쓰지 않는다.
+/**
+ * 시트의 오픈일을 그대로 반영해도 되는가.
+ *
+ * 2026-09-11 — 예전엔 `isOpenDateSuspicious`만 보고 30일 규칙에 걸리면 무조건 거부했다.
+ * 그래서 **계약(코드 발급)보다 한 달 넘게 늦게 연 정상 매장**도 영원히 거부되고, 매일
+ * 동기화 보고에 같은 경고만 반복됐다(시흥능곡점 2023-04-28, 사용자 확정).
+ *
+ * 판정 기준을 하나 더 둔다 — **이미 저장된 값과 시트 값이 같으면 받아들인다.** 저장값은
+ * 매출DB에서 들어온 것이라, 둘이 같다는 건 서로 다른 출처가 같은 날짜를 말한다는 뜻이고
+ * placeholder일 수 없다. 값이 서로 다를 때만 30일 규칙으로 거른다.
+ */
+export function shouldAcceptSheetOpenDate(code, sheetOpenedAt, storedOpenedAt) {
+  if (!sheetOpenedAt) return false;
+  if (storedOpenedAt && sheetOpenedAt === storedOpenedAt) return true;
+  return !isOpenDateSuspicious(code, sheetOpenedAt);
+}
+
 export function isOpenDateSuspicious(code, sheetOpenedAt) {
   const m = code.match(/^(\d{4})(\d{2})(\d{2})/);
   if (!m || !sheetOpenedAt) return false;

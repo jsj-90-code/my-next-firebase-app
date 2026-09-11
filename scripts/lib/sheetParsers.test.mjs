@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isOpenDateSuspicious,
+  shouldAcceptSheetOpenDate,
   parseKoreanDate,
   toBool,
   toDateStr,
@@ -156,5 +157,31 @@ describe("isOpenDateSuspicious", () => {
   it("코드가 날짜 형식이 아니거나 오픈일이 없으면 판단하지 않는다", () => {
     expect(isOpenDateSuspicious("ABC123", "2023-03-24")).toBe(false);
     expect(isOpenDateSuspicious("20230324392", null)).toBe(false);
+  });
+});
+
+describe("shouldAcceptSheetOpenDate", () => {
+  it("코드 날짜와 가까우면 그대로 받는다", () => {
+    expect(shouldAcceptSheetOpenDate("20230324392", "2023-04-10", null)).toBe(true);
+  });
+
+  // 시흥능곡점 사례(2026-09-11 사용자 확정) — 계약보다 35일 늦게 연 정상 매장이라
+  // 30일 규칙에 걸렸는데, 매출DB에서 들어온 저장값과 시트 값이 같다. 서로 다른 출처가
+  // 같은 날짜를 말하면 placeholder일 수 없으므로 받아들인다.
+  it("30일 넘게 차이나도 저장값과 같으면 받는다", () => {
+    expect(shouldAcceptSheetOpenDate("20230324392", "2023-04-28", "2023-04-28")).toBe(true);
+  });
+
+  it("30일 넘게 차이나고 저장값과도 다르면 거부한다", () => {
+    expect(shouldAcceptSheetOpenDate("20230324392", "2023-06-01", "2023-04-28")).toBe(false);
+  });
+
+  it("저장값이 없는데 30일 넘게 차이나면 거부한다 (placeholder 의심)", () => {
+    expect(shouldAcceptSheetOpenDate("20230324392", "2023-06-01", null)).toBe(false);
+  });
+
+  it("시트에 오픈일이 없으면 받지 않는다 (기존 값을 지우지 않는다)", () => {
+    expect(shouldAcceptSheetOpenDate("20230324392", null, "2023-04-28")).toBe(false);
+    expect(shouldAcceptSheetOpenDate("20230324392", "", "2023-04-28")).toBe(false);
   });
 });

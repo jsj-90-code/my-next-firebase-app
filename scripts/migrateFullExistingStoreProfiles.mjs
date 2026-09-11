@@ -18,7 +18,7 @@ import { google } from "googleapis";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { loadCollectionMap, needsWrite, makeWriteCounter } from "./lib/diffWrite.mjs";
-import { toNumber, toPercentNumber, toBool, toText, toDateStr, isOpenDateSuspicious } from "./lib/sheetParsers.mjs";
+import { toNumber, toPercentNumber, toBool, toText, toDateStr, shouldAcceptSheetOpenDate } from "./lib/sheetParsers.mjs";
 
 function loadEnvLocal() {
   let text;
@@ -157,13 +157,14 @@ async function main() {
       updatedAt: Date.now(),
     };
     const sheetOpenedAt = toDateStr(s["오픈일"]);
-    if (isOpenDateSuspicious(code, sheetOpenedAt)) {
+    const storedOpenedAt = storeDataByCode.get(code)?.openedAt ?? null;
+    if (shouldAcceptSheetOpenDate(code, sheetOpenedAt, storedOpenedAt)) {
+      patch.openedAt = sheetOpenedAt;
+    } else if (sheetOpenedAt) {
       const m = code.match(/^(\d{4})(\d{2})(\d{2})/);
       console.warn(
-        `  ⚠️  ${code} ${toText(s["가맹점명"])}: 시트 오픈일(${sheetOpenedAt})이 가맹점코드 날짜(${m[1]}-${m[2]}-${m[3]})와 30일 넘게 차이 — openedAt을 덮어쓰지 않았습니다. 시트에서 실제 오픈일을 확인해 고쳐주세요.`,
+        `  ⚠️  ${code} ${toText(s["가맹점명"])}: 시트 오픈일(${sheetOpenedAt})이 가맹점코드 날짜(${m[1]}-${m[2]}-${m[3]})와 30일 넘게 차이나고 저장값(${storedOpenedAt ?? "없음"})과도 달라 덮어쓰지 않았습니다. 시트에서 실제 오픈일을 확인해 고쳐주세요.`,
       );
-    } else {
-      patch.openedAt = sheetOpenedAt;
     }
     const dirty = needsWrite(storeDataByCode.get(code), patch, { merge: true });
     profileCounter.mark(dirty);

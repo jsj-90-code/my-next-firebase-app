@@ -23,7 +23,7 @@ import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } fro
 // 핑봇_가동률 퍼센트 파싱 버그가 한쪽만 고쳐지고 이 파일엔 남아있던 사고가 있었다(2026-08-22,
 // docs/data-issues.md). 단일 출처로 합쳐 같은 드리프트가 재발하지 않게 한다(2026-08-24).
 import { needsWrite } from "../../../scripts/lib/diffWrite.mjs";
-import { toNumber, toPercentNumber, toBool, toText, toDateStr, parseKoreanDate, isOpenDateSuspicious } from "../../../scripts/lib/sheetParsers.mjs";
+import { toNumber, toPercentNumber, toBool, toText, toDateStr, parseKoreanDate, shouldAcceptSheetOpenDate } from "../../../scripts/lib/sheetParsers.mjs";
 
 const SPREADSHEET_ID = process.env.STORE_EVAL_SPREADSHEET_ID || "1Q5yCOL5IT_pT8lYKvtzhzPK3ihC0otVifQBNPi0SjRA";
 const BATCH_LIMIT = 450; // Firestore 배치 한도(500)에서 여유를 둔 값
@@ -238,15 +238,15 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       updatedAt: Date.now(),
     };
     const sheetOpenedAt = toDateStr(s["오픈일"]);
-    if (isOpenDateSuspicious(code, sheetOpenedAt)) {
+    const storedOpenedAt = (storeDataByCode.get(code) as { openedAt?: string | null } | undefined)?.openedAt ?? null;
+    if (shouldAcceptSheetOpenDate(code, sheetOpenedAt, storedOpenedAt)) {
+      patch.openedAt = sheetOpenedAt;
+    } else if (sheetOpenedAt) {
       // 2026-09-11 — 예전엔 "코드 이름"만 남겨서, 보고를 봐도 시트의 어떤 값이 왜 거부됐는지
       // 알 수 없었다(매 실행마다 같은 줄만 반복). 거부된 시트값과 현재 저장값을 같이 적는다.
-      const storedOpenedAt = (storeDataByCode.get(code) as { openedAt?: string | null } | undefined)?.openedAt ?? null;
       suspiciousOpenDates.push(
-        `${code} ${toText(s["가맹점명"]) ?? ""} — 시트 오픈일 ${sheetOpenedAt ?? "없음"}이 코드 날짜와 30일 넘게 차이나 반영하지 않음(현재 저장값 ${storedOpenedAt ?? "없음"})`,
+        `${code} ${toText(s["가맹점명"]) ?? ""} — 시트 오픈일 ${sheetOpenedAt}이 코드 날짜와 30일 넘게 차이나고 저장값(${storedOpenedAt ?? "없음"})과도 달라 반영하지 않음`,
       );
-    } else {
-      patch.openedAt = sheetOpenedAt;
     }
     if (!isSameData(storeDataByCode.get(code), patch)) {
       await writer.set(db.collection("storeEvalExistingStores").doc(code), patch, true);
