@@ -30,5 +30,8 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // 2026-09-11 — `_` 접두 테스트는 로컬 보관자료를 읽는 **1회성 분석**이다.
+  // .gitignore에서도 빠지고 `npm test`에서도 --exclude로 빠지는데 타입체크만 잡고 있었다.
+  // 분석을 하나 남겨두면 그 뒤 모든 빌드가 막히므로 여기서도 뺀다.
+  "exclude": ["node_modules", "src/**/_*.test.ts"]
 }

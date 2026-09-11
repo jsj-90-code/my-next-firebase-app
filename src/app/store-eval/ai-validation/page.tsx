@@ -7,7 +7,7 @@
 // 결과는 화면에만 표시하고 아무것도 저장하지 않는다(1회성 진단).
 
 import { readJsonOrText } from "@/lib/readJsonOrText";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   SCORE_FIELD_KEYS,
@@ -37,6 +37,9 @@ export default function AiValidationPage() {
   const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
   const [outcomes, setOutcomes] = useState<PerStoreOutcome[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // 2026-09-11 — 중단 버튼용. 매장당 30~45초씩 걸리는데 한 번 시작하면 멈출 방법이
+  // 페이지를 닫는 것뿐이었다. 루프가 매 회차 이 값을 본다.
+  const cancelRef = useRef(false);
 
   async function ensureStoresLoaded(): Promise<ExistingStore[]> {
     if (stores) return stores;
@@ -67,10 +70,33 @@ export default function AiValidationPage() {
         setError("검증할 블랙라벨 매장이 없습니다.");
         return;
       }
+      // 2026-09-11 — 이 검증은 매장마다 **유료 AI**를 부른다(웹검색 그라운딩이 필요해
+      // 결제가 연결된 별도 키 GEMINI_API_KEY_LOCATION_EVAL을 쓴다, lib/gemini.ts 주석 참고).
+      // 예전엔 "전체 실행"을 체크하고 버튼을 누르면 바로 41곳이 돌았고 되돌릴 방법이 없었다.
+      // 표본이 작을 때(기본 10곳)는 묻지 않는다 — 매번 물으면 확인창을 안 읽게 된다.
+      const CONFIRM_THRESHOLD = 15;
+      if (targets.length >= CONFIRM_THRESHOLD) {
+        const minutes = Math.ceil((targets.length * 40) / 60);
+        const ok = window.confirm(
+          `매장 ${targets.length}곳에 AI를 한 번씩 호출합니다.\n\n` +
+            `· 예상 시간: 약 ${minutes}분 (매장당 30~45초)\n` +
+            `· 유료 API라 호출한 만큼 비용이 발생하고, 되돌릴 수 없습니다.\n\n` +
+            `진행할까요?`,
+        );
+        if (!ok) return;
+      }
+      cancelRef.current = false;
       setStatus("running");
       const token = await user?.getIdToken();
       const results: PerStoreOutcome[] = [];
       for (let i = 0; i < targets.length; i++) {
+        if (cancelRef.current) {
+          // 이미 부른 만큼의 결과는 그대로 보여준다 — 중단했다고 버리면 그 호출이 낭비된다.
+          setProgress({ done: i, total: targets.length, current: "" });
+          setError(`${i}곳까지 확인하고 중단했습니다. 아래 결과는 그대로 쓸 수 있습니다.`);
+          setStatus("done");
+          return;
+        }
         const store = targets[i];
         setProgress({ done: i, total: targets.length, current: store.storeName });
         try {
@@ -179,6 +205,15 @@ export default function AiValidationPage() {
           <button type="button" onClick={handleRun} disabled={status === "running"} className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">
             {status === "running" ? "검증 중..." : "검증 시작"}
           </button>
+          {status === "running" && (
+            <button
+              type="button"
+              onClick={() => { cancelRef.current = true; }}
+              className="app-btn-outline rounded-lg px-4 py-2 text-sm"
+            >
+              중단
+            </button>
+          )}
         </div>
         {progress && status === "running" && (
           <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
