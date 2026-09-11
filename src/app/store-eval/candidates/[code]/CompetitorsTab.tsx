@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   computeCompetitorAppliedPcCount,
+  computeCompetitorAvgCompetitiveness,
   computeCompetitorInvestigationSummary,
   computeCompetitorScores,
   computeCompetitorZoneComposition,
@@ -598,6 +599,9 @@ type CompetitorLoadResult = {
   error: string | null;
 };
 
+/** 렌더마다 새 배열이 생겨 useMemo 의존성이 매번 바뀌는 것을 막는다(ScorecardTab과 같은 패턴). */
+const NO_COMPETITORS: Competitor[] = [];
+
 export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { candidateCode: string; subjectLabel?: string }) {
   const { user } = useAuth();
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -609,8 +613,21 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
   const activeLoadResult = loadResult?.requestKey === requestKey ? loadResult : null;
-  const competitors = activeLoadResult?.competitors ?? [];
+  const competitors = activeLoadResult?.competitors ?? NO_COMPETITORS;
   const loading = activeLoadResult == null;
+
+  // 경쟁력격차의 분모와 **같은 함수**를 쓴다 — 설명이 실제 계산과 어긋나면 안 된다.
+  const competitorAvgScore = useMemo(
+    () => computeCompetitorAvgCompetitiveness(competitors, settings),
+    [competitors, settings],
+  );
+  const weakerThanAverage = useMemo(() => {
+    if (competitorAvgScore == null) return [];
+    return competitors
+      .map((c) => ({ name: c.name ?? "(이름없음)", score: computeCompetitorScores(c, settings).total }))
+      .filter((x): x is { name: string; score: number } => x.score != null && x.score < competitorAvgScore)
+      .sort((a, b) => a.score - b.score);
+  }, [competitors, competitorAvgScore, settings]);
   const error = activeLoadResult?.error ?? (mutationError?.candidateCode === candidateCode ? mutationError.message : null);
 
   // 붙여넣기로 일괄 입력(2026-08-27) - 점포개발자가 남기는 "경쟁점 설명" 텍스트를 결정적으로
@@ -844,6 +861,28 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
               </>
             );
           })()}
+        </div>
+      )}
+
+      {/* 2026-09-11 — 경쟁점을 추가했는데 예상매출이 **올라가는** 일이 실제로 있다.
+          경쟁력격차가 "자사점수 ÷ 경쟁점 PC대수 가중 평균점수"라, 평균보다 약한 경쟁점이
+          늘면 분모가 내려가 격차가 커진다. 그 효과가 경쟁 공급 증가 효과를 넘으면 매출이 오른다
+          (후보지 9곳 중 8곳에서 재현: releases/2026-09-11-competition-monotonicity-verified.md).
+          산식은 그대로 두기로 했으므로(사용자 확정), 대신 **왜 그런지 여기서 말해준다.**
+          숫자를 바꾸지 않는 순수 안내다. */}
+      {!loading && weakerThanAverage.length > 0 && (
+        <div className="app-badge app-badge-warn w-full justify-start rounded-xl px-4 py-3 text-xs leading-5">
+          <div>
+            <strong>평균보다 약한 경쟁점 {weakerThanAverage.length}곳</strong>
+            {" — "}
+            {weakerThanAverage.map((w) => `${w.name}(${formatScore(w.score)})`).join(", ")}
+            {" · 이 상권 평균 "}
+            {formatScore(competitorAvgScore)}
+            <br />
+            이런 경쟁점을 <strong>추가하거나 좌석을 늘리면 예상매출이 오히려 올라갈 수 있습니다.</strong>{" "}
+            경쟁력격차를 <em>자사 점수 ÷ 경쟁점 평균 점수</em>로 계산하는데, 약한 경쟁점이 늘면
+            그 평균이 내려가 격차가 커지기 때문입니다. <strong>입력이 틀린 게 아닙니다.</strong>
+          </div>
         </div>
       )}
 
