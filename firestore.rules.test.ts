@@ -20,7 +20,9 @@ import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 const emulatorAddress = process.env.FIRESTORE_EMULATOR_HOST;
 const describeWithEmulator = emulatorAddress ? describe : describe.skip;
-const rulesText = readFileSync("firestore.rules", "utf8");
+// 변이 검사(일부러 약화시킨 규칙으로 돌려서 테스트가 잡아내는지 확인)를 위해 경로를 바꿀 수
+// 있게 한다. 기본은 운영 규칙 파일이다 — .local-tools/mutate-rules.mjs 참고.
+const rulesText = readFileSync(process.env.STORE_EVAL_RULES_FILE ?? "firestore.rules", "utf8");
 
 const ADMIN_EMAIL = "admin@isens.camp";
 const WORKER_EMAIL = "worker@isens.camp";

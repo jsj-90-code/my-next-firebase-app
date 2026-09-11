@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:rules": "firebase-tools emulators:exec --only firestore --project demo-rules-test \"vitest run firestore.rules.test.ts\""
+    "test:rules": "node scripts/run-rules-tests.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
@@ -31,6 +31,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "firebase-tools": "^15.30.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"
