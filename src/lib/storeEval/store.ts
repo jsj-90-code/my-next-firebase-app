@@ -326,6 +326,29 @@ export async function listModelSettingsHistory(): Promise<ModelSettingsHistoryEn
 // ---------------------------------------------------------------------------
 // 기존 가맹점 마스터 + 월별 매출 (6.기존 가맹점 검증 화면 / 구글시트 동기화)
 // ---------------------------------------------------------------------------
+/** 백업 전용 — 상권자료 업로드 이력 전체. "어느 파일에서 언제 뽑았는지"의 유일한 기록이라 재생성이 안 된다. */
+export async function listAllMarketDataUploads(): Promise<MarketDataUpload[]> {
+  const snap = await getDocs(collection(requireDb(), MARKET_DATA_UPLOADS));
+  return snap.docs.map((d) => d.data() as MarketDataUpload);
+}
+
+/**
+ * 복원 전용 — 업로드 이력을 되돌린다. **없는 문서만 만든다.**
+ *
+ * 이 컬렉션은 불변 로그라 규칙이 `create`만 허용하고 `update`를 막는다. 이미 있는 id에
+ * set을 하면 update로 판정돼 거부되고, 그러면 복원 전체가 실패한다. 그래서 먼저 읽어
+ * 없는 것만 추린다 — 덮어쓰지 않는 게 이 컬렉션의 계약이기도 하다.
+ */
+export async function restoreMarketDataUploads(uploads: MarketDataUpload[]): Promise<{ added: number; skipped: number }> {
+  if (!uploads.length) return { added: 0, skipped: 0 };
+  const existing = new Set((await getDocs(collection(requireDb(), MARKET_DATA_UPLOADS))).docs.map((d) => d.id));
+  const missing = uploads.filter((u) => !existing.has(u.id));
+  for (const u of missing) {
+    await setDoc(doc(requireDb(), MARKET_DATA_UPLOADS, u.id), sanitize(u));
+  }
+  return { added: missing.length, skipped: uploads.length - missing.length };
+}
+
 export async function listExistingStores(): Promise<ExistingStore[]> {
   const snap = await getDocs(collection(requireDb(), EXISTING_STORES));
   return snap.docs.map((d) => d.data() as ExistingStore);

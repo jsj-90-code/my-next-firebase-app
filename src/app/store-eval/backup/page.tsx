@@ -164,12 +164,12 @@ export default function StoreEvalBackupPage() {
         <p className="mt-3 text-xs leading-5 text-[var(--sl-ink-soft)]">
           <strong>담기고 복원되는 것</strong> — 신규후보지 · 기존 가맹점 · 월매출 · 경쟁점 · 입지동선평가 ·
           운영설정 · 설정 변경이력 · 평가 결과 · <strong>좌석배치도(도면·존·발주설정)</strong> ·
-          후보지코드 카운터.
+          후보지코드 카운터 · <strong>상권자료 업로드 이력</strong>.
           <br />
-          <strong>담기지 않는 것</strong> — 수요거점, 상권자료 업로드 이력, 행정구역 참고자료, 감사 로그, 관리자 목록.
-          이 다섯은 보안규칙이 브라우저 쓰기를 막아둔 자료라 이 화면으로는 되돌릴 수 없습니다
-          (수요거점·행정구역 참고자료는 [상권자료 수집]으로 다시 받을 수 있고, 관리자 목록은
-          Firebase 콘솔에서 관리합니다).
+          <strong>담기지 않는 것</strong> — 수요거점, 행정구역 참고자료, 감사 로그, 관리자 목록.
+          수요거점·행정구역 참고자료는 <strong>[상권자료 수집]으로 다시 받을 수 있고</strong>,
+          감사 로그는 사후에 바뀌면 안 되는 기록이라 일부러 복원하지 않습니다.
+          관리자 목록은 Firebase 콘솔에서 관리합니다.
         </p>
         {message && <p className="mt-3 text-sm text-[var(--sl-ok)]">{message}</p>}
         {error && <p className="mt-3 text-sm text-[var(--sl-danger)]">백업 실패: {error}</p>}

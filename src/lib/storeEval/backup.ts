@@ -16,6 +16,7 @@ import {
   getModelSettings,
   listAllCompetitors,
   listAllLocationEvaluations,
+  listAllMarketDataUploads,
   listCandidates,
   listEvaluationResults,
   listExistingStores,
@@ -23,9 +24,11 @@ import {
   listModelSettingsHistory,
   raiseCandidateCodeCounter,
   restoreFromBackup,
+  restoreMarketDataUploads,
   type RestoreBackupPayload,
   type RestoreLogEntry,
 } from "./store";
+import type { MarketDataUpload } from "./types";
 // v2(2026-09-11) — 담는 범위를 넓혔다. 예전엔 7종만 담겨서 **좌석배치도가 통째로 백업 밖**이었고,
 // 후보지코드 카운터도 안 들어가 있었다(카운터를 잃으면 N001부터 다시 발급돼 기존 후보지를
 // 덮어쓴다). v1 파일도 그대로 복원된다 — 새 항목이 없으면 그 부분만 건너뛴다.
@@ -39,6 +42,15 @@ export type StoreEvalBackupPayload = RestoreBackupPayload & {
   seatLayoutProjects?: SeatLayoutProject[];
   seatLayoutSettings?: SeatLayoutSettings | null;
   candidateCodeCounter?: number | null;
+  /**
+   * 2026-09-11 추가 — 상권자료 업로드 이력. **재생성이 안 되는 유일한 항목**이라 담는다
+   * ("어느 파일에서 언제 뽑았는지"의 기록). 복원은 없는 문서만 만든다(불변 로그라 덮어쓰기 금지).
+   *
+   * 나머지 미포함 4종은 이유가 있어 뺀다 — 수요거점·행정구역 참고자료는 **자동 재수집**이
+   * 되고 보안규칙이 클라이언트 create를 막는다. 감사 로그는 **복원하면 안 되는** 성격이고
+   * 1.2MB로 백업 파일 크기를 배로 만든다. 관리자 목록은 Firebase 콘솔에서 다시 넣는다.
+   */
+  marketDataUploads?: MarketDataUpload[];
 };
 
 function pad(n: number): string {
@@ -67,6 +79,7 @@ async function buildBackupPayload(): Promise<StoreEvalBackupPayload> {
     seatLayoutSettings,
     candidateCodeCounter,
     evaluationResults,
+    marketDataUploads,
   ] = await Promise.all([
     listCandidates(),
     listExistingStores(),
@@ -79,6 +92,7 @@ async function buildBackupPayload(): Promise<StoreEvalBackupPayload> {
     loadSeatLayoutSettings(),
     getCandidateCodeCounter(),
     listEvaluationResults(),
+    listAllMarketDataUploads(),
   ]);
 
   return {
@@ -95,6 +109,7 @@ async function buildBackupPayload(): Promise<StoreEvalBackupPayload> {
     seatLayoutSettings,
     candidateCodeCounter,
     evaluationResults,
+    marketDataUploads,
   };
 }
 
@@ -159,6 +174,7 @@ export function validateBackupPayload(raw: unknown): BackupValidation {
   if (Array.isArray(obj.seatLayoutProjects)) counts.seatLayoutProjects = obj.seatLayoutProjects.length;
   if (obj.seatLayoutSettings) counts.seatLayoutSettings = 1;
   if (Array.isArray(obj.evaluationResults)) counts.evaluationResults = obj.evaluationResults.length;
+  if (Array.isArray(obj.marketDataUploads)) counts.marketDataUploads = obj.marketDataUploads.length;
   if (typeof obj.candidateCodeCounter === "number") counts.candidateCodeCounter = 1;
   return { valid: true, payload, counts };
 }
@@ -208,6 +224,9 @@ export async function computeRestorePreview(payload: StoreEvalBackupPayload): Pr
   if (typeof payload.candidateCodeCounter === "number") {
     items.push({ label: `후보지코드 카운터(N${String(payload.candidateCodeCounter).padStart(3, "0")}까지 발급됨)`, toAdd: 1, toUpdate: 0, currentTotal: -1 });
   }
+  if (payload.marketDataUploads) {
+    items.push({ label: "상권자료 업로드 이력(없는 것만 추가)", toAdd: payload.marketDataUploads.length, toUpdate: 0, currentTotal: -1 });
+  }
   return items;
 }
 
@@ -238,5 +257,8 @@ async function restoreExtras(payload: StoreEvalBackupPayload): Promise<void> {
   }
   if (typeof payload.candidateCodeCounter === "number") {
     await raiseCandidateCodeCounter(payload.candidateCodeCounter);
+  }
+  if (payload.marketDataUploads?.length) {
+    await restoreMarketDataUploads(payload.marketDataUploads);
   }
 }
