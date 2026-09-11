@@ -5,6 +5,7 @@
 // 변경 이력을 보여주는 것만 담당한다. 진짜 권한 강제는 firestore.rules에서 하고,
 // 여기서는 관리자가 아니면 입력을 readOnly로 만들고 저장 버튼을 숨기는 UX만 처리한다.
 
+import { modelSettingsValidationErrors, sumWarning } from "@/lib/storeEval/settingsValidation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDateTime } from "@/lib/storeEval/format";
@@ -250,35 +251,8 @@ export default function StoreEvalSettingsPage() {
     ? form.locationCompositeWeights.marketPositionFlow + form.locationCompositeWeights.preemption + form.locationCompositeWeights.visibility
     : 1;
 
-  function sumWarning(sum: number, label: string): string | null {
-    if (Math.abs(sum - 1) < 0.001) return null;
-    return `${label} 가중치 합이 100%(1.0)가 아닙니다. 현재 합: ${(sum * 100).toFixed(1)}%`;
-  }
-
-  // 2026-08-25 추가 — 저장을 막는 실제 검증(기존엔 가중치 합 경고를 보여주기만 하고 저장은
-  // 그냥 됐다). 외부유입 보정률은 "덜 준다(0%)~아예 없다고 보고 크게 깎는다(-100%)" 사이의
-  // 할인율이라 0~-1 범위를 벗어나면 실수로 보고 막는다.
-  function validationErrors(f: ModelSettings): string[] {
-    const errors: string[] = [];
-    const specSum = sumWarning(f.specWeights.vga + f.specWeights.monitor + f.specWeights.ram + f.specWeights.cpu, "하드웨어(GPU/모니터/RAM/CPU)");
-    const facilitySum = sumWarning(
-      f.facilityWeights.zoneComposition + f.facilityWeights.interior + f.facilityWeights.management,
-      "시설(존구성/인테리어/관리)",
-    );
-    const compSum = sumWarning(
-      f.competitivenessWeights.spec + f.competitivenessWeights.food + f.competitivenessWeights.interior + f.competitivenessWeights.location,
-      "경쟁력",
-    );
-    const locSum = sumWarning(
-      f.locationCompositeWeights.marketPositionFlow + f.locationCompositeWeights.preemption + f.locationCompositeWeights.visibility,
-      "입지동선종합점수",
-    );
-    for (const w of [specSum, facilitySum, compSum, locSum]) if (w) errors.push(w);
-    for (const [label, v] of Object.entries(f.inflowAdjustment)) {
-      if (v > 0 || v < -1) errors.push(`외부유입 보정률 - ${label}은(는) 0~-100%(-1~0) 범위여야 합니다. 현재: ${(v * 100).toFixed(1)}%`);
-    }
-    return errors;
-  }
+  // 검증은 순수함수라 @/lib/storeEval/settingsValidation으로 옮겼다(2026-09-11).
+  // 모델 계수를 직접 바꾸는 값들이라 단위 테스트가 필요했고, 화면 안에 있으면 테스트할 수 없다.
 
   async function handleSave() {
     if (!form) return;
@@ -288,7 +262,7 @@ export default function StoreEvalSettingsPage() {
       setSaveError("변경 사유를 입력해주세요 — 이후 다른 관리자가 이력을 볼 때 왜 바꿨는지 알 수 있어야 합니다.");
       return;
     }
-    const errors = validationErrors(form);
+    const errors = modelSettingsValidationErrors(form);
     if (errors.length > 0) {
       setSaveError(errors.join(" / "));
       return;
