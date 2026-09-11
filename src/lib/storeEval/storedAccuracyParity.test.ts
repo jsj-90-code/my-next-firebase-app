@@ -18,7 +18,11 @@ import {
 } from "./calc";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
-import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
+import {
+  existingStoreEvaluationPatch,
+  existingStoreSourceCode,
+  prepareExistingStoresForEvaluation,
+} from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
 import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
 import type { Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
@@ -203,5 +207,50 @@ describeIfSnapshot("기존점의 실제매출 파생값이 월매출 원자료�
   it("완료월수와 실제매출평균이 원자료에서 그대로 재현된다", () => {
     if (mismatches.length) console.log("불일치:\n" + mismatches.join("\n"));
     expect(mismatches).toEqual([]);
+  });
+});
+
+// 경쟁력점수·경쟁력격차·자사수요·상권수요·경쟁점IP도 크론이 매 실행마다 다시 써넣는 캐시다.
+// 검증화면은 어차피 다시 계산해서 쓰지만, **기존점 목록·프로필·스코어카드는 이 캐시를 그대로
+// 보여준다**. 캐시가 뒤처져 있으면 화면 숫자와 모형이 쓰는 숫자가 달라진다.
+describeIfSnapshot("기존점의 경쟁력·수요 캐시가 지금 설정으로 재현되는가", () => {
+  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+  const settings = mergeModelSettings(snap.settings);
+  const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+
+  const competitorsByLookup = new Map<string, Competitor[]>();
+  for (const c of allCompetitors) {
+    competitorsByLookup.set(c.candidateCode, [...(competitorsByLookup.get(c.candidateCode) ?? []), c]);
+  }
+  const locByLookup = new Map(snap.locationEvaluations.map((l) => [l.candidateCode, l]));
+
+  const FIELDS = ["competitivenessScore", "competitivenessGap", "ownDemand", "marketDemand", "competitorIp"] as const;
+  const near = (a: unknown, b: unknown) => {
+    if (a == null && b == null) return true;
+    if (typeof a !== "number" || typeof b !== "number") return a === b;
+    // 저장은 배정밀도 그대로라 사실상 완전 일치해야 한다. 아주 작은 여유만 둔다.
+    return Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-12);
+  };
+
+  const drift: string[] = [];
+  for (const store of snap.existingStores) {
+    const lookupCode = existingStoreSourceCode(store);
+    const patch = existingStoreEvaluationPatch(
+      store,
+      competitorsByLookup.get(lookupCode) ?? [],
+      locByLookup.get(lookupCode) ?? null,
+      settings,
+    );
+    for (const key of FIELDS) {
+      const saved = (store as unknown as Record<string, unknown>)[key];
+      if (!near(saved, patch[key])) {
+        drift.push(`${store.storeCode} ${store.storeName} ${key} 저장=${String(saved)} 재계산=${String(patch[key])}`);
+      }
+    }
+  }
+
+  it("저장된 캐시가 지금 설정으로 다시 계산한 값과 같다", () => {
+    if (drift.length) console.log(`캐시 뒤처짐 ${drift.length}건:\n` + drift.slice(0, 30).join("\n"));
+    expect(drift).toEqual([]);
   });
 });
