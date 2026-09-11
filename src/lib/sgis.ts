@@ -12,6 +12,51 @@ const SGIS_BASE = "https://sgisapi.kostat.go.kr/OpenAPI3";
 
 let cachedToken: { accessToken: string; expiresAt: number } | null = null;
 
+// SGIS는 실패해도 HTTP 200을 준다 — 본문의 errCd로만 성공/실패를 알 수 있다(성공은 0).
+// 2026-09-11 전까지 이걸 안 봐서, 인증 만료나 쿼터 초과가 "행정구역을 찾지 못했습니다"나
+// "인구 null"로 둔갑했다. 수집 화면엔 "자동수집 완료"라고 떠서 더 나빴다.
+type SgisBody = {
+  errCd?: number | string;
+  errMsg?: string;
+  id?: string;
+  result?: unknown;
+};
+
+async function sgisJson(url: string, what: string): Promise<SgisBody> {
+  const res = await fetch(url);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`SGIS ${what} 요청 실패 (${res.status}): ${text.slice(0, 200)}`);
+  let data: SgisBody;
+  try {
+    data = JSON.parse(text) as SgisBody;
+  } catch {
+    // 점검 페이지 등 HTML이 200으로 돌아오는 경우.
+    throw new Error(`SGIS ${what} 응답을 해석하지 못했습니다: ${text.slice(0, 200)}`);
+  }
+  const code = data?.errCd;
+  if (code != null && Number(code) !== 0) {
+    throw new Error(`SGIS ${what} 실패 (errCd ${code}): ${data?.errMsg ?? "메시지 없음"}`);
+  }
+  return data;
+}
+
+/** 인증 만료로 보이는 오류인지. 만료 시각을 못 믿는 경우가 있어 한 번은 토큰을 새로 받고 재시도한다. */
+function looksLikeAuthError(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err);
+  return /errCd -?(401|100)/.test(m) || m.includes("인증");
+}
+
+async function withTokenRetry<T>(run: (token: string) => Promise<T>): Promise<T> {
+  const token = await getSgisAccessToken();
+  try {
+    return await run(token);
+  } catch (err) {
+    if (!looksLikeAuthError(err)) throw err;
+    cachedToken = null;
+    return run(await getSgisAccessToken());
+  }
+}
+
 async function fetchNewAccessToken(): Promise<{ accessToken: string; expiresAt: number }> {
   const serviceId = process.env.SGIS_SERVICE_ID;
   const securityKey = process.env.SGIS_SECURITY_KEY;
@@ -21,9 +66,7 @@ async function fetchNewAccessToken(): Promise<{ accessToken: string; expiresAt: 
     consumer_key: serviceId,
     consumer_secret: securityKey,
   }).toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`SGIS 인증 요청 실패 (${res.status})`);
-  const data = await res.json();
+  const data = (await sgisJson(url, "인증")) as { result?: { accessToken?: string; accessTimeout?: unknown } };
   const accessToken = data?.result?.accessToken;
   if (!accessToken) throw new Error(`SGIS 인증 응답에 accessToken이 없습니다: ${JSON.stringify(data).slice(0, 200)}`);
 
@@ -48,17 +91,19 @@ export type AdminDongLookup = {
 /** 주소 문자열 → SGIS 자체 행정구역코드(adm_cd). Kakao 좌표역변환 코드체계와 섞이지 않도록
  * SGIS 지오코딩 API를 그대로 쓴다(같은 값 체계라야 population API가 바로 받아준다). */
 export async function geocodeToAdminDong(address: string): Promise<AdminDongLookup | null> {
-  const token = await getSgisAccessToken();
-  const url = `${SGIS_BASE}/addr/geocode.json?${new URLSearchParams({
-    accessToken: token,
-    address: address.trim(),
-  }).toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`SGIS 지오코딩 요청 실패 (${res.status})`);
-  const data = await res.json();
-  const first = data?.result?.resultdata?.[0];
-  if (!first?.adm_cd) return null;
-  return { admCd: String(first.adm_cd), admName: String(first.full_addr ?? first.adm_nm ?? "") };
+  return withTokenRetry(async (token) => {
+    const url = `${SGIS_BASE}/addr/geocode.json?${new URLSearchParams({
+      accessToken: token,
+      address: address.trim(),
+    }).toString()}`;
+    const data = (await sgisJson(url, "지오코딩")) as {
+      result?: { resultdata?: Array<{ adm_cd?: unknown; full_addr?: unknown; adm_nm?: unknown }> };
+    };
+    // 여기까지 왔으면 errCd는 0이다 — 결과가 없으면 "정말로 못 찾은 주소"다.
+    const first = data?.result?.resultdata?.[0];
+    if (!first?.adm_cd) return null;
+    return { admCd: String(first.adm_cd), admName: String(first.full_addr ?? first.adm_nm ?? "") };
+  });
 }
 
 export type AdminDongPopulation = {
@@ -70,25 +115,31 @@ export type AdminDongPopulation = {
 
 /** 행정구역코드 기준 인구 통계(행정구역 참고자료 전용 — V62 계산에 쓰지 않음). */
 export async function fetchAdminDongPopulation(admCd: string, year?: number): Promise<AdminDongPopulation> {
-  const token = await getSgisAccessToken();
   const requestYear = year ?? new Date().getFullYear() - 1; // 최신 확정연도가 보통 작년 통계
-  const url = `${SGIS_BASE}/stats/population.json?${new URLSearchParams({
-    accessToken: token,
-    year: String(requestYear),
-    adm_cd: admCd,
-    low_search: "0",
-  }).toString()}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`SGIS 인구통계 요청 실패 (${res.status})`);
-  const data = await res.json();
-  const first = data?.result?.[0];
-  if (!first) return { totalPopulation: null, malePopulation: null, femalePopulation: null, year: null };
-  return {
-    totalPopulation: first.tot_ppltn != null ? Number(first.tot_ppltn) : null,
-    // 남녀 인구는 이 "주요지표" 엔드포인트엔 없을 수 있다(성별/연령 세부는 별도 API) — 없으면
-    // 지어내지 않고 null로 남긴다.
-    malePopulation: first.male_ppltn != null ? Number(first.male_ppltn) : null,
-    femalePopulation: first.female_ppltn != null ? Number(first.female_ppltn) : null,
-    year: requestYear,
-  };
+  return withTokenRetry(async (token) => {
+    const url = `${SGIS_BASE}/stats/population.json?${new URLSearchParams({
+      accessToken: token,
+      year: String(requestYear),
+      adm_cd: admCd,
+      low_search: "0",
+    }).toString()}`;
+    const data = (await sgisJson(url, "인구통계")) as {
+      result?: Array<{ tot_ppltn?: unknown; male_ppltn?: unknown; female_ppltn?: unknown }>;
+    };
+    const first = data?.result?.[0];
+    if (!first) return { totalPopulation: null, malePopulation: null, femalePopulation: null, year: null };
+    const num = (v: unknown) => {
+      if (v == null) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    return {
+      totalPopulation: num(first.tot_ppltn),
+      // 남녀 인구는 이 "주요지표" 엔드포인트엔 없을 수 있다(성별/연령 세부는 별도 API) — 없으면
+      // 지어내지 않고 null로 남긴다.
+      malePopulation: num(first.male_ppltn),
+      femalePopulation: num(first.female_ppltn),
+      year: requestYear,
+    };
+  });
 }
