@@ -1892,7 +1892,13 @@ export function SeatLayoutWorkspace() {
   }
 
   async function handlePublishToSlides() {
-    if (!imgEl || !user) {
+    // 2026-09-11 — 두 조건을 합쳐 놓아서, 로그인이 끊겼을 때도 "먼저 도면을 업로드하세요"가
+    // 떴다. 도면은 멀쩡히 있는데 그 안내가 뜨면 원인을 못 찾는다. 다른 핸들러처럼 나눈다.
+    if (!user) {
+      setStatusMsg("로그인이 필요합니다.", "error");
+      return;
+    }
+    if (!imgEl) {
       setStatusMsg("먼저 도면을 업로드하세요.", "error");
       return;
     }
@@ -2248,12 +2254,24 @@ export function SeatLayoutWorkspace() {
         <SettingsPanel
           settings={settings}
           onClose={() => setSettingsOpen(false)}
+          // 2026-09-11 — 여기만 try/catch가 없어서, 저장이 실패하면 오류도 안 뜨고 패널도
+          // 안 닫혀 "아무 일도 안 일어난" 것처럼 보였다(로그인이 끊긴 경우도 조용히 return).
+          // 이 설정은 전체 프로젝트가 공유하는 문서라, 안 바뀐 걸 바뀐 줄 알고 넘어가면
+          // 다른 사람 작업까지 영향을 받는다. 다른 저장 경로와 같은 방식으로 맞춘다.
           onSave={async (next) => {
-            if (!user) return;
-            const saved = await saveSeatLayoutSettings(next, user.uid);
-            setSettings(saved);
-            setStatusMsg("사양 설정이 저장되었습니다.", "success");
-            setSettingsOpen(false);
+            if (!user) {
+              setStatusMsg("로그인이 필요합니다. 다시 로그인한 뒤 저장해주세요.", "error");
+              return;
+            }
+            try {
+              const saved = await saveSeatLayoutSettings(next, user.uid);
+              setSettings(saved);
+              setStatusMsg("사양 설정이 저장되었습니다.", "success");
+              setSettingsOpen(false);
+            } catch (err) {
+              // 패널은 닫지 않는다 — 입력값을 잃지 않고 그대로 다시 시도할 수 있어야 한다.
+              setStatusMsg(`사양 설정 저장 실패: ${err instanceof Error ? err.message : err}`, "error");
+            }
           }}
         />
       )}
