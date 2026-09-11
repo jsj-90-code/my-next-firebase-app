@@ -102,6 +102,31 @@ export function maxUsedCandidateNumber(codes: string[]): number {
   return max;
 }
 
+/** 백업 전용 — 후보지코드 카운터의 현재 값. 없으면 null. */
+export async function getCandidateCodeCounter(): Promise<number | null> {
+  const snap = await getDoc(doc(requireDb(), META, "candidateCodeCounter"));
+  if (!snap.exists()) return null;
+  const value = snap.data().value;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * 복원 전용 — 카운터를 되돌린다. **더 큰 값으로만 올린다.**
+ * 백업 시점 값이 지금보다 작을 수 있는데(백업 후 후보지를 더 만든 경우) 그대로 되돌리면
+ * 다음 발급 번호가 기존 후보지와 겹쳐 덮어쓴다. 복원은 병합이 원칙이므로 여기서도 병합한다.
+ */
+export async function raiseCandidateCodeCounter(value: number): Promise<number> {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  const counterRef = doc(requireDb(), META, "candidateCodeCounter");
+  return runTransaction(requireDb(), async (tx) => {
+    const snap = await tx.get(counterRef);
+    const current = snap.exists() ? ((snap.data().value as number) ?? 0) : 0;
+    const next = Math.max(current, value);
+    if (next !== current) tx.set(counterRef, { value: next });
+    return next;
+  });
+}
+
 export async function generateNextCandidateCode(): Promise<string> {
   // 2026-09-11 — 예전엔 카운터 문서 하나만 보고 번호를 발급했다. 그런데 이 카운터
   // (storeEvalMeta/candidateCodeCounter)는 **백업 파일에 들어 있지 않다**. 백업으로 복원한
@@ -597,6 +622,8 @@ export type RestoreBackupPayload = {
   locationEvaluations: LocationEvaluation[];
   modelSettings: ModelSettings | null;
   modelSettingsHistory: ModelSettingsHistoryEntry[];
+  /** 백업 v2부터. v1 파일에는 없으므로 선택 항목이다. */
+  evaluationResults?: EvaluationResult[];
 };
 
 export type RestoreLogEntry = {
@@ -629,6 +656,9 @@ export async function restoreFromBackup(
     counts.competitors = await batchUpsert(COMPETITORS, payload.competitors, (c) => c.id);
     counts.locationEvaluations = await batchUpsert(LOCATION_EVALS, payload.locationEvaluations, (l) => l.candidateCode);
     counts.modelSettingsHistory = await batchUpsert(SETTINGS_HISTORY, payload.modelSettingsHistory, (h) => h.id);
+    if (payload.evaluationResults?.length) {
+      counts.evaluationResults = await batchUpsert(RESULTS, payload.evaluationResults, (r) => r.candidateCode);
+    }
     if (payload.modelSettings) {
       await setDoc(doc(requireDb(), SETTINGS, "current"), sanitize(payload.modelSettings));
       counts.modelSettings = 1;

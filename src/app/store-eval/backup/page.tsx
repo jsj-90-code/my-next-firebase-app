@@ -162,10 +162,14 @@ export default function StoreEvalBackupPage() {
           {busy ? "백업 생성 중..." : "전체 데이터 백업(JSON)"}
         </button>
         <p className="mt-3 text-xs leading-5 text-[var(--sl-ink-soft)]">
-          <strong>담기는 것</strong> — 신규후보지 · 기존 가맹점 · 월매출 · 경쟁점 · 입지동선평가 · 운영설정 · 설정 변경이력.
+          <strong>담기고 복원되는 것</strong> — 신규후보지 · 기존 가맹점 · 월매출 · 경쟁점 · 입지동선평가 ·
+          운영설정 · 설정 변경이력 · 평가 결과 · <strong>좌석배치도(도면·존·발주설정)</strong> ·
+          후보지코드 카운터.
           <br />
-          <strong>담기지 않는 것</strong> — 수요거점, 상권자료 업로드 이력, 감사 로그, 좌석배치도(도면·존·발주설정),
-          후보지코드 카운터, 관리자 목록, 평가 결과, 행정구역 참고자료. 이 파일 하나로 전부 되살아나지는 않습니다.
+          <strong>담기지 않는 것</strong> — 수요거점, 상권자료 업로드 이력, 행정구역 참고자료, 감사 로그, 관리자 목록.
+          이 다섯은 보안규칙이 브라우저 쓰기를 막아둔 자료라 이 화면으로는 되돌릴 수 없습니다
+          (수요거점·행정구역 참고자료는 [상권자료 수집]으로 다시 받을 수 있고, 관리자 목록은
+          Firebase 콘솔에서 관리합니다).
         </p>
         {message && <p className="mt-3 text-sm text-[var(--sl-ok)]">{message}</p>}
         {error && <p className="mt-3 text-sm text-[var(--sl-danger)]">백업 실패: {error}</p>}
@@ -176,6 +180,9 @@ export default function StoreEvalBackupPage() {
         <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
           백업 파일에 있는 문서만 지금 데이터 위에 덮어씁니다(병합) — 백업 파일에 없는 기존 데이터는 지우지 않습니다.
           실행 전 지금 상태를 자동으로 한 번 더 백업 다운로드합니다.
+          후보지코드 카운터만은 예외로 <strong>더 큰 값일 때만</strong> 반영합니다 — 백업 이후에 만든 후보지가
+          있으면 되돌릴 때 번호가 겹쳐 그 후보지를 덮어쓰기 때문입니다.
+          예전(v1) 백업 파일도 그대로 복원되며, 그 파일에 없는 항목은 건너뜁니다.
         </p>
 
         <input

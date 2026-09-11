@@ -46,6 +46,15 @@ export async function listProjects(): Promise<ProjectSummary[]> {
   });
 }
 
+/**
+ * 백업 전용 — 프로젝트 문서를 내용까지 통째로 가져온다(listProjects는 목록용 요약만 준다).
+ * 도면 이미지가 들어 있어 건당 수백 KB다. 화면에서 쓰지 말고 백업에서만 쓴다.
+ */
+export async function listAllProjects(): Promise<SeatLayoutProject[]> {
+  const snapshot = await getDocs(collection(requireDb(), PROJECTS_COLLECTION));
+  return snapshot.docs.map((d) => ({ ...(d.data() as Omit<SeatLayoutProject, "id">), id: d.id }));
+}
+
 export async function loadProject(id: string): Promise<SeatLayoutProject | null> {
   const snap = await getDoc(doc(requireDb(), PROJECTS_COLLECTION, id));
   if (!snap.exists()) return null;

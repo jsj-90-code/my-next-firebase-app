@@ -108,3 +108,34 @@ describe("restoreFromBackup", () => {
     await expect(restoreFromBackup(emptyPayload(), null, null)).rejects.toThrow("모의 실패");
   });
 });
+
+// v2에서 평가 결과도 복원 대상이 됐다. v1 파일에는 이 항목이 없으므로 "있을 때만" 써야 한다 —
+// 빈 배열로 batch를 열면 쓸데없는 commit이 돌고, 없는 키를 읽으면 터진다.
+describe("restoreFromBackup — 평가 결과(v2)", () => {
+  it("평가 결과가 있으면 같이 복원하고 건수를 남긴다", async () => {
+    const { restoreFromBackup } = await import("./store");
+    const payload = emptyPayload();
+    payload.evaluationResults = [{ candidateCode: "N001" }, { candidateCode: "N002" }];
+    const log = await restoreFromBackup(payload, null, "tester@isens.camp");
+    expect(log.success).toBe(true);
+    expect(log.counts?.evaluationResults).toBe(2);
+    expect(committed).toContain("storeEvalResults");
+  });
+
+  it("예전 v1 파일처럼 항목이 없으면 그 컬렉션은 아예 건드리지 않는다", async () => {
+    const { restoreFromBackup } = await import("./store");
+    const log = await restoreFromBackup(emptyPayload(), null, null);
+    expect(log.success).toBe(true);
+    expect(log.counts).not.toHaveProperty("evaluationResults");
+    expect(committed).not.toContain("storeEvalResults");
+  });
+
+  it("빈 배열이면 쓰지 않는다", async () => {
+    const { restoreFromBackup } = await import("./store");
+    const payload = emptyPayload();
+    payload.evaluationResults = [];
+    const log = await restoreFromBackup(payload, null, null);
+    expect(log.counts).not.toHaveProperty("evaluationResults");
+    expect(committed).not.toContain("storeEvalResults");
+  });
+});
