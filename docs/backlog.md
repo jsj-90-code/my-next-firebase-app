@@ -574,7 +574,23 @@ MAPE가 단조 개선된다(β=1 10.857% → β=0 9.758%). 대안 설명 2개는
 |---|---|---|---|
 | `firestore.rules` 스키마 검증 | +1716줄 | **폐기** | 요청당 1,000 표현식 한도 초과로 **정상 저장이 거부된다**. 에뮬레이터 84개 중 32통과/52실패. 살리려면 전체 검증을 서버 API로 옮기는 별도 프로젝트가 필요하다 |
 | `firestore.rules.test.ts` 하네스 | +1102줄 | **살림(재작성)** | main에는 규칙 테스트가 아예 없었다. 다만 원본은 폐기하는 스키마 규칙을 검사하므로 그대로는 못 쓴다 → main 규칙에 맞춰 22개로 새로 썼다(`ff07a5a`) |
-| UI 린트·상태관리 정리 ~20파일 | 커밋 35개 | **폐기** | **main은 이미 `eslint src` 0건이다.** 09-08~09-10 재작성 과정에서 같은 파일들이 다시 쓰였고 문제가 남아 있지 않다 |
+| UI 린트·상태관리 정리 ~20파일 | 커밋 35개 | **폐기** | 내용이 **이미 main에 있다**(아래 실측) |
+
+> **폐기 근거를 실측으로 교체(2026-09-11 재확인).** 처음엔 "main이 `eslint src` 0건"만 근거로
+> 들었는데 **그건 약하다 — 린트 통과와 버그 없음은 다르다.** 그래서 동작 수정분을 파일별로 대조했다.
+>
+> | 확인 대상 | 결과 |
+> |---|---|
+> | `ThemeToggle.tsx` (테마 토글 동기화, `useSyncExternalStore`) | **바이트 단위 동일** |
+> | `SeatLayoutWorkspace.tsx` 키보드 Enter 처리 | main도 `useEffectEvent`로 되어 있음 |
+> | `existing-stores/page.tsx` 경쟁방어(`loadSequence`) | 14곳 / 14곳 **일치** |
+> | `existing-stores/[code]/page.tsx` | 7곳 / 7곳 **일치** |
+> | `candidates/[code]/page.tsx` | 7곳 / 7곳 **일치** |
+> | `LocationEvalTab.tsx` 요청별 분리 | 양쪽 모두 있음 |
+> | `kakao.ts`·`kakaoStaticMapCapture.ts`·`spreadsheetPairs.ts` | **동일** |
+>
+> 경로는 2026-09-07 `release/weekend-web-20260907` 릴리스다 — 그때 주말 웹 소스 21개가 main에
+> 들어갔고, weekend-work에 남은 건 그 뒤의 잔여 커밋이다. **폐기 판단은 유지한다.**
 
 `CLAUDE.md`의 주말 무인작업 섹션(+24줄)도 기간이 끝났으므로 가져오지 않는다.
 
