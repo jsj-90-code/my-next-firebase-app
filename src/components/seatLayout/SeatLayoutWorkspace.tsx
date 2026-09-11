@@ -1849,18 +1849,18 @@ export function SeatLayoutWorkspace() {
     }
   }
 
+  // 2026-09-11 — 여기서 silentSave()를 먼저 부르고 있었다. 이 버튼은 **이미지만 따로 받는
+  // 용도**(사용자 확인)이고, 저장 결과는 가드로만 쓰일 뿐 렌더링에 전혀 쓰이지 않았다
+  // (renderAllOutputs는 메모리의 project 상태로 그린다). 이미지를 받을 뿐인데 프로젝트가
+  // 저장되면 updatedAt이 바뀌고, 저장이 실패하면 이미지조차 못 받는다. 그래서 뺐다.
+  // 프레젠테이션 등록(handlePublishToSlides)은 공유 문서에 올리는 것이라 저장을 유지한다.
   async function handleDownload() {
     if (!imgEl) {
       setStatusMsg("먼저 도면을 업로드하세요.", "error");
       return;
     }
     setBusy(true);
-    setStatusMsg("저장 중...");
-    const saved = await silentSave();
-    if (!saved) {
-      setBusy(false);
-      return;
-    }
+    setStatusMsg("이미지 만드는 중...");
     const outputs = renderAllOutputs(EXPORT_SCALE);
     if (outputs) {
       outputs.forEach((item) => {

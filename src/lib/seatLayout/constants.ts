@@ -202,12 +202,17 @@ export const BEZEL_MAP: Record<DeskSize, { left: number; rightWith: number; righ
 export const COMPOSITE_W = 1920;
 export const COMPOSITE_H = 1080;
 
-// 다운로드용 최종 PNG는 이 배수만큼 더 높은 해상도로 뽑는다(캔버스 크기만 키우고 ctx.scale로
-// 그대로 확대해서 그리는 방식이라, canvasRender.ts의 좌표/폰트 크기 값은 전부 COMPOSITE_W/H
-// 기준 그대로 두면 된다). PPT에서 휠로 확대했을 때 글씨가 깨져 보이는 문제 때문에 도입 —
-// 2배(4K), 3배(6K급)로도 PC 발주 도면(사양표)처럼 글자를 크게 보는 슬라이드에서 확대 시 흐려
-// 보인다는 피드백이 있어 5배로 올림(9600x5400). 로컬 다운로드 파일에는 해상도 제한이 없다.
-export const EXPORT_SCALE = 5;
+// 다운로드용 최종 PNG의 해상도 배수(캔버스 크기만 키우고 ctx.scale로 그대로 확대해서 그리는
+// 방식이라, canvasRender.ts의 좌표/폰트 크기 값은 전부 COMPOSITE_W/H 기준 그대로 두면 된다).
+//
+// 2026-09-11 — 5배(9600x5400, PNG 약 11.5MB)에서 **1배(FHD)로 되돌렸다.**
+// "확대하면 글씨가 깨진다"는 피드백을 받고 올렸던 건데, 그 요구는 **구글 프레젠테이션에
+// 등록되는 이미지**에 대한 것이었고 다운로드 파일 쪽에 잘못 적용돼 있었다(사용자 확인).
+// 프레젠테이션 경로는 SLIDES_EXPORT_SCALE로 따로 관리한다 — 거기가 올바른 자리다.
+// 파일명도 `_FHD`라서 실제 9600x5400과 어긋나 있었다. 이제 이름과 실제가 일치한다.
+// **다시 올리기 전에 확인할 것**: 요구가 다운로드 파일에 대한 것인지, 프레젠테이션에 대한
+// 것인지부터 가른다. 프레젠테이션이면 여기가 아니라 SLIDES_EXPORT_SCALE을 본다.
+export const EXPORT_SCALE = 1;
 
 // 구글 프레젠테이션에 등록할 때만 쓰는 배율. Slides API의 createImage는 25메가픽셀을 넘는
 // 이미지를 무조건 거부한다("The provided image is too large" 에러) — EXPORT_SCALE(5배,
