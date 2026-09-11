@@ -1955,6 +1955,8 @@ export type V61TrainingStore = {
   specialDemandType: string | null;
   actualMonthlyRevenueAvg: number;
   specialDemandScore: number; // 0~3, computeSpecialDemandScore
+  /** 2026-09-11 실험 — 경쟁PC 가중 평균거리 ÷ 500m. 없으면 거리 피처가 붙지 않는다. */
+  competitorDistanceRatio?: number | null;
 };
 
 /**
@@ -2038,6 +2040,15 @@ export function empiricalFeaturesFor(input: {
   competitivenessGap?: number | null;
   specialDemandScore?: number;
   specialDemandType?: string | null;
+  /**
+   * 2026-09-11 실험 입력 — 경쟁PC 가중 평균거리 ÷ 500m. **넣지 않으면 피처가 안 붙는다.**
+   *
+   * 값이 있는 표본과 없는 표본을 섞으면 `fitEmpiricalRevenueModel`이 피처 길이 불일치로
+   * null을 돌려주므로(안전하게 실패한다) 학습·예측 경로에서 전부 넣거나 전부 빼야 한다.
+   * 500은 기존 수집 반경에 맞춘 단위 환산일 뿐 최적 거리나 도보 한계가 아니다.
+   * 설계 근거: docs/formula-full-review-20260911.md §10 "거리 후보의 최소 실험 설계".
+   */
+  competitorDistanceRatio?: number | null;
 }): number[] {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
@@ -2047,11 +2058,21 @@ export function empiricalFeaturesFor(input: {
     // 2026-09-03 — 배후수요형 특수상권(군부대·산업단지) 더미. isBackingDemandMarket 주석 참고.
     isBackingDemandMarket(input.specialDemandType) ? 1 : 0,
     ...(isValidVisibilityScore(input.visibilityScore) ? [input.visibilityScore] : []),
+    ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
+      ? [input.competitorDistanceRatio] : []),
   ];
 }
 
 /** empiricalFeaturesFor 순서([요금, IP당수요, 경쟁력점수, 경쟁력점수×log(격차), 배후수요더미])에 맞춘 계수 하한선 배열. */
-export function buildMinCoefficients(v61Training: ModelSettings["v61Training"]): number[] {
+export function buildMinCoefficients(
+  v61Training: ModelSettings["v61Training"],
+  /**
+   * empiricalFeaturesFor에 거리 피처를 넣었으면 여기도 같이 늘려야 길이가 맞는다.
+   * 하한선은 0이다 — "멀수록 경쟁이 약하다"는 가설이 있어도 최소 양의 효과를 강제하면
+   * 자료가 지지하지 않는 매출 상승을 만든다(docs/formula-full-review-20260911.md §10).
+   */
+  withDistance = false,
+): number[] {
   return [
     v61Training.minHourlyRateCoef,
     v61Training.minMarketDemandCoef,
@@ -2059,6 +2080,7 @@ export function buildMinCoefficients(v61Training: ModelSettings["v61Training"]):
     v61Training.minCompetitivenessGapCoef,
     v61Training.minBackingDemandCoef,
     ...(v61Training.modelVariant === "visibility-inflow" ? [v61Training.minVisibilityCoef ?? .05] : []),
+    ...(withDistance ? [0] : []),
   ];
 }
 
@@ -2755,6 +2777,11 @@ export function classifyTenureCohort(completedMonths: number | null): TenureCoho
 
 export type ValidationStoreInput = {
   extraPcHours?: number;
+  /**
+   * 2026-09-11 실험 — 경쟁PC 가중 평균거리 ÷ 500m.
+   * 넣지 않으면 지금과 완전히 같게 동작한다(피처가 안 붙는다).
+   */
+  competitorDistanceRatio?: number | null;
   visibilityScore?: number | null;
   storeCode: string;
   storeName: string;
@@ -3155,6 +3182,7 @@ export function toV61TrainingStore(
     specialDemandType: s.specialDemandType ?? null,
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
+    ...(s.competitorDistanceRatio != null ? { competitorDistanceRatio: s.competitorDistanceRatio } : {}),
     ...(settings?.v61Training.modelVariant === "visibility-inflow" ? {
       visibilityScore: s.visibilityScore ?? undefined,
       trainingRevenueFactor: 1 + (getV62Rate(s.inflowRestriction ?? null, settings) ?? 0),

@@ -228,7 +228,10 @@ function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<Mo
    * 다시 보면 되고, 부호는 그때도 요금 말고 문제가 아닐 가능성이 높다.
    */
   freeAllSigns = false): UsageRevenueModel | null {
-  const rawFloors = buildMinCoefficients(settings.v61Training);
+  // 2026-09-11 — 거리 피처를 넣은 표본이면 하한선도 같이 늘려야 길이가 맞는다.
+  // 전부 있거나 전부 없어야 한다(섞이면 fitEmpiricalRevenueModel이 길이 불일치로 null).
+  const withDistance = stores.length > 0 && stores.every(s => s.competitorDistanceRatio != null);
+  const rawFloors = buildMinCoefficients(settings.v61Training, withDistance);
   const allFloors = freeAllSigns ? rawFloors.map(() => TARIFF_COEF_LOWER_BOUND) : rawFloors;
   // 요금 계수만 음수를 허용하고 나머지 하한선은 그대로 둔다.
   const withTariffFloors = [TARIFF_COEF_LOWER_BOUND, ...allFloors.slice(1)];
