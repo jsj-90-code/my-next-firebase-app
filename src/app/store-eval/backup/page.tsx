@@ -179,6 +179,8 @@ export default function StoreEvalBackupPage() {
           disabled={stage === "restoring"}
           onChange={(e) => {
             const file = e.target.files?.[0];
+            // 같은 파일 재선택은 handleFileSelected -> resetRestoreFlow가 fileInputRef로
+            // value를 비워서 이미 해결돼 있다. 여기서 또 비울 필요 없다.
             if (file) handleFileSelected(file);
           }}
           className="mt-4 block w-full text-sm text-[#5c5346] file:mr-3 file:rounded-md file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"

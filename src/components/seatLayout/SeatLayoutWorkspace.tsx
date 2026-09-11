@@ -1576,6 +1576,10 @@ export function SeatLayoutWorkspace() {
     reader.onload = (evt) => applyFloorPlanDataUrlFromProbe(evt.target?.result as string);
     reader.onerror = () => setStatusMsg("도면 파일을 읽지 못했습니다.", "error");
     reader.readAsDataURL(file);
+    // 2026-09-11 — 이 줄이 빠져 있었다. input의 value가 그대로 남으면 **같은 파일을 다시
+    // 고를 때 change 이벤트가 안 떠서** 업로드가 통째로 먹통이 된다(다른 파일을 한 번
+    // 거쳤다 와야 한다). PDF 경로와 좌석번호표 핸들러에는 이미 있고 여기만 없었다.
+    e.target.value = "";
   }
 
   async function selectPdfPage(pageNumber: number) {
