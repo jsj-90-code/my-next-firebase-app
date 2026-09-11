@@ -82,16 +82,28 @@ function ExistingStoreProfileEditor({
   const [locationEvaluation, setLocationEvaluation] = useState<LocationEvaluation | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // 2026-09-11 — 아래 두 조회에 .catch()가 없었다. 실패해도 화면은 멀쩡해 보이는데,
+  // 운영 설정이 없으면 기본 계수로, 입지평가가 없으면 수동 입력값으로 점수가 계산된다.
+  // 점수가 조용히 달라지는 것이 로딩 실패보다 나쁘므로 표시한다.
+  const [loadFailed, setLoadFailed] = useState<string | null>(null);
 
   useEffect(() => {
-    getModelSettings().then((s) => {
-      if (s) setSettings(s);
-    });
+    getModelSettings()
+      .then((s) => {
+        if (s) setSettings(s);
+      })
+      .catch(() =>
+        setLoadFailed("운영 설정을 불러오지 못했습니다 — 점수가 기본 계수로 계산됩니다."),
+      );
   }, []);
 
   useEffect(() => {
     const lookupCode = store.originCandidateCode ?? store.storeCode;
-    getLocationEvaluation(lookupCode).then(setLocationEvaluation);
+    getLocationEvaluation(lookupCode)
+      .then(setLocationEvaluation)
+      .catch(() =>
+        setLoadFailed("입지동선평가 자료를 불러오지 못했습니다 — 입지 점수가 수동 입력값으로 계산됩니다."),
+      );
   }, [store.originCandidateCode, store.storeCode]);
 
   function set<K extends keyof ExistingStore>(key: K, value: ExistingStore[K]) {
@@ -370,6 +382,11 @@ function ExistingStoreProfileEditor({
         )}
       </section>
 
+      {loadFailed && (
+        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+          {loadFailed} 새로고침 후 다시 확인하세요.
+        </p>
+      )}
       {message && <p className="text-sm text-[var(--sl-ink-soft)]">{message}</p>}
       <div className="flex justify-end">
         <button type="button" disabled={saving} onClick={handleSave} className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">
