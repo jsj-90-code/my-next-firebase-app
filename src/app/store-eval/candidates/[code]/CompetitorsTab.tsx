@@ -294,11 +294,17 @@ function CompetitorForm({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+  const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
 
+  // 2026-09-11 — .catch()가 없었다. 조회가 실패하면 settings가 defaultModelSettings()인 채로
+  // 남아 **운영 계수가 아니라 기본 계수로 경쟁력 점수가 계산되는데** 화면엔 아무 표시가 없다.
+  // 값이 조용히 달라지는 쪽이 로딩 실패보다 나쁘므로 알린다.
   useEffect(() => {
-    getModelSettings().then((s) => {
-      if (s) setSettings(s);
-    });
+    getModelSettings()
+      .then((s) => {
+        if (s) setSettings(s);
+      })
+      .catch(() => setSettingsLoadFailed(true));
   }, []);
 
   const computed = useMemo(() => computeCompetitorScores(form, settings), [form, settings]);
@@ -551,6 +557,13 @@ function CompetitorForm({
         <NumberField label="퍼스트클래스존 수" value={form.firstClassZone} onChange={(v) => set("firstClassZone", v)} hint="팀룸형+파우더룸 고급존" />
       </div>
 
+      {settingsLoadFailed && (
+        <p className="app-badge app-badge-warn mt-4 w-full justify-start px-3 py-2 text-sm">
+          운영 설정을 불러오지 못했습니다. 지금 보이는 경쟁력 점수는 <strong>기본 계수</strong>로 계산된 값이라
+          실제와 다를 수 있습니다. 새로고침 후 다시 확인하세요.
+        </p>
+      )}
+
       {errors.length > 0 && (
         <div className="app-badge app-badge-danger mt-4 w-full justify-start px-3 py-2 text-sm">
           <ul className="list-inside list-disc">
@@ -593,6 +606,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
   const [editingId, setEditingId] = useState<string | "new" | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+  const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
   const activeLoadResult = loadResult?.requestKey === requestKey ? loadResult : null;
   const competitors = activeLoadResult?.competitors ?? [];
   const loading = activeLoadResult == null;
@@ -646,10 +660,15 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
     }
   }
 
+  // 2026-09-11 — .catch()가 없었다. 조회가 실패하면 settings가 defaultModelSettings()인 채로
+  // 남아 **운영 계수가 아니라 기본 계수로 경쟁력 점수가 계산되는데** 화면엔 아무 표시가 없다.
+  // 값이 조용히 달라지는 쪽이 로딩 실패보다 나쁘므로 알린다.
   useEffect(() => {
-    getModelSettings().then((s) => {
-      if (s) setSettings(s);
-    });
+    getModelSettings()
+      .then((s) => {
+        if (s) setSettings(s);
+      })
+      .catch(() => setSettingsLoadFailed(true));
   }, []);
 
   useEffect(() => {
@@ -780,6 +799,13 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
             </div>
           )}
         </section>
+      )}
+
+      {settingsLoadFailed && (
+        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+          운영 설정을 불러오지 못했습니다. 목록의 경쟁력 점수가 <strong>기본 계수</strong>로 계산돼 있을 수 있으니
+          새로고침 후 다시 확인하세요.
+        </p>
       )}
 
       {error && (

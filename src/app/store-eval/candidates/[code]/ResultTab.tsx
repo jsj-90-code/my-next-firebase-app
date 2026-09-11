@@ -220,6 +220,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const [completedRequest, setCompletedRequest] = useState<typeof requestKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [alreadyExisting, setAlreadyExisting] = useState(false);
+  // 전환 여부 조회가 실패한 상태. false로 두면 "아직 전환 안 됨"과 구분이 안 돼서
+  // 이미 전환된 후보지를 한 번 더 전환할 수 있다 — 모르는 상태를 따로 들고 있는다.
+  const [existingCheckFailed, setExistingCheckFailed] = useState(false);
   const [converting, setConverting] = useState(false);
   const [convertMessage, setConvertMessage] = useState<string | null>(null);
   // 2026-08-25 수정 — 실제 가맹점코드는 후보지코드(N001 등)와 다른 정식 코드다(계약 확정 후
@@ -272,7 +275,14 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   useEffect(() => {
     // 전환 후에는 storeCode가 candidateCode와 달라질 수 있으므로, 문서ID 직접 조회가 아니라
     // originCandidateCode 역조회로 "이미 전환됐는지"를 판정한다(2026-08-22부터).
-    findExistingStoreByOriginCandidate(candidateCode).then((s) => setAlreadyExisting(s != null));
+    // 2026-09-11 — .catch()가 없었다. 조회가 실패하면 alreadyExisting이 false로 남아
+    // 이미 전환된 후보지에도 전환 버튼이 그대로 보인다(중복 전환은 되돌릴 수 없다).
+    findExistingStoreByOriginCandidate(candidateCode)
+      .then((s) => {
+        setAlreadyExisting(s != null);
+        setExistingCheckFailed(false);
+      })
+      .catch(() => setExistingCheckFailed(true));
   }, [candidateCode]);
 
   async function handleConvert() {
@@ -288,6 +298,22 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
     if (existingStoreCodes.has(storeCode)) {
       setConvertMessage(`이미 존재하는 가맹점코드입니다(${storeCode}) — 다른 코드를 입력하거나 오타를 확인해주세요.`);
       return;
+    }
+    // 목록 조회가 실패했었다면 여기서 한 번 더 확인한다. 그래도 실패하면 진행하지 않는다 —
+    // 전환은 되돌릴 수 없어서, 모르는 채로 진행하는 것보다 막는 쪽이 낫다.
+    if (existingCheckFailed) {
+      try {
+        const already = await findExistingStoreByOriginCandidate(candidateCode);
+        setExistingCheckFailed(false);
+        setAlreadyExisting(already != null);
+        if (already != null) {
+          setConvertMessage("이미 기존 가맹점으로 전환된 후보지입니다 — [기존 가맹점 관리] 화면에서 확인하세요.");
+          return;
+        }
+      } catch {
+        setConvertMessage("전환 여부를 확인하지 못했습니다 — 중복 전환을 막기 위해 진행하지 않았습니다. 네트워크 확인 후 새로고침하고 다시 시도해주세요.");
+        return;
+      }
     }
     if (!window.confirm(`가맹점코드 "${storeCode}"로 기존 가맹점 전환을 진행할까요? 전환 후에는 되돌릴 수 없습니다.`)) {
       return;
@@ -509,6 +535,11 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               {converting ? "전환 중..." : "오픈 확정 → 기존 가맹점으로 전환"}
             </button>
           </>
+        )}
+        {existingCheckFailed && (
+          <span className="app-badge app-badge-warn px-3 py-2 text-xs">
+            전환 여부를 확인하지 못했습니다 — 이미 전환된 후보지일 수 있습니다. 새로고침 후 다시 확인하세요.
+          </span>
         )}
         {convertMessage && <p className="text-xs text-[#5c5346] dark:text-[#c9bfae]">{convertMessage}</p>}
       </div>
