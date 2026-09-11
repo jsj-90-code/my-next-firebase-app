@@ -53,3 +53,19 @@ exp-out.txt
 
 # Firestore 에뮬레이터 실행 로그 (npm run test:rules)
 firestore-debug.log
+
+# 세션 중 남는 실행 로그·임시 산출물. 작업 흔적이라 저장소에 넣지 않는다.
+*.tmp.log
+*.tmp.md
+*.tmp.diff
+v61-analysis-out.txt
+
+# 로컬 보관 자료를 읽는 1회성 분석 테스트. 일반 실행에서 --exclude '**/_*.test.ts'로 빠지고
+# CI·배포 대상이 아니다(관행: docs/releases의 여러 검토 문서 참고).
+src/**/_*.test.ts
+
+# 에이전트 도구의 기계별 설정
+/.agents/
+/.claude/
+/.mcp.json
+/skills-lock.json
