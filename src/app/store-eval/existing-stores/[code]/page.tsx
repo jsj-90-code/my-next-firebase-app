@@ -130,7 +130,7 @@ function ExistingStoreDetail({ code }: { code: string }) {
       {activeTab === "basic" && (
         <ExistingStoreProfileTab store={store} actor={user?.email ?? null} onSaved={(updated) => setStore(updated)} />
       )}
-      {activeTab === "competitors" && <CompetitorsTab candidateCode={lookupCode} />}
+      {activeTab === "competitors" && <CompetitorsTab candidateCode={lookupCode} subjectLabel="가맹점" />}
       {activeTab === "sales" && <SalesTab key={`${store.storeCode}:${store.openedAt}`} storeCode={store.storeCode} openedAt={store.openedAt} />}
       {activeTab === "location" && (
         <LocationEvalTab

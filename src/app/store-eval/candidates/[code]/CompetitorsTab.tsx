@@ -598,7 +598,7 @@ type CompetitorLoadResult = {
   error: string | null;
 };
 
-export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
+export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { candidateCode: string; subjectLabel?: string }) {
   const { user } = useAuth();
   const [reloadVersion, setReloadVersion] = useState(0);
   const requestKey = JSON.stringify([candidateCode, reloadVersion]);
@@ -721,7 +721,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁점</h2>
-          <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">이 후보지 반경 내 경쟁점 정보를 입력합니다.</p>
+          <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">이 {subjectLabel} 반경 내 경쟁점 정보를 입력합니다.</p>
         </div>
         {editingId === null && (
           <div className="flex gap-2 print:hidden">
