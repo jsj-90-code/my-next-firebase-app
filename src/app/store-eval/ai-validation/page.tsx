@@ -6,6 +6,7 @@
 // 이 화면이 매장 목록을 순차로 반복하며 /api/store-eval/ai-validation-run을 매장당 1번씩 호출한다.
 // 결과는 화면에만 표시하고 아무것도 저장하지 않는다(1회성 진단).
 
+import { readJsonOrText } from "@/lib/readJsonOrText";
 import { useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -81,15 +82,31 @@ export default function AiValidationPage() {
             },
             body: JSON.stringify({ storeCode: store.storeCode }),
           });
-          const data = await response.json();
+          // 매장마다 AI를 한 번씩 부르는 반복 루프라 게이트웨이 타임아웃이 가장 잦은
+          // 경로다. response.json()이면 그때 "요청 실패" 대신 파싱 에러가 그 매장의
+          // 사유로 남아 원인을 못 읽는다(readJsonOrText 주석 참고).
+          const data = await readJsonOrText<{
+            skipped: boolean; storeCode: string; storeName: string; address: string;
+            reason: string; groundTruth: Parameters<typeof compareLocationScores>[0];
+            aiFields: Parameters<typeof compareLocationScores>[1];
+          }>(response);
           if (!response.ok) throw new Error(data.error ?? "요청 실패");
           if (data.skipped) {
             results.push({ status: "skipped", storeCode: data.storeCode ?? store.storeCode, storeName: data.storeName ?? store.storeName, reason: data.reason ?? "알 수 없는 사유" });
+          } else if (!data.groundTruth || !data.aiFields) {
+            // 200인데 본문이 기대한 모양이 아니면(중간 프록시가 끼어든 경우 등) 조용히
+            // 빈 비교를 만들지 말고 그 매장을 사유와 함께 건너뛴다.
+            results.push({ status: "skipped", storeCode: store.storeCode, storeName: store.storeName, reason: "응답에 채점 결과가 없습니다." });
           } else {
             const rows = compareLocationScores(data.groundTruth, data.aiFields);
             results.push({
               status: "ok",
-              result: { storeCode: data.storeCode, storeName: data.storeName, address: data.address, rows },
+              result: {
+                storeCode: data.storeCode ?? store.storeCode,
+                storeName: data.storeName ?? store.storeName,
+                address: data.address ?? "",
+                rows,
+              },
             });
           }
         } catch (err) {

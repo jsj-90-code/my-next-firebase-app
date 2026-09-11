@@ -9,6 +9,7 @@ import { LocationEvalAiReviewPanel, type LocationEvalAiDraft, type LocationEvalA
 import { computeLocationCompositeScore } from "@/lib/storeEval/calc";
 import { formatScore } from "@/lib/storeEval/format";
 import { captureKakaoStaticMapUrl } from "@/lib/storeEval/kakaoStaticMapCapture";
+import { readJsonOrText } from "@/lib/readJsonOrText";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { getLocationEvaluation, getModelSettings, saveLocationEvaluation } from "@/lib/storeEval/store";
 import type {
@@ -215,9 +216,18 @@ export function LocationEvalTab({
           ),
         },
       );
-      const data = await response.json();
+      // AI 호출이라 게이트웨이 타임아웃 시 HTML이 돌아온다(readJsonOrText 주석 참고).
+      const data = await readJsonOrText<LocationEvalAiDraft>(response);
       if (!response.ok) throw new Error(data.error ?? "AI 초안 생성에 실패했습니다.");
-      setAiDraft({ fields: data.fields, confidence: data.confidence, rationale: data.rationale, warnings: data.warnings ?? [] });
+      // 200인데 본문이 기대한 모양이 아니면(중간 프록시가 끼어든 경우 등) 빈 초안을
+      // 만들지 말고 오류로 알린다.
+      if (!data.fields || !data.confidence) throw new Error("AI 응답에 평가 항목이 없습니다.");
+      setAiDraft({
+        fields: data.fields,
+        confidence: data.confidence,
+        rationale: data.rationale ?? "",
+        warnings: data.warnings ?? [],
+      });
       setMessage(null);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : "AI 초안 생성 중 오류가 발생했습니다.");

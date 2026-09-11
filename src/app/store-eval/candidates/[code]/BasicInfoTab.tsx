@@ -3,6 +3,7 @@
 // 탭1 기본정보 - "2. 신규후보지 입력" 화면 요구사항.
 // CandidateInput 타입의 실제 필드 전부를 폼으로 구성한다 (필드를 빼거나 추가하지 않는다).
 
+import { readJsonOrText } from "@/lib/readJsonOrText";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -270,7 +271,15 @@ function BasicInfoTabForm({
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ candidateCode: form.code }),
       });
-      const data = await response.json();
+      // 외부 API(SGIS·카카오)를 여러 번 호출하는 라우트라 게이트웨이 타임아웃 시 HTML이
+      // 돌아온다. response.json()이면 진짜 원인 대신 파싱 에러가 뜬다(readJsonOrText 주석 참고).
+      const data = await readJsonOrText<{
+        nearbyDuplicateWarnings: { code: string; name: string }[];
+        competitorsAdded: number;
+        demandPointsAdded: number;
+        adminDongReferenceStatus: string;
+        adminDongReferenceError: string;
+      }>(response);
       if (!response.ok) throw new Error(data.error ?? "상권자료 수집에 실패했습니다.");
       if (data.error) {
         setCollectError(data.error);
@@ -283,7 +292,7 @@ function BasicInfoTabForm({
       }
       await loadMarketData(form.code);
       setNearbyWarnings(data.nearbyDuplicateWarnings ?? []);
-      const parts = [`좌표 확인 완료`, `경쟁점(PC방) ${data.competitorsAdded}건`, `수요거점 ${data.demandPointsAdded}건 자동수집`];
+      const parts = [`좌표 확인 완료`, `경쟁점(PC방) ${data.competitorsAdded ?? 0}건`, `수요거점 ${data.demandPointsAdded ?? 0}건 자동수집`];
       if (data.adminDongReferenceStatus === "자동수집 완료") parts.push("행정구역 참고자료 수집 완료");
       else if (data.adminDongReferenceError) parts.push(`행정구역 참고자료 실패: ${data.adminDongReferenceError}`);
       setCollectMessage(parts.join(" · "));

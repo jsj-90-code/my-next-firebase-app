@@ -1,5 +1,6 @@
 "use client";
 
+import { readJsonOrText } from "@/lib/readJsonOrText";
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1857,18 +1858,8 @@ export function SeatLayoutWorkspace() {
     return last ? { ...last, withinLimit: false } : null;
   }
 
-  // 서버가 항상 JSON을 준다고 가정하면 안 된다 — Vercel 게이트웨이가 요청 본문 크기 초과 시
-  // "Request Entity Too Large" 같은 순수 텍스트를 돌려줘서 res.json()이 파싱 에러로 죽는다.
-  async function readJsonOrText<T = Record<string, unknown>>(res: Response): Promise<Partial<T> & { error?: string }> {
-    const text = await res.text();
-    try {
-      return JSON.parse(text);
-    } catch {
-      // 본문이 JSON이 아니면 그 텍스트 자체가 오류 메시지다(게이트웨이의 413/502 등).
-      // 나머지 필드는 없으므로 호출부는 전부 `?? 기본값`으로 받아야 한다.
-      return { error: text || `서버 오류 (HTTP ${res.status})` } as Partial<T> & { error: string };
-    }
-  }
+  // readJsonOrText는 @/lib/readJsonOrText로 옮겼다(2026-09-11) — store-eval 쪽 호출부에도
+  // 같은 문제가 있어서 공용으로 뺐다. HTML 오류 페이지를 한 줄로 다듬는 처리도 거기 있다.
 
   // 2026-09-11 — 여기서 silentSave()를 먼저 부르고 있었다. 이 버튼은 **이미지만 따로 받는
   // 용도**(사용자 확인)이고, 저장 결과는 가드로만 쓰일 뿐 렌더링에 전혀 쓰이지 않았다

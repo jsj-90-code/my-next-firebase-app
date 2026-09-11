@@ -26,6 +26,7 @@ import {
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
+import { readJsonOrText } from "@/lib/readJsonOrText";
 import { sectionClass, sectionTitleClass } from "./formFields";
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
@@ -416,9 +417,11 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           result,
         }),
       });
-      const data = await response.json();
+      // AI 호출이라 게이트웨이 타임아웃 시 HTML이 돌아온다. response.json()이면 그때
+      // 진짜 원인 대신 파싱 에러가 뜬다(readJsonOrText 주석 참고).
+      const data = await readJsonOrText<DaouReportDraft>(response);
       if (!response.ok) throw new Error(data.error ?? "보고서 초안 생성에 실패했습니다.");
-      setReportDraft(data);
+      setReportDraft(data as DaouReportDraft);
     } catch (err) {
       setReportError(err instanceof Error ? err.message : "보고서 초안 생성 중 오류가 발생했습니다.");
     } finally {
