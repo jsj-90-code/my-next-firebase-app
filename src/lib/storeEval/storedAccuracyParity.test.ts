@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   CORE_VALIDATION_MIN_MONTHS,
   computeCompetitorInvestigationSummary,
+  computeStabilizedPerformance,
   summarizeValidationRows,
   type ValidationStoreInput,
 } from "./calc";
@@ -153,5 +154,54 @@ describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되
 
   it("모형 버전 표기가 저장값과 같다", () => {
     expect(`${settings.modelVersion}-usage-v1`).toBe(stored!.modelVersion);
+  });
+});
+
+// 기존점 문서에 저장돼 있는 completedMonths / actualMonthlyRevenueAvg는 크론이 매일 다시
+// 계산해 넣는 파생값이다. 이 둘이 원자료(월매출)와 어긋나면 **모형이 틀린 정답지로 학습한다** —
+// 적중률 숫자는 멀쩡해 보이는데 기준이 잘못된, 가장 알아채기 어려운 형태의 사고다.
+describeIfSnapshot("기존점의 실제매출 파생값이 월매출 원자료와 맞는가", () => {
+  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+
+  // cronSync.monthsBetween과 같은 계산. 진행 중인 이번 달은 크론이 빼고 계산하므로 여기서도 뺀다.
+  const now = new Date();
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const elapsed = (openedAt: string, yearMonth: string) => {
+    const open = new Date(openedAt);
+    const [y, m] = yearMonth.split("-").map(Number);
+    return (y - open.getFullYear()) * 12 + (m - 1 - open.getMonth());
+  };
+
+  const salesByStore = new Map<string, ExistingStoreMonthlySales[]>();
+  for (const s of snap.sales) {
+    salesByStore.set(s.storeCode, [...(salesByStore.get(s.storeCode) ?? []), s]);
+  }
+
+  const mismatches: string[] = [];
+  for (const store of snap.existingStores) {
+    if (!store.openedAt) continue;
+    const rows = (salesByStore.get(store.storeCode) ?? [])
+      .filter((r) => r.yearMonth !== currentYearMonth)
+      .map((r) => ({ elapsedMonths: elapsed(store.openedAt!, r.yearMonth), pcSales: r.pcSales, productSales: r.productSales }));
+    if (rows.length === 0) continue;
+    const recomputed = computeStabilizedPerformance(rows);
+
+    if (recomputed.completedMonths !== (store.completedMonths ?? 0)) {
+      mismatches.push(
+        `${store.storeCode} ${store.storeName} 완료월 저장=${store.completedMonths} 재계산=${recomputed.completedMonths}`,
+      );
+    }
+    const savedAvg = store.actualMonthlyRevenueAvg ?? null;
+    const calcAvg = recomputed.actualMonthlyRevenueAvg;
+    const bothNull = savedAvg == null && calcAvg == null;
+    // 원 단위 반올림 차이는 넘긴다.
+    if (!bothNull && (savedAvg == null || calcAvg == null || Math.abs(savedAvg - calcAvg) > 1)) {
+      mismatches.push(`${store.storeCode} ${store.storeName} 평균 저장=${savedAvg} 재계산=${calcAvg}`);
+    }
+  }
+
+  it("완료월수와 실제매출평균이 원자료에서 그대로 재현된다", () => {
+    if (mismatches.length) console.log("불일치:\n" + mismatches.join("\n"));
+    expect(mismatches).toEqual([]);
   });
 });
