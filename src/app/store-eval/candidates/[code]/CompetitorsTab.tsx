@@ -241,8 +241,32 @@ function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): s
       warnings.push(`${emptyFacility.join("·")} 미입력 → 시설점수를 나머지 항목으로만 계산함`);
     }
   }
+  // 2026-09-11 — 커플존·일반2인석은 '조' 단위인데 좌석 수를 넣으면 특화좌석이 두 배로 잡히고,
+  // 존수용력이 구간 판정이라 등급이 통째로 뛴다. 실제로 혼동이 의심되는 사례가 있다
+  // (docs/releases/2026-09-11-couplezone-unit-check.md — 같은 경쟁점의 시트 18 → Firestore 36).
+  //
+  // 경계 30%는 두 분포 사이에서 잡았다. 단위가 고정된 시트 동기화분은 커플존좌석÷대수 최대가
+  // 25.3%라 **오탐이 0건**이고, 의심되는 후보지 경쟁점 5곳 중 3곳(30·37·42%)이 걸린다.
+  // 나머지 둘(21·23%)은 시트 분포와 겹쳐서 여기서 가를 수 없다 — 경계를 더 내리면 정상 입력을
+  // 경고하게 되므로 내리지 않았다. 이 경고는 명백한 배수 오입력을 막는 용도다.
+  //
+  // 값이 높다고 틀린 건 아니므로 저장은 막지 않고 경고로만 띄운다.
+  const appliedPc = computeCompetitorAppliedPcCount(c);
+  if (appliedPc != null && appliedPc > 0) {
+    const coupleSeats = (c.coupleZone ?? 0) * 2 + (c.regularCoupleSeatCount ?? 0);
+    const share = coupleSeats / appliedPc;
+    if (share > COUPLE_SEAT_SHARE_WARN) {
+      warnings.push(
+        `커플존 환산좌석이 PC대수의 ${(share * 100).toFixed(0)}% (${coupleSeats}석/${appliedPc}대) → ` +
+          `'조' 단위가 맞는지 확인해주세요. 좌석 수를 넣으면 두 배로 계산됩니다`,
+      );
+    }
+  }
   return warnings;
 }
+
+/** 커플존 환산좌석이 PC대수 대비 이 비율을 넘으면 단위 확인을 요청한다. */
+const COUPLE_SEAT_SHARE_WARN = 0.3;
 
 function CompetitorForm({
   initial,
