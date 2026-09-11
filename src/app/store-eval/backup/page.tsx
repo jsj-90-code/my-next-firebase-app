@@ -147,7 +147,7 @@ export default function StoreEvalBackupPage() {
       <div>
         <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">데이터 백업 / 복원</h1>
         <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
-          신규후보지, 기존 가맹점, 매출, 경쟁점, 입지동선평가, 운영설정과 그 변경이력까지 전체 데이터를 다룹니다.
+          신규후보지, 기존 가맹점, 매출, 경쟁점, 입지동선평가, 운영설정과 그 변경이력을 다룹니다.
         </p>
       </div>
 
@@ -161,6 +161,12 @@ export default function StoreEvalBackupPage() {
         >
           {busy ? "백업 생성 중..." : "전체 데이터 백업(JSON)"}
         </button>
+        <p className="mt-3 text-xs leading-5 text-[var(--sl-ink-soft)]">
+          <strong>담기는 것</strong> — 신규후보지 · 기존 가맹점 · 월매출 · 경쟁점 · 입지동선평가 · 운영설정 · 설정 변경이력.
+          <br />
+          <strong>담기지 않는 것</strong> — 수요거점, 상권자료 업로드 이력, 감사 로그, 좌석배치도(도면·존·발주설정),
+          후보지코드 카운터, 관리자 목록, 평가 결과, 행정구역 참고자료. 이 파일 하나로 전부 되살아나지는 않습니다.
+        </p>
         {message && <p className="mt-3 text-sm text-[var(--sl-ok)]">{message}</p>}
         {error && <p className="mt-3 text-sm text-[var(--sl-danger)]">백업 실패: {error}</p>}
       </section>
