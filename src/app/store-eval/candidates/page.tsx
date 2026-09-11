@@ -7,11 +7,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { duplicateCandidate, listCandidates } from "@/lib/storeEval/store";
+import {
+  duplicateCandidate,
+  getModelSettings,
+  listAllCompetitors,
+  listAllLocationEvaluations,
+  listCandidates,
+  listEvaluationResults,
+} from "@/lib/storeEval/store";
 import type { CandidateInput, ReviewStatus } from "@/lib/storeEval/types";
 import { formatDateTime } from "@/lib/storeEval/format";
+import { freshnessHint, resultFreshness, type Freshness } from "@/lib/storeEval/resultFreshness";
 
 const REVIEW_STATUS_STYLE: Record<ReviewStatus, string> = {
   진행: "app-badge app-badge-info",
@@ -30,6 +38,14 @@ export default function CandidateListPage() {
   const [busyCode, setBusyCode] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
+  // 저장된 결과가 지금 입력과 맞는지 판정할 재료. 조회가 실패하면 null로 두고 배지를 안 그린다 —
+  // 부가 정보라서 이것 때문에 목록 자체가 막히면 안 된다.
+  const [freshnessInputs, setFreshnessInputs] = useState<{
+    calculatedAtByCode: Map<string, number>;
+    competitorAtsByCode: Map<string, (number | null | undefined)[]>;
+    locationAtByCode: Map<string, number | null | undefined>;
+    settingsUpdatedAt: number | null;
+  } | null>(null);
 
   const load = useCallback(() => {
     return listCandidates()
@@ -47,6 +63,52 @@ export default function CandidateListPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // 2026-09-11 — 목록·대시보드의 예상매출은 "마지막으로 결과 탭을 연 시점"의 값이다.
+  // 그 뒤 경쟁점이나 운영설정이 바뀌면 옛 숫자가 그대로 떠 있는데 알 방법이 없었다
+  // (N009 평택소사벌점이 실제로 그랬다). 컬렉션 통째 조회 3번이라 후보지 수가 늘어도
+  // 읽기 비용은 일정하다.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listEvaluationResults(), listAllCompetitors(), listAllLocationEvaluations(), getModelSettings()])
+      .then(([results, competitors, locations, settings]) => {
+        if (cancelled) return;
+        const competitorAtsByCode = new Map<string, (number | null | undefined)[]>();
+        for (const c of competitors) {
+          competitorAtsByCode.set(c.candidateCode, [...(competitorAtsByCode.get(c.candidateCode) ?? []), c.updatedAt]);
+        }
+        setFreshnessInputs({
+          calculatedAtByCode: new Map(results.map((r) => [r.candidateCode, r.calculatedAt])),
+          competitorAtsByCode,
+          locationAtByCode: new Map(locations.map((l) => [l.candidateCode, l.updatedAt])),
+          settingsUpdatedAt: settings?.updatedAt ?? null,
+        });
+      })
+      .catch(() => {
+        // 배지를 못 그릴 뿐이다. 목록은 그대로 쓴다.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const freshnessByCode = useMemo(() => {
+    const map = new Map<string, Freshness>();
+    if (!freshnessInputs) return map;
+    for (const c of candidates) {
+      map.set(
+        c.code,
+        resultFreshness({
+          calculatedAt: freshnessInputs.calculatedAtByCode.get(c.code),
+          candidateUpdatedAt: c.updatedAt,
+          competitorUpdatedAts: freshnessInputs.competitorAtsByCode.get(c.code) ?? [],
+          locationEvaluationUpdatedAt: freshnessInputs.locationAtByCode.get(c.code),
+          settingsUpdatedAt: freshnessInputs.settingsUpdatedAt,
+        }),
+      );
+    }
+    return map;
+  }, [candidates, freshnessInputs]);
 
   // 요청사항 — 후보지코드는 "임시저장/저장"을 처음 누르는 순간에만 발급한다(BasicInfoTab.handleSave).
   // 여기서 미리 발급해두면 등록 버튼만 누르고 저장 안 하고 나가는 경우 번호가 영구히 건너뛴다.
@@ -182,6 +244,14 @@ export default function CandidateListPage() {
                     {c.isDraft && (
                       <span className="app-badge app-badge-neutral ml-2 px-1.5 py-0.5 text-[11px]">
                         임시저장
+                      </span>
+                    )}
+                    {freshnessByCode.get(c.code)?.state === "재계산필요" && (
+                      <span
+                        className="app-badge app-badge-warn ml-2 px-1.5 py-0.5 text-[11px]"
+                        title={freshnessHint(freshnessByCode.get(c.code)!) ?? undefined}
+                      >
+                        재계산 필요
                       </span>
                     )}
                   </td>

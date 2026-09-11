@@ -8,7 +8,14 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { exportCandidatesToExcel } from "@/lib/storeEval/exportExcel";
 import { formatDateTime, formatWon } from "@/lib/storeEval/format";
-import { listCandidates, listEvaluationResults } from "@/lib/storeEval/store";
+import {
+  getModelSettings,
+  listAllCompetitors,
+  listAllLocationEvaluations,
+  listCandidates,
+  listEvaluationResults,
+} from "@/lib/storeEval/store";
+import { freshnessHint, resultFreshness, type Freshness } from "@/lib/storeEval/resultFreshness";
 import type { CandidateInput, EvaluationResult, FinalJudgement } from "@/lib/storeEval/types";
 
 // "13_신규후보지판정" 원본 문자열 그대로. completionStatus/finalJudgement 어느 쪽이든 이 값이면
@@ -59,6 +66,8 @@ function StatCard({ label, value, tone }: { label: string; value: number; tone: 
 export default function StoreEvalDashboardPage() {
   const [candidates, setCandidates] = useState<CandidateInput[]>([]);
   const [results, setResults] = useState<EvaluationResult[]>([]);
+  // 후보지코드 → 저장된 결과가 지금 입력과 맞는지. 못 구하면 비어 있고 배지도 안 뜬다.
+  const [freshnessByCode, setFreshnessByCode] = useState<Map<string, Freshness>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -73,6 +82,34 @@ export default function StoreEvalDashboardPage() {
         if (cancelled) return;
         setCandidates(candidateList);
         setResults(resultList);
+        // 2026-09-11 — 이 표의 예상매출은 "마지막으로 결과 탭을 연 시점"의 값이다. 그 뒤
+        // 경쟁점·운영설정이 바뀌면 옛 숫자가 그대로 떠 있는데 알 방법이 없었다(N009 사례).
+        // 이 조회가 실패해도 표는 그대로 보여준다 — 배지만 안 뜬다.
+        Promise.all([listAllCompetitors(), listAllLocationEvaluations(), getModelSettings()])
+          .then(([competitors, locations, settings]) => {
+            if (cancelled) return;
+            const competitorAtsByCode = new Map<string, (number | null | undefined)[]>();
+            for (const c of competitors) {
+              competitorAtsByCode.set(c.candidateCode, [...(competitorAtsByCode.get(c.candidateCode) ?? []), c.updatedAt]);
+            }
+            const calculatedAtByCode = new Map(resultList.map((r) => [r.candidateCode, r.calculatedAt]));
+            const locationAtByCode = new Map(locations.map((l) => [l.candidateCode, l.updatedAt]));
+            setFreshnessByCode(
+              new Map(
+                candidateList.map((c) => [
+                  c.code,
+                  resultFreshness({
+                    calculatedAt: calculatedAtByCode.get(c.code),
+                    candidateUpdatedAt: c.updatedAt,
+                    competitorUpdatedAts: competitorAtsByCode.get(c.code) ?? [],
+                    locationEvaluationUpdatedAt: locationAtByCode.get(c.code),
+                    settingsUpdatedAt: settings?.updatedAt,
+                  }),
+                ]),
+              ),
+            );
+          })
+          .catch(() => {});
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "데이터를 불러오지 못했습니다.");
@@ -192,7 +229,17 @@ export default function StoreEvalDashboardPage() {
                           {candidate.code}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-[#5c5346] dark:text-[#c9bfae]">{candidate.name}</td>
+                      <td className="px-4 py-3 text-[#5c5346] dark:text-[#c9bfae]">
+                        {candidate.name}
+                        {freshnessByCode.get(candidate.code)?.state === "재계산필요" && (
+                          <span
+                            className="app-badge app-badge-warn ml-2 px-1.5 py-0.5 text-[11px]"
+                            title={freshnessHint(freshnessByCode.get(candidate.code)!) ?? undefined}
+                          >
+                            재계산 필요
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]">{formatWon(result?.v62Final)}</td>
                       <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]">{formatWon(result?.conservativeSales)}</td>
                       <td className="px-4 py-3">
