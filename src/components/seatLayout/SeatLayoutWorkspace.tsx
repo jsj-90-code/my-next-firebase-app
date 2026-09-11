@@ -2114,10 +2114,10 @@ export function SeatLayoutWorkspace() {
             ← 홈으로
           </Link>
           <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-[#171310] dark:text-[#f2ede2] sm:text-2xl">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-5 w-5 shrink-0 text-[#c05a2c]">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-5 w-5 shrink-0 text-[var(--sl-gold)]">
               <path d="M3 3h18v18H3z M3 9h18 M9 9v12 M12 12h6v6h-6z" />
             </svg>
-            아이센스 <span className="text-[#c05a2c]">PC방 좌석배치도</span> 작업 툴
+            아이센스 <span className="text-[var(--sl-gold)]">PC방 좌석배치도</span> 작업 툴
           </h1>
           <p className="text-xs text-[var(--sl-ink-soft)]">
             {user?.isAnonymous ? "사내 공용 접속" : `${user?.email} 님으로 로그인됨`}
@@ -2188,7 +2188,7 @@ export function SeatLayoutWorkspace() {
               href={presentationUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium text-[#c05a2c] underline hover:text-[#c05a2c]/80"
+              className="text-sm font-medium text-[var(--sl-gold-ink)] underline hover:opacity-80"
             >
               프레젠테이션 열기 ↗
             </a>
@@ -2201,7 +2201,7 @@ export function SeatLayoutWorkspace() {
               href={deskOrderSheetUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium text-[#c05a2c] underline hover:text-[#c05a2c]/80"
+              className="text-sm font-medium text-[var(--sl-gold-ink)] underline hover:opacity-80"
             >
               발주서 열기 ↗
             </a>
@@ -2533,7 +2533,7 @@ export function SeatLayoutWorkspace() {
                           type="button"
                           disabled={pdfPickerBusy}
                           onClick={() => selectPdfPage(p.pageNumber)}
-                          className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-[#c05a2c]/60 disabled:opacity-50 dark:border-white/10 dark:bg-[#1c1912]"
+                          className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-[var(--sl-gold)]/60 disabled:opacity-50 dark:border-white/10 dark:bg-[#1c1912]"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
@@ -2541,7 +2541,7 @@ export function SeatLayoutWorkspace() {
                             alt={`${p.pageNumber}페이지`}
                             className="aspect-[4/3] w-full rounded object-contain"
                           />
-                          <span className="text-xs text-[var(--sl-ink-soft)] group-hover:text-[#c05a2c]">
+                          <span className="text-xs text-[var(--sl-ink-soft)] group-hover:text-[var(--sl-gold-ink)]">
                             {p.pageNumber}페이지
                           </span>
                         </button>
@@ -2674,7 +2674,7 @@ export function SeatLayoutWorkspace() {
                   href={seatNumberSheetUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm font-medium text-[#c05a2c] underline hover:text-[#c05a2c]/80"
+                  className="text-sm font-medium text-[var(--sl-gold-ink)] underline hover:opacity-80"
                 >
                   시트 열기 ↗
                 </a>
@@ -2693,7 +2693,7 @@ export function SeatLayoutWorkspace() {
                       type="button"
                       disabled={pdfPickerBusy}
                       onClick={() => selectPdfPage(p.pageNumber)}
-                      className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-[#c05a2c]/60 disabled:opacity-50 dark:border-white/10 dark:bg-[#1c1912]"
+                      className="group flex flex-col items-center gap-1 rounded-lg border border-black/10 bg-white p-1.5 transition hover:border-[var(--sl-gold)]/60 disabled:opacity-50 dark:border-white/10 dark:bg-[#1c1912]"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -2701,7 +2701,7 @@ export function SeatLayoutWorkspace() {
                         alt={`${p.pageNumber}페이지`}
                         className="aspect-[4/3] w-full rounded object-contain"
                       />
-                      <span className="text-xs text-[var(--sl-ink-soft)] group-hover:text-[#c05a2c]">
+                      <span className="text-xs text-[var(--sl-ink-soft)] group-hover:text-[var(--sl-gold-ink)]">
                         {p.pageNumber}페이지
                       </span>
                     </button>
@@ -2883,7 +2883,7 @@ export function SeatLayoutWorkspace() {
                   <button
                     type="button"
                     onClick={() => setSeatNumberImageModalOpen(true)}
-                    className="text-xs font-medium text-[#c05a2c] underline underline-offset-2 hover:text-[#c05a2c]/80"
+                    className="text-xs font-medium text-[var(--sl-gold-ink)] underline underline-offset-2 hover:opacity-80"
                   >
                     크게 보기 ↗
                   </button>

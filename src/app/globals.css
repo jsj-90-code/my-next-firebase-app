@@ -137,7 +137,9 @@ body {
 .app-btn-accent {
   border: 1px solid rgba(192, 90, 44, 0.45);
   background: transparent;
-  color: var(--sl-gold);
+  /* 테두리는 브랜드색(--sl-gold)을 쓰지만 글자는 본문 크기라 --sl-gold-ink를 쓴다.
+     --sl-gold는 라이트 페이지 배경 위에서 3.92:1로 본문 기준에 못 미친다(2026-09-11 측정). */
+  color: var(--sl-gold-ink);
   font-weight: 500;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
