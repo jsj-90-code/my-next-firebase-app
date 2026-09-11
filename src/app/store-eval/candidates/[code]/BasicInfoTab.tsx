@@ -303,22 +303,43 @@ function BasicInfoTabForm({
     }
   }
 
+  // 2026-09-11 — try/catch가 없어서, 저장이 실패해도 화면에는 옮긴 좌표가 그대로 남고
+  // 오류도 안 떴다(setForm이 저장보다 먼저 실행된다). 사용자는 확정된 줄 알고 넘어간다.
+  // 실패하면 폼을 되돌리고 사유를 보여준다.
   async function handleConfirmMapPosition(lat: number, lng: number) {
+    const previous = form;
     const updated = { ...form, lat, lng, geocodedAt: Date.now() };
     setForm(updated);
-    await saveCandidate(updated, actor);
-    onSaved(updated);
-    setCollectMessage("지도에서 수정한 위치로 좌표를 확정했습니다.");
+    setCollectError(null);
+    try {
+      await saveCandidate(updated, actor);
+      onSaved(updated);
+      setCollectMessage("지도에서 수정한 위치로 좌표를 확정했습니다.");
+    } catch (err) {
+      setForm(previous);
+      setCollectMessage(null);
+      setCollectError(`좌표를 저장하지 못했습니다: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   // SGIS/소상공인365 업로드 패널에서 추출값을 "폼에 적용"했을 때 — AI 초안과 동일하게 폼 상태만
   // 바꾸고, 사용자가 확인 후 "저장"을 눌러야 실제로 저장된다(자동확정 금지 원칙). 업로드 이력
   // 자체는 불변 로그라 여기서 바로 저장한다(값을 실제로 반영했는지와 무관하게 "이 파일에서 이걸
   // 뽑았다"는 사실 자체는 남겨야 하므로).
+  // 2026-09-11 — 여기도 try/catch가 없었다. 업로드 이력은 "이 파일에서 이걸 뽑았다"는 불변
+  // 기록인데, 저장이 실패하면 조용히 사라지고 이력 목록에도 안 뜬다. 폼 적용은 되돌리지
+  // 않는다 — 추출값 자체는 화면에 남겨두고 사용자가 "저장"으로 확정하는 흐름이라서다.
+  // 다만 이력이 남지 않았다는 사실은 알려야 한다.
   async function handleApplyMarketDataUpload(patch: Record<string, number | string>, upload: MarketDataUpload) {
     setForm((prev) => ({ ...prev, ...patch }) as CandidateInput);
-    await saveMarketDataUpload(upload);
-    setMarketDataUploads((prev) => [upload, ...prev]);
+    try {
+      await saveMarketDataUpload(upload);
+      setMarketDataUploads((prev) => [upload, ...prev]);
+    } catch (err) {
+      setCollectError(
+        `추출값은 폼에 적용했지만 업로드 이력을 남기지 못했습니다: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   const mapPoints: MapPoint[] = useMemo(
