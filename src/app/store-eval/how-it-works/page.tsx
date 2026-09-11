@@ -42,7 +42,7 @@ export default function HowItWorksPage() {
       {/* 1단계 */}
       <section className={sectionClass}>
         <div className="flex items-start gap-3">
-          <StepBadge n={1} color="#1e7a6f" />
+          <StepBadge n={1} color="var(--sl-step-c)" />
           <div className="min-w-0 flex-1">
             <h2 className={`${sectionTitleClass} text-base`}>이 동네는 PC방을 얼마나 원할까? (수요)</h2>
 
@@ -87,7 +87,7 @@ export default function HowItWorksPage() {
       {/* 2단계 */}
       <section className={sectionClass}>
         <div className="flex items-start gap-3">
-          <StepBadge n={2} color="#7a4fa0" />
+          <StepBadge n={2} color="var(--sl-step-a)" />
           <div className="min-w-0 flex-1">
             <h2 className={`${sectionTitleClass} text-base`}>그 중에서 우리 매장은 몇 명을 데려올까? (몫)</h2>
 
@@ -106,7 +106,7 @@ export default function HowItWorksPage() {
               ].map((row) => (
                 <div key={row.label} className="grid grid-cols-[64px_1fr] items-center gap-3 text-sm sm:grid-cols-[64px_44px_1fr]">
                   <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{row.label}</span>
-                  <span className="font-mono text-[#7a4fa0]">{row.pct}%</span>
+                  <span className="font-mono text-[var(--sl-step-a-ink)]">{row.pct}%</span>
                   <span className="text-xs text-[var(--sl-ink-soft)] sm:col-start-3">{row.desc}</span>
                 </div>
               ))}
@@ -142,7 +142,7 @@ export default function HowItWorksPage() {
       {/* 3단계 */}
       <section className={sectionClass}>
         <div className="flex items-start gap-3">
-          <StepBadge n={3} color="#b8721e" />
+          <StepBadge n={3} color="var(--sl-step-b)" />
           <div className="min-w-0 flex-1">
             <h2 className={`${sectionTitleClass} text-base`}>그 손님들이 얼마를 써줄까? (진짜 매출로 바꾸기)</h2>
 
@@ -202,8 +202,8 @@ export default function HowItWorksPage() {
       <section className={sectionClass}>
         <h2 className={`${sectionTitleClass} text-base`}>정리하면</h2>
         <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-          <strong className="text-[#1e7a6f]">수요</strong>(이 동네가 원하는 양) → <strong className="text-[#7a4fa0]">몫</strong>(우리가
-          가져갈 비율) → <strong className="text-[#b8721e]">매출</strong>(실제 돈으로 환산)
+          <strong className="text-[var(--sl-step-c-ink)]">수요</strong>(이 동네가 원하는 양) → <strong className="text-[var(--sl-step-a-ink)]">몫</strong>(우리가
+          가져갈 비율) → <strong className="text-[var(--sl-step-b-ink)]">매출</strong>(실제 돈으로 환산)
         </p>
         <p className="mt-2 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
           이 세 단계는 앞 단계 결과를 그대로 다음 단계에 넘겨주는 방식이라, 앞 단계가 틀리면 뒤 단계도 같이 틀어집니다.
