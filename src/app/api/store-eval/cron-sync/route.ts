@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { runFullProfileMigration, runRevenueSync } from "@/lib/storeEval/cronSync";
 import { adminDb } from "@/lib/firebase-admin";
@@ -11,7 +12,12 @@ function isAuthorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false; // 시크릿 미설정이면 항상 거부 - 무방비로 공개하지 않는다
   const header = request.headers.get("authorization");
-  return header === `Bearer ${secret}`;
+  if (!header) return false;
+  // 비밀값 비교는 상수시간으로 한다(=== 는 첫 다른 글자에서 바로 끝난다). 길이가 다르면
+  // timingSafeEqual이 예외를 던지므로 먼저 거른다 — 길이 자체는 비밀이 아니다.
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const actual = Buffer.from(header);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 // 2026-08-30 — Vercel CLI의 `vercel logs`는 실시간 tail만 되고 과거 실행 기록을 조회할 수

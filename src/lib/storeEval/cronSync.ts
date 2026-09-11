@@ -239,7 +239,12 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     };
     const sheetOpenedAt = toDateStr(s["오픈일"]);
     if (isOpenDateSuspicious(code, sheetOpenedAt)) {
-      suspiciousOpenDates.push(`${code} ${toText(s["가맹점명"]) ?? ""}`);
+      // 2026-09-11 — 예전엔 "코드 이름"만 남겨서, 보고를 봐도 시트의 어떤 값이 왜 거부됐는지
+      // 알 수 없었다(매 실행마다 같은 줄만 반복). 거부된 시트값과 현재 저장값을 같이 적는다.
+      const storedOpenedAt = (storeDataByCode.get(code) as { openedAt?: string | null } | undefined)?.openedAt ?? null;
+      suspiciousOpenDates.push(
+        `${code} ${toText(s["가맹점명"]) ?? ""} — 시트 오픈일 ${sheetOpenedAt ?? "없음"}이 코드 날짜와 30일 넘게 차이나 반영하지 않음(현재 저장값 ${storedOpenedAt ?? "없음"})`,
+      );
     } else {
       patch.openedAt = sheetOpenedAt;
     }
