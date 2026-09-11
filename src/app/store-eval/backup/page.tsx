@@ -304,14 +304,25 @@ export default function StoreEvalBackupPage() {
                 <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
                   실행자: {entry.actor ?? "알수없음"} · 백업 시점: {entry.sourceExportedAt ? new Date(entry.sourceExportedAt).toLocaleString("ko-KR") : "-"}
                 </p>
-                {entry.success && entry.counts && (
+                {/* 2026-09-11 — 실패 건도 건수를 보여준다. 복원은 컬렉션을 순차로 올리는
+                    구조라 중간에 실패하면 부분 복원 상태로 남는데, 예전엔 성공일 때만
+                    건수를 보여줘서 어디까지 올라갔는지 알 수 없었다. */}
+                {entry.counts && (
                   <p className="mt-1 text-xs text-[#5c5346] dark:text-[#c9bfae]">
+                    {entry.success ? "" : "실패 전까지 반영됨 — "}
                     {Object.entries(entry.counts)
                       .map(([k, v]) => `${k} ${v}건`)
                       .join(" · ")}
                   </p>
                 )}
-                {!entry.success && entry.error && <p className="mt-1 text-xs text-[var(--sl-danger)]">{entry.error}</p>}
+                {!entry.success && (
+                  <p className="mt-1 text-xs text-[var(--sl-danger)]">
+                    {entry.error ?? "사유가 기록되지 않았습니다."}
+                    {entry.counts
+                      ? " · 같은 파일로 다시 복원하면 됩니다(문서 id 기준 덮어쓰기라 중복 생성되지 않습니다)."
+                      : " · 반영된 문서가 없습니다."}
+                  </p>
+                )}
               </li>
             ))}
           </ul>

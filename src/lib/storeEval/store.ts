@@ -599,8 +599,12 @@ export async function restoreFromBackup(
 ): Promise<RestoreLogEntry> {
   const restoredAt = Date.now();
   const id = `${restoredAt}`;
+  // 2026-09-11 — counts를 try 밖으로 뺐다. 복원은 컬렉션을 순차로 올리는 구조라(컬렉션
+  // 사이에는 트랜잭션이 없다) 중간에 실패하면 **부분 복원 상태**로 남는데, 예전에는 실패
+  // 로그의 counts가 null이라 어디까지 올라갔는지 알 방법이 없었다. 다시 돌리는 건 안전하지만
+  // (문서 id 기준 멱등 upsert다) 운영자가 판단할 근거는 있어야 한다.
+  const counts: Record<string, number> = {};
   try {
-    const counts: Record<string, number> = {};
     counts.candidates = await batchUpsert(CANDIDATES, payload.candidates, (c) => c.code);
     counts.existingStores = await batchUpsert(EXISTING_STORES, payload.existingStores, (s) => s.storeCode);
     counts.existingStoreSales = await batchUpsert(EXISTING_STORE_SALES, payload.existingStoreSales, (s) => `${s.storeCode}_${s.yearMonth}`);
@@ -621,7 +625,8 @@ export async function restoreFromBackup(
       actor,
       sourceExportedAt,
       success: false,
-      counts: null,
+      // 실패해도 여기까지 올라간 건수는 남긴다. 비어 있으면 "첫 컬렉션에서 바로 실패"라는 뜻이다.
+      counts: Object.keys(counts).length ? { ...counts } : null,
       error: err instanceof Error ? err.message : String(err),
     };
     // 로그 자체 쓰기도 실패할 수 있으니(예: 이미 Firestore 연결이 끊긴 상황) 조용히 무시하고
