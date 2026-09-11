@@ -1825,17 +1825,27 @@ export function SeatLayoutWorkspace() {
     { scale: 2, quality: 0.8 },
   ];
 
-  function renderAllOutputsForSlides(): ExportItem[] | null {
-    let last: ExportItem[] | null = null;
+  /**
+   * 한도 안에 들어오는 가장 높은 배율로 렌더링한다.
+   *
+   * 2026-09-11 — **어느 배율로 내려갔는지 호출부에 알려준다.** 전에는 조용히 낮춰서,
+   * 3.4배를 기대한 사용자가 2배짜리를 받아도 알 방법이 없었다("프레젠테이션 해상도를
+   * 올려달라"는 요구가 실제로 충족됐는지 확인이 안 됐다). 이제 상태 메시지에 실제 해상도를
+   * 적는다 — 자주 낮은 배율로 떨어진다면 그건 서버 본문 한도를 손볼 근거가 된다.
+   */
+  function renderAllOutputsForSlides(): { outputs: ExportItem[]; scale: number; withinLimit: boolean } | null {
+    let last: { outputs: ExportItem[]; scale: number } | null = null;
     for (const { scale, quality } of SLIDES_RENDER_ATTEMPTS) {
       const outputs = renderAllOutputs(scale, "image/jpeg", quality);
       if (!outputs) return null;
-      last = outputs;
-      if (outputs.every((o) => o.dataUrl.length <= SLIDES_MAX_DATA_URL_CHARS)) return outputs;
+      last = { outputs, scale };
+      if (outputs.every((o) => o.dataUrl.length <= SLIDES_MAX_DATA_URL_CHARS)) {
+        return { outputs, scale, withinLimit: true };
+      }
     }
     // 제일 낮춘 시도까지도 한도를 넘으면(존이 극단적으로 많은 매장), 마지막 결과라도 그대로
     // 시도해본다 — 서버가 413으로 거부하면 그 에러 메시지가 그대로 사용자에게 표시된다.
-    return last;
+    return last ? { ...last, withinLimit: false } : null;
   }
 
   // 서버가 항상 JSON을 준다고 가정하면 안 된다 — Vercel 게이트웨이가 요청 본문 크기 초과 시
@@ -1887,10 +1897,12 @@ export function SeatLayoutWorkspace() {
       setBusy(false);
       return;
     }
-    const outputs = renderAllOutputsForSlides();
-    if (outputs) {
+    const rendered = renderAllOutputsForSlides();
+    if (rendered) {
+      const { outputs, scale, withinLimit } = rendered;
+      const px = `${Math.round(COMPOSITE_W * scale)}×${Math.round(COMPOSITE_H * scale)}`;
       try {
-        setStatusMsg("공유 프레젠테이션에 등록 중... (몇 초 걸릴 수 있습니다)");
+        setStatusMsg(`공유 프레젠테이션에 등록 중... (${px}, 몇 초 걸릴 수 있습니다)`);
         const token = await user.getIdToken();
         let latestUrl = "";
         // 맨 앞(0번)에 꽂히는 순서라, 화면에서 desk→pc→summary 순으로 보이도록 역순으로 등록한다.
@@ -1908,7 +1920,15 @@ export function SeatLayoutWorkspace() {
           if (!res.ok) throw new Error(`${item.label}: ${data.error ?? "등록에 실패했습니다."}`);
           latestUrl = data.presentationUrl as string;
         }
-        setStatusMsg(`등록 완료! (프레젠테이션에 ${outputs.length}장 반영됨)`, "success");
+        // 배율이 낮아졌으면 그 사실을 숨기지 않는다 — 기대한 해상도로 올라갔는지 사용자가 알아야 한다.
+        setStatusMsg(
+          `등록 완료! (프레젠테이션에 ${outputs.length}장 반영됨 · ${px}` +
+            (scale < SLIDES_EXPORT_SCALE
+              ? ` — 용량 한도 때문에 ${SLIDES_EXPORT_SCALE}배에서 ${scale}배로 낮췄습니다`
+              : "") +
+            (withinLimit ? "" : " — 용량 한도를 넘겨 그대로 시도했습니다") + ")",
+          "success",
+        );
         if (latestUrl) {
           setPresentationUrl(latestUrl);
           // await 이후의 window.open은 브라우저 팝업 차단에 걸리는 경우가 많아, 아래
