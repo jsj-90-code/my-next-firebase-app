@@ -6,6 +6,16 @@
 
 const KAKAO_LOCAL_BASE = "https://dapi.kakao.com/v2/local";
 
+/** 카카오가 문자열로 주는 좌표를 숫자로. 값이 없거나 빈 문자열이면 null이다 —
+ * Number("")는 0이라, 그냥 Number()로 바꾸면 좌표 누락이 "위도 0, 경도 0"(기니만 앞바다)이 된다. */
+function toCoord(value: unknown): number | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) ? n : null;
+}
+
 function getKakaoRestKey(): string | null {
   return process.env.KAKAO_REST_API_KEY || null;
 }
@@ -60,11 +70,16 @@ async function geocodeAddressExact(trimmed: string): Promise<GeocodeResult | nul
   if (!doc) return null;
   const road = doc.road_address;
   const jibun = doc.address;
+  const lat = toCoord(doc.y);
+  const lng = toCoord(doc.x);
+  // 좌표가 없는 결과는 "찾았다"고 하면 안 된다 — NaN이나 0,0 좌표가 후보지에 저장되면 이후
+  // 거리·수요 계산이 조용히 망가진다. 못 찾은 것으로 처리해서 사용자가 직접 지정하게 한다.
+  if (lat == null || lng == null) return null;
   return {
     roadAddress: road?.address_name ?? null,
     jibunAddress: jibun?.address_name ?? null,
-    lat: Number(doc.y),
-    lng: Number(doc.x),
+    lat,
+    lng,
     buildingName: road?.building_name || null,
   };
 }
@@ -102,14 +117,28 @@ export type KakaoPlace = {
 
 function parsePlaceDocuments(data: KakaoLocalResponse<KakaoPlaceDocument>): KakaoPlace[] {
   const docs = data?.documents ?? [];
-  return docs.map((d) => ({
-    id: String(d.id),
-    name: String(d.place_name ?? ""),
-    categoryGroupCode: d.category_group_code || null,
-    lat: Number(d.y),
-    lng: Number(d.x),
-    distanceM: d.distance ? Number(d.distance) : null,
-  }));
+  const places: KakaoPlace[] = [];
+  for (const d of docs) {
+    // 2026-09-11 — 예전엔 Number(d.y)를 그대로 담아서, 좌표가 빠진 문서가 오면 lat/lng이 NaN인
+    // 경쟁점이 그대로 저장됐다(Firestore는 NaN을 받는다). 그러면 거리계산이 전부 NaN이 되고
+    // 화면엔 빈칸으로만 보인다 — 값을 지어내지 말고 그 문서를 빼는 게 맞다.
+    const lat = toCoord(d.y);
+    const lng = toCoord(d.x);
+    if (lat == null || lng == null) continue;
+    // id는 중복제거 키다. 없으면 "undefined"라는 문자열이 키가 돼 서로 다른 장소가 뭉개진다.
+    if (d.id == null || String(d.id) === "") continue;
+    const distanceRaw = toCoord(d.distance);
+    places.push({
+      id: String(d.id),
+      name: String(d.place_name ?? ""),
+      categoryGroupCode: d.category_group_code || null,
+      lat,
+      lng,
+      // 같은 건물이면 카카오가 "0"을 준다 — 예전 `d.distance ? ...` 는 이걸 null로 버렸다.
+      distanceM: distanceRaw,
+    });
+  }
+  return places;
 }
 
 /** 카테고리 그룹 코드(SC4=학교, SW8=지하철역 등) 기반 반경검색. 최대 3페이지(45건)까지 모은다. */
