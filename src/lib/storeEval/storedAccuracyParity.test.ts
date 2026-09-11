@@ -23,14 +23,24 @@ import {
   existingStoreSourceCode,
   prepareExistingStoresForEvaluation,
 } from "./existingStoreEvaluation";
+import { evaluateCandidate } from "./evaluate";
 import { mergeModelSettings } from "./settings";
 import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
-import type { Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
+import type {
+  CandidateInput,
+  Competitor,
+  EvaluationResult,
+  ExistingStore,
+  ExistingStoreMonthlySales,
+  LocationEvaluation,
+} from "./types";
 
 const SNAPSHOT = ".local-tools/validation-snapshot.json";
 
 type Snapshot = {
   fetchedAt: string;
+  candidates: CandidateInput[];
+  results: (EvaluationResult & { candidateCode: string; calculatedAt?: number })[];
   existingStores: ExistingStore[];
   competitors: Record<string, unknown>[];
   locationEvaluations: LocationEvaluation[];
@@ -252,5 +262,60 @@ describeIfSnapshot("기존점의 경쟁력·수요 캐시가 지금 설정으로
   it("저장된 캐시가 지금 설정으로 다시 계산한 값과 같다", () => {
     if (drift.length) console.log(`캐시 뒤처짐 ${drift.length}건:\n` + drift.slice(0, 30).join("\n"));
     expect(drift).toEqual([]);
+  });
+});
+
+// 대시보드와 후보지 목록은 **저장된 평가 결과**(storeEvalResults)를 그대로 보여준다.
+// 결과는 후보지 결과 탭을 열 때만 다시 계산해 저장되므로, 설정이나 경쟁점이 바뀐 뒤 그 탭을
+// 안 열면 대시보드에는 옛 예상매출이 계속 사실처럼 떠 있는다. 얼마나 벌어져 있는지 본다.
+describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재현되는가", () => {
+  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+  const settings = mergeModelSettings(snap.settings);
+  const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+  const wantedSalesIds = new Set(evaluationSalesIds(snap.existingStores));
+  const sales = snap.sales.filter((s) => wantedSalesIds.has(`${s.storeCode}_${s.yearMonth}`));
+
+  const rows = (snap.candidates ?? []).map((candidate) => {
+    const competitors = allCompetitors.filter((c) => c.candidateCode === candidate.code);
+    const loc = snap.locationEvaluations.find((l) => l.candidateCode === candidate.code) ?? null;
+    const recomputed = evaluateCandidate({
+      candidate,
+      competitors,
+      locationEvaluation: loc,
+      settings,
+      existingStores: snap.existingStores,
+      trainingLocationEvaluations: snap.locationEvaluations,
+      trainingCompetitors: allCompetitors,
+      trainingSales: sales,
+    });
+    const stored = (snap.results ?? []).find((r) => r.candidateCode === candidate.code) ?? null;
+    const storedValue = stored?.v62Final ?? null;
+    const diffPct =
+      storedValue != null && storedValue > 0 && recomputed.v62Final != null
+        ? (recomputed.v62Final - storedValue) / storedValue
+        : null;
+    return { code: candidate.code, name: candidate.name ?? "", stored: storedValue, now: recomputed.v62Final, diffPct, calculatedAt: stored?.calculatedAt ?? null };
+  });
+
+  it("차이를 표로 남긴다", () => {
+    const won = (v: number | null) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
+    console.log(
+      ["후보지\t저장값\t지금값\t차이", ...rows.map((r) =>
+        `${r.code} ${r.name}\t${won(r.stored)}\t${won(r.now)}\t${r.diffPct == null ? "-" : `${(r.diffPct * 100).toFixed(2)}%`}`,
+      )].join("\n"),
+    );
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  // 결과가 저장된 후보지는 지금 계산과 같아야 한다. 벌어져 있으면 대시보드가 옛 숫자다.
+  it("저장된 결과가 지금 계산과 0.5% 이내로 같다", () => {
+    const stale = rows.filter((r) => r.diffPct != null && Math.abs(r.diffPct) > 0.005);
+    if (stale.length) {
+      console.log(
+        `대시보드가 뒤처진 후보지 ${stale.length}곳 — 결과 탭을 한 번 열면 갱신된다:\n` +
+          stale.map((r) => `  ${r.code} ${r.name} 저장=${r.stored} 지금=${r.now} (${((r.diffPct as number) * 100).toFixed(2)}%)`).join("\n"),
+      );
+    }
+    expect(stale.map((r) => r.code)).toEqual([]);
   });
 });
