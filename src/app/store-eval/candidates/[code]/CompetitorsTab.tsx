@@ -19,6 +19,7 @@ import {
   scoreFromVgaSpec,
 } from "@/lib/storeEval/calc";
 import { parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
+import { formatScore } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
 import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
@@ -522,7 +523,7 @@ function CompetitorForm({
           </div>
         </>
       )}
-      <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">종합 경쟁력점수: {computed.total ?? "-"}</p>
+      <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">종합 경쟁력점수: {formatScore(computed.total)}</p>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <TextAreaField label="먹거리 근거" value={form.foodBasis ?? ""} onChange={(v) => set("foodBasis", v || null)} rows={2} />
         <TextAreaField label="인테리어 근거" value={form.interiorBasis ?? ""} onChange={(v) => set("interiorBasis", v || null)} rows={2} />
@@ -920,7 +921,7 @@ export function CompetitorsTab({ candidateCode }: { candidateCode: string }) {
                 </div>
                 <div>
                   <dt className="inline text-[var(--sl-ink-soft)]">경쟁력점수 </dt>
-                  <dd className="inline">{computeCompetitorScores(c, settings).total ?? "-"}</dd>
+                  <dd className="inline">{formatScore(computeCompetitorScores(c, settings).total)}</dd>
                 </div>
               </dl>
               <div className="mt-3 flex justify-end gap-2 print:hidden">
