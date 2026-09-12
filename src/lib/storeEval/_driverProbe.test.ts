@@ -234,3 +234,74 @@ d("PC대수와 등급의 관계", () => {
     expect(lines.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 후보지 진단 — 총매출 순위는 대수에 오염된다. 대당으로 갈라본다 (2026-09-13 밤)
+//
+// backlog "① 신중동점 — 예상매출이 낮게 뜬다"의 가설: "경쟁점이 10곳으로 많고 경쟁 공급(C)이
+// 커서 log(D/(N+C))가 낮아지는 구조일 수 있다". 기여도 분해로 그 가설을 직접 검정한다.
+// ---------------------------------------------------------------------------
+d("후보지 진단 — 대수 효과를 분리한다", () => {
+  const snap = loadValidationSnapshot() as {
+    candidates: CandidateInput[]; existingStores: ExistingStore[]; competitors: Record<string, unknown>[];
+    locationEvaluations: LocationEvaluation[]; sales: ExistingStoreMonthlySales[]; settings: Record<string, unknown> | null;
+  };
+  const settings = mergeModelSettings(snap.settings);
+  const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+  const wanted = new Set(evaluationSalesIds(snap.existingStores));
+  const sales = snap.sales.filter((s) => wanted.has(`${s.storeCode}_${s.yearMonth}`));
+
+  const run = (candidate: CandidateInput, pcCount: number) =>
+    evaluateCandidate({
+      candidate: { ...candidate, expectedPcCount: pcCount },
+      competitors: allCompetitors.filter((c) => c.candidateCode === candidate.code),
+      locationEvaluation: snap.locationEvaluations.find((l) => l.candidateCode === candidate.code) ?? null,
+      settings,
+      existingStores: snap.existingStores, trainingLocationEvaluations: snap.locationEvaluations,
+      trainingCompetitors: allCompetitors, trainingSales: sales,
+    });
+
+  it("총매출 순위 vs 대당 순위 — 무엇이 낮은 평가를 만드는가", () => {
+    const rows = snap.candidates.map((c) => {
+      const pc = c.expectedPcCount ?? 100;
+      const asIs = run(c, pc);
+      const at100 = run(c, 100); // 대수를 100대로 통일했을 때
+      const drivers = asIs.revenueBreakdown?.usageDrivers;
+      const contrib = (label: string) => {
+        if (!drivers) return null;
+        const i = drivers.labels.findIndex((l) => l === label);
+        return i < 0 ? null : (Math.exp(drivers.contributions[i]) - 1) * 100;
+      };
+      return {
+        code: c.code, name: c.name ?? "", pc,
+        revenue: asIs.v62Final ?? 0,
+        perPc: (asIs.v62Final ?? 0) / pc,
+        at100: at100.v62Final ?? 0,
+        supply: contrib("공급 대비 수요"),
+        visibility: contrib("접근성·가시성"),
+        edge: contrib("경쟁력 우위 정도"),
+        competitors: allCompetitors.filter((x) => x.candidateCode === c.code && x.investigationStatus !== "경쟁점없음").length,
+      };
+    });
+    const byRevenue = [...rows].sort((a, b) => b.revenue - a.revenue);
+    const byPerPc = [...rows].sort((a, b) => b.perPc - a.perPc);
+    const rank = (list: typeof rows, code: string) => list.findIndex((r) => r.code === code) + 1;
+
+    console.log("\n후보지          대수  예상매출   대당      총매출순위 대당순위  100대환산   경쟁점 공급대비수요 가시성  경쟁우위");
+    for (const r of byPerPc) {
+      console.log(
+        `${r.code} ${r.name.padEnd(10)} ${String(r.pc).padStart(3)}대 ` +
+        `${(Math.round(r.revenue / 10000).toLocaleString("ko-KR") + "만").padStart(7)} ` +
+        `${(Math.round(r.perPc / 10000 * 10) / 10).toFixed(1).padStart(5)}만 ` +
+        `${String(rank(byRevenue, r.code)).padStart(6)}위 ${String(rank(byPerPc, r.code)).padStart(6)}위 ` +
+        `${(Math.round(r.at100 / 10000).toLocaleString("ko-KR") + "만").padStart(8)} ` +
+        `${String(r.competitors).padStart(4)}곳 ` +
+        `${(r.supply == null ? "-" : (r.supply >= 0 ? "+" : "") + r.supply.toFixed(1) + "%").padStart(8)} ` +
+        `${(r.visibility == null ? "-" : (r.visibility >= 0 ? "+" : "") + r.visibility.toFixed(1) + "%").padStart(7)} ` +
+        `${(r.edge == null ? "-" : (r.edge >= 0 ? "+" : "") + r.edge.toFixed(1) + "%").padStart(7)}`,
+      );
+    }
+    console.log("");
+    expect(rows.length).toBeGreaterThan(0);
+  });
+});
