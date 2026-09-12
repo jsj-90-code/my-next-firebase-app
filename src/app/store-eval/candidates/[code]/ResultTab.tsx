@@ -30,6 +30,7 @@ import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { storeEvaluationGrade } from "@/lib/storeEval/reportContext";
 import { computePeerPosition } from "@/lib/storeEval/peerPosition";
+import { summarizeDrivers } from "@/lib/storeEval/revenueDrivers";
 import { collectReviewSignals, type ReviewSignal } from "@/lib/storeEval/reviewSignals";
 import { sectionClass, sectionTitleClass, NumberField, TextAreaField } from "./formFields";
 import { ReportCard } from "./ReportCard";
@@ -123,15 +124,11 @@ function ResultCard({ label, value, emphasis, hint }: { label: string; value: st
  * 표시는 **PC 이용시간 기준**이다. 먹거리는 별도 모형이고 오차가 더 커서(12.6%) 같이 섞지 않는다.
  */
 function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; contributions: number[] } | null | undefined }) {
-  if (!drivers || drivers.labels.length === 0 || drivers.labels.length !== drivers.contributions.length) return null;
-  // 로그 기여분 → 배수 → 퍼센트. exp(v)-1이 "평균 대비 몇 % 더/덜"이다.
-  const rows = drivers.labels
-    .map((label, i) => ({ label, pct: Math.exp(drivers.contributions[i]) - 1 }))
-    // 영향이 사실상 없는 항(±0.5% 미만)은 숨긴다 — 0.0%짜리 줄이 늘어서면 핵심이 묻힌다.
-    .filter((r) => Math.abs(r.pct) >= 0.005)
-    .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
-  if (rows.length === 0) return null;
-  const maxAbs = Math.max(...rows.map((r) => Math.abs(r.pct)));
+  // 2026-09-13 — 변환 계산은 revenueDrivers.ts로 옮겼다. 화면 안에 있으면 테스트할 수단이 없어
+  // 라벨-값이 어긋나는 경로를 막았는지 확인할 방법이 없었다.
+  const summary = summarizeDrivers(drivers);
+  if (!summary) return null;
+  const { rows, maxAbs } = summary;
 
   return (
     <details className="mt-3">

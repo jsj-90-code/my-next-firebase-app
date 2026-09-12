@@ -17,6 +17,7 @@ import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { collectReviewSignals } from "./reviewSignals";
 import { storeEvaluationGrade } from "./reportContext";
 import { computePeerPosition } from "./peerPosition";
+import { summarizeDrivers } from "./revenueDrivers";
 import type { CandidateInput, Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
 
 const d = hasValidationSnapshot() ? describe : describe.skip;
@@ -360,5 +361,63 @@ d("기존점 분포 위치 실데이터 점검", () => {
     const medians = new Set(withPos.map((r) => r.pos!.median));
     expect(counts.size).toBe(1);
     expect(medians.size).toBe(1);
+  });
+});
+
+// summarizeDrivers를 뽑아낸 뒤(2026-09-13) 실데이터에서 화면에 실제로 그려질 모양을 확인한다.
+d("기여도 표시 변환 실데이터 점검", () => {
+  const snap = loadValidationSnapshot() as {
+    candidates: CandidateInput[]; existingStores: ExistingStore[]; competitors: Record<string, unknown>[];
+    locationEvaluations: LocationEvaluation[]; sales: ExistingStoreMonthlySales[]; settings: Record<string, unknown> | null;
+  };
+  const settings = mergeModelSettings(snap.settings);
+  const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+  const wanted = new Set(evaluationSalesIds(snap.existingStores));
+  const sales = snap.sales.filter((s) => wanted.has(s.storeCode + "_" + s.yearMonth));
+
+  const summaries = snap.candidates.map((candidate) => {
+    const r = evaluateCandidate({
+      candidate,
+      competitors: allCompetitors.filter((c) => c.candidateCode === candidate.code),
+      locationEvaluation: snap.locationEvaluations.find((l) => l.candidateCode === candidate.code) ?? null,
+      settings, existingStores: snap.existingStores,
+      trainingLocationEvaluations: snap.locationEvaluations, trainingCompetitors: allCompetitors, trainingSales: sales,
+    });
+    return { code: candidate.code, name: candidate.name ?? "", s: summarizeDrivers(r.revenueBreakdown?.usageDrivers) };
+  });
+
+  it("9곳 전부 표시할 내용이 나온다", () => {
+    for (const x of summaries) {
+      expect(x.s, x.code + " 기여도 요약이 비었다").not.toBeNull();
+      expect(x.s!.rows.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("막대 기준(maxAbs)이 0이 아니다 — 0이면 화면에서 0으로 나눈다", () => {
+    for (const x of summaries) expect(x.s!.maxAbs).toBeGreaterThan(0);
+  });
+
+  it("가장 큰 항이 맨 위에 온다", () => {
+    for (const x of summaries) {
+      const absList = x.s!.rows.map((r) => Math.abs(r.pct));
+      expect(absList).toEqual([...absList].sort((a, b) => b - a));
+    }
+  });
+
+  it("총 효과가 현실적인 범위다 (-50%~+100%)", () => {
+    for (const x of summaries) {
+      expect(x.s!.totalPct, x.code + " 총효과 " + (x.s!.totalPct * 100).toFixed(1) + "%").toBeGreaterThan(-0.5);
+      expect(x.s!.totalPct).toBeLessThan(1);
+    }
+  });
+
+  it("막대 너비가 0~100% 안에 들어간다", () => {
+    for (const x of summaries) {
+      for (const r of x.s!.rows) {
+        const width = (Math.abs(r.pct) / x.s!.maxAbs) * 100;
+        expect(width).toBeGreaterThan(0);
+        expect(width).toBeLessThanOrEqual(100);
+      }
+    }
   });
 });
