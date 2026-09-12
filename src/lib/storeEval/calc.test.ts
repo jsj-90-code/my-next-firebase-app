@@ -2693,3 +2693,23 @@ describe("empiricalFeatureLabels — 피처와 라벨이 어긋나지 않는다"
     }
   });
 });
+
+// 2026-09-13 — 배후수요 더미 항은 해당 없는 후보지에서도 마이너스 기여로 뜬다(실데이터에서 9곳 중
+// 8곳). 라벨이 "배후수요 상권(군부대·산업단지)"인 채로 뜨면 "우리 상권이 군부대라는 건가?"로
+// 읽히므로 상태를 드러낸다.
+describe("배후수요 라벨 — 해당 여부를 드러낸다", () => {
+  const base = { hourlyRate: 1400, marketDemand: 4000, competitorIp: 300, pcCount: 100, competitivenessScore: 4.1 };
+  it("배후수요형이면 그 이름을 쓴다", () => {
+    expect(empiricalFeatureLabels({ ...base, specialDemandType: "군부대" })[4]).toBe("배후수요 상권(군부대·산업단지)");
+  });
+  it("해당 없으면 '해당 없음'으로 적는다", () => {
+    expect(empiricalFeatureLabels({ ...base, specialDemandType: null })[4]).toBe("배후수요 상권 해당 없음");
+    expect(empiricalFeatureLabels({ ...base, specialDemandType: "야구장" })[4]).toBe("배후수요 상권 해당 없음");
+  });
+  it("어느 쪽이든 피처와 길이는 같다", () => {
+    for (const t of ["군부대", "야구장", null]) {
+      const input = { ...base, specialDemandType: t };
+      expect(empiricalFeatureLabels(input)).toHaveLength(empiricalFeaturesFor(input).length);
+    }
+  });
+});

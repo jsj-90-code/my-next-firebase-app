@@ -22,8 +22,8 @@
 // 여기서는 **현재 HEAD의 운영 검증 경로**로 같은 수치가 나오는지만 본다.
 // 가중치를 바꾸면 경쟁력점수·격차가 전부 다시 계산되므로 prepareExistingStoresForEvaluation부터
 // 다시 태운다.
-import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import { computeCompetitorInvestigationSummary, summarizeValidationRows, type ValidationStoreInput } from "./calc";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
@@ -32,11 +32,10 @@ import { mergeModelSettings } from "./settings";
 import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
 import type { Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation, ModelSettings } from "./types";
 
-const SNAPSHOT = ".local-tools/validation-snapshot.json";
-const d = existsSync(SNAPSHOT) ? describe : describe.skip;
+const d = hasValidationSnapshot() ? describe : describe.skip;
 
 d("경쟁력 가중치 단독 변경 후보", () => {
-  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as {
+  const snap = loadValidationSnapshot() as {
     existingStores: ExistingStore[]; competitors: Record<string, unknown>[];
     locationEvaluations: LocationEvaluation[]; sales: ExistingStoreMonthlySales[];
     settings: Record<string, unknown> | null;

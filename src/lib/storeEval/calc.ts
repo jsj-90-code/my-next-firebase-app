@@ -2079,7 +2079,11 @@ export function empiricalFeatureLabels(input: Parameters<typeof empiricalFeature
     "공급 대비 수요",
     "자사 경쟁력",
     "경쟁력 우위 정도",
-    "배후수요 상권(군부대·산업단지)",
+    // 2026-09-13 — 이 항은 0/1 표시값이라, 해당 없는 후보지에서도 "코호트 평균 대비 낮다"는
+    // 이유로 마이너스 기여가 뜬다(실데이터에서 9곳 중 8곳이 -1.7%였다). 라벨이 계속
+    // "배후수요 상권(군부대·산업단지)"이면 "우리 상권이 군부대라는 건가?"로 읽히므로 상태를
+    // 그대로 드러낸다.
+    isBackingDemandMarket(input.specialDemandType) ? "배후수요 상권(군부대·산업단지)" : "배후수요 상권 해당 없음",
     ...(isValidVisibilityScore(input.visibilityScore) ? ["접근성·가시성"] : []),
     ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
       ? ["경쟁점 평균거리"] : []),

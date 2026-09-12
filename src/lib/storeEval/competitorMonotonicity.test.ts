@@ -17,8 +17,8 @@
 // 못 믿게 된다. 적중률보다 먼저 걸리는 문제다.
 //
 // 재현: node .local-tools/dump-validation-snapshot.mjs
-import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import { computeCompetitorScores } from "./calc";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { evaluateCandidate } from "./evaluate";
@@ -26,8 +26,7 @@ import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { mergeModelSettings } from "./settings";
 import type { CandidateInput, Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
 
-const SNAPSHOT = ".local-tools/validation-snapshot.json";
-const describeIfSnapshot = existsSync(SNAPSHOT) ? describe : describe.skip;
+const describeIfSnapshot = hasValidationSnapshot() ? describe : describe.skip;
 
 type Snapshot = {
   candidates: CandidateInput[];
@@ -39,7 +38,7 @@ type Snapshot = {
 };
 
 describeIfSnapshot("경쟁이 늘어날 때 예상매출이 내려가는가", () => {
-  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+  const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
   const settings = mergeModelSettings(snap.settings);
   const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
   const wanted = new Set(evaluationSalesIds(snap.existingStores));

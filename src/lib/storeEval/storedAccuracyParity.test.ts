@@ -7,8 +7,8 @@
 //   node .local-tools/dump-validation-snapshot.mjs
 // 스냅샷은 운영 자료라 git에 올라가지 않는다 — 없으면 이 블록 전체를 건너뛴다.
 // 그래서 평소 `npm test`에서는 아무 일도 안 하고, 확인이 필요할 때 스냅샷을 떠서 돌린다.
-import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import {
   CORE_VALIDATION_MIN_MONTHS,
   computeCompetitorInvestigationSummary,
@@ -35,7 +35,6 @@ import type {
   LocationEvaluation,
 } from "./types";
 
-const SNAPSHOT = ".local-tools/validation-snapshot.json";
 
 type Snapshot = {
   fetchedAt: string;
@@ -58,10 +57,10 @@ type Snapshot = {
   } | null;
 };
 
-const describeIfSnapshot = existsSync(SNAPSHOT) ? describe : describe.skip;
+const describeIfSnapshot = hasValidationSnapshot() ? describe : describe.skip;
 
 describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되는가", () => {
-  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+  const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
   const settings = mergeModelSettings(snap.settings);
   const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
 
@@ -175,7 +174,7 @@ describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되
 // 계산해 넣는 파생값이다. 이 둘이 원자료(월매출)와 어긋나면 **모형이 틀린 정답지로 학습한다** —
 // 적중률 숫자는 멀쩡해 보이는데 기준이 잘못된, 가장 알아채기 어려운 형태의 사고다.
 describeIfSnapshot("기존점의 실제매출 파생값이 월매출 원자료와 맞는가", () => {
-  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+  const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
 
   // cronSync.monthsBetween과 같은 계산. 진행 중인 이번 달은 크론이 빼고 계산하므로 여기서도 뺀다.
   const now = new Date();
@@ -224,7 +223,7 @@ describeIfSnapshot("기존점의 실제매출 파생값이 월매출 원자료�
 // 검증화면은 어차피 다시 계산해서 쓰지만, **기존점 목록·프로필·스코어카드는 이 캐시를 그대로
 // 보여준다**. 캐시가 뒤처져 있으면 화면 숫자와 모형이 쓰는 숫자가 달라진다.
 describeIfSnapshot("기존점의 경쟁력·수요 캐시가 지금 설정으로 재현되는가", () => {
-  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+  const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
   const settings = mergeModelSettings(snap.settings);
   const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
 
@@ -269,7 +268,7 @@ describeIfSnapshot("기존점의 경쟁력·수요 캐시가 지금 설정으로
 // 결과는 후보지 결과 탭을 열 때만 다시 계산해 저장되므로, 설정이나 경쟁점이 바뀐 뒤 그 탭을
 // 안 열면 대시보드에는 옛 예상매출이 계속 사실처럼 떠 있는다. 얼마나 벌어져 있는지 본다.
 describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재현되는가", () => {
-  const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Snapshot;
+  const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
   const settings = mergeModelSettings(snap.settings);
   const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
   const wantedSalesIds = new Set(evaluationSalesIds(snap.existingStores));
