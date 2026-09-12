@@ -130,7 +130,22 @@ writeFileSync(".local-tools/validation-snapshot.json", JSON.stringify({
 console.log(`후보지 ${candidates.length} / 평가결과 ${results.length} / 기존점 ${existingStores.length} / 경쟁점 ${competitors.length} / 입지평가 ${locationEvaluations.length} / 월매출 ${sales.length}`);
 ```
 
-## 부록 2 — 기여도 프로브 (`_driverProbe.test.ts`, gitignore)
+## 후속 — 같은 단위 버그가 더 있는지 전수 확인 (결과: 없음)
+
+핑봇 가동률 건을 고친 뒤, **같은 유형이 다른 곳에도 있는지** `formatPercent` 호출처를 전수로 훑었다
+(약 40곳). 결론은 **`pingbotUtilization` 하나뿐**이었다.
+
+| 의심했던 값 | 판정 |
+|---|---|
+| `measuredSeatRate` (0~100으로 입력받음) | `formatPercent`에 가지 않는다 — 입력 폼에서만 쓰고 계산은 `calc.ts`가 정규화해 처리 |
+| `sheetInflowRate` | 시트 원시값이 아니라 `getV62Rate`가 설정에서 만든 보정률(0~1). 정상 |
+| 가동률 계열(`v62ImpliedUtilization`·`expectedUtilization`·`v62MaxUtilizationRate`) | 전부 계산된 0~1 비율. 정상 |
+| 적중률 계열(`within10PctRatio`·`meanAbsoluteErrorPct` 등) | 전부 0~1 비율. 정상 |
+
+**코드 변경 없음.** 확인만 하고 끝난 점검이지만, "하나 고쳤으니 비슷한 게 더 있을 것"이라는
+의심을 닫아두는 값어치가 있어 남긴다.
+
+## 부록 2 — 기여도 프로브 (`_driverProbe.test.ts`, gitignore → 2026-09-13 정식 편입됨)
 
 `src/**/_*.test.ts`는 gitignore라 이 파일도 저장소에 안 남는다. 다만 `_liveCheck.test.ts`는
 force-add로 편입한 선례가 있다(측정 하네스는 따라다녀야 한다는 판단, 2026-09-10).
