@@ -66,10 +66,10 @@ function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: Evalu
           </div>
         ))}
         <p className="mt-0.5 text-center text-[9px] text-[var(--sl-ink-soft)]">
-          ↓ 기존 가맹점 실적으로 학습한 회귀모형
+          ↓ 기존 가맹점 실적으로 학습한 예측모형
         </p>
         <div className="flex items-baseline justify-between text-[11px]">
-          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">V62 최종예상월매출</span>
+          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">예상 월매출</span>
           <span className="font-bold text-[var(--sl-gold-ink)]">약 {formatManwonRough(result.v62Final)}</span>
         </div>
       </div>
@@ -122,7 +122,7 @@ export function ReportCard({
           없으면 나중에 어느 시점 값인지 알 수 없다(기준매출은 평가 시점에 따라 달라지기도 한다). */}
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-[10px] tracking-wide text-[var(--sl-ink-soft)]">ISENS 점포평가 · V62</p>
+          <p className="text-[10px] tracking-wide text-[var(--sl-ink-soft)]">ISENS 점포평가</p>
           <h3 className="mt-0.5 text-lg font-bold">{candidate.name}</h3>
           <p className="mt-0.5 text-xs text-[var(--sl-ink-soft)]">{candidate.address}</p>
         </div>
@@ -136,17 +136,20 @@ export function ReportCard({
       </div>
 
       <div className="mt-4 rounded-xl bg-[#171310] p-4 text-white dark:bg-[#f2ede2] dark:text-[#171310]">
-        <p className="text-[10px] text-white/60 dark:text-[#171310]/60">V62 최종예상월매출</p>
+        <p className="text-[10px] text-white/60 dark:text-[#171310]/60">예상 월매출</p>
         {/* 2026-09-13 — 원 단위("58,280,450원")에서 만원 단위로 바꿨다. 420px 카드에서 자릿수가
             길어 읽기 어려웠고, 실제 평가기록도 "약 5,800만원"으로 쓴다. 회귀 예측값이라 만원
             단위까지 주장할 정밀도가 없기도 하다(100만원 단위로 끊는 formatManwonRough). */}
         <p className="mt-1 text-2xl font-bold">약 {formatManwonRough(result.v62Final)}</p>
         <p className="mt-1 text-[10px] text-white/60 dark:text-[#171310]/60">
-          선투자 2,000만원 기준 {formatManwon(result.aaBaselineRevenue)} · 상권등급 {result.marketGrade ?? "-"} · {result.marketCharacter ?? "-"}
+          {/* 2026-09-13 — 상권등급(SS/S/A/B)을 뺐다. 이 카드는 점포팀 등 다른 팀이 보는 물건인데
+              그 등급 체계는 이 시스템 안에서만 쓰는 내부 지표라 밖에서는 읽히지 않는다. 상권성격
+              (번화가/혼합/주거중심)은 말 그대로라 남긴다. */}
+          선투자 2,000만원 기준 {formatManwon(result.aaBaselineRevenue)} · {result.marketCharacter ?? "-"} 상권
         </p>
         {accuracy && accuracy.sampleCount > 0 && accuracy.meanAbsoluteErrorPct != null && (
           <p className="mt-1 text-[10px] text-white/60 dark:text-[#171310]/60">
-            이 모형의 실측 평균오차 {formatPercent(accuracy.meanAbsoluteErrorPct)} (기존점 {accuracy.sampleCount}곳 검증) ·{" "}
+            기존 가맹점 {accuracy.sampleCount}곳 실적으로 검증한 평균오차 {formatPercent(accuracy.meanAbsoluteErrorPct)} ·{" "}
             {formatManwonRough(result.v62Final != null ? result.v62Final * (1 - accuracy.meanAbsoluteErrorPct) : null)}~
             {formatManwonRough(result.v62Final != null ? result.v62Final * (1 + accuracy.meanAbsoluteErrorPct) : null)} 범위
           </p>
@@ -178,16 +181,23 @@ export function ReportCard({
           value={`${formatNumber(result.marketDemand)}명`}
           hint={marketDemandSourceHint(result.marketCharacter) ?? undefined}
         />
-        <StatTile label="경쟁IP" value={formatNumber(result.competitorIp)} hint="경쟁점 시설·서비스 종합점수 합" />
-        <StatTile label="IP당수요" value={formatScore(result.ipPerDemand)} hint="여유>15 / 포화<7" />
+        {/* 2026-09-13 — 내부 지표명(경쟁IP·IP당수요·경쟁력격차)과 원점수를 뺐다. 이 카드는 점포팀
+            등 다른 팀이 보는 물건이라 "경쟁IP 320", "경쟁력격차 1.63" 같은 값은 읽히지 않는다.
+            뜻이 그대로 드러나는 말과 이미 있던 5단계 라벨로 바꾼다(값 자체는 같은 계산). */}
+        <StatTile label="경쟁점 공급 규모" value={formatNumber(result.competitorIp)} hint="주변 경쟁점의 시설·규모를 합산한 값" />
         <StatTile
-          label="경쟁력격차"
+          label="공급 대비 수요"
+          value={formatScore(result.ipPerDemand)}
+          hint="클수록 여유 (15 이상 여유 · 7 미만 포화)"
+        />
+        <StatTile
+          label="자사 경쟁력"
           value={
-            competitors.length === 0
+            investigated.length === 0
               ? "비교 대상 없음"
-              : `${formatScore(result.competitivenessGap)} (${competitivenessLabel(result.competitivenessGap) ?? "비교 불가"})`
+              : (competitivenessLabel(result.competitivenessGap) ?? "비교 불가")
           }
-          hint="경쟁점 평균 대비, 1.0=동률"
+          hint="경쟁점 평균과 비교한 시설·서비스 수준"
         />
       </div>
 
@@ -239,7 +249,7 @@ export function ReportCard({
             })}
           </div>
           <p className="mt-1 text-[9px] text-[var(--sl-ink-soft)]">
-            {result.aaJudgement === "1,000만원 미달" ? "1,000만원 기준 미달" : `${result.aaJudgement} 달성`} · 출점 판단(V62)과는 별개 판정
+            {result.aaJudgement === "1,000만원 미달" ? "1,000만원 기준 미달" : `${result.aaJudgement} 달성`} · 출점 판단과는 별개 판정
           </p>
         </div>
       )}

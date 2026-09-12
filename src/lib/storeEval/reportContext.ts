@@ -219,14 +219,14 @@ export function buildDaouReportContext({
         (result.demandCaptureRate != null
           ? `, 예상 수요확보율 ${formatPercent(result.demandCaptureRate)}(경쟁점 없음일 때의 원본 기준값)`
           : "") +
-        `, 경쟁IP ${formatNumber(result.competitorIp)}, IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
+        `, 경쟁점 공급 규모 ${formatNumber(result.competitorIp)}, 공급 대비 수요 ${formatScore(result.ipPerDemand)}(15 이상 여유 / 7 미만 포화)`,
     );
   } else {
     const label = competitivenessLabel(result.competitivenessGap);
     lines.push(
       `[경쟁력 비교] 자사 시설·서비스 경쟁력은 경쟁점 평균 대비 ${label ?? "비교 불가"} 수준` +
         (result.demandCaptureRate != null ? `, 예상 수요확보율 ${formatPercent(result.demandCaptureRate)}` : "") +
-        `, 경쟁IP ${formatNumber(result.competitorIp)}, IP당수요 ${formatScore(result.ipPerDemand)}(여유 기준 >15 / 포화 기준 <7)`,
+        `, 경쟁점 공급 규모 ${formatNumber(result.competitorIp)}, 공급 대비 수요 ${formatScore(result.ipPerDemand)}(15 이상 여유 / 7 미만 포화)`,
     );
     // 2026-09-13 추가 — 실제 문서는 "존 구성 측면에서는 우위 확보가 가능하나, 좌석 사양 및 진입
     // 편의에서는 열위 요소가 있음"처럼 **어느 항목이 우위이고 어느 항목이 열위인지**를 짚는다.
@@ -254,7 +254,7 @@ export function buildDaouReportContext({
   lines.push(
     `[매출 예측] 상권수요 약 ${formatNumber(result.marketDemand)}명 중 자사가 확보할 것으로 예상되는 수요 약 ` +
       `${formatNumber(result.expectedOwnDemand)}명, 예상 PC대수 ${formatNumber(result.expectedPcCount)}대, ` +
-      `시간당요금 ${formatNumber(result.hourlyRate)}원, V62 최종예상월매출 약 ${formatManwonRough(result.v62Final)}`,
+      `시간당요금 ${formatNumber(result.hourlyRate)}원, 예상 월매출 약 ${formatManwonRough(result.v62Final)}`,
   );
 
   // 2026-09-13 추가 — **이 줄이 이번 수정의 핵심이다.** 실제 평가기록의 [종합 의견]은 거의 항상
@@ -267,7 +267,7 @@ export function buildDaouReportContext({
     lines.push(
       `[필요 가동률] ${formatNumber(result.expectedPcCount)}대·시간당 이용요금 ${formatNumber(result.hourlyRate)}원·${ratioText}` +
         `위 예상 월매출을 달성하려면 약 ${formatPercent(result.v62ImpliedUtilization, 0)}의 가동률이 필요함 ` +
-        `(V62 예상매출을 거꾸로 풀어낸 값이므로 지어낸 수치가 아님 — 종합 의견에 반드시 포함할 것).`,
+        `(위 예상 월매출을 거꾸로 풀어낸 값이므로 지어낸 수치가 아님 — 종합 의견에 반드시 포함할 것).`,
     );
   }
 
