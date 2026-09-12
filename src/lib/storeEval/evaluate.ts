@@ -13,6 +13,7 @@ import {
   buildMinCoefficients,
   buildV61TrainingStores,
   computeAaBaselineRevenue,
+  resolveBaselineOpenMonth,
   computeBoundedSales,
   computeCapacityOverflowRevenueBonus,
   computeCompetitivenessGap,
@@ -78,6 +79,12 @@ export type EvaluateContext = {
   trainingCompetitors: Competitor[];
   /** Web callers supply monthly components to activate tariff-based revenue. Omit only for historical comparisons. */
   trainingSales?: ExistingStoreMonthlySales[];
+  /**
+   * 평가 시각. 기준매출의 오픈월을 "평가한 달의 다음 달"로 잡는 데만 쓴다(2026-09-13, calc.ts
+   * resolveBaselineOpenMonth 참고). 안 주면 현재 시각 — 테스트에서 월을 고정하려고 열어둔다.
+   * V62 예측 산식은 이 값을 쓰지 않는다(적중률에 영향 없음).
+   */
+  now?: Date;
 };
 
 export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
@@ -326,21 +333,26 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // ---- AA 기준매출 (요청사항 4) — 2,000/1,500/1,000만원 3단계, 전부 같은 산식(PC대수 100대 상한
   // 포함)이고 월별기준표만 다르다. 1,500만원표는 defaultModelSettings에 없을 수 있는 옛 저장값
   // 대비 폴백을 둔다(신규 필드라 기존 Firestore 문서엔 없을 수 있음).
-  const aaBaselineRevenue = computeAaBaselineRevenue(c.expectedPcCount, c.plannedOpenMonth, settings.aaMonthlyTargets, settings.aaMaxPcCount);
+  // 2026-09-13 — 오픈월은 더 이상 사람이 찍은 c.plannedOpenMonth를 쓰지 않고 "평가한 달의 다음
+  // 달"로 통일한다(사용자 확정). 평가 단계에선 실제 오픈일이 확정된 적이 없는데 담당자마다 다른
+  // 달을 찍으면 같은 후보지의 기준매출이 달라지던 문제 때문이다. c.plannedOpenMonth는 입력 이력
+  // 보존용으로 남겨두고 계산에선 쓰지 않는다(calc.ts resolveBaselineOpenMonth 참고).
+  const baselineOpenMonth = resolveBaselineOpenMonth(ctx.now);
+  const aaBaselineRevenue = computeAaBaselineRevenue(c.expectedPcCount, baselineOpenMonth, settings.aaMonthlyTargets, settings.aaMaxPcCount);
   const aaBaselineRevenue1500 = computeAaBaselineRevenue(
     c.expectedPcCount,
-    c.plannedOpenMonth,
+    baselineOpenMonth,
     settings.aaMonthlyTargets1500 ?? defaultModelSettings().aaMonthlyTargets1500,
     settings.aaMaxPcCount,
   );
   const aaBaselineRevenue1000 = computeAaBaselineRevenue(
     c.expectedPcCount,
-    c.plannedOpenMonth,
+    baselineOpenMonth,
     settings.aaMonthlyTargets1000 ?? defaultModelSettings().aaMonthlyTargets1000,
     settings.aaMaxPcCount,
   );
   const aaJudgement = judgeAaGrade({
-    plannedOpenMonth: c.plannedOpenMonth,
+    plannedOpenMonth: baselineOpenMonth,
     forecastRevenue: v62Final,
     aaBaselineRevenue2000: aaBaselineRevenue,
     aaBaselineRevenue1500,

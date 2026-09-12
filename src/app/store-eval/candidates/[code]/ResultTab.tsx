@@ -25,9 +25,10 @@ import {
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
-import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
+import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { readJsonOrText } from "@/lib/readJsonOrText";
+import { storeEvaluationGrade } from "@/lib/storeEval/reportContext";
 import { sectionClass, sectionTitleClass, NumberField, TextAreaField } from "./formFields";
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
@@ -393,6 +394,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 버렸는데, 보고서 컨텍스트를 만들려면 화면에 떠 있는 것과 같은 값이 필요해 여기 같이 담아둔다.
   const [candidateForReport, setCandidateForReport] = useState<CandidateInput | null>(null);
   const [competitorsForReport, setCompetitorsForReport] = useState<Competitor[]>([]);
+  // 2026-09-13 — 입지동선평가도 보고서 컨텍스트로 넘긴다. 평가자가 직접 쓴 상권구조/지도판단
+  // 메모가 [상권] 섹션의 가장 중요한 근거인데(reportContext 주석), 그동안 run() 안에서 계산에만
+  // 쓰고 버려서 AI에게 전달된 적이 없었다.
+  const [locationForReport, setLocationForReport] = useState<LocationEvaluation | null>(null);
   const [reportDraft, setReportDraft] = useState<DaouReportDraft | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -533,6 +538,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       setSettingsUsed(settings);
       setCandidateForReport(candidate);
       setCompetitorsForReport(competitors);
+      setLocationForReport(locationEvaluation);
       setReportDraft(null);
       setReportError(null);
       setError(null);
@@ -584,12 +590,34 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             pop500m: candidateForReport.pop500m,
             floating500Avg: candidateForReport.floating500Avg,
             facility500SubwayRiders: candidateForReport.facility500SubwayRiders,
+            // 2026-09-13 추가 — 실제 평가기록이 "7층에 위치해 접근성과 가시성에 일부 제약이 있음"
+            // 처럼 입지 조건을 직접 짚는다.
+            floor: candidateForReport.floor,
+            groundLevel: candidateForReport.groundLevel,
+            hasElevator: candidateForReport.hasElevator,
+            expectedPcCount: candidateForReport.expectedPcCount,
           },
           competitors: competitorsForReport.map((c) => ({
             name: c.name,
             distanceM: c.distanceM,
             investigationStatus: c.investigationStatus,
           })),
+          // 2026-09-13 추가 — 평가자가 직접 쓴 메모가 [상권] 섹션의 핵심 근거다.
+          locationEvaluation: locationForReport
+            ? {
+                locationScore: locationForReport.locationScore,
+                visibilityScore: locationForReport.visibilityScore,
+                preemptionScore: locationForReport.preemptionScore,
+                mapMemo: locationForReport.mapMemo,
+                marketStructureMemo: locationForReport.marketStructureMemo,
+                specialDemandType: locationForReport.specialDemandType,
+                specialDemandIntensity: locationForReport.specialDemandIntensity,
+                inflowRestriction: locationForReport.inflowRestriction,
+              }
+            : null,
+          // "상품매출 비율 50% 기준 약 29%의 가동률" 문장의 그 50%. v62ImpliedUtilization이 이
+          // 비율을 전제로 역산된 값이라 함께 넘겨야 문장이 맞는다.
+          productRatio: settingsUsed?.measuredForecastProductRatio ?? null,
           result,
         }),
       });
@@ -633,6 +661,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   }
 
   if (!result || !settingsUsed) return null;
+
+  // 점포평가 등급 — 계산으로 확정한다(AI에게 맡기지 않는 이유는 아래 초안 섹션 주석 참고).
+  const reportGrade = storeEvaluationGrade(result);
 
   return (
     <div className="flex flex-col gap-6">
@@ -885,10 +916,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>선투자 프로모션 기준매출 판정 (참고용)</h3>
         <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-          예상 오픈월부터 10개월간 &ldquo;순수익 2,000/1,500/1,000만원 대당 일매출목표&rdquo; 평균과 위 V62 최종예상월매출을
-          비교하는 3단계 등급 판정입니다(1,500만원은 2,000/1,000만원 실측표의 월별 평균). PC대수는 100대 상한이
-          적용됩니다(100대 초과여도 100대 기준으로 계산). 선투자 프로모션 대상 판단용이라 최종운영판정과는 별개이고,
-          출점 여부 결정에는 쓰지 않습니다.
+          <strong>평가한 달의 다음 달에 오픈한다고 보고</strong>, 그 <strong>다음 달부터 10개월간</strong> &ldquo;순수익
+          2,000/1,500/1,000만원 대당 일매출목표&rdquo; 평균과 위 V62 최종예상월매출을 비교하는 3단계 등급
+          판정입니다(1,500만원은 2,000/1,000만원 실측표의 월별 평균). PC대수는 100대 상한이 적용됩니다(100대 초과여도
+          100대 기준으로 계산). 선투자 프로모션 대상 판단용이라 최종운영판정과는 별개이고, 출점 여부 결정에는 쓰지 않습니다.
+          {/* 2026-09-13 — 오픈월을 사람이 찍던 것을 "평가월+1"로 통일하고, 계산 구간도 오픈 첫 달을
+              빼고 그 다음 달부터 세도록 바꿨다(사용자 확정). 달이 바뀌면 같은 후보지라도 기준매출이
+              달라지는 게 정상이다 — calc.ts resolveBaselineOpenMonth 주석 참고. */}
           {/* 2026-08-27 (2차): 원래 여기 비교 대상은 미검증 AA경로(핑봇 실측)였는데, 평균오차 52%로
               확인돼 V62(정식 계산) 기준으로 바꿨다 — calc.ts judgeAaGrade 주석 참고. */}
         </p>
@@ -927,7 +961,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <div>
             <h3 className={sectionTitleClass}>다우오피스 평가기록 초안</h3>
             <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-              위 계산 결과만 근거로 AI(Gemini)가 [상권]/[경쟁]/[종합 의견] 문장을 씁니다. 다우오피스에 자동으로 기입하지 않으니,
+              위 계산 결과와 입지동선평가 메모를 근거로 AI(Gemini)가 [상권]/[경쟁]/[종합 의견]/[선투자 프로모션] 문장을 씁니다.
+              맨 위 <strong>점포평가 등급은 AI가 아니라 계산으로 확정</strong>합니다. 다우오피스에 자동으로 기입하지 않으니,
               내용을 검토·수정한 뒤 직접 복사해서 붙여넣어주세요. 손익계산(투자비·회수기간 등)은 포함하지 않습니다.
             </p>
           </div>
@@ -947,11 +982,30 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
         {reportDraft && (
           <div className="mt-4 flex flex-col gap-3">
+            {/* 2026-09-13 — 실제 평가기록은 맨 윗줄이 "점포평가 : MAA"다. 이 등급만은 AI가 아니라
+                코드가 확정한다(storeEvaluationGrade) — 결재 문서의 결론이라 모델이 그럴듯하게
+                지어내면 잘못된 등급이 그대로 올라간다. 규칙: 번화가면 앞에 M, 뒤는 선투자
+                프로모션 충족 기준(2,000만원→AA / 1,500만원→A+ / 1,000만원→A). */}
+            <div className="app-card-sm rounded-xl p-3">
+              <p className="text-xs font-semibold text-[var(--sl-ink-soft)]">점포평가 등급</p>
+              {reportGrade ? (
+                <p className="mt-1 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">점포평가 : {reportGrade}</p>
+              ) : (
+                <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
+                  점포평가 : <span className="text-[var(--sl-warn)]">해당 없음</span> — 예상 월매출이 1,000만원 기준매출에도
+                  못 미쳐 자동 판정 대상이 아닙니다. 직접 판단해서 적어주세요.
+                </p>
+              )}
+            </div>
             {(
               [
                 { key: "market", label: "상권", text: reportDraft.marketSection },
                 { key: "competition", label: "경쟁", text: reportDraft.competitionSection },
                 { key: "summary", label: "종합 의견", text: reportDraft.summarySection },
+                // 선투자 기준매출이 안 나온 후보지는 AI가 빈 문자열을 주므로 그때는 칸 자체를 숨긴다.
+                ...(reportDraft.promotionSection?.trim()
+                  ? ([{ key: "promotion", label: "선투자 프로모션", text: reportDraft.promotionSection }] as const)
+                  : []),
               ] as const
             ).map((section) => (
               <div key={section.key} className="app-card-sm rounded-xl p-3">
@@ -973,7 +1027,19 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               onClick={() =>
                 handleCopy(
                   "all",
-                  `[상권] ${reportDraft.marketSection}\n[경쟁] ${reportDraft.competitionSection}\n[종합 의견] ${reportDraft.summarySection}`,
+                  // 다우오피스에 그대로 붙여넣는 전체 텍스트 — 실제 문서 형식대로 등급 줄이 맨 위에
+                  // 오고 섹션 사이는 한 줄 띄운다. 등급이 자동 판정되지 않았으면 사람이 채우도록
+                  // 빈칸으로 남긴다(틀린 등급을 넣는 것보다 낫다).
+                  [
+                    `점포평가 : ${reportGrade ?? ""}`,
+                    "",
+                    `[상권] ${reportDraft.marketSection}`,
+                    "",
+                    `[경쟁] ${reportDraft.competitionSection}`,
+                    "",
+                    `[종합 의견] ${reportDraft.summarySection}`,
+                    ...(reportDraft.promotionSection?.trim() ? ["", `[선투자 프로모션] ${reportDraft.promotionSection}`] : []),
+                  ].join("\n"),
                 )
               }
               className="app-btn-primary w-fit rounded-lg px-4 py-2 text-sm"

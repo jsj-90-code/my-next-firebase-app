@@ -15,6 +15,7 @@ import {
   classifyTenureCohort,
   CORE_VALIDATION_MIN_MONTHS,
   computeAaBaselineRevenue,
+  resolveBaselineOpenMonth,
   computeBoundedSales,
   computeCompetitorInvestigationSummary,
   computeCompetitorOccupiedSeats,
@@ -1655,29 +1656,50 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
   });
 });
 
-describe("AA 기준매출 (오픈월부터 10개월 순수익 2,000만원 대당 일매출목표 평균)", () => {
+// 2026-09-13 사용자 확정 — 계산 구간이 "오픈월부터"에서 "**오픈 다음 달부터** 10개월"로 바뀌었다.
+// 오픈 첫 달은 월중 오픈·초기 운영이라 프로모션 기준 기간에서 뺀다는 실무 규칙이다("10월에
+// 오픈하는 매장이라치고, 11월~ 10개월"). 원본 시트(08_계산기준!C54:E65) 정의와 달라진 지점이라
+// 아래 검산으로 못박아 둔다.
+describe("AA 기준매출 (오픈 다음 달부터 10개월 순수익 2,000만원 대당 일매출목표 평균)", () => {
   const targets = defaultModelSettings().aaMonthlyTargets;
-  it("1월 오픈·100대 초과분은 100대로 캡", () => {
-    // 1~10월 평균을 손으로 검산
-    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    const expectedAvg =
+  function expectedFor(months: number[], pc: number) {
+    const avg =
       months.reduce((sum, m) => {
         const t = targets.find((x) => x.month === m)!;
         return sum + t.dailyRevenuePerPcTarget * t.daysInMonth;
       }, 0) / 10;
-    expect(computeAaBaselineRevenue(150, 1, targets, 100)).toBe(Math.round(100 * expectedAvg));
+    return Math.round(pc * avg);
+  }
+
+  it("1월 오픈이면 2~11월로 센다(오픈월 제외)·100대 초과분은 100대로 캡", () => {
+    expect(computeAaBaselineRevenue(150, 1, targets, 100)).toBe(expectedFor([2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 100));
   });
-  it("11월 오픈이면 다음해 1~8월까지 순환한다", () => {
-    const months = [11, 12, 1, 2, 3, 4, 5, 6, 7, 8];
-    const expectedAvg =
-      months.reduce((sum, m) => {
-        const t = targets.find((x) => x.month === m)!;
-        return sum + t.dailyRevenuePerPcTarget * t.daysInMonth;
-      }, 0) / 10;
-    expect(computeAaBaselineRevenue(80, 11, targets, 100)).toBe(Math.round(80 * expectedAvg));
+  it("11월 오픈이면 12월부터 다음해 9월까지 순환한다", () => {
+    expect(computeAaBaselineRevenue(80, 11, targets, 100)).toBe(expectedFor([12, 1, 2, 3, 4, 5, 6, 7, 8, 9], 80));
+  });
+  it("12월 오픈이면 다음해 1~10월", () => {
+    expect(computeAaBaselineRevenue(100, 12, targets, 100)).toBe(expectedFor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 100));
+  });
+  it("사용자 예시: 10월 오픈이면 11월부터 다음해 8월까지", () => {
+    expect(computeAaBaselineRevenue(100, 10, targets, 100)).toBe(expectedFor([11, 12, 1, 2, 3, 4, 5, 6, 7, 8], 100));
   });
   it("오픈월 미입력이면 null", () => {
     expect(computeAaBaselineRevenue(100, null, targets, 100)).toBeNull();
+  });
+});
+
+// 2026-09-13 — 기준매출의 오픈월은 이제 사람이 찍지 않고 "평가한 달의 다음 달"로 정한다.
+// 평가 단계에선 실제 오픈일이 확정된 적이 없어, 담당자마다 다른 달을 찍으면 같은 후보지의
+// 기준매출이 달라지던 문제 때문이다(사용자 확정).
+describe("resolveBaselineOpenMonth (평가한 달의 다음 달)", () => {
+  it("9월에 평가하면 10월 오픈으로 본다", () => {
+    expect(resolveBaselineOpenMonth(new Date(2026, 8, 13))).toBe(10); // getMonth 8 = 9월
+  });
+  it("12월에 평가하면 다음해 1월로 넘어간다", () => {
+    expect(resolveBaselineOpenMonth(new Date(2026, 11, 31))).toBe(1);
+  });
+  it("1월에 평가하면 2월", () => {
+    expect(resolveBaselineOpenMonth(new Date(2026, 0, 1))).toBe(2);
   });
 });
 

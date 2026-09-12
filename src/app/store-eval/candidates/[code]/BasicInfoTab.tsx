@@ -460,7 +460,12 @@ function BasicInfoTabForm({
           <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
           <NumberField label="요금표_시간당원" value={form.hourlyRate} onChange={(v) => set("hourlyRate", v)} required />
           <NumberField label="상권데이터기준연도" value={form.demographicsYear} onChange={(v) => set("demographicsYear", v)} step={1} />
-          <NumberField label="예상오픈월 (1~12)" value={form.plannedOpenMonth} onChange={(v) => set("plannedOpenMonth", v)} step={1} hint="AA 기준매출(오픈월부터 10개월 평균) 계산에 사용" />
+          {/* 2026-09-13 — 이 값은 더 이상 기준매출 계산에 쓰이지 않는다. 평가 단계에선 실제
+              오픈일이 확정된 적이 없는데 담당자마다 다른 달을 찍으면 같은 후보지의 기준매출이
+              달라져서, "평가한 달의 다음 달 오픈"이라는 하나의 가정으로 통일했다(사용자 확정,
+              calc.ts resolveBaselineOpenMonth). 입력 이력이 남아 있는 후보지가 있어 칸은 지우지
+              않고 참고용으로 둔다. */}
+          <NumberField label="예상오픈월 (1~12)" value={form.plannedOpenMonth} onChange={(v) => set("plannedOpenMonth", v)} step={1} hint="참고용 메모입니다 — 기준매출은 '평가한 달의 다음 달 오픈' 기준으로 자동 계산됩니다" />
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 print:hidden">

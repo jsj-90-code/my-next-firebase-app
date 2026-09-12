@@ -2681,8 +2681,28 @@ export function computeExistingStoreDemandEvaluation(
 // ---------------------------------------------------------------------------
 
 /**
- * AA 기준매출 = MIN(예상PC대수, 100) × average(오픈월부터 연속 10개월의 (일매출목표×일수)).
- * 윤년은 처리하지 않는다(요청사항 4 그대로). 월은 1~12를 순환한다(12월 오픈이면 다음 해 1~9월까지 포함).
+ * 기준매출 계산에 쓸 오픈월 — **평가한 달의 다음 달** (2026-09-13 사용자 확정).
+ *
+ * 프로모션이 10개월짜리라 오픈 시점이 언제냐에 따라 같은 PC대수라도 목표 월매출이 달라진다
+ * (월별 일매출목표와 일수가 다르기 때문). 그런데 평가 단계에서는 실제 오픈일이 확정된 적이
+ * 없어서, 담당자마다 예상오픈월을 다르게 찍으면 같은 후보지도 기준매출이 달라졌다. 그래서
+ * "평가한 달의 다음 달에 오픈한다"는 **하나의 가정으로 통일**한다 — 9월에 평가하면 10월 오픈.
+ *
+ * 결과적으로 기준매출은 "언제 평가했는가"에 따라 달라진다(같은 후보지를 10월에 다시 열면
+ * 11월 오픈 기준으로 다시 계산됨). 결과 탭은 열 때마다 재계산하므로 이게 의도된 동작이다.
+ */
+export function resolveBaselineOpenMonth(now: Date = new Date()): number {
+  return ((now.getMonth() + 1) % 12) + 1;
+}
+
+/**
+ * AA 기준매출 = MIN(예상PC대수, 100) × average(**오픈월 다음 달부터** 연속 10개월의 (일매출목표×일수)).
+ * 윤년은 처리하지 않는다(요청사항 4 그대로). 월은 1~12를 순환한다.
+ *
+ * ⚠️ 2026-09-13 변경 — 원래는 **오픈월 자체부터** 10개월이었다(원본 08_계산기준!C54:E65 정의).
+ * 사용자 확정으로 오픈 다음 달부터 세도록 바꿨다: "10월에 오픈하는 매장이라치고, 11월~ 10개월".
+ * 오픈 첫 달은 월중 오픈·초기 운영이라 프로모션 기준 기간에서 제외한다는 실무 규칙이다.
+ * 그래서 10월 오픈이면 11월~다음 해 8월이 계산 구간이 된다.
  */
 export function computeAaBaselineRevenue(
   pcCount: number | null,
@@ -2695,7 +2715,8 @@ export function computeAaBaselineRevenue(
   const appliedPc = Math.min(pcCount, maxPcCount);
   let total = 0;
   for (let k = 0; k < 10; k++) {
-    const month = ((plannedOpenMonth - 1 + k) % 12) + 1;
+    // +1 = 오픈 다음 달부터 시작(위 주석 참고). plannedOpenMonth가 1~12이므로 -1+1이 상쇄돼 그대로 쓴다.
+    const month = ((plannedOpenMonth + k) % 12) + 1;
     const target = byMonth.get(month);
     if (!target) return null;
     total += target.dailyRevenuePerPcTarget * target.daysInMonth;

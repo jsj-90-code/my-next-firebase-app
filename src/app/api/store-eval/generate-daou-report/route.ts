@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { runDaouReportDraft } from "@/lib/storeEval/daouReportAi";
-import { buildDaouReportContext, type DaouReportContextCandidate, type DaouReportContextCompetitor } from "@/lib/storeEval/reportContext";
+import {
+  buildDaouReportContext,
+  type DaouReportContextCandidate,
+  type DaouReportContextCompetitor,
+  type DaouReportContextLocation,
+} from "@/lib/storeEval/reportContext";
 import type { EvaluationResult } from "@/lib/storeEval/types";
 
 // 다우오피스 평가기록 보고서 텍스트 초안 - API 라우트.
@@ -12,6 +17,10 @@ import type { EvaluationResult } from "@/lib/storeEval/types";
 type GenerateDaouReportBody = {
   candidate?: DaouReportContextCandidate;
   competitors?: DaouReportContextCompetitor[];
+  // 2026-09-13 추가 — 입지동선평가의 정성 메모가 [상권] 섹션의 핵심 근거다(reportContext 주석 참고).
+  // 옛 화면이 안 보내도 동작하도록 선택값으로 둔다.
+  locationEvaluation?: DaouReportContextLocation | null;
+  productRatio?: number | null;
   result?: EvaluationResult;
 };
 
@@ -35,6 +44,8 @@ export async function POST(request: Request) {
   const contextText = buildDaouReportContext({
     candidate: body.candidate,
     competitors: body.competitors ?? [],
+    locationEvaluation: body.locationEvaluation ?? null,
+    productRatio: body.productRatio ?? null,
     result: body.result,
   });
 
