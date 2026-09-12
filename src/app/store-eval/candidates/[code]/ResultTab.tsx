@@ -29,6 +29,7 @@ import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, Final
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { storeEvaluationGrade } from "@/lib/storeEval/reportContext";
+import { computePeerPosition } from "@/lib/storeEval/peerPosition";
 import { collectReviewSignals, type ReviewSignal } from "@/lib/storeEval/reviewSignals";
 import { sectionClass, sectionTitleClass, NumberField, TextAreaField } from "./formFields";
 import { ReportCard } from "./ReportCard";
@@ -226,34 +227,22 @@ function ReviewSignalList({ signals }: { signals: ReviewSignal[] }) {
  */
 function PeerPositionNote({ stores, result, expectedPcCount }: { stores: ExistingStore[]; result: EvaluationResult; expectedPcCount: number | null }) {
   const forecast = result.v62Final;
-  const peers = stores.filter(
-    (s) => s.brandType === "블랙라벨" && !s.excludedFromModel && s.actualMonthlyRevenueAvg != null && s.actualMonthlyRevenueAvg > 0,
-  );
-  if (forecast == null || peers.length < 5) return null; // 표본이 너무 적으면 순위가 의미 없다
-
-  const revenues = peers.map((s) => s.actualMonthlyRevenueAvg as number).sort((a, b) => b - a);
-  // 이 예측값보다 실제로 더 잘 버는 매장이 몇 곳인가 → 그 다음 자리가 이 후보지의 순위다.
-  const rank = revenues.filter((r) => r > forecast).length + 1;
-  const median = revenues[Math.floor(revenues.length / 2)];
-
-  // 규모가 비슷한 매장만 따로 본다 — 대수가 다르면 매출 차이의 상당 부분이 그냥 규모 차이다.
-  const sameSize = expectedPcCount != null
-    ? peers.filter((s) => s.pcCount != null && Math.abs((s.pcCount as number) - expectedPcCount) <= 15)
-    : [];
-  const sameSizeAvg = sameSize.length > 0
-    ? sameSize.reduce((sum, s) => sum + (s.actualMonthlyRevenueAvg as number), 0) / sameSize.length
-    : null;
+  // 2026-09-13 — 계산은 peerPosition.ts로 옮겼다. 화면 안에 있으면 테스트할 방법이 없어
+  // 경계 조건(동률·짝수 중앙값·규모 허용폭)이 맞는지 확인할 수가 없었다.
+  const position = computePeerPosition(stores, forecast, expectedPcCount);
+  if (position == null || forecast == null) return null;
+  const { peerCount, rank, median, sameSizeAvg, sameSizeCount } = position;
 
   return (
     <div className="app-card-sm mt-2 rounded-xl px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
       <b className="text-[#171310] dark:text-[#f2ede2]">기존 가맹점과 견줘보면</b> — 실제로 영업 중인{" "}
-      {peers.length}곳의 매출과 나란히 놓으면 이 예측값은{" "}
-      <b className="text-[#171310] dark:text-[#f2ede2]">{peers.length}곳 중 {rank}번째</b> 수준입니다
+      {peerCount}곳의 매출과 나란히 놓으면 이 예측값은{" "}
+      <b className="text-[#171310] dark:text-[#f2ede2]">{peerCount}곳 중 {rank}번째</b> 수준입니다
       (기존점 중앙값 {formatManwonRough(median)}).
       {sameSizeAvg != null && (
         <>
           <br />
-          비슷한 규모({expectedPcCount}대 ±15대) {sameSize.length}곳의 실제 평균은{" "}
+          비슷한 규모({expectedPcCount}대 ±15대) {sameSizeCount}곳의 실제 평균은{" "}
           <b className="text-[#171310] dark:text-[#f2ede2]">{formatManwonRough(sameSizeAvg)}</b>입니다
           {forecast > sameSizeAvg ? " — 이 후보지는 그보다 높게 예측됐습니다." : forecast < sameSizeAvg ? " — 이 후보지는 그보다 낮게 예측됐습니다." : "."}
         </>

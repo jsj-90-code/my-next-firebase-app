@@ -16,6 +16,7 @@ import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility"
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { collectReviewSignals } from "./reviewSignals";
 import { storeEvaluationGrade } from "./reportContext";
+import { computePeerPosition } from "./peerPosition";
 import type { CandidateInput, Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
 
 const d = hasValidationSnapshot() ? describe : describe.skip;
@@ -303,5 +304,61 @@ d("후보지 진단 — 대수 효과를 분리한다", () => {
     }
     console.log("");
     expect(rows.length).toBeGreaterThan(0);
+  });
+});
+
+// 기존점 분포 위치가 실데이터에서 맞는지 (2026-09-13, 계산을 peerPosition.ts로 뽑아낸 뒤)
+d("기존점 분포 위치 실데이터 점검", () => {
+  const snap = loadValidationSnapshot() as {
+    candidates: CandidateInput[]; existingStores: ExistingStore[]; competitors: Record<string, unknown>[];
+    locationEvaluations: LocationEvaluation[]; sales: ExistingStoreMonthlySales[]; settings: Record<string, unknown> | null;
+  };
+  const settings = mergeModelSettings(snap.settings);
+  const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+  const wanted = new Set(evaluationSalesIds(snap.existingStores));
+  const sales = snap.sales.filter((s) => wanted.has(s.storeCode + "_" + s.yearMonth));
+
+  const rows = snap.candidates.map((candidate) => {
+    const r = evaluateCandidate({
+      candidate,
+      competitors: allCompetitors.filter((c) => c.candidateCode === candidate.code),
+      locationEvaluation: snap.locationEvaluations.find((l) => l.candidateCode === candidate.code) ?? null,
+      settings, existingStores: snap.existingStores,
+      trainingLocationEvaluations: snap.locationEvaluations, trainingCompetitors: allCompetitors, trainingSales: sales,
+    });
+    return { code: candidate.code, name: candidate.name ?? "", pos: computePeerPosition(snap.existingStores, r.v62Final, candidate.expectedPcCount) };
+  });
+
+  it("후보지별 순위를 표로 남긴다", () => {
+    const man = (v: number | null) => (v == null ? "-" : Math.round(v / 10000).toLocaleString("ko-KR") + "만");
+    console.log("");
+    for (const r of rows) {
+      if (!r.pos) { console.log(r.code + " " + r.name + " — 표본 부족으로 표시 안 함"); continue; }
+      console.log(
+        r.code + " " + r.name.padEnd(10) +
+        " " + String(r.pos.rank).padStart(2) + "/" + r.pos.peerCount + "위" +
+        "  중앙값 " + man(r.pos.median) +
+        "  동급규모 " + String(r.pos.sameSizeCount).padStart(2) + "곳 평균 " + man(r.pos.sameSizeAvg),
+      );
+    }
+    console.log("");
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it("순위가 1..비교군수+1 범위 안이고 중앙값이 양수다", () => {
+    for (const r of rows) {
+      if (!r.pos) continue;
+      expect(r.pos.rank).toBeGreaterThanOrEqual(1);
+      expect(r.pos.rank).toBeLessThanOrEqual(r.pos.peerCount + 1);
+      expect(r.pos.median).toBeGreaterThan(0);
+    }
+  });
+
+  it("모든 후보지가 같은 비교군·중앙값을 본다 (후보지마다 달라지면 기준이 흔들린 것이다)", () => {
+    const withPos = rows.filter((r) => r.pos);
+    const counts = new Set(withPos.map((r) => r.pos!.peerCount));
+    const medians = new Set(withPos.map((r) => r.pos!.median));
+    expect(counts.size).toBe(1);
+    expect(medians.size).toBe(1);
   });
 });
