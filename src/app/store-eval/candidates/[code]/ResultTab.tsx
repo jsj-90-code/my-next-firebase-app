@@ -601,6 +601,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             name: c.name,
             distanceM: c.distanceM,
             investigationStatus: c.investigationStatus,
+            // 2026-09-13 — 핑봇 실측 가동률은 우리 예측이 아니라 직접 재 온 값이라 평가기록의
+            // 근거로 쓸 수 있다(reportContext 주석 참고).
+            totalPcCount: c.totalPcCount,
+            pingbotUtilization: c.pingbotUtilization,
           })),
           // 2026-09-13 추가 — 평가자가 직접 쓴 메모가 [상권] 섹션의 핵심 근거다.
           locationEvaluation: locationForReport

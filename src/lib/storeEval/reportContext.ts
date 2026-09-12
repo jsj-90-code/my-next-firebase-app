@@ -33,7 +33,14 @@ export type DaouReportContextCandidate = Pick<
   | "hasElevator"
   | "expectedPcCount"
 >;
-export type DaouReportContextCompetitor = Pick<Competitor, "name" | "distanceM" | "investigationStatus">;
+// 2026-09-13 — 핑봇 가동률과 전체대수를 추가한다. 실제 평가기록이 "123대 규모에서 약 30%의
+// 가동률이 확인되어 기본적인 PC방 이용수요가 확보된 상권으로 판단됨"처럼 **경쟁점의 실측
+// 가동현황**을 근거로 쓴다. 이건 우리 예측이 아니라 핑봇으로 직접 재 온 값이라 "증명된 자료만
+// 쓴다"는 원칙(2026-09-13 사용자)에 부합한다 — 오차 52%짜리 AA경로 예상가동률과는 성격이 다르다.
+export type DaouReportContextCompetitor = Pick<
+  Competitor,
+  "name" | "distanceM" | "investigationStatus" | "totalPcCount" | "pingbotUtilization"
+>;
 // 2026-09-13 추가 — 입지동선평가. 점수(1~5)보다 **메모 두 개가 핵심**이다. 상권의 성격을 사람이
 // 직접 적어둔 유일한 자리이고, 실제 평가기록의 [상권] 섹션은 사실상 이 내용을 다듬은 것이다.
 export type DaouReportContextLocation = Pick<
@@ -284,10 +291,23 @@ export function buildDaouReportContext({
         `별도 예측 먹거리 매출 약 ${formatManwon(result.revenueBreakdown.productRevenue)}를 합산. 학습 이용시간은 과거 PC매출과 현재 등록 요금으로 추정하며 할인으로 인한 고객 증가는 가정하지 않음.`,
     );
   }
-  if (result.expectedUtilization != null) {
+  // 2026-09-13 — 예전엔 여기서 AA경로(실측기반 예상가동률)를 참고로 넘겼는데 **뺐다.** 그 경로는
+  // 평균오차 52%로 확인된 미검증 예측이라(calc.ts judgeAaGrade 주석), 결재 문서에 쓸 근거가 되지
+  // 못한다. "증명되고 사실확인이 된 자료만 넣어 객관적으로 판단하게 하자"는 사용자 방침(2026-09-13)에
+  // 따라 재료 단계에서 아예 제거한다 — 프롬프트로 "쓰지 마세요"라고 막는 것보다 확실하다.
+  //
+  // 대신 경쟁점의 **핑봇 실측 가동률**을 넘긴다. 이건 예측이 아니라 직접 재 온 값이다.
+  const measuredCompetitors = investigated.filter((c) => c.pingbotUtilization != null);
+  if (measuredCompetitors.length > 0) {
     lines.push(
-      `[참고] 실측기반 예상가동률 ${formatPercent(result.expectedUtilization)} — 경쟁점 실가동좌석을 기반으로 한 별도 계산 경로이며 ` +
-        "미검증 참고 지표입니다(위 [필요 가동률]과 다른 산식이므로 섞어 쓰지 마세요). 경쟁점의 실제 가동현황을 언급할 때만 참고로 쓰세요.",
+      `[경쟁점 실측 가동현황] ` +
+        measuredCompetitors
+          .map(
+            (c) =>
+              `${c.name || "(이름 없음)"}${c.totalPcCount != null ? ` ${formatNumber(c.totalPcCount)}대` : ""} 가동률 ${formatPercent(c.pingbotUtilization)}`,
+          )
+          .join(", ") +
+        ` — 핑봇으로 직접 측정한 실측값(우리 예측이 아님). 상권에 실제 이용수요가 얼마나 있는지의 근거로 쓸 수 있음.`,
     );
   }
 
