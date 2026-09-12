@@ -105,6 +105,13 @@ describe("결재 전 확인 신호", () => {
     expect(collectReviewSignals(input).find((s) => s.title.includes("특수수요"))?.forReport).toBe(true);
   });
 
+  it('특수수요가 "없음"이면 경고하지 않는다 (없음도 유효한 선택지 문자열이다)', () => {
+    // 2026-09-13 실데이터에서 3곳이 "특수수요(없음)에 기대고 있습니다"라는 엉뚱한 경고를 달고
+    // 있었다. truthy 검사만 하면 잡히는 함정이라 테스트로 고정한다.
+    const input = makeInput({ locationEvaluation: { specialDemandType: '없음' } as unknown as LocationEvaluation });
+    expect(titles(input).some((t) => t.includes('특수수요'))).toBe(false);
+  });
+
   it("우리 예상 가동률이 경쟁점 실측보다 1.2배 넘게 높으면 짚는다", () => {
     // 경쟁점 실측 30%, 우리 예상 40% → 1.33배
     const input = makeInput({

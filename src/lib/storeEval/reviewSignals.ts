@@ -151,7 +151,10 @@ export function collectReviewSignals({
   }
 
   // ---- 특수수요 의존 — "야구 경기일에 일시적으로 집중되는 방문객" 서술의 근거 ----
-  if (locationEvaluation?.specialDemandType) {
+  // ⚠️ "없음"은 null이 아니라 **유효한 선택지 문자열**이다(SpecialDemandType). truthy 검사만
+  // 하면 특수수요가 없는 후보지에 "특수수요(없음)에 기대고 있습니다"라는 엉뚱한 경고가 뜬다 —
+  // 2026-09-13 실데이터 9곳에 돌려보다 3곳에서 실제로 발견했다.
+  if (locationEvaluation?.specialDemandType && locationEvaluation.specialDemandType !== "없음") {
     signals.push({
       level: "주의",
       title: `특수수요(${locationEvaluation.specialDemandType})에 기대고 있습니다`,

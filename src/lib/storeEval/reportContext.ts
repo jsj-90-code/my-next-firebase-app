@@ -195,7 +195,9 @@ export function buildDaouReportContext({
 
     // 특수수요 — 실제 문서의 "야구 경기일에 일시적으로 집중되는 방문객이 상당 부분 포함됐을
     // 가능성" 서술이 이 항목에서 나온다. 유동인구를 그대로 믿으면 안 된다는 단서다.
-    if (loc.specialDemandType) {
+    // ⚠️ "없음"도 유효한 선택지 문자열이다 — 그냥 truthy 검사를 하면 AI에게 "[특수수요] 없음"이
+    // 넘어가 평가기록에 "없음 수요에 의존한다"는 식의 이상한 문장이 나온다(2026-09-13 발견).
+    if (loc.specialDemandType && loc.specialDemandType !== "없음") {
       lines.push(
         `[특수수요] ${loc.specialDemandType}${loc.specialDemandIntensity ? ` (강도: ${loc.specialDemandIntensity})` : ""}` +
           ` — 이런 수요는 특정 요일·행사일에만 몰릴 수 있어 조사된 유동인구 전체를 상시 PC방 이용수요로 보기 어려울 수 있음.`,
