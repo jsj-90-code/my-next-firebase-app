@@ -367,7 +367,50 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
                   : "실제매출 입력 전"
               }
             />
+            {/* 2026-09-13 — 후보지 평가 당시 담당자가 따로 적어둔 판단 매출이 있으면 산식 옆에
+                나란히 채점한다. 이 비교가 "담당자 판단 매출" 기능의 목적 그 자체다 — 사람이
+                계통적으로 더 맞는다면 그 차이가 산식 개선의 단서가 된다. 안 적었으면 아예
+                숨긴다(빈 칸을 늘려 화면만 복잡해지므로). */}
+            {store.predictedAtConversion.judgedRevenue != null && (
+              <>
+                <StatBox label="예측 당시 담당자 판단매출" value={formatWon(store.predictedAtConversion.judgedRevenue)} />
+                <StatBox
+                  label="오차율 (실제-담당자판단)/담당자판단"
+                  value={
+                    store.actualMonthlyRevenueAvg != null
+                      ? formatPercent(
+                          (store.actualMonthlyRevenueAvg - store.predictedAtConversion.judgedRevenue) /
+                            store.predictedAtConversion.judgedRevenue,
+                        )
+                      : "실제매출 입력 전"
+                  }
+                />
+              </>
+            )}
           </div>
+          {store.predictedAtConversion.judgedRevenue != null && store.actualMonthlyRevenueAvg != null && (() => {
+            const actual = store.actualMonthlyRevenueAvg;
+            const judged = store.predictedAtConversion.judgedRevenue;
+            const v62 = store.predictedAtConversion.v62Final;
+            if (judged == null || v62 == null || v62 === 0 || judged === 0) return null;
+            const modelError = Math.abs((actual - v62) / v62);
+            const humanError = Math.abs((actual - judged) / judged);
+            const winner = modelError < humanError ? "산식(V62)" : humanError < modelError ? "담당자 판단" : "동률";
+            return (
+              <p className="mt-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+                이 매장 한 곳만 놓고 보면 <b className="text-[#171310] dark:text-[#f2ede2]">{winner}</b>이 더 가까웠습니다
+                (산식 오차 {formatPercent(modelError)} · 담당자 오차 {formatPercent(humanError)}).
+                <span className="text-[var(--sl-ink-soft)]">
+                  {" "}한 곳 결과로는 어느 쪽이 낫다고 말할 수 없습니다 — 여러 곳이 쌓여야 의미가 생깁니다.
+                </span>
+              </p>
+            );
+          })()}
+          {store.predictedAtConversion.judgedReason && (
+            <p className="mt-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
+              당시 판단 근거: {store.predictedAtConversion.judgedReason}
+            </p>
+          )}
         </div>
       ) : store.originCandidateCode ? (
         <p className="app-card mb-4 rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">

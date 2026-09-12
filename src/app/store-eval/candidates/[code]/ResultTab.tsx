@@ -21,13 +21,14 @@ import {
   listAllLocationEvaluations,
   listAllCompetitors,
   saveEvaluationResult,
+  saveCandidate,
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { readJsonOrText } from "@/lib/readJsonOrText";
-import { sectionClass, sectionTitleClass } from "./formFields";
+import { sectionClass, sectionTitleClass, NumberField, TextAreaField } from "./formFields";
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 
@@ -103,6 +104,151 @@ function ResultCard({ label, value, emphasis, hint }: { label: string; value: st
       <p className={`mt-1 font-semibold ${emphasis ? "text-2xl" : "text-lg"}`}>{value}</p>
       {hint && <p className={`mt-1 text-[11px] ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[var(--sl-ink-soft)]"}`}>{hint}</p>}
     </div>
+  );
+}
+
+/**
+ * 담당자 판단 매출 (2026-09-13 신설)
+ *
+ * 사용자 지적: "예측 매출액 조정을 못 하니까 그게 좀 굉장히 찝찝하구만" — 현장 감각으로 "이건
+ * 높다/낮다"를 알아도 반영할 데가 없었다.
+ *
+ * 그렇다고 **V62 예측값 자체를 고치게 만들지는 않았다.** 예측값을 손으로 고치면 그 값으로 재는
+ * 적중률(MAPE 9.88%)이 아무 의미가 없어지기 때문이다 — 사람이 맞춘 값을 사람이 채점하는 꼴이다.
+ * 대신 산식 결과는 그대로 두고 판단을 **나란히** 적어둔다. 셋 다 이득이다.
+ *   1. 산식이 오염되지 않아 적중률 검증이 그대로 유지된다
+ *   2. 현장 판단이 버려지지 않고 근거와 함께 남는다
+ *   3. 개점 후 실제 매출이 나오면 "산식이 맞았나, 사람이 맞았나"를 데이터로 알 수 있다 —
+ *      사람이 계통적으로 더 맞는다면 그 차이가 곧 산식 개선의 단서다(표본 38곳에서 산식 개선이
+ *      막혀 있는 상황을 우회하는 길, docs/backlog.md B-1)
+ *
+ * 전환 시점 값은 store.ts가 predictedAtConversion에 함께 동결한다.
+ */
+function JudgedRevenuePanel({
+  candidateCode,
+  initial,
+  v62Final,
+  actor,
+  onSaved,
+}: {
+  candidateCode: string;
+  initial: CandidateInput;
+  v62Final: number | null;
+  actor: string | null;
+  onSaved: (saved: CandidateInput) => void;
+}) {
+  const [revenue, setRevenue] = useState<number | null>(initial.judgedRevenue ?? null);
+  const [reason, setReason] = useState<string>(initial.judgedReason ?? "");
+  // 마지막으로 Firestore에 저장된 값 — 입력칸과 비교해 "저장 안 된 변경이 있는지"를 판단한다.
+  const [saved, setSaved] = useState<{ revenue: number | null; reason: string; at: number | null; by: string | null }>({
+    revenue: initial.judgedRevenue ?? null,
+    reason: initial.judgedReason ?? "",
+    at: initial.judgedAt ?? null,
+    by: initial.judgedBy ?? null,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmedReason = reason.trim();
+  const dirty = revenue !== saved.revenue || trimmedReason !== saved.reason.trim();
+  const gapRatio = revenue != null && v62Final != null && v62Final !== 0 ? (revenue - v62Final) / v62Final : null;
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      // 결과 탭이 들고 있는 후보지 값은 "계산을 시작한 시점"의 스냅샷이다. 그 사이 기본정보
+      // 탭에서 다른 항목을 고쳤을 수 있으므로, 저장 직전에 최신 문서를 다시 읽어 판단값 네 칸만
+      // 갈아끼운다(saveCandidate가 문서 전체를 덮어쓰기 때문에 이렇게 안 하면 남의 수정이 날아간다).
+      const latest = await getCandidate(candidateCode);
+      if (!latest) throw new Error("후보지를 찾지 못했습니다. 화면을 새로고침해주세요.");
+      const hasJudgement = revenue != null || trimmedReason !== "";
+      const now = Date.now();
+      const next: CandidateInput = {
+        ...latest,
+        judgedRevenue: revenue,
+        judgedReason: trimmedReason === "" ? null : trimmedReason,
+        // 둘 다 비우면 "판단을 지웠다"는 뜻이라 적은 사람·시각도 같이 지운다.
+        judgedAt: hasJudgement ? now : null,
+        judgedBy: hasJudgement ? actor : null,
+      };
+      await saveCandidate(next, actor);
+      setSaved({ revenue: next.judgedRevenue, reason: next.judgedReason ?? "", at: next.judgedAt, by: next.judgedBy });
+      onSaved(next);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "판단 매출을 저장하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className={sectionClass}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className={sectionTitleClass}>담당자 판단 매출 (선택 입력)</h3>
+        <span className="app-badge app-badge-neutral text-xs">산식에 반영되지 않음</span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+        위 V62 예상매출을 보고 <b className="text-[#171310] dark:text-[#f2ede2]">현장 감각으로는 다르게 본다</b>면 여기에
+        적어두세요. <b className="text-[#171310] dark:text-[#f2ede2]">위 예상매출은 바뀌지 않습니다</b> — 산식은 그대로 두고
+        판단만 나란히 기록합니다. 예측값을 직접 고치면 이 모형이 얼마나 맞는지 잴 수 없게 되기 때문입니다.
+        <br />
+        나중에 이 매장이 문을 열고 실제 매출이 나오면,{" "}
+        <b className="text-[#171310] dark:text-[#f2ede2]">산식과 담당자 중 누가 더 잘 맞혔는지</b> 비교할 수 있습니다.
+        비워두셔도 됩니다.
+      </p>
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <NumberField
+          label="담당자 판단 월매출"
+          value={revenue}
+          onChange={setRevenue}
+          step={100000}
+          hint={
+            revenue != null
+              ? `${formatWon(revenue)} — 원 단위로 입력합니다`
+              : "원 단위로 입력합니다 (예: 4,500만원이면 45000000)"
+          }
+        />
+        <TextAreaField
+          label="그렇게 본 근거"
+          value={reason}
+          onChange={setReason}
+          rows={3}
+          hint="한 줄이면 충분합니다. 나중에 누가 맞았는지 볼 때 이 메모가 가장 중요합니다."
+        />
+      </div>
+      {gapRatio != null && (
+        <p className="mt-3 text-sm leading-6">
+          V62 예상매출 {formatWon(v62Final)} 대비{" "}
+          <b className={gapRatio >= 0 ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"}>
+            {gapRatio >= 0 ? "+" : ""}
+            {formatPercent(gapRatio)} ({gapRatio >= 0 ? "+" : "-"}
+            {formatWon(Math.abs((revenue ?? 0) - (v62Final ?? 0)))})
+          </b>{" "}
+          {gapRatio >= 0 ? "높게" : "낮게"}보셨습니다.
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving || !dirty}
+          className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
+        >
+          {saving ? "저장 중..." : "판단 저장"}
+        </button>
+        {dirty && !saving && <span className="text-xs text-[var(--sl-warn)]">저장하지 않은 변경이 있습니다</span>}
+        {!dirty && saved.at != null && (
+          <span className="text-xs text-[var(--sl-ink-soft)]">
+            {formatDate(saved.at)} 저장됨{saved.by ? ` · ${saved.by}` : ""}
+          </span>
+        )}
+        {!dirty && saved.at == null && saved.revenue == null && (
+          <span className="text-xs text-[var(--sl-ink-soft)]">아직 적힌 판단이 없습니다</span>
+        )}
+      </div>
+      {error && <p className="app-badge app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{error}</p>}
+    </section>
   );
 }
 
@@ -678,6 +824,20 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           </div>
         </details>
       </section>
+
+      {/* 2026-09-13 — 예상매출 바로 아래에 둔다. 숫자를 보고 "이건 현장 감각과 다르다"고 느끼는
+          그 자리에서 바로 적을 수 있어야 실제로 쓰이기 때문이다. 후보지 값이 로드되기 전에는
+          저장할 대상이 없으므로 렌더하지 않는다. */}
+      {candidateForReport && (
+        <JudgedRevenuePanel
+          key={candidateForReport.code}
+          candidateCode={candidateCode}
+          initial={candidateForReport}
+          v62Final={result.v62Final}
+          actor={user?.email ?? null}
+          onSaved={(savedCandidate) => setCandidateForReport(savedCandidate)}
+        />
+      )}
 
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-2">

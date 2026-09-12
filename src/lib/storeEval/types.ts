@@ -190,6 +190,22 @@ export type CandidateInput = {
   ownInteriorConditionScore: number | null; // 청결·관리상태 (계산 미반영, 참고용)
   ownComfortScore: number | null; // 냄새·조명·화장실·편의성 (계산 미반영, 참고용)
 
+  // 2026-09-13 신설 — 담당자 판단 매출. 사용자 지적("예측 매출액 조정을 못 하니까 그게 좀 굉장히
+  // 찝찝하구만")에 대한 답인데, V62 예측값 자체를 사람이 고치게 만들지는 않았다. 예측값을 손으로
+  // 고치면 그 값으로 잰 적중률(MAPE)이 아무 의미가 없어지기 때문이다 — 사람이 맞춘 값을 사람이
+  // 채점하는 꼴이 된다. 그래서 산식 결과는 그대로 두고 현장 판단을 "나란히" 기록만 한다.
+  //
+  // ★ calc.ts / evaluate.ts는 이 필드들을 절대 읽지 않는다(judgedRevenueIsolation.test.ts가
+  //   코드로 고정). 순수 기록용이고, 산식에 되먹임되는 순간 검증 체계가 무너진다.
+  //
+  // 진짜 목적은 따로 있다 — 개점 후 실제 매출이 나오면 "산식이 맞았나, 사람이 맞았나"를 데이터로
+  // 비교할 수 있다. 그래서 후보지→기존점 전환 때 predictedAtConversion에 함께 동결한다(store.ts).
+  // 표본 38곳에서 산식 개선이 막혀 있는 상황(docs/backlog.md B-1)을 우회하는 길이기도 하다.
+  judgedRevenue: number | null; // 담당자가 판단한 월매출(원). 비워두는 게 기본이다.
+  judgedReason: string | null; // 그렇게 본 근거 한 줄 — 나중에 누가 맞았는지 볼 때 이게 핵심이다
+  judgedAt: number | null; // 판단을 적은 시각. 예측 시점이 언제였는지가 사후 비교에서 중요하다
+  judgedBy: string | null; // 적은 사람 (이메일)
+
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -772,6 +788,12 @@ export type ExistingStore = {
     upperSales: number | null;
     expectedPcCount: number | null;
     hourlyRate: number | null;
+    // 2026-09-13 추가 — 전환 시점에 담당자가 적어둔 판단 매출도 같이 동결한다. 이게 있어야
+    // 개점 후 실제 매출이 나왔을 때 "산식(v62Final) vs 사람(judgedRevenue) 중 누가 더 맞았나"를
+    // 비교할 수 있다. 후보지 문서(CandidateInput.judgedRevenue)는 나중에 고쳐질 수 있으므로,
+    // 위 예측값들과 똑같은 이유로 "그때 본 값"을 여기 따로 남긴다. 판단을 안 적었으면 null.
+    judgedRevenue: number | null;
+    judgedReason: string | null;
     calculatedAt: number; // 후보지평가 당시 evaluateCandidate 계산 시각
     linkedAt: number; // 이 스냅샷을 기존 가맹점에 연결한 시각(전환 또는 수동연결 시점)
   } | null;

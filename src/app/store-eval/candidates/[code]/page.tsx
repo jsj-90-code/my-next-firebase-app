@@ -115,6 +115,12 @@ function blankCandidate(code: string): CandidateInput {
     ownInteriorConditionScore: null,
     ownSeatZoneScore: null,
     ownComfortScore: null,
+    // 2026-09-13 — 담당자 판단 매출(최종결과 탭에서 입력). 새 후보지는 항상 비어 있고, 끝까지
+    // 안 적어도 된다 — 산식은 이 값을 쓰지 않는다(types.ts judgedRevenue 주석 참고).
+    judgedRevenue: null,
+    judgedReason: null,
+    judgedAt: null,
+    judgedBy: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     updatedBy: null,

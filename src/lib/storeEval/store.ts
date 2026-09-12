@@ -478,6 +478,12 @@ export async function convertCandidateToExistingStore(input: {
           upperSales: evaluationResult.upperSales,
           expectedPcCount: evaluationResult.expectedPcCount,
           hourlyRate: evaluationResult.hourlyRate,
+          // 2026-09-13 — 담당자 판단 매출은 evaluationResult가 아니라 후보지 문서에 있다(산식
+          // 결과가 아니라 사람이 적은 값이기 때문). 전환 시점에 적혀 있던 값만 여기 동결하고,
+          // 이후 후보지 문서에서 바뀌더라도 이 스냅샷은 따라가지 않는다 — 위 예측값들과 같은
+          // 원칙이다("그때 본 값"의 유일한 기록). 안 적었으면 null로 남는다.
+          judgedRevenue: c.judgedRevenue ?? null,
+          judgedReason: c.judgedReason ?? null,
           calculatedAt: evaluationResult.calculatedAt,
           linkedAt: now,
         }
@@ -587,6 +593,9 @@ export async function linkExistingStoreToCandidate(
   const store = await getExistingStore(storeCode);
   if (!store) throw new Error(`기존 가맹점을 찾지 못했습니다: ${storeCode}`);
   const result = await getEvaluationResult(candidateCode);
+  // 2026-09-13 — 담당자 판단 매출은 후보지 문서에만 있어서 한 건 더 읽는다(수동 연결은 드물게
+  // 하는 작업이라 읽기 1건이 문제되지 않는다). 후보지가 이미 지워졌으면 판단값 없이 연결한다.
+  const candidate = result ? await getCandidate(candidateCode).catch(() => null) : null;
   const now = Date.now();
 
   const updated: ExistingStore = {
@@ -604,6 +613,8 @@ export async function linkExistingStoreToCandidate(
           upperSales: result.upperSales,
           expectedPcCount: result.expectedPcCount,
           hourlyRate: result.hourlyRate,
+          judgedRevenue: candidate?.judgedRevenue ?? null,
+          judgedReason: candidate?.judgedReason ?? null,
           calculatedAt: result.calculatedAt,
           linkedAt: now,
         }

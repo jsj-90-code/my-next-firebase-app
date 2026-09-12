@@ -90,6 +90,10 @@ function emptyCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput
     ownInteriorConditionScore: null,
     ownSeatZoneScore: null,
     ownComfortScore: null,
+    judgedRevenue: null,
+    judgedReason: null,
+    judgedAt: null,
+    judgedBy: null,
     createdAt: 0,
     updatedAt: 0,
     updatedBy: null,
@@ -349,5 +353,34 @@ describe("evaluateCandidate 배선 검증", () => {
     });
     expect(blankResult.competitivenessGap).toBeCloseTo(explicitResult.competitivenessGap ?? 0, 6);
     expect(blankResult.v62Final).toBe(explicitResult.v62Final);
+  });
+
+  // 2026-09-13 — 담당자 판단 매출은 **기록 전용**이다. 이 값이 산식에 되먹임되는 순간 적중률
+  // (MAPE)로 모형을 채점한다는 전제가 무너진다 — 사람이 손댄 값을 사람이 채점하는 꼴이 되기
+  // 때문이다. 그래서 "쓰지 않는다"를 주석이 아니라 테스트로 고정한다. 나중에 누군가 편의를 위해
+  // calc/evaluate에서 이 필드를 읽으면 여기서 바로 깨진다. (소스에 필드명이 등장하지 않는지까지
+  // 보는 정적 검사는 judgedRevenueIsolation.test.ts에 따로 있다.)
+  it("담당자 판단 매출을 적어도 산식 결과는 한 글자도 달라지지 않는다", () => {
+    const base = {
+      competitors: [competitor],
+      locationEvaluation: locationEval,
+      settings,
+      existingStores: [],
+      trainingCompetitors: [],
+      trainingLocationEvaluations: [],
+    };
+    const without = evaluateCandidate({ ...base, candidate: emptyCandidate() });
+    const withJudgement = evaluateCandidate({
+      ...base,
+      candidate: emptyCandidate({
+        judgedRevenue: 99_000_000, // V62가 뭘 내놓든 확연히 다른 값
+        judgedReason: "역세권 신축이라 산식보다 잘 나올 것으로 본다",
+        judgedAt: 1_726_000_000_000,
+        judgedBy: "tester@isens.camp",
+      }),
+    });
+    // calculatedAt은 계산 시각이라 호출할 때마다 다르다 — 비교에서만 뺀다.
+    const strip = (r: typeof without) => ({ ...r, calculatedAt: 0 });
+    expect(strip(withJudgement)).toEqual(strip(without));
   });
 });
