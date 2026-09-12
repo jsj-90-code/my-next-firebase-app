@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatDate, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
+import { formatDate, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   convertCandidateToExistingStore,
@@ -25,10 +25,11 @@ import {
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
-import type { CandidateInput, Competitor, EvaluationResult, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
+import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { storeEvaluationGrade } from "@/lib/storeEval/reportContext";
+import { collectReviewSignals, type ReviewSignal } from "@/lib/storeEval/reviewSignals";
 import { sectionClass, sectionTitleClass, NumberField, TextAreaField } from "./formFields";
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
@@ -104,6 +105,95 @@ function ResultCard({ label, value, emphasis, hint }: { label: string; value: st
       <p className={`text-xs ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[var(--sl-ink-soft)]"}`}>{label}</p>
       <p className={`mt-1 font-semibold ${emphasis ? "text-2xl" : "text-lg"}`}>{value}</p>
       {hint && <p className={`mt-1 text-[11px] ${emphasis ? "text-white/60 dark:text-[#171310]/60" : "text-[var(--sl-ink-soft)]"}`}>{hint}</p>}
+    </div>
+  );
+}
+
+/** 결재 전 확인할 것 (2026-09-13 신설). 신호 수집은 reviewSignals.ts가 하고 여기서는 표시만 한다. */
+function ReviewSignalList({ signals }: { signals: ReviewSignal[] }) {
+  if (signals.length === 0) {
+    return (
+      <p className="app-notice app-badge-ok w-full text-xs">
+        결재 전 확인할 것 — <b>따로 짚이는 항목이 없습니다.</b> 입력과 계산 전제가 모두 정상입니다.
+      </p>
+    );
+  }
+  const badgeFor = (level: ReviewSignal["level"]) =>
+    level === "확인" ? "app-badge-danger" : level === "주의" ? "app-badge-warn" : "app-badge-info";
+  // 확인 → 주의 → 정보 순으로. 먼저 고쳐야 하는 것이 위로 온다.
+  const order: ReviewSignal["level"][] = ["확인", "주의", "정보"];
+  const sorted = [...signals].sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level));
+  const mustFix = sorted.filter((s) => s.level === "확인").length;
+
+  return (
+    <section className={sectionClass}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className={sectionTitleClass}>결재 전 확인할 것 ({signals.length}건)</h3>
+        {mustFix > 0 && <span className="app-badge app-badge-danger text-xs">먼저 처리할 것 {mustFix}건</span>}
+      </div>
+      <div className="mt-3 flex flex-col gap-2">
+        {sorted.map((s, i) => (
+          <div key={`${s.title}-${i}`} className="flex gap-2">
+            <span className={`app-badge ${badgeFor(s.level)} h-fit shrink-0 text-[11px]`}>{s.level}</span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#171310] dark:text-[#f2ede2]">{s.title}</p>
+              <p className="text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">{s.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 기존 가맹점 분포에서의 위치 (2026-09-13 신설)
+ *
+ * 예상매출을 숫자 하나로만 보여주면 "5,800만원"이 좋은 건지 나쁜 건지 알 수가 없다. 기존
+ * 가맹점의 **실제** 매출은 이미 이 화면까지 로드돼 있는데(모형 학습용) 화면에서는 버리고 있었다.
+ * 새로 읽는 것 없이 분포에서의 자리만 보여준다.
+ *
+ * 비교군은 **모형이 학습에 쓰는 기준과 같게** 맞춘다 — 블랙라벨·산식학습 제외 아님·실제매출 있음.
+ * 기준이 다르면 "38곳 검증"이라고 적힌 정확도 수치와 모수가 어긋나 혼란만 준다.
+ */
+function PeerPositionNote({ stores, result, expectedPcCount }: { stores: ExistingStore[]; result: EvaluationResult; expectedPcCount: number | null }) {
+  const forecast = result.v62Final;
+  const peers = stores.filter(
+    (s) => s.brandType === "블랙라벨" && !s.excludedFromModel && s.actualMonthlyRevenueAvg != null && s.actualMonthlyRevenueAvg > 0,
+  );
+  if (forecast == null || peers.length < 5) return null; // 표본이 너무 적으면 순위가 의미 없다
+
+  const revenues = peers.map((s) => s.actualMonthlyRevenueAvg as number).sort((a, b) => b - a);
+  // 이 예측값보다 실제로 더 잘 버는 매장이 몇 곳인가 → 그 다음 자리가 이 후보지의 순위다.
+  const rank = revenues.filter((r) => r > forecast).length + 1;
+  const median = revenues[Math.floor(revenues.length / 2)];
+
+  // 규모가 비슷한 매장만 따로 본다 — 대수가 다르면 매출 차이의 상당 부분이 그냥 규모 차이다.
+  const sameSize = expectedPcCount != null
+    ? peers.filter((s) => s.pcCount != null && Math.abs((s.pcCount as number) - expectedPcCount) <= 15)
+    : [];
+  const sameSizeAvg = sameSize.length > 0
+    ? sameSize.reduce((sum, s) => sum + (s.actualMonthlyRevenueAvg as number), 0) / sameSize.length
+    : null;
+
+  return (
+    <div className="app-card-sm mt-2 rounded-xl px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+      <b className="text-[#171310] dark:text-[#f2ede2]">기존 가맹점과 견줘보면</b> — 실제로 영업 중인{" "}
+      {peers.length}곳의 매출과 나란히 놓으면 이 예측값은{" "}
+      <b className="text-[#171310] dark:text-[#f2ede2]">{peers.length}곳 중 {rank}번째</b> 수준입니다
+      (기존점 중앙값 {formatManwonRough(median)}).
+      {sameSizeAvg != null && (
+        <>
+          <br />
+          비슷한 규모({expectedPcCount}대 ±15대) {sameSize.length}곳의 실제 평균은{" "}
+          <b className="text-[#171310] dark:text-[#f2ede2]">{formatManwonRough(sameSizeAvg)}</b>입니다
+          {forecast > sameSizeAvg ? " — 이 후보지는 그보다 높게 예측됐습니다." : forecast < sameSizeAvg ? " — 이 후보지는 그보다 낮게 예측됐습니다." : "."}
+        </>
+      )}
+      <br />
+      <span className="text-[var(--sl-ink-soft)]">
+        기존점은 실제 매출, 이 후보지는 예측값이라 성격이 다릅니다. 순위는 대략의 눈대중으로만 보세요.
+      </span>
     </div>
   );
 }
@@ -381,6 +471,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 사용자가 반드시 직접 입력하게 한다.
   const [newStoreCode, setNewStoreCode] = useState("");
   const [existingStoreCodes, setExistingStoreCodes] = useState<Set<string>>(new Set());
+  // 2026-09-13 — 예상매출 숫자 하나만으로는 "이게 좋은 건지" 알 수 없다는 문제. 기존 가맹점
+  // 실제 매출은 이미 여기까지 로드돼 있는데(학습용) 화면에서 버리고 있었다. 분포에서의 위치를
+  // 보여주려고 보관한다 — 새로 읽는 건 없다.
+  const [peerStores, setPeerStores] = useState<ExistingStore[]>([]);
   // 검증화면이 남겨둔 모형 실측 정확도 요약 1건. 없으면(아직 검증화면을 안 열었으면) null이고
   // 화면에는 안내만 뜬다. 읽기 1건이라 후보지 화면 비용에 사실상 영향이 없다.
   const [accuracy, setAccuracy] = useState<ModelAccuracySummary | null>(null);
@@ -519,6 +613,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (sequence !== runSequence.current) return;
       setUsedDefaultSettings(modelSettingsDoc == null);
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
+      setPeerStores(existingStores);
 
       const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales });
       // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
@@ -573,6 +668,16 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 2026-08-25). 다우오피스 자체에 자동 기입하지 않는다 — 사람이 검토 후 복사해서 직접 붙여넣는다.
   async function handleGenerateReport() {
     if (!result || !candidateForReport) return;
+    // 화면에 띄우는 체크리스트와 같은 규칙으로 신호를 모으되, 문서에 쓸 만한 것만 걸러 넘긴다.
+    const reportRiskNotes = collectReviewSignals({
+      result,
+      candidate: candidateForReport,
+      competitors: competitorsForReport,
+      locationEvaluation: locationForReport,
+      usedDefaultSettings,
+    })
+      .filter((s) => s.forReport)
+      .map((s) => `${s.title} (${s.detail})`);
     setReportLoading(true);
     setReportError(null);
     try {
@@ -622,6 +727,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           // "상품매출 비율 50% 기준 약 29%의 가동률" 문장의 그 50%. v62ImpliedUtilization이 이
           // 비율을 전제로 역산된 값이라 함께 넘겨야 문장이 맞는다.
           productRatio: settingsUsed?.measuredForecastProductRatio ?? null,
+          // 2026-09-13 — 규칙이 찾아낸 리스크 중 **문서에 쓸 만한 것만** 넘긴다(forReport). 내부
+          // 확인용 신호(운영설정 누락·좌표 없음 등)는 결재 문서에 들어갈 내용이 아니다.
+          riskNotes: reportRiskNotes,
           result,
         }),
       });
@@ -668,6 +776,18 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
   // 점포평가 등급 — 계산으로 확정한다(AI에게 맡기지 않는 이유는 아래 초안 섹션 주석 참고).
   const reportGrade = storeEvaluationGrade(result);
+
+  // 결재 전 확인 신호 — 규칙으로만 모은다(reviewSignals.ts). 후보지 값이 아직 로드되지 않았으면
+  // 입력 기반 신호는 건너뛰고 계산 결과 기반 신호만 나온다.
+  const reviewSignals = candidateForReport
+    ? collectReviewSignals({
+        result,
+        candidate: candidateForReport,
+        competitors: competitorsForReport,
+        locationEvaluation: locationForReport,
+        usedDefaultSettings,
+      })
+    : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -772,6 +892,11 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         [계산 상태]는 아직 입력·계산이 덜 끝났다는 뜻이고, [사업 판정]이 떠야 실제 출점 판단에 참고할 수 있는 결과입니다.
       </p>
 
+      {/* 2026-09-13 — 결재 전 체크리스트. 경고가 화면 곳곳에 흩어져 있어(운영설정은 맨 위, 가동률은
+          판정 앞, 상한은 매출 카드 안) 빠뜨리기 쉬웠다. 규칙으로 신호를 모아 한 자리에 세운다 —
+          여기서 새로운 판단을 하지는 않는다(reviewSignals.ts 주석 참고). */}
+      <ReviewSignalList signals={reviewSignals} />
+
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className={sectionTitleClass}>매출 예측 (V62)</h3>
@@ -808,6 +933,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             맞는지 알 수 없었다. 검증화면이 남겨둔 요약 1건을 읽어 함께 보여준다(계산을 다시
             돌리지 않으므로 Firestore 읽기는 1건뿐이다). 요약이 아직 없으면 안내만 띄운다. */}
         <ModelAccuracyNote accuracy={accuracy} v62Final={result.v62Final} />
+        <PeerPositionNote stores={peerStores} result={result} expectedPcCount={candidateForReport?.expectedPcCount ?? result.expectedPcCount} />
         {result.revenueBreakdown && <p className="mt-2 text-sm leading-6">
           PC {formatWon(result.revenueBreakdown.pcRevenue)} + 상품(먹거리) {formatWon(result.revenueBreakdown.productRevenue)}
           {result.revenueBreakdown.monthlyRevenue > 0 && <>

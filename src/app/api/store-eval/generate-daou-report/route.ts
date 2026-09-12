@@ -21,6 +21,7 @@ type GenerateDaouReportBody = {
   // 옛 화면이 안 보내도 동작하도록 선택값으로 둔다.
   locationEvaluation?: DaouReportContextLocation | null;
   productRatio?: number | null;
+  riskNotes?: string[];
   result?: EvaluationResult;
 };
 
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
     competitors: body.competitors ?? [],
     locationEvaluation: body.locationEvaluation ?? null,
     productRatio: body.productRatio ?? null,
+    riskNotes: body.riskNotes ?? [],
     result: body.result,
   });
 

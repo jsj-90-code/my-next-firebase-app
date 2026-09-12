@@ -63,6 +63,11 @@ export type DaouReportContextInput = {
   // 상품매출비율(기본 0.5) — 실제 문서가 "상품매출 비율 50% 기준 약 29%의 가동률"이라고 쓸 때의
   // 그 50%다. v62ImpliedUtilization이 이 비율을 전제로 역산된 값이라 함께 넘겨야 문장이 맞는다.
   productRatio?: number | null;
+  // 2026-09-13 — 결재 전 확인 신호 중 **문서에 쓸 만한 것만**(forReport) 걸러서 넘긴다.
+  // 실제 평가기록은 "다수의 경쟁점과 수요를 나눠야 하며", "요금 인하 등 적극적인 공동 대응이
+  // 발생할 가능성이 있음"처럼 리스크를 직접 짚는다. 그 재료가 그동안 없었다.
+  // ⚠️ 신호는 규칙(reviewSignals.ts)이 찾는다 — AI가 리스크를 지어내게 두지 않는다.
+  riskNotes?: string[];
 };
 
 // 2026-08-25 — 경쟁력격차(computeCompetitivenessGap)는 자사점수÷경쟁점평균점수 "비율"이라
@@ -136,6 +141,7 @@ export function buildDaouReportContext({
   locationEvaluation,
   result,
   productRatio,
+  riskNotes,
 }: DaouReportContextInput): string {
   const lines: string[] = [];
 
@@ -312,6 +318,13 @@ export function buildDaouReportContext({
   }
 
   lines.push(`[판정] 입력완성도 ${result.completionStatus ?? "-"}, 최종운영판정 ${result.finalJudgement ?? "-"}`);
+
+  // 2026-09-13 — 규칙이 찾아낸 리스크 신호. 실제 평가기록이 "다수의 경쟁점과 수요를 나눠야 하며",
+  // "요금 인하 등 공동 대응 가능성"처럼 리스크를 직접 짚는데 그 재료가 없었다. 지어내라는 게
+  // 아니라 **여기 적힌 것만** 쓰라는 뜻으로 넘긴다.
+  if (riskNotes && riskNotes.length > 0) {
+    lines.push(`[확인된 리스크] ${riskNotes.join(" / ")} — 이 항목들은 규칙으로 확인된 사실이므로 [경쟁]이나 [종합 의견]에 자연스럽게 녹여 쓸 것(없는 리스크를 새로 지어내지는 말 것).`);
+  }
 
   return lines.join("\n");
 }
