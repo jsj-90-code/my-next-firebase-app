@@ -2181,8 +2181,14 @@ export function runLeaveOneOutValidation(
 // V61(인구·이용률 기반)과는 독립적인 두 번째 예측 경로다 — 서로 대체하지 않고 나란히 보여준다.
 // ---------------------------------------------------------------------------
 
-/** normalizeRate_: 1보다 크면 %로 보고 100으로 나눈다 (원본 스프레드시트와 동일 관례). */
-function normalizePercentLike(v: number): number {
+/**
+ * normalizeRate_: 1보다 크면 %로 보고 100으로 나눈다 (원본 스프레드시트와 동일 관례).
+ *
+ * 2026-09-13 export로 바꿨다 — 화면·보고서에서 `pingbotUtilization`을 **정규화 없이** 그대로
+ * 퍼센트 포맷에 넣는 버그가 있었다(실데이터는 54건 전부 5.5~52.1처럼 % 표기라 "1370%"가 됐다).
+ * 같은 규칙을 두 벌 쓰면 또 어긋나므로 이 함수 하나만 쓰게 한다.
+ */
+export function normalizePercentLike(v: number): number {
   return v > 1 ? v / 100 : v;
 }
 

@@ -16,6 +16,7 @@
 //   - 선투자 프로모션 기준매출 → 실제 문서의 네 번째 섹션
 
 import { formatManwon, formatManwonRough, formatNumber, formatPercent, formatScore } from "./format";
+import { normalizePercentLike } from "./calc";
 import type { CandidateInput, Competitor, EvaluationResult, LocationEvaluation } from "./types";
 
 export type DaouReportContextCandidate = Pick<
@@ -312,7 +313,10 @@ export function buildDaouReportContext({
         measuredCompetitors
           .map(
             (c) =>
-              `${c.name || "(이름 없음)"}${c.totalPcCount != null ? ` ${formatNumber(c.totalPcCount)}대` : ""} 가동률 ${formatPercent(c.pingbotUtilization)}`,
+              // ⚠️ 핑봇 가동률은 시트 관례상 "30"처럼 % 표기로 들어온다(실데이터 54건 전부 그렇다).
+              // normalizePercentLike를 거치지 않으면 "3000%"가 찍힌다 — calc.ts가 계산에서 쓰는
+              // 것과 같은 함수를 쓴다(규칙을 두 벌 만들면 또 어긋난다).
+              `${c.name || "(이름 없음)"}${c.totalPcCount != null ? ` ${formatNumber(c.totalPcCount)}대` : ""} 가동률 ${formatPercent(normalizePercentLike(c.pingbotUtilization as number))}`,
           )
           .join(", ") +
         ` — 핑봇으로 직접 측정한 실측값(우리 예측이 아님). 상권에 실제 이용수요가 얼마나 있는지의 근거로 쓸 수 있음.`,
