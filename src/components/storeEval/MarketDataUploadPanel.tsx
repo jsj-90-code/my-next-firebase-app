@@ -270,9 +270,9 @@ export function MarketDataUploadPanel({
       )}
 
       {busy && <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">파일을 읽는 중...</p>}
-      {error && <p className="app-badge app-badge-warn mt-2 w-full justify-start py-1 text-xs">{error}</p>}
+      {error && <p className="app-notice app-badge-warn mt-2 w-full justify-start py-1 text-xs">{error}</p>}
       {applyMessage && (
-        <p className="app-badge app-badge-ok mt-2 w-full justify-start py-1 text-xs">{applyMessage}</p>
+        <p className="app-notice app-badge-ok mt-2 w-full justify-start py-1 text-xs">{applyMessage}</p>
       )}
       {fileInfo && <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">업로드 파일: {fileInfo.name}</p>}
 

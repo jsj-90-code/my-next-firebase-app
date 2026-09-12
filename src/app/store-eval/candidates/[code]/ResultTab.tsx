@@ -248,7 +248,7 @@ function JudgedRevenuePanel({
           <span className="text-xs text-[var(--sl-ink-soft)]">아직 적힌 판단이 없습니다</span>
         )}
       </div>
-      {error && <p className="app-badge app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{error}</p>}
+      {error && <p className="app-notice app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{error}</p>}
     </section>
   );
 }
@@ -652,7 +652,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   if (error) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
         <button
           type="button"
           onClick={handleRecalculate}
@@ -695,7 +695,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       </div>
 
       {usedDefaultSettings && (
-        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+        <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm">
           운영설정이 저장돼 있지 않아 <strong>기본 계수</strong>로 계산했습니다. 아래 예상매출은 운영 기준값이
           아닙니다 — [운영 설정] 화면에서 저장한 뒤 다시 확인하세요.
         </p>
@@ -749,7 +749,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         // 1.2배부터 짚는다. 경쟁점이 약하면 우리가 더 높은 게 정상이라 작은 차이는 넘긴다.
         if (ours < rivals * 1.2) return null;
         return (
-          <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm leading-6">
+          <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm leading-6">
             이 상권 경쟁점은 실측 가동률이 <strong>{formatPercent(rivals)}</strong>인데, 우리 예상은{" "}
             <strong>{formatPercent(ours)}</strong>입니다({(ours / rivals).toFixed(2)}배).{" "}
             <strong>우리가 들어가면 경쟁이 하나 늘어나는데 기존 경쟁점보다 더 높게 차는 셈</strong>이라,
@@ -782,7 +782,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           </span>
         </div>
         {result.v61IsFallback && (
-          <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
+          <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
             {result.modelVersion.endsWith("-usage-v1")
               ? "PC·먹거리 학습자료 또는 후보지 필수 입력이 부족해 매출을 계산하지 못했습니다. 요금·입지평가·기존점 월별 매출을 확인해주세요."
               : `학습표본이 최소 기준(${settingsUsed.v61Training.minSampleCount}곳)에 못 미쳐 임시 폴백 회귀식을 썼습니다.`}
@@ -817,13 +817,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         </p>}
         <PriceScenarioPanel baselines={[{id:candidateCode,label:candidateForReport?.name ?? candidateCode,revenue:result.v62Final,hourlyRate:result.hourlyRate,pcRevenue:result.revenueBreakdown?.pcRevenue,productRevenue:result.revenueBreakdown?.productRevenue}]} productRatio={settingsUsed.measuredForecastProductRatio} />
         {result.capacityCapped && (
-          <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
+          <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
             가동률 물리적 상한({formatPercent(settingsUsed.v62MaxUtilizationRate)})에 걸려 예측값을 조정했습니다. 원래 예측은{" "}
             {formatWon(result.v62FinalBeforeCap)}였습니다. PC 이용시간을 좌석대수 × 720시간 × 설정 가동률 이내로 제한합니다.
           </p>
         )}
         {result.competitorOverflowRevenueBonus > 0 && (
-          <p className="app-badge mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
+          <p className="app-notice mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
             경쟁점이 자기 물리적 상한을 넘겨 못 받는 수요 일부가 자사로 재배분됐습니다 (+
             {formatWon(result.competitorOverflowRevenueBonus)}, 고객 1명 월평균 방문 {settingsUsed.customerVisitsPerMonth}회·1회
             {settingsUsed.customerSessionHours}시간 기준).
@@ -888,7 +888,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             가동률이 검토기준을 넘는 게 흔한 정상 상태이지, "재검토가 필요한 문제"가 아니기
             때문이다(사용자 확인, ReportCard.tsx 커밋 12c8896/이후 배지 제거 참고). 여기 ResultTab도
             같은 이유로 경고성 문구 대신 담백한 방법론 설명으로 통일한다. */}
-        <p className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
+        <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
           이 값은 V61/V62처럼 기존 가맹점 실제매출로 검증된 적이 없는 별도 계산입니다(경쟁점 실가동좌석을 우리 매장 좌석점유로
           환산하는 방식). 출점 판단은 위 &ldquo;V62 최종예상월매출&rdquo;을 기준으로 하고, 이 값은 참고로만 봐주세요.
           {result.measuredForecastNeedsReview &&
@@ -981,7 +981,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         </div>
 
         {reportError && (
-          <p className="app-badge app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{reportError}</p>
+          <p className="app-notice app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{reportError}</p>
         )}
 
         {reportDraft && (
@@ -1072,7 +1072,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             {cardExporting ? "저장 중..." : "PNG로 저장"}
           </button>
         </div>
-        {cardError && <p className="app-badge app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{cardError}</p>}
+        {cardError && <p className="app-notice app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{cardError}</p>}
         <div className="mt-4 overflow-x-auto">
           <div ref={cardRef} className="inline-block">
             <ReportCard
@@ -1082,9 +1082,13 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
                 address: candidateForReport?.address ?? result.address,
                 expectedPcCount: candidateForReport?.expectedPcCount ?? result.expectedPcCount,
                 hourlyRate: candidateForReport?.hourlyRate ?? result.hourlyRate,
+                judgedRevenue: candidateForReport?.judgedRevenue ?? null,
+                judgedReason: candidateForReport?.judgedReason ?? null,
               }}
               competitors={competitorsForReport}
               summarySection={reportDraft?.summarySection}
+              accuracy={accuracy}
+              productRatio={settingsUsed.measuredForecastProductRatio}
             />
           </div>
         </div>

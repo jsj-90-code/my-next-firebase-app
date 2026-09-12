@@ -82,7 +82,7 @@ function ExistingStoreDetail({ code }: { code: string }) {
   if (error) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
         <Link href="/store-eval/existing-stores" className="w-fit text-sm text-[var(--sl-ink-soft)] underline">
           목록으로 돌아가기
         </Link>

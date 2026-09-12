@@ -161,7 +161,7 @@ function Section({
       <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h2>
       {description && <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">{description}</p>}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">{children}</div>
-      {warning && <p className="app-badge app-badge-warn mt-3 w-full justify-start py-2 text-xs">⚠ {warning}</p>}
+      {warning && <p className="app-notice app-badge-warn mt-3 w-full justify-start py-2 text-xs">⚠ {warning}</p>}
     </section>
   );
 }
@@ -299,7 +299,7 @@ export default function StoreEvalSettingsPage() {
 
   if (loadError) {
     return (
-      <div className="app-badge app-badge-danger w-full justify-start rounded-2xl p-6 text-sm">
+      <div className="app-notice app-badge-danger w-full justify-start rounded-2xl p-6 text-sm">
         설정을 불러오지 못했습니다: {loadError}
       </div>
     );
@@ -317,13 +317,13 @@ export default function StoreEvalSettingsPage() {
       </div>
 
       {usingDefault && (
-        <p className="app-badge app-badge-warn w-full justify-start py-3 text-sm">
+        <p className="app-notice app-badge-warn w-full justify-start py-3 text-sm">
           아직 저장된 설정이 없습니다 - 기본값을 보여줍니다.
         </p>
       )}
 
       {!isAdmin && (
-        <p className="app-badge app-badge-neutral w-full justify-start py-3 text-sm">
+        <p className="app-notice app-badge-neutral w-full justify-start py-3 text-sm">
           운영설정 변경 권한이 없어 조회만 가능합니다. 값 변경이 필요하면 관리자에게 문의하세요.
         </p>
       )}

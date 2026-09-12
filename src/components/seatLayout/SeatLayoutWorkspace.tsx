@@ -2793,7 +2793,7 @@ export function SeatLayoutWorkspace() {
                   직접 입력한 존은 덮어쓰지 않습니다.
                 </p>
                 {seatNumberWarnings.map((w, i) => (
-                  <p key={i} className="app-badge app-badge-warn w-full justify-start py-1.5 text-xs">
+                  <p key={i} className="app-notice app-badge-warn w-full justify-start py-1.5 text-xs">
                     {w}
                   </p>
                 ))}

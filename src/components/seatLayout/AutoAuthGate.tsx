@@ -70,14 +70,14 @@ export function AutoAuthGate({ children }: { children: ReactNode }) {
       </p>
 
       {user && !allowed && (
-        <p className="app-badge app-badge-danger mt-3 w-full justify-center py-2 text-sm">
+        <p className="app-notice app-badge-danger mt-3 w-full justify-center py-2 text-sm">
           {user.email} 계정은 @{ALLOWED_EMAIL_DOMAIN} 도메인이 아니라서 접속할 수 없습니다. 다른 계정으로 다시
           로그인해주세요.
         </p>
       )}
 
       {signInError && (
-        <p className="app-badge app-badge-danger mt-3 w-full justify-center py-2 text-left text-sm leading-6">
+        <p className="app-notice app-badge-danger mt-3 w-full justify-center py-2 text-left text-sm leading-6">
           {signInError}
           <br />
           {signInErrorCode === "auth/unauthorized-domain" ? (

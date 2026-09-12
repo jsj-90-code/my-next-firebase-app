@@ -294,7 +294,7 @@ export function LocationEvalTab({
           자동저장되지 않으니 아래 승인화면에서 검토·수정 후 적용하고, 최종적으로 &ldquo;저장&rdquo;을 눌러주세요.
         </p>
         {aiError && (
-          <p className="app-badge app-badge-danger mt-2 w-full justify-start px-3 py-2 text-xs">{aiError}</p>
+          <p className="app-notice app-badge-danger mt-2 w-full justify-start px-3 py-2 text-xs">{aiError}</p>
         )}
         {aiDraft && (
           <LocationEvalAiReviewPanel
@@ -399,10 +399,10 @@ export function LocationEvalTab({
       </section>
 
       {error && (
-        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
       {message && (
-        <p className="app-badge app-badge-ok w-full justify-start px-3 py-2 text-sm">
+        <p className="app-notice app-badge-ok w-full justify-start px-3 py-2 text-sm">
           {message}
         </p>
       )}

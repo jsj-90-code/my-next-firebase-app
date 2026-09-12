@@ -572,14 +572,14 @@ function CompetitorForm({
       </div>
 
       {settingsLoadFailed && (
-        <p className="app-badge app-badge-warn mt-4 w-full justify-start px-3 py-2 text-sm">
+        <p className="app-notice app-badge-warn mt-4 w-full justify-start px-3 py-2 text-sm">
           운영 설정을 불러오지 못했습니다. 지금 보이는 경쟁력 점수는 <strong>기본 계수</strong>로 계산된 값이라
           실제와 다를 수 있습니다. 새로고침 후 다시 확인하세요.
         </p>
       )}
 
       {errors.length > 0 && (
-        <div className="app-badge app-badge-danger mt-4 w-full justify-start px-3 py-2 text-sm">
+        <div className="app-notice app-badge-danger mt-4 w-full justify-start px-3 py-2 text-sm">
           <ul className="list-inside list-disc">
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
@@ -832,14 +832,14 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
       )}
 
       {settingsLoadFailed && (
-        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+        <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm">
           운영 설정을 불러오지 못했습니다. 목록의 경쟁력 점수가 <strong>기본 계수</strong>로 계산돼 있을 수 있으니
           새로고침 후 다시 확인하세요.
         </p>
       )}
 
       {error && (
-        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
 
       {/* 2026-08-25 추가 — "실제 조사 경쟁점 수"를 조사수준별로 쪼개서 바로 보여준다. 이미
@@ -883,7 +883,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
           산식은 그대로 두기로 했으므로(사용자 확정), 대신 **왜 그런지 여기서 말해준다.**
           숫자를 바꾸지 않는 순수 안내다. */}
       {!loading && weakerThanAverage.length > 0 && (
-        <div className="app-badge app-badge-warn w-full justify-start rounded-xl px-4 py-3 text-xs leading-5">
+        <div className="app-notice app-badge-warn w-full justify-start rounded-xl px-4 py-3 text-xs leading-5">
           <div>
             <strong>평균보다 약한 경쟁점 {weakerThanAverage.length}곳</strong>
             {" — "}

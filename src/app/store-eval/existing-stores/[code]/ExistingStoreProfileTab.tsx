@@ -383,7 +383,7 @@ function ExistingStoreProfileEditor({
       </section>
 
       {loadFailed && (
-        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+        <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm">
           {loadFailed} 새로고침 후 다시 확인하세요.
         </p>
       )}

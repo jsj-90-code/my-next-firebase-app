@@ -288,6 +288,27 @@ body {
   --sl-info-soft: rgba(157, 185, 204, 0.14);
 }
 
+/*
+ * 2026-09-13 신설 — 여러 줄짜리 안내/경고 문단용. 색은 .app-badge-ok/-warn/-danger/-info를
+ * 그대로 덧붙여 쓴다(배경·글자색만 정의하므로 조합된다).
+ *
+ * 왜 필요한가: .app-badge는 `display: inline-flex; gap: .375rem`이라 **문장 조각마다 별개의
+ * flex 아이템이 된다.** 한 덩어리 텍스트면 티가 안 나지만 <strong>이나 {변수} 보간이 섞이면
+ * 조각마다 줄바꿈되고 사이가 벌어진다. 사용자가 울산삼산점 결과 화면에서 발견한 현상이
+ * 이것이다 — "…실측 가동률이 / 16.7% / 인데, 우리 예상은 / 28.8% / 입니다" 처럼 끊겼다.
+ *
+ * 또 하나: 이 파일의 클래스들은 @layer 밖에 있어서 Tailwind 유틸리티(@layer utilities)를
+ * **이긴다.** 그래서 긴 안내문에 붙여둔 `px-3 py-2 text-sm leading-6`이 그동안 전부 무시되고
+ * 배지 크기(0.75rem, padding .125rem)로 눌려 있었다. 여기서는 font-size를 정하지 않아
+ * text-xs/text-sm이 제대로 먹도록 두고, padding만 기존 px-3 py-2와 같은 값으로 확정한다.
+ */
+.app-notice {
+  display: block;
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  line-height: 1.6;
+}
+
 .app-badge {
   display: inline-flex;
   align-items: center;

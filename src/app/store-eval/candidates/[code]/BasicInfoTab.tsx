@@ -483,15 +483,15 @@ function BasicInfoTabForm({
           </span>
         </div>
         {collectError && (
-          <p className="app-badge app-badge-danger mt-2 w-full justify-start px-3 py-2 text-sm">{collectError}</p>
+          <p className="app-notice app-badge-danger mt-2 w-full justify-start px-3 py-2 text-sm">{collectError}</p>
         )}
         {collectMessage && (
-          <p className="app-badge app-badge-ok mt-2 w-full justify-start px-3 py-2 text-sm">
+          <p className="app-notice app-badge-ok mt-2 w-full justify-start px-3 py-2 text-sm">
             {collectMessage}
           </p>
         )}
         {nearbyWarnings.length > 0 && (
-          <div className="app-badge app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs">
+          <div className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs">
             중복 후보지 가능성: {nearbyWarnings.map((w) => `${w.name || w.code}(${w.code})`).join(", ")}
           </div>
         )}
@@ -856,7 +856,7 @@ function BasicInfoTabForm({
       </section>
 
       {errors.length > 0 && (
-        <div className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">
+        <div className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">
           <ul className="list-inside list-disc">
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
@@ -865,7 +865,7 @@ function BasicInfoTabForm({
         </div>
       )}
       {message && (
-        <p className="app-badge app-badge-ok w-full justify-start px-3 py-2 text-sm">
+        <p className="app-notice app-badge-ok w-full justify-start px-3 py-2 text-sm">
           {message}
         </p>
       )}

@@ -1021,7 +1021,7 @@ export default function ValidationPage() {
       </div>
 
       {usedDefaultSettings && (
-        <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">
+        <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm">
           운영설정(모형 계수)이 저장돼 있지 않아 <strong>기본 계수</strong>로 계산했습니다. 아래 적중률은 운영
           기준값이 아니며, 후보지 화면에 넘기는 공식 적중률로도 저장하지 않았습니다 — [운영 설정] 화면에서
           저장한 뒤 다시 열어주세요.

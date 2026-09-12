@@ -200,7 +200,7 @@ export default function StoreEvalBackupPage() {
         />
         {fileName && <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">선택한 파일: {fileName}</p>}
 
-        {restoreError && <p className="app-badge app-badge-danger mt-3 w-full justify-start py-2 text-sm">{restoreError}</p>}
+        {restoreError && <p className="app-notice app-badge-danger mt-3 w-full justify-start py-2 text-sm">{restoreError}</p>}
 
         {stage === "previewing" && <p className="mt-3 text-sm text-[var(--sl-ink-soft)]">파일 확인 중...</p>}
 
@@ -267,7 +267,7 @@ export default function StoreEvalBackupPage() {
         )}
 
         {stage === "done" && restoreResult && (
-          <div className="app-badge app-badge-ok mt-4 w-full flex-col items-start gap-0 rounded-lg px-4 py-3 text-sm">
+          <div className="app-notice app-badge-ok mt-4 w-full flex-col items-start gap-0 rounded-lg px-4 py-3 text-sm">
             <p className="font-semibold">복원이 완료되었습니다.</p>
             <ul className="mt-2 list-inside list-disc text-xs">
               {restoreResult.counts &&

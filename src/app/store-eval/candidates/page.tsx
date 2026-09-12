@@ -185,9 +185,9 @@ export default function CandidateListPage() {
       </div>
 
       {error && (
-        <p className="app-badge app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
-      {warning && <p className="app-badge app-badge-warn w-full justify-start px-3 py-2 text-sm">{warning}</p>}
+      {warning && <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm">{warning}</p>}
 
       {/* 2026-08-25 추가 — 후보지가 늘어나면서 코드/이름/주소로 바로 찾을 방법이 없었다. 서버
           쪽 검색 없이(목록이 크지 않음) 클라이언트에서 이미 불러온 목록을 그대로 필터링한다. */}

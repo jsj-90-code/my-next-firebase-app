@@ -211,7 +211,7 @@ export default function HowItWorksPage() {
         </p>
       </section>
 
-      <div className="app-badge app-badge-warn w-full items-start justify-start gap-2 px-4 py-3 text-left text-xs leading-5">
+      <div className="app-notice app-badge-warn w-full items-start justify-start gap-2 px-4 py-3 text-left text-xs leading-5">
         <span>
           <strong>참고</strong> — 결과 화면에 &ldquo;실측기반 예상월매출&rdquo;이라는 값도 같이 보이는데, 이건 지금까지 설명한
           정식 계산과는 완전히 다른 별도 방법입니다(경쟁매장에 지금 실제로 몇 명이 앉아있는지 조회해서 환산하는 방식). 아직

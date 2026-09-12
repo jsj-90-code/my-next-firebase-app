@@ -200,7 +200,7 @@ export function LocationEvalAiReviewPanel({
       </details>
 
       {applyMessage && (
-        <p className="app-badge app-badge-ok mt-2 w-full justify-start py-1 text-xs">{applyMessage}</p>
+        <p className="app-notice app-badge-ok mt-2 w-full justify-start py-1 text-xs">{applyMessage}</p>
       )}
 
       <div className="mt-3 flex items-center justify-between">
