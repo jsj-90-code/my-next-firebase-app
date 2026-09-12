@@ -63,6 +63,9 @@ v61-analysis-out.txt
 # 로컬 보관 자료를 읽는 1회성 분석 테스트. 일반 실행에서 --exclude '**/_*.test.ts'로 빠지고
 # CI·배포 대상이 아니다(관행: docs/releases의 여러 검토 문서 참고).
 src/**/_*.test.ts
+# 예외: 반복해서 돌리는 측정 하네스·프로브는 PC를 옮겨도 따라가야 한다(force-add 편입).
+!src/lib/storeEval/_liveCheck.test.ts
+!src/lib/storeEval/_driverProbe.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
