@@ -2063,6 +2063,29 @@ export function empiricalFeaturesFor(input: {
   ];
 }
 
+/**
+ * 위 empiricalFeaturesFor가 만든 피처에 1:1로 대응하는 **사람이 읽는 이름** (2026-09-13 신설).
+ *
+ * ⚠️ 반드시 empiricalFeaturesFor **바로 아래**에 두고 **같은 조건식**을 쓴다. 예전에 evaluate.ts가
+ * 라벨 배열을 따로 들고 있다가 실제 피처 구성과 어긋난 채 몇 달간 방치된 적이 있다(2026-09-03에
+ * 발견, evaluate.ts 주석 참고). 라벨이 어긋나면 "왜 이 매출인가" 설명이 통째로 거짓이 되므로,
+ * 두 함수의 길이가 항상 같다는 것을 테스트로 고정해뒀다(calc.test.ts).
+ *
+ * 이름은 **결재 문서에 그대로 나가도 되는 말**로 쓴다 — "IP당수요" 같은 내부 용어를 쓰지 않는다.
+ */
+export function empiricalFeatureLabels(input: Parameters<typeof empiricalFeaturesFor>[0]): string[] {
+  return [
+    "시간당 요금",
+    "공급 대비 수요",
+    "자사 경쟁력",
+    "경쟁력 우위 정도",
+    "배후수요 상권(군부대·산업단지)",
+    ...(isValidVisibilityScore(input.visibilityScore) ? ["접근성·가시성"] : []),
+    ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
+      ? ["경쟁점 평균거리"] : []),
+  ];
+}
+
 /** empiricalFeaturesFor 순서([요금, IP당수요, 경쟁력점수, 경쟁력점수×log(격차), 배후수요더미])에 맞춘 계수 하한선 배열. */
 export function buildMinCoefficients(
   v61Training: ModelSettings["v61Training"],

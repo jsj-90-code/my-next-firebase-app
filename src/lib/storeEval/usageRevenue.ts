@@ -96,6 +96,19 @@ export type UsageRevenueBreakdown = {
   baselineRevenue: number;
   overflowRevenue: number;
   sampleCount: number;
+  /**
+   * 2026-09-13 신설 — "왜 이 매출인가"를 설명할 재료. 이용시간 모형의 기여도 분해다.
+   *
+   * 회귀식이 `log(대당이용시간) = yMean + Σ(z_j × 계수_j)` 꼴이라, 항 하나하나가 곧 "그 요인이
+   * 코호트 평균 대비 이용시간을 몇 배로 만들었는가"다. 이미 예측 과정에서 계산하고 있던 값을
+   * 버리지 않고 실어 올릴 뿐이다 — **새 계산도, 산식 변경도 아니다.**
+   *
+   * `contributions[j]`는 로그 스케일 기여분(z×계수)이다. 화면에서 `exp(v)-1`로 바꾸면 "+12%"처럼
+   * 읽힌다. 합이 0이면 코호트 평균과 같다는 뜻이다.
+   */
+  usageDrivers: { labels: string[]; contributions: number[] } | null;
+  /** 이용시간 모형이 요금 피처 없이 적합됐는지 — 라벨 첫 칸(시간당 요금)을 잘라야 맞는다. */
+  usageDroppedTariff: boolean;
 };
 /** Same elapsed-month window as computeStabilizedPerformance; missing components are not zero sales. */
 export function buildRevenuePartsByStore(stores: {
@@ -326,14 +339,25 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
     return null;
   // `count`는 "무엇 하나당" 학습했는지에 맞춰야 한다 — 이용시간은 PC대수당, 먹거리는 설정에 따라
   // PC대수당 또는 이용시간당이다. 그래서 이용시간을 먼저 구하고 먹거리에 그 값을 넘긴다.
+  // 2026-09-13 — 예전에는 예측값만 꺼내고 explain(z)을 버렸다. "왜 이 매출인가"를 설명하려면
+  // 항별 기여도가 필요해서 z와 계수를 함께 돌려주도록 바꿨다. 반환하는 예측값 계산식은 그대로다.
   const predict = (part: EmpiricalRevenueModel, withTariff: boolean, count: number) => {
     const output = predictEmpiricalRevenue(part, withTariff ? featuresRaw : featuresRaw.slice(1), count, settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
-    return output ? output.explain.ridgeRevenue * settings.v61Training.ridgeWeight + output.explain.baselineRevenue * settings.v61Training.baselineWeight : null;
+    if (!output) return null;
+    return {
+      value: output.explain.ridgeRevenue * settings.v61Training.ridgeWeight + output.explain.baselineRevenue * settings.v61Training.baselineWeight,
+      // 항별 기여도 = 표준화값 × 계수. 로그 스케일이라 화면에서 exp()로 배수/퍼센트로 바꾼다.
+      contributions: output.explain.z.map((zv, j) => zv * part.coefficients[j]),
+      // 요금 피처를 안 쓴 모형은 첫 번째 피처(요금)를 잘라서 적합됐다 — 라벨도 같이 잘라야 맞는다.
+      droppedTariff: !withTariff,
+    };
   };
-  const hours = predict(model.usage, model.usageHasTariffFeature, pcCount);
+  const usageOut = predict(model.usage, model.usageHasTariffFeature, pcCount);
+  const hours = usageOut?.value ?? null;
   if (hours == null || !Number.isFinite(hours) || hours <= 0) return null;
-  const food = predict(model.product, model.productHasTariffFeature,
+  const foodOut = predict(model.product, model.productHasTariffFeature,
     model.productScalesWithHours ? hours : pcCount);
+  const food = foodOut?.value ?? null;
   if (food == null || !Number.isFinite(food) || food < 0) return null;
   const extraFood = food / hours * extraPcHours;
   const uncappedPcHours = hours * inflowFactor + extraPcHours;
@@ -342,7 +366,11 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
   const result = { pcHours, uncappedPcHours, pcRevenue, productRevenue, monthlyRevenue: pcRevenue + productRevenue,
     revenueBeforeCap: Math.round(uncappedPcHours * hourlyRate) + productRevenue, capacityCapped: pcHours < uncappedPcHours,
     baselineRevenue: Math.round(hours * hourlyRate) + Math.round(food),
-    overflowRevenue: Math.round(extraPcHours * hourlyRate) + Math.round(extraFood), sampleCount: model.sampleCount };
+    overflowRevenue: Math.round(extraPcHours * hourlyRate) + Math.round(extraFood), sampleCount: model.sampleCount,
+    // 라벨은 호출부(evaluate.ts)가 붙인다 — 여기서는 피처 구성을 모르기 때문이다. 요금 피처를
+    // 뺀 모형이면 라벨 첫 칸도 잘라내라는 표시를 함께 올린다.
+    usageDrivers: usageOut ? { labels: [], contributions: usageOut.contributions } : null,
+    usageDroppedTariff: usageOut?.droppedTariff ?? false };
   return [result.monthlyRevenue, result.revenueBeforeCap, result.baselineRevenue, result.overflowRevenue].every(Number.isSafeInteger) ? result : null;
 }
 /** Every validation target is excluded from both fitted components. Current tariff is a proxy for historical tariff. */

@@ -109,6 +109,74 @@ function ResultCard({ label, value, emphasis, hint }: { label: string; value: st
   );
 }
 
+/**
+ * 왜 이 매출인가 — 요인별 기여도 (2026-09-13 신설)
+ *
+ * 그동안 화면은 예상매출을 숫자 하나로만 보여줬다. "왜 5,800만원인가"에 답할 수단이 없어서,
+ * 점포팀에 평가 결과를 설명할 때 근거를 댈 수가 없었다.
+ *
+ * 예측식이 `log(대당 이용시간) = 코호트평균 + Σ(표준화값 × 계수)` 꼴이라 **항 하나하나가 곧
+ * "그 요인이 평균 대비 이용시간을 몇 배로 만들었는가"** 다. 이미 예측 과정에서 계산하던 값을
+ * 꺼내 쓸 뿐이라 새 계산도, 산식 변경도 아니다(usageRevenue.ts usageDrivers 주석 참고).
+ *
+ * 표시는 **PC 이용시간 기준**이다. 먹거리는 별도 모형이고 오차가 더 커서(12.6%) 같이 섞지 않는다.
+ */
+function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; contributions: number[] } | null | undefined }) {
+  if (!drivers || drivers.labels.length === 0 || drivers.labels.length !== drivers.contributions.length) return null;
+  // 로그 기여분 → 배수 → 퍼센트. exp(v)-1이 "평균 대비 몇 % 더/덜"이다.
+  const rows = drivers.labels
+    .map((label, i) => ({ label, pct: Math.exp(drivers.contributions[i]) - 1 }))
+    // 영향이 사실상 없는 항(±0.5% 미만)은 숨긴다 — 0.0%짜리 줄이 늘어서면 핵심이 묻힌다.
+    .filter((r) => Math.abs(r.pct) >= 0.005)
+    .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+  if (rows.length === 0) return null;
+  const maxAbs = Math.max(...rows.map((r) => Math.abs(r.pct)));
+
+  return (
+    <details className="mt-3">
+      <summary className="cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)] hover:text-[#171310] dark:hover:text-[#f2ede2]">
+        왜 이 매출인가 — 요인별 영향 보기
+      </summary>
+      <div className="mt-3 flex flex-col gap-2">
+        <p className="text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+          기존 가맹점 <b className="text-[#171310] dark:text-[#f2ede2]">평균적인 매장과 견줬을 때</b>, 이 후보지의 조건이 PC
+          이용시간을 얼마나 끌어올리고 내렸는지입니다. 먹거리는 별도 계산이라 여기 포함하지 않았습니다.
+        </p>
+        {rows.map((r) => {
+          const positive = r.pct > 0;
+          return (
+            <div key={r.label}>
+              <div className="flex items-baseline justify-between text-xs">
+                <span className="text-[#5c5346] dark:text-[#c9bfae]">{r.label}</span>
+                <span className={`font-semibold ${positive ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"}`}>
+                  {positive ? "+" : ""}{formatPercent(r.pct)}
+                </span>
+              </div>
+              {/* 가운데를 0으로 두고 좌우로 뻗는 막대 — 올린 요인과 내린 요인이 한눈에 갈린다. */}
+              <div className="mt-1 flex h-1.5 items-center">
+                <div className="flex h-full w-1/2 justify-end">
+                  {!positive && (
+                    <div className="h-full rounded-l-full bg-[var(--sl-warn)]" style={{ width: `${(Math.abs(r.pct) / maxAbs) * 100}%` }} />
+                  )}
+                </div>
+                <div className="h-full w-px bg-[#171310]/20 dark:bg-white/20" />
+                <div className="flex h-full w-1/2">
+                  {positive && (
+                    <div className="h-full rounded-r-full bg-[var(--sl-ok)]" style={{ width: `${(r.pct / maxAbs) * 100}%` }} />
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <p className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">
+          각 수치는 그 요인 하나만 놓고 본 영향이고, 실제 예측은 이것들이 함께 곱해져 나옵니다. 더하기로 맞아떨어지지 않는 게 정상입니다.
+        </p>
+      </div>
+    </details>
+  );
+}
+
 /** 결재 전 확인할 것 (2026-09-13 신설). 신호 수집은 reviewSignals.ts가 하고 여기서는 표시만 한다. */
 function ReviewSignalList({ signals }: { signals: ReviewSignal[] }) {
   if (signals.length === 0) {
@@ -934,6 +1002,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             돌리지 않으므로 Firestore 읽기는 1건뿐이다). 요약이 아직 없으면 안내만 띄운다. */}
         <ModelAccuracyNote accuracy={accuracy} v62Final={result.v62Final} />
         <PeerPositionNote stores={peerStores} result={result} expectedPcCount={candidateForReport?.expectedPcCount ?? result.expectedPcCount} />
+        <RevenueDriverBreakdown drivers={result.revenueBreakdown?.usageDrivers} />
         {result.revenueBreakdown && <p className="mt-2 text-sm leading-6">
           PC {formatWon(result.revenueBreakdown.pcRevenue)} + 상품(먹거리) {formatWon(result.revenueBreakdown.productRevenue)}
           {result.revenueBreakdown.monthlyRevenue > 0 && <>

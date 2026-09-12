@@ -65,6 +65,7 @@ import {
   describeNotVerifiableReason,
   diagnoseLoocvSensitivity,
   empiricalFeaturesFor,
+  empiricalFeatureLabels,
   fitEmpiricalRevenueModel,
   fitNonnegativeRidgeRegression,
   getV62Rate,
@@ -2652,3 +2653,43 @@ describe("buildParityComparisonRows (요청사항 — sheetParity vs loocvValida
   });
 });
 
+
+// 2026-09-13 — "왜 이 매출인가" 요인별 기여도 화면이 이 라벨을 그대로 쓴다. 라벨과 피처가 어긋나면
+// 설명이 통째로 거짓이 된다("경쟁력 우위 정도 +12%"라고 적어놓고 실제로는 요금 항인 식). 실제로
+// evaluate.ts가 라벨 배열을 따로 들고 있다가 몇 달간 어긋난 적이 있어(2026-09-03 발견) 그 사고를
+// 구조적으로 막는다 — 두 함수는 같은 입력에 대해 항상 같은 길이를 내야 한다.
+describe("empiricalFeatureLabels — 피처와 라벨이 어긋나지 않는다", () => {
+  const base = {
+    hourlyRate: 1400,
+    marketDemand: 4000,
+    competitorIp: 300,
+    pcCount: 100,
+    competitivenessScore: 4.1,
+    competitivenessGap: 1.3,
+  };
+
+  it("기본 구성에서 길이가 같다", () => {
+    expect(empiricalFeatureLabels(base)).toHaveLength(empiricalFeaturesFor(base).length);
+  });
+
+  it("접근가시성이 붙어도 길이가 같다", () => {
+    const withVisibility = { ...base, visibilityScore: 4 };
+    expect(empiricalFeatureLabels(withVisibility)).toHaveLength(empiricalFeaturesFor(withVisibility).length);
+    // 가시성이 유효하지 않으면 양쪽 다 안 붙는다.
+    const invalid = { ...base, visibilityScore: null };
+    expect(empiricalFeatureLabels(invalid)).toHaveLength(empiricalFeaturesFor(invalid).length);
+  });
+
+  it("거리 피처가 붙어도 길이가 같다", () => {
+    const withDistance = { ...base, visibilityScore: 3, competitorDistanceRatio: 0.6 };
+    expect(empiricalFeatureLabels(withDistance)).toHaveLength(empiricalFeaturesFor(withDistance).length);
+  });
+
+  it("라벨에 내부 용어를 쓰지 않는다", () => {
+    // 이 이름은 평가자 화면에 그대로 노출된다 — "IP당수요" 같은 내부 지표명이 새면 안 된다.
+    const labels = empiricalFeatureLabels({ ...base, visibilityScore: 4 }).join(" ");
+    for (const banned of ["IP", "V62", "V61", "더미", "log"]) {
+      expect(labels).not.toContain(banned);
+    }
+  });
+});

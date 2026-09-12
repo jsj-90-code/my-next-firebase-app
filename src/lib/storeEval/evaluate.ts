@@ -44,6 +44,7 @@ import {
   computeV61Fallback,
   computeV62Final,
   empiricalFeaturesFor,
+  empiricalFeatureLabels,
   fitEmpiricalRevenueModel,
   isBackingDemandMarket,
   getV62Rate,
@@ -165,9 +166,13 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const useUsageModel = ctx.trainingSales !== undefined;
   const usageTraining = useUsageModel ? attachRevenueParts(trainingStores, buildRevenuePartsByStore(refreshedStores, ctx.trainingSales!)) : [];
   const usageModel = useUsageModel ? fitUsageRevenueModel(usageTraining, settings) : null;
-  const usageFeatures = empiricalFeaturesFor({hourlyRate:c.hourlyRate??0,marketDemand:marketDemand??0,competitorIp,
+  // 2026-09-13 — 피처 입력을 변수로 뽑았다. 같은 객체로 라벨도 만들어야 값과 이름이 어긋나지
+  // 않는다(empiricalFeatureLabels 주석 — 예전에 라벨 배열이 따로 놀다가 몇 달간 어긋난 적 있다).
+  const usageFeatureInput = {hourlyRate:c.hourlyRate??0,marketDemand:marketDemand??0,competitorIp,
     pcCount:c.expectedPcCount??0,competitivenessScore:ownCompetitivenessScore??0,competitivenessGap,
-    specialDemandType:loc?.specialDemandType,visibilityScore:useVisibility?loc?.visibilityScore:undefined});
+    specialDemandType:loc?.specialDemandType,visibilityScore:useVisibility?loc?.visibilityScore:undefined};
+  const usageFeatures = empiricalFeaturesFor(usageFeatureInput);
+  const usageDriverLabels = empiricalFeatureLabels(usageFeatureInput);
   const usagePrediction = usageModel && c.hourlyRate != null && c.expectedPcCount
     && marketDemand != null && ownCompetitivenessScore != null
     ? predictUsageRevenue(usageModel,usageFeatures,c.expectedPcCount,c.hourlyRate,settings) : null;
@@ -373,7 +378,12 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     v61IsFallback,
     v61ModelLabel: useUsageModel ? (usageFinal?"PC 이용량·먹거리 분리 학습":"PC 이용량 학습자료 부족") : v61IsFallback ? "임시 근사치·검증 전" : useVisibility ? "V61 가시성 학습모형·외부유입 정합" : "V61 실측 학습모형",
     v61TrainingSampleCount: useUsageModel ? usageTraining.length : trainingStores.length,
-    ...(usageFinal?{revenueBreakdown:usageFinal}:{}),
+    ...(usageFinal?{revenueBreakdown:{...usageFinal,
+      // 라벨을 여기서 붙인다 — 요금 피처 없이 적합된 모형이면 첫 칸(시간당 요금)을 잘라야 맞는다.
+      usageDrivers: usageFinal.usageDrivers
+        ? {labels: usageFinal.usageDroppedTariff ? usageDriverLabels.slice(1) : usageDriverLabels,
+           contributions: usageFinal.usageDrivers.contributions}
+        : null}}:{}),
     v61ValidationMeanAbsError: null, // 후보지 평가 화면에서는 채우지 않는다 - 검증 화면(validation/page.tsx)에서 별도 계산
     v61TrainedModelExplain,
     locationScore,
