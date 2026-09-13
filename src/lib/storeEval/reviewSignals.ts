@@ -13,6 +13,32 @@
 
 import type { CandidateInput, Competitor, EvaluationResult, LocationEvaluation } from "./types";
 
+/**
+ * 우리 예상 가동률이 경쟁점 실측보다 이 배수 이상 높으면 짚는다. 경쟁점이 약하면 우리가 더
+ * 높은 게 정상이라 작은 차이는 넘긴다(2026-09-11 호구포역 건에서 정한 값).
+ */
+export const RIVAL_UTILIZATION_WARN_RATIO = 1.2;
+
+/**
+ * 우리 예상 가동률과 경쟁점 실측 가동률을 견준다 (2026-09-13 통합).
+ *
+ * 같은 계산이 화면 경고(ResultTab)와 확인 신호(이 파일) 두 곳에 따로 있었다. 규칙을 두 벌
+ * 두면 한쪽만 고쳐져 어긋난다 — 오늘 `normalizePercentLike`에서 같은 실수를 겪었다. 하나로 묶는다.
+ *
+ * 경쟁점 평균 가동률은 이미 계산된 두 값(실가동좌석 ÷ 경쟁IP)으로 낸다. 새 산식이 아니다.
+ */
+export function compareOwnVsRivalUtilization(
+  result: Pick<EvaluationResult, "v62ImpliedUtilization" | "competitorOccupiedSeats" | "competitorIp">,
+): { ours: number; rivals: number; ratio: number } | null {
+  const ours = result.v62ImpliedUtilization;
+  const rivalSeats = result.competitorOccupiedSeats;
+  const rivalIp = result.competitorIp;
+  if (ours == null || rivalSeats == null || !rivalIp || rivalIp <= 0) return null;
+  const rivals = rivalSeats / rivalIp;
+  if (rivals <= 0) return null;
+  return { ours, rivals, ratio: ours / rivals };
+}
+
 export type ReviewSignalLevel = "확인" | "주의" | "정보";
 
 export type ReviewSignal = {
@@ -172,19 +198,15 @@ export function collectReviewSignals({
   }
 
   // ---- 예측 가동률이 경쟁점 실측보다 크게 높은 경우 ----
-  // (화면에 이미 같은 경고가 있지만, 결재 전 체크리스트에도 모아둔다)
-  const rivalSeats = result.competitorOccupiedSeats;
-  const rivalIp = result.competitorIp;
-  if (result.v62ImpliedUtilization != null && rivalSeats != null && rivalIp && rivalIp > 0) {
-    const rivalUtil = rivalSeats / rivalIp;
-    if (rivalUtil > 0 && result.v62ImpliedUtilization >= rivalUtil * 1.2) {
-      signals.push({
-        level: "주의",
-        title: "우리 예상 가동률이 경쟁점 실측보다 많이 높습니다",
-        detail: `경쟁점 ${(rivalUtil * 100).toFixed(1)}% vs 우리 예상 ${(result.v62ImpliedUtilization * 100).toFixed(1)}%. 경쟁점 실사값과 자사 계획 대수를 확인해주세요.`,
-        forReport: false,
-      });
-    }
+  // 화면(ResultTab)에도 같은 경고가 뜨는데, 계산은 위 compareOwnVsRivalUtilization 하나만 쓴다.
+  const utilization = compareOwnVsRivalUtilization(result);
+  if (utilization && utilization.ratio >= RIVAL_UTILIZATION_WARN_RATIO) {
+    signals.push({
+      level: "주의",
+      title: "우리 예상 가동률이 경쟁점 실측보다 많이 높습니다",
+      detail: `경쟁점 ${(utilization.rivals * 100).toFixed(1)}% vs 우리 예상 ${(utilization.ours * 100).toFixed(1)}%. 경쟁점 실사값과 자사 계획 대수를 확인해주세요.`,
+      forReport: false,
+    });
   }
 
   return signals;

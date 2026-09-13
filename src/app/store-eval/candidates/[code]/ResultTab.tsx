@@ -31,7 +31,7 @@ import { readJsonOrText } from "@/lib/readJsonOrText";
 import { storeEvaluationGrade } from "@/lib/storeEval/reportContext";
 import { computePeerPosition } from "@/lib/storeEval/peerPosition";
 import { summarizeDrivers } from "@/lib/storeEval/revenueDrivers";
-import { collectReviewSignals, type ReviewSignal } from "@/lib/storeEval/reviewSignals";
+import { collectReviewSignals, compareOwnVsRivalUtilization, RIVAL_UTILIZATION_WARN_RATIO, type ReviewSignal } from "@/lib/storeEval/reviewSignals";
 import { sectionClass, sectionTitleClass, NumberField, TextAreaField } from "./formFields";
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
@@ -914,18 +914,16 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         // 2026-09-11 사용자 지적(호구포역) — 경쟁이 하나 늘어나는데 기존 사업자보다 가동률이
         // 크게 높게 나오면 확인이 필요하다. 경쟁점 평균 가동률은 이미 계산된 두 값으로 낸다
         // (실가동좌석 ÷ 경쟁IP). 산식은 건드리지 않고 **짚어주기만** 한다.
-        const ours = result.v62ImpliedUtilization;
-        const rivalSeats = result.competitorOccupiedSeats;
-        const rivalIp = result.competitorIp;
-        if (ours == null || rivalSeats == null || !rivalIp || rivalIp <= 0) return null;
-        const rivals = rivalSeats / rivalIp;
-        if (rivals <= 0) return null;
-        // 1.2배부터 짚는다. 경쟁점이 약하면 우리가 더 높은 게 정상이라 작은 차이는 넘긴다.
-        if (ours < rivals * 1.2) return null;
+        // 2026-09-13 — 계산을 reviewSignals.ts로 통합했다. 결재 전 체크리스트에도 같은 경고가
+        // 뜨는데 규칙이 두 벌이면 한쪽만 고쳐져 어긋난다(오늘 normalizePercentLike에서 같은
+        // 실수를 겪었다). 임계값도 그쪽 상수 하나만 쓴다.
+        const utilization = compareOwnVsRivalUtilization(result);
+        if (!utilization || utilization.ratio < RIVAL_UTILIZATION_WARN_RATIO) return null;
+        const { ours, rivals, ratio } = utilization;
         return (
           <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm leading-6">
             이 상권 경쟁점은 실측 가동률이 <strong>{formatPercent(rivals)}</strong>인데, 우리 예상은{" "}
-            <strong>{formatPercent(ours)}</strong>입니다({(ours / rivals).toFixed(2)}배).{" "}
+            <strong>{formatPercent(ours)}</strong>입니다({ratio.toFixed(2)}배).{" "}
             <strong>우리가 들어가면 경쟁이 하나 늘어나는데 기존 경쟁점보다 더 높게 차는 셈</strong>이라,
             경쟁점 실사값(PC대수·가동률)과 자사 계획 PC대수를 한 번 확인해주세요.
             경쟁점이 실제로 많이 약하면 나올 수 있는 값이라 <strong>틀렸다는 뜻은 아닙니다.</strong>

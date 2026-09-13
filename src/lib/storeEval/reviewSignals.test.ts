@@ -5,7 +5,7 @@
 // 사정이지 점포 평가 내용이 아니다) — 그 경계를 여기서 고정한다.
 
 import { describe, expect, it } from "vitest";
-import { collectReviewSignals, type ReviewSignalInput } from "./reviewSignals";
+import { collectReviewSignals, compareOwnVsRivalUtilization, RIVAL_UTILIZATION_WARN_RATIO, type ReviewSignalInput } from "./reviewSignals";
 import type { Competitor, EvaluationResult, LocationEvaluation } from "./types";
 
 function makeInput(overrides: Partial<ReviewSignalInput> = {}): ReviewSignalInput {
@@ -143,5 +143,43 @@ describe("결재 전 확인 신호", () => {
     // 반면 점포 자체의 조건은 넘어간다.
     expect(forReport.some((t) => t.includes("밀도"))).toBe(true);
     expect(forReport.some((t) => t.includes("7층"))).toBe(true);
+  });
+});
+
+// 2026-09-13 — 같은 계산이 화면 경고와 확인 신호 두 곳에 있던 것을 하나로 합쳤다.
+// 임계값과 경계 동작을 여기서 고정한다(두 곳이 같은 함수를 쓰므로 한 번만 검사하면 된다).
+describe("우리 vs 경쟁점 가동률 비교", () => {
+  const res = (over: Record<string, unknown>) =>
+    ({ v62ImpliedUtilization: 0.4, competitorOccupiedSeats: 30, competitorIp: 100, ...over }) as unknown as EvaluationResult;
+
+  it("경쟁점 평균 가동률은 실가동좌석 ÷ 경쟁IP다", () => {
+    const c = compareOwnVsRivalUtilization(res({}));
+    expect(c?.rivals).toBeCloseTo(0.3, 10);
+    expect(c?.ours).toBeCloseTo(0.4, 10);
+    expect(c?.ratio).toBeCloseTo(0.4 / 0.3, 10);
+  });
+
+  it(`${RIVAL_UTILIZATION_WARN_RATIO}배 경계에서 갈린다`, () => {
+    // 경쟁점 30% 기준 — 우리가 36%면 정확히 1.2배
+    const at = compareOwnVsRivalUtilization(res({ v62ImpliedUtilization: 0.36 }));
+    expect(at!.ratio).toBeGreaterThanOrEqual(RIVAL_UTILIZATION_WARN_RATIO);
+    const below = compareOwnVsRivalUtilization(res({ v62ImpliedUtilization: 0.35 }));
+    expect(below!.ratio).toBeLessThan(RIVAL_UTILIZATION_WARN_RATIO);
+  });
+
+  it("비교할 수 없으면 null (0으로 나누지 않는다)", () => {
+    expect(compareOwnVsRivalUtilization(res({ v62ImpliedUtilization: null }))).toBeNull();
+    expect(compareOwnVsRivalUtilization(res({ competitorOccupiedSeats: null }))).toBeNull();
+    expect(compareOwnVsRivalUtilization(res({ competitorIp: 0 }))).toBeNull();
+    expect(compareOwnVsRivalUtilization(res({ competitorIp: null }))).toBeNull();
+    expect(compareOwnVsRivalUtilization(res({ competitorOccupiedSeats: 0 }))).toBeNull();
+  });
+
+  it("신호 생성이 이 비교와 같은 결과를 낸다", () => {
+    // 경계 아래면 신호가 없고, 위면 있다 — 화면 경고도 같은 함수를 쓰므로 자동으로 일치한다.
+    const below = makeInput({ result: res({ v62ImpliedUtilization: 0.35 }), competitors: [competitor()] });
+    expect(titles(below).some((t) => t.includes("가동률"))).toBe(false);
+    const above = makeInput({ result: res({ v62ImpliedUtilization: 0.4 }), competitors: [competitor()] });
+    expect(titles(above).some((t) => t.includes("가동률"))).toBe(true);
   });
 });
