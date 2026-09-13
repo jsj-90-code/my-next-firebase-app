@@ -952,12 +952,13 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                   <dd className="inline">{formatScore(computeCompetitorScores(c, settings).total)}</dd>
                 </div>
               </dl>
-              <div className="mt-3 flex justify-end gap-2 print:hidden">
+              {/* 모바일에서 26px은 눌러 빗나가기 쉬웠다 — 높이를 키우고 두 버튼 간격도 벌린다(2026-09-13 확인). */}
+              <div className="mt-3 flex justify-end gap-3 print:hidden">
                 <button
                   type="button"
                   data-leaves-editor
                   onClick={() => setEditingId(c.id)}
-                  className="app-btn-outline rounded-md px-2.5 py-1 text-xs"
+                  className="app-btn-outline rounded-md px-3 py-2 text-xs"
                 >
                   수정
                 </button>
@@ -965,7 +966,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                   type="button"
                   disabled={busyId === c.id}
                   onClick={() => handleDelete(c.id)}
-                  className="rounded-md border border-[var(--sl-danger)]/30 px-2.5 py-1 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50"
+                  className="rounded-md border border-[var(--sl-danger)]/30 px-3 py-2 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50"
                 >
                   삭제
                 </button>

@@ -140,34 +140,37 @@ function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; cont
           기존 가맹점 <b className="text-[#171310] dark:text-[#f2ede2]">평균적인 매장과 견줬을 때</b>, 이 후보지의 조건이 PC
           이용시간을 얼마나 끌어올리고 내렸는지입니다. 먹거리는 별도 계산이라 여기 포함하지 않았습니다.
         </p>
-        {rows.map((r) => {
-          const positive = r.pct > 0;
-          return (
-            <div key={r.label}>
-              <div className="flex items-baseline justify-between text-xs">
-                <span className="text-[#5c5346] dark:text-[#c9bfae]">{r.label}</span>
-                <span className={`font-semibold ${positive ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"}`}>
-                  {positive ? "+" : ""}{formatPercent(r.pct)}
-                </span>
-              </div>
-              {/* 가운데를 0으로 두고 좌우로 뻗는 막대 — 올린 요인과 내린 요인이 한눈에 갈린다. */}
-              <div className="mt-1 flex h-1.5 items-center">
-                <div className="flex h-full w-1/2 justify-end">
-                  {!positive && (
-                    <div className="h-full rounded-l-full bg-[var(--sl-warn)]" style={{ width: `${(Math.abs(r.pct) / maxAbs) * 100}%` }} />
-                  )}
+        {/* 0축을 행마다 끊지 않고 한 줄로 관통시킨다 — 끊긴 눈금은 화면에서 축으로 안 읽혔다(2026-09-13 확인). */}
+        <div className="relative flex flex-col gap-2">
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-[#171310]/25 dark:bg-white/25" />
+          {rows.map((r) => {
+            const positive = r.pct > 0;
+            return (
+              <div key={r.label}>
+                <div className="flex items-baseline justify-between text-xs">
+                  <span className="text-[#5c5346] dark:text-[#c9bfae]">{r.label}</span>
+                  <span className={`font-semibold ${positive ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"}`}>
+                    {positive ? "+" : ""}{formatPercent(r.pct)}
+                  </span>
                 </div>
-                {/* 0축. 막대보다 길게 빼야 "어디가 0인지"가 눈에 들어온다(2026-09-13 화면 확인). */}
-                <div className="h-3 w-px bg-[#171310]/30 dark:bg-white/30" />
-                <div className="flex h-full w-1/2">
-                  {positive && (
-                    <div className="h-full rounded-r-full bg-[var(--sl-ok)]" style={{ width: `${(r.pct / maxAbs) * 100}%` }} />
-                  )}
+                {/* 가운데를 0으로 두고 좌우로 뻗는 막대 — 올린 요인과 내린 요인이 한눈에 갈린다. */}
+                <div className="mt-1 flex h-1.5 items-center">
+                  <div className="flex h-full w-1/2 justify-end">
+                    {!positive && (
+                      <div className="h-full rounded-l-full bg-[var(--sl-warn)]" style={{ width: `${(Math.abs(r.pct) / maxAbs) * 100}%` }} />
+                    )}
+                  </div>
+                  <div className="w-px shrink-0" />
+                  <div className="flex h-full w-1/2">
+                    {positive && (
+                      <div className="h-full rounded-r-full bg-[var(--sl-ok)]" style={{ width: `${(r.pct / maxAbs) * 100}%` }} />
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
         <p className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">
           각 수치는 그 요인 하나만 놓고 본 영향이고, 실제 예측은 이것들이 함께 곱해져 나옵니다. 더하기로 맞아떨어지지 않는 게 정상입니다.
         </p>
