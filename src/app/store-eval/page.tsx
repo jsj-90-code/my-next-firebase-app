@@ -6,7 +6,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { exportCandidatesToExcel } from "@/lib/storeEval/exportExcel";
 import { formatDateTime, formatWon } from "@/lib/storeEval/format";
 import {
   getModelSettings,
@@ -68,6 +67,8 @@ export default function StoreEvalDashboardPage() {
   const [results, setResults] = useState<EvaluationResult[]>([]);
   // 후보지코드 → 저장된 결과가 지금 입력과 맞는지. 못 구하면 비어 있고 배지도 안 뜬다.
   const [freshnessByCode, setFreshnessByCode] = useState<Map<string, Freshness>>(new Map());
+  const [freshnessFailed, setFreshnessFailed] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -83,6 +84,8 @@ export default function StoreEvalDashboardPage() {
         if (cancelled) return;
         setCandidates(candidateList);
         setResults(resultList);
+        setFreshnessByCode(new Map());
+        setFreshnessFailed(false);
         // 2026-09-11 — 이 표의 예상매출은 "마지막으로 결과 탭을 연 시점"의 값이다. 그 뒤
         // 경쟁점·운영설정이 바뀌면 옛 숫자가 그대로 떠 있는데 알 방법이 없었다(N009 사례).
         // 이 조회가 실패해도 표는 그대로 보여준다 — 배지만 안 뜬다.
@@ -110,7 +113,7 @@ export default function StoreEvalDashboardPage() {
               ),
             );
           })
-          .catch(() => {});
+          .catch(() => { if (!cancelled) setFreshnessFailed(true); });
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "데이터를 불러오지 못했습니다.");
@@ -152,10 +155,13 @@ export default function StoreEvalDashboardPage() {
 
   async function handleExport() {
     setExporting(true);
+    setExportError(null);
     try {
+      // ExcelJS is only needed after an explicit export request, not on dashboard entry.
+      const { exportCandidatesToExcel } = await import("@/lib/storeEval/exportExcel");
       await exportCandidatesToExcel(candidates, results);
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "엑셀 내보내기에 실패했습니다.");
+      setExportError(err instanceof Error ? err.message : "엑셀 내보내기에 실패했습니다. 다시 시도해주세요.");
     } finally {
       setExporting(false);
     }
@@ -180,6 +186,14 @@ export default function StoreEvalDashboardPage() {
 
   return (
     <div className="flex flex-col gap-8">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">점포평가 현황</h1>
+          <p className="mt-2 text-sm text-[var(--sl-ink-soft)]">후보지의 평가 진행 상황과 마지막으로 저장된 결과를 확인합니다.</p>
+        </div>
+        <Link href="/store-eval/candidates" className="app-btn-outline rounded-lg px-4 py-2 text-sm">후보지 관리 →</Link>
+      </div>
+      {freshnessFailed && <p role="status" className="app-notice app-badge-warn px-4 py-3 text-sm">평가 결과가 최신인지 확인하지 못했습니다. 아래 매출은 마지막 저장값입니다. 후보지 최종결과 탭에서 다시 확인해주세요.</p>}
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <StatCard label="전체 후보지" value={stats.total} tone="neutral" />
         <StatCard label="평가 완료" value={stats.completed} tone="ok" />
@@ -189,7 +203,7 @@ export default function StoreEvalDashboardPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">후보지 목록</h2>
           <button
             type="button"
@@ -200,6 +214,7 @@ export default function StoreEvalDashboardPage() {
             {exporting ? "내보내는 중..." : "엑셀로 내보내기"}
           </button>
         </div>
+        {exportError && <p role="alert" className="app-notice app-badge-danger px-4 py-3 text-sm">{exportError}</p>}
 
         {candidates.length === 0 ? (
           <div className="app-card rounded-2xl p-8 text-center text-sm text-[var(--sl-ink-soft)]">

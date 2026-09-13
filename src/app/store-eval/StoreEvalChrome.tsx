@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { AutoAuthGate } from "@/components/seatLayout/AutoAuthGate";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -19,6 +19,8 @@ const NAV_ITEMS = [
 
 export function StoreEvalChrome({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const currentPage = NAV_ITEMS.find((item) => item.href === "/store-eval" ? pathname === item.href : pathname?.startsWith(item.href))?.label ?? "점포평가";
   return (
     <div className="app-theme flex min-h-screen flex-col">
       <AutoAuthGate>
@@ -39,7 +41,7 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
                 점포평가 <span className="text-[var(--sl-gold-ink)]">V62</span>
               </Link>
             </div>
-            <nav aria-label="점포평가 메뉴" className="app-tabbar order-3 flex w-full gap-1 overflow-x-auto p-1 text-sm lg:order-none lg:w-auto">
+            <nav aria-label="점포평가 메뉴" className="app-tabbar hidden gap-1 p-1 text-sm lg:flex">
               {NAV_ITEMS.map((item) => {
                 const active = item.href === "/store-eval" ? pathname === item.href : pathname?.startsWith(item.href);
                 return (
@@ -55,6 +57,20 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
               })}
             </nav>
             <ThemeToggle className="app-btn-outline ml-auto rounded-full px-3 py-1.5 text-xs" />
+            <div className="order-3 w-full lg:hidden">
+              <button type="button" aria-expanded={menuOpen} aria-controls="store-eval-mobile-menu" onClick={() => setMenuOpen((open) => !open)} className="app-btn-outline flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm">
+                <span className="font-semibold">{currentPage}</span>
+                <span className="text-xs text-[var(--sl-ink-soft)]">{menuOpen ? "메뉴 닫기 −" : "전체 메뉴 +"}</span>
+              </button>
+              <nav id="store-eval-mobile-menu" aria-label="점포평가 모바일 메뉴" hidden={!menuOpen} className="mt-2">
+                <div className="grid grid-cols-2 gap-1 rounded-xl border border-[#171310]/[0.08] p-2 dark:border-white/[0.08]">
+                  {NAV_ITEMS.map((item) => {
+                    const active = item.href === "/store-eval" ? pathname === item.href : pathname?.startsWith(item.href);
+                    return <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)} aria-current={active ? "page" : undefined} className={`app-tab rounded-lg px-3 py-3 text-sm ${active ? "app-tab-active" : ""}`}>{item.label}</Link>;
+                  })}
+                </div>
+              </nav>
+            </div>
           </div>
         </header>
         <main id="store-eval-content" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-6">{children}</main>
