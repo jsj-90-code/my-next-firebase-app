@@ -110,12 +110,14 @@ function ExistingStoreDetail({ code }: { code: string }) {
         )}
       </div>
 
-      <nav className="flex flex-wrap gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08]">
+      <nav aria-label="가맹점 상세 메뉴" className="flex flex-wrap gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08]">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => setTab(tab.key)}
+            aria-current={activeTab === tab.key ? "page" : undefined}
+            data-leaves-editor={activeTab !== tab.key ? "" : undefined}
             className={`px-3 py-2 ${
               activeTab === tab.key
                 ? "border-b-2 border-[#171310] font-medium text-[#171310] dark:border-[#f2ede2] dark:text-[#f2ede2]"

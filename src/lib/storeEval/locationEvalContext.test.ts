@@ -6,6 +6,10 @@ function baseCandidate(overrides: Partial<CandidateInput> = {}): CandidateInput 
   return {
     code: "N999",
     name: "테스트후보지",
+    judgedRevenue: null,
+    judgedReason: null,
+    judgedAt: null,
+    judgedBy: null,
     address: "서울 강남구 테스트로 1",
     lat: 37.5,
     lng: 127.0,

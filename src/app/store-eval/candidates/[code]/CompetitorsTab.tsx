@@ -4,8 +4,10 @@
 // Competitor 타입의 필드 전부를 폼에 반영하고, investigationStatus(신규 워크플로 필드)로
 // "경쟁점 데이터 없음"과 "노후·저경쟁력 미조사"를 구분한다(docs/data-issues.md #3).
 
-import { useEffect, useMemo, useState } from "react";
+import { validateCompetitorInput } from "@/lib/storeEval/inputValidation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUnsavedInputGuard } from "@/components/storeEval/useUnsavedInputGuard";
 import {
   computeCompetitorAppliedPcCount,
   computeCompetitorAvgCompetitiveness,
@@ -166,42 +168,6 @@ function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: 
   };
 }
 
-const NUMERIC_FIELDS: { key: keyof Competitor; label: string }[] = [
-  { key: "distanceM", label: "거리(m)" },
-  { key: "floor", label: "층수" },
-  { key: "totalPcCount", label: "전체대수" },
-  { key: "appliedPcCount", label: "적용대수" },
-  { key: "ratePer1000Won", label: "1000원당분" },
-  { key: "hourlyRateConverted", label: "시간당환산요금" },
-  { key: "visitorCount", label: "이용객수" },
-  { key: "measuredSeatRate", label: "실측착석률" },
-  { key: "pingbotUtilization", label: "핑봇_가동률" },
-  { key: "renovationYear", label: "리뉴얼연도" },
-  { key: "singleSeatCount", label: "1인석 수" },
-  { key: "room1", label: "1인룸 수" },
-  { key: "room2", label: "2인룸 수" },
-  { key: "teamRoom", label: "팀룸 수" },
-  { key: "coupleZone", label: "커플존 좌석수" },
-  { key: "vipZone", label: "VIP존 수" },
-  { key: "friendsZone", label: "프렌즈존 수" },
-  { key: "firstClassZone", label: "퍼스트클래스존 수" },
-];
-
-function validate(form: Competitor): string[] {
-  const errors: string[] = [];
-  if (!form.name.trim()) errors.push("경쟁점명을 입력해주세요.");
-  for (const f of NUMERIC_FIELDS) {
-    const v = form[f.key];
-    if (typeof v === "number" && v < 0) errors.push(`${f.label}은(는) 음수가 될 수 없습니다.`);
-  }
-  // 2026-08-25 추가 — 두 필드는 calc.ts normalizePercentLike가 0~1(비율)과 1~100(퍼센트 숫자)
-  // 두 표기를 모두 허용하는 레거시 데이터 호환 방식이라, 상한도 그에 맞춰 100으로 잡는다
-  // (0~1로 단정해서 UI를 바꾸면 기존에 퍼센트 숫자로 넣힌 정상 데이터를 틀렸다고 오판하게 됨).
-  if (form.measuredSeatRate != null && form.measuredSeatRate > 100) errors.push("실측착석률은 100을 넘을 수 없습니다.");
-  if (form.pingbotUtilization != null && form.pingbotUtilization > 100) errors.push("핑봇_가동률은 100을 넘을 수 없습니다.");
-  return errors;
-}
-
 /**
  * 2026-08-30 추가 — "상세" 조사수준은 "간략"과 달리 미입력 항목을 기본값(2.5)으로
  * 채워주지 않는다(applySurveyLevelDefault 참고). 그래서 상세인데 대수나 평가항목 중 하나라도
@@ -283,17 +249,22 @@ const COUPLE_SEAT_SHARE_WARN = 0.3;
 
 function CompetitorForm({
   initial,
+  baseline,
   onCancel,
   onSaved,
   actor,
 }: {
   initial: Competitor;
+  baseline: Competitor | null;
   onCancel: () => void;
   onSaved: (c: Competitor) => void;
   actor: string | null;
 }) {
   const [form, setForm] = useState<Competitor>(initial);
   const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
+  const dirty = baseline == null || JSON.stringify(form) !== JSON.stringify(baseline);
+  const unsavedDialog = useUnsavedInputGuard(dirty, saving);
   const [errors, setErrors] = useState<string[]>([]);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
@@ -345,23 +316,27 @@ function CompetitorForm({
   }
 
   async function handleSubmit() {
-    const validationErrors = validate(form);
+    if (saveLock.current) return;
+    const validationErrors = validateCompetitorInput(form);
     setErrors(validationErrors);
     if (validationErrors.length > 0) return;
+    saveLock.current = true;
     setSaving(true);
     try {
       const toSave: Competitor = { ...form, updatedAt: Date.now() };
-      await saveCompetitor(toSave, actor);
-      onSaved(toSave);
+      const saved = await saveCompetitor(toSave, actor, baseline);
+      onSaved(saved);
     } catch (err) {
       setErrors([err instanceof Error ? err.message : "저장 중 오류가 발생했습니다."]);
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   }
 
   return (
-    <section className={sectionClass}>
+    <fieldset disabled={saving} aria-busy={saving} className={`min-w-0 ${sectionClass}`}>
+      {unsavedDialog}
       <h3 className={sectionTitleClass}>경쟁점 {initial.name ? "수정" : "추가"}</h3>
 
       <div className="app-card-sm mt-3 rounded-lg px-3 py-2 text-xs leading-5 text-[var(--sl-warn)]">
@@ -579,7 +554,7 @@ function CompetitorForm({
       )}
 
       {errors.length > 0 && (
-        <div className="app-notice app-badge-danger mt-4 w-full justify-start px-3 py-2 text-sm">
+        <div role="alert" className="app-notice app-badge-danger mt-4 w-full justify-start px-3 py-2 text-sm">
           <ul className="list-inside list-disc">
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
@@ -589,7 +564,7 @@ function CompetitorForm({
       )}
 
       <div className="mt-5 flex justify-end gap-3 print:hidden">
-        <button type="button" onClick={onCancel} className="app-btn-outline rounded-lg px-4 py-2 text-sm">
+        <button type="button" data-leaves-editor onClick={onCancel} className="app-btn-outline rounded-lg px-4 py-2 text-sm">
           취소
         </button>
         <button
@@ -601,7 +576,7 @@ function CompetitorForm({
           {saving ? "저장 중..." : "저장"}
         </button>
       </div>
-    </section>
+    </fieldset>
   );
 }
 
@@ -763,6 +738,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
             </button>
             <button
               type="button"
+              data-leaves-editor
               onClick={() => {
                 setPrefill(null);
                 setEditingId("new");
@@ -901,6 +877,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
       {editingCompetitor && (
         <CompetitorForm
           initial={editingCompetitor}
+          baseline={editingId === "new" ? null : competitors.find((c) => c.id === editingId) ?? null}
           actor={user?.email ?? null}
           onCancel={() => {
             setEditingId(null);
@@ -978,6 +955,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
               <div className="mt-3 flex justify-end gap-2 print:hidden">
                 <button
                   type="button"
+                  data-leaves-editor
                   onClick={() => setEditingId(c.id)}
                   className="app-btn-outline rounded-md px-2.5 py-1 text-xs"
                 >

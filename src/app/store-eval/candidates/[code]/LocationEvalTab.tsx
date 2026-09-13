@@ -3,8 +3,9 @@
 // 탭3 입지동선평가 - "4. 입지동선 평가" 화면 요구사항.
 // LocationEvaluation 타입 필드 전부 + 종합점수 실시간 미리보기(calc.ts, 저장하지 않음).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUnsavedInputGuard } from "@/components/storeEval/useUnsavedInputGuard";
 import { LocationEvalAiReviewPanel, type LocationEvalAiDraft, type LocationEvalAiFields } from "@/components/storeEval/LocationEvalAiReviewPanel";
 import { computeLocationCompositeScore } from "@/lib/storeEval/calc";
 import { formatScore } from "@/lib/storeEval/format";
@@ -102,8 +103,11 @@ export function LocationEvalTab({
   const { user } = useAuth();
   const requestKey = JSON.stringify([candidateCode, candidateName, candidateAddress]);
   const [loadResult, setLoadResult] = useState<LocationEvalLoadResult | null>(null);
+  const persistedBaseline = useRef<LocationEvaluation | null>(null);
+  const [savedForm, setSavedForm] = useState<LocationEvaluation | null>(null);
   const [saveError, setSaveError] = useState<{ requestKey: string; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const [message, setMessage] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -113,6 +117,8 @@ export function LocationEvalTab({
   const settings = activeLoadResult?.settings ?? null;
   const loading = activeLoadResult == null;
   const error = activeLoadResult?.error ?? (saveError?.requestKey === requestKey ? saveError.message : null);
+  const dirty = form != null && savedForm != null && JSON.stringify(form) !== JSON.stringify(savedForm);
+  const unsavedDialog = useUnsavedInputGuard(dirty, saving || aiLoading);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,9 +126,12 @@ export function LocationEvalTab({
     void Promise.all([getLocationEvaluation(candidateCode), getModelSettings()])
       .then(([existing, modelSettings]) => {
         if (cancelled) return;
+        const loadedForm = existing ?? blankLocationEvaluation(candidateCode, candidateName, candidateAddress);
+        persistedBaseline.current = existing;
+        setSavedForm(loadedForm);
         setLoadResult({
           requestKey,
-          form: existing ?? blankLocationEvaluation(candidateCode, candidateName, candidateAddress),
+          form: loadedForm,
           settings: modelSettings ?? defaultModelSettings(),
           error: null,
         });
@@ -143,6 +152,8 @@ export function LocationEvalTab({
   }, [candidateAddress, candidateCode, candidateName, requestKey]);
 
   function set<K extends keyof LocationEvaluation>(key: K, value: LocationEvaluation[K]) {
+    if (saveLock.current) return;
+    setMessage(null);
     setLoadResult((prev) =>
       prev?.requestKey === requestKey && prev.form
         ? { ...prev, form: { ...prev.form, [key]: value } }
@@ -163,14 +174,17 @@ export function LocationEvalTab({
   }, [form, settings]);
 
   async function handleSave() {
-    if (!form) return;
+    if (!form || saveLock.current || aiLoading) return;
+    saveLock.current = true;
     setMessage(null);
     setSaveError(null);
     setSaving(true);
     try {
       const toSave: LocationEvaluation = { ...form, candidateCode, name: candidateName, address: candidateAddress };
-      await saveLocationEvaluation(toSave, user?.email ?? null);
-      setLoadResult((prev) => (prev?.requestKey === requestKey ? { ...prev, form: toSave } : prev));
+      const saved = await saveLocationEvaluation(toSave, user?.email ?? null, persistedBaseline.current);
+      persistedBaseline.current = saved;
+      setSavedForm(saved);
+      setLoadResult((prev) => (prev?.requestKey === requestKey ? { ...prev, form: saved } : prev));
       setMessage("저장했습니다.");
     } catch (err) {
       setSaveError({
@@ -178,6 +192,7 @@ export function LocationEvalTab({
         message: err instanceof Error ? err.message : "저장 중 오류가 발생했습니다.",
       });
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   }
@@ -237,6 +252,8 @@ export function LocationEvalTab({
   }
 
   function handleApplyAiPatch(patch: Partial<LocationEvalAiFields>, rationale: string) {
+    if (saveLock.current) return;
+    setMessage(null);
     setLoadResult((prev) => {
       if (prev?.requestKey !== requestKey || !prev.form) return prev;
       // 기존에 사람이 적어둔 메모를 지우지 않고 AI 초안을 뒤에 덧붙인다(2026-08-24, 덮어쓰기 버그 수정).
@@ -258,7 +275,9 @@ export function LocationEvalTab({
   if (!form) return <p className="text-sm text-[var(--sl-ink-soft)]">데이터를 불러오지 못했습니다.</p>;
 
   return (
-    <div className="flex flex-col gap-6">
+    <fieldset disabled={saving} aria-busy={saving} className="flex min-w-0 flex-col gap-6">
+      {unsavedDialog}
+      {dirty && <p role="status" className="text-sm text-[var(--sl-warn)]">저장하지 않은 변경이 있습니다.</p>}
       <div className="app-card-sm rounded-lg px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
         <strong>공식 기준표 없음</strong> — 아래 판단 필드(점수·특수수요·외부유입제한·수요이탈위험 등)의
         기준은 원본 스프레드시트 어디에도 문서화되어 있지 않습니다(docs/data-issues.md #2). 아래 참고자료는 원본
@@ -399,10 +418,10 @@ export function LocationEvalTab({
       </section>
 
       {error && (
-        <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <p role="alert" className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
       {message && (
-        <p className="app-notice app-badge-ok w-full justify-start px-3 py-2 text-sm">
+        <p role="status" className="app-notice app-badge-ok w-full justify-start px-3 py-2 text-sm">
           {message}
         </p>
       )}
@@ -410,13 +429,13 @@ export function LocationEvalTab({
       <div className="flex justify-end print:hidden">
         <button
           type="button"
-          disabled={saving}
+          disabled={saving || aiLoading}
           onClick={handleSave}
           className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
         >
           {saving ? "저장 중..." : "저장"}
         </button>
       </div>
-    </div>
+    </fieldset>
   );
 }

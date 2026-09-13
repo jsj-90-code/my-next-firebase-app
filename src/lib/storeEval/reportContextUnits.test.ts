@@ -19,7 +19,7 @@ const result = {
 
 const candidate = {
   name: "테스트", address: "테스트주소", pop500m: 10000, floating500Avg: 100000,
-  facility500SubwayRiders: null, floor: 2, groundLevel: "지상", hasElevator: true, expectedPcCount: 100,
+  facility500SubwayRiders: null, floor: 2, groundLevel: "지상" as const, hasElevator: true, expectedPcCount: 100,
 };
 
 const competitor = (over: Partial<Competitor> = {}) => ({

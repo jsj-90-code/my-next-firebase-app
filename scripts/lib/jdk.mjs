@@ -52,6 +52,9 @@ export function envWithJdk(base = process.env) {
   const home = findJdkHome();
   if (!home) return null;
   env.JAVA_HOME = home;
-  env.PATH = `${join(home, "bin")}${process.platform === "win32" ? ";" : ":"}${env.PATH}`;
+  // Windows can expose this as Path. Spreading process.env loses case-insensitive lookup;
+  // adding PATH beside Path can drop Node/npm from child-process lookup.
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  env[pathKey] = `${join(home, "bin")}${process.platform === "win32" ? ";" : ":"}${env[pathKey] ?? ""}`;
   return env;
 }

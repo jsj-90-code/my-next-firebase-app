@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUnsavedInputGuard } from "@/components/storeEval/useUnsavedInputGuard";
 import { formatDate, formatManwon, formatManwonPerPc, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
@@ -21,7 +22,7 @@ import {
   listAllLocationEvaluations,
   listAllCompetitors,
   saveEvaluationResult,
-  saveCandidate,
+  updateCandidateFields,
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
@@ -300,43 +301,46 @@ function JudgedRevenuePanel({
     by: initial.judgedBy ?? null,
   });
   const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   const trimmedReason = reason.trim();
   const dirty = revenue !== saved.revenue || trimmedReason !== saved.reason.trim();
+  const unsavedDialog = useUnsavedInputGuard(dirty, saving);
   const gapRatio = revenue != null && v62Final != null && v62Final !== 0 ? (revenue - v62Final) / v62Final : null;
 
   async function handleSave() {
+    if (saveLock.current) return;
+    if (revenue != null && (!Number.isFinite(revenue) || revenue < 0)) {
+      setError("판단 월매출은 0 이상의 유효한 숫자로 입력해주세요.");
+      return;
+    }
+    saveLock.current = true;
     setSaving(true);
     setError(null);
     try {
-      // 결과 탭이 들고 있는 후보지 값은 "계산을 시작한 시점"의 스냅샷이다. 그 사이 기본정보
-      // 탭에서 다른 항목을 고쳤을 수 있으므로, 저장 직전에 최신 문서를 다시 읽어 판단값 네 칸만
-      // 갈아끼운다(saveCandidate가 문서 전체를 덮어쓰기 때문에 이렇게 안 하면 남의 수정이 날아간다).
-      const latest = await getCandidate(candidateCode);
-      if (!latest) throw new Error("후보지를 찾지 못했습니다. 화면을 새로고침해주세요.");
       const hasJudgement = revenue != null || trimmedReason !== "";
       const now = Date.now();
-      const next: CandidateInput = {
-        ...latest,
+      const next = await updateCandidateFields(candidateCode, {
         judgedRevenue: revenue,
         judgedReason: trimmedReason === "" ? null : trimmedReason,
         // 둘 다 비우면 "판단을 지웠다"는 뜻이라 적은 사람·시각도 같이 지운다.
         judgedAt: hasJudgement ? now : null,
         judgedBy: hasJudgement ? actor : null,
-      };
-      await saveCandidate(next, actor);
+      }, actor);
       setSaved({ revenue: next.judgedRevenue, reason: next.judgedReason ?? "", at: next.judgedAt, by: next.judgedBy });
       onSaved(next);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "판단 매출을 저장하지 못했습니다.");
     } finally {
+      saveLock.current = false;
       setSaving(false);
     }
   }
 
   return (
-    <section className={sectionClass}>
+    <fieldset disabled={saving} aria-busy={saving} className={`min-w-0 ${sectionClass}`}>
+      {unsavedDialog}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className={sectionTitleClass}>담당자 판단 매출 (선택 입력)</h3>
         <span className="app-badge app-badge-neutral text-xs">산식에 반영되지 않음</span>
@@ -400,8 +404,8 @@ function JudgedRevenuePanel({
           <span className="text-xs text-[var(--sl-ink-soft)]">아직 적힌 판단이 없습니다</span>
         )}
       </div>
-      {error && <p className="app-notice app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{error}</p>}
-    </section>
+      {error && <p role="alert" className="app-notice app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{error}</p>}
+    </fieldset>
   );
 }
 

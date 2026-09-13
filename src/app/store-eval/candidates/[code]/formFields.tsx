@@ -5,13 +5,14 @@
 
 import { useId } from "react";
 import type { ChangeEvent, ReactNode } from "react";
+import { formatNumber } from "@/lib/storeEval/format";
 
 const inputClass = "app-input w-full px-2.5 py-1.5 text-sm";
 const labelClass = "text-xs font-medium text-[var(--sl-ink-soft)]";
 
 export const sectionClass = "app-card rounded-2xl p-5";
 export const sectionTitleClass = "text-sm font-semibold text-[#171310] dark:text-[#f2ede2]";
-export const gridClass = "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4";
+export const gridClass = "grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4";
 
 /** 자동추출 데이터 소스가 없어 사용자가 직접 조사/입력해야 하는 필드에 붙이는 표시. */
 export function ManualBadge() {
@@ -36,7 +37,7 @@ export function FieldWrap({
   children: ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex min-w-0 flex-col gap-1">
       <span className={labelClass}>
         {label}
         {required && <span className="ml-0.5 text-[var(--sl-danger)]">*</span>}
@@ -378,7 +379,8 @@ export function ComputedField({ label, value, hint }: { label: string; value: nu
       <input
         type="text"
         readOnly
-        value={value == null ? "-" : String(value)}
+        value={formatNumber(value)}
+        title={value == null ? undefined : `계산값: ${value}`}
         className="app-card-sm w-full rounded-md px-2.5 py-1.5 text-sm text-[#5c5346] dark:text-[#c9bfae]"
       />
     </FieldWrap>

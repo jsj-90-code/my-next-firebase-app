@@ -20,6 +20,6 @@ if (env.JAVA_HOME !== process.env.JAVA_HOME) console.log(`JDK를 찾았다: ${en
 // 인자를 배열로 쪼개 shell에 넘기면 따옴표가 사라져 firebase가 "Too many arguments"로 죽는다
 // (2026-09-11에 실제로 겪었다). 명령 문자열 하나로 넘긴다.
 execSync(
-  `npx firebase emulators:exec --only firestore --project demo-rules-test "vitest run firestore.rules.test.ts"`,
+  `npx firebase emulators:exec --only firestore --project demo-rules-test "vitest run firestore.rules.test.ts src/lib/storeEval/inputPersistence.test.ts"`,
   { stdio: "inherit", env },
 );

@@ -30,6 +30,7 @@ import {
 import { db } from "@/lib/firebase";
 import { mergeModelSettings } from "./settings";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
+import { mergeInputChanges } from "./inputChanges";
 import type {
   AdminDongReference,
   CandidateInput,
@@ -158,10 +159,46 @@ export async function getCandidate(code: string): Promise<CandidateInput | null>
   return snap.exists() ? (snap.data() as CandidateInput) : null;
 }
 
-export async function saveCandidate(candidate: CandidateInput, actor: string | null): Promise<void> {
-  const before = await getCandidate(candidate.code);
-  await setDoc(doc(requireDb(), CANDIDATES, candidate.code), sanitize({ ...candidate, updatedAt: Date.now(), updatedBy: actor }));
-  await writeAuditLog({ entityType: "candidate", entityId: candidate.code, action: before ? "수정" : "생성", before, after: candidate, actor });
+// The input and its audit entry must commit together. A rejected audit must never leave a saved
+// input behind while the UI reports failure. Read inside the transaction for an accurate before.
+async function saveAuditedInput<T extends object>(
+  collectionName: string,
+  id: string,
+  entityType: AuditLogEntry["entityType"],
+  actor: string | null,
+  build: (before: T | null) => T,
+): Promise<T> {
+  const database = requireDb();
+  const ref = doc(database, collectionName, id);
+  const auditRef = doc(collection(database, AUDIT_LOG));
+  return runTransaction(database, async (tx) => {
+    const snap = await tx.get(ref);
+    const before = snap.exists() ? snap.data() as T : null;
+    const after = sanitize(build(before));
+    tx.set(ref, after);
+    tx.set(auditRef, sanitize({ entityType, entityId: id, action: before ? "수정" : "생성", before, after, actor, at: Date.now() }));
+    return after;
+  });
+}
+
+export async function saveCandidate(candidate: CandidateInput, actor: string | null, baseline?: CandidateInput): Promise<CandidateInput> {
+  return saveAuditedInput<CandidateInput>(CANDIDATES, candidate.code, "candidate", actor, (before) => {
+    if (baseline && !before) throw new Error("후보지가 삭제되었습니다. 목록에서 다시 확인해주세요.");
+    const input = baseline && before ? mergeInputChanges(before, baseline, candidate) : candidate;
+    return { ...input, updatedAt: Date.now(), updatedBy: actor };
+  });
+}
+
+/** Coordinates and judgement are separate editors; never replace unrelated candidate fields. */
+export async function updateCandidateFields(
+  code: string,
+  patch: Partial<Pick<CandidateInput, "lat" | "lng" | "geocodedAt" | "judgedRevenue" | "judgedReason" | "judgedAt" | "judgedBy">>,
+  actor: string | null,
+): Promise<CandidateInput> {
+  return saveAuditedInput<CandidateInput>(CANDIDATES, code, "candidate", actor, (before) => {
+    if (!before) throw new Error("후보지를 찾지 못했습니다. 목록에서 다시 확인해주세요.");
+    return { ...before, ...patch, updatedAt: Date.now(), updatedBy: actor };
+  });
 }
 
 /**
@@ -217,11 +254,13 @@ export async function listAllLocationEvaluations(): Promise<LocationEvaluation[]
   return snap.docs.map((d) => d.data() as LocationEvaluation);
 }
 
-export async function saveCompetitor(competitor: Competitor, actor: string | null): Promise<void> {
-  const ref = doc(requireDb(), COMPETITORS, competitor.id);
-  const before = await getDoc(ref);
-  await setDoc(ref, sanitize({ ...competitor, updatedAt: Date.now() }));
-  await writeAuditLog({ entityType: "competitor", entityId: competitor.id, action: before.exists() ? "수정" : "생성", before: before.exists() ? before.data() : null, after: competitor, actor });
+export async function saveCompetitor(competitor: Competitor, actor: string | null, baseline?: Competitor | null): Promise<Competitor> {
+  return saveAuditedInput<Competitor>(COMPETITORS, competitor.id, "competitor", actor, (before) => {
+    if (baseline && !before) throw new Error("경쟁점이 삭제되었습니다. 목록에서 다시 확인해주세요.");
+    if (baseline === null && before) throw new Error("이미 저장된 경쟁점입니다. 목록에서 다시 확인해주세요.");
+    const input = baseline && before ? mergeInputChanges(before, baseline, competitor) : competitor;
+    return { ...input, updatedAt: Date.now() };
+  });
 }
 
 export async function deleteCompetitor(id: string, actor: string | null): Promise<void> {
@@ -276,10 +315,13 @@ export async function getLocationEvaluation(candidateCode: string): Promise<Loca
   return snap.exists() ? (snap.data() as LocationEvaluation) : null;
 }
 
-export async function saveLocationEvaluation(evaluation: LocationEvaluation, actor: string | null): Promise<void> {
-  const before = await getLocationEvaluation(evaluation.candidateCode);
-  await setDoc(doc(requireDb(), LOCATION_EVALS, evaluation.candidateCode), sanitize({ ...evaluation, updatedAt: Date.now(), updatedBy: actor }));
-  await writeAuditLog({ entityType: "locationEvaluation", entityId: evaluation.candidateCode, action: before ? "수정" : "생성", before, after: evaluation, actor });
+export async function saveLocationEvaluation(evaluation: LocationEvaluation, actor: string | null, baseline?: LocationEvaluation | null): Promise<LocationEvaluation> {
+  return saveAuditedInput<LocationEvaluation>(LOCATION_EVALS, evaluation.candidateCode, "locationEvaluation", actor, (before) => {
+    if (baseline && !before) throw new Error("입지평가가 삭제되었습니다. 새로고침 후 다시 확인해주세요.");
+    if (baseline === null && before) throw new Error("다른 화면에서 입지평가를 저장했습니다. 입력 내용을 복사해 보관한 뒤 새로고침해주세요.");
+    const input = baseline && before ? mergeInputChanges(before, baseline, evaluation) : evaluation;
+    return { ...input, updatedAt: Date.now(), updatedBy: actor };
+  });
 }
 
 // ---------------------------------------------------------------------------

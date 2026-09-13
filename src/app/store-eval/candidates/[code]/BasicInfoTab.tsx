@@ -3,9 +3,11 @@
 // 탭1 기본정보 - "2. 신규후보지 입력" 화면 요구사항.
 // CandidateInput 타입의 실제 필드 전부를 폼으로 구성한다 (필드를 빼거나 추가하지 않는다).
 
+import { validateCandidateInput } from "@/lib/storeEval/inputValidation";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUnsavedInputGuard } from "@/components/storeEval/useUnsavedInputGuard";
 import {
   applyStandardOwnFacilityDefaults,
   computeFacilityScore,
@@ -33,6 +35,7 @@ import {
   listDemandPoints,
   listMarketDataUploads,
   saveCandidate,
+  updateCandidateFields,
   saveMarketDataUpload,
 } from "@/lib/storeEval/store";
 import type {
@@ -88,74 +91,6 @@ const GROUND_LEVEL_OPTIONS: { value: GroundLevel; label: string }[] = [
   { value: "지하", label: "지하" },
 ];
 
-const NUMERIC_FIELDS: { key: keyof CandidateInput; label: string }[] = [
-  { key: "expectedPcCount", label: "예상PC대수" },
-  { key: "floor", label: "점포층수" },
-  { key: "hourlyRate", label: "요금표_시간당원" },
-  { key: "demographicsYear", label: "상권데이터기준연도" },
-  { key: "plannedOpenMonth", label: "예상오픈월" },
-  { key: "pop500m", label: "반경500m 총인구(거주)" },
-  { key: "area1kmKm2", label: "반경1km 면적(㎢)" },
-  { key: "pop1km", label: "반경1km 총인구" },
-  { key: "male1kmRatio", label: "반경1km 남성비율" },
-  { key: "age1km_0_9", label: "1km 0~9세" },
-  { key: "age1km_10_19", label: "1km 10~19세" },
-  { key: "age1km_20_29", label: "1km 20~29세" },
-  { key: "age1km_30_39", label: "1km 30~39세" },
-  { key: "age1km_40_49", label: "1km 40~49세" },
-  { key: "age1km_50_59", label: "1km 50~59세" },
-  { key: "age1km_60_69", label: "1km 60~69세" },
-  { key: "age1km_70_79", label: "1km 70~79세" },
-  { key: "age1km_80plus", label: "1km 80세 이상" },
-  { key: "floating500Avg", label: "유동인구 평균(500m)" },
-  { key: "floating500Male", label: "유동인구 남(500m)" },
-  { key: "floating500_10s", label: "유동 10대(500m)" },
-  { key: "floating500_20s", label: "유동 20대(500m)" },
-  { key: "floating500_30s", label: "유동 30대(500m)" },
-  { key: "floating500_40s", label: "유동 40대(500m)" },
-  { key: "floating500_50s", label: "유동 50대(500m)" },
-  { key: "floating500_60plus", label: "유동 60대이상(500m)" },
-  { key: "operatingPcStores500m", label: "실영업 PC방업소수(500m)" },
-  { key: "operatingPcStores1km", label: "실영업 PC방업소수(1km)" },
-  { key: "employ500Total", label: "직장인구 전체(500m)" },
-  { key: "employ500Male", label: "직장인구 남(500m)" },
-  { key: "employ500Female", label: "직장인구 여(500m)" },
-  { key: "employ1kmTotal", label: "직장인구 전체(1km)" },
-  { key: "employ1kmMale", label: "직장인구 남(1km)" },
-  { key: "employ1kmFemale", label: "직장인구 여(1km)" },
-  { key: "facility500SubwayRiders", label: "지하철 승하차(500m)" },
-  { key: "facility1kmSubwayRiders", label: "지하철 승하차(1km)" },
-  { key: "ownSingleSeatCount", label: "1인석 수" },
-  { key: "ownRoom1", label: "1인룸 수" },
-  { key: "ownRoom2", label: "2인룸 수" },
-  { key: "ownTeamRoom", label: "팀룸 수" },
-  { key: "ownCoupleZone", label: "커플존 수" },
-  { key: "ownVipZone", label: "VIP존 수" },
-  { key: "ownFriendsZone", label: "프렌즈존 수" },
-  { key: "ownFirstClassZone", label: "퍼스트클래스존 수" },
-];
-
-function validate(form: CandidateInput): string[] {
-  const errors: string[] = [];
-  if (!form.name.trim()) errors.push("후보지명을 입력해주세요.");
-  if (!form.address.trim()) errors.push("주소를 입력해주세요.");
-  if (form.expectedPcCount == null) errors.push("예상PC대수를 입력해주세요.");
-  if (form.hourlyRate == null) errors.push("시간당요금을 입력해주세요.");
-  for (const f of NUMERIC_FIELDS) {
-    const v = form[f.key];
-    if (typeof v === "number" && v < 0) errors.push(`${f.label}은(는) 음수가 될 수 없습니다.`);
-  }
-  // 2026-08-25 추가 — 위 "음수 불가" 일괄 검사만으로는 못 잡는 범위 검증(0은 통과하지만 실제로는
-  // 말이 안 되는 값, 또는 상한이 있는 값).
-  if (form.expectedPcCount != null && form.expectedPcCount < 1) errors.push("예상PC대수는 1대 이상이어야 합니다.");
-  if (form.hourlyRate != null && form.hourlyRate <= 0) errors.push("요금표_시간당원은 0보다 커야 합니다.");
-  if (form.plannedOpenMonth != null && (form.plannedOpenMonth < 1 || form.plannedOpenMonth > 12)) {
-    errors.push("예상오픈월은 1~12 사이여야 합니다.");
-  }
-  if (form.male1kmRatio != null && form.male1kmRatio > 1) errors.push("반경1km 남성비율은 100%를 넘을 수 없습니다.");
-  return errors;
-}
-
 type BasicInfoTabProps = {
   candidate: CandidateInput;
   actor: string | null;
@@ -173,6 +108,9 @@ function BasicInfoTabForm({
 }: BasicInfoTabProps) {
   const { user, loading: authLoading } = useAuth();
   const [form, setForm] = useState<CandidateInput>(candidate);
+  const [savedForm, setSavedForm] = useState<CandidateInput>(candidate);
+  const operationLock = useRef(false);
+  const [positionSaving, setPositionSaving] = useState(false);
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -192,6 +130,9 @@ function BasicInfoTabForm({
   // 2단계(2026-08-24) — SGIS/소상공인365 반자동 업로드 이력.
   const [marketDataUploads, setMarketDataUploads] = useState<MarketDataUpload[]>([]);
   const marketLoadSequence = useRef(0);
+  const busy = saving !== null || collecting || positionSaving;
+  const dirty = JSON.stringify(form) !== JSON.stringify(savedForm);
+  const unsavedDialog = useUnsavedInputGuard(dirty, busy);
 
   const loadMarketData = useCallback(async (code: string, isCancelled: () => boolean = () => false) => {
     const sequence = ++marketLoadSequence.current;
@@ -253,6 +194,11 @@ function BasicInfoTabForm({
   }, [candidate.code, authLoading, loadMarketData, user]);
 
   async function handleCollectMarketData() {
+    if (operationLock.current) return;
+    if (dirty) {
+      setCollectError("변경한 기본정보를 먼저 저장한 뒤 상권자료를 수집해주세요.");
+      return;
+    }
     if (form.code === "new") {
       setCollectError("먼저 저장한 뒤 이용할 수 있습니다.");
       return;
@@ -261,6 +207,7 @@ function BasicInfoTabForm({
       setCollectError("주소를 먼저 입력해주세요.");
       return;
     }
+    operationLock.current = true;
     setCollecting(true);
     setCollectError(null);
     setCollectMessage(null);
@@ -288,6 +235,7 @@ function BasicInfoTabForm({
       const fresh = await getCandidate(form.code);
       if (fresh) {
         setForm(fresh);
+        setSavedForm(fresh);
         onSaved(fresh);
       }
       await loadMarketData(form.code);
@@ -299,26 +247,31 @@ function BasicInfoTabForm({
     } catch (err) {
       setCollectError(err instanceof Error ? err.message : "상권자료 수집 중 오류가 발생했습니다.");
     } finally {
+      operationLock.current = false;
       setCollecting(false);
     }
   }
 
-  // 2026-09-11 — try/catch가 없어서, 저장이 실패해도 화면에는 옮긴 좌표가 그대로 남고
-  // 오류도 안 떴다(setForm이 저장보다 먼저 실행된다). 사용자는 확정된 줄 알고 넘어간다.
-  // 실패하면 폼을 되돌리고 사유를 보여준다.
+  // Confirm coordinates only after persistence succeeds; never save unrelated unfinished fields.
   async function handleConfirmMapPosition(lat: number, lng: number) {
-    const previous = form;
-    const updated = { ...form, lat, lng, geocodedAt: Date.now() };
-    setForm(updated);
+    if (operationLock.current) return;
+    operationLock.current = true;
+    setPositionSaving(true);
     setCollectError(null);
     try {
-      await saveCandidate(updated, actor);
+      const patch = { lat, lng, geocodedAt: Date.now() };
+      const updated = await updateCandidateFields(form.code, patch, actor);
+      // Only coordinates were saved. Keep the rest of the unsaved form exactly as entered.
+      setForm((prev) => ({ ...prev, ...patch }));
+      setSavedForm((prev) => ({ ...prev, ...patch }));
       onSaved(updated);
       setCollectMessage("지도에서 수정한 위치로 좌표를 확정했습니다.");
     } catch (err) {
-      setForm(previous);
       setCollectMessage(null);
       setCollectError(`좌표를 저장하지 못했습니다: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      operationLock.current = false;
+      setPositionSaving(false);
     }
   }
 
@@ -412,34 +365,42 @@ function BasicInfoTabForm({
   })();
 
   function set<K extends keyof CandidateInput>(key: K, value: CandidateInput[K]) {
+    if (operationLock.current) return;
+    setMessage(null);
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   async function handleSave(isDraft: boolean) {
+    if (operationLock.current) return;
     setMessage(null);
-    const validationErrors = validate(form);
+    const validationErrors = validateCandidateInput(form);
     setErrors(validationErrors);
     if (validationErrors.length > 0) return;
 
+    operationLock.current = true;
     setSaving(isDraft ? "draft" : "final");
     try {
       // 후보지코드는 첫 저장 시점에만 발급한다(요청사항) — "new" draft 상태에서 코드를 미리
       // 뽑아두면 등록 버튼만 누르고 저장 안 하는 경우 번호가 영구히 건너뛴다.
       const code = form.code === "new" ? await generateNextCandidateCode() : form.code;
       const toSave: CandidateInput = { ...form, code, isDraft };
-      await saveCandidate(toSave, actor);
-      setForm(toSave);
-      onSaved(toSave);
+      const saved = await saveCandidate(toSave, actor, form.code === "new" ? undefined : savedForm);
+      setForm(saved);
+      setSavedForm(saved);
+      onSaved(saved);
       setMessage(isDraft ? "임시저장했습니다." : "저장했습니다.");
     } catch (err) {
       setErrors([err instanceof Error ? err.message : "저장 중 오류가 발생했습니다."]);
     } finally {
+      operationLock.current = false;
       setSaving(null);
     }
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <fieldset disabled={busy} aria-busy={busy} className="flex min-w-0 flex-col gap-6">
+      {unsavedDialog}
+      {dirty && <p role="status" className="text-sm text-[var(--sl-warn)]">저장하지 않은 변경이 있습니다.</p>}
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>기본정보</h3>
         <div className={`${gridClass} mt-4`}>
@@ -471,15 +432,15 @@ function BasicInfoTabForm({
         <div className="mt-4 flex flex-wrap items-center gap-3 print:hidden">
           <button
             type="button"
-            disabled={collecting || form.code === "new" || authLoading}
+            disabled={busy || dirty || form.code === "new" || authLoading}
             onClick={handleCollectMarketData}
-            title={form.code === "new" ? "먼저 저장한 뒤 이용할 수 있습니다" : authLoading ? "로그인 확인 중입니다" : undefined}
+            title={form.code === "new" || dirty ? "변경한 기본정보를 먼저 저장해주세요" : authLoading ? "로그인 확인 중입니다" : undefined}
             className="app-btn-outline rounded-lg px-4 py-2 text-sm disabled:opacity-50"
           >
             {collecting ? "수집 중..." : "상권자료 수집"}
           </button>
           <span className="text-xs text-[var(--sl-ink-soft)]">
-            주소로 좌표 확인 + 행정구역 참고자료 + 주변 경쟁점(PC방)·수요거점을 자동으로 모읍니다.
+            {dirty ? "변경한 기본정보를 먼저 저장하면 수집할 수 있습니다." : "저장된 주소로 좌표 확인 + 행정구역 참고자료 + 주변 경쟁점(PC방)·수요거점을 자동으로 모읍니다."}
           </span>
         </div>
         {collectError && (
@@ -761,9 +722,9 @@ function BasicInfoTabForm({
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>경쟁력 점수</h3>
         <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-          하드웨어·입지 점수는 위에 입력한 VGA·층수+엘리베이터로부터 자동 계산됩니다. 종합 경쟁력점수
-          가중합(하드웨어30%·인테리어·좌석·관리40%·먹거리20%·입지10%, 2026-08-28 전면개편)은 운영설정
-          화면의 계수를 따릅니다.
+          하드웨어 점수는 GPU·CPU·RAM·모니터 사양으로 계산합니다. 입지 점수는 저장된 입지동선평가를
+          우선 적용하며, 평가 전에는 층수·엘리베이터 정보를 사용합니다. 종합 경쟁력점수는 운영설정에
+          저장된 하드웨어·먹거리·시설·입지 비중을 따릅니다.
         </p>
         <div className={`${gridClass} mt-4`}>
           <ComputedField label="하드웨어 점수 (자동)" value={computedScores.spec} hint="GPU40%+모니터25%+CPU20%+RAM15%" />
@@ -856,7 +817,7 @@ function BasicInfoTabForm({
       </section>
 
       {errors.length > 0 && (
-        <div className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">
+        <div role="alert" className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">
           <ul className="list-inside list-disc">
             {errors.map((e, i) => (
               <li key={i}>{e}</li>
@@ -865,7 +826,7 @@ function BasicInfoTabForm({
         </div>
       )}
       {message && (
-        <p className="app-notice app-badge-ok w-full justify-start px-3 py-2 text-sm">
+        <p role="status" className="app-notice app-badge-ok w-full justify-start px-3 py-2 text-sm">
           {message}
         </p>
       )}
@@ -888,7 +849,7 @@ function BasicInfoTabForm({
           {saving === "final" ? "저장 중..." : "저장"}
         </button>
       </div>
-    </div>
+    </fieldset>
   );
 }
 

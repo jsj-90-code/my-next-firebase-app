@@ -221,7 +221,7 @@ function CandidateDetail({ code }: { code: string }) {
         )}
       </div>
 
-      <nav className="flex gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08] print:hidden">
+      <nav aria-label="후보지 상세 메뉴" className="flex flex-wrap gap-1 border-b border-[#171310]/[0.08] text-sm dark:border-white/[0.08] print:hidden">
         {TABS.map((tab) => {
           const disabled = !persisted && tab.key !== "basic";
           return (
@@ -230,8 +230,10 @@ function CandidateDetail({ code }: { code: string }) {
               type="button"
               onClick={() => setTab(tab.key)}
               disabled={disabled}
+              aria-current={activeTab === tab.key ? "page" : undefined}
+              data-leaves-editor={activeTab !== tab.key ? "" : undefined}
               title={disabled ? "기본정보를 먼저 저장해야 이용할 수 있습니다" : undefined}
-              className={`-mb-px rounded-t-md border-b-2 px-4 py-2 font-medium transition ${
+              className={`-mb-px rounded-t-md border-b-2 px-3 py-2 font-medium transition sm:px-4 ${
                 activeTab === tab.key
                   ? "border-[#c05a2c] text-[#171310] dark:text-[#f2ede2]"
                   : disabled

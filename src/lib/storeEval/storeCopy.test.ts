@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(), runTransaction: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(), runTransaction: vi.fn(), transactionSet: vi.fn() }));
 vi.mock("@/lib/firebase", () => ({ db: {} }));
 vi.mock("firebase/firestore", async importOriginal => ({
   ...await importOriginal<typeof import("firebase/firestore")>(),
@@ -17,7 +17,10 @@ describe("후보지 복사 시 담당자 판단 격리", () => {
     vi.resetAllMocks();
     mocks.getDocs.mockResolvedValue({ docs: [] });
     mocks.setDoc.mockResolvedValue(undefined);
-    mocks.runTransaction.mockResolvedValue(12);
+    mocks.runTransaction.mockResolvedValueOnce(12).mockImplementation(async (_db, callback) => callback({
+      get: async () => ({ exists: () => false }),
+      set: mocks.transactionSet,
+    }));
   });
 
   it("입력은 복사하지만 다른 후보지의 판단 금액·근거·작성자는 승계하지 않는다", async () => {
@@ -30,12 +33,13 @@ describe("후보지 복사 시 담당자 판단 격리", () => {
       expectedPcCount: 100, hourlyRate: 1200, judgedRevenue: null, judgedReason: null,
       judgedAt: null, judgedBy: null, updatedBy: "copy@example.com" });
     expect(source.judgedRevenue).toBe(70_000_000);
-    expect(mocks.setDoc).toHaveBeenCalledWith({ collection: "storeEvalCandidates", id: "N012" }, expect.objectContaining({ judgedRevenue: null, judgedBy: null }));
+    expect(mocks.transactionSet).toHaveBeenCalledWith({ collection: "storeEvalCandidates", id: "N012" }, expect.objectContaining({ judgedRevenue: null, judgedBy: null }));
   });
 
   it("원본이 없으면 새 후보지를 저장하지 않는다", async () => {
     mocks.getDoc.mockResolvedValue({ exists: () => false });
     await expect(duplicateCandidate("N001", null)).rejects.toThrow("복사할 후보지를 찾지 못했습니다");
     expect(mocks.setDoc).not.toHaveBeenCalled();
+    expect(mocks.transactionSet).not.toHaveBeenCalled();
   });
 });
