@@ -79,6 +79,7 @@ export function CandidateMap({
   onConfirmPosition: (lat: number, lng: number) => void;
 }) {
   const [sdkLoaded, setSdkLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [mapsReady, setMapsReady] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const markerRef = useRef<KakaoMarker>(null);
@@ -138,8 +139,17 @@ export function CandidateMap({
         src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${jsKey}&autoload=false&libraries=services`}
         strategy="afterInteractive"
         onReady={() => setSdkLoaded(true)}
+        onError={() => setLoadFailed(true)}
       />
-      <div ref={containerRef} className="h-80 w-full rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]" />
+      {loadFailed ? (
+        <p className="rounded-xl bg-[var(--sl-warn-soft)] px-3 py-3 text-xs text-[var(--sl-warn)]">
+          지도를 불러오지 못했습니다 — 카카오 지도 키에 이 주소가 등록되어 있지 않습니다. 카카오 개발자
+          콘솔에서 현재 접속 도메인을 웹 플랫폼에 등록하면 표시됩니다. 좌표·주변 자료 저장은 지도 없이도
+          정상 동작합니다.
+        </p>
+      ) : (
+        <div ref={containerRef} className="h-80 w-full rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]" />
+      )}
       {pendingPosition && (
         <div className="flex items-center gap-3 rounded-lg bg-[var(--sl-info-soft)] px-3 py-2 text-xs text-[var(--sl-info)]">
           <span>
