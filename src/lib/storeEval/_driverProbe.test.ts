@@ -339,7 +339,7 @@ d("기존점 분포 위치 실데이터 점검", () => {
         r.code + " " + r.name.padEnd(10) +
         " " + String(r.pos.rank).padStart(2) + "/" + r.pos.peerCount + "위" +
         "  중앙값 " + man(r.pos.median) +
-        "  동급규모 " + String(r.pos.sameSizeCount).padStart(2) + "곳 평균 " + man(r.pos.sameSizeAvg),
+        "  대당 " + (r.pos.perPc ? man(r.pos.perPc.own) + " (중앙 " + man(r.pos.perPc.median) + ", " + r.pos.perPc.rank + "/" + r.pos.perPc.count + "위)" : "-"),
       );
     }
     console.log("");

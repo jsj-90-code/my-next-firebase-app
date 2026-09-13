@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatDate, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
+import { formatDate, formatManwonPerPc, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   convertCandidateToExistingStore,
@@ -228,7 +228,7 @@ function PeerPositionNote({ stores, result, expectedPcCount }: { stores: Existin
   // 경계 조건(동률·짝수 중앙값·규모 허용폭)이 맞는지 확인할 수가 없었다.
   const position = computePeerPosition(stores, forecast, expectedPcCount);
   if (position == null || forecast == null) return null;
-  const { peerCount, rank, median, sameSizeAvg, sameSizeCount } = position;
+  const { peerCount, rank, median, perPc } = position;
 
   return (
     <div className="app-card-sm mt-2 rounded-xl px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
@@ -236,12 +236,19 @@ function PeerPositionNote({ stores, result, expectedPcCount }: { stores: Existin
       {peerCount}곳의 매출과 나란히 놓으면 이 예측값은{" "}
       <b className="text-[#171310] dark:text-[#f2ede2]">{peerCount}곳 중 {rank}번째</b> 수준입니다
       (기존점 중앙값 {formatManwonRough(median)}).
-      {sameSizeAvg != null && (
+      {/* 2026-09-13 — "비슷한 규모 N곳 평균"을 대당 비교로 바꿨다. 기존점 대수가 76~168대로
+          좁게 몰려 있어 규모별로 묶어봐야 어떻게 잘라도 전체 평균과 ±1.3% 안이었다(정보가
+          없으면서 "규모를 맞춰 비교했다"는 인상만 줬다). 대당은 37.8만~87.9만으로 2.33배 폭이라
+          실제로 변별된다. */}
+      {perPc && (
         <>
           <br />
-          비슷한 규모({expectedPcCount}대 ±15대) {sameSizeCount}곳의 실제 평균은{" "}
-          <b className="text-[#171310] dark:text-[#f2ede2]">{formatManwonRough(sameSizeAvg)}</b>입니다
-          {forecast > sameSizeAvg ? " — 이 후보지는 그보다 높게 예측됐습니다." : forecast < sameSizeAvg ? " — 이 후보지는 그보다 낮게 예측됐습니다." : "."}
+          <b className="text-[#171310] dark:text-[#f2ede2]">PC 1대당으로 보면</b> {formatManwonPerPc(perPc.own)}으로,
+          기존점 대당 중앙값 {formatManwonPerPc(perPc.median)}보다{" "}
+          <b className="text-[#171310] dark:text-[#f2ede2]">
+            {perPc.own > perPc.median ? "높습니다" : perPc.own < perPc.median ? "낮습니다" : "같습니다"}
+          </b>{" "}
+          ({perPc.count}곳 중 {perPc.rank}번째). 대수가 달라서 생기는 차이를 뺀 비교입니다.
         </>
       )}
       <br />

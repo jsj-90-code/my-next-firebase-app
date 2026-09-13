@@ -21,6 +21,13 @@ export function formatManwonRough(value: number | null | undefined): string {
   return `${(Math.round(value / 1_000_000) * 100).toLocaleString("ko-KR")}만원`;
 }
 
+// 2026-09-13 — 대당 매출처럼 만원 단위로 작은 값. 60만·58.3만처럼 소수 한 자리까지 보여야
+// 기존점과의 차이가 드러난다(대당 실측이 37.8만~87.9만 범위라 100만원 단위로 끊으면 뭉개진다).
+export function formatManwonPerPc(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "-";
+  return `${(Math.round(value / 1000) / 10).toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}만원`;
+}
+
 export function formatPercent(value: number | null | undefined, digits = 1): string {
   if (value == null || Number.isNaN(value)) return "-";
   return `${(value * 100).toFixed(digits)}%`;

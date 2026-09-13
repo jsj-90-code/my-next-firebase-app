@@ -5,7 +5,7 @@
 // 틀리면 판단을 그르친다.
 
 import { describe, expect, it } from "vitest";
-import { computePeerPosition, selectPeers, MIN_PEERS_FOR_RANK, SAME_SIZE_PC_TOLERANCE, type PeerStore } from "./peerPosition";
+import { computePeerPosition, selectPeers, MIN_PEERS_FOR_RANK, type PeerStore } from "./peerPosition";
 
 const store = (revenue: number | null, pcCount: number | null = 100, over: Partial<PeerStore> = {}): PeerStore => ({
   brandType: "블랙라벨",
@@ -70,32 +70,6 @@ describe("중앙값", () => {
   });
 });
 
-describe("비슷한 규모 평균", () => {
-  it(`대수 차이가 ${SAME_SIZE_PC_TOLERANCE}대 이내인 매장만 평균낸다`, () => {
-    const stores = sample([100, 200, 300, 400, 500], [100, 110, 116, 85, 84]);
-    // 100대 기준 ±15 → 100, 110, 116(16 차이라 제외), 85(15 차이라 포함), 84(제외)
-    const p = computePeerPosition(stores, 250, 100);
-    expect(p?.sameSizeCount).toBe(3); // 100, 110, 85
-    expect(p?.sameSizeAvg).toBe((100 + 200 + 400) / 3);
-  });
-
-  it("경계값(정확히 15대 차이)은 포함한다", () => {
-    const p = computePeerPosition(sample([100, 100, 100, 100, 500], [100, 100, 100, 100, 115]), 200, 100);
-    expect(p?.sameSizeCount).toBe(5);
-  });
-
-  it("해당 규모가 없으면 null이고 개수는 0", () => {
-    const p = computePeerPosition(sample([100, 200, 300, 400, 500], [200, 210, 220, 230, 240]), 250, 100);
-    expect(p?.sameSizeAvg).toBeNull();
-    expect(p?.sameSizeCount).toBe(0);
-  });
-
-  it("계획 대수를 모르면 규모 비교를 하지 않는다", () => {
-    const p = computePeerPosition(sample([100, 200, 300, 400, 500]), 250, null);
-    expect(p?.sameSizeAvg).toBeNull();
-  });
-});
-
 describe("표시하지 않는 경우", () => {
   it("예측값이 없으면 null", () => {
     expect(computePeerPosition(sample([10, 20, 30, 40, 50]), null, 100)).toBeNull();
@@ -108,5 +82,51 @@ describe("표시하지 않는 경우", () => {
 
   it("비교군이 전부 걸러지면 null", () => {
     expect(computePeerPosition([store(null), store(0), store(5000, 100, { brandType: "기타" })], 25, 100)).toBeNull();
+  });
+});
+
+// 2026-09-13 — "비슷한 규모 N곳 평균"을 대당 비교로 교체했다. 규모별로 묶으면 기존점 대수가
+// 76~168대로 몰려 있어 어떻게 잘라도 전체 평균과 ±1.3% 안이었다(정보가 없으면서 "규모를 맞춰
+// 비교했다"는 인상만 줬다). 대당은 나누기로 규모를 정규화해 실제로 변별된다.
+describe("대당 비교", () => {
+  it("대당 = 예측값 ÷ 계획 대수", () => {
+    const p = computePeerPosition(sample([100, 200, 300, 400, 500]), 600, 100);
+    expect(p?.perPc?.own).toBe(6);
+  });
+
+  it("기존점 대당 중앙값은 각 매장을 자기 대수로 나눈 값의 중앙값이다", () => {
+    // 매출 100/200/300/400/500, 대수 10/10/10/10/10 → 대당 10,20,30,40,50 → 중앙 30
+    const p = computePeerPosition(sample([100, 200, 300, 400, 500], [10, 10, 10, 10, 10]), 250, 10);
+    expect(p?.perPc?.median).toBe(30);
+  });
+
+  it("규모가 달라도 대당으로 정규화된다", () => {
+    // 200대에서 400(대당 2) vs 50대에서 200(대당 4) — 총액은 전자가 크지만 대당은 후자가 크다
+    const stores = sample([400, 200, 100, 100, 100], [200, 50, 100, 100, 100]);
+    const p = computePeerPosition(stores, 300, 100); // 대당 3
+    // 대당 3보다 큰 건 4(50대 매장) 하나 → 2위
+    expect(p?.perPc?.rank).toBe(2);
+  });
+
+  it("총매출 순위와 대당 순위가 다를 수 있다 (그게 이 비교의 요점이다)", () => {
+    const stores = sample([900, 100, 100, 100, 100], [300, 10, 10, 10, 10]);
+    // 예측 200을 50대로 내면 대당 4 — 총액으로는 900 아래(2위)지만 대당으로는 10 아래(2위)
+    const p = computePeerPosition(stores, 200, 50);
+    expect(p?.rank).toBe(2); // 총액: 900만 위
+    expect(p?.perPc?.own).toBe(4); // 200/50
+    expect(p?.perPc?.median).toBe(10); // 기존점 대당 3,10,10,10,10 → 중앙 10
+    expect(p?.perPc?.rank).toBe(5); // 대당 4보다 큰 게 10짜리 4곳
+  });
+
+  it("계획 대수를 모르면 대당 비교를 하지 않는다", () => {
+    expect(computePeerPosition(sample([10, 20, 30, 40, 50]), 25, null)?.perPc).toBeNull();
+    expect(computePeerPosition(sample([10, 20, 30, 40, 50]), 25, 0)?.perPc).toBeNull();
+  });
+
+  it("대수가 있는 기존점이 모자라면 대당 비교를 하지 않는다", () => {
+    const stores = sample([10, 20, 30, 40, 50], [100, 100, null as unknown as number, null as unknown as number, null as unknown as number]);
+    expect(computePeerPosition(stores, 25, 100)?.perPc).toBeNull();
+    // 총매출 순위는 그대로 나온다 — 대당만 못 내는 것이다
+    expect(computePeerPosition(stores, 25, 100)?.rank).toBe(4);
   });
 });

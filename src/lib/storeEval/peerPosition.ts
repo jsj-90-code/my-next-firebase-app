@@ -22,22 +22,21 @@ export type PeerPosition = {
   rank: number;
   /** 기존점 실제 매출의 중앙값 */
   median: number;
-  /** 비슷한 규모 기존점의 실제 매출 평균. 해당 매장이 없으면 null */
-  sameSizeAvg: number | null;
-  /** 위 평균에 쓰인 매장 수 */
-  sameSizeCount: number;
+  /**
+   * PC 1대당으로 환산한 비교 (2026-09-13에 "비슷한 규모 평균"을 대신해 넣었다).
+   * 계획 대수를 모르거나 대수가 있는 기존점이 없으면 null.
+   */
+  perPc: {
+    /** 이 후보지의 대당 예상매출 */
+    own: number;
+    /** 기존점 대당 실제매출 중앙값 */
+    median: number;
+    /** 대당 기준 순위 */
+    rank: number;
+    /** 대당 비교에 쓰인 기존점 수(대수가 있는 곳만) */
+    count: number;
+  } | null;
 };
-
-/**
- * 비슷한 규모로 볼 PC대수 차이(대). 이보다 크게 차이나면 매출 차이의 상당 부분이 규모 차이다.
- *
- * ⚠️ 2026-09-13 실측 — **현재 표본에서는 이 값을 어떻게 잡아도 정보량이 거의 없다.** 기존점 38곳의
- * 대수가 76~168대(중앙 99, 사분위 94~109)로 좁게 몰려 있어서, 100대 기준 ±5대(16곳)든 ±30대
- * (37곳)든 그 평균이 전체 평균과 **±1.3% 안에서** 같다. 즉 화면의 "비슷한 규모 N곳 평균"은
- * 사실상 전체 평균이면서 "규모를 맞춰 비교했다"는 인상만 준다.
- * 어떻게 할지는 사용자 판단 사안으로 docs/backlog.md D-4에 남겼다(뺄지, 대당 매출 비교로 바꿀지).
- */
-export const SAME_SIZE_PC_TOLERANCE = 15;
 
 /** 순위가 의미를 가지려면 최소 이만큼은 있어야 한다. 3~4곳에서 "N곳 중 2번째"는 정보가 아니다. */
 export const MIN_PEERS_FOR_RANK = 5;
@@ -61,21 +60,38 @@ export function computePeerPosition(stores: PeerStore[], forecast: number | null
   const peers = selectPeers(stores);
   if (peers.length < MIN_PEERS_FOR_RANK) return null;
 
-  const revenues = peers.map((s) => s.actualMonthlyRevenueAvg as number).sort((a, b) => a - b);
-  const mid = Math.floor(revenues.length / 2);
-  const median = revenues.length % 2 === 0 ? (revenues[mid - 1] + revenues[mid]) / 2 : revenues[mid];
+  const revenues = peers.map((s) => s.actualMonthlyRevenueAvg as number);
+  const median = medianOf(revenues);
 
-  const sameSize = expectedPcCount == null
-    ? []
-    : peers.filter((s) => s.pcCount != null && Math.abs((s.pcCount as number) - expectedPcCount) <= SAME_SIZE_PC_TOLERANCE);
+  // 대당 비교 — 규모를 나눠서 정규화한다. "비슷한 규모끼리 묶어 평균내기"보다 정직하고
+  // 실제로 변별된다(2026-09-13 실측: 대당은 37.8만~87.9만으로 2.33배 폭, 규모별 묶음은
+  // 어떻게 잘라도 전체 평균과 ±1.3% 안이라 정보가 없었다).
+  const sized = peers.filter((s) => s.pcCount != null && (s.pcCount as number) > 0);
+  const perPc =
+    expectedPcCount != null && expectedPcCount > 0 && sized.length >= MIN_PEERS_FOR_RANK
+      ? (() => {
+          const own = forecast / expectedPcCount;
+          const values = sized.map((s) => (s.actualMonthlyRevenueAvg as number) / (s.pcCount as number));
+          return {
+            own,
+            median: medianOf(values),
+            rank: values.filter((v) => v > own).length + 1,
+            count: values.length,
+          };
+        })()
+      : null;
 
   return {
     peerCount: peers.length,
     rank: revenues.filter((r) => r > forecast).length + 1,
     median,
-    sameSizeAvg: sameSize.length > 0
-      ? sameSize.reduce((sum, s) => sum + (s.actualMonthlyRevenueAvg as number), 0) / sameSize.length
-      : null,
-    sameSizeCount: sameSize.length,
+    perPc,
   };
+}
+
+/** 짝수면 가운데 두 값의 평균. "중앙값"이라고 적어 보여주는 자리라 이름과 값을 맞춘다. */
+function medianOf(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }

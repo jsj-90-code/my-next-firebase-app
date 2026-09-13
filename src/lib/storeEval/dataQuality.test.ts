@@ -64,13 +64,15 @@ d("운영 데이터 품질", () => {
     expect(bad.map((c) => `${c.code} (${c.lat}, ${c.lng})`)).toEqual([]);
   });
 
+  // ⚠️ 커플존 홀수는 검사하지 않는다 — 저장 단위가 '조'라 홀수(9조 = 18석)가 정상이다.
+  // 폼만 '석'으로 받고 저장 ÷2 / 표시 ×2로 환산한다(2026-09-11 커밋 9888aad). 2026-09-13에
+  // "홀수면 조/석 혼동"이라는 잘못된 전제로 14건을 문제로 올렸다가 취소했다.
+
   it("판단이 필요한 항목은 세어서 남긴다 (실패시키지 않는다)", () => {
-    const oddCouple = investigated.filter((c) => c.coupleZone != null && c.coupleZone > 0 && c.coupleZone % 2 === 1);
     const noCoords = (snap.candidates ?? []).filter((c) => c.lat == null || c.lng == null);
     const noMeasured = investigated.filter((c) => c.pingbotUtilization == null);
     console.log(
       [
-        `커플존 홀수(조/석 혼동 가능) ${oddCouple.length}건`,
         `후보지 좌표 미수집 ${noCoords.length}곳`,
         `경쟁점 실측 가동률 없음 ${noMeasured.length}/${investigated.length}건`,
       ].join(" · "),
