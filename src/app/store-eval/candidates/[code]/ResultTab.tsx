@@ -133,10 +133,8 @@ function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; cont
   const { rows, maxAbs } = summary;
 
   return (
-    <details className="mt-3">
-      <summary className="cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)] hover:text-[#171310] dark:hover:text-[#f2ede2]">
-        왜 이 매출인가 — 요인별 영향 보기
-      </summary>
+    <details className="app-card mt-3 rounded-xl p-4">
+      <summary className="cursor-pointer text-sm font-semibold">왜 이 매출인가 — 요인별 영향 보기</summary>
       <div className="mt-3 flex flex-col gap-2">
         <p className="text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
           기존 가맹점 <b className="text-[#171310] dark:text-[#f2ede2]">평균적인 매장과 견줬을 때</b>, 이 후보지의 조건이 PC
@@ -159,7 +157,8 @@ function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; cont
                     <div className="h-full rounded-l-full bg-[var(--sl-warn)]" style={{ width: `${(Math.abs(r.pct) / maxAbs) * 100}%` }} />
                   )}
                 </div>
-                <div className="h-full w-px bg-[#171310]/20 dark:bg-white/20" />
+                {/* 0축. 막대보다 길게 빼야 "어디가 0인지"가 눈에 들어온다(2026-09-13 화면 확인). */}
+                <div className="h-3 w-px bg-[#171310]/30 dark:bg-white/30" />
                 <div className="flex h-full w-1/2">
                   {positive && (
                     <div className="h-full rounded-r-full bg-[var(--sl-ok)]" style={{ width: `${(r.pct / maxAbs) * 100}%` }} />
