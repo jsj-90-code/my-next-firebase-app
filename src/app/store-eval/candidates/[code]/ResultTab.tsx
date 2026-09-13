@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
-import { formatDate, formatManwonPerPc, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
+import { formatDate, formatManwon, formatManwonPerPc, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   convertCandidateToExistingStore,
@@ -70,8 +70,9 @@ function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySumm
     );
   }
   const mae = accuracy.meanAbsoluteErrorPct;
+  // 2026-09-13 — 예상매출 카드·기존점 비교와 같은 만원 단위로 맞춘다(예전엔 이 줄만 원이었다).
   const band = v62Final != null && mae != null
-    ? `${formatWon(Math.round(v62Final * (1 - mae)))} ~ ${formatWon(Math.round(v62Final * (1 + mae)))}`
+    ? `${formatManwonRough(v62Final * (1 - mae))} ~ ${formatManwonRough(v62Final * (1 + mae))}`
     : null;
   const when = formatDate(accuracy.updatedAt);
   return (
@@ -978,7 +979,16 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             숨기면 나중에 V62 값이 이상해 보일 때 V61과 비교해서 원인을 못 찾게 되므로, 지우지
             않고 접이식으로만 옮긴다. */}
         <div className="mt-4">
-          <ResultCard label="V62 최종예상월매출" value={formatWon(result.v62Final)} emphasis />
+          {/* 2026-09-13 — 만원 표기를 앞에 세우고 원 단위를 작게 병기한다. 바로 아래 기존점
+              비교("중앙값 6,378만원")·정확도 범위가 만원인데 이 카드만 원이라 같은 화면에서
+              단위가 갈렸다. 두 값을 견주려면 머릿속에서 자릿수를 옮겨야 했다. 정밀도가 필요한
+              자리라 원 단위를 버리지 않고 hint로 남긴다. */}
+          <ResultCard
+            label="V62 최종예상월매출"
+            value={`약 ${formatManwonRough(result.v62Final)}`}
+            hint={formatWon(result.v62Final)}
+            emphasis
+          />
           {/* 2026-09-11 — V62가 **전제하는** 가동률. 아래 "예상 가동률"은 참고용 AA경로 값이라
               (호구포역 24.5%) 출점 판단 기준인 V62의 전제(40.3%)와 다르다. 사용자가 "경쟁점이
               30%인데 우리가 40%는 말이 안 된다"고 지적했을 때 그 40%가 화면 어디에도 없었다. */}
@@ -1117,9 +1127,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               확인돼 V62(정식 계산) 기준으로 바꿨다 — calc.ts judgeAaGrade 주석 참고. */}
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ResultCard label="2,000만원 기준매출" value={formatWon(result.aaBaselineRevenue)} />
-          <ResultCard label="1,500만원 기준매출" value={formatWon(result.aaBaselineRevenue1500)} />
-          <ResultCard label="1,000만원 기준매출" value={formatWon(result.aaBaselineRevenue1000)} />
+          <ResultCard label="2,000만원 기준매출" value={formatManwon(result.aaBaselineRevenue)} hint={formatWon(result.aaBaselineRevenue)} />
+          <ResultCard label="1,500만원 기준매출" value={formatManwon(result.aaBaselineRevenue1500)} hint={formatWon(result.aaBaselineRevenue1500)} />
+          <ResultCard label="1,000만원 기준매출" value={formatManwon(result.aaBaselineRevenue1000)} hint={formatWon(result.aaBaselineRevenue1000)} />
           <ResultCard
             label="자동평가"
             value={result.aaJudgement ?? "-"}
