@@ -180,19 +180,25 @@ export default function CandidateListPage() {
           disabled={creating}
           className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
         >
-          {creating ? "코드 발급 중..." : "+ 신규 후보지 등록"}
+          {creating ? "입력 화면 여는 중..." : "+ 신규 후보지 등록"}
         </button>
       </div>
 
       {error && (
-        <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
+        <div role="alert" className="app-notice app-badge-danger w-full px-3 py-2 text-sm">
+          <p>{error}</p>
+          <button type="button" onClick={() => { setLoading(true); setError(null); void load(); }} disabled={loading || busyCode !== null} className="app-btn-outline mt-3 text-sm disabled:opacity-50">
+            목록 다시 불러오기
+          </button>
+        </div>
       )}
       {warning && <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm">{warning}</p>}
 
       {/* 2026-08-25 추가 — 후보지가 늘어나면서 코드/이름/주소로 바로 찾을 방법이 없었다. 서버
           쪽 검색 없이(목록이 크지 않음) 클라이언트에서 이미 불러온 목록을 그대로 필터링한다. */}
       <input
-        type="text"
+        type="search"
+        aria-label="후보지 코드, 이름, 주소 검색"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="코드·이름·주소로 검색"
@@ -201,6 +207,7 @@ export default function CandidateListPage() {
 
       <div className="app-card overflow-x-auto rounded-2xl">
         <table className="w-full min-w-[720px] text-left text-sm">
+          <caption className="sr-only">신규 후보지 목록과 검토 상태</caption>
           <thead className="border-b border-[#171310]/[0.08] bg-[#171310]/[0.02] text-xs uppercase tracking-wide text-[var(--sl-ink-soft)] dark:border-white/[0.08] dark:bg-white/[0.02]">
             <tr>
               <th className="px-4 py-3">코드</th>
@@ -218,6 +225,12 @@ export default function CandidateListPage() {
                   불러오는 중...
                 </td>
               </tr>
+            ) : error && candidates.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-[var(--sl-ink-soft)]">
+                  목록을 확인할 수 없습니다. 다시 불러오기를 눌러주세요.
+                </td>
+              </tr>
             ) : candidates.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-[var(--sl-ink-soft)]">
@@ -228,6 +241,7 @@ export default function CandidateListPage() {
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-[var(--sl-ink-soft)]">
                   &ldquo;{search}&rdquo;와(과) 일치하는 후보지가 없습니다.
+                  <button type="button" onClick={() => setSearch("")} className="app-btn-outline mx-auto mt-3 block text-sm">검색 초기화</button>
                 </td>
               </tr>
             ) : (
@@ -255,7 +269,7 @@ export default function CandidateListPage() {
                       </span>
                     )}
                   </td>
-                  <td className="max-w-[240px] truncate px-4 py-3 text-[#5c5346] dark:text-[#c9bfae]">{c.address || "-"}</td>
+                  <td title={c.address || undefined} className="max-w-[240px] truncate px-4 py-3 text-[#5c5346] dark:text-[#c9bfae]">{c.address || "-"}</td>
                   <td className="px-4 py-3">
                     <span className={REVIEW_STATUS_STYLE[c.reviewStatus]}>
                       {c.reviewStatus}
@@ -272,7 +286,8 @@ export default function CandidateListPage() {
                       </Link>
                       <button
                         type="button"
-                        disabled={busyCode === c.code}
+                        disabled={busyCode !== null}
+                        aria-label={`${c.name || c.code} 복사`}
                         onClick={() => handleDuplicate(c.code)}
                         className="app-btn-outline rounded-md px-2.5 py-1 text-xs disabled:opacity-50"
                       >
@@ -280,7 +295,8 @@ export default function CandidateListPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={busyCode === c.code}
+                        disabled={busyCode !== null}
+                        aria-label={`${c.name || c.code} 삭제`}
                         onClick={() => handleDelete(c.code)}
                         className="rounded-md border border-[var(--sl-danger)]/30 px-2.5 py-1 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50"
                       >

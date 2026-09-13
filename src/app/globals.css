@@ -359,6 +359,11 @@ body {
 }
 
 /* 표 행 hover, 얇은 구분선 등 반복되는 자잘한 패턴 */
+.app-theme :is(a, button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--sl-gold-ink);
+  outline-offset: 3px;
+}
+
 .app-row:hover {
   background: rgba(23, 19, 16, 0.035);
 }

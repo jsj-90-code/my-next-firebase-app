@@ -13,6 +13,7 @@
 // 방치돼 있던 죽은 코드였다 - 실제 반영으로 고쳤다).
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
@@ -415,6 +416,12 @@ const OVERALL_STATUS_STYLE: Record<ValidationSummary2["overallStatus"], { badge:
 
 /** 화면 맨 위에서 "지금 이 모델을 믿고 써도 되는지"를 한눈에 보여주는 배지. */
 function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
+  if (summary.sampleCount === 0) return (
+    <section className="app-card rounded-2xl p-5" role="status">
+      <h2 className="text-lg font-semibold">검증 자료가 부족합니다</h2>
+      <p className="mt-2 text-sm text-[var(--sl-ink-soft)]">실제 매출과 예측값을 비교할 수 있는 매장이 아직 없습니다. 아래 매장별 확인 사유를 살펴보세요.</p>
+    </section>
+  );
   const style = OVERALL_STATUS_STYLE[summary.overallStatus];
   return (
     <section className={`rounded-2xl border-2 p-5 ${style.badge}`}>
@@ -515,7 +522,7 @@ function GlossarySection() {
       <div className="mt-3 space-y-3 text-[#5c5346] dark:text-[#c9bfae]">
         <p>
           이 화면은 <b>신규 매장 매출 예측 모델</b>이 실제로 얼마나 정확한지, 이미 운영 중인 가맹점의 실제 매출과 비교해서 검증합니다.
-          아래 숫자들이 목표치를 넘으면 이 모델을 새 후보지 평가에 그대로 써도 된다는 뜻입니다.
+          목표 충족 여부와 매장별 오차를 함께 확인해 후보지 평가에 참고하세요.
         </p>
         <ul className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
           <li>
@@ -526,7 +533,7 @@ function GlossarySection() {
           </li>
           <li>
             <b>리브원아웃 교차검증(LOOCV)</b> — 한 매장을 학습 데이터에서 빼고, 마치 처음 보는 신규 매장인 것처럼 그 매장의 매출을
-            예측해보는 방법. 실제 신규 후보지를 예측할 때와 조건이 가장 비슷해서, 이 숫자가 곧 진짜 모델 성능입니다.
+            예측해보는 방법입니다. 새로운 매장의 예측 성능을 가늠하는 참고치이며, 실제 개점 후 결과를 보장하지는 않습니다.
           </li>
           <li>
             <b>V62 운영 결과(시트 재현)</b> — 원본 구글시트가 예전에 계산해둔 값을 웹이 똑같이 재현하는지 확인하는 것. 모델 성능
@@ -607,15 +614,41 @@ function TenureBadge({
  * (calc.ts CORE_VALIDATION_MIN_MONTHS 참고).
  */
 function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
-  const sorted = [...rows].sort((a, b) => {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const visible = rows.filter(row => {
+    const matchesSearch = `${row.storeName} ${row.storeCode}`.toLowerCase().includes(search.trim().toLowerCase());
+    const included = row.includedInCoreAccuracy || row.includedInEarlyValidation;
+    return matchesSearch && (filter === "all" || (filter === "official" && included)
+      || (filter === "miss" && included && row.absoluteErrorPct != null && row.absoluteErrorPct > 0.1)
+      || (filter === "reference" && !included));
+  });
+  const sorted = [...visible].sort((a, b) => {
     const aFormal = a.cohort === "정식 검증군" ? 0 : 1;
     const bFormal = b.cohort === "정식 검증군" ? 0 : 1;
     if (aFormal !== bFormal) return aFormal - bFormal;
     return (b.absoluteErrorPct ?? -1) - (a.absoluteErrorPct ?? -1);
   });
   return (
+    <section className="space-y-3" aria-label="매장별 검증 결과">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="min-w-0 flex-1 text-sm font-medium">매장 검색
+          <input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="매장명 또는 코드" className="app-input mt-1 w-full px-3 py-2" />
+        </label>
+        <label className="text-sm font-medium">표시 대상
+          <select value={filter} onChange={event => setFilter(event.target.value)} className="app-input mt-1 block px-3 py-2">
+            <option value="all">전체 매장</option>
+            <option value="official">공식 검증 매장</option>
+            <option value="miss">공식 검증 중 오차 10% 초과</option>
+            <option value="reference">공식 검증 제외 매장</option>
+          </select>
+        </label>
+        <p className="py-2 text-xs text-[var(--sl-ink-soft)]" role="status">{sorted.length} / {rows.length}곳 표시</p>
+      </div>
+      <p className="text-xs text-[var(--sl-ink-soft)]">매장명을 누르면 상세 정보를 확인할 수 있습니다. 검색·필터는 위 전체 적중률에 영향을 주지 않습니다.</p>
     <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
       <table className="w-full min-w-[640px] text-sm">
+        <caption className="sr-only">매장별 실제매출과 예측매출 비교</caption>
         <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
             <th className="px-3 py-2">매장명</th>
@@ -629,7 +662,12 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
         <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
           {sorted.map((r) => (
             <tr key={r.storeCode} className="text-[#171310] dark:text-[#f2ede2]">
-              <td className="px-3 py-2 font-medium">{r.storeName}</td>
+              <td className="px-3 py-2 font-medium">
+                <Link href={`/store-eval/existing-stores/${encodeURIComponent(r.storeCode)}?tab=sales`} className="text-[var(--sl-gold-ink)] underline underline-offset-4">{r.storeName}</Link>
+                {!r.includedInCoreAccuracy && !r.includedInEarlyValidation && (
+                  <p className="mt-1 text-xs font-normal text-[var(--sl-ink-soft)]">공식 검증 제외 · {r.exclusionReason ?? describeNotVerifiableReason(r)}</p>
+                )}
+              </td>
               <td className="px-3 py-2">
                 <TenureBadge cohort={r.cohort} completedMonths={r.completedMonths} />
               </td>
@@ -647,13 +685,24 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
               </td>
             </tr>
           ))}
+          {sorted.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-[var(--sl-ink-soft)]">
+            <p>조건에 맞는 매장이 없습니다.</p>
+            <button type="button" className="app-btn-outline mt-3 rounded-lg px-3 py-2" onClick={() => { setSearch(""); setFilter("all"); }}>검색·필터 초기화</button>
+          </td></tr>}
         </tbody>
       </table>
     </div>
+    </section>
   );
 }
 
 function SummaryBlock({ title, summary, benchmark }: { title: string; summary: ValidationSummary2; benchmark?: ReferenceBenchmark }) {
+  if (summary.sampleCount === 0) return (
+    <section className="app-card rounded-xl p-4">
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <p className="mt-2 text-sm text-[var(--sl-ink-soft)]">비교 가능한 표본이 없어 적중률과 목표 충족 여부를 판단하지 않습니다.</p>
+    </section>
+  );
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h3>
@@ -746,6 +795,7 @@ function MeasuredForecastSummaryBlock({ summary }: { summary: ValidationSummary2
 
 export default function ValidationPage() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [loadAttempt, setLoadAttempt] = useState(0);
   // 후보지 화면에 넘겨줄 정확도 요약을 저장하지 못했을 때의 사유(성공하면 null).
   const [accuracyWriteError, setAccuracyWriteError] = useState<string | null>(null);
 
@@ -778,7 +828,7 @@ export default function ValidationPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   const computed = useMemo(() => {
     if (state.status !== "ready") return null;
@@ -967,7 +1017,8 @@ export default function ValidationPage() {
     return (
       <div className="rounded-2xl border border-[var(--sl-danger)]/30 bg-[var(--sl-danger-soft)] p-8 text-[#171310] dark:text-[#f2ede2]">
         <h2 className="text-lg font-semibold">데이터를 불러오지 못했습니다</h2>
-        <p className="mt-2 text-sm leading-6">{state.message}</p>
+        <p className="mt-2 text-sm leading-6" role="alert">{state.message}</p>
+        <button type="button" onClick={() => { setState({ status: "loading" }); setLoadAttempt(value => value + 1); }} className="app-btn-primary mt-4 rounded-lg px-4 py-2">다시 불러오기</button>
       </div>
     );
   }
@@ -977,8 +1028,9 @@ export default function ValidationPage() {
       <div className="app-card rounded-2xl p-8 text-center">
         <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">아직 등록된 기존 가맹점이 없습니다</h2>
         <p className="mt-2 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-          기존 가맹점 마스터(storeEvalExistingStores)와 학습 특징치가 Firestore에 들어오면 이 화면에 검증 결과가 표시됩니다.
+          기존 가맹점을 등록하고 실제 매출과 평가 정보를 입력하면 검증 결과를 확인할 수 있습니다.
         </p>
+        <Link href="/store-eval/existing-stores" className="app-btn-primary mt-4 inline-flex rounded-lg px-4 py-2">기존 가맹점 관리로 이동</Link>
       </div>
     );
   }
@@ -1041,22 +1093,21 @@ export default function ValidationPage() {
           학습표본 자격도 같은 기준이라 조기검증 집계는 비게 되고, coreSummary와 combinedSummary가
           같은 매장 집합이 된다. */}
       <section className="space-y-3">
-        <p className="text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
+        {combinedSummary.sampleCount > 0 && <p className="text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
           블랙라벨 매장(실제매출이 {CORE_VALIDATION_MIN_MONTHS}개월 이상 확정되고 산식학습제외가 아닌{" "}
           <b>{combinedSummary.sampleCount}곳</b>)으로 확인한 결과,{" "}
           <b>{combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct <= 0.1).length}곳</b>(
           {formatPercent(combinedSummary.within10PctRatio)})은 모델 예측이 실제 매출과 <b>10% 이내</b>로 맞았습니다. 나머지{" "}
           {combinedRows.filter((r) => r.absoluteErrorPct != null && r.absoluteErrorPct > 0.1).length}곳은 10%보다 더 차이가 났고,
           전체 평균으로는 실제 매출과 <b>{formatPercent(combinedSummary.meanAbsoluteErrorPct)}</b> 정도 차이가 났습니다.
-        </p>
+        </p>}
         <p className="text-xs text-[var(--sl-ink-soft)]">
-          아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 2026-09-02부터 실제매출이{" "}
-          {CORE_VALIDATION_MIN_MONTHS}개월이라도 확정된 매장은 계약 상태와 무관하게 전부 정식검증 표본이자 학습표본입니다(예전에는
-          12개월 이상만 정식검증). 완료월이 1~2개월인 매장은 오픈 프로모션 효과가 섞여 있을 수 있다는 점은 감안해서
-          보셔야 합니다.
+          아래 표는 블랙라벨 매장 전체({blackLabelRows.length}곳)입니다. 실제매출이 {CORE_VALIDATION_MIN_MONTHS}개월 이상 확정되고
+          학습·검증 요건을 충족한 매장을 공식 집계에 포함합니다. 제외된 매장은 표에 사유를 표시합니다.
+          완료월이 1~2개월인 매장은 오픈 프로모션 효과가 섞여 있을 수 있습니다.
         </p>
 
-        <ErrorBucketChart summary={combinedSummary} />
+        {combinedSummary.sampleCount > 0 && <ErrorBucketChart summary={combinedSummary} />}
 
         <SimpleResultTable rows={blackLabelRows} />
         <RevenueComparisonTable rows={blackLabelRows} />
@@ -1136,7 +1187,7 @@ export default function ValidationPage() {
       <div>
         <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">모델 검증 적중률 (리브원아웃 교차검증 — 신규점포 일반화 성능 참고)</h2>
         <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-          여기가 이 화면의 핵심입니다 — 신규 후보지를 예측할 때와 가장 비슷한 조건으로 측정한 <b>진짜 모델 성능</b>입니다.
+          각 매장을 학습에서 제외하고 예측한 결과입니다. 신규 후보지의 성능을 가늠하는 참고치로 사용하세요.
         </p>
       </div>
       <SummaryBlock title="1. 학습대상점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
@@ -1146,7 +1197,7 @@ export default function ValidationPage() {
         benchmark={REFERENCE_BENCHMARK.조기검증}
       />
       <SummaryBlock title="3. 정식검증+조기검증 통합 적중률" summary={combinedSummary} benchmark={REFERENCE_BENCHMARK.통합} />
-      <SummaryBlock title="4. 사후 운영이슈·참고용 점포까지 포함한 참고 적중률" summary={computed.referenceSummary} />
+      <SummaryBlock title="공식 검증에서 제외된 참고용 점포의 적중률" summary={computed.referenceSummary} />
 
       <section className="space-y-4 app-card rounded-2xl p-5">
         <div>
@@ -1154,8 +1205,7 @@ export default function ValidationPage() {
             시트 재현 적중률 — V62 운영 결과 (이관 검증용, 공식 성능 아님)
           </h2>
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-            시트에 저장된 V61 예측값(재계산 없이 그대로)에 외부유입 보정만 적용한 결과입니다. 실제 신규후보지 평가에 쓰는 예상매출이
-            이 방식과 같습니다. 위 리브원아웃 교차검증과 절대 섞지 않습니다.
+            과거 시트에 저장된 예측값에 외부유입 보정을 적용한 이관 참고자료입니다. 현재 신규후보지는 PC 이용시간·먹거리 분리 모형으로 계산합니다.
           </p>
         </div>
         <SheetParitySummaryBlock title="정식검증(시트 재현)" summary={sheetCoreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
@@ -1255,6 +1305,7 @@ export default function ValidationPage() {
       {/* 코호트별 상세 표 */}
       {(["정식 검증군", "조기 검증 A", "조기 검증 B", "조기 검증 C", "참고용", "제외"] as TenureCohort[]).map((cohort) => {
         const rows = byCohort.get(cohort) ?? [];
+        if (rows.length === 0) return null;
         return (
           <section key={cohort}>
             <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">

@@ -71,6 +71,7 @@ export default function StoreEvalDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +122,7 @@ export default function StoreEvalDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   const resultByCode = useMemo(() => new Map(results.map((result) => [result.candidateCode, result])), [results]);
 
@@ -166,13 +167,13 @@ export default function StoreEvalDashboardPage() {
 
   if (error) {
     return (
-      <div className="mx-auto w-full max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+      <div role="alert" className="app-card mx-auto w-full max-w-xl p-6">
         <h2 className="text-lg font-semibold">데이터를 불러오지 못했습니다</h2>
         <p className="mt-2 text-sm leading-6">{error}</p>
         <p className="mt-2 text-sm leading-6">
-          Firebase/Firestore 설정(.env.local)이 올바른지, 또는 storeEvalCandidates/storeEvalResults 컬렉션 접근 권한이
-          있는지 확인해주세요.
+          연결 상태를 확인한 뒤 다시 시도해주세요. 문제가 계속되면 관리자에게 문의해주세요.
         </p>
+        <button type="button" onClick={() => { setLoading(true); setLoadAttempt((attempt) => attempt + 1); }} className="app-btn-primary mt-4">다시 불러오기</button>
       </div>
     );
   }

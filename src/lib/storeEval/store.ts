@@ -183,7 +183,10 @@ export async function duplicateCandidate(sourceCode: string, actor: string | nul
   const source = await getCandidate(sourceCode);
   if (!source) throw new Error("복사할 후보지를 찾지 못했습니다.");
   const newCode = await generateNextCandidateCode();
-  const copy: CandidateInput = { ...source, code: newCode, name: `${source.name} (복사본)`, isDraft: true, createdAt: Date.now(), updatedAt: Date.now(), updatedBy: actor };
+  const copy: CandidateInput = { ...source, code: newCode, name: `${source.name} (복사본)`, isDraft: true,
+    // 판단은 해당 후보지를 검토한 사람의 기록이므로 새 후보지에 승계하지 않는다.
+    judgedRevenue: null, judgedReason: null, judgedAt: null, judgedBy: null,
+    createdAt: Date.now(), updatedAt: Date.now(), updatedBy: actor };
   await saveCandidate(copy, actor);
   return copy;
 }

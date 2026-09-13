@@ -22,6 +22,7 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
   return (
     <div className="app-theme flex min-h-screen flex-col">
       <AutoAuthGate>
+        <a href="#store-eval-content" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 app-btn-primary rounded-lg px-4 py-2">본문으로 바로가기</a>
         <header className="border-b border-[#171310]/[0.08] bg-[#fffdf7] dark:border-white/[0.08] dark:bg-[#1c1912]">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
             <div className="flex items-center gap-3">
@@ -38,14 +39,15 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
                 점포평가 <span className="text-[var(--sl-gold-ink)]">V62</span>
               </Link>
             </div>
-            <nav className="app-tabbar flex flex-wrap gap-1 p-1 text-sm">
+            <nav aria-label="점포평가 메뉴" className="app-tabbar order-3 flex w-full gap-1 overflow-x-auto p-1 text-sm lg:order-none lg:w-auto">
               {NAV_ITEMS.map((item) => {
                 const active = item.href === "/store-eval" ? pathname === item.href : pathname?.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`app-tab rounded-lg px-3 py-1.5 ${active ? "app-tab-active" : ""}`}
+                    aria-current={active ? "page" : undefined}
+                    className={`app-tab shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 ${active ? "app-tab-active" : ""}`}
                   >
                     {item.label}
                   </Link>
@@ -55,7 +57,7 @@ export function StoreEvalChrome({ children }: { children: ReactNode }) {
             <ThemeToggle className="app-btn-outline ml-auto rounded-full px-3 py-1.5 text-xs" />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
+        <main id="store-eval-content" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-6">{children}</main>
       </AutoAuthGate>
     </div>
   );

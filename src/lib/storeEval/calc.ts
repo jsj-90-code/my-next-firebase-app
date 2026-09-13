@@ -3083,8 +3083,9 @@ export function bucketizeErrors(rows: { absoluteErrorPct: number | null; storeNa
   const withError = rows.filter((r): r is { absoluteErrorPct: number; storeName: string } => r.absoluteErrorPct != null);
   const n = withError.length;
   let lower = 0;
-  return ERROR_BUCKETS.map((b) => {
-    const inBucket = withError.filter((r) => r.absoluteErrorPct > lower && (b.max == null || r.absoluteErrorPct <= b.max));
+  return ERROR_BUCKETS.map((b, index) => {
+    // 정확히 일치한 예측(0%)도 첫 구간에 포함한다. 이후 구간은 경계 중복을 피한다.
+    const inBucket = withError.filter((r) => (index === 0 ? r.absoluteErrorPct >= lower : r.absoluteErrorPct > lower) && (b.max == null || r.absoluteErrorPct <= b.max));
     lower = b.max ?? lower;
     return { label: b.label, count: inBucket.length, ratio: n ? inBucket.length / n : 0, storeNames: inBucket.map((r) => r.storeName) };
   });
