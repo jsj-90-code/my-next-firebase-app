@@ -1078,8 +1078,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className={sectionTitleClass}>실측기반 예상월매출 — 경쟁점 실가동좌석 기반 (V61/V62와 별개 경로, 참고용)</h3>
-          <span className="app-badge app-badge-warn text-xs">미검증 참고 지표</span>
+          <h3 className={sectionTitleClass}>경쟁점 실측 현황 — 실가동좌석 기반 (V61/V62와 별개 자료, 참고용)</h3>
+          <span className="app-badge app-badge-warn text-xs">참고 지표</span>
         </div>
         {/* 이 경로(13_신규후보지판정 AA열)는 원본 시트에도 존재 목적을 설명하는 근거가 없고,
             V61/V62처럼 기존 가맹점 리브-원-아웃 검증을 거친 적이 없다(docs/data-issues.md
@@ -1091,8 +1091,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             때문이다(사용자 확인, ReportCard.tsx 커밋 12c8896/이후 배지 제거 참고). 여기 ResultTab도
             같은 이유로 경고성 문구 대신 담백한 방법론 설명으로 통일한다. */}
         <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
-          이 값은 V61/V62처럼 기존 가맹점 실제매출로 검증된 적이 없는 별도 계산입니다(경쟁점 실가동좌석을 우리 매장 좌석점유로
-          환산하는 방식). 출점 판단은 위 &ldquo;V62 최종예상월매출&rdquo;을 기준으로 하고, 이 값은 참고로만 봐주세요.
+          여기 숫자는 경쟁점에 실제로 몇 자리가 돌아가는지(핑봇 실측)를 우리 매장 좌석점유로 환산한 <strong>별도 자료</strong>입니다.
+          위 &ldquo;V62 최종예상월매출&rdquo;과는 계산 경로가 다릅니다. <strong>이 경로로 매출 금액까지 환산한 값은 2026-09-14에
+          기존점 28곳으로 재봤더니 오차가 46%여서 화면에서 뺐습니다</strong>(V62는 9.88%). 좌석·가동률은 실측 자료라 남겨두었으니
+          &ldquo;V62가 전제하는 가동률이 경쟁점 실측보다 과한가&rdquo;를 가늠하는 데만 써주세요.
           {result.measuredForecastNeedsReview &&
             " 예상 가동률이 계획한 PC대수를 넘는데, 경쟁점이 많은 상권은 주요 경쟁점 위주로만 실사하는 게 정상 업무 프로세스라(전수조사 아님) 흔히 나오는 결과입니다 — 데이터가 잘못됐다는 뜻은 아닙니다."}
         </p>
@@ -1114,8 +1116,11 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             value={formatPercent(result.expectedUtilization)}
             hint={result.measuredForecastNeedsReview ? "주요 경쟁점 위주 실측 기준 추정치로, 실제보다 높게 나올 수 있음" : undefined}
           />
-          <ResultCard label="예상 대당 일매출" value={formatWon(result.expectedDailyRevenuePerPc)} />
-          <ResultCard label="실측기반 예상월매출 (참고용, 미검증)" value={formatWon(result.measuredForecastMonthlyRevenue)} />
+          {/* 2026-09-14 — "예상 대당 일매출"과 "실측기반 예상월매출"을 뺐다. 둘은 같은 값을 단위만
+              바꾼 것이고(dailyRevenuePerPc = monthlyRevenue / 대수 / 30), 기존점 28곳 백테스트에서
+              MAPE 46.45% · ±10% 10.7% · 계통편향 -19.8%였다. 2026-09-13에 같은 경로(AA경로, 오차 52%)를
+              평가기록 재료에서 이미 뺐는데 화면에는 남아 있었다. 좌석·가동률은 실측 자료라 남긴다.
+              근거: docs/releases/2026-09-14-measured-forecast-accuracy.md */}
         </div>
       </section>
 
