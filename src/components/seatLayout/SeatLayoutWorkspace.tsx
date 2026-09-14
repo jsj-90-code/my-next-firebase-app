@@ -25,6 +25,7 @@ import {
 import { compressImageDataUrl } from "@/lib/seatLayout/imageCompress";
 import { buildQuadrantTiles } from "@/lib/seatLayout/imageTiles";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
+import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
@@ -134,6 +135,31 @@ function statusToneClass(tone: "info" | "success" | "error") {
   if (tone === "success") return "text-[var(--sl-ok)]";
   if (tone === "error") return "text-[var(--sl-danger)]";
   return "text-[var(--sl-ink-soft)]";
+}
+
+/**
+ * 썸네일 data URL에서 브라켓 색(주황·빨강) 비율을 잰다 (2026-09-14).
+ * 판정 규칙은 bracketHint.ts에 있고 여기서는 픽셀만 꺼내 넘긴다 — 규칙을 두 벌 만들지 않는다.
+ * 실패하면 0을 돌려줘서 힌트가 조용히 사라지게 한다(도면 작업 자체를 막으면 안 된다).
+ */
+async function bracketRatioOfDataUrl(dataUrl: string): Promise<number> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("thumbnail load failed"));
+      el.src = dataUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return 0;
+    ctx.drawImage(img, 0, 0);
+    return bracketColorRatio(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+  } catch {
+    return 0;
+  }
 }
 
 export function SeatLayoutWorkspace() {
@@ -280,6 +306,10 @@ export function SeatLayoutWorkspace() {
     { pageNumber: number; thumbnail: string }[] | null
   >(null);
   const [pdfPickerBusy, setPdfPickerBusy] = useState(false);
+  // 2026-09-14 — "보통 3페이지"는 사용자가 본 PDF 3건에서 나온 관례라 일반화할 근거가 못 된다
+  // ("PDF 어떻게 주냐에 따라 틀릴 수 있다"). 번호 대신 **썸네일에서 주황·빨강을 세서** 짚는다.
+  // 힌트일 뿐이고 고르는 건 사람이다 — 애매하면 null이라 아무 표시도 안 한다.
+  const [bracketHintPage, setBracketHintPage] = useState<number | null>(null);
   // PDF 페이지 선택/크롭 화면은 도면과 좌석번호표가 공유한다 — 이 값으로 현재 어느 쪽을
   // 위한 것인지 구분한다 (선택한 페이지를 어디에 적용할지, 크롭 결과를 어디로 보낼지).
   const [pdfPickerTarget, setPdfPickerTarget] = useState<"floorplan" | "seatNumberPlate">(
@@ -1576,6 +1606,11 @@ export function SeatLayoutWorkspace() {
         }
         setPdfPickerTarget("floorplan");
         setPdfPickerPages(pages);
+        // 브라켓 표시가 있을 법한 페이지를 짚어준다. 실패하거나 애매하면 null이라 아무 표시도 안 한다.
+        const ratios = await Promise.all(
+          pages.map(async (pg) => ({ pageNumber: pg.pageNumber, ratio: await bracketRatioOfDataUrl(pg.thumbnail) })),
+        );
+        setBracketHintPage(pickLikelyBracketPage(ratios));
         setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
       } catch (err) {
         setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
@@ -1618,6 +1653,7 @@ export function SeatLayoutWorkspace() {
           : "도면 영역의 왼쪽 위를 클릭하세요 (제목 블록/범례 표는 빼고 도면만).",
       );
       setPdfPickerPages(null);
+      setBracketHintPage(null);
       pdfDocRef.current = null;
       setStatusMsg(
         pdfPickerTarget === "seatNumberPlate"
@@ -1634,6 +1670,7 @@ export function SeatLayoutWorkspace() {
 
   function cancelPdfPicker() {
     setPdfPickerPages(null);
+    setBracketHintPage(null);
     pdfDocRef.current = null;
   }
 
@@ -2579,22 +2616,28 @@ export function SeatLayoutWorkspace() {
                   <br />
                   💡 여러 페이지면 어느 페이지를 쓸지 고르게 됩니다.
                   <br />
-                  💡 <strong>책가방 선반 도면(보통 3페이지)</strong>을 고르세요 — 브라켓 표시가 있어야 헤드셋걸이
-                  종류가 자동으로 구분됩니다.
+                  💡 <strong>책가방 선반 도면</strong>(주황·빨간 브라켓 표시가 있는 페이지)을 고르세요 — 그래야
+                  헤드셋걸이 종류가 자동으로 구분됩니다.
                 </p>
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="app-card-sm mt-3 rounded-lg p-3">
                     <p className="text-xs font-semibold text-[var(--sl-warn)]">
                       배치도(평면도) 페이지를 클릭해서 선택해주세요
                     </p>
-                    {/* 2026-09-14 — 브라켓 표시가 없는 도면으로 작업하는 일이 있었다. PDF에는 책가방
-                        선반 도면이 같이 들어 있고 보통 3페이지다(사용자 확인). 어느 페이지를 골라야
-                        하는지 여기서 알려준다 — 고르는 그 순간이 유일하게 늦지 않은 자리다. */}
+                    {/* 2026-09-14 — 고르는 그 순간이 유일하게 늦지 않은 자리라 여기서 알려준다.
+                        페이지 번호로 찍어주지 않는다 — "보통 3페이지"는 본 PDF 3건의 관례일 뿐이라
+                        일반화할 근거가 없다. 대신 썸네일에서 브라켓 색을 세서 짚는다(bracketHint.ts). */}
                     <p className="mt-1 text-[11px] leading-4 text-[var(--sl-ink-soft)]">
-                      <strong>책가방 선반 도면(보통 3페이지)</strong>에는 주황·빨간 점과 선으로 브라켓 표시가 그려져
-                      있습니다. 그 표시가 있는 페이지를 고르면 <strong>아이락스 헤드셋걸이 수량이 자동으로</strong>
-                      세어집니다. 표시가 없는 페이지를 고르면 존마다 수량을 직접 넣어야 합니다.
+                      <strong>책가방 선반 도면</strong>을 고르세요 — 마주보는 책상 줄 위에 주황·빨간 점과 선으로
+                      브라켓이 그려져 있는 페이지입니다. 그 페이지를 고르면 <strong>아이락스 헤드셋걸이 수량이
+                      자동으로</strong> 세어집니다. 없는 페이지를 고르면 존마다 직접 넣어야 합니다.
                     </p>
+                    {bracketHintPage != null && (
+                      <p className="app-notice app-badge-warn mt-2 px-3 py-2 text-[11px] leading-4">
+                        {bracketHintPage}페이지에 주황·빨간 표시가 가장 많습니다 — 이 페이지일 수 있습니다.
+                        <span className="text-[var(--sl-ink-soft)]"> (색만 보고 짚은 것이라 직접 확인해주세요)</span>
+                      </p>
+                    )}
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       {pdfPickerPages.map((p) => (
                         <button
@@ -2960,8 +3003,9 @@ export function SeatLayoutWorkspace() {
                       <div className="app-notice app-badge-warn mt-2 max-w-md px-4 py-3 text-left text-xs leading-5">
                         <p className="font-semibold">어느 페이지를 골라야 하나요?</p>
                         <p className="mt-1">
-                          <strong>책가방 선반 도면(보통 3페이지)</strong>을 고르세요. 마주보는 책상 줄 위에
+                          <strong>책가방 선반 도면</strong>을 고르세요. 마주보는 책상 줄 위에
                           <strong> 주황색·빨간색 점과 선</strong>으로 브라켓이 그려져 있는 페이지입니다.
+                          PDF마다 몇 번째 장인지는 다릅니다.
                         </p>
                         <p className="mt-1">
                           그 표시가 있어야 <strong>아이락스 헤드셋걸이</strong> 수량을 자동으로 셉니다. 표시가 없는
