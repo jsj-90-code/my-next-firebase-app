@@ -513,7 +513,7 @@ function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
  * 사람도 이해할 수 있게) 익숙한 사용자는 클릭 한 번으로 접을 수 있다. 판정/계산 로직과는
  * 무관한 순수 설명 텍스트라 여기 문구를 고쳐도 검증 결과에 영향을 주지 않는다.
  */
-function GlossarySection() {
+function GlossarySection({ target10 }: { target10: number }) {
   return (
     <details className="app-card rounded-2xl p-5 text-sm leading-6">
       <summary className="cursor-pointer text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
@@ -550,7 +550,8 @@ function GlossarySection() {
             <b>MAPE(평균절대오차율)</b> — 예측이 실제매출과 평균적으로 몇 % 차이 나는지. 낮을수록 좋습니다.
           </li>
           <li>
-            <b>±10% 이내 적중률</b> — 예측이 실제매출과 10% 이내로 맞은 매장의 비율. 높을수록 좋습니다(목표 80%).
+            <b>±10% 이내 적중률</b> — 예측이 실제매출과 10% 이내로 맞은 매장의 비율. 높을수록 좋습니다(목표{" "}
+            {formatPercent(target10, 0)}). 목표치는 운영설정에서 바꿀 수 있어 여기 숫자를 적지 않고 설정값을 그대로 보여줍니다.
           </li>
           <li>
             <b>편향</b> — 예측이 실제보다 전체적으로 높게(+) 또는 낮게(-) 쏠려 있는지.
@@ -1120,7 +1121,7 @@ export default function ValidationPage() {
           아래 적중률은 각 점포를 학습에서 제외한 재검증 결과이며, 새 점포의 적중률을 보장하지 않습니다.
         </p>
       )}
-      <GlossarySection />
+      <GlossarySection target10={settings.target10pctRatio} />
       <PriceScenarioPanel baselines={state.rows.map(row=>({id:row.storeCode,label:row.storeName,revenue:row.v62PredictedRevenueAvg,hourlyRate:row.hourlyRate,pcRevenue:row.revenueBreakdown?.pcRevenue,productRevenue:row.revenueBreakdown?.productRevenue}))} productRatio={state.settings.measuredForecastProductRatio} />
 
       <details className="app-card rounded-2xl p-5">
@@ -1233,12 +1234,14 @@ export default function ValidationPage() {
 
       <section className="space-y-3 app-card rounded-2xl p-5">
         <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
-          5. 실측기반 예상월매출 검증 (신규 — 경쟁점 실가동좌석 기반, 이번에 처음 검증)
+          5. 실측기반 예상월매출 검증 (경쟁점 실가동좌석 기반 — 화면에서 뺀 경로의 근거)
         </h2>
         <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
-          V61/V62(인구·이용률 기반)과 완전히 별개인 두 번째 경로를 기존 가맹점 실제매출로 처음 검증해봤습니다. 이 경로는 원본
-          시트에도 존재 목적이 문서화돼 있지 않고 지금까지 검증된 적이 없어서, V61/V62 같은 통과/미달 목표(목표 MAE 등)를 적용하지
-          않고 수치만 그대로 보여줍니다 — 계속 쓸지 여부는 이 결과를 보고 판단해주세요.
+          V61/V62(인구·이용률 기반)과 완전히 별개인 두 번째 경로입니다. <b>2026-09-14에 판단이 끝났습니다</b> — 오차가 46%로
+          커서(V62는 9.88%) 후보지 결과 화면에서 금액 카드를 뺐고, 좌석·가동률 실측만 남겼습니다. 2026-09-13에 평가기록 재료에서
+          같은 경로를 뺀 것과 같은 이유입니다. 이 표는 그 판단의 근거이고, 자료가 쌓여 쓸 만해지는지 계속 보려고 남겨둡니다.
+          V61/V62 같은 통과/미달 목표는 적용하지 않고 수치만 그대로 보여줍니다.
+          근거: <code>docs/releases/2026-09-14-measured-forecast-accuracy.md</code>
         </p>
         <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
           정식검증({coreSummary.sampleCount}곳) 중 자사 시설값이 완비되고 경쟁점 실측(핑봇)이 있는{" "}

@@ -432,10 +432,11 @@ export default function HowItWorksPage() {
 
       <div className="app-notice app-badge-warn w-full items-start justify-start gap-2 px-4 py-3 text-left text-xs leading-5">
         <span>
-          <strong>참고</strong> — 결과 화면에 &ldquo;실측기반 예상월매출&rdquo;이라는 값도 같이 보이는데, 이건 지금까지 설명한
-          정식 계산과는 완전히 다른 별도 방법입니다(경쟁매장에 지금 실제로 몇 명이 앉아있는지 조회해서 환산하는 방식). 아직
-          정확도가 검증되지 않아서 참고용으로만 보여줄 뿐, 실제 출점 판단은 항상 위에서 설명한 정식 계산(최종 예상월매출)
-          기준으로 합니다.
+          <strong>참고</strong> — 예전에는 결과 화면에 &ldquo;실측기반 예상월매출&rdquo;이라는 값이 같이 보였습니다. 경쟁매장에
+          지금 실제로 몇 명이 앉아있는지 조회해서 환산하는, 위 설명과는 완전히 다른 별도 방법입니다.
+          <strong>2026-09-14에 기존 가맹점 28곳으로 정확도를 재봤더니 오차가 46%여서(위 정식 계산은 9.88%) 금액은 화면에서
+          뺐습니다.</strong> 경쟁매장 좌석·가동률 실측은 남아 있는데, 그건 &ldquo;위 계산이 전제하는 가동률이 현실보다 과한가&rdquo;를
+          가늠하는 용도입니다. 출점 판단은 언제나 위에서 설명한 정식 계산(최종 예상월매출) 기준입니다.
         </span>
       </div>
     </div>
