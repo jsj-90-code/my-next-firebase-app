@@ -1150,12 +1150,15 @@ export function SeatLayoutWorkspace() {
       try {
         const pdf = await loadPdfDocument(file);
         pdfDocRef.current = pdf;
-        const pages: { pageNumber: number; thumbnail: string }[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          pages.push({ pageNumber: i, thumbnail: await renderPdfPageToDataUrl(pdf, i, 260) });
-        }
+        // 2026-09-14 — 전부 그린 뒤에 한꺼번에 보여주면 큰 도면은 1분 가까이 빈 화면이다
+        // (실측: 11.8MB·10장에서 56초). 그리는 대로 하나씩 붙여서 먼저 나온 페이지를 바로 누를 수 있게 한다.
         setPdfPickerTarget("seatNumberPlate");
-        setPdfPickerPages(pages);
+        setPdfPickerPages([]);
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260);
+          setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
+          setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
+        }
         setStatusMsg(`PDF ${pdf.numPages}페이지 중 좌석번호표(피난안내도) 페이지를 선택해주세요.`, "success");
       } catch (err) {
         setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
@@ -1600,18 +1603,23 @@ export function SeatLayoutWorkspace() {
       try {
         const pdf = await loadPdfDocument(file);
         pdfDocRef.current = pdf;
+        // 2026-09-14 — 그리는 대로 하나씩 붙인다(위 좌석번호표 쪽 주석 참고).
+        setPdfPickerTarget("floorplan");
+        setPdfPickerPages([]);
         const pages: { pageNumber: number; thumbnail: string }[] = [];
         for (let i = 1; i <= pdf.numPages; i++) {
-          pages.push({ pageNumber: i, thumbnail: await renderPdfPageToDataUrl(pdf, i, 260) });
+          const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260);
+          pages.push({ pageNumber: i, thumbnail });
+          setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
+          setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
         }
-        setPdfPickerTarget("floorplan");
-        setPdfPickerPages(pages);
-        // 브라켓 표시가 있을 법한 페이지를 짚어준다. 실패하거나 애매하면 null이라 아무 표시도 안 한다.
+        setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
+        // 브라켓 표시가 있을 법한 페이지를 짚어준다. 전체를 견줘야 하므로 다 그린 뒤에 한다.
+        // 실패하거나 애매하면 null이라 아무 표시도 안 한다.
         const ratios = await Promise.all(
           pages.map(async (pg) => ({ pageNumber: pg.pageNumber, ratio: await bracketRatioOfDataUrl(pg.thumbnail) })),
         );
         setBracketHintPage(pickLikelyBracketPage(ratios));
-        setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
       } catch (err) {
         setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
       } finally {
