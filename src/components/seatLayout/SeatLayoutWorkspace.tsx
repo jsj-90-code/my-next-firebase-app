@@ -1558,6 +1558,13 @@ export function SeatLayoutWorkspace() {
     if (!file) return;
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 
+    // accept 속성은 파일 선택창의 기본 필터일 뿐이라 "모든 파일"로 바꾸면 통과한다. 여기서 막는다.
+    if (!isPdf) {
+      e.target.value = "";
+      setStatusMsg("도면은 PDF만 올릴 수 있습니다. 책가방 선반 도면이 같은 PDF 안에 있어야 브라켓 표시를 읽을 수 있습니다.", "error");
+      return;
+    }
+
     if (isPdf) {
       setStatusMsg("PDF에서 페이지를 불러오는 중...");
       try {
@@ -2554,27 +2561,39 @@ export function SeatLayoutWorkspace() {
                   htmlFor="floorplan-file-input"
                   className="mt-3 block cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)]"
                 >
-                  도면 업로드 (PDF 권장)
+                  도면 업로드 (PDF만)
                 </label>
+                {/* 2026-09-14 — 이미지도 받다가 PDF만 받는다(사용자 확정). 실무 PDF에는 배치도와
+                    책가방 선반 도면이 함께 들어 있는데, 화면 캡처 이미지를 올리면 그중 한 장만
+                    들어와 브라켓 표시가 아예 없는 상태가 된다. 권유로는 안 지켜졌다. */}
                 <input
                   id="floorplan-file-input"
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,application/pdf"
+                  accept="application/pdf,.pdf"
                   onChange={handleFileChange}
                   className="mt-1 w-full text-sm text-[#5c5346] file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:opacity-80 dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
                 />
                 <p className="mt-1 text-xs font-medium text-[var(--sl-warn)]">
                   도면은 모든 탭에서 공통으로 사용됩니다.
                   <br />
-                  💡 도면 이미지는 PDF로 등록하세요 — 화면 캡처보다 훨씬 선명해요.
+                  💡 여러 페이지면 어느 페이지를 쓸지 고르게 됩니다.
                   <br />
-                  💡 가방 선반 브라켓 표시(주황·빨간 점과 선)가 있는 도면을 쓰세요 — 헤드셋걸이 종류가 자동으로 구분돼요.
+                  💡 <strong>책가방 선반 도면(보통 3페이지)</strong>을 고르세요 — 브라켓 표시가 있어야 헤드셋걸이
+                  종류가 자동으로 구분됩니다.
                 </p>
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="app-card-sm mt-3 rounded-lg p-3">
                     <p className="text-xs font-semibold text-[var(--sl-warn)]">
                       배치도(평면도) 페이지를 클릭해서 선택해주세요
+                    </p>
+                    {/* 2026-09-14 — 브라켓 표시가 없는 도면으로 작업하는 일이 있었다. PDF에는 책가방
+                        선반 도면이 같이 들어 있고 보통 3페이지다(사용자 확인). 어느 페이지를 골라야
+                        하는지 여기서 알려준다 — 고르는 그 순간이 유일하게 늦지 않은 자리다. */}
+                    <p className="mt-1 text-[11px] leading-4 text-[var(--sl-ink-soft)]">
+                      <strong>책가방 선반 도면(보통 3페이지)</strong>에는 주황·빨간 점과 선으로 브라켓 표시가 그려져
+                      있습니다. 그 표시가 있는 페이지를 고르면 <strong>아이락스 헤드셋걸이 수량이 자동으로</strong>
+                      세어집니다. 표시가 없는 페이지를 고르면 존마다 수량을 직접 넣어야 합니다.
                     </p>
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       {pdfPickerPages.map((p) => (
@@ -2929,9 +2948,9 @@ export function SeatLayoutWorkspace() {
                         onClick={() => fileInputRef.current?.click()}
                         className="app-btn-primary rounded-lg px-4 py-2 text-sm"
                       >
-                        도면 파일 선택
+                        도면 PDF 선택
                       </button>
-                      <p className="text-xs text-[var(--sl-ink-soft)]">PDF로 올리면 화면 캡처보다 훨씬 선명합니다</p>
+                      <p className="text-xs text-[var(--sl-ink-soft)]">PDF만 올릴 수 있습니다 · 여러 페이지면 고를 수 있습니다</p>
                       {/* 2026-09-14 — 사용자 제보: 왼쪽 패널에 적어뒀는데도 브라켓 표시 없는 도면을
                           넣고 쓰는 일이 있었다. 그러면 헤드셋걸이를 손으로 넣어야 한다. 안내를 파일 고르는
                           자리로 옮기고, **무엇을 눈으로 확인해야 하는지**와 **안 하면 어떻게 되는지**를 적는다.
@@ -2939,14 +2958,15 @@ export function SeatLayoutWorkspace() {
                       {/* .app-notice는 display:block이라 flex 유틸리티가 안 먹는다 — 줄을 나누려면
                           블록 요소여야 한다(2026-09-14 화면에서 문장이 붙어 나와 확인). */}
                       <div className="app-notice app-badge-warn mt-2 max-w-md px-4 py-3 text-left text-xs leading-5">
-                        <p className="font-semibold">도면을 고르기 전에 — 가방 선반 브라켓 표시가 있나요?</p>
+                        <p className="font-semibold">어느 페이지를 골라야 하나요?</p>
                         <p className="mt-1">
-                          마주보는 책상 줄 위에 <strong>주황색·빨간색 점과 선</strong>으로 그어놓은 표시입니다.
-                          이게 있어야 <strong>아이락스 헤드셋걸이</strong> 수량을 자동으로 셉니다.
+                          <strong>책가방 선반 도면(보통 3페이지)</strong>을 고르세요. 마주보는 책상 줄 위에
+                          <strong> 주황색·빨간색 점과 선</strong>으로 브라켓이 그려져 있는 페이지입니다.
                         </p>
                         <p className="mt-1">
-                          표시가 없는 도면을 쓰면 <strong>존마다 수량을 손으로 넣어야 하고</strong>, 안 넣으면
-                          전부 아이센스 헤드셋걸이로 발주됩니다.
+                          그 표시가 있어야 <strong>아이락스 헤드셋걸이</strong> 수량을 자동으로 셉니다. 표시가 없는
+                          페이지를 고르면 <strong>존마다 수량을 손으로 넣어야 하고</strong>, 안 넣으면 전부 아이센스
+                          헤드셋걸이로 발주됩니다.
                         </p>
                       </div>
                     </div>
