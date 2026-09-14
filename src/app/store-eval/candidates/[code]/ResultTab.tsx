@@ -970,40 +970,6 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 print:hidden">
-        {alreadyExisting ? (
-          <span className="app-card-sm rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
-            이미 기존 가맹점으로 전환됨 — [기존 가맹점 관리] 화면에서 관리하세요.
-          </span>
-        ) : (
-          <>
-            <label className="flex items-center gap-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
-              실제 가맹점코드
-              <input
-                type="text"
-                value={newStoreCode}
-                onChange={(e) => setNewStoreCode(e.target.value)}
-                placeholder="예: 20260703437"
-                className="app-input w-40 px-2 py-1.5 text-sm"
-              />
-            </label>
-            <button
-              type="button"
-              disabled={converting}
-              onClick={handleConvert}
-              className="rounded-lg border border-[var(--sl-ok)]/30 bg-[var(--sl-ok-soft)] px-4 py-2 text-sm font-medium text-[var(--sl-ok)] hover:brightness-95 disabled:opacity-50"
-            >
-              {converting ? "전환 중..." : "오픈 확정 → 기존 가맹점으로 전환"}
-            </button>
-          </>
-        )}
-        {existingCheckFailed && (
-          <span className="app-badge app-badge-warn px-3 py-2 text-xs">
-            전환 여부를 확인하지 못했습니다 — 이미 전환된 후보지일 수 있습니다. 새로고침 후 다시 확인하세요.
-          </span>
-        )}
-        {convertMessage && <p className="text-xs text-[#5c5346] dark:text-[#c9bfae]">{convertMessage}</p>}
-      </div>
 
       {(() => {
         // 2026-09-11 사용자 지적(호구포역) — 경쟁이 하나 늘어나는데 기존 사업자보다 가동률이
@@ -1035,9 +1001,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         </span>
         <span className="text-xs text-[var(--sl-ink-soft)]">입력완성도: {result.completionStatus ?? "-"}</span>
       </div>
-      <p className="text-xs text-[var(--sl-ink-soft)]">
-        [계산 상태]는 아직 입력·계산이 덜 끝났다는 뜻이고, [사업 판정]이 떠야 실제 출점 판단에 참고할 수 있는 결과입니다.
-      </p>
+      {/* 2026-09-14 — 늘 떠 있던 용어 설명. [계산 상태]일 때만 필요한 안내라 그때만 보여준다. */}
+      {judgementKind(result.finalJudgement) === "계산 상태" && (
+        <p className="text-xs text-[var(--sl-ink-soft)]">
+          [계산 상태]는 아직 입력·계산이 덜 끝났다는 뜻입니다. [사업 판정]이 떠야 실제 출점 판단에 참고할 수 있는 결과입니다.
+        </p>
+      )}
 
       {/* 2026-09-13 — 결재 전 체크리스트. 경고가 화면 곳곳에 흩어져 있어(운영설정은 맨 위, 가동률은
           판정 앞, 상한은 매출 카드 안) 빠뜨리기 쉬웠다. 규칙으로 신호를 모아 한 자리에 세운다 —
@@ -1440,6 +1409,53 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           </div>
         </div>
       </details>
+
+      {/* 2026-09-14 — 원래 화면 맨 위에 있었다. 자주 쓰지 않는 데다 되돌리기 어려운 동작인데
+          가장 먼저 눈에 띄었고, 정작 결론(예상매출·판정)은 스크롤 아래였다. 아래로 내려서
+          결론이 먼저 오게 했다. 동작은 그대로다. */}
+      <section className="app-card rounded-2xl p-5 print:hidden">
+        <h3 className={sectionTitleClass}>오픈이 확정됐다면</h3>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+          기존 가맹점으로 옮기면 이 후보지는 예측 대상이 아니라 <strong>실적을 쌓는 매장</strong>이 됩니다.
+          되돌리기 번거로우니 실제로 오픈이 확정된 뒤에 눌러주세요.
+        </p>
+        <div className="mt-3">
+        <div className="flex flex-wrap items-center gap-3 print:hidden">
+          {alreadyExisting ? (
+            <span className="app-card-sm rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
+              이미 기존 가맹점으로 전환됨 — [기존 가맹점 관리] 화면에서 관리하세요.
+            </span>
+          ) : (
+            <>
+              <label className="flex items-center gap-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
+                실제 가맹점코드
+                <input
+                  type="text"
+                  value={newStoreCode}
+                  onChange={(e) => setNewStoreCode(e.target.value)}
+                  placeholder="예: 20260703437"
+                  className="app-input w-40 px-2 py-1.5 text-sm"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={converting}
+                onClick={handleConvert}
+                className="rounded-lg border border-[var(--sl-ok)]/30 bg-[var(--sl-ok-soft)] px-4 py-2 text-sm font-medium text-[var(--sl-ok)] hover:brightness-95 disabled:opacity-50"
+              >
+                {converting ? "전환 중..." : "오픈 확정 → 기존 가맹점으로 전환"}
+              </button>
+            </>
+          )}
+          {existingCheckFailed && (
+            <span className="app-badge app-badge-warn px-3 py-2 text-xs">
+              전환 여부를 확인하지 못했습니다 — 이미 전환된 후보지일 수 있습니다. 새로고침 후 다시 확인하세요.
+            </span>
+          )}
+          {convertMessage && <p className="text-xs text-[#5c5346] dark:text-[#c9bfae]">{convertMessage}</p>}
+        </div>
+        </div>
+      </section>
     </div>
   );
 }
