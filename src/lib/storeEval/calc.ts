@@ -1916,7 +1916,10 @@ export function buildV61TrainingStores(
   const locationsByCode = new Map(locations.map(l => [l.candidateCode, l]));
   return stores.filter(isEligibleForV61Training)
     .filter(s => !useVisibility || ((s.completedMonths ?? 0) >= CORE_VALIDATION_MIN_MONTHS
-      && isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.visibilityScore)))
+      && isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.visibilityScore)
+      // 곱 모드에서는 선점경쟁도 있어야 한다 — 섞이면 같은 칸에 두 척도가 들어간다.
+      && (settings?.v61Training.accessScoreMode !== "visibility-x-preemption"
+        || isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.preemptionScore))))
     .map((s) => ({
     storeCode: s.storeCode,
     storeName: s.storeName,
@@ -1934,6 +1937,8 @@ export function buildV61TrainingStores(
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
     ...(useVisibility ? {
       visibilityScore: locationsByCode.get(s.originCandidateCode ?? s.storeCode)!.visibilityScore!,
+      ...(settings!.v61Training.accessScoreMode === "visibility-x-preemption"
+        ? { preemptionScore: locationsByCode.get(s.originCandidateCode ?? s.storeCode)!.preemptionScore! } : {}),
       trainingRevenueFactor: 1 + (getV62Rate(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.inflowRestriction ?? null, settings!) ?? 0),
     } : {}),
   }));
@@ -1941,6 +1946,8 @@ export function buildV61TrainingStores(
 
 export type V61TrainingStore = {
   visibilityScore?: number;
+  /** 선점경쟁 점수 — accessScoreMode가 "visibility-x-preemption"일 때만 채워진다. */
+  preemptionScore?: number;
   /** 실매출에 이미 반영된 외부유입 차감을 학습 목표에서 분리하기 위한 배율. */
   trainingRevenueFactor?: number;
   storeCode: string;
@@ -2034,6 +2041,13 @@ export function isValidVisibilityScore(score: unknown): score is number {
 
 export function empiricalFeaturesFor(input: {
   visibilityScore?: number | null;
+  /**
+   * 선점경쟁 점수 (2026-09-14 추가). **들어오면 접근성 피처가 log(가시성 × 선점경쟁)으로 바뀐다.**
+   * 설정이 "visibility-x-preemption"일 때만 호출부가 넣는다 — 넣는 표본과 안 넣는 표본을 섞으면
+   * 같은 피처 칸에 서로 다른 척도가 들어가므로 **전부 넣거나 전부 빼야 한다**
+   * (competitorDistanceRatio와 같은 규칙).
+   */
+  preemptionScore?: number | null;
   hourlyRate: number;
   marketDemand: number;
   competitorIp: number;
@@ -2059,7 +2073,19 @@ export function empiricalFeaturesFor(input: {
     input.competitivenessScore * Math.log(Math.max(0.1, input.competitivenessGap ?? 1)),
     // 2026-09-03 — 배후수요형 특수상권(군부대·산업단지) 더미. isBackingDemandMarket 주석 참고.
     isBackingDemandMarket(input.specialDemandType) ? 1 : 0,
-    ...(isValidVisibilityScore(input.visibilityScore) ? [input.visibilityScore] : []),
+    // 2026-09-14 — 접근성은 **곱**으로 작동한다. 선점경쟁 점수는 단독으로는 신호가 없는데
+    // (PC대수를 걷어낸 잔차와 r=0.079) 접근가시성과 곱하면 살아난다 — 참 이용시간 38곳 LOOCV에서
+    // 가시성만 13.85% → log(가시성 × 선점경쟁) 13.06%. 좋은 자리를 먼저 잡았는지와 눈에 띄는지가
+    // 따로 놀지 않고 같이 있어야 의미가 있다는 뜻이다.
+    //
+    // ⚠️ 더 좋은 조합은 log(가시성 × **주요동선**) 12.72%였지만 쓰지 않는다 — 주요동선은
+    // 2026-09-01에 locationScore로 통합되며 입력·AI채점에서 빠져서 **신규 후보지에 값이 없다**
+    // (마산산호점 2026-09-14 확인). 학습에만 있고 예측에 없는 피처는 쓰면 안 된다.
+    ...(isValidVisibilityScore(input.visibilityScore)
+      ? [isValidVisibilityScore(input.preemptionScore)
+          ? Math.log(input.visibilityScore * input.preemptionScore)
+          : input.visibilityScore]
+      : []),
     ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
       ? [input.competitorDistanceRatio] : []),
   ];
@@ -2086,7 +2112,9 @@ export function empiricalFeatureLabels(input: Parameters<typeof empiricalFeature
     // "배후수요 상권(군부대·산업단지)"이면 "우리 상권이 군부대라는 건가?"로 읽히므로 상태를
     // 그대로 드러낸다.
     isBackingDemandMarket(input.specialDemandType) ? "배후수요 상권(군부대·산업단지)" : "배후수요 상권 해당 없음",
-    ...(isValidVisibilityScore(input.visibilityScore) ? ["접근성·가시성"] : []),
+    ...(isValidVisibilityScore(input.visibilityScore)
+      ? [isValidVisibilityScore(input.preemptionScore) ? "접근성·선점경쟁" : "접근성·가시성"]
+      : []),
     ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
       ? ["경쟁점 평균거리"] : []),
   ];
@@ -2839,6 +2867,8 @@ export type ValidationStoreInput = {
    */
   competitorDistanceRatio?: number | null;
   visibilityScore?: number | null;
+  /** 선점경쟁 점수 — accessScoreMode가 "visibility-x-preemption"일 때 접근성 피처에 곱해진다. */
+  preemptionScore?: number | null;
   storeCode: string;
   storeName: string;
   brand: string | null; // null = 브랜드 미확인 (09_입지동선평가에 행 없음)
@@ -3242,6 +3272,8 @@ export function toV61TrainingStore(
     ...(s.competitorDistanceRatio != null ? { competitorDistanceRatio: s.competitorDistanceRatio } : {}),
     ...(settings?.v61Training.modelVariant === "visibility-inflow" ? {
       visibilityScore: s.visibilityScore ?? undefined,
+      ...(settings.v61Training.accessScoreMode === "visibility-x-preemption"
+        ? { preemptionScore: s.preemptionScore ?? undefined } : {}),
       trainingRevenueFactor: 1 + (getV62Rate(s.inflowRestriction ?? null, settings) ?? 0),
     } : {}),
   };

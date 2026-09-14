@@ -170,7 +170,9 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // 않는다(empiricalFeatureLabels 주석 — 예전에 라벨 배열이 따로 놀다가 몇 달간 어긋난 적 있다).
   const usageFeatureInput = {hourlyRate:c.hourlyRate??0,marketDemand:marketDemand??0,competitorIp,
     pcCount:c.expectedPcCount??0,competitivenessScore:ownCompetitivenessScore??0,competitivenessGap,
-    specialDemandType:loc?.specialDemandType,visibilityScore:useVisibility?loc?.visibilityScore:undefined};
+    specialDemandType:loc?.specialDemandType,visibilityScore:useVisibility?loc?.visibilityScore:undefined,
+    // 접근성 피처를 가시성×선점경쟁으로 쓸 때만 넣는다(calc.ts empiricalFeaturesFor 주석).
+    preemptionScore:useVisibility&&settings.v61Training.accessScoreMode==="visibility-x-preemption"?loc?.preemptionScore:undefined};
   const usageFeatures = empiricalFeaturesFor(usageFeatureInput);
   const usageDriverLabels = empiricalFeatureLabels(usageFeatureInput);
   const usagePrediction = usageModel && c.hourlyRate != null && c.expectedPcCount
@@ -200,6 +202,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       // 이미 입지동선평가 탭에서 입력받는 값이라 새 입력 필드가 필요 없다.
       specialDemandType: loc?.specialDemandType ?? null,
       visibilityScore: useVisibility ? loc?.visibilityScore : undefined,
+      preemptionScore: useVisibility && settings.v61Training.accessScoreMode === "visibility-x-preemption"
+        ? loc?.preemptionScore : undefined,
     });
     const prediction = predictEmpiricalRevenue(
       trainedModel,
@@ -222,7 +226,10 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
           "경쟁력점수",
           "경쟁력점수×경쟁력격차",
           "배후수요상권(군부대·산업단지)",
-          ...(useVisibility ? ["접근가시성"] : []),
+          ...(useVisibility
+            ? [settings.v61Training.accessScoreMode === "visibility-x-preemption"
+              ? "접근가시성×선점경쟁" : "접근가시성"]
+            : []),
         ],
         featureRealValues: [
           c.hourlyRate,
@@ -230,7 +237,10 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
           ownCompetitivenessScore,
           competitivenessGap ?? 1,
           isBackingDemandMarket(loc?.specialDemandType) ? 1 : 0,
-          ...(useVisibility ? [loc!.visibilityScore!] : []),
+          ...(useVisibility
+            ? [settings.v61Training.accessScoreMode === "visibility-x-preemption" && loc?.preemptionScore != null
+              ? loc.visibilityScore! * loc.preemptionScore : loc!.visibilityScore!]
+            : []),
         ],
         featureModelValues: featuresRaw,
         featureMeans: trainedModel.featureMeans,

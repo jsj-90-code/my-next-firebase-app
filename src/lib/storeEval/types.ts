@@ -406,6 +406,21 @@ export type ModelSettings = {
     /** 활성화 시 접근가시성과 외부유입 차감 전 학습 목표를 사용한다. */
     modelVariant?: "legacy" | "visibility-inflow";
     minVisibilityCoef?: number;
+    /**
+     * 접근성 피처를 무엇으로 만들지 (2026-09-14 신설).
+     *
+     * - `"visibility"`(기본) — 접근가시성 점수 그대로. 종전 동작.
+     * - `"visibility-x-preemption"` — **log(접근가시성 × 선점경쟁)**.
+     *
+     * 입지동선평가는 점수를 여러 개 매기는데 예측에는 접근가시성 하나만 쓰고 있었다.
+     * 실측해보니 **선점경쟁은 단독으로는 신호가 없는데(r=0.079) 가시성과 곱하면 살아난다**
+     * — 참 이용시간 38곳 LOOCV에서 13.85% → 13.06%.
+     *
+     * (더 나은 조합인 log(가시성 × 주요동선) 12.72%는 쓰지 않는다 — 주요동선은 2026-09-01에
+     * 통합되며 입력에서 빠져 신규 후보지에 값이 없다.)
+     * 근거·수치: docs/demand-structure-search-2026-09-14.md
+     */
+    accessScoreMode?: "visibility" | "visibility-x-preemption";
     ridgeLambda: number; // 10 — 38곳 LOOCV + 부분표본 재검증으로 선정
     ridgeWeight: number; // 0.80 — 릿지회귀 예측 가중치
     baselineWeight: number; // 0.20 — 대당월매출 중앙값 가중치

@@ -118,6 +118,9 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
       // 부분만 교정하는 보수적인 0.05를 택했다 — 재추출 200회에서 MAPE 176/200·±20% 183/200·
       // 오차폭 133/200으로 셋 다 우세하다.
       minBackingDemandCoef: 0.05,
+      // 2026-09-14 — 기본은 종전 동작(접근가시성만). "visibility-x-preemption"으로 켜면
+      // 선점경쟁 점수를 곱해서 쓴다. 켤지 말지는 사용자 확인 대기 중이다(types.ts 주석·docs 참고).
+      accessScoreMode: "visibility" as const,
       // 2026-09-14 — 실효단가 지수. 사용자 제공 매장 로그(PC 거래 원본 6곳)로 저장된 가동률
       // 필드가 정확함을 확인한 뒤(오차 2.3%), 38곳 전부의 **참 이용시간**을 가동률에서 구해
       // 실효단가 = PC매출 ÷ 참이용시간 을 계산했다. log-log 회귀 결과 기울기 0.546(R² 0.346).

@@ -2713,3 +2713,48 @@ describe("배후수요 라벨 — 해당 여부를 드러낸다", () => {
     }
   });
 });
+
+describe("접근성 피처 — 가시성 단독 vs 가시성×선점경쟁 (2026-09-14 신설)", () => {
+  const base = { hourlyRate: 1300, marketDemand: 200000, competitorIp: 300, pcCount: 100, competitivenessScore: 4 };
+
+  it("선점경쟁을 안 넣으면 종전 그대로 — 가시성 점수가 그대로 들어간다", () => {
+    const f = empiricalFeaturesFor({ ...base, visibilityScore: 4 });
+    expect(f).toHaveLength(6);
+    expect(f[5]).toBe(4);
+    expect(empiricalFeatureLabels({ ...base, visibilityScore: 4 })[5]).toBe("접근성·가시성");
+  });
+
+  it("선점경쟁을 넣으면 log(가시성 × 선점경쟁)이 된다", () => {
+    const f = empiricalFeaturesFor({ ...base, visibilityScore: 4, preemptionScore: 3 });
+    expect(f).toHaveLength(6);
+    expect(f[5]).toBeCloseTo(Math.log(12), 10);
+    expect(empiricalFeatureLabels({ ...base, visibilityScore: 4, preemptionScore: 3 })[5]).toBe("접근성·선점경쟁");
+  });
+
+  it("피처 개수는 어느 쪽이든 같다 — 라벨과 값이 어긋나면 설명이 통째로 거짓이 된다", () => {
+    for (const input of [
+      { ...base, visibilityScore: 4 },
+      { ...base, visibilityScore: 4, preemptionScore: 3 },
+      { ...base },
+    ]) expect(empiricalFeaturesFor(input)).toHaveLength(empiricalFeatureLabels(input).length);
+  });
+
+  it("가시성이 없으면 선점경쟁만 있어도 접근성 피처는 안 붙는다", () => {
+    const f = empiricalFeaturesFor({ ...base, preemptionScore: 3 });
+    expect(f).toHaveLength(5);
+  });
+
+  it("선점경쟁이 범위 밖이면 가시성 단독으로 되돌아간다 — 조용히 0을 만들지 않는다", () => {
+    for (const bad of [0, 6, 2.5, NaN, null, undefined]) {
+      const f = empiricalFeaturesFor({ ...base, visibilityScore: 4, preemptionScore: bad as number | null });
+      expect(f[5]).toBe(4);
+    }
+  });
+
+  it("둘 다 높을수록 커지고, 한쪽이 낮으면 깎인다 — 곱으로 쓰는 이유", () => {
+    const v = (vis: number, pre: number) => empiricalFeaturesFor({ ...base, visibilityScore: vis, preemptionScore: pre })[5];
+    expect(v(5, 5)).toBeGreaterThan(v(5, 2)); // 자리는 좋은데 선점이 밀리면 깎인다
+    expect(v(5, 5)).toBeGreaterThan(v(2, 5)); // 선점했어도 안 보이면 깎인다
+    expect(v(4, 3)).toBeCloseTo(v(3, 4), 10); // 곱이라 순서는 무관
+  });
+});

@@ -187,6 +187,7 @@ async function loadValidationData(): Promise<{
         specialDemandIntensity: s.specialDemandIntensity,
         inflowRestriction: loc?.inflowRestriction ?? null,
         visibilityScore: loc?.visibilityScore ?? null,
+        preemptionScore: loc?.preemptionScore ?? null,
         hasLocationEvaluation: loc != null,
         floor: s.floor,
         groundLevel: s.groundLevel,

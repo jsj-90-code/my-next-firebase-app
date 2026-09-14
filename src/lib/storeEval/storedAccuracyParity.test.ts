@@ -109,6 +109,7 @@ describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되
       specialDemandIntensity: s.specialDemandIntensity,
       inflowRestriction: loc?.inflowRestriction ?? null,
       visibilityScore: loc?.visibilityScore ?? null,
+      preemptionScore: loc?.preemptionScore ?? null,
       hasLocationEvaluation: loc != null,
       floor: s.floor,
       groundLevel: s.groundLevel,
