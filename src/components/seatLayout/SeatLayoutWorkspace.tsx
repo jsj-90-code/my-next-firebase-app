@@ -1593,11 +1593,15 @@ export function SeatLayoutWorkspace() {
           });
           ratios.push({ pageNumber: i, ratio });
           setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
+          // 2026-09-14 — 다 그린 뒤에 짚었더니 실제 도면에서 힌트를 못 보고 지나갔다. 페이지마다
+          // 렌더 시간이 천차만별이라서다(평택소사벌점 실측: 1~8페이지는 각 0.1~1.5초인데 9·10페이지가
+          // 15.8초·13.3초로 전체 35초 중 29초를 잡아먹는다). 정작 필요한 3페이지는 3초면 나온다.
+          // 그래서 지금까지 그린 것만으로 매번 다시 짚는다 — 뒤 페이지가 더 진하면 그때 바뀐다.
+          // 어차피 "확인해주세요"라고 적어둔 힌트라 바뀌어도 판단은 사람이 한다.
+          setBracketHintPage(pickLikelyBracketPage(ratios));
           setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
         }
         setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
-        // 전체를 견줘야 하므로 다 그린 뒤에 짚는다. 애매하면 null이라 아무 표시도 안 한다.
-        setBracketHintPage(pickLikelyBracketPage(ratios));
       } catch (err) {
         setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
       } finally {
