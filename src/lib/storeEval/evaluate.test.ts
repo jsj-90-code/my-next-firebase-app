@@ -185,7 +185,10 @@ describe("evaluateCandidate 배선 검증", () => {
   // 예전 계약: 요금이 올라도 이용시간은 그대로고 PC매출만 요금에 정비례한다(탄력성 1.0 고정).
   // 새 계약:   요금이 오르면 이용시간이 줄고, PC매출은 늘되 **비례보다 덜** 는다(탄력성 < 1).
   // 먹거리가 요금과 무관한 것과, 가동률 상한에 걸리면 다시 정비례가 되는 것은 그대로다.
-  it("요금이 오르면 이용시간이 줄어 PC매출이 비례보다 덜 는다(먹거리는 무관)", () => {
+  // 2026-09-14 — 계약이 다시 바뀌었다(사용자 확정). 2026-09-10에 "요금이 오르면 이용시간이 줄어
+  // PC매출이 비례보다 덜 는다"로 바꿨던 것을, 실무 판단으로 **요금 비례**로 되돌렸다.
+  // 근거: usageRevenue.ts의 TARIFF_FEATURE_DEFAULT 주석.
+  it("요금이 오르면 PC매출이 그만큼 비례해서 는다(먹거리는 무관, 이용시간은 요금과 무관)", () => {
     const activeSettings = {...settings, v61Training:{...settings.v61Training, modelVariant:"visibility-inflow" as const, ridgeWeight:1, baselineWeight:0}};
     const existingStores = Array.from({length:16}, (_,i) => ({
       storeCode:`S${i}`, originCandidateCode:`L${i}`, storeName:`매장${i}`, brandType:"블랙라벨", excludedFromModel:false,
@@ -205,15 +208,13 @@ describe("evaluateCandidate 배선 검증", () => {
     expect(high.v61Baseline).not.toBeNull();
     expect(high.revenueBreakdown).toBeDefined();
     expect(low.revenueBreakdown).toBeDefined();
-    // 요금이 싼 쪽이 이용시간이 더 많다 — 탄력성이 학습되면서 생긴 새 동작.
-    expect(low.revenueBreakdown!.pcHours).toBeGreaterThan(high.revenueBreakdown!.pcHours);
-    expect(low.v62ImpliedUtilization!).toBeGreaterThan(high.v62ImpliedUtilization!);
-    // 먹거리는 PC요금과 무관하다(먹거리 모형에는 요금을 넣지 않았다).
+    // 이용시간은 요금과 무관하다 — 요금을 이용시간 모형의 피처로 쓰지 않는다.
+    expect(low.revenueBreakdown!.pcHours).toBe(high.revenueBreakdown!.pcHours);
+    // 먹거리도 PC요금과 무관하다(먹거리 모형에도 요금을 넣지 않았다).
     expect(low.revenueBreakdown!.productRevenue).toBe(high.revenueBreakdown!.productRevenue);
-    // PC매출은 요금이 오르면 늘긴 하지만 **비례(1.5배)보다는 덜** 는다.
+    // PC매출은 요금에 **정비례**한다 — 같은 이용시간에 시간당요금만 달라지기 때문이다.
     const pcRatio = high.revenueBreakdown!.pcRevenue / low.revenueBreakdown!.pcRevenue;
-    expect(pcRatio).toBeGreaterThan(1);
-    expect(pcRatio).toBeLessThan(1500 / 1000);
+    expect(pcRatio).toBeCloseTo(1500 / 1000, 3);
     // 요금 시나리오 자체는 살아 있어야 한다 — 요금을 올리면 총매출 예측도 오른다.
     expect(high.v62Final!).toBeGreaterThan(low.v62Final!);
     expect(low.v62Final).toBe(low.revenueBreakdown!.pcRevenue+low.revenueBreakdown!.productRevenue);
