@@ -1,10 +1,27 @@
+"use client";
+
 // 매출 계산법 설명 화면 - 2026-08-27 추가.
 // 사용자 요청: "중고등학생정도가 봐도 이해할수 있도록, rawdemand·비음수 릿지회귀 같은 전문용어
 // 넣지말고 알기쉽게 적되 상세히, 예상매출까지 나오는 과정을" — calc.ts/evaluate.ts의 실제 계산
 // 순서(수요→점유율→매출)를 그대로 따라가되, 전문용어 없이 쉬운 말로 풀어 쓴다. 새 계산을 만들지
 // 않고 이미 있는 계산 흐름을 설명만 한다.
+//
+// 2026-09-14 — 사용자 지적: "지금 정의 같은 형태로만 적혀 있는데, 실제 계산이 어떻게 진행되는지
+// 이해할 수 있는 자료가 되는 게 더 좋겠다." 맞는 지적이었다. 설명만 있고 **숫자가 하나도 없어서**
+// 읽고 나도 "그래서 이 후보지 5,300만원이 어디서 나왔나"에 답이 안 됐다. 그래서 실제 후보지를
+// 골라 각 단계에 그 후보지의 진짜 숫자가 흘러가는 표를 붙인다.
+//
+// 숫자는 calcWalkthrough.ts가 만든다 — 거기서도 새 산식을 쓰지 않고 기존 계산 함수와 저장된
+// 평가결과의 중간값만 꺼낸다(그 파일 주석 참고). 고정 예시를 박아두지 않은 이유는, 산식이나
+// 설정이 바뀌면 화면이 조용히 낡은 숫자를 보여주게 되기 때문이다.
 
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { sectionClass, sectionTitleClass } from "../candidates/[code]/formFields";
+import { buildWalkthrough, type WalkRow, type WalkStep } from "@/lib/storeEval/calcWalkthrough";
+import { getModelSettings, listCandidates, listEvaluationResults } from "@/lib/storeEval/store";
+import type { CandidateInput, EvaluationResult, ModelSettings } from "@/lib/storeEval/types";
+import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 
 function StepBadge({ n, color }: { n: number; color: string }) {
   return (
@@ -17,15 +34,188 @@ function StepBadge({ n, color }: { n: number; color: string }) {
   );
 }
 
+function formatRowValue(row: WalkRow): string {
+  if (row.value == null) return "-";
+  if (typeof row.value === "string") return row.value;
+  switch (row.kind) {
+    case "won":
+      return formatWon(row.value);
+    case "count":
+      // 원수요처럼 소수가 나오는 값이 있다 — 사람 수·대수 자리라 반올림해서 보여준다.
+      return formatNumber(Math.round(row.value));
+    case "hours":
+      return `${formatNumber(Math.round(row.value))}시간`;
+    case "percent":
+      return formatPercent(row.value);
+    case "score":
+      return formatScore(row.value);
+    case "multiple":
+      return `×${row.value.toFixed(2)}`;
+    default:
+      return String(row.value);
+  }
+}
+
+/**
+ * 표(table)가 아니라 목록으로 그린다 — 좁은 화면에서 가로 스크롤이 생기지 않게 하려는 것이다
+ * (2026-09-13에 표 14개를 390px에서 실측한 결과 참고).
+ */
+function WalkRows({ step }: { step: WalkStep }) {
+  return (
+    <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
+      <p className="text-xs font-semibold text-[var(--sl-ink-soft)]">이 후보지의 실제 숫자</p>
+      <dl className="mt-2 flex flex-col divide-y divide-[var(--sl-line)]">
+        {step.rows.map((row, i) => (
+          <div key={`${row.label}-${i}`} className="flex flex-col gap-0.5 py-2 first:pt-0 last:pb-0">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+              <dt
+                className={
+                  row.result
+                    ? "text-sm font-semibold text-[#171310] dark:text-[#f2ede2]"
+                    : "text-sm text-[#5c5346] dark:text-[#c9bfae]"
+                }
+              >
+                {row.label}
+              </dt>
+              <dd
+                className={
+                  row.result
+                    ? "font-mono text-sm font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]"
+                    : "font-mono text-sm tabular-nums text-[#5c5346] dark:text-[#c9bfae]"
+                }
+              >
+                {formatRowValue(row)}
+              </dd>
+            </div>
+            {row.note && <p className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">{row.note}</p>}
+          </div>
+        ))}
+      </dl>
+      {step.blocked && (
+        <p className="app-notice app-badge-warn mt-3 w-full items-start justify-start px-3 py-2 text-left text-[11px] leading-4">
+          <span>{step.blocked}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function HowItWorksPage() {
+  const [candidates, setCandidates] = useState<CandidateInput[]>([]);
+  const [results, setResults] = useState<EvaluationResult[]>([]);
+  const [settings, setSettings] = useState<ModelSettings | null>(null);
+  const [code, setCode] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const loadSequence = useRef(0);
+
+  // 후보지 목록 화면과 같은 방식 — loading은 true로 시작하고 여기서는 끌 때만 건드린다.
+  // 효과 안에서 동기적으로 setState를 하면 렌더가 연쇄된다(react-hooks/set-state-in-effect).
+  const load = useCallback(() => {
+    const sequence = ++loadSequence.current;
+    // 세 번만 읽고 끝낸다 — 후보지를 바꿔도 추가 조회가 없다(무료 한도 대비 읽기 절약).
+    return Promise.all([listCandidates(), listEvaluationResults(), getModelSettings()])
+      .then(([list, stored, modelSettings]) => {
+        if (sequence !== loadSequence.current) return;
+        setCandidates(list);
+        setResults(stored);
+        setSettings(modelSettings);
+        const withResult = list.find((c) => stored.some((r) => r.candidateCode === c.code && r.v62Final != null));
+        setCode((prev) => prev || withResult?.code || list[0]?.code || "");
+      })
+      .catch(() => {
+        if (sequence === loadSequence.current) setError("자료를 불러오지 못했습니다. 다시 불러오기를 눌러주세요.");
+      })
+      .finally(() => {
+        if (sequence === loadSequence.current) setLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    const requests = loadSequence;
+    void load();
+    return () => { requests.current++; };
+  }, [load]);
+
+  const refresh = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    void load();
+  }, [load]);
+
+  const candidate = useMemo(() => candidates.find((c) => c.code === code) ?? null, [candidates, code]);
+  const result = useMemo(() => results.find((r) => r.candidateCode === code) ?? null, [results, code]);
+  const walkthrough = useMemo(
+    () => (candidate && settings ? buildWalkthrough(candidate, result, settings) : null),
+    [candidate, result, settings],
+  );
+  const stepOf = useCallback(
+    (n: 1 | 2 | 3) => walkthrough?.steps.find((s) => s.step === n) ?? null,
+    [walkthrough],
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">매출은 어떻게 계산될까?</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
           이 프로그램은 후보지 하나(또는 이미 문을 연 매장)의 &ldquo;한 달 예상 매출&rdquo; 숫자 하나를 뽑아내기까지, 사실 세 단계를
-          순서대로 거칩니다. 전문 용어 없이, 그 세 단계를 그대로 따라가면서 설명합니다.
+          순서대로 거칩니다. 전문 용어 없이, 그 세 단계를 그대로 따라가면서 설명합니다. 아래에서 실제 후보지를 하나 고르면
+          <strong> 그 후보지의 진짜 숫자가 단계마다 어떻게 바뀌어 가는지</strong> 같이 보여드립니다.
         </p>
+      </div>
+
+      {/* 후보지 선택 */}
+      <div className="app-card-sm rounded-lg px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label htmlFor="walkthrough-candidate" className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
+            숫자로 따라가 볼 후보지
+          </label>
+          <select
+            id="walkthrough-candidate"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            disabled={loading || candidates.length === 0}
+            className="app-input min-w-0 flex-1 px-2.5 py-1.5 text-sm sm:flex-none sm:min-w-[16rem]"
+          >
+            {candidates.length === 0 && <option value="">{loading ? "불러오는 중…" : "등록된 후보지가 없습니다"}</option>}
+            {candidates.map((c) => {
+              const hasResult = results.some((r) => r.candidateCode === c.code && r.v62Final != null);
+              return (
+                <option key={c.code} value={c.code}>
+                  {c.code} {c.name ?? ""}
+                  {hasResult ? "" : " (계산 전)"}
+                </option>
+              );
+            })}
+          </select>
+          <button type="button" onClick={refresh} disabled={loading} className="app-btn-outline px-3 py-1.5 text-sm disabled:opacity-50">
+            {loading ? "불러오는 중…" : "다시 불러오기"}
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] leading-4 text-[var(--sl-ink-soft)]" role="status" aria-live="polite">
+          {error
+            ? error
+            : loading
+              ? "후보지를 불러오고 있습니다."
+              : walkthrough
+                ? `${walkthrough.modelLabel} 기준으로 계산된 결과입니다. 아래 숫자는 새로 계산한 게 아니라 저장된 평가 결과에서 그대로 꺼낸 값입니다.`
+                : candidate
+                  ? "이 후보지는 아직 계산한 적이 없습니다. 후보지 상세의 최종결과 탭에서 계산을 먼저 실행해 주세요."
+                  : "후보지를 고르면 단계마다 실제 숫자가 함께 표시됩니다."}
+        </p>
+        {walkthrough?.inputsChangedSinceResult && (
+          <p className="app-notice app-badge-warn mt-2 w-full items-start justify-start px-3 py-2 text-left text-[11px] leading-4">
+            <span>
+              저장된 결과를 계산한 뒤에 기본정보가 바뀌었습니다. 1단계는 <strong>지금 입력</strong> 기준이고 2·3단계는
+              <strong> 저장된 결과</strong> 기준이라 숫자가 서로 안 맞을 수 있습니다.{" "}
+              <Link href={`/store-eval/candidates/${code}`} className="underline">
+                최종결과 탭에서 다시 계산
+              </Link>
+              하면 맞춰집니다.
+            </span>
+          </p>
+        )}
       </div>
 
       <div className="app-card-sm rounded-lg px-4 py-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
@@ -69,15 +259,18 @@ export default function HowItWorksPage() {
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-              마지막으로 한 번 더 깎습니다. &ldquo;PC방에 갈 성향이 있는 사람&rdquo;이라고 매일 가는 건 아니니까요. 번화가는
-              53%, 중간 동네는 61%, 주택가는 78%만 실제 수요로 인정해요. (주택가일수록 다른 놀거리가 적어서 인정 비율을
-              더 높게 잡습니다.)
+              마지막으로 한 번 더 깎습니다. &ldquo;PC방에 갈 성향이 있는 사람&rdquo;이라고 매일 가는 건 아니니까요. 그래서
+              동네 성격마다 정해둔 <strong>인정 비율</strong>만큼만 실제 수요로 칩니다. 이 비율은 &ldquo;예측이 실제 매출보다
+              높았나 낮았나&rdquo;를 상권 성격별로 재서 맞춰온 값이라 바뀝니다 — 그래서 여기에 숫자를 적어두지 않고
+              <strong> 아래 표에 지금 설정된 값을 그대로</strong> 보여줍니다.
             </p>
+
+            {stepOf(1) && <WalkRows step={stepOf(1)!} />}
 
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">이렇게 나온 숫자 = &ldquo;이 상권 전체가 원하는 PC방 수요&rdquo;</p>
               <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-                아직 &ldquo;우리 매장 것&rdquo;이 아니에요. 이 동네에 있는 모든 PC방이 나눠 가질 파이 전체의 크기입니다.
+                아직 &ldquo;우리 매장&rdquo; 것이 아니에요. 이 동네에 있는 모든 PC방이 나눠 가질 파이 전체의 크기입니다.
               </p>
             </div>
           </div>
@@ -127,6 +320,8 @@ export default function HowItWorksPage() {
               쉽게 말하면: <strong>PC 대수가 많을수록, 그리고 경쟁매장보다 시설이 좋을수록 더 큰 몫을 가져간다</strong>는
               거예요. 만약 이 동네에 경쟁매장이 하나도 없다면? 파이를 통째로 다 우리가 가져갑니다.
             </p>
+
+            {stepOf(2) && <WalkRows step={stepOf(2)!} />}
 
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">1단계 수요 × 2단계 몫 비율 = &ldquo;우리 매장으로 올 손님 수&rdquo;</p>
@@ -187,6 +382,8 @@ export default function HowItWorksPage() {
               </div>
             </div>
 
+            {stepOf(3) && <WalkRows step={stepOf(3)!} />}
+
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">이렇게 나온 최종 숫자 = &ldquo;예상 월매출&rdquo;</p>
               <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
@@ -209,6 +406,15 @@ export default function HowItWorksPage() {
           이 세 단계는 앞 단계 결과를 그대로 다음 단계에 넘겨주는 방식이라, 앞 단계가 틀리면 뒤 단계도 같이 틀어집니다.
           그래서 &ldquo;수요 측정이 정확한가&rdquo;부터 먼저 검증하는 게 중요합니다.
         </p>
+        {code && (
+          <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
+            이 후보지의 전체 결과와 &ldquo;왜 이 매출인가&rdquo; 요인별 기여도는{" "}
+            <Link href={`/store-eval/candidates/${code}`} className="underline">
+              후보지 상세의 최종결과 탭
+            </Link>
+            에서 볼 수 있습니다.
+          </p>
+        )}
       </section>
 
       <div className="app-notice app-badge-warn w-full items-start justify-start gap-2 px-4 py-3 text-left text-xs leading-5">
