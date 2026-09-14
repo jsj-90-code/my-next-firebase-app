@@ -167,7 +167,7 @@ function computeCompetitorBreakdown(c: Competitor, settings: ModelSettings) {
 }
 
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="whitespace-nowrap px-2 py-1.5 text-left text-xs font-medium text-[var(--sl-ink-soft)]">{children}</th>;
+  return <th scope="col" className="whitespace-nowrap px-2 py-1.5 text-left text-xs font-medium text-[var(--sl-ink-soft)]">{children}</th>;
 }
 function Td({ children, strong }: { children: React.ReactNode; strong?: boolean }) {
   return <td className={`whitespace-nowrap px-2 py-1.5 text-xs ${strong ? "font-semibold text-[#171310] dark:text-[#f2ede2]" : ""}`}>{children}</td>;

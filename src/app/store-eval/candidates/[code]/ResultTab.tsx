@@ -542,13 +542,13 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
         <table className="w-full min-w-[560px] border-collapse text-[11px]">
           <thead>
             <tr className="border-b border-[#171310]/[0.08] text-left text-[var(--sl-ink-soft)] dark:border-white/[0.08]">
-              <th className="py-1 pr-2">요인</th>
-              <th className="py-1 pr-2">이 후보지 값</th>
-              <th className="py-1 pr-2">학습평균</th>
-              <th className="py-1 pr-2">학습표준편차</th>
-              <th className="py-1 pr-2">표준화값(z)</th>
-              <th className="py-1 pr-2">학습된 가중치</th>
-              <th className="py-1">기여도(z×가중치)</th>
+              <th scope="col" className="py-1 pr-2">요인</th>
+              <th scope="col" className="py-1 pr-2">이 후보지 값</th>
+              <th scope="col" className="py-1 pr-2">학습평균</th>
+              <th scope="col" className="py-1 pr-2">학습표준편차</th>
+              <th scope="col" className="py-1 pr-2">표준화값(z)</th>
+              <th scope="col" className="py-1 pr-2">학습된 가중치</th>
+              <th scope="col" className="py-1">기여도(z×가중치)</th>
             </tr>
           </thead>
           <tbody>

@@ -265,21 +265,21 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
       <table className="w-full min-w-[1600px] text-sm">
         <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
-            <th className="px-3 py-2">점포명</th>
-            <th className="px-3 py-2">브랜드</th>
-            <th className="px-3 py-2">완료월수</th>
-            <th className="px-3 py-2">운영상태</th>
-            <th className="px-3 py-2">데이터완성도</th>
-            <th className="px-3 py-2">경쟁조사상태</th>
-            <th className="px-3 py-2">예상매출(V62)</th>
-            <th className="px-3 py-2">실제매출평균</th>
-            <th className="px-3 py-2">오차금액</th>
-            <th className="px-3 py-2">절대오차율</th>
-            <th className="px-3 py-2">방향</th>
-            <th className="px-3 py-2">우선 추정 원인</th>
-            <th className="px-3 py-2">정식검증 포함</th>
-            <th className="px-3 py-2">조기검증 포함</th>
-            <th className="px-3 py-2">제외/참고 사유</th>
+            <th scope="col" className="px-3 py-2">점포명</th>
+            <th scope="col" className="px-3 py-2">브랜드</th>
+            <th scope="col" className="px-3 py-2">완료월수</th>
+            <th scope="col" className="px-3 py-2">운영상태</th>
+            <th scope="col" className="px-3 py-2">데이터완성도</th>
+            <th scope="col" className="px-3 py-2">경쟁조사상태</th>
+            <th scope="col" className="px-3 py-2">예상매출(V62)</th>
+            <th scope="col" className="px-3 py-2">실제매출평균</th>
+            <th scope="col" className="px-3 py-2">오차금액</th>
+            <th scope="col" className="px-3 py-2">절대오차율</th>
+            <th scope="col" className="px-3 py-2">방향</th>
+            <th scope="col" className="px-3 py-2">우선 추정 원인</th>
+            <th scope="col" className="px-3 py-2">정식검증 포함</th>
+            <th scope="col" className="px-3 py-2">조기검증 포함</th>
+            <th scope="col" className="px-3 py-2">제외/참고 사유</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
@@ -347,19 +347,19 @@ function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
       <table className="w-full min-w-[1700px] text-sm">
         <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
-            <th className="px-3 py-2">점포명</th>
-            <th className="px-3 py-2">실제매출</th>
-            <th className="px-3 py-2">시트 V61</th>
-            <th className="px-3 py-2">웹 V61</th>
-            <th className="px-3 py-2">시트 보정률</th>
-            <th className="px-3 py-2">웹 보정률</th>
-            <th className="px-3 py-2">시트 V62</th>
-            <th className="px-3 py-2">웹 V62</th>
-            <th className="px-3 py-2">예측금액 차이</th>
-            <th className="px-3 py-2">시트 절대오차율</th>
-            <th className="px-3 py-2">웹 절대오차율</th>
-            <th className="px-3 py-2">차이 발생 단계</th>
-            <th className="px-3 py-2">비고</th>
+            <th scope="col" className="px-3 py-2">점포명</th>
+            <th scope="col" className="px-3 py-2">실제매출</th>
+            <th scope="col" className="px-3 py-2">시트 V61</th>
+            <th scope="col" className="px-3 py-2">웹 V61</th>
+            <th scope="col" className="px-3 py-2">시트 보정률</th>
+            <th scope="col" className="px-3 py-2">웹 보정률</th>
+            <th scope="col" className="px-3 py-2">시트 V62</th>
+            <th scope="col" className="px-3 py-2">웹 V62</th>
+            <th scope="col" className="px-3 py-2">예측금액 차이</th>
+            <th scope="col" className="px-3 py-2">시트 절대오차율</th>
+            <th scope="col" className="px-3 py-2">웹 절대오차율</th>
+            <th scope="col" className="px-3 py-2">차이 발생 단계</th>
+            <th scope="col" className="px-3 py-2">비고</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
@@ -652,12 +652,12 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
         <caption className="sr-only">매장별 실제매출과 예측매출 비교</caption>
         <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
-            <th className="px-3 py-2">매장명</th>
-            <th className="px-3 py-2">운영기간</th>
-            <th className="px-3 py-2">실제매출(월평균)</th>
-            <th className="px-3 py-2">모델 예측매출</th>
-            <th className="px-3 py-2">오차율</th>
-            <th className="px-3 py-2">결과</th>
+            <th scope="col" className="px-3 py-2">매장명</th>
+            <th scope="col" className="px-3 py-2">운영기간</th>
+            <th scope="col" className="px-3 py-2">실제매출(월평균)</th>
+            <th scope="col" className="px-3 py-2">모델 예측매출</th>
+            <th scope="col" className="px-3 py-2">오차율</th>
+            <th scope="col" className="px-3 py-2">결과</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
@@ -748,10 +748,10 @@ function SummaryBlock({ title, summary, benchmark }: { title: string; summary: V
         <table className="w-full min-w-[600px] text-sm">
           <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
             <tr>
-              <th className="px-3 py-2">오차 구간</th>
-              <th className="px-3 py-2">점포 수</th>
-              <th className="px-3 py-2">비율</th>
-              <th className="px-3 py-2">점포명</th>
+              <th scope="col" className="px-3 py-2">오차 구간</th>
+              <th scope="col" className="px-3 py-2">점포 수</th>
+              <th scope="col" className="px-3 py-2">비율</th>
+              <th scope="col" className="px-3 py-2">점포명</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
@@ -1259,11 +1259,11 @@ export default function ValidationPage() {
             <table className="w-full min-w-[600px] text-sm">
               <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
                 <tr>
-                  <th className="px-3 py-2">점포명</th>
-                  <th className="px-3 py-2">실측기반 예상월매출</th>
-                  <th className="px-3 py-2">실제매출평균</th>
-                  <th className="px-3 py-2">절대오차율</th>
-                  <th className="px-3 py-2">경쟁점 핑봇 커버율</th>
+                  <th scope="col" className="px-3 py-2">점포명</th>
+                  <th scope="col" className="px-3 py-2">실측기반 예상월매출</th>
+                  <th scope="col" className="px-3 py-2">실제매출평균</th>
+                  <th scope="col" className="px-3 py-2">절대오차율</th>
+                  <th scope="col" className="px-3 py-2">경쟁점 핑봇 커버율</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">

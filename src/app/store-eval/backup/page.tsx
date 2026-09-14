@@ -213,10 +213,10 @@ export default function StoreEvalBackupPage() {
               <table className="w-full text-sm">
                 <thead className="text-left text-xs font-medium text-[var(--sl-ink-soft)]">
                   <tr>
-                    <th className="px-3 py-2">항목</th>
-                    <th className="px-3 py-2">현재 보유</th>
-                    <th className="px-3 py-2">새로 추가될 문서</th>
-                    <th className="px-3 py-2">덮어써질 문서</th>
+                    <th scope="col" className="px-3 py-2">항목</th>
+                    <th scope="col" className="px-3 py-2">현재 보유</th>
+                    <th scope="col" className="px-3 py-2">새로 추가될 문서</th>
+                    <th scope="col" className="px-3 py-2">덮어써질 문서</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">

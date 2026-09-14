@@ -282,10 +282,10 @@ export function MarketDataUploadPanel({
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-[#fffdf7] dark:bg-[#1c1912]">
                 <tr className="text-left text-[var(--sl-ink-soft)]">
-                  <th className="w-8 px-2 py-1"></th>
-                  <th className="px-2 py-1">항목</th>
-                  <th className="px-2 py-1">원본 라벨(매칭)</th>
-                  <th className="px-2 py-1">값</th>
+                  <th scope="col" className="w-8 px-2 py-1"></th>
+                  <th scope="col" className="px-2 py-1">항목</th>
+                  <th scope="col" className="px-2 py-1">원본 라벨(매칭)</th>
+                  <th scope="col" className="px-2 py-1">값</th>
                 </tr>
               </thead>
               <tbody>

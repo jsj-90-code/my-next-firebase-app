@@ -264,10 +264,10 @@ export default function AiValidationPage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-left text-[var(--sl-ink-soft)]">
-                      <th className="px-2 py-1.5">매장명</th>
-                      <th className="px-2 py-1.5">주소</th>
+                      <th scope="col" className="px-2 py-1.5">매장명</th>
+                      <th scope="col" className="px-2 py-1.5">주소</th>
                       {SCORE_FIELD_KEYS.map((key) => (
-                        <th key={key} className="px-2 py-1.5">
+                        <th scope="col" key={key} className="px-2 py-1.5">
                           {SCORE_FIELD_LABELS[key]}
                         </th>
                       ))}

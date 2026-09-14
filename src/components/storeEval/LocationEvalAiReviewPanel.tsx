@@ -129,11 +129,11 @@ export function LocationEvalAiReviewPanel({
         <table className="w-full text-xs">
           <thead className="bg-[#fffdf7] dark:bg-[#1c1912]">
             <tr className="text-left text-[var(--sl-ink-soft)]">
-              <th className="w-8 px-2 py-1"></th>
-              <th className="px-2 py-1">항목</th>
-              <th className="px-2 py-1">현재값</th>
-              <th className="px-2 py-1">AI 제안값</th>
-              <th className="px-2 py-1">신뢰도</th>
+              <th scope="col" className="w-8 px-2 py-1"></th>
+              <th scope="col" className="px-2 py-1">항목</th>
+              <th scope="col" className="px-2 py-1">현재값</th>
+              <th scope="col" className="px-2 py-1">AI 제안값</th>
+              <th scope="col" className="px-2 py-1">신뢰도</th>
             </tr>
           </thead>
           <tbody>

@@ -603,15 +603,15 @@ export default function ExistingStoresPage() {
           <table className="w-full min-w-[900px] text-sm">
             <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
               <tr>
-                <th className="px-3 py-2">가맹점코드</th>
-                <th className="px-3 py-2">가맹점명</th>
-                <th className="px-3 py-2">브랜드</th>
-                <th className="px-3 py-2">오픈일</th>
-                <th className="px-3 py-2">PC대수</th>
-                <th className="px-3 py-2">완료월수</th>
-                <th className="px-3 py-2">실제매출평균</th>
-                <th className="px-3 py-2">가맹상태</th>
-                <th className="px-3 py-2"></th>
+                <th scope="col" className="px-3 py-2">가맹점코드</th>
+                <th scope="col" className="px-3 py-2">가맹점명</th>
+                <th scope="col" className="px-3 py-2">브랜드</th>
+                <th scope="col" className="px-3 py-2">오픈일</th>
+                <th scope="col" className="px-3 py-2">PC대수</th>
+                <th scope="col" className="px-3 py-2">완료월수</th>
+                <th scope="col" className="px-3 py-2">실제매출평균</th>
+                <th scope="col" className="px-3 py-2">가맹상태</th>
+                <th scope="col" className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
