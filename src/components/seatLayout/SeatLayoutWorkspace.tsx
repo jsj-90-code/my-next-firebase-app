@@ -9,6 +9,7 @@ import {
   DESK_SIZE_OPTIONS,
   PC_SPEC_FIELDS,
   SPEC_FIELDS,
+  ZONE_GROUPS,
   ZONE_TYPES,
   COMPOSITE_H,
   COMPOSITE_W,
@@ -3048,24 +3049,56 @@ export function SeatLayoutWorkspace() {
               <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
                 클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
               </p>
-              <div className="mt-3 grid grid-cols-2 gap-1.5">
-                {ZONE_TYPES.map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => selectType(t.key)}
-                    className={`app-type-btn flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
-                      selectedTypeKey === t.key ? "app-type-btn-active" : ""
-                    }`}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
-                      style={{ background: t.color }}
-                      aria-hidden
-                    />
-                    <span className="truncate">{t.label}</span>
-                  </button>
-                ))}
+              {/* 2026-09-14 — 18개를 2열로 평면 나열하던 것을 묶었다. 묶는 기준은 내가 정하지
+                  않고 사용자에게 받았다(constants.ts ZONE_GROUPS 주석). 지금 안 쓰는 존은
+                  접어서 눈에서 치운다 — 지우지는 않는다(기존 프로젝트가 쓰고 있을 수 있다). */}
+              <div className="mt-3 flex flex-col gap-3">
+                {ZONE_GROUPS.map((group) => {
+                  const items = group.typeKeys
+                    .map((key) => ZONE_TYPES.find((t) => t.key === key))
+                    .filter((t): t is (typeof ZONE_TYPES)[number] => t != null);
+                  if (items.length === 0) return null;
+                  const buttons = (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {items.map((t) => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => selectType(t.key)}
+                          className={`app-type-btn flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+                            selectedTypeKey === t.key ? "app-type-btn-active" : ""
+                          }`}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-[3px]"
+                            style={{ background: t.color }}
+                            aria-hidden
+                          />
+                          <span className="truncate">{t.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                  if (group.collapsed) {
+                    return (
+                      <details key={group.key}>
+                        <summary className="cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)]">
+                          {group.label} ({items.length})
+                        </summary>
+                        {group.hint && (
+                          <p className="mt-1 text-[11px] leading-4 text-[var(--sl-ink-soft)]">{group.hint}</p>
+                        )}
+                        <div className="mt-1.5">{buttons}</div>
+                      </details>
+                    );
+                  }
+                  return (
+                    <div key={group.key}>
+                      <p className="mb-1.5 text-xs font-medium text-[var(--sl-ink-soft)]">{group.label}</p>
+                      {buttons}
+                    </div>
+                  );
+                })}
               </div>
               {selectedType && (
                 <div className="app-card-sm mt-3 rounded-lg px-3 py-2 text-sm text-[#5c5346] dark:text-[#c9bfae]">

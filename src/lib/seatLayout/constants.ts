@@ -219,3 +219,45 @@ export const EXPORT_SCALE = 1;
 // 9600x5400 ≈ 51.8MP)를 그대로 쓰면 이 한도를 두 배 넘게 초과해서 등록 자체가 실패한다.
 // 3.4배(6528x3672 ≈ 24.0MP)는 25MP 한도 안에서 낼 수 있는 사실상 최대 해상도다.
 export const SLIDES_EXPORT_SCALE = 3.4;
+
+/**
+ * 존 유형 묶음 (2026-09-14 신설).
+ *
+ * 왜 묶나 — 18개가 2열로 평면 나열돼 있어 훑기 부담이 있었다. 어떻게 묶을지는 **내가 정하지 않고
+ * 사용자에게 받았다** — 어떤 존이 어느 성격인지는 코드에 안 적혀 있어서 추측하면 오히려 나빠진다.
+ *
+ * 사용자 확인(2026-09-14):
+ *   기본좌석        멀티존
+ *   사양 특화       LOL · FPS · FC ONLINE
+ *   존 특화(인테리어) 프렌즈존 · 커플석 · 커플존 · VIP존 · 세레머니 팀룸 · 팀룸 · 1인석 · 1인룸 · 2인룸 · 3인룸
+ *   지금 안 씀      버프존 · 리얼프로게이머존 — "설계는 만들어놨지만 신규매장은 지금 안 쓰고 있음"
+ *
+ * ⚠️ `ZONE_TYPES`의 순서·내용은 건드리지 않았다 — 앱스크립트 v15 이식본이고 다른 코드가 그 순서를
+ * 쓴다(DRAFT_COLORS 등). 여기서는 키만 참조해 화면에서 묶어 보여줄 뿐이다.
+ */
+export type ZoneGroup = {
+  key: "basic" | "spec" | "zone" | "etc" | "legacy";
+  label: string;
+  /** 접어둘 묶음인지. 지금 안 쓰는 존은 접어서 눈에서 치운다. */
+  collapsed?: boolean;
+  hint?: string;
+  typeKeys: ZoneTypeKey[];
+};
+
+export const ZONE_GROUPS: ZoneGroup[] = [
+  { key: "basic", label: "기본좌석", typeKeys: ["multi"] },
+  { key: "spec", label: "사양 특화", typeKeys: ["lol", "fps", "fc"] },
+  {
+    key: "zone",
+    label: "존 특화 (인테리어)",
+    typeKeys: ["friends", "couple_seat", "couple_room", "vip", "ceremony_team", "team", "one_seat", "one_room", "two", "three"],
+  },
+  { key: "etc", label: "기타", typeKeys: ["desk_only", "etc"] },
+  {
+    key: "legacy",
+    label: "지금 안 쓰는 존",
+    collapsed: true,
+    hint: "설계는 있지만 신규 매장에는 쓰지 않습니다",
+    typeKeys: ["buff", "progamer"],
+  },
+];
