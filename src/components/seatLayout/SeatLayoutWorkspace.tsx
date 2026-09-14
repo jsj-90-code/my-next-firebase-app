@@ -874,7 +874,12 @@ export function SeatLayoutWorkspace() {
 
       if (tab === "desk") {
         setBagShelfDraft(String(bagShelfCount ?? 0));
-        const bagShelfMsg = bagShelfCount ? ` / 가방 선반(아이락스 헤드셋걸이) ${bagShelfCount}석` : "";
+        // 2026-09-14 — 예전에는 0이면 **아무 말도 안 했다.** 그래서 "브라켓 표시가 없는 도면이라
+        // 못 센 것"인지 "원래 가방 선반이 없는 매장"인지 구분이 안 됐고, 사용자는 인식이 안 된 줄도
+        // 모른 채 넘어갔다. 0도 결과이므로 말하게 한다.
+        const bagShelfMsg = bagShelfCount
+          ? ` / 가방 선반(아이락스 헤드셋걸이) ${bagShelfCount}석`
+          : " / 가방 선반 브라켓 표시를 못 찾음 → 이대로 두면 전부 아이센스 헤드셋걸이로 발주됩니다";
         if (sizeBreakdown && sizeBreakdown.length) {
           setBreakdown(sizeBreakdown.map((r) => ({ ...r })));
           const total = sizeBreakdown.reduce((s, r) => s + r.qty, 0);
@@ -2564,7 +2569,7 @@ export function SeatLayoutWorkspace() {
                   <br />
                   💡 도면 이미지는 PDF로 등록하세요 — 화면 캡처보다 훨씬 선명해요.
                   <br />
-                  💡 책가방선반 브라켓 표시가 있는 도면을 사용하세요 — 헤드셋걸이 종류가 자동으로 구분돼요.
+                  💡 가방 선반 브라켓 표시(주황·빨간 점과 선)가 있는 도면을 쓰세요 — 헤드셋걸이 종류가 자동으로 구분돼요.
                 </p>
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="app-card-sm mt-3 rounded-lg p-3">
@@ -2927,6 +2932,21 @@ export function SeatLayoutWorkspace() {
                         도면 파일 선택
                       </button>
                       <p className="text-xs text-[var(--sl-ink-soft)]">PDF로 올리면 화면 캡처보다 훨씬 선명합니다</p>
+                      {/* 2026-09-14 — 사용자 제보: 왼쪽 패널에 적어뒀는데도 브라켓 표시 없는 도면을
+                          넣고 쓰는 일이 있었다. 그러면 헤드셋걸이를 손으로 넣어야 한다. 안내를 파일 고르는
+                          자리로 옮기고, **무엇을 눈으로 확인해야 하는지**와 **안 하면 어떻게 되는지**를 적는다.
+                          기존 문구는 이득만 말했다("자동으로 구분돼요") — 사람은 이득 문구를 건너뛴다. */}
+                      <div className="app-notice app-badge-warn mt-2 max-w-md flex-col items-start gap-1 px-4 py-3 text-left text-xs leading-5">
+                        <span className="font-semibold">도면을 고르기 전에 — 가방 선반 브라켓 표시가 있나요?</span>
+                        <span>
+                          마주보는 책상 줄 위에 <strong>주황색·빨간색 점과 선</strong>으로 그어놓은 표시입니다.
+                          이게 있어야 <strong>아이락스 헤드셋걸이</strong> 수량을 자동으로 셉니다.
+                        </span>
+                        <span>
+                          표시가 없는 도면을 쓰면 <strong>존마다 수량을 손으로 넣어야 하고</strong>, 안 넣으면
+                          전부 아이센스 헤드셋걸이로 발주됩니다.
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3269,6 +3289,12 @@ function ZoneForm(props: ZoneFormProps) {
             <label className="text-xs font-medium text-[var(--sl-ink-soft)]">
               아이락스 헤드셋걸이 설치 수량
             </label>
+            {/* 2026-09-14 — 도면에 브라켓 표시가 없으면 AI가 0으로 세고, 이 칸이 0인 채로 넘어가
+                발주 수량이 전부 아이센스로 나간다. 왜 여기를 채워야 하는지 그 자리에서 알려준다. */}
+            <p className="mt-0.5 text-[11px] leading-4 text-[var(--sl-ink-soft)]">
+              도면에 가방 선반 브라켓 표시(주황·빨간 점과 선)가 있으면 AI가 자동으로 셉니다.
+              표시가 없는 도면이면 <strong>여기에 직접 넣어주세요.</strong>
+            </p>
             <input
               type="number"
               min={0}
