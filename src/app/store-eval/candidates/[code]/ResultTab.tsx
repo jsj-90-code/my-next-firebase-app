@@ -1147,7 +1147,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
           여기 숫자는 경쟁점에 실제로 몇 자리가 돌아가는지(핑봇 실측)를 우리 매장 좌석점유로 환산한 <strong>별도 자료</strong>입니다.
           위 &ldquo;최종예상월매출&rdquo;과는 계산 경로가 다릅니다. <strong>이 경로로 매출 금액까지 환산한 값은 2026-09-14에
-          기존점 28곳으로 재봤더니 오차가 46%여서 화면에서 뺐습니다</strong>(정식 경로는 9.88%). 좌석·가동률은 실측 자료라 남겨두었으니
+          기존점 28곳으로 재봤더니 오차가 46%여서 화면에서 뺐습니다</strong>
+          (정식 경로는 {accuracy?.meanAbsoluteErrorPct != null ? formatPercent(accuracy.meanAbsoluteErrorPct) : "검증화면 참고"}). 좌석·가동률은 실측 자료라 남겨두었으니
           &ldquo;예상매출이 전제하는 가동률이 경쟁점 실측보다 과한가&rdquo;를 가늠하는 데만 써주세요.
           {result.measuredForecastNeedsReview &&
             " 예상 가동률이 계획한 PC대수를 넘는데, 경쟁점이 많은 상권은 주요 경쟁점 위주로만 실사하는 게 정상 업무 프로세스라(전수조사 아님) 흔히 나오는 결과입니다 — 데이터가 잘못됐다는 뜻은 아닙니다."}

@@ -19,9 +19,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { sectionClass, sectionTitleClass } from "../candidates/[code]/formFields";
 import { buildCompetitivenessWeights, buildWalkthrough, type WalkRow, type WalkStep } from "@/lib/storeEval/calcWalkthrough";
-import { getModelSettings, listCandidates, listEvaluationResults } from "@/lib/storeEval/store";
+import { getModelAccuracySummary, getModelSettings, listCandidates, listEvaluationResults } from "@/lib/storeEval/store";
 import { effectiveHourlyRate } from "@/lib/storeEval/usageRevenue";
-import type { CandidateInput, EvaluationResult, ModelSettings } from "@/lib/storeEval/types";
+import type { CandidateInput, EvaluationResult, ModelAccuracySummary, ModelSettings } from "@/lib/storeEval/types";
 import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 
 function StepBadge({ n, color }: { n: number; color: string }) {
@@ -105,6 +105,8 @@ export default function HowItWorksPage() {
   const [candidates, setCandidates] = useState<CandidateInput[]>([]);
   const [results, setResults] = useState<EvaluationResult[]>([]);
   const [settings, setSettings] = useState<ModelSettings | null>(null);
+  // 정식 경로 적중률 — 화면에 숫자를 글자로 박지 않으려고 검증화면이 남긴 요약을 읽는다.
+  const [accuracy, setAccuracy] = useState<ModelAccuracySummary | null>(null);
   const [code, setCode] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,13 +116,14 @@ export default function HowItWorksPage() {
   // 효과 안에서 동기적으로 setState를 하면 렌더가 연쇄된다(react-hooks/set-state-in-effect).
   const load = useCallback(() => {
     const sequence = ++loadSequence.current;
-    // 세 번만 읽고 끝낸다 — 후보지를 바꿔도 추가 조회가 없다(무료 한도 대비 읽기 절약).
-    return Promise.all([listCandidates(), listEvaluationResults(), getModelSettings()])
-      .then(([list, stored, modelSettings]) => {
+    // 네 번만 읽고 끝낸다 — 후보지를 바꿔도 추가 조회가 없다(무료 한도 대비 읽기 절약).
+    return Promise.all([listCandidates(), listEvaluationResults(), getModelSettings(), getModelAccuracySummary()])
+      .then(([list, stored, modelSettings, acc]) => {
         if (sequence !== loadSequence.current) return;
         setCandidates(list);
         setResults(stored);
         setSettings(modelSettings);
+        setAccuracy(acc);
         const withResult = list.find((c) => stored.some((r) => r.candidateCode === c.code && r.v62Final != null));
         setCode((prev) => prev || withResult?.code || list[0]?.code || "");
       })
@@ -456,8 +459,9 @@ export default function HowItWorksPage() {
         <span>
           <strong>참고</strong> — 예전에는 결과 화면에 &ldquo;실측기반 예상월매출&rdquo;이라는 값이 같이 보였습니다. 경쟁매장에
           지금 실제로 몇 명이 앉아있는지 조회해서 환산하는, 위 설명과는 완전히 다른 별도 방법입니다.
-          <strong>2026-09-14에 기존 가맹점 28곳으로 정확도를 재봤더니 오차가 46%여서(위 정식 계산은 9.88%) 금액은 화면에서
-          뺐습니다.</strong> 경쟁매장 좌석·가동률 실측은 남아 있는데, 그건 &ldquo;위 계산이 전제하는 가동률이 현실보다 과한가&rdquo;를
+          <strong>2026-09-14에 기존 가맹점 28곳으로 정확도를 재봤더니 오차가 46%여서 금액은 화면에서 뺐습니다</strong>
+          (위 정식 계산은{" "}
+          {accuracy?.meanAbsoluteErrorPct != null ? formatPercent(accuracy.meanAbsoluteErrorPct) : "검증화면 참고"}). 경쟁매장 좌석·가동률 실측은 남아 있는데, 그건 &ldquo;위 계산이 전제하는 가동률이 현실보다 과한가&rdquo;를
           가늠하는 용도입니다. 출점 판단은 언제나 위에서 설명한 정식 계산(최종 예상월매출) 기준입니다.
         </span>
       </div>

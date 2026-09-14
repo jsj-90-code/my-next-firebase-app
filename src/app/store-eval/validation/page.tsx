@@ -1239,7 +1239,7 @@ export default function ValidationPage() {
         </h2>
         <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
           V61/V62(인구·이용률 기반)과 완전히 별개인 두 번째 경로입니다. <b>2026-09-14에 판단이 끝났습니다</b> — 오차가 46%로
-          커서(V62는 9.88%) 후보지 결과 화면에서 금액 카드를 뺐고, 좌석·가동률 실측만 남겼습니다. 2026-09-13에 평가기록 재료에서
+          커서(V62는 {formatPercent(coreSummary.meanAbsoluteErrorPct)}) 후보지 결과 화면에서 금액 카드를 뺐고, 좌석·가동률 실측만 남겼습니다. 2026-09-13에 평가기록 재료에서
           같은 경로를 뺀 것과 같은 이유입니다. 이 표는 그 판단의 근거이고, 자료가 쌓여 쓸 만해지는지 계속 보려고 남겨둡니다.
           V61/V62 같은 통과/미달 목표는 적용하지 않고 수치만 그대로 보여줍니다.
           근거: <code>docs/releases/2026-09-14-measured-forecast-accuracy.md</code>
