@@ -390,7 +390,7 @@ export function LocationEvalTab({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>외부유입 / 브랜드</h3>
-        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">외부유입제한은 V62 보정률에 직결되는 핵심 항목입니다(강함 -20% / 보통 -3% / 없음 0%).</p>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">외부유입제한은 예상매출 보정률에 직결되는 핵심 항목입니다(강함 -20% / 보통 -3% / 없음 0%).</p>
         <div className={`${gridClass} mt-4`}>
           <SelectField
             label="외부유입제한"
@@ -404,7 +404,7 @@ export function LocationEvalTab({
             value={form.brandType}
             onChange={(v) => set("brandType", v)}
             options={BRAND_TYPE_OPTIONS}
-            hint="V61 학습표본은 '블랙라벨'만 사용합니다 — 여기 값이 다르면 검증 대상에서 자동 제외됩니다."
+            hint="학습표본은 '블랙라벨'만 사용합니다 — 여기 값이 다르면 검증 대상에서 자동 제외됩니다."
           />
         </div>
         <div className="mt-4">

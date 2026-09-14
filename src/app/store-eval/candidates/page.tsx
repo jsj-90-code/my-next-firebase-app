@@ -188,7 +188,7 @@ export default function CandidateListPage() {
         <div>
           <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">신규후보지</h1>
           <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
-            신규 후보지를 등록하고, 경쟁점·입지동선평가를 거쳐 V62 최종판정을 확인합니다.
+            신규 후보지를 등록하고, 경쟁점·입지동선평가를 거쳐 최종판정을 확인합니다.
           </p>
         </div>
         <button

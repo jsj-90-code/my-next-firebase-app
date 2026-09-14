@@ -625,7 +625,7 @@ function BasicInfoTabForm({
           쓰는 값과 중복이라 사용자 확인). */}
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>소상공인365 참고자료 (직장인구 · 시설정보)</h3>
-        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">소상공인365 원본 전용 — V62 계산에는 쓰이지 않습니다.</p>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">소상공인365 원본 전용 — 예상매출 계산에는 쓰이지 않습니다.</p>
 
         <p className="mt-4 text-xs font-medium text-[var(--sl-ink-soft)]">PC방업소수 (1km)</p>
         <div className={`${gridClass} mt-2`}>

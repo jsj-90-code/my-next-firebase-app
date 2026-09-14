@@ -276,6 +276,18 @@ body {
   --sl-danger-soft: rgba(171, 64, 55, 0.1);
   --sl-info: #4d677a;
   --sl-info-soft: rgba(77, 103, 122, 0.1);
+
+  /* 2026-09-14 신설 — 차트 전용 발산형(diverging) 한 쌍. 상태색(ok/warn)을 차트에 돌려쓰던 것을
+     분리했다. 상태색은 "지금 상태", 이 색은 "올림/내림"이라 역할이 다르고, 무엇보다 옛 조합
+     (#7f5b17 / #426b46)은 **정상시각에서도 구분이 어려웠다**.
+
+     눈으로 고르지 않고 계산해서 골랐다(dataviz skill의 validate_palette.js):
+       옛 조합  정상시각 ΔE 9.6  · 색각이상 5.4  → FAIL (기준 15 / 8)
+       새 조합  정상시각 ΔE 18.3 · 색각이상 11.1 → 전 항목 PASS
+     다크도 같은 방식으로 골랐다(ΔE 18.1 / 10.8, 다크 밝기대 L 0.48~0.67 안).
+     색을 바꾸면 반드시 그 검증기를 다시 돌릴 것. */
+  --sl-chart-up: #008b78;
+  --sl-chart-down: #9a5f19;
 }
 :root.dark .app-theme {
   --sl-ok: #8fc492;
@@ -286,6 +298,8 @@ body {
   --sl-danger-soft: rgba(226, 133, 124, 0.14);
   --sl-info: #9db9cc;
   --sl-info-soft: rgba(157, 185, 204, 0.14);
+  --sl-chart-up: #11a58c;
+  --sl-chart-down: #b8823a;
 }
 
 /*

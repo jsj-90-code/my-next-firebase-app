@@ -130,3 +130,40 @@ describe("대당 비교", () => {
     expect(computePeerPosition(stores, 25, 100)?.rank).toBe(4);
   });
 });
+
+// 2026-09-14 — 화면이 이 분포를 점 그림으로 그린다. 그림과 문장(순위·중앙값)이 어긋나면
+// "38곳 중 25번째"라고 적어놓고 점은 다른 데 찍히는 사고가 난다. 같은 배열에서 나오는지 고정한다.
+describe("분포 값", () => {
+  it("오름차순이고 비교군 수와 개수가 같다", () => {
+    const stores = sample([7000, 5000, 9000, 6000, 8000, 5500]);
+    const pos = computePeerPosition(stores, 6500, 100)!;
+    expect(pos.values).toEqual([5000, 5500, 6000, 7000, 8000, 9000]);
+    expect(pos.values.length).toBe(pos.peerCount);
+  });
+
+  it("순위가 분포 안에서의 위치와 맞는다", () => {
+    const stores = sample([7000, 5000, 9000, 6000, 8000, 5500]);
+    const forecast = 6500;
+    const pos = computePeerPosition(stores, forecast, 100)!;
+    // 순위 = 나보다 큰 값의 개수 + 1
+    expect(pos.rank).toBe(pos.values.filter((v) => v > forecast).length + 1);
+  });
+
+  it("중앙값이 분포 배열의 중앙값과 같다", () => {
+    const stores = sample([7000, 5000, 9000, 6000, 8000, 5500]);
+    const pos = computePeerPosition(stores, 6500, 100)!;
+    const v = pos.values;
+    const mid = Math.floor(v.length / 2);
+    const expected = v.length % 2 === 0 ? (v[mid - 1] + v[mid]) / 2 : v[mid];
+    expect(pos.median).toBe(expected);
+  });
+
+  it("대당 분포도 오름차순이고 대당 순위와 맞는다", () => {
+    const stores = sample([7000, 5000, 9000, 6000, 8000, 5500], [100, 100, 150, 80, 120, 90]);
+    const pos = computePeerPosition(stores, 6500, 100)!;
+    const pp = pos.perPc!;
+    expect([...pp.values].sort((a, b) => a - b)).toEqual(pp.values);
+    expect(pp.rank).toBe(pp.values.filter((v) => v > pp.own).length + 1);
+    expect(pp.values.length).toBe(pp.count);
+  });
+});

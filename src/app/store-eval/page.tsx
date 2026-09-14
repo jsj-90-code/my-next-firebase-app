@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { formatDateTime, formatWon } from "@/lib/storeEval/format";
+import { formatDateTime, formatManwonRough, formatWon } from "@/lib/storeEval/format";
 import {
   getModelSettings,
   listAllCompetitors,
@@ -230,9 +230,14 @@ export default function StoreEvalDashboardPage() {
                 <tr>
                   <th className="px-4 py-3 font-medium">후보지코드</th>
                   <th className="px-4 py-3 font-medium">이름</th>
-                  <th className="px-4 py-3 font-medium">V62 최종예상월매출</th>
+                  <th className="px-4 py-3 font-medium">최종예상월매출</th>
                   <th className="px-4 py-3 font-medium">85% 보수판단매출</th>
-                  <th className="px-4 py-3 font-medium">최종운영판정</th>
+                  {/* 2026-09-14 — 이 열은 두 축을 함께 쓴다. computeFinalJudgement가 폭포식이라
+                      완성도가 미완이면 그 상태("입력 필요")를, 완료면 진단("포화 주의"/"입지 재검토"/
+                      "평가 완료")을 낸다. 원본 시트 §6.2 설계라 건드리지 않고 읽는 사람에게 밝힌다. */}
+                  <th className="px-4 py-3 font-medium" title="입력이 덜 끝났으면 그 상태를, 끝났으면 진단 결과를 보여줍니다">
+                    최종운영판정
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
@@ -256,8 +261,8 @@ export default function StoreEvalDashboardPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]">{formatWon(result?.v62Final)}</td>
-                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]">{formatWon(result?.conservativeSales)}</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={formatWon(result?.v62Final)}>{formatManwonRough(result?.v62Final)}</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={formatWon(result?.conservativeSales)}>{formatManwonRough(result?.conservativeSales)}</td>
                       <td className="px-4 py-3">
                         <JudgementBadge result={result} />
                       </td>
@@ -282,7 +287,7 @@ export default function StoreEvalDashboardPage() {
               <thead className="border-b border-[#171310]/[0.08] text-xs text-[var(--sl-ink-soft)] dark:border-white/[0.08]">
                 <tr>
                   <th className="px-4 py-3 font-medium">후보지</th>
-                  <th className="px-4 py-3 font-medium">V62 최종예상월매출</th>
+                  <th className="px-4 py-3 font-medium">최종예상월매출</th>
                   <th className="px-4 py-3 font-medium">최종운영판정</th>
                   <th className="px-4 py-3 font-medium">계산 시각</th>
                 </tr>

@@ -149,21 +149,23 @@ function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; cont
               <div key={r.label}>
                 <div className="flex items-baseline justify-between text-xs">
                   <span className="text-[#5c5346] dark:text-[#c9bfae]">{r.label}</span>
-                  <span className={`font-semibold ${positive ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"}`}>
+                  <span className={`font-semibold tabular-nums ${positive ? "text-[var(--sl-chart-up)]" : "text-[var(--sl-chart-down)]"}`}>
                     {positive ? "+" : ""}{formatPercent(r.pct)}
                   </span>
                 </div>
-                {/* 가운데를 0으로 두고 좌우로 뻗는 막대 — 올린 요인과 내린 요인이 한눈에 갈린다. */}
-                <div className="mt-1 flex h-1.5 items-center">
+                {/* 가운데를 0으로 두고 좌우로 뻗는 막대 — 올린 요인과 내린 요인이 한눈에 갈린다.
+                    2026-09-14: 6px는 값 비교가 어려워 10px로 키우고, 색을 차트 전용 토큰으로 바꿨다
+                    (상태색 재사용 → 구분 실패, globals.css --sl-chart-up 주석 참고). */}
+                <div className="mt-1 flex h-2.5 items-center" title={`${r.label} ${positive ? "+" : ""}${formatPercent(r.pct)}`}>
                   <div className="flex h-full w-1/2 justify-end">
                     {!positive && (
-                      <div className="h-full rounded-l-full bg-[var(--sl-warn)]" style={{ width: `${(Math.abs(r.pct) / maxAbs) * 100}%` }} />
+                      <div className="h-full rounded-l-full bg-[var(--sl-chart-down)]" style={{ width: `${(Math.abs(r.pct) / maxAbs) * 100}%` }} />
                     )}
                   </div>
                   <div className="w-px shrink-0" />
                   <div className="flex h-full w-1/2">
                     {positive && (
-                      <div className="h-full rounded-r-full bg-[var(--sl-ok)]" style={{ width: `${(r.pct / maxAbs) * 100}%` }} />
+                      <div className="h-full rounded-r-full bg-[var(--sl-chart-up)]" style={{ width: `${(r.pct / maxAbs) * 100}%` }} />
                     )}
                   </div>
                 </div>
@@ -226,13 +228,87 @@ function ReviewSignalList({ signals }: { signals: ReviewSignal[] }) {
  * 비교군은 **모형이 학습에 쓰는 기준과 같게** 맞춘다 — 블랙라벨·산식학습 제외 아님·실제매출 있음.
  * 기준이 다르면 "38곳 검증"이라고 적힌 정확도 수치와 모수가 어긋나 혼란만 준다.
  */
+/**
+ * 기존점 분포에서 이 후보지가 어디쯤인지 — 점 분포(strip plot). 2026-09-14 신설.
+ *
+ * 왜 그림인가: 예전에는 "38곳 중 25번째 수준입니다(중앙값 6,400만원)"처럼 **문장 네 줄**로
+ * 말했다. 순위·중앙값·내 값의 관계는 위치로 보여주면 0.5초에 읽히는데 문장으로는 머릿속에서
+ * 다시 그려야 한다. 값은 `computePeerPosition`이 순위·중앙값과 **같은 배열**에서 내주므로
+ * 그림과 문장이 어긋날 수 없다.
+ *
+ * 형태 선택(dataviz): "내 값이 남들 사이 어디인가"는 막대가 아니라 점 분포다. 막대는 크기
+ * 비교용이고 여기 필요한 건 위치다. 축 눈금 대신 양끝·중앙값만 직접 라벨한다.
+ */
+function PeerDistributionStrip({
+  values,
+  own,
+  median,
+  format,
+  ownLabel,
+}: {
+  values: number[];
+  own: number;
+  median: number;
+  format: (v: number | null | undefined) => string;
+  ownLabel: string;
+}) {
+  if (values.length === 0) return null;
+  const lo = Math.min(values[0], own);
+  const hi = Math.max(values[values.length - 1], own);
+  const span = hi - lo;
+  // 전부 같은 값이면 위치 계산이 0으로 나뉜다 — 그때는 그리지 않는다.
+  if (!(span > 0)) return null;
+  const at = (v: number) => ((v - lo) / span) * 100;
+
+  return (
+    <div className="mt-2">
+      <div className="relative h-9">
+        {/* 기준선 */}
+        <div aria-hidden className="absolute inset-x-0 top-4 h-px bg-[#171310]/15 dark:bg-white/15" />
+        {/* 기존점 각각 — 겹치면 진해져서 밀집 구간이 저절로 드러난다 */}
+        {values.map((v, i) => (
+          <span
+            key={`${v}-${i}`}
+            aria-hidden
+            className="absolute top-2 h-4 w-0.5 rounded-full bg-[#171310]/30 dark:bg-white/35"
+            style={{ left: `${at(v)}%` }}
+            title={format(v)}
+          />
+        ))}
+        {/* 중앙값 */}
+        <span
+          aria-hidden
+          className="absolute top-1 h-6 w-px bg-[#171310]/55 dark:bg-white/55"
+          style={{ left: `${at(median)}%` }}
+          title={`중앙값 ${format(median)}`}
+        />
+        {/* 이 후보지 — 유일하게 색을 쓴다 */}
+        <span
+          className="absolute top-1.5 z-10 h-5 w-[3px] rounded-full bg-[var(--sl-gold)] ring-2 ring-[var(--sl-surface,#fff)] dark:ring-[#1a1a19]"
+          style={{ left: `${at(own)}%` }}
+          title={`${ownLabel} ${format(own)}`}
+        />
+      </div>
+      <div className="flex justify-between text-[10px] leading-4 text-[var(--sl-ink-soft)]">
+        <span>{format(lo)}</span>
+        <span>중앙값 {format(median)}</span>
+        <span>{format(hi)}</span>
+      </div>
+      <p className="mt-0.5 text-[10px] leading-4 text-[var(--sl-ink-soft)]">
+        <span className="mr-1 inline-block h-2 w-[3px] translate-y-[1px] rounded-full bg-[var(--sl-gold)]" aria-hidden />
+        {ownLabel} · 얇은 선 하나가 기존점 한 곳입니다
+      </p>
+    </div>
+  );
+}
+
 function PeerPositionNote({ stores, result, expectedPcCount }: { stores: ExistingStore[]; result: EvaluationResult; expectedPcCount: number | null }) {
   const forecast = result.v62Final;
   // 2026-09-13 — 계산은 peerPosition.ts로 옮겼다. 화면 안에 있으면 테스트할 방법이 없어
   // 경계 조건(동률·짝수 중앙값·규모 허용폭)이 맞는지 확인할 수가 없었다.
   const position = computePeerPosition(stores, forecast, expectedPcCount);
   if (position == null || forecast == null) return null;
-  const { peerCount, rank, median, perPc } = position;
+  const { peerCount, rank, median, perPc, values } = position;
 
   return (
     <div className="app-card-sm mt-2 rounded-xl px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
@@ -240,6 +316,7 @@ function PeerPositionNote({ stores, result, expectedPcCount }: { stores: Existin
       {peerCount}곳의 매출과 나란히 놓으면 이 예측값은{" "}
       <b className="text-[#171310] dark:text-[#f2ede2]">{peerCount}곳 중 {rank}번째</b> 수준입니다
       (기존점 중앙값 {formatManwonRough(median)}).
+      <PeerDistributionStrip values={values} own={forecast} median={median} format={formatManwonRough} ownLabel="이 후보지 예측" />
       {/* 2026-09-13 — "비슷한 규모 N곳 평균"을 대당 비교로 바꿨다. 기존점 대수가 76~168대로
           좁게 몰려 있어 규모별로 묶어봐야 어떻게 잘라도 전체 평균과 ±1.3% 안이었다(정보가
           없으면서 "규모를 맞춰 비교했다"는 인상만 줬다). 대당은 37.8만~87.9만으로 2.33배 폭이라
@@ -253,6 +330,7 @@ function PeerPositionNote({ stores, result, expectedPcCount }: { stores: Existin
             {perPc.own > perPc.median ? "높습니다" : perPc.own < perPc.median ? "낮습니다" : "같습니다"}
           </b>{" "}
           ({perPc.count}곳 중 {perPc.rank}번째). 대수가 달라서 생기는 차이를 뺀 비교입니다.
+          <PeerDistributionStrip values={perPc.values} own={perPc.own} median={perPc.median} format={formatManwonPerPc} ownLabel="이 후보지 대당" />
         </>
       )}
       <br />
@@ -348,7 +426,7 @@ function JudgedRevenuePanel({
         <span className="app-badge app-badge-neutral text-xs">산식에 반영되지 않음</span>
       </div>
       <p className="mt-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
-        위 V62 예상매출을 보고 <b className="text-[#171310] dark:text-[#f2ede2]">현장 감각으로는 다르게 본다</b>면 여기에
+        위 예상매출을 보고 <b className="text-[#171310] dark:text-[#f2ede2]">현장 감각으로는 다르게 본다</b>면 여기에
         적어두세요. <b className="text-[#171310] dark:text-[#f2ede2]">위 예상매출은 바뀌지 않습니다</b> — 산식은 그대로 두고
         판단만 나란히 기록합니다. 예측값을 직접 고치면 이 모형이 얼마나 맞는지 잴 수 없게 되기 때문입니다.
         <br />
@@ -378,7 +456,7 @@ function JudgedRevenuePanel({
       </div>
       {gapRatio != null && (
         <p className="mt-3 text-sm leading-6">
-          V62 예상매출 {formatWon(v62Final)} 대비{" "}
+          예상매출 {formatWon(v62Final)} 대비{" "}
           <b className={gapRatio >= 0 ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"}>
             {gapRatio >= 0 ? "+" : ""}
             {formatPercent(gapRatio)} ({gapRatio >= 0 ? "+" : "-"}
@@ -453,11 +531,11 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
 
   return (
     <div>
-      <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">§4.1 V61 기본예측(학습모형)</p>
+      <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">보정 전 기본예측이 나오는 과정 (학습모형)</p>
       <p className="mt-1">
         기존 가맹점 {explain.sampleCount}곳의 실제 매출 데이터로 학습한 통계모형(비음수 릿지회귀)입니다. 이 후보지의 조건 {explain.featureLabels.length}가지를 넣으면
         아래 표처럼 계산됩니다.
-        {explain.featureLabels.length === 6 && " 학습할 때 실제 매출에서 외부유입 제한의 차감을 분리하고, 최종 V62에서 해당 후보지의 제한을 적용합니다."}
+        {explain.featureLabels.length === 6 && " 학습할 때 실제 매출에서 외부유입 제한의 차감을 분리하고, 최종 단계에서 해당 후보지의 제한을 적용합니다."}
       </p>
 
       <div className="mt-2 overflow-x-auto">
@@ -505,7 +583,7 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
         기준모형(학습표본 대당월매출 중앙값) {formatWon(explain.perPcMedian)} × 예상PC대수 {formatNumber(explain.pcCount)}대 ={" "}
         <b>기준모형매출 {formatWon(explain.baselineRevenue)}</b>
         <br />
-        V61 기본예측 = 회귀예측매출×{formatPercent(explain.ridgeWeight, 0)} + 기준모형매출×{formatPercent(explain.baselineWeight, 0)} ={" "}
+        보정 전 기본예측 = 회귀예측매출×{formatPercent(explain.ridgeWeight, 0)} + 기준모형매출×{formatPercent(explain.baselineWeight, 0)} ={" "}
         <b>{formatWon(v61Baseline)}</b>
       </p>
       <p className="mt-1 text-[11px] text-[var(--sl-ink-soft)]">
@@ -862,7 +940,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
           <h2 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">최종평가 결과</h2>
-          <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">모델버전 {result.modelVersion} 기준 계산 결과입니다.</p>
+          {/* 2026-09-14 — 맨 위에 있던 "모델버전 V62-usage-v1"을 뺐다(사용자: "버전은 이제 없어도
+              되지 않나"). 추적용으로는 여전히 필요해서 아래 "세부 계산값 보기" 안으로 내렸다.
+              저장 데이터의 modelVersion은 그대로다 — 옛 결과와 대조할 때 쓴다. */}
+          <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">마지막으로 계산한 결과입니다.</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -965,7 +1046,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
 
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className={sectionTitleClass}>매출 예측 (V62)</h3>
+          <h3 className={sectionTitleClass}>매출 예측</h3>
           <span
             className={`app-badge text-xs ${result.v61IsFallback ? "app-badge-warn" : "app-badge-ok"}`}
           >
@@ -990,7 +1071,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               단위가 갈렸다. 두 값을 견주려면 머릿속에서 자릿수를 옮겨야 했다. 정밀도가 필요한
               자리라 원 단위를 버리지 않고 hint로 남긴다. */}
           <ResultCard
-            label="V62 최종예상월매출"
+            label="최종예상월매출"
             value={`약 ${formatManwonRough(result.v62Final)}`}
             hint={formatWon(result.v62Final)}
             emphasis
@@ -999,7 +1080,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               (호구포역 24.5%) 출점 판단 기준인 V62의 전제(40.3%)와 다르다. 사용자가 "경쟁점이
               30%인데 우리가 40%는 말이 안 된다"고 지적했을 때 그 40%가 화면 어디에도 없었다. */}
           <ResultCard
-            label="V62가 전제하는 가동률"
+            label="이 예상매출이 전제하는 가동률"
             value={formatPercent(result.v62ImpliedUtilization)}
             hint="이 예상매출이 나오려면 좌석이 이만큼 차 있어야 한다는 뜻입니다"
           />
@@ -1011,7 +1092,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <PeerPositionNote stores={peerStores} result={result} expectedPcCount={candidateForReport?.expectedPcCount ?? result.expectedPcCount} />
         <RevenueDriverBreakdown drivers={result.revenueBreakdown?.usageDrivers} />
         {result.revenueBreakdown && <p className="mt-2 text-sm leading-6">
-          PC {formatWon(result.revenueBreakdown.pcRevenue)} + 상품(먹거리) {formatWon(result.revenueBreakdown.productRevenue)}
+          {/* 2026-09-14 — 원 단위였다. 같은 화면 히어로가 "약 5,800만원"인데 여기만 원 단위라
+              단위 규칙이 흔들렸다. 게다가 이 분해값은 총매출보다 부정확하므로(PC 14.4% · 상품
+              12.6%) 원 단위는 없는 정밀도를 주장하는 셈이다 — 히어로와 같은 100만원 단위로 맞춘다. */}
+          PC {formatManwonRough(result.revenueBreakdown.pcRevenue)} + 상품(먹거리) {formatManwonRough(result.revenueBreakdown.productRevenue)}
           {result.revenueBreakdown.monthlyRevenue > 0 && <>
             <br />총매출 중 상품 비중 {formatPercent(result.revenueBreakdown.productRevenue / result.revenueBreakdown.monthlyRevenue)}
           </>}
@@ -1033,11 +1117,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         )}
         <details className="mt-3">
           <summary className="cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)] hover:text-[#171310] dark:hover:text-[#f2ede2]">
-            세부 계산값 보기 (V61 기본예측 · V62 보정률 · 보수/상한 참고범위)
+            세부 계산값 보기 (보정 전 기본예측 · 보정률 · 보수/상한 참고범위 · 모델버전)
           </summary>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <ResultCard label="V61 기본예측" value={formatWon(result.v61Baseline)} hint={result.v61ModelLabel} />
-            <ResultCard label="V62 보정률" value={formatPercent(result.v62Rate)} />
+            <ResultCard label="보정 전 기본예측" value={formatWon(result.v61Baseline)} hint={result.v61ModelLabel} />
+            <ResultCard label="유입제약 보정률" value={formatPercent(result.v62Rate)} />
+            <ResultCard label="계산에 쓰인 모델" value={result.modelVersion} hint="옛 결과와 대조할 때 쓰는 값입니다" />
             {/* 2026-09-10 — "보수판단"이라는 이름 때문에 통계적 하한으로 오해할 수 있어 설명을 붙였다.
                 이 둘은 설정값(lowerBoundFactor/upperBoundFactor)을 곱한 고정 밴드이지 실측 신뢰구간이
                 아니다. 실제 이 모형이 얼마나 맞는지는 검증 화면에서 확인해야 한다. */}
@@ -1051,7 +1136,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
                 출점 판단 기준인 V62의 전제(40.3%)와 달랐다. 사용자가 "경쟁점이 30%인데
                 우리가 40%는 말이 안 된다"고 지적했을 때, 그 40%가 화면 어디에도 없었다. */}
             <ResultCard
-              label="V62가 전제하는 가동률"
+              label="이 예상매출이 전제하는 가동률"
               value={formatPercent(result.v62ImpliedUtilization)}
               hint="이 예상매출이 나오려면 좌석이 이만큼 차 있어야 한다는 뜻입니다"
             />

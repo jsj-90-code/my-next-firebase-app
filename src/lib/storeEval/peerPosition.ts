@@ -35,7 +35,15 @@ export type PeerPosition = {
     rank: number;
     /** 대당 비교에 쓰인 기존점 수(대수가 있는 곳만) */
     count: number;
+    /** 대당 매출 분포(오름차순). 화면이 점 분포를 그릴 때 쓴다. */
+    values: number[];
   } | null;
+  /**
+   * 기존점 실제매출 분포(오름차순). 2026-09-14 추가 — 화면이 "38곳 중 25번째"를 문장으로만
+   * 말하던 것을 점 분포 그림으로 바꾸려면 값 자체가 필요하다. 순위·중앙값과 **같은 배열에서**
+   * 나오므로 그림과 문장이 어긋날 수 없다.
+   */
+  values: number[];
 };
 
 /** 순위가 의미를 가지려면 최소 이만큼은 있어야 한다. 3~4곳에서 "N곳 중 2번째"는 정보가 아니다. */
@@ -77,6 +85,7 @@ export function computePeerPosition(stores: PeerStore[], forecast: number | null
             median: medianOf(values),
             rank: values.filter((v) => v > own).length + 1,
             count: values.length,
+            values: [...values].sort((a, b) => a - b),
           };
         })()
       : null;
@@ -86,6 +95,7 @@ export function computePeerPosition(stores: PeerStore[], forecast: number | null
     rank: revenues.filter((r) => r > forecast).length + 1,
     median,
     perPc,
+    values: [...revenues].sort((a, b) => a - b),
   };
 }
 
