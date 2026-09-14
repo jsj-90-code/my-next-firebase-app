@@ -1416,10 +1416,10 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     // 표준존구성(팀룸2·커플존3·VIP존5·프렌즈존15, 나머지0)에서 존다양성=4종류→3.5,
     // 특화좌석비율=(팀룸2×5+커플존3×2+VIP5+프렌즈15)/100=0.36→존수용력4 → 존구성=3.5*.7+4*.3=3.65.
     // interior(facility) = 존구성3.65*.5+인테리어4(표준값)*.3+관리4(표준값)*.2 = 3.825. location=4.0
-    // 2026-09-03(8차) 하드:시설:입지를 30:40:30 → 20:50:20으로 재배분(먹거리 16.667% 유지):
-    // 하드 18.5185% / 먹거리 16.6667% / 시설 46.2963% / 입지 18.5185%
-    // → 4*.185185+4*.166667+3.825*.462963+4*.185185 = 3.91898
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.919, 3);
+    // 2026-09-15 재배분(사용자 확정): 사양 25% / 먹거리 5% / 시설 55% / 입지 15%
+    // → 4*.25 + 4*.05 + 3.825*.55 + 4*.15 = 3.90375
+    // (먹거리가 자사 38곳 전부 4.00점 상수라 비중을 줄였다 — settings.ts 주석 참고)
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.90375, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -1446,8 +1446,9 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     // interior(facility)는 위 테스트와 동일 존구성(3.65)+인테리어4(직접입력, 표준값과 동일)+
     // 관리4(표준값) = 3.65*.5+4*.3+4*.2 = 3.825. location=4
     // 2026-09-03(8차) 하드:시설:입지 20:50:20 재배분(먹거리 16.667% 유지):
-    // → 3.808*.185185+4*.166667+3.825*.462963+4*.185185 = 3.88337
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.8834, 3);
+    // 2026-09-15 재배분: 사양 25% / 먹거리 5% / 시설 55% / 입지 15%
+    // → 3.808*.25 + 4*.05 + 3.825*.55 + 4*.15 = 3.855673
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.855673, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);

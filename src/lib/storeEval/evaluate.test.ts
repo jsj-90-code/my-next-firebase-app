@@ -260,8 +260,11 @@ describe("evaluateCandidate 배선 검증", () => {
     expect(result.v61ModelLabel).toContain("가시성");
     const explain=result.v61TrainedModelExplain!;
     for(const values of [explain.featureLabels, explain.featureRealValues, explain.featureModelValues, explain.featureMeans, explain.featureSds, explain.coefficients]) expect(values).toHaveLength(6);
-    expect(explain.featureLabels[5]).toBe("접근가시성");
-    expect(explain.featureRealValues[5]).toBe(4);
+    // 2026-09-15 — 접근성 피처가 가시성 단독에서 **가시성 × 선점경쟁**으로 바뀌었다
+    // (settings.v61Training.accessScoreMode 기본값이 visibility-x-preemption).
+    // 선점경쟁은 단독으로는 신호가 없는데(r=0.079) 가시성과 곱하면 살아난다 — settings 주석 참고.
+    expect(explain.featureLabels[5]).toBe("접근가시성×선점경쟁");
+    expect(explain.featureRealValues[5]).toBe(4 * 3); // 가시성 4 x 선점경쟁 3
     expect(explain.yMean).toBeCloseTo(existingStores.reduce((sum,s) => sum+Math.log(s.actualMonthlyRevenueAvg!/s.pcCount!/.8),0)/16, 10);
     const missing = evaluateCandidate({candidate:emptyCandidate(), competitors:[competitor], locationEvaluation:{...locationEval, visibilityScore:null}, settings:activeSettings, existingStores, trainingLocationEvaluations, trainingCompetitors: []});
     expect(missing.v61IsFallback).toBe(true);

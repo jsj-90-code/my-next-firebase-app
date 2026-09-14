@@ -12,7 +12,8 @@ describe("mergeModelSettings", () => {
     expect(merged.v61Training.ridgeWeight).toBe(0.7);
     expect(merged.v61Training.minSampleCount).toBe(12);
     expect(merged.v61Training.minMarketDemandCoef).toBe(0.03);
-    expect(merged.v61Training.minCompetitivenessGapCoef).toBe(0.06);
+    // 2026-09-15 0.06 → 0.09 (settings.ts 주석 참고)
+    expect(merged.v61Training.minCompetitivenessGapCoef).toBe(0.09);
     expect(merged.v61Training.minBackingDemandCoef).toBe(0.05);
     expect(merged.updatedAt).toBe(123);
   });
