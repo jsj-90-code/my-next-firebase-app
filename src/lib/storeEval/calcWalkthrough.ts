@@ -163,7 +163,7 @@ function buildShareStep(result: EvaluationResult): WalkStep {
     label: "우리 매장 경쟁력 점수",
     value: result.ownCompetitivenessScore,
     kind: "score",
-    note: "좌석 30% + 사양 25% + 먹거리 20% + 인테리어 15% + 위치 10%",
+    note: "시설·사양·입지·먹거리 네 가지를 정해진 비중으로 더한 값(비중은 위 표 참고)",
   });
   rows.push({
     label: "경쟁점 평균 경쟁력 점수",
@@ -335,4 +335,76 @@ export function buildWalkthrough(
       result.marketDemand != null &&
       demand.recomputedMarketDemand !== result.marketDemand,
   };
+}
+
+/**
+ * 2단계 "경쟁력 점수는 무엇으로 매기나"를 설정에서 뽑아 만든다 (2026-09-14 신설).
+ *
+ * ⚠️ 이걸 만든 이유 — 화면에 비중을 글자로 박아두면 **반드시 낡는다.** 실제로 이 화면은
+ * "좌석30·사양25·먹거리20·인테리어15·위치10"이라는 2026-08-27 당시의 5분류를 그대로 달고
+ * 있었는데, 2026-08-28에 4분류로 재편됐고 2026-09-03에 비중이 또 바뀌었다(하드:시설:입지
+ * 30:40:30 → 20:50:20). 항목 하나(관리)는 화면에 아예 없었다.
+ *
+ * 그래서 숫자를 쓰지 않고 `competitivenessWeights` / `specWeights` / `facilityWeights` /
+ * `locationCompositeWeights`에서 그대로 읽어 계산한다. 설정이 바뀌면 화면이 따라 바뀐다.
+ */
+export type WeightPart = { label: string; pct: number };
+export type WeightRow = {
+  label: string;
+  /** 경쟁력 점수 전체에서 차지하는 비중. 0.185 = 18.5% */
+  pct: number;
+  desc: string;
+  /** 그 항목 **안에서**의 세부 비중. 전체 대비가 아니다. */
+  parts?: WeightPart[];
+};
+
+type WeightSettings = Pick<
+  ModelSettings,
+  "competitivenessWeights" | "specWeights" | "facilityWeights" | "locationCompositeWeights"
+>;
+
+export function buildCompetitivenessWeights(settings: WeightSettings): WeightRow[] {
+  const w = settings.competitivenessWeights;
+  const spec = settings.specWeights;
+  const fac = settings.facilityWeights;
+  const loc = settings.locationCompositeWeights;
+
+  return [
+    {
+      label: "시설",
+      pct: w.interior,
+      desc: "어떤 좌석이 얼마나 갖춰져 있고, 꾸밈새와 관리 상태가 어떤지",
+      parts: [
+        { label: "존 구성", pct: fac.zoneComposition },
+        { label: "인테리어", pct: fac.interior },
+        { label: "관리", pct: fac.management },
+      ],
+    },
+    {
+      label: "사양",
+      pct: w.spec,
+      desc: "컴퓨터 성능",
+      parts: [
+        { label: "그래픽카드", pct: spec.vga },
+        { label: "모니터", pct: spec.monitor },
+        { label: "CPU", pct: spec.cpu },
+        { label: "램", pct: spec.ram },
+      ],
+    },
+    {
+      label: "입지",
+      pct: w.location,
+      desc: "상권 안에서 어디에 있는지. 입지동선평가가 없으면 층수·엘리베이터로 대신한다",
+      parts: [
+        { label: "상권위치·동선", pct: loc.marketPositionFlow },
+        { label: "선점", pct: loc.preemption },
+        { label: "가시성", pct: loc.visibility },
+      ],
+    },
+    {
+      label: "먹거리",
+      pct: w.food,
+      desc: "파는 음식 수준. 조사자가 직접 확인한 값이 있으면 브랜드 기본값보다 그게 우선한다",
+    },
+  ].sort((a, b) => b.pct - a.pct);
 }

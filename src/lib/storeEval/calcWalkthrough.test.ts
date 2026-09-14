@@ -8,7 +8,7 @@
 // "라벨과 값이 짝이 맞는가"도 같이 본다.
 
 import { describe, expect, it } from "vitest";
-import { buildWalkthrough, type WalkRow } from "./calcWalkthrough";
+import { buildCompetitivenessWeights, buildWalkthrough, type WalkRow } from "./calcWalkthrough";
 import { computeMarketDemand } from "./calc";
 import { mergeModelSettings } from "./settings";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
@@ -179,6 +179,53 @@ describe("계산 과정 설명", () => {
       expect(step.rows.every((r) => r.label.length > 0)).toBe(true);
       expect(step.rows.filter((r) => r.result).length).toBe(1);
     }
+  });
+});
+
+// 2026-09-14 — 화면에 "좌석30·사양25·먹거리20·인테리어15·위치10"이 글자로 박혀 있었는데, 실제
+// 비중은 2026-08-28(5분류→4분류)과 2026-09-03(20:50:20)에 두 번 바뀐 뒤였다. 항목 하나(관리)는
+// 화면에 아예 없었다. 다시는 글자로 박히지 않도록 "설정에서 나왔는가"를 고정한다.
+describe("경쟁력 비중 표", () => {
+  it("네 항목이 설정값 그대로이고 합이 100%다", () => {
+    const rows = buildCompetitivenessWeights(settings);
+    const w = settings.competitivenessWeights;
+    expect(rows.map((r) => r.label).sort()).toEqual(["먹거리", "사양", "시설", "입지"]);
+    expect(rows.find((r) => r.label === "사양")!.pct).toBe(w.spec);
+    expect(rows.find((r) => r.label === "시설")!.pct).toBe(w.interior);
+    expect(rows.find((r) => r.label === "입지")!.pct).toBe(w.location);
+    expect(rows.find((r) => r.label === "먹거리")!.pct).toBe(w.food);
+    expect(rows.reduce((sum, r) => sum + r.pct, 0)).toBeCloseTo(1, 10);
+  });
+
+  it("비중이 큰 항목부터 나온다", () => {
+    const pcts = buildCompetitivenessWeights(settings).map((r) => r.pct);
+    expect([...pcts].sort((a, b) => b - a)).toEqual(pcts);
+  });
+
+  it("사양 세부는 specWeights 그대로이고 합이 100%다 — 옛 'GPU70/모니터30'이 아니다", () => {
+    const parts = buildCompetitivenessWeights(settings).find((r) => r.label === "사양")!.parts!;
+    const spec = settings.specWeights;
+    expect(parts.find((p) => p.label === "그래픽카드")!.pct).toBe(spec.vga);
+    expect(parts.find((p) => p.label === "모니터")!.pct).toBe(spec.monitor);
+    expect(parts.find((p) => p.label === "CPU")!.pct).toBe(spec.cpu);
+    expect(parts.find((p) => p.label === "램")!.pct).toBe(spec.ram);
+    expect(parts.reduce((sum, p) => sum + p.pct, 0)).toBeCloseTo(1, 10);
+  });
+
+  it("시설 세부에 관리가 빠지지 않는다", () => {
+    const parts = buildCompetitivenessWeights(settings).find((r) => r.label === "시설")!.parts!;
+    const fac = settings.facilityWeights;
+    expect(parts.find((p) => p.label === "존 구성")!.pct).toBe(fac.zoneComposition);
+    expect(parts.find((p) => p.label === "인테리어")!.pct).toBe(fac.interior);
+    expect(parts.find((p) => p.label === "관리")!.pct).toBe(fac.management);
+    expect(parts.reduce((sum, p) => sum + p.pct, 0)).toBeCloseTo(1, 10);
+  });
+
+  it("설정을 바꾸면 표도 따라 바뀐다 (숫자가 박혀 있지 않다)", () => {
+    const changed = { ...settings, competitivenessWeights: { spec: 0.4, food: 0.1, interior: 0.3, location: 0.2 } };
+    const rows = buildCompetitivenessWeights(changed);
+    expect(rows[0].label).toBe("사양");
+    expect(rows[0].pct).toBe(0.4);
   });
 });
 

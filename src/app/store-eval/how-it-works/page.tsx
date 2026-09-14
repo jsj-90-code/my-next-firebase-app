@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { sectionClass, sectionTitleClass } from "../candidates/[code]/formFields";
-import { buildWalkthrough, type WalkRow, type WalkStep } from "@/lib/storeEval/calcWalkthrough";
+import { buildCompetitivenessWeights, buildWalkthrough, type WalkRow, type WalkStep } from "@/lib/storeEval/calcWalkthrough";
 import { getModelSettings, listCandidates, listEvaluationResults } from "@/lib/storeEval/store";
 import type { CandidateInput, EvaluationResult, ModelSettings } from "@/lib/storeEval/types";
 import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
@@ -149,6 +149,7 @@ export default function HowItWorksPage() {
     () => (candidate && settings ? buildWalkthrough(candidate, result, settings) : null),
     [candidate, result, settings],
   );
+  const weightRows = useMemo(() => (settings ? buildCompetitivenessWeights(settings) : []), [settings]);
   const stepOf = useCallback(
     (n: 1 | 2 | 3) => walkthrough?.steps.find((s) => s.step === n) ?? null,
     [walkthrough],
@@ -289,20 +290,26 @@ export default function HowItWorksPage() {
               좋은가&rdquo;</strong>를 점수로 매깁니다. 5가지를 봐요:
             </p>
 
+            {/* 비중을 글자로 박아두면 반드시 낡는다 — 실제로 2026-08-28·09-03 두 번 바뀌는 동안
+                이 목록만 2026-08-27 값으로 남아 있었다. 설정에서 읽어 그린다. */}
             <div className="mt-3 flex flex-col gap-2">
-              {[
-                { label: "좌석", pct: 30, desc: "방 종류가 다양하고 독립된 룸이 많을수록 높은 점수" },
-                { label: "사양", pct: 25, desc: "그래픽카드 성능(70%)과 모니터 화질(30%)" },
-                { label: "먹거리", pct: 20, desc: "파는 음식 수준" },
-                { label: "인테리어", pct: 15, desc: "매장 분위기" },
-                { label: "위치", pct: 10, desc: "몇 층인지, 엘리베이터가 있는지" },
-              ].map((row) => (
-                <div key={row.label} className="grid grid-cols-[64px_1fr] items-center gap-3 text-sm sm:grid-cols-[64px_44px_1fr]">
+              {weightRows.map((row) => (
+                <div key={row.label} className="grid grid-cols-[64px_1fr] items-baseline gap-3 text-sm sm:grid-cols-[64px_56px_1fr]">
                   <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{row.label}</span>
-                  <span className="font-mono text-[var(--sl-step-a-ink)]">{row.pct}%</span>
-                  <span className="text-xs text-[var(--sl-ink-soft)] sm:col-start-3">{row.desc}</span>
+                  <span className="font-mono tabular-nums text-[var(--sl-step-a-ink)]">{formatPercent(row.pct)}</span>
+                  <span className="text-xs text-[var(--sl-ink-soft)] sm:col-start-3">
+                    {row.desc}
+                    {row.parts && (
+                      <span className="mt-0.5 block">
+                        이 안에서 — {row.parts.map((part) => `${part.label} ${formatPercent(part.pct, 0)}`).join(" · ")}
+                      </span>
+                    )}
+                  </span>
                 </div>
               ))}
+              {weightRows.length === 0 && (
+                <p className="text-xs text-[var(--sl-ink-soft)]">운영설정을 불러오면 지금 적용된 비중이 여기에 표시됩니다.</p>
+              )}
             </div>
 
             <p className="mt-4 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
@@ -350,8 +357,14 @@ export default function HowItWorksPage() {
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
               후보지의 수요·경쟁력·입지를 넣어 예상 PC 이용시간과 먹거리 매출을 구합니다.
               <strong>예상 PC 이용시간 × 입력한 시간당요금 + 먹거리 매출</strong>이 기본 예상 매출입니다.
-              다른 조건이 같다면 요금을 1,500원에서 1,000원으로 내릴 때 PC매출은 3분의 2가 되고 먹거리 매출은 유지됩니다.
-              할인으로 손님이 더 늘어나는 효과는 별도로 가정하지 않습니다.
+            </p>
+
+            <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
+              (2026-09-10 바뀜) 요금을 내리면 매출이 그만큼 그대로 줄어들까요? <strong>아닙니다.</strong> 예전에는
+              &ldquo;요금을 3분의 2로 내리면 PC매출도 3분의 2&rdquo;로 계산했는데, 실제 가맹점 38곳의 기록을 보니
+              <strong> 요금이 비싼 매장이 그만큼 더 벌지는 않았습니다</strong>(요금을 내리면 손님이 더 오래 쓰기
+              때문입니다). 그래서 지금은 그 관계를 실제 기록에서 배워서 씁니다 — 1,500원을 1,000원으로 내리면
+              PC매출은 3분의 2가 아니라 <strong>대략 85% 수준</strong>이 됩니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
