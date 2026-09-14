@@ -383,10 +383,10 @@ export default function HowItWorksPage() {
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
               (2026-09-14 바뀜) 요금을 내리면 매출이 그만큼 그대로 줄어들까요? <strong>아닙니다.</strong>
               <strong>등록요금(정가)과 실제로 시간당 받는 돈이 다르기</strong> 때문입니다 — 좌석 추가과금이 더해지고
-              정액제 할인이 빼는데, <strong>요금이 비싼 매장일수록 할인 비중이 큽니다.</strong> 실제 가맹점
-              {tariffFacts.sampleCount}곳의 기록을 재보니 정가 1,000원 매장은 정가의 {tariffFacts.at1000}%를 받았고,
-              1,800원 매장은 {tariffFacts.at1800}%만 받았습니다. 그래서 1,500원을 1,000원으로 내리면 PC매출은
-              3분의 2(67%)가 아니라 <strong>약 {tariffFacts.drop}%</strong>가 됩니다.
+              정액제 할인이 빼는데, <strong>요금이 비싼 매장일수록 할인 비중이 큽니다.</strong> 실제 가맹점{" "}
+              {tariffFacts.sampleCount}곳의 기록에서 이 관계를 배웠고, 지금 계산은 정가 1,000원이면 정가의{" "}
+              {tariffFacts.at1000}%, 1,800원이면 {tariffFacts.at1800}%를 받는 것으로 봅니다. 그래서 1,500원을
+              1,000원으로 내리면 PC매출은 3분의 2(67%)가 아니라 <strong>약 {tariffFacts.drop}%</strong>가 됩니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
