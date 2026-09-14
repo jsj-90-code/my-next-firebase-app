@@ -151,6 +151,30 @@ body {
   opacity: 0.4;
 }
 
+/* 되돌릴 수 없는 동작(삭제) 전용. 2026-09-14 신설.
+
+   왜 만들었나 — 삭제 버튼이 .app-btn-accent(등록·발행)와 **같은 형태**(얇은 외곽선 + 색 글자)라
+   색으로만 갈렸다. 그런데 두 색의 구분도를 재보니 정상시각 ΔE 7.8(라이트) · 10.4(다크)로
+   기준 15에 한참 못 미친다 — **색각이상이 없어도 구분이 어렵다**(dataviz validate_palette.js).
+   실제로 배치도 상단에서 "선택한 프로젝트 삭제"와 "...데이터 등록"이 같은 버튼처럼 보였다.
+
+   그래서 색을 바꾸는 대신 **형태를 바꾼다** — 채움을 줘서 외곽선 버튼들과 한눈에 갈리게 한다.
+   색맹·흑백 인쇄에서도 유지되는 구분이다. 상태색은 색 하나로 의미를 나르지 않는다는 원칙과 같다. */
+.app-btn-danger {
+  border: 1px solid color-mix(in srgb, var(--sl-danger) 45%, transparent);
+  background: var(--sl-danger-soft);
+  color: var(--sl-danger);
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.app-btn-danger:hover {
+  background: color-mix(in srgb, var(--sl-danger) 20%, transparent);
+  border-color: var(--sl-danger);
+}
+.app-btn-danger:disabled {
+  opacity: 0.4;
+}
+
 .app-btn-outline {
   border: 1px solid var(--sl-hairline);
   background: transparent;

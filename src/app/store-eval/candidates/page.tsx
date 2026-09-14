@@ -336,6 +336,6 @@ function CandidateActions({ candidate, busy, onDuplicate, onDelete }: {
   return <div className="mt-4 flex flex-wrap justify-end gap-2 md:mt-0 md:flex-nowrap">
     <Link href={`/store-eval/candidates/${candidate.code}`} aria-label={`${name} 열기`} className="app-btn-outline min-h-10 flex-1 rounded-lg px-3 py-2 text-center text-xs md:min-h-0 md:flex-none">열기</Link>
     <button type="button" disabled={busy} aria-label={`${name} 복사`} onClick={() => void onDuplicate(candidate.code)} className="app-btn-outline min-h-10 rounded-lg px-3 py-2 text-xs disabled:opacity-50 md:min-h-0">복사</button>
-    <button type="button" disabled={busy} aria-label={`${name} 삭제`} onClick={() => void onDelete(candidate.code)} className="min-h-10 rounded-lg border border-[var(--sl-danger)]/30 px-3 py-2 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50 md:min-h-0">삭제</button>
+    <button type="button" disabled={busy} aria-label={`${name} 삭제`} onClick={() => void onDelete(candidate.code)} className="app-btn-danger min-h-10 rounded-lg px-3 py-2 text-xs disabled:opacity-50 md:min-h-0">삭제</button>
   </div>;
 }

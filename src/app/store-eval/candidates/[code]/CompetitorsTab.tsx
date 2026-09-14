@@ -966,7 +966,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                   type="button"
                   disabled={busyId === c.id}
                   onClick={() => handleDelete(c.id)}
-                  className="rounded-md border border-[var(--sl-danger)]/30 px-3 py-2 text-xs font-medium text-[var(--sl-danger)] hover:bg-[var(--sl-danger-soft)] disabled:opacity-50"
+                  className="app-btn-danger rounded-md px-3 py-2 text-xs disabled:opacity-50"
                 >
                   삭제
                 </button>
