@@ -80,8 +80,8 @@ function WalkRows({ step }: { step: WalkStep }) {
               <dd
                 className={
                   row.result
-                    ? "font-mono text-sm font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]"
-                    : "font-mono text-sm tabular-nums text-[#5c5346] dark:text-[#c9bfae]"
+                    ? "ml-auto font-mono text-sm font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]"
+                    : "ml-auto font-mono text-sm tabular-nums text-[#5c5346] dark:text-[#c9bfae]"
                 }
               >
                 {formatRowValue(row)}
