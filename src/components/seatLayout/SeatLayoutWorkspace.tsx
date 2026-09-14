@@ -2936,16 +2936,18 @@ export function SeatLayoutWorkspace() {
                           넣고 쓰는 일이 있었다. 그러면 헤드셋걸이를 손으로 넣어야 한다. 안내를 파일 고르는
                           자리로 옮기고, **무엇을 눈으로 확인해야 하는지**와 **안 하면 어떻게 되는지**를 적는다.
                           기존 문구는 이득만 말했다("자동으로 구분돼요") — 사람은 이득 문구를 건너뛴다. */}
-                      <div className="app-notice app-badge-warn mt-2 max-w-md flex-col items-start gap-1 px-4 py-3 text-left text-xs leading-5">
-                        <span className="font-semibold">도면을 고르기 전에 — 가방 선반 브라켓 표시가 있나요?</span>
-                        <span>
+                      {/* .app-notice는 display:block이라 flex 유틸리티가 안 먹는다 — 줄을 나누려면
+                          블록 요소여야 한다(2026-09-14 화면에서 문장이 붙어 나와 확인). */}
+                      <div className="app-notice app-badge-warn mt-2 max-w-md px-4 py-3 text-left text-xs leading-5">
+                        <p className="font-semibold">도면을 고르기 전에 — 가방 선반 브라켓 표시가 있나요?</p>
+                        <p className="mt-1">
                           마주보는 책상 줄 위에 <strong>주황색·빨간색 점과 선</strong>으로 그어놓은 표시입니다.
                           이게 있어야 <strong>아이락스 헤드셋걸이</strong> 수량을 자동으로 셉니다.
-                        </span>
-                        <span>
+                        </p>
+                        <p className="mt-1">
                           표시가 없는 도면을 쓰면 <strong>존마다 수량을 손으로 넣어야 하고</strong>, 안 넣으면
                           전부 아이센스 헤드셋걸이로 발주됩니다.
-                        </span>
+                        </p>
                       </div>
                     </div>
                   )}
