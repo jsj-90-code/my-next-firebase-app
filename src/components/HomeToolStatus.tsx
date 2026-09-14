@@ -25,6 +25,9 @@ export function HomeToolStatus({ tool }: { tool: "seat-layout" | "store-eval" })
     requestKey: string;
     state: "loaded" | "error";
     latest: number | null;
+    // 2026-09-14 — 왼쪽 칸이 늘 "사용 가능"이라 아무 정보가 없었다. 이미 받아온 목록의
+    // 길이를 쓰면 추가 조회 없이 "지금 몇 건이 있나"를 알려줄 수 있다.
+    count: number;
   } | null>(null);
 
   useEffect(() => {
@@ -38,15 +41,16 @@ export function HomeToolStatus({ tool }: { tool: "seat-layout" | "store-eval" })
           tool === "seat-layout"
             ? (await listProjects()).map((p) => p.updatedAt)
             : (await listCandidates()).map((c) => c.updatedAt);
+        const count = updatedAts.length;
         const max = updatedAts.reduce<number | null>(
           (acc, ts) => (ts != null && (acc == null || ts > acc) ? ts : acc),
           null,
         );
         if (!cancelled) {
-          setResult({ requestKey: activeRequestKey, state: "loaded", latest: max });
+          setResult({ requestKey: activeRequestKey, state: "loaded", latest: max, count });
         }
       } catch {
-        if (!cancelled) setResult({ requestKey: activeRequestKey, state: "error", latest: null });
+        if (!cancelled) setResult({ requestKey: activeRequestKey, state: "error", latest: null, count: 0 });
       }
     }
     void load();
@@ -66,11 +70,22 @@ export function HomeToolStatus({ tool }: { tool: "seat-layout" | "store-eval" })
             ? "아직 없음"
             : relativeTime(result.latest);
 
+  const countLabel =
+    requestKey == null
+      ? "로그인 필요"
+      : result?.requestKey !== requestKey
+        ? "확인 중..."
+        : result.state === "error"
+          ? "-"
+          : `${result.count}건`;
+
   return (
     <div className="flex border-t border-[#171310]/[0.08] font-mono text-[10.5px] dark:border-white/[0.08]">
       <div className="flex-1 border-r border-[#171310]/[0.08] px-3 py-2 dark:border-white/[0.08]">
-        <div className="text-[9px] uppercase tracking-wide text-[var(--sl-ink-soft)]">Status</div>
-        <div className="mt-0.5 font-medium text-[var(--sl-ok)]">사용 가능</div>
+        <div className="text-[9px] uppercase tracking-wide text-[var(--sl-ink-soft)]">
+          {tool === "seat-layout" ? "프로젝트" : "후보지"}
+        </div>
+        <div className="mt-0.5 font-medium text-[#171310] dark:text-[#f2ede2]">{countLabel}</div>
       </div>
       <div className="flex-1 px-3 py-2">
         <div className="text-[9px] uppercase tracking-wide text-[var(--sl-ink-soft)]">최근 업데이트</div>

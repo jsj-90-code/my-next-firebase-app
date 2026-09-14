@@ -129,6 +129,18 @@ export default function StoreEvalDashboardPage() {
 
   const resultByCode = useMemo(() => new Map(results.map((result) => [result.candidateCode, result])), [results]);
 
+  // 2026-09-14 — 기본은 기존 순서(등록 순)를 유지하고, 헤더를 누르면 예상매출 내림차순.
+  // 계산은 없다. 이미 있는 result.v62Final로 정렬만 한다.
+  const [sortByRevenue, setSortByRevenue] = useState(false);
+  const sortedCandidates = useMemo(() => {
+    if (!sortByRevenue) return candidates;
+    return [...candidates].sort((a, b) => {
+      const av = resultByCode.get(a.code)?.v62Final ?? -Infinity;
+      const bv = resultByCode.get(b.code)?.v62Final ?? -Infinity;
+      return bv - av;
+    });
+  }, [candidates, resultByCode, sortByRevenue]);
+
   const stats = useMemo(() => {
     let completed = 0;
     let inputNeeded = 0;
@@ -230,7 +242,19 @@ export default function StoreEvalDashboardPage() {
                 <tr>
                   <th className="px-4 py-3 font-medium">후보지코드</th>
                   <th className="px-4 py-3 font-medium">이름</th>
-                  <th className="px-4 py-3 font-medium">최종예상월매출</th>
+                  {/* 2026-09-14 — 9곳을 견주는 화면인데 정렬이 없어 순위를 눈으로 세야 했다.
+                      기본 순서는 그대로 두고(등록 순), 누르면 매출순으로 바꾼다. */}
+                  <th className="px-4 py-3 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setSortByRevenue((v) => !v)}
+                      className="inline-flex items-center gap-1 hover:text-[var(--sl-gold-ink)]"
+                      title={sortByRevenue ? "등록 순서로 되돌리기" : "예상매출 높은 순으로 정렬"}
+                    >
+                      최종예상월매출
+                      <span aria-hidden className={sortByRevenue ? "text-[var(--sl-gold-ink)]" : "opacity-40"}>↓</span>
+                    </button>
+                  </th>
                   <th className="px-4 py-3 font-medium">85% 보수판단매출</th>
                   {/* 2026-09-14 — 이 열은 두 축을 함께 쓴다. computeFinalJudgement가 폭포식이라
                       완성도가 미완이면 그 상태("입력 필요")를, 완료면 진단("포화 주의"/"입지 재검토"/
@@ -241,7 +265,7 @@ export default function StoreEvalDashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
-                {candidates.map((candidate) => {
+                {sortedCandidates.map((candidate) => {
                   const result = resultByCode.get(candidate.code);
                   return (
                     <tr key={candidate.code} className="app-row transition">

@@ -2909,8 +2909,24 @@ export function SeatLayoutWorkspace() {
                       className="max-h-[76vh] max-w-full cursor-crosshair rounded-lg border border-black/10 bg-white dark:border-white/10"
                     />
                   ) : (
-                    <div className="flex min-h-[620px] w-full items-center justify-center text-sm text-[var(--sl-ink-soft)]">
-                      왼쪽에서 도면 이미지를 업로드하면 여기에 표시됩니다.
+                    /* 2026-09-14 — 문구만 있어서 업로드하려면 눈을 왼쪽 패널까지 옮겨야 했다.
+                       비어 있는 자리가 가장 큰 과녁이므로 여기서 바로 파일을 고르게 한다. */
+                    <div className="flex min-h-[620px] w-full flex-col items-center justify-center gap-3 px-6 text-center">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.2} aria-hidden
+                        className="h-10 w-10 text-[var(--sl-ink-soft)]/60">
+                        <path d="M4 16.5V6a2 2 0 0 1 2-2h8l6 6v4.5" />
+                        <path d="M14 4v6h6" />
+                        <path d="M12 20v-7 M9 16l3-3 3 3" />
+                      </svg>
+                      <p className="text-sm font-medium text-[#171310] dark:text-[#f2ede2]">도면을 올리면 여기에 표시됩니다</p>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="app-btn-primary rounded-lg px-4 py-2 text-sm"
+                      >
+                        도면 파일 선택
+                      </button>
+                      <p className="text-xs text-[var(--sl-ink-soft)]">PDF로 올리면 화면 캡처보다 훨씬 선명합니다</p>
                     </div>
                   )}
                 </div>
@@ -2982,22 +2998,35 @@ export function SeatLayoutWorkspace() {
             </section>
 
             <section className="app-card rounded-2xl p-5">
+              {/* 2026-09-14 — 두 ⚠️는 "구역을 그릴 때 지켜야 할 규칙"인데, 정작 그릴 때(존 유형 선택
+                  상태)는 사라지고 **아무것도 안 할 때만** 크게 떠 있었다. 거꾸로였다. 상시 경고는
+                  경고로 안 읽히기도 한다(알림 피로). 그리는 동안 곁에 두고, 대기 상태에서는 접어둔다. */}
               {selectedTypeKey ? (
-                <p className="text-sm text-[var(--sl-ink-soft)]">{dragHint}</p>
+                <div className="space-y-2">
+                  <p className="text-sm text-[var(--sl-ink-soft)]">{dragHint}</p>
+                  {DRAW_RULES.map((rule) => (
+                    <p key={rule} className="flex items-start gap-2 rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] px-3 py-2 text-xs font-medium leading-5 text-[var(--sl-warn)]">
+                      <span aria-hidden>⚠️</span>
+                      <span>{rule}</span>
+                    </p>
+                  ))}
+                </div>
               ) : (
-                <ul className="space-y-2.5 text-sm text-[#5c5346] dark:text-[#c9bfae]">
-                  <li className="flex items-start gap-2 rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] px-3 py-2 font-medium text-[var(--sl-warn)]">
-                    <span aria-hidden>⚠️</span>
-                    <span>존 구역 설정 시 파티션이 겹치지 않게 구역을 지정합니다. (인식 정확도에 영향)</span>
-                  </li>
-                  <li className="flex items-start gap-2 rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] px-3 py-2 font-medium text-[var(--sl-warn)]">
-                    <span aria-hidden>⚠️</span>
-                    <span>책가방선반 설치 좌석은 구역 설정 시 브라켓 표시가 한 면이라도 겹치도록 지정합니다. (인식 정확도에 영향)</span>
-                  </li>
-                  <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
-                  <li>노란 느낌표(!)는 책상 수량/사이즈 인식 전이라는 뜻입니다. 조정 후 Enter를 누르면 재인식됩니다.</li>
-                  <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>
-                </ul>
+                <div className="space-y-2.5 text-sm text-[#5c5346] dark:text-[#c9bfae]">
+                  <details className="rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] px-3 py-2">
+                    <summary className="cursor-pointer text-sm font-medium text-[var(--sl-warn)]">
+                      그릴 때 꼭 지킬 것 {DRAW_RULES.length}가지 (인식 정확도에 영향)
+                    </summary>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[var(--sl-warn)]">
+                      {DRAW_RULES.map((rule) => <li key={rule}>{rule}</li>)}
+                    </ul>
+                  </details>
+                  <ul className="space-y-2.5">
+                    <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
+                    <li>노란 느낌표(!)는 책상 수량/사이즈 인식 전이라는 뜻입니다. 조정 후 Enter를 누르면 재인식됩니다.</li>
+                    <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>
+                  </ul>
+                </div>
               )}
             </section>
 
@@ -3007,6 +3036,12 @@ export function SeatLayoutWorkspace() {
     </div>
   );
 }
+
+/** 구역을 그릴 때 지켜야 할 규칙. 그리는 중과 대기 상태 양쪽에서 같은 문장을 쓴다(2026-09-14). */
+const DRAW_RULES = [
+  "존 구역 설정 시 파티션이 겹치지 않게 구역을 지정합니다.",
+  "책가방선반 설치 좌석은 구역 설정 시 브라켓 표시가 한 면이라도 겹치도록 지정합니다.",
+] as const;
 
 // ==================== 존 정보 입력 폼 ====================
 
