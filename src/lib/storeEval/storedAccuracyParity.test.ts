@@ -294,7 +294,15 @@ describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재
       storedValue != null && storedValue > 0 && recomputed.v62Final != null
         ? (recomputed.v62Final - storedValue) / storedValue
         : null;
-    return { code: candidate.code, name: candidate.name ?? "", stored: storedValue, now: recomputed.v62Final, diffPct, calculatedAt: stored?.calculatedAt ?? null };
+    // 2026-09-14 — 총액만 보면 내부값이 낡아도 통과한다. 실제로 실효단가를 넣은 날 N002·N012가
+    // 그렇게 빠져나갔다(총액은 0.5% 안이었는데 저장된 PC매출÷이용시간이 아직 정가였다).
+    // 계산법 화면이 그 내부값을 그대로 읽어 보여주므로, 낡으면 화면이 거짓말을 한다.
+    const storedRate = stored?.revenueBreakdown && stored.revenueBreakdown.pcHours > 0
+      ? stored.revenueBreakdown.pcRevenue / stored.revenueBreakdown.pcHours : null;
+    const nowRate = recomputed.revenueBreakdown && recomputed.revenueBreakdown.pcHours > 0
+      ? recomputed.revenueBreakdown.pcRevenue / recomputed.revenueBreakdown.pcHours : null;
+    return { code: candidate.code, name: candidate.name ?? "", stored: storedValue, now: recomputed.v62Final, diffPct,
+      storedRate, nowRate, calculatedAt: stored?.calculatedAt ?? null };
   });
 
   it("차이를 표로 남긴다", () => {
@@ -317,5 +325,19 @@ describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재
       );
     }
     expect(stale.map((r) => r.code)).toEqual([]);
+  });
+
+  // 총액이 맞아도 내부값이 낡을 수 있다. 계산법 화면은 이 내부값을 읽는다.
+  it("저장된 실효단가가 지금 설정과 같다 — 총액만 맞으면 놓친다", () => {
+    const off = rows.filter((r) => r.storedRate != null && r.nowRate != null
+      && Math.abs((r.storedRate as number) - (r.nowRate as number)) > 1);
+    if (off.length) {
+      console.log(
+        [`저장된 실효단가가 낡은 후보지 ${off.length}곳 — 결과 탭에서 다시 계산을 누르면 갱신된다:`,
+          ...off.map((r) => `  ${r.code} ${r.name} 저장=${Math.round(r.storedRate as number)}원 지금=${Math.round(r.nowRate as number)}원`),
+        ].join(String.fromCharCode(10)),
+      );
+    }
+    expect(off.map((r) => r.code)).toEqual([]);
   });
 });
