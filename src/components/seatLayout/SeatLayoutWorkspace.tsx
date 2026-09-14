@@ -909,7 +909,7 @@ export function SeatLayoutWorkspace() {
         // 모른 채 넘어갔다. 0도 결과이므로 말하게 한다.
         const bagShelfMsg = bagShelfCount
           ? ` / 가방 선반(아이락스 헤드셋걸이) ${bagShelfCount}석`
-          : " / 가방 선반 브라켓 표시를 못 찾음 → 이대로 두면 전부 아이센스 헤드셋걸이로 발주됩니다";
+          : " / 브라켓 표시 없음(전부 아이센스 헤드셋걸이)";
         if (sizeBreakdown && sizeBreakdown.length) {
           setBreakdown(sizeBreakdown.map((r) => ({ ...r })));
           const total = sizeBreakdown.reduce((s, r) => s + r.qty, 0);
@@ -1591,7 +1591,7 @@ export function SeatLayoutWorkspace() {
     // accept 속성은 파일 선택창의 기본 필터일 뿐이라 "모든 파일"로 바꾸면 통과한다. 여기서 막는다.
     if (!isPdf) {
       e.target.value = "";
-      setStatusMsg("도면은 PDF만 올릴 수 있습니다. 책가방 선반 도면이 같은 PDF 안에 있어야 브라켓 표시를 읽을 수 있습니다.", "error");
+      setStatusMsg("도면은 PDF만 올릴 수 있습니다.", "error");
       return;
     }
 
@@ -2614,28 +2614,21 @@ export function SeatLayoutWorkspace() {
                 <p className="mt-1 text-xs font-medium text-[var(--sl-warn)]">
                   도면은 모든 탭에서 공통으로 사용됩니다.
                   <br />
-                  💡 여러 페이지면 어느 페이지를 쓸지 고르게 됩니다.
-                  <br />
-                  💡 <strong>책가방 선반 도면</strong>(주황·빨간 브라켓 표시가 있는 페이지)을 고르세요 — 그래야
-                  헤드셋걸이 종류가 자동으로 구분됩니다.
+                  💡 <strong>책가방 선반 브라켓 도면 (3페이지)</strong>을 고르세요.
                 </p>
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="app-card-sm mt-3 rounded-lg p-3">
                     <p className="text-xs font-semibold text-[var(--sl-warn)]">
                       배치도(평면도) 페이지를 클릭해서 선택해주세요
                     </p>
-                    {/* 2026-09-14 — 고르는 그 순간이 유일하게 늦지 않은 자리라 여기서 알려준다.
-                        페이지 번호로 찍어주지 않는다 — "보통 3페이지"는 본 PDF 3건의 관례일 뿐이라
-                        일반화할 근거가 없다. 대신 썸네일에서 브라켓 색을 세서 짚는다(bracketHint.ts). */}
+                    {/* 고르는 그 순간이 유일하게 늦지 않은 자리다. 짧게 — 길면 안 읽는다(사용자 지적). */}
                     <p className="mt-1 text-[11px] leading-4 text-[var(--sl-ink-soft)]">
-                      <strong>책가방 선반 도면</strong>을 고르세요 — 마주보는 책상 줄 위에 주황·빨간 점과 선으로
-                      브라켓이 그려져 있는 페이지입니다. 그 페이지를 고르면 <strong>아이락스 헤드셋걸이 수량이
-                      자동으로</strong> 세어집니다. 없는 페이지를 고르면 존마다 직접 넣어야 합니다.
+                      <strong>책가방 선반 브라켓 도면 (3페이지)</strong>을 고르면 헤드셋걸이 수량이 자동으로 세어집니다.
                     </p>
                     {bracketHintPage != null && (
                       <p className="app-notice app-badge-warn mt-2 px-3 py-2 text-[11px] leading-4">
-                        {bracketHintPage}페이지에 주황·빨간 표시가 가장 많습니다 — 이 페이지일 수 있습니다.
-                        <span className="text-[var(--sl-ink-soft)]"> (색만 보고 짚은 것이라 직접 확인해주세요)</span>
+                        브라켓 표시는 <strong>{bracketHintPage}페이지</strong>에 가장 많습니다.
+                        <span className="text-[var(--sl-ink-soft)]"> 확인해주세요</span>
                       </p>
                     )}
                     <div className="mt-2 grid grid-cols-3 gap-2">
@@ -2998,21 +2991,11 @@ export function SeatLayoutWorkspace() {
                           넣고 쓰는 일이 있었다. 그러면 헤드셋걸이를 손으로 넣어야 한다. 안내를 파일 고르는
                           자리로 옮기고, **무엇을 눈으로 확인해야 하는지**와 **안 하면 어떻게 되는지**를 적는다.
                           기존 문구는 이득만 말했다("자동으로 구분돼요") — 사람은 이득 문구를 건너뛴다. */}
-                      {/* .app-notice는 display:block이라 flex 유틸리티가 안 먹는다 — 줄을 나누려면
-                          블록 요소여야 한다(2026-09-14 화면에서 문장이 붙어 나와 확인). */}
-                      <div className="app-notice app-badge-warn mt-2 max-w-md px-4 py-3 text-left text-xs leading-5">
-                        <p className="font-semibold">어느 페이지를 골라야 하나요?</p>
-                        <p className="mt-1">
-                          <strong>책가방 선반 도면</strong>을 고르세요. 마주보는 책상 줄 위에
-                          <strong> 주황색·빨간색 점과 선</strong>으로 브라켓이 그려져 있는 페이지입니다.
-                          PDF마다 몇 번째 장인지는 다릅니다.
-                        </p>
-                        <p className="mt-1">
-                          그 표시가 있어야 <strong>아이락스 헤드셋걸이</strong> 수량을 자동으로 셉니다. 표시가 없는
-                          페이지를 고르면 <strong>존마다 수량을 손으로 넣어야 하고</strong>, 안 넣으면 전부 아이센스
-                          헤드셋걸이로 발주됩니다.
-                        </p>
-                      </div>
+                      {/* 2026-09-14 — 처음엔 세 문단으로 길게 적었는데 사용자 지적: "글이 길면
+                          사람들이 잘 안 읽어. 요약해서 할 만한 것만 딱." 한 줄로 줄였다. */}
+                      <p className="app-notice app-badge-warn mt-2 max-w-md px-4 py-2.5 text-left text-xs leading-5">
+                        <strong>책가방 선반 브라켓 도면 (3페이지)</strong>을 고르세요 — 헤드셋걸이 수량이 자동으로 세어집니다.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -3355,11 +3338,9 @@ function ZoneForm(props: ZoneFormProps) {
             <label className="text-xs font-medium text-[var(--sl-ink-soft)]">
               아이락스 헤드셋걸이 설치 수량
             </label>
-            {/* 2026-09-14 — 도면에 브라켓 표시가 없으면 AI가 0으로 세고, 이 칸이 0인 채로 넘어가
-                발주 수량이 전부 아이센스로 나간다. 왜 여기를 채워야 하는지 그 자리에서 알려준다. */}
+            {/* 브라켓 도면이 아니면 AI가 0으로 세고 전부 아이센스로 발주된다. 짧게 알려준다. */}
             <p className="mt-0.5 text-[11px] leading-4 text-[var(--sl-ink-soft)]">
-              도면에 가방 선반 브라켓 표시(주황·빨간 점과 선)가 있으면 AI가 자동으로 셉니다.
-              표시가 없는 도면이면 <strong>여기에 직접 넣어주세요.</strong>
+              브라켓 도면이면 자동으로 셉니다. 아니면 <strong>직접 넣어주세요.</strong>
             </p>
             <input
               type="number"
