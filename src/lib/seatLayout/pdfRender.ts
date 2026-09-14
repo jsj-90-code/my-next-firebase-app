@@ -46,6 +46,14 @@ export async function renderPdfPageToDataUrl(
   pdf: PdfJsLib.PDFDocumentProxy,
   pageNumber: number,
   targetLongEdge: number,
+  /**
+   * 방금 그린 캔버스의 픽셀을 한 번 훑고 싶을 때 (2026-09-14 추가).
+   *
+   * 브라켓 색 판정이 이걸 쓴다. 예전에는 data URL을 받아서 **다시 Image로 디코딩하고 또
+   * 캔버스에 그려** 픽셀을 읽었다 — 이미 여기 캔버스에 있는 걸 두 번 일한 셈이고, 10장짜리
+   * 도면에서는 그 재작업이 눈에 띄게 느렸다. 여기서 바로 넘긴다.
+   */
+  inspect?: (pixels: Uint8ClampedArray) => void,
 ): Promise<string> {
   const page = await pdf.getPage(pageNumber);
   const baseViewport = page.getViewport({ scale: 1 });
@@ -62,5 +70,13 @@ export async function renderPdfPageToDataUrl(
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   await page.render({ canvas, viewport }).promise;
+  if (inspect) {
+    // 실패해도 썸네일은 그대로 내보낸다 — 부가 기능이 도면 작업을 막으면 안 된다.
+    try {
+      inspect(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+    } catch {
+      /* 훑기 실패는 무시 */
+    }
+  }
   return canvas.toDataURL("image/png");
 }

@@ -138,31 +138,6 @@ function statusToneClass(tone: "info" | "success" | "error") {
   return "text-[var(--sl-ink-soft)]";
 }
 
-/**
- * 썸네일 data URL에서 브라켓 색(주황·빨강) 비율을 잰다 (2026-09-14).
- * 판정 규칙은 bracketHint.ts에 있고 여기서는 픽셀만 꺼내 넘긴다 — 규칙을 두 벌 만들지 않는다.
- * 실패하면 0을 돌려줘서 힌트가 조용히 사라지게 한다(도면 작업 자체를 막으면 안 된다).
- */
-async function bracketRatioOfDataUrl(dataUrl: string): Promise<number> {
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("thumbnail load failed"));
-      el.src = dataUrl;
-    });
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return 0;
-    ctx.drawImage(img, 0, 0);
-    return bracketColorRatio(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
-  } catch {
-    return 0;
-  }
-}
-
 export function SeatLayoutWorkspace() {
   const { user, logout } = useAuth();
 
@@ -1607,19 +1582,21 @@ export function SeatLayoutWorkspace() {
         // 2026-09-14 — 그리는 대로 하나씩 붙인다(위 좌석번호표 쪽 주석 참고).
         setPdfPickerTarget("floorplan");
         setPdfPickerPages([]);
-        const pages: { pageNumber: number; thumbnail: string }[] = [];
+        // 브라켓 색 비율은 **그리는 김에** 같이 구한다(renderPdfPageToDataUrl의 inspect).
+        // 예전엔 다 그린 뒤 data URL을 하나씩 다시 디코딩해서 읽었는데, 그 재작업 때문에
+        // 10장짜리 도면에서는 힌트가 한참 뒤에야 떴다.
+        const ratios: { pageNumber: number; ratio: number }[] = [];
         for (let i = 1; i <= pdf.numPages; i++) {
-          const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260);
-          pages.push({ pageNumber: i, thumbnail });
+          let ratio = 0;
+          const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260, (px) => {
+            ratio = bracketColorRatio(px);
+          });
+          ratios.push({ pageNumber: i, ratio });
           setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
           setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
         }
         setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
-        // 브라켓 표시가 있을 법한 페이지를 짚어준다. 전체를 견줘야 하므로 다 그린 뒤에 한다.
-        // 실패하거나 애매하면 null이라 아무 표시도 안 한다.
-        const ratios = await Promise.all(
-          pages.map(async (pg) => ({ pageNumber: pg.pageNumber, ratio: await bracketRatioOfDataUrl(pg.thumbnail) })),
-        );
+        // 전체를 견줘야 하므로 다 그린 뒤에 짚는다. 애매하면 null이라 아무 표시도 안 한다.
         setBracketHintPage(pickLikelyBracketPage(ratios));
       } catch (err) {
         setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
