@@ -77,9 +77,27 @@ const TARIFF_COEF_LOWER_BOUND = -1;
  */
 const TARIFF_FEATURE_DEFAULT: TariffFeatureMode = false;
 
-/** 등록요금으로 추정한 월평균 PC 이용시간 — 이용시간 모형의 학습 목표와 같은 값이다. */
-function usageHoursEstimate(store: UsageTrainingStore): number {
-  return store.pcRevenueAvg / store.hourlyRate;
+/**
+ * **정가 → 실효단가** (2026-09-14 신설).
+ *
+ * 등록요금(정가)과 실제로 시간당 받는 돈은 다르다. 좌석 추가과금이 더해지고 정액제 할인이
+ * 빼는데, 그 합이 정가에 비례하지 않는다 — 비싼 요금일수록 할인 비중이 커서 **정가를 올린
+ * 만큼 실제 수입이 안 따라온다**. 38곳 실측 결과 지수는 0.546이었다(설정 주석 참고).
+ *
+ * 기준요금에서 정가와 같아지도록 중심을 잡는다. 이렇게 해야 이용시간의 절대 크기가 유지돼
+ * 가동률 상한(v62MaxUtilizationRate) 판정이 종전과 같은 척도에서 돌아간다.
+ */
+export function effectiveHourlyRate(listRate: number, v61: Pick<ModelSettings["v61Training"], "tariffEffectiveExponent" | "tariffReferenceRate">): number {
+  const { tariffEffectiveExponent: e, tariffReferenceRate: r0 } = v61;
+  if (!Number.isFinite(listRate) || listRate <= 0) return listRate;
+  // 설정이 비었거나 지수 1이면 종전 동작 그대로.
+  if (!Number.isFinite(e) || e === 1 || !Number.isFinite(r0) || r0 <= 0) return listRate;
+  return r0 * Math.pow(listRate / r0, e);
+}
+
+/** 실효단가로 추정한 월평균 PC 이용시간 — 이용시간 모형의 학습 목표와 같은 값이다. */
+function usageHoursEstimate(store: UsageTrainingStore, settings: Pick<ModelSettings, "v61Training">): number {
+  return store.pcRevenueAvg / effectiveHourlyRate(store.hourlyRate, settings.v61Training);
 }
 
 /**
@@ -275,11 +293,11 @@ function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<Mo
       const features = empiricalFeaturesFor(store);
       // 먹거리를 "이용시간당 지출"로 학습할 때는 분모가 PC대수가 아니라 이용시간이다.
       const denominator = kind === "product" && productPerHour
-        ? usageHoursEstimate(store)
+        ? usageHoursEstimate(store, settings)
         : store.pcCount;
       return {
         featuresRaw: withTariff ? features : features.slice(1),
-        revenuePerPc: (kind === "usage" ? store.pcRevenueAvg / store.hourlyRate : store.productRevenueAvg)
+        revenuePerPc: (kind === "usage" ? store.pcRevenueAvg / effectiveHourlyRate(store.hourlyRate, settings.v61Training) : store.productRevenueAvg)
           / denominator / (store.trainingRevenueFactor ?? 1),
         weight: monthWeightFor(store.monthCount, monthWeighting),
       };
@@ -334,14 +352,14 @@ export function fitUsageRevenueModel(stores: UsageTrainingStore[], settings: Pic
     // 먹거리를 이용시간당으로 학습했으면 예측도 이용시간을 곱해야 단위가 맞는다.
     const estimate = (part: EmpiricalRevenueModel, withTariff = false, perHour = false) =>
       predictEmpiricalRevenue(part, withTariff ? full : features,
-        perHour ? usageHoursEstimate(target) : target.pcCount,
+        perHour ? usageHoursEstimate(target, settings) : target.pcCount,
         settings.v61Training.ridgeWeight, settings.v61Training.baselineWeight);
     const usage = estimate(inner.usage, inner.usageHasTariffFeature), product = estimate(inner.product, inner.productHasTariffFeature, inner.productScalesWithHours);
     if (!usage || !product) return model;
     const unrounded = (value: NonNullable<typeof usage>) => value.explain.ridgeRevenue * settings.v61Training.ridgeWeight
       + value.explain.baselineRevenue * settings.v61Training.baselineWeight;
     const factor = target.trainingRevenueFactor ?? 1;
-    usagePairs.push({ predicted: unrounded(usage), actual: target.pcRevenueAvg / target.hourlyRate / factor });
+    usagePairs.push({ predicted: unrounded(usage), actual: target.pcRevenueAvg / effectiveHourlyRate(target.hourlyRate, settings.v61Training) / factor });
     productPairs.push({ predicted: unrounded(product), actual: target.productRevenueAvg / factor });
     // (먹거리를 이용시간당으로 학습해도 보정은 "예측 먹거리매출 대 실제 먹거리매출" 비율이라
     //  분모가 무엇이든 같은 금액끼리 비교된다 — estimate가 이미 단위를 맞춰 곱해뒀다.)
@@ -373,6 +391,9 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
       droppedTariff: !withTariff,
     };
   };
+  // 2026-09-14 — 금액으로 바꿀 때는 정가가 아니라 **실효단가**를 쓴다. 학습 목표도 같은
+  // 분모(실효단가)로 만들어져 있어서 여기서 다시 곱해야 단위가 맞는다.
+  const paidRate = effectiveHourlyRate(hourlyRate, settings.v61Training);
   const usageOut = predict(model.usage, model.usageHasTariffFeature, pcCount);
   const hours = usageOut?.value ?? null;
   if (hours == null || !Number.isFinite(hours) || hours <= 0) return null;
@@ -383,11 +404,11 @@ export function predictUsageRevenue(model: UsageRevenueModel, featuresRaw: numbe
   const extraFood = food / hours * extraPcHours;
   const uncappedPcHours = hours * inflowFactor + extraPcHours;
   const pcHours = Math.min(uncappedPcHours, pcCount * 24 * 30 * settings.v62MaxUtilizationRate);
-  const pcRevenue = Math.round(pcHours * hourlyRate), productRevenue = Math.round(food * inflowFactor + extraFood);
+  const pcRevenue = Math.round(pcHours * paidRate), productRevenue = Math.round(food * inflowFactor + extraFood);
   const result = { pcHours, uncappedPcHours, pcRevenue, productRevenue, monthlyRevenue: pcRevenue + productRevenue,
-    revenueBeforeCap: Math.round(uncappedPcHours * hourlyRate) + productRevenue, capacityCapped: pcHours < uncappedPcHours,
-    baselineRevenue: Math.round(hours * hourlyRate) + Math.round(food),
-    overflowRevenue: Math.round(extraPcHours * hourlyRate) + Math.round(extraFood), sampleCount: model.sampleCount,
+    revenueBeforeCap: Math.round(uncappedPcHours * paidRate) + productRevenue, capacityCapped: pcHours < uncappedPcHours,
+    baselineRevenue: Math.round(hours * paidRate) + Math.round(food),
+    overflowRevenue: Math.round(extraPcHours * paidRate) + Math.round(extraFood), sampleCount: model.sampleCount,
     // 라벨은 호출부(evaluate.ts)가 붙인다 — 여기서는 피처 구성을 모르기 때문이다. 요금 피처를
     // 뺀 모형이면 라벨 첫 칸도 잘라내라는 표시를 함께 올린다.
     usageDrivers: usageOut ? { labels: [], contributions: usageOut.contributions } : null,

@@ -40,6 +40,8 @@ function ScenarioInputs({ baseline, productRatio }: {baseline:Baseline; productR
     <p className="text-xs leading-5 text-[var(--sl-ink-soft)]">
       PC 이용시간과 먹거리 매출을 고정한 계산입니다. 할인에 따른 고객 증감은 추정하지 않습니다.
       기준 PC매출 × 변경요금 ÷ 기준요금 + 기준 먹거리 매출로 계산하며, 입력값은 저장되지 않습니다.
+      <strong> 단순 비례 계산</strong>이라 예상매출 모형과는 다릅니다 — 모형은 요금이 비쌀수록 할인 비중이
+      커지는 것(실효단가)을 반영해 변화폭을 더 작게 봅니다.
       표시 금액은 항목별로 원 단위 반올림한 뒤 합산합니다.
     </p>
   </div>;

@@ -248,7 +248,7 @@ function buildRevenueStep(result: EvaluationResult, settings: WalkSettings): Wal
     label: "학습모형이 처음 내놓은 값 (보정 전)",
     value: b.baselineRevenue,
     kind: "won",
-    note: "예상 PC 이용시간 × 시간당요금 + 먹거리 매출. 아직 아래 보정이 안 들어갔다",
+    note: "예상 PC 이용시간 × 실효단가 + 먹거리 매출. 아직 아래 보정이 안 들어갔다",
   });
   rows.push({
     label: "× 유입제약 보정",
@@ -285,7 +285,7 @@ function buildRevenueStep(result: EvaluationResult, settings: WalkSettings): Wal
     label: "그 안의 PC 매출",
     value: b.pcRevenue,
     kind: "won",
-    note: `예상 이용시간 ${Math.round(b.pcHours).toLocaleString("ko-KR")}시간 × 시간당요금`,
+    note: `예상 이용시간 ${Math.round(b.pcHours).toLocaleString("ko-KR")}시간 × 실효단가 ${Math.round(b.pcRevenue / b.pcHours).toLocaleString("ko-KR")}원 — 정가가 아니라 **실제로 시간당 받는 돈**이다 (좌석 추가과금이 더해지고 정액 할인이 빠진다)`,
   });
   rows.push({ label: "그 안의 먹거리 매출", value: b.productRevenue, kind: "won" });
   if (result.expectedPcCount && result.expectedPcCount > 0) {

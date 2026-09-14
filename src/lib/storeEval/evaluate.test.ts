@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateCandidate } from "./evaluate";
 import { defaultModelSettings } from "./settings";
+import { effectiveHourlyRate } from "./usageRevenue";
 import type { CandidateInput, Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
 
 const settings = { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
@@ -188,7 +189,7 @@ describe("evaluateCandidate 배선 검증", () => {
   // 2026-09-14 — 계약이 다시 바뀌었다(사용자 확정). 2026-09-10에 "요금이 오르면 이용시간이 줄어
   // PC매출이 비례보다 덜 는다"로 바꿨던 것을, 실무 판단으로 **요금 비례**로 되돌렸다.
   // 근거: usageRevenue.ts의 TARIFF_FEATURE_DEFAULT 주석.
-  it("요금이 오르면 PC매출이 그만큼 비례해서 는다(먹거리는 무관, 이용시간은 요금과 무관)", () => {
+  it("요금이 오르면 PC매출이 실효단가만큼 는다(먹거리는 무관, 이용시간은 요금과 무관)", () => {
     const activeSettings = {...settings, v61Training:{...settings.v61Training, modelVariant:"visibility-inflow" as const, ridgeWeight:1, baselineWeight:0}};
     const existingStores = Array.from({length:16}, (_,i) => ({
       storeCode:`S${i}`, originCandidateCode:`L${i}`, storeName:`매장${i}`, brandType:"블랙라벨", excludedFromModel:false,
@@ -212,9 +213,14 @@ describe("evaluateCandidate 배선 검증", () => {
     expect(low.revenueBreakdown!.pcHours).toBe(high.revenueBreakdown!.pcHours);
     // 먹거리도 PC요금과 무관하다(먹거리 모형에도 요금을 넣지 않았다).
     expect(low.revenueBreakdown!.productRevenue).toBe(high.revenueBreakdown!.productRevenue);
-    // PC매출은 요금에 **정비례**한다 — 같은 이용시간에 시간당요금만 달라지기 때문이다.
+    // 2026-09-14 — PC매출은 정가가 아니라 **실효단가**에 비례한다. 정가를 올려도 할인 비중이
+    // 같이 커져서 실제 받는 돈은 그만큼 안 오른다(38곳 실측, 지수 0.546 — settings 주석 참고).
     const pcRatio = high.revenueBreakdown!.pcRevenue / low.revenueBreakdown!.pcRevenue;
-    expect(pcRatio).toBeCloseTo(1500 / 1000, 3);
+    const expected = effectiveHourlyRate(1500, activeSettings.v61Training) / effectiveHourlyRate(1000, activeSettings.v61Training);
+    expect(pcRatio).toBeCloseTo(expected, 3);
+    // 정가 비율(1.5배)보다는 **덜** 오른다 — 이게 종전 동작과 달라진 지점이다.
+    expect(pcRatio).toBeLessThan(1500 / 1000);
+    expect(pcRatio).toBeGreaterThan(1);
     // 요금 시나리오 자체는 살아 있어야 한다 — 요금을 올리면 총매출 예측도 오른다.
     expect(high.v62Final!).toBeGreaterThan(low.v62Final!);
     expect(low.v62Final).toBe(low.revenueBreakdown!.pcRevenue+low.revenueBreakdown!.productRevenue);
@@ -228,7 +234,8 @@ describe("evaluateCandidate 배선 검증", () => {
     expect(cappedHigh.revenueBreakdown!.pcHours).toBe(100 * 720 * .01);
     expect(cappedLow.revenueBreakdown!.pcHours).toBe(cappedHigh.revenueBreakdown!.pcHours);
     expect(cappedLow.revenueBreakdown!.productRevenue).toBe(cappedHigh.revenueBreakdown!.productRevenue);
-    expect(cappedLow.revenueBreakdown!.pcRevenue).toBe(cappedHigh.revenueBreakdown!.pcRevenue * 2 / 3);
+    // 상한에 걸려도 금액 환산은 실효단가를 쓴다(이용시간이 같으니 비율도 실효단가 비율).
+    expect(cappedLow.revenueBreakdown!.pcRevenue).toBe(Math.round(cappedHigh.revenueBreakdown!.pcHours * effectiveHourlyRate(1000, activeSettings.v61Training)));
     expect(cappedLow.v62Final).toBe(cappedLow.revenueBreakdown!.pcRevenue + cappedLow.revenueBreakdown!.productRevenue);
     expect(cappedLow.v62FinalBeforeCap).toBeGreaterThan(cappedLow.v62Final!);
     expect(cappedLow.v62ImpliedUtilization).toBe(.01);

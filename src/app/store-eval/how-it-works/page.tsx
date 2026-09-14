@@ -20,6 +20,7 @@ import Link from "next/link";
 import { sectionClass, sectionTitleClass } from "../candidates/[code]/formFields";
 import { buildCompetitivenessWeights, buildWalkthrough, type WalkRow, type WalkStep } from "@/lib/storeEval/calcWalkthrough";
 import { getModelSettings, listCandidates, listEvaluationResults } from "@/lib/storeEval/store";
+import { effectiveHourlyRate } from "@/lib/storeEval/usageRevenue";
 import type { CandidateInput, EvaluationResult, ModelSettings } from "@/lib/storeEval/types";
 import { formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 
@@ -150,6 +151,18 @@ export default function HowItWorksPage() {
     [candidate, result, settings],
   );
   const weightRows = useMemo(() => (settings ? buildCompetitivenessWeights(settings) : []), [settings]);
+  // 요금 설명의 숫자는 글자로 박지 않고 설정에서 그린다(CLAUDE.md 규칙).
+  const tariffFacts = useMemo(() => {
+    const v61 = settings?.v61Training;
+    if (!v61) return { at1000: "—", at1800: "—", drop: "—", sampleCount: "38" };
+    const ratio = (rate: number) => Math.round((effectiveHourlyRate(rate, v61) / rate) * 100);
+    return {
+      at1000: String(ratio(1000)),
+      at1800: String(ratio(1800)),
+      drop: String(Math.round((effectiveHourlyRate(1000, v61) / effectiveHourlyRate(1500, v61)) * 100)),
+      sampleCount: String(result?.v61TrainingSampleCount ?? 38),
+    };
+  }, [settings, result]);
   const stepOf = useCallback(
     (n: 1 | 2 | 3) => walkthrough?.steps.find((s) => s.step === n) ?? null,
     [walkthrough],
@@ -358,21 +371,22 @@ export default function HowItWorksPage() {
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
               다른 가맹점의 월별 기록에서 <strong>PC매출과 먹거리 매출을 나눠</strong> 봅니다.
-              PC매출을 등록된 시간당요금으로 나눠 이용시간을 추정하고, 비슷한 수요·경쟁·입지를 가진 매장에서
+              PC매출을 <strong>실효단가</strong>(정가가 아니라 실제로 시간당 받는 돈)로 나눠 이용시간을 추정하고, 비슷한 수요·경쟁·입지를 가진 매장에서
               이용시간과 먹거리 매출이 얼마나 나오는지 각각 학습합니다. 참고할 자료가 부족하면 매출을 표시하지 않습니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
               후보지의 수요·경쟁력·입지를 넣어 예상 PC 이용시간과 먹거리 매출을 구합니다.
-              <strong>예상 PC 이용시간 × 입력한 시간당요금 + 먹거리 매출</strong>이 기본 예상 매출입니다.
+              <strong>예상 PC 이용시간 × 실효단가 + 먹거리 매출</strong>이 기본 예상 매출입니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">
-              (2026-09-10 바뀜) 요금을 내리면 매출이 그만큼 그대로 줄어들까요? <strong>아닙니다.</strong> 예전에는
-              &ldquo;요금을 3분의 2로 내리면 PC매출도 3분의 2&rdquo;로 계산했는데, 실제 가맹점 38곳의 기록을 보니
-              <strong> 요금이 비싼 매장이 그만큼 더 벌지는 않았습니다</strong>(요금을 내리면 손님이 더 오래 쓰기
-              때문입니다). 그래서 지금은 그 관계를 실제 기록에서 배워서 씁니다 — 1,500원을 1,000원으로 내리면
-              PC매출은 3분의 2가 아니라 <strong>대략 85% 수준</strong>이 됩니다.
+              (2026-09-14 바뀜) 요금을 내리면 매출이 그만큼 그대로 줄어들까요? <strong>아닙니다.</strong>
+              <strong>등록요금(정가)과 실제로 시간당 받는 돈이 다르기</strong> 때문입니다 — 좌석 추가과금이 더해지고
+              정액제 할인이 빼는데, <strong>요금이 비싼 매장일수록 할인 비중이 큽니다.</strong> 실제 가맹점
+              {tariffFacts.sampleCount}곳의 기록을 재보니 정가 1,000원 매장은 정가의 {tariffFacts.at1000}%를 받았고,
+              1,800원 매장은 {tariffFacts.at1800}%만 받았습니다. 그래서 1,500원을 1,000원으로 내리면 PC매출은
+              3분의 2(67%)가 아니라 <strong>약 {tariffFacts.drop}%</strong>가 됩니다.
             </p>
 
             <p className="mt-3 text-sm leading-6 text-[#5c5346] dark:text-[#c9bfae]">

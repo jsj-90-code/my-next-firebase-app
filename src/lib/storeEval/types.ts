@@ -427,6 +427,15 @@ export type ModelSettings = {
     // 2026-09-03 추가 — 5번째 피처(배후수요형 특수상권 더미)의 계수 하한선.
     // calc.ts isBackingDemandMarket 주석 참고.
     minBackingDemandCoef: number;
+    // 2026-09-14 신설 — **정가 → 실효단가** 변환. 등록요금(정가)과 실제로 시간당 받는 돈은
+    // 다르다. 좌석 추가과금이 더해지고 정액제 할인이 빼는데, 둘의 합이 정가에 비례하지 않는다.
+    // 실측(38곳, 가동률 기반 참 이용시간 대비 PC매출): 정가 1000원 매장은 정가의 112%를 받고
+    // 1800원 매장은 83%만 받는다 — 비싼 요금일수록 할인 비중이 크기 때문이다.
+    //   실효단가 = tariffReferenceRate × (정가 ÷ tariffReferenceRate)^tariffEffectiveExponent
+    // 지수 1이면 종전 동작(정가 그대로)과 완전히 같다.
+    tariffEffectiveExponent: number;
+    /** 실효단가 변환의 기준점(원). 이 요금에서는 정가 = 실효단가. 학습표본 요금의 기하평균. */
+    tariffReferenceRate: number;
   };
   // 13_신규후보지판정 "경쟁력격차 → 예상수요확보율/신규수요증가율" 룩업표 (08_계산기준!B44:D49).
   // gapLowerBound는 오름차순이며, 실제 격차가 그 값 이상인 것 중 가장 큰 하한을 적용한다(LOOKUP과 동일).

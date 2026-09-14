@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { empiricalFeaturesFor, toV61TrainingStore, type ValidationStoreInput } from "./calc";
 import { defaultModelSettings } from "./settings";
 import type { ExistingStoreMonthlySales } from "./types";
-import { attachRevenueParts, buildRevenuePartsByStore, fitUsageRevenueModel, predictUsageRevenue, runUsageCohortValidation } from "./usageRevenue";
+import {
+  effectiveHourlyRate, attachRevenueParts, buildRevenuePartsByStore, fitUsageRevenueModel, predictUsageRevenue, runUsageCohortValidation } from "./usageRevenue";
 
 const asOf = new Date("2026-09-08T00:00:00Z");
 const settings = defaultModelSettings();
@@ -33,7 +34,61 @@ describe("tariff revenue model", () => {
     expect(attachRevenueParts([{ ...toV61TrainingStore(stores[0], settings), actualMonthlyRevenueAvg: 1 }], parts)).toHaveLength(0);
   });
 
-  it("changing only tariff scales PC revenue, preserves food and occupied hours, including at capacity", () => {
+  describe("실효단가 (정가 → 실제로 받는 시간당 금액)", () => {
+    const v61 = settings.v61Training;
+
+    it("기준요금에서는 정가와 같다", () => {
+      expect(effectiveHourlyRate(v61.tariffReferenceRate, v61)).toBeCloseTo(v61.tariffReferenceRate, 6);
+    });
+
+    it("기준보다 싸면 정가보다 더 받고, 비싸면 덜 받는다 — 할인 비중이 요금에 따라 달라서다", () => {
+      expect(effectiveHourlyRate(1000, v61)).toBeGreaterThan(1000);
+      expect(effectiveHourlyRate(1800, v61)).toBeLessThan(1800);
+    });
+
+    it("실측값을 재현한다 — 정가 대비 비율 (2026-09-14, 38곳)", () => {
+      // settings 주석의 실측표와 같은 방향·크기여야 한다. 여기가 깨지면 지수가 바뀐 것이다.
+      const ratio = (rate: number) => effectiveHourlyRate(rate, v61) / rate;
+      expect(ratio(1000)).toBeCloseTo(1.16, 1); // 실측 112%
+      expect(ratio(1300)).toBeCloseTo(1.02, 1); // 실측  97%
+      expect(ratio(1500)).toBeCloseTo(0.97, 1); // 실측  90%
+      expect(ratio(1800)).toBeCloseTo(0.91, 1); // 실측  83%
+      // 요금이 오를수록 비율은 단조 감소한다.
+      expect(ratio(1000)).toBeGreaterThan(ratio(1300));
+      expect(ratio(1300)).toBeGreaterThan(ratio(1500));
+      expect(ratio(1500)).toBeGreaterThan(ratio(1800));
+    });
+
+    it("요금을 올리면 실효단가도 오른다 — 방향은 절대 뒤집히지 않는다", () => {
+      let prev = 0;
+      for (const rate of [800, 1000, 1200, 1400, 1600, 1800, 2500]) {
+        const eff = effectiveHourlyRate(rate, v61);
+        expect(eff).toBeGreaterThan(prev);
+        prev = eff;
+      }
+    });
+
+    it("지수 1이면 종전 동작(정가 그대로)과 완전히 같다", () => {
+      const off = { ...v61, tariffEffectiveExponent: 1 };
+      for (const rate of [1000, 1343, 1800]) expect(effectiveHourlyRate(rate, off)).toBe(rate);
+    });
+
+    it("설정이 비었거나 이상하면 정가를 그대로 쓴다 — 조용히 0을 만들지 않는다", () => {
+      for (const bad of [
+        { tariffEffectiveExponent: NaN, tariffReferenceRate: 1343 },
+        { tariffEffectiveExponent: 0.546, tariffReferenceRate: 0 },
+        { tariffEffectiveExponent: 0.546, tariffReferenceRate: NaN },
+      ]) expect(effectiveHourlyRate(1500, bad)).toBe(1500);
+    });
+
+    it("0원·음수·무한대는 그대로 돌려준다 (호출부 가드가 처리한다)", () => {
+      expect(effectiveHourlyRate(0, v61)).toBe(0);
+      expect(effectiveHourlyRate(-100, v61)).toBe(-100);
+      expect(Number.isNaN(effectiveHourlyRate(NaN, v61))).toBe(true);
+    });
+  });
+
+  it("changing only tariff scales PC revenue by the effective-rate curve, preserving food and occupied hours", () => {
     const training = attachRevenueParts(stores.map(store => toV61TrainingStore(store, settings)), buildRevenuePartsByStore(stores, sales, asOf));
     const model = fitUsageRevenueModel(training, settings)!;
     expect(model).not.toBeNull();
@@ -45,7 +100,12 @@ describe("tariff revenue model", () => {
       expect(high).not.toBeNull();
       expect(low.pcHours).toBe(high.pcHours);
       expect(low.productRevenue).toBe(high.productRevenue);
-      expect(Math.abs(low.pcRevenue - high.pcRevenue * 2 / 3)).toBeLessThanOrEqual(1);
+      // 2026-09-14 — 정가에 **정비례**하지 않는다. 실효단가 곡선(지수 0.546)을 따른다:
+      // 정가가 낮은 매장은 할인을 덜 해서 정가 대비 더 받기 때문이다(설정 주석 참고).
+      const ratio = effectiveHourlyRate(1000, settings.v61Training) / effectiveHourlyRate(1500, settings.v61Training);
+      expect(ratio).toBeGreaterThan(2 / 3); // 정가 비율(0.667)보다 덜 떨어진다
+      expect(ratio).toBeLessThan(1);
+      expect(Math.abs(low.pcRevenue - high.pcRevenue * ratio)).toBeLessThanOrEqual(1);
       expect(low.monthlyRevenue).toBe(low.pcRevenue + low.productRevenue);
       expect(low.monthlyRevenue).toBeLessThan(high.monthlyRevenue);
       if (cap === .01) expect(low.pcHours).toBe(720);
