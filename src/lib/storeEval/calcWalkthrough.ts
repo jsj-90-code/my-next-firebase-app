@@ -200,7 +200,7 @@ function buildShareStep(result: EvaluationResult): WalkStep {
     value: result.expectedOwnDemand,
     kind: "count",
     result: true,
-    note: "3단계 계산에는 이 값을 그대로 넣지 않는다 — 동네 수요와 경쟁 정도를 따로 넘긴다(아래 설명)",
+    note: "이 '손님 수'라는 숫자 자체는 3단계에 넣지 않는다. 대신 경쟁력·경쟁 규모·동네 수요를 따로 넘겨 3단계가 직접 쓴다 — 경쟁력이 매출에 주는 영향은 그대로 살아 있다",
   });
 
   return {

@@ -332,9 +332,17 @@ export default function HowItWorksPage() {
 
             <div className="app-card-sm mt-4 rounded-lg px-4 py-3">
               <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">1단계 수요 × 2단계 몫 비율 = &ldquo;우리 매장으로 올 손님 수&rdquo;</p>
+              {/* 2026-09-14 — 사용자 지적: 이 단계를 자세히 보여준 뒤 "안 씁니다"라고만 적어놔서
+                  "그럼 경쟁력이 매출에 반영이 안 된다는 거냐"로 읽혔다. 실제로는 경쟁력을 10% 올리면
+                  예상매출이 15% 오른다(실측). 손님 수라는 **숫자 하나**를 안 넘길 뿐이다. */}
               <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-                이 숫자는 화면에 참고용으로 계속 보여드리지만, 3단계 계산에는 안 씁니다 — 3단계는 1단계 동네 수요와 이
-                동네 경쟁 정도를 각각 따로 넘겨줍니다(바로 아래 참고).
+                <strong>경쟁력이 매출에 반영되지 않는다는 뜻이 아닙니다.</strong> 이 &ldquo;손님 수&rdquo;라는 숫자 하나만
+                3단계에 넘기지 않을 뿐, <strong>우리 경쟁력·경쟁점 규모·동네 수요는 각각 그대로 3단계에 들어갑니다.</strong>
+                실제로 경쟁력을 10% 올리면 예상매출이 15%쯤 오릅니다.
+              </p>
+              <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+                왜 손님 수를 통째로 안 넘기냐면 — 예전에는 그렇게 했는데 실제 매출 기록과 비교해보니 설명이 거의
+                안 됐습니다. &ldquo;경쟁이 많으면 무조건 나쁘다&rdquo;는 가정이 틀렸던 거예요(바로 아래 참고).
               </p>
             </div>
           </div>
