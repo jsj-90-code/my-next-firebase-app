@@ -37,7 +37,7 @@ describe("존 유형 묶음", () => {
     expect(byKey.get("basic")).toEqual(["multi"]);
     expect(byKey.get("spec")).toEqual(["lol", "fps", "fc"]);
     expect(byKey.get("zone")).toEqual([
-      "friends", "couple_seat", "couple_room", "vip", "ceremony_team", "team", "one_seat", "one_room", "two", "three",
+      "friends", "vip", "couple_seat", "couple_room", "ceremony_team", "team", "one_seat", "one_room", "two", "three",
     ]);
     expect(byKey.get("legacy")).toEqual(["buff", "progamer"]);
   });

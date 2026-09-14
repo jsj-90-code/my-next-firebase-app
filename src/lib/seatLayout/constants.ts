@@ -229,7 +229,9 @@ export const SLIDES_EXPORT_SCALE = 3.4;
  * 사용자 확인(2026-09-14):
  *   기본좌석        멀티존
  *   사양 특화       LOL · FPS · FC ONLINE
- *   존 특화(인테리어) 프렌즈존 · 커플석 · 커플존 · VIP존 · 세레머니 팀룸 · 팀룸 · 1인석 · 1인룸 · 2인룸 · 3인룸
+ *   존 특화(인테리어) 프렌즈존 · VIP존 · 커플석 · 커플존 · 세레머니 팀룸 · 팀룸 · 1인석 · 1인룸 · 2인룸 · 3인룸
+ *                   (2열 그리드라 나열 순서가 곧 좌우 배치다. 프렌즈존-VIP존, 커플석-커플존이
+ *                    나란히 오도록 사용자가 순서를 지정했다 — 2026-09-14)
  *   지금 안 씀      버프존 · 리얼프로게이머존 — "설계는 만들어놨지만 신규매장은 지금 안 쓰고 있음"
  *
  * ⚠️ `ZONE_TYPES`의 순서·내용은 건드리지 않았다 — 앱스크립트 v15 이식본이고 다른 코드가 그 순서를
@@ -250,7 +252,7 @@ export const ZONE_GROUPS: ZoneGroup[] = [
   {
     key: "zone",
     label: "존 특화 (인테리어)",
-    typeKeys: ["friends", "couple_seat", "couple_room", "vip", "ceremony_team", "team", "one_seat", "one_room", "two", "three"],
+    typeKeys: ["friends", "vip", "couple_seat", "couple_room", "ceremony_team", "team", "one_seat", "one_room", "two", "three"],
   },
   { key: "etc", label: "기타", typeKeys: ["desk_only", "etc"] },
   {
