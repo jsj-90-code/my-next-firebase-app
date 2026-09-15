@@ -174,24 +174,44 @@ function parseFlowPopulation(html) {
   return { months, selected: series["선택 영역"] ?? null, series };
 }
 
-/* ---------------------------------------------------------------- 대상 */
+/* ---------------------------------------------------------------- 대상
+ * 좌표는 두 곳에서 온다:
+ *   1) 운영 스냅샷의 lat/lng — 후보지는 대체로 채워져 있다
+ *   2) .local-tools/geocoded-sites.json — 기존점 41곳은 운영 DB에 좌표가 아예 없어서
+ *      scripts/geocodeExistingStores.mjs 로 주소를 변환해 만든 파일 (운영 DB는 안 건드린다)
+ * 둘 다 없으면 그 지점은 건너뛴다. 좌표를 지어내지 않는다. */
+const GEOCODED = ".local-tools/geocoded-sites.json";
+
 function loadTargets() {
   if (!existsSync(SNAPSHOT)) {
     console.error(`${SNAPSHOT}이 없다. 먼저 node scripts/dumpValidationSnapshot.mjs 를 돌린다.`);
     process.exit(1);
   }
   const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8"));
+  const geo = existsSync(GEOCODED) ? JSON.parse(readFileSync(GEOCODED, "utf8")).sites ?? {} : {};
+
   const targets = [];
-  for (const c of snap.candidates ?? []) {
-    if (c.lat && c.lng) targets.push({ kind: "candidate", code: c.code ?? c.id, name: c.name ?? "", lat: c.lat, lng: c.lng });
+  const noCoord = [];
+  const add = (kind, code, name, lat, lng) => {
+    const key = `${kind}:${code}`;
+    const fromGeo = geo[key];
+    const finalLat = lat ?? fromGeo?.lat ?? null;
+    const finalLng = lng ?? fromGeo?.lng ?? null;
+    if (finalLat && finalLng) {
+      targets.push({ kind, code, name, lat: finalLat, lng: finalLng, coordSource: lat ? "운영DB" : "주소변환" });
+    } else {
+      noCoord.push(`${code} ${name}`);
+    }
+  };
+
+  for (const c of snap.candidates ?? []) add("candidate", c.code ?? c.id, c.name ?? "", c.lat, c.lng);
+  for (const e of snap.existingStores ?? []) add("existing", e.storeCode ?? e.id, e.storeName ?? "", e.lat, e.lng);
+
+  if (noCoord.length) {
+    console.log(`\n⚠️ 좌표가 없어 제외한 ${noCoord.length}곳: ${noCoord.slice(0, 5).join(", ")}${noCoord.length > 5 ? " …" : ""}`);
+    console.log("   node scripts/geocodeExistingStores.mjs 를 먼저 돌리면 대부분 채워진다.");
   }
-  for (const e of snap.existingStores ?? []) {
-    if (e.lat && e.lng) targets.push({ kind: "existing", code: e.storeCode ?? e.id, name: e.storeName ?? "", lat: e.lat, lng: e.lng });
-  }
-  const missing =
-    (snap.candidates ?? []).filter((c) => !c.lat || !c.lng).length +
-    (snap.existingStores ?? []).filter((e) => !e.lat || !e.lng).length;
-  return { targets, missing };
+  return { targets, missing: noCoord.length };
 }
 
 /* ---------------------------------------------------------------- 본체 */
