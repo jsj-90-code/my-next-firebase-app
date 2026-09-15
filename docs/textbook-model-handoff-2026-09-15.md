@@ -197,3 +197,68 @@ SGIS_SECRET_KEY=...
 
 파라미터로는 50,400개를 다 훑어 29%가 벽이었고, 구조 보정(밀집도)도 실패했다.
 **새 자료 없이 넘을 수 있는 벽이 아니다.**
+
+---
+
+## 7. 소상공인365 자동화 — 여기까지 뚫었다 (2026-09-15 심야)
+
+UI 경로는 **끝까지 확인했다.** 막히는 건 사이트가 아니라 agent-browser 데몬이 명령 사이에
+자꾸 끊기는 것이다(`os error 10060`, 세션 상태가 날아간다).
+
+### 확인된 실제 경로
+
+```
+https://bigdata.sbiz.or.kr/#/gis/locAnls        <- 입지분석. 직접 들어가진다
+  title: "소상공인365 > 입지분석"
+```
+
+⚠️ **분석 UI 전체가 iframe 안에 있다.** snapshot에서 `Iframe [ref=eN]` 아래로 나온다.
+
+동작 확인된 순서 (영월점 주소로 끝까지 성공):
+```
+1. textbox "주소, 상호명을 검색 또는 위치 선택"  에 주소 입력
+2. button "검색" 클릭
+   -> button "강원특별자치도 영월군 영월읍 단종로 3-1" 같은 후보가 뜬다. 그걸 클릭
+3. textbox "업종을 선택 또는 검색해주세요"  에 "PC방" 입력
+4. 옆 button "검색" 클릭
+   -> button "예술·스포츠 > 유원지·오락 > PC방" 이 뜬다. 그걸 클릭
+5. (여기까지 성공) 다음은 지도에서 반경 클릭 -> 반경설정 -> 확인 -> 분석하기
+```
+
+### 팝업이 클릭을 막는다
+
+홈 진입 시 모달이 뜬다. 이렇게 지우고 시작한다.
+```js
+document.querySelectorAll(".q-dialog").forEach(d => d.remove());
+document.querySelectorAll(".q-dialog__backdrop").forEach(d => d.remove());
+```
+
+### 내부 API (번들에서 추출)
+
+`https://bigdata.sbiz.or.kr/assets/index-*.js` 를 받아 `/(sbiz|gis|pub)/api/...` 를 긁으면 나온다.
+재현: `node .local-tools/_find-sbiz-api.mjs` (번들 해시가 바뀌면 URL을 갱신해야 한다)
+
+```
+/sbiz/api/bizonSttus/DynPplCmpr/search.json?dongCd=11140520   <- 유동인구. 단 행정동 단위다
+/gis/api/getTpbizLcd_cmpt                                      업종 대분류
+/gis/api/getHierarchyTpbizCode_cmpt                            업종 계층
+/gis/api/snsAnls/getSnsAnlsDetail                              SNS 분석
+```
+
+메인 번들에는 api 경로가 24개뿐이다. **반경 기반 분석 API는 지연 로딩되는 청크에 있다** —
+`분석하기`를 실제로 눌러야 네트워크에 잡힌다. 거기까지가 다음 할 일이다.
+
+반경 파라미터 이름 후보로 번들에 `radius`가 있다.
+
+### 다음에 이어서 하는 법
+
+```bash
+# 데몬이 죽어 있으면 먼저 정리 (섹션 2 참고)
+export AGENT_BROWSER_SESSION="s1" AGENT_BROWSER_IDLE_TIMEOUT_MS=0
+# 한 번의 bash -c 안에서 여러 명령을 이어 붙여야 세션이 안 끊긴다
+timeout 280 bash -c 'agent-browser open "https://bigdata.sbiz.or.kr/#/gis/locAnls" >/dev/null; sleep 14; agent-browser network requests --clear >/dev/null; ...'
+```
+**교훈: agent-browser 명령을 따로따로 부르면 세션이 날아간다.** 반드시 한 `bash -c`로 묶는다.
+
+목표는 `분석하기`까지 눌러 네트워크에 잡히는 **반경 기반 API 한 줄**을 확보하는 것이다.
+그것만 있으면 38곳 + 후보지를 스크립트로 한 번에 돌릴 수 있다 — UI 자동화를 반복할 필요가 없다.
