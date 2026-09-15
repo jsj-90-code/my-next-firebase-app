@@ -26,6 +26,9 @@ import { loadCollectionMap, needsWrite } from "./lib/diffWrite.mjs";
 
 const DATA = ".local-tools/sbiz-floating-population.json";
 const SNAPSHOT = ".local-tools/validation-snapshot.json";
+// 수집기는 500·1000도 받지만 **여기서는 쓰지 않는다.** 기존 floating500Avg는 출처가 다른
+// 값이라 덮어쓰면 "반경을 바꿔서 좋아졌는지, 출처가 바뀌어서 좋아졌는지"를 영영 못 가른다.
+// 500·1000은 비교가 끝난 뒤에 별도 필드로 넣을지 정한다.
 const RADII = [100, 200, 300, 400];
 const APPLY = process.argv.includes("--apply");
 

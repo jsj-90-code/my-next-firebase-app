@@ -25,7 +25,11 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const SNAPSHOT = ".local-tools/validation-snapshot.json";
 const OUT = ".local-tools/sbiz-floating-population.json";
-const RADII = [100, 200, 300, 400];
+// 500·1000은 2026-09-15에 추가했다. 기존 floating500Avg는 출처가 달라(시트 경유) 앞뒤가
+// 안 맞는 곳이 있었다 — 호구포역점은 400m 96,280인데 500m가 35,105로 **반경이 커졌는데 인구가
+// 줄어드는** 모순이었다. 같은 출처로 다시 받아 비교하려는 것이며, 기존 필드는 덮어쓰지 않는다
+// (writeFloatingPopulationToFirestore.mjs가 100~400만 쓴다).
+const RADII = [100, 200, 300, 400, 500, 1000];
 const PCBANG_UPJONG = "R10406"; // 예술·스포츠 > 유원지·오락 > PC방
 const BASE = "https://bigdata.sbiz.or.kr";
 const DELAY_MS = Number(process.env.SBIZ_DELAY_MS || 1200);
