@@ -203,7 +203,12 @@ export default function StoreEvalDashboardPage() {
           <h1 className="text-xl font-semibold">점포평가 현황</h1>
           <p className="mt-2 text-sm text-[var(--sl-ink-soft)]">후보지의 평가 진행 상황과 마지막으로 저장된 결과를 확인합니다.</p>
         </div>
-        <Link href="/store-eval/candidates" className="app-btn-outline rounded-lg px-4 py-2 text-sm">후보지 관리 →</Link>
+        <div className="flex shrink-0 gap-2">
+          {/* 2026-09-15 — 교과서식 산식을 손으로 돌려보는 실험 화면. 운영 산식·저장값은 건드리지
+              않는다. 실험이라는 게 드러나게 보조 버튼으로 둔다. */}
+          <Link href="/store-eval/lab" className="app-btn-outline rounded-lg px-4 py-2 text-sm opacity-80">실험실</Link>
+          <Link href="/store-eval/candidates" className="app-btn-outline rounded-lg px-4 py-2 text-sm">후보지 관리 →</Link>
+        </div>
       </div>
       {freshnessFailed && <p role="status" className="app-notice app-badge-warn px-4 py-3 text-sm">평가 결과가 최신인지 확인하지 못했습니다. 아래 매출은 마지막 저장값입니다. 후보지 최종결과 탭에서 다시 확인해주세요.</p>}
       <section className="grid grid-cols-2 gap-4 sm:grid-cols-5">
