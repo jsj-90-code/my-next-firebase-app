@@ -129,30 +129,16 @@ async function main() {
       // 동일). applyStandardOwnFacilityDefaults가 이 값이 있으면 우선 쓰도록 이미 짜여 있었는데
       // 아무도 채워준 적이 없었다.
       ownManagementScore: toNumber(s["자사_매장관리점수"]),
-      pop500m: toNumber(s["반경500m_총인구"]),
       area1kmKm2: toNumber(s["반경1km_조회면적_km2"]),
-      pop1km: toNumber(s["반경1km_총인구"]),
       male1kmRatio: (() => {
         const n = toNumber(s["반경1km_남성비율"]);
         return n == null ? null : n > 1 ? n / 100 : n;
       })(),
-      age1km_0_9: toNumber(s["반경1km_0~9세"]),
-      age1km_10_19: toNumber(s["반경1km_10~19세"]),
-      age1km_20_29: toNumber(s["반경1km_20~29세"]),
-      age1km_30_39: toNumber(s["반경1km_30~39세"]),
-      age1km_40_49: toNumber(s["반경1km_40~49세"]),
-      age1km_50_59: toNumber(s["반경1km_50~59세"]),
-      age1km_60_69: toNumber(s["반경1km_60~69세"]),
-      age1km_70_79: toNumber(s["반경1km_70~79세"]),
-      age1km_80plus: toNumber(s["반경1km_80세이상"]),
-      floating500Avg: toNumber(s["유동500_일평균"]),
-      floating500Male: toNumber(s["유동500_남성"]),
-      floating500_10s: toNumber(s["유동500_10대"]),
-      floating500_20s: toNumber(s["유동500_20대"]),
-      floating500_30s: toNumber(s["유동500_30대"]),
-      floating500_40s: toNumber(s["유동500_40대"]),
-      floating500_50s: toNumber(s["유동500_50대"]),
-      floating500_60plus: toNumber(s["유동500_60대이상"]),
+      // 유동인구 500m·주거인구는 여기서 쓰지 않는다 (2026-09-16, 사용자 확정).
+      // 정본이 시트 손입력에서 자동수집(소상공인365·SGIS)으로 옮겨졌다. 이 스크립트는
+      // src/lib/storeEval/cronSync.ts와 판정 로직이 완전히 동일해야 하므로 같이 뺀다 —
+      // 한쪽만 고치면 이 스크립트를 손으로 돌리는 순간 자동수집분이 다시 지워진다.
+      // 배경과 갱신 방법은 cronSync.ts의 같은 자리 주석에 적어뒀다.
       operatingPcStores500m: toNumber(s["실영업_PC방업소수_500m"]),
       updatedAt: Date.now(),
     };

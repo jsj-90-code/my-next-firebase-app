@@ -210,30 +210,34 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       // 읽어와야 한다(applyStandardOwnFacilityDefaults가 이 값이 있으면 우선 쓰고, 없을 때만
       // 표준값 4로 폴백하도록 이미 짜여 있었는데 정작 이 필드를 아무도 채워준 적이 없었다).
       ownManagementScore: toNumber(s["자사_매장관리점수"]),
-      pop500m: toNumber(s["반경500m_총인구"]),
       area1kmKm2: toNumber(s["반경1km_조회면적_km2"]),
-      pop1km: toNumber(s["반경1km_총인구"]),
       male1kmRatio: (() => {
         const n = toNumber(s["반경1km_남성비율"]);
         return n == null ? null : n > 1 ? n / 100 : n;
       })(),
-      age1km_0_9: toNumber(s["반경1km_0~9세"]),
-      age1km_10_19: toNumber(s["반경1km_10~19세"]),
-      age1km_20_29: toNumber(s["반경1km_20~29세"]),
-      age1km_30_39: toNumber(s["반경1km_30~39세"]),
-      age1km_40_49: toNumber(s["반경1km_40~49세"]),
-      age1km_50_59: toNumber(s["반경1km_50~59세"]),
-      age1km_60_69: toNumber(s["반경1km_60~69세"]),
-      age1km_70_79: toNumber(s["반경1km_70~79세"]),
-      age1km_80plus: toNumber(s["반경1km_80세이상"]),
-      floating500Avg: toNumber(s["유동500_일평균"]),
-      floating500Male: toNumber(s["유동500_남성"]),
-      floating500_10s: toNumber(s["유동500_10대"]),
-      floating500_20s: toNumber(s["유동500_20대"]),
-      floating500_30s: toNumber(s["유동500_30대"]),
-      floating500_40s: toNumber(s["유동500_40대"]),
-      floating500_50s: toNumber(s["유동500_50대"]),
-      floating500_60plus: toNumber(s["유동500_60대이상"]),
+      // ── 유동인구 500m·주거인구는 여기서 쓰지 않는다 (2026-09-16, 사용자 확정) ──────────
+      // 예전엔 시트의 `유동500_*` 8개 컬럼과 `반경500m_총인구`·`반경1km_총인구`·`반경1km_*세`
+      // 9구간을 여기서 매일 덮어썼다. 그 값들은 사람이 소상공인365/SGIS 화면을 보고 손으로
+      // 넣은 것이고, 출처·측정시점이 지점마다 달랐다.
+      //
+      // 2026-09-15에 두 출처를 API로 뚫어 52곳을 같은 기준으로 다시 받았고(반경 100~1000m,
+      // 최근 12개월 평균, 주거는 2024년), 그 과정에서 손입력 오류도 찾았다 — N003 호구포역점
+      // 유동 500m가 실제의 1/3이라 상권성격이 뒤집혀 있었고, 주거인구도 5곳이 3~10% 어긋났다.
+      //
+      // 그런데 자동수집분을 Firestore에 넣어도 **다음날 06시 이 크론이 시트 값으로 되돌렸다.**
+      // 2026-09-16 아침에 실제로 그 일이 일어나 기존점 41곳이 통째로 옛 값으로 복귀했고,
+      // 화면에 저장된 적중률(MAPE 9.26%)이 지금 데이터로는 재현되지 않는(9.37%) 상태가 됐다.
+      //
+      // 그래서 이 필드들의 **정본을 자동수집으로 옮긴다.** 시트의 해당 컬럼은 더 이상 읽지
+      // 않으며(값은 참고용으로 시트에 남아 있다), 갱신은 아래 스크립트로만 한다:
+      //   node scripts/collectSbizFloatingPopulation.mjs → writeFloatingPopulationToFirestore.mjs --include-500 --apply
+      //   node scripts/collectSgisResidentPopulation.mjs → writeResidentPopulationToFirestore.mjs --apply
+      //
+      // ⚠️ 새 매장이 시트에 등록되면 이 크론은 유동·주거를 채워주지 않는다. 위 두 수집기를
+      //    돌려야 채워진다(안 채우면 산식이 그 지점을 수요 0으로 본다).
+      //
+      // `area1kmKm2`·`male1kmRatio`·`operatingPcStores500m`은 자동수집 대상이 아니라서
+      // 그대로 시트에서 읽는다 — 경계를 여기 적어 둔다.
       operatingPcStores500m: toNumber(s["실영업_PC방업소수_500m"]),
       updatedAt: Date.now(),
     };
