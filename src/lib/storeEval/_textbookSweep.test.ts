@@ -167,6 +167,188 @@ describeIf("교과서식 — 새 기초자료 위에서 다시 탐색", () => {
     expect(sc.sampleCount).toBeGreaterThan(30);
   });
 
+  // 교과서식 29%가 "좋은" 건지 "나쁜" 건지는 혼자 봐서는 모른다. 아무 정보도 안 쓰는
+  // 기준선과 비교해야 한다. 여기서 교과서식이 단순 기준선을 못 이기면, 문제는 파라미터가
+  // 아니라 **구조**다 — 인구에서 수요를 뽑는 길 자체가 신호를 못 담고 있다는 뜻이다.
+  it("아무것도 안 쓰는 기준선과 비교", () => {
+    const MONTH_HOURS = 24 * 30;
+    const acts = base.map((r) => r.actualRevenue);
+    const med = (a: number[]) => { const x = [...a].sort((p, q) => p - q); return x[Math.floor(x.length / 2)]; };
+    const mape = (pred: number[]) => {
+      const e = pred.map((p, i) => Math.abs(p - acts[i]) / acts[i]);
+      return e.reduce((a, b) => a + b, 0) / e.length;
+    };
+    const within = (pred: number[], t: number) => {
+      const e = pred.map((p, i) => Math.abs(p - acts[i]) / acts[i]);
+      return e.filter((v) => v <= t).length / e.length;
+    };
+
+    // B0 — 전 지점 중앙값. 매장 정보를 하나도 안 쓴다.
+    const b0 = acts.map(() => med(acts));
+    // B1 — PC대수 x (대당매출 중앙값). 좌석 수만 쓴다.
+    const perPc = base.map((r, i) => acts[i] / (r.input.pcCount as number));
+    const b1 = base.map((r) => (r.input.pcCount as number) * med(perPc));
+    // B2 — 좌석 x 요금 x 가동률 중앙값. 용량과 가격만 쓴다(수요 추정을 아예 안 한다).
+    const util = base.map((r, i) => {
+      const cap = (r.input.pcCount as number) * MONTH_HOURS * (r.input.hourlyRate ?? 0);
+      return cap > 0 ? acts[i] / cap : null;
+    }).filter((v): v is number => v != null);
+    const b2 = base.map((r) => (r.input.pcCount as number) * MONTH_HOURS * (r.input.hourlyRate ?? 0) * med(util));
+
+    for (const [label, pred] of [["B0 중앙값(정보 0)", b0], ["B1 PC대수만", b1], ["B2 PC대수x요금", b2]] as const) {
+      console.log(`${label.padEnd(20)} MAPE ${(mape(pred) * 100).toFixed(2)}%  ±20% ${(within(pred, 0.2) * 100).toFixed(0)}%`);
+    }
+    console.log("교과서식 최선           MAPE 29.42%");
+    console.log("운영 산식(V62)          MAPE  9.26%");
+    expect(acts.length).toBeGreaterThan(30);
+  });
+
+  // 교과서식이 왜 단순 기준선보다 나쁜가 — 균형 가설을 검정한다.
+  //
+  // 가설: PC방 시장은 **공급이 수요를 따라간다.** 사람이 많은 동네에는 PC방도 많이 생긴다.
+  // 그렇다면 (수요 ÷ 공급)은 동네마다 거의 같아지고, 그 결과 한 매장의 매출은 좌석 수에
+  // 거의 비례한다. 인구는 "이 동네가 PC 몇 대를 먹여 살리나"를 말해 줄 뿐, "우리 가게가
+  // 대당 얼마를 버나"는 말해 주지 않는다.
+  //
+  // 이 가설이 맞으면 교과서식이 나쁜 이유가 설명된다 — 인구 총량은 지점마다 몇 배씩
+  // 차이 나는데 실제 대당매출은 그만큼 안 흔들리므로, 인구를 매출에 그대로 실으면
+  // 예측 분산이 실제보다 훨씬 커진다.
+  it("균형 가설 — 공급이 수요를 따라가는가", () => {
+    const rows = withRadii(base, 1000, 500);
+    const xs: number[] = [];  // 시장 수요(인구)
+    const ys: number[] = [];  // 시장 공급(우리 PC + 경쟁 IP)
+    const perPc: number[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const pop = r.input.pop1km;
+      const flow = r.input.floatingByRadius[500];
+      const pc = r.input.pcCount;
+      if (pop == null || flow == null || !pc) continue;
+      xs.push(pop + flow * 0.2);
+      ys.push(pc + (r.input.competitorIp ?? 0));
+      perPc.push(r.actualRevenue / pc);
+    }
+    const corr = (a: number[], b: number[]) => {
+      const ma = a.reduce((x, y) => x + y, 0) / a.length;
+      const mb = b.reduce((x, y) => x + y, 0) / b.length;
+      let sab = 0, saa = 0, sbb = 0;
+      for (let i = 0; i < a.length; i++) {
+        const da = a[i] - ma, db = b[i] - mb;
+        sab += da * db; saa += da * da; sbb += db * db;
+      }
+      return sab / Math.sqrt(saa * sbb);
+    };
+    const cv = (a: number[]) => {
+      const m = a.reduce((x, y) => x + y, 0) / a.length;
+      const v = a.reduce((s, x) => s + (x - m) * (x - m), 0) / a.length;
+      return Math.sqrt(v) / m;
+    };
+    console.log(`\n시장수요(주거1km+유동x0.2) vs 시장공급(자사PC+경쟁IP): r = ${corr(xs, ys).toFixed(3)} (n=${xs.length})`);
+    console.log(`변동계수 — 시장수요 ${(cv(xs) * 100).toFixed(0)}% · 시장공급 ${(cv(ys) * 100).toFixed(0)}% · 실제 대당매출 ${(cv(perPc) * 100).toFixed(0)}%`);
+    console.log("→ 대당매출의 변동이 인구 변동보다 훨씬 작으면, 인구를 매출에 그대로 실으면 안 된다.");
+    expect(xs.length).toBeGreaterThan(30);
+  });
+
+  /**
+   * 교과서식 v2 후보 — 긴장도(수요/공급)를 **감쇠 지수 λ로 눌러서** 쓴다.
+   *
+   * 지금 구조는 가동률 = 수요 / 공급 그대로다(λ=1). 그런데 균형 가설 검정에서 봤듯이
+   * 공급이 수요를 따라가므로 이 비는 실제보다 훨씬 크게 흔들린다. λ<1로 누르면 그 과잉
+   * 변동이 줄고, λ=0이면 "모든 동네 가동률이 같다"(=B1 PC대수만)가 된다.
+   *
+   * 이 구조는 두 극단을 모두 품는다 — λ를 데이터가 고르게 두면 "상권 정보가 대당매출을
+   * 얼마나 설명하는가"를 그 값이 그대로 말해 준다. λ*가 0에 가까우면 상권은 설명력이 없는 것이다.
+   *
+   * 수준(A)은 로그 공간 평균으로 닫힌 형태로 맞춘다(fitHoursPerUser와 같은 방식) —
+   * 눈으로 정할 값이 아니고, 이걸 맞춰야 λ끼리 공정하게 비교된다.
+   */
+  it("교과서식 v2 — 긴장도 감쇠 λ 탐색", () => {
+    const MONTH_HOURS = 24 * 30;
+    const medOf = (a: number[]) => { const x = [...a].sort((p, q) => p - q); return x[Math.floor(x.length / 2)]; };
+
+    type V2Row = { pc: number; rate: number; tension: number; actual: number };
+    function buildRows(resR: Radius, floR: Radius, ff: number, gamma: number, outside: number): V2Row[] {
+      const out: V2Row[] = [];
+      for (const r of base) {
+        const pc = r.input.pcCount;
+        const rate = r.input.hourlyRate;
+        const pop = r.sig.residentTotal[resR];
+        const flow = r.sig.floatingTotal[floR];
+        if (!pc || rate == null || pop == null || flow == null) continue;
+        const gap = r.input.competitivenessGap ?? 1;
+        const demand = pop + flow * ff;
+        const supply = pc * Math.pow(gap, gamma) + (r.input.competitorIp ?? 0) + outside;
+        if (!(supply > 0)) continue;
+        out.push({ pc, rate, tension: demand / supply, actual: r.actualRevenue });
+      }
+      return out;
+    }
+
+    function scoreV2(rows: V2Row[], lambda: number, maxUtil: number, productRatio: number) {
+      const medT = medOf(rows.map((r) => r.tension));
+      if (!(medT > 0)) return null;
+      // 수준 A를 로그 공간에서 닫힌 형태로 맞춘다(상한에 걸린 건 제외 — 배율 추정을 왜곡한다).
+      const logs: number[] = [];
+      for (const r of rows) {
+        const shape = Math.pow(r.tension / medT, lambda);
+        const rev1 = r.pc * MONTH_HOURS * shape * r.rate / (1 - productRatio);
+        if (rev1 > 0 && r.actual > 0) logs.push(Math.log(r.actual / rev1));
+      }
+      if (!logs.length) return null;
+      const A = Math.exp(logs.reduce((a, b) => a + b, 0) / logs.length);
+
+      const errs: number[] = [];
+      for (const r of rows) {
+        const util = Math.min(A * Math.pow(r.tension / medT, lambda), maxUtil);
+        const rev = r.pc * MONTH_HOURS * util * r.rate / (1 - productRatio);
+        errs.push(Math.abs(rev - r.actual) / r.actual);
+      }
+      const sorted = [...errs].sort((a, b) => a - b);
+      return {
+        mape: errs.reduce((a, b) => a + b, 0) / errs.length,
+        med: sorted[Math.floor(sorted.length / 2)],
+        w20: errs.filter((v) => v <= 0.2).length / errs.length,
+        max: sorted[sorted.length - 1],
+        n: errs.length,
+      };
+    }
+
+    const results: { label: string; mape: number; med: number; w20: number; max: number; lambda: number }[] = [];
+    const LAMBDAS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.8, 1.0, 1.25];
+    for (const resR of ALL_RADII) {
+      for (const floR of ALL_RADII) {
+        for (const ff of [0.05, 0.1, 0.2, 0.35, 0.5]) {
+          for (const gamma of [0.5, 1.0, 1.5]) {
+            for (const outside of [0, 100, 200, 400]) {
+              const rows = buildRows(resR, floR, ff, gamma, outside);
+              if (rows.length < 30) continue;
+              for (const lambda of LAMBDAS) {
+                const sc = scoreV2(rows, lambda, 0.85, 0.5);
+                if (!sc) continue;
+                results.push({
+                  label: `주거${resR} 유동${floR} ff=${ff} gamma=${gamma} oo=${outside} lambda=${lambda}`,
+                  mape: sc.mape, med: sc.med, w20: sc.w20, max: sc.max, lambda,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    results.sort((a, b) => a.mape - b.mape);
+    console.log(`\n조합 ${results.length}개 · 상위 12개`);
+    for (const r of results.slice(0, 12)) {
+      console.log(`  MAPE ${(r.mape * 100).toFixed(2)}%  중앙 ${(r.med * 100).toFixed(1)}%  ±20% ${(r.w20 * 100).toFixed(0)}%  최대 ${(r.max * 100).toFixed(0)}%   ${r.label}`);
+    }
+    // λ별 최선을 따로 본다 — 상권 정보가 실제로 값을 더하는지가 여기서 보인다.
+    console.log("\nλ별 최선 (λ=0은 상권을 아예 안 쓰는 것과 같다)");
+    for (const lam of LAMBDAS) {
+      const best = results.filter((r) => r.lambda === lam).sort((a, b) => a.mape - b.mape)[0];
+      if (best) console.log(`  lambda=${String(lam).padEnd(5)} MAPE ${(best.mape * 100).toFixed(2)}%   ${best.label}`);
+    }
+    expect(results.length).toBeGreaterThan(0);
+  });
+
   it("반경 × 파라미터 전수 탐색", () => {
     const P = DEFAULT_TEXTBOOK_PARAMS;
     const results: { label: string; mape: number; med: number; w20: number; max: number }[] = [];
