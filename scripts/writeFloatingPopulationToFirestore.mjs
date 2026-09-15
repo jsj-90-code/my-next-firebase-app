@@ -26,10 +26,15 @@ import { loadCollectionMap, needsWrite } from "./lib/diffWrite.mjs";
 
 const DATA = ".local-tools/sbiz-floating-population.json";
 const SNAPSHOT = ".local-tools/validation-snapshot.json";
-// 수집기는 500·1000도 받지만 **여기서는 쓰지 않는다.** 기존 floating500Avg는 출처가 다른
-// 값이라 덮어쓰면 "반경을 바꿔서 좋아졌는지, 출처가 바뀌어서 좋아졌는지"를 영영 못 가른다.
-// 500·1000은 비교가 끝난 뒤에 별도 필드로 넣을지 정한다.
-const RADII = [100, 200, 300, 400];
+// 기본은 100~400m만 쓴다. 500m는 기존 손입력값이 있어서 **비교가 끝나기 전에는 덮지 않는다**
+// (출처가 섞이면 "반경 때문인지 출처 때문인지"를 영영 못 가른다).
+//
+// 2026-09-15에 비교를 끝냈다 — `_baseDataSwap.test.ts`로 재보니 500m를 새 값으로 바꾸면
+// MAPE 9.37% -> 9.26%, ±10% 63.16% -> 65.79%로 **개선**됐다. 기존 값은 출처·시점이 불명이고
+// N003은 실제의 1/3이었다. 그래서 사용자 판단으로 500m도 교체한다: `--include-500`.
+//
+// 1000m는 대응하는 기존 필드가 없어 아직 쓰지 않는다.
+const RADII = process.argv.includes("--include-500") ? [100, 200, 300, 400, 500] : [100, 200, 300, 400];
 const APPLY = process.argv.includes("--apply");
 
 function loadEnvLocal() {
