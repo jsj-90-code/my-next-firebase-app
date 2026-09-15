@@ -33,8 +33,12 @@ export type AgeUsageWeights = {
   age40s: number; age50s: number; age60plus: number;
 };
 
-/** 유동인구를 어느 반경으로 쓸지. 100·200은 아직 수집된 적이 없다(2026-09-15). */
-export type FloatingRadius = 100 | 200 | 500;
+/**
+ * 유동인구를 어느 반경으로 쓸지.
+ * 2026-09-15에 100/200/300/400m 수집 경로를 열었다(scripts/collectSbizFloatingPopulation.mjs).
+ * 500m는 원래 갖고 있던 값이라 출처가 다르다 — 반경끼리 비교할 땐 100~400m 안에서 본다.
+ */
+export type FloatingRadius = 100 | 200 | 300 | 400 | 500;
 /** 주거인구를 어느 반경으로 쓸지. 500m는 연령 분해가 없어 총수만 쓸 수 있다. */
 export type ResidentRadius = 500 | 1000;
 

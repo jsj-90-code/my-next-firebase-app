@@ -106,11 +106,13 @@ async function loadLabData(): Promise<Loaded | null> {
           age30s: sr.age1km_30_39 ?? 0, age40s: sr.age1km_40_49 ?? 0, age50s: sr.age1km_50_59 ?? 0,
           age60plus: (sr.age1km_60_69 ?? 0) + (sr.age1km_70_79 ?? 0) + (sr.age1km_80plus ?? 0),
         },
-        // 2026-09-15 — 100m·200m 수집 경로를 열었다(소상공인365 반경 선택). 아직 안 모은
+        // 2026-09-15 — 100/200/300/400m 수집 경로를 열었다(소상공인365 반경 선택). 아직 안 모은
         // 매장은 null이라 그 반경을 고르면 "자료없음"으로 빠진다.
         floatingByRadius: {
           100: s.floating100Avg ?? null,
           200: s.floating200Avg ?? null,
+          300: s.floating300Avg ?? null,
+          400: s.floating400Avg ?? null,
           500: s.floating500Avg,
         },
         floatingAgesByRadius: {
@@ -123,6 +125,16 @@ async function loadLabData(): Promise<Loaded | null> {
             age10s: s.floating200_10s ?? 0, age20s: s.floating200_20s ?? 0,
             age30s: s.floating200_30s ?? 0, age40s: s.floating200_40s ?? 0,
             age50s: s.floating200_50s ?? 0, age60plus: s.floating200_60plus ?? 0,
+          },
+          300: s.floating300Avg == null ? null : {
+            age10s: s.floating300_10s ?? 0, age20s: s.floating300_20s ?? 0,
+            age30s: s.floating300_30s ?? 0, age40s: s.floating300_40s ?? 0,
+            age50s: s.floating300_50s ?? 0, age60plus: s.floating300_60plus ?? 0,
+          },
+          400: s.floating400Avg == null ? null : {
+            age10s: s.floating400_10s ?? 0, age20s: s.floating400_20s ?? 0,
+            age30s: s.floating400_30s ?? 0, age40s: s.floating400_40s ?? 0,
+            age50s: s.floating400_50s ?? 0, age60plus: s.floating400_60plus ?? 0,
           },
           500: {
             age10s: s.floating500_10s ?? 0, age20s: s.floating500_20s ?? 0,
@@ -169,8 +181,8 @@ export default function LabPage() {
   // 반경별로 자료가 몇 곳이나 모였는지 — 반경 버튼 아래에 그대로 보여준다.
   const counts = useMemo(() => {
     const rs = data?.rows ?? [];
-    const n = (r: 100 | 200 | 500) => rs.filter((x) => x.input.floatingByRadius[r] != null).length;
-    return { f100: n(100), f200: n(200), f500: n(500), total: rs.length };
+    const n = (r: FloatingRadius) => rs.filter((x) => x.input.floatingByRadius[r] != null).length;
+    return { f100: n(100), f200: n(200), f300: n(300), f400: n(400), f500: n(500), total: rs.length };
   }, [data]);
 
   const score: TextbookScore | null = useMemo(
@@ -246,7 +258,7 @@ function Controls({
   p, set, setAge, counts,
 }: {
   p: TextbookParams;
-  counts: { f100: number; f200: number; f500: number; total: number };
+  counts: { f100: number; f200: number; f300: number; f400: number; f500: number; total: number };
   set: <K extends keyof TextbookParams>(k: K, v: TextbookParams[K]) => void;
   setAge: (k: keyof TextbookParams["ageWeights"], v: number) => void;
 }) {
@@ -261,9 +273,9 @@ function Controls({
           hint={p.residentRadius === 500 ? "500m는 연령 분해 자료가 없어 총인구만 씁니다" : "1km는 연령·성별 분해까지 있습니다"} />
 
         <Choice label="유동 반경" value={String(p.floatingRadius)}
-          options={[["100", "100m"], ["200", "200m"], ["500", "500m"]]}
+          options={[["100", "100m"], ["200", "200m"], ["300", "300m"], ["400", "400m"], ["500", "500m"]]}
           onChange={(v) => set("floatingRadius", Number(v) as FloatingRadius)}
-          hint={`수집된 매장 — 100m ${counts.f100}곳 · 200m ${counts.f200}곳 · 500m ${counts.f500}곳 (표본 ${counts.total}곳). 아직 안 모은 반경을 고르면 그 매장은 계산에서 빠집니다.`} />
+          hint={`수집된 매장 — 100m ${counts.f100} · 200m ${counts.f200} · 300m ${counts.f300} · 400m ${counts.f400} · 500m ${counts.f500}곳 (표본 ${counts.total}곳). 아직 안 모은 반경을 고르면 그 매장은 계산에서 빠집니다. 500m는 출처가 달라 100~400m끼리 비교하는 게 맞습니다.`} />
 
         <Slider label="유동 계수" value={p.floatingFactor} min={0} max={1} step={0.05}
           onChange={(v) => set("floatingFactor", v)}

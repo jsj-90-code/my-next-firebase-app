@@ -111,6 +111,22 @@ export type CandidateInput = {
   floating200_40s?: number | null;
   floating200_50s?: number | null;
   floating200_60plus?: number | null;
+  floating300Avg?: number | null;
+  floating300Male?: number | null;
+  floating300_10s?: number | null;
+  floating300_20s?: number | null;
+  floating300_30s?: number | null;
+  floating300_40s?: number | null;
+  floating300_50s?: number | null;
+  floating300_60plus?: number | null;
+  floating400Avg?: number | null;
+  floating400Male?: number | null;
+  floating400_10s?: number | null;
+  floating400_20s?: number | null;
+  floating400_30s?: number | null;
+  floating400_40s?: number | null;
+  floating400_50s?: number | null;
+  floating400_60plus?: number | null;
 
   // 2026-08-27 — 인허가 PC방업소수(500m/1km)는 삭제했다(사용자 확인: 계산에도 안 쓰이고
   // 소상공인365 자동추출이라 직접 검증도 안 된 값이라 "실영업"만 남기면 충분함). 실영업(직접
@@ -831,6 +847,22 @@ export type ExistingStore = {
   floating200_40s?: number | null;
   floating200_50s?: number | null;
   floating200_60plus?: number | null;
+  floating300Avg?: number | null;
+  floating300Male?: number | null;
+  floating300_10s?: number | null;
+  floating300_20s?: number | null;
+  floating300_30s?: number | null;
+  floating300_40s?: number | null;
+  floating300_50s?: number | null;
+  floating300_60plus?: number | null;
+  floating400Avg?: number | null;
+  floating400Male?: number | null;
+  floating400_10s?: number | null;
+  floating400_20s?: number | null;
+  floating400_30s?: number | null;
+  floating400_40s?: number | null;
+  floating400_50s?: number | null;
+  floating400_60plus?: number | null;
   operatingPcStores500m: number | null;
 
   // 2026-08-21 추가 — "후보지평가 → 오픈 → 실제매출로 검증" 흐름을 실제로 잇기 위한 필드.
