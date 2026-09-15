@@ -69,6 +69,16 @@ export type TextbookParams = {
    * 실제로 잘 되는 매장을 절반 아래로 깎아버렸다(오차 56~64%).
    */
   agglomerationFactor: number;
+  /**
+   * **주거 밀집도 보정** — 2026-09-15 야간 발견.
+   *
+   * 치우침(예측/실제-1)이 500m 주거인구와 r=0.660으로 강하게 붙어 있었다(유의선 0.32).
+   * 수요를 1km 주거인구로 재는데, 같은 1km 인구라도 500m 안에 얼마나 몰려 있는지가
+   * 매장마다 다르다. 가까이 몰려 있는 곳을 그만큼 더 크게 세고 있었던 것이다.
+   *
+   * 수요에 (500m주거 / 1km주거)^(-계수)를 곱해 상쇄한다. 0이면 끈 것이다.
+   */
+  densityCorrection: number;
   /** 총매출 대비 상품매출 비율(회사 기준 50%). */
   productRatio: number;
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
@@ -90,6 +100,7 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   gapExponent: 1.0,
   outsideOptionIp: 0,
   agglomerationFactor: 0,
+  densityCorrection: 0,
   productRatio: 0.5,
   maxUtilization: 0.85,
 };
@@ -191,7 +202,11 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const agg = p.agglomerationFactor > 0
     ? 1 + p.agglomerationFactor * Math.log(1 + (input.competitorCount ?? 0))
     : 1;
-  const totalUsers = baseUsers * agg;
+  // 주거 밀집도 보정 — 500m에 몰려 있는 상권을 과대평가하던 걸 상쇄한다.
+  const dens = p.densityCorrection > 0 && input.pop500m && input.pop1km
+    ? Math.pow(input.pop500m / input.pop1km, -p.densityCorrection)
+    : 1;
+  const totalUsers = baseUsers * agg * dens;
   const totalHours = totalUsers * p.hoursPerUserPerMonth;
 
   // ── 3) 점유율 ───────────────────────────────────────────────────────────
