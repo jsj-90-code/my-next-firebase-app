@@ -87,6 +87,14 @@ function StatTile({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
+/**
+ * 카드에 그리는 예측 범위의 폭. **ModelAccuracySummary.within20PctRatio의 정의(±20%)와 같은
+ * 값이어야 한다** — 밴드는 ±20%로 그려놓고 "89%가 이 안에 들어옴"은 ±20% 기준 비율을 쓰면
+ * 화면이 거짓말을 한다. 둘을 따로 고칠 수 없게 여기 한 곳에 묶어둔다.
+ * (설정값이 아니라 지표의 정의라서 settings가 아니라 상수로 둔다.)
+ */
+const WITHIN20_BAND = 0.2;
+
 export function ReportCard({
   result,
   candidate,
@@ -147,11 +155,29 @@ export function ReportCard({
               (번화가/혼합/주거중심)은 말 그대로라 남긴다. */}
           선투자 2,000만원 기준 {formatManwon(result.aaBaselineRevenue)} · {result.marketCharacter ?? "-"} 상권
         </p>
+        {/* 2026-09-15 — 예전엔 "평균오차 X% · (예측±X%) 범위"만 적었는데, 그 밴드가 실제로 몇 %를
+            덮는지는 없었다. ±평균오차(9.7%) 밴드는 38곳 중 20곳(52.6%)만 담는다 — 절반은 밖으로
+            나간다. 읽는 사람은 "이 범위 안에는 들어오겠지"로 받아들이므로 사실상 과장이었다.
+            결과 탭에는 이미 "±15% 밴드에 82%만 들어온다"고 적혀 있는데(ResultTab AccuracyNote),
+            정작 밖으로 내보내는 이 카드가 더 낙관적이었다. 밴드는 ±20%(실측 89.5%)로 넓히고
+            덮는 비율을 같이 적는다. 숫자는 저장된 검증값에서 읽는다 — 여기에 글자로 박지 않는다. */}
         {accuracy && accuracy.sampleCount > 0 && accuracy.meanAbsoluteErrorPct != null && (
           <p className="mt-1 text-[10px] text-white/60 dark:text-[#171310]/60">
-            기존 가맹점 {accuracy.sampleCount}곳 실적으로 검증한 평균오차 {formatPercent(accuracy.meanAbsoluteErrorPct)} ·{" "}
-            {formatManwonRough(result.v62Final != null ? result.v62Final * (1 - accuracy.meanAbsoluteErrorPct) : null)}~
-            {formatManwonRough(result.v62Final != null ? result.v62Final * (1 + accuracy.meanAbsoluteErrorPct) : null)} 범위
+            기존 가맹점 {accuracy.sampleCount}곳 실적으로 검증 · 평균오차 {formatPercent(accuracy.meanAbsoluteErrorPct)}
+            {accuracy.within20PctRatio != null && result.v62Final != null && (
+              <>
+                <br />
+                {formatManwonRough(result.v62Final * (1 - WITHIN20_BAND))}~
+                {formatManwonRough(result.v62Final * (1 + WITHIN20_BAND))} (검증 매장의{" "}
+                {formatPercent(accuracy.within20PctRatio)}가 이 폭 안에 들어옴)
+              </>
+            )}
+            {accuracy.within10PctRatio != null && (
+              <>
+                <br />
+                {formatPercent(accuracy.within10PctRatio)}는 ±10% 안, 나머지는 그 밖
+              </>
+            )}
           </p>
         )}
         {result.capacityCapped && (
