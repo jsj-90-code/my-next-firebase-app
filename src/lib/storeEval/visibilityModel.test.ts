@@ -56,11 +56,17 @@ describe("가시성 모형의 학습·검증 경로", () => {
     // This fixture contains only fields read by the training adapter.
     const store = {storeCode:"S1", storeName:"매장", originCandidateCode:"N1", brandType:"블랙라벨", excludedFromModel:false, completedMonths:12,
       pcCount:100, hourlyRate:1200, marketDemand:3000, competitorIp:200, competitivenessScore:3, actualMonthlyRevenueAvg:40000000} as ExistingStore;
-    const locations = [{candidateCode:"N1", visibilityScore:4, inflowRestriction:"강함"}] as LocationEvaluation[];
+    // 2026-09-15 — accessScoreMode가 "visibility-x-preemption"이면 접근성 피처가
+    // log(가시성 × 선점경쟁)이라 **선점경쟁도 있어야 학습에 들어간다.** 없는 표본을 섞으면
+    // 같은 피처 칸에 서로 다른 척도가 들어가므로 가시성과 똑같이 통째로 뺀다.
+    const locations = [{candidateCode:"N1", visibilityScore:4, preemptionScore:3, inflowRestriction:"강함"}] as LocationEvaluation[];
     const trained = buildV61TrainingStores([store], locations, settings);
     expect(trained[0].visibilityScore).toBe(4);
+    expect(trained[0].preemptionScore).toBe(3);
     expect(toEmpiricalSample(trained[0]).revenuePerPc).toBe(500000);
     expect(buildV61TrainingStores([store], [], settings)).toEqual([]);
+    // 선점경쟁만 빠져도 제외된다 — 조용히 척도가 섞이는 것보다 표본을 버리는 쪽이 안전하다.
+    expect(buildV61TrainingStores([store], [{candidateCode:"N1", visibilityScore:4, inflowRestriction:"강함"}] as LocationEvaluation[], settings)).toEqual([]);
     expect(buildV61TrainingStores([{...store, completedMonths:0}], locations, settings)).toEqual([]);
     expect(buildV61TrainingStores([store])).toHaveLength(1);
   });
