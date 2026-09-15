@@ -10,13 +10,13 @@
 // 하락 / 센 경쟁점 신설(대조군) → 9곳 전부 하락.
 //
 // 돌리는 법:
-//   node .local-tools/dump-validation-snapshot.mjs
+//   node scripts/dumpValidationSnapshot.mjs
 //   npx vitest run src/lib/storeEval/competitorMonotonicity.test.ts
 //
 // 왜 중요한가 — 직원이 경쟁점을 하나 더 넣었는데 예상매출이 **올라가면** 그 순간 도구를
 // 못 믿게 된다. 적중률보다 먼저 걸리는 문제다.
 //
-// 재현: node .local-tools/dump-validation-snapshot.mjs
+// 재현: node scripts/dumpValidationSnapshot.mjs
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import { computeCompetitorScores } from "./calc";

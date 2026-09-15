@@ -4,7 +4,7 @@
 //
 // 화면 코드(validation/page.tsx loadValidationData + computed)를 그대로 따라 한다 —
 // 새 산식을 만들지 않는다. 데이터만 admin SDK로 미리 떠둔 스냅샷에서 읽는다:
-//   node .local-tools/dump-validation-snapshot.mjs
+//   node scripts/dumpValidationSnapshot.mjs
 // 스냅샷은 운영 자료라 git에 올라가지 않는다 — 없으면 이 블록 전체를 건너뛴다.
 // 그래서 평소 `npm test`에서는 아무 일도 안 하고, 확인이 필요할 때 스냅샷을 떠서 돌린다.
 import { describe, expect, it } from "vitest";

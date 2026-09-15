@@ -8,7 +8,7 @@
 // 후보를 다시 탐색해서 고르면 같은 함정에 또 빠진다.
 //
 // 돌리는 법:
-//   node .local-tools/dump-validation-snapshot.mjs
+//   node scripts/dumpValidationSnapshot.mjs
 //   npx vitest run src/lib/storeEval/weightsCandidateParity.test.ts
 // 스냅샷이 없으면 건너뛴다(운영 자료라 git에 없다).
 //

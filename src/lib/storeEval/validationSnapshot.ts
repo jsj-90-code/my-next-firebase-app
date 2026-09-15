@@ -49,8 +49,12 @@ export function hasValidationSnapshot(): boolean {
  * 호출부는 `hasValidationSnapshot()`으로 describe/describe.skip을 고르고, 본문에서는 이 함수가
  * 준 값을 그대로 쓰면 된다.
  *
- * 스냅샷을 만드는 방법은 `.local-tools/dump-validation-snapshot.mjs`(gitignore)에 있고, 그 스크립트
- * 소스는 docs/releases/2026-09-13-validation-recovery.md에 보존해뒀다.
+ * 스냅샷은 `node scripts/dumpValidationSnapshot.mjs`로 만든다(읽기 전용, 약 1,200건 읽음).
+ * 2026-09-15까지는 이 도구가 `.local-tools/`(gitignore) 안에 있어서 PC를 옮기면 사라졌고, 그
+ * 바람에 낡은 스냅샷 위에서 테스트가 붉어지는 일이 반복됐다 — 그래서 git으로 옮겼다.
+ *
+ * ⚠️ 테스트가 이 스냅샷 위에서 실패하면 **코드를 의심하기 전에 `fetchedAt`부터 본다.**
+ * 마지막 산식 변경보다 이르면 그 실패는 가짜다.
  */
 export function loadValidationSnapshot<T = ValidationSnapshot>(): T {
   if (!hasValidationSnapshot()) return EMPTY as unknown as T;

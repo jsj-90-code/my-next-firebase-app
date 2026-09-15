@@ -952,7 +952,7 @@ A-3이 "데이터로 판별 불가"로 남겨둔 것을 가렸다. 사용자 확
 - **대시보드 적중률이 재현된다.** 운영 원자료(기존점 41·경쟁점 224·입지평가 50·월매출 850)를
   떠서 검증화면과 같은 경로로 다시 돌린 결과가 `storeEvalSystemStatus/accuracy`와 **1e-6 이내
   일치**. 정식검증군 38곳 · MAPE 9.88% · 중앙값 9.02% · ±10% 52.63% · ±15% 76.32% · ±20% 89.47%.
-  재현: `node .local-tools/dump-validation-snapshot.mjs` 후
+  재현: `node scripts/dumpValidationSnapshot.mjs` 후
   `npx vitest run src/lib/storeEval/storedAccuracyParity.test.ts`.
 - **좌표 이상 0건.** 후보지 9 · 기존점 41 · 경쟁점 224 · 수요거점 884 전수 검사에서 NaN·0,0·
   한국 밖 좌표 없음. 즉 카카오 파싱 수정은 **예방**이지 복구가 아니다.
@@ -1244,7 +1244,7 @@ git pull → npm install(필수, firebase-tools 추가됨) → npm run build.
 ### 그때 돌릴 것 (순서대로)
 
 ```
-node .local-tools/dump-validation-snapshot.mjs          # 운영 자료 스냅샷(읽기 전용)
+node scripts/dumpValidationSnapshot.mjs          # 운영 자료 스냅샷(읽기 전용)
 npx vitest run src/lib/storeEval/storedAccuracyParity.test.ts        # ① 기준선 확인
 npx vitest run src/lib/storeEval/weightsCandidateParity.test.ts      # ② 고정 후보 검정
 npx vitest run src/lib/storeEval/competitorMonotonicity.test.ts      # ③ 방향 문제 확인
