@@ -162,6 +162,38 @@ function parseAdmin(html) {
   return { admiCd: cd[1], admiNm: nm?.[1] ?? "" };
 }
 
+/**
+ * 탭4 HTML의 "성별/연령대별 일평균 유동인구" 표에서 선택 영역 행을 캔다.
+ *
+ * ⚠️ 같은 모양의 표가 주거인구·직장인구에도 있다. 그래서 `<dt>성별/연령대별 일평균 유동인구</dt>`
+ * 를 앵커로 잡고 그 뒤 첫 표만 본다 — 앵커 없이 첫 표를 집으면 조용히 엉뚱한 값이 들어온다.
+ *
+ * 스키마의 floating{R}Male / floating{R}_10s~_60plus 를 그대로 채우는 값이다.
+ */
+function parseDemographics(html) {
+  const anchor = html.indexOf("성별/연령대별 일평균 유동인구");
+  if (anchor === -1) return null;
+  const section = html.slice(anchor, anchor + 20000);
+  const row = section.match(
+    /<th[^>]*rowspan="2"[^>]*>\s*선택 영역\s*<\/th>[\s\S]{0,200}?<td[^>]*rowspan="2"[^>]*>([\d,]+)<\/td>((?:[\s\S]{0,40}?<td[^>]*>[\d,.]+<\/td>){8})/,
+  );
+  if (!row) return null;
+  const num = (s) => Number(String(s).replace(/,/g, ""));
+  const cells = [...row[2].matchAll(/<td[^>]*>([\d,.]+)<\/td>/g)].map((m) => num(m[1]));
+  if (cells.length < 8) return null;
+  return {
+    total: num(row[1]),
+    male: cells[0],
+    female: cells[1],
+    age10s: cells[2],
+    age20s: cells[3],
+    age30s: cells[4],
+    age40s: cells[5],
+    age50s: cells[6],
+    age60plus: cells[7],
+  };
+}
+
 /** 탭4 HTML에서 월 라벨과 계열별 값을 캔다. "선택 영역"이 우리가 준 반경 원이다. */
 function parseFlowPopulation(html) {
   const months = [...html.matchAll(/flowByMnth\.push\("([^"]*)"\)/g)].map((m) => m[1]);
@@ -235,8 +267,10 @@ let failed = 0;
 
 for (const t of targets) {
   const key = `${t.kind}:${t.code}`;
+  // 연령·성별 표는 2026-09-15에 나중에 추가했다. 그 전에 받은 지점은 selected만 있고
+  // demographics가 없으므로 다시 받는다 — 저장해둔 analyNo를 그대로 쓰니 캡처는 다시 안 한다.
   const already = out.sites[key];
-  if (already && RADII.every((r) => already.radii?.[r]?.selected)) {
+  if (already && RADII.every((r) => already.radii?.[r]?.selected && already.radii?.[r]?.demographics)) {
     skipped++;
     continue;
   }
@@ -271,7 +305,7 @@ for (const t of targets) {
     }
 
     for (const radius of RADII) {
-      if (record.radii[radius]?.selected) continue;
+      if (record.radii[radius]?.selected && record.radii[radius]?.demographics) continue;
       let entry = record.radii[radius];
       if (!entry?.analyNo) {
         entry = await issueAnalyNo({ lat: t.lat, lng: t.lng, tm, radius });
@@ -288,7 +322,8 @@ for (const t of targets) {
         xtLoginId: "",
       });
       const parsed = parseFlowPopulation(tab4);
-      record.radii[radius] = { ...entry, ...parsed };
+      const demographics = parseDemographics(tab4);
+      record.radii[radius] = { ...entry, ...parsed, demographics };
       await sleep(DELAY_MS);
     }
 
