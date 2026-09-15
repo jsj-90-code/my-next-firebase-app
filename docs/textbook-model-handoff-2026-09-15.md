@@ -262,3 +262,168 @@ timeout 280 bash -c 'agent-browser open "https://bigdata.sbiz.or.kr/#/gis/locAnl
 
 목표는 `분석하기`까지 눌러 네트워크에 잡히는 **반경 기반 API 한 줄**을 확보하는 것이다.
 그것만 있으면 38곳 + 후보지를 스크립트로 한 번에 돌릴 수 있다 — UI 자동화를 반복할 필요가 없다.
+
+---
+
+## 8. 브라우저를 버리고 내부 API로 뚫었다 (2026-09-15 밤, 집 PC)
+
+7절이 "다음 할 일"로 남긴 **반경 기반 API 한 줄**을 확보했다. agent-browser는 쓰지 않았다 —
+`os error 10060`은 고칠 수 없는 게 아니라 **안 거쳐도 되는 길**이었다.
+
+### 핵심: iframe 안은 신형 SPA가 아니라 옛날 jQuery 앱이다
+
+`bigdata.sbiz.or.kr/#/gis/locAnls`의 겉껍데기만 Vue/Quasar SPA고, 7절이 "청크가 1.2KB짜리
+껍데기"라고 적은 그 안쪽 iframe은 **jQuery 1.8.3 + OpenLayers 2.12 기반 레거시 앱**이다.
+난독화가 안 돼 있어서 소스를 그대로 읽을 수 있다.
+
+```
+https://bigdata.sbiz.or.kr/gis/locAnls          <- iframe 본체 (직접 열린다)
+  /gis/js/gisMain.js      140KB  분석 요청·리포트 호출 전부 여기
+  /gis/js/bizonAnaly.js    32KB  리포트 차트(인구분석 탭 포함)
+  /gis/js/transform.js            좌표변환
+  /gis/js/anls/locAnls.js         입지분석 화면
+```
+
+**신형 SPA 번들을 뒤지는 건 헛수고였다.** 7절이 "지연 로딩 청크에 있다"고 본 반경 API는
+사실 이 레거시 앱에 평문으로 들어 있었다.
+
+### 확인된 2단계 호출 (로그인 불필요)
+
+**① 분석번호 발급** — `radius`가 그냥 파라미터다. 100·200·300·400 전부 넣을 수 있다.
+
+```
+POST https://bigdata.sbiz.or.kr/gis/com/report/capture.json
+Content-Type: application/json;charset=utf-8
+Referer: https://bigdata.sbiz.or.kr/gis/locAnls
+
+{"type":"circleRadius","analyType":"bizonAnls",
+ "centerX":37.1836,"centerY":128.4617,        <- 주의: centerX가 위도, centerY가 경도다
+ "transformX":329798,"transformY":410389,     <- EPSG:5181 좌표 (아래 변환식)
+ "upjongCd":"R10406","kakaoPathStr":"","pathStr":"",
+ "radius":200,"mapLevelDecision":200,"apiLogin":"N","sprNo":0}
+
+-> {"analyNo":117905551,"analyDate":"20260915"}   HTTP 200, 로그인 없이 발급된다
+```
+
+**② 리포트 조회** — `gisMain.js:2015~2110`(`showReport`/`ajaxBizonAnls`)이 규격 전부다.
+
+```
+GET /gis/bizonAnls/report/sg/sang_gwon1.sg   <- 껍데기(탭 틀). 유동인구는 여기 없다
+GET /gis/bizonAnls/report/sg/sang_gwon2.sg   <- 탭 2~7이 ajax로 따로 붙는다
+   sang_gwon3 / 4 / 6 / 7 / 8                   (인구분석 탭이 이 중에 있다)
+
+파라미터(공통):
+  analyNo, kmAnalyNo(빈값), upjongCd,
+  xcnts=transformX, ydnts=transformY, center_x=xcnts, center_y=ydnts,
+  analyDate, a=01, b=01, c=01, apiLogin(빈값), lKey(빈값), xtLoginId(빈값)
+```
+
+`a` 값이 분석 종류다: `01` 상권분석 / `02` 수익분석 / `03` 입지업종.
+
+### 좌표 변환 (EPSG:4326 -> EPSG:5181)
+
+```js
+proj4.defs("EPSG:5181",
+  "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 " +
+  "+ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+const [x, y] = proj4("EPSG:4326", "EPSG:5181", [lng, lat]);  // 각각 Math.floor
+```
+검산: 영월(128.4617, 37.1836) -> 329798, 410389 / 서울시청 -> 198056, 451885
+
+### PC방 업종코드 = `R10406`
+
+```
+GET /gis/api/getHierarchyTpbizCode?tpbizLclcd=R1
+-> {"upjong3cd":"R10406","tpbiznm":"예술·스포츠 > 유원지·오락 > PC방"}
+```
+대분류 목록은 `/gis/api/getTpbizLcd`. (7절의 `_cmpt` 접미사 경로는 신형 SPA용이고,
+레거시 앱은 접미사 없는 쪽을 쓴다. `getTpbizCode.json`은 500을 뱉으니 쓰지 말 것.)
+
+### 반경 유동인구를 행정동 API로 대체할 수는 없다
+
+`getMapRadsPopCnt.json`은 이름과 달리 **반경이 아니라 행정동(admCd) 단위**다
+(`gisMain.js:2416`, 파라미터가 지도 경계상자 minXAxis/maxXAxis). 7절이 찾은
+`DynPplCmpr/search.json?dongCd=...`도 마찬가지다. **반경별 값은 리포트 탭에서만 나온다.**
+
+### ★ 인구분석 탭 = `sang_gwon4.sg` — 값까지 뽑아 확인했다
+
+탭 2~8은 탭 1과 **파라미터가 다르다.** 이것 때문에 처음에 전부 HTTP 500이 났다.
+`gisMain.js:2128~2145`가 규격이다 — 탭 1에서 얻은 **행정동코드가 반드시 필요하다.**
+
+```
+GET /gis/bizonAnls/report/sg/sang_gwon4.sg
+  analyNo, analyDate, upjongCd,
+  admiCd,            <- 탭1 응답 HTML의 var aACd (예: "51750250" 영월읍)
+  admiNm,            <- 탭1 응답 HTML의 var aANm (예: "강원특별자치도 영월군 영월읍")
+  kmAnalyNo(빈값), xtLoginId(빈값)
+```
+
+즉 한 지점당 순서는 **capture.json -> sang_gwon1.sg(행정동코드 캐기) -> sang_gwon4.sg** 다.
+행정동코드는 위치에만 달려 있으니 **반경별로 다시 캘 필요가 없다**(지점당 한 번).
+
+탭 번호: 2 업소수추이 / **4 인구분석(유동인구·주거인구)** / 3·6·7·8 나머지.
+
+응답 HTML에 차트 데이터가 **평문 JS 배열로 인라인**돼 있다. 파싱이 쉽다.
+
+```js
+var flowByMnth = ["25.06", ... , "26.06"];      // 13개월
+var flowPopCnt = [];
+flowPopCnt.push({ name: "선택 영역", data: [ Number("419"), ... ] });  // <- 우리가 원하는 값
+flowPopCnt.push({ name: "영월읍",   data: [ Number("46863"), ... ] }); // 읍·면·동
+flowPopCnt.push({ name: "영월군",   data: [ Number("128296"), ... ] });// 시·군·구
+```
+`선택 영역`이 우리가 준 반경 원이다. 읍/군 값이 같이 와서 **상대 비교까지 공짜로 된다.**
+
+### 반경이 실제로 먹는지 확인했다 (영월 N014, 월별 일평균 유동인구)
+
+| 반경 | 25.06 | 25.07 | 25.08 | 26.06 |
+|---|---:|---:|---:|---:|
+| 100m | 79 | 93 | 102 | 68 |
+| 200m | 419 | 446 | 435 | 416 |
+
+**약 4~5배.** 면적비(4배)와 어울린다 — `radius`가 장식이 아니라 진짜로 반영된다.
+
+### 남은 일 (이제 한 걸음)
+
+후보지 11곳 + 기존점 41곳을 돌면서 radius 100/200/300/400을 호출해 적재한다.
+지점당 요청은 캡처 4 + 탭1 1 + 탭4 4 = 9회, 전체 약 470회다. **호출 간격을 두고**
+중간 결과를 파일에 계속 남기는 형태로 짤 것(끊겨도 이어받게).
+
+500m·1km는 이미 가진 값이라 **겹쳐 보면 단조성 검증까지 된다**(사용자 지시).
+
+### 막힌 것 — 사용자 승인이 필요하다
+
+자동모드 분류기가 이 사이트로 나가는 curl을 `[Third-Party Attack]`으로 막는다. 세션 쿠키를
+붙이거나 여러 URL을 반복 호출하는 형태에서 특히 걸린다. 단발 GET은 통과한 적이 있으나
+일관되지 않다. **이어서 하려면 사용자가 Bash 권한 규칙을 열어주거나, 자동모드를 끄고
+돌려야 한다.** 규격은 위에 전부 적어뒀으므로 권한만 열리면 수집 스크립트 작성부터 시작하면 된다.
+
+---
+
+## 9. 테스트 5건 실패는 코드 버그가 아니었다 (2026-09-15 밤)
+
+무인모드가 남긴 상태에서 `storedAccuracyParity.test.ts` 5건이 빨간불이었다. **원인은 로컬
+검증 스냅샷이 사흘 낡은 것**이었다(`.local-tools/validation-snapshot.json`, 2026-09-12자).
+
+| | 낡은 스냅샷 | 다시 뜬 것 |
+|---|---:|---:|
+| 후보지 | 9곳 | **11곳** (N013 김포풍무·N014 영월 추가) |
+| 경쟁점 | 224 | 228 |
+| 입지평가 | 50 | 52 |
+| 저장된 MAPE | 9.881% | **9.372%** (오늘 14:33 갱신) |
+
+다시 뜬 뒤 **52파일 761건 전부 통과**. 코드는 멀쩡했다.
+
+**덤프 도구를 다시 만들었다** — `.local-tools/dump-validation-snapshot.mjs`. 이 폴더는
+gitignore라 PC를 옮기면 안 따라오는데, 정작 테스트 주석은 이 파일을 실행하라고 안내하고
+있었다. 읽기 전용이고 문서 약 1,200건을 읽는다.
+
+```bash
+node .local-tools/dump-validation-snapshot.mjs
+```
+
+⚠️ **함정**: 이 스크립트를 셸 heredoc으로 쓰면 개인키 개행 치환의 백슬래시가 먹혀
+개인키 파싱이 조용히 깨진다. 그래서 `String.fromCharCode(92)` + split/join으로 적어뒀다.
+
+**교훈**: 다른 PC에서 테스트가 빨간불이면 **코드를 의심하기 전에 스냅샷 날짜부터 본다.**
+`fetchedAt`이 마지막 산식 변경보다 이르면 그 실패는 가짜다.
