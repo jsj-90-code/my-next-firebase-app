@@ -91,6 +91,26 @@ export type CandidateInput = {
   floating500_40s: number | null;
   floating500_50s: number | null;
   floating500_60plus: number | null;
+  // 2026-09-15 추가 — 유동인구 100m/200m. 소상공인365에서 반경을 바꿔 다시 모은 값이다.
+  // 왜 필요한가: PC방 이용은 도보 몇 분 안에서 갈린다는 가정을 실제로 재보려는 것이다.
+  // 500m만 있을 땐 그 가정을 검정할 방법이 없었다(교과서식 산식 재설계, /store-eval/lab).
+  // 아직 안 모은 매장이 많아 전부 null 허용이다 — 없으면 그 반경은 화면에서 못 고른다.
+  floating100Avg?: number | null;
+  floating100Male?: number | null;
+  floating100_10s?: number | null;
+  floating100_20s?: number | null;
+  floating100_30s?: number | null;
+  floating100_40s?: number | null;
+  floating100_50s?: number | null;
+  floating100_60plus?: number | null;
+  floating200Avg?: number | null;
+  floating200Male?: number | null;
+  floating200_10s?: number | null;
+  floating200_20s?: number | null;
+  floating200_30s?: number | null;
+  floating200_40s?: number | null;
+  floating200_50s?: number | null;
+  floating200_60plus?: number | null;
 
   // 2026-08-27 — 인허가 PC방업소수(500m/1km)는 삭제했다(사용자 확인: 계산에도 안 쓰이고
   // 소상공인365 자동추출이라 직접 검증도 안 된 값이라 "실영업"만 남기면 충분함). 실영업(직접
@@ -791,6 +811,26 @@ export type ExistingStore = {
   floating500_40s: number | null;
   floating500_50s: number | null;
   floating500_60plus: number | null;
+  // 2026-09-15 추가 — 유동인구 100m/200m. 소상공인365에서 반경을 바꿔 다시 모은 값이다.
+  // 왜 필요한가: PC방 이용은 도보 몇 분 안에서 갈린다는 가정을 실제로 재보려는 것이다.
+  // 500m만 있을 땐 그 가정을 검정할 방법이 없었다(교과서식 산식 재설계, /store-eval/lab).
+  // 아직 안 모은 매장이 많아 전부 null 허용이다 — 없으면 그 반경은 화면에서 못 고른다.
+  floating100Avg?: number | null;
+  floating100Male?: number | null;
+  floating100_10s?: number | null;
+  floating100_20s?: number | null;
+  floating100_30s?: number | null;
+  floating100_40s?: number | null;
+  floating100_50s?: number | null;
+  floating100_60plus?: number | null;
+  floating200Avg?: number | null;
+  floating200Male?: number | null;
+  floating200_10s?: number | null;
+  floating200_20s?: number | null;
+  floating200_30s?: number | null;
+  floating200_40s?: number | null;
+  floating200_50s?: number | null;
+  floating200_60plus?: number | null;
   operatingPcStores500m: number | null;
 
   // 2026-08-21 추가 — "후보지평가 → 오픈 → 실제매출로 검증" 흐름을 실제로 잇기 위한 필드.

@@ -203,6 +203,9 @@ const AGE_BANDS: { suffix: string; label: string; matches: string[] }[] = [
   { suffix: "80plus", label: "80세이상", matches: ["80세이상", "80세+", "80대이상"] },
 ];
 
+/** 소상공인365에서 고를 수 있는 반경. 2026-09-15에 100·200을 추가했다. */
+export type MarketRadiusKey = "100" | "200" | "500" | "1km";
+
 const FLOATING_DECADE_BANDS: { suffix: string; label: string; matches: string[] }[] = [
   { suffix: "10s", label: "10대", matches: ["10대"] },
   { suffix: "20s", label: "20대", matches: ["20대"] },
@@ -388,13 +391,17 @@ export function parseSosangongin365TrendLatest(text: string, rowLabelHint?: stri
 // 2026-08-27 — 유동인구(1km)는 삭제했다(사용자 확인: 반경이 넓어 실제 상권 밖 유동인구까지 잡혀서
 // 수요 계산에 못 씀). 500m 유동인구만 계속 자동추출한다. floating500Female도 같이 뺐다 — 수요
 // 계산은 남성비율만 쓰고 여성은 1-남성비율로 자동 계산돼서 굳이 따로 저장할 필요가 없었다.
-function floatingSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
+// 2026-09-15 — 반경을 100/200까지 열었다. 소상공인365에서 그 반경이 선택 가능하다는 것을
+// 사용자가 확인했다. 필드 이름만 접두어가 달라지고 파싱 규칙은 같다.
+// 1km 유동은 원래부터 안 쓴다(이 사이트 리포트에 그 조합이 없다).
+function floatingSpecs(radiusKey: MarketRadiusKey, displayRadius: string): MarketFieldSpec[] {
   if (radiusKey === "1km") return [];
+  const prefix = `floating${radiusKey}`;
   return [
-    { key: "floating500Avg", displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["유동인구:전체"], kind: "count" },
-    { key: "floating500Male", displayLabel: `유동인구 남(${displayRadius})`, matchLabels: ["유동인구:남성"], kind: "count" },
+    { key: `${prefix}Avg`, displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["유동인구:전체"], kind: "count" },
+    { key: `${prefix}Male`, displayLabel: `유동인구 남(${displayRadius})`, matchLabels: ["유동인구:남성"], kind: "count" },
     ...FLOATING_DECADE_BANDS.map((b) => ({
-      key: `floating500_${b.suffix}`,
+      key: `${prefix}_${b.suffix}`,
       displayLabel: `유동 ${b.label}(${displayRadius})`,
       matchLabels: b.matches.map((m) => `유동인구:${m}`),
       kind: "count" as const,
@@ -402,8 +409,8 @@ function floatingSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketF
   ];
 }
 
-function employSpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
-  const prefix = radiusKey === "500" ? "employ500" : "employ1km";
+function employSpecs(radiusKey: MarketRadiusKey, displayRadius: string): MarketFieldSpec[] {
+  const prefix = radiusKey === "1km" ? "employ1km" : `employ${radiusKey}`;
   return [
     { key: `${prefix}Total`, displayLabel: `직장인구 전체(${displayRadius})`, matchLabels: ["직장인구:전체"], kind: "count" },
     { key: `${prefix}Male`, displayLabel: `직장인구 남(${displayRadius})`, matchLabels: ["직장인구:남성"], kind: "count" },
@@ -434,7 +441,7 @@ const SB365_SCHOOL_CATEGORIES: { key: string; matches: string[] }[] = [
 // 현황" 표만 다른 표와 완전히 다른 모양이다 — "선택 영역" 표기가 아예 없고, 노선명+역명이 라벨로
 // 나오고("수인선 호구포역"), 그 뒤로 최근 3개년 승하차 인원이 이어진다. 반경 안에 역이 여러 개면
 // 행이 여러 줄 나올 수 있어(안 겪어봤지만 구조상 가능) 전부 더한다. 최신 연도(마지막 칸)만 쓴다.
-function facilitySubwaySpecs(radiusKey: "500" | "1km", displayRadius: string): MarketFieldSpec[] {
+function facilitySubwaySpecs(radiusKey: MarketRadiusKey, displayRadius: string): MarketFieldSpec[] {
   return [
     {
       key: radiusKey === "500" ? "facility500SubwayRiders" : "facility1kmSubwayRiders",
@@ -559,7 +566,7 @@ export function parseSosangongin365FullReport(text: string): LabelValuePair[] {
 export type Sosangongin365TableVariant = {
   key: "전체";
   label: string;
-  buildSpecs: (radiusKey: "500" | "1km", displayRadius: string) => MarketFieldSpec[];
+  buildSpecs: (radiusKey: MarketRadiusKey, displayRadius: string) => MarketFieldSpec[];
   extract: (text: string) => LabelValuePair[];
 };
 

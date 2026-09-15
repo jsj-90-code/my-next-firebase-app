@@ -106,9 +106,24 @@ async function loadLabData(): Promise<Loaded | null> {
           age30s: sr.age1km_30_39 ?? 0, age40s: sr.age1km_40_49 ?? 0, age50s: sr.age1km_50_59 ?? 0,
           age60plus: (sr.age1km_60_69 ?? 0) + (sr.age1km_70_79 ?? 0) + (sr.age1km_80plus ?? 0),
         },
-        // 유동 100m·200m는 아직 수집된 적이 없다 — 채워지면 여기에 붙인다.
-        floatingByRadius: { 500: s.floating500Avg },
+        // 2026-09-15 — 100m·200m 수집 경로를 열었다(소상공인365 반경 선택). 아직 안 모은
+        // 매장은 null이라 그 반경을 고르면 "자료없음"으로 빠진다.
+        floatingByRadius: {
+          100: s.floating100Avg ?? null,
+          200: s.floating200Avg ?? null,
+          500: s.floating500Avg,
+        },
         floatingAgesByRadius: {
+          100: s.floating100Avg == null ? null : {
+            age10s: s.floating100_10s ?? 0, age20s: s.floating100_20s ?? 0,
+            age30s: s.floating100_30s ?? 0, age40s: s.floating100_40s ?? 0,
+            age50s: s.floating100_50s ?? 0, age60plus: s.floating100_60plus ?? 0,
+          },
+          200: s.floating200Avg == null ? null : {
+            age10s: s.floating200_10s ?? 0, age20s: s.floating200_20s ?? 0,
+            age30s: s.floating200_30s ?? 0, age40s: s.floating200_40s ?? 0,
+            age50s: s.floating200_50s ?? 0, age60plus: s.floating200_60plus ?? 0,
+          },
           500: {
             age10s: s.floating500_10s ?? 0, age20s: s.floating500_20s ?? 0,
             age30s: s.floating500_30s ?? 0, age40s: s.floating500_40s ?? 0,
@@ -151,6 +166,13 @@ export default function LabPage() {
     return () => { alive = false; };
   }, []);
 
+  // 반경별로 자료가 몇 곳이나 모였는지 — 반경 버튼 아래에 그대로 보여준다.
+  const counts = useMemo(() => {
+    const rs = data?.rows ?? [];
+    const n = (r: 100 | 200 | 500) => rs.filter((x) => x.input.floatingByRadius[r] != null).length;
+    return { f100: n(100), f200: n(200), f500: n(500), total: rs.length };
+  }, [data]);
+
   const score: TextbookScore | null = useMemo(
     () => (data?.rows.length ? scoreTextbook(data.rows, p) : null),
     [data, p],
@@ -186,7 +208,7 @@ export default function LabPage() {
       {score && data && (
         <>
           <ScoreBoard score={score} current={data.current} />
-          <Controls p={p} set={set} setAge={setAge} />
+          <Controls p={p} set={set} setAge={setAge} counts={counts} />
           <StoreTable score={score} />
         </>
       )}
@@ -221,9 +243,10 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
 }
 
 function Controls({
-  p, set, setAge,
+  p, set, setAge, counts,
 }: {
   p: TextbookParams;
+  counts: { f100: number; f200: number; f500: number; total: number };
   set: <K extends keyof TextbookParams>(k: K, v: TextbookParams[K]) => void;
   setAge: (k: keyof TextbookParams["ageWeights"], v: number) => void;
 }) {
@@ -239,9 +262,8 @@ function Controls({
 
         <Choice label="유동 반경" value={String(p.floatingRadius)}
           options={[["100", "100m"], ["200", "200m"], ["500", "500m"]]}
-          disabled={["100", "200"]}
           onChange={(v) => set("floatingRadius", Number(v) as FloatingRadius)}
-          hint="100m·200m는 아직 수집된 적이 없습니다. 소상공인365에서 반경을 바꿔 다시 모아야 합니다." />
+          hint={`수집된 매장 — 100m ${counts.f100}곳 · 200m ${counts.f200}곳 · 500m ${counts.f500}곳 (표본 ${counts.total}곳). 아직 안 모은 반경을 고르면 그 매장은 계산에서 빠집니다.`} />
 
         <Slider label="유동 계수" value={p.floatingFactor} min={0} max={1} step={0.05}
           onChange={(v) => set("floatingFactor", v)}

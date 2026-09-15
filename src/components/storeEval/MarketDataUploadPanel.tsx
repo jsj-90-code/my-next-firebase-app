@@ -12,6 +12,7 @@ import {
   parsePastedTableSectioned,
   type ExtractedFieldDraft,
   type MarketFieldSpec,
+  type MarketRadiusKey,
   type Sosangongin365TableVariant,
 } from "@/lib/storeEval/marketDataExtract";
 import { extractLabelValuePairsFromFile, hashFile } from "@/lib/storeEval/spreadsheetPairs";
@@ -19,7 +20,12 @@ import type { MarketDataSourceType, MarketDataUpload } from "@/lib/storeEval/typ
 
 type EditableDraft = ExtractedFieldDraft & { checked: boolean; editedValue: string };
 
-const RADIUS_OPTIONS: { key: "500" | "1km"; label: string }[] = [
+// 2026-09-15 — 100m·200m를 열었다(사용자 확인: 소상공인365에서 선택 가능). 유동인구가 도보
+// 몇 분 안에서 갈리는지 재보려면 그 반경 자료가 있어야 하는데, 500m만 있을 땐 그 가정을
+// 검정할 방법이 없었다(교과서식 산식 재설계, /store-eval/lab).
+const RADIUS_OPTIONS: { key: MarketRadiusKey; label: string }[] = [
+  { key: "100", label: "100m" },
+  { key: "200", label: "200m" },
   { key: "500", label: "500m" },
   { key: "1km", label: "1km" },
 ];
@@ -75,7 +81,7 @@ export function MarketDataUploadPanel({
   const [busy, setBusy] = useState(false);
   const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [variantKey, setVariantKey] = useState<string | null>(tableVariants?.[0]?.key ?? null);
-  const [radiusKey, setRadiusKey] = useState<"500" | "1km">("500");
+  const [radiusKey, setRadiusKey] = useState<MarketRadiusKey>("500");
 
   const activeVariant = tableVariants?.find((v) => v.key === variantKey) ?? null;
   const radiusLabel = RADIUS_OPTIONS.find((r) => r.key === radiusKey)!.label;
