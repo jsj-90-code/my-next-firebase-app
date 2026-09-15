@@ -79,6 +79,7 @@ src/**/_*.test.ts
 !src/lib/storeEval/_textbookSweep.test.ts
 !src/lib/storeEval/_newSignalsScan.test.ts
 !src/lib/storeEval/_householdSignalTest.test.ts
+!src/lib/storeEval/_effectiveTradeArea.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
