@@ -1212,4 +1212,191 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     }
     expect(set.length).toBeGreaterThan(20);
   });
+
+  // ── (14) 동선 방해·가시성 — 로드뷰 판정이 관문을 통과하나 (2026-09-17) ──────
+  //
+  // 사용자: "그래서 지금 동선방해 가시성 작업하면 되는겨?"
+  //
+  // 값은 2026-09-16에 로드뷰 자동 캡처 + AI 예/아니오 판정으로 52곳 중 49곳을 채웠다.
+  // 계수가 0이라 지금은 계산에 안 들어간다. 여기서 켜 보고 관문에 건다.
+  //
+  // 자를 앞 항목들과 **똑같이** 쓴다 — 실측 점유율 대비, LOO · 5겹 · 무작위 대조군,
+  // MAPE와 r 두 기준. 그래야 접근성 κ(p=0.046)·중심도 ν(p=0.002)와 견줄 수 있다.
+  //
+  // ⚠️ 기준선은 "입지 없음"이 아니라 **중심도·접근성을 이미 켠 상태**다. 그 둘이 이미
+  //    이 신호를 먹고 있으면 여기서 아무것도 안 나와야 정상이다(유동 방향이 그랬다).
+  //
+  // ⚠️ 사람이 표본을 대조하기 전이다. 여기서 못 넘으면 대조하는 품을 안 들여도 된다.
+  it("(14) 동선 방해·가시성 — 로드뷰 판정이 관문을 통과하나", () => {
+    const RV = ".local-tools/roadview-judgments.json";
+    if (!existsSync(RV)) { console.log("\n로드뷰 판정 자료가 없다."); return; }
+    const raw = JSON.parse(readFileSync(RV, "utf8"));
+    const BLOCK = ["block1", "block2", "block3", "block4"], VIS = ["vis1", "vis2", "vis3"];
+    // 문항은 전부 "예=나쁨"이라 뒤집는다(writeRoadviewJudgmentsToFirestore.mjs와 같은 규칙).
+    const judged = new Map<string, { fb: number; vi: number }>();
+    for (const s of raw.sites as any[]) {
+      if (!String(s.key).startsWith("existing_")) continue;
+      judged.set(String(s.key).replace("existing_", ""), {
+        fb: 5 - BLOCK.filter((k) => s[k] === true).length,
+        vi: 4 - VIS.filter((k) => s[k] === true).length,
+      });
+    }
+
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const key = (r: Row) => `existing:${r.store.storeCode}`;
+    const floAvg = (r: Row, rad: number): number | null => {
+      const sel = F[key(r)]?.radii?.[String(rad)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    const centFlo = (r: Row) => {
+      const i = floAvg(r, 300), o = floAvg(r, 1000);
+      return i == null || o == null || !(o > 0) ? null : (i / o) * (1000 / 300) ** 2;
+    };
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+
+    const ok = cmp.filter((r) =>
+      judged.has(r.store.storeCode) && centFlo(r) != null && r.floorScore != null);
+    if (ok.length < 15) { console.log(`\n표본이 ${ok.length}곳뿐이라 관문을 못 건다.`); return; }
+    const sig = 2 / Math.sqrt(ok.length);
+
+    console.log(`\n══ (14) 동선 방해·가시성 ══`);
+    console.log(`경쟁상권 ${cmp.length}곳 중 판정 있는 곳 ${ok.length}곳 · 유의선 ${sig.toFixed(3)}`);
+
+    // 1) 값이 실제로 몇 가지나 쓰이나 — (1)의 교훈. 값이 2~3개면 배점을 바꿔도 소용없다.
+    for (const [label, get] of [["동선 방해", (r: Row) => judged.get(r.store.storeCode)!.fb],
+      ["가시성", (r: Row) => judged.get(r.store.storeCode)!.vi]] as const) {
+      const v = ok.map(get);
+      const tally = [...new Set(v)].sort((a, b) => a - b).map((x) => `${x}점:${v.filter((y) => y === x).length}곳`).join(" ");
+      const y = ok.map((r) => r.shareObs), t = ok.map((r) => r.t);
+      const r1 = pear(v, y), r2 = partial(v, y, t);
+      console.log(`  ${label.padEnd(8)} 쓰인값 ${new Set(v).size}가지 [${tally}]`);
+      console.log(`  ${" ".padEnd(8)} 실측점유율 r=${r1.toFixed(3)}${Math.abs(r1) > sig ? "*" : " "} · 시점통제 ${r2.toFixed(3)}${Math.abs(r2) > sig ? "*" : " "}`);
+    }
+
+    // 1-b) 문항 하나하나가 뜻대로 재고 있나.
+    //
+    // 합산 점수의 부호가 뜻과 반대로 나왔다. 합쳐 놓으면 어느 문항이 범인인지 안 보이므로
+    // 문항별로 실측 점유율과 대본다. **"예"가 나쁨이면 상관이 음수여야 정상이다.**
+    // 양수로 나오는 문항은 나쁨을 재는 게 아니라 다른 것을 재고 있다.
+    const Q: Record<string, string> = raw.questions ?? {};
+    const siteByCode = new Map<string, any>();
+    for (const s of raw.sites as any[]) {
+      if (String(s.key).startsWith("existing_")) siteByCode.set(String(s.key).replace("existing_", ""), s);
+    }
+    console.log(`\n  [문항별] "예"가 나쁨이므로 **음(-)이 정상**이다. 양(+)이면 뜻대로 안 재는 것이다.`);
+    for (const q of [...BLOCK, ...VIS]) {
+      const sel = ok.filter((r) => typeof siteByCode.get(r.store.storeCode)?.[q] === "boolean");
+      if (sel.length < 10) { console.log(`  ${q.padEnd(8)} 판정 ${sel.length}곳뿐 — 건너뜀 (선행조건 미충족)`); continue; }
+      const yes = sel.map((r) => (siteByCode.get(r.store.storeCode)[q] === true ? 1 : 0));
+      const nYes = yes.filter((v) => v === 1).length;
+      if (nYes === 0 || nYes === sel.length) { console.log(`  ${q.padEnd(8)} 전부 같은 답(예 ${nYes}곳) — 변별 없음`); continue; }
+      const rr = pear(yes, sel.map((r) => r.shareObs));
+      const s2 = 2 / Math.sqrt(sel.length);
+      console.log(`  ${q.padEnd(8)} 예 ${String(nYes).padStart(2)}곳/${sel.length}곳  실측점유율 r=${rr.toFixed(3)}`
+        + `${Math.abs(rr) > s2 ? "*" : " "}  ${rr > 0 && Math.abs(rr) > s2 ? "<- ⚠️ 부호가 뒤집혔다" : ""}`);
+      console.log(`  ${" ".padEnd(8)} "${Q[q] ?? ""}"`);
+    }
+
+    // 2) 중심도·접근성을 이미 켠 뒤의 **잔차**와 붙나 — 앞 항이 신호를 먹었는지 본다.
+    const cRef = P.locationReferences.centrality, fRef = P.locationReferences.access;
+    const baseOf = (r: Row) =>
+      qualShare(r)
+      * Math.pow(centFlo(r)! / cRef, P.locationExponents.centrality)
+      * Math.pow(r.floorScore! / fRef, P.locationExponents.access);
+    const resid = ok.map((r) => Math.log(r.shareObs / baseOf(r)));
+    for (const [label, get] of [["동선 방해", (r: Row) => judged.get(r.store.storeCode)!.fb],
+      ["가시성", (r: Row) => judged.get(r.store.storeCode)!.vi]] as const) {
+      const rr = pear(ok.map(get), resid);
+      console.log(`  ${label} ↔ (중심도·접근성 켠 뒤) 잔차   r=${rr.toFixed(3)}${Math.abs(rr) > sig ? "*  <- 남는 신호가 있다" : "   <- 앞 항이 이미 먹었다"}`);
+    }
+
+    // 3) 관문 — 접근성 κ·중심도 ν와 **같은 자**로 건다.
+    const gm = (a: number[]) => Math.exp(mean(a.map(Math.log)));
+    const fbRef = gm(ok.map((r) => judged.get(r.store.storeCode)!.fb));
+    const viRef = gm(ok.map((r) => judged.get(r.store.storeCode)!.vi));
+    console.log(`  기준값(기하평균) 동선 ${fbRef.toFixed(2)} · 가시성 ${viRef.toFixed(2)}`);
+
+    type Pt = { base: number; fb: number; vi: number; obs: number };
+    const pts: Pt[] = ok.map((r) => ({
+      base: baseOf(r), fb: judged.get(r.store.storeCode)!.fb,
+      vi: judged.get(r.store.storeCode)!.vi, obs: r.shareObs,
+    }));
+    // ⚠️ 음수 지수까지 훑는다. 동선 방해가 실측 점유율과 **음(-)의 상관**으로 나와서,
+    //    양수만 훑으면 "최선이 0"이라는 잘못된 답이 나온다. 음수가 이기면 그건
+    //    "방해가 적을수록 점유율이 낮다"는 뜻이라 **뜻이 뒤집힌 것**이고, 채택이 아니라
+    //    교란을 의심해야 하는 신호다. 값은 재되 해석은 따로 한다.
+    const EX = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 1.5];
+    const predE = (p: Pt, a: number, b: number) =>
+      p.base * Math.pow(p.fb / fbRef, a) * Math.pow(p.vi / viRef, b);
+    const mapeE = (s: Pt[], a: number, b: number) => mean(s.map((p) => Math.abs(predE(p, a, b) / p.obs - 1)));
+    const corrE = (s: Pt[], a: number, b: number) => pear(s.map((p) => predE(p, a, b)), s.map((p) => p.obs));
+    const pickE = (s: Pt[], crit: "mape" | "r") => {
+      let best = { a: 0, b: 0, v: Infinity };
+      for (const a of EX) for (const b of EX) {
+        const v = crit === "mape" ? mapeE(s, a, b) : -corrE(s, a, b);
+        if (v < best.v) best = { a, b, v };
+      }
+      return best;
+    };
+
+    console.log(`\n  [지수 훑기] 기준선 a=0·b=0 -> MAPE ${(mapeE(pts, 0, 0) * 100).toFixed(2)}% · r ${corrE(pts, 0, 0).toFixed(3)}`);
+    for (const a of EX) {
+      const line = EX.map((b) => `b=${b} ${(mapeE(pts, a, b) * 100).toFixed(1)}%/${corrE(pts, a, b).toFixed(2)}`).join("  ");
+      console.log(`    a=${a}  ${line}`);
+    }
+    for (const crit of ["mape", "r"] as const) {
+      const p = pickE(pts, crit);
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"} 기준 최선] 동선 a=${p.a} · 가시성 b=${p.b}`
+        + `  -> MAPE ${(mapeE(pts, p.a, p.b) * 100).toFixed(2)}% · r ${corrE(pts, p.a, p.b).toFixed(3)}`);
+    }
+
+    console.log(`\n  ══ LOO 홀드아웃 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const errs: number[] = [], preds: number[] = [], pa: number[] = [], pb: number[] = [];
+      for (let i = 0; i < pts.length; i++) {
+        const best = pickE(pts.filter((_, j) => j !== i), crit);
+        pa.push(best.a); pb.push(best.b);
+        const ph = predE(pts[i], best.a, best.b);
+        preds.push(ph); errs.push(Math.abs(ph / pts[i].obs - 1));
+      }
+      const ins = pickE(pts, crit);
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ${(mapeE(pts, ins.a, ins.b) * 100).toFixed(2)}% → LOO ${(mean(errs) * 100).toFixed(2)}%`
+        + ` · LOO r=${pear(preds, pts.map((p) => p.obs)).toFixed(3)}`
+        + `  (기준선 LOO r=${corrE(pts, 0, 0).toFixed(3)})`);
+      console.log(`     훈련이 고른 동선 a 중앙 ${med(pa)} · 가시성 b 중앙 ${med(pb)}`);
+    }
+
+    let seed = 20260917 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuf = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+
+    console.log(`\n  ══ 무작위 대조군 500회 — 판정을 매장끼리 섞는다 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const sc = (s: Pt[], a: number, b: number) => (crit === "mape" ? mapeE(s, a, b) : -corrE(s, a, b));
+      const gainOf = (s: Pt[]) => { const p = pickE(s, crit); return sc(s, 0, 0) - sc(s, p.a, p.b); };
+      const real = gainOf(pts);
+      const gs: number[] = [];
+      for (let i = 0; i < 500; i++) {
+        const fbP = shuf(pts.map((p) => p.fb)), viP = shuf(pts.map((p) => p.vi));
+        gs.push(gainOf(pts.map((p, j) => ({ ...p, fb: fbP[j], vi: viP[j] }))));
+      }
+      gs.sort((a, b) => a - b);
+      const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+      const fm = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 실제 ${fm(real)} · 섞으면 중앙 ${fm(med(gs))}`
+        + ` · 95퍼센타일 ${fm(gs[Math.floor(gs.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+    console.log(`\n  ⚠️ 자유계수가 둘(a·b)이라 섞어도 이득이 난다. 대조군 중앙값이 0보다 크면`);
+    console.log(`     그만큼은 계수를 푼 값이지 판정이 준 값이 아니다.`);
+    expect(ok.length).toBeGreaterThan(14);
+  });
 });
