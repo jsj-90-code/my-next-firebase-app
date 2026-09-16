@@ -127,6 +127,11 @@ export type CandidateInput = {
   floating400_40s?: number | null;
   floating400_50s?: number | null;
   floating400_60plus?: number | null;
+  // 2026-09-17 추가 — **상권 중심도 계산용. 총량만 쓴다.**
+  // 중심도 = (유동 300m ÷ 유동 1km) x (1000/300)². 1보다 크면 우리 문 앞이 상권 평균보다
+  // 빽빽하다(=상권 중심), 작으면 우리 주변은 한산한데 저쪽이 붐빈다(=상권 끝).
+  // 연령·성별 분해는 안 넣는다 — 비율만 쓰므로 필요 없고, 수요식은 400m를 쓴다.
+  floating1000Avg?: number | null;
 
   // 2026-08-27 — 인허가 PC방업소수(500m/1km)는 삭제했다(사용자 확인: 계산에도 안 쓰이고
   // 소상공인365 자동추출이라 직접 검증도 안 된 값이라 "실영업"만 남기면 충분함). 실영업(직접
@@ -863,6 +868,8 @@ export type ExistingStore = {
   floating400_40s?: number | null;
   floating400_50s?: number | null;
   floating400_60plus?: number | null;
+  // 2026-09-17 추가 — **상권 중심도 계산용. 총량만 쓴다.** 자세한 뜻은 CandidateInput 쪽 주석.
+  floating1000Avg?: number | null;
   operatingPcStores500m: number | null;
 
   // 2026-08-21 추가 — "후보지평가 → 오픈 → 실제매출로 검증" 흐름을 실제로 잇기 위한 필드.

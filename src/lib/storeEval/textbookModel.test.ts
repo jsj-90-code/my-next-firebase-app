@@ -17,7 +17,7 @@ function input(over: Partial<TextbookInput>): TextbookInput {
     storeCode: "T", storeName: "테스트", pcCount: 100, hourlyRate: 1343,
     actualUtilization: null, specialDemandType: "없음",
     competitivenessGap: 1, competitorIp: 0, competitorCount: 0,
-    ownQualityParts: null, rivals: null,
+    ownQualityParts: null, rivals: null, location: null,
     pop500m: 5000, pop1km: 20000,
     residentAges: { age0s: 2000, age10s: 2000, age20s: 4000, age30s: 4000, age40s: 3000, age50s: 3000, age60plus: 2000 },
     residentMaleRatio: 0.5, floatingMaleRatioByRadius: {}, floatingByRadius: {}, floatingAgesByRadius: {},
@@ -107,6 +107,77 @@ describe("품질 모드 점유율", () => {
 
   it("PC대수가 0인 경쟁점은 무시한다 (경쟁점 pcCount가 전 문서 0이라 생기는 함정)", () => {
     expect(shareOf({ ownQualityParts: parts(3), rivals: [{ ip: 0, distanceM: 50, parts: parts(5) }] })).toBe(1);
+  });
+});
+
+describe("입지 — 점유율에 곱하는 독립 항", () => {
+  const L = (over: Partial<NonNullable<TextbookInput["location"]>>) => ({
+    centrality: null, access: null, direction: null, flowBlock: null, visibility: null, ...over,
+  });
+  // 경쟁점을 하나 둬야 점유율이 1 미만이라 배율이 보인다 (1은 상한에 걸린다).
+  const base = { ownQualityParts: parts(3), rivals: [{ ip: 100, distanceM: 100, parts: parts(3) }] };
+
+  it("기준값이면 1배다 — 아무 일도 안 한다", () => {
+    const ref = P.locationReferences;
+    const b = computeTextbook(input({ ...base, location: L({ centrality: ref.centrality, access: ref.access }) }), P);
+    expect(b.locationMultiplier).toBeCloseTo(1, 10);
+    expect(b.share).toBeCloseTo(0.5, 10);
+  });
+
+  it("상권 중심이면 점유율이 올라가고, 상권 끝이면 내려간다", () => {
+    const ref = P.locationReferences.centrality;
+    const mid = computeTextbook(input({ ...base, location: L({ centrality: ref }) }), P).share!;
+    const core = computeTextbook(input({ ...base, location: L({ centrality: ref * 2 }) }), P).share!;
+    const edge = computeTextbook(input({ ...base, location: L({ centrality: ref / 2 }) }), P).share!;
+    expect(core).toBeGreaterThan(mid);
+    expect(edge).toBeLessThan(mid);
+    // nu=0.25이면 중심도 2배가 2^0.25 = 1.189배다
+    expect(core / mid).toBeCloseTo(Math.pow(2, P.locationExponents.centrality), 10);
+  });
+
+  it("층이 높으면(접근성 점수가 낮으면) 점유율이 내려간다", () => {
+    const hi = computeTextbook(input({ ...base, location: L({ access: 5 }) }), P).share!;  // 1층
+    const lo = computeTextbook(input({ ...base, location: L({ access: 1 }) }), P).share!;  // 5층+엘베
+    expect(hi).toBeGreaterThan(lo);
+  });
+
+  it("자료가 없으면 그 항은 1배로 빠진다 — 없는 값을 지어내지 않는다", () => {
+    const none = computeTextbook(input({ ...base, location: null }), P);
+    expect(none.locationMultiplier).toBe(1);
+    expect(none.locationFactors).toEqual([]);
+    // location 객체는 있는데 값이 전부 null이어도 같다
+    const empty = computeTextbook(input({ ...base, location: L({}) }), P);
+    expect(empty.locationMultiplier).toBe(1);
+  });
+
+  it("[보류] 항목은 계수가 0이라 값이 있어도 안 쓰인다", () => {
+    const withHeld = computeTextbook(input({ ...base, location: L({ direction: 0.5, flowBlock: 5, visibility: 5 }) }), P);
+    expect(withHeld.locationMultiplier).toBe(1);
+    expect(withHeld.locationFactors).toEqual([]);
+  });
+
+  it("[보류] 유동 방향은 계수를 켜면 바로 동작한다 — 편심도가 크면 불리하다", () => {
+    const p: TextbookParams = { ...P, locationExponents: { ...P.locationExponents, direction: 1 } };
+    const center = computeTextbook(input({ ...base, location: L({ direction: 0.1 }) }), p).share!;
+    const edge = computeTextbook(input({ ...base, location: L({ direction: 0.6 }) }), p).share!;
+    expect(center).toBeGreaterThan(edge);
+  });
+
+  it("어느 항목이 얼마를 곱했는지 내놓는다 (화면 표시용)", () => {
+    const b = computeTextbook(input({ ...base, location: L({ centrality: 8, access: 5 }) }), P);
+    expect(b.locationFactors.map((f) => f.key).sort()).toEqual(["access", "centrality"]);
+    expect(b.locationFactors.reduce((a, f) => a * f.value, 1)).toBeCloseTo(b.locationMultiplier!, 10);
+  });
+
+  it("점유율은 1을 못 넘는다 — 입지가 좋아도 동네 수요보다 많이 먹지는 못한다", () => {
+    const b = computeTextbook(input({ ownQualityParts: parts(3), rivals: [], location: L({ centrality: 100 }) }), P);
+    expect(b.share).toBe(1);
+  });
+
+  it("off 모드에서는 입지도 통째로 빠진다 — 필요 점유율을 보는 모드다", () => {
+    const b = computeTextbook(input({ ...base, location: L({ centrality: 100, access: 5 }) }), { ...P, shareMode: "off" });
+    expect(b.share).toBe(1);
+    expect(b.locationMultiplier).toBe(1);
   });
 });
 

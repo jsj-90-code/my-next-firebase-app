@@ -33,8 +33,13 @@ const SNAPSHOT = ".local-tools/validation-snapshot.json";
 // MAPE 9.37% -> 9.26%, ±10% 63.16% -> 65.79%로 **개선**됐다. 기존 값은 출처·시점이 불명이고
 // N003은 실제의 1/3이었다. 그래서 사용자 판단으로 500m도 교체한다: `--include-500`.
 //
-// 1000m는 대응하는 기존 필드가 없어 아직 쓰지 않는다.
-const RADII = process.argv.includes("--include-500") ? [100, 200, 300, 400, 500] : [100, 200, 300, 400];
+// 1000m는 2026-09-17에 열었다: `--include-1000`. **총량(floating1000Avg)만 쓴다.**
+// 상권 중심도 = (유동 300m ÷ 유동 1km) x (1000/300)²를 계산하려면 1km 총량이 필요한데,
+// 비율만 쓰므로 연령·성별 분해는 안 넣는다(수요식은 400m를 쓴다 — 1km는 수요가 아니다).
+const RADII = [
+  ...(process.argv.includes("--include-500") ? [100, 200, 300, 400, 500] : [100, 200, 300, 400]),
+  ...(process.argv.includes("--include-1000") ? [1000] : []),
+];
 const APPLY = process.argv.includes("--apply");
 
 function loadEnvLocal() {
@@ -102,6 +107,8 @@ function buildPatch(site, report) {
     const d = r.demographics;
     const s = (v) => (v == null ? null : Math.round(v * scale));
     patch[`floating${radius}Avg`] = avg;
+    // 1000m는 중심도(비율)에만 쓰므로 총량에서 멈춘다. 연령·성별 필드를 만들지 않는다.
+    if (radius === 1000) continue;
     patch[`floating${radius}Male`] = s(d.male);
     patch[`floating${radius}_10s`] = s(d.age10s);
     patch[`floating${radius}_20s`] = s(d.age20s);

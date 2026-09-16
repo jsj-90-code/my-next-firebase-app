@@ -20,6 +20,7 @@ import Link from "next/link";
 import {
   computeCompetitorIp,
   computeSpecScore,
+  computeLocationScoreFromFacts,
   computeOwnZoneComposition,
   computeCompetitorZoneComposition,
   summarizeValidationRows,
@@ -186,6 +187,20 @@ async function loadLabData(): Promise<Loaded | null> {
             parts: rivalQualityParts(c, settings),
           }))
           .filter((r) => r.ip > 0),
+        // 입지 5항목 (2026-09-17). 기존 주관 3항목(상권위치·동선/선점경쟁/접근가시성)은 안 쓴다 —
+        // 1~5점인데 실제로 3~4개 값만 쓰였고 셋 다 유의선 미달이었다.
+        location: {
+          // 상권 중심도 — 유동 300m/1km. 1보다 크면 우리 문 앞이 상권 평균보다 빽빽하다.
+          centrality: s.floating300Avg != null && s.floating1000Avg != null && s.floating1000Avg > 0
+            ? (s.floating300Avg / s.floating1000Avg) * (1000 / 300) ** 2
+            : null,
+          // 접근성 — 경쟁점과 **같은 함수**로 매긴다. 자사만 다른 자를 쓰면 뜻이 없어진다.
+          access: computeLocationScoreFromFacts(s.floor ?? null, s.groundLevel ?? null, s.hasElevator ?? null),
+          // 아래 셋은 아직 자료가 없다. 자리만 둔다 — 계수도 0이라 계산에 안 들어간다.
+          direction: null,
+          flowBlock: null,
+          visibility: null,
+        },
         pop500m: s.pop500m, pop1km: s.pop1km,
         // 연령별 이용률을 지역 성비로 섞는 데 쓴다(2026-09-16). 성별 x 연령 교차 자료는
         // 존재하지 않으므로 "연령대 안 성비 = 지역 전체 성비"로 근사한다.
@@ -517,6 +532,28 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
               </div>
             </>
           )}
+          {p.shareMode !== "off" && (() => {
+            const on = ([
+              ["상권 중심도", p.locationExponents.centrality, "자료"],
+              ["접근성(층수)", p.locationExponents.access, "자료"],
+              ["유동 방향", p.locationExponents.direction, "보류"],
+              ["동선 방해", p.locationExponents.flowBlock, "보류"],
+              ["간판·출입구", p.locationExponents.visibility, "보류"],
+            ] as [string, number, string][]).filter(([, v]) => v !== 0);
+            return (
+              <div className="mt-2">
+                <div className="font-mono text-[11px]">
+                  점유율 × {on.length ? on.map(([n, v]) => `(${n}÷기준)^${v}`).join(" × ") : "1 (입지 항이 전부 꺼져 있습니다)"}
+                </div>
+                <div className="mt-1">
+                  입지는 <b>경쟁력점수 안이 아니라 밖</b>에서 점유율에 곱합니다. 6층 매장은 경쟁점이 없어도
+                  덜 오기 때문입니다 — 손님이 경쟁점으로 가는 게 아니라 <b>아예 안 옵니다.</b> 그래서
+                  나눗셈이 아니라 곱셈입니다.
+                  {on.length > 0 && <> 지금 켜진 항목은 <b>{on.map(([n, , l]) => `${n}[${l}]`).join(" · ")}</b>입니다.</>}
+                </div>
+              </div>
+            );
+          })()}
           <div className="mt-1">
             가동률 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
             (실측 월평균 최대가 46.5%, 월 최대의 최대가 52.0%).
@@ -691,6 +728,39 @@ function Controls({
           <Slider label="경쟁력격차 지수" value={p.gapExponent} min={0} max={4} step={0.1}
             onChange={(v) => set("gapExponent", v)}
             hint="1이면 기존 구조와 같습니다. 높일수록 경쟁력 차이를 세게 봅니다. (기각된 구조입니다 — 비교용)" />
+        )}
+
+        {p.shareMode !== "off" && (
+          <div className="mb-3 rounded-lg border border-[#171310]/10 p-3 dark:border-white/10">
+            <p className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">입지 (점유율에 곱합니다)</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--sl-ink-soft)]">
+              입지는 경쟁력점수 <b>안이 아니라 밖</b>입니다. 접근성은 &ldquo;경쟁점보다 낮은 층인가&rdquo;가 아니라
+              <b> &ldquo;올라오기 얼마나 번거로운가&rdquo;</b>라서 나눗셈이 아니라 곱셈이 맞습니다 — 6층 매장은
+              경쟁점이 없어도 덜 옵니다. 품질에 섞으면 상관이 0.554→0.565인데, 따로 곱하면 0.554→0.725입니다.
+              <br />
+              기존 <b>주관 3항목(상권위치·동선 / 선점경쟁 / 접근가시성)은 폐기</b>했습니다. 1~5점인데 실제로는
+              3~4개 값만 쓰였고(상권위치·동선은 29곳 중 19곳이 5점) 셋 다 유의선 0.371 미달이었습니다.
+            </p>
+            <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">
+              <b>[자료]</b> 관문(홀드아웃·교차검증·대조군)을 통과한 값 ·
+              <b> [보류]</b> 자료가 계수를 못 정해 0으로 둔 값 — 항목을 버린 게 아닙니다
+            </p>
+            <Slider label="[자료] 상권 중심도 ν" value={p.locationExponents.centrality} min={0} max={1} step={0.05}
+              onChange={(v) => set("locationExponents", { ...p.locationExponents, centrality: v })}
+              hint="중심도 = (유동 300m ÷ 유동 1km) × (1000/300)². 1보다 크면 우리 문 앞이 상권 평균보다 빽빽합니다(상권 중심), 작으면 우리 주변은 한산한데 저쪽이 붐빕니다(상권 끝). 관문을 전부 통과했고 지금까지 중 제일 강합니다 — 대조군 p=0.002." />
+            <Slider label="[자료] 접근성(층수) κ" value={p.locationExponents.access} min={0} max={1} step={0.05}
+              onChange={(v) => set("locationExponents", { ...p.locationExponents, access: v })}
+              hint="층수·지상지하·엘리베이터로 자동 계산합니다(경쟁점과 같은 함수). 관문은 통과했지만 기준에 따라 갈립니다 — 중심도가 들어오면 오차(MAPE) 기준으로는 0이 뽑히고, 순서(상관) 기준으로는 0.25~0.5가 남습니다. 둘은 겹치지 않습니다(상관 0.068). 켜고 꺼보며 정하십시오." />
+            <Slider label="[보류] 유동 방향 ω" value={p.locationExponents.direction} min={0} max={2} step={0.1}
+              onChange={(v) => set("locationExponents", { ...p.locationExponents, direction: v })}
+              hint="8방위로 세어 만든 편심도(0=사방이 고름, 1에 가까울수록 한쪽 쏠림). 부호는 맞지만(음수) 중심도가 이미 먹고 있어 잔차 상관이 −0.280에서 −0.069로 사라집니다. 대조군 p=1.000/0.216 미달. 자료는 모아뒀으니 값을 주시면 바로 켜집니다. ※ 지금은 실험실이 이 값을 아직 안 넘겨 자료없음으로 빠집니다." />
+            <Slider label="[보류] 동선 방해" value={p.locationExponents.flowBlock} min={0} max={2} step={0.1}
+              onChange={(v) => set("locationExponents", { ...p.locationExponents, flowBlock: v })}
+              hint="경쟁점이 우리와 손님 사이 동선에 껴 있는지. 경쟁점 좌표가 22%뿐이라 방위를 못 잽니다 — 좌표부터 모아야 합니다. 자리만 있습니다." />
+            <Slider label="[보류] 간판·출입구" value={p.locationExponents.visibility} min={0} max={2} step={0.1}
+              onChange={(v) => set("locationExponents", { ...p.locationExponents, visibility: v })}
+              hint="로드뷰로 봐야 하는 항목입니다. 만들 때는 1~5점이 아니라 '주도로에서 간판이 보이는가 예/아니오' 같은 사실 질문이어야 합니다 — 지금 주관 3항목이 1~5점이라 망가졌습니다. 자리만 있습니다." />
+          </div>
         )}
 
         <h2 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">3단계 · 매출</h2>

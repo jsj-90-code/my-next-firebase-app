@@ -297,6 +297,57 @@ export type TextbookParams = {
    *    실무 감각 비중에서 입지 몫은 17.0%였고, 나머지 넷이 그 몫을 나눠 갖고 있는 상태다.
    */
   qualityWeights: { spec: number; food: number; zone: number; interior: number; management: number };
+  /**
+   * **입지 — 점유율에 곱하는 독립 항들** (2026-09-17 전면 재설계).
+   *
+   * ── 왜 경쟁력점수 안이 아니라 밖인가 ────────────────────────────────
+   * 입지를 품질에 섞으면 **자사÷경쟁의 나눗셈**이 된다. 그런데 접근성은 "경쟁점보다 낮은
+   * 층인가"가 아니라 **"올라오기 얼마나 번거로운가"**다 — 6층 매장은 경쟁점이 없어도 덜 온다.
+   * 손님이 경쟁점으로 가는 게 아니라 **아예 안 온다.** 그래서 비율이 아니라 곱셈이다.
+   * 실측도 같은 말을 한다: 품질에 섞으면 r이 0.554 -> 0.565로 0.011밖에 안 오르는데,
+   * 독립 곱셈 항으로 두면 0.554 -> 0.725로 오른다. 근거는 `_locationRebuild.test.ts` ③④.
+   *
+   * ── 기존 주관 3항목은 폐기했다 ─────────────────────────────────────
+   * 상권위치·동선 / 선점경쟁 / 접근가시성은 1~5점인데 **실제로 3~4개 값만 쓰였고**
+   * (상권위치·동선은 29곳 중 19곳이 5점) 셋 다 유의선 0.371 미달이었다(0.075 / 0.220 / 0.181).
+   * 층수에서 기계적으로 나온 값이 0.389로 유일하게 유의했다. 41곳에 매겨둔 평가값도 안 쓴다.
+   *
+   * ── 계수 출처 라벨 ────────────────────────────────────────────────
+   * 사용자 방침(2026-09-17): **항목은 뜻으로 정하고, 계수만 자료로 정한다.**
+   * 검정은 "이 항목이 중요한가"가 아니라 "자료에서 주워온 숫자를 믿어도 되나"를 묻는 것이라,
+   * 감각으로 정한 값에는 필요 없다. 표본이 늘면 `[보류]`를 `[감각]`이나 `[자료]`로 올린다.
+   */
+  locationExponents: {
+    /**
+     * `[자료]` **상권 중심도** ν — 관문을 전부 통과했다. 지금까지 중 제일 강하다.
+     *   중심도 = (유동 300m ÷ 유동 1km) x (1000/300)²  — 1보다 크면 문 앞이 상권 평균보다 빽빽
+     *   LOO 24.52% -> 25.50%(벌어짐 0.98%p) · 5겹 78% · 대조군 MAPE p=0.002 · r p=0.012
+     * ⚠️ 300m/500m 짝은 쓰지 않는다 — 순서는 더 잘 맞히지만(r 0.801) MAPE 홀드아웃에서
+     *    6.65%p 벌어져 gamma(7%p)와 비슷한 징후를 보인다.
+     */
+    centrality: number;
+    /**
+     * `[자료]` **접근성(층수)** κ — 관문은 통과했으나 **기준에 따라 갈린다.**
+     * 중심도가 들어오면 MAPE 기준으로는 κ=0이 뽑히고(LOO 97%), r 기준으로는 0.25~0.5가 남는다.
+     * 둘은 서로 겹치지도 않는다(층수자 ↔ 중심도 r=0.068). 층수는 순서는 맞히지만 편향을 키운다.
+     * **표본 29곳으로는 못 정한다 — 화면에서 끄고 켜며 본다.**
+     */
+    access: number;
+    /**
+     * `[보류]` **유동 방향(편심도)** ω — 기본 0. 자료는 모았고 **부호도 맞다**(음수).
+     * 다만 중심도가 이미 먹고 있다 — 잔차 상관이 -0.280 -> (중심도·층수 반영 후) -0.069로
+     * 사라지고, 편심도 ↔ 중심도가 r=-0.335로 겹친다. 대조군도 p=1.000 / 0.216으로 미달.
+     * **항목을 버린 게 아니라 자료가 계수를 못 정한 것이다.** 사용자가 정하면 그날 켜진다.
+     */
+    direction: number;
+    /** `[보류]` **동선 방해** — 기본 0. 경쟁점 좌표가 22%뿐이라 방위를 못 잰다. 좌표부터. */
+    flowBlock: number;
+    /** `[보류]` **간판·출입구 가시성** — 기본 0. 로드뷰 평가가 필요하고, 그때는 1~5점이 아니라
+     * 예/아니오 사실 질문으로 물어야 한다(지금 3항목이 그래서 망가졌다). 경쟁점 좌표부터. */
+    visibility: number;
+  };
+  /** 입지 지표의 기준값 — 이 값에서 1배가 된다. 표본 중앙값으로 잡는다. */
+  locationReferences: { centrality: number; access: number };
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
@@ -373,6 +424,10 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 실무 감각 비중(입지 17.0% 제외, 시설 34.0%를 존구성 23.8 + 인테리어 10.2로 나눈 값).
   // 합이 0.83인 건 입지 몫이 빠져서다 — computeQualityScore가 있는 항목의 합으로 나눈다.
   qualityWeights: { spec: 0.264, food: 0.075, zone: 0.238, interior: 0.102, management: 0.151 },
+  // 입지 — [자료] 둘만 켜져 있고 [보류] 셋은 0이다. 자세한 근거는 타입 쪽 주석.
+  locationExponents: { centrality: 0.25, access: 0.25, direction: 0, flowBlock: 0, visibility: 0 },
+  // 기준값 — 실측 32곳 중앙. 중심도 1.0은 "사방이 상권 평균만큼", 층수 4는 "2~3층 + 엘베".
+  locationReferences: { centrality: 3.95, access: 4 },
   // 2026-09-16 측정값. 표본 2~5곳이라 확정값이 아니다 — 조절판에서 돌려볼 것.
   specialDemandMultipliers: { "군부대": 2.25, "대학가": 1.45, "산업단지": 1.39, "기타": 1.25, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
   maxUtilization: 0.55,
@@ -409,6 +464,22 @@ export type TextbookInput = {
    *    그런 점포는 거리도 품질도 없어서 여기 못 들어온다. 두 값은 일부러 다르다.
    */
   rivals: { ip: number; distanceM: number | null; parts: QualityParts | null }[] | null;
+  /**
+   * **입지 5항목** (2026-09-17). 전부 null이면 그 항은 1배(중립)로 빠진다 —
+   * 자료가 없다고 틀린 값을 만들지 않는다. 화면에는 "자료없음"으로 표시한다.
+   */
+  location: {
+    /** 상권 중심도 = (유동 300m ÷ 유동 1km) x (1000/300)². 1보다 크면 문 앞이 빽빽하다. */
+    centrality: number | null;
+    /** 접근성 — `computeLocationScoreFromFacts(층수, 지상지하, 엘베)`. 자사·경쟁점이 같은 자다. */
+    access: number | null;
+    /** 유동 방향 편심도(0~1). 0이면 사방이 고르고, 1에 가까울수록 한쪽으로 쏠렸다(상권 끝). */
+    direction: number | null;
+    /** 동선 방해 — 아직 자료 없음(경쟁점 좌표 22%). 자리만 둔다. */
+    flowBlock: number | null;
+    /** 간판·출입구 가시성 — 아직 자료 없음(로드뷰 평가 필요). 자리만 둔다. */
+    visibility: number | null;
+  } | null;
   /** 특수수요 유형 — "군부대"/"대학가"/"산업단지"/"관광·유흥"/"기타"/"없음". 수요 배수에 쓴다. */
   specialDemandType: string | null;
   /** 상권 흡인력 계산용. 조사된 경쟁점 수(IP가 아니라 점포 수). */
@@ -435,6 +506,10 @@ export type TextbookBreakdown = {
   totalDemandUsers: number | null;
   totalDemandHours: number | null;
   share: number | null;
+  /** 입지가 점유율에 곱한 배율. 1이면 입지가 아무 일도 안 한 것(자료없음 또는 계수 0). */
+  locationMultiplier: number | null;
+  /** 어느 입지 항목이 얼마를 곱했는지 — 화면에 그대로 보여준다. */
+  locationFactors: { key: string; value: number }[];
   ownDemandHours: number | null;
   utilization: number | null;
   capped: boolean;
@@ -479,7 +554,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const missing: string[] = [];
   const empty: TextbookBreakdown = {
     residentDemandUsers: null, floatingDemandUsers: null, totalDemandUsers: null,
-    totalDemandHours: null, share: null, ownDemandHours: null, utilization: null,
+    totalDemandHours: null, share: null, locationMultiplier: null, locationFactors: [], ownDemandHours: null, utilization: null,
     capped: false, unitPrice: null, pcUnitPrice: null, pcRevenue: null, productRevenue: null,
     monthlyRevenue: null, productRatio: null, missing,
   };
@@ -577,7 +652,34 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   // shareMode="off"면 점유율을 아예 1로 둔다 — 경쟁 항을 통째로 들어낸 상태다.
   // 그러면 화면의 "필요 점유율"(실측가동률 ÷ 이 예측)이 **이 매장이 실제로 먹은 몫**이 되고,
   // 그 값으로 수요식을 2차 검증할 수 있다(2026-09-16 사용자 설계).
-  const share = p.shareMode === "off" ? 1 : (denom > 0 ? ownWeight / denom : 1);
+  const rawShare = p.shareMode === "off" ? 1 : (denom > 0 ? ownWeight / denom : 1);
+
+  // ── 입지 — 점유율에 곱한다 (2026-09-17) ────────────────────────────────
+  // 경쟁력점수 안이 아니라 **밖**이다. 접근성은 "경쟁점보다 낮은 층인가"가 아니라
+  // "올라오기 얼마나 번거로운가"라서, 비율이 아니라 곱셈이 맞다. 타입 쪽 주석 참고.
+  //
+  // 자료가 없으면 그 항은 1배로 빠진다 — **없는 값을 지어내지 않는다.**
+  // shareMode="off"일 때도 빠진다. "off"는 경쟁·입지를 통째로 들어내 필요 점유율을 보는 모드다.
+  const locFactors: { key: string; value: number }[] = [];
+  if (p.shareMode !== "off" && input.location) {
+    const L = input.location, E = p.locationExponents, R = p.locationReferences;
+    const mul = (key: string, v: number | null, exp: number, ref: number) => {
+      if (v == null || !Number.isFinite(v) || !(v > 0) || !(ref > 0) || exp === 0) return;
+      locFactors.push({ key, value: Math.pow(v / ref, exp) });
+    };
+    mul("centrality", L.centrality, E.centrality, R.centrality);
+    mul("access", L.access, E.access, R.access);
+    // 편심도는 클수록 불리하므로 (1 - 편심도)를 쓴다. 기준 0.75는 실측 중앙 편심도 0.25의 여집합.
+    if (L.direction != null && Number.isFinite(L.direction) && E.direction !== 0) {
+      const room = Math.max(0.01, 1 - L.direction);
+      locFactors.push({ key: "direction", value: Math.pow(room / 0.75, E.direction) });
+    }
+    mul("flowBlock", L.flowBlock, E.flowBlock, 3);
+    mul("visibility", L.visibility, E.visibility, 3);
+  }
+  const locationMultiplier = locFactors.reduce((a, f) => a * f.value, 1);
+  // 점유율은 1을 넘을 수 없다 — 입지가 좋아도 그 동네 수요보다 많이 먹지는 못한다.
+  const share = Math.min(1, rawShare * locationMultiplier);
 
   // ── 4) 매출 ─────────────────────────────────────────────────────────────
   const rawOwnHours = totalHours * share;
@@ -612,6 +714,8 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     totalDemandUsers: totalUsers,
     totalDemandHours: totalHours,
     share,
+    locationMultiplier,
+    locationFactors: locFactors,
     ownDemandHours: ownHours,
     utilization,
     capped,
