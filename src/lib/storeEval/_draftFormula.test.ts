@@ -78,8 +78,8 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
 
   type Row = {
     name: string; pc: number; rival: number; gap: number; rate: number | null;
-    demandBase: number;     // 주거1km
-    demandFlow: number;     // 유동 포락선
+    demandBase: number;     // 주거1km 10~30대
+    demandFlow: number;     // 유동400m 10~30대
     util: number;           // 실측 가동률(평가창 12개월 평균)
     locScore: number | null; compScore: number | null;
   };
@@ -97,8 +97,22 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
       const r = fv.radii?.[String(R)];
       if (r?.selected?.length) flo[R] = Math.round(mean(r.selected.slice(-12)));
     }
-    const pop = rv.radii?.["1000"]?.totalPopulation;
-    const env = envelope(flo);
+    // 주거 1km의 10~30대 — SGIS age_2(10대)/age_3(20대)/age_4(30대).
+    const p1k = rv.radii?.["1000"]?.pops;
+    const pop = p1k?.age_2_cnt == null
+      ? null
+      : Number(p1k.age_2_cnt) + Number(p1k.age_3_cnt) + Number(p1k.age_4_cnt);
+    // 유동 400m의 10~30대. 연령·성별은 최근월 한 벌만 오므로 12개월 평균 축척으로 맞춘다
+    // (writeFloatingPopulationToFirestore.mjs와 같은 보정).
+    const f400 = fv.radii?.["400"];
+    let env: number | null = null;
+    if (f400?.selected?.length && f400.demographics) {
+      const avg = Math.round(mean(f400.selected.slice(-12)));
+      const recent = f400.selected[f400.selected.length - 1];
+      const sc = recent > 0 ? avg / recent : 1;
+      const d = f400.demographics;
+      env = Math.round(((d.age10s ?? 0) + (d.age20s ?? 0) + (d.age30s ?? 0)) * sc);
+    }
     if (pop == null || env == null) continue;
     const loc = locByCode.get(st.storeCode);
     rows.push({
@@ -110,7 +124,10 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     });
   }
 
-  const ALPHA = 0.3; // 주거 기본 + 유동 +@ (사용자 설계). 유동 비중 약 37%.
+  // 2026-09-16 — 사용자 판정 기준("독점매장이 5% 내외로 맞아야 한다")으로 수요식 149개를 거르니
+  // 통과가 2개뿐이었고, 그중 나머지 29곳에서도 가장 좋은 것이 이 조합이다(독점 4.6%, 나머지 32.1%).
+  // **10~30대만 센다** — PC방 주 이용층이다. 계수도 "10~30대 469명당 PC 1대"로 읽혀 해석이 쉽다.
+  const ALPHA = 0.2;
   const demand = (r: Row) => r.demandBase + r.demandFlow * ALPHA;
 
   /**
@@ -156,7 +173,7 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
   it("표본", () => {
     const mono = rows.filter((r) => r.rival === 0);
     console.log(`\n표본 ${rows.length}곳 (실측 가동률 있는 매장) · 그중 독점 ${mono.length}곳: ${mono.map((r) => r.name).join(", ")}`);
-    console.log(`수요식: 주거1km + 유동포락선 x${ALPHA}`);
+    console.log(`수요식: 주거1km 10~30대 + 유동400m 10~30대 x${ALPHA}`);
     expect(rows.length).toBeGreaterThan(25);
   });
 

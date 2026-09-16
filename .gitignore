@@ -91,6 +91,7 @@ src/**/_*.test.ts
 !src/lib/storeEval/_monopolyCalibration.test.ts
 !src/lib/storeEval/_marketCapacity.test.ts
 !src/lib/storeEval/_draftFormula.test.ts
+!src/lib/storeEval/_monopolyFit.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
