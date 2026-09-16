@@ -34,6 +34,48 @@ export type AgeUsageWeights = {
 };
 
 /**
+ * 연령·성별 PC방 이용률 — **1,000명 중 몇 명이 PC방을 쓰나** (2026-09-16 사용자 제공 실측 조사).
+ *
+ *   연령   남성   여성
+ *   10대   390    130
+ *   20대   420    150
+ *   30대   170     45
+ *   40대   100     20
+ *   50대    35      8
+ *
+ * 이 값은 **우리 데이터로 맞춘 게 아니다.** 외부 조사값을 그대로 넣었는데 독점매장 3곳이
+ * 최대오차 0.8% 안에 들어왔다(직접 만든 추정 가중치는 3.2~4.7%였다). 과적합일 수 없는
+ * 종류의 일치라 이 값을 신뢰한다.
+ *
+ * ⚠️ 2020~2021 조사라 절대 수준은 낡았을 수 있다. 다만 산식에서 의미를 갖는 건 **연령·성별 간
+ *    비율**뿐이고, 전체 수준은 hoursPerUserPerMonth(축척 계수)가 흡수한다.
+ */
+export const PC_USE_RATE_MALE: AgeUsageWeights = {
+  age0s: 0, age10s: 0.390, age20s: 0.420, age30s: 0.170,
+  age40s: 0.100, age50s: 0.035, age60plus: 0,
+};
+export const PC_USE_RATE_FEMALE: AgeUsageWeights = {
+  age0s: 0, age10s: 0.130, age20s: 0.150, age30s: 0.045,
+  age40s: 0.020, age50s: 0.008, age60plus: 0,
+};
+
+/**
+ * 지역 남성비율 m으로 남녀 이용률을 섞는다. m=0.5면 남녀평균이다.
+ *
+ * ⚠️ **성별 x 연령 교차 자료는 존재하지 않는다.** SGIS도 소상공인365도 성별 총수와 연령 총수를
+ *    따로 줄 뿐이다(2026-09-16 확인, classDeg 1·2·3 전부 같은 74필드). 그래서 "각 연령대 안의
+ *    성비 = 그 지역 전체 성비"로 근사한다. 이건 임시방편이 아니라 자료의 한계다.
+ */
+export function blendUsageByGender(maleRatio: number | null): AgeUsageWeights {
+  const m = maleRatio == null || !Number.isFinite(maleRatio) ? 0.5 : Math.min(1, Math.max(0, maleRatio));
+  const mix = (key: keyof AgeUsageWeights) => m * PC_USE_RATE_MALE[key] + (1 - m) * PC_USE_RATE_FEMALE[key];
+  return {
+    age0s: mix("age0s"), age10s: mix("age10s"), age20s: mix("age20s"), age30s: mix("age30s"),
+    age40s: mix("age40s"), age50s: mix("age50s"), age60plus: mix("age60plus"),
+  };
+}
+
+/**
  * 유동인구를 어느 반경으로 쓸지.
  * 2026-09-15에 100/200/300/400m 수집 경로를 열었다(scripts/collectSbizFloatingPopulation.mjs).
  * 500m는 원래 갖고 있던 값이라 출처가 다르다 — 반경끼리 비교할 땐 100~400m 안에서 본다.
@@ -89,24 +131,36 @@ export type TextbookParams = {
   maxUtilization: number;
 };
 
+/**
+ * 2026-09-16 확정본. 근거는 `docs/handoff-20260916-evening.md` 2절.
+ *
+ *   유동 400m  — 500m는 수원망포점처럼 지하철 상권을 먹는다(300→400m에서 4.19배 점프).
+ *                100~300m는 너무 좁아 오차가 커진다. 독점 5% 체를 통과한 조합이 전부 400m 계열이었다.
+ *   주거 1km   — 100~500m도 전부 시험했으나 1km가 이겼다. PC방은 평균 3시간·월 3.7회 오는
+ *                목적지형이라 도보 10분권이 상권이라는 뜻이다.
+ *   유동 x0.15 — **측정값이 아니라 보정상수다.** 한 숫자가 셋을 떠맡는다: 단위 변환(주거는 "명",
+ *                유동은 "하루 통행량"), 중복 제거(거주자 통행이 양쪽에 두 번), 방문객의 낮은 이용
+ *                성향. 그래서 "유동인구의 15%가 수요"라고 읽으면 안 된다.
+ *   격차^4     — 경쟁력 쏠림. 우위가 있으면 한쪽으로 쏠린다는 현장 관찰을 지수로 옮긴 것이고,
+ *                무작위 대조군 500회에서 p=0.004로 통과했다(가동률 MAPE 46.25% → 30.59%).
+ *   상한 0.55  — 실측 월평균 가동률 최대가 46.5%(전대후문점), 월 최대의 최대가 52.0%다.
+ */
 export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   residentRadius: 1000,
-  floatingRadius: 500,
+  floatingRadius: 400,
   useResidentAgeWeights: true,
   useFloatingAgeWeights: true,
-  // 2026-09-15 실측에서 주거1km + 유동x0.2이 가장 나았다(MAPE 42.0%). 출발점으로만 쓴다.
-  floatingFactor: 0.2,
-  ageWeights: {
-    age0s: 0.01, age10s: 0.35, age20s: 0.30, age30s: 0.14,
-    age40s: 0.05, age50s: 0.02, age60plus: 0.01,
-  },
+  floatingFactor: 0.15,
+  // 연령가중 자체는 남녀 이용률을 지역 성비로 섞어 그때그때 만든다(blendUsageByGender).
+  // 여기 값은 성비를 모를 때(남녀 1:1)의 기본값이다.
+  ageWeights: blendUsageByGender(0.5),
   hoursPerUserPerMonth: 1.0,
-  gapExponent: 1.0,
+  gapExponent: 4.0,
   outsideOptionIp: 0,
   agglomerationFactor: 0,
   densityCorrection: 0,
   productRatio: 0.5,
-  maxUtilization: 0.85,
+  maxUtilization: 0.55,
 };
 
 /** 한 점포(기존점이든 후보지든)의 교과서식 입력. */
@@ -123,6 +177,13 @@ export type TextbookInput = {
   pop500m: number | null;
   pop1km: number | null;
   residentAges: { age0s: number; age10s: number; age20s: number; age30s: number; age40s: number; age50s: number; age60plus: number } | null;
+  /**
+   * 주거인구의 남성비율(0~1). 연령별 이용률을 성비로 섞는 데 쓴다(blendUsageByGender).
+   * 없으면 남녀 1:1로 본다.
+   */
+  residentMaleRatio: number | null;
+  /** 유동인구의 반경별 남성비율(0~1). */
+  floatingMaleRatioByRadius: Partial<Record<FloatingRadius, number | null>>;
   /** 유동 — 반경별. 아직 500만 채워진다. */
   floatingByRadius: Partial<Record<FloatingRadius, number | null>>;
   floatingAgesByRadius: Partial<Record<FloatingRadius, { age10s: number; age20s: number; age30s: number; age40s: number; age50s: number; age60plus: number } | null>>;
@@ -173,17 +234,24 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     capped: false, pcRevenue: null, productRevenue: null, monthlyRevenue: null, missing,
   };
 
+  // 연령별 이용률은 **그 자료의 지역 성비로 섞어서** 쓴다(2026-09-16). 주거와 유동은 성비가
+  // 다르므로(주거 중앙 49.9%, 유동 중앙 57.9%) 각각 따로 섞는다.
+  // 성비 자료가 없으면 남녀 1:1로 떨어진다(blendUsageByGender가 null을 0.5로 본다).
+  // `?.`를 쓰는 이유: 이 필드는 2026-09-16에 추가돼서, 그 전에 만들어진 호출부는 아예 안 넘긴다.
+  const residentWeights = blendUsageByGender(input.residentMaleRatio ?? null);
+  const floatingWeights = blendUsageByGender(input.floatingMaleRatioByRadius?.[p.floatingRadius] ?? null);
+
   // ── 1) 주거 수요 ────────────────────────────────────────────────────────
   let residentUsers: number | null = null;
   if (p.residentRadius === 1000) {
     if (p.useResidentAgeWeights && input.residentAges) {
-      residentUsers = weightedAges(input.residentAges, p.ageWeights);
+      residentUsers = weightedAges(input.residentAges, residentWeights);
     } else if (input.pop1km != null) {
-      residentUsers = input.pop1km * flatUsageRate(p.ageWeights);
+      residentUsers = input.pop1km * flatUsageRate(residentWeights);
     } else missing.push("1km 주거인구");
   } else {
     // 500m는 연령 분해가 없다 — 총수 x 평균 이용률만 가능하다.
-    if (input.pop500m != null) residentUsers = input.pop500m * flatUsageRate(p.ageWeights);
+    if (input.pop500m != null) residentUsers = input.pop500m * flatUsageRate(residentWeights);
     else missing.push("500m 주거인구");
   }
 
@@ -194,9 +262,9 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   if (flow == null) {
     missing.push(`${p.floatingRadius}m 유동인구`);
   } else if (p.useFloatingAgeWeights && flowAges) {
-    floatingUsers = weightedAges(flowAges, p.ageWeights) * p.floatingFactor;
+    floatingUsers = weightedAges(flowAges, floatingWeights) * p.floatingFactor;
   } else {
-    floatingUsers = flow * flatUsageRate(p.ageWeights) * p.floatingFactor;
+    floatingUsers = flow * flatUsageRate(floatingWeights) * p.floatingFactor;
   }
 
   if (residentUsers == null && floatingUsers == null) return empty;

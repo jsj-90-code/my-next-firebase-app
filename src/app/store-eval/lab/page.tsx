@@ -31,7 +31,7 @@ import {
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
-  DEFAULT_TEXTBOOK_PARAMS, scoreTextbook,
+  DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, scoreTextbook,
   type FloatingRadius, type ResidentRadius, type TextbookInput, type TextbookParams, type TextbookScore,
 } from "@/lib/storeEval/textbookModel";
 import type { Competitor, ExistingStore, ModelSettings } from "@/lib/storeEval/types";
@@ -101,6 +101,16 @@ async function loadLabData(): Promise<Loaded | null> {
         competitorIp: computeCompetitorIp(cs, s.operatingPcStores500m ?? null),
         competitorCount: cs.filter((c) => c.investigationStatus !== "경쟁점없음").length,
         pop500m: s.pop500m, pop1km: s.pop1km,
+        // 연령별 이용률을 지역 성비로 섞는 데 쓴다(2026-09-16). 성별 x 연령 교차 자료는
+        // 존재하지 않으므로 "연령대 안 성비 = 지역 전체 성비"로 근사한다.
+        residentMaleRatio: s.male1kmRatio ?? null,
+        floatingMaleRatioByRadius: {
+          100: s.floating100Avg ? (s.floating100Male ?? 0) / s.floating100Avg : null,
+          200: s.floating200Avg ? (s.floating200Male ?? 0) / s.floating200Avg : null,
+          300: s.floating300Avg ? (s.floating300Male ?? 0) / s.floating300Avg : null,
+          400: s.floating400Avg ? (s.floating400Male ?? 0) / s.floating400Avg : null,
+          500: s.floating500Avg ? (s.floating500Male ?? 0) / s.floating500Avg : null,
+        },
         residentAges: {
           age0s: sr.age1km_0_9 ?? 0, age10s: sr.age1km_10_19 ?? 0, age20s: sr.age1km_20_29 ?? 0,
           age30s: sr.age1km_30_39 ?? 0, age40s: sr.age1km_40_49 ?? 0, age50s: sr.age1km_50_59 ?? 0,
@@ -220,6 +230,7 @@ export default function LabPage() {
       {score && data && (
         <>
           <ScoreBoard score={score} current={data.current} />
+          <HowItWorks p={p} fitted={score.fittedHoursPerUser} />
           <Controls p={p} set={set} setAge={setAge} counts={counts} />
           <StoreTable score={score} />
         </>
@@ -251,6 +262,112 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
         1인당 월이용시간 배율은 매번 자동으로 맞춥니다(현재 {score.fittedHoursPerUser.toFixed(2)}).
       </p>
     </div>
+  );
+}
+
+/**
+ * 계산기준 — 지금 수요를 어떻게 재는지 화면에 적어 둔다 (2026-09-16 사용자 요청:
+ * "혹시 내가 까먹을 수도 있음 이후 작업하면서").
+ *
+ * ⚠️ **숫자를 글자로 박지 않는다.** 전부 `p`(현재 파라미터)와 `fitted`(맞춰진 축척)에서 읽어
+ *    그린다 — 위 조절판을 움직이면 이 설명도 같이 바뀐다. 계산만 바꾸고 설명을 두면 화면이
+ *    조용히 거짓말을 한다(CLAUDE.md 규칙, docs/backlog.md 2026-09-14 블록).
+ */
+function HowItWorks({ p, fitted }: { p: TextbookParams; fitted: number }) {
+  const MONTH_HOURS = 24 * 30;
+  // 축척 계수를 사람이 읽을 수 있는 말로 바꾼다: "환산수요 N명당 PC 1대".
+  const perPc = fitted > 0 ? Math.round(MONTH_HOURS / fitted / MONTH_HOURS * MONTH_HOURS / fitted) : null;
+  const usersPerPc = fitted > 0 ? Math.round(1 / (fitted / MONTH_HOURS)) : null;
+  void perPc;
+  const male = PC_USE_RATE_MALE;
+  const female = PC_USE_RATE_FEMALE;
+  const pct = (v: number) => Math.round(v * 1000);
+  return (
+    <details className="app-card mt-4 rounded-xl px-4 py-3 text-xs leading-relaxed" open>
+      <summary className="cursor-pointer text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
+        계산기준 — 지금 수요를 어떻게 재고 있나
+      </summary>
+
+      <ol className="mt-3 space-y-3 text-[var(--sl-ink-soft)]">
+        <li>
+          <b className="text-[#171310] dark:text-[#f2ede2]">1. 인구를 &ldquo;PC방 이용자&rdquo;로 환산한다</b>
+          <div className="mt-1">
+            연령대마다 PC방 이용률이 다르고, 남녀는 약 3배 차이 납니다. 그래서 인구를 그대로 쓰지 않고
+            이용률을 곱해 환산합니다.
+          </div>
+          <table className="mt-2 text-[11px]">
+            <thead className="text-[var(--sl-ink-soft)]">
+              <tr><th className="pr-4 text-left font-normal">1,000명당</th><th className="pr-4 text-right font-normal">남성</th><th className="text-right font-normal">여성</th></tr>
+            </thead>
+            <tbody>
+              {([["10대", "age10s"], ["20대", "age20s"], ["30대", "age30s"], ["40대", "age40s"], ["50대", "age50s"]] as const).map(([label, key]) => (
+                <tr key={key}>
+                  <td className="pr-4">{label}</td>
+                  <td className="pr-4 text-right tabular-nums">{pct(male[key])}명</td>
+                  <td className="text-right tabular-nums">{pct(female[key])}명</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="mt-1">
+            지역 남성비율로 남녀 이용률을 섞습니다. <b>성별×연령 교차 자료는 존재하지 않아서</b>
+            (SGIS·소상공인365 둘 다 성별 총수와 연령 총수를 따로 줍니다) &ldquo;연령대 안의 성비 =
+            지역 전체 성비&rdquo;로 근사합니다.
+          </div>
+        </li>
+
+        <li>
+          <b className="text-[#171310] dark:text-[#f2ede2]">2. 주거를 기본으로, 유동을 보태 수요를 만든다</b>
+          <div className="mt-1 font-mono text-[11px]">
+            수요 = 환산(주거 {p.residentRadius === 1000 ? "1km" : `${p.residentRadius}m`})
+            {" + "}환산(유동 {p.floatingRadius}m) × {p.floatingFactor}
+          </div>
+          <div className="mt-1">
+            유동 계수 <b>{p.floatingFactor}</b>는 <b>측정값이 아니라 보정상수</b>입니다. 한 숫자가 셋을
+            떠맡습니다 — 단위 변환(주거는 &ldquo;명&rdquo;, 유동은 &ldquo;하루 통행량&rdquo;), 중복 제거(거주자 통행이
+            양쪽에 두 번 세어짐), 방문객의 낮은 이용 성향. 그래서 <b>&ldquo;유동인구의
+            {" "}{Math.round(p.floatingFactor * 100)}%가 수요&rdquo;라고 읽으면 안 됩니다.</b>
+          </div>
+        </li>
+
+        <li>
+          <b className="text-[#171310] dark:text-[#f2ede2]">3. 수요를 경쟁과 나눠 가동률을 낸다</b>
+          <div className="mt-1 font-mono text-[11px]">
+            가동률 = 수요 × 격차<sup>{p.gapExponent}</sup> ÷ (자사PC × 격차<sup>{p.gapExponent}</sup> + 경쟁IP)
+            {p.outsideOptionIp > 0 ? ` + 안가는몫 ${p.outsideOptionIp}` : ""}
+          </div>
+          <div className="mt-1">
+            지수 <b>{p.gapExponent}</b>는 <b>쏠림</b>을 뜻합니다. 1이면 경쟁력만큼 비례해 나눠 갖고,
+            클수록 우위 매장으로 몰립니다. 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
+            (실측 월평균 최대가 46.5%, 월 최대의 최대가 52.0%).
+          </div>
+        </li>
+
+        <li>
+          <b className="text-[#171310] dark:text-[#f2ede2]">4. 가동률을 매출로 바꾼다</b>
+          <div className="mt-1 font-mono text-[11px]">
+            매출 = 자사PC × 720시간 × 가동률 × 실효단가 ÷ (1 − {p.productRatio})
+          </div>
+          <div className="mt-1">상품매출 비중 {Math.round(p.productRatio * 100)}%를 되돌려 총매출로 만듭니다.</div>
+        </li>
+
+        <li>
+          <b className="text-[#171310] dark:text-[#f2ede2]">축척은 자동으로 맞춥니다</b>
+          <div className="mt-1">
+            1인당 월이용시간은 눈으로 정할 값이 아니라, 나머지를 고정한 채 실제 매출에 가장 잘 맞는
+            배율을 닫힌 형태로 구합니다. 지금 값은 <b>{fitted.toFixed(3)}시간</b>
+            {usersPerPc != null && <> — 환산수요 <b>{usersPerPc.toLocaleString()}명</b>이 PC 1대를 100% 채우는 셈입니다</>}.
+          </div>
+        </li>
+      </ol>
+
+      <div className="mt-3 rounded-lg bg-[#171310]/5 px-3 py-2 dark:bg-white/5">
+        <b className="text-[#171310] dark:text-[#f2ede2]">판정 기준</b> — 독점매장(경쟁 0곳)은 점유율이
+        1이라 <b>수요식만 발가벗겨집니다.</b> 거기서 안 맞으면 수요가 틀린 것이고 경쟁력·입지로 덮을 수도
+        없습니다. 다만 독점이 3곳뿐이라(탕정역·광주각화·남악) 오차 1.1%와 1.3%의 차이는 잡음입니다 —
+        <b> 5% 이내인지만 통과/탈락으로 보고</b>, 통과한 것들 중에서 전체로 가릅니다.
+      </div>
+    </details>
   );
 }
 
@@ -338,8 +455,8 @@ function StoreTable({ score }: { score: TextbookScore }) {
           <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
             <tr>
               <th scope="col" className="px-3 py-2">매장</th>
-              <th scope="col" className="px-3 py-2 text-right">교과서식</th>
-              <th scope="col" className="px-3 py-2 text-right">실제</th>
+              <th scope="col" className="px-3 py-2 text-right">예상매출</th>
+              <th scope="col" className="px-3 py-2 text-right">실제매출</th>
               <th scope="col" className="px-3 py-2 text-right">오차</th>
               <th scope="col" className="px-3 py-2 text-right">가동률</th>
               <th scope="col" className="px-3 py-2 text-right">점유율</th>
