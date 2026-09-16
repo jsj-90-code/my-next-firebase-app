@@ -98,6 +98,10 @@ src/**/_*.test.ts
 !src/lib/storeEval/_shareAudit.test.ts
 !src/lib/storeEval/_competitionDesign.test.ts
 !src/lib/storeEval/_locationRebuild.test.ts
+# 2026-09-16 — 세 다리를 다 붙인 전체 성적을 재는 하네스. `_textbookScore.test.ts`가
+# gitignore라 PC를 옮기며 사라졌고, 그 사이 입지가 빠진 숫자가 "교과서식 성적"으로
+# 돌아다녔다. 같은 일이 또 나지 않게 편입한다.
+!src/lib/storeEval/_textbookFull.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
