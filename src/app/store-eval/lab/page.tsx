@@ -272,6 +272,30 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
           </div>
         ))}
       </div>
+      {score.requiredShare && (
+        <div className="mt-3 rounded-xl border border-amber-400/40 bg-amber-50/60 p-4 dark:border-amber-300/20 dark:bg-amber-400/10">
+          <p className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
+            필요 점유율 — 이 매장들이 실제로 먹은 몫
+          </p>
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+            실측가동률 ÷ (경쟁이 없다고 볼 때의 예측 가동률). 수요식이 맞다면 0~100% 안에 들고
+            경쟁이 셀수록 낮아야 합니다. <b>100%를 넘으면 그 동네 수요를 과소평가한 것</b>입니다.
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
+            {([
+              ["중앙", pct(score.requiredShare.median)],
+              ["최소", pct(score.requiredShare.min)],
+              ["최대", pct(score.requiredShare.max)],
+              ["100% 초과", `${score.requiredShare.overOne}곳 / ${score.requiredShare.count}곳`],
+            ] as const).map(([k, v]) => (
+              <div key={k}>
+                <p className="text-xs text-[var(--sl-ink-soft)]">{k}</p>
+                <p className={`text-lg font-bold ${k === "100% 초과" && score.requiredShare!.overOne > 0 ? "text-red-600 dark:text-red-400" : "text-[#171310] dark:text-[#f2ede2]"}`}>{v}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
         표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) · 축척 둘은 매번 자동으로 맞춥니다
         (1인당 월이용시간 {score.fittedHoursPerUser.toFixed(2)}시간 ← 독점 실측가동률 ·
@@ -356,13 +380,39 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
 
         <li>
           <b className="text-[#171310] dark:text-[#f2ede2]">3. 수요를 경쟁과 나눠 가동률을 낸다</b>
-          <div className="mt-1 font-mono text-[11px]">
-            가동률 = 수요 × 격차<sup>{p.gapExponent}</sup> ÷ (자사PC × 격차<sup>{p.gapExponent}</sup> + 경쟁IP)
-            {p.outsideOptionIp > 0 ? ` + 안가는몫 ${p.outsideOptionIp}` : ""}
-          </div>
+          {p.shareMode === "off" ? (
+            <>
+              <div className="mt-1 font-mono text-[11px]">
+                가동률 = 수요 ÷ 자사PC &nbsp;&nbsp;(점유율 = 100%, <b>경쟁 항을 들어낸 상태</b>)
+              </div>
+              <div className="mt-1">
+                지금은 점유율 환산을 <b>꺼 두었습니다.</b> 2026-09-16 점검에서 지금 환산이 실측
+                점유율을 아무것도 설명하지 못한다는 게 드러났습니다 — 경쟁력격차 r=0.025 ·
+                사양 −0.062 · 입지 0.075~0.220으로 전부 유의선 0.371 미달이고, 수준도 안 맞습니다
+                (자사PC÷(자사PC+경쟁IP) 중앙 0.186 vs 실측 0.519).
+              </div>
+              <div className="mt-1">
+                그래서 <b>경쟁을 0으로 놓고 시작</b>합니다. 아래 표의 <b>필요 점유율</b>이 각 매장이
+                실제로 먹은 몫이고, 그 값으로 <b>수요식을 2차 검증</b>합니다. 100%를 넘는 매장은
+                그 동네 수요를 과소평가했다는 뜻입니다.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-1 font-mono text-[11px]">
+                가동률 = 수요 × 격차<sup>{p.gapExponent}</sup> ÷ (자사PC × 격차<sup>{p.gapExponent}</sup> + 경쟁IP)
+                {p.outsideOptionIp > 0 ? ` + 안가는몫 ${p.outsideOptionIp}` : ""}
+              </div>
+              <div className="mt-1">
+                지수 <b>{p.gapExponent}</b>는 원래 <b>쏠림</b>을 뜻하려던 값입니다. 그런데 2026-09-16
+                검정에서 <b>쏠림이 아니라 수준 보정</b>이라는 게 드러났습니다 — 격차를 아예 빼고 상수
+                배율 4만 써도 점유율 MAPE가 32.6%로 격차^4의 32.0%와 같습니다. 홀드아웃에서도
+                무너집니다(표본 안 29.08% → LOO 36.20%, 무작위 대조군 p=0.072).
+              </div>
+            </>
+          )}
           <div className="mt-1">
-            지수 <b>{p.gapExponent}</b>는 <b>쏠림</b>을 뜻합니다. 1이면 경쟁력만큼 비례해 나눠 갖고,
-            클수록 우위 매장으로 몰립니다. 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
+            가동률 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
             (실측 월평균 최대가 46.5%, 월 최대의 최대가 52.0%).
           </div>
         </li>
@@ -481,6 +531,26 @@ function Controls({
           onChange={(v) => set("outsideOptionIp", v)}
           hint="경쟁IP와 같은 단위로 분모에 더합니다. 0이면 경쟁점 없는 상권의 점유율이 100%가 되어 수요를 통째로 먹습니다." />
 
+        <div className="mb-3 rounded-lg border border-[#171310]/10 p-3 dark:border-white/10">
+          <p className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">점유율 환산</p>
+          <div className="mt-2 flex gap-2">
+            {(["off", "formula"] as const).map((mode) => (
+              <button key={mode} type="button" onClick={() => set("shareMode", mode)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium ${p.shareMode === mode
+                  ? "bg-[#171310] text-white dark:bg-[#f2ede2] dark:text-[#171310]"
+                  : "border border-[#171310]/15 text-[var(--sl-ink-soft)] dark:border-white/15"}`}>
+                {mode === "off" ? "끄기 (점유율 100%)" : "산식 (격차^지수)"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-[var(--sl-ink-soft)]">
+            <b>끄기</b>가 기본값입니다. 2026-09-16 점검에서 지금 점유율 환산이 실측 점유율을
+            아무것도 설명하지 못한다는 게 드러났습니다 — 경쟁력격차 r=0.025 · 사양 −0.062 ·
+            입지 0.075~0.220으로 전부 유의선 0.371 미달이고, 수준도 안 맞습니다
+            (자사PC÷(자사PC+경쟁IP) 중앙 0.186 vs 실측 0.519).
+            그래서 <b>경쟁 항을 들어낸 상태에서 수요식부터 2차 검증</b>합니다.
+          </p>
+        </div>
         <Slider label="경쟁력격차 지수" value={p.gapExponent} min={0} max={4} step={0.1}
           onChange={(v) => set("gapExponent", v)}
           hint="1이면 기존 구조와 같습니다. 높일수록 경쟁력 차이를 세게 봅니다." />
@@ -519,6 +589,11 @@ function StoreTable({ score }: { score: TextbookScore }) {
   return (
     <section className="mt-6">
       <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 (오차 큰 순)</h2>
+      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+        <b>필요 점유율</b>은 이 매장이 <b>실제로 먹은 몫</b>입니다 — 실측가동률 ÷ 경쟁없을때 예측.
+        수요식이 맞다면 0~100% 안에 들고 경쟁이 셀수록 낮아야 합니다.
+        <b className="text-red-600 dark:text-red-400"> 100%를 넘으면 그 동네 수요를 과소평가한 것</b>입니다.
+      </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
@@ -530,7 +605,9 @@ function StoreTable({ score }: { score: TextbookScore }) {
               <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
               <th scope="col" className="px-3 py-2 text-right">실측가동률</th>
               <th scope="col" className="px-3 py-2 text-right">가동률오차</th>
-              <th scope="col" className="px-3 py-2 text-right">점유율</th>
+              <th scope="col" className="px-3 py-2 text-right" title="경쟁이 없다고 볼 때의 예측 가동률">경쟁없을때</th>
+              <th scope="col" className="px-3 py-2 text-right" title="실측가동률 ÷ 경쟁없을때 — 이 매장이 실제로 먹은 몫">필요 점유율</th>
+              <th scope="col" className="px-3 py-2 text-right">산식 점유율</th>
               <th scope="col" className="px-3 py-2">비고</th>
             </tr>
           </thead>
@@ -549,6 +626,10 @@ function StoreTable({ score }: { score: TextbookScore }) {
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.actualUtilization)}</td>
                   <td className={`px-3 py-2 text-right tabular-nums ${(r.utilErrPct ?? 0) > 0.2 ? "font-semibold text-red-600 dark:text-red-400" : ""}`}>
                     {pct(r.utilErrPct)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{pct(r.utilizationNoShare)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums font-semibold ${(r.requiredShare ?? 0) > 1 ? "text-red-600 dark:text-red-400" : ""}`}>
+                    {pct(r.requiredShare)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.share)}</td>
                   <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">

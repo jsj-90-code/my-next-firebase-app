@@ -197,6 +197,26 @@ export type TextbookParams = {
   rateElasticity: number;
   /** 정가 탄력도의 기준점(원). 이 정가인 매장에서 총단가 = T0가 된다. 32곳 중앙정가. */
   referenceHourlyRate: number;
+  /**
+   * **점유율 환산을 켤지 끌지** (2026-09-16 밤 신설).
+   *
+   * 사용자 설계: "일단 전체가맹점을 점유율환산하는 값을 전부제거해서 0부터 시작한다음에,
+   * 점유율이 얼마가 되어야 예상매출로갈수있는지 확인해볼수있도록하면 지금 수요의 문제점이
+   * 있는지 2차검증을 해볼수있을것같다."
+   *
+   *   "formula" — 지금까지 동작. 점유율 = (자사PC x 격차^γ) / (자사PC x 격차^γ + 경쟁IP + 안가는몫)
+   *   "off"     — 점유율을 1로 둔다. 경쟁 항을 통째로 들어낸 상태다.
+   *
+   * `off`로 두면 예측 가동률이 "경쟁이 없다면 이만큼"이 되고, 화면의 **필요 점유율**
+   * (= 실측가동률 ÷ 그 예측)이 **이 매장이 실제로 먹은 몫**이 된다. 수요식이 맞다면 그 값이
+   * 0~1 안에 들고 경쟁이 셀수록 낮아야 한다. 1을 넘으면 그 동네 수요를 과소평가한 것이다.
+   *
+   * 왜 이게 필요한가: 2026-09-16 점검에서 지금 점유율 환산이 **아무것도 설명하지 못한다**는
+   * 게 드러났다(경쟁력격차 r=0.025, 사양 -0.062, 입지 0.075~0.220 — 전부 유의선 0.371 미달).
+   * 게다가 수준도 안 맞는다(자사PC/(자사PC+경쟁IP) 중앙 0.186 vs 실측 0.519). 근거는
+   * `_shareAudit.test.ts`에 있다. 그래서 경쟁 항을 고치기 전에 수요식부터 다시 본다.
+   */
+  shareMode: "formula" | "off";
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
@@ -236,6 +256,9 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 2026-09-16 저녁(3)부터 이 지수는 PC몫에만 걸린다(상품몫은 정가와 무관).
   rateElasticity: 0.546,
   referenceHourlyRate: 1343,
+  // 2026-09-16 밤 — 경쟁 항이 아무것도 설명하지 못한다는 게 드러나 **끈 상태로 시작**한다.
+  // 화면의 "필요 점유율"로 수요식을 먼저 2차 검증한 뒤, 경쟁 항을 다시 세운다.
+  shareMode: "off",
   maxUtilization: 0.55,
 };
 
@@ -385,7 +408,10 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   // 분모의 outsideOptionIp가 "PC방을 안 가는 몫"이다. 이게 없으면 경쟁점 0곳일 때
   // 점유율이 100%가 되어 동네 수요를 통째로 먹는다.
   const denom = ownWeight + rivalIp + p.outsideOptionIp;
-  const share = denom > 0 ? ownWeight / denom : 1;
+  // shareMode="off"면 점유율을 아예 1로 둔다 — 경쟁 항을 통째로 들어낸 상태다.
+  // 그러면 화면의 "필요 점유율"(실측가동률 ÷ 이 예측)이 **이 매장이 실제로 먹은 몫**이 되고,
+  // 그 값으로 수요식을 2차 검증할 수 있다(2026-09-16 사용자 설계).
+  const share = p.shareMode === "off" ? 1 : (denom > 0 ? ownWeight / denom : 1);
 
   // ── 4) 매출 ─────────────────────────────────────────────────────────────
   const rawOwnHours = totalHours * share;
@@ -567,12 +593,22 @@ export type TextbookScore = {
   /** 가동률 성적 — 실측 가동률이 있는 매장만. 매출과 따로 봐야 층별 판정이 된다. */
   utilizationMape: number | null;
   utilizationSampleCount: number;
+  /**
+   * **필요 점유율** 요약 — 이 매장이 실제로 먹은 몫. 수요식 2차 검증용이다.
+   * 필요 점유율 = 실측가동률 ÷ (경쟁 없다고 볼 때의 예측 가동률)
+   * 수요식이 맞다면 0~1 안에 들어야 한다. 1을 넘으면 그 동네 수요를 과소평가한 것이다.
+   */
+  requiredShare: { count: number; median: number; min: number; max: number; overOne: number } | null;
   rows: {
     storeCode: string; storeName: string | null;
     predicted: number | null; actual: number; absErrPct: number | null;
     utilization: number | null; actualUtilization: number | null; utilErrPct: number | null;
     share: number | null; capped: boolean;
     unitPrice: number | null; pcUnitPrice: number | null; productRatio: number | null;
+    /** 경쟁이 없다고 볼 때의 예측 가동률 — 필요 점유율의 분모다. */
+    utilizationNoShare: number | null;
+    /** 필요 점유율 = 실측가동률 ÷ utilizationNoShare. 실측 가동률이 없으면 null. */
+    requiredShare: number | null;
     missing: string[];
   }[];
 };
@@ -593,6 +629,7 @@ export function scoreTextbook(
   const out: TextbookScore["rows"] = [];
   const errs: number[] = [];
   const utilErrs: number[] = [];
+  const reqShares: number[] = [];
   for (const r of rows) {
     const b = computeTextbook(r.input, full);
     const err = b.monthlyRevenue != null && r.actualRevenue > 0
@@ -604,15 +641,25 @@ export function scoreTextbook(
       ? Math.abs(b.utilization - au) / au
       : null;
     if (utilErr != null) utilErrs.push(utilErr);
+    // **필요 점유율** — 경쟁을 아예 없다고 본 예측 가동률로 실측을 나눈 값이다.
+    // 이게 "이 매장이 실제로 먹은 몫"이고, 수요식 2차 검증의 자다(2026-09-16 사용자 설계).
+    // 상한을 무한대로 두는 이유: 상한에 걸리면 분모가 잘려 필요 점유율이 부풀려진다.
+    const bNo = computeTextbook(r.input, { ...full, shareMode: "off", maxUtilization: Number.POSITIVE_INFINITY });
+    const req = bNo.utilization != null && bNo.utilization > 0 && au != null && au > 0
+      ? au / bNo.utilization
+      : null;
+    if (req != null) reqShares.push(req);
     out.push({
       storeCode: r.input.storeCode, storeName: r.input.storeName,
       predicted: b.monthlyRevenue, actual: r.actualRevenue, absErrPct: err,
       utilization: b.utilization, actualUtilization: au ?? null, utilErrPct: utilErr,
       share: b.share, capped: b.capped, unitPrice: b.unitPrice, pcUnitPrice: b.pcUnitPrice,
-      productRatio: b.productRatio, missing: b.missing,
+      productRatio: b.productRatio, utilizationNoShare: bNo.utilization, requiredShare: req,
+      missing: b.missing,
     });
   }
   const sorted = [...errs].sort((a, b) => a - b);
+  const reqSorted = [...reqShares].sort((a, b) => a - b);
   return {
     sampleCount: errs.length,
     mape: errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : null,
@@ -625,6 +672,13 @@ export function scoreTextbook(
     scaledOnUtilization,
     utilizationMape: utilErrs.length ? utilErrs.reduce((a, b) => a + b, 0) / utilErrs.length : null,
     utilizationSampleCount: utilErrs.length,
+    requiredShare: reqSorted.length ? {
+      count: reqSorted.length,
+      median: reqSorted[Math.floor(reqSorted.length / 2)],
+      min: reqSorted[0],
+      max: reqSorted[reqSorted.length - 1],
+      overOne: reqSorted.filter((v) => v > 1).length,
+    } : null,
     rows: out.sort((a, b) => (b.absErrPct ?? 0) - (a.absErrPct ?? 0)),
   };
 }
