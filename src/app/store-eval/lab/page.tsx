@@ -604,9 +604,17 @@ function StoreTable({ score }: { score: TextbookScore }) {
     <section className="mt-6">
       <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 (오차 큰 순)</h2>
       <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-        <b>필요 점유율</b>은 이 매장이 <b>실제로 먹은 몫</b>입니다 — 실측가동률 ÷ 경쟁없을때 예측.
-        수요식이 맞다면 0~100% 안에 들고 경쟁이 셀수록 낮아야 합니다.
-        <b className="text-red-600 dark:text-red-400"> 100%를 넘으면 그 동네 수요를 과소평가한 것</b>입니다.
+        <b>가동률오차</b>는 퍼센트포인트 차이가 아니라 <b>상대오차</b>입니다(|예상−실측| ÷ 실측).
+        <b> 수요 전부라면</b>은 점유율 항을 끈 값 — 이 동네 수요가 전부 우리에게 온다면 PC가 몇 % 도는가입니다.
+        경쟁점 유무와 무관합니다.
+        <b> 실제 먹은 몫</b>은 실측가동률 ÷ 수요 전부라면입니다.
+      </p>
+      <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        ⚠️ <b>지금 이 두 열은 믿을 수 없습니다.</b> 38곳 중 37곳이 &ldquo;수요 전부라면&rdquo; 100%를 넘고
+        중앙값이 317%입니다. 경쟁점이 0곳인 독점 매장(탕정역점)조차 &ldquo;실제 먹은 몫&rdquo;이 15%로
+        나옵니다 — 독점이면 100%에 가까워야 합니다. <b>수요식이 실제의 3~6배를 잡고, 점유율이
+        그만큼 작게 나와 서로 상쇄되는 상태</b>입니다. 그래서 예상매출은 얼추 맞지만 중간 두 단계가
+        둘 다 틀렸습니다. 2026-09-16 확인, 원인 추적 중입니다.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">
@@ -618,9 +626,9 @@ function StoreTable({ score }: { score: TextbookScore }) {
               <th scope="col" className="px-3 py-2 text-right">오차</th>
               <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
               <th scope="col" className="px-3 py-2 text-right">실측가동률</th>
-              <th scope="col" className="px-3 py-2 text-right">가동률오차</th>
-              <th scope="col" className="px-3 py-2 text-right" title="경쟁이 없다고 볼 때의 예측 가동률">경쟁없을때</th>
-              <th scope="col" className="px-3 py-2 text-right" title="실측가동률 ÷ 경쟁없을때 — 이 매장이 실제로 먹은 몫">필요 점유율</th>
+              <th scope="col" className="px-3 py-2 text-right" title="|예상−실측| ÷ 실측. 퍼센트포인트 차이가 아니라 상대오차다(매출 오차와 같은 방식).">가동률오차<span className="ml-0.5 text-[10px] font-normal text-[var(--sl-ink-soft)]">(상대)</span></th>
+              <th scope="col" className="px-3 py-2 text-right" title="점유율 항을 아예 끈 예측 가동률 — 이 동네 수요가 전부 우리에게 온다면 PC가 몇 % 돌아가나. 경쟁점 유무와 무관하고, 100%를 넘으면 수요가 우리 용량보다 크다는 뜻이다.">수요 전부라면</th>
+              <th scope="col" className="px-3 py-2 text-right" title="실측가동률 ÷ 수요 전부라면 — 이 매장이 그 동네 수요 중 실제로 먹은 몫">실제 먹은 몫</th>
               <th scope="col" className="px-3 py-2 text-right">산식 점유율</th>
               <th scope="col" className="px-3 py-2">비고</th>
             </tr>
