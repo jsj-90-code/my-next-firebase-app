@@ -169,6 +169,26 @@
 //       ([[feedback_item_vs_coefficient]]) — 계수를 `[보류]`(ω=0)로 두거나 사용자가
 //       `[감각]`으로 정하면 된다. 표본이 늘면 다시 본다.
 //
+// ⑫ **접근성 κ는 켠다 — 갈렸던 원인은 기준값이었다.** (사용자: "작업은 너한테시킬거임")
+//    ⑨에서 MAPE 기준은 κ=0을, r 기준은 κ=0.25를 골라 갈렸다. 원인을 찾았다:
+//    층수 항이 편향을 키우는데(-5.5% -> -10.0%) MAPE가 편향을 포함하기 때문이다.
+//
+//    **기준값을 중앙값에서 기하평균으로 바꾸니 갈림이 사라진다.**
+//    곱셈 보정 (x/기준)^지수는 표본 전체에서 평균적으로 1배여야 중립인데, 그러려면 기준이
+//    **로그 공간의 중심 = 기하평균**이어야 한다. 중심도는 0.37~6.95로 오른쪽 꼬리가 길어
+//    중앙값(3.95)과 기하평균(3.22)이 꽤 다르다.
+//
+//      기준           고르는 κ (MAPE / r)   편향      MAPE      r
+//      중앙값 3.95·4   0 / 0.25            -12.8%   24.59%   0.712
+//      **기하평균 3.22·3.42  0.25 / 0.25   -9.2%    24.08%   0.736**
+//
+//      [ν=0.25 고정] κ=0 -> 24.39%·0.693 · **κ=0.25 -> 24.08%·0.736** · κ=0.5 -> 26.13%·0.727
+//      LOO도 κ0.25/ν0.25를 93%(MAPE)·86%(r) 고르고 벌어짐 1.79%p.
+//
+//    ⚠️ **수준을 자유계수 λ로 푸는 것보다 낫다.** λ를 풀면 표본 안 MAPE는 비슷한데(24.04%)
+//       LOO 벌어짐이 1.79%p -> **6.45%p**로 커진다. 기하평균은 자료에 맞춰 고르는 값이 아니라
+//       "보정이 평균적으로 아무 일도 안 하게" 만드는 유일한 값이라 **자유계수가 아니다.**
+//
 // ⚠️ 이건 **측정이지 채택이 아니다.** 입지 개념 재수립은 사용자 결정 사항이다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -899,6 +919,134 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     });
     runGate("(나) 카카오 음식점 300m/1km — 출처 바꿔 재현되나", centKak);
     expect(cmp.length).toBeGreaterThan(20);
+  });
+
+  it("⑫ 접근성 κ를 켤까 끌까 — 수준(λ)을 풀고 다시 판정한다", () => {
+    // ⑨에서 갈렸다: 중심도가 들어오면 **MAPE 기준은 κ=0**(LOO 97%), **r 기준은 κ=0.25~0.5**.
+    // 사용자 방침(2026-09-17): "웹에서 슬라이드조정해서 맞춰보진않을거야 (...) 작업은 너한테시킬거임".
+    // 화면에 떠넘길 게 아니라 여기서 결론을 내야 한다.
+    //
+    // 심증: **편향 때문이다.** 층수 항은 편향을 -5.5% -> -10.0%로 키운다(④). 중심도도 편향을
+    // 키운다. 축척 A가 독점 3곳에 고정돼 있어서 둘이 겹치면 수준이 너무 내려가고, MAPE는
+    // 편향을 포함하므로 손해가 난다. 경쟁 항 때도 같은 함정이 있었다(λ를 풀면 그림이 바뀐다).
+    //
+    // 그래서 **수준 λ를 자유로 풀고** 다시 본다. λ가 편향을 흡수한 뒤에도 κ가 남으면 켜고,
+    // 그때도 0이면 끈다.
+    const DENS = ".local-tools/kakao-place-density.json";
+    if (!existsSync(DENS)) return;
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const key = (r: Row) => `existing:${r.store.storeCode}`;
+    const floAvg = (r: Row, rad: number): number | null => {
+      const sel = F[key(r)]?.radii?.[String(rad)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    const centFlo = (r: Row) => {
+      const i = floAvg(r, 300), o = floAvg(r, 1000);
+      return i == null || o == null || !(o > 0) ? null : (i / o) * (1000 / 300) ** 2;
+    };
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const fRef = med(rows.map((r) => r.floorScore).filter((v): v is number => v != null));
+    const ok = cmp.filter((r) => centFlo(r) != null && r.floorScore != null);
+    const cRef = med(ok.map((r) => centFlo(r)!));
+    type Q = { base: number; fs: number; ct: number; obs: number };
+    const set: Q[] = ok.map((r) => ({ base: qualShare(r), fs: r.floorScore!, ct: centFlo(r)!, obs: r.shareObs }));
+
+    const KAP = [0, 0.25, 0.5, 0.75], NU = [0, 0.25, 0.5, 0.75], LAM = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+    const pred = (q: Q, l: number, k: number, v: number) => Math.min(1, l * q.base * Math.pow(q.fs / fRef, k) * Math.pow(q.ct / cRef, v));
+    const mape = (s: Q[], l: number, k: number, v: number) => mean(s.map((q) => Math.abs(pred(q, l, k, v) / q.obs - 1)));
+    const corr = (s: Q[], l: number, k: number, v: number) => pear(s.map((q) => pred(q, l, k, v)), s.map((q) => q.obs));
+    const bias = (s: Q[], l: number, k: number, v: number) => mean(s.map((q) => pred(q, l, k, v) / q.obs - 1));
+    const sc = (s: Q[], crit: "mape" | "r", l: number, k: number, v: number) => (crit === "mape" ? mape(s, l, k, v) : -corr(s, l, k, v));
+    const pick = (s: Q[], crit: "mape" | "r", Ls: number[], Ks = KAP) => {
+      let b = { l: Ls[0], k: Ks[0], v: NU[0], val: Infinity };
+      for (const l of Ls) for (const k of Ks) for (const v of NU) { const x = sc(s, crit, l, k, v); if (x < b.val) b = { l, k, v, val: x }; }
+      return b;
+    };
+
+    console.log(`\n══ 수준 λ 고정(=1) vs 자유 · n=${set.length} ══`);
+    console.log(`${"설정".padEnd(26)}${"고른 값".padStart(20)}${"편향".padStart(9)}${"MAPE".padStart(8)}${"r".padStart(8)}`);
+    const show = (label: string, b: { l: number; k: number; v: number }) => {
+      console.log(`${label.padEnd(26)}${`λ=${b.l}·κ=${b.k}·ν=${b.v}`.padStart(20)}${(bias(set, b.l, b.k, b.v) * 100).toFixed(1).padStart(8)}%${(mape(set, b.l, b.k, b.v) * 100).toFixed(2).padStart(7)}%${corr(set, b.l, b.k, b.v).toFixed(3).padStart(8)}`);
+    };
+    show("λ 고정 · MAPE 기준", pick(set, "mape", [1]));
+    show("λ 고정 · r 기준", pick(set, "r", [1]));
+    show("λ 자유 · MAPE 기준", pick(set, "mape", LAM));
+    show("λ 자유 · r 기준", pick(set, "r", LAM));
+    console.log(`  -> λ가 편향을 흡수한 뒤에도 κ가 남으면 켠다. 그때도 0이면 끈다.`);
+
+    // ── 기준값을 제대로 잡으면 λ가 필요 없다 ──────────────────────────
+    // λ를 푸는 건 자유계수를 하나 더 주는 것이라 비싸다(LOO 벌어짐 0.98 -> 6.45%p).
+    // 그런데 λ가 한 일은 **수준 보정**뿐이고, 그건 기준값이 잘못 잡혀서 생긴 일이다.
+    //
+    // 곱셈 보정 (x/ref)^e는 표본 전체에서 **평균적으로 1배**여야 중립이다. 그러려면
+    // ref가 x의 **기하평균**이어야 한다(로그 공간의 중심). 중앙값을 쓰면 분포가 한쪽으로
+    // 꼬리를 끌 때 중립이 깨진다 — 중심도는 0.37~6.95로 오른쪽 꼬리가 길다.
+    //
+    // 기하평균은 **자유계수가 아니라 정규화**다. λ처럼 자료에 맞춰 고르는 값이 아니라,
+    // "보정이 평균적으로 아무 일도 안 하게" 만드는 유일한 값이다.
+    const geo = (a: number[]) => Math.exp(mean(a.map(Math.log)));
+    const cGeo = geo(set.map((q) => q.ct)), fGeo = geo(set.map((q) => q.fs));
+    const pred2 = (q: Q, k: number, v: number) => Math.min(1, q.base * Math.pow(q.fs / fGeo, k) * Math.pow(q.ct / cGeo, v));
+    const mape2 = (s: Q[], k: number, v: number) => mean(s.map((q) => Math.abs(pred2(q, k, v) / q.obs - 1)));
+    const corr2 = (s: Q[], k: number, v: number) => pear(s.map((q) => pred2(q, k, v)), s.map((q) => q.obs));
+    const bias2 = (s: Q[], k: number, v: number) => mean(s.map((q) => pred2(q, k, v) / q.obs - 1));
+    const pick2 = (s: Q[], crit: "mape" | "r") => {
+      let b = { k: KAP[0], v: NU[0], val: Infinity };
+      for (const k of KAP) for (const v of NU) { const x = crit === "mape" ? mape2(s, k, v) : -corr2(s, k, v); if (x < b.val) b = { k, v, val: x }; }
+      return b;
+    };
+    console.log(`\n══ 기준값을 기하평균으로 (λ 없이) ══`);
+    console.log(`  중심도 기준 ${cRef.toFixed(2)}(중앙) → ${cGeo.toFixed(2)}(기하평균) · 층수 기준 ${fRef}(중앙) → ${fGeo.toFixed(2)}(기하평균)`);
+    console.log(`${"설정".padEnd(26)}${"고른 값".padStart(16)}${"편향".padStart(9)}${"MAPE".padStart(8)}${"r".padStart(8)}`);
+    for (const crit of ["mape", "r"] as const) {
+      const b = pick2(set, crit);
+      console.log(`${(crit === "mape" ? "MAPE 기준" : "r 기준").padEnd(26)}${`κ=${b.k}·ν=${b.v}`.padStart(16)}${(bias2(set, b.k, b.v) * 100).toFixed(1).padStart(8)}%${(mape2(set, b.k, b.v) * 100).toFixed(2).padStart(7)}%${corr2(set, b.k, b.v).toFixed(3).padStart(8)}`);
+    }
+    // κ만 켜고 끄며 직접 비교 — ν는 고정한다.
+    console.log(`\n  [ν=0.25 고정] κ를 켜고 끄면`);
+    console.log(`  ${"κ".padStart(6)}${"편향".padStart(9)}${"MAPE".padStart(8)}${"r".padStart(8)}`);
+    for (const k of KAP) {
+      console.log(`  ${String(k).padStart(6)}${(bias2(set, k, 0.25) * 100).toFixed(1).padStart(8)}%${(mape2(set, k, 0.25) * 100).toFixed(2).padStart(7)}%${corr2(set, k, 0.25).toFixed(3).padStart(8)}`);
+    }
+    console.log(`\n  [LOO · 기하평균 기준, λ 없이]`);
+    for (const crit of ["mape", "r"] as const) {
+      const errs: number[] = [], preds: number[] = [], picks: string[] = [];
+      for (let i = 0; i < set.length; i++) {
+        const b = pick2(set.filter((_, j) => j !== i), crit);
+        picks.push(`κ${b.k}/ν${b.v}`);
+        const ph = pred2(set[i], b.k, b.v);
+        preds.push(ph); errs.push(Math.abs(ph / set[i].obs - 1));
+      }
+      const ins = pick2(set, crit);
+      const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ${(mape2(set, ins.k, ins.v) * 100).toFixed(2)}% → LOO ${(mean(errs) * 100).toFixed(2)}% (벌어짐 ${((mean(errs) - mape2(set, ins.k, ins.v)) * 100).toFixed(2)}%p) · LOO r=${pear(preds, set.map((q) => q.obs)).toFixed(3)} · ${tally.slice(0, 2).map(([x, n]) => `${x} ${Math.round(n / set.length * 100)}%`).join(" · ")}`);
+    }
+
+    // λ를 푼 상태에서 홀드아웃까지 본다 — λ도 자유계수라 공짜가 아니다.
+    console.log(`\n[LOO · λ 자유]`);
+    for (const crit of ["mape", "r"] as const) {
+      const errs: number[] = [], preds: number[] = [], picks: string[] = [];
+      for (let i = 0; i < set.length; i++) {
+        const b = pick(set.filter((_, j) => j !== i), crit, LAM);
+        picks.push(`κ${b.k}`);
+        const ph = pred(set[i], b.l, b.k, b.v);
+        preds.push(ph); errs.push(Math.abs(ph / set[i].obs - 1));
+      }
+      const ins = pick(set, crit, LAM);
+      const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ${(mape(set, ins.l, ins.k, ins.v) * 100).toFixed(2)}% → LOO ${(mean(errs) * 100).toFixed(2)}% (벌어짐 ${((mean(errs) - mape(set, ins.l, ins.k, ins.v)) * 100).toFixed(2)}%p) · LOO r=${pear(preds, set.map((q) => q.obs)).toFixed(3)}`);
+      console.log(`      훈련이 고른 κ: ${tally.map(([x, n]) => `${x} ${Math.round(n / set.length * 100)}%`).join(" · ")}`);
+    }
+    expect(set.length).toBeGreaterThan(20);
   });
 
   it("⑪ 중심도를 어떤 반경 짝으로 만들까 — 1km는 Firestore에 없다", () => {

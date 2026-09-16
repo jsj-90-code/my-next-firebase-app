@@ -744,13 +744,18 @@ function Controls({
             <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">
               <b>[자료]</b> 관문(홀드아웃·교차검증·대조군)을 통과한 값 ·
               <b> [보류]</b> 자료가 계수를 못 정해 0으로 둔 값 — 항목을 버린 게 아닙니다
+              <br />
+              기준값은 <b>기하평균</b>({p.locationReferences.centrality} / {p.locationReferences.access})으로 잡습니다.
+              곱셈 보정이 표본 전체에서 평균적으로 1배가 되려면 로그 공간의 중심이어야 하고,
+              중앙값을 쓰면 꼬리가 긴 쪽으로 중립이 깨집니다. <b>자유계수가 아니라 정규화</b>라
+              검정 대상이 아닙니다.
             </p>
             <Slider label="[자료] 상권 중심도 ν" value={p.locationExponents.centrality} min={0} max={1} step={0.05}
               onChange={(v) => set("locationExponents", { ...p.locationExponents, centrality: v })}
               hint="중심도 = (유동 300m ÷ 유동 1km) × (1000/300)². 1보다 크면 우리 문 앞이 상권 평균보다 빽빽합니다(상권 중심), 작으면 우리 주변은 한산한데 저쪽이 붐빕니다(상권 끝). 관문을 전부 통과했고 지금까지 중 제일 강합니다 — 대조군 p=0.002." />
             <Slider label="[자료] 접근성(층수) κ" value={p.locationExponents.access} min={0} max={1} step={0.05}
               onChange={(v) => set("locationExponents", { ...p.locationExponents, access: v })}
-              hint="층수·지상지하·엘리베이터로 자동 계산합니다(경쟁점과 같은 함수). 관문은 통과했지만 기준에 따라 갈립니다 — 중심도가 들어오면 오차(MAPE) 기준으로는 0이 뽑히고, 순서(상관) 기준으로는 0.25~0.5가 남습니다. 둘은 겹치지 않습니다(상관 0.068). 켜고 꺼보며 정하십시오." />
+              hint="층수·지상지하·엘리베이터로 자동 계산합니다(경쟁점과 같은 함수). 한때 오차 기준과 순서 기준이 갈렸는데 원인이 기준값이었습니다 — 기하평균으로 고치니 두 기준이 같은 답(0.25)을 냅니다. κ=0이면 MAPE 24.39%·상관 0.693, κ=0.25면 24.08%·0.736, κ=0.5면 26.13%·0.727입니다." />
             <Slider label="[보류] 유동 방향 ω" value={p.locationExponents.direction} min={0} max={2} step={0.1}
               onChange={(v) => set("locationExponents", { ...p.locationExponents, direction: v })}
               hint="8방위로 세어 만든 편심도(0=사방이 고름, 1에 가까울수록 한쪽 쏠림). 부호는 맞지만(음수) 중심도가 이미 먹고 있어 잔차 상관이 −0.280에서 −0.069로 사라집니다. 대조군 p=1.000/0.216 미달. 자료는 모아뒀으니 값을 주시면 바로 켜집니다. ※ 지금은 실험실이 이 값을 아직 안 넘겨 자료없음으로 빠집니다." />
