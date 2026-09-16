@@ -84,6 +84,7 @@ src/**/_*.test.ts
 !src/lib/storeEval/_demandOnly.test.ts
 !src/lib/storeEval/_monopolyDemand.test.ts
 !src/lib/storeEval/_utilizationTarget.test.ts
+!src/lib/storeEval/_monopolyCalibration.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
