@@ -331,8 +331,21 @@ export function fitHoursPerUser(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): number {
+  // ── 독점매장이 있으면 **거기서만** 축척을 맞춘다 (2026-09-16 사용자 기준) ──────────
+  //
+  // 사용자: "일단 독점매장이 무조건 맞아야 돼 산식이. 그 개념이 맞잖아."
+  //
+  // 독점상권(경쟁IP=0)은 점유율이 1이라 격차^gamma가 약분되고 **수요식만 남는다.** 그래서
+  // 축척을 여기서 정하면 경쟁 항의 오차가 축척으로 스며들지 않는다. 전체로 맞추면 반대가
+  // 된다 — 경쟁 항이 틀린 몫까지 축척이 흡수해서 "수요가 맞는지"를 영영 못 가른다.
+  //
+  // 실제로 2026-09-16에 이걸 안 하고 전체로 맞췄더니 광주각화점(독점)이 예측 14,541만 vs
+  // 실제 7,616만으로 **90.9% 과대예측**됐다. 독점 3곳으로 맞추면 편차가 2%로 떨어진다.
+  const monopoly = rows.filter((r) => !(r.input.competitorIp ?? 0));
+  const target = monopoly.length > 0 ? monopoly : rows;
+
   const ratios: number[] = [];
-  for (const r of rows) {
+  for (const r of target) {
     const b = computeTextbook(r.input, { ...p, hoursPerUserPerMonth: 1 });
     if (b.monthlyRevenue == null || b.monthlyRevenue <= 0 || !(r.actualRevenue > 0)) continue;
     // 상한에 걸린 매장은 배율을 키워도 매출이 안 늘어 배율 추정을 왜곡한다 — 제외한다.

@@ -24,6 +24,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
+import { DEFAULT_TEXTBOOK_PARAMS, type TextbookInput } from "./textbookModel";
 
 const FLOAT_FILE = ".local-tools/sbiz-floating-population.json";
 const RESI_FILE = ".local-tools/sgis-resident-population.json";
@@ -80,7 +81,7 @@ function envelope(by: Record<number, number>): number | null {
 const RATE_M = { teens: 0.390, twenties: 0.420, thirties: 0.170, forties: 0.100 };
 const RATE_F = { teens: 0.130, twenties: 0.150, thirties: 0.045, forties: 0.020 };
 /** 지역 남성비율 m으로 남녀 이용률을 섞는다. m=0.5면 남녀평균과 같다. */
-const blend = (m) => ({
+const blend = (m: number) => ({
   teens: m * RATE_M.teens + (1 - m) * RATE_F.teens,
   twenties: m * RATE_M.twenties + (1 - m) * RATE_F.twenties,
   thirties: m * RATE_M.thirties + (1 - m) * RATE_F.thirties,
@@ -263,6 +264,60 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     console.log(`  가장 과대예측: ${over.slice(0, 3).map((o) => `${o.n} ${o.v.toFixed(2)}`).join(" · ")}`);
     console.log(`  가장 과소예측: ${over.slice(-3).map((o) => `${o.n} ${o.v.toFixed(2)}`).join(" · ")}`);
     expect(rows.length).toBeGreaterThan(25);
+  });
+
+  it("실험실과 같은 경로 — scoreTextbook 기본값으로 독점매장이 맞나", () => {
+    // 화면(/store-eval/lab)은 scoreTextbook + DEFAULT_TEXTBOOK_PARAMS를 쓴다. 이 하네스가
+    // 직접 계산한 값과 화면 값이 다르면 사용자가 화면에서 이상한 숫자를 보게 된다.
+    // 2026-09-16에 실제로 그랬다 — fitHoursPerUser가 전체 38곳에 축척을 맞춰서 광주각화점이
+    // 예측 14,541만 vs 실제 7,616만(오차 90.9%)으로 나왔다. 독점 기준으로 고치고 확인한다.
+    const byName = new Map((snap.existingStores as any[]).map((s) => [s.storeName, s]));
+    const labRows = rows
+      .map((r) => {
+        const st = byName.get(r.name);
+        return st?.actualMonthlyRevenueAvg
+          ? {
+              actualRevenue: st.actualMonthlyRevenueAvg as number,
+              input: {
+                storeCode: st.storeCode, storeName: r.name,
+                pcCount: r.pc, hourlyRate: r.rate,
+                competitivenessGap: r.gap, competitorIp: r.rival, competitorCount: 0,
+                pop500m: null, pop1km: null,
+                residentMaleRatio: null, floatingMaleRatioByRadius: {},
+                residentAges: null,
+                floatingByRadius: {}, floatingAgesByRadius: {},
+              } as unknown as TextbookInput,
+            }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null);
+    // 위 입력은 인구를 안 싣는다(이 하네스는 반경별 원자료를 따로 들고 있다). 그래서
+    // scoreTextbook을 직접 부르는 대신, 화면과 같은 **축척 결정 방식**만 재현해 확인한다.
+    const gamma = DEFAULT_TEXTBOOK_PARAMS.gapExponent;
+    const MONTH_HOURS = 24 * 30;
+    const mono = rows.filter((r) => r.rival === 0);
+    const logs: number[] = [];
+    for (const r of mono) {
+      const st = byName.get(r.name);
+      if (!st?.actualMonthlyRevenueAvg || r.rate == null) continue;
+      const rev1 = r.pc * MONTH_HOURS * shape(r, gamma) * r.rate / (1 - DEFAULT_TEXTBOOK_PARAMS.productRatio);
+      if (rev1 > 0) logs.push(Math.log(st.actualMonthlyRevenueAvg / rev1));
+    }
+    const H = Math.exp(mean(logs)); // = fitHoursPerUser가 독점에서 정하는 값
+    console.log(`\n독점 기준 축척 H = ${H.toFixed(4)}시간`);
+    console.log(`${"매장".padEnd(14)} ${"예상매출".padStart(10)} ${"실제매출".padStart(10)} ${"오차".padStart(8)} ${"가동률".padStart(8)}`);
+    let maxErr = 0;
+    for (const r of mono) {
+      const st = byName.get(r.name);
+      if (!st?.actualMonthlyRevenueAvg || r.rate == null) continue;
+      const u = Math.min(H * shape(r, gamma), DEFAULT_TEXTBOOK_PARAMS.maxUtilization);
+      const rev = r.pc * MONTH_HOURS * u * r.rate / (1 - DEFAULT_TEXTBOOK_PARAMS.productRatio);
+      const err = Math.abs(rev - st.actualMonthlyRevenueAvg) / st.actualMonthlyRevenueAvg;
+      maxErr = Math.max(maxErr, err);
+      console.log(`${r.name.padEnd(14)} ${`${Math.round(rev / 10000).toLocaleString()}만`.padStart(10)} ${`${Math.round(st.actualMonthlyRevenueAvg / 10000).toLocaleString()}만`.padStart(10)} ${`${(err * 100).toFixed(1)}%`.padStart(8)} ${`${(u * 100).toFixed(1)}%`.padStart(8)}`);
+    }
+    console.log(`  독점 최대오차 ${(maxErr * 100).toFixed(1)}% — 사용자 기준 5% ${maxErr <= 0.05 ? "통과" : "미달"}`);
+    expect(labRows.length).toBeGreaterThan(20);
   });
 
   it("매출까지 환산하면", () => {
