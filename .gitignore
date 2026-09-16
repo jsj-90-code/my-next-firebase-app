@@ -58,6 +58,8 @@ exp-out.txt
 !/.local-tools/sbiz-report-tabs.json
 !/.local-tools/sgis-resident-population.json
 !/.local-tools/geocoded-sites.json
+# 게토 시간대별 가동률 — 매출이 아니라 가동률(%)이라 공개 통계와 같은 급으로 본다.
+!/.local-tools/geto-utilization.json
 
 # Firestore 에뮬레이터 실행 로그 (npm run test:rules)
 firestore-debug.log
