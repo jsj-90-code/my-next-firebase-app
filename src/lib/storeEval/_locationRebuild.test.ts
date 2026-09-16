@@ -123,6 +123,35 @@
 //    대조군이 미달이고(p=0.317) LOO도 더 벌어진다(1.43%p). **산식에는 유동인구판을 쓴다.**
 //    카카오는 ⑦의 교차검증(정의가 실재하는가)에서 제 몫을 다했다.
 //
+// ⑪ **1km는 파이어스토어에 없다 — 300m/500m이 대안인데 성격이 다르다.**
+//    실험실은 파이어스토어를 읽는데 `floating1000Avg` 필드가 없다(로컬 연구 파일에만 있다).
+//    이미 있는 반경만으로 되는지 봤다:
+//
+//      짝          파이어스토어   잔차와 r
+//      300m/500m    있음        0.552 *   <- 유일한 대안
+//      200m/500m    있음        0.413 *
+//      100m/500m    있음        0.231
+//      300m/1000m   없음        0.601 *   <- ⑨에서 관문을 통과한 짝
+//
+//    **그런데 관문을 돌려 보니 둘의 성격이 다르다:**
+//
+//                        300m/1km        300m/500m
+//      표본 안 MAPE       24.52%          25.47%
+//      표본 안 r          0.725           **0.801**
+//      LOO [MAPE] 벌어짐  **0.98%p**      6.65%p  <- gamma(7%p)와 비슷한 징후
+//      LOO [r]   벌어짐   0.43%p          **0.12%p**
+//      LOO r              0.734           **0.771**
+//      5겹 안정(MAPE)     **78%**         53%
+//      대조군 MAPE        **p=0.002**     p=0.028
+//      대조군 r           p=0.012         **p=0.006**
+//      잭나이프           0.570~0.780     **0.641~0.843**
+//
+//    **300m/500m은 순서(r)는 더 잘 맞히는데 MAPE 홀드아웃에서 6.65%p 벌어진다.**
+//    변동계수가 작아서(22.5% vs 45.3%) 같은 효과를 내려면 지수를 키워야 하고(ν=0.5),
+//    큰 지수가 이상점에서 오차를 증폭시킨다. **MAPE 우선 원칙에서는 1km판이 안전하다.**
+//    -> 필드 `floating1000Avg` 하나만 더하면 된다(`writeFloatingPopulationToFirestore.mjs`가
+//       이미 반경 배열로 돌고, 1000m만 "대응 필드가 없어" 빠져 있다). 사용자 판단 대기.
+//
 // ⑩ **유동 방향(편심도) — 방향은 맞았는데 중심도가 이미 먹고 있다.** (사용자 항목)
 //    8방위로 300m 밀어낸 점에서 반경 300m 업소 수를 세고 방위벡터로 합쳤다.
 //    편심도 0=사방이 고름(중앙) · 1에 가까울수록 한쪽 쏠림(끝). 29곳 0.094~0.505.
@@ -861,7 +890,60 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     const both = cmp.filter((r) => centFlo(r) != null && r.floorScore != null);
     console.log(`\n[겹침 점검] 층수자 점수 ↔ 중심도 r=${pear(both.map((r) => r.floorScore!), both.map((r) => Math.log(centFlo(r)!))).toFixed(3)} (n=${both.length})`);
     runGate("(가) 유동 300m/1km — 본 후보", centFlo);
+    // 1km는 파이어스토어에 없다(⑪). 이미 있는 300m/500m이 관문도 통과하면 배관을 안 뚫어도 된다.
+    runGate("(다) 유동 300m/500m — 파이어스토어에 있는 짝", (r) => {
+      const sel3 = F[key(r)]?.radii?.["300"]?.selected, sel5 = F[key(r)]?.radii?.["500"]?.selected;
+      if (!sel3?.length || !sel5?.length) return null;
+      const i = mean(sel3.slice(-12)), o = mean(sel5.slice(-12));
+      return o > 0 ? (i / o) * (500 / 300) ** 2 : null;
+    });
     runGate("(나) 카카오 음식점 300m/1km — 출처 바꿔 재현되나", centKak);
+    expect(cmp.length).toBeGreaterThan(20);
+  });
+
+  it("⑪ 중심도를 어떤 반경 짝으로 만들까 — 1km는 Firestore에 없다", () => {
+    // ⑨에서 고른 건 유동 300m/1km인데, **1km는 파이어스토어에 없다**(로컬 연구 파일에만 있다).
+    // 실험실에 넣으려면 수집 경로를 새로 뚫어야 한다. 그 전에 **이미 있는 반경(100~500m)만으로
+    // 대체 가능한지** 본다 — 되면 배관 작업이 통째로 없어진다.
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const key = (r: Row) => `existing:${r.store.storeCode}`;
+    const floAvg = (r: Row, rad: number): number | null => {
+      const sel = F[key(r)]?.radii?.[String(rad)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const fRef = med(rows.map((r) => r.floorScore).filter((v): v is number => v != null));
+    const withFloor = (r: Row) => qualShare(r) * Math.pow((r.floorScore ?? fRef) / fRef, 0.25);
+    const cent = (r: Row, i: number, o: number) => {
+      const a = floAvg(r, i), b = floAvg(r, o);
+      return a == null || b == null || !(b > 0) ? null : (a / b) * (o / i) ** 2;
+    };
+    const PAIRS: [number, number, boolean][] = [
+      [100, 500, true], [100, 400, true], [200, 500, true], [300, 500, true], [100, 300, true],
+      [300, 1000, false], [100, 1000, false], [200, 1000, false], [500, 1000, false],
+    ];
+    const sig = 2 / Math.sqrt(cmp.length);
+    console.log(`\n안쪽/바깥 반경 짝별 · n=${cmp.length} · 유의선 ${sig.toFixed(3)}`);
+    console.log(`${"짝".padEnd(16)}${"파이어스토어".padStart(12)}${"잔차와 r".padStart(11)}${"시점통제".padStart(10)}${"변동계수".padStart(10)}`);
+    for (const [i, o, inFs] of PAIRS) {
+      const ok2 = cmp.filter((r) => cent(r, i, o) != null);
+      if (ok2.length < 20) continue;
+      const x = ok2.map((r) => Math.log(cent(r, i, o)!));
+      const y = ok2.map((r) => Math.log(r.shareObs / withFloor(r)));
+      const v = ok2.map((r) => cent(r, i, o)!);
+      const r1 = pear(x, y), r2 = partial(x, y, ok2.map((r) => r.t));
+      console.log(`${`${i}m/${o}m`.padEnd(16)}${(inFs ? "있음" : "없음").padStart(12)}${(r1.toFixed(3) + (Math.abs(r1) > sig ? " *" : "  ")).padStart(11)}${(r2.toFixed(3) + (Math.abs(r2) > sig ? " *" : "  ")).padStart(10)}${(sd(v) / mean(v) * 100).toFixed(1).padStart(9)}%`);
+    }
+    console.log(`  -> "있음" 줄 중에 1km 짝만큼 나오는 게 있으면 수집 경로를 안 뚫어도 된다.`);
     expect(cmp.length).toBeGreaterThan(20);
   });
 
