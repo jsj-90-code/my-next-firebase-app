@@ -123,6 +123,23 @@
 //    대조군이 미달이고(p=0.317) LOO도 더 벌어진다(1.43%p). **산식에는 유동인구판을 쓴다.**
 //    카카오는 ⑦의 교차검증(정의가 실재하는가)에서 제 몫을 다했다.
 //
+// ⑩ **유동 방향(편심도) — 방향은 맞았는데 중심도가 이미 먹고 있다.** (사용자 항목)
+//    8방위로 300m 밀어낸 점에서 반경 300m 업소 수를 세고 방위벡터로 합쳤다.
+//    편심도 0=사방이 고름(중앙) · 1에 가까울수록 한쪽 쏠림(끝). 29곳 0.094~0.505.
+//
+//    **부호는 전부 음수다 — 사용자 직관이 방향은 맞았다**(편심도가 크면 점유율이 낮다).
+//    그런데 앞 항을 반영할수록 사라진다:
+//      아무것도 없이  r=-0.280 (이미 유의선 0.371 미달)
+//      층수만 반영    r=-0.208
+//      중심도만 반영  r=-0.167
+//      **둘 다 반영   r=-0.069**  <- 거의 0
+//    편심도 ↔ 중심도가 r=-0.335로 상당히 겹친다. **같은 걸 방향으로 본 것뿐이다.**
+//
+//    관문: MAPE 기준 최선이 **ω=0**(편심도 안 씀)이고 대조군 p=1.000 ❌ · r 기준 p=0.216 ❌.
+//    -> **자료는 ω를 정해주지 못한다.** 항목을 버리라는 뜻이 아니다
+//       ([[feedback_item_vs_coefficient]]) — 계수를 `[보류]`(ω=0)로 두거나 사용자가
+//       `[감각]`으로 정하면 된다. 표본이 늘면 다시 본다.
+//
 // ⚠️ 이건 **측정이지 채택이 아니다.** 입지 개념 재수립은 사용자 결정 사항이다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -846,5 +863,123 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     runGate("(가) 유동 300m/1km — 본 후보", centFlo);
     runGate("(나) 카카오 음식점 300m/1km — 출처 바꿔 재현되나", centKak);
     expect(cmp.length).toBeGreaterThan(20);
+  });
+
+  it("⑩ 유동 방향(편심도) — 중심도와 겹치나, 따로 서나", () => {
+    // 사용자 항목: "유동방향좋긴한데 이거 너가 자료넣어줄수있어?"
+    //
+    // 8방위로 300m 밀어낸 점에서 반경 300m 업소 수를 세고, 방위벡터로 합쳐 **편심도**를 만든다.
+    //   편심도 0 = 사방이 고르다(상권 한가운데) · 1에 가까울수록 한쪽으로 쏠렸다(상권 끝)
+    //
+    // 중심도와 **재는 대상이 다르다**:
+    //   중심도  — 우리 주변이 빽빽한가 (거리)
+    //   편심도  — 상권이 우리 기준 어느 쪽에 쏠렸나 (방향)
+    // 그런데 둘이 같은 걸 보고 있을 수도 있다. **겹침부터 확인한다.**
+    const DIR = ".local-tools/kakao-directional.json";
+    const DENS = ".local-tools/kakao-place-density.json";
+    if (!existsSync(DIR) || !existsSync(DENS)) { console.log(`\n자료 없음. node scripts/collectKakaoDirectional.mjs 먼저.`); return; }
+    const D = JSON.parse(readFileSync(DIR, "utf8")).sites as Record<string, any>;
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const key = (r: Row) => `existing:${r.store.storeCode}`;
+    const floAvg = (r: Row, rad: number): number | null => {
+      const sel = F[key(r)]?.radii?.[String(rad)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    const centFlo = (r: Row) => {
+      const i = floAvg(r, 300), o = floAvg(r, 1000);
+      return i == null || o == null || !(o > 0) ? null : (i / o) * (1000 / 300) ** 2;
+    };
+    const ecc = (r: Row): number | null => {
+      const v = D[key(r)]?.eccentricity;
+      return v == null ? null : Number(v);
+    };
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const fRef = med(rows.map((r) => r.floorScore).filter((v): v is number => v != null));
+
+    const ok = cmp.filter((r) => ecc(r) != null && centFlo(r) != null && r.floorScore != null);
+    const e = ok.map((r) => ecc(r)!), c = ok.map((r) => Math.log(centFlo(r)!)), f = ok.map((r) => r.floorScore!);
+    const sig = 2 / Math.sqrt(ok.length);
+    console.log(`\n[분포] n=${ok.length} · 편심도 중앙 ${med(e).toFixed(3)} · 범위 ${Math.min(...e).toFixed(3)}~${Math.max(...e).toFixed(3)} · 변동계수 ${(sd(e) / mean(e) * 100).toFixed(1)}%`);
+    console.log(`[겹침 점검] 유의선 ${sig.toFixed(3)}`);
+    console.log(`  편심도 ↔ 중심도   r=${pear(e, c).toFixed(3)}${Math.abs(pear(e, c)) > sig ? " *" : ""}   (겹치면 같은 걸 두 번 넣는 것이다)`);
+    console.log(`  편심도 ↔ 층수자   r=${pear(e, f).toFixed(3)}${Math.abs(pear(e, f)) > sig ? " *" : ""}`);
+
+    const cRef = med(ok.map((r) => centFlo(r)!));
+    const resid = (r: Row, k: number, v: number) =>
+      Math.log(r.shareObs / (qualShare(r) * Math.pow((r.floorScore ?? fRef) / fRef, k) * Math.pow(centFlo(r)! / cRef, v)));
+    console.log(`\n[잔차와의 상관] 앞 항들을 반영한 뒤에도 편심도가 남는가`);
+    for (const [label, k, v] of [["아무것도 없이", 0, 0], ["층수만 κ=0.25", 0.25, 0], ["중심도만 ν=0.25", 0, 0.25], ["둘 다", 0.25, 0.25]] as [string, number, number][]) {
+      const y = ok.map((r) => resid(r, k, v));
+      const r1 = pear(e, y), r2 = partial(e, y, ok.map((r) => r.t));
+      console.log(`  ${label.padEnd(20)} r=${(r1.toFixed(3) + (Math.abs(r1) > sig ? " *" : "  ")).padStart(9)} 시점통제 ${(r2.toFixed(3) + (Math.abs(r2) > sig ? " *" : "")).padStart(8)}`);
+    }
+    console.log(`  ⚠️ 음수여야 말이 된다 — 편심도가 크면(상권 끝) 점유율이 낮아야 한다.`);
+
+    // ── 관문 ─────────────────────────────────────────────────────────
+    // 자유계수가 셋이 된다(κ·ν·ω). 표본 29곳에 셋이면 과적합이 쉽다 — 그래서 더 엄하게 본다.
+    type Q = { base: number; fs: number; ct: number; ec: number; obs: number };
+    const set: Q[] = ok.map((r) => ({ base: qualShare(r), fs: r.floorScore ?? fRef, ct: centFlo(r)!, ec: ecc(r)!, obs: r.shareObs }));
+    const KAP = [0, 0.25, 0.5], NU = [0, 0.25, 0.5, 0.75], OM = [0, 0.5, 1, 2];
+    // 편심도가 크면 불리하므로 (1-편심도)를 쓴다. 기준은 중앙값.
+    const eRef = med(set.map((q) => 1 - q.ec));
+    const pred = (q: Q, k: number, v: number, w: number) =>
+      q.base * Math.pow(q.fs / fRef, k) * Math.pow(q.ct / cRef, v) * Math.pow((1 - q.ec) / eRef, w);
+    const mape = (s: Q[], k: number, v: number, w: number) => mean(s.map((q) => Math.abs(pred(q, k, v, w) / q.obs - 1)));
+    const corr = (s: Q[], k: number, v: number, w: number) => pear(s.map((q) => pred(q, k, v, w)), s.map((q) => q.obs));
+    const sc = (s: Q[], crit: "mape" | "r", k: number, v: number, w: number) => (crit === "mape" ? mape(s, k, v, w) : -corr(s, k, v, w));
+    const pick = (s: Q[], crit: "mape" | "r", Ws = OM) => {
+      let b = { k: KAP[0], v: NU[0], w: Ws[0], val: Infinity };
+      for (const k of KAP) for (const v of NU) for (const w of Ws) { const x = sc(s, crit, k, v, w); if (x < b.val) b = { k, v, w, val: x }; }
+      return b;
+    };
+    const b0 = pick(set, "mape", [0]), b1 = pick(set, "mape");
+    console.log(`\n══ 관문 (n=${set.length}, 자유계수 셋) ══`);
+    console.log(`  표본 안: 편심도 없이 κ=${b0.k}·ν=${b0.v} → MAPE ${(mape(set, b0.k, b0.v, 0) * 100).toFixed(2)}% · r ${corr(set, b0.k, b0.v, 0).toFixed(3)}`);
+    console.log(`          +편심도 κ=${b1.k}·ν=${b1.v}·ω=${b1.w} → MAPE ${(mape(set, b1.k, b1.v, b1.w) * 100).toFixed(2)}% · r ${corr(set, b1.k, b1.v, b1.w).toFixed(3)}`);
+    for (const crit of ["mape", "r"] as const) {
+      const errs: number[] = [], preds: number[] = [], picks: string[] = [];
+      for (let i = 0; i < set.length; i++) {
+        const b = pick(set.filter((_, j) => j !== i), crit);
+        picks.push(`κ${b.k}/ν${b.v}/ω${b.w}`);
+        const ph = pred(set[i], b.k, b.v, b.w);
+        preds.push(ph); errs.push(Math.abs(ph / set[i].obs - 1));
+      }
+      const ins = pick(set, crit);
+      const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`  LOO [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ${(mape(set, ins.k, ins.v, ins.w) * 100).toFixed(2)}% → LOO ${(mean(errs) * 100).toFixed(2)}% (벌어짐 ${((mean(errs) - mape(set, ins.k, ins.v, ins.w)) * 100).toFixed(2)}%p) · LOO r=${pear(preds, set.map((q) => q.obs)).toFixed(3)}`);
+      console.log(`      고른 값: ${tally.slice(0, 3).map(([x, n]) => `${x} ${Math.round(n / set.length * 100)}%`).join(" · ")}`);
+    }
+    let seed = 20260917 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuf = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+    for (const crit of ["mape", "r"] as const) {
+      const picks: string[] = [];
+      for (let rep = 0; rep < 100; rep++) {
+        const idx = shuf(set.map((_, i) => i));
+        for (let ff = 0; ff < 5; ff++) { const b = pick(idx.filter((_, j) => j % 5 !== ff).map((i) => set[i]), crit); picks.push(`κ${b.k}/ν${b.v}/ω${b.w}`); }
+      }
+      const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`  5겹 [${crit === "mape" ? "MAPE" : "r"}] ${tally.slice(0, 3).map(([x, n]) => `${x} ${(n / picks.length * 100).toFixed(0)}%`).join(" · ")}`);
+    }
+    for (const crit of ["mape", "r"] as const) {
+      const gain = (s: Q[]) => { const a = pick(s, crit, [0]), b = pick(s, crit); return sc(s, crit, a.k, a.v, 0) - sc(s, crit, b.k, b.v, b.w); };
+      const real = gain(set);
+      const gs: number[] = [];
+      for (let i = 0; i < 500; i++) { const pool = shuf(set.map((q) => q.ec)); gs.push(gain(set.map((q, j) => ({ ...q, ec: pool[j] })))); }
+      gs.sort((a, b) => a - b);
+      const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+      const fm = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+      console.log(`  대조군 [${crit === "mape" ? "MAPE" : "r"}] 실제 ${fm(real)} · 섞으면 중앙 ${fm(med(gs))} · 95퍼센타일 ${fm(gs[Math.floor(gs.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+    expect(set.length).toBeGreaterThan(20);
   });
 });
