@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8">
+<style>
+html,body{margin:0;background:#111;font:13px/1.4 "Malgun Gothic",sans-serif;color:#eee}
+#wrap{width:1600px}
+.hdr{padding:6px 10px;font-size:15px;font-weight:700;background:#1c1c1c}
+.row{display:flex}
+.cell{width:800px}
+.cap{padding:4px 8px;background:#262626;font-size:12px;color:#bbb}
+.view{width:800px;height:520px;background:#000}
+</style>
+<div id="wrap">
+  <div class="hdr" id="hdr">loading</div>
+  <div class="row">
+    <div class="cell"><div class="cap" id="capA">A</div><div class="view" id="rvA"></div></div>
+    <div class="cell"><div class="cap" id="capB">B</div><div class="view" id="rvB"></div></div>
+  </div>
+</div>
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=APPKEY&autoload=false"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const lat = parseFloat(q.get('lat')), lng = parseFloat(q.get('lng'));
+const tilt = parseFloat(q.get('tilt') || '0');
+const busyDeg = parseFloat(q.get('busy'));
+const label = q.get('label') || '';
+window.RV_STATE = 'init'; window.RV_INFO = {};
+
+function bearing(aLat, aLng, bLat, bLng) {
+  const dN = (bLat - aLat) * 111320;
+  const dE = (bLng - aLng) * 111320 * Math.cos(aLat * Math.PI / 180);
+  return (Math.atan2(dE, dN) * 180 / Math.PI + 360) % 360;
+}
+
+kakao.maps.load(function () {
+  const pos = new kakao.maps.LatLng(lat, lng);
+  new kakao.maps.RoadviewClient().getNearestPanoId(pos, 150, function (panoId) {
+    if (!panoId) { window.RV_STATE = 'none'; document.getElementById('hdr').textContent = label + ' — 로드뷰 없음'; return; }
+    let ready = 0;
+    const mk = (elId, capId, capText, panFn, tiltV) => {
+      const rv = new kakao.maps.Roadview(document.getElementById(elId));
+      rv.setPanoId(panoId, pos);
+      kakao.maps.event.addListener(rv, 'init', function () {
+        const p = rv.getPosition();
+        const pan = panFn(p);
+        rv.setViewpoint({ pan: pan, tilt: tiltV, zoom: rv.getViewpoint().zoom });
+        const d = Math.round(Math.hypot((p.getLat() - lat) * 111320, (p.getLng() - lng) * 111320 * Math.cos(lat * Math.PI / 180)));
+        document.getElementById(capId).textContent = capText + ' · 시선 ' + Math.round(pan) + '도 · 촬영지점에서 ' + d + 'm';
+        window.RV_INFO[elId] = { pan: Math.round(pan), distM: d };
+        if (++ready === 2) setTimeout(() => { window.RV_STATE = 'ready'; }, 1500);
+      });
+    };
+    document.getElementById('hdr').textContent = label;
+    mk('rvA', 'capA', 'A. 매장 정면 (가시성)', (p) => bearing(p.getLat(), p.getLng(), lat, lng), tilt);
+    mk('rvB', 'capB', 'B. 사람이 제일 많은 쪽 (동선)', () => busyDeg, 0);
+  });
+});
+</script>
