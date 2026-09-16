@@ -24,7 +24,7 @@
 
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { buildLabRows, type LabRow } from "./labInput";
+import { buildLabRows, utilizationByStore, type LabRow } from "./labInput";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
@@ -61,16 +61,9 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
   }
 
-  // 실측 가동률 — 화면과 같은 방식으로 평가창 월매출에서 평균을 낸다.
-  const utilByStore = new Map<string, number>();
-  {
-    const acc = new Map<string, number[]>();
-    for (const s of snap.sales ?? []) {
-      if (s.utilizationRate == null || !(s.utilizationRate > 0)) continue;
-      acc.set(s.storeCode, [...(acc.get(s.storeCode) ?? []), s.utilizationRate]);
-    }
-    for (const [code, vs] of acc) utilByStore.set(code, vs.reduce((a, b) => a + b, 0) / vs.length);
-  }
+  // 실측 가동률 — 화면과 **같은 함수**를 쓴다. 스냅샷은 월매출 컬렉션을 통째로 담고 있어서
+  // (41곳 850건) 평가창 밖 월이 섞인다. 거르는 일은 labInput.ts 안에 있다.
+  const utilByStore = utilizationByStore(snap.sales ?? [], snap.existingStores);
 
   // 로드뷰 판정은 Firestore에 있어 하네스(오프라인 스냅샷)에서는 안 읽는다. 계수가 0이라
   // 결과에 영향이 없다 — 켤 때가 오면 스냅샷에 같이 담아야 한다.

@@ -17,11 +17,44 @@ import {
   computeOwnZoneComposition,
   computeCompetitorZoneComposition,
 } from "@/lib/storeEval/calc";
+import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation";
 import type { QualityParts, TextbookInput } from "@/lib/storeEval/textbookModel";
 import type { Competitor, ExistingStore, ModelSettings } from "@/lib/storeEval/types";
 
 export type LabRow = { input: TextbookInput; actualRevenue: number };
+
+/**
+ * 매장별 **실측 월평균 가동률**(0~1). 수요 축척을 여기에 맞춘다(2026-09-16).
+ *
+ * 게토에서 받은 값과 대조했을 때 평균차 3.34% · r=1.000으로 사실상 같은 값이라,
+ * 파이어스토어에 이미 있는 `utilizationRate` 필드를 쓴다(별도 수집 불필요).
+ *
+ * ⚠️ **평가창(개점 다음 달부터 12개월) 안에서만 평균 낸다.** 조립을 한 곳에 두는 이 파일의
+ *    취지대로 여기에 넣었다 — 이것만 화면과 하네스에 따로 베껴져 있어서 2026-09-17에 사고가
+ *    났다. 화면은 `listEvaluationSales`가 그 12개월 문서만 읽어와 저절로 맞았지만, 하네스는
+ *    스냅샷 덤프(컬렉션 통째)를 넘겨 **전 기간**을 평균 내고 있었다. 41곳 중 37곳이 섞였고,
+ *    개점 초기 가동률이 높아 전 기간 평균이 한 방향으로 낮게 쏠린 계통편향이었다
+ *    (시흥정왕점 -6.6%p · 전대상대점 -4.3%p).
+ *
+ *    여기서 한 번 더 거르므로 **이미 걸러진 입력이 와도, 통째로 와도 같은 값**이 나온다.
+ */
+export function utilizationByStore(
+  sales: Array<{ storeCode: string; yearMonth: string; utilizationRate?: number | null }>,
+  stores: Array<Pick<ExistingStore, "storeCode" | "openedAt">>,
+): Map<string, number> {
+  const windowByCode = new Map(stores.map((s) => [s.storeCode, new Set(evaluationMonths(s.openedAt))]));
+  const acc = new Map<string, number[]>();
+  for (const s of sales) {
+    const rate = s.utilizationRate;
+    if (rate == null || !(rate > 0)) continue;
+    if (!windowByCode.get(s.storeCode)?.has(s.yearMonth)) continue;
+    acc.set(s.storeCode, [...(acc.get(s.storeCode) ?? []), rate]);
+  }
+  const out = new Map<string, number>();
+  for (const [code, vs] of acc) out.set(code, vs.reduce((a, b) => a + b, 0) / vs.length);
+  return out;
+}
 
 // ── 경쟁력 항목별 점수 뽑기 (2026-09-17) ──────────────────────────────────
 //

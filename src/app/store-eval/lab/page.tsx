@@ -49,7 +49,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 
 // 모델 입력 조립은 labInput.ts에 있다 — 측정 하네스와 **같은 코드**를 써야 한다.
 // 화면에만 항목을 붙이다 하네스가 입지를 통째로 빠뜨린 적이 있다(2026-09-16).
-import { buildLabRows, type LabRow } from "@/lib/storeEval/labInput";
+import { buildLabRows, utilizationByStore, type LabRow } from "@/lib/storeEval/labInput";
 
 type Loaded = {
   rows: LabRow[];
@@ -79,18 +79,9 @@ async function loadLabData(): Promise<Loaded | null> {
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
   const stores = prepareExistingStoresForEvaluation(storedStores, allCompetitors, allLocationEvaluations, settings);
 
-  // 매장별 **실측 월평균 가동률** — 수요 축척을 여기에 맞춘다(2026-09-16). 평가창 월매출의
-  // utilizationRate 평균이다. 게토에서 받은 값과 대조했을 때 평균차 3.34% · r=1.000으로
-  // 사실상 같은 값이라, 파이어스토어에 이미 있는 이 필드를 쓴다(별도 수집 불필요).
-  const utilByStore = new Map<string, number>();
-  {
-    const acc = new Map<string, number[]>();
-    for (const s of sales) {
-      if (s.utilizationRate == null || !(s.utilizationRate > 0)) continue;
-      acc.set(s.storeCode, [...(acc.get(s.storeCode) ?? []), s.utilizationRate]);
-    }
-    for (const [code, vs] of acc) utilByStore.set(code, vs.reduce((a, b) => a + b, 0) / vs.length);
-  }
+  // 매장별 실측 월평균 가동률 — 하네스와 **같은 함수**를 쓴다(labInput.ts). 평가창을 무엇으로
+  // 자르는지가 거기 한 곳에만 있다.
+  const utilByStore = utilizationByStore(sales, storedStores);
 
   const compsByCode = new Map<string, Competitor[]>();
   for (const c of allCompetitors) {
