@@ -136,24 +136,38 @@ describe("Huff 설계 후보", () => {
 
     console.log(`\n[Huff 구조 훑기] 점유율 = 자사PC x 점수^θ ÷ (자사PC x 점수^θ + Σ 경쟁PC x 점수^θ x 겹침)`);
     console.log(`겹침 w(d) = exp(-거리 / d0).  d0="없음"이면 겹침 100%(지금 구조)\n`);
-    console.log(`${"d0".padStart(7)}${"θ".padStart(5)}${"점유율중앙".padStart(11)}${"편향".padStart(9)}${"MAPE".padStart(8)}${"실측과 r".padStart(10)}`);
+    console.log(`${"겹침".padStart(14)}${"θ".padStart(5)}${"점유율중앙".padStart(11)}${"편향".padStart(9)}${"MAPE".padStart(8)}${"실측과 r".padStart(10)}`);
     const DEF = med(rN);
-    let best: any = null;
-    for (const d0 of [150, 250, 400, 600, 1000, Infinity]) {
-      for (const th of [0, 1, 2, 4]) {
-        const sh = (r: any) => {
-          const own = r.pc * Math.pow((r.ownScore ?? DEF) / DEF, th);
-          const riv = r.rivals.reduce((a: number, x: any) => a + x.ip * Math.pow((x.score ?? DEF) / DEF, th) * (d0 === Infinity ? 1 : Math.exp(-x.d / d0)), 0);
-          return own / (own + riv);
-        };
-        const e = cmp.map((r) => sh(r) / r.shareObs - 1);
-        const m = mean(e.map(Math.abs));
-        const rr = pear(cmp.map(sh), cmp.map((r) => r.shareObs));
-        if (!best || m < best.m) best = { d0, th, m, rr };
-        console.log(`${(d0 === Infinity ? "없음" : String(d0)).padStart(7)}${String(th).padStart(5)}${med(cmp.map(sh)).toFixed(3).padStart(11)}${(mean(e) * 100).toFixed(1).padStart(8)}%${(m * 100).toFixed(1).padStart(7)}%${rr.toFixed(3).padStart(10)}`);
-      }
+    // 겹침 함수 두 형태를 비교한다.
+    //  (가) 지수 감쇠 exp(-d/d0) — 거리가 계속 작용한다
+    //  (나) **유효거리 계단** d<=R ? 1 : 0 — 유효거리 안에서는 거리가 작용 안 하고 품질이 가른다
+    //      (2026-09-16 사용자 실무 의견: "거리는 유효거리안에있으면 거리가 크게작용안한다는게
+    //       실무의견이고, 매장의 품질이 (점수)가 작용되어야함")
+    const run = (label: string, w: (d: number) => number, th: number) => {
+      const sh = (r: any) => {
+        const own = r.pc * Math.pow((r.ownScore ?? DEF) / DEF, th);
+        const riv = r.rivals.reduce((a: number, x: any) => a + x.ip * Math.pow((x.score ?? DEF) / DEF, th) * w(x.d), 0);
+        return own / (own + riv);
+      };
+      const e = cmp.map((r) => sh(r) / r.shareObs - 1);
+      const m = mean(e.map(Math.abs));
+      const rr = pear(cmp.map(sh), cmp.map((r) => r.shareObs));
+      console.log(`${label.padStart(14)}${String(th).padStart(5)}${med(cmp.map(sh)).toFixed(3).padStart(11)}${(mean(e) * 100).toFixed(1).padStart(8)}%${(m * 100).toFixed(1).padStart(7)}%${rr.toFixed(3).padStart(10)}`);
+      return { label, th, m, rr };
+    };
+    const all: { label: string; th: number; m: number; rr: number }[] = [];
+    console.log(`-- (나) 유효거리 계단: 안에서는 거리 무관, 품질이 가른다 --`);
+    for (const R2 of [150, 200, 300, 400, 500, 800]) {
+      for (const th of [0, 1, 2, 3, 4]) all.push(run(`반경${R2}m`, (d) => (d <= R2 ? 1 : 0), th));
     }
-    console.log(`\n  최선: d0=${best.d0} · θ=${best.th} · MAPE ${(best.m * 100).toFixed(1)}% · r=${best.rr.toFixed(3)}`);
+    console.log(`-- (가) 지수 감쇠 (참고) --`);
+    for (const d0 of [150, 250, 400]) for (const th of [0, 2]) all.push(run(`exp${d0}`, (d) => Math.exp(-d / d0), th));
+    console.log(`-- 겹침 없음 (지금 구조) --`);
+    for (const th of [0, 2, 4]) all.push(run("없음", () => 1, th));
+    const best = all.reduce((x, y) => (y.m < x.m ? y : x));
+    const bestR = all.reduce((x, y) => (y.rr > x.rr ? y : x));
+    console.log(`\n  MAPE 최선: ${best.label} θ=${best.th} · MAPE ${(best.m * 100).toFixed(1)}% · r=${best.rr.toFixed(3)}`);
+    console.log(`  상관 최선: ${bestR.label} θ=${bestR.th} · MAPE ${(bestR.m * 100).toFixed(1)}% · r=${bestR.rr.toFixed(3)}`);
     console.log(`  (비교) 지금 산식 격차^4: MAPE 32.0% · 실측 점유율 중앙 ${med(cmp.map((r: any) => r.shareObs)).toFixed(3)}`);
     expect(cmp.length).toBeGreaterThan(20);
   });
