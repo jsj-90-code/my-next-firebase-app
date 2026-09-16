@@ -9,11 +9,22 @@
 //
 // ⚠️ **이 화면은 운영 산식을 건드리지 않는다.** 계산은 전부 textbookModel.ts(신규)로만 하고,
 //    기존 calc.ts/usageRevenue.ts는 "지금 산식" 비교값을 얻는 데만 읽기로 쓴다.
-//    파라미터는 화면 상태로만 들고 있고 Firestore에 저장하지 않는다 — 실험이기 때문이다.
 //
-// 왜 이 화면이 필요한가: 지금 산식은 MAPE 9.7%로 숫자는 좋지만 "기존 38곳 평균에서 ±"라는
-// 설명밖에 못 한다. 교과서식(수요 -> 점유율 -> 매출)은 설명이 되지만 2026-09-15 실측에서
-// MAPE 30~46%다. 어느 쪽으로 갈지는 파라미터를 직접 돌려보고 정해야 한다.
+// 왜 이 화면이 필요한가: 지금 산식은 MAPE 9.3%로 숫자는 좋지만 "기존 38곳 평균에서 ±"라는
+// 설명밖에 못 한다. 교과서식(수요 -> 점유율 -> 매출)은 설명이 되지만 실측 MAPE가 30~46%다.
+// 어느 쪽으로 갈지 사람이 보고 정하라고 만든 화면이다.
+//
+// ── 2026-09-16 두 가지가 바뀌었다 (사용자 방향) ────────────────────────────
+//
+// 1) **자료를 갈랐다.** 전까지 실험실은 운영 V62와 **같은 Firestore 문서**를 읽었다. 그래서
+//    실험용으로 기초자료를 고치면 운영 예측이 조용히 따라 움직였다(2026-09-15 유동·주거인구
+//    교체로 V62 MAPE가 9.37% -> 9.26%로 같이 변한 게 그 예다). 시설·사양까지 실험실에서
+//    고칠 참이라 `storeEvalLab*` 전용 복제본으로 갈라놨다. 복사는 한 방향(운영->실험실)뿐이고
+//    `scripts/syncLabCollections.mjs`를 **명시적으로 돌릴 때만** 일어난다.
+//
+// 2) **조절판을 없앴다.** 사용자: "슬라이드바 직접 조절하는 건 없애고 최신 데이터 기준으로
+//    반영한 예상매출·가동률들 보고 싶다." 계수는 DEFAULT_TEXTBOOK_PARAMS에 고정돼 있고
+//    화면은 읽기 전용으로 보여만 준다(ParamSummary). 계수를 바꾸는 건 코드 작업이다.
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -25,8 +36,8 @@ import {
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
-  getModelSettings, listAllCompetitors, listAllLocationEvaluations,
-  listExistingStores, listEvaluationSales,
+  getLabModelSettings, listLabCompetitors, listLabLocationEvaluations,
+  listLabExistingStores, listEvaluationSales,
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
@@ -52,11 +63,15 @@ const manwon = (v: number | null | undefined) =>
   v == null ? "-" : `${Math.round(v / 10000).toLocaleString()}만`;
 
 async function loadLabData(): Promise<Loaded | null> {
+  // ⚠️ **실험실 전용 복제본만 읽는다**(2026-09-16 사용자 방향). 운영 컬렉션을 읽으면
+  //    실험실에서 시설·사양을 고칠 때 운영 V62가 같이 움직인다 — 갈라놓은 뜻이 없어진다.
+  //    복제본은 scripts/syncLabCollections.mjs로 **명시적으로** 채운다(자동 동기화 없음).
+  //    월매출만 운영 것을 그대로 읽는다 — 실측 사실이라 두 벌로 둘 이유가 없다.
   const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
-    listExistingStores(),
-    getModelSettings(),
-    listAllCompetitors(),
-    listAllLocationEvaluations(),
+    listLabExistingStores(),
+    getLabModelSettings(),
+    listLabCompetitors(),
+    listLabLocationEvaluations(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -131,7 +146,10 @@ export default function LabPage() {
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [p, setP] = useState<TextbookParams>({ ...DEFAULT_TEXTBOOK_PARAMS, outsideOptionIp: 500 });
+  // 조절판을 없앴다(2026-09-16 사용자 방향: "슬라이드바 직접 조절하는 건 없애고 최신 데이터
+  // 기준으로 반영한 예상매출·가동률을 보고 싶다"). 계수는 코드에 고정하고, 바꿔야 하면
+  // textbookModel.ts의 DEFAULT_TEXTBOOK_PARAMS에서 바꾼다 — 화면에 떠넘기지 않는다.
+  const p: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS, outsideOptionIp: 500 };
 
   useEffect(() => {
     let alive = true;
@@ -153,17 +171,13 @@ export default function LabPage() {
     [data, p],
   );
 
-  const set = <K extends keyof TextbookParams>(k: K, v: TextbookParams[K]) => setP((old) => ({ ...old, [k]: v }));
-  const setAge = (k: keyof TextbookParams["ageWeights"], v: number) =>
-    setP((old) => ({ ...old, ageWeights: { ...old.ageWeights, [k]: v } }));
-
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <div className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#171310] dark:text-[#f2ede2]">점포평가 실험실</h1>
           <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
-            교과서식 산식(수요 → 점유율 → 매출)을 직접 돌려보는 화면입니다.
+            교과서식 산식(수요 → 점유율 → 매출)을 최신 자료로 돌린 결과입니다.
             <b className="text-[#171310] dark:text-[#f2ede2]"> 운영 산식과 저장값은 전혀 건드리지 않습니다.</b>
           </p>
         </div>
@@ -174,7 +188,11 @@ export default function LabPage() {
         지금 운영 산식은 기존 가맹점 실적에 회귀로 맞춥니다. 숫자는 좋지만 &ldquo;왜 이 금액인가&rdquo;를
         설명할 때 <b>&ldquo;기존 가맹점 평균에서 조정했다&rdquo;</b>밖에 말할 수 없습니다.
         여기 교과서식은 <b>&ldquo;이 동네 수요가 얼마고 그중 우리가 몇 %를 가져간다&rdquo;</b>로 설명됩니다.
-        대신 정확도가 떨어집니다 — 그 맞바꿈이 할 만한지 직접 보시라고 만든 화면입니다.
+        대신 정확도가 떨어집니다 — 그 맞바꿈이 할 만한지 보시라고 만든 화면입니다.
+        <span className="mt-1 block">
+          이 화면이 읽는 자료는 <b>운영과 따로 관리되는 실험실 전용 복제본</b>입니다. 여기서 무엇을 고쳐도
+          운영 점포평가 숫자는 바뀌지 않습니다. 운영 쪽 최신 자료를 당겨오는 건 별도 작업입니다.
+        </span>
       </div>
 
       {loading && <p className="mt-8 text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>}
@@ -185,7 +203,7 @@ export default function LabPage() {
           <ScoreBoard score={score} current={data.current} />
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
             scaledOnUtilization={score.scaledOnUtilization} />
-          <Controls p={p} set={set} setAge={setAge} counts={counts} />
+          <ParamSummary p={p} counts={counts} />
           <StoreTable score={score} />
         </>
       )}
@@ -482,171 +500,102 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
   );
 }
 
-function Controls({
-  p, set, setAge, counts,
-}: {
+
+/**
+ * 지금 쓰는 계수를 **읽기 전용**으로 보여준다.
+ *
+ * 2026-09-16까지는 여기가 슬라이드 조절판이었다. 사용자 방향으로 걷어냈다 —
+ * "웹에서 슬라이드 조절해서 맞춰보진 않을 거야, 작업은 너한테 시킬 거임."
+ * 계수를 바꿔야 하면 `textbookModel.ts`의 `DEFAULT_TEXTBOOK_PARAMS`에서 바꾼다.
+ *
+ * 출처 라벨의 뜻(2026-09-17 규칙):
+ *   [자료] 자료가 정했고 관문(홀드아웃·5겹·대조군)을 통과했다
+ *   [감각] 실무 감각으로 박았다 — 자료가 아직 말을 못 한다
+ *   [보류] 계수 0으로 자리만 둔다
+ */
+function ParamSummary({ p, counts }: {
   p: TextbookParams;
   counts: { f100: number; f200: number; f300: number; f400: number; f500: number; total: number };
-  set: <K extends keyof TextbookParams>(k: K, v: TextbookParams[K]) => void;
-  setAge: (k: keyof TextbookParams["ageWeights"], v: number) => void;
 }) {
+  const num = (v: number, d = 2) => v.toFixed(d).replace(/\.?0+$/, "");
+  const groups: { title: string; rows: { label: string; value: string; tag?: string }[] }[] = [
+    {
+      title: "1단계 · 수요",
+      rows: [
+        { label: "유동인구 반경", value: `${p.floatingRadius}m` },
+        { label: "주거인구 반경", value: `${p.residentRadius}m` },
+        { label: "유동 계수", value: num(p.floatingFactor) },
+        { label: "상권 흡인력", value: num(p.agglomerationFactor) },
+      ],
+    },
+    {
+      title: "2단계 · 점유율",
+      rows: [
+        { label: "점유율 방식", value: p.shareMode === "quality" ? "품질 반영" : "끔" },
+        { label: "유효거리", value: `${p.effectiveRadiusM}m` },
+        { label: "품질 지수 θ", value: num(p.qualityExponent) },
+        { label: "PC방 안 가는 몫", value: `${p.outsideOptionIp.toLocaleString()} IP` },
+      ],
+    },
+    {
+      title: "입지 (점유율에 곱한다)",
+      rows: [
+        { label: "상권 중심도 ν", value: num(p.locationExponents.centrality), tag: "자료" },
+        { label: "접근성(층수) κ", value: num(p.locationExponents.access), tag: "자료" },
+        { label: "유동 방향 ω", value: num(p.locationExponents.direction), tag: "보류" },
+        { label: "동선 방해", value: num(p.locationExponents.flowBlock), tag: "보류" },
+        { label: "가시성", value: num(p.locationExponents.visibility), tag: "보류" },
+      ],
+    },
+    {
+      title: "3단계 · 매출",
+      rows: [
+        { label: "정가 탄력도", value: num(p.rateElasticity, 3) },
+        { label: "기준 정가", value: `${p.referenceHourlyRate.toLocaleString()}원` },
+        { label: "가동률 상한", value: `${(p.maxUtilization * 100).toFixed(0)}%` },
+      ],
+    },
+  ];
+
   return (
-    <div className="mt-6 grid gap-4 md:grid-cols-2">
-      <section className="app-card rounded-xl p-4">
-        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">1단계 · 수요</h2>
-
-        <Choice label="주거 반경" value={String(p.residentRadius)}
-          options={[["500", "500m"], ["1000", "1km"]]}
-          onChange={(v) => set("residentRadius", Number(v) as ResidentRadius)}
-          hint={p.residentRadius === 500 ? "500m는 연령 분해 자료가 없어 총인구만 씁니다" : "1km는 연령·성별 분해까지 있습니다"} />
-
-        <Choice label="유동 반경" value={String(p.floatingRadius)}
-          options={[["100", "100m"], ["200", "200m"], ["300", "300m"], ["400", "400m"], ["500", "500m"]]}
-          onChange={(v) => set("floatingRadius", Number(v) as FloatingRadius)}
-          hint={`수집된 매장 — 100m ${counts.f100} · 200m ${counts.f200} · 300m ${counts.f300} · 400m ${counts.f400} · 500m ${counts.f500}곳 (표본 ${counts.total}곳). 아직 안 모은 반경을 고르면 그 매장은 계산에서 빠집니다. 500m는 출처가 달라 100~400m끼리 비교하는 게 맞습니다.`} />
-
-        <Slider label="유동 계수" value={p.floatingFactor} min={0} max={1} step={0.05}
-          onChange={(v) => set("floatingFactor", v)}
-          hint="스쳐 가는 사람이 대부분이라 1.0일 수 없습니다. 0이면 주거만 씁니다." />
-
-        <Slider label="상권 흡인력" value={p.agglomerationFactor} min={0} max={1} step={0.05}
-          onChange={(v) => set("agglomerationFactor", v)}
-          hint="경쟁점이 많다 = 그 자리가 좋다. 수요에 (1 + 계수 × ln(1+경쟁점수))를 곱합니다. 0이면 끕니다." />
-
-        <div className="mt-3 flex gap-4">
-          <Toggle label="주거 연령가중" checked={p.useResidentAgeWeights} onChange={(v) => set("useResidentAgeWeights", v)} />
-          <Toggle label="유동 연령가중" checked={p.useFloatingAgeWeights} onChange={(v) => set("useFloatingAgeWeights", v)} />
-        </div>
-      </section>
-
-      <section className="app-card rounded-xl p-4">
-        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">2단계 · 점유율</h2>
-
-        <Slider label="PC방 안 가는 몫" value={p.outsideOptionIp} min={0} max={3000} step={100}
-          onChange={(v) => set("outsideOptionIp", v)}
-          hint="경쟁IP와 같은 단위로 분모에 더합니다. 0이면 경쟁점 없는 상권의 점유율이 100%가 되어 수요를 통째로 먹습니다." />
-
-        <div className="mb-3 rounded-lg border border-[#171310]/10 p-3 dark:border-white/10">
-          <p className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">점유율 환산</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {(["quality", "off", "formula"] as const).map((mode) => (
-              <button key={mode} type="button" onClick={() => set("shareMode", mode)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium ${p.shareMode === mode
-                  ? "bg-[#171310] text-white dark:bg-[#f2ede2] dark:text-[#171310]"
-                  : "border border-[#171310]/15 text-[var(--sl-ink-soft)] dark:border-white/15"}`}>
-                {mode === "quality" ? "품질 (유효거리+지수)" : mode === "off" ? "끄기 (점유율 100%)" : "격차^지수 (기각됨)"}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-[var(--sl-ink-soft)]">
-            <b>품질</b>이 기본값입니다(2026-09-17). 유효거리 안의 경쟁점만 품질로 겨룹니다 —
-            홀드아웃에서 표본 안 30.5% → LOO 31.1%로 거의 안 벌어지고, 자유계수 둘이 각자 따로
-            무작위 대조군을 통과했습니다(품질 p=0.016 · 거리 p=0.016).
-            <br />
-            <b>끄기</b>는 아래 표의 <b>필요 점유율</b>을 만드는 모드입니다 — 경쟁을 0으로 놓았을 때의
-            예측이라, 실측가동률 ÷ 그 값이 <b>이 매장이 실제로 먹은 몫</b>이 됩니다.
-            <br />
-            <b>격차^지수</b>는 <b>기각된 구조</b>입니다. 비교용으로만 남겨 둡니다(LOO 29.08% → 36.20%,
-            대조군 p=0.072, 격차와 실측 점유율의 상관 r=0.025).
-          </p>
-        </div>
-        {p.shareMode === "quality" ? (
-          <>
-            <Slider label="유효거리 (m)" value={p.effectiveRadiusM} min={100} max={1000} step={50}
-              onChange={(v) => set("effectiveRadiusM", v)}
-              hint="이 안의 경쟁점만 진짜 경쟁자로 셉니다. 300m은 잠정값입니다 — 300·400·500m가 MAPE로 구별되지 않고(30.1~30.5%), 300을 고른 근거는 상관(0.560 vs 400m 0.434)과 실무 의견뿐입니다." />
-            <Slider label="품질 지수 θ" value={p.qualityExponent} min={0} max={6} step={0.5}
-              onChange={(v) => set("qualityExponent", v)}
-              hint="0이면 품질을 안 봅니다(PC대수 비례 배분). 3은 자료가 고른 최선이자 매출 변화폭 역산 중앙값(3.25)입니다. θ가 하는 일의 상당 부분은 수준 보정입니다 — 자사/경쟁 품질비 1.75의 세제곱이 5.36이고 최적 상수배율 λ=5와 같은 값입니다." />
-            <div className="mb-3 rounded-lg border border-[#171310]/10 p-3 dark:border-white/10">
-              <p className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁력점수 비중</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-[var(--sl-ink-soft)]">
-                기본값은 <b>실무 감각 비중</b>입니다 — 기존 비중은 적중률을 맞추려고 조정한
-                산물이라 뜻이 없습니다. <b>정확도 비용도 없습니다</b>: 세 벌을 돌려도 실측과의
-                상관이 0.553~0.561로 차이가 0.008입니다. 자사는 먹거리·인테리어·관리가 전부 4점
-                상수라 비중을 바꿔도 상대 위치가 안 변하고, 경쟁점은 구성요소끼리 같이 움직입니다.
-                <br />
-                ⚠️ <b>입지는 빠져 있습니다.</b> 항목·평가값·개념을 전부 다시 만든 뒤 넣습니다.
-                실무 감각에서 입지 몫은 17.0%였고, 지금은 나머지 넷이 그 몫을 나눠 갖고 있습니다.
-              </p>
-              {([["spec", "사양"], ["food", "먹거리"], ["zone", "존구성"], ["interior", "인테리어"], ["management", "관리"]] as const).map(([k, label]) => (
-                <Slider key={k} label={`${label} 비중`} value={p.qualityWeights[k]} min={0} max={0.6} step={0.001}
-                  onChange={(v) => set("qualityWeights", { ...p.qualityWeights, [k]: v })}
-                  hint={k === "spec" ? "합이 1이 아니어도 됩니다 — 있는 항목만 모아 그 합으로 나눠 씁니다. 결측 항목은 자동으로 빠집니다." : undefined} />
-              ))}
-            </div>
-          </>
-        ) : (
-          <Slider label="경쟁력격차 지수" value={p.gapExponent} min={0} max={4} step={0.1}
-            onChange={(v) => set("gapExponent", v)}
-            hint="1이면 기존 구조와 같습니다. 높일수록 경쟁력 차이를 세게 봅니다. (기각된 구조입니다 — 비교용)" />
-        )}
-
-        {p.shareMode !== "off" && (
-          <div className="mb-3 rounded-lg border border-[#171310]/10 p-3 dark:border-white/10">
-            <p className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">입지 (점유율에 곱합니다)</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-[var(--sl-ink-soft)]">
-              입지는 경쟁력점수 <b>안이 아니라 밖</b>입니다. 접근성은 &ldquo;경쟁점보다 낮은 층인가&rdquo;가 아니라
-              <b> &ldquo;올라오기 얼마나 번거로운가&rdquo;</b>라서 나눗셈이 아니라 곱셈이 맞습니다 — 6층 매장은
-              경쟁점이 없어도 덜 옵니다. 품질에 섞으면 상관이 0.554→0.565인데, 따로 곱하면 0.554→0.725입니다.
-              <br />
-              기존 <b>주관 3항목(상권위치·동선 / 선점경쟁 / 접근가시성)은 폐기</b>했습니다. 1~5점인데 실제로는
-              3~4개 값만 쓰였고(상권위치·동선은 29곳 중 19곳이 5점) 셋 다 유의선 0.371 미달이었습니다.
-            </p>
-            <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">
-              <b>[자료]</b> 관문(홀드아웃·교차검증·대조군)을 통과한 값 ·
-              <b> [보류]</b> 자료가 계수를 못 정해 0으로 둔 값 — 항목을 버린 게 아닙니다
-              <br />
-              기준값은 <b>기하평균</b>({p.locationReferences.centrality} / {p.locationReferences.access})으로 잡습니다.
-              곱셈 보정이 표본 전체에서 평균적으로 1배가 되려면 로그 공간의 중심이어야 하고,
-              중앙값을 쓰면 꼬리가 긴 쪽으로 중립이 깨집니다. <b>자유계수가 아니라 정규화</b>라
-              검정 대상이 아닙니다.
-            </p>
-            <Slider label="[자료] 상권 중심도 ν" value={p.locationExponents.centrality} min={0} max={1} step={0.05}
-              onChange={(v) => set("locationExponents", { ...p.locationExponents, centrality: v })}
-              hint="중심도 = (유동 300m ÷ 유동 1km) × (1000/300)². 1보다 크면 우리 문 앞이 상권 평균보다 빽빽합니다(상권 중심), 작으면 우리 주변은 한산한데 저쪽이 붐빕니다(상권 끝). 관문을 전부 통과했고 지금까지 중 제일 강합니다 — 대조군 p=0.002." />
-            <Slider label="[자료] 접근성(층수) κ" value={p.locationExponents.access} min={0} max={1} step={0.05}
-              onChange={(v) => set("locationExponents", { ...p.locationExponents, access: v })}
-              hint="층수·지상지하·엘리베이터로 자동 계산합니다(경쟁점과 같은 함수). 한때 오차 기준과 순서 기준이 갈렸는데 원인이 기준값이었습니다 — 기하평균으로 고치니 두 기준이 같은 답(0.25)을 냅니다. κ=0이면 MAPE 24.39%·상관 0.693, κ=0.25면 24.08%·0.736, κ=0.5면 26.13%·0.727입니다." />
-            <Slider label="[보류] 유동 방향 ω" value={p.locationExponents.direction} min={0} max={2} step={0.1}
-              onChange={(v) => set("locationExponents", { ...p.locationExponents, direction: v })}
-              hint="8방위로 세어 만든 편심도(0=사방이 고름, 1에 가까울수록 한쪽 쏠림). 부호는 맞지만(음수) 중심도가 이미 먹고 있어 잔차 상관이 −0.280에서 −0.069로 사라집니다. 대조군 p=1.000/0.216 미달. 자료는 모아뒀으니 값을 주시면 바로 켜집니다. ※ 지금은 실험실이 이 값을 아직 안 넘겨 자료없음으로 빠집니다." />
-            <Slider label="[보류] 동선 방해" value={p.locationExponents.flowBlock} min={0} max={2} step={0.1}
-              onChange={(v) => set("locationExponents", { ...p.locationExponents, flowBlock: v })}
-              hint="경쟁점이 우리와 손님 사이 동선에 껴 있는지. 경쟁점 좌표가 22%뿐이라 방위를 못 잽니다 — 좌표부터 모아야 합니다. 자리만 있습니다." />
-            <Slider label="[보류] 간판·출입구" value={p.locationExponents.visibility} min={0} max={2} step={0.1}
-              onChange={(v) => set("locationExponents", { ...p.locationExponents, visibility: v })}
-              hint="로드뷰로 봐야 하는 항목입니다. 만들 때는 1~5점이 아니라 '주도로에서 간판이 보이는가 예/아니오' 같은 사실 질문이어야 합니다 — 지금 주관 3항목이 1~5점이라 망가졌습니다. 자리만 있습니다." />
-          </div>
-        )}
-
-        <h2 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">3단계 · 매출</h2>
-        <Slider label="정가 탄력도" value={p.rateElasticity} min={0} max={1} step={0.001}
-          onChange={(v) => set("rateElasticity", v)}
-          hint="정가를 올려도 실제로 받는 돈은 그만큼 다 안 오릅니다(정액권 할인). 0.546은 운영 산식과 같은 값이고, 0이면 정가가 매출을 안 바꿉니다. 0으로 내리면 독점 최대오차가 12.8%→8.5%로 줄지만 요금 조절이 무의미해집니다." />
-        {/* 상품매출 비율 조절판은 2026-09-16 저녁(3)에 없앴다 — 이제 파라미터가 아니라 결과다.
-            상품몫(원/PC·시간)은 독점 실매출로 자동으로 맞춘다. */}
-        <Slider label="가동률 상한" value={p.maxUtilization} min={0.5} max={1} step={0.01}
-          onChange={(v) => set("maxUtilization", v)} hint="좌석이 모자라 더는 못 받는 선." />
-      </section>
-
-      <section className="app-card rounded-xl p-4 md:col-span-2">
-        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">연령별 PC방 이용률</h2>
-        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-          이 연령 100명 중 몇 명이 PC방을 쓰는가. 절대값보다 <b>연령 간 비율</b>이 중요합니다 —
-          전체 크기는 1인당 월이용시간 배율이 자동으로 흡수합니다.
+    <section className="mt-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">지금 쓰는 계수</h2>
+        <p className="text-xs text-[var(--sl-ink-soft)]">
+          화면에서 못 바꿉니다 — 코드에 고정돼 있습니다. 바꿔야 하면 말씀해 주세요.
         </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {([
-            ["age0s", "0~9세"], ["age10s", "10대"], ["age20s", "20대"], ["age30s", "30대"],
-            ["age40s", "40대"], ["age50s", "50대"], ["age60plus", "60대+"],
-          ] as [keyof TextbookParams["ageWeights"], string][]).map(([k, label]) => (
-            <Slider key={k} label={label} value={p.ageWeights[k]} min={0} max={1} step={0.01}
-              onChange={(v) => setAge(k, v)} />
-          ))}
-        </div>
-      </section>
-    </div>
+      </div>
+
+      <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {groups.map((g) => (
+          <div key={g.title} className="app-card rounded-xl p-4">
+            <h3 className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">{g.title}</h3>
+            <dl className="mt-2 space-y-1.5">
+              {g.rows.map((r) => (
+                <div key={r.label} className="flex items-baseline justify-between gap-2">
+                  <dt className="text-xs text-[var(--sl-ink-soft)]">
+                    {r.tag && (
+                      <span className={`mr-1 rounded px-1 py-0.5 text-[10px] ${
+                        r.tag === "자료"
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : "bg-[#171310]/[0.07] text-[var(--sl-ink-soft)] dark:bg-white/10"
+                      }`}>{r.tag}</span>
+                    )}
+                    {r.label}
+                  </dt>
+                  <dd className="shrink-0 text-xs font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">{r.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+        기초자료 수집 현황 — 유동인구 100m {counts.f100}곳 · 200m {counts.f200}곳 · 300m {counts.f300}곳 ·
+        400m {counts.f400}곳 · 500m {counts.f500}곳 (표본 {counts.total}곳)
+      </p>
+    </section>
   );
 }
 
@@ -711,58 +660,3 @@ function StoreTable({ score }: { score: TextbookScore }) {
   );
 }
 
-// ---- 작은 입력 부품들 ----
-
-function Slider({ label, value, min, max, step, onChange, hint }: {
-  label: string; value: number; min: number; max: number; step: number;
-  onChange: (v: number) => void; hint?: string;
-}) {
-  return (
-    <div className="mt-3">
-      <div className="flex items-baseline justify-between">
-        <label className="text-xs font-medium text-[#171310] dark:text-[#f2ede2]">{label}</label>
-        <span className="text-xs tabular-nums text-[var(--sl-ink-soft)]">{value}</span>
-      </div>
-      <input type="range" min={min} max={max} step={step} value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 w-full accent-[var(--sl-gold-ink)]" />
-      {hint && <p className="mt-0.5 text-[11px] leading-snug text-[var(--sl-ink-soft)]">{hint}</p>}
-    </div>
-  );
-}
-
-function Choice({ label, value, options, onChange, hint, disabled }: {
-  label: string; value: string; options: [string, string][];
-  onChange: (v: string) => void; hint?: string; disabled?: string[];
-}) {
-  return (
-    <div className="mt-3">
-      <label className="text-xs font-medium text-[#171310] dark:text-[#f2ede2]">{label}</label>
-      <div className="mt-1 flex gap-2">
-        {options.map(([v, text]) => {
-          const off = disabled?.includes(v);
-          return (
-            <button key={v} type="button" disabled={off} onClick={() => onChange(v)}
-              className={`rounded-lg px-3 py-1.5 text-xs ${
-                value === v ? "app-btn-primary" : off ? "app-btn-outline opacity-40" : "app-btn-outline"
-              }`}
-              title={off ? "아직 수집된 자료가 없습니다" : undefined}>
-              {text}{off && " (자료없음)"}
-            </button>
-          );
-        })}
-      </div>
-      {hint && <p className="mt-0.5 text-[11px] leading-snug text-[var(--sl-ink-soft)]">{hint}</p>}
-    </div>
-  );
-}
-
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-2 text-xs text-[#171310] dark:text-[#f2ede2]">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
-        className="accent-[var(--sl-gold-ink)]" />
-      {label}
-    </label>
-  );
-}
