@@ -99,7 +99,30 @@
 //    **어느 반경에서도 살아남는다.** 반경 선택 문제가 아니라 실재하는 입지 효과다.
 //    카카오 쪽은 약하지만 부호가 일관되게 양수다.
 //
-// ⚠️ ⑦⑧은 **상관까지만이다.** 항으로 만들어 LOO·5겹·대조군을 통과시키는 건 아직 안 했다.
+// ⑨ **중심도 항 ν가 관문을 통과한다 — 지금까지 중 제일 강하게.** κ까지 같이 자유로 풀었다.
+//
+//      점유율 = [품질 점유율] x (층수자÷4)^κ x (중심도÷기준)^ν
+//
+//      표본 안   층수만 κ=0.25        MAPE 28.66% · r 0.632
+//               +중심도 κ=0·ν=0.25   MAPE **24.52%** · r **0.725**
+//      LOO      24.52% -> 25.50% (벌어짐 0.98%p) · LOO r **0.734**
+//      5겹 100회 κ0/ν0.25 **78%**
+//      대조군    MAPE **p=0.002** ✅ · r **p=0.012** ✅
+//      잭나이프  r 0.570~0.780 (유의선 0.378) — 여유가 크다
+//
+//    경쟁 항은 MAPE 대조군 p=0.098로 미달이었고 층수는 p=0.046 턱걸이였다. 중심도는 0.002다.
+//
+// ⚠️ **반전: 중심도가 들어오면 MAPE 기준으로 층수 항이 빠진다(κ=0).** LOO가 97%, 5겹이 78%로
+//    κ=0을 고른다. 그런데 **r 기준으로는 κ=0.25~0.5가 남는다.** 그리고 둘은 서로 겹치지도
+//    않는다(층수자 ↔ 중심도 r=0.068, 거의 독립).
+//    해석: **층수는 순서는 맞히지만 편향을 키운다**(④에서 편향 -5.5% -> -10.0%). 중심도가
+//    순서를 더 잘 맞히므로, 층수를 빼면 편향이 덜 나빠져 MAPE가 좋아진다. 둘 다 둘지는
+//    표본 29곳으로 못 정한다 — 실험실 스위치로 두고 보는 게 맞다.
+//
+// ⚠️ **카카오판은 약하다.** 출처를 바꿔 재현해 보면 MAPE 대조군은 통과하지만(p=0.024) r
+//    대조군이 미달이고(p=0.317) LOO도 더 벌어진다(1.43%p). **산식에는 유동인구판을 쓴다.**
+//    카카오는 ⑦의 교차검증(정의가 실재하는가)에서 제 몫을 다했다.
+//
 // ⚠️ 이건 **측정이지 채택이 아니다.** 입지 개념 재수립은 사용자 결정 사항이다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -703,6 +726,125 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     console.log(`  -> 모든 반경에서 살아남으면 진짜 입지다. 특정 반경에서만 뜨면 반경 선택 문제다.`);
     console.log(`  ⚠️ 유동 300m/1km는 수요식이 유동을 300m로 재면 **정의상 수요와 겹친다** — 그 줄은 걸러 읽어라.`);
     console.log(`     카카오 열은 수요식과 출처가 달라 그 겹침이 없다. **그 열이 진짜 판정이다.**`);
+    expect(cmp.length).toBeGreaterThan(20);
+  });
+
+  it("⑨ 중심도 항 ν — 관문(LOO·5겹·대조군)을 통과하나", () => {
+    // ⑦⑧은 상관까지였다. 상관 0.601은 아직 "그럴싸하다"까지다 — 이 저장소는 정확히 그 단계에서
+    // 두 번 속았다(2026-09-15 밀집도 r=0.660 / 2026-09-16 gamma=4). 항으로 만들어 검정한다.
+    //
+    //   점유율 = [품질 점유율] x (층수자÷기준)^κ x (중심도÷기준)^ν
+    //
+    // κ까지 **같이 자유로 푼다.** κ를 0.25로 박아두고 ν만 고르면 자유도를 숨기는 것이다.
+    const DENS = ".local-tools/kakao-place-density.json";
+    if (!existsSync(DENS)) return;
+    const K = JSON.parse(readFileSync(DENS, "utf8")).sites as Record<string, any>;
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const key = (r: Row) => `existing:${r.store.storeCode}`;
+    const floAvg = (r: Row, rad: number): number | null => {
+      const sel = F[key(r)]?.radii?.[String(rad)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    const centFlo = (r: Row) => {
+      const i = floAvg(r, 300), o = floAvg(r, 1000);
+      return i == null || o == null || !(o > 0) ? null : (i / o) * (1000 / 300) ** 2;
+    };
+    const centKak = (r: Row) => {
+      const i = K[key(r)]?.counts?.FD6?.["300"], o = K[key(r)]?.counts?.FD6?.["1000"];
+      return i == null || o == null || !(o > 0) ? null : (Number(i) / Number(o)) * (1000 / 300) ** 2;
+    };
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const fRef = med(rows.map((r) => r.floorScore).filter((v): v is number => v != null));
+
+    type Q = { n: string; base: number; fs: number; ct: number; obs: number; t: number };
+    const build = (get: (r: Row) => number | null): { set: Q[]; ref: number } | null => {
+      const ok = cmp.filter((r) => get(r) != null && get(r)! > 0);
+      if (ok.length < 20) return null;
+      const ref = med(ok.map((r) => get(r)!));
+      return { ref, set: ok.map((r) => ({ n: r.n, base: qualShare(r), fs: r.floorScore ?? fRef, ct: get(r)!, obs: r.shareObs, t: r.t })) };
+    };
+    const KAP = [0, 0.25, 0.5, 0.75, 1];
+    const NU = [0, 0.25, 0.5, 0.75, 1];
+
+    const runGate = (title: string, get: (r: Row) => number | null) => {
+      const built = build(get);
+      if (!built) { console.log(`\n${title}: 표본 부족`); return; }
+      const { set, ref } = built;
+      const pred = (q: Q, k: number, v: number) => q.base * Math.pow(q.fs / fRef, k) * Math.pow(q.ct / ref, v);
+      const mape = (s: Q[], k: number, v: number) => mean(s.map((q) => Math.abs(pred(q, k, v) / q.obs - 1)));
+      const corr = (s: Q[], k: number, v: number) => pear(s.map((q) => pred(q, k, v)), s.map((q) => q.obs));
+      const sc = (s: Q[], crit: "mape" | "r", k: number, v: number) => (crit === "mape" ? mape(s, k, v) : -corr(s, k, v));
+      const pick = (s: Q[], crit: "mape" | "r", Ks = KAP, Vs = NU) => {
+        let b = { k: Ks[0], v: Vs[0], val: Infinity };
+        for (const k of Ks) for (const v of Vs) { const x = sc(s, crit, k, v); if (x < b.val) b = { k, v, val: x }; }
+        return b;
+      };
+      console.log(`\n══ ${title} (n=${set.length}) ══`);
+      const b0 = pick(set, "mape", KAP, [0]);       // 층수만
+      const b1 = pick(set, "mape");                  // 층수 + 중심도
+      console.log(`  표본 안 최선: 층수만 κ=${b0.k} → MAPE ${(mape(set, b0.k, 0) * 100).toFixed(2)}% · r ${corr(set, b0.k, 0).toFixed(3)}`);
+      console.log(`              +중심도 κ=${b1.k}·ν=${b1.v} → MAPE ${(mape(set, b1.k, b1.v) * 100).toFixed(2)}% · r ${corr(set, b1.k, b1.v).toFixed(3)}`);
+      // 잭나이프 — 한 곳이 만든 값인지
+      const jk = set.map((_, i) => {
+        const s2 = set.filter((_, j) => j !== i);
+        return pear(s2.map((q) => pred(q, b1.k, b1.v)), s2.map((q) => q.obs));
+      });
+      console.log(`  한 곳 빼면 r ${Math.min(...jk).toFixed(3)}~${Math.max(...jk).toFixed(3)} (유의선 ${(2 / Math.sqrt(set.length - 1)).toFixed(3)})`);
+
+      for (const crit of ["mape", "r"] as const) {
+        const errs: number[] = [], preds: number[] = [], picks: string[] = [];
+        for (let i = 0; i < set.length; i++) {
+          const b = pick(set.filter((_, j) => j !== i), crit);
+          picks.push(`κ${b.k}/ν${b.v}`);
+          const ph = pred(set[i], b.k, b.v);
+          preds.push(ph); errs.push(Math.abs(ph / set[i].obs - 1));
+        }
+        const ins = pick(set, crit);
+        const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+        console.log(`  LOO [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ${(mape(set, ins.k, ins.v) * 100).toFixed(2)}% → LOO ${(mean(errs) * 100).toFixed(2)}% (벌어짐 ${((mean(errs) - mape(set, ins.k, ins.v)) * 100).toFixed(2)}%p) · LOO r=${pear(preds, set.map((q) => q.obs)).toFixed(3)}`);
+        console.log(`      고른 값: ${tally.slice(0, 3).map(([x, n]) => `${x} ${Math.round(n / set.length * 100)}%`).join(" · ")}`);
+      }
+
+      let seed = 20260917 >>> 0;
+      const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+      const shuf = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+      for (const crit of ["mape", "r"] as const) {
+        const picks: string[] = [];
+        for (let rep = 0; rep < 100; rep++) {
+          const idx = shuf(set.map((_, i) => i));
+          for (let f = 0; f < 5; f++) { const b = pick(idx.filter((_, j) => j % 5 !== f).map((i) => set[i]), crit); picks.push(`κ${b.k}/ν${b.v}`); }
+        }
+        const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+        console.log(`  5겹 [${crit === "mape" ? "MAPE" : "r"}] ${tally.slice(0, 3).map(([x, n]) => `${x} ${(n / picks.length * 100).toFixed(0)}%`).join(" · ")}`);
+      }
+
+      // 대조군 — 중심도만 매장끼리 섞는다. 기준선은 "중심도 없음(ν=0)에서 최선의 κ".
+      for (const crit of ["mape", "r"] as const) {
+        const gain = (s: Q[]) => { const a = pick(s, crit, KAP, [0]), b = pick(s, crit); return sc(s, crit, a.k, 0) - sc(s, crit, b.k, b.v); };
+        const real = gain(set);
+        const gs: number[] = [];
+        for (let i = 0; i < 500; i++) { const pool = shuf(set.map((q) => q.ct)); gs.push(gain(set.map((q, j) => ({ ...q, ct: pool[j] })))); }
+        gs.sort((a, b) => a - b);
+        const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+        const f = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+        console.log(`  대조군 [${crit === "mape" ? "MAPE" : "r"}] 실제 ${f(real)} · 섞으면 중앙 ${f(med(gs))} · 95퍼센타일 ${f(gs[Math.floor(gs.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+      }
+    };
+
+    // 층수와 중심도가 서로 겹치면 "둘 다 넣었다"가 아니라 "같은 걸 두 번 넣었다"가 된다.
+    const both = cmp.filter((r) => centFlo(r) != null && r.floorScore != null);
+    console.log(`\n[겹침 점검] 층수자 점수 ↔ 중심도 r=${pear(both.map((r) => r.floorScore!), both.map((r) => Math.log(centFlo(r)!))).toFixed(3)} (n=${both.length})`);
+    runGate("(가) 유동 300m/1km — 본 후보", centFlo);
+    runGate("(나) 카카오 음식점 300m/1km — 출처 바꿔 재현되나", centKak);
     expect(cmp.length).toBeGreaterThan(20);
   });
 });
