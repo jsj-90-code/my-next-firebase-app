@@ -149,7 +149,7 @@ export default function LabPage() {
   // 조절판을 없앴다(2026-09-16 사용자 방향: "슬라이드바 직접 조절하는 건 없애고 최신 데이터
   // 기준으로 반영한 예상매출·가동률을 보고 싶다"). 계수는 코드에 고정하고, 바꿔야 하면
   // textbookModel.ts의 DEFAULT_TEXTBOOK_PARAMS에서 바꾼다 — 화면에 떠넘기지 않는다.
-  const p: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS, outsideOptionIp: 500 };
+  const p: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS };
 
   useEffect(() => {
     let alive = true;
@@ -235,7 +235,7 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
             필요 점유율 — 이 매장들이 실제로 먹은 몫
           </p>
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-            실측가동률 ÷ (경쟁이 없다고 볼 때의 예측 가동률). 수요식이 맞다면 0~100% 안에 들고
+            실측가동률 ÷ (점유율 항을 끈 예측 가동률). 수요식이 맞다면 0~100% 안에 들고
             경쟁이 셀수록 낮아야 합니다. <b>100%를 넘으면 그 동네 수요를 과소평가한 것</b>입니다.
           </p>
           <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -609,12 +609,12 @@ function StoreTable({ score }: { score: TextbookScore }) {
         경쟁점 유무와 무관합니다.
         <b> 실제 먹은 몫</b>은 실측가동률 ÷ 수요 전부라면입니다.
       </p>
-      <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-        ⚠️ <b>지금 이 두 열은 믿을 수 없습니다.</b> 38곳 중 37곳이 &ldquo;수요 전부라면&rdquo; 100%를 넘고
-        중앙값이 317%입니다. 경쟁점이 0곳인 독점 매장(탕정역점)조차 &ldquo;실제 먹은 몫&rdquo;이 15%로
-        나옵니다 — 독점이면 100%에 가까워야 합니다. <b>수요식이 실제의 3~6배를 잡고, 점유율이
-        그만큼 작게 나와 서로 상쇄되는 상태</b>입니다. 그래서 예상매출은 얼추 맞지만 중간 두 단계가
-        둘 다 틀렸습니다. 2026-09-16 확인, 원인 추적 중입니다.
+      <p className="mt-1 rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+        2026-09-16에 이 두 열이 말이 안 되게 나오던 문제를 고쳤습니다. 화면이 &ldquo;PC방 안 가는 몫&rdquo;을
+        모델 기본값(0) 대신 <b>500으로 덮어쓰고</b> 있었습니다. 그러면 경쟁점이 0곳인 독점 매장도
+        점유율이 17%로 계산되는데, <b>수요 축척은 &ldquo;독점이면 점유율 1&rdquo;을 전제로 독점 매장에
+        맞춥니다.</b> 전제가 깨지니 수요가 6배 부풀려졌고, 점유율이 그만큼 작아져 매출만 얼추 맞는
+        상태였습니다. 지금은 독점 매장이 점유율 100%를 받고 전체 MAPE도 41.8% → 23.4%로 내려갔습니다.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">

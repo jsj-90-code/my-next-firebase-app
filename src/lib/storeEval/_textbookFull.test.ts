@@ -92,7 +92,7 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     }));
   }
 
-  const P: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS, outsideOptionIp: 500 };
+  const P: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS };
   const line = (label: string, rs: LabRow[], p: TextbookParams = P) => {
     const sc = scoreTextbook(rs, p);
     const f = (v: number | null | undefined, d = 2) => (v == null ? "-" : (v * 100).toFixed(d));
