@@ -111,6 +111,8 @@ async function loadLabData(): Promise<Loaded | null> {
         pcCount: s.evaluationPcCount ?? s.pcCount,
         hourlyRate: s.hourlyRate,
         actualUtilization: utilByStore.get(s.storeCode) ?? null,
+        // 특수수요는 이제 **수요 산식 안에서** 배수로 쓴다(2026-09-16). 입지 보정이 아니다.
+        specialDemandType: s.specialDemandType ?? null,
         competitivenessGap: s.competitivenessGap,
         competitorIp: computeCompetitorIp(cs, s.operatingPcStores500m ?? null),
         competitorCount: cs.filter((c) => c.investigationStatus !== "경쟁점없음").length,
@@ -369,6 +371,16 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
           <div className="mt-1 font-mono text-[11px]">
             수요 = 환산(주거 {p.residentRadius === 1000 ? "1km" : `${p.residentRadius}m`})
             {" + "}환산(유동 {p.floatingRadius}m) × {p.floatingFactor}
+          </div>
+          <div className="mt-1">
+            <b>특수수요 배수</b> — 군부대·대학가·산업단지는 <b>인구 통계에 안 잡히는 이용자</b>를
+            데려옵니다. 그래서 입지 보정이 아니라 <b>수요 산식 안에서</b> 곱합니다.
+            {" "}지금 값: {Object.entries(p.specialDemandMultipliers)
+              .filter(([k, v]) => v !== 1 && k !== "관광유흥")
+              .map(([k, v]) => `${k} ×${v}`).join(" · ") || "전부 1.0"}.
+            {" "}2026-09-16에 필요 점유율로 측정했습니다(군부대 118.3% · 대학가 76.0% ·
+            산업단지 72.8% vs 없음 52.5%).
+            {" "}<b>표본이 2~5곳이라 확정값이 아닙니다</b> — 경쟁력 작업을 끝낸 뒤 2차 가공합니다.
           </div>
           <div className="mt-1">
             유동 계수 <b>{p.floatingFactor}</b>는 <b>측정값이 아니라 보정상수</b>입니다. 한 숫자가 셋을
