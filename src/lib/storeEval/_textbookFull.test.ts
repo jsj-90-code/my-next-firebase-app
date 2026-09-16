@@ -72,6 +72,8 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     for (const [code, vs] of acc) utilByStore.set(code, vs.reduce((a, b) => a + b, 0) / vs.length);
   }
 
+  // 로드뷰 판정은 Firestore에 있어 하네스(오프라인 스냅샷)에서는 안 읽는다. 계수가 0이라
+  // 결과에 영향이 없다 — 켤 때가 오면 스냅샷에 같이 담아야 한다.
   const rows = buildLabRows({ stores, compsByCode, utilByStore, settings });
 
   /** 입지 항목을 골라서 끈 행을 만든다. 원본은 안 건드린다. */

@@ -37,7 +37,7 @@ import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/l
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   getLabModelSettings, listLabCompetitors, listLabLocationEvaluations,
-  listLabExistingStores, listEvaluationSales,
+  listLabExistingStores, listLabRoadviewJudgments, listEvaluationSales,
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
@@ -67,11 +67,12 @@ async function loadLabData(): Promise<Loaded | null> {
   //    실험실에서 시설·사양을 고칠 때 운영 V62가 같이 움직인다 — 갈라놓은 뜻이 없어진다.
   //    복제본은 scripts/syncLabCollections.mjs로 **명시적으로** 채운다(자동 동기화 없음).
   //    월매출만 운영 것을 그대로 읽는다 — 실측 사실이라 두 벌로 둘 이유가 없다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey] = await Promise.all([
     listLabExistingStores(),
     getLabModelSettings(),
     listLabCompetitors(),
     listLabLocationEvaluations(),
+    listLabRoadviewJudgments(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -122,7 +123,7 @@ async function loadLabData(): Promise<Loaded | null> {
   }
 
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings });
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey });
 
   let current: Loaded["current"] = null;
   try {
@@ -604,7 +605,7 @@ function StoreTable({ score }: { score: TextbookScore }) {
     <section className="mt-6">
       <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 (오차 큰 순)</h2>
       <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-        <b>가동률오차</b>는 퍼센트포인트 차이가 아니라 <b>상대오차</b>입니다(|예상−실측| ÷ 실측).
+        <b>가동률차</b>는 예상 − 실측을 <b>퍼센트포인트</b>로 적은 값입니다 — 양수면 예상이 높다는 뜻입니다.
         <b> 수요 전부라면</b>은 점유율 항을 끈 값 — 이 동네 수요가 전부 우리에게 온다면 PC가 몇 % 도는가입니다.
         경쟁점 유무와 무관합니다.
         <b> 실제 먹은 몫</b>은 실측가동률 ÷ 수요 전부라면입니다.
@@ -626,7 +627,7 @@ function StoreTable({ score }: { score: TextbookScore }) {
               <th scope="col" className="px-3 py-2 text-right">오차</th>
               <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
               <th scope="col" className="px-3 py-2 text-right">실측가동률</th>
-              <th scope="col" className="px-3 py-2 text-right" title="|예상−실측| ÷ 실측. 퍼센트포인트 차이가 아니라 상대오차다(매출 오차와 같은 방식).">가동률오차<span className="ml-0.5 text-[10px] font-normal text-[var(--sl-ink-soft)]">(상대)</span></th>
+              <th scope="col" className="px-3 py-2 text-right" title="예상 − 실측, 퍼센트포인트. 양수면 예상이 실측보다 높다는 뜻이다. 가동률은 그 자체가 %라서 상대오차가 아니라 %p로 보여준다.">가동률차<span className="ml-0.5 text-[10px] font-normal text-[var(--sl-ink-soft)]">(%p)</span></th>
               <th scope="col" className="px-3 py-2 text-right" title="점유율 항을 아예 끈 예측 가동률 — 이 동네 수요가 전부 우리에게 온다면 PC가 몇 % 돌아가나. 경쟁점 유무와 무관하고, 100%를 넘으면 수요가 우리 용량보다 크다는 뜻이다.">수요 전부라면</th>
               <th scope="col" className="px-3 py-2 text-right" title="실측가동률 ÷ 수요 전부라면 — 이 매장이 그 동네 수요 중 실제로 먹은 몫">실제 먹은 몫</th>
               <th scope="col" className="px-3 py-2 text-right">산식 점유율</th>
@@ -646,8 +647,16 @@ function StoreTable({ score }: { score: TextbookScore }) {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.utilization)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.actualUtilization)}</td>
-                  <td className={`px-3 py-2 text-right tabular-nums ${(r.utilErrPct ?? 0) > 0.2 ? "font-semibold text-red-600 dark:text-red-400" : ""}`}>
-                    {pct(r.utilErrPct)}
+                  {/* 가동률은 그 자체가 %라서 상대오차로 보여주면 오해를 부른다(2026-09-16
+                      사용자 지적: "52.6% 실제 31.6%면 21 아니냐? 왜 66.7%나옴?").
+                      퍼센트포인트 차이를 부호까지 붙여 보여준다 — 양수면 예상이 높다는 뜻. */}
+                  <td className={`px-3 py-2 text-right tabular-nums ${
+                    Math.abs(((r.utilization ?? 0) - (r.actualUtilization ?? 0))) > 0.1
+                      ? "font-semibold text-red-600 dark:text-red-400" : ""
+                  }`}>
+                    {r.utilization == null || r.actualUtilization == null
+                      ? "-"
+                      : `${(r.utilization - r.actualUtilization) >= 0 ? "+" : ""}${((r.utilization - r.actualUtilization) * 100).toFixed(1)}%p`}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.utilizationNoShare)}</td>
                   <td className={`px-3 py-2 text-right tabular-nums font-semibold ${(r.requiredShare ?? 0) > 1 ? "text-red-600 dark:text-red-400" : ""}`}>

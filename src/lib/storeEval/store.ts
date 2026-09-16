@@ -77,6 +77,10 @@ const LAB_CANDIDATES = "storeEvalLabCandidates";
 const LAB_COMPETITORS = "storeEvalLabCompetitors";
 const LAB_LOCATION_EVALS = "storeEvalLabLocationEvaluations";
 const LAB_SETTINGS = "storeEvalLabSettings";
+// 로드뷰 판정(입지 4·5번). **매장 문서가 아니라 따로 둔다** — syncLabCollections.mjs가
+// 운영 문서로 실험실 문서를 통째로 덮어쓰기 때문에, 매장 문서에 넣으면 다음 동기화 때
+// 판정이 날아간다. 별도 컬렉션은 동기화가 손대지 않는다.
+const LAB_ROADVIEW = "storeEvalLabRoadviewJudgments";
 
 const AUDIT_LOG = "storeEvalAuditLog";
 const RESTORE_LOG = "storeEvalRestoreLog";
@@ -450,6 +454,23 @@ export async function listLabLocationEvaluations(): Promise<LocationEvaluation[]
  * 실험실 설정. 복제본이 없으면 **null이 아니라 운영 설정으로 떨어진다** — 실험실이
  * 설정 없이도 돌아야 하기 때문이다. 실험실에서 설정을 처음 저장하는 순간 갈라진다.
  */
+/**
+ * 로드뷰 판정을 `existing:<매장코드>` 키로 돌려준다(buildLabRows가 그 꼴을 받는다).
+ *
+ * 판정 못 한 곳은 아예 없다 — 없는 걸 null로 채우지 않고 빠뜨린다. 받는 쪽이 "자료 없음"으로
+ * 다루도록 두는 게 맞다.
+ */
+export async function listLabRoadviewJudgments(): Promise<Map<string, { flowBlock: number | null; visibility: number | null }>> {
+  const snap = await getDocs(collection(requireDb(), LAB_ROADVIEW));
+  const out = new Map<string, { flowBlock: number | null; visibility: number | null }>();
+  snap.forEach((d) => {
+    const v = d.data() as { key?: string; flowBlock?: number | null; visibility?: number | null };
+    if (!v.key) return;
+    out.set(v.key, { flowBlock: v.flowBlock ?? null, visibility: v.visibility ?? null });
+  });
+  return out;
+}
+
 export async function getLabModelSettings(): Promise<ModelSettings | null> {
   const snap = await getDoc(doc(requireDb(), LAB_SETTINGS, "current"));
   if (!snap.exists()) return getModelSettings();

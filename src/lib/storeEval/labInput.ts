@@ -79,6 +79,16 @@ export function rivalQualityParts(c: Competitor, settings: ModelSettings): Quali
   };
 }
 
+/**
+ * 로드뷰 판정에서 나온 입지 4·5번 값. 클수록 좋다.
+ *
+ * 문항은 전부 "예 = 나쁨"이라 예 개수를 뒤집어 만든다(writeRoadviewJudgmentsToFirestore.mjs):
+ * 동선 방해 = 5 − 예 개수(0~4), 가시성 = 4 − 예 개수(0~3).
+ *
+ * ⚠️ 사람이 표본을 직접 보고 대조하기 전이다. 그리고 계수가 0이라 아직 계산에 안 들어간다.
+ */
+export type RoadviewJudgment = { flowBlock: number | null; visibility: number | null };
+
 export type BuildLabRowsArgs = {
   /** prepareExistingStoresForEvaluation을 이미 통과한 기존점. */
   stores: ExistingStore[];
@@ -87,6 +97,11 @@ export type BuildLabRowsArgs = {
   /** 매장코드 -> 실측 월평균 가동률(0~1). 수요 축척을 여기 맞춘다. */
   utilByStore: Map<string, number>;
   settings: ModelSettings;
+  /**
+   * `existing:<매장코드>` -> 로드뷰 판정. 없으면 그 매장의 4·5번은 null로 남는다 —
+   * 판정 못 한 곳에 값을 지어내지 않는다.
+   */
+  roadviewByKey?: Map<string, RoadviewJudgment>;
 };
 
 /**
@@ -95,12 +110,13 @@ export type BuildLabRowsArgs = {
  * 값을 지어내지 않는다 — 자료가 없는 항목은 null로 넘기고, 모델이 그 항을 중립(1배)으로
  * 빼도록 둔다. 빠진 자리를 평균이나 0으로 메우면 "모른다"가 "나쁘다"로 둔갑한다.
  */
-export function buildLabRows({ stores, compsByCode, utilByStore, settings }: BuildLabRowsArgs): LabRow[] {
+export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey }: BuildLabRowsArgs): LabRow[] {
   const rows: LabRow[] = [];
   for (const s of stores) {
     if (s.excludedFromModel || !s.actualMonthlyRevenueAvg) continue;
     const code = existingStoreSourceCode(s);
     const cs = compsByCode.get(code) ?? [];
+    const rv = roadviewByKey?.get(`existing:${s.storeCode}`) ?? null;
     const sr = s as unknown as Record<string, number | null>;
     rows.push({
       actualRevenue: s.actualMonthlyRevenueAvg,
@@ -139,9 +155,12 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings }: Bui
           // ⚠️ 계수 ω는 0이라 지금은 계산에 안 들어간다 — 중심도가 이미 이 신호를 먹어
           // 대조군을 못 넘었다. 값을 보여주고 스위치로 켤 수 있게만 해 둔다.
           direction: s.flowEccentricity ?? null,
-          // 아래 둘은 아직 자료원이 없다. 자리만 둔다 — 계수도 0이라 계산에 안 들어간다.
-          flowBlock: null,
-          visibility: null,
+          // 동선 방해·가시성 — 로드뷰를 자동으로 찍어 예/아니오 사실만 판정한 값이다
+          // (2026-09-16, 52곳 중 49곳). 점수를 매긴 게 아니라 감점 문항의 예 개수를 뒤집은
+          // 값이다. 판정 못 한 곳은 null로 남긴다 — 지어내지 않는다.
+          // ⚠️ 계수가 0이라 아직 계산에 안 들어간다. 사람 표본 대조도 남아 있다.
+          flowBlock: rv?.flowBlock ?? null,
+          visibility: rv?.visibility ?? null,
         },
         pop500m: s.pop500m, pop1km: s.pop1km,
         // 연령별 이용률을 지역 성비로 섞는 데 쓴다(2026-09-16). 성별 x 연령 교차 자료는
