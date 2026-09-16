@@ -19,7 +19,7 @@
 // ── 축척은 두 개다 (2026-09-16 구조 변경) ────────────────────────────────
 //   층마다 실측값이 따로 있으니 축척도 따로 맞춘다. 자세한 근거는 fitHoursPerUser 위 주석.
 //     hoursPerUserPerMonth <- 독점매장 **실측 가동률**
-//     productUnitPrice     <- 독점매장 **실매출**
+//     productUnitPrice     <- **전 매장** 실매출÷실측가동률 (직접 측정되므로 독점 제약 없음)
 //   그전에는 축척 하나가 둘을 겸해서, 환산층이 틀린 만큼이 가동률로 되밀려 들어갔다.
 //
 // 기존 산식과 다른 점은 **회귀로 덮지 않는다**는 것이다. 기존 V61/V62는 위 값을 특징 하나로
@@ -146,10 +146,10 @@ export type TextbookParams = {
    *
    * ⚠️ 상품몫을 후보지에서 예측할 방법은 아직 없다. PC대수 r=0.251 · 정가 r=−0.015 ·
    *    가동률 r=0.118로 전부 유의선 0.354 미만이고, 좌석 구성 19개 항목도 다중비교 수준이다.
-   *    경쟁력점수가 r=0.713으로 강하지만 **쓰지 않는다** — 독점상권은 점유율이 1이라 경쟁력이
-   *    약분되는 게 설계인데, 여기에 넣으면 그 구분이 깨진다(2026-09-16 사용자 결정:
-   *    "독점매장은 경쟁력점수로 맞추는건 안할거고. 애초에 점유100이라 경쟁력점수가 의미가없음").
-   *    그래서 지금은 **상수**이고, `fitProductUnitPrice`가 독점 실매출에서 구한다.
+   *    경쟁력점수가 r=0.713으로 강해 보이지만 **착시다** — 평가창 시점을 통제하면 0.170으로
+   *    무너진다(경쟁력점수 ~ 시점 r=0.913). 쓰지 않는다. 사용자 결정(2026-09-16)과도 맞는다:
+   *    "독점매장은 경쟁력점수로 맞추는건 안할거고. 애초에 점유100이라 경쟁력점수가 의미가없음".
+   *    그래서 지금은 **상수**이고, `fitProductUnitPrice`가 실측 가동률이 있는 전 매장에서 구한다.
    */
   productUnitPrice: number;
   /**
@@ -184,7 +184,7 @@ export type TextbookParams = {
    *
    * ── 구조 비교 (환산층만 떼어 잰 성적, 실측 가동률을 넣고 매출만 계산, 32곳) ──────
    *
-   *   덧셈(채택) PC몫 + 상품몫 1,492원        MAPE 10.35%  · 독점 최대 10.6%
+   *   덧셈(채택) PC몫 + 상품몫 1,508원        MAPE 10.48%  · 독점 최대 10.1%
    *   곱셈(옛것) 2,681 x (정가/1300)^0.546   MAPE  9.23%  · 독점 최대 12.9%
    *   요금 무시  총단가 2,928원 상수           MAPE 12.18%  · 독점 최대  8.7%
    *
@@ -229,9 +229,9 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   outsideOptionIp: 0,
   agglomerationFactor: 0,
   densityCorrection: 0,
-  // fitProductUnitPrice가 독점 실매출에서 다시 구한다. 여기 값은 그 전에 쓰이는 출발점이고,
-  // 독점 3곳으로 맞춘 값이다(실측 32곳 상품몫 중앙은 1,456원).
-  productUnitPrice: 1492,
+  // fitProductUnitPrice가 실측 가동률이 있는 전 매장에서 다시 구한다. 여기 값은 그 전에
+  // 쓰이는 출발점이다(2026-09-16 실측 32곳 기준).
+  productUnitPrice: 1508,
   // 운영 산식 usageRevenue.ts effectiveHourlyRate와 같은 값 — 두 산식이 한 식을 쓴다.
   // 2026-09-16 저녁(3)부터 이 지수는 PC몫에만 걸린다(상품몫은 정가와 무관).
   rateElasticity: 0.546,
@@ -442,7 +442,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
  * 수요식은 멀쩡했는데 환산층 오차를 대신 뒤집어쓰고 있었다.
  *
  *   1) hoursPerUserPerMonth ← 독점매장 **실측 가동률**   (fitHoursPerUser)
- *   2) productUnitPrice     ← 독점매장 **실매출**        (fitProductUnitPrice)
+ *   2) productUnitPrice     ← **전 매장** 실매출·실측가동률 (fitProductUnitPrice)
  *
  * 순서가 중요하다. 1)을 먼저 정해 가동률을 고정한 뒤, 2)가 남은 몫만 맡는다.
  */
@@ -497,12 +497,12 @@ export function fitHoursPerUser(
 }
 
 /**
- * 상품몫(productUnitPrice)을 **독점매장 실매출**에 맞춘다. 수요 축척이 이미 정해진 뒤에 부른다.
+ * 상품몫(productUnitPrice)을 **실측 가동률이 있는 전 매장**에서 구한다.
  *
  * 덧셈 구조라 배수가 아니라 **빼서** 구한다 — PC몫은 정가에서 이미 정해졌으니, 실매출에서
  * PC몫을 빼고 남는 게 상품몫이다.
  *
- *   상품몫 = 평균( 실매출 ÷ 자사이용시간 − PC몫 )
+ *   상품몫 = 평균( 실매출 ÷ (PC x 720 x 실측가동률) − PC몫 )
  *
  * 남는 오차가 곧 "세 독점매장이 PC·시간당 실제로 얼마나 다르게 버는가"다. 2026-09-16 실측으로
  * 총단가가 탕정역 3,206원 · 광주각화 2,853원 · 남악 2,745원이라 16.8% 벌어져 있고, **그 차이의
@@ -513,6 +513,30 @@ export function fitProductUnitPrice(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): number {
+  // ── 실측 가동률이 있으면 **전 매장**을 쓴다 (2026-09-16 저녁(3) 수정) ──────────────
+  //
+  // 상품몫은 수요와 달리 **직접 측정된다** — 실매출 ÷ (PC x 720 x 실측가동률) − PC몫.
+  // 산식을 한 번도 거치지 않으니 독점이라는 지렛대가 필요 없다.
+  //
+  // 사용자(2026-09-16): "정액권비중은 독점매장비율로쓰면안될거같은데, 전체매장으로해야하지
+  // 않음? 평균값이라" — 맞다. 평균으로 쓸 값이면 표본이 많을수록 낫다.
+  //
+  // ⚠️ 그전에는 **모형이 예측한** 이용시간(ownDemandHours)으로 나눴다. 경쟁상권 매장은 그
+  //    값이 29% 틀려서 독점으로 제한할 수밖에 없었다. 실측 가동률로 나누면 그 제약이 사라진다.
+  //    독점 3곳 1,492원 vs 전체 32곳 1,508원으로 값 자체는 1%밖에 안 달랐지만, 표본이 3곳에서
+  //    32곳으로 늘고 독점 매출 최대오차도 10.6% → 10.1%로 조금 나아진다.
+  const measured: number[] = [];
+  for (const r of rows) {
+    const au = r.input.actualUtilization;
+    const pc = r.input.pcCount;
+    if (au == null || !(au > 0) || !pc || !(r.actualRevenue > 0)) continue;
+    const b = computeTextbook(r.input, { ...p, productUnitPrice: 0 });
+    if (b.pcUnitPrice == null) continue;
+    measured.push(r.actualRevenue / (pc * MONTH_HOURS * au) - b.pcUnitPrice);
+  }
+  if (measured.length) return Math.max(0, measured.reduce((a, b) => a + b, 0) / measured.length);
+
+  // ── 되돌림: 실측 가동률이 하나도 없으면 독점매장에서 모형 이용시간으로 맞춘다 ──────
   const target = calibrationTarget(rows);
   const shares: number[] = [];
   for (const r of target) {
@@ -536,7 +560,7 @@ export type TextbookScore = {
   maxAbsErr: number | null;
   /** 배율까지 맞춘 뒤의 hoursPerUserPerMonth. 화면에 그대로 보여준다. */
   fittedHoursPerUser: number;
-  /** 독점 실매출로 맞춘 뒤의 productUnitPrice(상품몫, 원/PC·시간). 화면에 그대로 보여준다. */
+  /** 전 매장 실측으로 구한 productUnitPrice(상품몫, 원/PC·시간). 화면에 그대로 보여준다. */
   fittedProductUnitPrice: number;
   /** 수요 축척을 실측 가동률로 맞췄는지. false면 매출로 떨어진 것이라 두 층이 다시 엉킨다. */
   scaledOnUtilization: boolean;
@@ -558,8 +582,8 @@ export function scoreTextbook(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): TextbookScore {
-  // 축척 둘을 **순서대로** 맞춘다. 1) 수요 축척을 실측 가동률에, 2) 상품몫을 독점 실매출에.
-  // 순서가 바뀌면 안 된다 — 가동률이 먼저 고정돼야 상품몫이 남은 몫만 맡는다.
+  // 축척 둘을 맞춘다. 1) 수요 축척은 **독점** 실측 가동률에(수요는 직접 관측이 안 되므로),
+  // 2) 상품몫은 **전 매장** 실측 가동률로 직접 측정한다(산식을 안 거치므로 독점 제약이 없다).
   const fitted = fitHoursPerUser(rows, p);
   const scaledOnUtilization = rows.some((r) => (r.input.actualUtilization ?? 0) > 0);
   const withFit: TextbookParams = { ...p, hoursPerUserPerMonth: fitted };

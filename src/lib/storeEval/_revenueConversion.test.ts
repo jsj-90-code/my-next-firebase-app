@@ -36,12 +36,20 @@
 //    ⚠️ 물가상승은 아니다. **같은 매장 안에서는 총단가가 연 -0.1%(중앙, 26곳)로 안 오른다.**
 //    매장 간 비교로만 연 17.2%가 나온다 -> "최근에 연 매장이 원래 단가가 높다"는 코호트 효과다.
 //
-//    실무 결론: **신규 후보지는 최근 코호트에 속하므로 32곳 전체 평균으로 맞추면 과소예측된다.**
-//    지금 산식은 상품몫을 독점 3곳으로 맞추는데 그 셋의 평가창 중간이 2025-01/06/10로 전부
-//    최근이라 안전하다(독점 기하평균 총단가 2,928원 > 32곳 중앙 2,778원).
+//    실무 함의: 신규 후보지는 최근 코호트다. 2024년 이전 17곳 상품몫 평균 1,349원 vs
+//    2025년 이후 15곳 1,657원으로 갈린다. 다만 코호트만으로 맞추면(1,725원) 전체 MAPE가
+//    10.48% -> 13.56%로 나빠지고 편향이 +9.3%가 되어, 연 17%를 외삽하는 셈이라 지금은 안 쓴다.
+//    **표본이 늘면 다시 본다.**
 // 6) 상품 판매가는 버려도 된다. 캔음료 등 본사 표준가는 전 매장 동일하고, 조리 메뉴는 다르지만
 //    공통 99종을 같은 비중으로 놓고 가격만 바꾸면 ±5%로 좁혀진다. 상품몫 차이의 주범은
 //    **얼마나/무엇을 파느냐**(시간당 판매개수 +26%)이지 얼마에 파느냐가 아니다.
+// 7) **상품몫은 독점이 아니라 전 매장에서 구한다** (2026-09-16 사용자: "전체매장으로해야하지
+//    않음? 평균값이라"). 수요는 직접 관측이 안 돼서 독점이라는 지렛대가 필요하지만, 상품몫은
+//    실매출 ÷ (PC x 720 x **실측가동률**) − PC몫으로 직접 측정된다. 산식을 안 거치니 제약이 없다.
+//    독점 3곳 1,492원 vs 전 매장 1,508원으로 값은 1%밖에 안 달랐지만 표본이 3곳 -> 32곳이 되고
+//    독점 매출 최대오차도 10.1% -> 9.3%로 나아진다.
+//    ⚠️ 그전에는 **모형이 예측한** 이용시간으로 나눠서 독점으로 제한할 수밖에 없었다
+//       (경쟁상권은 예측 가동률이 29% 틀린다). 실측 가동률로 나누는 게 핵심이다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
@@ -138,7 +146,7 @@ describeIf("매출 환산층 — 실측 가동률을 넣고 매출만 잰다", (
   it("덧셈 구조 — 정가는 PC몫에만 걸린다", () => {
     // 2026-09-16 저녁(3) 채택 구조:
     //   총단가 = PC몫 + 상품몫,  PC몫 = 기준정가 x (정가/기준정가)^β,  상품몫 = 상수
-    // 상품몫은 독점 실매출에서 PC몫을 **빼서** 구한다(화면 fitProductUnitPrice와 같은 방식).
+    // 상품몫은 전 매장 실측에서 PC몫을 **빼서** 구한다(화면 fitProductUnitPrice와 같은 방식).
     const REF = 1343, BETA = 0.546;   // 운영 산식 usageRevenue.ts effectiveHourlyRate와 같은 값
     const pcUnit = (r: Row, b = BETA) => REF * Math.pow(r.listRate / REF, b);
     const k = gmean(rows.map((r) => r.pcUnitPrice / pcUnit(r)));
@@ -152,8 +160,10 @@ describeIf("매출 환산층 — 실측 가동률을 넣고 매출만 잰다", (
       const s = [...err].sort((x, y) => x - y);
       console.log(`  ${label.padEnd(40)} 환산층 ${(mean(err) * 100).toFixed(2).padStart(6)}% · 중앙 ${(s[Math.floor(s.length / 2)] * 100).toFixed(1).padStart(5)}% · 최대 ${(s[s.length - 1] * 100).toFixed(0).padStart(3)}% · 독점최대 ${(Math.max(...me) * 100).toFixed(1).padStart(5)}%`);
     }
-    console.log(`\n[구조 비교 — 축척은 전부 독점 실매출에 맞춘다]`);
-    const S = mean(mono.map((r) => r.unitPrice - pcUnit(r)));
+    console.log(`\n[구조 비교 — 상품몫은 전 매장 실측으로 구한다]`);
+    // 상품몫은 **전 매장**에서 직접 측정한다 — 실측 가동률로 나누니 산식을 안 거친다.
+    // 수요와 달리 독점 제약이 필요 없다. 독점 3곳이면 1,492원, 전 매장이면 1,508원(1% 차이).
+    const S = mean(rows.map((r) => r.unitPrice - pcUnit(r)));
     score(`덧셈(채택): PC몫 + 상품몫 ${S.toFixed(0)}원`, (r) => pcUnit(r) + S);
     const ref2 = median(rows.map((r) => r.listRate));
     const T0 = gmean(mono.map((r) => r.unitPrice / Math.pow(r.listRate / ref2, BETA)));

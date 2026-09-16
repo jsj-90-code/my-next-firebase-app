@@ -311,17 +311,19 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     const predUtil = (r: Row) => Math.min(A * shape(r, gamma), cap);
     // ② PC몫은 정가에서 바로 나온다 — 운영 산식 effectiveHourlyRate와 같은 식이라 맞출 게 없다.
     const pcUnit = (r: Row) => (r.rate == null ? ref : ref * Math.pow(r.rate / ref, beta));
-    // ③ 상품몫만 독점 실매출로 맞춘다. 덧셈 구조라 배수가 아니라 **빼서** 구한다.
+    // ③ 상품몫은 **전 매장**에서 직접 측정한다 — 실측 가동률로 나누니 산식을 안 거친다.
+    //    수요와 달리 독점이라는 지렛대가 필요 없다(2026-09-16 사용자: "전체매장으로해야하지
+    //    않음? 평균값이라"). 독점 3곳으로 맞추면 1,492원, 전 매장이면 1,508원 — 1% 차이다.
     const shares: number[] = [];
-    for (const r of mono) {
+    for (const r of rows) {
       const st = byName.get(r.name);
       if (!st?.actualMonthlyRevenueAvg) continue;
-      const hours = r.pc * MONTH_HOURS * predUtil(r);
+      const hours = r.pc * MONTH_HOURS * r.util;   // 실측 가동률로 나눈다
       if (hours > 0) shares.push(st.actualMonthlyRevenueAvg / hours - pcUnit(r));
     }
     const S = mean(shares);
 
-    console.log(`\n축척 둘 — A = ${A.toExponential(3)} (독점 실측가동률) · 상품몫 S = ${S.toFixed(0)}원/PC·시간 (독점 실매출)`);
+    console.log(`\n축척 둘 — A = ${A.toExponential(3)} (독점 실측가동률) · 상품몫 S = ${S.toFixed(0)}원/PC·시간 (전 매장 실측)`);
     console.log(`총단가 = PC몫 + 상품몫 · PC몫 = ${ref} x (정가/${ref})^${beta} — 운영 산식 effectiveHourlyRate와 같은 식`);
     console.log(`${"매장".padEnd(14)} ${"예상가동률".padStart(10)} ${"실측가동률".padStart(10)} ${"가동률오차".padStart(10)} ${"예상매출".padStart(10)} ${"실제매출".padStart(10)} ${"매출오차".padStart(9)}`);
     let maxUtilErr = 0, maxRevErr = 0;
@@ -358,11 +360,11 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     const mono = rows.filter((r) => r.rival === 0);
     const pcUnit = (r: Row) => (r.rate == null ? ref : ref * Math.pow(r.rate / ref, beta));
     const predUtil = (r: Row) => Math.min(A * shape(r, gamma), cap);
-    // 상품몫은 독점 실매출에서 PC몫을 빼서 구한다(화면 fitProductUnitPrice와 같은 방식).
+    // 상품몫은 전 매장 실측 가동률로 직접 측정한다(화면 fitProductUnitPrice와 같은 방식).
     const shares: number[] = [];
-    for (const r of mono) {
+    for (const r of rows) {
       const actual = byName.get(r.name)?.actualMonthlyRevenueAvg;
-      const hours = r.pc * MONTH_HOURS * predUtil(r);
+      const hours = r.pc * MONTH_HOURS * r.util;   // 실측 가동률로 나눈다
       if (actual && hours > 0) shares.push(actual / hours - pcUnit(r));
     }
     const S = mean(shares);
