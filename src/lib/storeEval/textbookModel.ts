@@ -14,12 +14,12 @@
 //   1) 총수요   = (주거인구 x 이용률 + 유동인구 x 이용률 x α) x 1인당 월이용시간
 //   2) 점유율   = (자사PC x 격차^γ) / (자사PC x 격차^γ + 경쟁IP)
 //   3) 자사수요 = 총수요 x 점유율   -> 가동률 = 자사수요 / (자사PC x 720)
-//   4) 매출     = 자사PC x 720 x 가동률 x 총단가
+//   4) 매출     = 자사PC x 720 x 가동률 x 총단가,  총단가 = PC몫(정가) + 상품몫(상수)
 //
 // ── 축척은 두 개다 (2026-09-16 구조 변경) ────────────────────────────────
 //   층마다 실측값이 따로 있으니 축척도 따로 맞춘다. 자세한 근거는 fitHoursPerUser 위 주석.
 //     hoursPerUserPerMonth <- 독점매장 **실측 가동률**
-//     totalUnitPrice       <- 독점매장 **실매출**
+//     productUnitPrice     <- 독점매장 **실매출**
 //   그전에는 축척 하나가 둘을 겸해서, 환산층이 틀린 만큼이 가동률로 되밀려 들어갔다.
 //
 // 기존 산식과 다른 점은 **회귀로 덮지 않는다**는 것이다. 기존 V61/V62는 위 값을 특징 하나로
@@ -132,24 +132,33 @@ export type TextbookParams = {
    */
   densityCorrection: number;
   /**
-   * 총매출 대비 상품매출 비율. **매출 크기에는 더 이상 영향을 주지 않는다**(2026-09-16 구조 변경).
-   * 총매출은 이제 총단가(totalUnitPrice)가 직접 정하고, 이 값은 그 총매출을 PC매출과 상품매출로
-   * **쪼개 보여주는 데만** 쓴다. 실측 32곳 중앙 52.7%다(회사 기준값은 50%였다).
-   */
-  productRatio: number;
-  /**
-   * **총단가** — PC 1대를 1시간 채웠을 때 들어오는 총매출(PC+상품, 원).
+   * **상품몫** — PC 1대가 1시간 채워졌을 때 들어오는 **상품매출**(먹거리·음료, 원).
    *
-   * 2026-09-16 신설. 그전에는 `매출 = 이용시간 x 정가 ÷ (1-상품비율)`이었는데, 정가는
-   * 실제로 받는 돈과 다르다(좌석 추가과금 +, 정액권 할인 −). 32곳에서 역산한 실측 총단가는
-   * 중앙 2,778원 · 범위 2,246~3,606원이고, 정가x2(=지금 산식)와는 독점 3곳에서 −12.7%~+19.2%
-   * 어긋났다. 그래서 정가를 거쳐 가지 않고 총단가를 직접 축척으로 잡는다.
+   * 2026-09-16 저녁(3) 신설. 그전에는 총단가 하나에 정가를 통째로 곱했는데, 그러면
+   * **요금을 올리면 라면 값도 같이 오르는** 꼴이 된다. PC방 매출의 절반이 상품이라
+   * (실측 32곳 상품몫 중앙 1,456원 vs PC몫 1,366원) 그냥 두면 안 되는 크기다.
    *
-   * 이 값은 눈으로 정하지 않는다 — `fitTotalUnitPrice`가 **독점매장 실매출**에서 구한다.
+   *   총단가 = PC몫(정가가 여기에만 들어감) + 상품몫(정가와 무관)
+   *
+   * 독점 3곳에서 총단가가 16.8% 벌어지는데, 그 차이의 **75%가 상품몫**이다
+   * (탕정역 1,591원 vs 남악 1,247원). PC몫 차이는 25%뿐이다. 그래서 정가로 총단가를
+   * 맞히려던 옛 구조는 애초에 4분의 1짜리를 겨냥하고 있었다.
+   *
+   * ⚠️ 상품몫을 후보지에서 예측할 방법은 아직 없다. PC대수 r=0.251 · 정가 r=−0.015 ·
+   *    가동률 r=0.118로 전부 유의선 0.354 미만이고, 좌석 구성 19개 항목도 다중비교 수준이다.
+   *    경쟁력점수가 r=0.713으로 강하지만 **쓰지 않는다** — 독점상권은 점유율이 1이라 경쟁력이
+   *    약분되는 게 설계인데, 여기에 넣으면 그 구분이 깨진다(2026-09-16 사용자 결정:
+   *    "독점매장은 경쟁력점수로 맞추는건 안할거고. 애초에 점유100이라 경쟁력점수가 의미가없음").
+   *    그래서 지금은 **상수**이고, `fitProductUnitPrice`가 독점 실매출에서 구한다.
    */
-  totalUnitPrice: number;
+  productUnitPrice: number;
   /**
-   * **정가 탄력도 β** — 총단가가 정가를 얼마나 따라가는지. 총단가 = T0 x (정가/기준정가)^β.
+   * **정가 탄력도 β** — 실제로 받는 시간당 요금이 정가를 얼마나 따라가는지.
+   *
+   * 2026-09-16 저녁(3)부터 이 지수는 **PC몫에만** 걸린다(상품몫은 정가와 무관하다). 그래서
+   * PC몫 = 기준정가 x (정가/기준정가)^β가 되고, 이건 운영 산식 `effectiveHourlyRate`와 **완전히
+   * 같은 식**이다. 실측으로도 축척이 필요 없었다 — 32곳에서 실측 PC몫 ÷ eff(정가)의 기하평균이
+   * 1.005라 eff()가 수준까지 그대로 맞는다.
    *
    * **운영 산식의 `effectiveHourlyRate`(usageRevenue.ts)와 같은 형태다.** 거기 기본값은
    * `tariffEffectiveExponent = 0.546` · `tariffReferenceRate = 1343`(38곳으로 2026-09-14에
@@ -157,31 +166,33 @@ export type TextbookParams = {
    * 측정한 값도 0.49~0.535라 그 지수 자체는 잘 선 값이다 — 32곳 실효단가를 MAPE 9.16%로
    * 맞힌다(정가를 그대로 쓰면 10.43%).
    *
-   * **왜 0이 아니라 0.546인가 — 독점 기준을 이 층에 쓰면 안 된다.**
+   * **왜 이 지수가 필요한가 — 정액권 할인이 실체다.**
    *
-   * 독점매장(경쟁IP=0)이 필요한 이유는 점유율이 1이라 격차^gamma가 약분돼 **수요식을 경쟁
-   * 항에서 떼어낼 수 있기** 때문이다. 환산층에는 그 문제가 없다 — 실측 가동률이 있어서
-   * 32곳 **전부에서** 총단가를 직접 잴 수 있다(총단가 = 실매출 ÷ (PC x 720 x 실측가동률)).
-   * 그래서 이 층은 독점으로 고르지 않고 전체 표본으로 고른다.
-   *
-   * 환산층만 떼어 잰 성적(실측 가동률을 넣고 매출만 계산, 32곳):
-   *   β=0      MAPE 12.18%      β=0.4  MAPE 9.71%      β=0.6  MAPE 9.29%
-   *
-   * 독점 3곳은 이 추세를 거스른다 — 정가 순서(1400 < 1500 < 1700)가 실효단가 순서
-   * (1397 < 1498 < 1615)와 정확히 반대다. 그래서 β를 올리면 독점만 나빠진다:
-   *
-   *   β=0     독점 최대오차  8.5%  · 전체 MAPE 30.96%
-   *   β=0.3   독점 최대오차 10.9%  · 전체 MAPE 30.14%
-   *   β=0.546 독점 최대오차 12.8%  · 전체 MAPE 30.14%   ← 기본값. 운영 산식과 동일
-   *   β=1     독점 최대오차 16.2%  · 전체 MAPE 31.14%   (2026-09-16 이전 동작)
-   *
-   * 세 매장 순서가 정확히 뒤집힐 확률은 1/6이라 우연으로 설명된다. 32곳 증거가 3곳보다
-   * 강하다고 보고 0.546을 쓴다. 독점을 우선하려면 조절판에서 0으로 내리면 된다.
+   * 건별 원장(바탕화면 `좌석가동률_7월`, 8곳)으로 2026-09-16에 처음 직접 측정했다. 정액권
+   * 손님은 시간당 296~663원으로 **정가의 1/3**만 내고, 그 시간 비중이 매장마다 2.1~9.1%로
+   * 4배 차이 난다. 그래서 정가 1,700원 매장이 실제로는 1,397원(82%)만 받고, 1,000원 매장은
+   * 1,255원(126%)을 받는다. 이 지수는 그 **평균**을 한 숫자로 담은 것이다.
    *
    * 사용자(2026-09-16): "매장별 정액할인 금액이 틀리고 신규후보지도 마찬가지로 정액할인에
-   * 대한 정보가 없으니까 평균값이 가장 정답일것같다" — 맞는 판단이고, 여기서 쓰는 "평균"이
-   * 바로 그것이다. 정액할인의 *크기*는 모르지만 **정가가 비쌀수록 할인이 크다는 경향**은
-   * 38곳에서 측정된 정보라 버리지 않는다.
+   * 대한 정보가 없으니까 평균값이 가장 정답일것같다" — 맞는 판단이다. 정액할인의 *크기*는
+   * 매장 운영 정책이라 후보지에서 알 수 없지만, **정가가 비쌀수록 할인이 크다는 경향**은
+   * 38곳에서 측정된 정보라 버리지 않는다. 여기서 쓰는 "평균"이 바로 그 조건부 평균이다.
+   *
+   * ⚠️ **요금제 자체는 아직 반영되지 않는다.** 들어가는 건 `시간당 정가` 한 숫자뿐이고,
+   *    정액권 가격·구성, 좌석별 추가과금, 상품 가격은 안 들어간다. 매장별 정액권 비중을
+   *    받을 수 있게 되면 그때 이 지수를 매장별로 풀 수 있다.
+   *
+   * ── 구조 비교 (환산층만 떼어 잰 성적, 실측 가동률을 넣고 매출만 계산, 32곳) ──────
+   *
+   *   덧셈(채택) PC몫 + 상품몫 1,492원        MAPE 10.35%  · 독점 최대 10.6%
+   *   곱셈(옛것) 2,681 x (정가/1300)^0.546   MAPE  9.23%  · 독점 최대 12.9%
+   *   요금 무시  총단가 2,928원 상수           MAPE 12.18%  · 독점 최대  8.7%
+   *
+   * 덧셈이 전체 MAPE는 1.1%p 나쁘다. 곱셈이 반칙 이득을 보기 때문이다 — 정가가 상품몫과도
+   * 약하게 붙어 있어서(r=0.405, 비싼 매장이 먹거리도 잘 판다) 정가가 "매장 전반의 급"을
+   * 대신 나타내는 역할을 한다. 논리적으로는 그러면 안 된다. 덧셈은 독점 오차가 낮고
+   * 요금 인상 반응도 맞다(정가 +80%일 때 총단가 덧셈 +16% vs 곱셈 +38%).
+   * 2026-09-16 사용자 결정: "덧셈으로하자".
    */
   rateElasticity: number;
   /** 정가 탄력도의 기준점(원). 이 정가인 매장에서 총단가 = T0가 된다. 32곳 중앙정가. */
@@ -218,12 +229,11 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   outsideOptionIp: 0,
   agglomerationFactor: 0,
   densityCorrection: 0,
-  // 실측 32곳 평균. 매출 크기가 아니라 PC/상품 분해 표시에만 쓴다(2026-09-16).
-  productRatio: 0.523,
-  // fitTotalUnitPrice가 독점 실매출에서 다시 구한다. 여기 값은 그 전에 쓰이는 출발점이다.
-  // (기본 β에서 총단가 = 실효단가 ÷ (1-0.523)이므로 정가 1343원 매장 기준 약 2,816원)
-  totalUnitPrice: 2816,
+  // fitProductUnitPrice가 독점 실매출에서 다시 구한다. 여기 값은 그 전에 쓰이는 출발점이고,
+  // 독점 3곳으로 맞춘 값이다(실측 32곳 상품몫 중앙은 1,456원).
+  productUnitPrice: 1492,
   // 운영 산식 usageRevenue.ts effectiveHourlyRate와 같은 값 — 두 산식이 한 식을 쓴다.
+  // 2026-09-16 저녁(3)부터 이 지수는 PC몫에만 걸린다(상품몫은 정가와 무관).
   rateElasticity: 0.546,
   referenceHourlyRate: 1343,
   maxUtilization: 0.55,
@@ -273,11 +283,18 @@ export type TextbookBreakdown = {
   ownDemandHours: number | null;
   utilization: number | null;
   capped: boolean;
-  /** 이 매장에 적용된 총단가(원/PC·시간). 화면에 그대로 보여준다. */
+  /** 이 매장에 적용된 총단가(원/PC·시간) = PC몫 + 상품몫. 화면에 그대로 보여준다. */
   unitPrice: number | null;
+  /** PC몫(원/PC·시간). 정가가 여기에만 들어간다. */
+  pcUnitPrice: number | null;
   pcRevenue: number | null;
   productRevenue: number | null;
   monthlyRevenue: number | null;
+  /**
+   * 상품매출 비율 — **결과값이다.** 2026-09-16 저녁(3)부터 파라미터가 아니다.
+   * PC몫과 상품몫을 따로 계산하니 비율은 나눠 보면 나온다.
+   */
+  productRatio: number | null;
   /** 왜 값이 안 나왔는지. 화면에서 그대로 보여준다. */
   missing: string[];
 };
@@ -308,7 +325,8 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const empty: TextbookBreakdown = {
     residentDemandUsers: null, floatingDemandUsers: null, totalDemandUsers: null,
     totalDemandHours: null, share: null, ownDemandHours: null, utilization: null,
-    capped: false, unitPrice: null, pcRevenue: null, productRevenue: null, monthlyRevenue: null, missing,
+    capped: false, unitPrice: null, pcUnitPrice: null, pcRevenue: null, productRevenue: null,
+    monthlyRevenue: null, productRatio: null, missing,
   };
 
   // 연령별 이용률은 **그 자료의 지역 성비로 섞어서** 쓴다(2026-09-16). 주거와 유동은 성비가
@@ -376,18 +394,25 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const ownHours = Math.min(rawOwnHours, capHours);
   const utilization = ownHours / (pc * MONTH_HOURS);
 
-  // 총단가 = T0 x (정가/기준정가)^β. β=0(기본)이면 정가와 무관하게 T0다.
-  // 정가를 거쳐 가지 않는 이유는 totalUnitPrice/rateElasticity 주석에 적혀 있다.
+  // ── 총단가 = PC몫 + 상품몫 ─────────────────────────────────────────────
+  //
+  //   PC몫   = 기준정가 x (정가 / 기준정가)^β   <- 정가가 여기에만 들어간다
+  //   상품몫 = 상수                             <- 정가와 무관하다 (라면 값은 PC요금을 안 따라간다)
+  //
+  // 2026-09-16 저녁(3) 이전에는 총단가 전체에 정가를 곱했다. 그러면 정가를 80% 올릴 때
+  // 총단가가 38% 오르는데, 상품매출은 안 오르므로 과하다(덧셈 구조에서는 17%).
   const rate = input.hourlyRate;
-  const rateFactor = p.rateElasticity === 0 || rate == null || !(p.referenceHourlyRate > 0)
-    ? 1
-    : Math.pow(rate / p.referenceHourlyRate, p.rateElasticity);
-  if (rate == null && p.rateElasticity !== 0) missing.push("시간당 요금");
-  const unitPrice = p.totalUnitPrice * rateFactor;
-  const monthlyRevenue = unitPrice > 0 ? ownHours * unitPrice : null;
-  // 상품비율은 총매출을 쪼개 보여주는 데만 쓴다 — 총매출 크기는 위에서 이미 정해졌다.
-  const pcRevenue = monthlyRevenue != null ? monthlyRevenue * (1 - p.productRatio) : null;
-  const productRevenue = monthlyRevenue != null && pcRevenue != null ? monthlyRevenue - pcRevenue : null;
+  const ref = p.referenceHourlyRate;
+  if (rate == null) missing.push("시간당 요금");
+  // 요금을 모르면 기준정가(표본 중앙)인 매장으로 가정한다. 화면에 "자료없음"으로 표시된다.
+  const effRate = rate == null || !(ref > 0)
+    ? ref
+    : ref * Math.pow(rate / ref, p.rateElasticity);
+  const pcUnitPrice = effRate;
+  const unitPrice = pcUnitPrice + p.productUnitPrice;
+  const pcRevenue = ownHours * pcUnitPrice;
+  const productRevenue = ownHours * p.productUnitPrice;
+  const monthlyRevenue = unitPrice > 0 ? pcRevenue + productRevenue : null;
 
   return {
     residentDemandUsers: residentUsers,
@@ -399,9 +424,11 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     utilization,
     capped,
     unitPrice,
+    pcUnitPrice,
     pcRevenue,
     productRevenue,
     monthlyRevenue,
+    productRatio: monthlyRevenue != null && monthlyRevenue > 0 ? productRevenue / monthlyRevenue : null,
     missing,
   };
 }
@@ -415,7 +442,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
  * 수요식은 멀쩡했는데 환산층 오차를 대신 뒤집어쓰고 있었다.
  *
  *   1) hoursPerUserPerMonth ← 독점매장 **실측 가동률**   (fitHoursPerUser)
- *   2) totalUnitPrice       ← 독점매장 **실매출**        (fitTotalUnitPrice)
+ *   2) productUnitPrice     ← 독점매장 **실매출**        (fitProductUnitPrice)
  *
  * 순서가 중요하다. 1)을 먼저 정해 가동률을 고정한 뒤, 2)가 남은 몫만 맡는다.
  */
@@ -470,27 +497,34 @@ export function fitHoursPerUser(
 }
 
 /**
- * 총단가(totalUnitPrice)를 **독점매장 실매출**에 맞춘다. 수요 축척이 이미 정해진 뒤에 부른다.
+ * 상품몫(productUnitPrice)을 **독점매장 실매출**에 맞춘다. 수요 축척이 이미 정해진 뒤에 부른다.
+ *
+ * 덧셈 구조라 배수가 아니라 **빼서** 구한다 — PC몫은 정가에서 이미 정해졌으니, 실매출에서
+ * PC몫을 빼고 남는 게 상품몫이다.
+ *
+ *   상품몫 = 평균( 실매출 ÷ 자사이용시간 − PC몫 )
  *
  * 남는 오차가 곧 "세 독점매장이 PC·시간당 실제로 얼마나 다르게 버는가"다. 2026-09-16 실측으로
- * 탕정역 3,206원 · 광주각화 2,853원 · 남악 2,745원이라 17% 벌어져 있고, 후보지에서 알 수 있는
- * 어떤 값으로도 설명되지 않았다(경쟁력점수·좌석구성·PC대수 전부 확인). 그래서 독점 최대오차
- * 8.5%가 지금 자료의 바닥이다.
+ * 총단가가 탕정역 3,206원 · 광주각화 2,853원 · 남악 2,745원이라 16.8% 벌어져 있고, **그 차이의
+ * 75%가 상품몫**이다(탕정역 1,591원 vs 남악 1,247원). 후보지에서 알 수 있는 값으로는 설명되지
+ * 않았다 — 그래서 독점 최대오차 10.6%가 지금 자료의 바닥이다.
  */
-export function fitTotalUnitPrice(
+export function fitProductUnitPrice(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): number {
   const target = calibrationTarget(rows);
-  const ratios: number[] = [];
+  const shares: number[] = [];
   for (const r of target) {
-    const b = computeTextbook(r.input, { ...p, totalUnitPrice: 1 });
-    if (b.monthlyRevenue == null || b.monthlyRevenue <= 0 || !(r.actualRevenue > 0)) continue;
+    // 상품몫을 0으로 두고 계산하면 PC몫과 자사이용시간만 남는다.
+    const b = computeTextbook(r.input, { ...p, productUnitPrice: 0 });
+    if (b.ownDemandHours == null || b.ownDemandHours <= 0 || !(r.actualRevenue > 0)) continue;
     if (b.capped) continue;
-    ratios.push(Math.log(r.actualRevenue / b.monthlyRevenue));
+    shares.push(r.actualRevenue / b.ownDemandHours - (b.pcUnitPrice ?? 0));
   }
-  if (!ratios.length) return p.totalUnitPrice;
-  return logMean(ratios);
+  if (!shares.length) return p.productUnitPrice;
+  // 상품몫이 음수면 PC몫이 실매출보다 크다는 뜻이다 — 0으로 막는다.
+  return Math.max(0, shares.reduce((a, b) => a + b, 0) / shares.length);
 }
 
 export type TextbookScore = {
@@ -502,8 +536,8 @@ export type TextbookScore = {
   maxAbsErr: number | null;
   /** 배율까지 맞춘 뒤의 hoursPerUserPerMonth. 화면에 그대로 보여준다. */
   fittedHoursPerUser: number;
-  /** 독점 실매출로 맞춘 뒤의 totalUnitPrice(원/PC·시간). 화면에 그대로 보여준다. */
-  fittedTotalUnitPrice: number;
+  /** 독점 실매출로 맞춘 뒤의 productUnitPrice(상품몫, 원/PC·시간). 화면에 그대로 보여준다. */
+  fittedProductUnitPrice: number;
   /** 수요 축척을 실측 가동률로 맞췄는지. false면 매출로 떨어진 것이라 두 층이 다시 엉킨다. */
   scaledOnUtilization: boolean;
   /** 가동률 성적 — 실측 가동률이 있는 매장만. 매출과 따로 봐야 층별 판정이 된다. */
@@ -513,7 +547,8 @@ export type TextbookScore = {
     storeCode: string; storeName: string | null;
     predicted: number | null; actual: number; absErrPct: number | null;
     utilization: number | null; actualUtilization: number | null; utilErrPct: number | null;
-    share: number | null; capped: boolean; unitPrice: number | null;
+    share: number | null; capped: boolean;
+    unitPrice: number | null; pcUnitPrice: number | null; productRatio: number | null;
     missing: string[];
   }[];
 };
@@ -523,13 +558,13 @@ export function scoreTextbook(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): TextbookScore {
-  // 축척 둘을 **순서대로** 맞춘다. 1) 수요 축척을 실측 가동률에, 2) 총단가를 독점 실매출에.
-  // 순서가 바뀌면 안 된다 — 가동률이 먼저 고정돼야 총단가가 남은 몫만 맡는다.
+  // 축척 둘을 **순서대로** 맞춘다. 1) 수요 축척을 실측 가동률에, 2) 상품몫을 독점 실매출에.
+  // 순서가 바뀌면 안 된다 — 가동률이 먼저 고정돼야 상품몫이 남은 몫만 맡는다.
   const fitted = fitHoursPerUser(rows, p);
   const scaledOnUtilization = rows.some((r) => (r.input.actualUtilization ?? 0) > 0);
   const withFit: TextbookParams = { ...p, hoursPerUserPerMonth: fitted };
-  const fittedUnitPrice = fitTotalUnitPrice(rows, withFit);
-  const full: TextbookParams = { ...withFit, totalUnitPrice: fittedUnitPrice };
+  const fittedProductUnitPrice = fitProductUnitPrice(rows, withFit);
+  const full: TextbookParams = { ...withFit, productUnitPrice: fittedProductUnitPrice };
 
   const out: TextbookScore["rows"] = [];
   const errs: number[] = [];
@@ -549,7 +584,8 @@ export function scoreTextbook(
       storeCode: r.input.storeCode, storeName: r.input.storeName,
       predicted: b.monthlyRevenue, actual: r.actualRevenue, absErrPct: err,
       utilization: b.utilization, actualUtilization: au ?? null, utilErrPct: utilErr,
-      share: b.share, capped: b.capped, unitPrice: b.unitPrice, missing: b.missing,
+      share: b.share, capped: b.capped, unitPrice: b.unitPrice, pcUnitPrice: b.pcUnitPrice,
+      productRatio: b.productRatio, missing: b.missing,
     });
   }
   const sorted = [...errs].sort((a, b) => a - b);
@@ -561,7 +597,7 @@ export function scoreTextbook(
     within20: errs.length ? errs.filter((v) => v <= 0.2).length / errs.length : null,
     maxAbsErr: sorted.length ? sorted[sorted.length - 1] : null,
     fittedHoursPerUser: fitted,
-    fittedTotalUnitPrice: fittedUnitPrice,
+    fittedProductUnitPrice,
     scaledOnUtilization,
     utilizationMape: utilErrs.length ? utilErrs.reduce((a, b) => a + b, 0) / utilErrs.length : null,
     utilizationSampleCount: utilErrs.length,

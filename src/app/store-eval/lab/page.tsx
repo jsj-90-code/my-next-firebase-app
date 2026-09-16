@@ -244,7 +244,7 @@ export default function LabPage() {
       {score && data && (
         <>
           <ScoreBoard score={score} current={data.current} />
-          <HowItWorks p={p} fitted={score.fittedHoursPerUser} unitPrice={score.fittedTotalUnitPrice}
+          <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
             scaledOnUtilization={score.scaledOnUtilization} />
           <Controls p={p} set={set} setAge={setAge} counts={counts} />
           <StoreTable score={score} />
@@ -275,7 +275,7 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
       <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
         표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) · 축척 둘은 매번 자동으로 맞춥니다
         (1인당 월이용시간 {score.fittedHoursPerUser.toFixed(2)}시간 ← 독점 실측가동률 ·
-        PC 1대·1시간당 매출 {Math.round(score.fittedTotalUnitPrice).toLocaleString()}원 ← 독점 실매출).
+        상품몫 {Math.round(score.fittedProductUnitPrice).toLocaleString()}원/PC·시간 ← 독점 실매출).
         {score.utilizationMape != null && (
           <> 가동률 자체의 오차는 {pct(score.utilizationMape)}입니다(실측 있는 {score.utilizationSampleCount}곳)
           — 매출 오차와 따로 봐야 어느 층이 틀렸는지 갈립니다.</>
@@ -293,9 +293,11 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
  *    그린다 — 위 조절판을 움직이면 이 설명도 같이 바뀐다. 계산만 바꾸고 설명을 두면 화면이
  *    조용히 거짓말을 한다(CLAUDE.md 규칙, docs/backlog.md 2026-09-14 블록).
  */
-function HowItWorks({ p, fitted, unitPrice, scaledOnUtilization }: {
-  p: TextbookParams; fitted: number; unitPrice: number; scaledOnUtilization: boolean;
+function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
+  p: TextbookParams; fitted: number; productUnitPrice: number; scaledOnUtilization: boolean;
 }) {
+  // PC몫은 정가에서 나온다 — 기준정가 x (정가/기준정가)^β. 운영 산식 effectiveHourlyRate와 같은 식이다.
+  const pcAt = (rate: number) => p.referenceHourlyRate * Math.pow(rate / p.referenceHourlyRate, p.rateElasticity);
   const MONTH_HOURS = 24 * 30;
   // 축척 계수를 사람이 읽을 수 있는 말로 바꾼다: "환산수요 N명당 PC 1대".
   const perPc = fitted > 0 ? Math.round(MONTH_HOURS / fitted / MONTH_HOURS * MONTH_HOURS / fitted) : null;
@@ -371,27 +373,35 @@ function HowItWorks({ p, fitted, unitPrice, scaledOnUtilization }: {
             매출 = 자사PC × 720시간 × 가동률 × <b>PC 1대·1시간당 매출</b>
           </div>
           <div className="mt-1 font-mono text-[11px]">
-            PC 1대·1시간당 매출 = {Math.round(unitPrice).toLocaleString()}원 × (정가 ÷ {p.referenceHourlyRate})<sup>{p.rateElasticity}</sup>
+            PC 1대·1시간당 매출 = <b>PC몫</b> + <b>상품몫</b>
+          </div>
+          <div className="mt-1 font-mono text-[11px]">
+            PC몫   = {p.referenceHourlyRate}원 × (정가 ÷ {p.referenceHourlyRate})<sup>{p.rateElasticity}</sup>
+            <br />상품몫 = {Math.round(productUnitPrice).toLocaleString()}원 (정가와 무관)
           </div>
           <div className="mt-1">
             손님 1명이 쓰는 돈(객단가)이 아니라 <b>PC 1대가 1시간 채워졌을 때 들어오는 총액</b>입니다.
-            PC요금과 먹거리를 합친 값이고, 실측 32곳 중앙이 2,778원입니다.
+            실측 32곳 중앙이 2,778원(PC몫 1,366 + 상품몫 1,456)입니다.
+            건별 원장으로도 확인했습니다 — 광주첨단 2,682원 · 발산역 2,984원.
+          </div>
+          <div className="mt-1">
+            <b>정가는 PC몫에만 들어갑니다.</b> 라면 값은 PC요금을 따라가지 않기 때문입니다.
+            2026-09-16까지는 총단가 전체에 곱해서, 정가를 80% 올리면 총단가가 38% 오르는 것으로
+            계산했습니다(지금 구조에서는 17%).
           </div>
           <div className="mt-1">
             지수 <b>{p.rateElasticity}</b>는 <b>정가를 올려도 그만큼 다 받지는 못한다</b>는 뜻입니다 —
             좌석 추가과금은 더해지지만 정액권 할인이 빼는데, 비싼 요금일수록 할인 비중이 큽니다.
-            {p.rateElasticity > 0 ? (
-              <> 정가 1,000원이면 {Math.round(unitPrice * Math.pow(1000 / p.referenceHourlyRate, p.rateElasticity)).toLocaleString()}원,
-              1,700원이면 {Math.round(unitPrice * Math.pow(1700 / p.referenceHourlyRate, p.rateElasticity)).toLocaleString()}원입니다.</>
-            ) : (
-              <> 지금은 <b>0</b>이라 정가가 매출을 전혀 바꾸지 않습니다.</>
-            )}
-            {" "}운영 산식(<code>usageRevenue.ts</code>)이 38곳으로 구한 값이 0.546이고, 이 화면의 32곳
-            재측정값도 0.49~0.535로 같습니다.
+            건별 원장 실측: 정액권 손님은 시간당 296~663원으로 <b>정가의 1/3</b>만 내고, 그 시간
+            비중이 매장마다 2.1~9.1%입니다. 이 지수는 그 평균을 한 숫자로 담은 것입니다.
+            {" "}정가 1,000원이면 PC몫 {Math.round(pcAt(1000)).toLocaleString()}원,
+            1,700원이면 {Math.round(pcAt(1700)).toLocaleString()}원입니다.
+            {" "}운영 산식(<code>usageRevenue.ts</code> <code>effectiveHourlyRate</code>)과 <b>같은 식</b>입니다.
           </div>
           <div className="mt-1">
-            상품비율 <b>{Math.round(p.productRatio * 100)}%</b>는 <b>총매출 크기를 바꾸지 않습니다</b> —
-            위에서 나온 총매출을 PC매출과 상품매출로 쪼개 보여주는 데만 씁니다(실측 32곳 평균).
+            상품몫은 <b>후보지에서 예측할 방법이 아직 없습니다.</b> PC대수 r=0.251 · 정가 r=−0.015 ·
+            가동률 r=0.118로 전부 유의선 0.354 미만입니다. 그래서 전 매장 같은 값(독점 실매출로
+            맞춘 상수)을 씁니다. 상품매출 비율은 이제 <b>파라미터가 아니라 결과</b>입니다.
           </div>
         </li>
 
@@ -407,7 +417,7 @@ function HowItWorks({ p, fitted, unitPrice, scaledOnUtilization }: {
             {usersPerPc != null && <> (환산수요 <b>{usersPerPc.toLocaleString()}명</b>이 PC 1대를 100% 채우는 셈)</>}
           </div>
           <div className="mt-1">
-            ② PC 1대·1시간당 매출 <b>{Math.round(unitPrice).toLocaleString()}원</b> ← 독점매장 <b>실매출</b>
+            ② 상품몫 <b>{Math.round(productUnitPrice).toLocaleString()}원</b> ← 독점매장 <b>실매출</b> (PC몫은 정가에서 바로 나오므로 맞출 게 없습니다)
           </div>
           {!scaledOnUtilization && (
             <div className="mt-1 text-[var(--sl-warn,#b4530a)]">
@@ -479,9 +489,8 @@ function Controls({
         <Slider label="정가 탄력도" value={p.rateElasticity} min={0} max={1} step={0.001}
           onChange={(v) => set("rateElasticity", v)}
           hint="정가를 올려도 실제로 받는 돈은 그만큼 다 안 오릅니다(정액권 할인). 0.546은 운영 산식과 같은 값이고, 0이면 정가가 매출을 안 바꿉니다. 0으로 내리면 독점 최대오차가 12.8%→8.5%로 줄지만 요금 조절이 무의미해집니다." />
-        <Slider label="상품매출 비율" value={p.productRatio} min={0} max={0.8} step={0.01}
-          onChange={(v) => set("productRatio", v)}
-          hint="총매출 크기는 안 바꿉니다 — PC/상품으로 쪼개 보여주는 데만 씁니다. 실측 32곳 평균 52.3%(건별 원장 54.8~56.0%)." />
+        {/* 상품매출 비율 조절판은 2026-09-16 저녁(3)에 없앴다 — 이제 파라미터가 아니라 결과다.
+            상품몫(원/PC·시간)은 독점 실매출로 자동으로 맞춘다. */}
         <Slider label="가동률 상한" value={p.maxUtilization} min={0.5} max={1} step={0.01}
           onChange={(v) => set("maxUtilization", v)} hint="좌석이 모자라 더는 못 받는 선." />
       </section>

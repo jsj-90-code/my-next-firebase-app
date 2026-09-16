@@ -14,9 +14,12 @@
 // ── 2026-09-16에 여기서 밝혀진 것 ───────────────────────────────────────
 // 1) 축척 하나가 두 일을 겸하고 있었다. fitHoursPerUser가 축척을 **실매출**에 맞추는 바람에
 //    환산층이 틀린 만큼(-12.7%~+19.2%)이 가동률로 되밀려, 독점 3곳 가동률이 화면에서
-//    -3.2~-5.3% 어긋나 보였다. 축척을 둘로 나눠 고쳤다(fitHoursPerUser / fitTotalUnitPrice).
-// 2) 환산층이 실제로 필요로 하는 값은 하나뿐이다 — **총단가**(PC 1대·1시간당 총매출).
+//    -3.2~-5.3% 어긋나 보였다. 축척을 둘로 나눠 고쳤다(fitHoursPerUser / fitProductUnitPrice).
+// 2) 환산층이 필요로 하는 값은 **총단가**(PC 1대·1시간당 총매출)다.
 //    실측 32곳: 중앙 2,778원 · 범위 2,246~3,606원 · 변동계수 13.4%.
+//    그리고 총단가는 **PC몫 + 상품몫**으로 갈라야 한다(저녁(3) 결정). 정가는 PC몫에만 걸린다 —
+//    총단가 전체에 곱하면 요금을 올릴 때 라면 값도 같이 오르는 꼴이 된다.
+//    독점 3곳 총단가가 16.8% 벌어지는데 **그 차이의 75%가 상품몫**이다(탕정역 1,591원 vs 남악 1,247원).
 // 3) 건별 원장(바탕화면 `좌석가동률_7월`)으로 독립 검증했다. 광주첨단점 2026-08 기준
 //    원장 가동률 29.8% vs 매출DB 30.0%, 원장 총단가 2,682원 vs DB기준 2,857원.
 //    객단가는 6,909~10,844원, 평균 체류 2.37~3.16시간이었다.
@@ -59,6 +62,10 @@ describeIf("매출 환산층 — 실측 가동률을 넣고 매출만 잰다", (
     effRate: number;
     /** 총매출 ÷ (PC x 720 x 실측가동률) — 환산층이 필요로 하는 유일한 숫자 */
     unitPrice: number;
+    /** 그중 PC몫. 정가가 여기에만 걸린다. */
+    pcUnitPrice: number;
+    /** 그중 상품몫. 독점 3곳 총단가 차이의 75%가 여기서 난다. */
+    productUnitPrice: number;
   };
   const rows: Row[] = [];
   for (const st of snap.existingStores as any[]) {
@@ -82,6 +89,8 @@ describeIf("매출 환산층 — 실측 가동률을 넣고 매출만 잰다", (
       total, prodRatio: prodSales / total,
       effRate: pcSales / (pc * MONTH_HOURS * u),
       unitPrice: total / (pc * MONTH_HOURS * u),
+      pcUnitPrice: pcSales / (pc * MONTH_HOURS * u),
+      productUnitPrice: prodSales / (pc * MONTH_HOURS * u),
     });
   }
   const mono = rows.filter((r) => r.rival === 0);
@@ -110,23 +119,45 @@ describeIf("매출 환산층 — 실측 가동률을 넣고 매출만 잰다", (
     expect(u.length).toBeGreaterThan(25);
   });
 
-  it("정가 탄력도 β를 훑는다 — 전체 32곳과 독점 3곳이 반대 방향을 가리킨다", () => {
-    // 총단가 = T0 x (정가/기준)^β. T0는 독점 실매출에 맞춘다(화면 fitTotalUnitPrice와 같은 방식).
-    const ref = median(rows.map((r) => r.listRate));
-    console.log(`\n총단가 = T0 x (정가/${ref})^β · T0는 독점 실매출에 맞춤`);
-    console.log(`${"β".padEnd(8)}${"T0".padStart(8)}${"독점최대".padStart(9)}${"전체MAPE".padStart(10)}${"중앙".padStart(8)}${"최대".padStart(7)}`);
-    for (const b of [0, 0.2, 0.3, 0.4, 0.546, 0.8, 1.0]) {
-      const shape = (r: Row) => Math.pow(r.listRate / ref, b);
-      const T0 = gmean(mono.map((r) => r.unitPrice / shape(r)));
-      const err = rows.map((r) => Math.abs(T0 * shape(r) / r.unitPrice - 1));
-      const me = mono.map((r) => Math.abs(T0 * shape(r) / r.unitPrice - 1));
+  it("덧셈 구조 — 정가는 PC몫에만 걸린다", () => {
+    // 2026-09-16 저녁(3) 채택 구조:
+    //   총단가 = PC몫 + 상품몫,  PC몫 = 기준정가 x (정가/기준정가)^β,  상품몫 = 상수
+    // 상품몫은 독점 실매출에서 PC몫을 **빼서** 구한다(화면 fitProductUnitPrice와 같은 방식).
+    const REF = 1343, BETA = 0.546;   // 운영 산식 usageRevenue.ts effectiveHourlyRate와 같은 값
+    const pcUnit = (r: Row, b = BETA) => REF * Math.pow(r.listRate / REF, b);
+    const k = gmean(rows.map((r) => r.pcUnitPrice / pcUnit(r)));
+    console.log(`\nPC몫 = ${REF} x (정가/${REF})^${BETA} — 운영 산식 effectiveHourlyRate와 같은 식`);
+    console.log(`  실측 PC몫 ÷ 이 식 = ${k.toFixed(3)} (기하평균) -> 축척을 따로 둘 필요가 없다`);
+    console.log(`  이 식이 실측 PC몫을 맞히는 정도: MAPE ${(mean(rows.map((r) => Math.abs(pcUnit(r) / r.pcUnitPrice - 1))) * 100).toFixed(2)}%`);
+
+    function score(label: string, unit: (r: Row) => number) {
+      const err = rows.map((r) => Math.abs(unit(r) / r.unitPrice - 1));
+      const me = mono.map((r) => Math.abs(unit(r) / r.unitPrice - 1));
       const s = [...err].sort((x, y) => x - y);
-      const tag = b === 0.546 ? " <- 운영 산식과 동일(기본값)" : "";
-      console.log(`${b.toFixed(3).padEnd(8)}${T0.toFixed(0).padStart(8)}${(Math.max(...me) * 100).toFixed(1).padStart(8)}%${(mean(err) * 100).toFixed(2).padStart(9)}%${(s[Math.floor(s.length / 2)] * 100).toFixed(1).padStart(7)}%${(s[s.length - 1] * 100).toFixed(0).padStart(6)}%${tag}`);
+      console.log(`  ${label.padEnd(40)} 환산층 ${(mean(err) * 100).toFixed(2).padStart(6)}% · 중앙 ${(s[Math.floor(s.length / 2)] * 100).toFixed(1).padStart(5)}% · 최대 ${(s[s.length - 1] * 100).toFixed(0).padStart(3)}% · 독점최대 ${(Math.max(...me) * 100).toFixed(1).padStart(5)}%`);
     }
-    console.log(`\n독점 3곳의 정가 순서가 실효단가 순서와 **정확히 반대**라 β를 올리면 독점만 나빠진다.`);
-    console.log(`세 매장 순서가 정확히 뒤집힐 확률은 1/6이라 우연으로 설명된다 — 그래서 32곳 쪽을 따랐다.`);
-    console.log(`환산층은 실측 가동률이 있어 32곳 전부에서 직접 측정된다. 독점으로 고를 이유가 없는 층이다.`);
+    console.log(`\n[구조 비교 — 축척은 전부 독점 실매출에 맞춘다]`);
+    const S = mean(mono.map((r) => r.unitPrice - pcUnit(r)));
+    score(`덧셈(채택): PC몫 + 상품몫 ${S.toFixed(0)}원`, (r) => pcUnit(r) + S);
+    const ref2 = median(rows.map((r) => r.listRate));
+    const T0 = gmean(mono.map((r) => r.unitPrice / Math.pow(r.listRate / ref2, BETA)));
+    score(`곱셈(옛것): ${T0.toFixed(0)} x (정가/${ref2})^${BETA}`, (r) => T0 * Math.pow(r.listRate / ref2, BETA));
+    const C = gmean(mono.map((r) => r.unitPrice));
+    score(`요금 무시: 총단가 ${C.toFixed(0)}원 상수`, () => C);
+
+    console.log(`\n[요금을 올리면 총단가가 얼마나 오르나 — 구조가 여기서 갈린다]`);
+    console.log(`${"정가".padStart(8)}${"덧셈(채택)".padStart(13)}${"곱셈(옛것)".padStart(13)}`);
+    for (const p of [1000, 1400, 1800]) {
+      const add = REF * Math.pow(p / REF, BETA) + S;
+      const mul = T0 * Math.pow(p / ref2, BETA);
+      console.log(`${(p + "원").padStart(8)}${(Math.round(add).toLocaleString() + "원").padStart(13)}${(Math.round(mul).toLocaleString() + "원").padStart(13)}`);
+    }
+    const a = (REF * Math.pow(1800 / REF, BETA) + S) / (REF * Math.pow(1000 / REF, BETA) + S) - 1;
+    const m = Math.pow(1800 / 1000, BETA) - 1;
+    console.log(`  정가 1,000 -> 1,800원(+80%)일 때 총단가 상승: 덧셈 +${(a * 100).toFixed(0)}% · 곱셈 +${(m * 100).toFixed(0)}%`);
+    console.log(`  곱셈은 상품매출까지 정가를 따라 올린다 — 라면 값은 PC요금을 안 따라가므로 틀린 동작이다.`);
+    console.log(`  덧셈이 전체 MAPE는 조금 나쁘지만(정가가 상품몫과도 약하게 붙어 곱셈이 반칙 이득을 본다)`);
+    console.log(`  구조가 옳고 독점 오차도 낮다. 2026-09-16 사용자 결정.`);
     expect(rows.length).toBeGreaterThan(25);
   });
 
@@ -149,7 +180,7 @@ describeIf("매출 환산층 — 실측 가동률을 넣고 매출만 잰다", (
       const rr = pearson(rows.map(get), pr);
       console.log(`  ${label.padEnd(10)} r = ${rr.toFixed(3)}${Math.abs(rr) > sig ? " *" : ""}`);
     }
-    console.log(`  -> 못 설명한다. 그래서 산식은 평균값을 쓰고, 총매출 크기가 아니라 PC/상품 분해에만 쓴다.`);
+    console.log(`  -> 못 설명한다. 그래서 상품몫은 전 매장 같은 상수를 쓴다(상품비율은 이제 결과값이다).`);
     console.log(`  -> 건별 원장으로 본 실체: 정액권 손님이 시간당 296~663원(일반의 1/3)을 내고,`);
     console.log(`     그 시간 비중이 매장마다 2.1~9.1%다. 매장 운영 정책이라 후보지에선 알 수 없다.`);
     expect(pr.length).toBeGreaterThan(25);

@@ -298,7 +298,9 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     //    환산층이 틀린 만큼이 가동률로 되밀려 들어간다 — 독점 3곳 가동률이 화면에서
     //    -3.2~-5.3% 어긋나 보이던 원인이다. 지금은 축척이 둘이다:
     //      A  <- 독점 **실측 가동률**   (fitHoursPerUser)
-    //      T0 <- 독점 **실매출**        (fitTotalUnitPrice)
+    //      S  <- 독점 **실매출**        (fitProductUnitPrice)
+    //    그리고 2026-09-16 저녁(3)부터 총단가는 **덧셈**이다 — PC몫(정가) + 상품몫(상수).
+    //    정가를 총단가 전체에 곱하면 요금을 올릴 때 라면 값도 같이 오르는 꼴이 된다.
     const gamma = DEFAULT_TEXTBOOK_PARAMS.gapExponent;
     const { rateElasticity: beta, referenceHourlyRate: ref, maxUtilization: cap } = DEFAULT_TEXTBOOK_PARAMS;
     const MONTH_HOURS = 24 * 30;
@@ -307,26 +309,27 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     // ① 수요 축척은 실측 가동률에 맞춘다 — 독점에서는 격차^gamma가 약분돼 수요식만 남는다.
     const A = median(mono.map((r) => r.util / shape(r, gamma)));
     const predUtil = (r: Row) => Math.min(A * shape(r, gamma), cap);
-    // ② 총단가는 그다음에 독점 실매출로 맞춘다. 가동률이 이미 고정됐으니 남은 몫만 맡는다.
-    const rateFactor = (r: Row) => (beta === 0 || r.rate == null ? 1 : Math.pow(r.rate / ref, beta));
-    const T0logs: number[] = [];
+    // ② PC몫은 정가에서 바로 나온다 — 운영 산식 effectiveHourlyRate와 같은 식이라 맞출 게 없다.
+    const pcUnit = (r: Row) => (r.rate == null ? ref : ref * Math.pow(r.rate / ref, beta));
+    // ③ 상품몫만 독점 실매출로 맞춘다. 덧셈 구조라 배수가 아니라 **빼서** 구한다.
+    const shares: number[] = [];
     for (const r of mono) {
       const st = byName.get(r.name);
       if (!st?.actualMonthlyRevenueAvg) continue;
-      const base = r.pc * MONTH_HOURS * predUtil(r) * rateFactor(r);
-      if (base > 0) T0logs.push(Math.log(st.actualMonthlyRevenueAvg / base));
+      const hours = r.pc * MONTH_HOURS * predUtil(r);
+      if (hours > 0) shares.push(st.actualMonthlyRevenueAvg / hours - pcUnit(r));
     }
-    const T0 = Math.exp(mean(T0logs));
+    const S = mean(shares);
 
-    console.log(`\n축척 둘 — A = ${A.toExponential(3)} (독점 실측가동률) · T0 = ${T0.toFixed(0)}원/PC·시간 (독점 실매출)`);
-    console.log(`정가 탄력도 β = ${beta} (기준 ${ref}원) — 운영 산식 usageRevenue.ts와 같은 값`);
+    console.log(`\n축척 둘 — A = ${A.toExponential(3)} (독점 실측가동률) · 상품몫 S = ${S.toFixed(0)}원/PC·시간 (독점 실매출)`);
+    console.log(`총단가 = PC몫 + 상품몫 · PC몫 = ${ref} x (정가/${ref})^${beta} — 운영 산식 effectiveHourlyRate와 같은 식`);
     console.log(`${"매장".padEnd(14)} ${"예상가동률".padStart(10)} ${"실측가동률".padStart(10)} ${"가동률오차".padStart(10)} ${"예상매출".padStart(10)} ${"실제매출".padStart(10)} ${"매출오차".padStart(9)}`);
     let maxUtilErr = 0, maxRevErr = 0;
     for (const r of mono) {
       const st = byName.get(r.name);
       if (!st?.actualMonthlyRevenueAvg) continue;
       const u = predUtil(r);
-      const rev = r.pc * MONTH_HOURS * u * T0 * rateFactor(r);
+      const rev = r.pc * MONTH_HOURS * u * (pcUnit(r) + S);
       const ue = (u - r.util) / r.util;
       const re = (rev - st.actualMonthlyRevenueAvg) / st.actualMonthlyRevenueAvg;
       maxUtilErr = Math.max(maxUtilErr, Math.abs(ue));
@@ -335,43 +338,45 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     }
     console.log(`  독점 가동률 최대오차 ${(maxUtilErr * 100).toFixed(1)}% — 수요식이 맞는지를 여기서 본다`);
     console.log(`  독점 매출  최대오차 ${(maxRevErr * 100).toFixed(1)}% — 남는 건 환산층 몫이다`);
-    console.log(`  (β=0으로 내리면 매출 최대오차가 8.5%로 줄지만 정가가 매출을 안 바꾸게 된다.`);
-    console.log(`   근거는 _revenueConversion.test.ts와 textbookModel.ts rateElasticity 주석에 있다)`);
+    console.log(`  그 차이의 75%가 상품몫이다(탕정역 1,591원 vs 남악 1,247원/PC·시간).`);
+    console.log(`  근거는 _revenueConversion.test.ts와 textbookModel.ts productUnitPrice 주석에 있다.`);
     // 수요 축척을 실측 가동률에 맞췄으니 독점 가동률은 거의 정확히 맞아야 한다.
     expect(maxUtilErr).toBeLessThan(0.05);
     expect(labRows.length).toBeGreaterThan(20);
   });
 
   it("매출까지 환산하면", () => {
-    // 초안의 최종 산출물은 매출이다. 가동률 -> 매출 환산은 **총단가** 하나만 더 쓴다
-    // (2026-09-16: 예전에는 정가 ÷ (1-상품비율)이었다. 정가는 실제로 받는 돈과 다르다).
+    // 초안의 최종 산출물은 매출이다. 가동률 -> 매출 환산은 **총단가** 하나만 더 쓴다.
+    //   총단가 = PC몫(정가에서 나옴) + 상품몫(상수, 독점 실매출로 맞춤)
+    // 2026-09-16 아침에는 정가 ÷ (1-상품비율)이었고, 저녁(2)에는 총단가에 정가를 통째로
+    // 곱했다. 둘 다 정가가 상품매출까지 끌고 다녀서 틀렸다.
     const gamma = 4;
     const { A } = calibrateA(gamma);
     const { rateElasticity: beta, referenceHourlyRate: ref, maxUtilization: cap } = DEFAULT_TEXTBOOK_PARAMS;
     const MONTH_HOURS = 24 * 30;
     const byName = new Map((snap.existingStores as any[]).map((s) => [s.storeName, s]));
     const mono = rows.filter((r) => r.rival === 0);
-    const rateFactor = (r: Row) => (beta === 0 || r.rate == null ? 1 : Math.pow(r.rate / ref, beta));
+    const pcUnit = (r: Row) => (r.rate == null ? ref : ref * Math.pow(r.rate / ref, beta));
     const predUtil = (r: Row) => Math.min(A * shape(r, gamma), cap);
-    // 총단가는 독점 실매출로 맞춘다(화면 fitTotalUnitPrice와 같은 방식).
-    const T0logs: number[] = [];
+    // 상품몫은 독점 실매출에서 PC몫을 빼서 구한다(화면 fitProductUnitPrice와 같은 방식).
+    const shares: number[] = [];
     for (const r of mono) {
       const actual = byName.get(r.name)?.actualMonthlyRevenueAvg;
-      const base = r.pc * MONTH_HOURS * predUtil(r) * rateFactor(r);
-      if (actual && base > 0) T0logs.push(Math.log(actual / base));
+      const hours = r.pc * MONTH_HOURS * predUtil(r);
+      if (actual && hours > 0) shares.push(actual / hours - pcUnit(r));
     }
-    const T0 = Math.exp(mean(T0logs));
+    const S = mean(shares);
     const errs: number[] = [];
     for (const r of rows) {
       const actual = byName.get(r.name)?.actualMonthlyRevenueAvg;
       if (!actual) continue;
-      errs.push(Math.abs(r.pc * MONTH_HOURS * predUtil(r) * T0 * rateFactor(r) - actual) / actual);
+      errs.push(Math.abs(r.pc * MONTH_HOURS * predUtil(r) * (pcUnit(r) + S) - actual) / actual);
     }
     const s = [...errs].sort((a, b) => a - b);
-    console.log(`\n매출 환산 (가동률 상한 ${Math.round(cap * 100)}%, 총단가 ${T0.toFixed(0)}원 x (정가/${ref})^${beta}) — n=${errs.length}`);
+    console.log(`\n매출 환산 (가동률 상한 ${Math.round(cap * 100)}%, 총단가 = ${ref}x(정가/${ref})^${beta} + 상품몫 ${S.toFixed(0)}원) — n=${errs.length}`);
     console.log(`  MAPE ${(mean(errs) * 100).toFixed(2)}% · 중앙 ${(s[Math.floor(s.length / 2)] * 100).toFixed(1)}% · ±20% ${(errs.filter((v) => v <= 0.2).length / errs.length * 100).toFixed(0)}%`);
     console.log(`  (참고) 운영 산식 V62는 MAPE 9.26%, PC대수만 세는 기준선은 16.85%다.`);
-    console.log(`  (참고) 환산층만 떼어 재면 MAPE 9.23%다 — _revenueConversion.test.ts`);
+    console.log(`  (참고) 환산층만 떼어 재는 건 _revenueConversion.test.ts에 있다.`);
     expect(errs.length).toBeGreaterThan(20);
   });
 });
