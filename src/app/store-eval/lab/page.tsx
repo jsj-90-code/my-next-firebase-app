@@ -60,6 +60,19 @@ async function loadLabData(): Promise<Loaded | null> {
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
   const stores = prepareExistingStoresForEvaluation(storedStores, allCompetitors, allLocationEvaluations, settings);
 
+  // 매장별 **실측 월평균 가동률** — 수요 축척을 여기에 맞춘다(2026-09-16). 평가창 월매출의
+  // utilizationRate 평균이다. 게토에서 받은 값과 대조했을 때 평균차 3.34% · r=1.000으로
+  // 사실상 같은 값이라, 파이어스토어에 이미 있는 이 필드를 쓴다(별도 수집 불필요).
+  const utilByStore = new Map<string, number>();
+  {
+    const acc = new Map<string, number[]>();
+    for (const s of sales) {
+      if (s.utilizationRate == null || !(s.utilizationRate > 0)) continue;
+      acc.set(s.storeCode, [...(acc.get(s.storeCode) ?? []), s.utilizationRate]);
+    }
+    for (const [code, vs] of acc) utilByStore.set(code, vs.reduce((a, b) => a + b, 0) / vs.length);
+  }
+
   const compsByCode = new Map<string, Competitor[]>();
   for (const c of allCompetitors) {
     compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
@@ -97,6 +110,7 @@ async function loadLabData(): Promise<Loaded | null> {
         storeCode: s.storeCode, storeName: s.storeName,
         pcCount: s.evaluationPcCount ?? s.pcCount,
         hourlyRate: s.hourlyRate,
+        actualUtilization: utilByStore.get(s.storeCode) ?? null,
         competitivenessGap: s.competitivenessGap,
         competitorIp: computeCompetitorIp(cs, s.operatingPcStores500m ?? null),
         competitorCount: cs.filter((c) => c.investigationStatus !== "경쟁점없음").length,
@@ -230,7 +244,8 @@ export default function LabPage() {
       {score && data && (
         <>
           <ScoreBoard score={score} current={data.current} />
-          <HowItWorks p={p} fitted={score.fittedHoursPerUser} />
+          <HowItWorks p={p} fitted={score.fittedHoursPerUser} unitPrice={score.fittedTotalUnitPrice}
+            scaledOnUtilization={score.scaledOnUtilization} />
           <Controls p={p} set={set} setAge={setAge} counts={counts} />
           <StoreTable score={score} />
         </>
@@ -258,8 +273,13 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
         ))}
       </div>
       <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-        표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) ·
-        1인당 월이용시간 배율은 매번 자동으로 맞춥니다(현재 {score.fittedHoursPerUser.toFixed(2)}).
+        표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) · 축척 둘은 매번 자동으로 맞춥니다
+        (1인당 월이용시간 {score.fittedHoursPerUser.toFixed(2)}시간 ← 독점 실측가동률 ·
+        PC 1대·1시간당 매출 {Math.round(score.fittedTotalUnitPrice).toLocaleString()}원 ← 독점 실매출).
+        {score.utilizationMape != null && (
+          <> 가동률 자체의 오차는 {pct(score.utilizationMape)}입니다(실측 있는 {score.utilizationSampleCount}곳)
+          — 매출 오차와 따로 봐야 어느 층이 틀렸는지 갈립니다.</>
+        )}
       </p>
     </div>
   );
@@ -273,7 +293,9 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
  *    그린다 — 위 조절판을 움직이면 이 설명도 같이 바뀐다. 계산만 바꾸고 설명을 두면 화면이
  *    조용히 거짓말을 한다(CLAUDE.md 규칙, docs/backlog.md 2026-09-14 블록).
  */
-function HowItWorks({ p, fitted }: { p: TextbookParams; fitted: number }) {
+function HowItWorks({ p, fitted, unitPrice, scaledOnUtilization }: {
+  p: TextbookParams; fitted: number; unitPrice: number; scaledOnUtilization: boolean;
+}) {
   const MONTH_HOURS = 24 * 30;
   // 축척 계수를 사람이 읽을 수 있는 말로 바꾼다: "환산수요 N명당 PC 1대".
   const perPc = fitted > 0 ? Math.round(MONTH_HOURS / fitted / MONTH_HOURS * MONTH_HOURS / fitted) : null;
@@ -346,18 +368,52 @@ function HowItWorks({ p, fitted }: { p: TextbookParams; fitted: number }) {
         <li>
           <b className="text-[#171310] dark:text-[#f2ede2]">4. 가동률을 매출로 바꾼다</b>
           <div className="mt-1 font-mono text-[11px]">
-            매출 = 자사PC × 720시간 × 가동률 × 실효단가 ÷ (1 − {p.productRatio})
+            매출 = 자사PC × 720시간 × 가동률 × <b>PC 1대·1시간당 매출</b>
           </div>
-          <div className="mt-1">상품매출 비중 {Math.round(p.productRatio * 100)}%를 되돌려 총매출로 만듭니다.</div>
+          <div className="mt-1 font-mono text-[11px]">
+            PC 1대·1시간당 매출 = {Math.round(unitPrice).toLocaleString()}원 × (정가 ÷ {p.referenceHourlyRate})<sup>{p.rateElasticity}</sup>
+          </div>
+          <div className="mt-1">
+            손님 1명이 쓰는 돈(객단가)이 아니라 <b>PC 1대가 1시간 채워졌을 때 들어오는 총액</b>입니다.
+            PC요금과 먹거리를 합친 값이고, 실측 32곳 중앙이 2,778원입니다.
+          </div>
+          <div className="mt-1">
+            지수 <b>{p.rateElasticity}</b>는 <b>정가를 올려도 그만큼 다 받지는 못한다</b>는 뜻입니다 —
+            좌석 추가과금은 더해지지만 정액권 할인이 빼는데, 비싼 요금일수록 할인 비중이 큽니다.
+            {p.rateElasticity > 0 ? (
+              <> 정가 1,000원이면 {Math.round(unitPrice * Math.pow(1000 / p.referenceHourlyRate, p.rateElasticity)).toLocaleString()}원,
+              1,700원이면 {Math.round(unitPrice * Math.pow(1700 / p.referenceHourlyRate, p.rateElasticity)).toLocaleString()}원입니다.</>
+            ) : (
+              <> 지금은 <b>0</b>이라 정가가 매출을 전혀 바꾸지 않습니다.</>
+            )}
+            {" "}운영 산식(<code>usageRevenue.ts</code>)이 38곳으로 구한 값이 0.546이고, 이 화면의 32곳
+            재측정값도 0.49~0.535로 같습니다.
+          </div>
+          <div className="mt-1">
+            상품비율 <b>{Math.round(p.productRatio * 100)}%</b>는 <b>총매출 크기를 바꾸지 않습니다</b> —
+            위에서 나온 총매출을 PC매출과 상품매출로 쪼개 보여주는 데만 씁니다(실측 32곳 평균).
+          </div>
         </li>
 
         <li>
-          <b className="text-[#171310] dark:text-[#f2ede2]">축척은 자동으로 맞춥니다</b>
+          <b className="text-[#171310] dark:text-[#f2ede2]">축척은 둘이고, 각각 실측값에 맞춥니다</b>
           <div className="mt-1">
-            1인당 월이용시간은 눈으로 정할 값이 아니라, 나머지를 고정한 채 실제 매출에 가장 잘 맞는
-            배율을 닫힌 형태로 구합니다. 지금 값은 <b>{fitted.toFixed(3)}시간</b>
-            {usersPerPc != null && <> — 환산수요 <b>{usersPerPc.toLocaleString()}명</b>이 PC 1대를 100% 채우는 셈입니다</>}.
+            층마다 실측값이 따로 있으니(가동률은 매출DB, 매출도 매출DB) 축척도 따로 맞춥니다.
+            하나로 겸하게 하면 매출 환산이 틀린 만큼이 <b>가동률로 되밀려 들어갑니다</b> —
+            2026-09-16까지 그랬고, 그래서 독점 3곳 가동률이 −3.2~−5.3% 어긋나 보였습니다.
           </div>
+          <div className="mt-1">
+            ① 1인당 월이용시간 <b>{fitted.toFixed(3)}시간</b> ← 독점매장 <b>실측 가동률</b>
+            {usersPerPc != null && <> (환산수요 <b>{usersPerPc.toLocaleString()}명</b>이 PC 1대를 100% 채우는 셈)</>}
+          </div>
+          <div className="mt-1">
+            ② PC 1대·1시간당 매출 <b>{Math.round(unitPrice).toLocaleString()}원</b> ← 독점매장 <b>실매출</b>
+          </div>
+          {!scaledOnUtilization && (
+            <div className="mt-1 text-[var(--sl-warn,#b4530a)]">
+              ⚠ 실측 가동률이 하나도 없어 ①을 매출로 맞췄습니다. 두 층이 다시 엉킨 상태입니다.
+            </div>
+          )}
         </li>
       </ol>
 
@@ -420,8 +476,12 @@ function Controls({
           hint="1이면 기존 구조와 같습니다. 높일수록 경쟁력 차이를 세게 봅니다." />
 
         <h2 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">3단계 · 매출</h2>
+        <Slider label="정가 탄력도" value={p.rateElasticity} min={0} max={1} step={0.001}
+          onChange={(v) => set("rateElasticity", v)}
+          hint="정가를 올려도 실제로 받는 돈은 그만큼 다 안 오릅니다(정액권 할인). 0.546은 운영 산식과 같은 값이고, 0이면 정가가 매출을 안 바꿉니다. 0으로 내리면 독점 최대오차가 12.8%→8.5%로 줄지만 요금 조절이 무의미해집니다." />
         <Slider label="상품매출 비율" value={p.productRatio} min={0} max={0.8} step={0.01}
-          onChange={(v) => set("productRatio", v)} hint="회사 기준 50%. 실측 38곳 중앙값 52%." />
+          onChange={(v) => set("productRatio", v)}
+          hint="총매출 크기는 안 바꿉니다 — PC/상품으로 쪼개 보여주는 데만 씁니다. 실측 32곳 평균 52.3%(건별 원장 54.8~56.0%)." />
         <Slider label="가동률 상한" value={p.maxUtilization} min={0.5} max={1} step={0.01}
           onChange={(v) => set("maxUtilization", v)} hint="좌석이 모자라 더는 못 받는 선." />
       </section>
@@ -458,7 +518,9 @@ function StoreTable({ score }: { score: TextbookScore }) {
               <th scope="col" className="px-3 py-2 text-right">예상매출</th>
               <th scope="col" className="px-3 py-2 text-right">실제매출</th>
               <th scope="col" className="px-3 py-2 text-right">오차</th>
-              <th scope="col" className="px-3 py-2 text-right">가동률</th>
+              <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
+              <th scope="col" className="px-3 py-2 text-right">실측가동률</th>
+              <th scope="col" className="px-3 py-2 text-right">가동률오차</th>
               <th scope="col" className="px-3 py-2 text-right">점유율</th>
               <th scope="col" className="px-3 py-2">비고</th>
             </tr>
@@ -475,6 +537,10 @@ function StoreTable({ score }: { score: TextbookScore }) {
                     {pct(r.absErrPct)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.utilization)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{pct(r.actualUtilization)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${(r.utilErrPct ?? 0) > 0.2 ? "font-semibold text-red-600 dark:text-red-400" : ""}`}>
+                    {pct(r.utilErrPct)}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.share)}</td>
                   <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
                     {r.capped && "가동률 상한 "}

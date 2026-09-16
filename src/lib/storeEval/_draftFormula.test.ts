@@ -293,52 +293,85 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
       .filter((x): x is NonNullable<typeof x> => x != null);
     // 위 입력은 인구를 안 싣는다(이 하네스는 반경별 원자료를 따로 들고 있다). 그래서
     // scoreTextbook을 직접 부르는 대신, 화면과 같은 **축척 결정 방식**만 재현해 확인한다.
+    //
+    // ⚠️ 2026-09-16에 여기가 바뀌었다. 예전에는 축척 하나(H)를 **실매출**에 맞췄는데, 그러면
+    //    환산층이 틀린 만큼이 가동률로 되밀려 들어간다 — 독점 3곳 가동률이 화면에서
+    //    -3.2~-5.3% 어긋나 보이던 원인이다. 지금은 축척이 둘이다:
+    //      A  <- 독점 **실측 가동률**   (fitHoursPerUser)
+    //      T0 <- 독점 **실매출**        (fitTotalUnitPrice)
     const gamma = DEFAULT_TEXTBOOK_PARAMS.gapExponent;
+    const { rateElasticity: beta, referenceHourlyRate: ref, maxUtilization: cap } = DEFAULT_TEXTBOOK_PARAMS;
     const MONTH_HOURS = 24 * 30;
     const mono = rows.filter((r) => r.rival === 0);
-    const logs: number[] = [];
+
+    // ① 수요 축척은 실측 가동률에 맞춘다 — 독점에서는 격차^gamma가 약분돼 수요식만 남는다.
+    const A = median(mono.map((r) => r.util / shape(r, gamma)));
+    const predUtil = (r: Row) => Math.min(A * shape(r, gamma), cap);
+    // ② 총단가는 그다음에 독점 실매출로 맞춘다. 가동률이 이미 고정됐으니 남은 몫만 맡는다.
+    const rateFactor = (r: Row) => (beta === 0 || r.rate == null ? 1 : Math.pow(r.rate / ref, beta));
+    const T0logs: number[] = [];
     for (const r of mono) {
       const st = byName.get(r.name);
-      if (!st?.actualMonthlyRevenueAvg || r.rate == null) continue;
-      const rev1 = r.pc * MONTH_HOURS * shape(r, gamma) * r.rate / (1 - DEFAULT_TEXTBOOK_PARAMS.productRatio);
-      if (rev1 > 0) logs.push(Math.log(st.actualMonthlyRevenueAvg / rev1));
+      if (!st?.actualMonthlyRevenueAvg) continue;
+      const base = r.pc * MONTH_HOURS * predUtil(r) * rateFactor(r);
+      if (base > 0) T0logs.push(Math.log(st.actualMonthlyRevenueAvg / base));
     }
-    const H = Math.exp(mean(logs)); // = fitHoursPerUser가 독점에서 정하는 값
-    console.log(`\n독점 기준 축척 H = ${H.toFixed(4)}시간`);
-    console.log(`${"매장".padEnd(14)} ${"예상매출".padStart(10)} ${"실제매출".padStart(10)} ${"오차".padStart(8)} ${"가동률".padStart(8)}`);
-    let maxErr = 0;
+    const T0 = Math.exp(mean(T0logs));
+
+    console.log(`\n축척 둘 — A = ${A.toExponential(3)} (독점 실측가동률) · T0 = ${T0.toFixed(0)}원/PC·시간 (독점 실매출)`);
+    console.log(`정가 탄력도 β = ${beta} (기준 ${ref}원) — 운영 산식 usageRevenue.ts와 같은 값`);
+    console.log(`${"매장".padEnd(14)} ${"예상가동률".padStart(10)} ${"실측가동률".padStart(10)} ${"가동률오차".padStart(10)} ${"예상매출".padStart(10)} ${"실제매출".padStart(10)} ${"매출오차".padStart(9)}`);
+    let maxUtilErr = 0, maxRevErr = 0;
     for (const r of mono) {
       const st = byName.get(r.name);
-      if (!st?.actualMonthlyRevenueAvg || r.rate == null) continue;
-      const u = Math.min(H * shape(r, gamma), DEFAULT_TEXTBOOK_PARAMS.maxUtilization);
-      const rev = r.pc * MONTH_HOURS * u * r.rate / (1 - DEFAULT_TEXTBOOK_PARAMS.productRatio);
-      const err = Math.abs(rev - st.actualMonthlyRevenueAvg) / st.actualMonthlyRevenueAvg;
-      maxErr = Math.max(maxErr, err);
-      console.log(`${r.name.padEnd(14)} ${`${Math.round(rev / 10000).toLocaleString()}만`.padStart(10)} ${`${Math.round(st.actualMonthlyRevenueAvg / 10000).toLocaleString()}만`.padStart(10)} ${`${(err * 100).toFixed(1)}%`.padStart(8)} ${`${(u * 100).toFixed(1)}%`.padStart(8)}`);
+      if (!st?.actualMonthlyRevenueAvg) continue;
+      const u = predUtil(r);
+      const rev = r.pc * MONTH_HOURS * u * T0 * rateFactor(r);
+      const ue = (u - r.util) / r.util;
+      const re = (rev - st.actualMonthlyRevenueAvg) / st.actualMonthlyRevenueAvg;
+      maxUtilErr = Math.max(maxUtilErr, Math.abs(ue));
+      maxRevErr = Math.max(maxRevErr, Math.abs(re));
+      console.log(`${r.name.padEnd(14)} ${`${(u * 100).toFixed(1)}%`.padStart(10)} ${`${(r.util * 100).toFixed(1)}%`.padStart(10)} ${`${(ue * 100).toFixed(1)}%`.padStart(10)} ${`${Math.round(rev / 10000).toLocaleString()}만`.padStart(10)} ${`${Math.round(st.actualMonthlyRevenueAvg / 10000).toLocaleString()}만`.padStart(10)} ${`${(re * 100).toFixed(1)}%`.padStart(9)}`);
     }
-    console.log(`  독점 최대오차 ${(maxErr * 100).toFixed(1)}% — 사용자 기준 5% ${maxErr <= 0.05 ? "통과" : "미달"}`);
+    console.log(`  독점 가동률 최대오차 ${(maxUtilErr * 100).toFixed(1)}% — 수요식이 맞는지를 여기서 본다`);
+    console.log(`  독점 매출  최대오차 ${(maxRevErr * 100).toFixed(1)}% — 남는 건 환산층 몫이다`);
+    console.log(`  (β=0으로 내리면 매출 최대오차가 8.5%로 줄지만 정가가 매출을 안 바꾸게 된다.`);
+    console.log(`   근거는 _revenueConversion.test.ts와 textbookModel.ts rateElasticity 주석에 있다)`);
+    // 수요 축척을 실측 가동률에 맞췄으니 독점 가동률은 거의 정확히 맞아야 한다.
+    expect(maxUtilErr).toBeLessThan(0.05);
     expect(labRows.length).toBeGreaterThan(20);
   });
 
   it("매출까지 환산하면", () => {
-    // 초안의 최종 산출물은 매출이다. 가동률 -> 매출 환산은 요금과 상품비율만 더 쓴다.
+    // 초안의 최종 산출물은 매출이다. 가동률 -> 매출 환산은 **총단가** 하나만 더 쓴다
+    // (2026-09-16: 예전에는 정가 ÷ (1-상품비율)이었다. 정가는 실제로 받는 돈과 다르다).
     const gamma = 4;
     const { A } = calibrateA(gamma);
+    const { rateElasticity: beta, referenceHourlyRate: ref, maxUtilization: cap } = DEFAULT_TEXTBOOK_PARAMS;
     const MONTH_HOURS = 24 * 30;
     const byName = new Map((snap.existingStores as any[]).map((s) => [s.storeName, s]));
+    const mono = rows.filter((r) => r.rival === 0);
+    const rateFactor = (r: Row) => (beta === 0 || r.rate == null ? 1 : Math.pow(r.rate / ref, beta));
+    const predUtil = (r: Row) => Math.min(A * shape(r, gamma), cap);
+    // 총단가는 독점 실매출로 맞춘다(화면 fitTotalUnitPrice와 같은 방식).
+    const T0logs: number[] = [];
+    for (const r of mono) {
+      const actual = byName.get(r.name)?.actualMonthlyRevenueAvg;
+      const base = r.pc * MONTH_HOURS * predUtil(r) * rateFactor(r);
+      if (actual && base > 0) T0logs.push(Math.log(actual / base));
+    }
+    const T0 = Math.exp(mean(T0logs));
     const errs: number[] = [];
     for (const r of rows) {
-      const st = byName.get(r.name);
-      const actual = st?.actualMonthlyRevenueAvg;
-      if (!actual || r.rate == null) continue;
-      const u = Math.min(A * shape(r, gamma), 0.55); // 실측 최대 46.5% -> 상한 55%
-      const pred = r.pc * MONTH_HOURS * u * r.rate / 0.5;
-      errs.push(Math.abs(pred - actual) / actual);
+      const actual = byName.get(r.name)?.actualMonthlyRevenueAvg;
+      if (!actual) continue;
+      errs.push(Math.abs(r.pc * MONTH_HOURS * predUtil(r) * T0 * rateFactor(r) - actual) / actual);
     }
     const s = [...errs].sort((a, b) => a - b);
-    console.log(`\n매출 환산 (가동률 상한 55%, 상품비율 50%) — n=${errs.length}`);
+    console.log(`\n매출 환산 (가동률 상한 ${Math.round(cap * 100)}%, 총단가 ${T0.toFixed(0)}원 x (정가/${ref})^${beta}) — n=${errs.length}`);
     console.log(`  MAPE ${(mean(errs) * 100).toFixed(2)}% · 중앙 ${(s[Math.floor(s.length / 2)] * 100).toFixed(1)}% · ±20% ${(errs.filter((v) => v <= 0.2).length / errs.length * 100).toFixed(0)}%`);
     console.log(`  (참고) 운영 산식 V62는 MAPE 9.26%, PC대수만 세는 기준선은 16.85%다.`);
+    console.log(`  (참고) 환산층만 떼어 재면 MAPE 9.23%다 — _revenueConversion.test.ts`);
     expect(errs.length).toBeGreaterThan(20);
   });
 });

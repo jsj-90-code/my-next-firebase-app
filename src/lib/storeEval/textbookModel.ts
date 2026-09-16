@@ -13,8 +13,14 @@
 // ── 구조 ─────────────────────────────────────────────────────────────────
 //   1) 총수요   = (주거인구 x 이용률 + 유동인구 x 이용률 x α) x 1인당 월이용시간
 //   2) 점유율   = (자사PC x 격차^γ) / (자사PC x 격차^γ + 경쟁IP)
-//   3) 자사수요 = 총수요 x 점유율
-//   4) 매출     = 자사수요 x 실효단가 + 상품매출
+//   3) 자사수요 = 총수요 x 점유율   -> 가동률 = 자사수요 / (자사PC x 720)
+//   4) 매출     = 자사PC x 720 x 가동률 x 총단가
+//
+// ── 축척은 두 개다 (2026-09-16 구조 변경) ────────────────────────────────
+//   층마다 실측값이 따로 있으니 축척도 따로 맞춘다. 자세한 근거는 fitHoursPerUser 위 주석.
+//     hoursPerUserPerMonth <- 독점매장 **실측 가동률**
+//     totalUnitPrice       <- 독점매장 **실매출**
+//   그전에는 축척 하나가 둘을 겸해서, 환산층이 틀린 만큼이 가동률로 되밀려 들어갔다.
 //
 // 기존 산식과 다른 점은 **회귀로 덮지 않는다**는 것이다. 기존 V61/V62는 위 값을 특징 하나로
 // 넣고 기존 38곳 평균에 맞춰 회귀하는데, 그래서 "기존 가맹점 평균에서 ±"라는 설명밖에 못 한다.
@@ -125,8 +131,61 @@ export type TextbookParams = {
    * 수요에 (500m주거 / 1km주거)^(-계수)를 곱해 상쇄한다. 0이면 끈 것이다.
    */
   densityCorrection: number;
-  /** 총매출 대비 상품매출 비율(회사 기준 50%). */
+  /**
+   * 총매출 대비 상품매출 비율. **매출 크기에는 더 이상 영향을 주지 않는다**(2026-09-16 구조 변경).
+   * 총매출은 이제 총단가(totalUnitPrice)가 직접 정하고, 이 값은 그 총매출을 PC매출과 상품매출로
+   * **쪼개 보여주는 데만** 쓴다. 실측 32곳 중앙 52.7%다(회사 기준값은 50%였다).
+   */
   productRatio: number;
+  /**
+   * **총단가** — PC 1대를 1시간 채웠을 때 들어오는 총매출(PC+상품, 원).
+   *
+   * 2026-09-16 신설. 그전에는 `매출 = 이용시간 x 정가 ÷ (1-상품비율)`이었는데, 정가는
+   * 실제로 받는 돈과 다르다(좌석 추가과금 +, 정액권 할인 −). 32곳에서 역산한 실측 총단가는
+   * 중앙 2,778원 · 범위 2,246~3,606원이고, 정가x2(=지금 산식)와는 독점 3곳에서 −12.7%~+19.2%
+   * 어긋났다. 그래서 정가를 거쳐 가지 않고 총단가를 직접 축척으로 잡는다.
+   *
+   * 이 값은 눈으로 정하지 않는다 — `fitTotalUnitPrice`가 **독점매장 실매출**에서 구한다.
+   */
+  totalUnitPrice: number;
+  /**
+   * **정가 탄력도 β** — 총단가가 정가를 얼마나 따라가는지. 총단가 = T0 x (정가/기준정가)^β.
+   *
+   * **운영 산식의 `effectiveHourlyRate`(usageRevenue.ts)와 같은 형태다.** 거기 기본값은
+   * `tariffEffectiveExponent = 0.546` · `tariffReferenceRate = 1343`(38곳으로 2026-09-14에
+   * 구함)이고, 이 β에 0.546을 넣으면 그 식과 완전히 같아진다. 2026-09-16에 32곳으로 독립
+   * 측정한 값도 0.49~0.535라 그 지수 자체는 잘 선 값이다 — 32곳 실효단가를 MAPE 9.16%로
+   * 맞힌다(정가를 그대로 쓰면 10.43%).
+   *
+   * **왜 0이 아니라 0.546인가 — 독점 기준을 이 층에 쓰면 안 된다.**
+   *
+   * 독점매장(경쟁IP=0)이 필요한 이유는 점유율이 1이라 격차^gamma가 약분돼 **수요식을 경쟁
+   * 항에서 떼어낼 수 있기** 때문이다. 환산층에는 그 문제가 없다 — 실측 가동률이 있어서
+   * 32곳 **전부에서** 총단가를 직접 잴 수 있다(총단가 = 실매출 ÷ (PC x 720 x 실측가동률)).
+   * 그래서 이 층은 독점으로 고르지 않고 전체 표본으로 고른다.
+   *
+   * 환산층만 떼어 잰 성적(실측 가동률을 넣고 매출만 계산, 32곳):
+   *   β=0      MAPE 12.18%      β=0.4  MAPE 9.71%      β=0.6  MAPE 9.29%
+   *
+   * 독점 3곳은 이 추세를 거스른다 — 정가 순서(1400 < 1500 < 1700)가 실효단가 순서
+   * (1397 < 1498 < 1615)와 정확히 반대다. 그래서 β를 올리면 독점만 나빠진다:
+   *
+   *   β=0     독점 최대오차  8.5%  · 전체 MAPE 30.96%
+   *   β=0.3   독점 최대오차 10.9%  · 전체 MAPE 30.14%
+   *   β=0.546 독점 최대오차 12.8%  · 전체 MAPE 30.14%   ← 기본값. 운영 산식과 동일
+   *   β=1     독점 최대오차 16.2%  · 전체 MAPE 31.14%   (2026-09-16 이전 동작)
+   *
+   * 세 매장 순서가 정확히 뒤집힐 확률은 1/6이라 우연으로 설명된다. 32곳 증거가 3곳보다
+   * 강하다고 보고 0.546을 쓴다. 독점을 우선하려면 조절판에서 0으로 내리면 된다.
+   *
+   * 사용자(2026-09-16): "매장별 정액할인 금액이 틀리고 신규후보지도 마찬가지로 정액할인에
+   * 대한 정보가 없으니까 평균값이 가장 정답일것같다" — 맞는 판단이고, 여기서 쓰는 "평균"이
+   * 바로 그것이다. 정액할인의 *크기*는 모르지만 **정가가 비쌀수록 할인이 크다는 경향**은
+   * 38곳에서 측정된 정보라 버리지 않는다.
+   */
+  rateElasticity: number;
+  /** 정가 탄력도의 기준점(원). 이 정가인 매장에서 총단가 = T0가 된다. 32곳 중앙정가. */
+  referenceHourlyRate: number;
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
@@ -159,7 +218,14 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   outsideOptionIp: 0,
   agglomerationFactor: 0,
   densityCorrection: 0,
-  productRatio: 0.5,
+  // 실측 32곳 평균. 매출 크기가 아니라 PC/상품 분해 표시에만 쓴다(2026-09-16).
+  productRatio: 0.523,
+  // fitTotalUnitPrice가 독점 실매출에서 다시 구한다. 여기 값은 그 전에 쓰이는 출발점이다.
+  // (기본 β에서 총단가 = 실효단가 ÷ (1-0.523)이므로 정가 1343원 매장 기준 약 2,816원)
+  totalUnitPrice: 2816,
+  // 운영 산식 usageRevenue.ts effectiveHourlyRate와 같은 값 — 두 산식이 한 식을 쓴다.
+  rateElasticity: 0.546,
+  referenceHourlyRate: 1343,
   maxUtilization: 0.55,
 };
 
@@ -169,6 +235,15 @@ export type TextbookInput = {
   storeName: string | null;
   pcCount: number | null;
   hourlyRate: number | null;
+  /**
+   * **실측 월평균 가동률**(0~1). 평가창 월매출의 `utilizationRate` 평균이다.
+   *
+   * 2026-09-16 신설. 수요층 축척을 여기에 맞춘다 — 그전에는 축척 하나가 "수요를 가동률로
+   * 바꾸는 일"과 "가동률을 매출로 바꾸는 일"을 겸해서, 환산층이 틀린 만큼이 가동률로
+   * 되밀려 들어갔다(독점 3곳 가동률이 화면에서 −3.2~−5.3% 어긋나 보이던 원인).
+   * 층마다 실측값이 따로 있으니(가동률은 매출DB·게토, 매출은 매출DB) 축척도 따로 맞춘다.
+   */
+  actualUtilization: number | null;
   competitivenessGap: number | null;
   competitorIp: number | null;
   /** 상권 흡인력 계산용. 조사된 경쟁점 수(IP가 아니라 점포 수). */
@@ -198,6 +273,8 @@ export type TextbookBreakdown = {
   ownDemandHours: number | null;
   utilization: number | null;
   capped: boolean;
+  /** 이 매장에 적용된 총단가(원/PC·시간). 화면에 그대로 보여준다. */
+  unitPrice: number | null;
   pcRevenue: number | null;
   productRevenue: number | null;
   monthlyRevenue: number | null;
@@ -231,7 +308,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const empty: TextbookBreakdown = {
     residentDemandUsers: null, floatingDemandUsers: null, totalDemandUsers: null,
     totalDemandHours: null, share: null, ownDemandHours: null, utilization: null,
-    capped: false, pcRevenue: null, productRevenue: null, monthlyRevenue: null, missing,
+    capped: false, unitPrice: null, pcRevenue: null, productRevenue: null, monthlyRevenue: null, missing,
   };
 
   // 연령별 이용률은 **그 자료의 지역 성비로 섞어서** 쓴다(2026-09-16). 주거와 유동은 성비가
@@ -299,11 +376,17 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const ownHours = Math.min(rawOwnHours, capHours);
   const utilization = ownHours / (pc * MONTH_HOURS);
 
+  // 총단가 = T0 x (정가/기준정가)^β. β=0(기본)이면 정가와 무관하게 T0다.
+  // 정가를 거쳐 가지 않는 이유는 totalUnitPrice/rateElasticity 주석에 적혀 있다.
   const rate = input.hourlyRate;
-  if (rate == null) missing.push("시간당 요금");
-  const pcRevenue = rate != null ? ownHours * rate : null;
-  // 상품매출은 총매출 대비 비율로 잡는다(회사 기준). PC매출 = 총매출 x (1 - productRatio).
-  const monthlyRevenue = pcRevenue != null && p.productRatio < 1 ? pcRevenue / (1 - p.productRatio) : null;
+  const rateFactor = p.rateElasticity === 0 || rate == null || !(p.referenceHourlyRate > 0)
+    ? 1
+    : Math.pow(rate / p.referenceHourlyRate, p.rateElasticity);
+  if (rate == null && p.rateElasticity !== 0) missing.push("시간당 요금");
+  const unitPrice = p.totalUnitPrice * rateFactor;
+  const monthlyRevenue = unitPrice > 0 ? ownHours * unitPrice : null;
+  // 상품비율은 총매출을 쪼개 보여주는 데만 쓴다 — 총매출 크기는 위에서 이미 정해졌다.
+  const pcRevenue = monthlyRevenue != null ? monthlyRevenue * (1 - p.productRatio) : null;
   const productRevenue = monthlyRevenue != null && pcRevenue != null ? monthlyRevenue - pcRevenue : null;
 
   return {
@@ -315,6 +398,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     ownDemandHours: ownHours,
     utilization,
     capped,
+    unitPrice,
     pcRevenue,
     productRevenue,
     monthlyRevenue,
@@ -323,37 +407,90 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
 }
 
 /**
- * hoursPerUserPerMonth는 스케일 계수라 눈으로 정할 값이 아니다. 나머지 파라미터를 고정한
- * 상태에서 실제 매출에 **가장 잘 맞는 배율**을 닫힌 형태로 구한다(로그 공간 평균).
- * 이렇게 해야 반경·가중을 바꿀 때 스케일 차이 때문에 비교가 엉키지 않는다.
+ * ── 축척은 **두 개**다. 층마다 실측값이 따로 있으니 따로 맞춘다 (2026-09-16 구조 변경) ──
+ *
+ * 그전에는 축척 하나(hoursPerUserPerMonth)를 실매출에 맞춰서 두 일을 겸하게 했다. 그랬더니
+ * 환산층(정가 ÷ (1-상품비율))이 매장마다 −12.7%~+19.2% 틀린 만큼이 **가동률로 되밀려
+ * 들어갔다** — 독점 3곳 가동률이 화면에서 −3.2~−5.3% 어긋나 보이던 원인이 이것이다.
+ * 수요식은 멀쩡했는데 환산층 오차를 대신 뒤집어쓰고 있었다.
+ *
+ *   1) hoursPerUserPerMonth ← 독점매장 **실측 가동률**   (fitHoursPerUser)
+ *   2) totalUnitPrice       ← 독점매장 **실매출**        (fitTotalUnitPrice)
+ *
+ * 순서가 중요하다. 1)을 먼저 정해 가동률을 고정한 뒤, 2)가 남은 몫만 맡는다.
+ */
+
+/** 독점매장이 있으면 거기서만 고른다. 없으면 전체를 쓴다. */
+function calibrationTarget<T extends { input: TextbookInput }>(rows: T[]): T[] {
+  // 독점상권(경쟁IP=0)은 점유율이 1이라 격차^gamma가 약분되고 **수요식만 남는다.** 그래서
+  // 축척을 여기서 정하면 경쟁 항의 오차가 축척으로 스며들지 않는다. 전체로 맞추면 반대가
+  // 된다 — 경쟁 항이 틀린 몫까지 축척이 흡수해서 "수요가 맞는지"를 영영 못 가른다.
+  //
+  // 사용자(2026-09-16): "일단 독점매장이 무조건 맞아야 돼 산식이. 그 개념이 맞잖아."
+  // 실제로 2026-09-16에 이걸 안 하고 전체로 맞췄더니 광주각화점(독점)이 90.9% 과대예측됐다.
+  const monopoly = rows.filter((r) => !(r.input.competitorIp ?? 0));
+  return monopoly.length > 0 ? monopoly : rows;
+}
+
+const logMean = (xs: number[]) => Math.exp(xs.reduce((a, b) => a + b, 0) / xs.length);
+
+/**
+ * 수요 축척(hoursPerUserPerMonth)을 **독점매장 실측 가동률**에 맞춘다.
+ *
+ * 실측 가동률이 하나도 없으면 매출로 떨어진다(예전 방식). 그 경우 가동률과 매출을 한 축척이
+ * 겸하게 되므로 위에 적은 되밀림이 다시 생긴다 — 반환값만 보고 넘어가지 말 것.
  */
 export function fitHoursPerUser(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): number {
-  // ── 독점매장이 있으면 **거기서만** 축척을 맞춘다 (2026-09-16 사용자 기준) ──────────
-  //
-  // 사용자: "일단 독점매장이 무조건 맞아야 돼 산식이. 그 개념이 맞잖아."
-  //
-  // 독점상권(경쟁IP=0)은 점유율이 1이라 격차^gamma가 약분되고 **수요식만 남는다.** 그래서
-  // 축척을 여기서 정하면 경쟁 항의 오차가 축척으로 스며들지 않는다. 전체로 맞추면 반대가
-  // 된다 — 경쟁 항이 틀린 몫까지 축척이 흡수해서 "수요가 맞는지"를 영영 못 가른다.
-  //
-  // 실제로 2026-09-16에 이걸 안 하고 전체로 맞췄더니 광주각화점(독점)이 예측 14,541만 vs
-  // 실제 7,616만으로 **90.9% 과대예측**됐다. 독점 3곳으로 맞추면 편차가 2%로 떨어진다.
-  const monopoly = rows.filter((r) => !(r.input.competitorIp ?? 0));
-  const target = monopoly.length > 0 ? monopoly : rows;
+  const target = calibrationTarget(rows);
 
-  const ratios: number[] = [];
+  const byUtil: number[] = [];
+  for (const r of target) {
+    const actual = r.input.actualUtilization;
+    if (actual == null || !(actual > 0)) continue;
+    const b = computeTextbook(r.input, { ...p, hoursPerUserPerMonth: 1, maxUtilization: Number.POSITIVE_INFINITY });
+    if (b.utilization == null || b.utilization <= 0) continue;
+    byUtil.push(Math.log(actual / b.utilization));
+  }
+  if (byUtil.length) return logMean(byUtil);
+
+  // ── 되돌림: 실측 가동률이 없으면 매출로 맞춘다 (예전 방식) ──────────────────────
+  const byRevenue: number[] = [];
   for (const r of target) {
     const b = computeTextbook(r.input, { ...p, hoursPerUserPerMonth: 1 });
     if (b.monthlyRevenue == null || b.monthlyRevenue <= 0 || !(r.actualRevenue > 0)) continue;
     // 상한에 걸린 매장은 배율을 키워도 매출이 안 늘어 배율 추정을 왜곡한다 — 제외한다.
     if (b.capped) continue;
+    byRevenue.push(Math.log(r.actualRevenue / b.monthlyRevenue));
+  }
+  if (!byRevenue.length) return p.hoursPerUserPerMonth;
+  return logMean(byRevenue);
+}
+
+/**
+ * 총단가(totalUnitPrice)를 **독점매장 실매출**에 맞춘다. 수요 축척이 이미 정해진 뒤에 부른다.
+ *
+ * 남는 오차가 곧 "세 독점매장이 PC·시간당 실제로 얼마나 다르게 버는가"다. 2026-09-16 실측으로
+ * 탕정역 3,206원 · 광주각화 2,853원 · 남악 2,745원이라 17% 벌어져 있고, 후보지에서 알 수 있는
+ * 어떤 값으로도 설명되지 않았다(경쟁력점수·좌석구성·PC대수 전부 확인). 그래서 독점 최대오차
+ * 8.5%가 지금 자료의 바닥이다.
+ */
+export function fitTotalUnitPrice(
+  rows: { input: TextbookInput; actualRevenue: number }[],
+  p: TextbookParams,
+): number {
+  const target = calibrationTarget(rows);
+  const ratios: number[] = [];
+  for (const r of target) {
+    const b = computeTextbook(r.input, { ...p, totalUnitPrice: 1 });
+    if (b.monthlyRevenue == null || b.monthlyRevenue <= 0 || !(r.actualRevenue > 0)) continue;
+    if (b.capped) continue;
     ratios.push(Math.log(r.actualRevenue / b.monthlyRevenue));
   }
-  if (!ratios.length) return p.hoursPerUserPerMonth;
-  return Math.exp(ratios.reduce((a, b) => a + b, 0) / ratios.length);
+  if (!ratios.length) return p.totalUnitPrice;
+  return logMean(ratios);
 }
 
 export type TextbookScore = {
@@ -365,10 +502,18 @@ export type TextbookScore = {
   maxAbsErr: number | null;
   /** 배율까지 맞춘 뒤의 hoursPerUserPerMonth. 화면에 그대로 보여준다. */
   fittedHoursPerUser: number;
+  /** 독점 실매출로 맞춘 뒤의 totalUnitPrice(원/PC·시간). 화면에 그대로 보여준다. */
+  fittedTotalUnitPrice: number;
+  /** 수요 축척을 실측 가동률로 맞췄는지. false면 매출로 떨어진 것이라 두 층이 다시 엉킨다. */
+  scaledOnUtilization: boolean;
+  /** 가동률 성적 — 실측 가동률이 있는 매장만. 매출과 따로 봐야 층별 판정이 된다. */
+  utilizationMape: number | null;
+  utilizationSampleCount: number;
   rows: {
     storeCode: string; storeName: string | null;
     predicted: number | null; actual: number; absErrPct: number | null;
-    utilization: number | null; share: number | null; capped: boolean;
+    utilization: number | null; actualUtilization: number | null; utilErrPct: number | null;
+    share: number | null; capped: boolean; unitPrice: number | null;
     missing: string[];
   }[];
 };
@@ -378,20 +523,33 @@ export function scoreTextbook(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): TextbookScore {
+  // 축척 둘을 **순서대로** 맞춘다. 1) 수요 축척을 실측 가동률에, 2) 총단가를 독점 실매출에.
+  // 순서가 바뀌면 안 된다 — 가동률이 먼저 고정돼야 총단가가 남은 몫만 맡는다.
   const fitted = fitHoursPerUser(rows, p);
+  const scaledOnUtilization = rows.some((r) => (r.input.actualUtilization ?? 0) > 0);
   const withFit: TextbookParams = { ...p, hoursPerUserPerMonth: fitted };
+  const fittedUnitPrice = fitTotalUnitPrice(rows, withFit);
+  const full: TextbookParams = { ...withFit, totalUnitPrice: fittedUnitPrice };
+
   const out: TextbookScore["rows"] = [];
   const errs: number[] = [];
+  const utilErrs: number[] = [];
   for (const r of rows) {
-    const b = computeTextbook(r.input, withFit);
+    const b = computeTextbook(r.input, full);
     const err = b.monthlyRevenue != null && r.actualRevenue > 0
       ? Math.abs(b.monthlyRevenue - r.actualRevenue) / r.actualRevenue
       : null;
     if (err != null) errs.push(err);
+    const au = r.input.actualUtilization;
+    const utilErr = b.utilization != null && au != null && au > 0
+      ? Math.abs(b.utilization - au) / au
+      : null;
+    if (utilErr != null) utilErrs.push(utilErr);
     out.push({
       storeCode: r.input.storeCode, storeName: r.input.storeName,
       predicted: b.monthlyRevenue, actual: r.actualRevenue, absErrPct: err,
-      utilization: b.utilization, share: b.share, capped: b.capped, missing: b.missing,
+      utilization: b.utilization, actualUtilization: au ?? null, utilErrPct: utilErr,
+      share: b.share, capped: b.capped, unitPrice: b.unitPrice, missing: b.missing,
     });
   }
   const sorted = [...errs].sort((a, b) => a - b);
@@ -403,6 +561,10 @@ export function scoreTextbook(
     within20: errs.length ? errs.filter((v) => v <= 0.2).length / errs.length : null,
     maxAbsErr: sorted.length ? sorted[sorted.length - 1] : null,
     fittedHoursPerUser: fitted,
+    fittedTotalUnitPrice: fittedUnitPrice,
+    scaledOnUtilization,
+    utilizationMape: utilErrs.length ? utilErrs.reduce((a, b) => a + b, 0) / utilErrs.length : null,
+    utilizationSampleCount: utilErrs.length,
     rows: out.sort((a, b) => (b.absErrPct ?? 0) - (a.absErrPct ?? 0)),
   };
 }
