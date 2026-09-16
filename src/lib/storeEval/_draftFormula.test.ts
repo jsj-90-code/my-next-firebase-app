@@ -77,7 +77,15 @@ function envelope(by: Record<number, number>): number | null {
  * 성별 자료를 연령과 교차해 갖고 있지 않아 남녀 1:1 평균을 쓴다. 남성 값만 써도 비율이
  * 거의 같아 결과가 비슷했다(독점 1.5%).
  */
-const USE_RATE = { teens: 0.260, twenties: 0.285, thirties: 0.1075, forties: 0.060 };
+const RATE_M = { teens: 0.390, twenties: 0.420, thirties: 0.170, forties: 0.100 };
+const RATE_F = { teens: 0.130, twenties: 0.150, thirties: 0.045, forties: 0.020 };
+/** 지역 남성비율 m으로 남녀 이용률을 섞는다. m=0.5면 남녀평균과 같다. */
+const blend = (m) => ({
+  teens: m * RATE_M.teens + (1 - m) * RATE_F.teens,
+  twenties: m * RATE_M.twenties + (1 - m) * RATE_F.twenties,
+  thirties: m * RATE_M.thirties + (1 - m) * RATE_F.thirties,
+  forties: m * RATE_M.forties + (1 - m) * RATE_F.forties,
+});
 /* eslint-disable @typescript-eslint/no-explicit-any */
 describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 쌓는다", () => {
   const snap = loadValidationSnapshot<any>();
@@ -118,12 +126,16 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     }
     // 주거 1km를 **PC방 이용자 수로 환산**한다 — SGIS age_2(10대)~age_5(40대)에 연령별 이용률을 곱한다.
     const p1k = rv.radii?.["1000"]?.pops;
+    const resMale = p1k?.woman_cnt != null && Number(p1k.tot_ppltn_cnt) > 0
+      ? 1 - Number(p1k.woman_cnt) / Number(p1k.tot_ppltn_cnt)
+      : 0.5;
+    const RR = blend(resMale);
     const pop = p1k?.age_2_cnt == null
       ? null
-      : Number(p1k.age_2_cnt) * USE_RATE.teens
-        + Number(p1k.age_3_cnt) * USE_RATE.twenties
-        + Number(p1k.age_4_cnt) * USE_RATE.thirties
-        + Number(p1k.age_5_cnt) * USE_RATE.forties;
+      : Number(p1k.age_2_cnt) * RR.teens
+        + Number(p1k.age_3_cnt) * RR.twenties
+        + Number(p1k.age_4_cnt) * RR.thirties
+        + Number(p1k.age_5_cnt) * RR.forties;
     // 유동 400m도 같은 이용률로 환산. 연령·성별은 최근월 한 벌만 오므로 12개월 평균 축척으로
     // 맞춘다(writeFloatingPopulationToFirestore.mjs와 같은 보정).
     const f400 = fv.radii?.["400"];
@@ -133,10 +145,11 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
       const recent = f400.selected[f400.selected.length - 1];
       const sc = recent > 0 ? avg / recent : 1;
       const d = f400.demographics;
-      env = ((d.age10s ?? 0) * USE_RATE.teens
-        + (d.age20s ?? 0) * USE_RATE.twenties
-        + (d.age30s ?? 0) * USE_RATE.thirties
-        + (d.age40s ?? 0) * USE_RATE.forties) * sc;
+      const FR = blend(d.total > 0 ? d.male / d.total : 0.5);
+      env = ((d.age10s ?? 0) * FR.teens
+        + (d.age20s ?? 0) * FR.twenties
+        + (d.age30s ?? 0) * FR.thirties
+        + (d.age40s ?? 0) * FR.forties) * sc;
     }
     if (pop == null || env == null) continue;
     const loc = locByCode.get(st.storeCode);
@@ -156,7 +169,7 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
   // 반경 선택 근거(2026-09-16): 사용자 판정 기준 "독점매장이 5% 내외로 맞아야 한다"로 수요식
   // 149개를 거르니 통과가 2개뿐이었고, 둘 다 주거1km + 유동400m 계열이었다. 유동 500m는
   // 수원망포점처럼 지하철 상권을 먹고(300->400m에서 4.19배), 100~300m는 너무 좁아 오차가 커진다.
-  const ALPHA = 0.2;
+  const ALPHA = 0.15;
   const demand = (r: Row) => r.demandBase + r.demandFlow * ALPHA;
 
   /**
@@ -203,7 +216,7 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     const mono = rows.filter((r) => r.rival === 0);
     console.log(`\n표본 ${rows.length}곳 (실측 가동률 있는 매장) · 그중 독점 ${mono.length}곳: ${mono.map((r) => r.name).join(", ")}`);
     console.log(`수요식: (주거1km + 유동400m x${ALPHA})를 연령별 이용률로 환산`);
-    console.log(`이용률(1,000명당): 10대 ${USE_RATE.teens * 1000} · 20대 ${USE_RATE.twenties * 1000} · 30대 ${USE_RATE.thirties * 1000} · 40대 ${USE_RATE.forties * 1000}`);
+    console.log("이용률(1,000명당 남/여): 10대 390/130 · 20대 420/150 · 30대 170/45 · 40대 100/20 — 지역 남성비율로 섞는다");
     expect(rows.length).toBeGreaterThan(25);
   });
 

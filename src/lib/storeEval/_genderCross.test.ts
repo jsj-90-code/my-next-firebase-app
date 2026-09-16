@@ -156,6 +156,74 @@ describeIf("성별 x 연령 교차", () => {
     expect(rows.length).toBeGreaterThan(25);
   });
 
+  it("반경 재탐색 — 연령·성별 환산을 넣은 뒤에도 주거1km·유동400m가 맞나", () => {
+    // 주거1km·유동400m는 **연령·성별 환산을 넣기 전에** 고른 값이다(2026-09-16 오전).
+    // 수요를 재는 방식이 바뀌었으니 최적 반경도 달라질 수 있다. 같은 기준으로 다시 훑는다:
+    //   1순위 — 독점 최대오차 5% 이내(사용자 기준). 여기서 떨어지면 수요식이 틀린 것이다.
+    //   2순위 — 그 안에서 전체 MAPE가 낮은 것.
+    const RESI = [200, 300, 400, 500, 1000] as const;
+    const FLO = [100, 200, 300, 400, 500] as const;
+    const ALPHAS = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.7, 1.0] as const;
+
+    // 반경별 원자료를 다시 읽는다(위 rows는 1km/400m로 고정돼 있다).
+    type Cell = { res: Record<number, Ages>; resMale: number; flo: Record<number, Ages>; floMale: Record<number, number> };
+    const cells = new Map<string, Cell>();
+    for (const r of rows) {
+      const st = (snap.existingStores as any[]).find((s) => s.storeName === r.name);
+      const rv = resSites[`existing:${st.storeCode}`], fv = floSites[`existing:${st.storeCode}`];
+      const res: Record<number, Ages> = {}, flo: Record<number, Ages> = {}, floMale: Record<number, number> = {};
+      let resMale = 0.5;
+      for (const R of RESI) {
+        const p = rv.radii?.[String(R)]?.pops;
+        if (p?.age_2_cnt == null) continue;
+        res[R] = { teens: Number(p.age_2_cnt), twenties: Number(p.age_3_cnt), thirties: Number(p.age_4_cnt), forties: Number(p.age_5_cnt) };
+        if (R === 1000 && p.woman_cnt != null && Number(p.tot_ppltn_cnt) > 0) resMale = 1 - Number(p.woman_cnt) / Number(p.tot_ppltn_cnt);
+      }
+      for (const R of FLO) {
+        const f = fv.radii?.[String(R)];
+        if (!f?.selected?.length || !f.demographics || !(f.demographics.total > 0)) continue;
+        const avg = Math.round(mean(f.selected.slice(-12)));
+        const recent = f.selected[f.selected.length - 1];
+        const sc = recent > 0 ? avg / recent : 1;
+        const d = f.demographics;
+        flo[R] = { teens: (d.age10s ?? 0) * sc, twenties: (d.age20s ?? 0) * sc, thirties: (d.age30s ?? 0) * sc, forties: (d.age40s ?? 0) * sc };
+        floMale[R] = d.male / d.total;
+      }
+      cells.set(r.name, { res, resMale, flo, floMale });
+    }
+
+    const out: { label: string; maxMono: number; allMape: number; per: number }[] = [];
+    for (const RR of RESI) for (const FR of FLO) for (const a of ALPHAS) {
+      const demandFor = (r: Row) => {
+        const c = cells.get(r.name);
+        if (!c?.res[RR] || !c.flo[FR]) return null;
+        return blended(c.res[RR], c.resMale, true) + blended(c.flo[FR], c.floMale[FR], true) * a;
+      };
+      const items = rows.map((r) => ({ r, d: demandFor(r) })).filter((x): x is { r: Row; d: number } => x.d != null && x.d > 0);
+      if (items.length < rows.length) continue;
+      const monoItems = items.filter((x) => x.r.rival === 0);
+      const A = median(monoItems.map((x) => x.r.util / (x.d / x.r.pc)));
+      const maxMono = Math.max(...monoItems.map((x) => Math.abs(A * (x.d / x.r.pc) - x.r.util) / x.r.util));
+      const errs = items.map((x) => {
+        const g = Math.pow(x.r.gap, 4);
+        return Math.abs(A * (x.d * g) / (x.r.pc * g + x.r.rival) - x.r.util) / x.r.util;
+      });
+      out.push({ label: `주거${RR}m + 유동${FR}m x${a}`, maxMono, allMape: mean(errs), per: 1 / A });
+    }
+    // **독점 최대오차가 1순위다.** 사용자(2026-09-16): "일단 독점매장이 무조건 맞아야 돼
+    // 산식이. 그 개념이 맞잖아." 독점상권은 점유율이 1이라 수요식만 노출되는 유일한 자리다 —
+    // 전체 MAPE에는 경쟁 항의 오차가 섞여 있어 수요식의 실력을 가린다.
+    const pass = out.filter((o) => o.maxMono <= 0.05).sort((a, b) => a.maxMono - b.maxMono);
+    console.log(`\n조합 ${out.length}개 · 독점 5% 통과 ${pass.length}개 (독점 오차 낮은 순)`);
+    console.log(`${"수요식".padEnd(26)} ${"독점 최대오차".padStart(12)} ${"전체 MAPE".padStart(11)} ${"PC1대당".padStart(9)}`);
+    for (const o of pass.slice(0, 10)) {
+      console.log(`${o.label.padEnd(26)} ${(o.maxMono * 100).toFixed(1).padStart(11)}% ${(o.allMape * 100).toFixed(1).padStart(10)}% ${Math.round(o.per).toLocaleString().padStart(8)}명`);
+    }
+    const cur = out.find((o) => o.label === "주거1000m + 유동400m x0.2");
+    if (cur) console.log(`\n지금 쓰는 "주거1000m + 유동400m x0.2": 독점 ${(cur.maxMono * 100).toFixed(1)}% · 전체 ${(cur.allMape * 100).toFixed(1)}% · 통과군 내 순위 ${pass.indexOf(cur) + 1}/${pass.length}`);
+    expect(out.length).toBeGreaterThan(0);
+  });
+
   it("남성비율이 높은 상권에서 특히 달라지는가", () => {
     // 성별 교차의 실체는 "남성 많은 상권을 더 크게 본다"는 것이다. 실제로 그런지,
     // 그리고 그 매장들의 실측 가동률이 실제로 높은지 본다.
