@@ -49,6 +49,12 @@ npm run build && npx vitest run --exclude "**/_*.test.ts" --reporter=dot
 
 돌려보는 법: `npx vitest run src/lib/storeEval/_draftFormula.test.ts --reporter=verbose`
 
+**웹에도 반영돼 있다** — `/store-eval/lab`을 열면 전체 매장이 이 산식으로 계산된다.
+화면 위쪽 **계산기준** 섹션이 지금 수요를 어떻게 재는지 4단계로 설명하고, 그 값들은 전부
+현재 파라미터에서 읽어 그리므로 조절판을 움직이면 설명도 같이 바뀐다.
+표 헤더는 "예상매출 / 실제매출"이다.
+실험실 기본값 기준 38곳 MAPE 33.7%(가동률 자료 있는 32곳 기준 검정은 가동률 29.08%, 매출 30.93%).
+
 ### 계수가 둘뿐이고 둘 다 뜻이 있다
 
 - **A** = 환산수요 107명당 PC 1대 — 현장에서 검증 가능한 숫자다
