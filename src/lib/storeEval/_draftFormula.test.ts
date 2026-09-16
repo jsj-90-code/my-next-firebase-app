@@ -7,7 +7,7 @@
 // 그래야 어느 층이 틀렸는지 층별로 판정할 수 있다.
 //
 // ── 구조 ────────────────────────────────────────────────────────────────
-//   수요    = 주거1km + 유동포락선 x alpha            (명, 해석 가능)
+//   수요    = (주거1km + 유동400m x alpha)를 **연령별 PC방 이용률로 환산**한 값
 //   가동률  = A x 수요 x 격차^gamma ÷ (자사PC x 격차^gamma + 경쟁IP)
 //            (gamma>1이면 우위 매장 쏠림. A는 독점매장에서 고정)
 //   매출    = 자사PC x 720시간 x 가동률 x 실효단가 ÷ (1-상품비율)
@@ -59,6 +59,25 @@ function envelope(by: Record<number, number>): number | null {
   return any ? Math.round(t) : null;
 }
 
+/**
+ * 연령별 PC방 이용률 — **1,000명 중 몇 명이 PC방을 쓰나** (2026-09-16 사용자 제공 실측 조사).
+ *
+ *   연령   남성   여성   남녀평균
+ *   10대   390    130     260
+ *   20대   420    150     285
+ *   30대   170     45     108
+ *   40대   100     20      60
+ *   50대    35      8      22   (40대 이하만 쓰므로 여기선 안 쓴다)
+ *
+ * ⚠️ 이 값은 **우리 데이터로 맞춘 게 아니다.** 외부 조사값을 그대로 넣었는데 독점 3곳이
+ *    최대오차 0.8% 안에 들어왔다(추정치로 만든 가중치는 3.2~4.7%였다). 과적합일 수 없는
+ *    종류의 일치라 이 값을 신뢰한다.
+ * ⚠️ 2020~2021 조사라 절대 수준은 낡았을 수 있다. 다만 이 산식에서 의미를 갖는 건
+ *    **연령 간 비율**뿐이다 — 전체 수준은 계수 A가 흡수한다.
+ * 성별 자료를 연령과 교차해 갖고 있지 않아 남녀 1:1 평균을 쓴다. 남성 값만 써도 비율이
+ * 거의 같아 결과가 비슷했다(독점 1.5%).
+ */
+const USE_RATE = { teens: 0.260, twenties: 0.285, thirties: 0.1075, forties: 0.060 };
 /* eslint-disable @typescript-eslint/no-explicit-any */
 describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 쌓는다", () => {
   const snap = loadValidationSnapshot<any>();
@@ -97,13 +116,16 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
       const r = fv.radii?.[String(R)];
       if (r?.selected?.length) flo[R] = Math.round(mean(r.selected.slice(-12)));
     }
-    // 주거 1km의 10~30대 — SGIS age_2(10대)/age_3(20대)/age_4(30대).
+    // 주거 1km를 **PC방 이용자 수로 환산**한다 — SGIS age_2(10대)~age_5(40대)에 연령별 이용률을 곱한다.
     const p1k = rv.radii?.["1000"]?.pops;
     const pop = p1k?.age_2_cnt == null
       ? null
-      : Number(p1k.age_2_cnt) + Number(p1k.age_3_cnt) + Number(p1k.age_4_cnt);
-    // 유동 400m의 10~30대. 연령·성별은 최근월 한 벌만 오므로 12개월 평균 축척으로 맞춘다
-    // (writeFloatingPopulationToFirestore.mjs와 같은 보정).
+      : Number(p1k.age_2_cnt) * USE_RATE.teens
+        + Number(p1k.age_3_cnt) * USE_RATE.twenties
+        + Number(p1k.age_4_cnt) * USE_RATE.thirties
+        + Number(p1k.age_5_cnt) * USE_RATE.forties;
+    // 유동 400m도 같은 이용률로 환산. 연령·성별은 최근월 한 벌만 오므로 12개월 평균 축척으로
+    // 맞춘다(writeFloatingPopulationToFirestore.mjs와 같은 보정).
     const f400 = fv.radii?.["400"];
     let env: number | null = null;
     if (f400?.selected?.length && f400.demographics) {
@@ -111,7 +133,10 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
       const recent = f400.selected[f400.selected.length - 1];
       const sc = recent > 0 ? avg / recent : 1;
       const d = f400.demographics;
-      env = Math.round(((d.age10s ?? 0) + (d.age20s ?? 0) + (d.age30s ?? 0)) * sc);
+      env = ((d.age10s ?? 0) * USE_RATE.teens
+        + (d.age20s ?? 0) * USE_RATE.twenties
+        + (d.age30s ?? 0) * USE_RATE.thirties
+        + (d.age40s ?? 0) * USE_RATE.forties) * sc;
     }
     if (pop == null || env == null) continue;
     const loc = locByCode.get(st.storeCode);
@@ -124,9 +149,13 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
     });
   }
 
-  // 2026-09-16 — 사용자 판정 기준("독점매장이 5% 내외로 맞아야 한다")으로 수요식 149개를 거르니
-  // 통과가 2개뿐이었고, 그중 나머지 29곳에서도 가장 좋은 것이 이 조합이다(독점 4.6%, 나머지 32.1%).
-  // **10~30대만 센다** — PC방 주 이용층이다. 계수도 "10~30대 469명당 PC 1대"로 읽혀 해석이 쉽다.
+  // 유동 가중 — 유동인구는 "명"이 아니라 "하루 통행량"이라 주거인구와 단위가 다르다(같은 사람이
+  // 여러 번 세어진다). 0.2를 곱하면 유동이 수요에서 차지하는 몫이 중앙 22%가 되어 사용자 설계
+  // ("주거 기본 + 유동 +@")와 맞는다.
+  //
+  // 반경 선택 근거(2026-09-16): 사용자 판정 기준 "독점매장이 5% 내외로 맞아야 한다"로 수요식
+  // 149개를 거르니 통과가 2개뿐이었고, 둘 다 주거1km + 유동400m 계열이었다. 유동 500m는
+  // 수원망포점처럼 지하철 상권을 먹고(300->400m에서 4.19배), 100~300m는 너무 좁아 오차가 커진다.
   const ALPHA = 0.2;
   const demand = (r: Row) => r.demandBase + r.demandFlow * ALPHA;
 
@@ -173,7 +202,8 @@ describeIf("교과서식 초안 — 독점에서 수요를 고정하고 층을 �
   it("표본", () => {
     const mono = rows.filter((r) => r.rival === 0);
     console.log(`\n표본 ${rows.length}곳 (실측 가동률 있는 매장) · 그중 독점 ${mono.length}곳: ${mono.map((r) => r.name).join(", ")}`);
-    console.log(`수요식: 주거1km 10~30대 + 유동400m 10~30대 x${ALPHA}`);
+    console.log(`수요식: (주거1km + 유동400m x${ALPHA})를 연령별 이용률로 환산`);
+    console.log(`이용률(1,000명당): 10대 ${USE_RATE.teens * 1000} · 20대 ${USE_RATE.twenties * 1000} · 30대 ${USE_RATE.thirties * 1000} · 40대 ${USE_RATE.forties * 1000}`);
     expect(rows.length).toBeGreaterThan(25);
   });
 
