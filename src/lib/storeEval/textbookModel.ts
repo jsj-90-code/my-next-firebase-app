@@ -254,12 +254,81 @@ export type TextbookParams = {
    * 왜 이게 필요한가: 2026-09-16 점검에서 지금 점유율 환산이 **아무것도 설명하지 못한다**는
    * 게 드러났다(경쟁력격차 r=0.025, 사양 -0.062, 입지 0.075~0.220 — 전부 유의선 0.371 미달).
    * 게다가 수준도 안 맞는다(자사PC/(자사PC+경쟁IP) 중앙 0.186 vs 실측 0.519). 근거는
-   * `_shareAudit.test.ts`에 있다. 그래서 경쟁 항을 고치기 전에 수요식부터 다시 본다.
+   * `_shareAudit.test.ts`에 있다. 그래서 경쟁 항을 고치기 전에 수요식부터 다시 봤다.
+   *
+   *   "quality" — **2026-09-17 신설, 새 기본값.** 유효거리 안의 경쟁점만 품질로 겨룬다.
+   *               위 점검이 남긴 빈칸(상권 겹침)을 메운 것이다. 홀드아웃·대조군 결과는
+   *               `_competitionDesign.test.ts` 머리말에 있다.
    */
-  shareMode: "formula" | "off";
+  shareMode: "formula" | "off" | "quality";
+  /**
+   * **유효거리 R(m)** — 이 안의 경쟁점만 진짜 경쟁자로 센다 (shareMode="quality"에서만).
+   *
+   * 2026-09-16 사용자 실무 의견: "거리는 유효거리안에있으면 거리가 크게작용안한다는게
+   * 실무의견이고, 매장의 품질이 (점수)가 작용되어야함". 자료도 이쪽을 지지한다 —
+   * 지수 감쇠(최선 r=0.510)보다 **계단**(r=0.560)이 낫다.
+   *
+   * ⚠️ **300m은 잠정값이다.** 300·400·500m가 MAPE로 30.1~30.5%라 구별이 안 된다.
+   *    300을 고른 근거는 상관(0.560 vs 400m 0.434)과 실무 의견뿐이다. 표본이 늘면 여기부터
+   *    다시 본다. 근거: `_competitionDesign.test.ts` 검정 2·5.
+   */
+  effectiveRadiusM: number;
+  /**
+   * **품질 지수 θ** — 품질 차이를 얼마나 세게 볼지 (shareMode="quality"에서만).
+   *
+   * θ=3은 두 경로가 독립으로 만난 값이다. 자료로 고른 최선이 3이고, 사용자가 매출 변화폭에서
+   * 역산한 값이 2.74~4.92·중앙 3.25다. **감각은 매출액, 측정은 가동률 — 경로가 완전히 다르다.**
+   *
+   * ⚠️ θ가 하는 일의 상당 부분은 **수준 보정**이다. 자사/경쟁 품질비가 1.75인데 1.75³=5.36이고,
+   *    이는 최적 상수배율 λ=5와 같은 값이다. "θ가 오차를 줄였다"고 읽으면 안 된다 —
+   *    θ가 줄인 건 수준이고, 남긴 건 **순서**다(r 0.223 → 0.560).
+   */
+  qualityExponent: number;
+  /**
+   * **경쟁력점수 비중** — 사양·먹거리·존구성·인테리어·관리 (shareMode="quality"에서만).
+   *
+   * 합이 1이 아니어도 된다. 있는 항목만 모아 그 합으로 나눠 쓴다(결측 항목은 자동 제외).
+   *
+   * 기본값은 **실무 감각 비중**이다. 2026-09-16 사용자 지적대로 기존 비중은 적중률 튜닝
+   * 산물이고("지금 적용한값을 적중률 맞출려고 조정하다보니 저래된고고"), 교과서식은 회귀로
+   * 덮지 않는 게 목적이다. 정확도 비용도 없다 — 세 벌을 돌려도 r이 0.553~0.561로 차이 0.008이다.
+   *
+   * ⚠️ **입지는 여기 없다.** 사용자 방향대로 항목·평가값·개념을 전부 다시 만든 뒤 넣는다.
+   *    실무 감각 비중에서 입지 몫은 17.0%였고, 나머지 넷이 그 몫을 나눠 갖고 있는 상태다.
+   */
+  qualityWeights: { spec: number; food: number; zone: number; interior: number; management: number };
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
+
+/** 경쟁력점수를 이루는 다섯 항목. 없는 항목은 null로 두면 비중에서 자동으로 빠진다. */
+export type QualityParts = {
+  spec: number | null;
+  food: number | null;
+  zone: number | null;
+  interior: number | null;
+  management: number | null;
+};
+
+/**
+ * 경쟁력점수 — 있는 항목만 비중대로 섞는다. 자사·경쟁점에 **같은 함수**를 쓴다.
+ *
+ * ⚠️ 구성 점수(사양·존구성)는 저장 필드가 아니라 **파생값**이다. 원자료에서
+ *    `computeSpecScore` / `computeOwnZoneComposition` / `computeCompetitorZoneComposition`으로
+ *    계산해서 넣어야 한다. 2026-09-16에 이걸 "결측"으로 읽어 한 번 틀렸다.
+ */
+export function computeQualityScore(parts: QualityParts, w: TextbookParams["qualityWeights"]): number | null {
+  const items: [number | null, number][] = [
+    [parts.spec, w.spec], [parts.food, w.food], [parts.zone, w.zone],
+    [parts.interior, w.interior], [parts.management, w.management],
+  ];
+  let num = 0, den = 0;
+  for (const [v, weight] of items) {
+    if (v == null || !Number.isFinite(v) || !(weight > 0)) continue;
+    num += v * weight; den += weight;
+  }
+  return den > 0 ? num / den : null;
+}
 
 /**
  * 2026-09-16 확정본. 근거는 `docs/handoff-20260916-evening.md` 2절.
@@ -296,9 +365,14 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 2026-09-16 저녁(3)부터 이 지수는 PC몫에만 걸린다(상품몫은 정가와 무관).
   rateElasticity: 0.546,
   referenceHourlyRate: 1343,
-  // 2026-09-16 밤 — 경쟁 항이 아무것도 설명하지 못한다는 게 드러나 **끈 상태로 시작**한다.
-  // 화면의 "필요 점유율"로 수요식을 먼저 2차 검증한 뒤, 경쟁 항을 다시 세운다.
-  shareMode: "off",
+  // 2026-09-17 — 새 경쟁 항이 홀드아웃·대조군을 통과해 **품질 모드가 기본값**이 됐다.
+  // 끄기(off)는 여전히 쓸모가 있다 — 화면의 "필요 점유율"이 그 모드로 계산된다.
+  shareMode: "quality",
+  effectiveRadiusM: 300,
+  qualityExponent: 3,
+  // 실무 감각 비중(입지 17.0% 제외, 시설 34.0%를 존구성 23.8 + 인테리어 10.2로 나눈 값).
+  // 합이 0.83인 건 입지 몫이 빠져서다 — computeQualityScore가 있는 항목의 합으로 나눈다.
+  qualityWeights: { spec: 0.264, food: 0.075, zone: 0.238, interior: 0.102, management: 0.151 },
   // 2026-09-16 측정값. 표본 2~5곳이라 확정값이 아니다 — 조절판에서 돌려볼 것.
   specialDemandMultipliers: { "군부대": 2.25, "대학가": 1.45, "산업단지": 1.39, "기타": 1.25, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
   maxUtilization: 0.55,
@@ -321,6 +395,20 @@ export type TextbookInput = {
   actualUtilization: number | null;
   competitivenessGap: number | null;
   competitorIp: number | null;
+  /**
+   * **자사 경쟁력 항목별 점수** — 합친 점수가 아니라 **항목별 원점수**를 넣는다
+   * (shareMode="quality"용). 비중이 조절판에서 바뀌면 점수도 같이 바뀌어야 하기 때문이다.
+   * null이면 품질 항을 통째로 빼고 비례 배분한다("모른다 = 중립").
+   */
+  ownQualityParts: QualityParts | null;
+  /**
+   * **경쟁점 한 곳씩** — 거리·PC수·항목별 점수 (shareMode="quality"용).
+   *
+   * ⚠️ 합계인 `competitorIp`와 달리 **거리로 걸러야 하므로 낱개가 필요하다.** 그리고
+   *    `competitorIp`는 미조사 500m 점포를 100대로 추정해 채우는데(`computeCompetitorIp`),
+   *    그런 점포는 거리도 품질도 없어서 여기 못 들어온다. 두 값은 일부러 다르다.
+   */
+  rivals: { ip: number; distanceM: number | null; parts: QualityParts | null }[] | null;
   /** 특수수요 유형 — "군부대"/"대학가"/"산업단지"/"관광·유흥"/"기타"/"없음". 수요 배수에 쓴다. */
   specialDemandType: string | null;
   /** 상권 흡인력 계산용. 조사된 경쟁점 수(IP가 아니라 점포 수). */
@@ -450,10 +538,42 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   if (!pc) { missing.push("PC대수"); return { ...empty, residentDemandUsers: residentUsers, floatingDemandUsers: floatingUsers, totalDemandUsers: totalUsers, totalDemandHours: totalHours }; }
   const gap = input.competitivenessGap ?? 1;
   const rivalIp = input.competitorIp ?? 0;
-  const ownWeight = pc * Math.pow(gap, p.gapExponent);
-  // 분모의 outsideOptionIp가 "PC방을 안 가는 몫"이다. 이게 없으면 경쟁점 0곳일 때
-  // 점유율이 100%가 되어 동네 수요를 통째로 먹는다.
-  const denom = ownWeight + rivalIp + p.outsideOptionIp;
+  let ownWeight: number;
+  let denom: number;
+  if (p.shareMode === "quality") {
+    // 품질 모드 — 유효거리 안의 경쟁점만 세고, 각자의 품질을 지수만큼 올려 겨룬다.
+    //
+    //   점유율 = 자사PC x 자사품질^θ ÷ (자사PC x 자사품질^θ + Σ[d≤R] 경쟁PC x 경쟁품질ᵢ^θ)
+    //
+    // 품질의 **기준값은 약분된다** — 분자·분모를 같은 수로 나눠도 비가 안 변하기 때문이다.
+    // 그래서 "몇 점 만점"인지는 상관없고 자사/경쟁의 **비**만 작용한다.
+    //
+    // 자료가 없을 때는 "모른다 = 중립"으로 둔다. 자사 품질을 모르면 품질 항을 통째로 빼고
+    // (비례 배분), 경쟁점 품질을 모르면 그 경쟁점을 자사와 같은 품질로 본다. 어느 쪽도
+    // 결측을 유리/불리로 해석하지 않는다.
+    // 비중은 조절판에서 바뀌므로 점수를 여기서 매번 만든다.
+    const oq = input.ownQualityParts ? computeQualityScore(input.ownQualityParts, p.qualityWeights) : null;
+    // 자사 품질로 정규화한다 — 그러면 자사 항이 정확히 pc가 되고 경쟁점만 배율을 갖는다.
+    const ratio = (parts: QualityParts | null) => {
+      if (oq == null || !(oq > 0) || !parts) return 1;
+      const v = computeQualityScore(parts, p.qualityWeights);
+      return v == null || !(v > 0) ? 1 : v / oq;
+    };
+    ownWeight = pc;
+    let rivalWeight = 0;
+    for (const r of input.rivals ?? []) {
+      if (!(r.ip > 0)) continue;
+      // 거리를 모르면 유효거리 안으로 본다 — 경쟁점을 빼는 쪽이 아니라 세는 쪽이 보수적이다.
+      if (r.distanceM != null && r.distanceM > p.effectiveRadiusM) continue;
+      rivalWeight += r.ip * Math.pow(ratio(r.parts), p.qualityExponent);
+    }
+    denom = ownWeight + rivalWeight + p.outsideOptionIp;
+  } else {
+    ownWeight = pc * Math.pow(gap, p.gapExponent);
+    // 분모의 outsideOptionIp가 "PC방을 안 가는 몫"이다. 이게 없으면 경쟁점 0곳일 때
+    // 점유율이 100%가 되어 동네 수요를 통째로 먹는다.
+    denom = ownWeight + rivalIp + p.outsideOptionIp;
+  }
   // shareMode="off"면 점유율을 아예 1로 둔다 — 경쟁 항을 통째로 들어낸 상태다.
   // 그러면 화면의 "필요 점유율"(실측가동률 ÷ 이 예측)이 **이 매장이 실제로 먹은 몫**이 되고,
   // 그 값으로 수요식을 2차 검증할 수 있다(2026-09-16 사용자 설계).

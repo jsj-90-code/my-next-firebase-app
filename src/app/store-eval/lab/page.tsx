@@ -19,6 +19,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   computeCompetitorIp,
+  computeSpecScore,
+  computeOwnZoneComposition,
+  computeCompetitorZoneComposition,
   summarizeValidationRows,
   computeCompetitorInvestigationSummary,
   type ValidationStoreInput,
@@ -32,11 +35,67 @@ import {
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
   DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, scoreTextbook,
-  type FloatingRadius, type ResidentRadius, type TextbookInput, type TextbookParams, type TextbookScore,
+  type FloatingRadius, type QualityParts, type ResidentRadius, type TextbookInput,
+  type TextbookParams, type TextbookScore,
 } from "@/lib/storeEval/textbookModel";
 import type { Competitor, ExistingStore, ModelSettings } from "@/lib/storeEval/types";
 
 type LabRow = { input: TextbookInput; actualRevenue: number };
+
+// ── 경쟁력 항목별 점수 뽑기 (2026-09-17) ──────────────────────────────────
+//
+// ⚠️ 사양·존구성은 **저장 필드가 아니라 파생값**이다. 스냅샷에 `ownSpecScore`가 없다고
+//    "자료 없음"으로 읽어 2026-09-16에 한 번 틀렸다. 원자료는 멀쩡히 있고, 운영 산식과
+//    **같은 함수**로 계산해야 자사·경쟁점이 같은 자에 놓인다.
+//
+// ⚠️ 입지는 여기 없다. 사용자 방향대로 항목·평가값·개념을 전부 다시 만든 뒤 넣는다.
+function ownQualityParts(s: ExistingStore, pc: number | null, settings: ModelSettings): QualityParts {
+  const zone = computeOwnZoneComposition({
+    counts: {
+      singleSeatCount: s.ownSingleSeatCount ?? null, room1: s.ownRoom1 ?? null, room2: s.ownRoom2 ?? null,
+      teamRoom: s.ownTeamRoom ?? null, coupleZone: s.ownCoupleZone ?? null, vipZone: s.ownVipZone ?? null,
+      friendsZone: s.ownFriendsZone ?? null, firstClassZone: s.ownFirstClassZone ?? null,
+    },
+    teamRoomTotalSeats: s.ownTeamRoomTotalSeats ?? null, totalPcCount: pc,
+  });
+  return {
+    spec: computeSpecScore({
+      vgaBase: s.ownVgaBase ?? null, vgaTop: s.ownVgaTop ?? null, vgaTop2: s.ownVgaTop2 ?? null,
+      cpu: s.ownCpu ?? null, cpuTop1: s.ownCpuTop1 ?? null, cpuTop2: s.ownCpuTop2 ?? null,
+      ram: s.ownRam ?? null, ramTop: s.ownRamTop ?? null,
+      monitorBase: s.ownMonitorBase ?? null, monitorTop: s.ownMonitorTop ?? null,
+    }, settings),
+    food: s.ownFoodScore ?? null,
+    zone: zone.composition,
+    interior: s.ownInteriorScore ?? null,
+    management: s.ownManagementScore ?? null,
+  };
+}
+
+function rivalQualityParts(c: Competitor, settings: ModelSettings): QualityParts {
+  const zone = computeCompetitorZoneComposition({
+    counts: {
+      singleSeatCount: c.singleSeatCount ?? null, room1: c.room1 ?? null, room2: c.room2 ?? null,
+      teamRoom: c.teamRoom ?? null, coupleZone: c.coupleZone ?? null, vipZone: c.vipZone ?? null,
+      friendsZone: c.friendsZone ?? null, firstClassZone: c.firstClassZone ?? null,
+    },
+    regularCoupleSeatCount: c.regularCoupleSeatCount ?? null,
+    teamRoomTotalSeats: c.teamRoomTotalSeats ?? null,
+    totalPcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
+  });
+  return {
+    spec: computeSpecScore({
+      vgaBase: c.vgaBase ?? null, vgaTop: c.vgaTop ?? null, vgaTop2: c.vgaTop2 ?? null,
+      cpu: c.cpu ?? null, cpuTop1: c.cpuTop1 ?? null, cpuTop2: c.cpuTop2 ?? null,
+      ram: c.ram ?? null, ramTop: c.ramTop ?? null,
+      monitorBase: c.monitorBase ?? null, monitorTop: c.monitorTop ?? null,
+    }, settings),
+    food: c.foodScore ?? null,
+    zone: zone.composition,
+    interior: c.interiorScore ?? null,
+    management: c.managementScore ?? null,
+  };
+}
 type Loaded = {
   rows: LabRow[];
   /** 지금 운영 산식의 성적. 비교 기준선으로만 쓴다. */
@@ -116,6 +175,17 @@ async function loadLabData(): Promise<Loaded | null> {
         competitivenessGap: s.competitivenessGap,
         competitorIp: computeCompetitorIp(cs, s.operatingPcStores500m ?? null),
         competitorCount: cs.filter((c) => c.investigationStatus !== "경쟁점없음").length,
+        // 품질 모드용 — 거리로 걸러야 하므로 합계가 아니라 낱개로 넘긴다.
+        ownQualityParts: ownQualityParts(s, s.evaluationPcCount ?? s.pcCount, settings),
+        rivals: cs
+          .filter((c) => c.investigationStatus !== "경쟁점없음")
+          .map((c) => ({
+            // 경쟁점 pcCount는 전 문서가 0이다 — appliedPcCount/totalPcCount를 써야 한다.
+            ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0),
+            distanceM: c.distanceM ?? null,
+            parts: rivalQualityParts(c, settings),
+          }))
+          .filter((r) => r.ip > 0),
         pop500m: s.pop500m, pop1km: s.pop1km,
         // 연령별 이용률을 지역 성비로 섞는 데 쓴다(2026-09-16). 성별 x 연령 교차 자료는
         // 존재하지 않으므로 "연령대 안 성비 = 지역 전체 성비"로 근사한다.
@@ -409,6 +479,29 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
                 그 동네 수요를 과소평가했다는 뜻입니다.
               </div>
             </>
+          ) : p.shareMode === "quality" ? (
+            <>
+              <div className="mt-1 font-mono text-[11px]">
+                점유율 = 자사PC ÷ (자사PC + Σ<sub>[{p.effectiveRadiusM}m 안]</sub> 경쟁PC × (경쟁품질÷자사품질)<sup>{p.qualityExponent}</sup>)
+                {p.outsideOptionIp > 0 ? ` + 안가는몫 ${p.outsideOptionIp}` : ""}
+              </div>
+              <div className="mt-1">
+                <b>유효거리 {p.effectiveRadiusM}m 안</b>에 있는 경쟁점만 진짜 경쟁자로 셉니다. 그 안에서는
+                거리가 아니라 <b>품질이 가릅니다</b> — 실무 의견이고 자료도 그쪽입니다(지수 감쇠는
+                r=0.510, 계단은 0.560).
+              </div>
+              <div className="mt-1">
+                품질 지수 <b>{p.qualityExponent}</b>는 두 경로가 따로 찾아와 만난 값입니다. 자료로 고른
+                최선이 3이고, 매출 변화폭에서 역산한 값이 2.74~4.92·중앙 3.25입니다.
+                <b> 감각은 매출액, 측정은 가동률 — 경로가 완전히 다릅니다.</b>
+              </div>
+              <div className="mt-1">
+                ⚠️ 이 항이 잘하는 건 <b>순서</b>지 오차 크기가 아닙니다. 실측 점유율과의 상관이
+                0.223(상수배율) → <b>0.560</b>으로 오르지만, MAPE는 31.9% → 30.5%로 거의 안 줍니다.
+                실측 점유율에 수요식 오차가 섞여 있어서입니다. 그래서 <b>{p.effectiveRadiusM}m는 잠정값</b>
+                입니다 — 300·400·500m가 MAPE로 구별되지 않습니다.
+              </div>
+            </>
           ) : (
             <>
               <div className="mt-1 font-mono text-[11px]">
@@ -416,10 +509,11 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
                 {p.outsideOptionIp > 0 ? ` + 안가는몫 ${p.outsideOptionIp}` : ""}
               </div>
               <div className="mt-1">
-                지수 <b>{p.gapExponent}</b>는 원래 <b>쏠림</b>을 뜻하려던 값입니다. 그런데 2026-09-16
-                검정에서 <b>쏠림이 아니라 수준 보정</b>이라는 게 드러났습니다 — 격차를 아예 빼고 상수
-                배율 4만 써도 점유율 MAPE가 32.6%로 격차^4의 32.0%와 같습니다. 홀드아웃에서도
-                무너집니다(표본 안 29.08% → LOO 36.20%, 무작위 대조군 p=0.072).
+                <b>기각된 구조입니다(비교용).</b> 지수 <b>{p.gapExponent}</b>는 원래 <b>쏠림</b>을
+                뜻하려던 값인데, 2026-09-16 검정에서 <b>쏠림이 아니라 수준 보정</b>이라는 게
+                드러났습니다 — 격차를 아예 빼고 상수 배율 4만 써도 점유율 MAPE가 32.6%로 격차^4의
+                32.0%와 같습니다. 홀드아웃에서도 무너집니다(표본 안 29.08% → LOO 36.20%,
+                무작위 대조군 p=0.072). 격차와 실측 점유율의 상관은 <b>r=0.025</b>입니다.
               </div>
             </>
           )}
@@ -545,27 +639,59 @@ function Controls({
 
         <div className="mb-3 rounded-lg border border-[#171310]/10 p-3 dark:border-white/10">
           <p className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">점유율 환산</p>
-          <div className="mt-2 flex gap-2">
-            {(["off", "formula"] as const).map((mode) => (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(["quality", "off", "formula"] as const).map((mode) => (
               <button key={mode} type="button" onClick={() => set("shareMode", mode)}
                 className={`rounded-md px-3 py-1.5 text-xs font-medium ${p.shareMode === mode
                   ? "bg-[#171310] text-white dark:bg-[#f2ede2] dark:text-[#171310]"
                   : "border border-[#171310]/15 text-[var(--sl-ink-soft)] dark:border-white/15"}`}>
-                {mode === "off" ? "끄기 (점유율 100%)" : "산식 (격차^지수)"}
+                {mode === "quality" ? "품질 (유효거리+지수)" : mode === "off" ? "끄기 (점유율 100%)" : "격차^지수 (기각됨)"}
               </button>
             ))}
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-[var(--sl-ink-soft)]">
-            <b>끄기</b>가 기본값입니다. 2026-09-16 점검에서 지금 점유율 환산이 실측 점유율을
-            아무것도 설명하지 못한다는 게 드러났습니다 — 경쟁력격차 r=0.025 · 사양 −0.062 ·
-            입지 0.075~0.220으로 전부 유의선 0.371 미달이고, 수준도 안 맞습니다
-            (자사PC÷(자사PC+경쟁IP) 중앙 0.186 vs 실측 0.519).
-            그래서 <b>경쟁 항을 들어낸 상태에서 수요식부터 2차 검증</b>합니다.
+            <b>품질</b>이 기본값입니다(2026-09-17). 유효거리 안의 경쟁점만 품질로 겨룹니다 —
+            홀드아웃에서 표본 안 30.5% → LOO 31.1%로 거의 안 벌어지고, 자유계수 둘이 각자 따로
+            무작위 대조군을 통과했습니다(품질 p=0.016 · 거리 p=0.016).
+            <br />
+            <b>끄기</b>는 아래 표의 <b>필요 점유율</b>을 만드는 모드입니다 — 경쟁을 0으로 놓았을 때의
+            예측이라, 실측가동률 ÷ 그 값이 <b>이 매장이 실제로 먹은 몫</b>이 됩니다.
+            <br />
+            <b>격차^지수</b>는 <b>기각된 구조</b>입니다. 비교용으로만 남겨 둡니다(LOO 29.08% → 36.20%,
+            대조군 p=0.072, 격차와 실측 점유율의 상관 r=0.025).
           </p>
         </div>
-        <Slider label="경쟁력격차 지수" value={p.gapExponent} min={0} max={4} step={0.1}
-          onChange={(v) => set("gapExponent", v)}
-          hint="1이면 기존 구조와 같습니다. 높일수록 경쟁력 차이를 세게 봅니다." />
+        {p.shareMode === "quality" ? (
+          <>
+            <Slider label="유효거리 (m)" value={p.effectiveRadiusM} min={100} max={1000} step={50}
+              onChange={(v) => set("effectiveRadiusM", v)}
+              hint="이 안의 경쟁점만 진짜 경쟁자로 셉니다. 300m은 잠정값입니다 — 300·400·500m가 MAPE로 구별되지 않고(30.1~30.5%), 300을 고른 근거는 상관(0.560 vs 400m 0.434)과 실무 의견뿐입니다." />
+            <Slider label="품질 지수 θ" value={p.qualityExponent} min={0} max={6} step={0.5}
+              onChange={(v) => set("qualityExponent", v)}
+              hint="0이면 품질을 안 봅니다(PC대수 비례 배분). 3은 자료가 고른 최선이자 매출 변화폭 역산 중앙값(3.25)입니다. θ가 하는 일의 상당 부분은 수준 보정입니다 — 자사/경쟁 품질비 1.75의 세제곱이 5.36이고 최적 상수배율 λ=5와 같은 값입니다." />
+            <div className="mb-3 rounded-lg border border-[#171310]/10 p-3 dark:border-white/10">
+              <p className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁력점수 비중</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--sl-ink-soft)]">
+                기본값은 <b>실무 감각 비중</b>입니다 — 기존 비중은 적중률을 맞추려고 조정한
+                산물이라 뜻이 없습니다. <b>정확도 비용도 없습니다</b>: 세 벌을 돌려도 실측과의
+                상관이 0.553~0.561로 차이가 0.008입니다. 자사는 먹거리·인테리어·관리가 전부 4점
+                상수라 비중을 바꿔도 상대 위치가 안 변하고, 경쟁점은 구성요소끼리 같이 움직입니다.
+                <br />
+                ⚠️ <b>입지는 빠져 있습니다.</b> 항목·평가값·개념을 전부 다시 만든 뒤 넣습니다.
+                실무 감각에서 입지 몫은 17.0%였고, 지금은 나머지 넷이 그 몫을 나눠 갖고 있습니다.
+              </p>
+              {([["spec", "사양"], ["food", "먹거리"], ["zone", "존구성"], ["interior", "인테리어"], ["management", "관리"]] as const).map(([k, label]) => (
+                <Slider key={k} label={`${label} 비중`} value={p.qualityWeights[k]} min={0} max={0.6} step={0.001}
+                  onChange={(v) => set("qualityWeights", { ...p.qualityWeights, [k]: v })}
+                  hint={k === "spec" ? "합이 1이 아니어도 됩니다 — 있는 항목만 모아 그 합으로 나눠 씁니다. 결측 항목은 자동으로 빠집니다." : undefined} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <Slider label="경쟁력격차 지수" value={p.gapExponent} min={0} max={4} step={0.1}
+            onChange={(v) => set("gapExponent", v)}
+            hint="1이면 기존 구조와 같습니다. 높일수록 경쟁력 차이를 세게 봅니다. (기각된 구조입니다 — 비교용)" />
+        )}
 
         <h2 className="mt-5 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">3단계 · 매출</h2>
         <Slider label="정가 탄력도" value={p.rateElasticity} min={0} max={1} step={0.001}
