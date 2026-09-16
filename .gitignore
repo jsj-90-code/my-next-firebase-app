@@ -95,6 +95,7 @@ src/**/_*.test.ts
 !src/lib/storeEval/_ageWeights.test.ts
 !src/lib/storeEval/_genderCross.test.ts
 !src/lib/storeEval/_revenueConversion.test.ts
+!src/lib/storeEval/_shareAudit.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
