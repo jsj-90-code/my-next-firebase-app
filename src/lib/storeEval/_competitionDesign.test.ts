@@ -41,6 +41,18 @@
 // r이 0.372 -> 0.560으로 오르고 편향이 +10.4% -> -3.3%로 거의 사라진다 — gamma=4 반창고가
 // 필요 없어진다. **유효거리 계단이 지수 감쇠(최선 r=0.510)보다도 낫다.**
 //
+// 3) **비중은 정확도로 못 가른다.** 세 벌을 돌려도 r이 0.553~0.561로 차이가 0.008이다:
+//      현재(튜닝)  사양25·먹거리5·존구성27.5·인테리어16.5·관리11   θ=3  편향 -3.4%  r=0.561
+//      실무감각    사양26.4·먹거리7.5·존구성23.8·인테리어10.2·관리15.1 θ=3 편향 -5.5% r=0.554
+//      실무감각-존구성↑                                        θ=3  편향 +0.3%  r=0.553
+//    자사는 먹거리·인테리어·관리가 전부 4점 상수라 비중을 바꿔도 상대 위치가 안 변하고,
+//    경쟁점은 구성요소끼리 같이 움직인다(좋은 매장은 다 좋다).
+//
+//    **그래서 정확도 비용 없이 뜻이 있는 비중을 쓸 수 있다.** 사용자 지적대로 현재 비중은
+//    적중률 튜닝 산물이다("지금 적용한값을 적중률 맞출려고 조정하다보니 저래된고고",
+//    settings.ts에도 그리드서치 기록이 있다). 교과서식은 회귀로 덮지 않는 게 목적이므로
+//    **실무 감각 비중을 쓴다.** θ=3은 세 비중 모두에서 최선이라 안정적이다.
+//
 // ⚠️ 아직 홀드아웃·대조군 검정을 안 했다. d0와 θ 둘 다 자유계수라 과적합 확인이 필요하다.
 // ⚠️ 입지는 의도적으로 뺐다. 사용자 방향대로 개념부터 다시 만든 뒤 넣는다.
 import { describe, it, expect } from "vitest";
@@ -125,10 +137,13 @@ describe("Huff 설계 후보", () => {
             monitorBase: c.monitorBase ?? null, monitorTop: c.monitorTop ?? null,
           }, set);
           const fac = computeFacilityScore({ zoneComposition: z.composition, interiorScore: c.interiorScore ?? null, managementScore: c.managementScore ?? null }, set);
-          return { ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: Number(c.distanceM ?? 0), score: scoreOf(sp, c.foodScore ?? null, fac) };
+          return { ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: Number(c.distanceM ?? 0),
+            score: scoreOf(sp, c.foodScore ?? null, fac),
+            parts: { spec: sp, food: c.foodScore ?? null, zone: z.composition, interior: c.interiorScore ?? null, mgmt: c.managementScore ?? null } };
         })
         .filter((r) => r.ip > 0);
       rows.push({ n: s.storeName, pc, ownScore: scoreOf(ownSpec, s.ownFoodScore ?? null, ownFac), rivals,
+        ownParts: { spec: ownSpec, food: s.ownFoodScore ?? null, zone: ownZone.composition, interior: s.ownInteriorScore ?? null, mgmt: s.ownManagementScore ?? null },
         demand: pop + env * 0.15, util: mean(g.rows.map((r: any) => r.monthlyRate)) });
     }
     const mono = rows.filter((r) => !r.rivals.length);
@@ -177,6 +192,37 @@ describe("Huff 설계 후보", () => {
     const bestR = all.reduce((x, y) => (y.rr > x.rr ? y : x));
     console.log(`\n  MAPE 최선: ${best.label} θ=${best.th} · MAPE ${(best.m * 100).toFixed(1)}% · r=${best.rr.toFixed(3)}`);
     console.log(`  상관 최선: ${bestR.label} θ=${bestR.th} · MAPE ${(bestR.m * 100).toFixed(1)}% · r=${bestR.rr.toFixed(3)}`);
+
+    // ── 비중 두 벌 비교 (2026-09-16) ────────────────────────────────────
+    // 사용자: "지금 적용한값을 적중률 맞출려고 조정하다보니 저래된고고" — 현재 비중은
+    // 그리드서치 산물이지 실무 근거가 아니다. 실무 감각 비중과 나란히 놓고 본다.
+    // 입지는 뺀 상태라 나머지 넷을 재정규화해서 쓴다.
+    const SETS: [string, { spec: number; food: number; zone: number; interior: number; mgmt: number }][] = [
+      ["현재(튜닝)", { spec: .25, food: .05, zone: .275, interior: .165, mgmt: .11 }],
+      ["실무감각", { spec: .264, food: .075, zone: .238, interior: .102, mgmt: .151 }],
+      ["실무감각-존구성↑", { spec: .22, food: .075, zone: .32, interior: .08, mgmt: .151 }],
+    ];
+    const mk = (P: any, w: any) => {
+      const it = ([[P.spec, w.spec], [P.food, w.food], [P.zone, w.zone], [P.interior, w.interior], [P.mgmt, w.mgmt]] as [number | null, number][])
+        .filter((x): x is [number, number] => x[0] != null);
+      return it.length ? it.reduce((a, [v, ww]) => a + v * ww, 0) / it.reduce((a, [, ww]) => a + ww, 0) : null;
+    };
+    console.log(`
+[비중 두 벌 비교] 유효거리 300m 계단 고정, θ 훑기`);
+    console.log(`${"비중".padStart(18)}${"θ".padStart(4)}${"편향".padStart(9)}${"MAPE".padStart(8)}${"실측과 r".padStart(10)}`);
+    for (const [nm, w] of SETS) {
+      const D2 = med(rows.flatMap((r: any) => r.rivals.map((x: any) => mk(x.parts, w))).filter((v: any) => v != null) as number[]);
+      for (const th of [2, 3, 4]) {
+        const sh = (r: any) => {
+          const os = mk(r.ownParts, w) ?? D2;
+          const own = r.pc * Math.pow(os / D2, th);
+          const riv = r.rivals.reduce((a: number, x: any) => a + (x.d <= 300 ? x.ip * Math.pow((mk(x.parts, w) ?? D2) / D2, th) : 0), 0);
+          return own / (own + riv);
+        };
+        const e = cmp.map((r) => sh(r) / r.shareObs - 1);
+        console.log(`${nm.padStart(18)}${String(th).padStart(4)}${(mean(e) * 100).toFixed(1).padStart(8)}%${(mean(e.map(Math.abs)) * 100).toFixed(1).padStart(7)}%${pear(cmp.map(sh), cmp.map((r) => r.shareObs)).toFixed(3).padStart(10)}`);
+      }
+    }
     console.log(`  (비교) 지금 산식 격차^4: MAPE 32.0% · 실측 점유율 중앙 ${med(cmp.map((r: any) => r.shareObs)).toFixed(3)}`);
     expect(cmp.length).toBeGreaterThan(20);
   });
