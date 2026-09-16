@@ -72,6 +72,34 @@
 //    -> **"올라오기 번거롭다"가 맞고 "경쟁점과 비교당한다"는 아니다.** 경쟁점 층수는 안 봐도 된다.
 //    ⚠️ 표본 27곳이고 자사가 층수에서 불리한 곳이 14곳뿐이다. 표본이 늘면 다시 본다.
 //
+// ⑦ **"상권 끝"은 실재한다 — 두 출처가 일치한다.** (사용자 항목 ①)
+//    중심도 = (안쪽 개수 ÷ 넓은 개수) x (넓은반경/안쪽반경)²  — 1보다 크면 문 앞이 빽빽하다.
+//
+//      유동인구(소상공인365) ↔ 업소밀도(카카오)  **r=0.697** (순위 0.687, n=29)
+//
+//    출처가 완전히 다른데 이만큼 일치한다. **사용자 항목 ①은 측정 가능한 실체다.**
+//
+//    실측 검정(층수 항 κ=0.25를 반영한 뒤의 잔차와의 상관):
+//      **유동 300m/1km   r=0.601 * (시점통제 0.604 *)**  <- 제일 강하다
+//      유동 100m/1km     r=0.430 * (시점통제 0.429 *)
+//      카카오 음식점 300m/1km 0.339  · 100m/1km 0.147
+//    -> **유동인구 쪽이 훨씬 강하다.** 가게가 모여 있는 것과 사람이 다니는 건 다르고,
+//       PC방 수요는 후자에 달렸다. 카카오는 **정의를 검증**하는 데 쓰고, 산식에 넣을 값은
+//       유동인구로 만든다.
+//    (300m가 100m보다 훨씬 나은 것도 눈에 띈다 — 경쟁 항의 유효거리 300m와 같은 값이다)
+//
+// ⑧ **수요식 반경의 그림자가 아니다.** 붙잡기 전에 의심부터 했다 — 수요식이 유동을 400m로
+//    재는데 중심도가 유동 300m/1km의 비라서, "반경을 잘못 골랐다"가 중심도의 탈을 쓸 수 있다.
+//    수요식의 유동 반경을 바꿔가며 축척 A를 매번 다시 고정하고 다시 쟀다:
+//
+//      수요식 유동반경   100m   200m   300m   400m(지금)  500m   1000m
+//      유동 300m/1km   0.688* 0.637* 0.607*  0.601*     0.604* 0.681*
+//      카카오 300m/1km 0.443* 0.381* 0.344   0.339      0.342  0.430*
+//
+//    **어느 반경에서도 살아남는다.** 반경 선택 문제가 아니라 실재하는 입지 효과다.
+//    카카오 쪽은 약하지만 부호가 일관되게 양수다.
+//
+// ⚠️ ⑦⑧은 **상관까지만이다.** 항으로 만들어 LOO·5겹·대조군을 통과시키는 건 아직 안 했다.
 // ⚠️ 이건 **측정이지 채택이 아니다.** 입지 개념 재수립은 사용자 결정 사항이다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -491,5 +519,190 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     }
     console.log(`  -> μ를 올려 좋아지면 "비교당한다"가 맞고, κ만 남으면 "올라오기 번거롭다"가 맞다.`);
     expect(ok.length).toBeGreaterThan(15);
+  });
+
+  it("⑦ 상권 끝 vs 중심 — 두 출처로 만들어 교차검증한다", () => {
+    // 사용자 항목 ①: "상권 끝에있으면 접근성이 떨어지니까 이거 평가해야되고"
+    // 사용자 방향: "카카오API지금 활성화되어있으니까 이런걸로 교차검증하면어떨까"
+    //
+    // ── 정의 ──────────────────────────────────────────────────────────
+    // 상권 중심에 있으면 **우리 문 앞**이 붐비고, 끝에 있으면 우리 주변은 한산한데
+    // **조금 떨어진 곳**이 붐빈다. 그래서 "가까운 밀도 ÷ 넓은 밀도"로 잰다:
+    //
+    //   중심도 = (안쪽 100m 밀도) ÷ (전체 1km 밀도) = (안쪽 개수 ÷ 전체 개수) x 100
+    //
+    // 1보다 크면 우리 바로 앞이 상권 평균보다 빽빽하다(=중심), 작으면 한산하다(=끝).
+    //
+    // ── 왜 두 벌인가 ──────────────────────────────────────────────────
+    // 같은 자료로는 정의가 맞는지 확인할 수 없다. 출처를 갈라야 한다:
+    //   (가) 유동인구 — 소상공인365. "사람이 지나가나"
+    //   (나) 업소 밀도 — 카카오 FD6/CE7/CS2. "가게가 모여 있나"
+    // 둘이 같은 답을 내면 정의가 실재하는 것이고, 갈리면 내가 잘못 정의한 것이다.
+    const DENS = ".local-tools/kakao-place-density.json";
+    if (!existsSync(DENS)) { console.log(`\n${DENS}가 없다. node scripts/collectKakaoPlaceDensity.mjs 먼저.`); return; }
+    const K = JSON.parse(readFileSync(DENS, "utf8")).sites as Record<string, any>;
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const baseShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const key = (r: Row) => `existing:${r.store.storeCode}`;
+    /** 유동인구 반경 r의 최근 12개월 평균. */
+    const flo = (r: Row, rad: number): number | null => {
+      const sel = F[key(r)]?.radii?.[String(rad)]?.selected;
+      if (!sel?.length) return null;
+      return mean(sel.slice(-12));
+    };
+    const kak = (r: Row, code: string, rad: number): number | null => {
+      const v = K[key(r)]?.counts?.[code]?.[String(rad)];
+      return v == null ? null : Number(v);
+    };
+    /** 중심도 = (안쪽 개수 ÷ 넓은 개수) x (넓은반경/안쪽반경)^2 */
+    const centrality = (inner: number | null, outer: number | null, ri: number, ro: number) =>
+      inner == null || outer == null || !(outer > 0) ? null : (inner / outer) * (ro / ri) ** 2;
+
+    type M = { label: string; get: (r: Row) => number | null };
+    const measures: M[] = [
+      { label: "(가) 유동 100m/1km", get: (r) => centrality(flo(r, 100), flo(r, 1000), 100, 1000) },
+      { label: "(가) 유동 100m/500m", get: (r) => centrality(flo(r, 100), flo(r, 500), 100, 500) },
+      { label: "(가) 유동 300m/1km", get: (r) => centrality(flo(r, 300), flo(r, 1000), 300, 1000) },
+      { label: "(나) 음식점 100m/1km", get: (r) => centrality(kak(r, "FD6", 100), kak(r, "FD6", 1000), 100, 1000) },
+      { label: "(나) 음식점 300m/1km", get: (r) => centrality(kak(r, "FD6", 300), kak(r, "FD6", 1000), 300, 1000) },
+      { label: "(나) 음식+카페+편의 100m/1km", get: (r) => {
+        const i = ["FD6", "CE7", "CS2"].map((c) => kak(r, c, 100));
+        const o = ["FD6", "CE7", "CS2"].map((c) => kak(r, c, 1000));
+        if (i.some((v) => v == null) || o.some((v) => v == null)) return null;
+        return centrality(i.reduce((a, b) => a! + b!, 0), o.reduce((a, b) => a! + b!, 0), 100, 1000);
+      } },
+    ];
+
+    console.log(`\n[분포] 1보다 크면 우리 문 앞이 상권 평균보다 빽빽하다(=중심)`);
+    console.log(`${"지표".padEnd(30)}${"결측".padStart(6)}${"중앙".padStart(9)}${"범위".padStart(18)}${"변동계수".padStart(10)}`);
+    for (const m of measures) {
+      const v = cmp.map(m.get).filter((x): x is number => x != null);
+      console.log(`${m.label.padEnd(30)}${String(cmp.length - v.length).padStart(6)}${med(v).toFixed(2).padStart(9)}${`${Math.min(...v).toFixed(2)}~${Math.max(...v).toFixed(2)}`.padStart(18)}${(sd(v) / mean(v) * 100).toFixed(1).padStart(9)}%`);
+    }
+
+    // ── 교차검증 — 두 출처가 같은 답을 내는가 ─────────────────────────
+    console.log(`\n[교차검증] 유동인구(소상공인365) x 업소밀도(카카오) — 출처가 완전히 다르다`);
+    const A = measures[0], B = measures[3];
+    const pair = cmp.filter((r) => A.get(r) != null && B.get(r) != null);
+    const av = pair.map((r) => A.get(r)!), bv = pair.map((r) => B.get(r)!);
+    console.log(`  ${A.label} ↔ ${B.label}  r=${pear(av, bv).toFixed(3)}  (n=${pair.length}, 유의선 ${(2 / Math.sqrt(pair.length)).toFixed(3)})`);
+    console.log(`  순위로 보면 r=${pear(av.map((_, i) => av.filter((x) => x < av[i]).length), bv.map((_, i) => bv.filter((x) => x < bv[i]).length)).toFixed(3)}`);
+    const disagree = pair.map((r, i) => ({ n: r.n, a: av[i], b: bv[i] }))
+      .sort((x, y) => Math.abs(y.a - y.b) - Math.abs(x.a - x.b)).slice(0, 4);
+    console.log(`  가장 어긋나는 4곳: ${disagree.map((d) => `${d.n}(유동 ${d.a.toFixed(1)} vs 업소 ${d.b.toFixed(1)})`).join(" · ")}`);
+
+    // ── 실측 검정 — 품질 점유율이 남긴 오차를 설명하나 ─────────────────
+    console.log(`\n[실측 검정] 품질 점유율 잔차와의 상관 (층수 항 κ=0.25를 이미 반영한 뒤)`);
+    const ref = med(rows.map((r) => r.floorScore).filter((v): v is number => v != null));
+    const withFloor = (r: Row) => baseShare(r) * Math.pow((r.floorScore ?? ref) / ref, 0.25);
+    console.log(`${"지표".padEnd(30)}${"단순 r".padStart(10)}${"시점통제".padStart(10)}`);
+    for (const m of measures) {
+      const ok2 = cmp.filter((r) => m.get(r) != null);
+      if (ok2.length < 15) continue;
+      const x = ok2.map((r) => Math.log(m.get(r)!));
+      const y = ok2.map((r) => Math.log(r.shareObs / withFloor(r)));
+      const t = ok2.map((r) => r.t);
+      const sg = 2 / Math.sqrt(ok2.length);
+      const r1 = pear(x, y), r2 = partial(x, y, t);
+      console.log(`${m.label.padEnd(30)}${(r1.toFixed(3) + (Math.abs(r1) > sg ? " *" : "  ")).padStart(10)}${(r2.toFixed(3) + (Math.abs(r2) > sg ? " *" : "  ")).padStart(10)}`);
+    }
+    console.log(`  양수면 "상권 중심인데 예측이 낮다 = 중심 프리미엄을 덜 쳐줬다"는 뜻이다.`);
+    console.log(`  ⚠️ 유의선을 넘는 지표가 없으면 "상권 끝"은 이 자료로는 잡히지 않는 것이다.`);
+    expect(cmp.length).toBeGreaterThan(20);
+  });
+
+  it("⑧ 그 중심도가 정말 '입지'인가 — 수요식 반경의 그림자가 아닌가", () => {
+    // ⑦에서 유동 300m/1km 중심도가 잔차를 r=0.601*로 설명했다. 붙잡기 전에 **의심부터** 한다.
+    //
+    // 지금 수요식은 **주거 1km + 유동 400m x 0.15**다. 중심도는 유동 300m와 1km의 비다.
+    // 그러면 "유동을 400m로 재는 게 틀렸다"는 사실이 중심도의 탈을 쓰고 나타날 수 있다.
+    // 상권 끝 매장은 400m 안에 남의 상권이 섞여 수요가 부풀고, 그만큼 shareObs가 작아진다.
+    // **그건 입지가 아니라 반경 선택 문제다.**
+    //
+    // 가르는 법: 수요식의 유동 반경을 바꿔가며 중심도 효과가 살아남는지 본다.
+    //   살아남으면  -> 진짜 입지다 (반경과 무관하게 실재)
+    //   사라지면    -> 반경을 잘못 고른 것이다 (입지 항목이 아니라 수요식을 고쳐야 한다)
+    const DENS = ".local-tools/kakao-place-density.json";
+    if (!existsSync(DENS)) return;
+    const K = JSON.parse(readFileSync(DENS, "utf8")).sites as Record<string, any>;
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const key = (r: Row) => `existing:${r.store.storeCode}`;
+    const floAvg = (r: Row, rad: number): number | null => {
+      const sel = F[key(r)]?.radii?.[String(rad)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    /** 반경 rad로 유동 수요를 다시 만든다 — 본 산식의 연령·성비 가중을 그대로 쓴다. */
+    const floDemand = (r: Row, rad: number): number | null => {
+      const node = F[key(r)]?.radii?.[String(rad)];
+      if (!node?.selected?.length || !node.demographics) return null;
+      const last = node.selected[node.selected.length - 1];
+      const sc = last > 0 ? mean(node.selected.slice(-12)) / last : 1;
+      const d = node.demographics, FR = bl(d.total > 0 ? d.male / d.total : 0.5);
+      return ((d.age10s ?? 0) * FR.t + (d.age20s ?? 0) * FR.tw + (d.age30s ?? 0) * FR.th + (d.age40s ?? 0) * FR.f) * sc;
+    };
+    /** 주거 몫 = 지금 demand에서 유동 400m 몫을 걷어낸 나머지. */
+    const resiOf = (r: Row) => r.demand - (floDemand(r, 400) ?? 0) * 0.15;
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const ref = med(rows.map((r) => r.floorScore).filter((v): v is number => v != null));
+    const withFloor = (r: Row) => qualShare(r) * Math.pow((r.floorScore ?? ref) / ref, 0.25);
+
+    const cent = (r: Row, inner: number, outer: number) => {
+      const i = floAvg(r, inner), o = floAvg(r, outer);
+      return i == null || o == null || !(o > 0) ? null : (i / o) * (outer / inner) ** 2;
+    };
+    const centKakao = (r: Row) => {
+      const i = K[key(r)]?.counts?.FD6?.["300"], o = K[key(r)]?.counts?.FD6?.["1000"];
+      return i == null || o == null || !(o > 0) ? null : (Number(i) / Number(o)) * (1000 / 300) ** 2;
+    };
+
+    console.log(`\n수요식의 유동 반경을 바꿔가며 축척 A를 다시 맞추고, 중심도가 남는지 본다.`);
+    console.log(`(독점 ${rows.filter((r) => !r.rivals.length).length}곳으로 A를 매번 다시 고정한다 — 산식이 실제로 쓰는 설정)`);
+    console.log(`${"수요식 유동반경".padEnd(16)}${"n".padStart(4)}${"유동300/1km r".padStart(14)}${"시점통제".padStart(10)}${"카카오300/1km r".padStart(16)}`);
+    for (const rad of [100, 200, 300, 400, 500, 1000]) {
+      const built = rows.map((r) => {
+        const fd = floDemand(r, rad);
+        return { r, demand: fd == null ? null : resiOf(r) + fd * 0.15 };
+      }).filter((x): x is { r: Row; demand: number } => x.demand != null && x.demand > 0);
+      const mono2 = built.filter((x) => !x.r.rivals.length);
+      if (mono2.length < 2) continue;
+      const A2 = med(mono2.map((x) => x.r.util / (x.demand / (x.r.pc * 720))));
+      const cmp2 = built.filter((x) => x.r.rivals.length);
+      const obs = cmp2.map((x) => x.r.util / (A2 * x.demand / (x.r.pc * 720)));
+      const resid = cmp2.map((x, i) => Math.log(obs[i] / withFloor(x.r)));
+      const t = cmp2.map((x) => x.r.t);
+      const sg = 2 / Math.sqrt(cmp2.length);
+      const c1 = cmp2.map((x) => cent(x.r, 300, 1000));
+      const c2 = cmp2.map((x) => centKakao(x.r));
+      const use = (cv: (number | null)[]) => {
+        const idx = cv.map((v, i) => [v, i] as const).filter((p): p is readonly [number, number] => p[0] != null);
+        return { x: idx.map(([v]) => Math.log(v)), y: idx.map(([, i]) => resid[i]), t: idx.map(([, i]) => t[i]) };
+      };
+      const u1 = use(c1), u2 = use(c2);
+      const r1 = pear(u1.x, u1.y), r1p = partial(u1.x, u1.y, u1.t), r2 = pear(u2.x, u2.y);
+      const mark = (v: number) => v.toFixed(3) + (Math.abs(v) > sg ? " *" : "  ");
+      console.log(`${`${rad}m${rad === 400 ? " (지금)" : ""}`.padEnd(16)}${String(cmp2.length).padStart(4)}${mark(r1).padStart(14)}${mark(r1p).padStart(10)}${mark(r2).padStart(16)}`);
+    }
+    console.log(`  -> 모든 반경에서 살아남으면 진짜 입지다. 특정 반경에서만 뜨면 반경 선택 문제다.`);
+    console.log(`  ⚠️ 유동 300m/1km는 수요식이 유동을 300m로 재면 **정의상 수요와 겹친다** — 그 줄은 걸러 읽어라.`);
+    console.log(`     카카오 열은 수요식과 출처가 달라 그 겹침이 없다. **그 열이 진짜 판정이다.**`);
+    expect(cmp.length).toBeGreaterThan(20);
   });
 });
