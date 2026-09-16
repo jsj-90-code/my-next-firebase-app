@@ -63,6 +63,15 @@
 //    ⚠️ **r 기준으로 고르면 과적합한다** — κ=0.75가 LOO에서 33.0% -> 42.1%로 무너지고
 //       5겹에서 κ=2를 54% 고른다. **여기서는 MAPE 기준이 맞다**(경쟁 항과 반대다).
 //
+// ⑥ **"경쟁점 대비 층수"는 아니다 — "우리가 몇 층인가"만 작용한다.** (사용자 항목 ②)
+//    경쟁점 층수를 아는 27곳에서 품질 점유율 잔차와의 상관:
+//      자사 절대 층수   r=0.443 * (시점통제 0.413 *)   <- 이것만 걸린다
+//      자사 − 경쟁      r=0.410 * (시점통제 0.382)     <- 자사가 들어있어서 따라 올라간 값
+//      **경쟁 층수만    r=-0.004** (시점통제 -0.038)   <- 아무것도 아니다
+//    상대항 μ를 같이 넣으면 전부 나빠진다(κ=0.25·μ=0에서 MAPE 24.4%가 최선, μ를 올리면 28~35%).
+//    -> **"올라오기 번거롭다"가 맞고 "경쟁점과 비교당한다"는 아니다.** 경쟁점 층수는 안 봐도 된다.
+//    ⚠️ 표본 27곳이고 자사가 층수에서 불리한 곳이 14곳뿐이다. 표본이 늘면 다시 본다.
+//
 // ⚠️ 이건 **측정이지 채택이 아니다.** 입지 개념 재수립은 사용자 결정 사항이다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -419,5 +428,68 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
       console.log(`  [${crit === "mape" ? "MAPE" : "r"} 기준] 실제 ${f(real)} · 섞으면 중앙 ${f(med(gains))} · 95퍼센타일 ${f(gains[Math.floor(gains.length * 0.95)])} · p = ${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
     }
     expect(base.length).toBeGreaterThan(20);
+  });
+
+  it("⑥ 절대 층수인가 상대 층수인가 — 사용자 항목 ②", () => {
+    // 사용자(2026-09-17): "경재점이 지하1층 2층 이렇게되어있는데 우리점포는 5층 7층
+    // 이렇게되어있으면 이것도반영해야되고"
+    //
+    // ④~⑤에서 쓴 건 **자사 절대 층수**다. 사용자가 말한 건 **경쟁점 대비 상대 층수**다.
+    // 둘은 다른 주장이고, 어느 쪽이 맞는지는 재보면 안다.
+    //   절대 — 6층이면 경쟁점이 없어도 덜 온다 (올라오기 번거롭다)
+    //   상대 — 경쟁점이 2층이고 우리가 6층이면 손님이 그쪽으로 간다 (비교당한다)
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const baseShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const ref = med(rows.map((r) => r.floorScore).filter((v): v is number => v != null));
+    // 유효거리 안 경쟁점의 층수자 점수를 PC대수로 가중평균 — "이 상권 경쟁점들은 몇 층인가"
+    const rivalFloor = (r: Row) => {
+      let w = 0, s = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM || x.floorScore == null) continue;
+        w += x.ip; s += x.ip * x.floorScore;
+      }
+      return w > 0 ? s / w : null;
+    };
+    const ok = cmp.filter((r) => r.floorScore != null && rivalFloor(r) != null);
+    console.log(`\n경쟁상권 ${cmp.length}곳 중 경쟁점 층수를 아는 ${ok.length}곳 · 유의선 ${(2 / Math.sqrt(ok.length)).toFixed(3)}`);
+    const own = ok.map((r) => r.floorScore!), riv = ok.map((r) => rivalFloor(r)!);
+    console.log(`  자사 층수자 점수  중앙 ${med(own).toFixed(2)} · 범위 ${Math.min(...own)}~${Math.max(...own)}`);
+    console.log(`  경쟁 층수자 점수  중앙 ${med(riv).toFixed(2)} · 범위 ${Math.min(...riv).toFixed(1)}~${Math.max(...riv).toFixed(1)}`);
+    console.log(`  자사-경쟁 차이    중앙 ${med(own.map((v, i) => v - riv[i])).toFixed(2)} · 자사가 유리한 곳 ${own.filter((v, i) => v > riv[i]).length}곳 / 불리 ${own.filter((v, i) => v < riv[i]).length}곳`);
+    console.log(`  두 값의 상관 r=${pear(own, riv).toFixed(3)} (높으면 "같은 상권은 다 비슷한 층"이라 상대가 무의미하다)`);
+
+    const resid = ok.map((r) => Math.log(r.shareObs / baseShare(r)));
+    const t = ok.map((r) => r.t);
+    const sig = 2 / Math.sqrt(ok.length);
+    const line = (label: string, v: number[]) => {
+      const r1 = pear(v, resid), r2 = partial(v, resid, t);
+      console.log(`  ${label.padEnd(30)} r=${(r1.toFixed(3) + (Math.abs(r1) > sig ? " *" : "  ")).padStart(9)}  시점통제 ${(r2.toFixed(3) + (Math.abs(r2) > sig ? " *" : "")).padStart(8)}`);
+    };
+    console.log(`\n[품질 점유율이 남긴 오차와의 상관]`);
+    line("자사 절대 층수 (지금 κ 항)", own);
+    line("자사 − 경쟁 (상대 층수)", own.map((v, i) => v - riv[i]));
+    line("자사 ÷ 경쟁 (상대 비율)", own.map((v, i) => v / riv[i]));
+    line("경쟁 층수만 (참고)", riv);
+
+    console.log(`\n[두 항을 같이 넣으면] 점유율 x (자사÷${ref})^κ x (자사−경쟁+3)^μ 훑기`);
+    console.log(`${"κ(절대)".padStart(8)}${"μ(상대)".padStart(9)}${"MAPE".padStart(9)}${"실측과 r".padStart(10)}`);
+    for (const k of [0, 0.25, 0.5]) {
+      for (const m of [0, 0.25, 0.5]) {
+        const ps = ok.map((r) => baseShare(r) * Math.pow(r.floorScore! / ref, k) * Math.pow(Math.max(0.5, r.floorScore! - rivalFloor(r)! + 3) / 3, m));
+        const e = ok.map((r, i) => ps[i] / r.shareObs - 1);
+        console.log(`${String(k).padStart(8)}${String(m).padStart(9)}${(mean(e.map(Math.abs)) * 100).toFixed(1).padStart(8)}%${pear(ps, ok.map((r) => r.shareObs)).toFixed(3).padStart(10)}`);
+      }
+    }
+    console.log(`  -> μ를 올려 좋아지면 "비교당한다"가 맞고, κ만 남으면 "올라오기 번거롭다"가 맞다.`);
+    expect(ok.length).toBeGreaterThan(15);
   });
 });
