@@ -196,8 +196,12 @@ async function loadLabData(): Promise<Loaded | null> {
             : null,
           // 접근성 — 경쟁점과 **같은 함수**로 매긴다. 자사만 다른 자를 쓰면 뜻이 없어진다.
           access: computeLocationScoreFromFacts(s.floor ?? null, s.groundLevel ?? null, s.hasElevator ?? null),
-          // 아래 셋은 아직 자료가 없다. 자리만 둔다 — 계수도 0이라 계산에 안 들어간다.
-          direction: null,
+          // 유동 방향 — 편심도 0~1. 0이면 사방이 고르고(상권 한가운데), 1에 가까울수록
+          // 한쪽에만 몰렸다(상권 끝). 2026-09-16에 52곳 전부 채웠다.
+          // ⚠️ 계수 ω는 0이라 지금은 계산에 안 들어간다 — 중심도가 이미 이 신호를 먹어
+          // 대조군을 못 넘었다. 값을 보여주고 스위치로 켤 수 있게만 해 둔다.
+          direction: s.flowEccentricity ?? null,
+          // 아래 둘은 아직 자료원이 없다. 자리만 둔다 — 계수도 0이라 계산에 안 들어간다.
           flowBlock: null,
           visibility: null,
         },

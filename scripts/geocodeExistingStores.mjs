@@ -99,17 +99,41 @@ if (!existsSync(SNAPSHOT)) {
 const snap = JSON.parse(readFileSync(SNAPSHOT, "utf8"));
 const out = existsSync(OUT) ? JSON.parse(readFileSync(OUT, "utf8")) : { geocodedAt: null, sites: {} };
 
+// 좌표표는 **52곳 전부**를 담아야 한다. 운영 DB에 이미 좌표가 있는 지점을 그냥 건너뛰면
+// 이 파일에서 빠져버려서, 이걸 전제로 도는 수집기(유동인구·편심도)가 그 지점을 통째로
+// 놓친다. 2026-09-16에 후보지 10곳이 정확히 그렇게 새고 있었다 — 조회는 건너뛰되
+// **기록은 남긴다**(method: "운영DB").
 const targets = [];
+const fromDb = [];
 for (const e of snap.existingStores ?? []) {
-  if (e.lat && e.lng) continue;
+  const code = e.storeCode ?? e.id;
+  if (e.lat && e.lng) {
+    fromDb.push({ kind: "existing", code, name: e.storeName ?? "", address: e.address ?? "", lat: Number(e.lat), lng: Number(e.lng) });
+    continue;
+  }
   if (!e.address) continue;
-  targets.push({ kind: "existing", code: e.storeCode ?? e.id, name: e.storeName ?? "", address: e.address });
+  targets.push({ kind: "existing", code, name: e.storeName ?? "", address: e.address });
 }
 for (const c of snap.candidates ?? []) {
-  if (c.lat && c.lng) continue;
+  const code = c.code ?? c.id;
+  if (c.lat && c.lng) {
+    fromDb.push({ kind: "candidate", code, name: c.name ?? "", address: c.address ?? "", lat: Number(c.lat), lng: Number(c.lng) });
+    continue;
+  }
   if (!c.address) continue;
-  targets.push({ kind: "candidate", code: c.code ?? c.id, name: c.name ?? "", address: c.address });
+  targets.push({ kind: "candidate", code, name: c.name ?? "", address: c.address });
 }
+
+// 운영 DB 좌표를 좌표표에 편입한다. 이미 주소변환으로 잡아둔 값은 덮지 않는다 —
+// 그쪽은 매칭 주소·method가 같이 남아 있어 추적이 되고, 덮으면 그 이력이 사라진다.
+let dbAdded = 0;
+for (const d of fromDb) {
+  const key = `${d.kind}:${d.code}`;
+  if (out.sites[key]?.lat) continue;
+  out.sites[key] = { kind: d.kind, code: d.code, name: d.name, address: d.address, lat: d.lat, lng: d.lng, method: "운영DB" };
+  dbAdded++;
+}
+if (dbAdded) console.log(`운영 DB에 좌표가 있던 ${dbAdded}곳을 좌표표에 편입했다 (조회 안 함).\n`);
 
 console.log(`좌표 없는 지점 ${targets.length}곳을 조회한다.\n`);
 
@@ -144,7 +168,7 @@ for (const t of targets) {
 out.geocodedAt = new Date().toISOString();
 writeFileSync(OUT, JSON.stringify(out, null, 2), "utf8");
 
-console.log(`\n성공 ${ok}곳 (그중 쉼표앞 재시도 ${fallbackUsed}곳) · 실패 ${failures.length}곳 -> ${OUT}`);
+console.log(`\n조회 성공 ${ok}곳 (그중 쉼표앞 재시도 ${fallbackUsed}곳) · 실패 ${failures.length}곳 · 운영DB 편입 ${dbAdded}곳 · 좌표표 총 ${Object.keys(out.sites).length}곳 -> ${OUT}`);
 if (failures.length) {
   console.log("\n실패한 곳은 주소를 손봐야 한다. 좌표를 지어내지 않았다:");
   for (const f of failures) console.log(`  ${f.code} ${f.name} | ${f.address}`);

@@ -1,5 +1,5 @@
 {
-  "geocodedAt": "2026-09-15T12:49:44.971Z",
+  "geocodedAt": "2026-09-16T11:08:14.614Z",
   "sites": {
     "existing:20230324392": {
       "kind": "existing",
@@ -435,6 +435,96 @@
       "lng": 126.709469194174,
       "matchedAddress": "인천 남동구 호구포로 217",
       "method": "원본"
+    },
+    "candidate:N001": {
+      "kind": "candidate",
+      "code": "N001",
+      "name": "신중동점",
+      "address": "부천시 원미구 중1동 1133-5",
+      "lat": 37.4996407478007,
+      "lng": 126.776102657286,
+      "method": "운영DB"
+    },
+    "candidate:N002": {
+      "kind": "candidate",
+      "code": "N002",
+      "name": "춘천퇴계점",
+      "address": "강원 춘천시 석사동 888-5",
+      "lat": 37.8510524304043,
+      "lng": 127.74522462009,
+      "method": "운영DB"
+    },
+    "candidate:N004": {
+      "kind": "candidate",
+      "code": "N004",
+      "name": "하안금당사거리",
+      "address": "경기 광명시 하안동 200-2, 지하1층 일부",
+      "lat": 37.4592220415774,
+      "lng": 126.883021727794,
+      "method": "운영DB"
+    },
+    "candidate:N005": {
+      "kind": "candidate",
+      "code": "N005",
+      "name": "울산삼산점",
+      "address": "울산시 남구 삼산동1478-9",
+      "lat": 35.5381381512577,
+      "lng": 129.336511428272,
+      "method": "운영DB"
+    },
+    "candidate:N009": {
+      "kind": "candidate",
+      "code": "N009",
+      "name": "평택소사벌점",
+      "address": "경기도 평택시 비전5로21",
+      "lat": 37.0007390089091,
+      "lng": 127.113581688843,
+      "method": "운영DB"
+    },
+    "candidate:N010": {
+      "kind": "candidate",
+      "code": "N010",
+      "name": " 창원상남점",
+      "address": "경상남도 창원시 성산구 마디미로16번길 3",
+      "lat": 35.2228603140136,
+      "lng": 128.684611072209,
+      "method": "운영DB"
+    },
+    "candidate:N011": {
+      "kind": "candidate",
+      "code": "N011",
+      "name": "마산산호점",
+      "address": "경남 창원시 마산합포구 삼호로 49",
+      "lat": 35.221895396413,
+      "lng": 128.585065311493,
+      "method": "운영DB"
+    },
+    "candidate:N012": {
+      "kind": "candidate",
+      "code": "N012",
+      "name": "산본점",
+      "address": "군포시 산본동 1135-1",
+      "lat": 37.3592263056513,
+      "lng": 126.931751110987,
+      "method": "운영DB"
+    },
+    "candidate:N013": {
+      "kind": "candidate",
+      "code": "N013",
+      "name": "김포풍무점",
+      "address": "경기도 김포시 풍무로 128",
+      "lat": 37.6069390256286,
+      "lng": 126.723410519861,
+      "method": "운영DB"
+    },
+    "candidate:N014": {
+      "kind": "candidate",
+      "code": "N014",
+      "name": "영월점",
+      "address": "강원 영월군 영월읍 단종로 3-1, 1층",
+      "lat": 37.1838545413806,
+      "lng": 128.467902843509,
+      "method": "운영DB"
     }
   }
 }

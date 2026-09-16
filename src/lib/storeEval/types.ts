@@ -133,6 +133,16 @@ export type CandidateInput = {
   // 연령·성별 분해는 안 넣는다 — 비율만 쓰므로 필요 없고, 수요식은 400m를 쓴다.
   floating1000Avg?: number | null;
 
+  // 2026-09-16 추가 — **유동 방향(편심도).** 상권이 우리 기준 어느 쪽으로 쏠렸는지를 0~1로 잰다.
+  // 0이면 사방이 고르다(=상권 한가운데), 1에 가까울수록 한쪽에만 몰렸다(=상권 끝에 서 있다).
+  // 재는 법: 8방위로 300m 밀어낸 점마다 반경 300m 안의 음식점·카페 수를 카카오에서 세고,
+  // 그 분포의 쏠림을 본다(scripts/collectKakaoDirectional.mjs). 카카오는 방향을 안 주므로
+  // 중심을 옮긴 원을 쓴다. 원끼리 겹치지만 방향 가중치가 목적이라 겹침은 오히려 값을 매끄럽게 한다.
+  // ⚠️ 계수 ω는 0이다 — 대조군을 못 넘었다(중심도가 이미 이 신호를 먹어 잔차 상관 −0.280 →
+  // −0.069). **값은 채우되 계산엔 안 들어간다.** 켜는 건 사용자 결정 사항이다.
+  flowEccentricity?: number | null;
+  flowBusiestDir?: string | null; // 제일 붐비는 방위("남동" 등). 사람이 읽으라고 같이 둔다.
+
   // 2026-08-27 — 인허가 PC방업소수(500m/1km)는 삭제했다(사용자 확인: 계산에도 안 쓰이고
   // 소상공인365 자동추출이라 직접 검증도 안 된 값이라 "실영업"만 남기면 충분함). 실영업(직접
   // 확인해서 입력)은 500m이 경쟁IP 계산의 핵심값이라 그대로 둔다.
@@ -870,6 +880,9 @@ export type ExistingStore = {
   floating400_60plus?: number | null;
   // 2026-09-17 추가 — **상권 중심도 계산용. 총량만 쓴다.** 자세한 뜻은 CandidateInput 쪽 주석.
   floating1000Avg?: number | null;
+  // 2026-09-16 추가 — **유동 방향(편심도) 0~1.** 자세한 뜻은 CandidateInput 쪽 주석.
+  flowEccentricity?: number | null;
+  flowBusiestDir?: string | null;
   operatingPcStores500m: number | null;
 
   // 2026-08-21 추가 — "후보지평가 → 오픈 → 실제매출로 검증" 흐름을 실제로 잇기 위한 필드.
