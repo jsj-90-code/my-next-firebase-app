@@ -58,6 +58,26 @@ const SETTINGS = "storeEvalSettings";
 const SETTINGS_HISTORY = "storeEvalSettingsHistory";
 const EXISTING_STORES = "storeEvalExistingStores";
 const EXISTING_STORE_SALES = "storeEvalExistingStoreSales";
+// ── 실험실 전용 컬렉션 (2026-09-16) ────────────────────────────────────────
+//
+// 교과서식 실험실은 **운영 V62와 같은 문서를 읽고 있었다.** 그래서 실험용으로 기초자료를
+// 고치면 운영 예측이 조용히 따라 움직였다 — 2026-09-15에 유동·주거인구를 자동수집 값으로
+// 바꿨더니 V62 MAPE가 9.37% -> 9.26%로 같이 변한 게 그 예다. 개선이라 다행이었지 의도한
+// 게 아니었다.
+//
+// 시설·사양까지 실험실에서 고칠 참이라(사용자 방향 2026-09-16) 여기서 갈라놓는다.
+// **운영은 기존 컬렉션, 실험실은 아래 복제본만 읽고 쓴다.** 운영 쪽 갱신을 실험실로
+// 당겨오는 건 scripts/syncLabCollections.mjs로 **명시적으로** 한다 — 자동 동기화는 안 한다.
+// 자동으로 따라오면 갈라놓은 뜻이 없어진다.
+//
+// ⚠️ 월매출(EXISTING_STORE_SALES)은 복제하지 않는다. 실측 사실이라 실험실에서 고칠 일이
+//    없고, 두 벌로 두면 "어느 쪽 실적이 맞나"라는 없던 문제가 생긴다.
+const LAB_EXISTING_STORES = "storeEvalLabExistingStores";
+const LAB_CANDIDATES = "storeEvalLabCandidates";
+const LAB_COMPETITORS = "storeEvalLabCompetitors";
+const LAB_LOCATION_EVALS = "storeEvalLabLocationEvaluations";
+const LAB_SETTINGS = "storeEvalLabSettings";
+
 const AUDIT_LOG = "storeEvalAuditLog";
 const RESTORE_LOG = "storeEvalRestoreLog";
 const META = "storeEvalMeta";
@@ -397,6 +417,43 @@ export async function restoreMarketDataUploads(uploads: MarketDataUpload[]): Pro
 export async function listExistingStores(): Promise<ExistingStore[]> {
   const snap = await getDocs(collection(requireDb(), EXISTING_STORES));
   return snap.docs.map((d) => d.data() as ExistingStore);
+}
+
+// ── 실험실 전용 읽기 (2026-09-16) ──────────────────────────────────────────
+//
+// 운영 화면은 절대 이 함수들을 부르지 않는다. 반대로 실험실은 운영 컬렉션을 안 읽는다.
+// 한쪽만 섞여도 갈라놓은 뜻이 없어지므로, 부르는 자리를 늘릴 때 어느 쪽인지 확인할 것.
+//
+// 복제본이 아직 없으면(첫 실행) 빈 배열이 온다. scripts/syncLabCollections.mjs로 채운다.
+
+export async function listLabExistingStores(): Promise<ExistingStore[]> {
+  const snap = await getDocs(collection(requireDb(), LAB_EXISTING_STORES));
+  return snap.docs.map((d) => d.data() as ExistingStore);
+}
+
+export async function listLabCandidates(): Promise<CandidateInput[]> {
+  const snap = await getDocs(collection(requireDb(), LAB_CANDIDATES));
+  return snap.docs.map((d) => d.data() as CandidateInput);
+}
+
+export async function listLabCompetitors(): Promise<Competitor[]> {
+  const snap = await getDocs(collection(requireDb(), LAB_COMPETITORS));
+  return snap.docs.map((d) => migrateCompetitorInvestigationStatus(d.data()));
+}
+
+export async function listLabLocationEvaluations(): Promise<LocationEvaluation[]> {
+  const snap = await getDocs(collection(requireDb(), LAB_LOCATION_EVALS));
+  return snap.docs.map((d) => d.data() as LocationEvaluation);
+}
+
+/**
+ * 실험실 설정. 복제본이 없으면 **null이 아니라 운영 설정으로 떨어진다** — 실험실이
+ * 설정 없이도 돌아야 하기 때문이다. 실험실에서 설정을 처음 저장하는 순간 갈라진다.
+ */
+export async function getLabModelSettings(): Promise<ModelSettings | null> {
+  const snap = await getDoc(doc(requireDb(), LAB_SETTINGS, "current"));
+  if (!snap.exists()) return getModelSettings();
+  return mergeModelSettings(snap.data() as Partial<ModelSettings>);
 }
 
 export async function upsertExistingStore(store: ExistingStore): Promise<void> {
