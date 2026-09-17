@@ -62,9 +62,9 @@ type Loaded = {
    */
   qsc: { measured: number; total: number; avg: number | null; min: number | null; max: number | null } | null;
   /**
-   * 매장코드 -> {평가창 QSC 평균, 그걸 환산한 관리 점수}. 매장 표에 그대로 그린다.
+   * 매장코드 -> {QSC 평균(개점 이후 전 기간), 그걸 환산한 관리 점수}. 매장 표에 그대로 그린다.
    * 없으면 그 매장은 QSC가 없어 가맹점 평균을 받은 것이다 — 화면에서 구분해 보여줘야
-   * "실측 3.22점"과 "몰라서 평균 4.25점"을 사람이 헷갈리지 않는다.
+   * "실측 2.39점"과 "몰라서 평균 4.21점"을 사람이 헷갈리지 않는다.
    */
   qscByStore: Map<string, { qsc: number | null; management: number | null }>;
 };
@@ -85,7 +85,7 @@ async function loadLabData(): Promise<Loaded | null> {
     listLabCompetitors(),
     listLabLocationEvaluations(),
     listLabRoadviewJudgments(),
-    // QSC 평가창 평균 -> 관리 점수(labInput.ts qscToManagementScore). 실험실 전용 컬렉션이라
+    // QSC 점검 기록 -> 관리 점수(labInput.ts qscInWindowAverage + qscToManagementScore). 전용 컬렉션이라
     // 동기화가 안 건드리고, 운영 V62는 아예 읽지 않는다.
     listLabQscScores(),
   ]);
@@ -459,9 +459,16 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
                 관리 점수 = 1 + (QSC − 60) × 0.1 &nbsp;&nbsp;(1~5로 자름 · QSC 100점 = 5점 · 60점 이하 = 1점)
               </div>
               <div className="mt-1">
-                평가창(개점 다음 달~12개월) 안 점검의 평균을 씁니다. 매출 목표값이 같은 창의 평균이라
-                점검도 같은 창에서 재야 짝이 맞습니다. <b>0점 기록과 &quot;오픈 매장 점검&quot;은 뺍니다</b> —
+                <b>개점 이후 전 기간</b> 점검의 평균을 씁니다. <b>0점 기록과 &quot;오픈 매장 점검&quot;은 뺍니다</b> —
                 앞은 미실시·입력오류이고, 뒤는 오픈 직후 체크리스트라 재는 것이 다릅니다.
+              </div>
+              <div className="mt-1">
+                처음엔 매출 평가창과 같은 12개월로 잘랐는데, <b>QSC 점검이 연 1~2회라 12개월 창에 안 걸리는
+                매장이 7곳</b>이었습니다(청주터미널점은 제일 이른 점검이 개점 13개월째라 한 달 차이로 빠졌습니다).
+                창을 넓혀 재보니 12개월만 유독 나빴습니다 — 실측 매장 29 → 35곳, MAPE 22.28% → 22.02%.
+                점검 <b>1건으로 판정하던 매장이 8곳에서 4곳</b>으로 줄어드는 게 더 큰 이득입니다.
+                ⚠️ 대신 시점 통일을 포기한 것이라, 2026년 점검으로 2024년 매출을 설명하게 됩니다
+                (QSC ↔ 개점시점 r=0.158로 코호트 교란이 거의 없어 감수했습니다).
               </div>
               <div className="mt-1">
                 바닥 60은 <b>[감각] 계수</b>입니다. 매출 오차는 좋아지고(23.15% → 22.28%) 홀드아웃도
@@ -685,7 +692,7 @@ function StoreTable({ score, qscByStore }: { score: TextbookScore; qscByStore: L
               <th scope="col" className="px-3 py-2">매장</th>
               {hasQsc && (
                 <>
-                  <th scope="col" className="px-3 py-2 text-right" title="평가창(개점 다음 달~12개월) 안 점검의 평균. 0점 기록과 '오픈 매장 점검'은 뺀 값이다.">QSC</th>
+                  <th scope="col" className="px-3 py-2 text-right" title="개점 이후 전 기간 점검의 평균. 0점 기록과 오픈 매장 점검은 뺀 값이다.">QSC</th>
                   <th scope="col" className="px-3 py-2 text-right" title="1 + (QSC-60) x 0.1, 1~5로 자름. 회색 값은 그 매장에 QSC가 없어 가맹점 평균을 받은 것이다.">관리</th>
                 </>
               )}

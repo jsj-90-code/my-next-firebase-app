@@ -232,6 +232,33 @@ export function franchiseAverageManagement(mapped: (number | null)[]): number | 
 export type QscRecord = { date: string; score: number; form?: string };
 
 /**
+ * 관리 점수를 만들 때 쓰는 점검 창의 끝(개점 후 개월). **`Infinity` = 개점 이후 전부.**
+ *
+ * ── 왜 평가창(12개월)이 아닌가 (2026-09-17) ───────────────────────────────
+ * 처음엔 매출 평가창과 같은 12개월로 잘랐다. 시점을 맞춰야 짝이 맞는다는 이유였고 원칙도
+ * 그쪽이다. 그런데 **QSC 점검이 연 1~2회라 12개월 창에 안 걸리는 매장이 많다.**
+ * 사용자 지적으로 드러났다 — *"청주터미널 QSC체크리스트있는데"* (있다. 제일 이른 게
+ * 개점 13개월째라 한 달 차이로 빠졌다). 같은 처지가 7곳이고 4곳은 13~14개월이었다.
+ *
+ * 창을 넓혀 재보니 **12개월만 유독 나빴다**(바닥 60 고정 · 매출 38곳):
+ *   창        실측 매장   관리 평균   MAPE     중앙    최대
+ *   12개월     29/38      4.25     22.28%   15.0%   87%
+ *   15개월     34/38      4.26     21.94%   13.9%   84%
+ *   24개월     34/38      4.28     21.78%   13.2%   80%
+ *   **전체기간  35/38      4.20     22.02%   13.7%   80%**
+ * 15개월 위로는 전부 0.24%p 안이라 노이즈다. 전체기간을 고른 이유는 성적이 아니라 둘이다:
+ *   1. **표본이 제일 많다**(35/38) — 6곳이 새로 들어온다.
+ *   2. **점검 1건으로 판정하는 매장이 8곳에서 4곳으로 준다.** 구미산동점은 1건(82.2)으로
+ *      3.22점을 받던 것이 7건 평균(73.9)으로 2.39점이 된다 — 1건짜리 판정보다 낫다.
+ * 사용자 방향: *"다른매장 개월수늘려서 별차이없으면 평균값으로 조지자고"*
+ *
+ * ⚠️ 시점 통일을 포기한 것이므로 대가가 있다 — 2026년 점검으로 2024년 매출을 설명하게 된다.
+ *    그래도 쓰는 근거는 **코호트 교란이 거의 없다는 측정**이다(QSC ↔ 개점시점 r=0.158).
+ *    여기 값을 바꾸면 `_textbookFull.test.ts`의 창 훑기를 다시 돌리고 화면 설명도 고칠 것.
+ */
+export const QSC_WINDOW_MONTHS = Infinity;
+
+/**
  * 평균에 넣어도 되는 점검 기록인가 (2026-09-17 사용자 확인: *"0점·오픈점검 둘 다 제외"*).
  *
  * - **0점** — 송도점은 개점 0개월(오픈 2주 차)이고 창원남양점은 같은 매장의 다른 점검이
@@ -252,7 +279,16 @@ export function usableQscRecord(r: QscRecord): boolean {
  *    같은 창에서 재야 짝이 맞는다 — 자사 시설 점수를 평가 시점으로 통일해 둔 것과 같은 이유다.
  *    평가창 밖 점검은 그 매출을 만들어낸 운영 상태가 아니다.
  */
-export function qscInWindowAverage(records: QscRecord[], openedAt: string | null): number | null {
+export function qscInWindowAverage(
+  records: QscRecord[],
+  openedAt: string | null,
+  /**
+   * 창의 끝(개점 후 개월). 기본 12 = 매출 평가창과 같다. `Infinity`면 개점 이후 전부.
+   * ⚠️ 이걸 늘리는 건 **시점 통일을 포기하고 표본을 사는 거래**다 — 값을 고르기 전에
+   *    `_textbookFull.test.ts`의 창 훑기를 보고 정할 것.
+   */
+  maxMonths = QSC_WINDOW_MONTHS,
+): number | null {
   if (!records.length || !openedAt) return null;
   const open = new Date(openedAt);
   if (Number.isNaN(open.getTime())) return null;
@@ -260,7 +296,7 @@ export function qscInWindowAverage(records: QscRecord[], openedAt: string | null
     const d = new Date(r.date.replace(/\./g, "-"));
     if (Number.isNaN(d.getTime())) return false;
     const m = (d.getFullYear() - open.getFullYear()) * 12 + (d.getMonth() - open.getMonth());
-    return m >= 1 && m <= 12;
+    return m >= 1 && m <= maxMonths;
   }).map((r) => r.score);
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
 }
@@ -279,7 +315,7 @@ export type BuildLabRowsArgs = {
    */
   roadviewByKey?: Map<string, RoadviewJudgment>;
   /**
-   * 매장코드 -> 평가창 안 QSC 평균. 주면 자사 **관리 점수를 이 값으로 갈아끼운다**
+   * 매장코드 -> QSC 평균. 주면 자사 **관리 점수를 이 값으로 갈아끼운다**
    * (qscToManagementScore). 안 주면 저장된 `ownManagementScore`(전부 4.00)를 그대로 쓴다.
    * QSC가 없는 매장에는 있는 곳들의 평균을 넣는다 — 두 자가 섞이지 않게.
    */

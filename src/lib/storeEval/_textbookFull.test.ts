@@ -139,6 +139,47 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   // _qscResidual.test.ts는 경쟁상권 23곳의 점유율만 봤고(22.09%가 최선), 여기는 38곳 매출을
   // 본다. 독점 매장은 나눌 상대가 없어 관리 점수를 내려도 점유율이 안 변하는데, 경쟁 매장만
   // 내려가면 **편향이 생긴다.** 그 편향이 매출 단계에서 드러난다.
+  // 사용자 질문(2026-09-17): *"청주터미널 QSC체크리스트있는데"* — 있다. 다만 제일 이른
+  // 점검이 개점 13개월째라 평가창(1~12개월) 밖이다. 같은 처지가 7곳이고 그중 4곳은
+  // 13~14개월로 **한두 달 차이**다. 창을 넓히면 표본이 늘고 시점 통일이 흐려진다.
+  // 사용자 방향: *"다른매장 개월수늘려서 별차이없으면 평균값으로 조지자고"*
+  it("QSC 창을 넓히면 — 표본은 늘고 시점은 흐려진다. 값어치가 있나", () => {
+    if (!qscByStoreCode.size) { console.log("\n[QSC] 수집물이 없다 — 건너뜀"); return; }
+    const sites = JSON.parse(readFileSync(QSC_FILE, "utf8")).sites as Record<string, { name?: string; openedAt?: string; records?: QscRecord[] }>;
+    const mapAt = (months: number) => {
+      const m = new Map<string, number>();
+      for (const [key, site] of Object.entries(sites)) {
+        const code = key.startsWith("existing:") ? key.slice("existing:".length) : key;
+        const avg = qscInWindowAverage(site.records ?? [], site.openedAt ?? null, months);
+        if (avg != null) m.set(code, avg);
+      }
+      return m;
+    };
+    const mg = (q: number) => Math.max(1, Math.min(5, 1 + (q - 60) * (4 / 40)));
+    console.log("\n[QSC 창 훑기 — 바닥 60 고정 · 매출 기준]");
+    console.log(`  ${"창".padStart(10)}${"실측 매장".padStart(10)}${"관리 평균".padStart(10)}${"MAPE".padStart(9)}${"중앙".padStart(8)}${"최대".padStart(8)}`);
+    for (const months of [12, 15, 18, 24, Infinity]) {
+      const qm = mapAt(months);
+      const scores = [...qm.values()].map(mg);
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const base = buildLabRows({ stores, compsByCode, utilByStore, settings });
+      const rs = base.map((r) => {
+        const q = qm.get(r.input.storeCode);
+        const v = q == null ? avg : mg(q);
+        return { ...r, input: { ...r.input, ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, management: v } : r.input.ownQualityParts } };
+      });
+      const sc = scoreTextbook(rs, P);
+      const f = (v: number | null | undefined, d = 2) => (v == null ? "-" : (v * 100).toFixed(d));
+      const label = months === Infinity ? "전체기간" : `${months}개월`;
+      // 실측으로 채워진 매장 수는 **행에 들어간 것 기준**이다(표본 38곳 중 몇 곳).
+      const covered = base.filter((r) => qm.has(r.input.storeCode)).length;
+      console.log(`  ${label.padStart(10)}${`${covered}/${base.length}`.padStart(10)}${avg.toFixed(2).padStart(10)}${f(sc.mape).padStart(8)}%${f(sc.medianAbsErr, 1).padStart(7)}%${f(sc.maxAbsErr, 0).padStart(7)}%`);
+    }
+    console.log(`\n  판단거리: 창을 넓히면 "12개월 차 매출"을 "18개월 차 점검"으로 설명하게 된다.`);
+    console.log(`  표본이 눈에 띄게 늘고 오차도 좋아지면 살 값어치가 있고, 아니면 12개월을 지킨다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  }, 300_000);
+
   it("QSC 바닥을 매출 기준으로 다시 훑는다 — 점유율에서 고른 값이 여기서도 맞나", () => {
     if (!qscByStoreCode.size) { console.log("\n[QSC] 수집물이 없다 — 건너뜀"); return; }
     const mg = (q: number, floor: number) => Math.max(1, Math.min(5, 1 + (q - floor) * (4 / (100 - floor))));

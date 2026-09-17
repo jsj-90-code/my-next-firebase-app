@@ -72,32 +72,23 @@ try {
   process.exit(1);
 }
 
-const usable = (r) => r.score > 0 && !String(r.form ?? "").includes("오픈 매장 점검");
-
+// ⚠️ **평균을 여기서 내지 않는다.** 원본 기록을 그대로 저장하고, 창 길이·제외 규칙·평균은
+//    화면과 하네스가 `labInput.ts`의 qscInWindowAverage로 계산한다. 쓰는 쪽과 읽는 쪽이
+//    각자 계산하면 창을 바꿀 때 한쪽만 바뀌어 조용히 갈라진다 — 2026-09-17에 창을 12개월에서
+//    전체기간으로 바꾸다 그럴 뻔했다. 이 스크립트는 **자료를 옮기기만 한다.**
 const COLLECTION = "storeEvalLabQscScores";
 const rows = [];
 for (const [key, site] of Object.entries(raw.sites ?? {})) {
   const storeCode = key.startsWith("existing:") ? key.slice("existing:".length) : key;
   const records = site.records ?? [];
   if (!records.length || !site.openedAt) continue;
-  const open = new Date(site.openedAt);
-  if (Number.isNaN(open.getTime())) continue;
-  const kept = records.filter(usable);
-  const inWindow = kept.filter((r) => {
-    const d = new Date(String(r.date).split(".").join("-"));
-    if (Number.isNaN(d.getTime())) return false;
-    const m = (d.getFullYear() - open.getFullYear()) * 12 + (d.getMonth() - open.getMonth());
-    return m >= 1 && m <= 12;
-  });
-  if (!inWindow.length) continue;
-  const avg = inWindow.reduce((a, r) => a + r.score, 0) / inWindow.length;
   rows.push({
     storeCode,
     storeName: site.name ?? null,
     openedAt: site.openedAt,
-    inWindowAvg: Math.round(avg * 100) / 100,
-    inWindowCount: inWindow.length,
-    droppedCount: records.length - kept.length,
+    // 원본 그대로. 0점·오픈점검도 지우지 않고 넘긴다 — 무엇을 뺄지는 읽는 쪽 규칙이고,
+    // 여기서 미리 지우면 규칙이 바뀔 때 자료를 다시 받아야 한다.
+    records: records.map((r) => ({ date: String(r.date), score: Number(r.score), form: String(r.form ?? "") })),
     source: raw.source ?? "fcdaum.com",
     collectedAt: raw.collectedAt ?? null,
   });
@@ -107,16 +98,27 @@ const existing = await db.collection(COLLECTION).get();
 const before = new Map(existing.docs.map((d) => [d.id, d.data()]));
 rows.sort((a, b) => a.storeCode.localeCompare(b.storeCode));
 
-const mgmt = (q) => Math.max(1, Math.min(5, 1 + (q - 80) * (4 / 20)));
-console.log(`원자료 ${Object.keys(raw.sites ?? {}).length}곳 -> 평가창 안 점검이 있는 ${rows.length}곳`);
-console.log(`${"매장".padEnd(14)}${"QSC평균".padStart(8)}${"관리점수".padStart(9)}${"점검수".padStart(7)}${"버린기록".padStart(9)}`);
+// 미리보기용 참고 계산. **이 값이 저장되는 게 아니다** — 화면은 저장된 records에서 다시 낸다.
+// 여기 숫자는 "무엇이 들어갈지" 사람이 눈으로 보라고 찍는 것이고, labInput.ts와 같은 규칙을
+// 손으로 따라 적은 것이라 **틀릴 수 있다.** 진짜 값은 화면과 _textbookFull.test.ts에서 확인한다.
+const usable = (r) => r.score > 0 && !String(r.form ?? "").includes("오픈 매장 점검");
+const mgmt = (q) => Math.max(1, Math.min(5, 1 + (q - 60) * (4 / 40)));
+const avgOf = (r) => {
+  const v = r.records.filter(usable).map((x) => x.score);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+};
+console.log(`원자료 ${Object.keys(raw.sites ?? {}).length}곳 -> 점검 기록이 있는 ${rows.length}곳`);
+console.log(`${"매장".padEnd(14)}${"QSC평균".padStart(8)}${"관리점수".padStart(9)}${"쓰는건수".padStart(9)}${"버린건수".padStart(9)}`);
 for (const r of rows) {
-  console.log(`${String(r.storeName ?? r.storeCode).slice(0, 13).padEnd(14)}${r.inWindowAvg.toFixed(2).padStart(8)}${mgmt(r.inWindowAvg).toFixed(2).padStart(9)}${String(r.inWindowCount).padStart(7)}${String(r.droppedCount || "").padStart(9)}`);
+  const a = avgOf(r);
+  const kept = r.records.filter(usable).length;
+  console.log(`${String(r.storeName ?? r.storeCode).slice(0, 13).padEnd(14)}${(a == null ? "-" : a.toFixed(2)).padStart(8)}` +
+    `${(a == null ? "-" : mgmt(a).toFixed(2)).padStart(9)}${String(kept).padStart(9)}${String(r.records.length - kept || "").padStart(9)}`);
 }
-const avgMgmt = rows.reduce((a, r) => a + mgmt(r.inWindowAvg), 0) / rows.length;
-console.log(`\n관리 점수 평균 ${avgMgmt.toFixed(2)} · 범위 ${Math.min(...rows.map((r) => mgmt(r.inWindowAvg))).toFixed(2)}~${Math.max(...rows.map((r) => mgmt(r.inWindowAvg))).toFixed(2)}`);
+const ms = rows.map(avgOf).filter((a) => a != null).map(mgmt);
+console.log(`\n관리 점수 평균 ${(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(2)} · 범위 ${Math.min(...ms).toFixed(2)}~${Math.max(...ms).toFixed(2)} · ${ms.length}곳`);
 console.log(`(QSC 없는 매장과 후보지에는 이 평균이 들어간다 — 두 자가 섞이지 않게)`);
-console.log(`\n실험실 컬렉션 ${COLLECTION}: 기존 ${before.size}건 -> 쓸 것 ${rows.length}건`);
+console.log(`\n실험실 컬렉션 ${COLLECTION}: 기존 ${before.size}건 -> 쓸 것 ${rows.length}건 (원본 기록 그대로)`);
 
 if (!process.argv.includes("--apply")) {
   console.log("\n미리보기다. 실제로 쓰려면 --apply 를 붙인다.");

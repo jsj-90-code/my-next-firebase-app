@@ -31,6 +31,7 @@ import { db } from "@/lib/firebase";
 import { mergeModelSettings } from "./settings";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { mergeInputChanges } from "./inputChanges";
+import { qscInWindowAverage, type QscRecord } from "./labInput";
 import type {
   AdminDongReference,
   CandidateInput,
@@ -81,7 +82,7 @@ const LAB_SETTINGS = "storeEvalLabSettings";
 // 운영 문서로 실험실 문서를 통째로 덮어쓰기 때문에, 매장 문서에 넣으면 다음 동기화 때
 // 판정이 날아간다. 별도 컬렉션은 동기화가 손대지 않는다.
 const LAB_ROADVIEW = "storeEvalLabRoadviewJudgments";
-// QSC 평가창 평균(관리 점수의 원자료). 로드뷰 판정과 **같은 이유로** 매장 문서가 아니라
+// QSC 점검 기록(관리 점수의 원자료). 로드뷰 판정과 **같은 이유로** 매장 문서가 아니라
 // 따로 둔다 — syncLabCollections.mjs가 운영 문서로 실험실 문서를 통째로 덮으므로, 매장
 // 문서에 넣으면 다음 동기화 때 날아간다. 운영 V62는 이 컬렉션을 아예 읽지 않는다.
 const LAB_QSC = "storeEvalLabQscScores";
@@ -476,16 +477,20 @@ export async function listLabRoadviewJudgments(): Promise<Map<string, { flowBloc
 }
 
 /**
- * 매장코드 -> 평가창 안 QSC 평균. 실험실의 관리 점수가 이 값에서 나온다.
+ * 매장코드 -> QSC 평균. 저장된 원본 기록에서 labInput.ts 규칙으로 계산해 돌려준다.
  * 채우는 건 `scripts/writeQscScoresToFirestore.mjs`다(fcdaum 수집물이 원자료).
  */
 export async function listLabQscScores(): Promise<Map<string, number>> {
   const snap = await getDocs(collection(requireDb(), LAB_QSC));
   const out = new Map<string, number>();
   snap.forEach((d) => {
-    const v = d.data() as { storeCode?: string; inWindowAvg?: number | null };
-    if (!v.storeCode || v.inWindowAvg == null || !(v.inWindowAvg > 0)) return;
-    out.set(v.storeCode, v.inWindowAvg);
+    const v = d.data() as { storeCode?: string; openedAt?: string | null; records?: QscRecord[] };
+    if (!v.storeCode) return;
+    // ⚠️ 저장된 평균값을 읽지 않고 **원본 기록에서 여기서 계산한다.** 창 길이와 제외 규칙이
+    //    labInput.ts 한 곳에만 있어야 한다 — 쓰는 스크립트와 읽는 화면이 각자 계산하면
+    //    창을 바꿀 때 한쪽만 바뀌어 조용히 갈라진다(2026-09-17에 실제로 그럴 뻔했다).
+    const avg = qscInWindowAverage(v.records ?? [], v.openedAt ?? null);
+    if (avg != null && avg > 0) out.set(v.storeCode, avg);
   });
   return out;
 }
