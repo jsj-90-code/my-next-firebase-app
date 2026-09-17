@@ -617,6 +617,156 @@ describeIf("사양 — 자료 생김새", () => {
     console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}`);
   });
 
+  it("(21) CPU 2차 — 갈라서 본다 (티어 / 세대 간격 / 둘 다)", () => {
+    // 1차(15)에서 CPU 표를 통째로 끄면서 **두 변경을 같이 버렸다.**
+    //   1. 티어 구분   i3 13100F가 i5 13400F와 같은 3.00점이던 것을 가른다 (자사 9곳)
+    //   2. 세대 간격   세대당 1점이던 것이 성능차대로 압축된다 (13400F는 14400F의 97%)
+    // 2번이 망친 것을 1번까지 같이 버렸는지 가른다.
+    const gpu = (t: string | null) => labScoreFromVga(t);
+
+    // (가) 티어만 — 운영 세대 산술은 그대로 두고 모델번호 백의 자리로 가산만 붙인다.
+    //     인텔 모델번호가 티어를 담는다: 100=i3 · 400/500=i5 · 600=i5상위 · 700=i7 · 900=i9
+    const tierBonus = (t: string | null, size: number) => {
+      const key = labCpuKey(t);
+      if (key == null) return 0;
+      const m = key.match(/^(\d{4,5})$/);
+      if (!m) return 0;
+      const h = Number(m[1].slice(-3, -2)); // 백의 자리
+      const rank = h <= 1 ? -1.5 : h <= 5 ? 0 : h <= 6 ? 0.5 : h <= 7 ? 1 : 1.5;
+      return rank * size;
+    };
+    const cpuTierOnly = (size: number) => (t: string | null) => {
+      const base = scoreFromCpu(t);
+      return base == null ? null : Math.max(1, Math.min(5, base + tierBonus(t, size)));
+    };
+
+    console.log("\n[CPU (가) 티어만] 운영 세대 산술 + 모델번호 티어 가산 (i3 −1.5칸 · i7 +1칸 · i9 +1.5칸)");
+    line("  운영 그대로 (기준선)", opRows);
+    for (const size of [0.2, 0.4, 0.6]) {
+      line(`  티어 한 칸 ${size.toFixed(1)}점`, rowsWithScorers(gpu, cpuTierOnly(size)));
+    }
+
+    console.log("\n[CPU (나) 성능지수 + 세대 벌점] 벌점 0 = 1차에서 껐던 그 표");
+    for (const gp of [0, 0.15, 0.3, 0.5, 0.7, 1.0]) {
+      line(`  세대 벌점 ${gp.toFixed(2)}`, rowsWithScorers(gpu, (t) => labScoreFromCpu(t, LAB_CPU_PERF_INDEX, gp)));
+    }
+
+    console.log("\n[점수가 어떻게 되나] 주요 모델");
+    const show = ["i5 14400F", "울트라5 225F", "i5 14600K", "i5 13400F", "i3 13100F", "i5 12400F", "i7 12700F", "i5 11400F", "i5 9400F", "i9 9900KF"];
+    console.log(`  ${"".padEnd(16)}${show.map((t) => t.replace("i5 ", "").replace("i3 ", "i3-").replace("i7 ", "i7-").replace("i9 ", "i9-").replace("울트라5 ", "U5-").padStart(8)).join("")}`);
+    console.log(`  ${"운영".padEnd(14)}  ${show.map((t) => (scoreFromCpu(t) ?? NaN).toFixed(2).padStart(8)).join("")}`);
+    for (const gp of [0, 0.3, 0.5, 0.7]) {
+      console.log(`  ${("성능+벌점 " + gp.toFixed(2)).padEnd(14)}  ${show.map((t) => (labScoreFromCpu(t, LAB_CPU_PERF_INDEX, gp) ?? NaN).toFixed(2).padStart(8)).join("")}`);
+    }
+    console.log(`  ${"티어만 0.4".padEnd(14)}  ${show.map((t) => (cpuTierOnly(0.4)(t) ?? NaN).toFixed(2).padStart(8)).join("")}`);
+
+    // 자사 9곳이 i3다 — 이 변경이 자사 변별에 얼마나 닿나
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[];
+    const i3 = S.filter((s) => /i3/i.test(String(s.ownCpu ?? ""))).length;
+    console.log(`\n  자사 CPU가 i3인 곳 ${i3}/${S.length}곳 · 경쟁점 i3는 ${(rivals as unknown as Record<string, string>[]).filter((c) => /i3/i.test(String(c.cpu ?? ""))).length}건`);
+  });
+
+  it("(22) i3 매장은 실제로 매출이 낮은가 — 티어 구분의 근거를 직접 본다", () => {
+    // 티어 구분이 닿는 곳은 **자사뿐**이다(자사 i3 9곳 · 경쟁점 i3 0건). 그러면 산식을 거치기 전에
+    // 실매출을 직접 갈라보는 게 제일 빠르다. PC당 월매출로 본다(매장 크기를 지운다).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[];
+    const rowByCode = new Map(rows.map((r) => [r.input.storeCode, r]));
+    const bucket = new Map<string, number[]>();
+    for (const s of S) {
+      const r = rowByCode.get(s.storeCode);
+      if (!r) continue;
+      const pc = r.input.pcCount;
+      if (!pc || !(pc > 0) || !(r.actualRevenue > 0)) continue;
+      const t = String(s.ownCpu ?? "");
+      const k = /i3/i.test(t) ? "i3" : /i5/i.test(t) ? "i5" : /울트라|ultra/i.test(t) ? "울트라" : "기타";
+      bucket.set(k, [...(bucket.get(k) ?? []), r.actualRevenue / pc]);
+    }
+    console.log("\n[자사 CPU 티어별 실매출] PC당 월매출");
+    for (const [k, vs] of [...bucket.entries()].sort()) {
+      console.log(`  ${k.padEnd(5)} ${String(vs.length).padStart(3)}곳  평균 ${(mean(vs) / 10000).toFixed(2)}만원 · 중앙 ${(median(vs) / 10000).toFixed(2)}만원`);
+    }
+    // 세대까지 갈라 본다 — i3 13100F는 13세대라, 13세대 i5와 견줘야 티어 효과만 남는다.
+    const gen13 = new Map<string, number[]>();
+    for (const s of S) {
+      const r = rowByCode.get(s.storeCode);
+      if (!r) continue;
+      const pc = r.input.pcCount;
+      if (!pc || !(pc > 0) || !(r.actualRevenue > 0)) continue;
+      const t = String(s.ownCpu ?? "");
+      if (!/13\d{3}/.test(t)) continue;
+      const k = /i3/i.test(t) ? "13세대 i3" : "13세대 i5";
+      gen13.set(k, [...(gen13.get(k) ?? []), r.actualRevenue / pc]);
+    }
+    console.log("  같은 13세대 안에서만:");
+    for (const [k, vs] of [...gen13.entries()].sort()) {
+      console.log(`  ${k.padEnd(10)} ${String(vs.length).padStart(3)}곳  평균 ${(mean(vs) / 10000).toFixed(2)}만원 · 중앙 ${(median(vs) / 10000).toFixed(2)}만원`);
+    }
+
+    // ── 교란인가 ────────────────────────────────────────────────────────────
+    // 날것 차이는 구조를 증명하지 않는다([[feedback_raw_correlation_cannot_judge_structure]]).
+    // i3를 넣은 매장이 애초에 저가·소형이면 매출이 낮은 건 CPU 탓이 아니다.
+    const prof = new Map<string, { rate: number[]; pc: number[]; opened: number[]; resid: number[] }>();
+    const sc = scoreTextbook(rows, P);
+    const predByCode = new Map(sc.rows.map((r) => [r.storeCode, r.predicted]));
+    for (const s of S) {
+      const r = rowByCode.get(s.storeCode);
+      if (!r) continue;
+      const t = String(s.ownCpu ?? "");
+      const k = /i3/i.test(t) ? "i3" : /i5/i.test(t) ? "i5" : null;
+      if (!k) continue;
+      const e = prof.get(k) ?? { rate: [], pc: [], opened: [], resid: [] };
+      if (r.input.hourlyRate) e.rate.push(r.input.hourlyRate);
+      if (r.input.pcCount) e.pc.push(r.input.pcCount);
+      if (s.openedAt) { const d = new Date(s.openedAt); if (!isNaN(d.getTime())) e.opened.push(d.getFullYear() + d.getMonth() / 12); }
+      const pred = predByCode.get(s.storeCode);
+      if (pred != null && r.actualRevenue > 0) e.resid.push((pred - r.actualRevenue) / r.actualRevenue);
+      prof.set(k, e);
+    }
+    console.log("\n[교란 확인] i3 매장이 애초에 다른 매장인가");
+    console.log("  집단   요금      PC수     개점시기    모델 잔차(예측/실제−1)");
+    for (const k of ["i3", "i5"]) {
+      const e = prof.get(k)!;
+      console.log(`  ${k.padEnd(5)}  ${mean(e.rate).toFixed(0).padStart(5)}원  ${mean(e.pc).toFixed(1).padStart(5)}대  ${mean(e.opened).toFixed(2)}년  ${(mean(e.resid) * 100).toFixed(1).padStart(6)}%`);
+    }
+    console.log("  ⚠️ 잔차가 이미 0에 가까우면 모델이 그 매장을 맞히고 있다는 뜻이다 —");
+    console.log("     CPU를 더 낮추면 오히려 과소예측이 된다.");
+
+    // ── 같은 13세대 안에서만 (2026-09-18 사용자 지적) ─────────────────────
+    // 사용자: "i3라고 요금이낮은건아닌데? 요금은 사양에맞추는게아니라 상권에 맞추는형태임.
+    //          우리가 당시 기본모델은 i3를 넣은거뿐."
+    // 맞는 지적이다 — 요금은 i3의 결과가 아니다. 둘 다 **시기**에 붙어 있을 뿐이다.
+    // 그러면 같은 세대 안에서 견주면 시기가 묶이니 교란이 빠진다.
+    const g13 = new Map<string, { rev: number[]; rate: number[]; opened: number[]; resid: number[]; pc: number[] }>();
+    for (const s of S) {
+      const r = rowByCode.get(s.storeCode);
+      if (!r) continue;
+      const t = String(s.ownCpu ?? "");
+      if (!/13\d{3}/.test(t)) continue;
+      const pc = r.input.pcCount;
+      if (!pc || !(pc > 0) || !(r.actualRevenue > 0)) continue;
+      const k = /i3/i.test(t) ? "13세대 i3" : "13세대 i5";
+      const e = g13.get(k) ?? { rev: [], rate: [], opened: [], resid: [], pc: [] };
+      e.rev.push(r.actualRevenue / pc);
+      e.pc.push(pc);
+      if (r.input.hourlyRate) e.rate.push(r.input.hourlyRate);
+      if (s.openedAt) { const d = new Date(s.openedAt); if (!isNaN(d.getTime())) e.opened.push(d.getFullYear() + d.getMonth() / 12); }
+      const pred = predByCode.get(s.storeCode);
+      if (pred != null) e.resid.push((pred - r.actualRevenue) / r.actualRevenue);
+      g13.set(k, e);
+    }
+    console.log("\n[같은 13세대 안에서만] 시기를 묶으면 교란이 빠진다");
+    console.log("  집단        곳수  PC당매출   요금     PC수    개점시기    모델 잔차");
+    for (const k of ["13세대 i3", "13세대 i5"]) {
+      const e = g13.get(k);
+      if (!e) continue;
+      console.log(`  ${k.padEnd(10)}  ${String(e.rev.length).padStart(3)}곳  ${(mean(e.rev) / 10000).toFixed(2).padStart(6)}만  ${mean(e.rate).toFixed(0).padStart(5)}원  ${mean(e.pc).toFixed(1).padStart(5)}대  ${mean(e.opened).toFixed(2)}년  ${(mean(e.resid) * 100).toFixed(1).padStart(6)}%`);
+    }
+    // 성능지수로 본 i3 13100F의 자리
+    console.log(`\n  [참고] 성능지수  i3 13100F ${LAB_CPU_PERF_INDEX["13100"]} · i5 12400F ${LAB_CPU_PERF_INDEX["12400"]} · i5 13400F ${LAB_CPU_PERF_INDEX["13400"]} (i5 14400F = 100)`);
+  });
+
   it("(15) CPU가 나빠진 건 순서인가 수준인가", () => {
     // 새 CPU 표는 경쟁점을 크게 올린다(12400F 41건 +1.30 · 11400F +1.63 · 10400F +1.04).
     // 축척은 **독점매장에서만** 맞추므로(textbookModel calibrationTarget) 이 수준 이동은

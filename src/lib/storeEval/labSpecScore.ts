@@ -52,9 +52,47 @@
 // 점수를 움직였기 때문이 아니라 **맞는 모델에 맞게 움직였기** 때문이다.
 //
 // CPU는 순서를 못 고쳤다. 경쟁점 CPU 평균을 0.78점 올리는데(자사는 0.28점) 그 수준 이동을
-// 빼고 봐도 r이 0.002밖에 안 움직인다. 세대 산술이 CPU에서는 이미 충분했다는 뜻이다 —
-// 바닥에 깔린 66건의 순서를 살려도 성적이 안 변한다는 (10)의 결과와 같은 방향이다.
-// ⚠️ 표는 지웠다가 다시 만들지 않으려고 **남겨 둔다.** 표본이 늘면 다시 켜 보면 된다.
+// 빼고 봐도 r이 0.002밖에 안 움직인다.
+//
+// ── CPU 2차 — 갈라서 다시 봤다 (2026-09-18) ───────────────────────────────
+// 1차 표는 **두 가지를 한꺼번에** 했다. 2번이 망친 걸 1번까지 같이 버렸나 싶어 갈라 봤다.
+//   1. 티어 구분   i3 13100F가 i5 13400F와 같은 3.00점이던 것을 가른다 (자사 9곳)
+//   2. 세대 간격   세대당 1점이던 것이 성능차대로 압축된다 (13400F는 14400F의 97%)
+//
+// 채택된 GPU 표 위에서 재면(= 바닥 22.59% · r 0.581):
+//   티어만 0.2점   MAPE 22.63%  r 0.581   <- r이 **한 톨도** 안 움직인다
+//   티어만 0.6점   MAPE 22.70%  r 0.582
+//   성능+벌점 0.30 MAPE 22.85%  r 0.585   <- r +0.004인데 MAPE -0.26%p
+// GPU 변경이 이미 r을 0.563 -> 0.581로 올려놨고, **CPU를 어떻게 만져도 그 위에 안 얹힌다.**
+//
+// ── 왜 안 얹히나 — 코호트 교란 + 잔차가 반대 방향 ─────────────────────────
+// 자사 i3 9곳의 실매출은 실제로 낮다(PC당 54.69만원 vs i5 66.77만원). 그래서 "티어를 반영하면
+// 맞겠네" 싶은데, 자료를 더 보면 **두 가지가 반대로 말한다.**
+//
+// **(1) i3는 매장 선택이 아니라 시기다.** 사용자 정정(2026-09-18):
+//   *"i3라고 요금이낮은건아닌데? 요금은 사양에맞추는게아니라 상권에 맞추는형태임.
+//     우리가 당시 기본모델은 i3를 넣은거뿐."*
+// 그러니 "i3라서 요금이 낮다"는 읽기는 **인과가 거꾸로다.** 요금은 상권이 정하고, i3는 그 시절
+// 표준 구성이었을 뿐이다. 둘은 **개점 시기**에 같이 붙어 있다([[project_cohort_effect_confound]]).
+// 같은 13세대 안에서만 견줘도 시기가 갈린다:
+//
+//   집단        곳수  PC당매출   요금     PC수     개점시기    모델 잔차
+//   13세대 i3    9곳  54.69만  1,211원  100.3대  2023.65년   **-9.8%**
+//   13세대 i5   13곳  64.67만  1,346원  102.6대  2024.37년   **-2.9%**
+//
+// **(2) 잔차가 반대 방향이다.** 잔차가 음수면 모델이 실제보다 **낮게** 본다는 뜻이다.
+// i3 매장은 이미 9.8% 과소예측되고 있다. 여기서 CPU 점수를 더 낮추면 **더 틀린다.**
+// 자료는 오히려 "i3 매장이 산식보다 잘하고 있다"고 말한다.
+// ([[feedback_raw_correlation_cannot_judge_structure]])
+//
+// ⚠️ **티어 구분이 하드웨어 설명으로는 맞다.** 안 쓰는 이유는 "i3가 i5와 같다"가 아니라
+//    이 표본에서 **i3가 곧 2023년 코호트**라, 티어를 넣으면 시기 효과를 CPU 이름으로 세게 되기
+//    때문이다. 게다가 방향도 반대다. 요금·상권이 다른 i3 매장이 생기면 갈라볼 수 있다.
+//
+// 참고로 당시 판단 근거도 자료가 지지한다 — 성능지수로 **i3 13100F 82 · i5 12400F 88**이다.
+// 7% 차이라 "크게 차이 안 난다"고 본 게 합리적이었다(4코어지만 클럭이 높아 e스포츠에선 근소).
+//
+// ⚠️ 표와 세대 벌점은 지웠다가 다시 만들지 않으려고 **남겨 둔다.** 표본이 늘면 다시 켜 본다.
 //
 // ── 사용자 질문 셋에 대한 답 (2026-09-18) ──────────────────────────────────
 // 1. *"4070 4080은 성능대비 5060보다 우위일텐데 이런거 어케할지?"*
@@ -262,13 +300,45 @@ export function labCpuKey(text: string | null): string | null {
 }
 
 /** CPU 텍스트 -> 1~5점. 표에 없으면 운영 세대 산술로 떨어진다. */
-export function labScoreFromCpu(text: string | null, table: Record<string, number> = LAB_CPU_PERF_INDEX): number | null {
+export function labScoreFromCpu(
+  text: string | null,
+  table: Record<string, number> = LAB_CPU_PERF_INDEX,
+  genPenalty = LAB_CPU_GEN_PENALTY,
+): number | null {
   const key = labCpuKey(text);
   if (key == null) return scoreFromCpu(text);
   const idx = table[key];
-  if (idx != null) return labScoreFromPerfIndex(idx);
-  return scoreFromCpu(text);
+  if (idx == null) return scoreFromCpu(text);
+  const gen = labCpuGeneration(key);
+  const aged = gen == null ? 0 : genPenalty * Math.max(0, LAB_CPU_ANCHOR_GENERATION - gen);
+  const raw = LAB_PERF_ANCHOR_SCORE + Math.log(idx / 100) / LAB_PERF_LOG_STEP - aged;
+  return Math.max(1, Math.min(5, raw));
 }
+
+/** 표 열쇠 -> 세대. 울트라 200S는 14세대 **다음**이라 15로 본다. */
+export function labCpuGeneration(key: string | null): number | null {
+  if (!key) return null;
+  if (key.startsWith("울트라")) return 15;
+  const m = key.match(/^(\d{4,5})$/);
+  if (!m) return null;
+  return m[1].length === 5 ? Number(m[1].slice(0, 2)) : Number(m[1].slice(0, 1));
+}
+
+/** CPU 앵커 세대 — i5 14400F. */
+export const LAB_CPU_ANCHOR_GENERATION = 14;
+
+/**
+ * **CPU 세대 벌점** — GPU의 `LAB_GEN_PENALTY`와 같은 구조다.
+ *
+ * ── 왜 CPU에도 필요한가 (2026-09-18 2차) ──────────────────────────────────
+ * 1차에서 CPU 성능지수표를 켰다가 껐다(r 0.563 -> 0.566뿐). 그런데 그 표는 **두 가지를
+ * 한꺼번에** 했다:
+ *   1. **티어 구분 추가** — i3 13100F가 i5 13400F와 같은 3.00점이던 것을 갈랐다(자사 9곳)
+ *   2. **세대 간격 압축** — 세대당 1점이던 것이 성능차대로 줄었다(13400F는 14400F의 97%라 0.17점)
+ * 2번이 망친 것을 1번까지 같이 버렸을 수 있다. 세대 벌점은 **2번만 되돌린다** —
+ * 티어 구분은 남기고 세대 간격을 다시 벌린다.
+ */
+export const LAB_CPU_GEN_PENALTY = 0.3;
 
 /**
  * RAM — 사실상 16GB와 32GB 두 종류다(자사 35 vs 8 · 경쟁점 102 vs 75). 운영은 3.50/4.00으로
@@ -340,6 +410,8 @@ export type LabSpecOptions = {
   gpuLogStepUp?: number;
   /** 세대 벌점. 훑기용. 기본은 `LAB_GEN_PENALTY`. */
   gpuGenPenalty?: number;
+  /** CPU 세대 벌점. 훑기용. 기본은 `LAB_CPU_GEN_PENALTY`. */
+  cpuGenPenalty?: number;
   /** RAM 16GB↔32GB 격차. */
   ramGap?: number;
   /** 모니터 특화 칸을 무시하고 기본만 쓸지. 조사 성실도 비대칭(자사 100% vs 경쟁 47%) 대응. */
@@ -380,7 +452,7 @@ export function labComputeSpecScore(
   );
   // CPU는 기본으로 **운영 세대 산술**을 쓴다 — 성능지수표가 순서를 못 고쳤다(파일 상단 참고).
   const cpuScore = (opts.useCpuPerfIndex ?? LAB_USE_CPU_PERF_INDEX)
-    ? (t: string | null) => labScoreFromCpu(t, opts.cpuTable)
+    ? (t: string | null) => labScoreFromCpu(t, opts.cpuTable, opts.cpuGenPenalty ?? LAB_CPU_GEN_PENALTY)
     : scoreFromCpu;
   const cpu = combineHardwareTiers(cpuScore(input.cpu), [cpuScore(input.cpuTop1), cpuScore(input.cpuTop2)]);
   const ram = combineHardwareTiers(
