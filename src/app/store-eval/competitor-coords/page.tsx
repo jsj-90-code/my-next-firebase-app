@@ -48,7 +48,13 @@ function checkDistance(surveyM: number | null, actualM: number): { level: "ok" |
   const base = `조사 ${Math.round(surveyM)}m · 찍은 위치 ${Math.round(actualM)}m (${sign}${Math.round(gap)}m)`;
   if (gap <= allow * 0.5) return { level: "ok", text: `${base} — 잘 맞는다` };
   if (gap <= allow) return { level: "warn", text: `${base} — 조금 어긋난다` };
-  return { level: "bad", text: `${base} — 많이 어긋난다. 다른 건물을 찍은 건 아닌지 확인할 것` };
+  // ⚠️ 어긋난다고 좌표가 틀린 건 아니다. 2026-09-17에 225곳을 다 찍고 대조했더니 14곳이
+  //    크게 어긋났는데, 사용자 확인 결과 **틀린 쪽은 조사 거리**였다("초기 데이터"). 그래서
+  //    "좌표를 고쳐라"가 아니라 "둘 중 하나가 틀렸다"로 말한다.
+  return {
+    level: "bad",
+    text: `${base} — 많이 어긋난다. 좌표를 잘못 찍었거나 조사 거리가 잘못 적힌 것이다`,
+  };
 }
 
 type Parent = { code: string; name: string; lat: number; lng: number; kind: "기존점" | "후보지" };
@@ -361,7 +367,9 @@ export default function CompetitorCoordsPage() {
                       >
                         <strong>지금 저장된 좌표</strong> — {savedCheck.text}
                         <br />
-                        마커가 그 자리에서 시작한다. 틀렸으면 끌어다 옮기면 된다.
+                        마커가 그 자리에서 시작한다. 좌표가 맞다면 그냥 두면 된다 —{" "}
+                        <strong>산식은 조사 거리가 아니라 좌표로 잰 거리를 쓴다.</strong>{" "}
+                        조사 거리는 현장 기록이라 고치지 않고 그대로 남긴다.
                       </div>
                     )}
                   </div>

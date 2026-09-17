@@ -193,6 +193,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { computeSpecScore, computeOwnZoneComposition, computeCompetitorZoneComposition, computeLocationScoreFromFacts } from "./calc";
+import { rivalDistanceM } from "./labInput";
 import { defaultModelSettings } from "./settings";
 import { computeQualityScore, DEFAULT_TEXTBOOK_PARAMS, type QualityParts } from "./textbookModel";
 
@@ -302,7 +303,10 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
       rivals: (compsBy.get(s.storeCode) ?? [])
         .filter((c) => c.investigationStatus !== "경쟁점없음")
         .map((c) => ({
-          ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: Number(c.distanceM ?? 0),
+          // 거리는 **좌표로 잰 값**을 먼저 쓴다. 현장조사 거리(distanceM)는 초기 데이터라
+          // 잘못 적힌 게 있다(2026-09-17 사용자 확인). 유효거리 300m 판정이 걸린 자리라
+          // 틀리면 경쟁점이 통째로 빠지거나 없던 게 들어온다.
+          ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: rivalDistanceM(s, c) ?? 0,
           parts: rivalParts(c),
           floorScore: computeLocationScoreFromFacts(c.floor ?? null, c.groundLevel ?? null, c.hasElevator ?? null),
         }))
@@ -1468,7 +1472,7 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
       for (const c of withXY) {
         const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
         const w = Math.max(0, Math.cos(rad(angDiff(bearing(s.lat, s.lng, c.lat, c.lng), md))));
-        const dw = Math.exp(-Number(c.distanceM ?? 0) / 300);
+        const dw = Math.exp(-(rivalDistanceM(s, c) ?? 0) / 300);
         num += ip * w; den += ip;
         numD += ip * w * dw; denD += ip * dw;
       }

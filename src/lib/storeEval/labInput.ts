@@ -87,6 +87,39 @@ export function ownQualityParts(s: ExistingStore, pc: number | null, settings: M
   };
 }
 
+/**
+ * 경쟁점까지의 거리(m). **좌표가 양쪽에 다 있으면 좌표로 잰 값을 쓰고**, 없으면 현장조사가
+ * 적어둔 `distanceM`으로 떨어진다.
+ *
+ * ── 왜 좌표를 먼저 쓰나 (2026-09-17) ────────────────────────────────────────
+ * 사용자 확인: *"조사 거리 내가 잘못 작성한 듯. 초기 데이터."* 경쟁점 좌표를 225곳 전부
+ * 손으로 찍고 나서 조사 거리와 대조했더니 14곳이 크게 어긋났는데, **틀린 건 좌표가 아니라
+ * 조사 거리**였다(수원인계 EFC 205m로 적혔지만 실제 481m 등).
+ *
+ * 이 거리는 품질 모드에서 **유효거리(300m) 안쪽 경쟁점만 세는 데** 쓰인다. 거리가 틀리면
+ * 경쟁점이 통째로 빠지거나 없던 게 들어온다 — 225곳 중 4곳이 그랬다.
+ *
+ * ⚠️ 조사 거리 기록(`distanceM`)은 **고치지 않는다.** 현장에서 적은 값은 그대로 두고 여기서
+ *    파생값으로만 갈아끼운다. 나중에 어느 쪽이 맞았는지 되짚을 수 있어야 한다.
+ * ⚠️ 운영 산식(calc.ts / usageRevenue.ts / evaluate.ts)은 distanceM을 아예 안 읽는다.
+ *    이 변경은 실험실 전용이다([[project_textbook_is_lab_only]]).
+ */
+export function rivalDistanceM(
+  store: Pick<ExistingStore, "lat" | "lng">,
+  rival: Pick<Competitor, "lat" | "lng" | "distanceM">,
+): number | null {
+  const { lat: sLat, lng: sLng } = store;
+  const { lat: rLat, lng: rLng } = rival;
+  if (sLat != null && sLng != null && rLat != null && rLng != null) {
+    const R = 6371000, rad = (d: number) => (d * Math.PI) / 180;
+    const dLat = rad(rLat - sLat), dLng = rad(rLng - sLng);
+    const a = Math.sin(dLat / 2) ** 2
+      + Math.cos(rad(sLat)) * Math.cos(rad(rLat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  return rival.distanceM == null ? null : Number(rival.distanceM);
+}
+
 export function rivalQualityParts(c: Competitor, settings: ModelSettings): QualityParts {
   const zone = computeCompetitorZoneComposition({
     counts: {
@@ -170,7 +203,7 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
           .map((c) => ({
             // 경쟁점 pcCount는 전 문서가 0이다 — appliedPcCount/totalPcCount를 써야 한다.
             ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0),
-            distanceM: c.distanceM ?? null,
+            distanceM: rivalDistanceM(s, c),
             parts: rivalQualityParts(c, settings),
           }))
           .filter((r) => r.ip > 0),
