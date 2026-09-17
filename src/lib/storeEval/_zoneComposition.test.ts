@@ -515,4 +515,120 @@ describeIf("존구성 — 수준인가 순서인가", () => {
     console.log(`     숫자는 "어느 안이 얼마나 흔드나"를 보는 용도고, 고르는 기준은 뜻이다.`);
     expect(rows.length).toBeGreaterThan(30);
   });
+
+  // ── (9) 룸만 센다 ──────────────────────────────────────────────────────
+  // 사용자 제안(2026-09-17 밤): *"2인석 3인석이런거 다뺴고 팀룸 차이만 적용할까.
+  // 팀룸 1인룸 2인룸 이런거"*
+  //
+  // ── 왜 이게 (8)보다 나을 수 있나 ──────────────────────────────────────
+  // 이름표 비대칭이 **통째로 사라진다.** 문제였던 셋(VIP존·프렌즈존·커플존)이 전부 개방석이라
+  // 한 칸으로 묶이면 자사 전용 이름표가 다양성에 영향을 못 준다. 그리고 룸은 정의가 명확하다 —
+  // 벽과 문이 있나 없나다. 파티션 높이·재질 판단(유리냐 목재냐)이 안 들어간다.
+  // 퍼스트클래스존도 자동으로 풀린다: 룸이고 다인이니 팀룸 칸이다.
+  //
+  // ⚠️ **개방석은 모든 PC방에 있다.** 칸으로 세면 상수라 다양성에 기여를 못 한다.
+  //    그래서 이 안은 사실상 **"룸 종류만 센다"**가 된다. 자사 우위가 크게 줄어든다 —
+  //    자사 41곳 중 룸(팀룸) 보유는 26곳이고 15곳은 룸이 아예 없다.
+  //
+  // 수용력(특화좌석비율)을 어디까지 셀지는 따로 갈리므로 두 갈래를 다 잰다.
+  it("(9) 룸만 센다 — 개방형 구분을 통째로 뺀다", () => {
+    const zoneKeys = ["singleSeatCount", "room1", "room2", "teamRoom", "coupleZone", "vipZone", "friendsZone", "firstClassZone"] as const;
+    const FC_SEATS = 11;
+    /** 룸 종류 수 — 1인룸 · 2인룸 · (팀룸+퍼스트클래스존). 개방석은 모두가 가지므로 안 센다. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roomTypes = (o: any): number =>
+      [o.room1 ?? 0, o.room2 ?? 0, (o.teamRoom ?? 0) + (o.firstClassZone ?? 0)].filter((v) => v > 0).length;
+    /** 룸 좌석만. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roomSeats = (o: any, teamSeats: number | null): number =>
+      (o.room1 ?? 0) + (o.room2 ?? 0) * 2 + (teamSeats ?? (o.teamRoom ?? 0) * 5) + (o.firstClassZone ?? 0) * FC_SEATS;
+    /** 개방 특화석까지 포함한 좌석(지금 환산과 같은 범위). */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allSeats = (o: any, teamSeats: number | null): number =>
+      roomSeats(o, teamSeats) + (o.singleSeatCount ?? 0) + (o.vipZone ?? 0)
+      + (o.coupleZone ?? 0) * 2 + (o.regularCoupleSeatCount ?? 0) + (o.friendsZone ?? 0);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const score = (o: any, own: boolean, pc: number | null, teamSeats: number | null, roomSeatsOnly: boolean): number | null => {
+      if (zoneKeys.every((k) => o[k] == null)) return own ? null : UNSURVEYED_COMPETITOR_ZONE_SCORE;
+      if (pc == null || pc <= 0) return null;
+      const diversity = Math.min(5, 1 + (1 + roomTypes(o)) * 0.5);
+      const ratio = (roomSeatsOnly ? roomSeats(o, teamSeats) : allSeats(o, teamSeats)) / pc;
+      const capacity = ratio < 0.1 ? 1 : ratio < 0.2 ? 2 : ratio < 0.3 ? 3 : ratio < 0.5 ? 4 : 5;
+      return diversity * 0.7 + capacity * 0.3;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownRaw = (s: (typeof stores)[number]): any => ({
+      singleSeatCount: s.ownSingleSeatCount, room1: s.ownRoom1, room2: s.ownRoom2, teamRoom: s.ownTeamRoom,
+      coupleZone: s.ownCoupleZone, vipZone: s.ownVipZone, friendsZone: s.ownFriendsZone, firstClassZone: s.ownFirstClassZone,
+      regularCoupleSeatCount: null,
+    });
+
+    const variant = (roomSeatsOnly: boolean) => {
+      const ownMap = new Map<string, number | null>();
+      for (const s of stores) ownMap.set(s.storeCode, score(ownRaw(s), true, s.evaluationPcCount ?? s.pcCount ?? null, s.ownTeamRoomTotalSeats ?? null, roomSeatsOnly));
+      const arr: (number | null)[] = [];
+      for (const r of rows) {
+        for (const c of (compsByCode.get(r.input.storeCode) ?? []).filter((x) => x.investigationStatus !== "경쟁점없음")) {
+          const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+          if (!(ip > 0)) continue;
+          arr.push(score(c, false, ip, c.teamRoomTotalSeats ?? null, roomSeatsOnly));
+        }
+      }
+      return { rows: withZone((v, i) => ownMap.get(rows[i].input.storeCode) ?? v, (v, i) => arr[i] ?? v), ownMap, arr };
+    };
+
+    // 룸 보유 현황 — 자사 우위가 얼마나 남나
+    const ownWithRoom = stores.filter((s) => roomTypes(ownRaw(s)) > 0).length;
+    const rivalsAll = rows.flatMap((r) => (compsByCode.get(r.input.storeCode) ?? [])
+      .filter((x) => x.investigationStatus !== "경쟁점없음" && Number(x.appliedPcCount ?? x.totalPcCount ?? 0) > 0));
+    const rivalWithRoom = rivalsAll.filter((c) => roomTypes(c) > 0).length;
+    console.log("");
+    console.log(`[룸만 센다] 룸 보유 — 자사 ${ownWithRoom}/${stores.length}곳 · 경쟁점 ${rivalWithRoom}/${rivalsAll.length}건`);
+    console.log(`  (지금 잣대로는 자사 ${stores.length}/${stores.length}곳이 경쟁점 대부분을 이긴다)`);
+    console.log("");
+    const base = line("지금 그대로", rows);
+    const a = variant(false);
+    const scA = line("룸만 세기 · 좌석은 전부", a.rows);
+    console.log(`      자사 중앙 ${median([...a.ownMap.values()].filter((x): x is number => x != null)).toFixed(2)} · MAPE ${((scA.mape - base.mape) * 100 >= 0 ? "+" : "")}${((scA.mape - base.mape) * 100).toFixed(2)}%p · r ${(scA.r - base.r >= 0 ? "+" : "")}${(scA.r - base.r).toFixed(3)}`);
+    const b = variant(true);
+    const scB = line("룸만 세기 · 좌석도 룸만", b.rows);
+    console.log(`      자사 중앙 ${median([...b.ownMap.values()].filter((x): x is number => x != null)).toFixed(2)} · MAPE ${((scB.mape - base.mape) * 100 >= 0 ? "+" : "")}${((scB.mape - base.mape) * 100).toFixed(2)}%p · r ${(scB.r - base.r >= 0 ? "+" : "")}${(scB.r - base.r).toFixed(3)}`);
+    line("(참고) 존구성 비중 0", rows, { ...P, qualityWeights: { ...P.qualityWeights, zone: 0 } });
+
+    // 룸만 세면 다양성 칸이 0~3으로 좁아지고 실제로는 거의 "팀룸 있나 없나"의 이진이 된다.
+    // 그러면 지금의 다양성 0.7 / 수용력 0.3 비중이 과할 수 있다 — 안쪽 비중을 훑어본다.
+     
+    const ownRaw2 = ownRaw;
+    const withInnerWeight = (wDiv: number) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sc2 = (o: any, own: boolean, pc: number | null, teamSeats: number | null): number | null => {
+        if (zoneKeys.every((k) => o[k] == null)) return own ? null : UNSURVEYED_COMPETITOR_ZONE_SCORE;
+        if (pc == null || pc <= 0) return null;
+        const diversity = Math.min(5, 1 + (1 + roomTypes(o)) * 0.5);
+        const ratio = allSeats(o, teamSeats) / pc;
+        const capacity = ratio < 0.1 ? 1 : ratio < 0.2 ? 2 : ratio < 0.3 ? 3 : ratio < 0.5 ? 4 : 5;
+        return diversity * wDiv + capacity * (1 - wDiv);
+      };
+      const ownMap = new Map<string, number | null>();
+      for (const s of stores) ownMap.set(s.storeCode, sc2(ownRaw2(s), true, s.evaluationPcCount ?? s.pcCount ?? null, s.ownTeamRoomTotalSeats ?? null));
+      const arr: (number | null)[] = [];
+      for (const r of rows) {
+        for (const c of (compsByCode.get(r.input.storeCode) ?? []).filter((x) => x.investigationStatus !== "경쟁점없음")) {
+          const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+          if (!(ip > 0)) continue;
+          arr.push(sc2(c, false, ip, c.teamRoomTotalSeats ?? null));
+        }
+      }
+      return withZone((v, i) => ownMap.get(rows[i].input.storeCode) ?? v, (v, i) => arr[i] ?? v);
+    };
+    console.log("");
+    console.log(`[룸만 세기 · 좌석은 전부] 안쪽 비중 훑기 — 다양성(룸 종류) 대 수용력(좌석)`);
+    for (const wDiv of [0.7, 0.5, 0.3, 0.1]) {
+      line(`다양성 ${wDiv.toFixed(1)} / 수용력 ${(1 - wDiv).toFixed(1)}`, withInnerWeight(wDiv));
+    }
+    console.log(`  ⚠️ 여기서 제일 낮은 MAPE를 고르면 안 된다 — 존구성엔 순서 정보가 없으니`);
+    console.log(`     이 훑기는 "얼마나 흔들리나"만 말해준다. 채택은 대조군을 다시 거쳐야 한다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
 });
