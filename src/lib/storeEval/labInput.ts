@@ -155,6 +155,116 @@ export function rivalQualityParts(c: Competitor, settings: ModelSettings): Quali
  */
 export type RoadviewJudgment = { flowBlock: number | null; visibility: number | null };
 
+// ── QSC(본사 점검 점수) -> 관리 점수 (2026-09-17) ─────────────────────────
+//
+// **실험실 전용이다.** 운영 V62의 관리 점수는 계속 4.00 고정이다.
+//
+// ── 왜 관리 점수 안에 넣나 (배율로 곱하지 않고) ───────────────────────────
+// 자료만 보면 점유율에 `(QSC/기준)^2.5`를 곱하는 쪽이 낫다(MAPE 20.61% vs 22.09%).
+// 그런데 사용자가 뜻으로 정했다:
+//
+//   *"나는 관리점수에 QSC가 반영되었으면한데, 배율적용하면 약간 보정값이잖아"*
+//
+// 이 저장소 규칙이 그쪽이다 — **항목은 뜻으로 정하고 계수만 자료로 정한다.** 검정은
+// "이 항목이 중요한가"가 아니라 "자료에서 주워온 숫자를 믿어도 되나"를 묻는 것이다.
+// 관리 점수는 원래 "그 매장이 관리를 얼마나 잘하나"를 재는 칸이고, QSC가 바로 그걸 잰다.
+// 배율은 같은 것을 산식 밖에 덧붙이는 보정값이 된다.
+//
+// ── 환산자 — 100점이 5점, 60점이 1점 ─────────────────────────────────────
+// 앵커를 절대값으로 잡는다. "우리 표본에서 제일 낮은 곳이 몇 점"이 아니라 **"몇 점이면
+// 최하인가"**를 정한 것이라, 표본이 늘어도 점수의 뜻이 안 흔들린다.
+//
+//   관리 = 1 + (QSC - 60) x (4/40),  1~5로 자름
+//
+// ⚠️ **바닥은 `[감각]` 계수다.** 자료가 방향은 지지하지만 값을 확정해주지 못한다(아래).
+//
+// ── 바닥 60을 고른 근거 ───────────────────────────────────────────────────
+// 두 자리에서 재봤고 **답이 갈렸다.** 갈린 이유까지 확인했다.
+//
+//   바닥   관리 평균   점유율 MAPE(23곳)   매출 MAPE(38곳)   중앙    최대
+//   안 씀    4.00        23.72%            23.15%         14.4%   83%
+//  **60     4.25        22.73%          **22.28%**       15.0%   87%**  <- 채택
+//    70     4.00        22.47%            22.56%         17.1%   81%
+//    80     3.51      **22.09%**          23.38%         18.6%   71%
+//    85     3.08        22.20%            24.35%         20.7%   65%
+//
+// **점유율 기준은 바닥 80을, 매출 기준은 바닥 60을 고른다.** 독점 매장 15곳 때문이다 —
+// 경쟁점이 없으면 나눌 상대가 없어 관리를 내려도 점유율이 안 변하는데, 경쟁 상권 매장만
+// 내려가니 편향이 생기고 그게 매출 단계에서 드러난다. 모델은 이미 과소예측(-9.2%)이라
+// 관리를 더 내리면 나빠진다. **매출이 최종 성적이므로 매출 기준을 쓴다.**
+//
+// 관문(매출 38곳): LOO 벌어짐 **0.24%p** · 훈련겹이 바닥 60을 35/38회 고름 — 과적합이 아니다.
+// ❌ **대조군은 어떤 바닥에서도 못 넘는다**: 60 p=0.075 · 70 p=0.144 · 80 p=0.259.
+//    (점유율 단계에서는 넘는다 — 바닥 80에서 p=0.040. 매출까지 오면 수요식·단가·상품몫
+//     오차가 겹겹이 쌓여 관리 효과가 묻힌다.)
+//    그래서 **계수를 자료로 확정하지 않고 뜻으로 정했다.** 바닥 80은 매출 기준 효과가
+//    **마이너스(-0.22%p)**라 버렸다.
+//
+// 바닥 60이면 부수적으로 이런 성질이 있다:
+//   - 점검 **1건짜리 매장이 4곳**인데(구미산동·화명대로·진주혁신·하남덕풍) 기울기가 얕아
+//     그 1건이 점수를 덜 흔든다. QSC 1점 = 관리 0.1점(바닥 80은 0.2점).
+//   - 자사 30곳이 전부 3.22~5.00으로 **경쟁점 평균 2.67 위**에 남는다. 자사는 본사 QSC,
+//     경쟁점은 현장조사 주관 평가라 **자가 다르다** — 다른 자로 잰 값을 뒤집을 근거가 없다.
+//
+// ⚠️ 이상치 3건을 안 빼면 점유율 관문도 미달이었다(p=0.070 -> 0.040). usableQscRecord 참고.
+const QSC_TOP = 100, QSC_FLOOR = 60;
+
+/** QSC 점수(0~100)를 관리 점수(1~5)로 환산한다. 값이 없으면 null — 지어내지 않는다. */
+export function qscToManagementScore(qsc: number | null | undefined): number | null {
+  if (qsc == null || !Number.isFinite(qsc) || qsc <= 0) return null;
+  const raw = 1 + (qsc - QSC_FLOOR) * (4 / (QSC_TOP - QSC_FLOOR));
+  return Math.max(1, Math.min(5, raw));
+}
+
+/**
+ * QSC가 없는 매장에 쓸 값 — **가맹점 평균**이다. 상수로 박지 않고 그때그때 계산한다
+ * (박아두면 자료가 늘 때 조용히 낡는다).
+ *
+ * ⚠️ 왜 4.00으로 두지 않나: 30곳은 QSC 자(평균 3.5)로, 11곳은 옛 자(4.00)로 재면 **두 자가
+ *    섞인다.** 그러면 QSC 없는 매장이 "관리를 잘하는 곳"으로 둔갑한다. 모르는 곳엔 평균을
+ *    준다 — 후보지에 주는 값과 같다.
+ */
+export function franchiseAverageManagement(mapped: (number | null)[]): number | null {
+  const vs = mapped.filter((v): v is number => v != null);
+  return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+}
+
+export type QscRecord = { date: string; score: number; form?: string };
+
+/**
+ * 평균에 넣어도 되는 점검 기록인가 (2026-09-17 사용자 확인: *"0점·오픈점검 둘 다 제외"*).
+ *
+ * - **0점** — 송도점은 개점 0개월(오픈 2주 차)이고 창원남양점은 같은 매장의 다른 점검이
+ *   전부 90점대다. 미실시나 입력오류지 "관리가 0점"이 아니다.
+ * - **오픈 매장 점검** — 오픈 직후 체크리스트라 일반 QSC와 **재는 것이 다르다.** 같은 자에
+ *   놓으면 그 매장이 부당하게 낮아진다(송도점 50점이 여기서 나왔다).
+ *
+ * 나머지 서식 넷은 섞어 쓴다 — 평균이 87.3~92.4로 큰 차이가 없어 교란이 아니다.
+ */
+export function usableQscRecord(r: QscRecord): boolean {
+  return r.score > 0 && !(r.form ?? "").includes("오픈 매장 점검");
+}
+
+/**
+ * 평가창(개점 다음 달~12개월) 안 점검의 평균. 없으면 null.
+ *
+ * ⚠️ **전체 기간 평균으로 메우지 않는다.** 매출 목표값이 평가창 12개월 평균이라 점검 점수도
+ *    같은 창에서 재야 짝이 맞는다 — 자사 시설 점수를 평가 시점으로 통일해 둔 것과 같은 이유다.
+ *    평가창 밖 점검은 그 매출을 만들어낸 운영 상태가 아니다.
+ */
+export function qscInWindowAverage(records: QscRecord[], openedAt: string | null): number | null {
+  if (!records.length || !openedAt) return null;
+  const open = new Date(openedAt);
+  if (Number.isNaN(open.getTime())) return null;
+  const vals = records.filter(usableQscRecord).filter((r) => {
+    const d = new Date(r.date.replace(/\./g, "-"));
+    if (Number.isNaN(d.getTime())) return false;
+    const m = (d.getFullYear() - open.getFullYear()) * 12 + (d.getMonth() - open.getMonth());
+    return m >= 1 && m <= 12;
+  }).map((r) => r.score);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+
 export type BuildLabRowsArgs = {
   /** prepareExistingStoresForEvaluation을 이미 통과한 기존점. */
   stores: ExistingStore[];
@@ -168,6 +278,12 @@ export type BuildLabRowsArgs = {
    * 판정 못 한 곳에 값을 지어내지 않는다.
    */
   roadviewByKey?: Map<string, RoadviewJudgment>;
+  /**
+   * 매장코드 -> 평가창 안 QSC 평균. 주면 자사 **관리 점수를 이 값으로 갈아끼운다**
+   * (qscToManagementScore). 안 주면 저장된 `ownManagementScore`(전부 4.00)를 그대로 쓴다.
+   * QSC가 없는 매장에는 있는 곳들의 평균을 넣는다 — 두 자가 섞이지 않게.
+   */
+  qscByStoreCode?: Map<string, number>;
 };
 
 /**
@@ -176,7 +292,12 @@ export type BuildLabRowsArgs = {
  * 값을 지어내지 않는다 — 자료가 없는 항목은 null로 넘기고, 모델이 그 항을 중립(1배)으로
  * 빼도록 둔다. 빠진 자리를 평균이나 0으로 메우면 "모른다"가 "나쁘다"로 둔갑한다.
  */
-export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey }: BuildLabRowsArgs): LabRow[] {
+export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode }: BuildLabRowsArgs): LabRow[] {
+  // QSC를 쓸 때만 계산한다. 가맹점 평균은 **환산한 뒤**의 평균이다 — 점수를 먼저 평균 내고
+  // 환산하면 다른 값이 나온다(환산이 1~5로 잘리는 구간이 있어서).
+  const qscAvg = qscByStoreCode?.size
+    ? franchiseAverageManagement(stores.map((s) => qscToManagementScore(qscByStoreCode.get(s.storeCode))))
+    : null;
   const rows: LabRow[] = [];
   for (const s of stores) {
     if (s.excludedFromModel || !s.actualMonthlyRevenueAvg) continue;
@@ -197,7 +318,12 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
         competitorIp: computeCompetitorIp(cs, s.operatingPcStores500m ?? null),
         competitorCount: cs.filter((c) => c.investigationStatus !== "경쟁점없음").length,
         // 품질 모드용 — 거리로 걸러야 하므로 합계가 아니라 낱개로 넘긴다.
-        ownQualityParts: ownQualityParts(s, s.evaluationPcCount ?? s.pcCount, settings),
+        ownQualityParts: (() => {
+          const parts = ownQualityParts(s, s.evaluationPcCount ?? s.pcCount, settings);
+          if (!qscByStoreCode?.size) return parts;
+          // 관리 점수를 QSC 환산값으로 갈아끼운다. 그 매장에 QSC가 없으면 가맹점 평균.
+          return { ...parts, management: qscToManagementScore(qscByStoreCode.get(s.storeCode)) ?? qscAvg ?? parts.management };
+        })(),
         rivals: cs
           .filter((c) => c.investigationStatus !== "경쟁점없음")
           .map((c) => ({

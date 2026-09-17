@@ -22,14 +22,18 @@
 // 실행:
 //   npx vitest run src/lib/storeEval/_textbookFull.test.ts --reporter=verbose --disable-console-intercept
 
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { buildLabRows, utilizationByStore, type LabRow } from "./labInput";
+import { buildLabRows, utilizationByStore, qscInWindowAverage, type LabRow, type QscRecord } from "./labInput";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
 import { DEFAULT_TEXTBOOK_PARAMS, scoreTextbook, type TextbookParams } from "./textbookModel";
 import type { Competitor } from "./types";
+
+/** QSC 수집물. gitignore라 PC마다 있을 수도 없을 수도 있다 — 없으면 관리가 4.00으로 남는다. */
+const QSC_FILE = ".local-tools/qsc-scores.json";
 
 const describeIf = hasValidationSnapshot() ? describe : describe.skip;
 
@@ -65,9 +69,24 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   // (41곳 850건) 평가창 밖 월이 섞인다. 거르는 일은 labInput.ts 안에 있다.
   const utilByStore = utilizationByStore(snap.sales ?? [], snap.existingStores);
 
+  // QSC(관리 점수의 원자료)는 로컬 수집물에 있다. **화면과 같은 값을 넣어야 한다** —
+  // 안 넣으면 화면은 관리 1.44~5.00으로, 여기는 4.00 고정으로 돌아 성적이 갈라진다.
+  // 파일이 없는 PC에서는 그냥 빈 Map이 되고, 그때는 관리가 4.00으로 남는다(지어내지 않는다).
+  const qscByStoreCode = new Map<string, number>();
+  if (existsSync(QSC_FILE)) {
+    const sites = JSON.parse(readFileSync(QSC_FILE, "utf8")).sites as Record<string, { openedAt?: string; records?: QscRecord[] }>;
+    for (const [key, site] of Object.entries(sites)) {
+      const code = key.startsWith("existing:") ? key.slice("existing:".length) : key;
+      const avg = qscInWindowAverage(site.records ?? [], site.openedAt ?? null);
+      if (avg != null) qscByStoreCode.set(code, avg);
+    }
+  }
+
   // 로드뷰 판정은 Firestore에 있어 하네스(오프라인 스냅샷)에서는 안 읽는다. 계수가 0이라
   // 결과에 영향이 없다 — 켤 때가 오면 스냅샷에 같이 담아야 한다.
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings });
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode });
+  console.log(`\n[QSC] 관리 점수를 실측으로 채운 곳 ${qscByStoreCode.size}곳` +
+    (qscByStoreCode.size ? ` (나머지는 가맹점 평균)` : ` — 수집물이 없어 전부 4.00 고정으로 돈다`));
 
   /** 입지 항목을 골라서 끈 행을 만든다. 원본은 안 건드린다. */
   function withLocation(keep: "none" | "all" | Array<"centrality" | "access" | "direction">): LabRow[] {
@@ -115,6 +134,134 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     const r = pearson(pairs.map((x) => x[0]), pairs.map((x) => x[1]));
     console.log(`중심도 ↔ 수요식 유동400m 상관 r=${r.toFixed(3)} (n=${pairs.length})`);
   });
+
+  // ⚠️ 2026-09-17 — 점유율 잔차에서 고른 QSC 바닥(80)이 **매출에서는 최선이 아니다.**
+  // _qscResidual.test.ts는 경쟁상권 23곳의 점유율만 봤고(22.09%가 최선), 여기는 38곳 매출을
+  // 본다. 독점 매장은 나눌 상대가 없어 관리 점수를 내려도 점유율이 안 변하는데, 경쟁 매장만
+  // 내려가면 **편향이 생긴다.** 그 편향이 매출 단계에서 드러난다.
+  it("QSC 바닥을 매출 기준으로 다시 훑는다 — 점유율에서 고른 값이 여기서도 맞나", () => {
+    if (!qscByStoreCode.size) { console.log("\n[QSC] 수집물이 없다 — 건너뜀"); return; }
+    const mg = (q: number, floor: number) => Math.max(1, Math.min(5, 1 + (q - floor) * (4 / (100 - floor))));
+    /** 바닥을 바꿔 행을 다시 만든다. floor=null이면 QSC를 아예 안 쓴다(전부 4.00). */
+    const rowsAt = (floor: number | null): LabRow[] => {
+      if (floor == null) return buildLabRows({ stores, compsByCode, utilByStore, settings });
+      const mapped = new Map<string, number>();
+      for (const [code, q] of qscByStoreCode) mapped.set(code, q);
+      const scores = [...mapped.values()].map((q) => mg(q, floor));
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const base = buildLabRows({ stores, compsByCode, utilByStore, settings });
+      return base.map((r) => {
+        const q = mapped.get(r.input.storeCode);
+        const m = q == null ? avg : mg(q, floor);
+        return { ...r, input: { ...r.input, ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, management: m } : r.input.ownQualityParts } };
+      });
+    };
+    console.log("\n[QSC 바닥 — 매출 기준] 관리 = 1 + (QSC-바닥) x 4/(100-바닥)");
+    line("QSC 안 씀 (전부 4.00)", rowsAt(null));
+    for (const f of [50, 60, 65, 70, 75, 80, 85]) {
+      const scores = [...qscByStoreCode.values()].map((q) => mg(q, f));
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      line(`바닥 ${f} (관리 평균 ${avg.toFixed(2)})`, rowsAt(f));
+    }
+    console.log("\n  ⚠️ 점유율 기준(_qscResidual, 경쟁상권 23곳)은 바닥 80을 골랐다. 두 자리가 갈리면");
+    console.log("     그건 문제 제기지 채택 근거가 아니다 — 독점 매장이 안 움직여 편향이 생긴다.");
+
+    // ── 관문 — 표본 안 최선을 그대로 고르면 안 된다 ────────────────────────
+    // 이 저장소가 두 번 속은 방식이다(2026-09-15 밀집도 r=0.660 · 2026-09-16 gamma=4).
+    // 매출 기준으로 LOO와 무작위 대조군을 건다.
+    const FLOORS = [50, 60, 65, 70, 75, 80, 85];
+    const errsOf = (rs: LabRow[]) => {
+      const sc = scoreTextbook(rs, P);
+      const byCode = new Map(sc.rows.map((r) => [r.storeCode, r]));
+      return rs.map((r) => {
+        const o = byCode.get(r.input.storeCode);
+        return o?.absErrPct != null ? { code: r.input.storeCode, e: o.absErrPct } : null;
+      }).filter((x): x is { code: string; e: number } => x != null);
+    };
+    // 바닥별 매장별 오차를 한 번씩만 계산해 둔다(재계산이 비싸다).
+    const errByFloor = new Map<number | null, Map<string, number>>();
+    for (const f of [null, ...FLOORS]) errByFloor.set(f, new Map(errsOf(rowsAt(f)).map((x) => [x.code, x.e])));
+    const codes = [...errByFloor.get(null)!.keys()];
+    const mapeOn = (cs: string[], f: number | null) => {
+      const m = errByFloor.get(f)!;
+      const vs = cs.map((c) => m.get(c)).filter((v): v is number => v != null);
+      return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : NaN;
+    };
+    const pickOn = (cs: string[]) => FLOORS.reduce((a, b) => (mapeOn(cs, b) < mapeOn(cs, a) ? b : a), FLOORS[0]);
+
+    const held: number[] = [], picks: number[] = [];
+    for (const c of codes) {
+      const rest = codes.filter((x) => x !== c);
+      const f = pickOn(rest);
+      picks.push(f);
+      const v = errByFloor.get(f)!.get(c);
+      if (v != null) held.push(v);
+    }
+    const ins = pickOn(codes);
+    const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+    console.log(`\n[LOO · 매출] 표본 안 최선 바닥 ${ins} (${(mapeOn(codes, ins) * 100).toFixed(2)}%) -> 홀드아웃 ${(held.reduce((a, b) => a + b, 0) / held.length * 100).toFixed(2)}%` +
+      ` (벌어짐 ${((held.reduce((a, b) => a + b, 0) / held.length - mapeOn(codes, ins)) * 100).toFixed(2)}%p)`);
+    console.log(`  훈련겹이 고른 바닥: ${tally.slice(0, 3).map(([x, n]) => `${x}(${n}회)`).join(" · ")}`);
+
+    // 대조군 — QSC 점수만 매장끼리 섞는다. 기준선은 "QSC 안 씀".
+    let seed = 20260917 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const gainReal = mapeOn(codes, null) - mapeOn(codes, ins);
+    const withQsc = [...qscByStoreCode.keys()];
+    const gains: number[] = [];
+    for (let i = 0; i < 200; i++) {
+      const pool = [...qscByStoreCode.values()];
+      for (let j = pool.length - 1; j > 0; j--) { const k = Math.floor(rng() * (j + 1)); [pool[j], pool[k]] = [pool[k], pool[j]]; }
+      const shuffled = new Map(withQsc.map((c, j) => [c, pool[j]]));
+      const saved = new Map(qscByStoreCode);
+      qscByStoreCode.clear();
+      for (const [c, v] of shuffled) qscByStoreCode.set(c, v);
+      const m = new Map<number, Map<string, number>>();
+      for (const f of FLOORS) m.set(f, new Map(errsOf(rowsAt(f)).map((x) => [x.code, x.e])));
+      const best = Math.min(...FLOORS.map((f) => {
+        const mm = m.get(f)!;
+        const vs = codes.map((c) => mm.get(c)).filter((v): v is number => v != null);
+        return vs.reduce((a, b) => a + b, 0) / vs.length;
+      }));
+      gains.push(mapeOn(codes, null) - best);
+      qscByStoreCode.clear();
+      for (const [c, v] of saved) qscByStoreCode.set(c, v);
+    }
+    gains.sort((a, b) => a - b);
+    const pv = (gains.filter((g) => g >= gainReal).length + 1) / (gains.length + 1);
+    console.log(`[대조군 · 매출 · 바닥을 자료가 고름] 실제 좋아진 폭 ${(gainReal * 100).toFixed(2)}%p · 섞으면 중앙 ${(gains[Math.floor(gains.length / 2)] * 100).toFixed(2)}%p` +
+      ` · 95퍼센타일 ${(gains[Math.floor(gains.length * 0.95)] * 100).toFixed(2)}%p · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    console.log(`  ⚠️ 이 검정에는 **바닥 8개 중 최선을 고르는 자유도**가 들어 있다. 무작위 QSC라도`);
+    console.log(`     8개 중 제일 좋은 걸 고르면 우연히 좋아 보인다. 바닥을 뜻으로 고정하면 이 자유도가 없다.`);
+
+    // ── 바닥을 고정한 대조군 — 계수를 [감각]으로 정할 때 맞는 검정 ──────────
+    // 저장소 규칙: "검정은 '이 항목이 중요한가'가 아니라 '자료에서 주워온 숫자를 믿어도
+    // 되나'를 묻는 것이라, 감각으로 정한 값에는 필요 없다." 그래도 **QSC 자체가 신호인지**는
+    // 확인할 값어치가 있다 — 바닥을 박아두고 QSC 점수만 섞어 본다.
+    console.log(`\n[대조군 · 매출 · 바닥 고정] 바닥을 박아두고 QSC 점수만 매장끼리 섞는다`);
+    for (const f of [60, 70, 80]) {
+      const real = mapeOn(codes, null) - mapeOn(codes, f);
+      const gs: number[] = [];
+      for (let i = 0; i < 200; i++) {
+        const pool = [...qscByStoreCode.values()];
+        for (let j = pool.length - 1; j > 0; j--) { const k = Math.floor(rng() * (j + 1)); [pool[j], pool[k]] = [pool[k], pool[j]]; }
+        const saved = new Map(qscByStoreCode);
+        const shuffled = withQsc.map((c, j) => [c, pool[j]] as const);
+        qscByStoreCode.clear();
+        for (const [c, v] of shuffled) qscByStoreCode.set(c, v);
+        const mm = new Map(errsOf(rowsAt(f)).map((x) => [x.code, x.e]));
+        const vs = codes.map((c) => mm.get(c)).filter((v): v is number => v != null);
+        gs.push(mapeOn(codes, null) - vs.reduce((a, b) => a + b, 0) / vs.length);
+        qscByStoreCode.clear();
+        for (const [c, v] of saved) qscByStoreCode.set(c, v);
+      }
+      gs.sort((a, b) => a - b);
+      const p = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+      console.log(`  바닥 ${f}: 실제 ${(real * 100).toFixed(2)}%p · 섞으면 중앙 ${(gs[Math.floor(gs.length / 2)] * 100).toFixed(2)}%p` +
+        ` · 95퍼센타일 ${(gs[Math.floor(gs.length * 0.95)] * 100).toFixed(2)}%p · p=${p.toFixed(3)} ${p < 0.05 ? "✅" : "❌"}`);
+    }
+    expect(rows.length).toBeGreaterThan(30);
+  }, 600_000);
 
   it("입지가 전체 성적에 얼마를 하는가", () => {
     console.log("\n[입지 항목별] 계수는 기본값 — 중심도 ν=0.25 · 접근성 κ=0.25 · 유동방향 ω=0");

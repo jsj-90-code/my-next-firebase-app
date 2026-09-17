@@ -81,6 +81,10 @@ const LAB_SETTINGS = "storeEvalLabSettings";
 // 운영 문서로 실험실 문서를 통째로 덮어쓰기 때문에, 매장 문서에 넣으면 다음 동기화 때
 // 판정이 날아간다. 별도 컬렉션은 동기화가 손대지 않는다.
 const LAB_ROADVIEW = "storeEvalLabRoadviewJudgments";
+// QSC 평가창 평균(관리 점수의 원자료). 로드뷰 판정과 **같은 이유로** 매장 문서가 아니라
+// 따로 둔다 — syncLabCollections.mjs가 운영 문서로 실험실 문서를 통째로 덮으므로, 매장
+// 문서에 넣으면 다음 동기화 때 날아간다. 운영 V62는 이 컬렉션을 아예 읽지 않는다.
+const LAB_QSC = "storeEvalLabQscScores";
 
 const AUDIT_LOG = "storeEvalAuditLog";
 const RESTORE_LOG = "storeEvalRestoreLog";
@@ -467,6 +471,21 @@ export async function listLabRoadviewJudgments(): Promise<Map<string, { flowBloc
     const v = d.data() as { key?: string; flowBlock?: number | null; visibility?: number | null };
     if (!v.key) return;
     out.set(v.key, { flowBlock: v.flowBlock ?? null, visibility: v.visibility ?? null });
+  });
+  return out;
+}
+
+/**
+ * 매장코드 -> 평가창 안 QSC 평균. 실험실의 관리 점수가 이 값에서 나온다.
+ * 채우는 건 `scripts/writeQscScoresToFirestore.mjs`다(fcdaum 수집물이 원자료).
+ */
+export async function listLabQscScores(): Promise<Map<string, number>> {
+  const snap = await getDocs(collection(requireDb(), LAB_QSC));
+  const out = new Map<string, number>();
+  snap.forEach((d) => {
+    const v = d.data() as { storeCode?: string; inWindowAvg?: number | null };
+    if (!v.storeCode || v.inWindowAvg == null || !(v.inWindowAvg > 0)) return;
+    out.set(v.storeCode, v.inWindowAvg);
   });
   return out;
 }

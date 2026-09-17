@@ -37,7 +37,7 @@ import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/l
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   getLabModelSettings, listLabCompetitors, listLabLocationEvaluations,
-  listLabExistingStores, listLabRoadviewJudgments, listEvaluationSales,
+  listLabExistingStores, listLabRoadviewJudgments, listLabQscScores, listEvaluationSales,
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
@@ -55,6 +55,12 @@ type Loaded = {
   rows: LabRow[];
   /** 지금 운영 산식의 성적. 비교 기준선으로만 쓴다. */
   current: { mape: number | null; within10: number | null; within20: number | null; sampleCount: number } | null;
+  /**
+   * QSC(본사 점검) 적용 현황. **숫자를 글자로 박지 않고 여기서 읽어 그린다** — 자료가 늘면
+   * 화면이 저절로 따라간다. 몇 곳이 실측이고 몇 곳이 평균인지 화면에 꼭 적어야 한다:
+   * 안 적으면 "관리 3.51점"이 실측인지 기본값인지 사람이 구분 못 한다.
+   */
+  qsc: { measured: number; total: number; avg: number | null; min: number | null; max: number | null } | null;
 };
 
 const pct = (v: number | null | undefined, digits = 1) =>
@@ -67,12 +73,15 @@ async function loadLabData(): Promise<Loaded | null> {
   //    실험실에서 시설·사양을 고칠 때 운영 V62가 같이 움직인다 — 갈라놓은 뜻이 없어진다.
   //    복제본은 scripts/syncLabCollections.mjs로 **명시적으로** 채운다(자동 동기화 없음).
   //    월매출만 운영 것을 그대로 읽는다 — 실측 사실이라 두 벌로 둘 이유가 없다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode] = await Promise.all([
     listLabExistingStores(),
     getLabModelSettings(),
     listLabCompetitors(),
     listLabLocationEvaluations(),
     listLabRoadviewJudgments(),
+    // QSC 평가창 평균 -> 관리 점수(labInput.ts qscToManagementScore). 실험실 전용 컬렉션이라
+    // 동기화가 안 건드리고, 운영 V62는 아예 읽지 않는다.
+    listLabQscScores(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -114,7 +123,7 @@ async function loadLabData(): Promise<Loaded | null> {
   }
 
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey });
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode });
 
   let current: Loaded["current"] = null;
   try {
@@ -131,7 +140,20 @@ async function loadLabData(): Promise<Loaded | null> {
   } catch {
     current = null; // 비교값이 없어도 실험은 돌아가야 한다
   }
-  return { rows, current };
+
+  // QSC 적용 현황 — 행에 실제로 들어간 관리 점수에서 읽는다. 별도로 다시 계산하면
+  // 화면과 모델이 갈라진다(2026-09-17에 하네스가 그렇게 갈라졌다).
+  const mgmts = rows.map((r) => r.input.ownQualityParts?.management ?? null).filter((v): v is number => v != null);
+  const qsc = qscByStoreCode.size
+    ? {
+      measured: rows.filter((r) => qscByStoreCode.has(r.input.storeCode)).length,
+      total: rows.length,
+      avg: mgmts.length ? mgmts.reduce((a, b) => a + b, 0) / mgmts.length : null,
+      min: mgmts.length ? Math.min(...mgmts) : null,
+      max: mgmts.length ? Math.max(...mgmts) : null,
+    }
+    : null;
+  return { rows, current, qsc };
 }
 
 export default function LabPage() {
@@ -194,7 +216,7 @@ export default function LabPage() {
         <>
           <ScoreBoard score={score} current={data.current} />
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
-            scaledOnUtilization={score.scaledOnUtilization} />
+            scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} />
           <ParamSummary p={p} counts={counts} />
           <StoreTable score={score} />
         </>
@@ -266,8 +288,10 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
  *    그린다 — 위 조절판을 움직이면 이 설명도 같이 바뀐다. 계산만 바꾸고 설명을 두면 화면이
  *    조용히 거짓말을 한다(CLAUDE.md 규칙, docs/backlog.md 2026-09-14 블록).
  */
-function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
+function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
   p: TextbookParams; fitted: number; productUnitPrice: number; scaledOnUtilization: boolean;
+  /** QSC 적용 현황. 숫자를 글자로 박지 않고 여기서 읽어 그린다. */
+  qsc: Loaded["qsc"];
 }) {
   // PC몫은 정가에서 나온다 — 기준정가 x (정가/기준정가)^β. 운영 산식 effectiveHourlyRate와 같은 식이다.
   const pcAt = (rate: number) => p.referenceHourlyRate * Math.pow(rate / p.referenceHourlyRate, p.rateElasticity);
@@ -416,6 +440,38 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization }: {
               </div>
             );
           })()}
+          {qsc && (
+            <div className="mt-3 rounded border border-[var(--sl-line)] p-2">
+              <div className="font-semibold">관리 점수는 QSC(본사 점검)에서 나옵니다</div>
+              <div className="mt-1 font-mono text-[11px]">
+                관리 점수 = 1 + (QSC − 60) × 0.1 &nbsp;&nbsp;(1~5로 자름 · QSC 100점 = 5점 · 60점 이하 = 1점)
+              </div>
+              <div className="mt-1">
+                평가창(개점 다음 달~12개월) 안 점검의 평균을 씁니다. 매출 목표값이 같은 창의 평균이라
+                점검도 같은 창에서 재야 짝이 맞습니다. <b>0점 기록과 &quot;오픈 매장 점검&quot;은 뺍니다</b> —
+                앞은 미실시·입력오류이고, 뒤는 오픈 직후 체크리스트라 재는 것이 다릅니다.
+              </div>
+              <div className="mt-1">
+                바닥 60은 <b>[감각] 계수</b>입니다. 매출 오차는 좋아지고(23.15% → 22.28%) 홀드아웃도
+                안정적이지만(벌어짐 0.24%p · 훈련겹이 35/38회 이 값을 고름), <b>무작위 대조군은 못 넘습니다</b>
+                (p=0.075). 점유율 단계에서는 넘는데(p=0.040) 매출까지 오면 수요식·단가 오차에 묻힙니다.
+                그래서 자료가 아니라 <b>뜻으로 정한 값</b>입니다 — 표본이 늘면 다시 잽니다.
+              </div>
+              <div className="mt-1">
+                지금 <b>{qsc.total}곳 중 {qsc.measured}곳</b>이 실제 점검 점수로 계산되고,
+                나머지 {qsc.total - qsc.measured}곳은 <b>가맹점 평균</b>이 들어갑니다.
+                {qsc.avg != null && qsc.min != null && qsc.max != null && (
+                  <> 관리 점수는 <b>{qsc.min.toFixed(2)} ~ {qsc.max.toFixed(2)}</b>,
+                    평균 <b>{qsc.avg.toFixed(2)}</b>입니다(종전에는 전 매장 4.00 고정이었습니다).</>
+                )}
+              </div>
+              <div className="mt-1 text-[var(--sl-ink-soft)]">
+                ⚠️ <b>후보지에는 가맹점 평균이 들어갑니다</b> — 안 연 매장은 점검을 받을 수 없기 때문입니다.
+                그래서 이 항목은 <b>후보지 예상매출을 바꾸지 않습니다.</b> 기존점이 왜 빗나갔는지를
+                설명하는 항목입니다. 운영 산식(V62)의 관리 점수는 4.00 고정 그대로입니다.
+              </div>
+            </div>
+          )}
           <div className="mt-1">
             가동률 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
             (실측 월평균 최대가 46.5%, 월 최대의 최대가 52.0%).

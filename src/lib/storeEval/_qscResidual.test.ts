@@ -145,7 +145,7 @@ import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility"
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { evaluateCandidate } from "./evaluate";
-import { rivalDistanceM } from "./labInput";
+import { rivalDistanceM, qscInWindowAverage, qscToManagementScore, usableQscRecord } from "./labInput";
 import { defaultModelSettings, mergeModelSettings } from "./settings";
 import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
 import { computeQualityScore, DEFAULT_TEXTBOOK_PARAMS, type QualityParts } from "./textbookModel";
@@ -208,17 +208,32 @@ describeIf("QSC 잔차 검정 — 산식이 못 맞힌 부분을 점검 점수�
   const set = defaultModelSettings();
   const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
 
-  /** 평가창 안 평균. 없으면 null — 전체기간 평균으로 메우지 않는다(다른 것을 재는 값이다). */
-  const qscIn = (code: string): number | null => {
-    const q = Q[`existing:${code}`];
-    return q && q.inWindowCount > 0 && q.inWindowAvg != null && q.inWindowAvg > 0 ? q.inWindowAvg : null;
-  };
+  /**
+   * 쓸 수 없는 점검 기록을 걸러낸다 (2026-09-17 사용자 확인: *"0점·오픈점검 둘 다 제외"*).
+   *
+   * - **0점 2건** — 송도점은 개점 0개월(오픈 2주 차)이고 창원남양점은 같은 매장의 다른
+   *   점검이 전부 90점대다. 미실시나 입력오류지 "관리가 0점"이 아니다.
+   * - **오픈 매장 점검** — `블랙라벨PC존 오픈 매장 점검`은 오픈 직후 체크리스트라
+   *   일반 QSC와 **재는 것이 다르다.** 같은 자에 놓으면 그 매장이 부당하게 낮아진다
+   *   (송도점 50점이 여기서 나왔다).
+   *
+   * 나머지 서식 넷은 섞어 쓴다 — 평균이 87.3~92.4로 큰 차이가 없어 교란이 아니다.
+   */
+  // 화면과 **같은 함수**를 쓴다. 여기서 따로 구현하면 갈라진다 — 2026-09-17에 하네스가
+  // 운영 자료를 뜨고 화면은 실험실 자료를 읽어 실제로 갈라져 있었다.
+  const usableRecord = usableQscRecord;
+
+  /**
+   * 평가창(개점 다음 달~12개월) 안 평균. 없으면 null — 전체기간 평균으로 메우지 않는다.
+   * ⚠️ 파일의 `inWindowAvg`를 그대로 쓰지 않는다. 그 값은 위의 걸러낼 기록까지 포함한다.
+   */
+  const qscIn = (code: string): number | null =>
+    qscInWindowAverage(Q[`existing:${code}`]?.records ?? [], Q[`existing:${code}`]?.openedAt ?? null);
   /** 전체기간 평균 — 참고용. 평가창 밖 점검이 섞인다. */
   const qscAll = (code: string): number | null => {
     const q = Q[`existing:${code}`];
-    if (!q?.records?.length) return null;
-    const v = mean(q.records.map((r) => r.score));
-    return v > 0 ? v : null;
+    const vals = (q?.records ?? []).filter(usableRecord).map((r) => r.score);
+    return vals.length ? mean(vals) : null;
   };
 
   const openedBy = new Map((snap.existingStores as any[]).map((s) => [s.storeCode, s.openedAt]));
@@ -711,6 +726,124 @@ describeIf("QSC 잔차 검정 — 산식이 못 맞힌 부분을 점검 점수�
     const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
     console.log(`  대조군 [녹임·MAPE] 실제 ${(real * 100).toFixed(2)}%p · 95퍼센타일 ${(gs[Math.floor(gs.length * 0.95)] * 100).toFixed(2)}%p · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
     expect(set4.length).toBeGreaterThan(10);
+  });
+
+  it("(9) QSC → 관리점수 환산자를 고른다 — 절대기준이냐 밸런스냐", () => {
+    // 사용자 방향 둘이 **서로 충돌한다**(2026-09-17):
+    //   (1) *"100점=5점 / 50점=1점"* — 절대 기준. 50점이면 가맹점 최하라는 뜻이 살아난다.
+    //   (2) *"평균이 3정도 가야 밸런스맞긴한데"* — 1~5 척도의 한가운데가 우리 평균이어야 한다.
+    //
+    // QSC가 92점 근처에 몰려 있어(30곳 평균 92.19 · 82.2~100) 직선 하나로 둘을 다 만족할 수
+    // 없다. 평균을 3으로 끌어내리면 만점 100점도 3.37점이 된다.
+    //
+    // ⚠️ 어느 쪽이 맞느냐는 **뜻의 문제지 자료의 문제가 아니다.** 여기서는 각 안이 어떤
+    //    점수를 만들고 오차가 어떻게 되는지만 낸다. 고르는 건 사용자다.
+    //    (경쟁점 관리 점수는 현장조사 주관 평가로 1.5~4.5 · 평균 2.67이다. 자사를 어디에
+    //     놓느냐가 곧 "우리가 경쟁점보다 관리를 얼마나 잘하나"를 정하는 일이다.)
+    const ps = cmp.filter((r) => qscIn(r.code) != null);
+    if (ps.length < 15) { console.log(`\n표본 ${ps.length}곳 — 건너뜀`); return; }
+    const qs = ps.map((r) => qscIn(r.code)!);
+    const qAvg = mean(qs);
+    const clamp = (v: number) => Math.max(1, Math.min(5, v));
+
+    const plans: { label: string; f: (q: number) => number }[] = [
+      { label: "(가) 100→5 · 50→1 (절대기준)", f: (q) => clamp(1 + (q - 50) * (4 / 50)) },
+      { label: "(나) 평균→3 · 50→1 (밸런스)", f: (q) => clamp(1 + (q - 50) * (2 / (qAvg - 50))) },
+      { label: "(다) 꺾은선 50→1·평균→3·100→5", f: (q) => clamp(q <= qAvg ? 1 + (q - 50) * (2 / (qAvg - 50)) : 3 + (q - qAvg) * (2 / (100 - qAvg))) },
+      { label: "(라) 지금대로 전부 4.0", f: () => 4.0 },
+      // (가)의 기울기(변별력)는 그대로 두고 수준만 평균 3.0으로 평행이동한다.
+      // "밸런스"는 **평균의 문제**지 기울기의 문제가 아니라는 가설.
+      { label: "(마) (가) 기울기 + 평균 3.0", f: (q) => clamp(3.0 + (q - qAvg) * (4 / 50)) },
+      // 사용자 조정(2026-09-17): *"절대기준으로하되 50점 1아니라 60점>1 또는 65점>1
+      // 70점>1 이런식으로 조정하는건어떤데"* — 바닥을 올리면 기울기가 가팔라져 변별력이
+      // 커지고, 동시에 평균도 올라간다. 둘을 한꺼번에 움직이는 손잡이다.
+      { label: "(바) 100→5 · 60→1", f: (q) => clamp(1 + (q - 60) * (4 / 40)) },
+      { label: "(사) 100→5 · 65→1", f: (q) => clamp(1 + (q - 65) * (4 / 35)) },
+      { label: "(아) 100→5 · 70→1", f: (q) => clamp(1 + (q - 70) * (4 / 30)) },
+      { label: "(자) 100→5 · 75→1", f: (q) => clamp(1 + (q - 75) * (4 / 25)) },
+      { label: "(차) 100→5 · 80→1", f: (q) => clamp(1 + (q - 80) * (4 / 20)) },
+      // **실제로 배선된 함수**를 같은 표에 넣는다. (차)와 같은 줄이 나와야 맞다 —
+      // 다르면 화면과 하네스가 갈라진 것이다.
+      { label: "(채택) labInput.qscToManagementScore", f: (q) => qscToManagementScore(q) ?? 4 },
+    ];
+
+    type Q5 = { n: string; parts: QualityParts; rivals: Row["rivals"]; pc: number; loc: number; q: number; obs: number };
+    const set5: Q5[] = ps.map((r) => ({
+      n: r.n, parts: r.parts, rivals: r.rivals, pc: r.pc, q: qscIn(r.code)!, obs: r.shareObs,
+      loc: Math.pow((r.floorScore ?? fRefAll) / P.locationReferences.access, P.locationExponents.access)
+        * Math.pow((r.cent ?? P.locationReferences.centrality) / P.locationReferences.centrality, P.locationExponents.centrality),
+    }));
+    const shareWith = (x: Q5, f: (q: number) => number) => {
+      const parts: QualityParts = { ...x.parts, management: f(x.q) };
+      const oq = computeQualityScore(parts, W);
+      let riv = 0;
+      for (const v of x.rivals) {
+        if (v.d > P.effectiveRadiusM) continue;
+        const qq = oq == null ? 1 : (computeQualityScore(v.parts, W) ?? oq) / oq;
+        riv += v.ip * Math.pow(qq, P.qualityExponent);
+      }
+      return (x.pc / (x.pc + riv)) * x.loc;
+    };
+
+    console.log(`\n경쟁상권 QSC 보유 ${ps.length}곳 · QSC ${Math.min(...qs).toFixed(1)}~${Math.max(...qs).toFixed(1)} · 평균 ${qAvg.toFixed(2)}`);
+    console.log(`경쟁점 관리 점수(현장조사) 평균 2.67 · 범위 1.5~4.5 — 자사를 어디 놓을지가 이 검정의 질문이다.\n`);
+    console.log(`  ${"안".padEnd(30)}${"관리 범위".padStart(13)}${"평균".padStart(7)}${"후보지".padStart(8)}${"MAPE".padStart(9)}${"r".padStart(8)}`);
+    for (const { label, f } of plans) {
+      const mg = qs.map(f);
+      const m = mean(set5.map((x) => Math.abs(shareWith(x, f) / x.obs - 1)));
+      const rr = pear(set5.map((x) => shareWith(x, f)), set5.map((x) => x.obs));
+      console.log(`  ${label.padEnd(30)}${`${Math.min(...mg).toFixed(2)}~${Math.max(...mg).toFixed(2)}`.padStart(13)}${mean(mg).toFixed(2).padStart(7)}${f(qAvg).toFixed(2).padStart(8)}${(m * 100).toFixed(2).padStart(8)}%${rr.toFixed(3).padStart(8)}`);
+    }
+    console.log(`\n  [환산표] QSC 점수가 각 안에서 몇 점이 되나`);
+    console.log(`  ${"QSC".padStart(6)}${"(가)".padStart(9)}${"(나)".padStart(9)}${"(다)".padStart(9)}`);
+    for (const q of [50, 70, 82, 88, 92.19, 96, 100]) {
+      console.log(`  ${q.toFixed(q % 1 ? 2 : 0).padStart(6)}${plans[0].f(q).toFixed(2).padStart(9)}${plans[1].f(q).toFixed(2).padStart(9)}${plans[2].f(q).toFixed(2).padStart(9)}`);
+    }
+    // ── 관문 — 바닥을 어디로 잡을지는 자유계수다. 표본 안 최선을 그대로 쓰면 안 된다 ──
+    // 위 표가 **끝까지 단조롭게 좋아진다.** 이 저장소가 두 번 속은 모양이다
+    // (2026-09-15 밀집도 r=0.660 · 2026-09-16 gamma=4). 홀드아웃과 대조군에 건다.
+    const FLOORS = [50, 55, 60, 65, 70, 75, 80, 85];
+    const fOf = (floor: number) => (q: number) => clamp(1 + (q - floor) * (4 / (100 - floor)));
+    const mapeAt = (s: Q5[], floor: number) => mean(s.map((x) => Math.abs(shareWith(x, fOf(floor)) / x.obs - 1)));
+    const corrAt = (s: Q5[], floor: number) => pear(s.map((x) => shareWith(x, fOf(floor))), s.map((x) => x.obs));
+    const scAt = (s: Q5[], crit: "mape" | "r", floor: number) => (crit === "mape" ? mapeAt(s, floor) : -corrAt(s, floor));
+    const pickF = (s: Q5[], crit: "mape" | "r") => FLOORS.reduce((a, b) => (scAt(s, crit, b) < scAt(s, crit, a) ? b : a), FLOORS[0]);
+
+    console.log(`\n══ 바닥 관문 (n=${set5.length}) ══`);
+    console.log(`  ${"바닥".padStart(6)}${"평균".padStart(8)}${"MAPE".padStart(9)}${"r".padStart(8)}${"1점바닥에 걸린 곳".padStart(20)}`);
+    for (const f of FLOORS) {
+      const atFloor = set5.filter((x) => fOf(f)(x.q) <= 1.0001).length;
+      console.log(`  ${String(f).padStart(6)}${mean(set5.map((x) => fOf(f)(x.q))).toFixed(2).padStart(8)}${(mapeAt(set5, f) * 100).toFixed(2).padStart(8)}%${corrAt(set5, f).toFixed(3).padStart(8)}${String(atFloor).padStart(20)}`);
+    }
+    for (const crit of ["mape", "r"] as const) {
+      const errs: number[] = [], picks: number[] = [];
+      for (let i = 0; i < set5.length; i++) {
+        const b = pickF(set5.filter((_, j) => j !== i), crit);
+        picks.push(b);
+        errs.push(Math.abs(shareWith(set5[i], fOf(b)) / set5[i].obs - 1));
+      }
+      const ins = pickF(set5, crit);
+      const tally = [...new Set(picks)].map((x) => [x, picks.filter((y) => y === x).length] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`  LOO [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ${(mapeAt(set5, ins) * 100).toFixed(2)}% → LOO ${(mean(errs) * 100).toFixed(2)}% (벌어짐 ${((mean(errs) - mapeAt(set5, ins)) * 100).toFixed(2)}%p) · 고른 바닥 ${tally.slice(0, 3).map(([x, n]) => `${x} ${Math.round(n / set5.length * 100)}%`).join(" · ")}`);
+    }
+    let sd2 = 20260917 >>> 0;
+    const rg = () => { sd2 += 0x6d2b79f5; let x = Math.imul(sd2 ^ (sd2 >>> 15), 1 | sd2); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const sh = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rg() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+    for (const crit of ["mape", "r"] as const) {
+      // 기준선은 "지금대로 전부 4.0"이다. QSC를 안 쓰는 상태에서 얼마나 좋아지나를 잰다.
+      const base = (s: Q5[]) => (crit === "mape"
+        ? mean(s.map((x) => Math.abs(shareWith(x, () => 4.0) / x.obs - 1)))
+        : -pear(s.map((x) => shareWith(x, () => 4.0)), s.map((x) => x.obs)));
+      const gain = (s: Q5[]) => base(s) - Math.min(...FLOORS.map((f) => scAt(s, crit, f)));
+      const real = gain(set5);
+      const gs: number[] = [];
+      for (let i = 0; i < 500; i++) { const pool = sh(set5.map((x) => x.q)); gs.push(gain(set5.map((x, j) => ({ ...x, q: pool[j] })))); }
+      gs.sort((a, b) => a - b);
+      const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+      const fm = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+      console.log(`  대조군 [${crit === "mape" ? "MAPE" : "r"}] 실제 ${fm(real)} · 섞으면 중앙 ${fm(med(gs))} · 95퍼센타일 ${fm(gs[Math.floor(gs.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+    expect(set5.length).toBeGreaterThan(10);
   });
 
   it("(8) 자사 관리 점수를 4.0에서 3.0으로 내리면 후보지가 얼마나 내려가나", () => {

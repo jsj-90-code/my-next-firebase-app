@@ -295,6 +295,11 @@ export type TextbookParams = {
    *
    * ⚠️ **입지는 여기 없다.** 사용자 방향대로 항목·평가값·개념을 전부 다시 만든 뒤 넣는다.
    *    실무 감각 비중에서 입지 몫은 17.0%였고, 나머지 넷이 그 몫을 나눠 갖고 있는 상태다.
+   *
+   * ⚠️ **관리(management)는 실험실에서 QSC로 채운다**(2026-09-17). 운영 V62는 전 매장 4.00
+   *    고정이지만, 실험실은 본사 점검 점수를 1~5로 환산해 넣는다(3.22~5.00 · 평균 4.25).
+   *    환산자와 근거는 `labInput.ts`의 `qscToManagementScore`에 있다. 이 파일은 안 바뀌었다 —
+   *    관리는 원래 여기 있던 칸이고, 그 칸에 들어오는 **값**이 상수에서 실측으로 바뀐 것이다.
    */
   qualityWeights: { spec: number; food: number; zone: number; interior: number; management: number };
   /**
