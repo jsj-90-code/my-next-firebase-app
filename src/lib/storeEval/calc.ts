@@ -621,24 +621,55 @@ export const AMD_RYZEN_SERIES_TO_INTEL_GEN: Record<number, number> = {
   9: 14,
 };
 
+/**
+ * 2026-09-17 — **인텔 7·8·9세대를 통째로 못 읽고 있었다.** 세대 추출이 5자리 숫자만 봤기
+ * 때문이다(`/(\d{2})\d{3}/`). "i5 12400"은 읽히는데 "i5 9400F"는 세대가 한 자리라 4자리
+ * 모델번호가 되어 null이었다. 경쟁점 CPU 203건 중 **57건(28%)** 이 그랬다.
+ *
+ * null이 되면 그 항목이 가중합에서 빠지고 나머지로 재정규화된다 — **낡은 CPU가 낮은 점수를
+ * 받는 게 아니라 벌점을 아예 안 받았다.** 낡은 경쟁점이 실제보다 좋게 평가되고 있었다.
+ *
+ * 사용자 방향(2026-09-17): *"개떡같이 적어도 찰떡같이 알아들어야 하는 구조가 좋은데."*
+ * 그래서 목록 선택으로 바꾸지 않고 **읽는 쪽을 관대하게** 만든다.
+ *
+ * ⚠️ **4자리 모델번호는 제조사를 먼저 가려야 한다.**
+ *      인텔 i5 9400F  → 9세대 (2018년, 구형)
+ *      AMD  라이젠 9700x → 9000시리즈 (2024년, 최신)
+ *    숫자만 보면 둘을 못 가른다. 그래서 AMD 판정을 인텔보다 먼저 한다.
+ *
+ * ⚠️ GPU 표기가 들어오면 null로 둔다 — CPU 칸에 "RTX 3080Ti"가 적힌 오입력이 3건 있다.
+ *    숫자만 뽑으면 3080 → 3세대로 읽혀 조용히 틀린 점수가 나온다. 읽지 않는 게 맞다.
+ */
 export function scoreFromCpu(text: string | null): number | null {
   if (!text) return null;
-  const ultraM = text.match(/(?:울트라|ultra)\s*([579])\s+(\d{3})/i);
+  // 칸 착오 — GPU 모델명이 CPU 칸에 적힌 경우. 숫자를 뽑으면 엉뚱한 세대가 되므로 안 읽는다.
+  if (/\b(?:RTX|GTX|라데온|RADEON|RX\s*\d)/i.test(text)) return null;
+
+  // "울트라5 225F" · "울트라5 시리즈 225" 둘 다 받는다(사이에 낱말이 껴도 된다).
+  const ultraM = text.match(/(?:울트라|ultra)\s*([579])\D{0,8}(\d{3})/i);
   if (ultraM) {
     const tier = Number(ultraM[1]); // 5/7/9
     const tierRank = tier === 5 ? 1 : tier === 7 ? 2 : 3;
     const series = Math.floor(Number(ultraM[2]) / 100); // 225 → 2
     return Math.min(5, Math.max(1, 4 + (tierRank - 1) + (series - 2)));
   }
-  const ryzenM = text.match(/(?:ryzen|라이젠)\s*[3579]?\s*(\d)\d{3}/i);
+  // AMD를 인텔보다 먼저 본다 — 4자리 숫자의 뜻이 정반대이기 때문이다.
+  // "라이젠 9700x" · "Ryzen 5 5600" · "R7 5800X3D" 를 다 받는다.
+  const ryzenM = text.match(/(?:ryzen|라이젠|\bR[3579]\b)\s*[3579]?\s*(\d)\d{3}/i);
   if (ryzenM) {
     const equivalentGen = AMD_RYZEN_SERIES_TO_INTEL_GEN[Number(ryzenM[1])];
     if (equivalentGen != null) return Math.min(5, Math.max(1, equivalentGen - 10));
   }
   const genLabelM = text.match(/(\d{1,2})\s*세대/);
-  const generation = genLabelM ? Number(genLabelM[1]) : text.match(/(\d{2})\d{3}/)?.[1];
-  if (generation == null) return null;
-  return Math.min(5, Math.max(1, Number(generation) - 10));
+  if (genLabelM) return Math.min(5, Math.max(1, Number(genLabelM[1]) - 10));
+
+  // 인텔 모델번호 — 4자리면 한 자리 세대(9400F → 9), 5자리면 두 자리 세대(12400 → 12).
+  // 단어경계를 쓰지 않는다. "10400F"처럼 접미사가 붙으면 숫자와 글자 사이에 경계가 없다.
+  const modelM = text.match(/(\d{4,5})/);
+  if (!modelM) return null;
+  const digits = modelM[1];
+  const generation = digits.length === 5 ? Number(digits.slice(0, 2)) : Number(digits.slice(0, 1));
+  return Math.min(5, Math.max(1, generation - 10));
 }
 
 /**
@@ -649,7 +680,10 @@ export function scoreFromCpu(text: string | null): number | null {
  */
 export function scoreFromRam(text: string | null): number | null {
   if (!text) return null;
-  const m = text.match(/(\d+)\s*G/i);
+  // 2026-09-17 — 단위를 안 적어도 읽는다. 사용자 방향: "메모리 32면 32GB로 읽으면 되고
+  // 32기가라고 적혀도 32GB로 읽으면 됨. 32g도 32GB로 자동 적용."
+  // 그전에는 `/(\d+)\s*G/i`라 "32"·"32기가"가 null이었다(6건).
+  const m = text.match(/(\d+)\s*(?:G|기가|GB)?/i);
   if (!m) return null;
   const gb = Number(m[1]);
   if (gb <= 0) return null;

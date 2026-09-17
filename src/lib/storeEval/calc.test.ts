@@ -365,8 +365,31 @@ describe("scoreFromCpu (2026-08-27 추가 — 세대 기반 CPU 점수, 14세대
     expect(scoreFromCpu("11400")).toBe(1); // 11세대 -> 1
     expect(scoreFromCpu("16400")).toBe(5); // 16세대 -> 6 -> 5로 clamp
   });
-  it("4자리 구형 모델번호(9세대 이하, 예: i5-9400)는 5자리 패턴에 안 걸려 null - 지어내지 않는다", () => {
-    expect(scoreFromCpu("i5-9400")).toBeNull();
+  // 2026-09-17 — 예전에는 4자리 모델번호(7~9세대)를 못 읽고 null로 뒀다. 그게 "지어내지
+  // 않는다"로 적혀 있었지만, i5-9400이 9세대인 건 지어내는 게 아니라 사실이다. 그리고 null이
+  // 되면 항목이 가중합에서 빠져 **낡은 CPU가 벌점을 아예 안 받았다**(경쟁점 203건 중 57건).
+  // 11400(11세대)이 1점인데 더 낡은 9400이 점수 없음인 건 일관성이 없다.
+  it("4자리 구형 모델번호(7~9세대)도 읽는다 — 세대가 낮아 하한 1점", () => {
+    expect(scoreFromCpu("i5-9400")).toBe(1);
+    expect(scoreFromCpu("i5 9400F")).toBe(1);
+    expect(scoreFromCpu("i7 8700")).toBe(1);
+    expect(scoreFromCpu("i5 7500")).toBe(1);
+  });
+  // 4자리 숫자는 제조사에 따라 뜻이 정반대다 — 인텔 9400은 2018년 구형, AMD 9700x는 2024년
+  // 최신이다. 그래서 AMD 판정을 인텔보다 먼저 한다.
+  it("AMD 라이젠은 시리즈로 읽는다 — 4자리라도 인텔 구형과 안 헷갈린다", () => {
+    expect(scoreFromCpu("라이젠 9700x")).toBe(4); // 9000시리즈 -> 인텔 14세대 환산 -> 4점
+    expect(scoreFromCpu("Ryzen 5 5600")).toBe(1); // 5000시리즈 -> 11세대 -> 1점
+  });
+  // CPU 칸에 GPU 모델명이 적힌 오입력이 3건 있다. 숫자를 뽑으면 3080 -> 3세대로 조용히
+  // 틀린 점수가 나오므로 읽지 않는다.
+  it("CPU 칸에 GPU가 적혀 있으면 안 읽는다 - 칸 착오", () => {
+    expect(scoreFromCpu("RTX 3080Ti")).toBeNull();
+    expect(scoreFromCpu("RTX 2070s")).toBeNull();
+  });
+  // 사용자 방향(2026-09-17): "울트라5 시리즈 225"처럼 사이에 낱말이 껴도 읽는다.
+  it("울트라 표기에 낱말이 껴도 읽는다", () => {
+    expect(scoreFromCpu("울트라5 시리즈 225")).toBe(4);
   });
   it("세대/모델 패턴을 못 뽑으면 null - 지어내지 않는다", () => {
     expect(scoreFromCpu("울트라5 시리즈2 225F")).toBeNull();
