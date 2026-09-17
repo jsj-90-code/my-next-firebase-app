@@ -12,10 +12,10 @@
 
 import {
   computeCompetitorIp,
-  computeSpecScore,
   computeLocationScoreFromFacts,
 } from "@/lib/storeEval/calc";
 import { computeLabZoneComposition } from "@/lib/storeEval/labZoneComposition";
+import { labComputeSpecScore } from "@/lib/storeEval/labSpecScore";
 import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation";
 import type { QualityParts, TextbookInput } from "@/lib/storeEval/textbookModel";
@@ -78,7 +78,9 @@ export function ownQualityParts(s: ExistingStore, pc: number | null, settings: M
     teamRoomTotalSeats: s.ownTeamRoomTotalSeats ?? null, totalPcCount: pc, own: true,
   });
   return {
-    spec: computeSpecScore({
+    // 2026-09-18 — 사양도 실험실 전용 잣대를 쓴다(labSpecScore.ts). 운영은 세대 산술이라
+    // RTX 3060 Ti(2.25)가 RTX 4060(3.00)보다 낮게 깔리는 등 실제 서열과 어긋난 자리가 있었다.
+    spec: labComputeSpecScore({
       vgaBase: s.ownVgaBase ?? null, vgaTop: s.ownVgaTop ?? null, vgaTop2: s.ownVgaTop2 ?? null,
       cpu: s.ownCpu ?? null, cpuTop1: s.ownCpuTop1 ?? null, cpuTop2: s.ownCpuTop2 ?? null,
       ram: s.ownRam ?? null, ramTop: s.ownRamTop ?? null,
@@ -138,7 +140,7 @@ export function rivalQualityParts(c: Competitor, settings: ModelSettings): Quali
     own: false,
   });
   return {
-    spec: computeSpecScore({
+    spec: labComputeSpecScore({
       vgaBase: c.vgaBase ?? null, vgaTop: c.vgaTop ?? null, vgaTop2: c.vgaTop2 ?? null,
       cpu: c.cpu ?? null, cpuTop1: c.cpuTop1 ?? null, cpuTop2: c.cpuTop2 ?? null,
       ram: c.ram ?? null, ramTop: c.ramTop ?? null,

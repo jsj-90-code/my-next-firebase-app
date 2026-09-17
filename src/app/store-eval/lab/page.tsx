@@ -51,6 +51,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 // 화면에만 항목을 붙이다 하네스가 입지를 통째로 빠뜨린 적이 있다(2026-09-16).
 import { buildLabRows, utilizationByStore, type LabRow } from "@/lib/storeEval/labInput";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
+import { LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP } from "@/lib/storeEval/labSpecScore";
 
 type Loaded = {
   rows: LabRow[];
@@ -527,6 +528,37 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
               움직입니다. 그래서 이 변경은 <b>정확도가 아니라 뜻을 고친 것</b>입니다 —
               &quot;왜 우리가 이기는가&quot;의 답이 이름표여서는 안 되기 때문입니다.
               2026-09-17 측정: MAPE 22.02% → 22.60%. 운영 산식(V62)의 존구성은 그대로입니다.
+            </div>
+          </div>
+          <div className="mt-3 rounded border border-[var(--sl-line)] p-2">
+            <div className="font-semibold">사양은 <b>세대가 아니라 성능</b>으로 셉니다 (GPU만)</div>
+            <div className="mt-1 font-mono text-[11px]">
+              GPU점수 = {LAB_PERF_ANCHOR_SCORE} + ln(성능지수 / 100) / {LAB_PERF_LOG_STEP}
+              &nbsp;&nbsp;(RTX 5060 = 100 = {LAB_PERF_ANCHOR_SCORE.toFixed(2)}점)
+            </div>
+            <div className="mt-1">
+              운영 산식은 <b>세대 하나당 1점</b>입니다. 세대 숫자는 출시 연도지 성능이 아니라서, 같은 세대 안의
+              티어 차이가 세대 하나보다 클 때 서열이 뒤집힙니다. 실제로 조사 자료에 이런 자리가 있었습니다 —
+              <b> RTX 3060 Ti가 2.25점으로 RTX 4060(3.00점)보다 낮고</b>(23건), RTX 3070은 2.50점(12건),
+              RTX 4070은 3.50점으로 RTX 5060(4.00점)보다 낮았습니다(9건).
+            </div>
+            <div className="mt-1">
+              눈금은 <b>기존 사다리를 그대로 잇습니다.</b> RTX 5060 / 4060 / 3060 / 2060 = 4 / 3 / 2 / 1점이
+              한 칸당 성능 ×0.83에 해당해서, 그 기울기({LAB_PERF_LOG_STEP})를 모델 전체로 넓혔을 뿐입니다.
+              같은 식에 네 모델을 도로 넣으면 4.00 · 2.97 · 2.19 · 1.00이 나옵니다.
+            </div>
+            <div className="mt-1">
+              <b>CPU와 RAM은 안 바꿨습니다.</b> 같은 방식으로 CPU 성능지수표도 만들어 재 봤는데
+              순서를 못 고쳤습니다(r 0.563 → 0.566인데 MAPE는 22.62% → 23.02%, 수준을 되돌려도 22.93%).
+              RAM 16GB↔32GB 격차는 늘릴수록 단조롭게 나빠집니다(0.5 → 1.0에서 22.76% · 2.0에서 23.05%)
+              — 지우는 쪽도 r이 0.002만 움직여 <b>순서 정보가 거의 없는 항목</b>입니다. 운영과 같은 0.5로 둡니다.
+            </div>
+            <div className="mt-1 text-[var(--sl-ink-soft)]">
+              ⚠️ <b>성능지수는 [감각] 계수입니다</b> — 공개 벤치마크 통념에서 온 근사치라 이 저장소 자료로
+              검증할 수 없습니다. 대신 <b>무작위 대조군을 넘었습니다</b>: 점수 변화폭은 그대로 두고 어느 모델에
+              붙는지만 300회 뒤섞으면 r 개선이 중앙 −0.003 · 95퍼센타일 0.016인데 실제 표는 <b>+0.023(p=0.010)</b>입니다.
+              2026-09-18 측정: MAPE 22.60% → 22.62% · r 0.563 → 0.586 · ±20% 58% → 63% · 최대오차 76% → 63%.
+              운영 산식(V62)의 사양 점수는 그대로입니다.
             </div>
           </div>
           <div className="mt-1">
