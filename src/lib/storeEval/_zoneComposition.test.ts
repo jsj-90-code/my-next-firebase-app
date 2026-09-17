@@ -631,4 +631,87 @@ describeIf("존구성 — 수준인가 순서인가", () => {
     console.log(`     이 훑기는 "얼마나 흔들리나"만 말해준다. 채택은 대조군을 다시 거쳐야 한다.`);
     expect(rows.length).toBeGreaterThan(30);
   });
+
+  // ── (10) 룸 좌석을 더 무겁게 쳐야 하나 ─────────────────────────────────
+  // 사용자 질문(2026-09-17 밤): *"1인석2인석보다 룸형태가 가점더받는게맞는거같은데
+  // 이부분에대해선 적용되어있나?"*
+  //
+  // 지금은 **절반만** 적용돼 있다. 종류 점수(비중 0.3)는 룸만 세지만, 좌석 점수(비중 0.7)는
+  // 룸 1석과 개방 1석을 똑같이 센다. 그래서 룸 가점이 최대 0.6점뿐이다.
+  //   특화좌석 30%로 같을 때 — 룸 없음 3.10 · 룸 1종류 3.40 · 룸 3종류 3.70
+  //
+  // 제대로 하려면 좌석 환산에서 룸 좌석에 가중 w를 준다. 그런데 **누가 득을 보는지**를
+  // 먼저 봐야 한다.
+  //
+  //   자사 40곳       룸 492석 · 개방특화 851석  -> 룸 비중 **37%**
+  //   실험실 표본 경쟁점 168건  룸 685석 · 개방특화 626석 -> 룸 비중 **52%**
+  //
+  // **경쟁점이 룸 비중이 더 높다.** 룸에 가중을 주면 우리가 불리해진다.
+  // (전체 경쟁점 기준 룸 좌석의 50%가 `개수 x 5` 추정분이라 부풀려져 있는데, 실험실 표본
+  //  168건에는 미기입이 0건이라 **추정 없이 실측만으로도** 52%다 — 부풀림 탓이 아니다.)
+  //
+  // 그래서 이 결정에는 자기 편향이 없다. 우리에게 유리해서가 아니라 뜻이 맞아서 고를 수 있다.
+  it("(10) 룸 좌석 가중 — 올리면 우리가 불리해진다", () => {
+    const zoneKeys = ["singleSeatCount", "room1", "room2", "teamRoom", "coupleZone", "vipZone", "friendsZone", "firstClassZone"] as const;
+    const FC_SEATS = 11;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roomSeatsOf = (o: any, teamSeats: number | null): number =>
+      (o.room1 ?? 0) + (o.room2 ?? 0) * 2 + (teamSeats ?? (o.teamRoom ?? 0) * 5) + (o.firstClassZone ?? 0) * FC_SEATS;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const openSeatsOf = (o: any): number =>
+      (o.singleSeatCount ?? 0) + (o.vipZone ?? 0) + (o.friendsZone ?? 0) + (o.coupleZone ?? 0) * 2 + (o.regularCoupleSeatCount ?? 0);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roomTypesOf = (o: any): number =>
+      [o.room1 ?? 0, o.room2 ?? 0, (o.teamRoom ?? 0) + (o.firstClassZone ?? 0)].filter((v) => v > 0).length;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const score = (o: any, own: boolean, pc: number | null, teamSeats: number | null, w: number): number | null => {
+      if (zoneKeys.every((k) => o[k] == null)) return own ? null : UNSURVEYED_COMPETITOR_ZONE_SCORE;
+      if (pc == null || pc <= 0) return null;
+      const types = roomTypesOf(o);
+      const diversity = types <= 0 ? 1 : Math.min(5, 1 + (1 + types) * 0.5);
+      const ratio = (roomSeatsOf(o, teamSeats) * w + openSeatsOf(o)) / pc;
+      const capacity = ratio < 0.1 ? 1 : ratio < 0.2 ? 2 : ratio < 0.3 ? 3 : ratio < 0.5 ? 4 : 5;
+      return diversity * 0.3 + capacity * 0.7;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownRaw3 = (s: (typeof stores)[number]): any => ({
+      singleSeatCount: s.ownSingleSeatCount, room1: s.ownRoom1, room2: s.ownRoom2, teamRoom: s.ownTeamRoom,
+      coupleZone: s.ownCoupleZone, vipZone: s.ownVipZone, friendsZone: s.ownFriendsZone, firstClassZone: s.ownFirstClassZone,
+      regularCoupleSeatCount: null,
+    });
+
+    const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
+    const ownRoom = sum(stores.map((s) => roomSeatsOf(ownRaw3(s), s.ownTeamRoomTotalSeats ?? null)));
+    const ownOpen = sum(stores.map((s) => openSeatsOf(ownRaw3(s))));
+    const labRivals = rows.flatMap((r) => (compsByCode.get(r.input.storeCode) ?? [])
+      .filter((x) => x.investigationStatus !== "경쟁점없음" && Number(x.appliedPcCount ?? x.totalPcCount ?? 0) > 0));
+    const rivRoom = sum(labRivals.map((c) => roomSeatsOf(c, c.teamRoomTotalSeats ?? null)));
+    const rivOpen = sum(labRivals.map((c) => openSeatsOf(c)));
+    console.log("");
+    console.log(`[룸 좌석 가중] 룸 비중 — 자사 ${(ownRoom / (ownRoom + ownOpen) * 100).toFixed(0)}% (룸 ${ownRoom}석 · 개방 ${ownOpen}석)` +
+      ` · 경쟁점 ${(rivRoom / (rivRoom + rivOpen) * 100).toFixed(0)}% (룸 ${rivRoom}석 · 개방 ${rivOpen}석)`);
+    console.log(`  -> 경쟁점 쪽이 룸이 많다. 가중을 올리면 **우리가 불리해진다.**`);
+    console.log("");
+    for (const w of [1, 1.5, 2, 3]) {
+      const ownMap = new Map<string, number | null>();
+      for (const s of stores) ownMap.set(s.storeCode, score(ownRaw3(s), true, s.evaluationPcCount ?? s.pcCount ?? null, s.ownTeamRoomTotalSeats ?? null, w));
+      const arr: (number | null)[] = [];
+      for (const r of rows) {
+        for (const c of (compsByCode.get(r.input.storeCode) ?? []).filter((x) => x.investigationStatus !== "경쟁점없음")) {
+          const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+          if (!(ip > 0)) continue;
+          arr.push(score(c, false, ip, c.teamRoomTotalSeats ?? null, w));
+        }
+      }
+      const sc = line(`룸 좌석 x${w}${w === 1 ? " (지금)" : ""}`, withZone((v, i) => ownMap.get(rows[i].input.storeCode) ?? v, (v, i) => arr[i] ?? v));
+      const ownVals = [...ownMap.values()].filter((x): x is number => x != null);
+      const rivVals = arr.filter((x): x is number => x != null);
+      console.log(`      자사 중앙 ${median(ownVals).toFixed(2)} · 경쟁점 중앙 ${median(rivVals).toFixed(2)} · 격차 ${(median(ownVals) - median(rivVals)).toFixed(2)} · r ${sc.r.toFixed(3)}`);
+    }
+    console.log("");
+    console.log(`  판단거리: 격차가 줄어드는 만큼 우리 점유율이 내려간다. 성적으로는 못 고른다 —`);
+    console.log(`  존구성엔 순서 정보가 없다. 뜻으로 고르되 **우리에게 불리한 방향**임을 알고 고를 것.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
 });
