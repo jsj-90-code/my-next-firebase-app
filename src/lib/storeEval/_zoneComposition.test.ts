@@ -299,4 +299,70 @@ describeIf("존구성 — 수준인가 순서인가", () => {
     console.log(`  ⚠️ 차폐도(개방/파티션/룸)는 경쟁점에 조사된 적이 없어 여기 안 들어갔다.`);
     expect(rows.length).toBeGreaterThan(30);
   });
+
+  // ── (6) 퍼스트클래스존 — 10~12석 룸을 1석으로 세고 있다 ────────────────
+  // 사용자 설명(2026-09-17 밤): *"퍼스트클래스존이 룸인데 많은고객이 이용할수있는 거야,
+  // 안에한 10좌석인가 12좌석인가 매장마다 틀린데 ... 내부를 고급지게해놔서 비싼요금받을려고
+  // 만든건데 뭐이제안들어감. 망했으니까 안들어가겠지 수요없으니"*
+  //
+  // 자사 19곳이 값 **1**을 갖고 있다(전부 1이다 — 룸 하나라는 뜻). 그런데 `convertedZoneSeats`는
+  // `firstClassZone x 1`로 센다. **10~12석 룸이 1석으로 환산된다.**
+  //
+  // 그리고 격자에 얹으면 퍼스트클래스존은 (5인 이상 · 완전차폐)로 **팀룸과 같은 칸**이다.
+  // 고급 인테리어와 비싼 요금은 인테리어 항목과 단가가 이미 보는 것이라, 존구성에서 별도
+  // 종류로 세면 이중계산이다. 지금은 별도 종류라 19곳이 다양성 +1을 받고 있다 —
+  // **수요가 없어 접은 존이 평가에서 가점을 받는 중이다.**
+  //
+  // 두 교정이 반대 방향이라 따로 재고 합쳐서도 잰다.
+  it("(6) 퍼스트클래스존 — 종류는 팀룸과 한 칸, 좌석은 11석", () => {
+    const zoneKeys = ["singleSeatCount", "room1", "room2", "teamRoom", "coupleZone", "vipZone", "friendsZone", "firstClassZone"] as const;
+    const FC_SEATS = 11; // 사용자: 10~12석, 매장마다 다름. 중간값을 쓴다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const score = (o: any, own: boolean, pc: number | null, teamSeats: number | null, mergeType: boolean, fixSeats: boolean): number | null => {
+      if (zoneKeys.every((k) => o[k] == null)) return own ? null : UNSURVEYED_COMPETITOR_ZONE_SCORE;
+      if (pc == null || pc <= 0) return null;
+      const types = mergeType
+        ? [o.singleSeatCount ?? 0, o.room1 ?? 0, o.room2 ?? 0, o.coupleZone ?? 0, o.vipZone ?? 0, o.friendsZone ?? 0,
+           (o.teamRoom ?? 0) + (o.firstClassZone ?? 0)].filter((v) => v > 0).length
+        : zoneKeys.filter((k) => (o[k] ?? 0) > 0).length;
+      const diversity = Math.min(5, 1 + (1 + types) * 0.5);
+      const seats = (o.singleSeatCount ?? 0) + (o.room1 ?? 0) + (o.room2 ?? 0) * 2
+        + (teamSeats ?? (o.teamRoom ?? 0) * 5) + (o.coupleZone ?? 0) * 2 + (own ? 0 : (o.regularCoupleSeatCount ?? 0))
+        + (o.vipZone ?? 0) + (o.friendsZone ?? 0) + (o.firstClassZone ?? 0) * (fixSeats ? FC_SEATS : 1);
+      const ratio = seats / pc;
+      const capacity = ratio < 0.1 ? 1 : ratio < 0.2 ? 2 : ratio < 0.3 ? 3 : ratio < 0.5 ? 4 : 5;
+      return diversity * 0.7 + capacity * 0.3;
+    };
+
+    const variant = (mergeType: boolean, fixSeats: boolean) => {
+      const ownMap = new Map<string, number | null>();
+      for (const s of stores) {
+        ownMap.set(s.storeCode, score(
+          { singleSeatCount: s.ownSingleSeatCount, room1: s.ownRoom1, room2: s.ownRoom2, teamRoom: s.ownTeamRoom,
+            coupleZone: s.ownCoupleZone, vipZone: s.ownVipZone, friendsZone: s.ownFriendsZone, firstClassZone: s.ownFirstClassZone },
+          true, s.evaluationPcCount ?? s.pcCount ?? null, s.ownTeamRoomTotalSeats ?? null, mergeType, fixSeats));
+      }
+      const rivalArr: (number | null)[] = [];
+      for (const r of rows) {
+        for (const c of (compsByCode.get(r.input.storeCode) ?? []).filter((x) => x.investigationStatus !== "경쟁점없음")) {
+          const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+          if (!(ip > 0)) continue;
+          rivalArr.push(score(c, false, ip, c.teamRoomTotalSeats ?? null, mergeType, fixSeats));
+        }
+      }
+      return withZone((v, i) => ownMap.get(rows[i].input.storeCode) ?? v, (v, i) => rivalArr[i] ?? v);
+    };
+
+    const fcStores = stores.filter((s) => (s.ownFirstClassZone ?? 0) > 0);
+    console.log("");
+    console.log(`[퍼스트클래스존] 자사 ${fcStores.length}곳이 갖고 있다 (값은 전부 1 = 룸 하나)`);
+    console.log(`  지금 환산: 1석 · 실제: ${FC_SEATS}석 -> 매장당 ${FC_SEATS - 1}석이 특화좌석에서 빠져 있다`);
+    const base = line("지금 그대로", rows);
+    line("종류만 팀룸과 합침", variant(true, false));
+    line("좌석만 11석으로", variant(false, true));
+    const both = line("둘 다 교정", variant(true, true));
+    console.log(`  둘 다 교정: MAPE ${((both.mape - base.mape) * 100 >= 0 ? "+" : "")}${((both.mape - base.mape) * 100).toFixed(2)}%p · r ${(both.r - base.r >= 0 ? "+" : "")}${(both.r - base.r).toFixed(3)}`);
+    console.log(`  ⚠️ 프렌즈존 환산(지금 x1)은 "개수가 구역인가 좌석인가"가 안 정해져 손대지 않았다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
 });
