@@ -148,6 +148,13 @@ service cloud.firestore {
       allow read, write: if isCompanyAccount();
     }
 
+    // QSC 평가창 평균(관리 점수의 원자료). 로드뷰 판정과 **같은 이유로** 따로 둔다 —
+    // 매장 문서에 넣으면 다음 동기화 때 날아간다. 채우는 건 firebase-admin 스크립트
+    // (writeQscScoresToFirestore.mjs)라 이 규칙을 우회한다. 화면이 읽게 하는 게 목적이다.
+    match /storeEvalLabQscScores/{storeCode} {
+      allow read, write: if isCompanyAccount();
+    }
+
     // 매출DB 미러(구글시트 원본의 사본). CLAUDE.md의 "매출DB 절대 삭제 금지"를 규칙 단에서도
     // 강제한다 — 클라이언트 코드에 이 컬렉션을 지우는 경로가 애초에 없고(2026-09-10 확인),
     // 동기화(cronSync)는 firebase-admin이라 보안규칙을 우회하므로 삭제 차단의 부작용이 없다.
