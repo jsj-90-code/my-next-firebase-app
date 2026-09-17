@@ -54,7 +54,7 @@ async function dumpCollection(name) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-const [candidates, results, existingStores, competitors, locationEvaluations, sales, settingsDoc, accuracyDoc] =
+const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, settingsDoc, accuracyDoc] =
   await Promise.all([
     dumpCollection("storeEvalCandidates"),
     dumpCollection("storeEvalResults"),
@@ -62,6 +62,11 @@ const [candidates, results, existingStores, competitors, locationEvaluations, sa
     dumpCollection("storeEvalCompetitors"),
     dumpCollection("storeEvalLocationEvaluations"),
     dumpCollection("storeEvalExistingStoreSales"),
+    // 실험실 QSC 점검 기록(관리 점수의 원자료). **운영 컬렉션이 아니지만 여기 담는다** —
+    // 원본은 `.local-tools/qsc-scores.json`인데 그 파일이 gitignore라 PC를 옮기면 안 따라온다.
+    // 없으면 하네스는 관리 4.00으로, 화면은 QSC 값으로 돌아 **성적이 조용히 갈라진다**
+    // (2026-09-17: 하네스가 운영 자료를 뜨고 화면은 실험실 자료를 읽어 실제로 갈라져 있었다).
+    dumpCollection("storeEvalLabQscScores"),
     db.collection("storeEvalSettings").doc("current").get(),
     db.collection("storeEvalSystemStatus").doc("accuracy").get(),
   ]);
@@ -74,13 +79,14 @@ const snapshot = {
   competitors,
   locationEvaluations,
   sales,
+  labQscScores,
   settings: settingsDoc.exists ? settingsDoc.data() : null,
   storedAccuracy: accuracyDoc.exists ? accuracyDoc.data() : null,
 };
 
 writeFileSync(new URL("../.local-tools/validation-snapshot.json", import.meta.url), JSON.stringify(snapshot, null, 2), "utf8");
-const total = candidates.length + results.length + existingStores.length + competitors.length + locationEvaluations.length + sales.length;
-console.log(`후보지 ${candidates.length} · 결과 ${results.length} · 기존점 ${existingStores.length} · 경쟁점 ${competitors.length} · 입지평가 ${locationEvaluations.length} · 월매출 ${sales.length} (총 ${total}건 읽음)`);
+const total = candidates.length + results.length + existingStores.length + competitors.length + locationEvaluations.length + sales.length + labQscScores.length;
+console.log(`후보지 ${candidates.length} · 결과 ${results.length} · 기존점 ${existingStores.length} · 경쟁점 ${competitors.length} · 입지평가 ${locationEvaluations.length} · 월매출 ${sales.length} · 실험실QSC ${labQscScores.length} (총 ${total}건 읽음)`);
 console.log("저장된 적중률:", JSON.stringify(snapshot.storedAccuracy && {
   modelVersion: snapshot.storedAccuracy.modelVersion,
   sampleCount: snapshot.storedAccuracy.sampleCount,

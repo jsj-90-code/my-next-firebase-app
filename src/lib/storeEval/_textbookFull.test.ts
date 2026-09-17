@@ -72,8 +72,18 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   // QSC(관리 점수의 원자료)는 로컬 수집물에 있다. **화면과 같은 값을 넣어야 한다** —
   // 안 넣으면 화면은 관리 1.44~5.00으로, 여기는 4.00 고정으로 돌아 성적이 갈라진다.
   // 파일이 없는 PC에서는 그냥 빈 Map이 되고, 그때는 관리가 4.00으로 남는다(지어내지 않는다).
+  // **스냅샷을 먼저 본다.** 2026-09-17에 dumpValidationSnapshot이 storeEvalLabQscScores도
+  // 뜨게 했다 — 로컬 수집물은 gitignore라 PC를 옮기면 안 따라오고, 그러면 하네스는 관리
+  // 4.00으로 화면은 QSC 값으로 돌아 성적이 조용히 갈라진다. 스냅샷에 없을 때만 파일로 떨어진다.
   const qscByStoreCode = new Map<string, number>();
-  if (existsSync(QSC_FILE)) {
+  const fromSnapshot = (snap.labQscScores ?? []) as { storeCode?: string; id?: string; openedAt?: string; records?: QscRecord[] }[];
+  for (const doc of fromSnapshot) {
+    const code = doc.storeCode ?? doc.id;
+    if (!code) continue;
+    const avg = qscInWindowAverage(doc.records ?? [], doc.openedAt ?? null);
+    if (avg != null) qscByStoreCode.set(code, avg);
+  }
+  if (!qscByStoreCode.size && existsSync(QSC_FILE)) {
     const sites = JSON.parse(readFileSync(QSC_FILE, "utf8")).sites as Record<string, { openedAt?: string; records?: QscRecord[] }>;
     for (const [key, site] of Object.entries(sites)) {
       const code = key.startsWith("existing:") ? key.slice("existing:".length) : key;
@@ -159,7 +169,7 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     console.log("\n[QSC 창 훑기 — 바닥 60 고정 · 매출 기준]");
     console.log(`  ${"창".padStart(10)}${"실측 매장".padStart(10)}${"관리 평균".padStart(10)}${"MAPE".padStart(9)}${"중앙".padStart(8)}${"최대".padStart(8)}`);
     for (const months of [12, 15, 18, 24, Infinity]) {
-      const qm = mapAt(months);
+      const qm = mapAt(months); // 창 훑기는 원본 파일이 있어야 한다(스냅샷엔 이미 걸러진 값이 아니라 원본이 들어 있어 둘 다 된다)
       const scores = [...qm.values()].map(mg);
       const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
       const base = buildLabRows({ stores, compsByCode, utilByStore, settings });
