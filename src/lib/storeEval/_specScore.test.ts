@@ -12,7 +12,7 @@ import {
   computeSpecScore, scoreFromVgaSpec, scoreFromCpuSpec, scoreFromRamSpec, scoreFromMonitorSpec,
   scoreFromVga, scoreFromCpu, scoreFromRam, scoreFromMonitor,
 } from "./calc";
-import { labScoreFromVga, labScoreFromCpu, labGpuKey, labCpuKey, labComputeSpecScore, LAB_GPU_PERF_INDEX, LAB_CPU_PERF_INDEX, type LabSpecOptions } from "./labSpecScore";
+import { labScoreFromVga, labScoreFromCpu, labGpuKey, labCpuKey, labComputeSpecScore, LAB_GPU_PERF_INDEX, LAB_CPU_PERF_INDEX, LAB_PERF_LOG_STEP_UP, type LabSpecOptions } from "./labSpecScore";
 import type { Competitor } from "./types";
 
 const describeIf = hasValidationSnapshot() ? describe : describe.skip;
@@ -215,7 +215,7 @@ describeIf("사양 — 자료 생김새", () => {
     const rivalSpec = rows.flatMap((r) => r.input.rivals ?? []).map((v) => v.parts?.spec).filter((v): v is number => v != null);
     const oMed = median(ownSpec), rMed = median(rivalSpec);
     console.log(`\n[상수 바꿔치기] 자사 중앙 ${oMed.toFixed(2)} · 경쟁점 중앙 ${rMed.toFixed(2)}`);
-    line("지금 그대로", rows);
+    line("실험실 기본", rows);
     line("자사만 상수", withSpec(() => oMed, (v) => v));
     line("경쟁점만 상수", withSpec((v) => v, () => rMed));
     line("둘 다 상수 (수준만)", withSpec(() => oMed, () => rMed));
@@ -399,7 +399,7 @@ describeIf("사양 — 자료 생김새", () => {
     // 운영 표만 쓰는 변환표(= 지금)로 되돌린 옵션. 재현이 맞는지 먼저 확인한다.
     const OLD_GPU = {} as Record<string, number>;
     console.log("\n[새 변환표] 하나씩 켠다 (모니터·RAM은 운영 그대로)");
-    line("지금 (운영 변환표)", rows);
+    line("운영 변환표 (기준선)", opRows);
     line("재현 확인", labRows({ gpuTable: OLD_GPU }));
     line("GPU만 성능지수", labRows({}));
     line("CPU만 성능지수", labRows({ gpuTable: OLD_GPU, useCpuPerfIndex: true }));
@@ -454,32 +454,62 @@ describeIf("사양 — 자료 생김새", () => {
     });
   };
 
-  it("(15) CPU가 나빠진 건 순서인가 수준인가", () => {
-    // 새 CPU 표는 경쟁점을 크게 올린다(12400F 41건 +1.30 · 11400F +1.63 · 10400F +1.04).
-    // 축척은 **독점매장에서만** 맞추므로(textbookModel calibrationTarget) 이 수준 이동은
-    // 축척이 안 먹어주고 MAPE에 그대로 찍힌다. 그래서 수준을 도로 맞춘 뒤 다시 본다.
+  // ⚠️ `rows`는 이제 **실험실 기본**(GPU 성능지수 켜짐)이다 — labInput이 labComputeSpecScore를
+  //    쓰기 때문이다. 운영 변환표 기준선이 필요하면 반드시 이 행을 쓴다.
+  const opRows = rowsWithScorers(scoreFromVga, scoreFromCpu);
+
+  it("(17) 앵커 위쪽 기울기 훑기 — 3080이 5.00인 게 과하다 (2026-09-18 사용자 지적)", () => {
+    // ⚠️ "3060-4060-5060 간격을 늘린다"는 **반대 효과**다 — 간격을 늘리면 기울기가 작아지고
+    //    3080이 상한에 더 세게 박힌다. 아래 첫 줄(0.18 = 지금, 대칭)이 그 증거다.
+    const tops = ["RTX 5080", "RTX 5070", "RTX 4070", "RTX 3080", "RTX 5060Ti", "RTX 3070 Ti", "RTX 3070", "RTX 5060"];
+    console.log("\n[앵커 위 기울기] 클수록 완만 · 앵커 아래(4060·3060·2060 등)는 한 톨도 안 바뀐다");
+    console.log(`  기울기   ${tops.map((t) => t.replace("RTX ", "").padStart(6)).join(" ")}`);
+    for (const up of [0.1816, 0.30, 0.45, 0.60, 0.854]) {
+      const cells = tops.map((t) => (labScoreFromVga(t, LAB_GPU_PERF_INDEX, up) ?? NaN).toFixed(2).padStart(6));
+      console.log(`  ${up.toFixed(3).padStart(6)}   ${cells.join(" ")}`);
+    }
+    console.log("  (0.1816 = 위아래 대칭 = 어제까지의 값 · 0.854 = RTX 5080이 딱 5.00이 되는 값)");
+    console.log("\n  성적:");
+    line("운영 변환표 (기준선)", opRows);
+    for (const up of [0.1816, 0.30, 0.45, 0.60, 0.854]) {
+      line(`  위 기울기 ${up.toFixed(3)}`, labRows({ gpuLogStepUp: up }));
+    }
+    // 이 값이 자사를 얼마나 건드리나 — 자사엔 앵커 위 카드가 5070 1 · 5060Ti 4 · 4070 3뿐이다.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const C = rivals as any[];
-    const oldAvg = mean(C.map((c) => scoreFromCpu(c.cpu ?? null)).filter((v): v is number => v != null));
-    const newAvg = mean(C.map((c) => labScoreFromCpu(c.cpu ?? null)).filter((v): v is number => v != null));
-    const shift = newAvg - oldAvg;
-    console.log(`\n[CPU 수준] 경쟁점 CPU 평균 ${oldAvg.toFixed(3)} -> ${newAvg.toFixed(3)} (+${shift.toFixed(3)})`);
-    line("지금 (운영 표)", rowsWithScorers(scoreFromVga, scoreFromCpu));
-    line("새 CPU 표", rowsWithScorers(scoreFromVga, (t) => labScoreFromCpu(t)));
-    line("새 CPU 표 · 수준 되돌림", rowsWithScorers(scoreFromVga, (t) => {
-      const v = labScoreFromCpu(t);
-      return v == null ? null : Math.max(1, Math.min(5, v - shift));
-    }));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const S = stores as any[];
-    const oOld = mean(S.map((s) => scoreFromCpu(s.ownCpu ?? null)).filter((v): v is number => v != null));
-    const oNew = mean(S.map((s) => labScoreFromCpu(s.ownCpu ?? null)).filter((v): v is number => v != null));
-    console.log(`  (자사 CPU 평균은 ${oOld.toFixed(3)} -> ${oNew.toFixed(3)} · 경쟁점이 ${(shift - (oNew - oOld)).toFixed(3)}점 더 올랐다)`);
+    const S = stores as any[], C = rivals as any[];
+    const cnt = (arr: unknown[], keys: string[]) => (arr as Record<string, string | null>[])
+      .flatMap((o) => keys.map((k) => o[k])).filter((t) => {
+        const idx = LAB_GPU_PERF_INDEX[labGpuKey(t ?? null) ?? ""];
+        return idx != null && idx > 100;
+      }).length;
+    console.log(`\n  앵커보다 빠른 카드: 자사 ${cnt(S, ["ownVgaBase", "ownVgaTop", "ownVgaTop2"])}건 · 경쟁점 ${cnt(C, ["vgaBase", "vgaTop", "vgaTop2"])}건`);
   });
 
-  it("(16) 대조군 — 새 GPU 표의 순서 개선이 진짜인가", () => {
-    // 표를 바꾸면 모델마다 점수가 얼마씩 움직인다. **그 움직임의 크기는 그대로 두고 어느 모델에
-    // 붙는지만 뒤섞어** 본다. 새 표가 "실제 서열을 맞혔다"면 뒤섞은 것보다 나아야 한다.
+  it("(18) 세대 벌점 훑기 — 성능 말고 '얼마나 최신인가'를 같이 본다", () => {
+    // 사용자 방향(2026-09-18): "성능외에 세대별 차등도 적용이 되는구조가 좋을것같은데"
+    // 점수 = 4 + ln(성능/100)/기울기 − 세대벌점 × (5 − 세대)
+    const show = ["RTX 5080", "RTX 5070", "RTX 5060Ti", "RTX 5060", "RTX 4070", "RTX 4060Ti", "RTX 4060",
+      "RTX 3080", "RTX 3070", "RTX 3060Ti", "RTX 3060", "RTX 2080", "RTX 2060", "GTX 1080"];
+    for (const up of [0.1816, 0.45]) {
+      console.log(`\n[세대 벌점] 위 기울기 ${up} 에서`);
+      console.log(`  벌점   ${show.map((t) => t.replace("RTX ", "").replace("GTX ", "G").padStart(6)).join("")}`);
+      for (const gp of [0, 0.1, 0.15, 0.2, 0.3]) {
+        const cells = show.map((t) => (labScoreFromVga(t, LAB_GPU_PERF_INDEX, up, gp) ?? NaN).toFixed(2).padStart(6));
+        console.log(`  ${gp.toFixed(2).padStart(5)}  ${cells.join("")}`);
+      }
+    }
+    console.log("\n[성적] 위 기울기 × 세대 벌점");
+    line("운영 변환표 (기준선)", opRows);
+    for (const up of [0.1816, 0.45]) {
+      for (const gp of [0, 0.1, 0.15, 0.2, 0.3]) {
+        line(`  위 ${up.toFixed(3)} · 벌점 ${gp.toFixed(2)}`, labRows({ gpuLogStepUp: up, gpuGenPenalty: gp }));
+      }
+    }
+  });
+
+  it("(19) 대조군 — 세대 벌점까지 넣은 표가 여전히 관문을 넘나", () => {
+    // (16)과 같은 방식이다. 채택하려는 **최종 표**로 다시 돌린다 — 표를 손볼 때마다
+    // 이걸 다시 돌리지 않으면 "대조군을 넘었다"는 말이 낡는다.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const S = stores as any[], C = rivals as any[];
     const texts = [...new Set([
@@ -497,8 +527,77 @@ describeIf("사양 — 자료 생김새", () => {
       const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0);
       return { r: pearson(ok.map((x) => x.predicted as number), ok.map((x) => x.actual)), mape: sc.mape ?? 0 };
     };
-    const base = rOf(rowsWithScorers(scoreFromVga, scoreFromCpu));
+    const base = rOf(opRows);
     const real = rOf(rowsWithScorers((t) => labScoreFromVga(t), scoreFromCpu));
+    const gain = real.r - base.r;
+    console.log(`\n[대조군 · 최종 GPU 표(성능+세대)] 모델 ${keys.length}종`);
+    console.log(`  실제: r ${base.r.toFixed(3)} -> ${real.r.toFixed(3)} (좋아진 폭 ${gain.toFixed(3)}) · MAPE ${f(base.mape)}% -> ${f(real.mape)}%`);
+    let rng = 20260918;
+    const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const gains: number[] = [];
+    for (let t = 0; t < 300; t++) {
+      const sh = [...deltas];
+      for (let i = sh.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [sh[i], sh[j]] = [sh[j], sh[i]]; }
+      const map = new Map(keys.map((k, i) => [k, sh[i]]));
+      const scorer = (text: string | null) => {
+        const a = scoreFromVga(text);
+        if (a == null) return null;
+        const d = map.get((text ?? "").trim());
+        return d == null ? a : Math.max(1, Math.min(5, a + d));
+      };
+      gains.push(rOf(rowsWithScorers(scorer, scoreFromCpu)).r - base.r);
+    }
+    const sorted = [...gains].sort((a, b) => a - b);
+    const pv = gains.filter((g) => g >= gain).length / gains.length;
+    console.log(`  델타를 모델끼리 뒤섞기 300회: 중앙 ${median(gains).toFixed(3)} · 95퍼센타일 ${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)}`);
+    console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}`);
+  });
+
+  it("(15) CPU가 나빠진 건 순서인가 수준인가", () => {
+    // 새 CPU 표는 경쟁점을 크게 올린다(12400F 41건 +1.30 · 11400F +1.63 · 10400F +1.04).
+    // 축척은 **독점매장에서만** 맞추므로(textbookModel calibrationTarget) 이 수준 이동은
+    // 축척이 안 먹어주고 MAPE에 그대로 찍힌다. 그래서 수준을 도로 맞춘 뒤 다시 본다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const C = rivals as any[];
+    const oldAvg = mean(C.map((c) => scoreFromCpu(c.cpu ?? null)).filter((v): v is number => v != null));
+    const newAvg = mean(C.map((c) => labScoreFromCpu(c.cpu ?? null)).filter((v): v is number => v != null));
+    const shift = newAvg - oldAvg;
+    console.log(`\n[CPU 수준] 경쟁점 CPU 평균 ${oldAvg.toFixed(3)} -> ${newAvg.toFixed(3)} (+${shift.toFixed(3)})`);
+    line("운영 변환표 (기준선)", opRows);
+    line("새 CPU 표", rowsWithScorers(scoreFromVga, (t) => labScoreFromCpu(t)));
+    line("새 CPU 표 · 수준 되돌림", rowsWithScorers(scoreFromVga, (t) => {
+      const v = labScoreFromCpu(t);
+      return v == null ? null : Math.max(1, Math.min(5, v - shift));
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[];
+    const oOld = mean(S.map((s) => scoreFromCpu(s.ownCpu ?? null)).filter((v): v is number => v != null));
+    const oNew = mean(S.map((s) => labScoreFromCpu(s.ownCpu ?? null)).filter((v): v is number => v != null));
+    console.log(`  (자사 CPU 평균은 ${oOld.toFixed(3)} -> ${oNew.toFixed(3)} · 경쟁점이 ${(shift - (oNew - oOld)).toFixed(3)}점 더 올랐다)`);
+  });
+
+  it("(16) 대조군 — 성능지수만 썼을 때 (세대 벌점 0) · 2026-09-18 1차", () => {
+    // 표를 바꾸면 모델마다 점수가 얼마씩 움직인다. **그 움직임의 크기는 그대로 두고 어느 모델에
+    // 붙는지만 뒤섞어** 본다. 새 표가 "실제 서열을 맞혔다"면 뒤섞은 것보다 나아야 한다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const texts = [...new Set([
+      ...S.flatMap((s) => [s.ownVgaBase, s.ownVgaTop, s.ownVgaTop2]),
+      ...C.flatMap((c) => [c.vgaBase, c.vgaTop, c.vgaTop2]),
+    ].map((t) => (t ?? "").trim()).filter(Boolean))];
+    const deltas: number[] = [], keys: string[] = [];
+    for (const t of texts) {
+      const a = scoreFromVga(t), b = labScoreFromVga(t, LAB_GPU_PERF_INDEX, LAB_PERF_LOG_STEP_UP, 0);
+      if (a == null || b == null) continue;
+      keys.push(t); deltas.push(b - a);
+    }
+    const rOf = (rs: LabRow[]) => {
+      const sc = scoreTextbook(rs, P);
+      const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0);
+      return { r: pearson(ok.map((x) => x.predicted as number), ok.map((x) => x.actual)), mape: sc.mape ?? 0 };
+    };
+    const base = rOf(opRows);
+    const real = rOf(rowsWithScorers((t) => labScoreFromVga(t, LAB_GPU_PERF_INDEX, LAB_PERF_LOG_STEP_UP, 0), scoreFromCpu));
     const gain = real.r - base.r;
     console.log(`\n[대조군 · 새 GPU 표] 서로 다른 모델 ${keys.length}종에 델타가 붙는다`);
     console.log(`  실제: r ${base.r.toFixed(3)} -> ${real.r.toFixed(3)} (좋아진 폭 ${gain.toFixed(3)}) · MAPE ${f(base.mape)}% -> ${f(real.mape)}%`);
@@ -643,7 +742,7 @@ describeIf("사양 — 자료 생김새", () => {
   it("(8) 하위항목 기여 — GPU·모니터·CPU·RAM 하나씩 꺼본다", () => {
     const w = settings.specWeights;
     console.log(`\n[하위항목] 하나씩 비중 0으로 돌리고 나머지로 재정규화`);
-    line("지금 그대로", rows);
+    line("실험실 기본", rows);
     for (const k of ["vga", "monitor", "cpu", "ram"] as const) {
       const s2 = { ...settings, specWeights: { ...w, [k]: 0 } };
       const r2 = buildLabRows({ stores, compsByCode, utilByStore, settings: s2, qscByStoreCode });

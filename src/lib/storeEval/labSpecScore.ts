@@ -124,9 +124,80 @@ export const LAB_CPU_PERF_INDEX: Record<string, number> = {
 /** 성능지수 -> 점수. 앵커 100 = 4.00, 칸당 성능 ×0.83(= 사용자 사다리에서 역산). */
 export const LAB_PERF_ANCHOR_SCORE = 4;
 export const LAB_PERF_LOG_STEP = 0.1816; // ln(58/100)/3 — RTX 5060/4060/3060/2060 = 4/3/2/1
-export function labScoreFromPerfIndex(index: number | null, logStep = LAB_PERF_LOG_STEP): number | null {
+
+/**
+ * **앵커 위쪽 기울기** — 앵커(RTX 5060)보다 빠른 카드에만 쓴다. 클수록 완만하다.
+ *
+ * ── 왜 위아래를 다르게 두나 (2026-09-18, 사용자 지적) ──────────────────────
+ * 사용자: *"GPU 3080 5점 너무과하다."* 맞다. 그리고 원인은 기울기가 아니라 **앵커 4점과
+ * 상한 5점 사이가 1점뿐**인 것이었다. 한 칸이 성능 ×0.83인데 RTX 3080은 앵커보다 35% 빨라서
+ * 식으로 5.65점이 나오고, 잘려서 5.00이 된다. RTX 5070·4070·5080도 같은 이유로 전부 5.00에
+ * 몰렸다 — **최상급끼리의 순서가 아예 안 보인다.**
+ *
+ * ⚠️ 사용자가 물은 "3060-4060-5060 간격을 늘리는" 쪽은 **반대 효과**다. 간격을 늘린다는 건
+ *    기울기를 작게 하는 것이고, 그러면 3080이 상한에 더 세게 박힌다(4+1.65 -> 4+2.5).
+ *
+ * 뜻으로 보면 위아래가 대칭일 이유가 없다. PC방 손님 기준으로 **앵커 아래는 체감이 확실하고**
+ * (RTX 2060이면 게임이 버벅인다) **앵커 위는 포화한다** — 롤·오버워치·배그·발로란트는 RTX
+ * 5060이면 다 충분히 돌아가서, 그 위로는 손님이 차이를 잘 모른다. 그래서 아래 기울기는 사용자
+ * 사다리에서 역산한 값을 그대로 두고, 위만 완만하게 한다.
+ *
+ * 값은 **[감각] 계수다.** 자사 GPU는 전부 앵커 이하~바로 위라 이 값이 자사 점수를 거의 안
+ * 건드리고, 경쟁점 상위 카드 27건(3080 5 · 4070 6 · 5070 5 · 3070Ti 5 · 5060Ti 4 · 5080 1 등)의
+ * 서열에만 작용한다.
+ */
+export const LAB_PERF_LOG_STEP_UP = 0.45;
+
+/**
+ * **세대 벌점** — 앵커 세대(RTX 50)에서 한 세대 멀어질 때마다 깎는 점수.
+ *
+ * ── 왜 성능만으로는 모자라나 (2026-09-18, 사용자 방향) ────────────────────
+ * 사용자: *"성능외에 세대별 차등도 적용이 되는구조가 좋을것같은데"*
+ *
+ * 성능지수만 쓰면 **"구형이라도 빠르면 장땡"**이 된다. PC방에서는 그렇지 않다 —
+ * 같은 성능이라도 구형 카드는 노후·고장률, 신작 게임의 최신 기능 지원, 그리고 손님이
+ * 사양표를 보고 받는 인상에서 불리하다. RTX 3080이 RTX 5060보다 35% 빠른 건 맞지만
+ * "RTX 3080 PC방"이 "RTX 5060 PC방"보다 좋은 곳이냐는 별개다.
+ *
+ * 그래서 두 축을 더한다 — **얼마나 빠른가(성능)**와 **얼마나 최신인가(세대)**.
+ *
+ *   점수 = 4 + ln(성능지수/100) / 기울기 − 세대벌점 × (5 − 그 카드 세대)
+ *
+ * 값은 **[감각] 계수다.** 훑기는 `_specScore.test.ts` (18)에 있다.
+ */
+export const LAB_GEN_PENALTY = 0.15;
+
+/** 앵커 세대. RTX 50 시리즈. */
+export const LAB_ANCHOR_GENERATION = 5;
+
+/**
+ * 표 열쇠 -> 세대. GTX 16 시리즈는 **2세대(튜링)**로 본다 — RTX 20과 같은 세대의 보급형이라
+ * 번호(16)를 그대로 읽으면 안 된다.
+ */
+export function labGpuGeneration(key: string | null): number | null {
+  if (!key) return null;
+  const m = key.match(/(\d{4})/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (n >= 5000) return 5;
+  if (n >= 4000) return 4;
+  if (n >= 3000) return 3;
+  if (n >= 2000) return 2;
+  if (n >= 1600) return 2; // GTX 16xx = 튜링. RTX 20과 같은 세대다.
+  return 1; // GTX 10xx = 파스칼
+}
+
+export function labScoreFromPerfIndex(
+  index: number | null,
+  logStep = LAB_PERF_LOG_STEP,
+  logStepUp = LAB_PERF_LOG_STEP_UP,
+  generation: number | null = null,
+  genPenalty = LAB_GEN_PENALTY,
+): number | null {
   if (index == null || !(index > 0)) return null;
-  const raw = LAB_PERF_ANCHOR_SCORE + Math.log(index / 100) / logStep;
+  const rel = Math.log(index / 100);
+  const aged = generation == null ? 0 : genPenalty * Math.max(0, LAB_ANCHOR_GENERATION - generation);
+  const raw = LAB_PERF_ANCHOR_SCORE + rel / (rel > 0 ? logStepUp : logStep) - aged;
   return Math.max(1, Math.min(5, raw));
 }
 
@@ -152,11 +223,16 @@ export function labGpuKey(text: string | null): string | null {
 }
 
 /** GPU 텍스트 -> 1~5점. 표에 없으면 운영 세대 산술로 떨어진다. */
-export function labScoreFromVga(text: string | null, table: Record<string, number> = LAB_GPU_PERF_INDEX): number | null {
+export function labScoreFromVga(
+  text: string | null,
+  table: Record<string, number> = LAB_GPU_PERF_INDEX,
+  logStepUp = LAB_PERF_LOG_STEP_UP,
+  genPenalty = LAB_GEN_PENALTY,
+): number | null {
   const key = labGpuKey(text);
   if (key == null) return null;
   const idx = table[key];
-  if (idx != null) return labScoreFromPerfIndex(idx);
+  if (idx != null) return labScoreFromPerfIndex(idx, LAB_PERF_LOG_STEP, logStepUp, labGpuGeneration(key), genPenalty);
   return scoreFromVga(text);
 }
 
@@ -232,6 +308,10 @@ export type LabSpecOptions = {
   cpuTable?: Record<string, number>;
   /** CPU를 성능지수로 볼지. 기본은 `LAB_USE_CPU_PERF_INDEX`(꺼짐 = 운영 세대 산술). */
   useCpuPerfIndex?: boolean;
+  /** 앵커 위쪽 기울기. 훑기용. 기본은 `LAB_PERF_LOG_STEP_UP`. */
+  gpuLogStepUp?: number;
+  /** 세대 벌점. 훑기용. 기본은 `LAB_GEN_PENALTY`. */
+  gpuGenPenalty?: number;
   /** RAM 16GB↔32GB 격차. */
   ramGap?: number;
   /** 모니터 특화 칸을 무시하고 기본만 쓸지. 조사 성실도 비대칭(자사 100% vs 경쟁 47%) 대응. */
@@ -264,9 +344,11 @@ export function labComputeSpecScore(
   opts: LabSpecOptions = {},
 ): number | null {
   const w = settings.specWeights;
+  const up = opts.gpuLogStepUp ?? LAB_PERF_LOG_STEP_UP;
+  const gp = opts.gpuGenPenalty ?? LAB_GEN_PENALTY;
   const gpu = combineHardwareTiers(
-    labScoreFromVga(input.vgaBase, opts.gpuTable),
-    [labScoreFromVga(input.vgaTop, opts.gpuTable), labScoreFromVga(input.vgaTop2, opts.gpuTable)],
+    labScoreFromVga(input.vgaBase, opts.gpuTable, up, gp),
+    [labScoreFromVga(input.vgaTop, opts.gpuTable, up, gp), labScoreFromVga(input.vgaTop2, opts.gpuTable, up, gp)],
   );
   // CPU는 기본으로 **운영 세대 산술**을 쓴다 — 성능지수표가 순서를 못 고쳤다(파일 상단 참고).
   const cpuScore = (opts.useCpuPerfIndex ?? LAB_USE_CPU_PERF_INDEX)

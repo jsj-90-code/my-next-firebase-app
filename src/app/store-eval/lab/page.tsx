@@ -51,7 +51,10 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 // 화면에만 항목을 붙이다 하네스가 입지를 통째로 빠뜨린 적이 있다(2026-09-16).
 import { buildLabRows, utilizationByStore, type LabRow } from "@/lib/storeEval/labInput";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
-import { LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP } from "@/lib/storeEval/labSpecScore";
+import {
+  LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP, LAB_PERF_LOG_STEP_UP,
+  LAB_GEN_PENALTY, LAB_ANCHOR_GENERATION,
+} from "@/lib/storeEval/labSpecScore";
 
 type Loaded = {
   rows: LabRow[];
@@ -531,10 +534,12 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
             </div>
           </div>
           <div className="mt-3 rounded border border-[var(--sl-line)] p-2">
-            <div className="font-semibold">사양은 <b>세대가 아니라 성능</b>으로 셉니다 (GPU만)</div>
+            <div className="font-semibold">사양은 <b>성능 + 세대</b>로 셉니다 (GPU만)</div>
             <div className="mt-1 font-mono text-[11px]">
-              GPU점수 = {LAB_PERF_ANCHOR_SCORE} + ln(성능지수 / 100) / {LAB_PERF_LOG_STEP}
-              &nbsp;&nbsp;(RTX 5060 = 100 = {LAB_PERF_ANCHOR_SCORE.toFixed(2)}점)
+              GPU점수 = {LAB_PERF_ANCHOR_SCORE} + ln(성능지수/100) / 기울기 − {LAB_GEN_PENALTY} × ({LAB_ANCHOR_GENERATION} − 세대)
+              <br />
+              기울기 = 앵커 아래 {LAB_PERF_LOG_STEP} · 앵커 위 {LAB_PERF_LOG_STEP_UP}
+              &nbsp;&nbsp;(RTX 5060 = 성능 100 · 5세대 = {LAB_PERF_ANCHOR_SCORE.toFixed(2)}점)
             </div>
             <div className="mt-1">
               운영 산식은 <b>세대 하나당 1점</b>입니다. 세대 숫자는 출시 연도지 성능이 아니라서, 같은 세대 안의
@@ -545,7 +550,18 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
             <div className="mt-1">
               눈금은 <b>기존 사다리를 그대로 잇습니다.</b> RTX 5060 / 4060 / 3060 / 2060 = 4 / 3 / 2 / 1점이
               한 칸당 성능 ×0.83에 해당해서, 그 기울기({LAB_PERF_LOG_STEP})를 모델 전체로 넓혔을 뿐입니다.
-              같은 식에 네 모델을 도로 넣으면 4.00 · 2.97 · 2.19 · 1.00이 나옵니다.
+            </div>
+            <div className="mt-1">
+              <b>성능만 보면 &quot;구형이라도 빠르면 장땡&quot;이 됩니다.</b> PC방에선 그렇지 않습니다 — 같은 성능이라도
+              구형은 노후·고장, 신작 게임의 최신 기능 지원, 손님이 사양표에서 받는 인상에서 불리합니다.
+              그래서 <b>세대 벌점 {LAB_GEN_PENALTY}점</b>을 한 세대마다 뺍니다. 앵커(RTX 50) 위쪽 기울기도
+              따로 {LAB_PERF_LOG_STEP_UP}로 완만하게 뒀습니다 — RTX 5060이면 롤·오버워치·배그가 다 돌아가서
+              그 위로는 손님 체감이 포화하기 때문입니다.
+            </div>
+            <div className="mt-1">
+              둘을 같이 써야 풀립니다. 위 기울기 없이 세대 벌점만 주면 <b>RTX 3080이 벌점 0.30에서도 5.00에
+              그대로 붙어 있습니다</b>(식으로 5.05가 나와 잘림). 둘을 같이 쓰면 RTX 3080 = <b>4.37점</b>으로
+              신형 RTX 5060 Ti와 같은 자리가 되고, RTX 4070(4.43)이 한 세대 최신이라 한 끗 위에 섭니다.
             </div>
             <div className="mt-1">
               <b>CPU와 RAM은 안 바꿨습니다.</b> 같은 방식으로 CPU 성능지수표도 만들어 재 봤는데
@@ -554,11 +570,12 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
               — 지우는 쪽도 r이 0.002만 움직여 <b>순서 정보가 거의 없는 항목</b>입니다. 운영과 같은 0.5로 둡니다.
             </div>
             <div className="mt-1 text-[var(--sl-ink-soft)]">
-              ⚠️ <b>성능지수는 [감각] 계수입니다</b> — 공개 벤치마크 통념에서 온 근사치라 이 저장소 자료로
-              검증할 수 없습니다. 대신 <b>무작위 대조군을 넘었습니다</b>: 점수 변화폭은 그대로 두고 어느 모델에
-              붙는지만 300회 뒤섞으면 r 개선이 중앙 −0.003 · 95퍼센타일 0.016인데 실제 표는 <b>+0.023(p=0.010)</b>입니다.
-              2026-09-18 측정: MAPE 22.60% → 22.62% · r 0.563 → 0.586 · ±20% 58% → 63% · 최대오차 76% → 63%.
-              운영 산식(V62)의 사양 점수는 그대로입니다.
+              ⚠️ <b>성능지수·세대벌점은 [감각] 계수입니다</b> — 공개 벤치마크 통념에서 온 근사치라 이 저장소
+              자료로 검증할 수 없습니다. 대신 <b>무작위 대조군을 넘었습니다</b>: 점수 변화폭은 그대로 두고 어느
+              모델에 붙는지만 300회 뒤섞으면 r 개선이 중앙 −0.002 · 95퍼센타일 0.014인데 실제 표는
+              <b> +0.018(p=0.013)</b>입니다.
+              2026-09-18 측정: MAPE 22.60% → 22.59% · r 0.563 → 0.581 · 중앙 15.4% → 14.8% ·
+              ±20% 58% → 61% · 최대오차 76% → 62%. 운영 산식(V62)의 사양 점수는 그대로입니다.
             </div>
           </div>
           <div className="mt-1">
