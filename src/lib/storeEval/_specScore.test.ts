@@ -421,6 +421,7 @@ describeIf("사양 — 자료 생김새", () => {
   const rowsWithScorers = (
     gpuScore: (t: string | null) => number | null,
     cpuScore: (t: string | null) => number | null,
+    ramScore?: (t: string | null) => number | null,
   ): LabRow[] => {
     const w = settings.specWeights;
     const comb = (vs: (number | null)[]) => {
@@ -433,7 +434,9 @@ describeIf("사양 — 자료 생김새", () => {
       if (o == null) return null;
       const g = comb((own ? [o.ownVgaBase, o.ownVgaTop, o.ownVgaTop2] : [o.vgaBase, o.vgaTop, o.vgaTop2]).map((t) => gpuScore(t ?? null)));
       const c = comb((own ? [o.ownCpu, o.ownCpuTop1, o.ownCpuTop2] : [o.cpu, o.cpuTop1, o.cpuTop2]).map((t) => cpuScore(t ?? null)));
-      const ra = scoreFromRamSpec(own ? (o.ownRam ?? null) : (o.ram ?? null), own ? (o.ownRamTop ?? null) : (o.ramTop ?? null));
+      const ramBase = own ? (o.ownRam ?? null) : (o.ram ?? null);
+      const ramTop = own ? (o.ownRamTop ?? null) : (o.ramTop ?? null);
+      const ra = ramScore ? comb([ramScore(ramBase), ramScore(ramTop)]) : scoreFromRamSpec(ramBase, ramTop);
       const m = scoreFromMonitorSpec(own ? (o.ownMonitorBase ?? null) : (o.monitorBase ?? null), own ? (o.ownMonitorTop ?? null) : (o.monitorTop ?? null));
       const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([s]) => s != null) as [number, number][];
       const tw = items.reduce((a, [, x]) => a + x, 0);
@@ -550,6 +553,67 @@ describeIf("사양 — 자료 생김새", () => {
     const sorted = [...gains].sort((a, b) => a - b);
     const pv = gains.filter((g) => g >= gain).length / gains.length;
     console.log(`  델타를 모델끼리 뒤섞기 300회: 중앙 ${median(gains).toFixed(3)} · 95퍼센타일 ${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)}`);
+    console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}`);
+  });
+
+  it("(20) RAM — 그대로 둬도 되나 (2026-09-18, 항목별로 하나씩)", () => {
+    // 자료가 사실상 두 값이다: 16GB 계열(자사 35 · 경쟁 102) · 32GB 계열(자사 8 · 경쟁 75).
+    // 운영 표는 3.50 / 4.00으로 **0.5점** 차이를 준다.
+    //
+    // 물을 것이 셋이다.
+    //   (가) 격차를 얼마로 둘까 — 훑기
+    //   (나) "32GB가 낫다"는 **방향**이 자료에 있나 — 뒤집어 본다
+    //   (다) 순서인가 수준인가 — 상수 바꿔치기 + 무작위 대조군
+    const gpu = (t: string | null) => labScoreFromVga(t);
+    const ramWith = (gb32: number, gb16: number) => (t: string | null) => {
+      const base = scoreFromRam(t);
+      if (base == null) return null;
+      return base >= 4 ? gb32 : base >= 3.5 ? gb16 : Math.max(1, gb16 - 2);
+    };
+    console.log("\n[RAM (가) 격차 훑기] 채택된 GPU 표(성능+세대) 위에서 · 32GB=4.00 고정");
+    for (const gap of [0, 0.25, 0.5, 1, 1.5, 2]) {
+      line(`  격차 ${gap.toFixed(2)} (16GB=${(4 - gap).toFixed(2)})`, rowsWithScorers(gpu, scoreFromCpu, ramWith(4, 4 - gap)));
+    }
+    console.log("\n[RAM (나) 방향] 32GB가 낫다는 게 자료에 있나 — 뒤집어 본다");
+    line("  지금 (32GB 4.00 · 16GB 3.50)", rowsWithScorers(gpu, scoreFromCpu, ramWith(4, 3.5)));
+    line("  뒤집기 (32GB 3.50 · 16GB 4.00)", rowsWithScorers(gpu, scoreFromCpu, ramWith(3.5, 4)));
+
+    console.log("\n[RAM (다) 순서인가 수준인가]");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownRam = (stores as any[]).map((s) => scoreFromRamSpec(s.ownRam ?? null, s.ownRamTop ?? null)).filter((v): v is number => v != null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rivalRam = (rivals as any[]).map((c) => scoreFromRamSpec(c.ram ?? null, c.ramTop ?? null)).filter((v): v is number => v != null);
+    console.log(`  자사 평균 ${mean(ownRam).toFixed(3)} · 경쟁점 평균 ${mean(rivalRam).toFixed(3)}  (경쟁점이 ${(mean(rivalRam) - mean(ownRam)).toFixed(3)} 높다)`);
+    line("  지금 그대로", rowsWithScorers(gpu, scoreFromCpu));
+    // ⚠️ 결측을 메우면 안 된다 — RAM이 없는 경쟁점 61건이 항목에서 빠지는 것이 원래 동작이다.
+    //    처음에 `() => 4`로 썼다가 그 61건을 4.00으로 메워 25.14%라는 엉뚱한 값을 봤다.
+    const constRam = (t: string | null) => (scoreFromRam(t) == null ? null : 4);
+    line("  RAM 상수 (순서 지움)", rowsWithScorers(gpu, scoreFromCpu, constRam));
+
+    // 무작위 대조군 — RAM 값을 자사끼리·경쟁점끼리 섞는다. 순서가 진짜면 실제가 나아야 한다.
+    const base = scoreTextbook(rowsWithScorers(gpu, scoreFromCpu, (t) => (scoreFromRam(t) == null ? null : 4)), P);
+    const real = scoreTextbook(rowsWithScorers(gpu, scoreFromCpu), P);
+    const gain = (base.mape ?? 0) - (real.mape ?? 0);
+    // 실제 16GB/32GB **비율은 그대로 두고** 어느 매장에 붙는지만 무작위로 바꾼다.
+    // 자사(16GB 35 · 32GB 8)와 경쟁점(16GB 102 · 32GB 75)의 비율이 달라서 따로 뽑는다 —
+    // 한 풀에서 뽑으면 수준까지 같이 흔들려 "순서만 지운" 게 아니게 된다.
+    const ownP32 = ownRam.filter((v) => v >= 4).length / ownRam.length;
+    const rivalP32 = rivalRam.filter((v) => v >= 4).length / rivalRam.length;
+    let rng = 20260918;
+    const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const gains: number[] = [];
+    for (let t = 0; t < 500; t++) {
+      // 자사/경쟁점을 가려야 해서 텍스트가 아니라 호출 순서로 구분할 수 없다 —
+      // 대신 두 비율의 평균을 쓴다. 비율 차이(0.19 vs 0.42)가 만드는 수준 효과는
+      // 아래 "RAM 상수" 줄이 따로 보여준다.
+      const p32 = (ownP32 + rivalP32) / 2;
+      const randomRam = (t: string | null) => (scoreFromRam(t) == null ? null : rand() < p32 ? 4 : 3.5);
+      gains.push((base.mape ?? 0) - (scoreTextbook(rowsWithScorers(gpu, scoreFromCpu, randomRam), P).mape ?? 0));
+    }
+    const sorted = [...gains].sort((a, b) => a - b);
+    const pv = gains.filter((g) => g >= gain).length / gains.length;
+    console.log(`\n  RAM을 켜서 좋아진 폭 ${f(gain)}%p`);
+    console.log(`  무작위 RAM 500회: 중앙 ${f(median(gains))}%p · 95퍼센타일 ${f(sorted[Math.floor(sorted.length * 0.95)])}%p`);
     console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}`);
   });
 
