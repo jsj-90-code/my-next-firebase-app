@@ -1399,4 +1399,273 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     console.log(`     그만큼은 계수를 푼 값이지 판정이 준 값이 아니다.`);
     expect(ok.length).toBeGreaterThan(14);
   });
+
+  // ── (15) 동선 방해를 다시 만든다 — 상권 쪽 길목에 경쟁점이 있나 (2026-09-17) ──
+  //
+  // 사용자 설명:
+  //   "역에서 상권으로 가는 길에 경쟁점이 하나 있으면 점유율 떨구고 뭐 이런 식.
+  //    근데 이게 반대로 상권에서 역으로 가는 길은 우리가 가까운데 이거 어떤 개념으로
+  //    할지는 잘 모르겠다. (...) 상권 중심에서 통행로에 경쟁점이 얼마나 걸쳐져 있는지
+  //    이게 포괄적인 개념인데 구체화하기가 좀 어렵네 나도. 사실 이건 나도 잘 모르겠어
+  //    **지도만 보면 뭐가 주통행로인지 모르니까.**"
+  //
+  // ── 주통행로를 몰라도 되는 이유 ──────────────────────────────────────────
+  // 편심도를 뽑을 때 8방위로 업소 수를 세어 뒀다(kakao-directional.json). 그 벡터합이
+  // **상권이 쏠린 방향**이고, 그게 곧 사람이 오는 방향이다. 주통행로를 따로 몰라도 된다.
+  //
+  //   1. 업소 수 8방위 벡터합 -> 상권 방향 θm
+  //   2. 경쟁점마다 우리 기준 방위 θc (좌표 178/228 = 78%)
+  //   3. 상권 쪽에 있는 경쟁점에만 무게 -> max(0, cos(θc - θm))
+  //
+  // 반대편 경쟁점은 cos이 음수라 자동으로 0이 된다. 사용자가 "어떤 개념으로 할지 모르겠다"고
+  // 한 그 부분 — "상권에서 역으로 가는 길은 우리가 가깝다" — 이 식에서 저절로 나온다.
+  //
+  // ⚠️ **총량이 아니라 비중을 쓴다.** 경쟁 IP 총량은 경쟁 항(품질 모드)이 이미 다 쓰고
+  //    있다. 여기서 새로운 정보는 "경쟁이 어느 **쪽**에 있나"뿐이다. 총량을 또 쓰면
+  //    같은 걸 두 번 세는 것이고, 그건 이 저장소가 중심도에서 이미 겪은 실수다.
+  it("(15) 동선 방해 재설계 — 상권 쪽 길목에 경쟁점이 있나", () => {
+    const DIR = ".local-tools/kakao-directional.json";
+    if (!existsSync(DIR)) { console.log("\n편심도 자료가 없다."); return; }
+    const D = JSON.parse(readFileSync(DIR, "utf8")).sites as Record<string, any>;
+    const DEG: Record<string, number> = { 북: 0, 북동: 45, 동: 90, 남동: 135, 남: 180, 남서: 225, 서: 270, 북서: 315 };
+    const rad = (d: number) => (d * Math.PI) / 180;
+
+    /** 8방위 업소 수의 벡터합 -> 상권이 쏠린 방향(도, 북=0 시계방향). 고르면 null. */
+    const marketDir = (code: string): number | null => {
+      const by = D[`existing:${code}`]?.byDir;
+      if (!by) return null;
+      let x = 0, y = 0;
+      for (const [k, v] of Object.entries(by)) {
+        const deg = DEG[k]; if (deg == null) continue;
+        x += Number(v) * Math.sin(rad(deg)); y += Number(v) * Math.cos(rad(deg));
+      }
+      if (Math.hypot(x, y) < 1e-9) return null;
+      return (Math.atan2(x, y) * 180) / Math.PI;
+    };
+    /** 우리 매장에서 경쟁점을 볼 때의 방위(도, 북=0 시계방향). */
+    const bearing = (la1: number, lo1: number, la2: number, lo2: number) => {
+      const p1 = rad(la1), p2 = rad(la2), dl = rad(lo2 - lo1);
+      const y = Math.sin(dl) * Math.cos(p2);
+      const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+      return (Math.atan2(y, x) * 180) / Math.PI;
+    };
+    const angDiff = (a: number, b: number) => {
+      let d = Math.abs(a - b) % 360;
+      return d > 180 ? 360 - d : d;
+    };
+
+    type Blk = { r: Row; share: number; shareD: number; nCoord: number; nAll: number; md: number };
+    const blks: Blk[] = [];
+    for (const r of cmp) {
+      const s = r.store;
+      const md = marketDir(s.storeCode);
+      if (md == null || s.lat == null || s.lng == null) continue;
+      const raw = (compsBy.get(s.storeCode) ?? []).filter((c: any) =>
+        c.investigationStatus !== "경쟁점없음" && Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+      const withXY = raw.filter((c: any) => c.lat != null && c.lng != null);
+      if (!raw.length || withXY.length < Math.max(2, raw.length * 0.5)) continue;
+      let num = 0, den = 0, numD = 0, denD = 0;
+      for (const c of withXY) {
+        const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+        const w = Math.max(0, Math.cos(rad(angDiff(bearing(s.lat, s.lng, c.lat, c.lng), md))));
+        const dw = Math.exp(-Number(c.distanceM ?? 0) / 300);
+        num += ip * w; den += ip;
+        numD += ip * w * dw; denD += ip * dw;
+      }
+      if (!(den > 0) || !(denD > 0)) continue;
+      blks.push({ r, share: num / den, shareD: numD / denD, nCoord: withXY.length, nAll: raw.length, md });
+    }
+
+    console.log(`\n══ (15) 동선 방해 재설계 — 상권 쪽 길목의 경쟁 비중 ══`);
+    console.log(`경쟁상권 ${cmp.length}곳 중 계산 가능 ${blks.length}곳 (좌표가 절반 넘는 곳만)`);
+    if (blks.length < 15) { console.log("표본이 모자라 관문을 못 건다."); expect(blks.length).toBeGreaterThanOrEqual(0); return; }
+    const sig = 2 / Math.sqrt(blks.length);
+    const sh = blks.map((b) => b.share), shD = blks.map((b) => b.shareD);
+    const obs = blks.map((b) => b.r.shareObs), tt = blks.map((b) => b.r.t);
+    console.log(`  상권쪽 경쟁 비중  범위 ${Math.min(...sh).toFixed(2)}~${Math.max(...sh).toFixed(2)} · 중앙 ${med(sh).toFixed(2)} · 표준편차 ${sd(sh).toFixed(3)}`);
+    console.log(`  (거리가중판)      범위 ${Math.min(...shD).toFixed(2)}~${Math.max(...shD).toFixed(2)} · 중앙 ${med(shD).toFixed(2)} · 표준편차 ${sd(shD).toFixed(3)}`);
+    console.log(`  유의선 ${sig.toFixed(3)}`);
+    console.log(`  상권쪽 비중   ↔ 실측점유율 r=${pear(sh, obs).toFixed(3)}${Math.abs(pear(sh, obs)) > sig ? "*" : " "} · 시점통제 ${partial(sh, obs, tt).toFixed(3)}`);
+    console.log(`  거리가중판    ↔ 실측점유율 r=${pear(shD, obs).toFixed(3)}${Math.abs(pear(shD, obs)) > sig ? "*" : " "} · 시점통제 ${partial(shD, obs, tt).toFixed(3)}`);
+    console.log(`  -> 막혀 있을수록 점유율이 낮아야 하므로 **음(-)이 정상**이다.`);
+
+    // ── 정의를 좁힌 변형 ───────────────────────────────────────────────────
+    // cos 가중은 넓다 — 옆쪽(90도) 경쟁점도 조금 센다. 사용자가 말한 "길목에 걸쳐져 있는"은
+    // 더 좁은 통로다. 좁혀도 안 나오면 검정력이 아니라 개념 문제다.
+    //
+    // ⚠️ 변형을 여럿 재면 우연히 하나가 유의해질 확률이 올라간다. 아래 셋은 **같은 개념을
+    //    좁힌 것**이지 다른 가설이 아니고, 하나가 유의해도 그것만 떼어 채택하지 않는다.
+    const variants: { label: string; f: (b: Blk) => number | null }[] = [
+      {
+        label: "45도 이내만 (좁은 길목)",
+        f: (b) => {
+          const s = b.r.store;
+          const list = (compsBy.get(s.storeCode) ?? []).filter((c: any) =>
+            c.investigationStatus !== "경쟁점없음" && c.lat != null && c.lng != null
+            && Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+          if (!list.length) return null;
+          let num = 0, den = 0;
+          for (const c of list) {
+            const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+            const inside = angDiff(bearing(s.lat, s.lng, c.lat, c.lng), b.md) <= 45 ? 1 : 0;
+            num += ip * inside; den += ip;
+          }
+          return den > 0 ? num / den : null;
+        },
+      },
+      {
+        label: "45도 이내 경쟁 IP 총량",
+        f: (b) => {
+          const s = b.r.store;
+          const list = (compsBy.get(s.storeCode) ?? []).filter((c: any) =>
+            c.investigationStatus !== "경쟁점없음" && c.lat != null && c.lng != null
+            && Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+          let n = 0;
+          for (const c of list) {
+            if (angDiff(bearing(s.lat, s.lng, c.lat, c.lng), b.md) > 45) continue;
+            n += Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+          }
+          return n;
+        },
+      },
+      {
+        label: "가장 가까운 경쟁점이 상권 쪽인가",
+        f: (b) => {
+          const s = b.r.store;
+          const list = (compsBy.get(s.storeCode) ?? []).filter((c: any) =>
+            c.investigationStatus !== "경쟁점없음" && c.lat != null && c.lng != null
+            && Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+          if (!list.length) return null;
+          const near = [...list].sort((a: any, c: any) => Number(a.distanceM ?? 9e9) - Number(c.distanceM ?? 9e9))[0];
+          return Math.max(0, Math.cos(rad(angDiff(bearing(s.lat, s.lng, near.lat, near.lng), b.md))));
+        },
+      },
+    ];
+    console.log(`  ── 정의를 좁힌 변형 (같은 개념, 더 좁은 통로) ──`);
+    for (const v of variants) {
+      const pairs = blks.map((b) => ({ x: v.f(b), y: b.r.shareObs, t: b.r.t }))
+        .filter((p): p is { x: number; y: number; t: number } => p.x != null && Number.isFinite(p.x));
+      if (pairs.length < 10 || new Set(pairs.map((p) => p.x)).size < 3) {
+        console.log(`  ${v.label.padEnd(26)} 변별 없음 (쓰인값 ${new Set(pairs.map((p) => p.x)).size}가지)`);
+        continue;
+      }
+      const s2 = 2 / Math.sqrt(pairs.length);
+      const r1 = pear(pairs.map((p) => p.x), pairs.map((p) => p.y));
+      const r2 = partial(pairs.map((p) => p.x), pairs.map((p) => p.y), pairs.map((p) => p.t));
+      console.log(`  ${v.label.padEnd(26)} n=${pairs.length} r=${r1.toFixed(3)}${Math.abs(r1) > s2 ? "*" : " "}`
+        + ` · 시점통제 ${r2.toFixed(3)}${Math.abs(r2) > s2 ? "*" : " "} (유의선 ${s2.toFixed(3)})`);
+    }
+
+    // 이미 쓰는 항들과 겹치나 — 겹치면 새 정보가 아니다.
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const floAvg = (r: Row, rr: number): number | null => {
+      const sel = F[`existing:${r.store.storeCode}`]?.radii?.[String(rr)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    const centFlo = (r: Row) => {
+      const i = floAvg(r, 300), o = floAvg(r, 1000);
+      return i == null || o == null || !(o > 0) ? null : (i / o) * (1000 / 300) ** 2;
+    };
+    const eccOf = (r: Row) => { const v = D[`existing:${r.store.storeCode}`]?.eccentricity; return v == null ? null : Number(v); };
+    const useC = blks.filter((b) => centFlo(b.r) != null && eccOf(b.r) != null);
+    if (useC.length >= 10) {
+      // 실측 점유율이 1을 넘는 매장은 **물리적으로 불가능한 값**이다 — 수요식이 그 동네
+    // 수요를 적게 잡은 것이라, 그 오차가 shareObs에 통째로 들어 있다. 상관을 흐리므로
+    // 빼고 다시 본다(값을 고른 게 아니라 못 쓰는 값을 뺀 것이다).
+    {
+      const clean = blks.filter((b) => b.r.shareObs <= 1);
+      if (clean.length >= 10) {
+        const s3 = 2 / Math.sqrt(clean.length);
+        const r1 = pear(clean.map((b) => b.share), clean.map((b) => b.r.shareObs));
+        const r2 = pear(clean.map((b) => b.shareD), clean.map((b) => b.r.shareObs));
+        console.log(`  [점유율 100% 초과 ${blks.length - clean.length}곳 제외 · n=${clean.length} · 유의선 ${s3.toFixed(3)}]`
+          + ` 상권쪽 비중 r=${r1.toFixed(3)}${Math.abs(r1) > s3 ? "*" : " "} · 거리가중 r=${r2.toFixed(3)}${Math.abs(r2) > s3 ? "*" : " "}`);
+      }
+    }
+    console.log(`  겹침 — 중심도와 r=${pear(useC.map((b) => b.share), useC.map((b) => Math.log(centFlo(b.r)!))).toFixed(3)}`
+        + ` · 편심도와 r=${pear(useC.map((b) => b.share), useC.map((b) => eccOf(b.r)!)).toFixed(3)}`
+        + ` · 경쟁점수와 r=${pear(useC.map((b) => b.share), useC.map((b) => b.nAll)).toFixed(3)}`);
+    }
+
+    // 관문 — 접근성 κ·중심도 ν와 같은 자.
+    const gate = blks.filter((b) => centFlo(b.r) != null && b.r.floorScore != null);
+    if (gate.length < 15) { console.log("  관문용 표본 부족."); expect(blks.length).toBeGreaterThan(0); return; }
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const cRef = P.locationReferences.centrality, fRef = P.locationReferences.access;
+    const baseOf = (r: Row) => qualShare(r)
+      * Math.pow(centFlo(r)! / cRef, P.locationExponents.centrality)
+      * Math.pow(r.floorScore! / fRef, P.locationExponents.access);
+
+    // 뚫린 정도 — 클수록 좋다. 0이 되지 않게 바닥을 둔다.
+    const openOf = (b: Blk) => Math.max(0.05, 1 - b.share);
+    const gm = (a: number[]) => Math.exp(mean(a.map(Math.log)));
+    const oRef = gm(gate.map(openOf));
+    type Pt = { base: number; open: number; obs: number };
+    const pts: Pt[] = gate.map((b) => ({ base: baseOf(b.r), open: openOf(b), obs: b.r.shareObs }));
+    const EXP = [0, 0.25, 0.5, 0.75, 1, 1.5, 2];
+    const predX = (p: Pt, k: number) => p.base * Math.pow(p.open / oRef, k);
+    const mapeX = (s: Pt[], k: number) => mean(s.map((p) => Math.abs(predX(p, k) / p.obs - 1)));
+    const corrX = (s: Pt[], k: number) => pear(s.map((p) => predX(p, k)), s.map((p) => p.obs));
+    const pickX = (s: Pt[], crit: "mape" | "r") => {
+      let best = { k: EXP[0], v: Infinity };
+      for (const k of EXP) { const v = crit === "mape" ? mapeX(s, k) : -corrX(s, k); if (v < best.v) best = { k, v }; }
+      return best;
+    };
+    console.log(`\n  [지수 훑기] 표본 ${gate.length}곳 · 기준값(기하평균) ${oRef.toFixed(3)}`);
+    for (const k of EXP) console.log(`    ψ=${String(k).padEnd(4)} MAPE ${(mapeX(pts, k) * 100).toFixed(2)}% · r ${corrX(pts, k).toFixed(3)}`);
+
+    console.log(`\n  ══ LOO 홀드아웃 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const errs: number[] = [], preds: number[] = [], picks: number[] = [];
+      for (let i = 0; i < pts.length; i++) {
+        const b = pickX(pts.filter((_, j) => j !== i), crit);
+        picks.push(b.k);
+        const ph = predX(pts[i], b.k);
+        preds.push(ph); errs.push(Math.abs(ph / pts[i].obs - 1));
+      }
+      const ins = pickX(pts, crit);
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ${(mapeX(pts, ins.k) * 100).toFixed(2)}% (ψ=${ins.k}) → LOO ${(mean(errs) * 100).toFixed(2)}%`
+        + ` · LOO r=${pear(preds, pts.map((p) => p.obs)).toFixed(3)}  (기준선 ψ=0: MAPE ${(mapeX(pts, 0) * 100).toFixed(2)}% · r ${corrX(pts, 0).toFixed(3)})`);
+      console.log(`     훈련이 고른 ψ 중앙 ${med(picks)}`);
+    }
+
+    let seed = 20260917 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuf = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+    console.log(`\n  ══ 무작위 대조군 500회 — 상권쪽 비중을 매장끼리 섞는다 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const sc = (s: Pt[], k: number) => (crit === "mape" ? mapeX(s, k) : -corrX(s, k));
+      const gainOf = (s: Pt[]) => sc(s, 0) - sc(s, pickX(s, crit).k);
+      const real = gainOf(pts);
+      const gs: number[] = [];
+      for (let i = 0; i < 500; i++) {
+        const pool = shuf(pts.map((p) => p.open));
+        gs.push(gainOf(pts.map((p, j) => ({ ...p, open: pool[j] }))));
+      }
+      gs.sort((a, b) => a - b);
+      const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+      const fm = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 실제 ${fm(real)} · 섞으면 중앙 ${fm(med(gs))}`
+        + ` · 95퍼센타일 ${fm(gs[Math.floor(gs.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+
+    console.log(`\n  매장별 (상권쪽 비중 높은 순 = 많이 막힌 순)`);
+    console.log(`  매장            상권방향  경쟁점(좌표/전체)  상권쪽비중  실측점유율`);
+    for (const b of [...blks].sort((x, y) => y.share - x.share)) {
+      const dirName = Object.entries(DEG).sort((a, c) =>
+        angDiff(a[1], b.md) - angDiff(c[1], b.md))[0][0];
+      console.log(`  ${b.r.n.slice(0, 12).padEnd(14)}${dirName.padStart(6)}${(b.nCoord + "/" + b.nAll).padStart(14)}`
+        + `${b.share.toFixed(2).padStart(12)}${(b.r.shareObs * 100).toFixed(1).padStart(11)}%`);
+    }
+    expect(blks.length).toBeGreaterThan(10);
+  });
 });
