@@ -92,6 +92,30 @@
 //    -> 좋은 장비를 갖춘 집이 점검도 잘 받는 경향은 있지만, QSC가 설명하는 잔차는 스펙이
 //       이미 반영된 **뒤에 남은 것**이다.
 //
+// 7. **관리 점수에 녹이는 방식은 안 된다.** (사용자 제안 2026-09-17:
+//    *"QSC점수 관리점수에녹이고, 신규후보지할때 3점을 평균으로 넣으면 되지않을까?"*)
+//    같은 표본·같은 관문으로 나란히 쟀다. 관리 = 4.0 + β x (QSC - 92.6):
+//
+//      방식                  최선      MAPE      r      대조군
+//      녹임(관리 점수에)     β=0.3    21.87%   0.827   **p=0.064 ❌**
+//      **곱함(따로)          ψ=2.5    20.61%   0.843   p=0.028 ✅**
+//
+//    **이유는 희석이다.** 관리는 실험실 경쟁력점수의 15.1%(운영 산식 11.0%)뿐이라 QSC 신호가
+//    7~9배로 묽어진다. 보상하려고 β를 키우면 **관리 점수가 0.89~6.22점**이 되어 1~5 척도를
+//    벗어난다. 그러고도 대조군을 못 넘는다.
+//
+// 8. **"후보지에 3점" — 같이 내리면 괜찮고 후보지만 내리면 -5%다.**
+//    ⚠️ 처음에 "3점으로 하면 후보지가 내려간다"고 했는데 **절반만 맞았다.** 실제로 쟀다:
+//
+//      기존점·후보지 **다 같이** 4.0 -> 3.0   후보지 평균 **+0.27%** (-0.26~+0.81%)
+//                                              경쟁력격차 1.454 -> 1.413 · 운영 MAPE 9.17% -> 9.04%
+//      **후보지만** 3.0 (기존점 4.0)          후보지 평균 **-5.02%** (-5.44~-4.69%)
+//
+//    전부 같이 내리면 **산식이 실매출로 다시 학습하며 흡수한다** — 거의 중립이다.
+//    후보지만 내리면 학습이 한 번도 본 적 없는 값이 후보지에만 들어가 **벌점이 된다.**
+//    -> 관리 점수의 수준(4.0이냐 3.0이냐)은 그 자체로는 거의 무해하다. **위험한 건 자를
+//       한쪽에만 들이대는 것이다.** 2026-09-15에 경쟁력점수를 손댈 때 겪은 것과 같은 교훈이다.
+//
 // ── 그래서 어떻게 할 것인가 ───────────────────────────────────────────────
 // ⚠️ **후보지 예측력은 여전히 안 는다.** 후보지엔 QSC가 없어서 가맹점 평균(=1배)을 쓰고,
 //    그러면 (QSC/기준)^ψ = 1이 되어 후보지 예측값이 **한 톨도 안 바뀐다.** 바뀌는 건
@@ -110,6 +134,7 @@ import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import {
   computeCompetitorInvestigationSummary,
+  summarizeValidationRows,
   computeSpecScore,
   computeOwnZoneComposition,
   computeCompetitorZoneComposition,
@@ -119,6 +144,7 @@ import {
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
+import { evaluateCandidate } from "./evaluate";
 import { rivalDistanceM } from "./labInput";
 import { defaultModelSettings, mergeModelSettings } from "./settings";
 import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
@@ -606,4 +632,168 @@ describeIf("QSC 잔차 검정 — 산식이 못 맞힌 부분을 점검 점수�
     console.log(`  (통제해도 남으면 QSC는 경쟁력점수의 그림자가 아니다)`);
     expect(ps.length).toBeGreaterThan(10);
   });
+
+  it("(7) 관리 점수에 녹이는 방식 vs 따로 곱하는 방식 — 어느 쪽이 나은가", () => {
+    // 사용자 제안(2026-09-17): *"QSC점수 관리점수에녹이고, 신규후보지할때 3점을 평균으로 넣으면"*
+    //
+    // 두 방식을 **같은 표본·같은 관문**으로 나란히 잰다.
+    //   (녹임) 관리 점수 = 기준 + β x (QSC - QSC평균)   -> 경쟁력점수 안으로 들어간다
+    //   (곱함) 관리 점수는 그대로 + 점유율에 (QSC/기준)^ψ
+    //
+    // ⚠️ **기준을 4.0으로 두면 후보지가 안 바뀌고, 3.0으로 두면 내려간다.** 후보지는 β항이
+    //    0이라(QSC를 모르니 평균을 넣는다) 기준값을 그대로 받기 때문이다. 그래서 여기서는
+    //    4.0 기준으로 잰다 — 3.0안의 값은 (8)에서 따로 낸다.
+    const ps = cmp.filter((r) => qscIn(r.code) != null);
+    if (ps.length < 15) { console.log(`\n표본 ${ps.length}곳 — 건너뜀`); return; }
+    const qRef = geo(ps.map((r) => qscIn(r.code)!));
+    const mgRef = 4.0; // 지금 자사 41곳이 전부 이 값이다
+
+    type Q4 = { n: string; parts: QualityParts; rivals: Row["rivals"]; pc: number; loc: number; q: number; obs: number };
+    const set4: Q4[] = ps.map((r) => ({
+      n: r.n, parts: r.parts, rivals: r.rivals, pc: r.pc, q: qscIn(r.code)!, obs: r.shareObs,
+      loc: Math.pow((r.floorScore ?? fRefAll) / P.locationReferences.access, P.locationExponents.access)
+        * Math.pow((r.cent ?? P.locationReferences.centrality) / P.locationReferences.centrality, P.locationExponents.centrality),
+    }));
+    /** 관리 점수를 바꿔 끼운 품질 점유율. β=0이면 지금과 같다. */
+    const shareWithMgmt = (x: Q4, beta: number) => {
+      const parts: QualityParts = { ...x.parts, management: mgRef + beta * (x.q - qRef) };
+      const oq = computeQualityScore(parts, W);
+      let riv = 0;
+      for (const v of x.rivals) {
+        if (v.d > P.effectiveRadiusM) continue;
+        const qq = oq == null ? 1 : (computeQualityScore(v.parts, W) ?? oq) / oq;
+        riv += v.ip * Math.pow(qq, P.qualityExponent);
+      }
+      return (x.pc / (x.pc + riv)) * x.loc;
+    };
+    /** 따로 곱하는 방식. 관리 점수는 안 건드린다. */
+    const shareWithMul = (x: Q4, psi: number) => shareWithMgmt(x, 0) * Math.pow(x.q / qRef, psi);
+
+    const mape = (f: (x: Q4) => number) => mean(set4.map((x) => Math.abs(f(x) / x.obs - 1)));
+    const corr = (f: (x: Q4) => number) => pear(set4.map(f), set4.map((x) => x.obs));
+
+    console.log(`\n══ (가) 관리 점수에 녹인다 — 관리 = 4.0 + β x (QSC - ${qRef.toFixed(1)}) ══`);
+    console.log(`  ${"β".padStart(6)}${"관리 범위".padStart(14)}${"MAPE".padStart(10)}${"r".padStart(9)}`);
+    const BETAS = [0, 0.02, 0.05, 0.08, 0.1, 0.15, 0.2, 0.3];
+    for (const b of BETAS) {
+      const lo = mgRef + b * (Math.min(...set4.map((x) => x.q)) - qRef);
+      const hi = mgRef + b * (Math.max(...set4.map((x) => x.q)) - qRef);
+      console.log(`  ${String(b).padStart(6)}${`${lo.toFixed(2)}~${hi.toFixed(2)}`.padStart(14)}${(mape((x) => shareWithMgmt(x, b)) * 100).toFixed(2).padStart(9)}%${corr((x) => shareWithMgmt(x, b)).toFixed(3).padStart(9)}`);
+    }
+    console.log(`\n══ (나) 따로 곱한다 — 점유율 x (QSC/${qRef.toFixed(1)})^ψ ══`);
+    console.log(`  ${"ψ".padStart(6)}${"배율 범위".padStart(14)}${"MAPE".padStart(10)}${"r".padStart(9)}`);
+    for (const psi of [0, 0.5, 1, 1.5, 2, 2.5, 3, 4]) {
+      const lo = Math.pow(Math.min(...set4.map((x) => x.q)) / qRef, psi);
+      const hi = Math.pow(Math.max(...set4.map((x) => x.q)) / qRef, psi);
+      console.log(`  ${String(psi).padStart(6)}${`${lo.toFixed(2)}~${hi.toFixed(2)}`.padStart(14)}${(mape((x) => shareWithMul(x, psi)) * 100).toFixed(2).padStart(9)}%${corr((x) => shareWithMul(x, psi)).toFixed(3).padStart(9)}`);
+    }
+
+    // ── 왜 갈리나 — 관리는 경쟁력점수의 한 조각이라 희석된다 ──────────────────
+    console.log(`\n[왜 갈리나] 관리 비중은 실험실 경쟁력점수의 ${(W.management * 100).toFixed(1)}%다(운영 산식은 11.0%).`);
+    console.log(`  관리를 1점 올려도 경쟁력점수는 ${W.management.toFixed(3)}점만 오르고, 그게 다시 경쟁점과 나뉘며 지수 ${P.qualityExponent}제곱을 탄다.`);
+    const b1 = BETAS.reduce((a, b) => (mape((x) => shareWithMgmt(x, b)) < mape((x) => shareWithMgmt(x, a)) ? b : a));
+    const p1 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 4].reduce((a, b) => (mape((x) => shareWithMul(x, b)) < mape((x) => shareWithMul(x, a)) ? b : a));
+    console.log(`\n[최선 비교] 녹임 β=${b1} MAPE ${(mape((x) => shareWithMgmt(x, b1)) * 100).toFixed(2)}% · r ${corr((x) => shareWithMgmt(x, b1)).toFixed(3)}`);
+    console.log(`           곱함 ψ=${p1} MAPE ${(mape((x) => shareWithMul(x, p1)) * 100).toFixed(2)}% · r ${corr((x) => shareWithMul(x, p1)).toFixed(3)}`);
+
+    // 대조군 — 녹임 방식도 같은 관문에 건다. 통과 못 하면 "우연히 좋아 보인 것"이다.
+    let seed = 20260917 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuf = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+    const gainMg = (s: Q4[]) => {
+      const m = (b: number) => mean(s.map((x) => Math.abs(shareWithMgmt(x, b) / x.obs - 1)));
+      return m(0) - Math.min(...BETAS.map(m));
+    };
+    const real = gainMg(set4);
+    const gs: number[] = [];
+    for (let i = 0; i < 500; i++) { const pool = shuf(set4.map((x) => x.q)); gs.push(gainMg(set4.map((x, j) => ({ ...x, q: pool[j] })))); }
+    gs.sort((a, b) => a - b);
+    const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+    console.log(`  대조군 [녹임·MAPE] 실제 ${(real * 100).toFixed(2)}%p · 95퍼센타일 ${(gs[Math.floor(gs.length * 0.95)] * 100).toFixed(2)}%p · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    expect(set4.length).toBeGreaterThan(10);
+  });
+
+  it("(8) 자사 관리 점수를 4.0에서 3.0으로 내리면 후보지가 얼마나 내려가나", () => {
+    // 사용자 제안의 "신규후보지할때 3점을 평균으로" 부분을 **운영 산식에서** 실제로 계산한다.
+    // QSC와 별개로 알아둘 값이다 — 관리 점수 1점이 예상매출에 얼마인가.
+    //
+    // ⚠️ 기존점과 후보지를 **같이** 내려야 한다. 후보지만 내리면 학습 때 안 본 값이 들어가서
+    //    "산식을 바꾼 것"이 아니라 "후보지에 벌점을 준 것"이 된다.
+    const runAt = (mg: number, candMg = mg) => {
+      const patched = (snap.existingStores as any[]).map((s) => ({ ...s, ownManagementScore: mg }));
+      const st = prepareExistingStoresForEvaluation(patched, allCompetitors, snap.locationEvaluations, settings);
+      const inputs: ValidationStoreInput[] = st.map((s: any) => {
+        const lookupCode = existingStoreSourceCode(s);
+        const loc = locByLookup.get(lookupCode) ?? null;
+        const competitors = compsByLookup.get(lookupCode) ?? [];
+        return {
+          storeCode: s.storeCode, storeName: s.storeName, brand: s.brandType ?? loc?.brandType ?? null,
+          openedAt: s.openedAt, completedMonths: s.completedMonths ?? 0, franchiseStatus: s.franchiseStatus,
+          isPostOpenIssue: s.excludedFromModel, postOpenIssueReason: s.excludedReason,
+          pcCount: s.pcCount, evaluationPcCount: s.evaluationPcCount, hourlyRate: s.hourlyRate,
+          ownDemand: s.ownDemand, marketDemand: s.marketDemand, competitorIp: s.competitorIp,
+          extraPcHours: computeOverflowPcHours(s.marketDemand,
+            { pcCount: s.evaluationPcCount ?? s.pcCount, competitivenessScore: s.competitivenessScore },
+            competitors, settings),
+          competitivenessScore: s.competitivenessScore, competitivenessGap: s.competitivenessGap,
+          actualRevenueAvg: s.actualMonthlyRevenueAvg, specialDemandType: s.specialDemandType,
+          specialDemandIntensity: s.specialDemandIntensity, inflowRestriction: loc?.inflowRestriction ?? null,
+          visibilityScore: loc?.visibilityScore ?? null, preemptionScore: loc?.preemptionScore ?? null,
+          hasLocationEvaluation: loc != null, floor: s.floor, groundLevel: s.groundLevel, hasElevator: s.hasElevator,
+          competitorSummary: computeCompetitorInvestigationSummary(competitors), sheetV61Predicted: s.v61Predicted,
+        };
+      });
+      const res = runUsageCohortValidation(inputs, sales as any, settings);
+      const core = (res.rows as any[]).filter((r) => r.brand === "블랙라벨" && r.includedInCoreAccuracy);
+      const sum = summarizeValidationRows(core, {
+        mape: settings.targetMAE, medianAe: settings.targetMedianAE, within10: settings.target10pctRatio,
+        within20: settings.target20pctRatio, maxBias: settings.maxAvgBias,
+      });
+      const cands = (snap.candidates as any[]).map((c) => {
+        const comps = (snap.competitors as any[]).filter((x) => x.candidateCode === c.code).map(migrateCompetitorInvestigationStatus);
+        const out = evaluateCandidate({
+          candidate: { ...c, ownManagementScore: candMg },
+          competitors: comps,
+          locationEvaluation: (snap.locationEvaluations as any[]).find((l) => l.candidateCode === c.code) ?? null,
+          settings, existingStores: patched as any,
+          trainingLocationEvaluations: snap.locationEvaluations,
+          trainingCompetitors: allCompetitors, trainingSales: sales as any,
+        });
+        return { code: c.code, name: c.name ?? "", v62: out.v62Final ?? null, gap: out.competitivenessGap ?? null };
+      });
+      return { sum, cands, gaps: st.map((s: any) => s.competitivenessGap).filter((v: any) => v != null) as number[] };
+    };
+
+    const a = runAt(4.0), b = runAt(3.0);
+    console.log(`\n══ 자사 관리 점수 4.0 → 3.0 (기존점·후보지 다 같이) ══`);
+    console.log(`  기존점 경쟁력격차 평균 ${mean(a.gaps).toFixed(4)} → ${mean(b.gaps).toFixed(4)} (${((mean(b.gaps) / mean(a.gaps) - 1) * 100).toFixed(2)}%)`);
+    const pct = (v: number | null) => (v == null ? "-" : `${(v * 100).toFixed(2)}%`);
+    console.log(`  운영 MAPE ${pct(a.sum.meanAbsoluteErrorPct)} → ${pct(b.sum.meanAbsoluteErrorPct)} · ±20% ${pct(a.sum.within20PctRatio)} → ${pct(b.sum.within20PctRatio)}`);
+    console.log(`\n  ${"후보지".padEnd(18)}${"관리 4.0".padStart(13)}${"관리 3.0".padStart(13)}${"차이".padStart(9)}`);
+    const diffs: number[] = [];
+    for (let i = 0; i < a.cands.length; i++) {
+      const x = a.cands[i], y = b.cands.find((c) => c.code === x.code);
+      if (x.v62 == null || y?.v62 == null) { console.log(`  ${`${x.code} ${x.name}`.slice(0, 17).padEnd(18)}${"-".padStart(13)}`); continue; }
+      const d = y.v62 / x.v62 - 1; diffs.push(d);
+      console.log(`  ${`${x.code} ${x.name}`.slice(0, 17).padEnd(18)}${Math.round(x.v62).toLocaleString("ko-KR").padStart(13)}${Math.round(y.v62).toLocaleString("ko-KR").padStart(13)}${`${(d * 100).toFixed(2)}%`.padStart(9)}`);
+    }
+    if (diffs.length) console.log(`\n  후보지 ${diffs.length}곳 평균 ${(mean(diffs) * 100).toFixed(2)}% · 최소 ${(Math.min(...diffs) * 100).toFixed(2)}% · 최대 ${(Math.max(...diffs) * 100).toFixed(2)}%`);
+    console.log(`  -> 거의 안 움직인다. 전부 같이 내리면 산식이 실매출로 다시 학습하며 흡수한다.`);
+
+    // ── 후보지만 3.0으로 내리면 — 이게 진짜 위험한 경우다 ────────────────────
+    // 기존점은 4.0 그대로 두고 후보지에만 3.0을 넣으면, 학습이 한 번도 본 적 없는 값이
+    // 후보지에만 들어간다. "산식을 바꾼 것"이 아니라 "후보지에만 벌점을 준 것"이 된다.
+    const c2 = runAt(4.0, 3.0);
+    console.log(`\n══ 후보지만 3.0 (기존점은 4.0 그대로) ══`);
+    console.log(`  ${"후보지".padEnd(18)}${"둘 다 4.0".padStart(13)}${"후보지만 3.0".padStart(14)}${"차이".padStart(9)}`);
+    const d2: number[] = [];
+    for (const x of a.cands) {
+      const y = c2.cands.find((c) => c.code === x.code);
+      if (x.v62 == null || y?.v62 == null) continue;
+      const d = y.v62 / x.v62 - 1; d2.push(d);
+      console.log(`  ${`${x.code} ${x.name}`.slice(0, 17).padEnd(18)}${Math.round(x.v62).toLocaleString("ko-KR").padStart(13)}${Math.round(y.v62).toLocaleString("ko-KR").padStart(14)}${`${(d * 100).toFixed(2)}%`.padStart(9)}`);
+    }
+    if (d2.length) console.log(`\n  후보지 ${d2.length}곳 평균 ${(mean(d2) * 100).toFixed(2)}% · 최소 ${(Math.min(...d2) * 100).toFixed(2)}% · 최대 ${(Math.max(...d2) * 100).toFixed(2)}%`);
+    expect(a.cands.length).toBeGreaterThan(0);
+  }, 300_000);
 });
