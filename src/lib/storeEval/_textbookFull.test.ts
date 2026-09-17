@@ -75,22 +75,34 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   // **스냅샷을 먼저 본다.** 2026-09-17에 dumpValidationSnapshot이 storeEvalLabQscScores도
   // 뜨게 했다 — 로컬 수집물은 gitignore라 PC를 옮기면 안 따라오고, 그러면 하네스는 관리
   // 4.00으로 화면은 QSC 값으로 돌아 성적이 조용히 갈라진다. 스냅샷에 없을 때만 파일로 떨어진다.
-  const qscByStoreCode = new Map<string, number>();
-  const fromSnapshot = (snap.labQscScores ?? []) as { storeCode?: string; id?: string; openedAt?: string; records?: QscRecord[] }[];
+  // **원본 기록을 그대로 들고 있는다.** 창을 바꿔 다시 평균 내는 시험(아래 "QSC 창을 넓히면")이
+  // 있어서, 평균 낸 값만 들고 있으면 그 시험이 원본 파일을 따로 읽어야 한다 — 그러면 파일이
+  // 없는 PC에서만 붉어진다(2026-09-17 집 PC에서 실제로 그랬다).
+  type QscSite = { name?: string; openedAt?: string; records?: QscRecord[] };
+  const qscSites = new Map<string, QscSite>();
+  const fromSnapshot = (snap.labQscScores ?? []) as ({ storeCode?: string; id?: string } & QscSite)[];
   for (const doc of fromSnapshot) {
     const code = doc.storeCode ?? doc.id;
-    if (!code) continue;
-    const avg = qscInWindowAverage(doc.records ?? [], doc.openedAt ?? null);
-    if (avg != null) qscByStoreCode.set(code, avg);
+    if (code) qscSites.set(code, doc);
   }
-  if (!qscByStoreCode.size && existsSync(QSC_FILE)) {
-    const sites = JSON.parse(readFileSync(QSC_FILE, "utf8")).sites as Record<string, { openedAt?: string; records?: QscRecord[] }>;
+  if (!qscSites.size && existsSync(QSC_FILE)) {
+    const sites = JSON.parse(readFileSync(QSC_FILE, "utf8")).sites as Record<string, QscSite>;
     for (const [key, site] of Object.entries(sites)) {
-      const code = key.startsWith("existing:") ? key.slice("existing:".length) : key;
-      const avg = qscInWindowAverage(site.records ?? [], site.openedAt ?? null);
-      if (avg != null) qscByStoreCode.set(code, avg);
+      qscSites.set(key.startsWith("existing:") ? key.slice("existing:".length) : key, site);
     }
   }
+
+  /** 창을 정해서 매장별 QSC 평균을 낸다. 창을 안 주면 채택된 규칙(전 기간)이다. */
+  const qscAverages = (months?: number) => {
+    const m = new Map<string, number>();
+    for (const [code, site] of qscSites) {
+      const avg = qscInWindowAverage(site.records ?? [], site.openedAt ?? null, months);
+      if (avg != null) m.set(code, avg);
+    }
+    return m;
+  };
+
+  const qscByStoreCode = qscAverages();
 
   // 로드뷰 판정은 Firestore에 있어 하네스(오프라인 스냅샷)에서는 안 읽는다. 계수가 0이라
   // 결과에 영향이 없다 — 켤 때가 오면 스냅샷에 같이 담아야 한다.
@@ -155,21 +167,12 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   // 사용자 방향: *"다른매장 개월수늘려서 별차이없으면 평균값으로 조지자고"*
   it("QSC 창을 넓히면 — 표본은 늘고 시점은 흐려진다. 값어치가 있나", () => {
     if (!qscByStoreCode.size) { console.log("\n[QSC] 수집물이 없다 — 건너뜀"); return; }
-    const sites = JSON.parse(readFileSync(QSC_FILE, "utf8")).sites as Record<string, { name?: string; openedAt?: string; records?: QscRecord[] }>;
-    const mapAt = (months: number) => {
-      const m = new Map<string, number>();
-      for (const [key, site] of Object.entries(sites)) {
-        const code = key.startsWith("existing:") ? key.slice("existing:".length) : key;
-        const avg = qscInWindowAverage(site.records ?? [], site.openedAt ?? null, months);
-        if (avg != null) m.set(code, avg);
-      }
-      return m;
-    };
+    const mapAt = (months: number) => qscAverages(months);
     const mg = (q: number) => Math.max(1, Math.min(5, 1 + (q - 60) * (4 / 40)));
     console.log("\n[QSC 창 훑기 — 바닥 60 고정 · 매출 기준]");
     console.log(`  ${"창".padStart(10)}${"실측 매장".padStart(10)}${"관리 평균".padStart(10)}${"MAPE".padStart(9)}${"중앙".padStart(8)}${"최대".padStart(8)}`);
     for (const months of [12, 15, 18, 24, Infinity]) {
-      const qm = mapAt(months); // 창 훑기는 원본 파일이 있어야 한다(스냅샷엔 이미 걸러진 값이 아니라 원본이 들어 있어 둘 다 된다)
+      const qm = mapAt(months); // 원본 기록에서 창만 바꿔 다시 평균 낸다 — 스냅샷·로컬파일 어느 쪽이어도 된다
       const scores = [...qm.values()].map(mg);
       const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
       const base = buildLabRows({ stores, compsByCode, utilByStore, settings });
