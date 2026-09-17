@@ -365,4 +365,42 @@ describeIf("존구성 — 수준인가 순서인가", () => {
     console.log(`  ⚠️ 프렌즈존 환산(지금 x1)은 "개수가 구역인가 좌석인가"가 안 정해져 손대지 않았다.`);
     expect(rows.length).toBeGreaterThan(30);
   });
+
+  // ── (7) 팀룸 룸당 좌석 — 5석 일괄 환산이 경쟁점엔 안 맞는다 ─────────────
+  // 경쟁점 팀룸 47건 중 **19건이 총좌석 미기입**이라 `개수 x 5`로 환산된다.
+  //
+  // 사용자 확인(2026-09-17 밤):
+  //   *"창원상남점 팀룸 3인6개 4인8개 이건데?"*  -> 메타pc 창원상남점. 6+8 = 14개로 기입값과 맞다
+  //   *"욜로는 3,4,5인 팀룸 14개"*              -> 욜로PC방 울산삼산점. 역시 14개가 맞다
+  //
+  // **룸 개수는 맞다.** 조사자가 좌석 수를 개수 칸에 적은 게 아니다 — 진짜 룸형 매장이다.
+  // 틀린 건 **룸당 좌석 가정**이다.
+  //   메타pc: 6x3 + 8x4 = 50석인데 환산은 14x5 = 70석  (룸당 3.57석 · 40% 과대)
+  //   욜로:   3~5인 14개면 대략 56석인데 환산은 70석    (룸당 4석 안팎)
+  // 경쟁점 좌석을 부풀리면 경쟁점 존구성이 올라가고 -> 경쟁력격차가 줄고 -> 우리 점유율이
+  // 내려간다. **예상매출을 낮게 만드는 방향**이라 지금까지 본 비대칭과 반대다.
+  //
+  // ⚠️ **그런데 실험실 성적은 이걸 못 잡는다.** 미기입 19건이 전부 후보지 쪽이고
+  //    기존점 쪽은 0건이라, 38곳 백테스트에는 한 건도 안 들어온다. 즉 이건
+  //    **실험실 문제가 아니라 운영 V62의 후보지 예상매출 문제다.**
+  it("(7) 팀룸 총좌석 미기입 — 어디에 걸려 있나", () => {
+    const all = [...compsByCode.values()].flat()
+      .filter((c) => c.investigationStatus !== "경쟁점없음" && (c.teamRoom ?? 0) > 0 && c.teamRoomTotalSeats == null);
+    const existingCodes = new Set(stores.map((s) => s.storeCode));
+    const onExisting = all.filter((c) => existingCodes.has(c.candidateCode));
+    const byCandidate = new Map<string, number>();
+    for (const c of all) {
+      if (existingCodes.has(c.candidateCode)) continue;
+      byCandidate.set(c.candidateCode, (byCandidate.get(c.candidateCode) ?? 0) + 1);
+    }
+    console.log("");
+    console.log(`[팀룸 총좌석 미기입] 모두 ${all.length}건 · 기존점 쪽 ${onExisting.length}건 · 후보지 쪽 ${all.length - onExisting.length}건`);
+    for (const [code, n] of [...byCandidate].sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${code.padEnd(8)} ${String(n).padStart(2)}건`);
+    }
+    console.log(`  -> 기존점 쪽이 0건이라 **실험실 38곳 성적은 이 값에 전혀 안 움직인다.**`);
+    console.log(`     고쳐서 달라지는 건 후보지 예상매출이다(운영 V62). 조사로 채우는 게 정답이다.`);
+    // 이 시험은 성적을 재지 않는다 — 잴 표본이 없다는 게 결론이다.
+    expect(onExisting.length).toBe(0);
+  });
 });
