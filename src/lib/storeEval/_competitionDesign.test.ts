@@ -80,6 +80,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { computeSpecScore, computeOwnZoneComposition, computeCompetitorZoneComposition, computeFacilityScore } from "@/lib/storeEval/calc";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
+import { rivalDistanceM } from "@/lib/storeEval/labInput";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
 const med = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
@@ -158,7 +159,10 @@ describe("Huff 설계 후보", () => {
             monitorBase: c.monitorBase ?? null, monitorTop: c.monitorTop ?? null,
           }, set);
           const fac = computeFacilityScore({ zoneComposition: z.composition, interiorScore: c.interiorScore ?? null, managementScore: c.managementScore ?? null }, set);
-          return { ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: Number(c.distanceM ?? 0),
+          // 거리는 **좌표로 잰 값**을 먼저 쓴다(2026-09-17). R=300m와 θ=3은 원래
+          // 현장조사 거리(distanceM)로 골랐는데, 그 값이 초기 데이터라 틀린 게 섞여
+          // 있었다(사용자 확인). 유효거리 판정이 걸린 자리라 여기가 바뀌면 R도 바뀐다.
+          return { ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: rivalDistanceM(s, c) ?? 0,
             score: scoreOf(sp, c.foodScore ?? null, fac),
             parts: { spec: sp, food: c.foodScore ?? null, zone: z.composition, interior: c.interiorScore ?? null, mgmt: c.managementScore ?? null } };
         })
