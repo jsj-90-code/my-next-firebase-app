@@ -50,10 +50,11 @@ export type MapPoint = {
   name: string;
   lat: number;
   lng: number;
-  category: DemandPointCategory | "PC방(경쟁점)";
+  category: DemandPointCategory | "PC방(경쟁점)" | "우리 매장";
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
+  "우리 매장": "#111827",
   "PC방(경쟁점)": "#dc2626",
   지하철역: "#2563eb",
   버스정류장: "#0891b2",

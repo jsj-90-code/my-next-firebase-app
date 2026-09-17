@@ -135,13 +135,38 @@ export default function CompetitorCoordsPage() {
   const selected = useMemo(() => real.find((c) => c.id === selectedId) ?? null, [real, selectedId]);
   const selectedParent = selected ? parents.get(selected.candidateCode) ?? null : null;
 
-  /** 지도에 같이 띄울 점 — 같은 매장의 **좌표가 이미 있는** 경쟁점들. 위치 감을 잡는 데 쓴다. */
+  /**
+   * 지도에 같이 띄울 점.
+   *  - 우리 매장(검은 점) — 거리를 재는 기준점이다. 이미 찍은 좌표를 고칠 때는 마커가
+   *    경쟁점 자리에서 시작하므로, 우리 매장이 안 보이면 방향 감각을 잃는다.
+   *  - 같은 상권에서 **좌표가 이미 있는 다른 경쟁점**(빨간 점) — 위치 감을 잡는 데 쓴다.
+   */
   const points: MapPoint[] = useMemo(() => {
-    if (!selected) return [];
-    return filled
+    if (!selected || !selectedParent) return [];
+    const others = filled
       .filter((c) => c.candidateCode === selected.candidateCode && c.id !== selected.id)
       .map((c) => ({ id: c.id, name: c.name ?? "경쟁점", lat: c.lat!, lng: c.lng!, category: "PC방(경쟁점)" as const }));
-  }, [filled, selected]);
+    return [
+      { id: `parent:${selectedParent.code}`, name: selectedParent.name, lat: selectedParent.lat, lng: selectedParent.lng, category: "우리 매장" as const },
+      ...others,
+    ];
+  }, [filled, selected, selectedParent]);
+
+  /** 이미 좌표가 있으면 **그 자리에서** 마커를 띄운다 — 잘못 찍힌 위치를 보고 고쳐야 한다. */
+  const markerStart = useMemo(() => {
+    if (!selectedParent) return null;
+    if (selected?.lat != null && selected?.lng != null) return { lat: selected.lat, lng: selected.lng };
+    return { lat: selectedParent.lat, lng: selectedParent.lng };
+  }, [selected, selectedParent]);
+
+  /** 지금 저장돼 있는 좌표가 조사 거리와 맞는지 — 잘못 찍은 걸 찾아내는 데 쓴다. */
+  const savedCheck = useMemo(() => {
+    if (!selected || !selectedParent || selected.lat == null || selected.lng == null) return null;
+    return checkDistance(
+      selected.distanceM == null ? null : Number(selected.distanceM),
+      haversineM(selectedParent.lat, selectedParent.lng, selected.lat, selected.lng),
+    );
+  }, [selected, selectedParent]);
 
   const check = useMemo(() => {
     if (!selected || !selectedParent || !pending) return null;
@@ -158,11 +183,15 @@ export default function CompetitorCoordsPage() {
     try {
       await saveCompetitor({ ...selected, lat: pending.lat, lng: pending.lng }, user?.email ?? null, selected);
       setCompetitors((prev) => prev.map((c) => (c.id === selected.id ? { ...c, lat: pending.lat, lng: pending.lng } : c)));
-      setNotice(`${selected.name ?? "경쟁점"} 좌표를 저장했습니다.`);
+      const wasNew = selected.lat == null || selected.lng == null;
+      setNotice(`${selected.name ?? "경쟁점"} 좌표를 ${wasNew ? "저장" : "수정"}했습니다.`);
       setPending(null);
-      // 같은 매장에 아직 남은 게 있으면 자동으로 다음 건으로 넘어간다.
-      const next = missing.find((c) => c.candidateCode === selected.candidateCode && c.id !== selected.id);
-      setSelectedId(next?.id ?? null);
+      // 새로 찍은 거면 같은 매장의 다음 건으로 자동으로 넘어간다 — 몰아서 찍는 게 빠르다.
+      // 고친 거면 그 자리에 머문다. 제대로 고쳐졌는지 눈으로 확인하고 싶을 것이다.
+      if (wasNew) {
+        const next = missing.find((c) => c.candidateCode === selected.candidateCode && c.id !== selected.id);
+        setSelectedId(next?.id ?? null);
+      }
     } catch (e) {
       setNotice(e instanceof Error ? e.message : "저장하지 못했습니다.");
     } finally {
@@ -203,7 +232,7 @@ export default function CompetitorCoordsPage() {
               </div>
               <label className="flex items-center gap-2 text-xs text-[var(--sl-ink-soft)]">
                 <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
-                다 채운 매장도 보기
+이미 찍은 것도 보기 <span className="text-[var(--sl-ink-soft)]">(잘못 찍은 걸 고치려면 켜기)</span>
               </label>
             </div>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#171310]/[0.08] dark:bg-white/[0.08]">
@@ -256,11 +285,41 @@ export default function CompetitorCoordsPage() {
                             </button>
                           </li>
                         ))}
-                        {showDone && g.filled.map((c) => (
-                          <li key={c.id} className="px-2 py-1 text-xs text-[var(--sl-ink-soft)]">
-                            ✓ {c.name ?? "(상호 없음)"}
-                          </li>
-                        ))}
+                        {/* 이미 찍은 것도 **다시 고를 수 있어야 한다** — 잘못 찍으면
+                            고쳐야 하기 때문이다(2026-09-17 사용자: "카카오를 잘못 찍었다").
+                            찍은 좌표가 조사 거리와 얼마나 맞는지 옆에 붙여, 잘못 찍은 걸
+                            목록에서 바로 찾을 수 있게 한다. */}
+                        {showDone && g.filled.map((c) => {
+                          const gap = g.parent && c.lat != null && c.lng != null
+                            ? checkDistance(
+                                c.distanceM == null ? null : Number(c.distanceM),
+                                haversineM(g.parent.lat, g.parent.lng, c.lat, c.lng),
+                              )
+                            : null;
+                          return (
+                            <li key={c.id}>
+                              <button
+                                type="button"
+                                disabled={!g.parent}
+                                onClick={() => { setSelectedId(c.id); setPending(null); setNotice(null); }}
+                                className={`w-full rounded-lg px-2 py-2 text-left text-sm transition ${
+                                  selectedId === c.id
+                                    ? "bg-[var(--sl-info-soft)] text-[var(--sl-info)]"
+                                    : "hover:bg-[#171310]/[0.04] dark:hover:bg-white/[0.06]"
+                                } ${g.parent ? "" : "cursor-not-allowed opacity-50"}`}
+                              >
+                                <span className={gap?.level === "bad" ? "font-medium text-[var(--sl-danger)]" : "text-[var(--sl-ink-soft)]"}>
+                                  {gap?.level === "bad" ? "⚠" : "✓"} {c.name ?? "(상호 없음)"}
+                                </span>
+                                {gap && (
+                                  <span className={`ml-2 text-xs ${gap.level === "bad" ? "text-[var(--sl-danger)]" : "text-[var(--sl-ink-soft)]"}`}>
+                                    {gap.level === "ok" ? "거리 맞음" : gap.level === "warn" ? "조금 어긋남" : "많이 어긋남"}
+                                  </span>
+                                )}
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </li>
                   ))}
@@ -286,9 +345,25 @@ export default function CompetitorCoordsPage() {
                       {selected.address ? ` · ${selected.address}` : ""}
                     </p>
                     <p className="text-xs text-[var(--sl-ink-soft)]">
-                      가운데 마커가 우리 매장 자리에서 시작한다. <strong>경쟁점 건물 위로 끌어다 놓고</strong> 확정하면
-                      조사 거리와 대조해 준다. 빨간 점은 이미 좌표를 채운 같은 상권 경쟁점이다.
+                      마커를 <strong>경쟁점 건물 위로 끌어다 놓고</strong> 확정하면 조사 거리와 대조해 준다.
+                      검은 점이 우리 매장(거리 재는 기준), 빨간 점은 이미 좌표를 채운 같은 상권 경쟁점이다.
                     </p>
+
+                    {savedCheck && (
+                      <div
+                        className={`rounded-lg px-3 py-2 text-xs ${
+                          savedCheck.level === "ok"
+                            ? "bg-[var(--sl-success-soft)] text-[var(--sl-success)]"
+                            : savedCheck.level === "warn"
+                              ? "bg-[var(--sl-warning-soft)] text-[var(--sl-warning)]"
+                              : "bg-[var(--sl-danger-soft)] text-[var(--sl-danger)]"
+                        }`}
+                      >
+                        <strong>지금 저장된 좌표</strong> — {savedCheck.text}
+                        <br />
+                        마커가 그 자리에서 시작한다. 틀렸으면 끌어다 옮기면 된다.
+                      </div>
+                    )}
                   </div>
 
                   {/* ── 폐점한 경쟁점을 찾는 길 ─────────────────────────────
@@ -336,8 +411,8 @@ export default function CompetitorCoordsPage() {
 
                   <CandidateMap
                     key={selected.id}
-                    lat={selectedParent.lat}
-                    lng={selectedParent.lng}
+                    lat={markerStart?.lat ?? selectedParent.lat}
+                    lng={markerStart?.lng ?? selectedParent.lng}
                     points={points}
                     onConfirmPosition={(lat, lng) => { setPending({ lat, lng }); setNotice(null); }}
                   />
