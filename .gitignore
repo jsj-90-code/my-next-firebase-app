@@ -104,6 +104,9 @@ src/**/_*.test.ts
 !src/lib/storeEval/_textbookFull.test.ts
 # 2026-09-17 — QSC 잔차 검정. 관문을 통과한 항이라 근거가 저장소에 남아야 한다.
 !src/lib/storeEval/_qscResidual.test.ts
+# 2026-09-17 — 기존점 캐시 갱신 도구. `.local-tools/refresh-existing-store-cache.mjs`가
+# node로 안 돈다(src의 확장자 없는 상대 import를 못 푼다). 대체품이라 편입한다.
+!src/lib/storeEval/_cacheRefresh.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
