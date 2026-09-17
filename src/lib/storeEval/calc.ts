@@ -330,6 +330,10 @@ export function applySurveyLevelDefault(
   investigationStatus?: CompetitorInvestigationStatus,
 ): number | null {
   if (score != null) return score;
+  // 2026-09-17 측정 — "노후저경쟁력미조사"에 간략조사와 **다른** 기본값을 줄지 재봤는데,
+  // 그 9곳이 전부 후보지(N005·N010·N012)에만 붙어 있어 기존점 검증군에 하나도 없다.
+  // 1.0~2.5로 훑어도 운영 적중률이 소수점까지 똑같다 — **자료로는 못 가린다.**
+  // 그래서 지금은 간략조사와 같은 값을 쓴다. 바꾸려면 뜻으로 정해야 한다.
   if (surveyLevel === "간략") return SURVEY_LEVEL_DEFAULT_SCORE["간략"];
   if (surveyLevel == null && investigationStatus === "노후저경쟁력미조사") return SURVEY_LEVEL_DEFAULT_SCORE["간략"];
   return null;
@@ -984,6 +988,36 @@ function countDistinctZoneTypes(counts: ZoneCompositionCounts): number {
   return ZONE_COMPOSITION_KEYS.filter((k) => (counts[k] ?? 0) > 0).length;
 }
 
+/**
+ * 존구성을 **아예 조사하지 않았는가** — 8항목이 하나도 안 적혔으면 참.
+ *
+ * "일부만 적힘"과 "아예 안 적힘"은 다르다. 앞은 없는 존에 0을 안 쓴 것이고(자료가 그걸
+ * 지지한다 — computeCompetitorZoneComposition 주석 참고), 뒤는 조사 자체를 안 한 것이다.
+ */
+function isZoneCompositionUnsurveyed(counts: ZoneCompositionCounts): boolean {
+  return ZONE_COMPOSITION_KEYS.every((k) => counts[k] == null);
+}
+
+/**
+ * **조사하지 않은 경쟁점의 존구성 점수** (2026-09-17 신설).
+ *
+ * 사용자 확인: *"미조사 매장들 보통 시설 경쟁력이 낮거든."* 조사자가 생략했다는 사실
+ * 자체가 "약하다"는 판단이고, 자료도 같은 말을 한다 — 이 값을 보통(2.5)으로 올리면
+ * 운영 MAPE가 9.17% → 9.29%로 나빠진다.
+ *
+ * ── 왜 상수로 박는가 ────────────────────────────────────────────────────
+ * 그전에도 **결과적으로는** 이 값이 나오고 있었다. 다만 규칙이 아니라 **사고**였다 —
+ * 8항목이 전부 null인데 게이트가 없어서 countDistinctZoneTypes가 0을 세고, "존이 하나도
+ * 없는 매장"으로 읽혀 최저점이 나왔다. 우연히 맞는 값이 나온 것이라, 나중에 그 36곳을
+ * 실제로 조사하는 순간 점수가 튀면서 예상매출이 흔들릴 자리였다.
+ *
+ * 이제는 "조사 안 한 경쟁점은 존구성을 낮게 본다"가 **적힌 규칙**이다. 계수는 자료로 골랐다.
+ *
+ * ⚠️ **자사에는 쓰지 않는다.** 우리가 우리 매장 존구성을 "약해서 생략"할 일은 없다 —
+ *    자사의 미기재는 그냥 입력 누락이라 null로 두고 사람이 채우게 한다.
+ */
+export const UNSURVEYED_COMPETITOR_ZONE_SCORE = 1.0;
+
 export function computeZoneDiversityScore(distinctTypeCount: number): number {
   if (distinctTypeCount <= 0) return 1;
   return Math.min(5, 1 + (1 + distinctTypeCount) * 0.5);
@@ -1037,6 +1071,21 @@ export function computeCompetitorZoneComposition(input: {
   teamRoomTotalSeats: number | null;
   totalPcCount: number | null;
 }): ZoneCompositionResult {
+  // 2026-09-17 — **하나도 안 적힌 경쟁점을 "존이 없는 매장"으로 읽고 있었다.**
+  // 이 함수엔 게이트가 없어서 8항목이 전부 null이어도 countDistinctZoneTypes가 0을 세고
+  // 최저점(1.00)이 나왔다. 조사를 안 한 36곳이 전부 그랬다(간략 23 · 노후저경쟁력미조사 9 ·
+  // 상세 4). 사양·먹거리는 applySurveyLevelDefault로 2.5점을 받는데 **존구성만 그 경로를
+  // 못 타고** 최저점을 받았다 — 경쟁점이 부당하게 약하게 평가되고 우리 예상매출이 높아진다.
+  //
+  // seatZoneScore 폴백(resolveZoneCompositionScore)도 이 때문에 죽어 있었다. 걸리려면
+  // composition이 null이어야 하는데 그런 곳이 0곳이었다.
+  //
+  // ⚠️ **"일부만 적힌 것"은 그대로 0으로 센다.** 자료가 그걸 지지한다 — 8항목을 다 채운
+  //    158곳의 존 종류가 평균 0.46개인데, 4항목만 채운 10곳은 1.60개다. 다 채운 쪽이
+  //    오히려 존이 적다는 건 **없는 존에 0을 성실히 적었다**는 뜻이다. 즉 안 적은 건 없는 것이다.
+  if (isZoneCompositionUnsurveyed(input.counts)) {
+    return { diversity: null, ratio: null, capacity: null, composition: UNSURVEYED_COMPETITOR_ZONE_SCORE };
+  }
   const distinct = countDistinctZoneTypes(input.counts) + ((input.regularCoupleSeatCount ?? 0) > 0 ? 0.5 : 0);
   const diversity = computeZoneDiversityScore(distinct);
   const ratio = computeSpecialtySeatRatio(input.counts, input.teamRoomTotalSeats, input.regularCoupleSeatCount, input.totalPcCount);
@@ -1044,14 +1093,24 @@ export function computeCompetitorZoneComposition(input: {
   return { diversity, ratio, capacity, composition: computeZoneCompositionScore(diversity, capacity) };
 }
 
-/** 자사 존구성 — 8개 존유형 중 하나라도 완전 미기재면 전체 null(§가드). 일반2인석 항목 없음. */
+/**
+ * 자사 존구성. 일반2인석 항목 없음.
+ *
+ * 2026-09-17 — 경쟁점과 **같은 잣대**로 맞췄다. 그전에는 자사만 "8개가 다 차야 점수가 나온다"
+ * (allFilled)였고 경쟁점은 게이트가 아예 없었다 — 같은 존구성인데 잣대가 둘이었다.
+ * 지금은 양쪽 다 **하나라도 적혀 있으면 계산하고(안 적은 건 0), 하나도 없으면 null**이다.
+ *
+ * 옛 게이트가 실제로 막던 건 검단사거리점 한 곳뿐이었고 그마저 제외매장이라, 이 변경으로
+ * 자사 쪽 결과는 달라지지 않는다. 잣대를 하나로 만드는 게 목적이다.
+ */
 export function computeOwnZoneComposition(input: {
   counts: ZoneCompositionCounts;
   teamRoomTotalSeats: number | null;
   totalPcCount: number | null;
 }): ZoneCompositionResult {
-  const allFilled = ZONE_COMPOSITION_KEYS.every((k) => input.counts[k] != null);
-  if (!allFilled) return { diversity: null, ratio: null, capacity: null, composition: null };
+  if (isZoneCompositionUnsurveyed(input.counts)) {
+    return { diversity: null, ratio: null, capacity: null, composition: null };
+  }
   const diversity = computeZoneDiversityScore(countDistinctZoneTypes(input.counts));
   const ratio = computeSpecialtySeatRatio(input.counts, input.teamRoomTotalSeats, null, input.totalPcCount);
   const capacity = computeZoneCapacityScore(ratio);

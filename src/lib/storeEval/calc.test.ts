@@ -57,6 +57,7 @@ import {
   computeZoneCapacityScore,
   computeZoneCompositionScore,
   computeCompetitorZoneComposition,
+  UNSURVEYED_COMPETITOR_ZONE_SCORE,
   computeOwnZoneComposition,
   redistributeCapacityConstrainedDemand,
   resolveFreshnessScore,
@@ -717,10 +718,23 @@ describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대
     expect(computeZoneCompositionScore(null, 1)).toBeNull();
   });
 
-  it("computeCompetitorZoneComposition — 미기재는 0 취급(가드 없음), 일반2인석 존재시 다양성 +0.5", () => {
-    const zeroZones = computeCompetitorZoneComposition({ counts: blankCounts, regularCoupleSeatCount: null, teamRoomTotalSeats: null, totalPcCount: 100 });
-    expect(zeroZones.diversity).toBe(1); // d=0
-    expect(zeroZones.capacity).toBe(1); // ratio=0
+  // 2026-09-17 — **아예 조사 안 한 경쟁점**은 "존이 하나도 없는 매장"이 아니라 "조사를
+  // 생략한 매장"이다. 예전에는 게이트가 없어 8항목이 전부 null이면 0을 세고 최저점이
+  // 나왔는데, 그건 규칙이 아니라 사고였다. 지금은 상수로 명시한다.
+  // 사용자 확인: "미조사 매장들 보통 시설 경쟁력이 낮거든." 자료도 같다 — 이 값을 올리면
+  // 운영 MAPE가 9.17%(1.0) → 9.29%(2.0) → 9.37%(2.5)로 나빠진다.
+  it("computeCompetitorZoneComposition — 아예 미조사면 명시 상수(낮게), 일부 미기재는 0 취급", () => {
+    const unsurveyed = computeCompetitorZoneComposition({ counts: blankCounts, regularCoupleSeatCount: null, teamRoomTotalSeats: null, totalPcCount: 100 });
+    expect(unsurveyed.composition).toBe(UNSURVEYED_COMPETITOR_ZONE_SCORE);
+    expect(unsurveyed.diversity).toBeNull(); // 조사 안 했으니 다양성·수용력은 "모름"이다
+    expect(unsurveyed.capacity).toBeNull();
+    // 하나라도 적혀 있으면 나머지는 0으로 센다 — 없는 존에 0을 안 쓴 것이기 때문이다.
+    const partiallyWritten = computeCompetitorZoneComposition({
+      counts: { ...blankCounts, teamRoom: 0 },
+      regularCoupleSeatCount: null, teamRoomTotalSeats: null, totalPcCount: 100,
+    });
+    expect(partiallyWritten.diversity).toBe(1); // d=0
+    expect(partiallyWritten.capacity).toBe(1); // ratio=0
     const withRegularCouple = computeCompetitorZoneComposition({
       counts: { ...blankCounts, teamRoom: 1 },
       regularCoupleSeatCount: 2,
@@ -730,9 +744,17 @@ describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대
     expect(withRegularCouple.diversity).toBe(computeZoneDiversityScore(1.5)); // 팀룸(1) + 일반2인석 보너스(0.5)
   });
 
-  it("computeOwnZoneComposition — 8개 존유형 중 하나라도 완전 미기재면 전체 null(자사 전용 가드)", () => {
-    const partial = { ...blankCounts, teamRoom: 2 }; // 나머지 7개는 null(미기재)
-    expect(computeOwnZoneComposition({ counts: partial, teamRoomTotalSeats: null, totalPcCount: 100 }).composition).toBeNull();
+  // 2026-09-17 — 경쟁점과 **같은 잣대**로 맞췄다(하나라도 적히면 계산, 하나도 없으면 null).
+  // 예전엔 자사만 "8개가 다 차야 한다"였고 경쟁점은 게이트가 아예 없었다.
+  // ⚠️ 자사에는 미조사 상수(UNSURVEYED_COMPETITOR_ZONE_SCORE)를 쓰지 않는다. 우리가 우리
+  //    매장을 "약해서 조사 생략"할 일은 없다 — 자사의 미기재는 그냥 입력 누락이다.
+  it("computeOwnZoneComposition — 하나라도 적히면 계산, 하나도 없으면 null(입력 누락)", () => {
+    const partial = { ...blankCounts, teamRoom: 2 }; // 나머지 7개는 null(= 그 존이 없다)
+    const partialResult = computeOwnZoneComposition({ counts: partial, teamRoomTotalSeats: null, totalPcCount: 100 });
+    expect(partialResult.diversity).toBe(2); // d=1(팀룸만)
+    expect(partialResult.composition).not.toBeNull();
+    // 하나도 안 적힌 건 입력 누락이므로 null로 남긴다(사람이 채워야 한다).
+    expect(computeOwnZoneComposition({ counts: blankCounts, teamRoomTotalSeats: null, totalPcCount: 100 }).composition).toBeNull();
     const allFilled = { singleSeatCount: 0, room1: 0, room2: 0, teamRoom: 2, coupleZone: 0, vipZone: 0, friendsZone: 0, firstClassZone: 0 };
     const result = computeOwnZoneComposition({ counts: allFilled, teamRoomTotalSeats: null, totalPcCount: 100 });
     expect(result.diversity).toBe(2); // d=1(팀룸만)
