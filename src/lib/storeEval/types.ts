@@ -383,6 +383,16 @@ export type Competitor = {
   sourcePlaceId?: string | null; // 카카오 장소 id — 재수집 시 중복 방지 키
   lat?: number | null;
   lng?: number | null;
+  // 2026-09-16 추가 — 좌표를 두 경로로 채우면서 생긴 필드들.
+  // 경쟁점 자료는 가맹점 오픈 당시(23~24년) 스냅샷이고 카카오맵은 지금이라, 상호가
+  // 바뀌었거나 폐점한 곳은 **이름으로 원리적으로 못 찾는다**. 주소는 가게가 바뀌어도
+  // 그대로라서 주소변환 경로를 따로 열었다(geocodeCompetitorsByAddress.mjs).
+  //   address            — 현장조사가 적어둔 주소(대부분 비어 있다)
+  //   coordMatchedAddress — 좌표를 찾을 때 실제로 매칭된 주소(검산용)
+  //   coordDistanceGapM   — 찍힌 좌표와 현장조사 거리의 차이(m). 크면 버렸다.
+  address?: string | null;
+  coordMatchedAddress?: string | null;
+  coordDistanceGapM?: number | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -728,6 +738,12 @@ export type ExistingStore = {
   evaluationPcCount: number | null;
   floor: number | null;
   groundLevel: GroundLevel | null;
+  // 2026-09-16 추가 — 장소검색(상호명)으로 41곳 전부 채웠다. 주소변환은 건물을 찍지만
+  // 장소검색은 점포를 찍는다(광주각화점이 265m 어긋나 있었다). 반경분석·입지 실험의
+  // 기준점이 되는 값이다.
+  // ⚠️ 운영 산식(calc.ts / usageRevenue.ts / evaluate.ts)은 이 필드를 읽지 않는다.
+  lat?: number | null;
+  lng?: number | null;
   openedAt: string | null;
   franchiseStatus: string | null; // 가맹상태
   excludedFromModel: boolean; // 산식학습제외 (01_점포기본정보 CO열)

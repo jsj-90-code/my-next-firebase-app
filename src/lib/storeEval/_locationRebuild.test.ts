@@ -1450,7 +1450,7 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
       return (Math.atan2(y, x) * 180) / Math.PI;
     };
     const angDiff = (a: number, b: number) => {
-      let d = Math.abs(a - b) % 360;
+      const d = Math.abs(a - b) % 360;
       return d > 180 ? 360 - d : d;
     };
 
