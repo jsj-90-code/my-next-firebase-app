@@ -434,7 +434,14 @@ export function scoreFromVga(text: string | null): number | null {
   const generation = Math.floor(num / 1000);
   const tier = num % 100;
   const tierBonus = tier >= 80 ? 1 : tier >= 70 ? 0.5 : 0;
-  return Math.min(5, Math.max(1, 4 + (generation - 5) + tierBonus));
+  // 2026-09-17(사용자 결정: "Ti 반영해보자") — Ti는 **모델번호에 안 나타난다.** 5060Ti의
+  // 뒤 두 자리도 60이라 위 tierBonus로는 5060과 구별이 안 됐다. 실제로는 한 단계 위 칩이라
+  // 20~25%쯤 빠르다. 등급표가 세대 하나당 1점이므로 그 1/4인 **+0.25점**을 준다.
+  //   RTX 5060 4.0 < 5060Ti 4.25 < 5070 4.5 < 5070Ti 4.75 < 5080 5.0  — 순서가 깨끗하게 선다.
+  // 26건이 걸린다(자사 4곳 RTX 5060Ti · 경쟁점 22곳 RTX 3060 Ti 등).
+  // AMD는 환산표로 숫자를 얻으므로 Ti 표기가 붙을 일이 없다 — 붙어도 해가 없다.
+  const tiBonus = /\d{3,4}\s*TI/.test(cleaned) ? 0.25 : 0;
+  return Math.min(5, Math.max(1, 4 + (generation - 5) + tierBonus + tiBonus));
 }
 
 /**
