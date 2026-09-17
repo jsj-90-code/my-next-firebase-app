@@ -61,6 +61,12 @@ type Loaded = {
    * 안 적으면 "관리 3.51점"이 실측인지 기본값인지 사람이 구분 못 한다.
    */
   qsc: { measured: number; total: number; avg: number | null; min: number | null; max: number | null } | null;
+  /**
+   * 매장코드 -> {평가창 QSC 평균, 그걸 환산한 관리 점수}. 매장 표에 그대로 그린다.
+   * 없으면 그 매장은 QSC가 없어 가맹점 평균을 받은 것이다 — 화면에서 구분해 보여줘야
+   * "실측 3.22점"과 "몰라서 평균 4.25점"을 사람이 헷갈리지 않는다.
+   */
+  qscByStore: Map<string, { qsc: number | null; management: number | null }>;
 };
 
 const pct = (v: number | null | undefined, digits = 1) =>
@@ -153,7 +159,13 @@ async function loadLabData(): Promise<Loaded | null> {
       max: mgmts.length ? Math.max(...mgmts) : null,
     }
     : null;
-  return { rows, current, qsc };
+  // 매장별 QSC·관리 점수. 관리 점수는 **행에 실제로 들어간 값**을 읽는다 — 여기서 다시
+  // 환산하면 화면과 모델이 갈라진다.
+  const qscByStore = new Map(rows.map((r) => [r.input.storeCode, {
+    qsc: qscByStoreCode.get(r.input.storeCode) ?? null,
+    management: r.input.ownQualityParts?.management ?? null,
+  }]));
+  return { rows, current, qsc, qscByStore };
 }
 
 export default function LabPage() {
@@ -218,7 +230,7 @@ export default function LabPage() {
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
             scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} />
           <ParamSummary p={p} counts={counts} />
-          <StoreTable score={score} />
+          <StoreTable score={score} qscByStore={data.qscByStore} />
         </>
       )}
     </div>
@@ -647,7 +659,9 @@ function ParamSummary({ p, counts }: {
   );
 }
 
-function StoreTable({ score }: { score: TextbookScore }) {
+function StoreTable({ score, qscByStore }: { score: TextbookScore; qscByStore: Loaded["qscByStore"] }) {
+  /** QSC가 있는 매장이 하나라도 있을 때만 두 열을 그린다. 없으면 빈 칸만 늘어난다. */
+  const hasQsc = [...qscByStore.values()].some((v) => v.qsc != null);
   return (
     <section className="mt-6">
       <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 (오차 큰 순)</h2>
@@ -669,6 +683,12 @@ function StoreTable({ score }: { score: TextbookScore }) {
           <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
             <tr>
               <th scope="col" className="px-3 py-2">매장</th>
+              {hasQsc && (
+                <>
+                  <th scope="col" className="px-3 py-2 text-right" title="평가창(개점 다음 달~12개월) 안 점검의 평균. 0점 기록과 '오픈 매장 점검'은 뺀 값이다.">QSC</th>
+                  <th scope="col" className="px-3 py-2 text-right" title="1 + (QSC-60) x 0.1, 1~5로 자름. 회색 값은 그 매장에 QSC가 없어 가맹점 평균을 받은 것이다.">관리</th>
+                </>
+              )}
               <th scope="col" className="px-3 py-2 text-right">예상매출</th>
               <th scope="col" className="px-3 py-2 text-right">실제매출</th>
               <th scope="col" className="px-3 py-2 text-right">오차</th>
@@ -684,9 +704,25 @@ function StoreTable({ score }: { score: TextbookScore }) {
           <tbody>
             {score.rows.map((r) => {
               const bad = (r.absErrPct ?? 0) > 0.2;
+              const q = qscByStore.get(r.storeCode);
               return (
                 <tr key={r.storeCode} className="border-b border-[#171310]/[0.06] dark:border-white/[0.06]">
                   <td className="px-3 py-2">{r.storeName ?? r.storeCode}</td>
+                  {hasQsc && (
+                    <>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">
+                        {q?.qsc == null ? "-" : q.qsc.toFixed(1)}
+                      </td>
+                      {/* 실측이 아니라 가맹점 평균을 받은 매장은 흐리게 — "몰라서 평균"과
+                          "재보니 평균"을 같은 색으로 보여주면 사람이 구분을 못 한다. */}
+                      <td className={`px-3 py-2 text-right tabular-nums ${
+                        q?.qsc == null ? "text-[var(--sl-ink-soft)] italic"
+                          : (q.management ?? 4) < 3.5 ? "font-semibold text-amber-700 dark:text-amber-400" : "font-semibold"
+                      }`} title={q?.qsc == null ? "QSC 기록이 없어 가맹점 평균이 들어갔다" : undefined}>
+                        {q?.management == null ? "-" : q.management.toFixed(2)}
+                      </td>
+                    </>
+                  )}
                   <td className="px-3 py-2 text-right tabular-nums">{manwon(r.predicted)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{manwon(r.actual)}</td>
                   <td className={`px-3 py-2 text-right tabular-nums ${bad ? "font-semibold text-red-600 dark:text-red-400" : ""}`}>
