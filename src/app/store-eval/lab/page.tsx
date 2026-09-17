@@ -50,6 +50,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 // 모델 입력 조립은 labInput.ts에 있다 — 측정 하네스와 **같은 코드**를 써야 한다.
 // 화면에만 항목을 붙이다 하네스가 입지를 통째로 빠뜨린 적이 있다(2026-09-16).
 import { buildLabRows, utilizationByStore, type LabRow } from "@/lib/storeEval/labInput";
+import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 
 type Loaded = {
   rows: LabRow[];
@@ -491,6 +492,43 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
               </div>
             </div>
           )}
+          <div className="mt-3 rounded border border-[var(--sl-line)] p-2">
+            <div className="font-semibold">존구성은 <b>존 이름이 아니라 룸</b>으로 셉니다</div>
+            <div className="mt-1 font-mono text-[11px]">
+              존구성 = 룸종류점수 × {LAB_ZONE_WEIGHTS.diversity} + 특화좌석점수 × {LAB_ZONE_WEIGHTS.capacity}
+            </div>
+            <div className="mt-1">
+              운영 산식은 <b>존 이름 8가지 중 몇 개를 갖고 있나</b>로 다양성을 셉니다. 그런데 그 이름표가
+              한쪽에만 있습니다 — <b>VIP존·프렌즈존·퍼스트클래스존은 자사 29·19·19곳인데 경쟁점은 228건 전부 0건</b>입니다.
+              우리 브랜드 용어라 조사자가 경쟁점의 같은 실체(파티션 1인석·유리파티션 다인석)를 보고도
+              그 칸에 안 넣기 때문입니다. 자사에는 &quot;일반 2인석&quot; 칸이 아예 없어 우리 2인석은 전부 커플존으로
+              들어갑니다. 그래서 <b>종류를 세면 자사가 항상 이깁니다.</b>
+            </div>
+            <div className="mt-1">
+              그래서 실험실은 <b>벽으로 막힌 룸만</b> 셉니다(1인룸 · 2인룸 · 팀룸). 룸은 정의가 명확하고
+              — 벽과 문이 있나 없나입니다 — 자사·경쟁점 양쪽 다 조사돼 있습니다. 파티션 높이나 재질
+              판단이 안 들어갑니다. <b>개방석은 모든 PC방에 있어</b> 칸으로 세면 상수라, 개방형 이름표는
+              <b> 좌석으로만</b> 들어갑니다(이름과 무관하게 실재하는 좌석은 전부 셉니다).
+            </div>
+            <div className="mt-1">
+              <b>퍼스트클래스존은 팀룸과 한 칸</b>입니다 — 룸이고 10~12석이 들어가므로 같은 것입니다
+              (좌석은 {FIRST_CLASS_ZONE_SEATS}석으로 셉니다). 고급 인테리어와 비싼 요금은 인테리어 항목과 단가가
+              이미 보는 것이라 여기서 또 세면 이중계산이고, <b>수요가 없어 접은 존에 다양성 가점을 주는 것</b>도
+              현실과 반대입니다.
+            </div>
+            <div className="mt-1">
+              비중을 {LAB_ZONE_WEIGHTS.diversity} / {LAB_ZONE_WEIGHTS.capacity}로 둔 것은 룸만 세면 다양성이
+              거의 <b>&quot;팀룸 있나 없나&quot;의 이진</b>이 되기 때문입니다. 거의 이진인 값에 무게를 싣는 것보다
+              &quot;특화좌석이 얼마나 되냐&quot;가 더 많은 것을 담습니다.
+            </div>
+            <div className="mt-1 text-[var(--sl-ink-soft)]">
+              ⚠️ <b>존구성에는 매장별 순서 정보가 없습니다</b>(무작위 대조군 MAPE p=0.455 · r p=0.066).
+              값을 상수로 바꿔치기해도 성적이 안 떨어지고, 계단을 펴 값을 9개에서 40개로 늘려도 r이 0.002
+              움직입니다. 그래서 이 변경은 <b>정확도가 아니라 뜻을 고친 것</b>입니다 —
+              &quot;왜 우리가 이기는가&quot;의 답이 이름표여서는 안 되기 때문입니다.
+              2026-09-17 측정: MAPE 22.02% → 22.60%. 운영 산식(V62)의 존구성은 그대로입니다.
+            </div>
+          </div>
           <div className="mt-1">
             가동률 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
             (실측 월평균 최대가 46.5%, 월 최대의 최대가 52.0%).

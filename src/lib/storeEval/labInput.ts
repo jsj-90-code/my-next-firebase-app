@@ -14,9 +14,8 @@ import {
   computeCompetitorIp,
   computeSpecScore,
   computeLocationScoreFromFacts,
-  computeOwnZoneComposition,
-  computeCompetitorZoneComposition,
 } from "@/lib/storeEval/calc";
+import { computeLabZoneComposition } from "@/lib/storeEval/labZoneComposition";
 import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation";
 import type { QualityParts, TextbookInput } from "@/lib/storeEval/textbookModel";
@@ -65,13 +64,18 @@ export function utilizationByStore(
 // ⚠️ 입지는 여기 없다. 경쟁력점수 안에 섞으면 효과가 없었고(r 0.554 -> 0.562, 잭나이프
 //    하한이 유의선 아래), 밖에서 곱해야 살아났다. buildLabRows의 `location`을 볼 것.
 export function ownQualityParts(s: ExistingStore, pc: number | null, settings: ModelSettings): QualityParts {
-  const zone = computeOwnZoneComposition({
+  // 2026-09-17 — 존구성은 실험실 전용 잣대를 쓴다(labZoneComposition.ts). 운영의
+  // computeOwnZoneComposition은 존 **이름** 종류를 세는데, 그 이름표가 자사에만 있어서
+  // 종류를 세면 자사가 항상 이겼다. 여기서는 룸 종류만 세고 좌석은 전부 센다.
+  const zone = computeLabZoneComposition({
     counts: {
       singleSeatCount: s.ownSingleSeatCount ?? null, room1: s.ownRoom1 ?? null, room2: s.ownRoom2 ?? null,
       teamRoom: s.ownTeamRoom ?? null, coupleZone: s.ownCoupleZone ?? null, vipZone: s.ownVipZone ?? null,
       friendsZone: s.ownFriendsZone ?? null, firstClassZone: s.ownFirstClassZone ?? null,
+      // 자사 입력에는 "일반 2인석" 칸이 없다 — 우리 2인석은 커플존으로 들어간다.
+      regularCoupleSeatCount: null,
     },
-    teamRoomTotalSeats: s.ownTeamRoomTotalSeats ?? null, totalPcCount: pc,
+    teamRoomTotalSeats: s.ownTeamRoomTotalSeats ?? null, totalPcCount: pc, own: true,
   });
   return {
     spec: computeSpecScore({
@@ -121,15 +125,17 @@ export function rivalDistanceM(
 }
 
 export function rivalQualityParts(c: Competitor, settings: ModelSettings): QualityParts {
-  const zone = computeCompetitorZoneComposition({
+  // 자사와 **같은 함수**를 쓴다. 잣대가 둘이면 비대칭이 또 생긴다.
+  const zone = computeLabZoneComposition({
     counts: {
       singleSeatCount: c.singleSeatCount ?? null, room1: c.room1 ?? null, room2: c.room2 ?? null,
       teamRoom: c.teamRoom ?? null, coupleZone: c.coupleZone ?? null, vipZone: c.vipZone ?? null,
       friendsZone: c.friendsZone ?? null, firstClassZone: c.firstClassZone ?? null,
+      regularCoupleSeatCount: c.regularCoupleSeatCount ?? null,
     },
-    regularCoupleSeatCount: c.regularCoupleSeatCount ?? null,
     teamRoomTotalSeats: c.teamRoomTotalSeats ?? null,
     totalPcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
+    own: false,
   });
   return {
     spec: computeSpecScore({
