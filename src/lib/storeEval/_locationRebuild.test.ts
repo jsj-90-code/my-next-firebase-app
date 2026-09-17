@@ -1668,4 +1668,203 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     }
     expect(blks.length).toBeGreaterThan(10);
   });
+
+  // ── (16) 가시성 재설계 — 올려보는 각도 (2026-09-17) ────────────────────────
+  //
+  // 사용자 설명:
+  //   "가시성이라 함은 점포의 주통행로에서 우리 매장 간판이 잘 보이냐 이거거든. 예를 들어
+  //    **통행로가 좁은데 높으면 고개를 완전 올려야 보일 거 아냐.** 멀리에서 보인다든가
+  //    이런 단점들이 있고, **통행로가 좀 넓으면 3-4층 정도는 커버 가능한 정도**일 거고"
+  //
+  // 이건 예/아니오가 아니라 **각도**다.
+  //
+  //   올려보는 각도 = arctan( 간판 높이 ÷ 보는 거리 )
+  //                            ↑ 층수        ↑ 도로 폭
+  //
+  // 지표는 0~1로 둔다:  보임 = 도로폭 ÷ (도로폭 + 높이)
+  //   1층이면 1.0(눈높이) · 좁은 길 4층이면 0.46 · 넓은 길 4층이면 0.66
+  //
+  // ⚠️ **도로 폭이 있어야만 새 정보다.** 층수는 접근성 κ가 이미 쓰고 있다. 층수만 다시
+  //    쓰면 같은 걸 두 번 세는 것이다. 그래서 "접근성을 켠 뒤의 잔차에 붙나"가 핵심이다.
+  //
+  // ⚠️ 지금은 도로 폭을 **거칠게** 쓴다. 로드뷰 캡처가 스크래치패드에 있어 지워졌고,
+  //    남은 건 block1("왕복 4차선 이상인가") 예/아니오뿐이다. 넓음 20m · 좁음 9m로 둔다.
+  //    여기서 신호가 보이면 캡처를 다시 찍어 **차선 수를 숫자로** 읽는다(예/아니오 대신).
+  it("(16) 가시성 재설계 — 올려보는 각도 (층수 x 도로폭)", () => {
+    const RV = ".local-tools/roadview-judgments.json";
+    if (!existsSync(RV)) { console.log("\n로드뷰 판정 자료가 없다."); return; }
+    const raw = JSON.parse(readFileSync(RV, "utf8"));
+    const wideBy = new Map<string, boolean>();
+    for (const s of raw.sites as any[]) {
+      if (!String(s.key).startsWith("existing_")) continue;
+      if (typeof s.block1 === "boolean") wideBy.set(String(s.key).replace("existing_", ""), s.block1);
+    }
+
+    const FLOOR_H = 3.5, WIDE_M = 20, NARROW_M = 9;
+    /** 간판 높이(m). 지상 N층이면 (N-1)x3.5, 1층·지하는 0(눈높이). */
+    const signHeight = (st: any): number | null => {
+      const f = Number(st.floor);
+      if (!Number.isFinite(f)) return null;
+      if (st.groundLevel === "지하") return 0;
+      return Math.max(0, (f - 1) * FLOOR_H);
+    };
+    const roadW = (code: string): number | null => {
+      const w = wideBy.get(code);
+      return w == null ? null : (w ? WIDE_M : NARROW_M);
+    };
+
+    type V = { r: Row; h: number; w: number; see: number };
+    const vs: V[] = [];
+    for (const r of cmp) {
+      const h = signHeight(r.store), w = roadW(r.store.storeCode);
+      if (h == null || w == null) continue;
+      vs.push({ r, h, w, see: w / (w + h) });
+    }
+    console.log(`\n══ (16) 가시성 재설계 — 올려보는 각도 ══`);
+    console.log(`경쟁상권 ${cmp.length}곳 중 계산 가능 ${vs.length}곳`);
+    if (vs.length < 15) { console.log("표본 부족."); expect(vs.length).toBeGreaterThanOrEqual(0); return; }
+    const sig = 2 / Math.sqrt(vs.length);
+    const see = vs.map((v) => v.see), obs = vs.map((v) => v.r.shareObs), tt = vs.map((v) => v.r.t);
+    const tally = [...new Set(see.map((x) => x.toFixed(2)))].sort()
+      .map((k) => `${k}:${see.filter((x) => x.toFixed(2) === k).length}곳`).join(" ");
+    console.log(`  보임값 ${new Set(see.map((x) => x.toFixed(2))).size}가지 [${tally}]`);
+    console.log(`  넓은 길 ${vs.filter((v) => v.w === WIDE_M).length}곳 · 좁은 길 ${vs.filter((v) => v.w === NARROW_M).length}곳`);
+    console.log(`  유의선 ${sig.toFixed(3)}`);
+    const rSee = pear(see, obs);
+    console.log(`  보임 ↔ 실측점유율  r=${rSee.toFixed(3)}${Math.abs(rSee) > sig ? "*" : " "} · 시점통제 ${partial(see, obs, tt).toFixed(3)}`);
+    console.log(`  -> 잘 보일수록 점유율이 높아야 하므로 **양(+)이 정상**이다.`);
+
+    // 층수만 쓴 값(접근성이 이미 쓰는 것)과 얼마나 다른가 — 겹치면 새 정보가 아니다.
+    const fsOk = vs.filter((v) => v.r.floorScore != null);
+    if (fsOk.length >= 10) {
+      console.log(`  겹침 — 접근성(층수자 점수)와 r=${pear(fsOk.map((v) => v.see), fsOk.map((v) => v.r.floorScore!)).toFixed(3)}`
+        + ` · 층수 자체와 r=${pear(fsOk.map((v) => v.see), fsOk.map((v) => Number(v.r.store.floor))).toFixed(3)}`);
+    }
+
+    // ⭐ 핵심 — 접근성 κ를 켠 뒤의 **잔차**에 붙나. 도로폭이 진짜 정보면 여기 남아야 한다.
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const floAvg = (r: Row, rr: number): number | null => {
+      const sel = F[`existing:${r.store.storeCode}`]?.radii?.[String(rr)]?.selected;
+      return sel?.length ? mean(sel.slice(-12)) : null;
+    };
+    const centFlo = (r: Row) => {
+      const i = floAvg(r, 300), o = floAvg(r, 1000);
+      return i == null || o == null || !(o > 0) ? null : (i / o) * (1000 / 300) ** 2;
+    };
+    const qualShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const cRef = P.locationReferences.centrality, fRef = P.locationReferences.access;
+    const gate = vs.filter((v) => centFlo(v.r) != null && v.r.floorScore != null);
+    if (gate.length < 15) { console.log("  관문용 표본 부족."); expect(vs.length).toBeGreaterThan(0); return; }
+    const baseOf = (r: Row) => qualShare(r)
+      * Math.pow(centFlo(r)! / cRef, P.locationExponents.centrality)
+      * Math.pow(r.floorScore! / fRef, P.locationExponents.access);
+    const resid = gate.map((v) => Math.log(v.r.shareObs / baseOf(v.r)));
+    const rRes = pear(gate.map((v) => v.see), resid);
+    const sg = 2 / Math.sqrt(gate.length);
+    console.log(`  ⭐ 중심도·접근성 켠 뒤 잔차 ↔ 보임  r=${rRes.toFixed(3)}${Math.abs(rRes) > sg ? "*  <- 도로폭이 새 정보다" : "   <- 남는 신호 없음"}  (n=${gate.length} 유의선 ${sg.toFixed(3)})`);
+
+    // ⚠️ 넓은 길 = 왕복 4차선 이상 = **번화가 표식**일 수 있다. block1이 부호가 뒤집혔던
+    //    이유가 그것이었다((14) 참고). 그렇다면 "넓은 길 매장이 점유율이 높다"는 건 도로폭
+    //    때문이 아니라 중심가라서다. 중심도와 얼마나 엮였는지 직접 본다.
+    {
+      const wc = gate.filter((v) => centFlo(v.r) != null);
+      if (wc.length >= 10) {
+        const wide = wc.map((v) => (v.w === WIDE_M ? 1 : 0));
+        const rc = pear(wide, wc.map((v) => Math.log(centFlo(v.r)!)));
+        const rf = pear(wide, wc.map((v) => Number(v.r.store.floor)));
+        console.log(`\n  ⚠️ 도로폭(넓음=1) ↔ 중심도 r=${rc.toFixed(3)}${Math.abs(rc) > sg ? "*  <- 넓은 길은 번화가 표식이다" : ""}`
+          + ` · ↔ 층수 r=${rf.toFixed(3)}`);
+        // 중심도까지 통제한 편상관 — 번화가 효과를 걷어내도 도로폭이 남나.
+        const pr = partial(wide, gate.map((v) => Math.log(v.r.shareObs)), wc.map((v) => Math.log(centFlo(v.r)!)));
+        console.log(`     중심도를 통제한 도로폭 ↔ 점유율  편상관 ${pr.toFixed(3)}`
+          + (Math.abs(pr) > sg ? "*  <- 도로폭이 따로 일한다" : "   <- 번화가 효과였다"));
+      }
+    }
+
+    // ⭐ 지표를 잘못 합쳤다 — 층수와 도로폭을 하나로 묶으니(보임 = 폭/(폭+높이)) 층수가
+    //    다 먹는다(보임 ↔ 층수 r=-0.918). 접근성 κ가 이미 층수를 쓰므로 잔차에서 그 부분이
+    //    빠지고 도로폭은 희석된다. **도로폭을 따로 떼어 재야 한다.**
+    {
+      const wideOnly = gate.map((v) => (v.w === WIDE_M ? 1 : 0));
+      const rW = pear(wideOnly, resid);
+      console.log(`\n  ⭐ 중심도·접근성 켠 뒤 잔차 ↔ **도로폭만**  r=${rW.toFixed(3)}`
+        + (Math.abs(rW) > sg ? "*  <- 도로폭은 새 정보다" : "   <- 남는 신호 없음")
+        + `  (n=${gate.length} 유의선 ${sg.toFixed(3)})`);
+      const wideR = gate.filter((v) => v.w === WIDE_M).map((_, i) => resid[gate.findIndex((g) => g === gate.filter((x) => x.w === WIDE_M)[i])]);
+      const narrowIdx = gate.map((v, i) => (v.w === NARROW_M ? i : -1)).filter((i) => i >= 0);
+      const wideIdx = gate.map((v, i) => (v.w === WIDE_M ? i : -1)).filter((i) => i >= 0);
+      if (wideIdx.length && narrowIdx.length) {
+        const mw = mean(wideIdx.map((i) => resid[i])), mn = mean(narrowIdx.map((i) => resid[i]));
+        console.log(`     잔차 평균 — 넓은 길 ${mw.toFixed(3)} (${wideIdx.length}곳) vs 좁은 길 ${mn.toFixed(3)} (${narrowIdx.length}곳)`);
+        console.log(`     -> 넓은 길이 산식보다 ${(Math.exp(mw - mn) * 100 - 100).toFixed(0)}% 더 먹는다`);
+      }
+      void wideR;
+    }
+
+    // 도로폭이 진짜 일하는지 직접 가른다 — 같은 층수끼리 넓은 길/좁은 길을 비교한다.
+    console.log(`\n  [같은 층수끼리 도로폭만 다를 때]`);
+    console.log(`  층수   넓은길 곳수·평균점유율    좁은길 곳수·평균점유율`);
+    for (const fl of [2, 3, 4]) {
+      const g1 = vs.filter((v) => Number(v.r.store.floor) === fl && v.w === WIDE_M);
+      const g2 = vs.filter((v) => Number(v.r.store.floor) === fl && v.w === NARROW_M);
+      if (!g1.length && !g2.length) continue;
+      const f = (g: V[]) => (g.length ? `${String(g.length).padStart(2)}곳 ${(mean(g.map((v) => v.r.shareObs)) * 100).toFixed(1)}%` : " 0곳     -");
+      console.log(`  ${fl}층 ${f(g1).padStart(22)}${f(g2).padStart(24)}`);
+    }
+
+    // 관문
+    const gmv = Math.exp(mean(gate.map((v) => Math.log(v.see))));
+    type Pt = { base: number; see: number; obs: number };
+    const pts: Pt[] = gate.map((v) => ({ base: baseOf(v.r), see: v.see, obs: v.r.shareObs }));
+    const EXP = [0, 0.25, 0.5, 0.75, 1, 1.5, 2];
+    const predV = (p: Pt, k: number) => p.base * Math.pow(p.see / gmv, k);
+    const mapeV = (s: Pt[], k: number) => mean(s.map((p) => Math.abs(predV(p, k) / p.obs - 1)));
+    const corrV = (s: Pt[], k: number) => pear(s.map((p) => predV(p, k)), s.map((p) => p.obs));
+    const pickV = (s: Pt[], crit: "mape" | "r") => {
+      let best = { k: EXP[0], v: Infinity };
+      for (const k of EXP) { const v = crit === "mape" ? mapeV(s, k) : -corrV(s, k); if (v < best.v) best = { k, v }; }
+      return best;
+    };
+    console.log(`\n  [지수 훑기] 기준값(기하평균) ${gmv.toFixed(3)}`);
+    for (const k of EXP) console.log(`    지수=${String(k).padEnd(4)} MAPE ${(mapeV(pts, k) * 100).toFixed(2)}% · r ${corrV(pts, k).toFixed(3)}`);
+
+    let seed = 20260917 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuf = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+    console.log(`\n  ══ LOO · 무작위 대조군 500회 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const errs: number[] = [], preds: number[] = [], picks: number[] = [];
+      for (let i = 0; i < pts.length; i++) {
+        const b = pickV(pts.filter((_, j) => j !== i), crit);
+        picks.push(b.k);
+        const ph = predV(pts[i], b.k);
+        preds.push(ph); errs.push(Math.abs(ph / pts[i].obs - 1));
+      }
+      const ins = pickV(pts, crit);
+      const sc = (s: Pt[], k: number) => (crit === "mape" ? mapeV(s, k) : -corrV(s, k));
+      const gainOf = (s: Pt[]) => sc(s, 0) - sc(s, pickV(s, crit).k);
+      const real = gainOf(pts);
+      const gs: number[] = [];
+      for (let i = 0; i < 500; i++) {
+        const pool = shuf(pts.map((p) => p.see));
+        gs.push(gainOf(pts.map((p, j) => ({ ...p, see: pool[j] }))));
+      }
+      gs.sort((a, b) => a - b);
+      const pv = (gs.filter((g) => g >= real).length + 1) / (gs.length + 1);
+      const fm = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 표본 안 지수=${ins.k} → LOO ${(mean(errs) * 100).toFixed(2)}% · LOO r=${pear(preds, pts.map((p) => p.obs)).toFixed(3)}`
+        + ` (기준선 MAPE ${(mapeV(pts, 0) * 100).toFixed(2)}% · r ${corrV(pts, 0).toFixed(3)})`);
+      console.log(`       대조군 실제 ${fm(real)} · 섞으면 중앙 ${fm(med(gs))} · 95퍼센타일 ${fm(gs[Math.floor(gs.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+    expect(vs.length).toBeGreaterThan(10);
+  });
 });
