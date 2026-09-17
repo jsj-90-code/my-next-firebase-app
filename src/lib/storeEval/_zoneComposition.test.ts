@@ -227,4 +227,76 @@ describeIf("존구성 — 수준인가 순서인가", () => {
     console.log(`  MAPE ${((cont.mape - base.mape) * 100).toFixed(2)}%p · r ${(cont.r - base.r >= 0 ? "+" : "")}${(cont.r - base.r).toFixed(3)}`);
     expect(rows.length).toBeGreaterThan(30);
   });
+
+  // ── (5) 이름표 비대칭 ──────────────────────────────────────────────────
+  // 사용자 지적(2026-09-17 밤): *"VIP존은 ... 사실상 파티션 처져있는 1인석이란말이지"* ·
+  // *"프렌즈존도 ... 개방형 팀룸이라는 허울좋은 마케팅적인 표현이지"* ·
+  // *"커플존의 차별성은 2인용 의자가 있다는거거든 ... 그렇다면 우리만 이득보는거잖아"*
+  //
+  // 자료가 그대로 지지한다 — **VIP존·프렌즈존·퍼스트클래스존은 경쟁점 228건 전부 0이다.**
+  // 조사표에 칸은 있는데 아무도 안 적는다. 우리 브랜드 용어라서 조사자가 경쟁점의 같은
+  // 실체(파티션 1인석·유리파티션 다인석)를 보고도 그 칸에 안 넣는다. 그래서 이 세 칸은
+  // 좌석 종류가 아니라 사실상 **"블랙라벨인가" 표시등**이다.
+  //
+  // 여기서는 이름표를 걷어내고 **인원 구간**으로만 센다(양쪽 같은 잣대):
+  //   1인 계열 = 1인석 + VIP존 + 퍼스트클래스존
+  //   2인 계열 = 커플존 + 일반2인석
+  //   다인 계열 = 프렌즈존
+  //   룸 = 1인룸 · 2인룸 (완전차폐라 별개로 둔다)
+  //   팀룸 = 팀룸
+  // 차폐도(개방/파티션/룸)는 **경쟁점에 조사된 적이 없어** 여기서 못 넣는다. 그게 다음 과제다.
+  it("(5) 이름표를 걷어내면 — 우리만 종류가 많은 게 아니었나", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const byPartySize = (o: any, own: boolean): number => {
+      const one = (o.singleSeatCount ?? 0) + (o.vipZone ?? 0) + (o.firstClassZone ?? 0);
+      const two = (o.coupleZone ?? 0) + (own ? 0 : (o.regularCoupleSeatCount ?? 0));
+      const many = (o.friendsZone ?? 0);
+      return [one, two, many, o.room1 ?? 0, o.room2 ?? 0, o.teamRoom ?? 0].filter((v) => v > 0).length;
+    };
+    const zoneKeys = ["singleSeatCount", "room1", "room2", "teamRoom", "coupleZone", "vipZone", "friendsZone", "firstClassZone"] as const;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const relabeled = (o: any, own: boolean, pc: number | null, teamSeats: number | null): number | null => {
+      if (zoneKeys.every((k) => o[k] == null)) return own ? null : UNSURVEYED_COMPETITOR_ZONE_SCORE;
+      const diversity = Math.min(5, 1 + (1 + byPartySize(o, own)) * 0.5);
+      if (pc == null || pc <= 0) return null;
+      const seats = (o.singleSeatCount ?? 0) + (o.room1 ?? 0) + (o.room2 ?? 0) * 2
+        + (teamSeats ?? (o.teamRoom ?? 0) * 5) + (o.coupleZone ?? 0) * 2 + (own ? 0 : (o.regularCoupleSeatCount ?? 0))
+        + (o.vipZone ?? 0) + (o.friendsZone ?? 0) + (o.firstClassZone ?? 0);
+      const ratio = seats / pc;
+      const capacity = ratio < 0.1 ? 1 : ratio < 0.2 ? 2 : ratio < 0.3 ? 3 : ratio < 0.5 ? 4 : 5;
+      return diversity * 0.7 + capacity * 0.3;
+    };
+
+    const ownNew = new Map<string, number | null>();
+    const ownTypes: number[] = [];
+    for (const s of stores) {
+      const o = { singleSeatCount: s.ownSingleSeatCount, room1: s.ownRoom1, room2: s.ownRoom2, teamRoom: s.ownTeamRoom,
+        coupleZone: s.ownCoupleZone, vipZone: s.ownVipZone, friendsZone: s.ownFriendsZone, firstClassZone: s.ownFirstClassZone };
+      ownNew.set(s.storeCode, relabeled(o, true, s.evaluationPcCount ?? s.pcCount ?? null, s.ownTeamRoomTotalSeats ?? null));
+      if (!zoneKeys.every((k) => o[k] == null)) ownTypes.push(byPartySize(o, true));
+    }
+    const rivalNew: (number | null)[] = [];
+    for (const r of rows) {
+      for (const c of (compsByCode.get(r.input.storeCode) ?? []).filter((x) => x.investigationStatus !== "경쟁점없음")) {
+        const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+        if (!(ip > 0)) continue;
+        rivalNew.push(relabeled(c, false, ip, c.teamRoomTotalSeats ?? null));
+      }
+    }
+    const oldTypes = stores
+      .filter((s) => !zoneKeys.every((k) => (s as unknown as Record<string, unknown>)[`own${k[0].toUpperCase()}${k.slice(1)}`] == null))
+      .map((s) => [s.ownSingleSeatCount, s.ownRoom1, s.ownRoom2, s.ownTeamRoom, s.ownCoupleZone, s.ownVipZone, s.ownFriendsZone, s.ownFirstClassZone]
+        .filter((v) => (v ?? 0) > 0).length);
+    const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+
+    console.log("");
+    console.log(`[이름표 걷어내기] 자사 존 종류 평균 ${avg(oldTypes).toFixed(2)}개 -> ${avg(ownTypes).toFixed(2)}개`);
+    const newOwn = [...ownNew.values()].filter((v): v is number => v != null);
+    console.log(`  자사 존구성 점수 중앙 ${median(ownZones).toFixed(2)} -> ${median(newOwn).toFixed(2)}`);
+    const base = line("지금 (이름표 그대로)", rows);
+    const fixed = line("이름표 걷어냄", withZone((v, i) => ownNew.get(rows[i].input.storeCode) ?? v, (v, i) => rivalNew[i] ?? v));
+    console.log(`  MAPE ${((fixed.mape - base.mape) * 100 >= 0 ? "+" : "")}${((fixed.mape - base.mape) * 100).toFixed(2)}%p · r ${(fixed.r - base.r >= 0 ? "+" : "")}${(fixed.r - base.r).toFixed(3)}`);
+    console.log(`  ⚠️ 차폐도(개방/파티션/룸)는 경쟁점에 조사된 적이 없어 여기 안 들어갔다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
 });
