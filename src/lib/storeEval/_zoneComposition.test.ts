@@ -835,4 +835,140 @@ describeIf("존구성 — 수준인가 순서인가", () => {
     }
     expect(rows.length).toBeGreaterThan(30);
   });
+
+  // ── (12) 어디서 힘이 빠지나 ───────────────────────────────────────────
+  // 사용자 감각(2026-09-17): *"느낌으로는 1천만원에서 1천오백정도? 팀룸."*
+  // 지금 산식은 671만원이고 룸 가중을 3배로 올려도 955만원이 천장이다. 그러면 모자란 몫은
+  // 존구성 **바깥**에 있다. 팀룸을 없앨 때 각 층이 얼마나 움직이는지 단계별로 본다.
+  //
+  //   존구성 -> 경쟁력점수 -> 품질비^θ -> 점유율 -> 매출
+  //
+  // 어느 단계에서 희석되는지 보면 무엇을 건드려야 하는지가 나온다.
+  it("(12) 팀룸을 없앨 때 단계별로 얼마나 움직이나", () => {
+    const zoneKeys = ["singleSeatCount", "room1", "room2", "teamRoom", "coupleZone", "vipZone", "friendsZone", "firstClassZone"] as const;
+    const FC_SEATS = 11;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roomSeatsOf = (o: any, t: number | null): number =>
+      (o.room1 ?? 0) + (o.room2 ?? 0) * 2 + (t ?? (o.teamRoom ?? 0) * 5) + (o.firstClassZone ?? 0) * FC_SEATS;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const openSeatsOf = (o: any): number =>
+      (o.singleSeatCount ?? 0) + (o.vipZone ?? 0) + (o.friendsZone ?? 0) + (o.coupleZone ?? 0) * 2 + (o.regularCoupleSeatCount ?? 0);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roomTypesOf = (o: any): number =>
+      [o.room1 ?? 0, o.room2 ?? 0, (o.teamRoom ?? 0) + (o.firstClassZone ?? 0)].filter((v) => v > 0).length;
+    const capOf = (r: number) => (r < 0.1 ? 1 : r < 0.2 ? 2 : r < 0.3 ? 3 : r < 0.5 ? 4 : 5);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const zoneScore = (o: any, own: boolean, pc: number | null, t: number | null, dropRooms: boolean): number | null => {
+      if (zoneKeys.every((k) => o[k] == null)) return own ? null : UNSURVEYED_COMPETITOR_ZONE_SCORE;
+      if (pc == null || pc <= 0) return null;
+      const types = dropRooms ? 0 : roomTypesOf(o);
+      const diversity = types <= 0 ? 1 : Math.min(5, 1 + (1 + types) * 0.5);
+      const seats = dropRooms ? openSeatsOf(o) : roomSeatsOf(o, t) + openSeatsOf(o);
+      return diversity * 0.3 + capOf(seats / pc) * 0.7;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownRaw5 = (s2: (typeof stores)[number]): any => ({
+      singleSeatCount: s2.ownSingleSeatCount, room1: s2.ownRoom1, room2: s2.ownRoom2, teamRoom: s2.ownTeamRoom,
+      coupleZone: s2.ownCoupleZone, vipZone: s2.ownVipZone, friendsZone: s2.ownFriendsZone, firstClassZone: s2.ownFirstClassZone,
+      regularCoupleSeatCount: null,
+    });
+    const buildRows = (dropRooms: boolean, p2: TextbookParams) => {
+      const ownMap = new Map<string, number | null>();
+      for (const s2 of stores) ownMap.set(s2.storeCode, zoneScore(ownRaw5(s2), true, s2.evaluationPcCount ?? s2.pcCount ?? null, s2.ownTeamRoomTotalSeats ?? null, dropRooms));
+      const arr: (number | null)[] = [];
+      for (const r of rows) {
+        for (const c of (compsByCode.get(r.input.storeCode) ?? []).filter((x) => x.investigationStatus !== "경쟁점없음")) {
+          const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+          if (!(ip > 0)) continue;
+          arr.push(zoneScore(c, false, ip, c.teamRoomTotalSeats ?? null, false));
+        }
+      }
+      void p2;
+      return withZone((v, i) => ownMap.get(rows[i].input.storeCode) ?? v, (v, i) => arr[i] ?? v);
+    };
+    const withRooms = new Set(stores.filter((s2) => roomTypesOf(ownRaw5(s2)) > 0).map((s2) => s2.storeCode));
+    const won = (v: number) => `${Math.round(v / 10000).toLocaleString()}만원`;
+
+    /** 팀룸 제거 시 평균 매출 하락. 파라미터를 바꿔가며 부른다. */
+    const dropAmount = (p2: TextbookParams) => {
+      const a = scoreTextbook(buildRows(false, p2), p2).rows;
+      const b = scoreTextbook(buildRows(true, p2), p2).rows;
+      const bm = new Map(b.map((x) => [x.storeCode, x]));
+      const diffs: number[] = [], zoneD: number[] = [], shareD: number[] = [];
+      for (const x of a) {
+        if (!withRooms.has(x.storeCode)) continue;
+        const y = bm.get(x.storeCode);
+        if (!y || x.predicted == null || y.predicted == null) continue;
+        diffs.push(x.predicted - y.predicted);
+        if (x.share != null && y.share != null) shareD.push((x.share - y.share) / (y.share || 1));
+      }
+      void zoneD;
+      const mean = (v: number[]) => (v.length ? v.reduce((q, w) => q + w, 0) / v.length : 0);
+      return { revenue: mean(diffs), sharePct: mean(shareD) };
+    };
+
+    // 존구성 점수 자체는 얼마나 떨어지나
+    const zNow = stores.filter((s2) => withRooms.has(s2.storeCode))
+      .map((s2) => (zoneScore(ownRaw5(s2), true, s2.evaluationPcCount ?? s2.pcCount ?? null, s2.ownTeamRoomTotalSeats ?? null, false) ?? 0));
+    const zGone = stores.filter((s2) => withRooms.has(s2.storeCode))
+      .map((s2) => (zoneScore(ownRaw5(s2), true, s2.evaluationPcCount ?? s2.pcCount ?? null, s2.ownTeamRoomTotalSeats ?? null, true) ?? 0));
+    const meanOf = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0);
+
+    console.log("");
+    console.log(`[단계별 분해] 팀룸을 없앨 때 (룸 보유 자사 ${withRooms.size}곳 평균)`);
+    console.log(`  1) 존구성 점수   ${meanOf(zNow).toFixed(2)} -> ${meanOf(zGone).toFixed(2)}  (${(meanOf(zGone) - meanOf(zNow)).toFixed(2)}점)`);
+    const base = dropAmount(P);
+    console.log(`  2) 점유율        평균 ${(base.sharePct * 100).toFixed(1)}% 줄어든다`);
+    console.log(`  3) 예상매출      ${won(base.revenue)} 떨어진다   <- 사용자 감각은 1,000~1,500만원`);
+    console.log("");
+    console.log(`[어디를 올려야 1,000~1,500만원이 되나]`);
+    console.log(`  ${"바꾸는 것".padEnd(26)}${"매출 하락".padStart(10)}${"실험실 MAPE".padStart(13)}`);
+    const show = (label: string, p2: TextbookParams) => {
+      const d = dropAmount(p2);
+      const sc = scoreTextbook(buildRows(false, p2), p2);
+      console.log(`  ${label.padEnd(26)}${won(d.revenue).padStart(10)}${`${((sc.mape ?? 0) * 100).toFixed(2)}%`.padStart(13)}`);
+    };
+    show("지금 그대로", P);
+    for (const zw of [0.35, 0.5, 0.7]) {
+      show(`존구성 비중 ${P.qualityWeights.zone} -> ${zw}`, { ...P, qualityWeights: { ...P.qualityWeights, zone: zw } });
+    }
+    for (const th of [3.5, 4, 5]) {
+      show(`품질 지수 θ 3 -> ${th}`, { ...P, qualityExponent: th });
+    }
+    // 사용자 지적(2026-09-17): *"근대그건있어야된다 팀룸이 없는데 주변에 팀룸이 있어야되
+    // 그래야 비교되지않음?"* — 맞는 말이고, **산식은 이미 그렇게 돼 있다.** 점유율이
+    // 자사품질/(자사품질+경쟁품질)이라 경쟁점이 룸을 안 가졌으면 룸 유무 효과가 자동으로 작아진다.
+    // 실제로 그러는지 경쟁점 룸 보유별로 갈라 확인한다.
+    {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rivalHasRoom = (c: any) => ((c.room1 ?? 0) + (c.room2 ?? 0) + (c.teamRoom ?? 0) + (c.firstClassZone ?? 0)) > 0;
+      const rivalRoomByStore = new Map<string, boolean>();
+      for (const r of rows) {
+        const cs = (compsByCode.get(r.input.storeCode) ?? [])
+          .filter((x) => x.investigationStatus !== "경쟁점없음" && Number(x.appliedPcCount ?? x.totalPcCount ?? 0) > 0);
+        rivalRoomByStore.set(r.input.storeCode, cs.some(rivalHasRoom));
+      }
+      const aRows = scoreTextbook(buildRows(false, P), P).rows;
+      const bRows = scoreTextbook(buildRows(true, P), P).rows;
+      const bm = new Map(bRows.map((x) => [x.storeCode, x]));
+      const withR: number[] = [], withoutR: number[] = [];
+      for (const x of aRows) {
+        if (!withRooms.has(x.storeCode)) continue;
+        const y = bm.get(x.storeCode);
+        if (!y || x.predicted == null || y.predicted == null) continue;
+        (rivalRoomByStore.get(x.storeCode) ? withR : withoutR).push(x.predicted - y.predicted);
+      }
+      const mean = (v: number[]) => (v.length ? v.reduce((q, w) => q + w, 0) / v.length : 0);
+      console.log("");
+      console.log(`  [경쟁점 룸 보유별] 팀룸을 없앨 때 떨어지는 매출 — 산식이 사용자 논리를 따르나`);
+      console.log(`    경쟁점에 룸 있음  ${withR.length}곳   ${won(mean(withR))}`);
+      console.log(`    경쟁점에 룸 없음  ${withoutR.length}곳   ${won(mean(withoutR))}`);
+      console.log(`    (실매출 관찰값 — 경쟁점 룸O 22.46만원/PC · 룸X 9.34만원/PC)`);
+    }
+
+    console.log("");
+    console.log(`  ⚠️ θ를 올리면 **모든 품질 항목**이 세진다(사양·먹거리·관리까지). 팀룸만 세게`);
+    console.log(`     하려면 존구성 비중 쪽이다. 어느 쪽이든 대조군을 다시 거쳐야 채택이다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
 });
