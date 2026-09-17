@@ -107,6 +107,10 @@ src/**/_*.test.ts
 # 2026-09-17 — 기존점 캐시 갱신 도구. `.local-tools/refresh-existing-store-cache.mjs`가
 # node로 안 돈다(src의 확장자 없는 상대 import를 못 푼다). 대체품이라 편입한다.
 !src/lib/storeEval/_cacheRefresh.test.ts
+# 2026-09-17 — 존구성 검정. 관문을 **못 넘은** 항이라 더 남아야 한다. 기여가 제일 큰
+# 항목이라 "그럼 존구성부터 손보자"는 얘기가 또 나올 자리인데, 그때 이 하네스를 다시
+# 만들지 않고 돌려보면 된다. 표본이 45~50곳 되면 r 기준 p=0.066을 다시 잰다.
+!src/lib/storeEval/_zoneComposition.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
