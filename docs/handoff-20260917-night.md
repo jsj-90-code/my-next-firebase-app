@@ -5,15 +5,37 @@
 ```
 점포평가 이어서 하자. docs/handoff-20260917-night.md 읽고 시작해.
 
+[먼저 확인]
 1. git pull 하고 node scripts/dumpValidationSnapshot.mjs 돌려서 검증 스냅샷 만들어.
-2. npm run build 랑 npx vitest run --exclude "**/_*.test.ts" 돌려서 상태 확인해줘.
-   집에서 나올 땐 790건 전부 통과였다.
-3. npx vitest run src/lib/storeEval/_textbookFull.test.ts --disable-console-intercept 로
-   실험실 성적 확인해. 기준값은 QSC 36곳 · MAPE 22.60% · 중앙 15.4%다.
-   ⚠️ 22.02%가 아니다 — 어젯밤 존구성을 바꿔서 기준값이 바뀌었다.
+   (매출이 들어 있어 git에 없다. 실험실 QSC도 여기 같이 담긴다)
+2. npm run build 랑 npx vitest run --exclude "**/_*.test.ts" 돌려.
+   집에서 나올 땐 790건 전부 통과였다. 붉은 게 있으면 그것부터 알려줘.
+3. npx vitest run src/lib/storeEval/_textbookFull.test.ts --disable-console-intercept
+   기준값: QSC 36곳 · MAPE 22.60% · 중앙 15.4%
+   ⚠️ 22.02%가 나오면 git pull이 안 된 거다 — 어젯밤 존구성을 바꿔서 기준값이 바뀌었다.
 
+[지금까지 어디까지 왔나]
+- 1단계 수요(유동400m·주거1km·유동x0.15)  확정
+- 2단계 입지(중심도 0.25·접근성 0.25)      확정. 나머지 3항목은 계수 0으로 판정 끝
+- 4단계 매출(단가 탄력 0.546·상품몫·상한 55%) 확정
+- 3단계 점유율 = 구조(θ=3·유효거리 300m·격차^4) 확정
+    관리   QSC로 채움 (9/17 낮)
+    존구성 존 이름 대신 룸으로 셈 (9/17 밤)   <- 어젯밤 작업
+    사양   아직
+    먹거리·인테리어  아직 (자사 41곳 전부 4.00 상수라 자료가 없다)
+
+[오늘 할 일]
+사양(spec)이다. 점유율 쪽에서 자료로 할 수 있는 마지막 항목이다.
+원자료가 제일 풍부하다 — CPU 4종·VGA 4종·모니터 40곳 상세.
+지금 변환표(computeSpecScore/scoreFromVga)는 운영에서 만든 거라 실험실 기준으로
+다시 볼 여지가 있고, 모니터 Hz도 여기 붙는다.
+⚠️ 운영과 공유하는 함수다. 어젯밤 존구성에서 쓴 labZoneComposition.ts 패턴대로
+   실험실 전용으로 뺄지 먼저 정하자.
+
+[규칙]
 주업무는 실험실 교과서식 산식이다. 운영 V62는 건드리지 않는다.
-다음 항목은 사양(spec)이다.
+후보지 예상매출이 안 바뀐다는 건 기각 사유가 아니다.
+숫자가 좋아져도 무작위 대조군을 못 넘으면 채택 안 한다.
 ```
 
 **실험실 주소**: https://my-next-firebase-app-one.vercel.app/store-eval/lab
