@@ -403,4 +403,116 @@ describeIf("존구성 — 수준인가 순서인가", () => {
     // 이 시험은 성적을 재지 않는다 — 잴 표본이 없다는 게 결론이다.
     expect(onExisting.length).toBe(0);
   });
+
+  // ── (8) 새 격자 — 이름 대신 (인원 x 차폐)로 센다 ────────────────────────
+  // 사용자 결정(2026-09-17 밤):
+  //   *"커플존 2인석으로 가자그냥. 2인석개념으로 맞추자."*
+  //   *"프렌즈존 좌석수임. 프렌즈존도 2인/3인석 개념으로 변경하는거어떤데. 근대 2인석인지
+  //     3인석인지 모르니까 기존에 넣어진수량에서 너가 나눠야되 그냥 비등하게."*
+  //
+  // ── 격자 ───────────────────────────────────────────────────────────────
+  // 차폐는 **2단계(개방/룸)만** 쓴다. "반차폐(높은 파티션·유리)"는 경쟁점에 조사된 적이
+  // 없어서 넣으면 또 자사만 유리해진다. 룸 여부는 양쪽 다 자료가 있다(room1·room2·teamRoom).
+  //
+  //   (1인 · 개방)   1인석 · VIP존          <- VIP존은 반차폐지만 룸은 아니다
+  //   (1인 · 룸)     1인룸
+  //   (2인 · 개방)   커플존 · 일반2인석 · 프렌즈존의 2인 몫
+  //   (2인 · 룸)     2인룸
+  //   (3~4인 · 개방) 프렌즈존의 3인 몫
+  //   (5인+ · 룸)    팀룸 · (퍼스트클래스존은 안에 따라)
+  //
+  // 프렌즈존 분할: 좌석 수 n을 `2a + 3b = n`으로 쪼개되 **|a-b| 최소**. 좌석 수는 보존된다.
+  //   5석 -> 2인1+3인1 · 8석 -> 2인1+3인2 · 10석 -> 2인2+3인2 · 15석 -> 2인3+3인3
+  //
+  // 퍼스트클래스존은 사용자가 아직 안 정했다(*"이거 차별화존으로 해야되말아야되"*). 세 안을 다 잰다.
+  it("(8) 새 격자 + 퍼스트클래스존 세 안", () => {
+    /** 좌석 수를 2인·3인 구획으로 비등하게 쪼갠다. 안 떨어지면 2인 쪽으로 몰아준다. */
+    const splitFriends = (n: number): { two: number; three: number } => {
+      let best: { two: number; three: number; d: number } | null = null;
+      for (let b = 0; b * 3 <= n; b++) {
+        const rest = n - 3 * b;
+        if (rest % 2) continue;
+        const a = rest / 2, d = Math.abs(a - b);
+        if (!best || d < best.d || (d === best.d && b > best.three)) best = { two: a, three: b, d };
+      }
+      return best ? { two: best.two, three: best.three } : { two: Math.floor(n / 2), three: 0 };
+    };
+
+    const zoneKeys = ["singleSeatCount", "room1", "room2", "teamRoom", "coupleZone", "vipZone", "friendsZone", "firstClassZone"] as const;
+    const FC_SEATS = 11;
+    type FcMode = "팀룸과한칸" | "차별화존유지" | "특화에서제외";
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cells = (o: any, fc: FcMode): number => {
+      const fz = splitFriends(o.friendsZone ?? 0);
+      const fcCount = o.firstClassZone ?? 0;
+      const grid = [
+        (o.singleSeatCount ?? 0) + (o.vipZone ?? 0),                      // 1인 개방
+        o.room1 ?? 0,                                                      // 1인 룸
+        (o.coupleZone ?? 0) + (o.regularCoupleSeatCount ?? 0) + fz.two,    // 2인 개방
+        o.room2 ?? 0,                                                      // 2인 룸
+        fz.three,                                                          // 3~4인 개방
+        (o.teamRoom ?? 0) + (fc === "팀룸과한칸" ? fcCount : 0),            // 5인+ 룸
+      ];
+      if (fc === "차별화존유지") grid.push(fcCount);
+      return grid.filter((v) => v > 0).length;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seats = (o: any, teamSeats: number | null, fc: FcMode): number =>
+      (o.singleSeatCount ?? 0) + (o.vipZone ?? 0) + (o.room1 ?? 0) + (o.room2 ?? 0) * 2
+      + (o.coupleZone ?? 0) * 2 + (o.regularCoupleSeatCount ?? 0) + (o.friendsZone ?? 0)
+      + (teamSeats ?? (o.teamRoom ?? 0) * 5)
+      + (fc === "특화에서제외" ? 0 : (o.firstClassZone ?? 0) * FC_SEATS);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const score = (o: any, own: boolean, pc: number | null, teamSeats: number | null, fc: FcMode): number | null => {
+      if (zoneKeys.every((k) => o[k] == null)) return own ? null : UNSURVEYED_COMPETITOR_ZONE_SCORE;
+      if (pc == null || pc <= 0) return null;
+      const diversity = Math.min(5, 1 + (1 + cells(o, fc)) * 0.5);
+      const ratio = seats(o, teamSeats, fc) / pc;
+      const capacity = ratio < 0.1 ? 1 : ratio < 0.2 ? 2 : ratio < 0.3 ? 3 : ratio < 0.5 ? 4 : 5;
+      return diversity * 0.7 + capacity * 0.3;
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownRaw = (s: (typeof stores)[number]): any => ({
+      singleSeatCount: s.ownSingleSeatCount, room1: s.ownRoom1, room2: s.ownRoom2, teamRoom: s.ownTeamRoom,
+      coupleZone: s.ownCoupleZone, vipZone: s.ownVipZone, friendsZone: s.ownFriendsZone, firstClassZone: s.ownFirstClassZone,
+      regularCoupleSeatCount: null,
+    });
+
+    const variant = (fc: FcMode) => {
+      const ownMap = new Map<string, number | null>();
+      for (const s of stores) ownMap.set(s.storeCode, score(ownRaw(s), true, s.evaluationPcCount ?? s.pcCount ?? null, s.ownTeamRoomTotalSeats ?? null, fc));
+      const arr: (number | null)[] = [];
+      for (const r of rows) {
+        for (const c of (compsByCode.get(r.input.storeCode) ?? []).filter((x) => x.investigationStatus !== "경쟁점없음")) {
+          const ip = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+          if (!(ip > 0)) continue;
+          arr.push(score(c, false, ip, c.teamRoomTotalSeats ?? null, fc));
+        }
+      }
+      return { rows: withZone((v, i) => ownMap.get(rows[i].input.storeCode) ?? v, (v, i) => arr[i] ?? v), ownMap };
+    };
+
+    const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
+    const oldCells = stores.map((s) => zoneKeys.filter((k) => ((ownRaw(s)[k] ?? 0) as number) > 0).length).filter((v) => v > 0);
+    console.log("");
+    console.log(`[새 격자] 자사 채운 칸 평균 ${avg(oldCells).toFixed(2)}개(지금 8항목 기준) -> ${avg(stores.map((s) => cells(ownRaw(s), "팀룸과한칸")).filter((v) => v > 0)).toFixed(2)}개(격자 6칸 기준)`);
+    const fcStores = stores.filter((s) => (s.ownFirstClassZone ?? 0) > 0).length;
+    console.log(`  퍼스트클래스존 보유 ${fcStores}곳 · 좌석 가정 ${FC_SEATS}석`);
+    console.log("");
+    const base = line("지금 그대로", rows);
+    const modes: FcMode[] = ["팀룸과한칸", "차별화존유지", "특화에서제외"];
+    for (const m of modes) {
+      const v = variant(m);
+      const sc = line(`새 격자 · 퍼클 ${m}`, v.rows);
+      const own = [...v.ownMap.values()].filter((x): x is number => x != null);
+      console.log(`      자사 존구성 중앙 ${median(own).toFixed(2)} (지금 ${median(ownZones).toFixed(2)}) · MAPE ${((sc.mape - base.mape) * 100 >= 0 ? "+" : "")}${((sc.mape - base.mape) * 100).toFixed(2)}%p · r ${(sc.r - base.r >= 0 ? "+" : "")}${(sc.r - base.r).toFixed(3)}`);
+    }
+    console.log("");
+    console.log(`  ⚠️ 성적으로 고르는 자리가 아니다 — 앞의 검정에서 존구성엔 순서 정보가 없다고 나왔다.`);
+    console.log(`     숫자는 "어느 안이 얼마나 흔드나"를 보는 용도고, 고르는 기준은 뜻이다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
 });
