@@ -822,11 +822,16 @@ describeIf("존구성 — 수준인가 순서인가", () => {
         }
       }
       const after = predByStore(withZone((v, i) => ownMap.get(rows[i].input.storeCode) ?? v, (v, i) => arr2[i] ?? v));
-      const diffs = withRooms.map((c) => (base.get(c) ?? 0) - (after.get(c) ?? 0)).filter((v) => Number.isFinite(v));
-      const mean = diffs.length ? diffs.reduce((x, y) => x + y, 0) / diffs.length : 0;
       console.log("");
-      console.log(`  (대조) 룸을 **좌석째 없애면** 평균 ${won(mean)} 떨어진다 — 사용자가 예전에 "2천 정도"라고`);
-      console.log(`         말한 시나리오가 이쪽이다. 지금 산식은 그보다 훨씬 작게 본다.`);
+      console.log(`  [대조 시나리오] 룸을 **좌석째 없애면** — 사용자 감각과 대볼 자리다`);
+      console.log(`  (2026-09-17 사용자: *"2천은 좀 과한것같기도하고. 그래도 2천안쪽?"*)`);
+      for (const w of [1, 1.5, 2, 2.5, 3]) {
+        const b2 = predByStore(build(w, true));
+        const d2 = withRooms.map((c) => (b2.get(c) ?? 0) - (after.get(c) ?? 0)).filter((v) => Number.isFinite(v));
+        const m2 = d2.length ? d2.reduce((x, y) => x + y, 0) / d2.length : 0;
+        console.log(`    x${String(w).padEnd(5)} 평균 ${won(m2).padStart(10)} 떨어진다`);
+      }
+      void base;
     }
     expect(rows.length).toBeGreaterThan(30);
   });
