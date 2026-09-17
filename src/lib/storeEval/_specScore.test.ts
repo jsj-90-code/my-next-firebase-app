@@ -1,0 +1,653 @@
+// 사양(하드웨어) 검정 — 진단 1단계 (2026-09-18).
+// 실행: npx vitest run src/lib/storeEval/_specScore.test.ts --disable-console-intercept
+
+import { describe, it } from "vitest";
+import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
+import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
+import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
+import { mergeModelSettings } from "./settings";
+import { buildLabRows, utilizationByStore, qscInWindowAverage, type LabRow, type QscRecord } from "./labInput";
+import { DEFAULT_TEXTBOOK_PARAMS, scoreTextbook, type TextbookParams } from "./textbookModel";
+import {
+  computeSpecScore, scoreFromVgaSpec, scoreFromCpuSpec, scoreFromRamSpec, scoreFromMonitorSpec,
+  scoreFromVga, scoreFromCpu, scoreFromRam, scoreFromMonitor,
+} from "./calc";
+import { labScoreFromVga, labScoreFromCpu, labGpuKey, labCpuKey, labComputeSpecScore, LAB_GPU_PERF_INDEX, LAB_CPU_PERF_INDEX, type LabSpecOptions } from "./labSpecScore";
+import type { Competitor } from "./types";
+
+const describeIf = hasValidationSnapshot() ? describe : describe.skip;
+
+const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
+
+describeIf("사양 — 자료 생김새", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const snap = loadValidationSnapshot<any>();
+  const settings = mergeModelSettings(snap.settings);
+  const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+  const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings);
+  const rivals = allCompetitors.filter((c) => c.investigationStatus !== "경쟁점없음");
+
+  it("(1) 칸이 얼마나 채워져 있나 — 자사 vs 경쟁점", () => {
+    const ownKeys = ["ownVgaBase", "ownVgaTop", "ownVgaTop2", "ownCpu", "ownCpuTop1", "ownCpuTop2", "ownRam", "ownRamTop", "ownMonitorBase", "ownMonitorTop"];
+    const rivalKeys = ["vgaBase", "vgaTop", "vgaTop2", "cpu", "cpuTop1", "cpuTop2", "ram", "ramTop", "monitorBase", "monitorTop"];
+    console.log(`\n[채움률] 자사 ${stores.length}곳 · 경쟁점 ${rivals.length}건`);
+    console.log("  칸            자사           경쟁점");
+    for (let i = 0; i < ownKeys.length; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const o = (stores as any[]).filter((s) => s[ownKeys[i]] != null && String(s[ownKeys[i]]).trim() !== "").length;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = (rivals as any[]).filter((c) => c[rivalKeys[i]] != null && String(c[rivalKeys[i]]).trim() !== "").length;
+      console.log(`  ${rivalKeys[i].padEnd(12)} ${String(o).padStart(3)}/${stores.length} (${((o / stores.length) * 100).toFixed(0).padStart(3)}%)   ${String(r).padStart(3)}/${rivals.length} (${((r / rivals.length) * 100).toFixed(0).padStart(3)}%)`);
+    }
+  });
+
+  it("(2) 항목별 점수 분포 — 자사 vs 경쟁점", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownSub = (s: any) => ({
+      vga: scoreFromVgaSpec(s.ownVgaBase ?? null, s.ownVgaTop ?? null, s.ownVgaTop2 ?? null),
+      cpu: scoreFromCpuSpec(s.ownCpu ?? null, s.ownCpuTop1 ?? null, s.ownCpuTop2 ?? null),
+      ram: scoreFromRamSpec(s.ownRam ?? null, s.ownRamTop ?? null),
+      monitor: scoreFromMonitorSpec(s.ownMonitorBase ?? null, s.ownMonitorTop ?? null),
+      total: computeSpecScore({
+        vgaBase: s.ownVgaBase ?? null, vgaTop: s.ownVgaTop ?? null, vgaTop2: s.ownVgaTop2 ?? null,
+        cpu: s.ownCpu ?? null, cpuTop1: s.ownCpuTop1 ?? null, cpuTop2: s.ownCpuTop2 ?? null,
+        ram: s.ownRam ?? null, ramTop: s.ownRamTop ?? null,
+        monitorBase: s.ownMonitorBase ?? null, monitorTop: s.ownMonitorTop ?? null,
+      }, settings),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rivalSub = (c: any) => ({
+      vga: scoreFromVgaSpec(c.vgaBase ?? null, c.vgaTop ?? null, c.vgaTop2 ?? null),
+      cpu: scoreFromCpuSpec(c.cpu ?? null, c.cpuTop1 ?? null, c.cpuTop2 ?? null),
+      ram: scoreFromRamSpec(c.ram ?? null, c.ramTop ?? null),
+      monitor: scoreFromMonitorSpec(c.monitorBase ?? null, c.monitorTop ?? null),
+      total: computeSpecScore({
+        vgaBase: c.vgaBase ?? null, vgaTop: c.vgaTop ?? null, vgaTop2: c.vgaTop2 ?? null,
+        cpu: c.cpu ?? null, cpuTop1: c.cpuTop1 ?? null, cpuTop2: c.cpuTop2 ?? null,
+        ram: c.ram ?? null, ramTop: c.ramTop ?? null,
+        monitorBase: c.monitorBase ?? null, monitorTop: c.monitorTop ?? null,
+      }, settings),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const O = (stores as any[]).map(ownSub), R = (rivals as any[]).map(rivalSub);
+    const w = settings.specWeights;
+    console.log(`\n[분포] 하드웨어 내부비중 GPU ${w.vga} · 모니터 ${w.monitor} · CPU ${w.cpu} · RAM ${w.ram}`);
+    console.log("  항목      자사 n  최소  중앙  최대 | 경쟁 n  최소  중앙  최대");
+    for (const k of ["vga", "cpu", "ram", "monitor", "total"] as const) {
+      const o = O.map((x) => x[k]).filter((v): v is number => v != null);
+      const r = R.map((x) => x[k]).filter((v): v is number => v != null);
+      const fmt = (a: number[]) => (a.length ? `${String(a.length).padStart(3)}  ${Math.min(...a).toFixed(2)} ${median(a).toFixed(2)} ${Math.max(...a).toFixed(2)}` : "  0     -    -    -");
+      console.log(`  ${k.padEnd(8)} ${fmt(o)} | ${fmt(r)}`);
+    }
+    const ot = O.map((x) => x.total).filter((v): v is number => v != null);
+    const rt = R.map((x) => x.total).filter((v): v is number => v != null);
+    console.log(`\n  자사 total 평균 ${mean(ot).toFixed(3)} · 경쟁점 ${mean(rt).toFixed(3)}`);
+    const ownMin = Math.min(...ot);
+    const below = rt.filter((v) => v < ownMin).length;
+    console.log(`  자사 최소(${ownMin.toFixed(2)})보다 낮은 경쟁점 ${below}/${rt.length}건 (${((below / rt.length) * 100).toFixed(0)}%)`);
+  });
+
+  it("(3) 원자료 값 목록 — 어떤 텍스트가 들어 있나", () => {
+    const tally = (vals: (string | null | undefined)[]) => {
+      const m = new Map<string, number>();
+      for (const v of vals) { const k = (v ?? "").trim(); if (!k) continue; m.set(k, (m.get(k) ?? 0) + 1); }
+      return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const blocks: [string, unknown[], unknown[], (t: string | null) => number | null][] = [
+      ["GPU 기본", S.map((s) => s.ownVgaBase), C.map((c) => c.vgaBase), scoreFromVga],
+      ["CPU 기본", S.map((s) => s.ownCpu), C.map((c) => c.cpu), scoreFromCpu],
+      ["RAM 기본", S.map((s) => s.ownRam), C.map((c) => c.ram), scoreFromRam],
+    ];
+    for (const [label, ov, rv, scorer] of blocks) {
+      const os = ov as (string | null)[], rs = rv as (string | null)[];
+      console.log(`\n[${label}] 자사`);
+      for (const [k, n] of tally(os)) console.log(`    ${String(n).padStart(3)}건  ${scorer(k) == null ? " -  " : scorer(k)!.toFixed(2)}  ${k}`);
+      console.log(`  [${label}] 경쟁점 (상위 15종)`);
+      for (const [k, n] of tally(rs).slice(0, 15)) console.log(`    ${String(n).padStart(3)}건  ${scorer(k) == null ? " -  " : scorer(k)!.toFixed(2)}  ${k}`);
+      const nullOwn = os.filter((v) => v && scorer(v) == null), nullRiv = rs.filter((v) => v && scorer(v) == null);
+      if (nullOwn.length || nullRiv.length) console.log(`  ⚠️ 못 읽은 텍스트 자사 ${nullOwn.length}건 · 경쟁점 ${nullRiv.length}건: ${[...new Set([...nullOwn, ...nullRiv])].slice(0, 10).join(" | ")}`);
+    }
+  });
+
+  it("(4) 모니터 — Hz가 얼마나 읽히나", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const rows: [string, string, number | null][] = [];
+    for (const s of S) if (s.ownMonitorBase) rows.push(["자사", String(s.ownMonitorBase), scoreFromMonitor(String(s.ownMonitorBase))]);
+    for (const c of C) if (c.monitorBase) rows.push(["경쟁", String(c.monitorBase), scoreFromMonitor(String(c.monitorBase))]);
+    const unread = rows.filter(([, , v]) => v == null);
+    console.log(`\n[모니터 기본] 기입 ${rows.length}건 중 점수 못 뽑은 것 ${unread.length}건`);
+    const m = new Map<string, number>();
+    for (const [side, t] of unread) m.set(`${side} | ${t}`, (m.get(`${side} | ${t}`) ?? 0) + 1);
+    for (const [k, n] of [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25)) console.log(`    ${String(n).padStart(3)}건  ${k}`);
+    console.log(`\n[모니터 특화] 자사 ${S.filter((s) => s.ownMonitorTop).length}건 · 경쟁 ${C.filter((c) => c.monitorTop).length}건`);
+    const mt = new Map<string, number>();
+    for (const s of S) if (s.ownMonitorBase) mt.set(`자사 | ${String(s.ownMonitorBase).trim()}`, (mt.get(`자사 | ${String(s.ownMonitorBase).trim()}`) ?? 0) + 1);
+    console.log("\n[모니터 기본 — 자사 값 목록]");
+    for (const [k, n] of [...mt.entries()].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(3)}건  ${(scoreFromMonitor(k.split("| ")[1]) ?? NaN).toFixed(2)}  ${k.split("| ")[1]}`);
+  });
+
+  // ── 여기부터 검정 ────────────────────────────────────────────────────────
+  // 존구성과 **같은 절차**다(_zoneComposition.test.ts). 기여가 크다고 채택하는 게 아니라
+  // (가) 매장별 **순서**를 맞히는지 (나) 자사를 한 번 띄우는 **수준 보정**인지를 가른다.
+  const utilByStore = utilizationByStore(snap.sales ?? [], snap.existingStores);
+  const compsByCode = new Map<string, Competitor[]>();
+  for (const c of allCompetitors) compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
+  const qscByStoreCode = new Map<string, number>();
+  for (const d of (snap.labQscScores ?? []) as { storeCode?: string; id?: string; openedAt?: string; records?: QscRecord[] }[]) {
+    const code = d.storeCode ?? d.id;
+    if (!code) continue;
+    const avg = qscInWindowAverage(d.records ?? [], d.openedAt ?? null);
+    if (avg != null) qscByStoreCode.set(code, avg);
+  }
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode });
+  const P: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS };
+
+  function pearson(xs: number[], ys: number[]): number {
+    const n = xs.length;
+    if (n < 2) return 0;
+    const mx = mean(xs), my = mean(ys);
+    let sxy = 0, sxx = 0, syy = 0;
+    for (let i = 0; i < n; i++) { const dx = xs[i] - mx, dy = ys[i] - my; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
+    return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+  }
+
+  /** 자사·경쟁점 spec을 갈아끼운 행을 만든다. 원본은 안 건드린다. */
+  function withSpec(
+    own: (v: number | null, i: number) => number | null,
+    rival: (v: number | null, i: number) => number | null,
+  ): LabRow[] {
+    let ri = -1;
+    return rows.map((r, i) => ({
+      actualRevenue: r.actualRevenue,
+      input: {
+        ...r.input,
+        ownQualityParts: r.input.ownQualityParts
+          ? { ...r.input.ownQualityParts, spec: own(r.input.ownQualityParts.spec, i) }
+          : r.input.ownQualityParts,
+        rivals: (r.input.rivals ?? []).map((v) => {
+          ri += 1;
+          return v.parts ? { ...v, parts: { ...v.parts, spec: rival(v.parts.spec, ri) } } : v;
+        }),
+      },
+    }));
+  }
+
+  const f = (v: number | null | undefined, d = 2) => (v == null ? "-" : (v * 100).toFixed(d));
+
+  function line(label: string, rs: LabRow[], p: TextbookParams = P) {
+    const sc = scoreTextbook(rs, p);
+    const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0);
+    const r = pearson(ok.map((x) => x.predicted as number), ok.map((x) => x.actual));
+    console.log(`  ${label.padEnd(30)} MAPE ${f(sc.mape).padStart(6)}%  중앙 ${f(sc.medianAbsErr, 1).padStart(5)}%  r ${r.toFixed(3)}`);
+    return { mape: sc.mape ?? 0, r };
+  }
+
+  it("(5) 바닥 포화 — 1.00에 몇 건이 깔려 있나", () => {
+    const ownSpec = rows.map((r) => r.input.ownQualityParts?.spec).filter((v): v is number => v != null);
+    const rivalSpec = rows.flatMap((r) => r.input.rivals ?? []).map((v) => v.parts?.spec).filter((v): v is number => v != null);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const C = rivals as any[];
+    const cpuAtFloor = C.map((c) => scoreFromCpu(c.cpu ?? null)).filter((v) => v === 1).length;
+    const cpuN = C.map((c) => scoreFromCpu(c.cpu ?? null)).filter((v): v is number => v != null).length;
+    const vgaAtFloor = C.map((c) => scoreFromVga(c.vgaBase ?? null)).filter((v) => v === 1).length;
+    const vgaN = C.map((c) => scoreFromVga(c.vgaBase ?? null)).filter((v): v is number => v != null).length;
+    console.log(`\n[바닥 포화] 경쟁점 CPU 1.00이 ${cpuAtFloor}/${cpuN}건 (${((cpuAtFloor / cpuN) * 100).toFixed(0)}%)`);
+    console.log(`            경쟁점 GPU 1.00이 ${vgaAtFloor}/${vgaN}건 (${((vgaAtFloor / vgaN) * 100).toFixed(0)}%)`);
+    console.log(`  하네스 행: 자사 spec ${ownSpec.length}곳 · 경쟁점 spec ${rivalSpec.length}건`);
+    // 바닥에 깔린 텍스트가 실제로는 서로 다른 물건인가
+    const floorTexts = new Map<string, number>();
+    for (const c of C) {
+      const t = String(c.cpu ?? "").trim();
+      if (t && scoreFromCpu(t) === 1) floorTexts.set(`CPU ${t}`, (floorTexts.get(`CPU ${t}`) ?? 0) + 1);
+      const g = String(c.vgaBase ?? "").trim();
+      if (g && scoreFromVga(g) === 1) floorTexts.set(`GPU ${g}`, (floorTexts.get(`GPU ${g}`) ?? 0) + 1);
+    }
+    console.log("  1.00으로 뭉개진 서로 다른 물건들:");
+    for (const [k, n] of [...floorTexts.entries()].sort((a, b) => b[1] - a[1])) console.log(`    ${String(n).padStart(3)}건  ${k}`);
+  });
+
+  it("(6) 수준인가 순서인가 — 상수로 바꿔치기", () => {
+    const ownSpec = rows.map((r) => r.input.ownQualityParts?.spec).filter((v): v is number => v != null);
+    const rivalSpec = rows.flatMap((r) => r.input.rivals ?? []).map((v) => v.parts?.spec).filter((v): v is number => v != null);
+    const oMed = median(ownSpec), rMed = median(rivalSpec);
+    console.log(`\n[상수 바꿔치기] 자사 중앙 ${oMed.toFixed(2)} · 경쟁점 중앙 ${rMed.toFixed(2)}`);
+    line("지금 그대로", rows);
+    line("자사만 상수", withSpec(() => oMed, (v) => v));
+    line("경쟁점만 상수", withSpec((v) => v, () => rMed));
+    line("둘 다 상수 (수준만)", withSpec(() => oMed, () => rMed));
+    line("사양 비중 0 (아예 뺌)", rows, { ...P, qualityWeights: { ...P.qualityWeights, spec: 0 } });
+  });
+
+  it("(7) 무작위 대조군 — 순서가 진짜인가", () => {
+    const base = scoreTextbook(rows, P);
+    const off = scoreTextbook(rows, { ...P, qualityWeights: { ...P.qualityWeights, spec: 0 } });
+    const gain = (off.mape ?? 0) - (base.mape ?? 0); // 사양을 켜서 좋아진 폭
+    const ownSpec = rows.map((r) => r.input.ownQualityParts?.spec ?? null);
+    const rivalSpec = rows.flatMap((r) => r.input.rivals ?? []).map((v) => v.parts?.spec ?? null);
+    let rng = 20260918;
+    const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const shuffle = <T,>(a: T[]) => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+    const gains: number[] = [];
+    for (let t = 0; t < 500; t++) {
+      const so = shuffle(ownSpec), sr = shuffle(rivalSpec);
+      const sc = scoreTextbook(withSpec((_, i) => so[i], (_, i) => sr[i]), P);
+      gains.push((off.mape ?? 0) - (sc.mape ?? 0));
+    }
+    const sorted = [...gains].sort((a, b) => a - b);
+    const p95 = sorted[Math.floor(sorted.length * 0.95)];
+    const pv = gains.filter((g) => g >= gain).length / gains.length;
+    console.log(`\n[대조군 · 매출 38곳] 사양을 켜서 좋아진 폭 ${f(gain)}%p`);
+    console.log(`  뒤섞은 값 500회: 중앙 ${f(median(gains))}%p · 95퍼센타일 ${f(p95)}%p`);
+    console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}`);
+  });
+
+  it("(9) 바닥을 풀면 신호가 있나 — 세대당 기울기를 낮춰본다", () => {
+    // ⚠️ **측정만 한다.** 여기서 MAPE가 내려가도 채택 근거가 아니다(대조군은 따로 본다).
+    // 지금은 세대 하나당 1점이라 9세대 이하 CPU·GTX 세대 GPU가 전부 1.00에 깔린다.
+    // 기울기를 낮추면 그 뭉치가 풀리는데, 풀린 순서가 매출을 맞히는지 보는 것이다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const specOf = (o: any, own: boolean, slope: number) => {
+      // 기존 점수에서 "4점 앵커로부터 몇 계단 아래인가"를 역산해 기울기만 갈아끼운다.
+      // 깔끔하진 않지만 변환표를 새로 쓰기 전에 신호 유무만 보는 자리다.
+      const rescale = (v: number | null) => (v == null ? null : Math.max(1, Math.min(5, 4 + (v - 4) * slope)));
+      const g = rescale(own ? scoreFromVgaSpec(o.ownVgaBase ?? null, o.ownVgaTop ?? null, o.ownVgaTop2 ?? null)
+        : scoreFromVgaSpec(o.vgaBase ?? null, o.vgaTop ?? null, o.vgaTop2 ?? null));
+      const c = rescale(own ? scoreFromCpuSpec(o.ownCpu ?? null, o.ownCpuTop1 ?? null, o.ownCpuTop2 ?? null)
+        : scoreFromCpuSpec(o.cpu ?? null, o.cpuTop1 ?? null, o.cpuTop2 ?? null));
+      const m = own ? scoreFromMonitorSpec(o.ownMonitorBase ?? null, o.ownMonitorTop ?? null)
+        : scoreFromMonitorSpec(o.monitorBase ?? null, o.monitorTop ?? null);
+      const ra = own ? scoreFromRamSpec(o.ownRam ?? null, o.ownRamTop ?? null) : scoreFromRamSpec(o.ram ?? null, o.ramTop ?? null);
+      const w = settings.specWeights;
+      const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([s]) => s != null) as [number, number][];
+      const tw = items.reduce((a, [, x]) => a + x, 0);
+      return tw > 0 ? items.reduce((a, [s, x]) => a + s * x, 0) / tw : null;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storeByCode = new Map((stores as any[]).map((s) => [s.storeCode, s]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rivalList = (code: string) => (compsByCode.get(code) ?? []).filter((c: any) => c.investigationStatus !== "경쟁점없음").filter((c) => Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+    console.log("\n[기울기] ⚠️ 전체 눈금을 같이 압축한다 — 바닥만 푸는 게 아니라 사양 비중을 줄이는 것과 섞인다");
+    for (const slope of [1, 0.75, 0.5, 0.35]) {
+      const rs: LabRow[] = rows.map((r) => {
+        const s = storeByCode.get(r.input.storeCode);
+        const rl = rivalList(r.input.storeCode);
+        let i = -1;
+        return {
+          actualRevenue: r.actualRevenue,
+          input: {
+            ...r.input,
+            ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: specOf(s, true, slope) } : r.input.ownQualityParts,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: specOf(rl[i] as any, false, slope) } } : v; }),
+          },
+        };
+      });
+      const atFloor = rs.flatMap((r) => r.input.rivals ?? []).map((v) => v.parts?.spec).filter((v) => v != null && v <= 1.01).length;
+      line(`기울기 ${slope.toFixed(2)} (바닥 ${atFloor}건)`, rs);
+    }
+  });
+
+  it("(10) 바닥만 푼다 — 위쪽 눈금은 그대로 두고 1.00 뭉치의 순서만 살린다", () => {
+    // (9)는 전체를 압축해서 "사양을 약하게 하기"와 섞였다. 여기서는 **1.00 위쪽을 한 톨도
+    // 안 건드리고**, 지금 1.00에 깔린 것들만 raw 순서대로 [0.40, 1.00]에 편다.
+    // 위쪽이 그대로니 격차가 줄지 않는다 — 오직 "낡은 PC 사이의 순서가 정보인가"만 묻는다.
+    const rawCpu = (t: string | null): number | null => {
+      const v = scoreFromCpu(t);
+      if (v == null) return null;
+      if (v > 1) return v;
+      const m = (t ?? "").match(/(\d{1,2})\s*세대/);
+      if (m) return Number(m[1]) - 10;
+      if (/(?:울트라|ultra|ryzen|라이젠)/i.test(t ?? "")) return v;
+      const d = (t ?? "").match(/(\d{4,5})/);
+      if (!d) return v;
+      const gen = d[1].length === 5 ? Number(d[1].slice(0, 2)) : Number(d[1].slice(0, 1));
+      return gen - 10;
+    };
+    const rawVga = (t: string | null): number | null => {
+      const v = scoreFromVga(t);
+      if (v == null) return null;
+      if (v > 1) return v;
+      const cleaned = (t ?? "").toUpperCase().replace(/\s/g, "");
+      const m = cleaned.match(/(\d{4})/);
+      if (!m) return v;
+      const num = Number(m[1]);
+      const tier = num % 100;
+      return 4 + (Math.floor(num / 1000) - 5) + (tier >= 80 ? 1 : tier >= 70 ? 0.5 : 0) + (/\d{3,4}\s*TI/.test(cleaned) ? 0.25 : 0);
+    };
+    /** raw<1을 [0.40,1.00]에 편다. raw>=1은 그대로. */
+    const spread = (raw: number | null) => (raw == null ? null : raw >= 1 ? Math.min(5, raw) : Math.max(0.4, 1 + (raw - 1) * 0.15));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const specOf2 = (o: any, own: boolean, on: boolean) => {
+      const w = settings.specWeights;
+      const gTexts = own ? [o?.ownVgaBase, o?.ownVgaTop, o?.ownVgaTop2] : [o?.vgaBase, o?.vgaTop, o?.vgaTop2];
+      const cTexts = own ? [o?.ownCpu, o?.ownCpuTop1, o?.ownCpuTop2] : [o?.cpu, o?.cpuTop1, o?.cpuTop2];
+      const comb = (vs: (number | null)[]) => {
+        const base = vs[0], sp = vs.slice(1).filter((v): v is number => v != null);
+        if (base == null) return sp.length ? sp.reduce((a, b) => a + b, 0) / sp.length : null;
+        return sp.length ? base * 0.8 + (sp.reduce((a, b) => a + b, 0) / sp.length) * 0.2 : base;
+      };
+      const g = on ? comb(gTexts.map((t) => spread(rawVga(t ?? null)))) : comb(gTexts.map((t) => scoreFromVga(t ?? null)));
+      const c = on ? comb(cTexts.map((t) => spread(rawCpu(t ?? null)))) : comb(cTexts.map((t) => scoreFromCpu(t ?? null)));
+      const m = own ? scoreFromMonitorSpec(o?.ownMonitorBase ?? null, o?.ownMonitorTop ?? null) : scoreFromMonitorSpec(o?.monitorBase ?? null, o?.monitorTop ?? null);
+      const ra = own ? scoreFromRamSpec(o?.ownRam ?? null, o?.ownRamTop ?? null) : scoreFromRamSpec(o?.ram ?? null, o?.ramTop ?? null);
+      const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([s]) => s != null) as [number, number][];
+      const tw = items.reduce((a, [, x]) => a + x, 0);
+      return tw > 0 ? items.reduce((a, [s, x]) => a + s * x, 0) / tw : null;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storeByCode = new Map((stores as any[]).map((s) => [s.storeCode, s]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rivalList = (code: string) => (compsByCode.get(code) ?? []).filter((c: any) => c.investigationStatus !== "경쟁점없음").filter((c) => Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+    const build = (on: boolean): LabRow[] => rows.map((r) => {
+      const s = storeByCode.get(r.input.storeCode);
+      const rl = rivalList(r.input.storeCode);
+      let i = -1;
+      return {
+        actualRevenue: r.actualRevenue,
+        input: {
+          ...r.input,
+          ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: specOf2(s, true, on) } : r.input.ownQualityParts,
+          rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: specOf2(rl[i], false, on) } } : v; }),
+        },
+      };
+    });
+    console.log("\n[바닥만 풀기] 위쪽 눈금 그대로 · 1.00 뭉치만 [0.40, 1.00]에 편다");
+    line("재현 확인 (바닥 그대로)", build(false));
+    line("바닥 품", build(true));
+    const spreadVals = (rivals as never as Record<string, string | null>[])
+      .map((c) => spread(rawCpu(c.cpu ?? null))).filter((v): v is number => v != null && v < 1);
+    console.log(`  풀린 경쟁점 CPU ${spreadVals.length}건: 최소 ${Math.min(...spreadVals).toFixed(2)} ~ 최대 ${Math.max(...spreadVals).toFixed(2)}`);
+  });
+
+  // ── 새 변환표를 끼운 행 만들기 ───────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const storeByCode = new Map((stores as any[]).map((s) => [s.storeCode, s]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rivalListOf = (code: string) => (compsByCode.get(code) ?? []).filter((c: any) => c.investigationStatus !== "경쟁점없음").filter((c) => Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const labSpecOf = (o: any, own: boolean, opts: LabSpecOptions) => (o == null ? null : labComputeSpecScore({
+    vgaBase: (own ? o.ownVgaBase : o.vgaBase) ?? null,
+    vgaTop: (own ? o.ownVgaTop : o.vgaTop) ?? null,
+    vgaTop2: (own ? o.ownVgaTop2 : o.vgaTop2) ?? null,
+    cpu: (own ? o.ownCpu : o.cpu) ?? null,
+    cpuTop1: (own ? o.ownCpuTop1 : o.cpuTop1) ?? null,
+    cpuTop2: (own ? o.ownCpuTop2 : o.cpuTop2) ?? null,
+    ram: (own ? o.ownRam : o.ram) ?? null,
+    ramTop: (own ? o.ownRamTop : o.ramTop) ?? null,
+    monitorBase: (own ? o.ownMonitorBase : o.monitorBase) ?? null,
+    monitorTop: (own ? o.ownMonitorTop : o.monitorTop) ?? null,
+  }, settings, opts));
+  const labRows = (opts: LabSpecOptions): LabRow[] => rows.map((r) => {
+    const s = storeByCode.get(r.input.storeCode);
+    const rl = rivalListOf(r.input.storeCode);
+    let i = -1;
+    return {
+      actualRevenue: r.actualRevenue,
+      input: {
+        ...r.input,
+        ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: labSpecOf(s, true, opts) } : r.input.ownQualityParts,
+        rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: labSpecOf(rl[i], false, opts) } } : v; }),
+      },
+    };
+  });
+
+  it("(14) 새 변환표 측정 — 하나씩 켜 본다", () => {
+    // 운영 표만 쓰는 변환표(= 지금)로 되돌린 옵션. 재현이 맞는지 먼저 확인한다.
+    const OLD_GPU = {} as Record<string, number>;
+    console.log("\n[새 변환표] 하나씩 켠다 (모니터·RAM은 운영 그대로)");
+    line("지금 (운영 변환표)", rows);
+    line("재현 확인", labRows({ gpuTable: OLD_GPU }));
+    line("GPU만 성능지수", labRows({}));
+    line("CPU만 성능지수", labRows({ gpuTable: OLD_GPU, useCpuPerfIndex: true }));
+    line("GPU+CPU 성능지수", labRows({ useCpuPerfIndex: true }));
+
+    // 아래 훑기는 **채택 후보인 GPU만 켠 바닥** 위에서 잰다(CPU 표는 순서를 못 고쳤다 — (15)).
+    console.log("\n[RAM 격차] 16GB↔32GB를 얼마나 벌릴까 (32GB=4.00 고정 · GPU 성능지수 바닥)");
+    for (const gap of [0, 0.25, 0.5, 1, 1.5, 2]) {
+      line(`격차 ${gap.toFixed(2)} (16GB=${(4 - gap).toFixed(2)})`, labRows({ ramGap: gap }));
+    }
+
+    console.log("\n[모니터] 특화 칸 비대칭 처리 (GPU 성능지수 바닥)");
+    line("지금대로 (특화 포함)", labRows({}));
+    line("기본만 (특화 무시)", labRows({ monitorBaseOnly: true }));
+    line("모니터 뺌 ⚠️항목 자르기", labRows({ dropMonitor: true }));
+  });
+
+  // 임의의 GPU/CPU 채점함수로 행을 만든다. 대조군에서 표를 통째로 갈아끼우기 위한 것.
+  const rowsWithScorers = (
+    gpuScore: (t: string | null) => number | null,
+    cpuScore: (t: string | null) => number | null,
+  ): LabRow[] => {
+    const w = settings.specWeights;
+    const comb = (vs: (number | null)[]) => {
+      const base = vs[0], sp = vs.slice(1).filter((v): v is number => v != null);
+      if (base == null) return sp.length ? sp.reduce((a, b) => a + b, 0) / sp.length : null;
+      return sp.length ? base * 0.8 + (sp.reduce((a, b) => a + b, 0) / sp.length) * 0.2 : base;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const specOf = (o: any, own: boolean) => {
+      if (o == null) return null;
+      const g = comb((own ? [o.ownVgaBase, o.ownVgaTop, o.ownVgaTop2] : [o.vgaBase, o.vgaTop, o.vgaTop2]).map((t) => gpuScore(t ?? null)));
+      const c = comb((own ? [o.ownCpu, o.ownCpuTop1, o.ownCpuTop2] : [o.cpu, o.cpuTop1, o.cpuTop2]).map((t) => cpuScore(t ?? null)));
+      const ra = scoreFromRamSpec(own ? (o.ownRam ?? null) : (o.ram ?? null), own ? (o.ownRamTop ?? null) : (o.ramTop ?? null));
+      const m = scoreFromMonitorSpec(own ? (o.ownMonitorBase ?? null) : (o.monitorBase ?? null), own ? (o.ownMonitorTop ?? null) : (o.monitorTop ?? null));
+      const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([s]) => s != null) as [number, number][];
+      const tw = items.reduce((a, [, x]) => a + x, 0);
+      return tw > 0 ? items.reduce((a, [s, x]) => a + s * x, 0) / tw : null;
+    };
+    return rows.map((r) => {
+      const s = storeByCode.get(r.input.storeCode);
+      const rl = rivalListOf(r.input.storeCode);
+      let i = -1;
+      return {
+        actualRevenue: r.actualRevenue,
+        input: {
+          ...r.input,
+          ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: specOf(s, true) } : r.input.ownQualityParts,
+          rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: specOf(rl[i], false) } } : v; }),
+        },
+      };
+    });
+  };
+
+  it("(15) CPU가 나빠진 건 순서인가 수준인가", () => {
+    // 새 CPU 표는 경쟁점을 크게 올린다(12400F 41건 +1.30 · 11400F +1.63 · 10400F +1.04).
+    // 축척은 **독점매장에서만** 맞추므로(textbookModel calibrationTarget) 이 수준 이동은
+    // 축척이 안 먹어주고 MAPE에 그대로 찍힌다. 그래서 수준을 도로 맞춘 뒤 다시 본다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const C = rivals as any[];
+    const oldAvg = mean(C.map((c) => scoreFromCpu(c.cpu ?? null)).filter((v): v is number => v != null));
+    const newAvg = mean(C.map((c) => labScoreFromCpu(c.cpu ?? null)).filter((v): v is number => v != null));
+    const shift = newAvg - oldAvg;
+    console.log(`\n[CPU 수준] 경쟁점 CPU 평균 ${oldAvg.toFixed(3)} -> ${newAvg.toFixed(3)} (+${shift.toFixed(3)})`);
+    line("지금 (운영 표)", rowsWithScorers(scoreFromVga, scoreFromCpu));
+    line("새 CPU 표", rowsWithScorers(scoreFromVga, (t) => labScoreFromCpu(t)));
+    line("새 CPU 표 · 수준 되돌림", rowsWithScorers(scoreFromVga, (t) => {
+      const v = labScoreFromCpu(t);
+      return v == null ? null : Math.max(1, Math.min(5, v - shift));
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[];
+    const oOld = mean(S.map((s) => scoreFromCpu(s.ownCpu ?? null)).filter((v): v is number => v != null));
+    const oNew = mean(S.map((s) => labScoreFromCpu(s.ownCpu ?? null)).filter((v): v is number => v != null));
+    console.log(`  (자사 CPU 평균은 ${oOld.toFixed(3)} -> ${oNew.toFixed(3)} · 경쟁점이 ${(shift - (oNew - oOld)).toFixed(3)}점 더 올랐다)`);
+  });
+
+  it("(16) 대조군 — 새 GPU 표의 순서 개선이 진짜인가", () => {
+    // 표를 바꾸면 모델마다 점수가 얼마씩 움직인다. **그 움직임의 크기는 그대로 두고 어느 모델에
+    // 붙는지만 뒤섞어** 본다. 새 표가 "실제 서열을 맞혔다"면 뒤섞은 것보다 나아야 한다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const texts = [...new Set([
+      ...S.flatMap((s) => [s.ownVgaBase, s.ownVgaTop, s.ownVgaTop2]),
+      ...C.flatMap((c) => [c.vgaBase, c.vgaTop, c.vgaTop2]),
+    ].map((t) => (t ?? "").trim()).filter(Boolean))];
+    const deltas: number[] = [], keys: string[] = [];
+    for (const t of texts) {
+      const a = scoreFromVga(t), b = labScoreFromVga(t);
+      if (a == null || b == null) continue;
+      keys.push(t); deltas.push(b - a);
+    }
+    const rOf = (rs: LabRow[]) => {
+      const sc = scoreTextbook(rs, P);
+      const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0);
+      return { r: pearson(ok.map((x) => x.predicted as number), ok.map((x) => x.actual)), mape: sc.mape ?? 0 };
+    };
+    const base = rOf(rowsWithScorers(scoreFromVga, scoreFromCpu));
+    const real = rOf(rowsWithScorers((t) => labScoreFromVga(t), scoreFromCpu));
+    const gain = real.r - base.r;
+    console.log(`\n[대조군 · 새 GPU 표] 서로 다른 모델 ${keys.length}종에 델타가 붙는다`);
+    console.log(`  실제: r ${base.r.toFixed(3)} -> ${real.r.toFixed(3)} (좋아진 폭 ${gain.toFixed(3)}) · MAPE ${f(base.mape)}% -> ${f(real.mape)}%`);
+    let rng = 20260918;
+    const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const gains: number[] = [];
+    for (let t = 0; t < 300; t++) {
+      const sh = [...deltas];
+      for (let i = sh.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [sh[i], sh[j]] = [sh[j], sh[i]]; }
+      const map = new Map(keys.map((k, i) => [k, sh[i]]));
+      const scorer = (text: string | null) => {
+        const a = scoreFromVga(text);
+        if (a == null) return null;
+        const d = map.get((text ?? "").trim());
+        return d == null ? a : Math.max(1, Math.min(5, a + d));
+      };
+      gains.push(rOf(rowsWithScorers(scorer, scoreFromCpu)).r - base.r);
+    }
+    const sorted = [...gains].sort((a, b) => a - b);
+    const pv = gains.filter((g) => g >= gain).length / gains.length;
+    console.log(`  델타를 모델끼리 뒤섞기 300회: 중앙 ${median(gains).toFixed(3)} · 95퍼센타일 ${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)}`);
+    console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}`);
+  });
+
+  it("(13) 새 변환표 대조 — 모든 값이 표에 걸리나, 점수가 어떻게 움직이나", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = (rivals as any[]);
+    const compare = (
+      label: string,
+      ownVals: (string | null)[], rivalVals: (string | null)[],
+      oldS: (t: string | null) => number | null,
+      newS: (t: string | null) => number | null,
+      key: (t: string | null) => string | null,
+      table: Record<string, number>,
+    ) => {
+      const tally = (vals: (string | null)[]) => {
+        const m = new Map<string, number>();
+        for (const v of vals) { const k = (v ?? "").trim(); if (!k) continue; m.set(k, (m.get(k) ?? 0) + 1); }
+        return m;
+      };
+      const o = tally(ownVals), r = tally(rivalVals);
+      const keys = [...new Set([...o.keys(), ...r.keys()])].sort((a, b) => (newS(b) ?? -1) - (newS(a) ?? -1));
+      console.log(`\n[${label} 변환표 대조]  ⚠️ = 표에 없어 세대 산술로 떨어진 값`);
+      console.log("   지금  ->  새로   자사  경쟁   값");
+      let missing = 0;
+      for (const k of keys) {
+        const inTable = key(k) != null && table[key(k)!] != null;
+        if (!inTable) missing += (o.get(k) ?? 0) + (r.get(k) ?? 0);
+        const a = oldS(k), b = newS(k);
+        const diff = a != null && b != null && Math.abs(b - a) >= 0.005 ? ` (${b > a ? "+" : ""}${(b - a).toFixed(2)})` : "";
+        console.log(`  ${(a == null ? " - " : a.toFixed(2)).padStart(5)}  -> ${(b == null ? " - " : b.toFixed(2)).padStart(5)}   ${String(o.get(k) ?? 0).padStart(4)}  ${String(r.get(k) ?? 0).padStart(4)}   ${inTable ? "  " : "⚠️"} ${k}${diff}`);
+      }
+      console.log(`  표에 없는 값 ${missing}건`);
+    };
+    compare("GPU",
+      S.flatMap((s) => [s.ownVgaBase, s.ownVgaTop, s.ownVgaTop2]), C.flatMap((c) => [c.vgaBase, c.vgaTop, c.vgaTop2]),
+      scoreFromVga, (t) => labScoreFromVga(t), labGpuKey, LAB_GPU_PERF_INDEX);
+    compare("CPU",
+      S.flatMap((s) => [s.ownCpu, s.ownCpuTop1, s.ownCpuTop2]), C.flatMap((c) => [c.cpu, c.cpuTop1, c.cpuTop2]),
+      scoreFromCpu, (t) => labScoreFromCpu(t), labCpuKey, LAB_CPU_PERF_INDEX);
+  });
+
+  it("(12) 원자료 전수 — 기본·특화 칸을 다 합쳐서 어떤 물건이 몇 건인가", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = (rivals as any[]);
+    const dump = (label: string, ownVals: (string | null)[], rivalVals: (string | null)[], scorer: (t: string | null) => number | null) => {
+      const tally = (vals: (string | null)[]) => {
+        const m = new Map<string, number>();
+        for (const v of vals) { const k = (v ?? "").trim(); if (!k) continue; m.set(k, (m.get(k) ?? 0) + 1); }
+        return m;
+      };
+      const o = tally(ownVals), r = tally(rivalVals);
+      const keys = [...new Set([...o.keys(), ...r.keys()])]
+        .sort((a, b) => (scorer(b) ?? -1) - (scorer(a) ?? -1) || (r.get(b) ?? 0) + (o.get(b) ?? 0) - ((r.get(a) ?? 0) + (o.get(a) ?? 0)));
+      console.log(`\n[${label}] 기본+특화 전부 · 점수 높은 순`);
+      console.log("   점수   자사  경쟁   값");
+      for (const k of keys) {
+        const sc = scorer(k);
+        console.log(`  ${(sc == null ? " -  " : sc.toFixed(2)).padStart(5)}  ${String(o.get(k) ?? 0).padStart(4)}  ${String(r.get(k) ?? 0).padStart(4)}   ${k}`);
+      }
+    };
+    dump("GPU", S.flatMap((s) => [s.ownVgaBase, s.ownVgaTop, s.ownVgaTop2]), C.flatMap((c) => [c.vgaBase, c.vgaTop, c.vgaTop2]), scoreFromVga);
+    dump("CPU", S.flatMap((s) => [s.ownCpu, s.ownCpuTop1, s.ownCpuTop2]), C.flatMap((c) => [c.cpu, c.cpuTop1, c.cpuTop2]), scoreFromCpu);
+    dump("RAM", S.flatMap((s) => [s.ownRam, s.ownRamTop]), C.flatMap((c) => [c.ram, c.ramTop]), scoreFromRam);
+  });
+
+  it("(11) 모니터 — 특화 칸이 비대칭인가 (존구성 이름표와 같은 종류인지)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = (rivals as any[]);
+    const oBase = S.filter((s) => s.ownMonitorBase), oTop = oBase.filter((s) => s.ownMonitorTop);
+    const cBase = C.filter((c) => c.monitorBase), cTop = cBase.filter((c) => c.monitorTop);
+    console.log(`\n[모니터 특화 채움률] 기본이 적힌 곳 중에서`);
+    console.log(`  자사   ${oTop.length}/${oBase.length} (${((oTop.length / oBase.length) * 100).toFixed(0)}%)`);
+    console.log(`  경쟁점 ${cTop.length}/${cBase.length} (${((cTop.length / cBase.length) * 100).toFixed(0)}%)`);
+    const lift = (base: number | null, full: number | null) => (base == null || full == null ? null : full - base);
+    const oLift = S.map((s) => lift(scoreFromMonitor(s.ownMonitorBase ?? null), scoreFromMonitorSpec(s.ownMonitorBase ?? null, s.ownMonitorTop ?? null))).filter((v): v is number => v != null);
+    const cLift = C.map((c) => lift(scoreFromMonitor(c.monitorBase ?? null), scoreFromMonitorSpec(c.monitorBase ?? null, c.monitorTop ?? null))).filter((v): v is number => v != null);
+    console.log(`\n[특화가 올린 폭] 자사 평균 +${mean(oLift).toFixed(3)}점 · 경쟁점 평균 +${mean(cLift).toFixed(3)}점`);
+    const oB = S.map((s) => scoreFromMonitor(s.ownMonitorBase ?? null)).filter((v): v is number => v != null);
+    const cB = C.map((c) => scoreFromMonitor(c.monitorBase ?? null)).filter((v): v is number => v != null);
+    console.log(`  기본만: 자사 평균 ${mean(oB).toFixed(3)} · 경쟁점 ${mean(cB).toFixed(3)}  (격차 ${(mean(oB) - mean(cB)).toFixed(3)})`);
+    const oF = S.map((s) => scoreFromMonitorSpec(s.ownMonitorBase ?? null, s.ownMonitorTop ?? null)).filter((v): v is number => v != null);
+    const cF = C.map((c) => scoreFromMonitorSpec(c.monitorBase ?? null, c.monitorTop ?? null)).filter((v): v is number => v != null);
+    console.log(`  특화까지: 자사 평균 ${mean(oF).toFixed(3)} · 경쟁점 ${mean(cF).toFixed(3)}  (격차 ${(mean(oF) - mean(cF)).toFixed(3)})`);
+    console.log(`  자사 기본 값 가짓수 ${new Set(oB).size}가지 · 경쟁점 ${new Set(cB).size}가지`);
+
+    // 변형: 특화를 양쪽 다 무시하고 **기본만** 쓴다 (조사 성실도 차이를 지운다)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const specOf3 = (o: any, own: boolean, baseOnly: boolean) => {
+      const w = settings.specWeights;
+      const g = own ? scoreFromVgaSpec(o?.ownVgaBase ?? null, o?.ownVgaTop ?? null, o?.ownVgaTop2 ?? null) : scoreFromVgaSpec(o?.vgaBase ?? null, o?.vgaTop ?? null, o?.vgaTop2 ?? null);
+      const c = own ? scoreFromCpuSpec(o?.ownCpu ?? null, o?.ownCpuTop1 ?? null, o?.ownCpuTop2 ?? null) : scoreFromCpuSpec(o?.cpu ?? null, o?.cpuTop1 ?? null, o?.cpuTop2 ?? null);
+      const ra = own ? scoreFromRamSpec(o?.ownRam ?? null, o?.ownRamTop ?? null) : scoreFromRamSpec(o?.ram ?? null, o?.ramTop ?? null);
+      const mBase = own ? (o?.ownMonitorBase ?? null) : (o?.monitorBase ?? null);
+      const mTop = own ? (o?.ownMonitorTop ?? null) : (o?.monitorTop ?? null);
+      const m = baseOnly ? scoreFromMonitor(mBase) : scoreFromMonitorSpec(mBase, mTop);
+      const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([s]) => s != null) as [number, number][];
+      const tw = items.reduce((a, [, x]) => a + x, 0);
+      return tw > 0 ? items.reduce((a, [s, x]) => a + s * x, 0) / tw : null;
+    };
+    const storeByCode = new Map(S.map((s) => [s.storeCode, s]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rivalList = (code: string) => (compsByCode.get(code) ?? []).filter((c: any) => c.investigationStatus !== "경쟁점없음").filter((c) => Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+    const build = (baseOnly: boolean): LabRow[] => rows.map((r) => {
+      const s = storeByCode.get(r.input.storeCode);
+      const rl = rivalList(r.input.storeCode);
+      let i = -1;
+      return {
+        actualRevenue: r.actualRevenue,
+        input: {
+          ...r.input,
+          ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: specOf3(s, true, baseOnly) } : r.input.ownQualityParts,
+          rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: specOf3(rl[i], false, baseOnly) } } : v; }),
+        },
+      };
+    });
+    console.log("");
+    line("재현 확인 (특화 포함)", build(false));
+    line("모니터 기본만 (특화 무시)", build(true));
+  });
+
+  it("(8) 하위항목 기여 — GPU·모니터·CPU·RAM 하나씩 꺼본다", () => {
+    const w = settings.specWeights;
+    console.log(`\n[하위항목] 하나씩 비중 0으로 돌리고 나머지로 재정규화`);
+    line("지금 그대로", rows);
+    for (const k of ["vga", "monitor", "cpu", "ram"] as const) {
+      const s2 = { ...settings, specWeights: { ...w, [k]: 0 } };
+      const r2 = buildLabRows({ stores, compsByCode, utilByStore, settings: s2, qscByStoreCode });
+      line(`${k} 뺌`, r2);
+    }
+  });
+});
