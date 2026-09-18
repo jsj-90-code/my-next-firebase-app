@@ -487,7 +487,12 @@ export type TextbookInput = {
    *    `competitorIp`는 미조사 500m 점포를 100대로 추정해 채우는데(`computeCompetitorIp`),
    *    그런 점포는 거리도 품질도 없어서 여기 못 들어온다. 두 값은 일부러 다르다.
    */
-  rivals: { ip: number; distanceM: number | null; parts: QualityParts | null }[] | null;
+  /**
+   * `name`은 **화면에 그리려고만** 들고 다닌다 — 계산에는 안 쓴다. 이름을 따로 뽑아
+   * 화면에서 다시 짝지으면 순서가 어긋나 "엉뚱한 경쟁점이 잡혔다"고 오해하게 된다
+   * (2026-09-18 사용자 요청: *"어느매장을 인식하고있는지 내가봐야겠어"*).
+   */
+  rivals: { ip: number; distanceM: number | null; parts: QualityParts | null; name?: string | null }[] | null;
   /**
    * **입지 5항목** (2026-09-17). 전부 null이면 그 항은 1배(중립)로 빠진다 —
    * 자료가 없다고 틀린 값을 만들지 않는다. 화면에는 "자료없음"으로 표시한다.

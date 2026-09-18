@@ -41,10 +41,10 @@ import {
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
-  DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, computeTextbook,
-  fittedParams, scoreTextbook,
+  DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, computeQualityScore,
+  computeTextbook, fittedParams, scoreTextbook,
   type FloatingRadius, type ResidentRadius,
-  type TextbookParams, type TextbookScore,
+  type TextbookInput, type TextbookParams, type TextbookScore,
 } from "@/lib/storeEval/textbookModel";
 import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 
@@ -265,6 +265,13 @@ export default function LabPage() {
           <StoreTable score={score} qscByStore={data.qscByStore} />
           <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
             franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount} />
+          <RivalRecognition
+            groups={[
+              ...data.rows.map((r) => ({ kind: "기존점" as const, input: r.input })),
+              ...data.candRows.map((r) => ({ kind: "후보지" as const, input: r.input })),
+            ]}
+            p={fittedParams(p, score)}
+          />
         </>
       )}
     </div>
@@ -1044,6 +1051,122 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount }: {
         여기 교과서식은 동네 수요에서 우리 몫을 떼어 냅니다. 어느 쪽이 맞는지는
         <b> 후보지에서는 판정할 수 없습니다</b>(실매출이 없습니다). 개점 후 실적이 쌓이면 그때 갈립니다.
       </p>
+    </section>
+  );
+}
+
+// ── 매장별 경쟁점 인식 (2026-09-18) ────────────────────────────────────────
+//
+// 사용자: *"각 매장별로 경쟁점 어떻게, 어느매장을 인식하고있는지 알고싶다.
+//          어느매장까지 경쟁점으로 보고있는지 내가봐야겠어"*
+//
+// ⚠️ **모델이 실제로 든 배열(`input.rivals`)을 그대로 그린다.** 경쟁점 목록을 여기서 다시
+//    조립하면 순서·필터가 어긋나 "엉뚱한 매장이 잡혔다"는 오해를 만든다. 이름도 그 배열에
+//    같이 실어 뒀다(textbookModel.ts rivals.name).
+//
+// 지금 산식이 경쟁점을 세는 방식은 **이진 절단**이다 — 유효거리(300m) 안이면 100% 세고,
+// 1m라도 밖이면 0이다. 거리 감쇠도, 도로 같은 장벽 개념도 없다. 이 표는 그 절단이 어디서
+// 일어나는지 눈으로 보라고 만든 것이다.
+function RivalRecognition({ groups, p }: {
+  groups: { kind: "기존점" | "후보지"; input: TextbookInput }[];
+  p: TextbookParams;
+}) {
+  const [open, setOpen] = useState(false);
+  const rows = groups.map(({ kind, input }) => {
+    const oq = input.ownQualityParts ? computeQualityScore(input.ownQualityParts, p.qualityWeights) : null;
+    const rivals = (input.rivals ?? []).map((v) => {
+      const q = v.parts ? computeQualityScore(v.parts, p.qualityWeights) : null;
+      const inRange = v.distanceM == null || v.distanceM <= p.effectiveRadiusM;
+      // 분모에 실제로 더해지는 무게. 자사 PC와 견줘야 크기가 읽힌다.
+      const ratio = oq != null && oq > 0 && q != null && q > 0 ? q / oq : 1;
+      return { ...v, q, inRange, weight: inRange ? v.ip * Math.pow(ratio, p.qualityExponent) : 0 };
+    }).sort((a, b) => (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9));
+    const counted = rivals.filter((r) => r.inRange);
+    const rivalWeight = rivals.reduce((a, r) => a + r.weight, 0);
+    return { kind, input, oq, rivals, counted, rivalWeight };
+  }).sort((a, b) => (b.rivals.length - b.counted.length) - (a.rivals.length - a.counted.length));
+
+  const droppedTotal = rows.reduce((a, r) => a + (r.rivals.length - r.counted.length), 0);
+  return (
+    <section className="mt-10">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 경쟁점 인식</h2>
+        <button type="button" onClick={() => setOpen((v) => !v)}
+          className="app-btn-outline shrink-0 rounded-lg px-3 py-1.5 text-xs">
+          {open ? "접기" : `펼치기 (${rows.length}곳)`}
+        </button>
+      </div>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+        산식이 <b>어느 매장을 경쟁점으로 세고 있는지</b> 그대로 보여줍니다. 지금 방식은
+        <b> 유효거리 {p.effectiveRadiusM}m 안이면 100% 세고, 1m라도 밖이면 0</b>입니다 —
+        거리에 따라 점점 약해지지도 않고, 도로 같은 장벽도 보지 않습니다.
+        조사된 경쟁점 중 <b>{droppedTotal}곳</b>이 거리 때문에 빠져 있습니다.
+      </p>
+      <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        <b>무게</b>는 분모에 실제로 더해지는 값입니다 — 경쟁점 PC수 × (경쟁력비)<sup>{p.qualityExponent}</sup>.
+        지수가 {p.qualityExponent}이라 경쟁력이 절반이면 무게는 {Math.pow(0.5, p.qualityExponent).toFixed(3)}배가 됩니다.
+        <b> 그래서 PC가 많아도 경쟁력이 낮으면 거의 안 세어집니다.</b>
+        점유율 = 자사PC ÷ (자사PC + 무게합)이고, 여기에 입지 배율을 곱한 뒤 100%로 자릅니다.
+      </p>
+      {open && (
+        <div className="mt-3 space-y-2">
+          {rows.map(({ kind, input, oq, rivals, counted, rivalWeight }) => (
+            <details key={`${kind}:${input.storeCode}`} className="app-card rounded-xl px-4 py-3">
+              <summary className="cursor-pointer text-sm">
+                <span className="font-semibold">{input.storeName ?? input.storeCode}</span>
+                <span className="ml-2 text-xs text-[var(--sl-ink-soft)]">
+                  {kind} · 자사 {input.pcCount ?? "-"}대 · 경쟁력 {oq?.toFixed(2) ?? "-"}
+                  {" · "}조사 {rivals.length}곳 중 <b>{counted.length}곳</b> 셈
+                  {rivals.length > counted.length && (
+                    <span className="text-amber-700 dark:text-amber-400"> ({rivals.length - counted.length}곳 거리초과)</span>
+                  )}
+                  {" · "}무게합 {rivalWeight.toFixed(1)}
+                </span>
+              </summary>
+              {rivals.length === 0 ? (
+                <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">조사된 경쟁점이 없습니다 — 독점 상권으로 계산됩니다(점유율 100%).</p>
+              ) : (
+                <table className="mt-2 w-full text-left text-xs">
+                  <thead className="text-[var(--sl-ink-soft)]">
+                    <tr>
+                      <th scope="col" className="py-1 pr-2">경쟁점</th>
+                      <th scope="col" className="py-1 pr-2 text-right">거리</th>
+                      <th scope="col" className="py-1 pr-2 text-right">PC</th>
+                      <th scope="col" className="py-1 pr-2 text-right">경쟁력</th>
+                      <th scope="col" className="py-1 pr-2 text-right">자사대비</th>
+                      <th scope="col" className="py-1 pr-2 text-right">무게</th>
+                      <th scope="col" className="py-1">셈/뺌</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rivals.map((v, i) => (
+                      <tr key={`${v.name ?? "?"}-${i}`} className={v.inRange ? "" : "opacity-50"}>
+                        <td className="py-1 pr-2">{v.name ?? "(이름없음)"}</td>
+                        <td className="py-1 pr-2 text-right tabular-nums">
+                          {v.distanceM == null ? "모름" : `${Math.round(v.distanceM)}m`}
+                        </td>
+                        <td className="py-1 pr-2 text-right tabular-nums">{v.ip}</td>
+                        <td className="py-1 pr-2 text-right tabular-nums">{v.q?.toFixed(2) ?? "-"}</td>
+                        <td className="py-1 pr-2 text-right tabular-nums">
+                          {oq && v.q ? `${((v.q / oq - 1) * 100).toFixed(0)}%` : "-"}
+                        </td>
+                        <td className="py-1 pr-2 text-right tabular-nums font-semibold">
+                          {v.inRange ? v.weight.toFixed(1) : "0"}
+                        </td>
+                        <td className="py-1">
+                          {v.inRange
+                            ? <span className="text-[var(--sl-ink-soft)]">셈</span>
+                            : <span className="text-amber-700 dark:text-amber-400">뺌 ({p.effectiveRadiusM}m 초과)</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </details>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

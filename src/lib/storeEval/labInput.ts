@@ -398,6 +398,9 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
             ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0),
             distanceM: rivalDistanceM(s, c),
             parts: rivalQualityParts(c, settings),
+            // 화면 표시용. 계산에는 안 쓰지만 **모델이 든 배열에 같이 실어야** 화면이
+            // 딴 데서 다시 짝지으며 어긋나지 않는다.
+            name: c.name ?? null,
           }))
           .filter((r) => r.ip > 0),
         // 입지 5항목 (2026-09-17). 기존 주관 3항목(상권위치·동선/선점경쟁/접근가시성)은 안 쓴다 —
@@ -585,6 +588,7 @@ export function buildLabCandidateRows({
             ip: Number(x.appliedPcCount ?? x.totalPcCount ?? 0),
             distanceM: rivalDistanceM(c, x),
             parts: rivalQualityParts(x, settings),
+            name: x.name ?? null,
           }))
           .filter((r) => r.ip > 0),
         location: {
