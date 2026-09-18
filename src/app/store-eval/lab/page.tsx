@@ -63,6 +63,11 @@ import {
 
 type Loaded = {
   rows: LabRow[];
+  /**
+   * 모델에서 빠진 매장(2026-09-18). **성적에 안 들어간다** — 같은 축척으로 예측만 내서
+   * 참고로 보여준다. 빠진 이유가 산식 밖의 사정이라 섞으면 계수가 그 사정을 배운다.
+   */
+  excludedRows: LabRow[];
   /** 지금 운영 산식의 성적. 비교 기준선으로만 쓴다. */
   current: { mape: number | null; within10: number | null; within20: number | null; sampleCount: number } | null;
   /**
@@ -154,6 +159,11 @@ async function loadLabData(): Promise<Loaded | null> {
 
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
   const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode });
+  // 모델에서 빠진 매장(송도점·동탄북광장점 등) — 2026-09-18 사용자 요청으로 화면에만 띄운다.
+  // ⚠️ `rows`와 절대 합치지 말 것. 합치면 축척과 계수가 가격전쟁·운영문제까지 배운다.
+  const excludedRows = buildLabRows({
+    stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode, which: "excluded",
+  });
 
   let current: Loaded["current"] = null;
   try {
@@ -197,7 +207,7 @@ async function loadLabData(): Promise<Loaded | null> {
     candidates, compsByCode, locByCode, settings, roadviewByKey, franchiseManagement,
   });
 
-  return { rows, current, qsc, qscByStore, specWeights: settings.specWeights, candRows, franchiseManagement };
+  return { rows, excludedRows, current, qsc, qscByStore, specWeights: settings.specWeights, candRows, franchiseManagement };
 }
 
 export default function LabPage() {
@@ -263,6 +273,7 @@ export default function LabPage() {
             scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
           <ParamSummary p={p} counts={counts} />
           <StoreTable score={score} qscByStore={data.qscByStore} />
+          <ExcludedTable rows={data.excludedRows} p={fittedParams(p, score)} />
           <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
             franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount} />
           <RivalRecognition
@@ -943,6 +954,71 @@ function StoreTable({ score, qscByStore }: { score: TextbookScore; qscByStore: L
                     {r.capped && "가동률 상한 "}
                     {r.missing.length > 0 && `자료없음: ${r.missing.join(", ")}`}
                   </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+// ── 모델에서 빠진 매장 (2026-09-18) ────────────────────────────────────────
+//
+// 사용자 요청: *"실험실에 송도점이랑 동탄북광장점 같이 보여지게 해라."*
+//
+// ⚠️ **성적에 안 들어간다.** 위 표(학습 대상)와 같은 축척·같은 계수로 예측만 내서 나란히
+//    놓는 것이다. 빠진 이유가 산식 밖의 사정(오픈 후 가격전쟁·운영관리 문제)이라, 섞으면
+//    축척과 계수가 그 사정을 배운다. 그래서 표를 아예 따로 둔다.
+//
+// 그래도 보는 이유는 있다 — **산식이 "그 사정이 없었다면 얼마"라고 말하는지**가 여기 나온다.
+function ExcludedTable({ rows, p }: { rows: LabRow[]; p: TextbookParams }) {
+  if (!rows.length) return null;
+  const computed = rows
+    .map((r) => ({ row: r, b: computeTextbook(r.input, p) }))
+    .sort((a, b) => (b.b.monthlyRevenue ?? 0) - (a.b.monthlyRevenue ?? 0));
+  return (
+    <section className="mt-6">
+      <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
+        모델에서 빠진 매장 {rows.length}곳{" "}
+        <span className="font-normal text-[var(--sl-ink-soft)]">(참고 — 성적에 안 들어감)</span>
+      </h2>
+      <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        이 매장들은 <b>오픈 후 생긴 사정</b> 때문에 학습에서 뺀 곳입니다. 위 성적·축척·계수에는
+        한 글자도 안 들어가고, <b>같은 축척으로 예측만 다시 내서</b> 나란히 놓은 것입니다.
+        <b> 산식이 &ldquo;그 사정이 없었다면 얼마&rdquo;라고 보는지</b>를 실측과 견주시면 됩니다.
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
+            <tr>
+              <th scope="col" className="px-3 py-2">매장</th>
+              <th scope="col" className="px-3 py-2 text-right">예상</th>
+              <th scope="col" className="px-3 py-2 text-right">실측</th>
+              <th scope="col" className="px-3 py-2 text-right">차이</th>
+              <th scope="col" className="px-3 py-2 text-right">예상 가동률</th>
+              <th scope="col" className="px-3 py-2 text-right">점유율</th>
+              <th scope="col" className="px-3 py-2">뺀 이유</th>
+            </tr>
+          </thead>
+          <tbody>
+            {computed.map(({ row, b }) => {
+              const diff = b.monthlyRevenue != null && row.actualRevenue > 0
+                ? b.monthlyRevenue / row.actualRevenue - 1 : null;
+              return (
+                <tr key={row.input.storeCode} className="border-b border-[#171310]/[0.06] dark:border-white/[0.06]">
+                  <td className="px-3 py-2">{row.input.storeName ?? row.input.storeCode}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{manwon(b.monthlyRevenue)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{manwon(row.actualRevenue)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${
+                    diff != null && Math.abs(diff) > 0.2 ? "font-semibold text-red-600 dark:text-red-400" : ""
+                  }`}>
+                    {diff == null ? "-" : `${diff >= 0 ? "+" : ""}${(diff * 100).toFixed(1)}%`}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{pct(b.utilization)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{pct(b.share)}</td>
+                  <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">{row.excludedReason ?? "-"}</td>
                 </tr>
               );
             })}

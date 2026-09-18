@@ -24,7 +24,17 @@ import type {
   CandidateInput, Competitor, ExistingStore, LocationEvaluation, ModelSettings,
 } from "@/lib/storeEval/types";
 
-export type LabRow = { input: TextbookInput; actualRevenue: number };
+export type LabRow = {
+  input: TextbookInput;
+  actualRevenue: number;
+  /**
+   * 모델에서 빠진 매장인가(2026-09-18). **성적에는 절대 안 들어간다** — 화면에 참고로만 띄운다.
+   * 사용자 요청: 송도점·동탄북광장점을 실험실에서 같이 보고 싶다.
+   * 이유는 `excludedReason`에 있다(송도=오픈 후 경쟁점 500원 가격전쟁, 동탄북광장=운영관리 문제).
+   */
+  excluded?: boolean;
+  excludedReason?: string | null;
+};
 
 /**
  * 매장별 **실측 월평균 가동률**(0~1). 수요 축척을 여기에 맞춘다(2026-09-16).
@@ -351,6 +361,14 @@ export type BuildLabRowsArgs = {
    * QSC가 없는 매장에는 있는 곳들의 평균을 넣는다 — 두 자가 섞이지 않게.
    */
   qscByStoreCode?: Map<string, number>;
+  /**
+   * `"excluded"`면 **모델에서 빠진 매장만** 조립한다(2026-09-18 사용자 요청: 송도점·동탄북광장점을
+   * 실험실에서 같이 보고 싶다). 생략하면 지금까지와 똑같이 **학습 대상만** 낸다.
+   *
+   * ⚠️ 이 결과를 `scoreTextbook`에 넣지 말 것. 빠진 이유가 산식 밖의 사정(가격전쟁·운영문제)이라
+   *    성적에 섞이면 축척과 계수가 그 사정을 배운다. 화면에서도 따로 떼어 보여준다.
+   */
+  which?: "included" | "excluded";
 };
 
 /**
@@ -359,7 +377,7 @@ export type BuildLabRowsArgs = {
  * 값을 지어내지 않는다 — 자료가 없는 항목은 null로 넘기고, 모델이 그 항을 중립(1배)으로
  * 빼도록 둔다. 빠진 자리를 평균이나 0으로 메우면 "모른다"가 "나쁘다"로 둔갑한다.
  */
-export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode }: BuildLabRowsArgs): LabRow[] {
+export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
   // QSC를 쓸 때만 계산한다. 가맹점 평균은 **환산한 뒤**의 평균이다 — 점수를 먼저 평균 내고
   // 환산하면 다른 값이 나온다(환산이 1~5로 잘리는 구간이 있어서).
   const qscAvg = qscByStoreCode?.size
@@ -367,13 +385,17 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
     : null;
   const rows: LabRow[] = [];
   for (const s of stores) {
-    if (s.excludedFromModel || !s.actualMonthlyRevenueAvg) continue;
+    // 실매출이 없으면 어느 쪽이든 못 쓴다 — 채점도 대조도 안 된다.
+    if (!s.actualMonthlyRevenueAvg) continue;
+    if (which === "excluded" ? !s.excludedFromModel : s.excludedFromModel) continue;
     const code = existingStoreSourceCode(s);
     const cs = compsByCode.get(code) ?? [];
     const rv = roadviewByKey?.get(`existing:${s.storeCode}`) ?? null;
     const sr = s as unknown as Record<string, number | null>;
     rows.push({
       actualRevenue: s.actualMonthlyRevenueAvg,
+      excluded: s.excludedFromModel === true,
+      excludedReason: s.excludedReason ?? null,
       input: {
         storeCode: s.storeCode, storeName: s.storeName,
         pcCount: s.evaluationPcCount ?? s.pcCount,
