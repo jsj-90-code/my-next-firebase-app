@@ -53,7 +53,7 @@ import { buildLabRows, utilizationByStore, type LabRow } from "@/lib/storeEval/l
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
   LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP, LAB_PERF_LOG_STEP_UP,
-  LAB_GEN_PENALTY, LAB_ANCHOR_GENERATION,
+  LAB_GEN_PENALTY, LAB_ANCHOR_GENERATION, LAB_CPU_GEN_PENALTY,
 } from "@/lib/storeEval/labSpecScore";
 
 type Loaded = {
@@ -72,6 +72,8 @@ type Loaded = {
    * "실측 2.39점"과 "몰라서 평균 4.21점"을 사람이 헷갈리지 않는다.
    */
   qscByStore: Map<string, { qsc: number | null; management: number | null }>;
+  /** 하드웨어 내부비중 — 화면 설명이 이 값을 읽어 그린다(숫자를 글자로 박지 않는다). */
+  specWeights: ModelSettings["specWeights"];
 };
 
 const pct = (v: number | null | undefined, digits = 1) =>
@@ -170,7 +172,7 @@ async function loadLabData(): Promise<Loaded | null> {
     qsc: qscByStoreCode.get(r.input.storeCode) ?? null,
     management: r.input.ownQualityParts?.management ?? null,
   }]));
-  return { rows, current, qsc, qscByStore };
+  return { rows, current, qsc, qscByStore, specWeights: settings.specWeights };
 }
 
 export default function LabPage() {
@@ -233,7 +235,7 @@ export default function LabPage() {
         <>
           <ScoreBoard score={score} current={data.current} />
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
-            scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} />
+            scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
           <ParamSummary p={p} counts={counts} />
           <StoreTable score={score} qscByStore={data.qscByStore} />
         </>
@@ -305,10 +307,12 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
  *    그린다 — 위 조절판을 움직이면 이 설명도 같이 바뀐다. 계산만 바꾸고 설명을 두면 화면이
  *    조용히 거짓말을 한다(CLAUDE.md 규칙, docs/backlog.md 2026-09-14 블록).
  */
-function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
+function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, specWeights }: {
   p: TextbookParams; fitted: number; productUnitPrice: number; scaledOnUtilization: boolean;
   /** QSC 적용 현황. 숫자를 글자로 박지 않고 여기서 읽어 그린다. */
   qsc: Loaded["qsc"];
+  /** 하드웨어 내부비중. 사양 설명이 이 값을 읽어 그린다. */
+  specWeights: Loaded["specWeights"];
 }) {
   // PC몫은 정가에서 나온다 — 기준정가 x (정가/기준정가)^β. 운영 산식 effectiveHourlyRate와 같은 식이다.
   const pcAt = (rate: number) => p.referenceHourlyRate * Math.pow(rate / p.referenceHourlyRate, p.rateElasticity);
@@ -534,7 +538,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
             </div>
           </div>
           <div className="mt-3 rounded border border-[var(--sl-line)] p-2">
-            <div className="font-semibold">사양은 <b>성능 + 세대</b>로 셉니다 (GPU만)</div>
+            <div className="font-semibold">사양은 <b>성능 + 세대</b>로 셉니다 (GPU · CPU)</div>
             <div className="mt-1 font-mono text-[11px]">
               GPU점수 = {LAB_PERF_ANCHOR_SCORE} + ln(성능지수/100) / 기울기 − {LAB_GEN_PENALTY} × ({LAB_ANCHOR_GENERATION} − 세대)
               <br />
@@ -564,10 +568,24 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc }: {
               신형 RTX 5060 Ti와 같은 자리가 되고, RTX 4070(4.43)이 한 세대 최신이라 한 끗 위에 섭니다.
             </div>
             <div className="mt-1">
-              <b>CPU와 RAM은 안 바꿨습니다.</b> 같은 방식으로 CPU 성능지수표도 만들어 재 봤는데
-              순서를 못 고쳤습니다(r 0.563 → 0.566인데 MAPE는 22.62% → 23.02%, 수준을 되돌려도 22.93%).
-              RAM 16GB↔32GB 격차는 늘릴수록 단조롭게 나빠집니다(0.5 → 1.0에서 22.76% · 2.0에서 23.05%)
-              — 지우는 쪽도 r이 0.002만 움직여 <b>순서 정보가 거의 없는 항목</b>입니다. 운영과 같은 0.5로 둡니다.
+              <b>CPU도 같은 구조를 씁니다</b>(세대 벌점은 {LAB_CPU_GEN_PENALTY}). 운영은 세대만 보고
+              티어를 아예 안 봐서 <b>i3 13100F가 i5 13400F와 같은 3.00점</b>이었습니다(자사 9곳).
+              새 표에서는 2.61 대 3.53으로 갈립니다. i7 12700F도 2.00 → 3.92로 제자리를 찾습니다.
+            </div>
+            <div className="mt-1">
+              ⚠️ <b>CPU는 무작위 대조군을 못 넘었습니다</b>(p=0.213). 그래도 켠 이유는
+              <b> 영향력과 서술은 다른 것</b>이기 때문입니다 — 매출에 얼마나 미치는지는 <b>비중</b>(하드웨어의
+              {" "}{Math.round(specWeights.cpu * 100)}%)이 담당하고, 하드웨어가 실제로 다른지는
+              <b> 변환표</b>가 담당합니다. 대조군은 영향력을 재는 도구라, 비중이 작은 항목이 못 넘는 건 당연합니다.
+              경로도 있습니다 — 손님이 사양표를 몰라도 <b>프레임·버벅임은 느끼고</b>, 세대별 성능 우위는
+              일반 고객도 아는 정보입니다.
+            </div>
+            <div className="mt-1">
+              <b>RAM은 안 바꿨습니다.</b> 16GB↔32GB 격차는 늘릴수록 단조롭게 나빠지고(1.0에서 22.76% ·
+              2.0에서 23.05%) 지우는 쪽도 r이 0.002만 움직입니다. 다만 <b>&quot;차이가 없다&quot;가 아니라
+              &quot;자료가 못 본다&quot;</b>입니다 — 16GB로 버벅이는 게임이 실재하는데(아이온2 등), 평가창이
+              끝나는 해가 2024년 12곳 · 2025년 13곳이라 <b>38곳 중 25곳이 그 게임들 이전</b>입니다.
+              운영과 같은 0.5로 둡니다.
             </div>
             <div className="mt-1 text-[var(--sl-ink-soft)]">
               ⚠️ <b>성능지수·세대벌점은 [감각] 계수입니다</b> — 공개 벤치마크 통념에서 온 근사치라 이 저장소

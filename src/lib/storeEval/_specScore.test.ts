@@ -767,6 +767,209 @@ describeIf("사양 — 자료 생김새", () => {
     console.log(`\n  [참고] 성능지수  i3 13100F ${LAB_CPU_PERF_INDEX["13100"]} · i5 12400F ${LAB_CPU_PERF_INDEX["12400"]} · i5 13400F ${LAB_CPU_PERF_INDEX["13400"]} (i5 14400F = 100)`);
   });
 
+  it("(23) CPU 3차 — 구조를 뜻으로 맞추면? (성능+세대, 대조군까지)", () => {
+    // 사용자(2026-09-18): *"CPU 이거 정답맞아? 정답은 성능별로 점수 둬야하고,
+    //                      세대별차이도 적용되야하는거아냐?"*
+    // 맞는 지적이다. GPU엔 "성능+세대"를 채택해놓고 CPU엔 세대 산술만 쓰는 건 일관성이 없다.
+    // 그리고 2차에서 내가 "기각"이라 한 근거는 MAPE였는데, 오늘 세운 기준은 **판정은 r**이다.
+    const gpu = (t: string | null) => labScoreFromVga(t);
+    const rOf = (rs: LabRow[]) => {
+      const sc = scoreTextbook(rs, P);
+      const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0);
+      return { r: pearson(ok.map((x) => x.predicted as number), ok.map((x) => x.actual)), mape: sc.mape ?? 0 };
+    };
+    const cur = rOf(rowsWithScorers(gpu, scoreFromCpu));
+    console.log(`\n[CPU 3차] 바닥 = 채택된 GPU 표 + 운영 CPU: MAPE ${f(cur.mape)}% · r ${cur.r.toFixed(3)}`);
+    console.log("\n  세대 벌점별 (성능지수 + 세대 벌점)");
+    for (const gp of [0, 0.075, 0.15, 0.3, 0.5, 0.7, 1.0]) {
+      line(`    벌점 ${gp.toFixed(3)}`, rowsWithScorers(gpu, (t) => labScoreFromCpu(t, LAB_CPU_PERF_INDEX, gp)));
+    }
+    console.log("\n  점수표 (i5 14400F = 4.00 앵커)");
+    const show = ["i5 14400F", "i5 13400F", "i3 13100F", "i5 12400F", "i5 11400F", "i5 10400F", "i5 9400F", "i7 12700F", "i9 9900KF", "i5 14600K"];
+    const hdr = show.map((t) => t.replace(/^i(\d) /, "i$1-").padStart(9)).join("");
+    console.log(`  ${"".padEnd(14)}${hdr}`);
+    console.log(`  ${"운영(지금)".padEnd(12)}  ${show.map((t) => (scoreFromCpu(t) ?? NaN).toFixed(2).padStart(9)).join("")}`);
+    for (const gp of [0.075, 0.15, 0.3, 0.7]) {
+      console.log(`  ${("성능+" + gp.toFixed(3)).padEnd(12)}  ${show.map((t) => (labScoreFromCpu(t, LAB_CPU_PERF_INDEX, gp) ?? NaN).toFixed(2).padStart(9)).join("")}`);
+    }
+
+    // 대조군 — GPU와 **같은 방식**이다. 델타의 크기는 그대로 두고 어느 모델에 붙는지만 뒤섞는다.
+    console.log("\n  [대조군] 세대 벌점별 · 델타를 모델끼리 300회 뒤섞기");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const texts = [...new Set([
+      ...S.flatMap((s) => [s.ownCpu, s.ownCpuTop1, s.ownCpuTop2]),
+      ...C.flatMap((c) => [c.cpu, c.cpuTop1, c.cpuTop2]),
+    ].map((t) => (t ?? "").trim()).filter(Boolean))];
+    for (const gp of [0.075, 0.15, 0.3, 0.7]) {
+      const keys: string[] = [], deltas: number[] = [];
+      for (const t of texts) {
+        const a = scoreFromCpu(t), b = labScoreFromCpu(t, LAB_CPU_PERF_INDEX, gp);
+        if (a == null || b == null) continue;
+        keys.push(t); deltas.push(b - a);
+      }
+      const real = rOf(rowsWithScorers(gpu, (t) => labScoreFromCpu(t, LAB_CPU_PERF_INDEX, gp)));
+      const gain = real.r - cur.r;
+      let rng = 20260918;
+      const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      const gains: number[] = [];
+      for (let t = 0; t < 300; t++) {
+        const sh = [...deltas];
+        for (let i = sh.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [sh[i], sh[j]] = [sh[j], sh[i]]; }
+        const map = new Map(keys.map((k, i) => [k, sh[i]]));
+        const scorer = (text: string | null) => {
+          const a = scoreFromCpu(text);
+          if (a == null) return null;
+          const d = map.get((text ?? "").trim());
+          return d == null ? a : Math.max(1, Math.min(5, a + d));
+        };
+        gains.push(rOf(rowsWithScorers(gpu, scorer)).r - cur.r);
+      }
+      const sorted = [...gains].sort((a, b) => a - b);
+      const pv = gains.filter((g) => g >= gain).length / gains.length;
+      console.log(`    벌점 ${gp.toFixed(3)}  r ${cur.r.toFixed(3)} -> ${real.r.toFixed(3)} (${gain >= 0 ? "+" : ""}${gain.toFixed(3)}) · 뒤섞기 95%tile ${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+  });
+
+  it("(24) CPU 전체 점수표 — 벌점별로 어떻게 되나 (자료에 있는 것 전부)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const tally = (vals: (string | null)[]) => {
+      const m = new Map<string, number>();
+      for (const v of vals) { const k = (v ?? "").trim(); if (!k) continue; m.set(k, (m.get(k) ?? 0) + 1); }
+      return m;
+    };
+    const o = tally(S.flatMap((s) => [s.ownCpu, s.ownCpuTop1, s.ownCpuTop2]));
+    const r = tally(C.flatMap((c) => [c.cpu, c.cpuTop1, c.cpuTop2]));
+    const gps = [0.075, 0.15, 0.3, 0.7];
+    const keys = [...new Set([...o.keys(), ...r.keys()])]
+      .filter((k) => scoreFromCpu(k) != null)
+      .sort((a, b) => (labScoreFromCpu(b, LAB_CPU_PERF_INDEX, 0.3) ?? 0) - (labScoreFromCpu(a, LAB_CPU_PERF_INDEX, 0.3) ?? 0));
+    console.log("\n[CPU 전체 점수표] 자료에 있는 모든 CPU · 벌점 0.30 기준 내림차순");
+    console.log(`  자사  경쟁 |  운영 | ${gps.map((g) => ("+" + g).padStart(6)).join("")} | 값`);
+    console.log(`  ${"-".repeat(76)}`);
+    for (const k of keys) {
+      const cells = gps.map((g) => (labScoreFromCpu(k, LAB_CPU_PERF_INDEX, g) ?? NaN).toFixed(2).padStart(6)).join("");
+      const inTable = LAB_CPU_PERF_INDEX[labCpuKey(k) ?? ""] != null;
+      console.log(`  ${String(o.get(k) ?? 0).padStart(4)}  ${String(r.get(k) ?? 0).padStart(4)} | ${(scoreFromCpu(k) ?? NaN).toFixed(2).padStart(5)} |${cells} | ${inTable ? " " : "⚠️"}${k}`);
+    }
+    console.log("  ⚠️ = 성능지수표에 없어 운영 세대 산술로 떨어지는 값 (벌점도 안 걸린다)");
+
+    // 자사·경쟁점 평균이 어떻게 움직이나 — 수준 이동을 눈으로 본다
+    console.log("\n[평균 이동] 수준이 얼마나 움직이나");
+    const avg = (m: Map<string, number>, f: (t: string) => number | null) => {
+      let sum = 0, n = 0;
+      for (const [k, c] of m) { const v = f(k); if (v != null) { sum += v * c; n += c; } }
+      return n ? sum / n : NaN;
+    };
+    console.log(`  ${"".padEnd(10)}  자사    경쟁점   격차`);
+    const oOld = avg(o, scoreFromCpu), rOld = avg(r, scoreFromCpu);
+    console.log(`  ${"운영".padEnd(9)} ${oOld.toFixed(3)}  ${rOld.toFixed(3)}  ${(oOld - rOld).toFixed(3)}`);
+    for (const g of gps) {
+      const a = avg(o, (t) => labScoreFromCpu(t, LAB_CPU_PERF_INDEX, g));
+      const b = avg(r, (t) => labScoreFromCpu(t, LAB_CPU_PERF_INDEX, g));
+      console.log(`  ${("벌점 " + g).padEnd(9)} ${a.toFixed(3)}  ${b.toFixed(3)}  ${(a - b).toFixed(3)}`);
+    }
+    console.log("  ⚠️ 격차가 줄면 자사 우위가 줄고 예상매출이 내려간다 — MAPE가 나빠지는 이유다.");
+  });
+
+  it("(25) 벌점을 매출 금액으로 번역한다 — 배수는 감이 안 온다", () => {
+    // 존구성에서 쓴 방법이다(docs/releases/2026-09-17 6절). 점수 0.3이 뭔지는 감이 안 오지만
+    // "경쟁점 CPU가 구형이면 우리 매출이 얼마 더 나오나"는 감이 온다.
+    const gpu = (t: string | null) => labScoreFromVga(t);
+    const cpuAt = (gp: number | null) => (t: string | null) =>
+      gp == null ? scoreFromCpu(t) : labScoreFromCpu(t, LAB_CPU_PERF_INDEX, gp);
+
+    // 경쟁상권 매장만 본다 — 독점 매장은 경쟁점 CPU를 바꿔도 점유율이 안 변한다.
+    const competitive = rows.filter((r) => (r.input.competitorIp ?? 0) > 0);
+    const models = ["i5 14400F", "i5 13400F", "i5 12400F", "i5 11400F", "i5 9400F"];
+
+    const revAt = (gp: number | null, rivalCpu: string) => {
+      const cs = cpuAt(gp);
+      const rs: LabRow[] = competitive.map((r) => ({
+        actualRevenue: r.actualRevenue,
+        input: {
+          ...r.input,
+          // 자사는 그대로, 경쟁점 CPU만 이 모델로 통일해 본다.
+          rivals: (r.input.rivals ?? []).map((v) => (v.parts ? { ...v, parts: { ...v.parts, spec: null } } : v)),
+        },
+      }));
+      void rs; void cs;
+      // 자사/경쟁점 사양을 제대로 다시 조립해야 하므로 rowsWithScorers를 쓰되,
+      // 경쟁점 CPU 텍스트를 통일한 뒤 넣는다.
+      const forced = rowsWithScorers(gpu, (t) => cs(t === "__RIVAL__" ? rivalCpu : t));
+      const sc = scoreTextbook(forced.filter((r) => (r.input.competitorIp ?? 0) > 0), P);
+      return sc;
+    };
+    void revAt;
+
+    // 위 방식은 텍스트를 못 갈아끼운다(원자료를 읽어 조립하므로). 대신 **경쟁점 spec 점수를
+    // 직접 계산해 넣는다** — 경쟁점 CPU만 지정 모델로 통일하고 나머지 항목은 실제값을 쓴다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rivalListOfCode = (code: string) => (compsByCode.get(code) ?? []).filter((c: any) => c.investigationStatus !== "경쟁점없음").filter((c) => Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+    const w = settings.specWeights;
+    const comb = (vs: (number | null)[]) => {
+      const base = vs[0], sp = vs.slice(1).filter((v): v is number => v != null);
+      if (base == null) return sp.length ? sp.reduce((a, b) => a + b, 0) / sp.length : null;
+      return sp.length ? base * 0.8 + (sp.reduce((a, b) => a + b, 0) / sp.length) * 0.2 : base;
+    };
+    const build = (gp: number | null, rivalCpu: string): number => {
+      const cs = cpuAt(gp);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const storeByCodeL = new Map((stores as any[]).map((s) => [s.storeCode, s]));
+      const rs: LabRow[] = rows.filter((r) => (r.input.competitorIp ?? 0) > 0).map((r) => {
+        const s = storeByCodeL.get(r.input.storeCode);
+        const rl = rivalListOfCode(r.input.storeCode);
+        let i = -1;
+        const ownSpec = (() => {
+          const g = comb([s?.ownVgaBase, s?.ownVgaTop, s?.ownVgaTop2].map((t) => gpu(t ?? null)));
+          const c = comb([s?.ownCpu, s?.ownCpuTop1, s?.ownCpuTop2].map((t) => cs(t ?? null)));
+          const ra = scoreFromRamSpec(s?.ownRam ?? null, s?.ownRamTop ?? null);
+          const m = scoreFromMonitorSpec(s?.ownMonitorBase ?? null, s?.ownMonitorTop ?? null);
+          const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([x]) => x != null) as [number, number][];
+          const tw = items.reduce((a, [, x]) => a + x, 0);
+          return tw > 0 ? items.reduce((a, [x, y]) => a + x * y, 0) / tw : null;
+        })();
+        return {
+          actualRevenue: r.actualRevenue,
+          input: {
+            ...r.input,
+            ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: ownSpec } : r.input.ownQualityParts,
+            rivals: (r.input.rivals ?? []).map((v) => {
+              i += 1;
+              const c0 = rl[i];
+              if (!v.parts || !c0) return v;
+              const g = comb([c0.vgaBase, c0.vgaTop, c0.vgaTop2].map((t: string | null) => gpu(t ?? null)));
+              const c = cs(rivalCpu); // ← 경쟁점 CPU를 이 모델로 통일
+              const ra = scoreFromRamSpec(c0.ram ?? null, c0.ramTop ?? null);
+              const m = scoreFromMonitorSpec(c0.monitorBase ?? null, c0.monitorTop ?? null);
+              const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([x]) => x != null) as [number, number][];
+              const tw = items.reduce((a, [, x]) => a + x, 0);
+              return { ...v, parts: { ...v.parts, spec: tw > 0 ? items.reduce((a, [x, y]) => a + x * y, 0) / tw : null } };
+            }),
+          },
+        };
+      });
+      const sc = scoreTextbook(rs, P);
+      const preds = sc.rows.map((x) => x.predicted).filter((v): v is number => v != null);
+      return preds.reduce((a, b) => a + b, 0) / preds.length;
+    };
+
+    console.log(`\n[매출로 번역] 경쟁상권 ${rows.filter((r) => (r.input.competitorIp ?? 0) > 0).length}곳 · 경쟁점 CPU를 전부 같은 모델로 놓았을 때 우리 예상매출 평균`);
+    console.log(`  경쟁점 CPU      ${["운영", "0.075", "0.15", "0.3", "0.7"].map((x) => x.padStart(10)).join("")}`);
+    const base: Record<string, number> = {};
+    for (const m of models) {
+      const cells = [null, 0.075, 0.15, 0.3, 0.7].map((gp) => build(gp, m));
+      base[m] = cells[0];
+      console.log(`  ${m.padEnd(14)}${cells.map((v) => (Math.round(v / 10000).toLocaleString() + "만").padStart(10)).join("")}`);
+    }
+    console.log("\n  [차이] 경쟁점이 i5 14400F(최신)일 때 대비 — 구형일수록 우리 매출이 얼마나 오르나");
+    for (const m of models.slice(1)) {
+      const cells = [null, 0.075, 0.15, 0.3, 0.7].map((gp) => build(gp, m) - build(gp, "i5 14400F"));
+      console.log(`  ${m.padEnd(14)}${cells.map((v) => ("+" + Math.round(v / 10000).toLocaleString() + "만").padStart(10)).join("")}`);
+    }
+  });
+
   it("(15) CPU가 나빠진 건 순서인가 수준인가", () => {
     // 새 CPU 표는 경쟁점을 크게 올린다(12400F 41건 +1.30 · 11400F +1.63 · 10400F +1.04).
     // 축척은 **독점매장에서만** 맞추므로(textbookModel calibrationTarget) 이 수준 이동은
