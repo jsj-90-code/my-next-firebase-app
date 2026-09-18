@@ -54,6 +54,7 @@ import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZon
 import {
   LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP, LAB_PERF_LOG_STEP_UP,
   LAB_GEN_PENALTY, LAB_ANCHOR_GENERATION, LAB_CPU_GEN_PENALTY,
+  LAB_MONITOR_HZ_STEP, LAB_MONITOR_HZ_STEP_UP, LAB_MONITOR_BONUS,
 } from "@/lib/storeEval/labSpecScore";
 
 type Loaded = {
@@ -538,7 +539,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             </div>
           </div>
           <div className="mt-3 rounded border border-[var(--sl-line)] p-2">
-            <div className="font-semibold">사양은 <b>성능 + 세대</b>로 셉니다 (GPU · CPU)</div>
+            <div className="font-semibold">사양은 <b>성능 + 세대</b>로 셉니다 (GPU · CPU · 모니터)</div>
             <div className="mt-1 font-mono text-[11px]">
               GPU점수 = {LAB_PERF_ANCHOR_SCORE} + ln(성능지수/100) / 기울기 − {LAB_GEN_PENALTY} × ({LAB_ANCHOR_GENERATION} − 세대)
               <br />
@@ -579,6 +580,37 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               <b> 변환표</b>가 담당합니다. 대조군은 영향력을 재는 도구라, 비중이 작은 항목이 못 넘는 건 당연합니다.
               경로도 있습니다 — 손님이 사양표를 몰라도 <b>프레임·버벅임은 느끼고</b>, 세대별 성능 우위는
               일반 고객도 아는 정보입니다.
+            </div>
+            <div className="mt-1">
+              <b>모니터도 같은 구조입니다</b> — 앵커는 자사 표준 <b>240Hz = 4.00</b>,
+              기울기는 아래 {LAB_MONITOR_HZ_STEP} · 위 {LAB_MONITOR_HZ_STEP_UP}입니다. 운영은 구간표였는데
+              경계가 실제 값 바로 위에 걸려 <b>140Hz(2.00)와 144Hz(3.00)가 1점 갈렸고</b>,
+              4K·OLED는 Hz를 무시하고 5점 고정이었습니다(4K 60Hz도 만점).
+            </div>
+            <div className="mt-1">
+              모니터는 GPU처럼 성능 지표가 하나로 안 나오니 <b>원가·프리미엄 등급</b>을 대리지표로 씁니다:
+              OLED +{LAB_MONITOR_BONUS.oled} · 4K +{LAB_MONITOR_BONUS.uhd4k} ·
+              BenQ ZOWIE +{LAB_MONITOR_BONUS.zowie} · BenQ 일반 +{LAB_MONITOR_BONUS.benq} ·
+              정품 게이밍 브랜드 +{LAB_MONITOR_BONUS.gamingBrand} ·
+              울트라와이드 +{LAB_MONITOR_BONUS.ultrawide} · QHD +{LAB_MONITOR_BONUS.qhd.toFixed(2)}.
+              한 칸에 여러 모델이 적힌 14건은 <b>낱개로 쪼개 각각 채점한 뒤 평균</b>냅니다 — 운영처럼
+              Hz를 먼저 평균내면 해상도·브랜드 가산이 뒤섞입니다.
+            </div>
+            <div className="mt-1">
+              ⭐ <b>QHD +{LAB_MONITOR_BONUS.qhd.toFixed(2)}는 사용자가 준 등가점에서 역산한 값입니다.</b>
+              &quot;32인치 FHD 240Hz(기본)와 27인치 QHD 165Hz는 사실 비슷하다&quot;는 판단을 그대로 식에 넣으면,
+              QHD 가산이 <b>165Hz의 Hz 손실(−0.73)을 정확히 상쇄</b>해야 합니다. 그래서 27인치 QHD 165Hz가
+              딱 4.00이 되어 기본과 같아집니다. 덕분에 <b>34인치 울트라와이드는 4.30</b>으로 특화 자격이
+              생기고, 기본과 진짜 동급인 것(27인치 FHD 240Hz 무명)만 제외됩니다 — 자사 특화 제외가
+              74개에서 <b>19개</b>로 줄었습니다.
+            </div>
+            <div className="mt-1 text-[var(--sl-ink-soft)]">
+              ⚠️ <b>WQHD = QHD</b>(2560×1440)이고 <b>WWQHD가 울트라와이드</b>(3440×1440)입니다. 세로 픽셀이
+              같으니 해상도 가산은 같고, 울트라와이드는 <b>시야(21:9)</b>를 따로 더합니다.
+              울트라와이드 가산을 더 키우지 않은 이유는 <b>요금 프리미엄이 VIP존과 붙어 있어</b>
+              모니터만의 몫을 가를 수 없기 때문입니다 — 요금은 단가가, 좌석은 존구성이 이미 봅니다.
+              모니터도 대조군은 못 넘었습니다(p=0.293) — CPU와 같이 <b>서술을 고친 것</b>입니다.
+              2026-09-18 측정: MAPE 22.85% → 22.70% · r 0.585 → 0.587 · 중앙 14.5% → 13.9%.
             </div>
             <div className="mt-1">
               <b>RAM은 안 바꿨습니다.</b> 16GB↔32GB 격차는 늘릴수록 단조롭게 나빠지고(1.0에서 22.76% ·

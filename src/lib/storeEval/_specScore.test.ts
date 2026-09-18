@@ -12,7 +12,7 @@ import {
   computeSpecScore, scoreFromVgaSpec, scoreFromCpuSpec, scoreFromRamSpec, scoreFromMonitorSpec,
   scoreFromVga, scoreFromCpu, scoreFromRam, scoreFromMonitor,
 } from "./calc";
-import { labScoreFromVga, labScoreFromCpu, labGpuKey, labCpuKey, labComputeSpecScore, LAB_GPU_PERF_INDEX, LAB_CPU_PERF_INDEX, LAB_PERF_LOG_STEP_UP, type LabSpecOptions } from "./labSpecScore";
+import { labScoreFromVga, labScoreFromCpu, labGpuKey, labCpuKey, labComputeSpecScore, LAB_GPU_PERF_INDEX, LAB_CPU_PERF_INDEX, LAB_PERF_LOG_STEP_UP, labScoreFromMonitorCell, labScoreFromMonitorUnit, type LabSpecOptions } from "./labSpecScore";
 import type { Competitor } from "./types";
 
 const describeIf = hasValidationSnapshot() ? describe : describe.skip;
@@ -967,6 +967,540 @@ describeIf("사양 — 자료 생김새", () => {
     for (const m of models.slice(1)) {
       const cells = [null, 0.075, 0.15, 0.3, 0.7].map((gp) => build(gp, m) - build(gp, "i5 14400F"));
       console.log(`  ${m.padEnd(14)}${cells.map((v) => ("+" + Math.round(v / 10000).toLocaleString() + "만").padStart(10)).join("")}`);
+    }
+  });
+
+  it("(26) 모니터 원문 전수 — 조사 수준이 얼마나 갈리나 (2026-09-18)", () => {
+    // 사용자 진단: *"자사는 우리가 발주했으니까 매장전체의 품목이 뭔지 정리가되어있는데,
+    //  경쟁점조사는 모니터사양까지는 디테일하게안봐. 디테일하게보더라도 수준이 높지않고,
+    //  조사자마다의 수준 편차가있어서. 내가 2차로 네이버같은곳에서 매장정보나 사진보고
+    //  추가로 작성하는데, 이게 없는매장들도 있을거아냐."*
+    //
+    // 그러면 자사와 경쟁점은 **자료의 성격이 다르다** — 발주 기록(사실) 대 현장 관찰(불완전).
+    // 얼마나 갈리는지 원문을 그대로 펴 본다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+
+    /** 텍스트가 무엇을 담고 있나 — 조사 수준을 가른다. */
+    const grade = (t: string | null) => {
+      if (!t || !t.trim()) return "(빈칸)";
+      const u = t.toUpperCase();
+      const hasHz = /\d{2,3}\s*HZ/i.test(t);
+      const hasRes = /FHD|QHD|UHD|4K|WQHD/.test(u);
+      const hasInch = /\d{2}\s*(인치|IN\b)/.test(u);
+      const hasModel = /[A-Z]{2,}\s*\d|\d{3,}[A-Z]/.test(u);
+      if (hasHz && hasRes && hasInch) return "1. 인치+해상도+Hz";
+      if (hasHz && hasRes) return "2. 해상도+Hz";
+      if (hasHz) return "3. Hz만";
+      if (hasRes || hasInch) return "4. 해상도·인치만 (Hz 없음)";
+      if (hasModel) return "5. 모델명만";
+      return "6. 그 밖";
+    };
+
+    for (const [label, vals] of [
+      ["자사 기본", S.map((s) => s.ownMonitorBase ?? null)],
+      ["자사 특화", S.map((s) => s.ownMonitorTop ?? null)],
+      ["경쟁점 기본", C.map((c) => c.monitorBase ?? null)],
+      ["경쟁점 특화", C.map((c) => c.monitorTop ?? null)],
+    ] as [string, (string | null)[]][]) {
+      const m = new Map<string, number>();
+      for (const v of vals) m.set(grade(v), (m.get(grade(v)) ?? 0) + 1);
+      const total = vals.length;
+      console.log(`\n[${label}] ${total}건`);
+      for (const [k, n] of [...m.entries()].sort()) {
+        console.log(`    ${String(n).padStart(3)}건 (${((n / total) * 100).toFixed(0).padStart(3)}%)  ${k}`);
+      }
+    }
+
+    console.log("\n[자사 기본 원문] 발주 기록이라 정리돼 있다");
+    const tally = (vals: (string | null)[]) => {
+      const m = new Map<string, number>();
+      for (const v of vals) { const k = (v ?? "").trim(); if (!k) continue; m.set(k, (m.get(k) ?? 0) + 1); }
+      return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    };
+    for (const [k, n] of tally(S.map((s) => s.ownMonitorBase ?? null))) {
+      console.log(`    ${String(n).padStart(3)}건  ${(scoreFromMonitor(k) ?? NaN).toFixed(2)}  ${k}`);
+    }
+
+    console.log("\n[경쟁점 기본 원문] 조사자마다 수준이 갈린다 (전수)");
+    for (const [k, n] of tally(C.map((c) => c.monitorBase ?? null))) {
+      const sc = scoreFromMonitor(k);
+      console.log(`    ${String(n).padStart(3)}건  ${sc == null ? " -  " : sc.toFixed(2)}  [${grade(k).slice(0, 2)}] ${k}`);
+    }
+  });
+
+  it("(27) 모니터 분별력 — Hz 하나로 좁혀서 본다 + 비중 훑기", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    /** 텍스트에서 Hz를 다 뽑는다. 한 칸에 여러 모델이 있으면 여러 개가 나온다. */
+    const hzOf = (t: string | null): number[] => (t ? [...t.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1])) : []);
+    const dist = (vals: (string | null)[]) => {
+      const m = new Map<number, number>();
+      let multi = 0, none = 0;
+      for (const v of vals) {
+        const hs = hzOf(v);
+        if (hs.length === 0) { if (v && v.trim()) none += 1; continue; }
+        if (hs.length > 1) multi += 1;
+        for (const h of hs) m.set(h, (m.get(h) ?? 0) + 1);
+      }
+      return { m, multi, none };
+    };
+    for (const [label, vals] of [
+      ["자사 기본", S.map((s) => s.ownMonitorBase ?? null)],
+      ["경쟁점 기본", C.map((c) => c.monitorBase ?? null)],
+    ] as [string, (string | null)[]][]) {
+      const { m, multi, none } = dist(vals);
+      console.log(`\n[${label}] Hz 분포`);
+      for (const [hz, n] of [...m.entries()].sort((a, b) => b[0] - a[0])) {
+        console.log(`    ${String(hz).padStart(3)}Hz  ${String(n).padStart(3)}건  ${"#".repeat(Math.min(40, n))}`);
+      }
+      console.log(`    (한 칸에 여러 모델이 적힌 곳 ${multi}건 · Hz를 못 뽑은 곳 ${none}건)`);
+    }
+    // 해상도·인치가 상수인지
+    const res = (vals: (string | null)[]) => {
+      let fhd = 0, qhd = 0, other = 0, inch32 = 0, total = 0;
+      for (const v of vals) {
+        if (!v || !v.trim()) continue;
+        total += 1;
+        const u = v.toUpperCase();
+        if (/QHD|WQHD/.test(u)) qhd += 1; else if (/FHD/.test(u)) fhd += 1; else other += 1;
+        if (/32\s*(인치|IN)/.test(u)) inch32 += 1;
+      }
+      return { fhd, qhd, other, inch32, total };
+    };
+    const ro = res(S.map((s) => s.ownMonitorBase ?? null)), rc = res(C.map((c) => c.monitorBase ?? null));
+    console.log(`\n[해상도·인치가 상수인가]`);
+    console.log(`  자사   기입 ${ro.total}건 중 FHD ${ro.fhd} · QHD ${ro.qhd} · 32인치 ${ro.inch32}`);
+    console.log(`  경쟁점 기입 ${rc.total}건 중 FHD ${rc.fhd} · QHD ${rc.qhd} · 32인치 ${rc.inch32}`);
+
+    // ── 비중 훑기 ───────────────────────────────────────────────────────────
+    // 사용자 진단대로 자료 신뢰도가 자사(발주 기록)와 경쟁점(현장 관찰+2차 보충)에서 다르다면,
+    // **비중을 낮추는 것**이 뜻에 맞는 대응이다. 얼마까지 낮출지 재 본다.
+    console.log(`\n[모니터 비중 훑기] 지금 ${settings.specWeights.monitor} · 나머지 항목으로 재정규화`);
+    for (const mw of [0.25, 0.2, 0.15, 0.1, 0.05, 0]) {
+      const s2 = { ...settings, specWeights: { ...settings.specWeights, monitor: mw } };
+      const r2 = buildLabRows({ stores, compsByCode, utilByStore, settings: s2, qscByStoreCode });
+      line(`  비중 ${mw.toFixed(2)}`, r2);
+    }
+  });
+
+  it("(28) 모니터 세부 재정립 — 구간표를 연속 눈금으로", () => {
+    // 지금 구간표는 경계가 실제 값 바로 위에 걸려 있다(>=144 / >=166 / >=241).
+    //   144Hz 36건 -> 3.00 · 140Hz 1건 -> 2.00   같은 물건인데 1점이 갈린다
+    //   165Hz 35건 -> 3.00 · 166Hz면 3.25        1Hz에 0.25점
+    // GPU·CPU와 같은 구조(연속 로그 눈금)로 맞춘다.
+    //
+    //   점수 = 앵커점수 + ln(Hz / 240) / step      (240Hz = 자사 표준)
+    //
+    // step은 "240 -> 144가 1점"이 되게 잡는다: ln(144/240) = -0.511.
+    // 지금 표에서 240=3.50 · 144=3.00이 1점이 아니라 0.5점이므로, 두 벌을 다 재 본다.
+    const HZ_STEP_1PT = 0.5108; // 240 -> 144 를 1점으로
+    const HZ_STEP_HALF = 1.0217; // 240 -> 144 를 0.5점으로 (지금 간격 유지)
+    const monoHz = (t: string | null): number | null => {
+      if (!t) return null;
+      const hs = [...t.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
+      if (hs.length === 0) return null;
+      return hs.reduce((a, b) => a + b, 0) / hs.length; // 한 칸에 여러 모델이면 평균(지금과 같다)
+    };
+    const contMonitor = (anchor: number, step: number) => (t: string | null): number | null => {
+      if (!t) return null;
+      const u = t.toUpperCase();
+      if (/4K|UHD|OLED/.test(u)) return 5;
+      const hz = monoHz(t);
+      if (hz == null) return scoreFromMonitor(t); // Hz가 없으면 운영 처리(모델명 표 등)
+      let sc = anchor + Math.log(hz / 240) / step;
+      // QHD 가산은 그대로 둔다 — 32인치에서 FHD↔QHD는 실제 체감 차이가 크다(경쟁점 10건·자사 1건).
+      const mentionsFhd = /FHD/.test(u);
+      if (!mentionsFhd && /QHD/.test(u)) sc += 1;
+      if (/ZOWIE/.test(u)) sc = Math.max(sc, 4.5);
+      return Math.max(1, Math.min(5, sc));
+    };
+    // 기본/특화 결합은 운영과 같게(65/35 · 기본보다 낮은 특화는 제외)
+    const specOf = (base: string | null, top: string | null, f: (t: string | null) => number | null) => {
+      const b = f(base);
+      if (!top) return b;
+      const q = top.split(",").map((p) => f(p.trim())).filter((s): s is number => s != null && (b == null || s > b));
+      if (q.length === 0) return b;
+      const avg = q.reduce((a, c) => a + c, 0) / q.length;
+      return b == null ? avg : b * 0.65 + avg * 0.35;
+    };
+    const gpu = (t: string | null) => labScoreFromVga(t);
+    const w = settings.specWeights;
+    const comb = (vs: (number | null)[]) => {
+      const base = vs[0], sp = vs.slice(1).filter((v): v is number => v != null);
+      if (base == null) return sp.length ? sp.reduce((a, b) => a + b, 0) / sp.length : null;
+      return sp.length ? base * 0.8 + (sp.reduce((a, b) => a + b, 0) / sp.length) * 0.2 : base;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storeByCodeL = new Map((stores as any[]).map((s) => [s.storeCode, s]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rivalListL = (code: string) => (compsByCode.get(code) ?? []).filter((c: any) => c.investigationStatus !== "경쟁점없음").filter((c) => Number(c.appliedPcCount ?? c.totalPcCount ?? 0) > 0);
+    const build = (mf: (t: string | null) => number | null): LabRow[] => rows.map((r) => {
+      const s = storeByCodeL.get(r.input.storeCode);
+      const rl = rivalListL(r.input.storeCode);
+      let i = -1;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mk = (o: any, own: boolean) => {
+        if (!o) return null;
+        const g = comb((own ? [o.ownVgaBase, o.ownVgaTop, o.ownVgaTop2] : [o.vgaBase, o.vgaTop, o.vgaTop2]).map((t) => gpu(t ?? null)));
+        const c = comb((own ? [o.ownCpu, o.ownCpuTop1, o.ownCpuTop2] : [o.cpu, o.cpuTop1, o.cpuTop2]).map((t) => labScoreFromCpu(t ?? null)));
+        const ra = scoreFromRamSpec(own ? (o.ownRam ?? null) : (o.ram ?? null), own ? (o.ownRamTop ?? null) : (o.ramTop ?? null));
+        const m = specOf(own ? (o.ownMonitorBase ?? null) : (o.monitorBase ?? null), own ? (o.ownMonitorTop ?? null) : (o.monitorTop ?? null), mf);
+        const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([x]) => x != null) as [number, number][];
+        const tw = items.reduce((a, [, x]) => a + x, 0);
+        return tw > 0 ? items.reduce((a, [x, y]) => a + x * y, 0) / tw : null;
+      };
+      return {
+        actualRevenue: r.actualRevenue,
+        input: {
+          ...r.input,
+          ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: mk(s, true) } : r.input.ownQualityParts,
+          rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: mk(rl[i], false) } } : v; }),
+        },
+      };
+    });
+
+    const hzList = [240, 200, 180, 165, 160, 144, 140, 120, 75, 60];
+    console.log("\n[Hz -> 점수] 실제 자료에 있는 값들");
+    console.log(`  ${"".padEnd(18)}${hzList.map((h) => (h + "Hz").padStart(8)).join("")}`);
+    const fmtRow = (label: string, f: (t: string | null) => number | null) =>
+      console.log(`  ${label.padEnd(16)}  ${hzList.map((h) => (f(`(32인치·FHD·${h}Hz)`) ?? NaN).toFixed(2).padStart(8)).join("")}`);
+    fmtRow("운영 구간표", scoreFromMonitor);
+    fmtRow("연속 240=4.00 1점", contMonitor(4, HZ_STEP_1PT));
+    fmtRow("연속 240=3.50 1점", contMonitor(3.5, HZ_STEP_1PT));
+    fmtRow("연속 240=3.50 0.5점", contMonitor(3.5, HZ_STEP_HALF));
+
+    console.log("\n[성적] 비중은 지금 그대로(0.25)");
+    line("  지금 (운영 구간표)", build(scoreFromMonitor));
+    line("  연속 240=4.00 1점", build(contMonitor(4, HZ_STEP_1PT)));
+    line("  연속 240=3.50 1점", build(contMonitor(3.5, HZ_STEP_1PT)));
+    line("  연속 240=3.50 0.5점", build(contMonitor(3.5, HZ_STEP_HALF)));
+
+    // 연속 눈금 + 비중 조정을 합쳐서 — 자료 신뢰도가 낮으니 비중을 낮추는 게 뜻에 맞는 대응이다.
+    console.log("\n[연속 눈금 × 비중] 240=4.00 · 1점 간격 위에서");
+    for (const mw of [0.25, 0.15, 0.1, 0.05]) {
+      const w2 = { ...w, monitor: mw };
+      const built = build(contMonitor(4, HZ_STEP_1PT)).map((r) => r); // 아래에서 비중만 갈아끼운다
+      void built;
+      // 비중이 바뀌면 spec 종합이 달라지므로 다시 조립한다.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mk = (o: any, own: boolean) => {
+        if (!o) return null;
+        const g = comb((own ? [o.ownVgaBase, o.ownVgaTop, o.ownVgaTop2] : [o.vgaBase, o.vgaTop, o.vgaTop2]).map((t) => gpu(t ?? null)));
+        const c = comb((own ? [o.ownCpu, o.ownCpuTop1, o.ownCpuTop2] : [o.cpu, o.cpuTop1, o.cpuTop2]).map((t) => labScoreFromCpu(t ?? null)));
+        const ra = scoreFromRamSpec(own ? (o.ownRam ?? null) : (o.ram ?? null), own ? (o.ownRamTop ?? null) : (o.ramTop ?? null));
+        const m = specOf(own ? (o.ownMonitorBase ?? null) : (o.monitorBase ?? null), own ? (o.ownMonitorTop ?? null) : (o.monitorTop ?? null), contMonitor(4, HZ_STEP_1PT));
+        const items = [[g, w2.vga], [m, w2.monitor], [ra, w2.ram], [c, w2.cpu]].filter(([x]) => x != null) as [number, number][];
+        const tw = items.reduce((a, [, x]) => a + x, 0);
+        return tw > 0 ? items.reduce((a, [x, y]) => a + x * y, 0) / tw : null;
+      };
+      const rs: LabRow[] = rows.map((r) => {
+        const s = storeByCodeL.get(r.input.storeCode);
+        const rl = rivalListL(r.input.storeCode);
+        let i = -1;
+        return {
+          actualRevenue: r.actualRevenue,
+          input: {
+            ...r.input,
+            ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: mk(s, true) } : r.input.ownQualityParts,
+            rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: mk(rl[i], false) } } : v; }),
+          },
+        };
+      });
+      line(`  비중 ${mw.toFixed(2)}`, rs);
+    }
+  });
+
+  it("(29) 모니터 — Hz 말고 뭐가 자료에 있나 (해상도·패널·브랜드·크기)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const ownAll = S.flatMap((s) => [s.ownMonitorBase, s.ownMonitorTop]).filter(Boolean).map(String);
+    const rivAll = C.flatMap((c) => [c.monitorBase, c.monitorTop]).filter(Boolean).map(String);
+    // 한 칸에 여러 모델이 줄바꿈/콤마로 들어간 경우가 있어 낱개로 편다.
+    const split = (arr: string[]) => arr.flatMap((t) => t.split(/[\n,]/).map((x) => x.trim()).filter(Boolean));
+    const O = split(ownAll), R = split(rivAll);
+    // ⚠️ WQHD = QHD(2560x1440)로 **같은 것**이고, WWQHD/UWQHD가 울트라와이드(3440x1440)로 다른 것이다.
+    //    (2026-09-18 사용자 정정 — 처음엔 WQHD를 울트라와이드로 잡아 자사 개수가 부풀려졌다)
+    const UW = /WWQHD|UWQHD|울트라와이드|ULTRAWIDE|21:9/i;
+    const keys: [string, RegExp][] = [
+      ["4K·UHD", /4K|UHD(?!QHD)/i],
+      ["OLED", /OLED/i],
+      ["QHD(=WQHD)", /(?<!W)(?<!U)WQHD|(?<!W)QHD/i],
+      ["  그중 울트라와이드(WWQHD)", UW],
+      ["FHD", /FHD/i],
+      ["울트라와이드", UW],
+      ["커브드", /커브드|CURVED/i],
+      ["HDR", /HDR/i],
+      ["ZOWIE", /ZOWIE/i],
+      ["BenQ", /BENQ/i],
+      ["LG 울트라기어", /울트라기어|ULTRAGEAR/i],
+      ["삼성 오디세이", /오디세이|ODYSSEY/i],
+      ["ASUS", /ASUS|에이수스|TUF|ROG/i],
+      ["DELL", /DELL|델\b/i],
+      ["GIGABYTE·AORUS", /GIGABYTE|AORUS|기가바이트/i],
+      ["MSI", /\bMSI\b/i],
+      ["알파스캔·AOC", /알파스캔|\bAOC\b/i],
+      ["27인치", /27\s*(인치|IN)/i],
+      ["32인치", /32\s*(인치|IN)/i],
+      ["34인치", /34\s*(인치|IN)/i],
+    ];
+    console.log(`\n[모니터 낱개 항목] 자사 ${O.length}개 · 경쟁점 ${R.length}개 (한 칸의 여러 모델을 낱개로 편 것)`);
+    console.log("  항목               자사   경쟁점");
+    for (const [label, re] of keys) {
+      const o = O.filter((t) => re.test(t)).length, r = R.filter((t) => re.test(t)).length;
+      console.log(`  ${label.padEnd(16)} ${String(o).padStart(4)}  ${String(r).padStart(6)}`);
+    }
+    // 지금 식에서 특례로 걸리는 것들이 실제로 몇 점을 받나
+    console.log("\n[지금 식의 특례가 걸린 실제 값]");
+    const special = [...new Set([...O, ...R])].filter((t) => /4K|UHD|OLED|ZOWIE/i.test(t) || /QHD/i.test(t));
+    for (const t of special.slice(0, 30)) {
+      console.log(`    ${(scoreFromMonitor(t) ?? NaN).toFixed(2)}  ${t}`);
+    }
+    console.log(`    (해상도·패널 특례가 걸리는 낱개 ${special.length}개)`);
+
+    // 240Hz 초과 — 상한(5.00)에 몰릴 후보들. 사용자 지적: "벤큐 360상한이좀걸리네 벤큐 600인가 그정도급까지있는데"
+    const hz1 = (t: string) => { const m = [...t.matchAll(/(\d{2,3})\s*hz/gi)].map((x) => Number(x[1])); return m.length ? Math.max(...m) : null; };
+    const high = [...O.map((t) => ["자사", t] as const), ...R.map((t) => ["경쟁", t] as const)]
+      .map(([side, t]) => [side, t, hz1(t)] as const)
+      .filter(([, , h]) => h != null && h > 240);
+    console.log(`\n[240Hz 초과] ${high.length}개 — 상한에 몰릴 후보`);
+    for (const [side, t, h] of high) console.log(`    ${side}  ${h}Hz  ${t}`);
+    const byHz = new Map<number, number>();
+    for (const [, , h] of high) byHz.set(h!, (byHz.get(h!) ?? 0) + 1);
+    console.log(`    Hz별: ${[...byHz.entries()].sort((a, b) => a[0] - b[0]).map(([h, n]) => `${h}Hz ${n}개`).join(" · ")}`);
+  });
+
+  it("(30) 모니터 최종안 — 연속 눈금 + 등급 가산 + 위쪽 기울기", () => {
+    // 사용자 확정 방향(2026-09-18):
+    //   - 연속 눈금 좋다
+    //   - 가산 순서: OLED > BenQ·4K > 정품브랜드 > 울트라와이드 > QHD
+    //   - QHD +1.0은 높다
+    //   - BenQ도 등급이 있다 (ZOWIE vs 일반)
+    //   - 240Hz 위가 상한에 몰린다 (600Hz까지 있다)
+    const UW = /WWQHD|UWQHD|울트라와이드|ULTRAWIDE|21:9/i;
+    const mk = (stepUp: number, benqZowie: number, benqPlain: number) => (t: string | null): number | null => {
+      if (!t) return null;
+      const u = t.toUpperCase();
+      const hs = [...t.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
+      if (hs.length === 0) return null;
+      const hz = hs.reduce((a, b) => a + b, 0) / hs.length;
+      const rel = Math.log(hz / 240);
+      let sc = 4 + rel / (rel > 0 ? stepUp : 0.5108);
+      // 해상도 — 세로 픽셀 기준. WWQHD(3440x1440)는 QHD(2560x1440)와 세로가 같다.
+      if (/4K|UHD(?!QHD)/.test(u)) sc += 0.6;
+      else if (/QHD/.test(u)) sc += 0.2;
+      if (UW.test(u)) sc += 0.3;      // 시야(21:9)는 해상도와 별개
+      if (/OLED/.test(u)) sc += 1.0;
+      // 브랜드 — ZOWIE(e스포츠 전용)와 일반 BenQ를 가른다
+      if (/ZOWIE/.test(u)) sc += benqZowie;
+      else if (/BENQ/.test(u)) sc += benqPlain;
+      else if (/ASUS|에이수스|TUF|ROG|DELL|ALIENWARE|에일리언웨어|울트라기어|ULTRAGEAR|오디세이|ODYSSEY|GIGABYTE|AORUS|\bMSI\b/.test(u)) sc += 0.4;
+      return Math.max(1, Math.min(5, sc));
+    };
+    const show = [
+      "제이씨현 (32인치·FHD·240Hz)",
+      "무명 (32인치·FHD·165Hz)",
+      "무명 (32인치·FHD·144Hz)",
+      "무명 (32인치·FHD·60Hz)",
+      "LG전자 울트라기어 32GP750 (32인치 QHD 165Hz)",
+      "LG UltraWide 34WP65C (34인치·울트라와이드 WWQHD·160Hz)",
+      "BenQ EX3200R (32인치·FHD·144Hz)",
+      "BenQ MOBIUZ EX3210U (32인치·4K·144Hz)",
+      "BenQ ZOWIE XL2546K (24.5인치·FHD·240Hz)",
+      "BenQ ZOWIE XL2540X+ (24.1인치·FHD·280Hz)",
+      "QNIX IPS (27인치·FHD·300Hz)",
+      "DELL Alienware AW2523HF (25인치·FHD·360Hz)",
+      "BenQ ZOWIE XL2566K (24.5인치·FHD·360Hz)",
+      "BenQ ZOWIE XL2566X+ (24.1인치 FHD 400Hz)",
+      "BenQ ZOWIE XL2586X+ (24.1인치 FHD 600Hz)",
+    ];
+    for (const su of [0.916, 1.5, 2.29]) {
+      console.log(`\n[위 기울기 ${su}] ${su === 0.916 ? "600Hz가 Hz항만으로 +1.00" : su === 2.29 ? "600Hz ZOWIE가 딱 5.00" : "중간"}`);
+      const f = mk(su, 0.6, 0.4);
+      for (const t of show) console.log(`    ${(f(t) ?? NaN).toFixed(2)}  ${t}`);
+    }
+  });
+
+  it("(31) 후보지가 실험실 산식을 돌릴 준비가 됐나 (2026-09-18)", () => {
+    // 사용자: *"나 신규후보지 평가할건데, 기존산식이랑 지금만드는산식 두개다할거거든.
+    //          평가항목이 추가된거있으니까 이거 반영해야할듯?"*
+    // 실험실은 지금 **기존점만** 본다(buildLabRows가 ExistingStore[]만 받는다).
+    // 후보지 경로를 만들려면 어떤 입력이 있고 없는지부터 세야 한다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cands: any[] = snap.candidates ?? [];
+    if (cands.length === 0) { console.log("\n[후보지] 스냅샷에 후보지가 없다"); return; }
+    const compsBy = new Map<string, number>();
+    for (const c of allCompetitors) compsBy.set(c.candidateCode, (compsBy.get(c.candidateCode) ?? 0) + 1);
+
+    const need: [string, (c: Record<string, unknown>) => boolean, string][] = [
+      ["PC수", (c) => c.pcCount != null, "수요·매출"],
+      ["요금", (c) => c.hourlyRate != null, "단가"],
+      ["주거 1km", (c) => c.pop1km != null, "1단계 수요"],
+      ["유동 400m", (c) => c.floating400Avg != null, "1단계 수요 (확정 반경)"],
+      ["유동 300m", (c) => c.floating300Avg != null, "2단계 중심도"],
+      ["유동 1km", (c) => c.floating1000Avg != null, "2단계 중심도"],
+      ["층·엘리베이터", (c) => c.floor != null, "2단계 접근성"],
+      ["연령별 주거", (c) => c.age1km_20_29 != null, "연령가중"],
+      ["자사 GPU", (c) => !!c.ownVgaBase, "4단계 사양"],
+      ["자사 CPU", (c) => !!c.ownCpu, "4단계 사양"],
+      ["자사 모니터", (c) => !!c.ownMonitorBase, "4단계 사양"],
+      ["자사 팀룸", (c) => c.ownTeamRoom != null, "3단계 존구성"],
+      ["경쟁점 조사", (c) => (compsBy.get(String(c.candidateCode ?? c.code ?? "")) ?? 0) > 0, "3단계 점유율"],
+    ];
+    console.log(`\n[후보지 ${cands.length}곳 — 실험실 산식 입력 준비도]`);
+    console.log("  항목             갖춘 곳          쓰이는 곳");
+    for (const [label, has, where] of need) {
+      const n = cands.filter((c) => { try { return has(c); } catch { return false; } }).length;
+      const mark = n === cands.length ? "✅" : n === 0 ? "❌" : "⚠️";
+      console.log(`  ${mark} ${label.padEnd(14)} ${String(n).padStart(2)}/${cands.length}  ${where}`);
+    }
+    console.log("\n  ❌ 후보지에 원래 없는 것: 실측 가동률(예측 대상) · QSC(신규점은 점검 기록 없음)");
+    console.log("     -> 가동률은 축척을 기존점으로 이미 맞춰 뒀으니 불필요하고,");
+    console.log("        QSC는 labInput의 가맹점 평균 경로가 그대로 쓰인다.");
+  });
+
+  it("(32) 모니터 채택안 측정 + 대조군", () => {
+    const gpu = (t: string | null) => labScoreFromVga(t);
+    const rOf = (rs: LabRow[]) => {
+      const sc = scoreTextbook(rs, P);
+      const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0);
+      return { r: pearson(ok.map((x) => x.predicted as number), ok.map((x) => x.actual)), mape: sc.mape ?? 0 };
+    };
+    console.log("\n[모니터] 운영 구간표 -> 실험실 연속 눈금 + 등급 가산");
+    line("  운영 구간표 (기준선)", labRows({ useOperationalMonitor: true }));
+    line("  실험실 새 표", labRows({}));
+
+    // 위 기울기 훑기 — 240Hz 초과 33개에만 걸린다.
+    console.log("\n[앵커 위 기울기] 240Hz 초과 33개(자사 23 · 경쟁 10)에 걸린다");
+    for (const su of [0.916, 1.5, 2.29, 3.5]) {
+      line(`  위 기울기 ${su.toFixed(3)}`, labRows({ monitorStepUp: su }));
+    }
+
+    // 대조군 — GPU·CPU와 **같은 방식**. 낱개 텍스트마다 델타가 붙는다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const cells = [...new Set([
+      ...S.flatMap((s) => [s.ownMonitorBase, s.ownMonitorTop]),
+      ...C.flatMap((c) => [c.monitorBase, c.monitorTop]),
+    ].map((t) => (t ?? "").trim()).filter(Boolean))];
+    const keys: string[] = [], deltas: number[] = [];
+    for (const t of cells) {
+      const a = opMonitorSpec(t), b = labScoreFromMonitorCell(t);
+      if (a == null || b == null) continue;
+      keys.push(t); deltas.push(b - a);
+    }
+    const base = rOf(labRows({ useOperationalMonitor: true }));
+    const real = rOf(labRows({}));
+    const gain = real.r - base.r;
+    console.log(`\n[대조군 · 모니터 새 표] 서로 다른 칸 ${keys.length}개에 델타가 붙는다`);
+    console.log(`  실제: r ${base.r.toFixed(3)} -> ${real.r.toFixed(3)} (${gain >= 0 ? "+" : ""}${gain.toFixed(3)}) · MAPE ${f(base.mape)}% -> ${f(real.mape)}%`);
+    let rng = 20260918;
+    const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const gains: number[] = [];
+    for (let t = 0; t < 300; t++) {
+      const sh = [...deltas];
+      for (let i = sh.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [sh[i], sh[j]] = [sh[j], sh[i]]; }
+      const map = new Map(keys.map((k, i) => [k, sh[i]]));
+      // 델타를 칸끼리 뒤섞은 채점기 — 운영 점수 + 남의 델타
+      const shuffled = (cell: string | null) => {
+        const a = opMonitorSpec(cell);
+        if (a == null) return null;
+        const d = map.get((cell ?? "").trim());
+        return d == null ? a : Math.max(1, Math.min(5, a + d));
+      };
+      gains.push(rOf(monitorRows(shuffled)).r - base.r);
+    }
+    const sorted = [...gains].sort((a, b) => a - b);
+    const pv = gains.filter((g) => g >= gain).length / gains.length;
+    console.log(`  델타를 칸끼리 뒤섞기 300회: 중앙 ${median(gains).toFixed(3)} · 95퍼센타일 ${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)}`);
+    console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}`);
+    void gpu;
+  });
+
+  /** 운영 방식으로 모니터 칸 하나를 채점 — 칸 전체를 한 번에 본다(Hz를 먼저 평균낸다). */
+  const opMonitorSpec = (cell: string | null) => scoreFromMonitor(cell);
+
+  /** 임의의 모니터 **칸 채점기**로 행을 만든다. 대조군에서 델타를 뒤섞기 위한 것. */
+  const monitorRows = (cellScore: (t: string | null) => number | null): LabRow[] => {
+    const w = settings.specWeights;
+    const comb = (vs: (number | null)[]) => {
+      const b = vs[0], sp = vs.slice(1).filter((v): v is number => v != null);
+      if (b == null) return sp.length ? sp.reduce((a, c) => a + c, 0) / sp.length : null;
+      return sp.length ? b * 0.8 + (sp.reduce((a, c) => a + c, 0) / sp.length) * 0.2 : b;
+    };
+    /** 기본 + 특화 65/35 (기본보다 낮은 특화는 제외) — 운영과 같은 원칙. */
+    const mon = (base: string | null, top: string | null) => {
+      const b = cellScore(base);
+      if (!top || !top.trim()) return b;
+      const t = cellScore(top);
+      if (t == null || (b != null && t <= b)) return b;
+      return b == null ? t : b * 0.65 + t * 0.35;
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const specOf = (o: any, own: boolean) => {
+      if (o == null) return null;
+      const g = comb((own ? [o.ownVgaBase, o.ownVgaTop, o.ownVgaTop2] : [o.vgaBase, o.vgaTop, o.vgaTop2]).map((t) => labScoreFromVga(t ?? null)));
+      const c = comb((own ? [o.ownCpu, o.ownCpuTop1, o.ownCpuTop2] : [o.cpu, o.cpuTop1, o.cpuTop2]).map((t) => labScoreFromCpu(t ?? null)));
+      const ra = scoreFromRamSpec(own ? (o.ownRam ?? null) : (o.ram ?? null), own ? (o.ownRamTop ?? null) : (o.ramTop ?? null));
+      const m = mon(own ? (o.ownMonitorBase ?? null) : (o.monitorBase ?? null), own ? (o.ownMonitorTop ?? null) : (o.monitorTop ?? null));
+      const items = [[g, w.vga], [m, w.monitor], [ra, w.ram], [c, w.cpu]].filter(([x]) => x != null) as [number, number][];
+      const tw = items.reduce((a, [, x]) => a + x, 0);
+      return tw > 0 ? items.reduce((a, [x, y]) => a + x * y, 0) / tw : null;
+    };
+    return rows.map((r) => {
+      const s = storeByCode.get(r.input.storeCode);
+      const rl = rivalListOf(r.input.storeCode);
+      let i = -1;
+      return {
+        actualRevenue: r.actualRevenue,
+        input: {
+          ...r.input,
+          ownQualityParts: r.input.ownQualityParts ? { ...r.input.ownQualityParts, spec: specOf(s, true) } : r.input.ownQualityParts,
+          rivals: (r.input.rivals ?? []).map((v) => { i += 1; return v.parts ? { ...v, parts: { ...v.parts, spec: specOf(rl[i], false) } } : v; }),
+        },
+      };
+    });
+  };
+
+  it("(33) ⚠️ 특화가 기본보다 낮은가 — 울트라와이드 점검 (2026-09-18 사용자 지적)", () => {
+    // 사용자: *"특화모델에 165 울트라와이드 WWQHD 모니터 몇점인지 확인하고, 기본사양 FHD 240Hz랑
+    //          차이얼만지 비교해보자. ... 특화인데 기본보다 낮은점수 일수도있으니"*
+    // 결합 규칙이 "기본보다 낮은 특화는 제외"라, 낮게 나오면 그 특화는 **산식에서 사라진다.**
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[];
+    const baseScores = new Map<string, number>();
+    for (const s of S) {
+      const b = labScoreFromMonitorCell(s.ownMonitorBase ?? null);
+      if (b != null) baseScores.set(s.storeCode, b);
+    }
+    const bs = [...baseScores.values()];
+    console.log(`\n[자사 기본] ${bs.length}곳 · 최소 ${Math.min(...bs).toFixed(2)} · 중앙 ${median(bs).toFixed(2)} · 최대 ${Math.max(...bs).toFixed(2)}`);
+
+    // 자사 특화 낱개를 모아 점수와 "자격 여부"를 본다.
+    const units = new Map<string, number>();
+    for (const s of S) {
+      for (const u of String(s.ownMonitorTop ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean)) {
+        units.set(u, (units.get(u) ?? 0) + 1);
+      }
+    }
+    const rowsOut = [...units.entries()].map(([t, n]) => ({ t, n, sc: labScoreFromMonitorUnit(t) }))
+      .filter((x): x is { t: string; n: number; sc: number } => x.sc != null)
+      .sort((a, b) => b.sc - a.sc);
+    console.log("\n[자사 특화 낱개] 기본 4.00과 비교 · 낮으면 '제외'된다");
+    console.log("  점수   건수  자격   값");
+    let excluded = 0;
+    for (const { t, n, sc } of rowsOut) {
+      const ok = sc > 4.0;
+      if (!ok) excluded += n;
+      console.log(`  ${sc.toFixed(2)}  ${String(n).padStart(4)}  ${ok ? "  ✅" : "  ❌"}  ${t}`);
+    }
+    console.log(`\n  ⚠️ 기본(4.00)보다 낮아 제외되는 자사 특화 ${excluded}개`);
+
+    // 아래쪽 기울기를 완만하게 하면 살아나나
+    console.log("\n[아래 기울기를 바꾸면] 165Hz 울트라와이드(QHD+0.2 · UW+0.3)가 기본 4.00을 넘나");
+    for (const [label, step] of [["0.5108 (240->144 1점 · 지금)", 0.5108], ["0.7662 (0.67점)", 0.7662], ["1.0217 (0.5점)", 1.0217]] as [string, number][]) {
+      const hz = (h: number) => 4 + Math.log(h / 240) / step;
+      console.log(`  ${label.padEnd(28)} 144Hz ${hz(144).toFixed(2)} · 165Hz ${hz(165).toFixed(2)} · 60Hz ${Math.max(1, hz(60)).toFixed(2)}  ->  UW165 ${(hz(165) + 0.5).toFixed(2)}`);
     }
   });
 

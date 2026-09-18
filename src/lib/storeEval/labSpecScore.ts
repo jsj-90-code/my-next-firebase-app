@@ -418,6 +418,156 @@ export function labScoreFromRam(text: string | null, gap = LAB_RAM_GAP): number 
   return Math.max(1, 4 - gap * 3);
 }
 
+// ── 모니터 — 실험실 전용 재정의 (2026-09-18) ──────────────────────────────
+//
+// ── 왜 새로 만드나 ─────────────────────────────────────────────────────────
+// 자료를 전수로 펴 보니 셋이 드러났다.
+//   1. **모니터는 사실상 Hz 하나다.** 32인치가 자사 40/40 · 경쟁 148/152이고 FHD가 자사 39/40 ·
+//      경쟁 132/152라, 인치·해상도는 거의 상수다. 갈리는 건 주사율뿐이다.
+//   2. **구간표 경계가 실제 값 바로 위에 걸려 있었다.** `>=144` / `>=166` / `>=241` 이라
+//      **140Hz(2.00)와 144Hz(3.00)가 1점 갈렸다.** 같은 물건인데 4Hz 차이로.
+//   3. **4K·OLED가 Hz를 아예 무시하고 5점 고정**이었다. 4K 60Hz도 만점이 된다.
+//
+// 그리고 **240Hz 초과가 33개**나 있다(자사 23 · 경쟁 10). 사용자 지적: *"벤큐 360상한이좀걸리네
+// 벤큐 600인가 그정도급까지있는데"* — 실제로 자료에 600Hz(ZOWIE XL2586X+)가 있다.
+//
+// ── 구조 — GPU·CPU와 같은 연속 눈금 + 등급 가산 ────────────────────────────
+//   점수 = 4 + ln(Hz/240) / 기울기 + 가산      (1~5로 자름)
+//   기울기: 240Hz 아래 0.5108 (240 -> 144 를 1점) · 위 2.29 (600Hz ZOWIE가 딱 5.00)
+//
+// 앵커 240Hz = 4.00은 GPU(RTX 5060)·CPU(i5 14400F)와 같은 원칙이다 — **자사 표준이 4점.**
+// 위쪽을 완만하게 둔 이유는 GPU와 같다: 240Hz를 넘으면 체감이 빠르게 포화하고(롤·오버워치
+// 손님은 거의 모른다), 그런 좌석은 프리미엄존이라 **요금이 이미 다르게 받고 있어서**
+// 단가 탄력(0.546)이 그 몫을 잡는다. 위 기울기 0.916으로 두면 360Hz부터 셋이 전부 5.00에
+// 몰렸다 — 사용자가 지적한 그 문제다.
+//
+// ── 가산 순서는 사용자가 정했다 ────────────────────────────────────────────
+// *"일단 OLED가 비용적이나 이런거봤을떄 가산이 제일높을거같고, 그다음이 BenQ / 4K 정도?
+//   그담이 울트라기어나 에이수스 DELL정도? 그담이 울트라와이드 그담이 QHD"*
+//
+// 모니터는 GPU처럼 성능 지표가 하나로 안 나오니 **원가·프리미엄 등급이 실질적인 대리지표**다.
+// 그리고 *"벤큐도 등급있으니까 적용해야될것같고"* — ZOWIE(e스포츠 전용)와 일반 BenQ를 갈랐다.
+//
+// ⚠️ **QHD를 +1.0에서 +0.2로 내렸다.** 2026-08-30에 "같은 165Hz면 QHD가 FHD보다 +1"로 확정한
+//    값을 사용자가 다시 봤다(*"QHD제안값 좀 높은거같은데?"*). +1.0이면 QHD 165Hz(4.00)가
+//    FHD 240Hz(3.50)보다 높아지는데, **PC방은 FPS가 주력이라 240Hz가 나은 경우가 많다.**
+// ⚠️ **WQHD = QHD(2560x1440)로 같은 것**이고 WWQHD/UWQHD가 울트라와이드(3440x1440)다
+//    (2026-09-18 사용자 정정). 세로 픽셀이 QHD와 같으므로 해상도 가산은 같고,
+//    울트라와이드는 **시야(21:9)**가 별개의 이점이라 따로 더한다.
+//
+// ⚠️ 가산 일곱 개가 전부 **[감각] 계수**다. GPU 성능지수는 공개 벤치마크라는 외부 기준이
+//    있었지만 여기는 없다. 채택 근거는 `_specScore.test.ts`의 대조군이 댄다.
+export const LAB_MONITOR_HZ_ANCHOR = 240;
+export const LAB_MONITOR_HZ_STEP = 0.5108; // ln(144/240) — 240 -> 144 를 1점
+export const LAB_MONITOR_HZ_STEP_UP = 2.29; // 600Hz ZOWIE가 딱 5.00이 되는 값
+
+export const LAB_MONITOR_BONUS = {
+  /** 응답속도 0.03ms · 명암비. 원가가 제일 높다. 자사 0 · 경쟁 5개. */
+  oled: 1.5,
+  /** 세로 2160. QHD 위. 자사 0 · 경쟁 6개. */
+  uhd4k: 1.0,
+  /** BenQ ZOWIE — e스포츠 전용(DyAc 모션블러 저감). 자사 31 · 경쟁 56개. */
+  zowie: 0.6,
+  /** BenQ 일반 라인(EX·MOBIUZ·GW). 자사 0 · 경쟁 30개. */
+  benq: 0.4,
+  /** 정품 게이밍 브랜드 — LG 울트라기어·삼성 오디세이·ASUS·DELL·GIGABYTE·MSI. 자사 19 · 경쟁 50개. */
+  gamingBrand: 0.4,
+  /** 울트라와이드(WWQHD 3440x1440) — 시야. ⚠️ 자사 27 · 경쟁 3개로 거의 자사 전용이라 작게 뒀다. */
+  ultrawide: 0.3,
+  /**
+   * QHD(=WQHD 2560x1440). 자사 29 · 경쟁 26개.
+   *
+   * ⭐ **이 값은 사용자가 준 등가점에서 역산했다** (2026-09-18). 처음엔 08-30 확정값 +1.0을
+   * 썼다가 "높다"는 지적에 +0.2로 내렸는데, 그러면 **원가가 비싼 QHD·울트라와이드가 싼 기본보다
+   * 낮아지는** 모순이 생겼다(자사 특화 74개가 "기본보다 낮음"으로 제외됐다). 사용자 판단:
+   *
+   *   *"두개사실 비슷함. 이용목적에대한 차이일뿐 가격이나 뭐이런것들 다 비슷해서 잘모르겠다"*
+   *   (32인치 FHD 240Hz 기본 ↔ 27인치 QHD 165Hz)
+   *
+   * 두 물건이 동급이면 QHD 가산은 **165Hz의 Hz 손실을 정확히 상쇄**해야 한다:
+   *   ln(165/240) / 0.5108 = -0.7336  ->  QHD = +0.7336
+   * 그러면 27인치 QHD 165Hz가 딱 4.00이 되어 기본과 같아진다. 추측이 아니라 **사용자가 아는
+   * 등가점을 앵커로 쓴 값**이다.
+   *
+   * 덕분에 34인치 WWQHD 165Hz는 4.30(QHD 0.73 + 울트라와이드 0.3)으로 **특화 자격이 생기고**,
+   * 27인치 QHD 165Hz처럼 진짜로 기본과 동급인 것만 제외된다.
+   */
+  qhd: 0.7336,
+};
+
+const UW_RE = /WWQHD|UWQHD|울트라와이드|ULTRAWIDE|21:9/i;
+const GAMING_BRAND_RE = /ASUS|에이수스|TUF|ROG|DELL|ALIENWARE|에일리언웨어|울트라기어|ULTRAGEAR|오디세이|ODYSSEY|GIGABYTE|AORUS|\bMSI\b/i;
+
+/**
+ * 모니터 **한 대**를 채점한다. Hz가 없으면 운영 처리로 떨어진다(모델명 표 등).
+ */
+export function labScoreFromMonitorUnit(
+  text: string | null,
+  bonus: typeof LAB_MONITOR_BONUS = LAB_MONITOR_BONUS,
+  stepUp = LAB_MONITOR_HZ_STEP_UP,
+): number | null {
+  if (!text || !text.trim()) return null;
+  const u = text.toUpperCase();
+  const hs = [...text.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
+  if (hs.length === 0) return scoreFromMonitor(text);
+  const hz = hs.reduce((a, b) => a + b, 0) / hs.length;
+  const rel = Math.log(hz / LAB_MONITOR_HZ_ANCHOR);
+  let sc = 4 + rel / (rel > 0 ? stepUp : LAB_MONITOR_HZ_STEP);
+  // 해상도 — 4K가 걸리면 QHD는 안 본다(이중계산).
+  if (/4K|\bUHD\b/.test(u)) sc += bonus.uhd4k;
+  else if (/QHD/.test(u)) sc += bonus.qhd;
+  if (UW_RE.test(u)) sc += bonus.ultrawide; // 해상도와 별개로 시야
+  if (/OLED/.test(u)) sc += bonus.oled;
+  // 브랜드 — 한 등급만 걸린다.
+  if (/ZOWIE/.test(u)) sc += bonus.zowie;
+  else if (/BENQ/.test(u)) sc += bonus.benq;
+  else if (GAMING_BRAND_RE.test(u)) sc += bonus.gamingBrand;
+  return Math.max(1, Math.min(5, sc));
+}
+
+/**
+ * 칸 하나 — **줄바꿈·콤마로 쪼개 낱개로 채점하고 평균**낸다.
+ *
+ * ⚠️ 운영은 칸 전체에서 Hz를 뽑아 **먼저 평균낸 뒤** 채점한다. 한 칸에 여러 모델이 적힌
+ *    14건에서 그게 틀린 답을 낸다 — 예를 들어 "Geekstar QHD 144Hz / AMH FHD 60Hz /
+ *    삼성 144Hz"가 운영에서는 Hz 평균 116으로 **1.50점**인데, 낱개로 채점하면
+ *    3.20 / 1.29 / 3.00 -> **2.50점**이다. 해상도·브랜드 가산이 각 모델에 맞게 붙기 때문이다.
+ */
+export function labScoreFromMonitorCell(
+  text: string | null,
+  bonus: typeof LAB_MONITOR_BONUS = LAB_MONITOR_BONUS,
+  stepUp = LAB_MONITOR_HZ_STEP_UP,
+): number | null {
+  if (!text || !text.trim()) return null;
+  const units = text.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  const scores = units.map((t) => labScoreFromMonitorUnit(t, bonus, stepUp)).filter((v): v is number => v != null);
+  if (scores.length === 0) return null;
+  return scores.reduce((a, b) => a + b, 0) / scores.length;
+}
+
+/** 모니터 특화 결합 비율 — 운영 `scoreFromMonitorSpec`과 같은 65/35. */
+const LAB_MONITOR_SPECIALTY_WEIGHT = 0.35;
+
+/**
+ * 기본 + 특화 결합. 운영과 같은 원칙이다 — 기본보다 낮은 특화는 "특화 자격 없음"으로 제외하고,
+ * 65/35로 섞는다(정직하게 다 적어도 손해 안 보게).
+ */
+export function labScoreFromMonitorSpec(
+  base: string | null,
+  top: string | null,
+  bonus: typeof LAB_MONITOR_BONUS = LAB_MONITOR_BONUS,
+  stepUp = LAB_MONITOR_HZ_STEP_UP,
+): number | null {
+  const b = labScoreFromMonitorCell(base, bonus, stepUp);
+  if (!top || !top.trim()) return b;
+  const units = top.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  const q = units.map((t) => labScoreFromMonitorUnit(t, bonus, stepUp))
+    .filter((s): s is number => s != null && (b == null || s > b));
+  if (q.length === 0) return b;
+  const avg = q.reduce((a, c) => a + c, 0) / q.length;
+  return b == null ? avg : b * (1 - LAB_MONITOR_SPECIALTY_WEIGHT) + avg * LAB_MONITOR_SPECIALTY_WEIGHT;
+}
+
 export type LabSpecInput = {
   vgaBase: string | null; vgaTop: string | null; vgaTop2: string | null;
   cpu: string | null; cpuTop1: string | null; cpuTop2: string | null;
@@ -453,13 +603,19 @@ export type LabSpecOptions = {
   monitorBaseOnly?: boolean;
   /** 모니터 항목을 아예 뺄지. ⚠️ 항목을 자르는 것이라 기본은 false다. */
   dropMonitor?: boolean;
+  /** 모니터를 **운영 구간표**로 채점할지. 비교 기준선용. 기본 false(= 실험실 연속 눈금). */
+  useOperationalMonitor?: boolean;
+  /** 모니터 등급 가산. 훑기용. 기본은 `LAB_MONITOR_BONUS`. */
+  monitorBonus?: typeof LAB_MONITOR_BONUS;
+  /** 모니터 앵커(240Hz) 위쪽 기울기. 훑기용. 기본은 `LAB_MONITOR_HZ_STEP_UP`. */
+  monitorStepUp?: number;
 };
 
 /**
- * 모니터 특화 결합 — 운영 `scoreFromMonitorSpec`과 같다(65/35 · 기본보다 낮은 특화는 제외).
- * 여기 따로 둔 이유는 `monitorBaseOnly` 스위치를 붙이기 위해서다.
+ * 운영 변환표(구간표)로 채점한 모니터 점수. **비교 기준선용으로만 남겨 둔다** —
+ * 실험실 본체는 위 `labScoreFromMonitorSpec`(연속 눈금 + 등급 가산)을 쓴다.
  */
-function labScoreFromMonitorSpec(base: string | null, top: string | null, baseOnly: boolean): number | null {
+function opScoreFromMonitorSpec(base: string | null, top: string | null, baseOnly: boolean): number | null {
   const b = scoreFromMonitor(base);
   if (baseOnly || !top) return b;
   const qualifying = top.split(",").map((p) => scoreFromMonitor(p.trim()))
@@ -494,7 +650,16 @@ export function labComputeSpecScore(
     labScoreFromRam(input.ram, opts.ramGap),
     [labScoreFromRam(input.ramTop, opts.ramGap)],
   );
-  const monitor = opts.dropMonitor ? null : labScoreFromMonitorSpec(input.monitorBase, input.monitorTop, opts.monitorBaseOnly ?? false);
+  const monitor = opts.dropMonitor
+    ? null
+    : opts.useOperationalMonitor
+      ? opScoreFromMonitorSpec(input.monitorBase, input.monitorTop, opts.monitorBaseOnly ?? false)
+      : labScoreFromMonitorSpec(
+        input.monitorBase,
+        opts.monitorBaseOnly ? null : input.monitorTop,
+        opts.monitorBonus,
+        opts.monitorStepUp,
+      );
   const items = [
     { score: gpu, weight: w.vga },
     { score: monitor, weight: w.monitor },
