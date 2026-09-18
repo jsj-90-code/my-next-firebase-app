@@ -551,6 +551,120 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     expect(base.length).toBeGreaterThan(20);
   });
 
+  it("⑤-B 지하를 지상과 같게 보는 게 맞나 — 2026-09-18 오송점에서 나온 질문", () => {
+    // 지금 자(`computeLocationScoreFromFacts`)는 **지하 1~2층과 지상 1~2층에 같은 4점**을 준다.
+    // 엘리베이터가 있으면 둘 다 5점 만점이다. 오송점(지하 1층·엘베)이 접근성 만점을 받아서
+    // 드러났다 — 사람은 "지하라 가시성이 나쁘다"고 접근가시성을 내렸는데 산식은 만점이었다.
+    //
+    // ⚠️ 이 자는 **운영 V62도 쓴다**(경쟁력점수 입지 폴백). 그래서 여기서는 고치지 않고
+    //    실험실 안에서 대안 자로 갈아끼워 재기만 한다. 통과하면 그때 어디에 둘지 얘기한다.
+    //
+    // 관문은 ⑤와 같다. 다만 고르는 게 κ가 아니라 **자 자체**라, 대조군은 "어느 매장이
+    // 지하인가"를 섞는다 — 지하 곳수는 그대로 두고 라벨만 옮긴다.
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const KAPPA = P.locationExponents.access;
+    const baseShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+
+    // 대안 자들. 지상 쪽은 한 글자도 안 건드린다 — 지하 칸만 다르다.
+    type Scale = (floor: number, isBasement: boolean, elev: boolean) => number;
+    const mk = (basementBase: (f: number) => number, elevInBasement: boolean): Scale =>
+      (floor, isBasement, elev) => {
+        if (isBasement) return Math.min(5, basementBase(floor) + (elev && elevInBasement ? 1 : 0));
+        let b: number;
+        if (floor <= 2) b = 4; else if (floor === 3) b = 3; else if (floor === 4) b = 2;
+        else if (floor === 5) b = 1; else b = 0;
+        return Math.min(5, b + (elev ? 1 : 0));
+      };
+    const SCALES: { label: string; f: Scale }[] = [
+      { label: "지금 (지하1~2 = 4, 지상과 같음)", f: mk((f) => (f <= 2 ? 4 : 3), true) },
+      { label: "지하 한 단계 아래 (지하1~2 = 3)", f: mk((f) => (f <= 2 ? 3 : 2), true) },
+      { label: "지하 두 단계 아래 (지하1~2 = 2)", f: mk((f) => (f <= 2 ? 2 : 1), true) },
+      { label: "지하엔 엘베 가산 없음", f: mk((f) => (f <= 2 ? 4 : 3), false) },
+    ];
+
+    const facts = cmp.map((r) => ({
+      n: r.n,
+      floor: Math.abs(Number(r.store.floor ?? 1)),
+      basement: r.store.groundLevel === "지하",
+      elev: r.store.hasElevator === true,
+      base: baseShare(r),
+      obs: r.shareObs,
+    }));
+    const basements = facts.filter((f) => f.basement);
+    console.log(
+      `\n══ ⑤-B 지하 자 — 경쟁상권 ${facts.length}곳 중 지하 ${basements.length}곳 ══\n` +
+        basements.map((b) => `  ${b.n} 지하${b.floor}층 · 엘베 ${b.elev ? "있음" : "없음"}`).join("\n"),
+    );
+
+    // 기준값은 자유계수가 아니라 정규화다 — 자를 바꾸면 기하평균도 같이 다시 잡는다.
+    const geo = (a: number[]) => Math.exp(mean(a.map((v) => Math.log(Math.max(0.01, v)))));
+    const scoreOf = (s: Scale, ff: typeof facts) => {
+      const fs = ff.map((p) => s(p.floor, p.basement, p.elev));
+      const ref = geo(fs);
+      const pred = ff.map((p, i) => p.base * Math.pow(fs[i] / ref, KAPPA));
+      return {
+        mape: mean(pred.map((v, i) => Math.abs(v / ff[i].obs - 1))),
+        r: pear(pred, ff.map((p) => p.obs)),
+        ref,
+      };
+    };
+
+    console.log(`\n  ${"자".padEnd(30)} ${"기준값".padStart(7)} ${"MAPE".padStart(8)} ${"r".padStart(7)}  지금 대비`);
+    const v0 = scoreOf(SCALES[0].f, facts);
+    for (const s of SCALES) {
+      const v = scoreOf(s.f, facts);
+      const dm = ((v.mape - v0.mape) * 100).toFixed(2);
+      const dr = (v.r - v0.r).toFixed(3);
+      console.log(
+        `  ${s.label.padEnd(30)} ${v.ref.toFixed(2).padStart(7)} ${`${(v.mape * 100).toFixed(2)}%`.padStart(8)} ${v.r.toFixed(3).padStart(7)}` +
+          `  MAPE ${dm}%p · r ${dr}`,
+      );
+    }
+
+    // 대조군 — "어느 매장이 지하인가"를 섞는다. 지하 곳수는 보존한다.
+    let seed = 20260918 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuffled = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+
+    console.log(`\n══ 무작위 대조군 500회 — 지하 라벨을 매장끼리 섞는다 ══`);
+    for (const s of SCALES.slice(1)) {
+      for (const crit of ["mape", "r"] as const) {
+        const gain = (ff: typeof facts) => {
+          const a = scoreOf(SCALES[0].f, ff), b = scoreOf(s.f, ff);
+          return crit === "mape" ? a.mape - b.mape : b.r - a.r;
+        };
+        const real = gain(facts);
+        const gains: number[] = [];
+        for (let i = 0; i < 500; i++) {
+          const pool = shuffled(facts.map((p) => p.basement));
+          gains.push(gain(facts.map((p, j) => ({ ...p, basement: pool[j] }))));
+        }
+        gains.sort((a, b) => a - b);
+        const pv = (gains.filter((g) => g >= real).length + 1) / (gains.length + 1);
+        const f = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+        console.log(
+          `  ${s.label.padEnd(30)} [${crit === "mape" ? "MAPE" : "r"}] 실제 ${f(real)}` +
+            ` · 섞으면 중앙 ${f(med(gains))} · 95퍼센타일 ${f(gains[Math.floor(gains.length * 0.95)])}` +
+            ` · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`,
+        );
+      }
+    }
+    console.log(
+      `\n  ⚠️ 지하가 ${basements.length}곳뿐이다. 대조군이 통과해도 그 셋이 우연히 잘 맞은 것일 수 있고,` +
+        `\n     미달이어도 "지하가 상관없다"는 뜻이 아니라 **자료가 못 정한다**는 뜻이다.`,
+    );
+    expect(facts.length).toBeGreaterThan(20);
+  });
+
   it("⑥ 절대 층수인가 상대 층수인가 — 사용자 항목 ②", () => {
     // 사용자(2026-09-17): "경재점이 지하1층 2층 이렇게되어있는데 우리점포는 5층 7층
     // 이렇게되어있으면 이것도반영해야되고"
