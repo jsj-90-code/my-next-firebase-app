@@ -123,7 +123,10 @@ describeIf("자사 먹거리·인테리어 기준값", () => {
     const base = runWith(4, 4);
     console.log(`\n[먹거리만 조정 — 인테리어 4 고정]`);
     console.log(`  먹거리   MAPE     중앙    ±20%    후보지 평균 예측 변화`);
-    for (const f of [4, 3.5, 3, 2.5]) {
+    // ⚠️ 위쪽(4.5·5)도 같이 훑는다. 아래로만 훑으면 "4가 최선"이라는 착각이 생긴다 —
+    //    실제로 물어야 할 건 "성적이 4에서 꺾이나, 아니면 그냥 높을수록 좋나"다.
+    //    후자면 자료는 값을 못 고르는 것이고, 4는 우리가 멈춘 자리일 뿐이다.
+    for (const f of [5, 4.5, 4, 3.5, 3, 2.5]) {
       const r = runWith(f, 4);
       const deltas: number[] = [];
       for (const [k, v] of r.preds) {
@@ -142,7 +145,7 @@ describeIf("자사 먹거리·인테리어 기준값", () => {
     const base = runWith(4, 4);
     console.log(`\n[인테리어만 조정 — 먹거리 4 고정]`);
     console.log(`  인테리어  MAPE     중앙    ±20%    후보지 평균 예측 변화`);
-    for (const v0 of [4, 3.5, 3, 2.5]) {
+    for (const v0 of [5, 4.5, 4, 3.5, 3, 2.5]) {
       const r = runWith(4, v0);
       const deltas: number[] = [];
       for (const [k, v] of r.preds) {
