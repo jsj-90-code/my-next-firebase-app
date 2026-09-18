@@ -155,4 +155,47 @@ describeIf("오송점 유효거리 민감도", () => {
     );
     expect(radii.length).toBeGreaterThan(0);
   });
+
+  // 2026-09-18 사용자: "팀플을 경쟁점으로 설정해야할것같음."
+  // 그런데 R은 **전역 계수**다. 오송점 하나 때문에 옮기면 기존점 38곳과 후보지 13곳이 전부
+  // 같이 움직인다. 그 값이 얼마인지 먼저 재 둔다 — 고르기 전에 대가를 봐야 한다.
+  it("R을 옮기면 오송점 말고 어디가 같이 움직이나", () => {
+    const targets = [300, 343, 400];
+    console.log(`\n[R을 옮겼을 때 전체 영향] 기존점 ${existingRows.length}곳 · 후보지 ${candRows.length}곳\n`);
+
+    console.log("  기존점 성적");
+    for (const R of targets) {
+      const { score } = runAt(R);
+      console.log(
+        `    R=${String(R).padStart(4)}  MAPE ${pct(score.mape)}  중앙 ${pct(score.medianAbsErr)}` +
+          `  ±20% ${pct(score.within20, 0)}${R === 300 ? "   <- 지금" : ""}`,
+      );
+    }
+
+    const byR = new Map(targets.map((R) => [R, runAt(R)]));
+    console.log(`\n  후보지별 예측 (경쟁점이 유효거리 밖에 있다가 들어오는 곳만 움직인다)`);
+    console.log(
+      `    ${"코드".padEnd(6)} ${"이름".padEnd(16)} ${"R=300".padStart(8)} ${"R=343".padStart(8)} ${"R=400".padStart(8)}  움직임`,
+    );
+    let moved = 0;
+    for (const r of candRows) {
+      const vals = targets.map((R) => {
+        const P = { ...DEFAULT_TEXTBOOK_PARAMS, effectiveRadiusM: R };
+        const s = byR.get(R)!;
+        void P;
+        return computeTextbook(r.input, s.full).monthlyRevenue ?? null;
+      });
+      const [a, , c] = vals;
+      const delta = a && c ? (c - a) / a : null;
+      const big = delta != null && Math.abs(delta) > 0.01;
+      if (big) moved++;
+      console.log(
+        `    ${r.input.storeCode.padEnd(6)} ${(r.input.storeName ?? "").slice(0, 15).padEnd(16)} ` +
+          vals.map((v) => manwon(v)).join(" ") +
+          `  ${delta == null ? "-" : `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)}%`}${big ? "  <-" : ""}`,
+      );
+    }
+    console.log(`\n  R=300 -> 400에서 1% 넘게 움직인 후보지 ${moved}/${candRows.length}곳`);
+    expect(candRows.length).toBeGreaterThan(0);
+  });
 });
