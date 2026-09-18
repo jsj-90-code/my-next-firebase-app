@@ -2356,4 +2356,133 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
 
     expect(cmp.length).toBeGreaterThan(20);
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // (19) 상권이 갈리면 **수요도 줄어든다** — 2026-09-18 사용자 정정
+  //
+  // 사용자: *"난 길건너니까 약하다고 체크한 게 아니라, 길건너편에 있으니까 상권이
+  //          분리되어 있다라고 보는 거였는데? 두 매장 간 영향력이 적다라고 체크한 거야."*
+  //
+  // (17)(18)은 **경쟁만** 깎았다. 그런데 상권이 갈렸다는 건 두 가지를 같이 뜻한다:
+  //   ㄱ  경쟁점이 우리 손님을 못 뺏는다        -> 우리 몫이 커진다 (예측 ↑)
+  //   ㄴ  길 건너 사람도 우리 손님이 아니다      -> 우리 수요가 준다 (예측 ↓)
+  // 방향이 반대라, ㄱ만 넣으면 서로 상쇄돼 아무 일도 안 일어난다. (17)(18)이 그랬다.
+  //
+  // 수요식은 매장 중심 **반경 400m 원**으로 센다. 그 원이 대로를 넘어가면 길 건너 사람이
+  // 우리 손님으로 들어와 있다. 오송점이 그 경우다(아파트 54동 중 51동이 길 건너).
+  //
+  // 갈렸나 여부는 로드뷰 판정 block1을 쓴다 — "제일 붐비는 쪽과 우리 사이에 왕복 4차선
+  // 이상 도로·철길·하천이 있는가". 매장 단위 사실 질문이고 41곳 중 13곳이 '예'다.
+  // ────────────────────────────────────────────────────────────────────────
+  it("(19) 갈린 상권은 수요도 깎아야 하나", () => {
+    const RV = ".local-tools/roadview-judgments.json";
+    if (!existsSync(RV)) { console.log("\n로드뷰 판정 자료가 없다."); return; }
+    const raw = JSON.parse(readFileSync(RV, "utf8"));
+    const split = new Map<string, boolean>();
+    for (const s of raw.sites as Record<string, unknown>[]) {
+      const key = String(s.key ?? "");
+      if (!key.startsWith("existing_")) continue;
+      if (typeof s.block1 === "boolean") split.set(key.replace("existing_", ""), s.block1);
+    }
+    const isSplit = (r: Row) => split.get(String(r.store.storeCode)) === true;
+    const nSplit = rows.filter(isSplit).length;
+    console.log(`\n══ (19) 갈린 상권의 수요 할인 ══`);
+    console.log(`  전체 ${rows.length}곳 중 갈림 ${nSplit}곳 · 경쟁상권 ${cmp.length}곳 중 ${cmp.filter(isSplit).length}곳`);
+
+    // λ만큼 수요를 깎는다. 축척 A도 같이 다시 잡는다 — A는 독점매장에서 재는 값이라
+    // 그중에도 갈린 곳이 있으면 같이 움직인다. 안 고치면 깎은 만큼이 A로 되밀려 들어간다.
+    const W2 = DEFAULT_TEXTBOOK_PARAMS.qualityWeights;
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const predShare = (r: Row) => {
+      const oq = computeQualityScore(r.parts, W2);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W2) ?? oq) / oq;
+        riv += x.ip * Math.pow(q, P.qualityExponent);
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const pred = cmp.map(predShare);
+
+    const obsWith = (lam: number, flag: (r: Row) => boolean) => {
+      const dem = (r: Row) => r.demand * (flag(r) ? 1 - lam : 1);
+      const mono2 = rows.filter((r) => !r.rivals.length);
+      const A2 = med(mono2.map((r) => r.util / (dem(r) / (r.pc * 720))));
+      return cmp.map((r) => r.util / (A2 * dem(r) / (r.pc * 720)));
+    };
+    const scoreLam = (lam: number, flag: (r: Row) => boolean) => {
+      const o = obsWith(lam, flag);
+      return { mape: mean(pred.map((v, i) => Math.abs(v / o[i] - 1))), r: pear(pred, o) };
+    };
+
+    const LAMS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6];
+    console.log(`\n  λ 훑기 (갈린 매장의 수요 x (1-λ))`);
+    for (const lam of LAMS) {
+      const s = scoreLam(lam, isSplit);
+      console.log(`    λ=${lam.toFixed(1)}  MAPE ${(s.mape * 100).toFixed(2)}%  r ${s.r.toFixed(3)}${lam === 0 ? "   <- 지금(안 깎음)" : ""}`);
+    }
+
+    let seed = 20260918 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuffled = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+
+    console.log(`\n══ LOO 홀드아웃 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const pickLam = (idxs: number[]) => {
+        let best = { lam: 0, v: Infinity };
+        for (const lam of LAMS) {
+          const o = obsWith(lam, isSplit);
+          const v = crit === "mape"
+            ? mean(idxs.map((i) => Math.abs(pred[i] / o[i] - 1)))
+            : -pear(idxs.map((i) => pred[i]), idxs.map((i) => o[i]));
+          if (v < best.v) best = { lam, v };
+        }
+        return best.lam;
+      };
+      const all = cmp.map((_, i) => i);
+      const errs: number[] = [], picks: number[] = [];
+      for (let i = 0; i < cmp.length; i++) {
+        const lam = pickLam(all.filter((j) => j !== i));
+        picks.push(lam);
+        const o = obsWith(lam, isSplit);
+        errs.push(Math.abs(pred[i] / o[i] - 1));
+      }
+      const ins = pickLam(all);
+      const base = scoreLam(0, isSplit);
+      const tally = [...new Set(picks)].map((p) => [p, picks.filter((x) => x === p).length] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 표본 안 λ=${ins} ${(scoreLam(ins, isSplit).mape * 100).toFixed(2)}%` +
+        ` → LOO ${(mean(errs) * 100).toFixed(2)}%   (안 깎으면 ${(base.mape * 100).toFixed(2)}%)`);
+      console.log(`     훈련이 고른 λ: ${tally.map(([p, c]) => `${p} ${Math.round(c / picks.length * 100)}%`).join(" · ")}`);
+    }
+
+    console.log(`\n══ 무작위 대조군 500회 — '갈림' 딱지를 매장끼리 섞는다 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const gainOf = (flag: (r: Row) => boolean) => {
+        const base = scoreLam(0, flag);
+        let best = Infinity, bl = 0;
+        for (const lam of LAMS) {
+          const s = scoreLam(lam, flag);
+          const v = crit === "mape" ? s.mape : -s.r;
+          if (v < best) { best = v; bl = lam; }
+        }
+        const s = scoreLam(bl, flag);
+        return crit === "mape" ? base.mape - s.mape : s.r - base.r;
+      };
+      const real = gainOf(isSplit);
+      const codes = rows.map((r) => String(r.store.storeCode));
+      const gains: number[] = [];
+      for (let i = 0; i < 500; i++) {
+        const pool = shuffled(codes.map((c) => split.get(c) === true));
+        const m = new Map(codes.map((c, j) => [c, pool[j]]));
+        gains.push(gainOf((r) => m.get(String(r.store.storeCode)) === true));
+      }
+      gains.sort((x, y) => x - y);
+      const pv = (gains.filter((g) => g >= real).length + 1) / (gains.length + 1);
+      const f = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 실제 ${f(real)} · 섞으면 중앙 ${f(med(gains))}` +
+        ` · 95퍼센타일 ${f(gains[Math.floor(gains.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+    expect(cmp.length).toBeGreaterThan(20);
+  });
 });
