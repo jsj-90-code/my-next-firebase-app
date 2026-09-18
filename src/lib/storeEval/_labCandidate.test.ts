@@ -32,7 +32,7 @@ import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility"
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
 import {
-  DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook,
+  DEFAULT_TEXTBOOK_PARAMS, computeQualityScore, computeTextbook, fittedParams, scoreTextbook,
 } from "./textbookModel";
 import type { CandidateInput, Competitor, LocationEvaluation } from "./types";
 
@@ -321,6 +321,76 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
         `${up == null ? "" : ` (+${(up * 100).toFixed(0)}%)`}`);
       console.log(`     ⚠️ 메운 값은 **눈금일 뿐 채택값이 아니다.** 유동 400m/300m/1km를 실제로 받아 채울 것.`);
       console.log(`     ⚠️ 중심도(유동 300m ÷ 1km)도 같이 빠져 입지 배율이 ${now.locationMultiplier?.toFixed(3) ?? "-"}에 머문다.`);
+    }
+  });
+
+  it("(7) 한 곳 상세 — 평가 코멘트에 쓸 근거를 통째로 찍는다", () => {
+    // 평가기록 코멘트([상권]/[경쟁]/[종합 의견])를 쓰려면 **산식이 실제로 무엇을 보고
+    // 그 숫자를 냈는지**가 필요하다. 요약표만 보고 쓰면 "느낌"이 섞인다.
+    //
+    //   LAB_CANDIDATE=N015 npx vitest run src/lib/storeEval/_labCandidate.test.ts --disable-console-intercept
+    //
+    // ⚠️ 여기 찍힌 것만 근거로 쓴다. 안 찍힌 건 산식이 안 본 것이므로 코멘트에도 넣지 않는다.
+    const want = process.env.LAB_CANDIDATE?.trim();
+    const picks = want ? candRows.filter((r) => r.input.storeCode === want) : candRows;
+    if (!picks.length) { console.log(`\n[상세] ${want ?? ""} 해당 후보지가 없다`); return; }
+
+    for (const r of picks) {
+      const b = computeTextbook(r.input, full);
+      const c = r.candidate;
+      const oq = r.input.ownQualityParts ? computeQualityScore(r.input.ownQualityParts, full.qualityWeights) : null;
+      console.log(`\n${"=".repeat(78)}`);
+      console.log(`[상세] ${r.input.storeCode} ${r.input.storeName} · ${c.address ?? ""}`);
+      console.log(`${"=".repeat(78)}`);
+
+      console.log(`\n-- 1단계 수요 --`);
+      console.log(`  주거 1km ${c.pop1km?.toLocaleString() ?? "-"}명 · 500m ${c.pop500m?.toLocaleString() ?? "-"}명`);
+      console.log(`  유동 ${full.floatingRadius}m ${r.input.floatingByRadius[full.floatingRadius]?.toLocaleString() ?? "-"}명 (유동계수 ${full.floatingFactor})`);
+      console.log(`  -> 주거수요 ${b.residentDemandUsers == null ? "-" : Math.round(b.residentDemandUsers).toLocaleString()}명` +
+        ` + 유동수요 ${b.floatingDemandUsers == null ? "-" : Math.round(b.floatingDemandUsers).toLocaleString()}명`);
+      console.log(`  특수수요: ${r.input.specialDemandType ?? "없음"} · 조사 경쟁점 ${r.input.competitorCount ?? 0}곳(흡인력 항)`);
+      console.log(`  => 총수요 ${b.totalDemandUsers == null ? "-" : Math.round(b.totalDemandUsers).toLocaleString()}명/월` +
+        ` · ${b.totalDemandHours == null ? "-" : Math.round(b.totalDemandHours).toLocaleString()}시간/월`);
+
+      console.log(`\n-- 2단계 입지 (점유율에 곱한다) --`);
+      const cen = r.input.location?.centrality;
+      console.log(`  상권 중심도 ${cen == null ? "-" : cen.toFixed(3)} (유동300m ÷ 유동1km × (1000/300)²; 1보다 크면 문 앞이 빽빽)`);
+      console.log(`     유동 300m ${c.floating300Avg?.toLocaleString() ?? "-"} · 1km ${c.floating1000Avg?.toLocaleString() ?? "-"}`);
+      console.log(`  접근성 ${r.input.location?.access?.toFixed(2) ?? "-"} (층 ${c.floor ?? "-"} · ${c.groundLevel ?? "-"} · 엘리베이터 ${c.hasElevator === true ? "있음" : c.hasElevator === false ? "없음" : "-"})`);
+      console.log(`  => 입지 배율 ${b.locationMultiplier?.toFixed(4) ?? "-"}` +
+        (b.locationFactors.length ? `  [${b.locationFactors.map((f) => `${f.key} ${f.value.toFixed(4)}`).join(" · ")}]` : ""));
+
+      console.log(`\n-- 3단계 점유율 --`);
+      console.log(`  자사 PC ${r.input.pcCount ?? "-"}대 · 자사 경쟁력 ${oq?.toFixed(3) ?? "-"}`);
+      const qp = r.input.ownQualityParts;
+      if (qp) {
+        console.log(`     사양 ${qp.spec?.toFixed(2) ?? "-"} · 존구성 ${qp.zone?.toFixed(2) ?? "-"} · 먹거리 ${qp.food?.toFixed(2) ?? "-"}` +
+          ` · 인테리어 ${qp.interior?.toFixed(2) ?? "-"} · 관리 ${qp.management?.toFixed(2) ?? "-"}(가맹점 평균)`);
+      }
+      const rivals = (r.input.rivals ?? []).map((v) => ({
+        ...v, q: v.parts ? computeQualityScore(v.parts, full.qualityWeights) : null,
+        inRange: v.distanceM == null || v.distanceM <= full.effectiveRadiusM,
+      }));
+      console.log(`  경쟁점 ${rivals.length}곳 (유효거리 ${full.effectiveRadiusM}m 안 ${rivals.filter((v) => v.inRange).length}곳이 실제로 겨룬다)`);
+      for (const v of rivals.sort((a, x) => (a.distanceM ?? 9e9) - (x.distanceM ?? 9e9))) {
+        console.log(`     ${v.inRange ? "●" : "○"} ${String(Math.round(v.distanceM ?? 0)).padStart(4)}m  PC ${String(v.ip).padStart(3)}대  경쟁력 ${v.q?.toFixed(3) ?? "-"}` +
+          `  (자사 대비 ${oq && v.q ? `${((v.q / oq - 1) * 100).toFixed(0)}%` : "-"})`);
+      }
+      const inR = rivals.filter((v) => v.inRange && v.q != null);
+      if (inR.length && oq) {
+        const avgQ = inR.reduce((a, v) => a + (v.q as number), 0) / inR.length;
+        console.log(`  유효거리 안 경쟁점 평균 경쟁력 ${avgQ.toFixed(3)} · 자사 ${oq.toFixed(3)} -> ${oq >= avgQ ? "자사 우위" : "자사 열위"} (${((oq / avgQ - 1) * 100).toFixed(1)}%)`);
+      }
+      console.log(`  => 점유율 ${b.share == null ? "-" : (b.share * 100).toFixed(1)}%` +
+        ` · 자사 이용시간 ${b.ownDemandHours == null ? "-" : Math.round(b.ownDemandHours).toLocaleString()}시간/월`);
+
+      console.log(`\n-- 4단계 매출 --`);
+      console.log(`  정가 ${c.hourlyRate?.toLocaleString() ?? "-"}원/시간 -> PC몫 ${b.pcUnitPrice == null ? "-" : Math.round(b.pcUnitPrice).toLocaleString()}원` +
+        ` + 상품몫 ${Math.round(full.productUnitPrice).toLocaleString()}원 = 총단가 ${b.unitPrice == null ? "-" : Math.round(b.unitPrice).toLocaleString()}원/PC·시간`);
+      console.log(`  예상 가동률 ${b.utilization == null ? "-" : (b.utilization * 100).toFixed(1)}%` +
+        `${b.capped ? ` (상한 ${(full.maxUtilization * 100).toFixed(0)}%에 걸렸다)` : ""}`);
+      console.log(`  => 예상 월매출 ${b.monthlyRevenue == null ? "-" : Math.round(b.monthlyRevenue).toLocaleString()}원 (${manwon(b.monthlyRevenue)})`);
+      if (b.missing.length) console.log(`  ⚠️ 자료없음: ${b.missing.join(", ")}`);
     }
   });
 });
