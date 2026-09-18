@@ -527,6 +527,28 @@
       "lat": 37.1838545413806,
       "lng": 128.467902843509,
       "method": "운영DB"
+    },
+    "candidate:N015": {
+      "kind": "candidate",
+      "code": "N015",
+      "name": "구리돌다리점",
+      "address": "경기도 구리시 수택동 383-3",
+      "lat": 37.6001879467754,
+      "lng": 127.138647379234,
+      "matchedAddress": "경기도 구리시 수택동 383-3",
+      "method": "운영DB좌표",
+      "queried": null
+    },
+    "candidate:N016": {
+      "kind": "candidate",
+      "code": "N016",
+      "name": "오송점",
+      "address": "충청북도 청주시 흥덕구 오송읍 오송생명로 161",
+      "lat": 36.6325264398291,
+      "lng": 127.327498297757,
+      "matchedAddress": "충청북도 청주시 흥덕구 오송읍 오송생명로 161",
+      "method": "운영DB좌표",
+      "queried": null
     }
   },
   "crosscheckedAt": "2026-09-16T12:21:26.091Z"
