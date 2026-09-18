@@ -16,7 +16,10 @@
 //   node scripts/collectSbizFloatingPopulation.mjs --limit 3     # 3곳만 시험
 //   node scripts/collectSbizFloatingPopulation.mjs               # 전체
 //
-// 산출물: .local-tools/sbiz-floating-population.json (운영 자료라 git 제외)
+// 산출물: .local-tools/sbiz-floating-population.json
+//   ⚠️ **git에 넣는다.** .gitignore가 이 파일만 예외로 풀어 뒀다(2026-09-17 커밋 d91c271
+//      "PC 옮길 때마다 85분씩 다시 받던 것"). 공개 통계라 넣어도 되고, 안 넣으면 PC를
+//      옮길 때마다 전 지점을 다시 받아야 한다. 받은 뒤 커밋할 것.
 // **이어받기 가능하다** — 지점 하나 끝날 때마다 저장하고, 다시 돌리면 이미 받은 건 건너뛴다.
 //
 // ⚠️ 남의 공개 사이트를 여러 번 부른다. 기본 간격 1.2초를 줄이지 말 것.
