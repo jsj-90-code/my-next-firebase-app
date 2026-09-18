@@ -203,8 +203,15 @@ const AGE_BANDS: { suffix: string; label: string; matches: string[] }[] = [
   { suffix: "80plus", label: "80세이상", matches: ["80세이상", "80세+", "80대이상"] },
 ];
 
-/** 소상공인365에서 고를 수 있는 반경. 2026-09-15에 100·200을 추가했다. */
-export type MarketRadiusKey = "100" | "200" | "500" | "1km";
+/**
+ * 소상공인365에서 고를 수 있는 반경. 2026-09-15에 100·200을, 2026-09-18에 300·400을 추가했다.
+ *
+ * 300·400을 연 이유(2026-09-18 사용자 요청): 실험실 교과서식 산식이 **유동 400m로 수요를
+ * 세고, 유동 300m ÷ 유동 1km로 상권 중심도를 잰다**(textbookModel.ts). 그런데 후보지 등록
+ * 화면에는 500m 칸밖에 없어서, 스크립트를 따로 돌리지 않으면 그 두 반경이 빈 채로 남고
+ * 후보지가 **말없이 낮게** 나왔다(구리돌다리점 3,886만 → 4,272만, +9.9%).
+ */
+export type MarketRadiusKey = "100" | "200" | "300" | "400" | "500" | "1km";
 
 const FLOATING_DECADE_BANDS: { suffix: string; label: string; matches: string[] }[] = [
   { suffix: "10s", label: "10대", matches: ["10대"] },
@@ -393,9 +400,25 @@ export function parseSosangongin365TrendLatest(text: string, rowLabelHint?: stri
 // 계산은 남성비율만 쓰고 여성은 1-남성비율로 자동 계산돼서 굳이 따로 저장할 필요가 없었다.
 // 2026-09-15 — 반경을 100/200까지 열었다. 소상공인365에서 그 반경이 선택 가능하다는 것을
 // 사용자가 확인했다. 필드 이름만 접두어가 달라지고 파싱 규칙은 같다.
-// 1km 유동은 원래부터 안 쓴다(이 사이트 리포트에 그 조합이 없다).
+// 2026-09-18 — 300/400을 열었다. 실험실 산식이 실제로 읽는 두 반경이다(위 MarketRadiusKey 주석).
+//
+// 1km은 **총량 하나(floating1000Avg)만** 만든다.
+//   - 2026-08-27에 1km 유동을 통째로 지웠던 이유는 "반경이 넓어 상권 밖까지 잡혀 **수요**에 못
+//     쓴다"였다. 그 판단은 지금도 유효해서 연령·성별은 여기서도 안 만든다.
+//   - 2026-09-17에 상권 중심도 = (유동 300m ÷ 유동 1km) x (1000/300)²가 들어오면서 **분모로만**
+//     1km 총량이 필요해졌다. 스크립트(writeFloatingPopulationToFirestore --include-1000)는 이미
+//     같은 규칙으로 총량만 쓴다 — 붙여넣기 경로도 같은 값에 닿게 맞춘 것이다.
+//   - 필드 이름이 `floating1kmAvg`가 아니라 `floating1000Avg`다. 접두어 규칙에서 벗어나는
+//     유일한 자리라 아래에서 따로 적는다(이름을 바꾸면 이미 쌓인 자료가 끊긴다).
+// ⚠️ 이 사이트 1km 리포트에 유동인구 표가 실제로 딸려오는지는 2026-09-18 현재 붙여넣기로
+//    확인되지 않았다. 안 나오면 이 항목은 그냥 안 잡힐 뿐이고(지어내지 않는다), 그 경우
+//    1km 총량은 여전히 스크립트나 손입력으로 채운다.
 function floatingSpecs(radiusKey: MarketRadiusKey, displayRadius: string): MarketFieldSpec[] {
-  if (radiusKey === "1km") return [];
+  if (radiusKey === "1km") {
+    return [
+      { key: "floating1000Avg", displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["유동인구:전체"], kind: "count" },
+    ];
+  }
   const prefix = `floating${radiusKey}`;
   return [
     { key: `${prefix}Avg`, displayLabel: `유동인구 평균(${displayRadius})`, matchLabels: ["유동인구:전체"], kind: "count" },
@@ -409,7 +432,13 @@ function floatingSpecs(radiusKey: MarketRadiusKey, displayRadius: string): Marke
   ];
 }
 
+// ⚠️ 2026-09-18 — 지하철과 같은 이유로 **받는 칸이 있는 반경(500m·1km)에서만** 만든다.
+//    CandidateInput에 있는 직장인구 필드는 employ500* / employ1km* 여섯 개뿐이다. 그 전에는
+//    100m·200m를 골라도 `employ100Total` 같은 필드가 만들어져 파이어스토어에 **아무도 안 읽는
+//    값**으로 저장됐다(화면에도 안 나온다). 300·400을 열면서 그 쓰레기를 두 반경 더 늘릴
+//    이유가 없다. 유동인구는 반대다 — floating100~400은 실제로 쓰는 필드라 그대로 만든다.
 function employSpecs(radiusKey: MarketRadiusKey, displayRadius: string): MarketFieldSpec[] {
+  if (radiusKey !== "500" && radiusKey !== "1km") return [];
   const prefix = radiusKey === "1km" ? "employ1km" : `employ${radiusKey}`;
   return [
     { key: `${prefix}Total`, displayLabel: `직장인구 전체(${displayRadius})`, matchLabels: ["직장인구:전체"], kind: "count" },
@@ -441,7 +470,13 @@ const SB365_SCHOOL_CATEGORIES: { key: string; matches: string[] }[] = [
 // 현황" 표만 다른 표와 완전히 다른 모양이다 — "선택 영역" 표기가 아예 없고, 노선명+역명이 라벨로
 // 나오고("수인선 호구포역"), 그 뒤로 최근 3개년 승하차 인원이 이어진다. 반경 안에 역이 여러 개면
 // 행이 여러 줄 나올 수 있어(안 겪어봤지만 구조상 가능) 전부 더한다. 최신 연도(마지막 칸)만 쓴다.
+//
+// ⚠️ 2026-09-18 — 받는 칸이 있는 반경(500m·1km)에서만 만든다. 그 전에는 `500이 아니면 1km`라
+//    100m·200m를 골라 붙여넣어도 **1km 칸에 100m 값이 덮어써졌다**. 1km 반경으로 다시 받기
+//    전까지 아무 표시 없이 틀린 값이 남는 자리였다. 300·400을 열면서 같은 사고가 두 배로
+//    늘 자리라 여기서 끊는다 — `facility300SubwayRiders` 같은 필드는 애초에 없다.
 function facilitySubwaySpecs(radiusKey: MarketRadiusKey, displayRadius: string): MarketFieldSpec[] {
+  if (radiusKey !== "500" && radiusKey !== "1km") return [];
   return [
     {
       key: radiusKey === "500" ? "facility500SubwayRiders" : "facility1kmSubwayRiders",

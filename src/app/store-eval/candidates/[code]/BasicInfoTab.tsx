@@ -518,7 +518,7 @@ function BasicInfoTabForm({
               title="소상공인365 상권분석 (유동인구·직장인구·세대수·업소수)"
               openUrl="https://bigdata.sbiz.or.kr/"
               openLabel="소상공인365 열기"
-              instructions='빅데이터 상권분석 → 상세분석 → 업종 "PC방", 반경은 아래에서 고른 값(500m/1km)과 같게 설정 후 분석하기 → 리포트 페이지 전체를 Ctrl+A로 선택해 그대로 복사해 붙여넣으세요(표를 따로 고를 필요 없습니다). 500m·1km는 사이트에서 각각 다시 분석해야 하니, 반경을 바꿔가며 두 번 반복하면 됩니다(한 리포트에 같이 안 나옴).'
+              instructions='빅데이터 상권분석 → 상세분석 → 업종 "PC방", 반경은 아래에서 고른 값과 같게 설정 후 분석하기 → 리포트 페이지 전체를 Ctrl+A로 선택해 그대로 복사해 붙여넣으세요(표를 따로 고를 필요 없습니다). 한 리포트에 반경 하나만 나오므로, 반경을 바꿔가며 반복하면 됩니다. ⚠️ 실험실 산식이 실제로 읽는 건 400m(수요) · 300m와 1km(상권 중심도)입니다 — 500m만 받으면 후보지 예측이 말없이 낮게 나옵니다.'
               tableVariants={SOSANGONGIN365_TABLE_VARIANTS}
               sourceType="sosangongin365"
               candidateCode={form.code}
@@ -575,7 +575,10 @@ function BasicInfoTabForm({
       </section>
 
       <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>유동인구 (반경 500m)</h3>
+        <h3 className={sectionTitleClass}>유동인구 (반경 500m) — 운영 V62</h3>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+          운영 산식(V62)이 읽는 유일한 유동 반경입니다. 여기가 비면 V62 예상매출이 안 움직입니다.
+        </p>
         <div className={`${gridClass} mt-4`}>
           <NumberField label="유동인구 평균" value={form.floating500Avg} onChange={(v) => set("floating500Avg", v)} />
           <NumberField label="유동인구 남" value={form.floating500Male} onChange={(v) => set("floating500Male", v)} />
@@ -585,6 +588,67 @@ function BasicInfoTabForm({
           <NumberField label="유동 40대" value={form.floating500_40s} onChange={(v) => set("floating500_40s", v)} />
           <NumberField label="유동 50대" value={form.floating500_50s} onChange={(v) => set("floating500_50s", v)} />
           <NumberField label="유동 60대 이상" value={form.floating500_60plus} onChange={(v) => set("floating500_60plus", v)} />
+        </div>
+      </section>
+
+      {/* 2026-09-18 추가 — 실험실 교과서식 산식이 읽는 반경. 등록 화면에 500m 칸밖에 없어서
+          스크립트를 따로 돌리지 않으면 여기가 빈 채로 남았고, 그러면 후보지 예측이 **말없이
+          낮게** 나왔다(구리돌다리점 3,886만 → 4,272만, +9.9%).
+          어느 반경을 왜 쓰는지는 textbookModel.ts에 근거가 있다:
+            400m — 수요의 유동 몫. 500m는 수원망포점처럼 지하철 상권을 통째로 먹고,
+                   100~300m는 너무 좁아 오차가 커진다.
+            300m ÷ 1km — 상권 중심도. 1보다 크면 우리 문 앞이 상권 평균보다 빽빽하다.
+          ⚠️ 여기 숫자를 글자로 박지 말 것. 반경 값이 바뀌면 이 주석과 아래 제목도 같이 고친다. */}
+      <section className={sectionClass}>
+        <h3 className={sectionTitleClass}>유동인구 (반경 400m) — 실험실 수요</h3>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+          실험실 교과서식 산식의 <strong>수요 확정 반경</strong>입니다. 비면 유동 몫(수요의 약 21%)이
+          빠진 채 계산됩니다. 소상공인365에서 반경 400m로 다시 분석해 붙여넣으세요.
+        </p>
+        <div className={`${gridClass} mt-4`}>
+          <NumberField label="유동인구 평균" value={form.floating400Avg ?? null} onChange={(v) => set("floating400Avg", v)} />
+          <NumberField label="유동인구 남" value={form.floating400Male ?? null} onChange={(v) => set("floating400Male", v)} />
+          <NumberField label="유동 10대" value={form.floating400_10s ?? null} onChange={(v) => set("floating400_10s", v)} />
+          <NumberField label="유동 20대" value={form.floating400_20s ?? null} onChange={(v) => set("floating400_20s", v)} />
+          <NumberField label="유동 30대" value={form.floating400_30s ?? null} onChange={(v) => set("floating400_30s", v)} />
+          <NumberField label="유동 40대" value={form.floating400_40s ?? null} onChange={(v) => set("floating400_40s", v)} />
+          <NumberField label="유동 50대" value={form.floating400_50s ?? null} onChange={(v) => set("floating400_50s", v)} />
+          <NumberField label="유동 60대 이상" value={form.floating400_60plus ?? null} onChange={(v) => set("floating400_60plus", v)} />
+        </div>
+      </section>
+
+      <section className={sectionClass}>
+        <h3 className={sectionTitleClass}>유동인구 (반경 300m · 1km) — 실험실 상권 중심도</h3>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+          상권 중심도 = (유동 300m ÷ 유동 1km) × (1000/300)². 1보다 크면 우리 문 앞이 상권 평균보다
+          빽빽하다는 뜻입니다. <strong>둘 중 하나라도 비면 중심도가 통째로 빠집니다.</strong>
+          1km은 비율의 분모로만 쓰므로 총량 한 칸뿐입니다(연령·성별은 안 씁니다 — 반경이 넓어
+          상권 밖까지 잡혀 수요에는 못 쓴다고 2026-08-27에 정리했습니다).
+        </p>
+        <div className={`${gridClass} mt-4`}>
+          <NumberField label="유동인구 평균 (300m)" value={form.floating300Avg ?? null} onChange={(v) => set("floating300Avg", v)} />
+          <NumberField label="유동인구 남 (300m)" value={form.floating300Male ?? null} onChange={(v) => set("floating300Male", v)} />
+          <NumberField label="유동 10대 (300m)" value={form.floating300_10s ?? null} onChange={(v) => set("floating300_10s", v)} />
+          <NumberField label="유동 20대 (300m)" value={form.floating300_20s ?? null} onChange={(v) => set("floating300_20s", v)} />
+          <NumberField label="유동 30대 (300m)" value={form.floating300_30s ?? null} onChange={(v) => set("floating300_30s", v)} />
+          <NumberField label="유동 40대 (300m)" value={form.floating300_40s ?? null} onChange={(v) => set("floating300_40s", v)} />
+          <NumberField label="유동 50대 (300m)" value={form.floating300_50s ?? null} onChange={(v) => set("floating300_50s", v)} />
+          <NumberField label="유동 60대 이상 (300m)" value={form.floating300_60plus ?? null} onChange={(v) => set("floating300_60plus", v)} />
+          <NumberField
+            label="유동인구 평균 (1km)"
+            value={form.floating1000Avg ?? null}
+            onChange={(v) => set("floating1000Avg", v)}
+            hint="중심도의 분모. 소상공인365 반경 1km 리포트 또는 수집 스크립트(--include-1000)로 채웁니다"
+          />
+          <ComputedField
+            label="상권 중심도 (계산값)"
+            value={
+              form.floating300Avg != null && form.floating1000Avg != null && form.floating1000Avg > 0
+                ? Math.round((form.floating300Avg / form.floating1000Avg) * (1000 / 300) ** 2 * 1000) / 1000
+                : null
+            }
+            hint="(유동 300m ÷ 유동 1km) × (1000/300)² — 1보다 크면 상권 중심, 작으면 상권 끝"
+          />
         </div>
       </section>
 

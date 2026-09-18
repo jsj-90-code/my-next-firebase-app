@@ -23,9 +23,14 @@ type EditableDraft = ExtractedFieldDraft & { checked: boolean; editedValue: stri
 // 2026-09-15 — 100m·200m를 열었다(사용자 확인: 소상공인365에서 선택 가능). 유동인구가 도보
 // 몇 분 안에서 갈리는지 재보려면 그 반경 자료가 있어야 하는데, 500m만 있을 땐 그 가정을
 // 검정할 방법이 없었다(교과서식 산식 재설계, /store-eval/lab).
+// 2026-09-18 — 300m·400m를 열었다. 실험실 산식이 **실제로 읽는 두 반경**이다:
+//   400m = 수요(확정 반경) · 300m ÷ 1km = 상권 중심도.
+// 이 둘이 비면 후보지 예측이 말없이 낮게 나온다(구리돌다리점 3,886만 → 4,272만).
 const RADIUS_OPTIONS: { key: MarketRadiusKey; label: string }[] = [
   { key: "100", label: "100m" },
   { key: "200", label: "200m" },
+  { key: "300", label: "300m" },
+  { key: "400", label: "400m" },
   { key: "500", label: "500m" },
   { key: "1km", label: "1km" },
 ];
