@@ -487,6 +487,90 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     expect(errs.length).toBeGreaterThan(30);
   });
 
+  it("자사와 경쟁점이 다른 자로 재고 있다 — 먹거리·인테리어·관리 (2026-09-18)", () => {
+    // 사용자: *"관리같은경우 거의 하, 중하, 중, 중상, 상 이런형태로 평가하거든. 좀 모자라다하면
+    //          중으로 표현한단말이지. 3점. 근대 우리는 자체 평균이 4.2잖아 이거 개념의 오류가있다.
+    //          인테리어도마찬가지 ... 상이없어 애초에 이사람들 평가에. 먹거리는 객관적 평가가
+    //          사실안되고 ... 근대 우리는 무조건 1점높지 거의"*
+    //
+    // ⚠️ **왜 이게 그냥 넘어가지지 않나.** 경쟁력은 `q_경쟁 / q_자사`의 **비**로만 쓰이고,
+    //    거기에 θ=3 지수가 붙는다. 자사가 통째로 높으면 경쟁점이 전부 작아 보인다.
+    //    그리고 **축척은 독점매장에서 맞춘다** — 독점은 경쟁 항이 약분돼 이 편향을 안 받는다.
+    //    그래서 편향이 축척에 흡수되지 않고 **경쟁상권 매장만 과대예측**으로 남는다.
+    //
+    // 여기서는 두 가지를 잰다.
+    //   1) 독점 vs 경쟁상권 잔차 — 위 가설이 맞으면 경쟁상권이 상대적으로 높아야 한다
+    //   2) 자사를 조사자 자로 내렸을 때 성적이 어떻게 변하나
+    const surveyed = allCompetitors.filter((c) => c.investigationStatus !== "경쟁점없음");
+    const stat = (xs: (number | null | undefined)[]) => {
+      const v = xs.filter((x): x is number => x != null).sort((a, b) => a - b);
+      return { n: v.length, avg: v.reduce((a, b) => a + b, 0) / v.length, med: v[Math.floor(v.length / 2)], max: v[v.length - 1] };
+    };
+    const rf = stat(surveyed.map((c) => c.foodScore));
+    const ri = stat(surveyed.map((c) => c.interiorScore));
+    const rm = stat(surveyed.map((c) => c.managementScore));
+    const own = (k: "food" | "interior" | "management") => stat(rows.map((r) => r.input.ownQualityParts?.[k] ?? null));
+    console.log(`\n[자가 둘이다] 조사자가 매긴 경쟁점 vs 자사에 들어간 값`);
+    console.log("   항목      경쟁점 평균/중앙/최고      자사 평균/중앙/최고");
+    for (const [label, r, o] of [["먹거리", rf, own("food")], ["인테리어", ri, own("interior")], ["관리", rm, own("management")]] as const) {
+      console.log(`  ${label.padEnd(6)} ${r.avg.toFixed(2)} / ${r.med.toFixed(2)} / ${r.max.toFixed(2)} (n=${r.n})` +
+        `      ${o.avg.toFixed(2)} / ${o.med.toFixed(2)} / ${o.max.toFixed(2)} (n=${o.n})`);
+    }
+
+    // 1) 독점 vs 경쟁상권 잔차
+    const base = scoreTextbook(rows, P);
+    const isMono = new Map(rows.map((r) => [r.input.storeCode, !(r.input.competitorIp ?? 0)]));
+    const resid = base.rows.filter((x) => x.predicted != null && x.actual > 0)
+      .map((x) => ({ code: x.storeCode, e: (x.predicted as number) / x.actual - 1, mono: isMono.get(x.storeCode) === true }));
+    const mAvg = (a: typeof resid) => a.length ? a.reduce((s2, x) => s2 + x.e, 0) / a.length : NaN;
+    const mono = resid.filter((x) => x.mono), comp = resid.filter((x) => !x.mono);
+    console.log(`\n[잔차] 독점 ${mono.length}곳 ${(mAvg(mono) * 100).toFixed(1)}%  vs  경쟁상권 ${comp.length}곳 ${(mAvg(comp) * 100).toFixed(1)}%` +
+      `  차이 ${((mAvg(comp) - mAvg(mono)) * 100).toFixed(1)}%p`);
+    console.log(`  자사 과대평가 가설이 맞으면 **경쟁상권이 독점보다 높게(과대예측)** 나와야 한다.`);
+
+    // 2) 자사를 조사자 자로 내려 본다 — 항목별로 따로, 그리고 한꺼번에
+    const shift = (keys: ("food" | "interior" | "management")[], to: Record<string, number>): LabRow[] =>
+      rows.map((r) => {
+        const q = r.input.ownQualityParts;
+        if (!q) return r;
+        const next = { ...q };
+        for (const k of keys) if (next[k] != null) next[k] = to[k];
+        return { actualRevenue: r.actualRevenue, input: { ...r.input, ownQualityParts: next } };
+      });
+    const avgTo = { food: rf.avg, interior: ri.avg, management: rm.avg };
+    const medTo = { food: rf.med, interior: ri.med, management: rm.med };
+    const topTo = { food: rf.max, interior: ri.max, management: rm.max };
+    console.log(`\n[자사를 조사자 자로 내리면] 축척은 매번 다시 맞춘다`);
+    line("  지금 (자사 4.00/4.00/4.20)", rows);
+    line("  먹거리만 경쟁점 평균", shift(["food"], avgTo));
+    line("  인테리어만 경쟁점 평균", shift(["interior"], avgTo));
+    line("  관리만 경쟁점 평균", shift(["management"], avgTo));
+    line("  셋 다 경쟁점 평균", shift(["food", "interior", "management"], avgTo));
+    line("  셋 다 경쟁점 중앙", shift(["food", "interior", "management"], medTo));
+    line("  셋 다 경쟁점 최고", shift(["food", "interior", "management"], topTo));
+    // ── 자를 맞추면 무너진다. 그럼 무엇이 가려져 있었나 ─────────────────────
+    // 경쟁상권이 이미 과소예측(-12.6%)인데 자사를 내리면 경쟁점이 더 커져 점유율이 더
+    // 내려간다. **두 오류가 서로를 가리고 있었다는 뜻이다.** 자를 고치는 건 옳지만
+    // 그것만 하면 숨어 있던 쪽이 드러난다. 같이 고칠 수 있는지 본다.
+    const fixed = shift(["food", "interior", "management"], avgTo);
+    console.log(`\n[자를 맞춘 뒤 경쟁 항을 다시 본다] 자사 = 경쟁점 평균으로 고정`);
+    console.log(`  경쟁력 지수 θ (지금 ${P.qualityExponent}) — 올리면 약한 경쟁점이 더 빨리 작아진다`);
+    for (const th of [3, 4, 5, 6, 8]) {
+      line(`    θ=${th}`, fixed, { ...P, qualityExponent: th });
+    }
+    console.log(`  유효거리 (지금 ${P.effectiveRadiusM}m) — 줄이면 먼 경쟁점이 빠진다`);
+    for (const rr of [150, 200, 250, 300] as const) {
+      line(`    ${rr}m`, fixed, { ...P, effectiveRadiusM: rr });
+    }
+    console.log(`  (비교) 자를 안 맞춘 지금 상태`);
+    line(`    θ=${P.qualityExponent} · ${P.effectiveRadiusM}m`, rows);
+
+    console.log(`\n  ⚠️ **MAPE로 고르지 말 것.** 여기서 성적이 좋아지는 건 "자사를 낮추면 경쟁점이`);
+    console.log(`     커져 점유율이 내려간다"는 수준 이동일 뿐이다. 무엇이 옳은 자인가는`);
+    console.log(`     **자료가 아니라 뜻으로** 정한다 — 같은 문항·같은 척도로 재는 것이다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
+
   it("정가가 매출에 충분히 반영되나 — 탄력도 β 검증 (2026-09-18)", () => {
     // 사용자: *"적용되는 요금이 실제예상매출에 충분히 적용되고있나? 예를들어 1000원요금 >
     //          1500원요금 요금제 33%정도차이나는데 이게 매출에 적용되었는가"*
