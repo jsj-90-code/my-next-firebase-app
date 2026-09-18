@@ -140,3 +140,9 @@ src/**/_*.test.ts
 # 2026-09-18 — 자사 먹거리 기준값은 **조사 결과가 나오면 다시 건다**(사용자: "조사를 먼저 하자").
 # 그때 이 하네스를 다시 만들지 말고 값만 바꿔 돌리면 된다. 인테리어 4.0 유지 근거도 여기 있다.
 !src/lib/storeEval/_ownFoodInterior.test.ts
+# 2026-09-18 밤 — 수요층 파기. 오늘 열 번 기각한 근거가 이 셋에 다 들어 있다.
+# 특히 _demandGap은 "필요 점유율과 산식 수요의 상관은 나눗셈이라 자동으로 음수"라는
+# 함정을 잡아 둔 자리다. 이걸 모르면 같은 착각을 또 한다.
+!src/lib/storeEval/_specialDemand.test.ts
+!src/lib/storeEval/_rivalCapacity.test.ts
+!src/lib/storeEval/_demandGap.test.ts
