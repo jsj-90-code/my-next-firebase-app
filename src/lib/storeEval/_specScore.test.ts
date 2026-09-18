@@ -1504,6 +1504,24 @@ describeIf("사양 — 자료 생김새", () => {
     }
   });
 
+  it("(34) 모니터 전체 점수표 — 자료에 있는 모든 모니터 (낱개)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const S = stores as any[], C = rivals as any[];
+    const split = (t: unknown) => String(t ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean);
+    const own = new Map<string, number>(), riv = new Map<string, number>();
+    for (const s of S) for (const u of [...split(s.ownMonitorBase), ...split(s.ownMonitorTop)]) own.set(u, (own.get(u) ?? 0) + 1);
+    for (const c of C) for (const u of [...split(c.monitorBase), ...split(c.monitorTop)]) riv.set(u, (riv.get(u) ?? 0) + 1);
+    const keys = [...new Set([...own.keys(), ...riv.keys()])]
+      .map((t) => ({ t, o: own.get(t) ?? 0, r: riv.get(t) ?? 0, nw: labScoreFromMonitorUnit(t), old: scoreFromMonitor(t) }))
+      .sort((a, b) => (b.nw ?? -1) - (a.nw ?? -1));
+    console.log(`\n[모니터 전체 점수표] 낱개 ${keys.length}종 · 새 점수 내림차순`);
+    console.log("   운영  ->  새로   자사  경쟁   값");
+    for (const k of keys) {
+      const d = k.old != null && k.nw != null && Math.abs(k.nw - k.old) >= 0.005 ? ` (${k.nw > k.old ? "+" : ""}${(k.nw - k.old).toFixed(2)})` : "";
+      console.log(`  ${(k.old == null ? " - " : k.old.toFixed(2)).padStart(5)}  -> ${(k.nw == null ? " - " : k.nw.toFixed(2)).padStart(5)}   ${String(k.o).padStart(4)}  ${String(k.r).padStart(4)}   ${k.t}${d}`);
+    }
+  });
+
   it("(15) CPU가 나빠진 건 순서인가 수준인가", () => {
     // 새 CPU 표는 경쟁점을 크게 올린다(12400F 41건 +1.30 · 11400F +1.63 · 10400F +1.04).
     // 축척은 **독점매장에서만** 맞추므로(textbookModel calibrationTarget) 이 수준 이동은
