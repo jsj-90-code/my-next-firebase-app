@@ -54,7 +54,7 @@ import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZon
 import {
   LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP, LAB_PERF_LOG_STEP_UP,
   LAB_GEN_PENALTY, LAB_ANCHOR_GENERATION, LAB_CPU_GEN_PENALTY,
-  LAB_MONITOR_HZ_STEP, LAB_MONITOR_HZ_STEP_UP, LAB_MONITOR_BONUS,
+  LAB_MONITOR_HZ_STEP, LAB_MONITOR_HZ_STEP_UP, LAB_MONITOR_BONUS, LAB_SPEC_WEIGHTS,
 } from "@/lib/storeEval/labSpecScore";
 
 type Loaded = {
@@ -576,7 +576,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             <div className="mt-1">
               ⚠️ <b>CPU는 무작위 대조군을 못 넘었습니다</b>(p=0.213). 그래도 켠 이유는
               <b> 영향력과 서술은 다른 것</b>이기 때문입니다 — 매출에 얼마나 미치는지는 <b>비중</b>(하드웨어의
-              {" "}{Math.round(specWeights.cpu * 100)}%)이 담당하고, 하드웨어가 실제로 다른지는
+              {" "}{Math.round(LAB_SPEC_WEIGHTS.cpu * 100)}%)이 담당하고, 하드웨어가 실제로 다른지는
               <b> 변환표</b>가 담당합니다. 대조군은 영향력을 재는 도구라, 비중이 작은 항목이 못 넘는 건 당연합니다.
               경로도 있습니다 — 손님이 사양표를 몰라도 <b>프레임·버벅임은 느끼고</b>, 세대별 성능 우위는
               일반 고객도 아는 정보입니다.
@@ -611,6 +611,22 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               모니터만의 몫을 가를 수 없기 때문입니다 — 요금은 단가가, 좌석은 존구성이 이미 봅니다.
               모니터도 대조군은 못 넘었습니다(p=0.293) — CPU와 같이 <b>서술을 고친 것</b>입니다.
               2026-09-18 측정: MAPE 22.85% → 22.70% · r 0.585 → 0.587 · 중앙 14.5% → 13.9%.
+            </div>
+            <div className="mt-1">
+              <b>하드웨어 내부비중도 실험실 전용으로 갈랐습니다</b> — GPU {LAB_SPEC_WEIGHTS.vga} ·
+              모니터 {LAB_SPEC_WEIGHTS.monitor} · CPU {LAB_SPEC_WEIGHTS.cpu} · RAM {LAB_SPEC_WEIGHTS.ram}
+              (운영은 0.40 / 0.25 / 0.20 / 0.15 그대로). 오늘 자료를 전수로 보니
+              <b> 자료가 제일 약한 모니터가 두 번째로 큰 비중</b>을 갖고 있었습니다(경쟁점 32% 빈칸 ·
+              조사자 편차 · 자사는 240Hz 상수). 기여도도 같은 방향입니다 — GPU를 빼면 r이 0.587 → 0.562로
+              떨어지는데 모니터를 빼면 오히려 0.592로 올라갑니다.
+              ⚠️ 훑기에서는 GPU 0.55~0.60이 더 좋았지만 <b>거기까지 안 갔습니다</b> — 자료에 맞추면
+              실험실 취지에 어긋납니다. 0.50은 뜻으로 고른 값입니다.
+            </div>
+            <div className="mt-1">
+              <b>듀얼모니터 보조 화면은 모니터 채점에서 뺍니다.</b> 10인치 60Hz라 1.29점이 나오는데 그건
+              품질이 나쁜 게 아니라 보조 화면이라 작은 것입니다. 그리고 <b>듀얼 좌석의 프리미엄은
+              존구성이 이미 셉니다</b> — 조사 필드 정의가 &quot;1인석 = 칸막이·듀얼모니터만 있는 개방형
+              좌석&quot;이라 특화좌석에 들어갑니다. 하드웨어에서 또 주면 이중계산입니다.
             </div>
             <div className="mt-1">
               <b>RAM은 안 바꿨습니다.</b> 16GB↔32GB 격차는 늘릴수록 단조롭게 나빠지고(1.0에서 22.76% ·

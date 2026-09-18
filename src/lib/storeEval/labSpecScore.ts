@@ -520,6 +520,19 @@ export function labScoreFromMonitorUnit(
   stepUp = LAB_MONITOR_HZ_STEP_UP,
 ): number | null {
   if (!text || !text.trim()) return null;
+  // ── 듀얼모니터 보조 화면은 채점에서 뺀다 (2026-09-18 사용자 지적) ─────────
+  // *"모니터중에 듀얼모니터있는데, 이거는 해당모니터의 스펙만보는게아니라 좌석에 모니터가
+  //   두개가있다는걸봐야하는데, 이런좌석은 프리미엄석이고..."*
+  //
+  // 보조 화면은 10인치 60Hz처럼 작다(1.29점). 그런데 그건 **모니터 품질이 나쁜 게 아니라
+  // 보조 화면이라 작은 것**이다. 사양 평균에 넣으면 한 칸에 "32인치 240Hz + 10인치 듀얼 60Hz"가
+  // 같이 적힌 경쟁점 점수가 (4.00+1.29)/2 = 2.65로 부당하게 낮아진다 — 우리에게 유리한 왜곡이다.
+  //
+  // ⚠️ 그리고 **듀얼 좌석의 프리미엄은 존구성이 이미 센다.** 조사 필드 정의가 그렇다
+  //    (`types.ts`: *1인석 = 칸막이·듀얼모니터만 있는 개방형 좌석*). `singleSeatCount`가
+  //    labZoneComposition의 **특화좌석**에 들어간다. 하드웨어에서 또 가산을 주면 이중계산이다.
+  //    그래서 여기서는 **가점도 감점도 주지 않고 빼기만** 한다.
+  if (/듀얼|DUAL/i.test(text)) return null;
   const u = text.toUpperCase();
   const hs = [...text.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
   if (hs.length === 0) return scoreFromMonitor(text);
@@ -581,6 +594,39 @@ export function labScoreFromMonitorSpec(
   return b == null ? avg : b * (1 - LAB_MONITOR_SPECIALTY_WEIGHT) + avg * LAB_MONITOR_SPECIALTY_WEIGHT;
 }
 
+/**
+ * **하드웨어 내부비중 — 실험실 전용** (2026-09-18 채택).
+ *
+ * ⚠️ 운영은 `settings.specWeights`(40/25/20/15)를 그대로 쓴다. 그 값은 Firestore 설정이라
+ *    **운영 V62의 `computeSpecScore`와 공유**된다 — 거기를 바꾸면 운영이 같이 움직인다.
+ *    그래서 실험실 값을 여기 따로 둔다.
+ *
+ * ── 왜 바꾸나 ──────────────────────────────────────────────────────────────
+ * 08-28에 사용자가 확정한 40/25/20/15는 **감각 비중**이고, 실험실의 취지는 그걸 회귀로
+ * 덮지 않는 것이다(textbookModel `qualityWeights` 주석). 그런데 오늘 자료를 전수로 보니
+ * **08-28에는 몰랐던 사실**이 나왔다 — 자료 신뢰도 순서가 비중 순서와 안 맞는다.
+ *
+ *   항목     현장 확인          자료 상태                             지금 -> 새로
+ *   GPU     쉽다(모델명 표기)   자사 40/41 · 경쟁 163/225            0.40 -> **0.50**
+ *   CPU     쉽다(모델명 표기)   자사 40/41 · 경쟁 163/225            0.20 -> 0.20
+ *   RAM     보통               사실상 16/32GB 두 값                  0.15 -> 0.15
+ *   모니터   **어렵다(Hz가 안 보인다)**  경쟁점 **32% 빈칸** · 조사자 편차 · 자사는 240Hz 상수  0.25 -> **0.15**
+ *
+ * **자료가 제일 약한 항목이 두 번째로 큰 비중**을 갖고 있었다. 그건 뜻이 안 맞는다.
+ * 그리고 기여도도 같은 방향이다 — GPU를 빼면 r이 0.587 -> 0.562로 떨어지는데(유일하게 크다),
+ * 모니터를 빼면 오히려 0.592로 **올라간다.**
+ *
+ * ⚠️ **자료가 가리키는 최적보다 덜 움직였다.** 훑기에서는 GPU 0.55~0.60이 제일 좋았다
+ *    (r 0.595~0.596). 거기까지 가면 **자료에 맞춘 것**이 되어 실험실 취지에 어긋난다.
+ *    0.50은 뜻으로 고른 값이고, 자료는 반대하지 않는 정도다.
+ *    (MAPE 22.70% -> 22.51% · r 0.587 -> 0.592)
+ *
+ * ⚠️ 이 값을 자료로 다시 고르려 하지 말 것. 무작위 비중 300개와 비교하는 대조군은
+ *    **순환이다** — 훑기를 보고 고른 값이 무작위 중 최상위인 건 당연하다. 실제로 p=0.003이
+ *    나왔지만 그 검정은 근거가 못 된다.
+ */
+export const LAB_SPEC_WEIGHTS = { vga: 0.50, monitor: 0.15, cpu: 0.20, ram: 0.15 };
+
 export type LabSpecInput = {
   vgaBase: string | null; vgaTop: string | null; vgaTop2: string | null;
   cpu: string | null; cpuTop1: string | null; cpuTop2: string | null;
@@ -622,6 +668,8 @@ export type LabSpecOptions = {
   monitorBonus?: typeof LAB_MONITOR_BONUS;
   /** 모니터 앵커(240Hz) 위쪽 기울기. 훑기용. 기본은 `LAB_MONITOR_HZ_STEP_UP`. */
   monitorStepUp?: number;
+  /** 하드웨어 내부비중. 훑기용. 기본은 실험실 전용 `LAB_SPEC_WEIGHTS`(운영 설정을 안 읽는다). */
+  specWeights?: typeof LAB_SPEC_WEIGHTS;
 };
 
 /**
@@ -647,7 +695,9 @@ export function labComputeSpecScore(
   settings: Pick<ModelSettings, "specWeights">,
   opts: LabSpecOptions = {},
 ): number | null {
-  const w = settings.specWeights;
+  // ⚠️ **운영 설정(settings.specWeights)을 안 읽는다.** 거기는 운영 V62와 공유하는 값이다.
+  //    실험실 비중은 LAB_SPEC_WEIGHTS에 따로 있다.
+  const w = opts.specWeights ?? LAB_SPEC_WEIGHTS;
   const up = opts.gpuLogStepUp ?? LAB_PERF_LOG_STEP_UP;
   const gp = opts.gpuGenPenalty ?? LAB_GEN_PENALTY;
   const gpu = combineHardwareTiers(

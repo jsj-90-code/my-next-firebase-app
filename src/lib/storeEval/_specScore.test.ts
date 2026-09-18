@@ -1522,6 +1522,76 @@ describeIf("사양 — 자료 생김새", () => {
     }
   });
 
+  it("(35) 하드웨어 내부비중 검토 — 채택된 새 표 위에서 (2026-09-18)", () => {
+    const W = settings.specWeights;
+    const run = (label: string, w: { vga: number; monitor: number; cpu: number; ram: number }) => line(label, labRows({ specWeights: w }));
+    console.log(`\n[기여도] 항목을 하나씩 0으로 (나머지로 재정규화) · 지금 GPU ${W.vga} · 모니터 ${W.monitor} · CPU ${W.cpu} · RAM ${W.ram}`);
+    run("  지금 그대로", { vga: W.vga, monitor: W.monitor, cpu: W.cpu, ram: W.ram });
+    run("  GPU 뺌", { vga: 0, monitor: W.monitor, cpu: W.cpu, ram: W.ram });
+    run("  모니터 뺌", { vga: W.vga, monitor: 0, cpu: W.cpu, ram: W.ram });
+    run("  CPU 뺌", { vga: W.vga, monitor: W.monitor, cpu: 0, ram: W.ram });
+    run("  RAM 뺌", { vga: W.vga, monitor: 0.25, cpu: W.cpu, ram: 0 });
+
+    // 모니터를 줄이고 나머지에 비례 배분
+    console.log("\n[모니터 비중] 줄인 몫을 GPU·CPU·RAM에 비례 배분");
+    for (const m of [0.25, 0.20, 0.15, 0.10, 0.05]) {
+      const rest = 1 - m, base = W.vga + W.cpu + W.ram;
+      run(`  모니터 ${m.toFixed(2)} (GPU ${(W.vga / base * rest).toFixed(2)})`, {
+        monitor: m, vga: W.vga / base * rest, cpu: W.cpu / base * rest, ram: W.ram / base * rest,
+      });
+    }
+
+    // GPU를 키우고 나머지에서 비례 차감
+    console.log("\n[GPU 비중] 키운 몫을 모니터·CPU·RAM에서 비례 차감");
+    for (const g of [0.40, 0.45, 0.50, 0.55, 0.60]) {
+      const rest = 1 - g, base = W.monitor + W.cpu + W.ram;
+      run(`  GPU ${g.toFixed(2)} (모니터 ${(W.monitor / base * rest).toFixed(2)})`, {
+        vga: g, monitor: W.monitor / base * rest, cpu: W.cpu / base * rest, ram: W.ram / base * rest,
+      });
+    }
+
+    // 이름 붙인 후보들
+    console.log("\n[후보 조합]");
+    run("  지금        40/25/20/15", { vga: 0.40, monitor: 0.25, cpu: 0.20, ram: 0.15 });
+    run("  모니터↓     45/15/22/18", { vga: 0.45, monitor: 0.15, cpu: 0.22, ram: 0.18 });
+    run("  확인가능성  50/10/25/15", { vga: 0.50, monitor: 0.10, cpu: 0.25, ram: 0.15 });
+    run("  GPU중심     55/15/20/10", { vga: 0.55, monitor: 0.15, cpu: 0.20, ram: 0.10 });
+    run("  ⭐ 제안     50/15/20/15", { vga: 0.50, monitor: 0.15, cpu: 0.20, ram: 0.15 });
+  });
+
+  it("(36) 대조군 — 비중을 바꾼 게 우연보다 나은가", () => {
+    const W = settings.specWeights;
+    const rOf = (w: { vga: number; monitor: number; cpu: number; ram: number }) => {
+      const sc = scoreTextbook(labRows({ specWeights: w }), P);
+      const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0);
+      return { r: pearson(ok.map((x) => x.predicted as number), ok.map((x) => x.actual)), mape: sc.mape ?? 0 };
+    };
+    const now = rOf({ vga: 0.40, monitor: 0.25, cpu: 0.20, ram: 0.15 });
+    const pick = rOf({ vga: 0.55, monitor: 0.15, cpu: 0.20, ram: 0.10 });
+    console.log(`\n[대조군 · 비중] 지금 40/25/20/15 (r ${now.r.toFixed(3)}) -> 채택안 55/15/20/10 (r ${pick.r.toFixed(3)})`);
+    console.log(`  좋아진 폭 ${(pick.r - now.r).toFixed(3)}`);
+    // 무작위 비중 300개 — 각 항목 0.05~0.60에서 뽑아 합 1로 정규화한다.
+    let rng = 20260918;
+    const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const rs: number[] = [];
+    for (let t = 0; t < 300; t++) {
+      const raw = [0, 0, 0, 0].map(() => 0.05 + rand() * 0.55);
+      const sum = raw.reduce((a, b) => a + b, 0);
+      const [vga, monitor, cpu, ram] = raw.map((x) => x / sum);
+      rs.push(rOf({ vga, monitor, cpu, ram }).r);
+    }
+    const sorted = [...rs].sort((a, b) => a - b);
+    const pctOf = (v: number) => (sorted.filter((x) => x < v).length / sorted.length * 100).toFixed(0);
+    console.log(`  무작위 비중 300개의 r: 최소 ${sorted[0].toFixed(3)} · 중앙 ${median(rs).toFixed(3)} · 95퍼센타일 ${sorted[Math.floor(sorted.length * 0.95)].toFixed(3)} · 최대 ${sorted[sorted.length - 1].toFixed(3)}`);
+    console.log(`  지금  40/25/20/15  r ${now.r.toFixed(3)}  -> 무작위 중 상위 ${(100 - Number(pctOf(now.r))).toFixed(0)}%`);
+    console.log(`  채택안 55/15/20/10 r ${pick.r.toFixed(3)}  -> 무작위 중 상위 ${(100 - Number(pctOf(pick.r))).toFixed(0)}%`);
+    const pv = rs.filter((x) => x >= pick.r).length / rs.length;
+    console.log(`  p = ${pv.toFixed(3)}  ${pv < 0.05 ? "통과 ✅" : "미달 ❌"}  (무작위가 채택안보다 좋을 확률)`);
+    // 최적 비중은 어디인가 — 무작위 300개 중 제일 좋은 것
+    console.log(`\n  ⚠️ 무작위 300개 중 최대가 ${sorted[sorted.length - 1].toFixed(3)}다. 채택안(${pick.r.toFixed(3)})이 그보다`);
+    console.log(`     ${pick.r >= sorted[sorted.length - 1] ? "높으면" : "낮으면"} 비중 공간에 더 좋은 자리가 있다는 뜻이라, 이 축만 본 게 아닌지 살펴야 한다.`);
+  });
+
   it("(15) CPU가 나빠진 건 순서인가 수준인가", () => {
     // 새 CPU 표는 경쟁점을 크게 올린다(12400F 41건 +1.30 · 11400F +1.63 · 10400F +1.04).
     // 축척은 **독점매장에서만** 맞추므로(textbookModel calibrationTarget) 이 수준 이동은
