@@ -976,3 +976,24 @@ export function scoreTextbook(
     rows: out.sort((a, b) => (b.absErrPct ?? 0) - (a.absErrPct ?? 0)),
   };
 }
+
+/**
+ * 채점에서 **맞춰진 축척까지 먹인 파라미터 한 벌**. 실매출이 없는 곳(신규후보지)에
+ * `computeTextbook`을 직접 돌릴 때 쓴다 (2026-09-18).
+ *
+ * ── 왜 함수로 두나 ─────────────────────────────────────────────────────────
+ * 부르는 쪽에서 `{ ...p, hoursPerUserPerMonth: score.fittedHoursPerUser, ... }`를 손으로
+ * 조립하면, 나중에 축척이 하나 더 늘 때 **부르는 자리를 전부 찾아 고쳐야 한다.** 한 군데라도
+ * 빠지면 그 화면만 옛 축척으로 돌아가는데, 값이 그럴듯해서 티가 안 난다. 조립을 한 곳에 둔다.
+ *
+ * ⚠️ 축척은 **실매출·실측가동률이 있는 기존점에서만** 맞춘다. 후보지 행으로 `scoreTextbook`을
+ *    부르지 말 것 — 맞출 실측값이 없어서 되돌림 경로로 새어 들어가고, 결국 예측값으로
+ *    예측값을 맞추는 순환이 된다.
+ */
+export function fittedParams(p: TextbookParams, score: TextbookScore): TextbookParams {
+  return {
+    ...p,
+    hoursPerUserPerMonth: score.fittedHoursPerUser,
+    productUnitPrice: score.fittedProductUnitPrice,
+  };
+}

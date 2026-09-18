@@ -1324,8 +1324,13 @@ describeIf("사양 — 자료 생김새", () => {
   it("(31) 후보지가 실험실 산식을 돌릴 준비가 됐나 (2026-09-18)", () => {
     // 사용자: *"나 신규후보지 평가할건데, 기존산식이랑 지금만드는산식 두개다할거거든.
     //          평가항목이 추가된거있으니까 이거 반영해야할듯?"*
-    // 실험실은 지금 **기존점만** 본다(buildLabRows가 ExistingStore[]만 받는다).
-    // 후보지 경로를 만들려면 어떤 입력이 있고 없는지부터 세야 한다.
+    //
+    // ✅ 2026-09-18에 후보지 경로를 열었다 — buildLabCandidateRows(labInput.ts)가 후보지를
+    //    조립하고 실험실 화면이 그걸 그린다. 예측 성적·자 맞춤 점검은 전용 하네스에 있다:
+    //      npx vitest run src/lib/storeEval/_labCandidate.test.ts --disable-console-intercept
+    //
+    // 여기 남겨 두는 건 **사양 항목 쪽에서 본 준비도**다(이 파일이 사양 하네스다).
+    // 자세한 준비도는 위 하네스의 (1)번이 낱개 이름까지 찍는다.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cands: any[] = snap.candidates ?? [];
     if (cands.length === 0) { console.log("\n[후보지] 스냅샷에 후보지가 없다"); return; }
@@ -1333,7 +1338,10 @@ describeIf("사양 — 자료 생김새", () => {
     for (const c of allCompetitors) compsBy.set(c.candidateCode, (compsBy.get(c.candidateCode) ?? 0) + 1);
 
     const need: [string, (c: Record<string, unknown>) => boolean, string][] = [
-      ["PC수", (c) => c.pcCount != null, "수요·매출"],
+      // ⚠️ 후보지 PC수는 **expectedPcCount**다(기존점만 pcCount). 2026-09-18에 여기서
+      //    pcCount를 보는 바람에 "0/12 자료없음"으로 읽혀 후보지 경로가 막힌 줄 알았다 —
+      //    자료는 처음부터 다 있었다. 기존점 필드명으로 후보지를 보면 이렇게 조용히 틀린다.
+      ["PC수", (c) => c.expectedPcCount != null, "수요·매출"],
       ["요금", (c) => c.hourlyRate != null, "단가"],
       ["주거 1km", (c) => c.pop1km != null, "1단계 수요"],
       ["유동 400m", (c) => c.floating400Avg != null, "1단계 수요 (확정 반경)"],

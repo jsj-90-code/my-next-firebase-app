@@ -11,6 +11,7 @@
 //    읽지 않는다 — 교과서식은 운영 산식을 덮지 않는다(2026-09-16 사용자 확정).
 
 import {
+  applyStandardOwnFacilityDefaults,
   computeCompetitorIp,
   computeLocationScoreFromFacts,
 } from "@/lib/storeEval/calc";
@@ -19,7 +20,9 @@ import { labComputeSpecScore } from "@/lib/storeEval/labSpecScore";
 import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation";
 import type { QualityParts, TextbookInput } from "@/lib/storeEval/textbookModel";
-import type { Competitor, ExistingStore, ModelSettings } from "@/lib/storeEval/types";
+import type {
+  CandidateInput, Competitor, ExistingStore, LocationEvaluation, ModelSettings,
+} from "@/lib/storeEval/types";
 
 export type LabRow = { input: TextbookInput; actualRevenue: number };
 
@@ -63,7 +66,27 @@ export function utilizationByStore(
 //
 // ⚠️ 입지는 여기 없다. 경쟁력점수 안에 섞으면 효과가 없었고(r 0.554 -> 0.562, 잭나이프
 //    하한이 유의선 아래), 밖에서 곱해야 살아났다. buildLabRows의 `location`을 볼 것.
-export function ownQualityParts(s: ExistingStore, pc: number | null, settings: ModelSettings): QualityParts {
+/**
+ * 자사 시설·사양 칸 한 벌. **기존점(ExistingStore)과 후보지(CandidateInput)가 이 필드들을
+ * 같은 이름으로 갖는다** — 그래서 한 함수로 둘 다 잰다(2026-09-18).
+ *
+ * ⚠️ 타입을 `ExistingStore`로 좁혀 두면 후보지를 재려고 **함수를 하나 더 만들게 된다.** 그 순간
+ *    자가 둘이 되고, 사양표를 고칠 때 한쪽만 고쳐져 조용히 갈라진다 — 2026-09-16에 하네스가
+ *    화면 조립을 베껴 써서 났던 사고와 같은 종류다. 잣대는 하나만 둔다.
+ */
+export type OwnFacilityFields = {
+  ownSingleSeatCount?: number | null; ownRoom1?: number | null; ownRoom2?: number | null;
+  ownTeamRoom?: number | null; ownCoupleZone?: number | null; ownVipZone?: number | null;
+  ownFriendsZone?: number | null; ownFirstClassZone?: number | null;
+  ownTeamRoomTotalSeats?: number | null;
+  ownVgaBase?: string | null; ownVgaTop?: string | null; ownVgaTop2?: string | null;
+  ownCpu?: string | null; ownCpuTop1?: string | null; ownCpuTop2?: string | null;
+  ownRam?: string | null; ownRamTop?: string | null;
+  ownMonitorBase?: string | null; ownMonitorTop?: string | null;
+  ownFoodScore?: number | null; ownInteriorScore?: number | null; ownManagementScore?: number | null;
+};
+
+export function ownQualityParts(s: OwnFacilityFields, pc: number | null, settings: ModelSettings): QualityParts {
   // 2026-09-17 — 존구성은 실험실 전용 잣대를 쓴다(labZoneComposition.ts). 운영의
   // computeOwnZoneComposition은 존 **이름** 종류를 세는데, 그 이름표가 자사에만 있어서
   // 종류를 세면 자사가 항상 이겼다. 여기서는 룸 종류만 세고 좌석은 전부 센다.
@@ -454,4 +477,185 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
     });
   }
   return rows;
+}
+
+// ── 신규후보지 경로 (2026-09-18) ───────────────────────────────────────────
+//
+// 사용자: *"나 신규후보지 평가할건데, 기존산식이랑 지금만드는산식 두개다할거거든."*
+//
+// 그동안 실험실은 **기존점만** 봤다(buildLabRows가 ExistingStore[]만 받았다). 후보지는
+// 실매출이 없으니 **채점할 수 없지만 예측은 할 수 있다** — 축척(hoursPerUserPerMonth ·
+// productUnitPrice)은 이미 기존점에서 맞춰 뒀기 때문이다. 그 맞춰진 파라미터를 그대로
+// 후보지 입력에 먹이면 예상매출이 나온다.
+//
+// ⚠️ **후보지로 축척을 다시 맞추지 말 것.** 맞출 실측값(실매출·실측가동률)이 애초에 없고,
+//    있다고 착각해 맞추면 "예측값으로 예측값을 맞추는" 순환이 된다.
+//
+// ── 기존점과 갈라지는 자리 넷 ─────────────────────────────────────────────
+//
+//  1. **PC수** — 후보지는 expectedPcCount다(기존점은 pcCount/evaluationPcCount). 이름이
+//     다를 뿐 뜻은 같다. 2026-09-18에 하네스가 pcCount를 보고 "0/12 자료없음"으로 읽어서
+//     한동안 막힌 줄 알았다 — 자료는 처음부터 다 있었다.
+//  2. **특수수요** — 기존점은 매장 문서에 있지만 후보지는 **입지평가**에 있다. 후보지코드로
+//     이어붙인다.
+//  3. **관리 점수** — 신규점은 QSC 점검 기록이 없다(있을 수가 없다). 가맹점 평균을 쓴다 —
+//     기존점 중 QSC가 없는 곳에 주는 값과 **같은 값**이다.
+//  4. **자사 시설 빈칸** — 결측이 아니라 **표준 구성**이다. 07 시트 헤더 메모의 "비우면 표준
+//     N개 적용" 규칙 그대로 STANDARD_OWN_FACILITY_DEFAULTS를 먹인다(2026-09-18 자료: 팀룸을
+//     직접 적은 곳이 12곳 중 3곳뿐인데 정상이다).
+//
+// ── 후보지에 원래 없는 둘 ─────────────────────────────────────────────────
+//  - **실측 가동률** — 이게 곧 예측 대상이다. null로 둔다.
+//  - **경쟁력격차** — 품질 모드(shareMode="quality")는 이 값을 아예 안 쓴다. 자사·경쟁점의
+//    항목별 점수로 직접 겨루기 때문이다. null로 둬도 결과가 안 변한다.
+
+export type LabCandidateRow = {
+  input: TextbookInput;
+  /** 원본 후보지 문서 — 화면이 주소·검토상태를 같이 그리려고 쥐고 있는다. */
+  candidate: CandidateInput;
+};
+
+export type BuildLabCandidateRowsArgs = {
+  candidates: CandidateInput[];
+  /** 후보지코드 -> 경쟁점 목록. 기존점과 **같은 맵**을 써도 된다(키가 안 겹친다). */
+  compsByCode: Map<string, Competitor[]>;
+  /** 후보지코드 -> 입지평가. 특수수요를 여기서 꺼낸다. */
+  locByCode: Map<string, LocationEvaluation>;
+  settings: ModelSettings;
+  /**
+   * "candidate:<후보지코드>" -> 로드뷰 판정. 지금은 후보지 판정이 하나도 없다(기존점만
+   * 찍었다). 계수가 0이라 결과에 영향이 없어 비워 둔다 — 채우면 저절로 들어온다.
+   */
+  roadviewByKey?: Map<string, RoadviewJudgment>;
+  /**
+   * 관리 점수로 쓸 **가맹점 평균**(1~5). 기존점 행에서 구한 값을 그대로 넘긴다
+   * (franchiseManagementFromRows) — 여기서 다시 계산하면 자가 둘이 된다.
+   * 없으면 표준값 4가 그대로 남는다.
+   */
+  franchiseManagement?: number | null;
+};
+
+/**
+ * 후보지를 교과서식 입력으로 조립한다. 채점용이 아니라 **예측용**이라 actualRevenue가 없다.
+ *
+ * 값을 지어내지 않는 규칙은 기존점과 같다 — 없는 항목은 null로 넘기고 모형이 그 항을
+ * 중립으로 빼게 둔다. 단 **자사 시설 빈칸만은 예외**다(위 4번: 결측이 아니라 표준 구성).
+ */
+export function buildLabCandidateRows({
+  candidates, compsByCode, locByCode, settings, roadviewByKey, franchiseManagement,
+}: BuildLabCandidateRowsArgs): LabCandidateRow[] {
+  const rows: LabCandidateRow[] = [];
+  for (const c of candidates) {
+    const cs = compsByCode.get(c.code) ?? [];
+    const loc = locByCode.get(c.code) ?? null;
+    const rv = roadviewByKey?.get(`candidate:${c.code}`) ?? null;
+    // 빈칸을 표준 구성으로 채운 뒤에 점수를 매긴다. 운영 evaluateCandidate와 **같은 함수**다.
+    const std = applyStandardOwnFacilityDefaults(c);
+    const parts = ownQualityParts(
+      {
+        ...c,
+        ownSingleSeatCount: std.ownSingleSeatCount, ownRoom1: std.ownRoom1, ownRoom2: std.ownRoom2,
+        ownTeamRoom: std.ownTeamRoom, ownCoupleZone: std.ownCoupleZone, ownVipZone: std.ownVipZone,
+        ownFriendsZone: std.ownFriendsZone, ownFirstClassZone: std.ownFirstClassZone,
+        ownFoodScore: std.ownFoodScore, ownInteriorScore: std.ownInteriorScore,
+      },
+      c.expectedPcCount,
+      settings,
+    );
+    rows.push({
+      candidate: c,
+      input: {
+        storeCode: c.code, storeName: c.name,
+        // ⚠️ 후보지의 PC수는 expectedPcCount다. 이름만 다르고 뜻은 기존점 pcCount와 같다.
+        pcCount: c.expectedPcCount,
+        hourlyRate: c.hourlyRate,
+        // 예측 대상이다 — 지어내지 않는다.
+        actualUtilization: null,
+        specialDemandType: loc?.specialDemandType ?? null,
+        // 품질 모드는 이 값을 안 쓴다(자사·경쟁점 항목별 점수로 직접 겨룬다).
+        competitivenessGap: null,
+        competitorIp: computeCompetitorIp(cs, c.operatingPcStores500m ?? null),
+        competitorCount: cs.filter((x) => x.investigationStatus !== "경쟁점없음").length,
+        // 신규점은 QSC가 없다 — 기존점 중 QSC 없는 곳과 **같은 값**(가맹점 평균)을 준다.
+        ownQualityParts: { ...parts, management: franchiseManagement ?? parts.management },
+        rivals: cs
+          .filter((x) => x.investigationStatus !== "경쟁점없음")
+          .map((x) => ({
+            // 경쟁점 pcCount는 전 문서가 0이다 — appliedPcCount/totalPcCount를 써야 한다.
+            ip: Number(x.appliedPcCount ?? x.totalPcCount ?? 0),
+            distanceM: rivalDistanceM(c, x),
+            parts: rivalQualityParts(x, settings),
+          }))
+          .filter((r) => r.ip > 0),
+        location: {
+          centrality: c.floating300Avg != null && c.floating1000Avg != null && c.floating1000Avg > 0
+            ? (c.floating300Avg / c.floating1000Avg) * (1000 / 300) ** 2
+            : null,
+          access: computeLocationScoreFromFacts(c.floor ?? null, c.groundLevel ?? null, c.hasElevator ?? null),
+          direction: c.flowEccentricity ?? null,
+          flowBlock: rv?.flowBlock ?? null,
+          visibility: rv?.visibility ?? null,
+        },
+        pop500m: c.pop500m, pop1km: c.pop1km,
+        residentMaleRatio: c.male1kmRatio ?? null,
+        floatingMaleRatioByRadius: {
+          100: c.floating100Avg ? (c.floating100Male ?? 0) / c.floating100Avg : null,
+          200: c.floating200Avg ? (c.floating200Male ?? 0) / c.floating200Avg : null,
+          300: c.floating300Avg ? (c.floating300Male ?? 0) / c.floating300Avg : null,
+          400: c.floating400Avg ? (c.floating400Male ?? 0) / c.floating400Avg : null,
+          500: c.floating500Avg ? (c.floating500Male ?? 0) / c.floating500Avg : null,
+        },
+        residentAges: {
+          age0s: c.age1km_0_9 ?? 0, age10s: c.age1km_10_19 ?? 0, age20s: c.age1km_20_29 ?? 0,
+          age30s: c.age1km_30_39 ?? 0, age40s: c.age1km_40_49 ?? 0, age50s: c.age1km_50_59 ?? 0,
+          age60plus: (c.age1km_60_69 ?? 0) + (c.age1km_70_79 ?? 0) + (c.age1km_80plus ?? 0),
+        },
+        floatingByRadius: {
+          100: c.floating100Avg ?? null, 200: c.floating200Avg ?? null,
+          300: c.floating300Avg ?? null, 400: c.floating400Avg ?? null,
+          500: c.floating500Avg ?? null,
+        },
+        floatingAgesByRadius: {
+          100: c.floating100Avg == null ? null : {
+            age10s: c.floating100_10s ?? 0, age20s: c.floating100_20s ?? 0,
+            age30s: c.floating100_30s ?? 0, age40s: c.floating100_40s ?? 0,
+            age50s: c.floating100_50s ?? 0, age60plus: c.floating100_60plus ?? 0,
+          },
+          200: c.floating200Avg == null ? null : {
+            age10s: c.floating200_10s ?? 0, age20s: c.floating200_20s ?? 0,
+            age30s: c.floating200_30s ?? 0, age40s: c.floating200_40s ?? 0,
+            age50s: c.floating200_50s ?? 0, age60plus: c.floating200_60plus ?? 0,
+          },
+          300: c.floating300Avg == null ? null : {
+            age10s: c.floating300_10s ?? 0, age20s: c.floating300_20s ?? 0,
+            age30s: c.floating300_30s ?? 0, age40s: c.floating300_40s ?? 0,
+            age50s: c.floating300_50s ?? 0, age60plus: c.floating300_60plus ?? 0,
+          },
+          400: c.floating400Avg == null ? null : {
+            age10s: c.floating400_10s ?? 0, age20s: c.floating400_20s ?? 0,
+            age30s: c.floating400_30s ?? 0, age40s: c.floating400_40s ?? 0,
+            age50s: c.floating400_50s ?? 0, age60plus: c.floating400_60plus ?? 0,
+          },
+          500: c.floating500Avg == null ? null : {
+            age10s: c.floating500_10s ?? 0, age20s: c.floating500_20s ?? 0,
+            age30s: c.floating500_30s ?? 0, age40s: c.floating500_40s ?? 0,
+            age50s: c.floating500_50s ?? 0, age60plus: c.floating500_60plus ?? 0,
+          },
+        },
+      },
+    });
+  }
+  return rows;
+}
+
+/**
+ * 기존점 행에서 **가맹점 평균 관리 점수**를 읽어낸다. 후보지에 그대로 넘기는 값이다.
+ *
+ * ⚠️ 행에 **실제로 들어간 값**을 읽는다 — QSC를 다시 환산하지 않는다. 여기서 또 계산하면
+ *    기존점과 후보지가 다른 자를 쓰게 된다(이 파일이 내내 막아 온 그 사고다).
+ */
+export function franchiseManagementFromRows(rows: LabRow[]): number | null {
+  const vs = rows.map((r) => r.input.ownQualityParts?.management ?? null)
+    .filter((v): v is number => v != null);
+  return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
 }

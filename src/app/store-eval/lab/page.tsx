@@ -36,12 +36,13 @@ import {
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
-  getLabModelSettings, listLabCompetitors, listLabLocationEvaluations,
+  getLabModelSettings, listLabCandidates, listLabCompetitors, listLabLocationEvaluations,
   listLabExistingStores, listLabRoadviewJudgments, listLabQscScores, listEvaluationSales,
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
-  DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, scoreTextbook,
+  DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, computeTextbook,
+  fittedParams, scoreTextbook,
   type FloatingRadius, type ResidentRadius,
   type TextbookParams, type TextbookScore,
 } from "@/lib/storeEval/textbookModel";
@@ -49,7 +50,10 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 
 // 모델 입력 조립은 labInput.ts에 있다 — 측정 하네스와 **같은 코드**를 써야 한다.
 // 화면에만 항목을 붙이다 하네스가 입지를 통째로 빠뜨린 적이 있다(2026-09-16).
-import { buildLabRows, utilizationByStore, type LabRow } from "@/lib/storeEval/labInput";
+import {
+  buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
+  utilizationByStore, type LabRow, type LabCandidateRow,
+} from "@/lib/storeEval/labInput";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
   LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP, LAB_PERF_LOG_STEP_UP,
@@ -75,6 +79,15 @@ type Loaded = {
   qscByStore: Map<string, { qsc: number | null; management: number | null }>;
   /** 하드웨어 내부비중 — 화면 설명이 이 값을 읽어 그린다(숫자를 글자로 박지 않는다). */
   specWeights: ModelSettings["specWeights"];
+  /**
+   * 신규후보지 — 실험실 산식으로 돌릴 입력 한 벌 (2026-09-18).
+   *
+   * ⚠️ 여기엔 실매출이 없다. **채점이 아니라 예측**이고, 축척은 기존점에서 맞춘 것을
+   *    그대로 받아 쓴다. 후보지로 축척을 다시 맞추면 예측으로 예측을 맞추는 순환이 된다.
+   */
+  candRows: LabCandidateRow[];
+  /** 후보지에 들어간 관리 점수(= 가맹점 평균). 화면에 적어야 "실측인가 평균인가"가 구분된다. */
+  franchiseManagement: number | null;
 };
 
 const pct = (v: number | null | undefined, digits = 1) =>
@@ -87,7 +100,7 @@ async function loadLabData(): Promise<Loaded | null> {
   //    실험실에서 시설·사양을 고칠 때 운영 V62가 같이 움직인다 — 갈라놓은 뜻이 없어진다.
   //    복제본은 scripts/syncLabCollections.mjs로 **명시적으로** 채운다(자동 동기화 없음).
   //    월매출만 운영 것을 그대로 읽는다 — 실측 사실이라 두 벌로 둘 이유가 없다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode, candidates] = await Promise.all([
     listLabExistingStores(),
     getLabModelSettings(),
     listLabCompetitors(),
@@ -96,6 +109,9 @@ async function loadLabData(): Promise<Loaded | null> {
     // QSC 점검 기록 -> 관리 점수(labInput.ts qscInWindowAverage + qscToManagementScore). 전용 컬렉션이라
     // 동기화가 안 건드리고, 운영 V62는 아예 읽지 않는다.
     listLabQscScores(),
+    // 신규후보지 (2026-09-18). 경쟁점·입지평가는 위에서 이미 통째로 읽으므로 따로 안 읽는다 —
+    // 후보지코드와 기존점코드는 안 겹쳐서 같은 맵에 담아도 된다.
+    listLabCandidates(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -173,7 +189,15 @@ async function loadLabData(): Promise<Loaded | null> {
     qsc: qscByStoreCode.get(r.input.storeCode) ?? null,
     management: r.input.ownQualityParts?.management ?? null,
   }]));
-  return { rows, current, qsc, qscByStore, specWeights: settings.specWeights };
+  // ── 신규후보지 (2026-09-18) ────────────────────────────────────────────────
+  // 조립은 labInput.ts 한 곳에 있다 — 하네스(_labCandidate.test.ts)가 **같은 함수**를 부른다.
+  // 관리 점수는 기존점 행에 실제로 들어간 값의 평균을 그대로 넘긴다(여기서 다시 환산하지 않는다).
+  const franchiseManagement = franchiseManagementFromRows(rows);
+  const candRows = buildLabCandidateRows({
+    candidates, compsByCode, locByCode, settings, roadviewByKey, franchiseManagement,
+  });
+
+  return { rows, current, qsc, qscByStore, specWeights: settings.specWeights, candRows, franchiseManagement };
 }
 
 export default function LabPage() {
@@ -239,6 +263,8 @@ export default function LabPage() {
             scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
           <ParamSummary p={p} counts={counts} />
           <StoreTable score={score} qscByStore={data.qscByStore} />
+          <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
+            franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount} />
         </>
       )}
     </div>
@@ -916,6 +942,108 @@ function StoreTable({ score, qscByStore }: { score: TextbookScore; qscByStore: L
           </tbody>
         </table>
       </div>
+    </section>
+  );
+}
+
+// ── 신규후보지 (2026-09-18) ────────────────────────────────────────────────
+//
+// ⚠️ **이 표에는 오차 열이 없다. 없는 게 맞다.** 후보지는 실매출이 아직 없어서 채점할
+//    대상이 자체가 없다. 나중에 "적중률이 왜 안 보이지" 하고 열을 만들지 말 것 — 만들려면
+//    개점 후 실매출이 쌓여 기존점으로 넘어간 뒤다(그때는 위 매장별 표가 잡는다).
+function CandidateTable({ rows, p, franchiseManagement, existingCount }: {
+  rows: LabCandidateRow[];
+  /** 기존점에서 **맞춰진 축척까지 먹인** 파라미터. 후보지로 다시 맞추지 않는다. */
+  p: TextbookParams;
+  franchiseManagement: number | null;
+  existingCount: number;
+}) {
+  const computed = rows.map((r) => ({ row: r, b: computeTextbook(r.input, p) }))
+    .sort((a, b) => (b.b.monthlyRevenue ?? 0) - (a.b.monthlyRevenue ?? 0));
+  if (!computed.length) {
+    return (
+      <section className="mt-10">
+        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">신규후보지</h2>
+        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+          실험실 복제본에 후보지가 없습니다. <code>scripts/syncLabCollections.mjs</code>로 채웁니다.
+        </p>
+      </section>
+    );
+  }
+  // 자료가 모자란 곳이 몇 곳인지 — 숫자를 글자로 박지 않고 여기서 세어 그린다.
+  const shortCount = computed.filter((c) => c.b.missing.length > 0).length;
+  return (
+    <section className="mt-10">
+      <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
+        신규후보지 {computed.length}곳 — 교과서식 예측
+      </h2>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+        후보지는 <b>실매출이 없어 채점할 수 없습니다</b> — 그래서 오차 열이 없습니다. 대신
+        기존 가맹점 {existingCount}곳에서 맞춘 축척(1인 월 {p.hoursPerUserPerMonth.toFixed(2)}시간 ·
+        상품몫 {Math.round(p.productUnitPrice).toLocaleString()}원/PC·시간)을 <b>그대로 받아</b> 예측만 합니다.
+        후보지로 축척을 다시 맞추면 예측값으로 예측값을 맞추는 순환이 됩니다.
+      </p>
+      <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        후보지에 원래 없는 둘은 이렇게 채웁니다.
+        <b> 실측 가동률</b>은 이것 자체가 예측 대상이라 안 넣습니다.
+        <b> QSC</b>는 신규점에 점검 기록이 있을 수 없어 <b>관리 점수에 가맹점 평균
+        {franchiseManagement == null ? "" : ` ${franchiseManagement.toFixed(2)}점`}</b>이 들어갑니다 —
+        기존점 중 QSC가 없는 곳에 주는 값과 같습니다.
+        자사 시설 빈칸은 결측이 아니라 <b>회사 표준 구성</b>으로 채웁니다.
+        {shortCount > 0 && <> 지금 자료가 모자란 곳이 <b>{shortCount}곳</b> 있습니다(맨 오른쪽 열).</>}
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
+            <tr>
+              <th scope="col" className="px-3 py-2">후보지</th>
+              <th scope="col" className="px-3 py-2 text-right" title="후보지의 PC수는 expectedPcCount(예상PC대수)다.">PC</th>
+              <th scope="col" className="px-3 py-2 text-right">예상매출</th>
+              <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
+              <th scope="col" className="px-3 py-2 text-right" title="자사PC x 자사품질^θ ÷ (자사 + 유효거리 안 경쟁점들). 100%면 유효거리 안에 겨룰 상대가 없다는 뜻이다.">점유율</th>
+              <th scope="col" className="px-3 py-2 text-right" title="1단계 수요 — 이 동네에서 한 달에 PC방을 쓰는 사람 수">수요(명)</th>
+              <th scope="col" className="px-3 py-2 text-right" title="PC몫(정가 기반) + 상품몫. 상품몫은 전 매장 실측에서 구한 상수다.">총단가</th>
+              <th scope="col" className="px-3 py-2 text-right" title="입지가 점유율에 곱한 배율. 1이면 입지가 아무 일도 안 한 것(자료없음 또는 계수 0).">입지배율</th>
+              <th scope="col" className="px-3 py-2">비고</th>
+            </tr>
+          </thead>
+          <tbody>
+            {computed.map(({ row, b }) => (
+              <tr key={row.input.storeCode} className="border-b border-[#171310]/[0.06] dark:border-white/[0.06]">
+                <td className="px-3 py-2">
+                  {row.input.storeName ?? row.input.storeCode}
+                  <span className="ml-1.5 text-xs text-[var(--sl-ink-soft)]">{row.input.storeCode}</span>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{row.input.pcCount ?? "-"}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-semibold">{manwon(b.monthlyRevenue)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {pct(b.utilization)}
+                  {b.capped && <span className="ml-1 text-xs text-amber-700 dark:text-amber-400" title="가동률 상한에 걸려 매출이 깎였다">상한</span>}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{pct(b.share)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">
+                  {b.totalDemandUsers == null ? "-" : Math.round(b.totalDemandUsers).toLocaleString()}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">
+                  {b.unitPrice == null ? "-" : `${Math.round(b.unitPrice).toLocaleString()}원`}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">
+                  {b.locationMultiplier == null ? "-" : b.locationMultiplier.toFixed(3)}
+                </td>
+                <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
+                  {b.missing.length > 0 && `자료없음: ${b.missing.join(", ")}`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+        운영 V62 예상매출은 <Link href="/store-eval/candidates" className="underline">신규후보지</Link> 화면에 있습니다.
+        두 산식은 <b>서로 다른 것을 봅니다</b> — V62는 기존 가맹점 실적에 회귀로 맞추고,
+        여기 교과서식은 동네 수요에서 우리 몫을 떼어 냅니다. 어느 쪽이 맞는지는
+        <b> 후보지에서는 판정할 수 없습니다</b>(실매출이 없습니다). 개점 후 실적이 쌓이면 그때 갈립니다.
+      </p>
     </section>
   );
 }
