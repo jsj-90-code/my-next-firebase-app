@@ -32,7 +32,9 @@ const OUT = ".local-tools/sbiz-floating-population.json";
 // 안 맞는 곳이 있었다 — 호구포역점은 400m 96,280인데 500m가 35,105로 **반경이 커졌는데 인구가
 // 줄어드는** 모순이었다. 같은 출처로 다시 받아 비교하려는 것이며, 기존 필드는 덮어쓰지 않는다
 // (writeFloatingPopulationToFirestore.mjs가 100~400만 쓴다).
-const RADII = [100, 200, 300, 400, 500, 1000];
+// 2026-09-18 — `--radii 100` 으로 좁힐 수 있게 했다. 경쟁점까지 여섯 반경을 다 받으면
+// 몇 시간이 걸리는데, "자사와 경쟁점 중 어디에 사람이 더 많나"는 100m 하나면 답이 나온다.
+const DEFAULT_RADII = [100, 200, 300, 400, 500, 1000];
 const PCBANG_UPJONG = "R10406"; // 예술·스포츠 > 유원지·오락 > PC방
 const BASE = "https://bigdata.sbiz.or.kr";
 const DELAY_MS = Number(process.env.SBIZ_DELAY_MS || 1200);
@@ -43,6 +45,13 @@ const argValue = (name) => {
   return i === -1 ? null : args[i + 1];
 };
 const LIMIT = argValue("--limit") ? Number(argValue("--limit")) : null;
+const RADII = argValue("--radii")
+  ? argValue("--radii").split(",").map((v) => Number(v.trim())).filter((v) => DEFAULT_RADII.includes(v))
+  : DEFAULT_RADII;
+/** 경쟁점도 대상에 넣는다(2026-09-18 사용자: "상권365에서 100미터로 경쟁점 뽑아보면 될 거 아냐"). */
+const WITH_COMPETITORS = args.includes("--competitors");
+const ONLY_COMPETITORS = args.includes("--only-competitors");
+if (!RADII.length) { console.error("--radii 값이 이상하다. 쓸 수 있는 값: " + DEFAULT_RADII.join(",")); process.exit(1); }
 
 /* ---------------------------------------------------------------- 좌표변환
  * EPSG:4326 -> EPSG:5181 (중부원점 TM, GRS80, lat_0=38 lon_0=127 k=1 x_0=200000 y_0=500000).
@@ -243,8 +252,19 @@ function loadTargets() {
     }
   };
 
-  for (const c of snap.candidates ?? []) add("candidate", c.code ?? c.id, c.name ?? "", c.lat, c.lng);
-  for (const e of snap.existingStores ?? []) add("existing", e.storeCode ?? e.id, e.storeName ?? "", e.lat, e.lng);
+  if (!ONLY_COMPETITORS) {
+    for (const c of snap.candidates ?? []) add("candidate", c.code ?? c.id, c.name ?? "", c.lat, c.lng);
+    for (const e of snap.existingStores ?? []) add("existing", e.storeCode ?? e.id, e.storeName ?? "", e.lat, e.lng);
+  }
+  // 경쟁점 — 좌표는 2026-09-17에 손으로 다 찍었다(229/232). 주소변환 폴백은 안 쓴다:
+  // 경쟁점 주소는 초기 자료라 틀린 게 있었고(수원인계 EFC 205m -> 실제 481m), 여기서
+  // 잘못된 좌표로 유동인구를 받으면 **어느 편에 사람이 많은지가 통째로 뒤집힌다.**
+  if (WITH_COMPETITORS || ONLY_COMPETITORS) {
+    for (const c of snap.competitors ?? []) {
+      if (c.lat == null || c.lng == null) continue;
+      add("competitor", c.id ?? `${c.candidateCode}_${c.name}`, `${c.name ?? ""} (${c.candidateCode})`, c.lat, c.lng);
+    }
+  }
 
   if (noCoord.length) {
     console.log(`\n⚠️ 좌표가 없어 제외한 ${noCoord.length}곳: ${noCoord.slice(0, 5).join(", ")}${noCoord.length > 5 ? " …" : ""}`);

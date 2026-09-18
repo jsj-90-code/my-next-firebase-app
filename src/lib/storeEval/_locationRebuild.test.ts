@@ -277,7 +277,8 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
   type Row = {
     n: string; pc: number; loc: any; store: any;
     parts: QualityParts; floorScore: number | null;
-    rivals: { ip: number; d: number; parts: QualityParts; floorScore: number | null }[];
+    // name — 상권 분리 판정(매장명↔경쟁점명으로 맞춘다)을 붙이려고 2026-09-18에 넣었다.
+    rivals: { name: string; ip: number; d: number; parts: QualityParts; floorScore: number | null }[];
     demand: number; util: number; t: number; shareObs: number;
   };
   const rows: Row[] = [];
@@ -306,6 +307,7 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
           // 거리는 **좌표로 잰 값**을 먼저 쓴다. 현장조사 거리(distanceM)는 초기 데이터라
           // 잘못 적힌 게 있다(2026-09-17 사용자 확인). 유효거리 300m 판정이 걸린 자리라
           // 틀리면 경쟁점이 통째로 빠지거나 없던 게 들어온다.
+          name: String(c.name ?? ""),
           ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: rivalDistanceM(s, c) ?? 0,
           parts: rivalParts(c),
           floorScore: computeLocationScoreFromFacts(c.floor ?? null, c.groundLevel ?? null, c.hasElevator ?? null),
@@ -1984,5 +1986,168 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
       console.log(`       대조군 실제 ${fm(real)} · 섞으면 중앙 ${fm(med(gs))} · 95퍼센타일 ${fm(gs[Math.floor(gs.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
     }
     expect(vs.length).toBeGreaterThan(10);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // (17) 상권 분리(길건너) — 2026-09-18 눈가림 판정
+  //
+  // 사용자가 153쌍을 카카오 지도로 보고 `같은편`/`길건너`로 판정했다. **성적을 보기 전에**
+  // 했고(페이지에 잔차·매출이 한 글자도 없다), 자동 판정은 OSM 도로 자료로 따로 돌려
+  // 봉인해 뒀다가 사람 판정이 끝난 뒤 열었다. 자료원이 갈려 있어야 "둘이 맞다"가 뜻을 갖는다.
+  //
+  // 판정 기준은 사용자 말 그대로다:
+  //   *"거리가 좀 멀어도 두 매장 모두 해당 상권의 가장자리쪽에 있어서 거리가 멀다면 같은편"*
+  //   *"거리가 비교적 가까워도 대로변 껴있고 통행이 불편하면 길건너"*
+  // 즉 **거리가 아니라 같은 상권이냐**로 경쟁을 세자는 제안이다. 지금 산식은 `거리 ≤ 300m`
+  // 계단 하나뿐이고, 그 계단이 오송점에서 342.5m -> 1m 차이로 예측을 31.7% 뒤집었다.
+  // ────────────────────────────────────────────────────────────────────────
+  it("(17) 상권 분리 — 사람 판정이 관문을 통과하나", () => {
+    const FILLED = ".local-tools/market-split-judgment-filled.csv";
+    const OSM = ".local-tools/market-split-osm.json";
+    if (!existsSync(FILLED)) { console.log("\n사람 판정 CSV가 없다. scripts/mergeMarketSplitJudgment.mjs 먼저."); return; }
+
+    const parseCsv = (text: string) => {
+      const out: string[][] = []; let row: string[] = [], f = "", q = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+        else if (c === '"') q = true;
+        else if (c === ",") { row.push(f); f = ""; }
+        else if (c === "\n") { row.push(f); out.push(row); row = []; f = ""; }
+        else if (c !== "\r") f += c;
+      }
+      if (f.length || row.length) { row.push(f); out.push(row); }
+      return out.filter((r) => r.length > 1 || (r[0] ?? "").trim() !== "");
+    };
+
+    const csv = parseCsv(readFileSync(FILLED, "utf8").replace(/^﻿/, ""));
+    if ((csv[0][0] ?? "").startsWith("#")) csv.shift();
+    const head = csv.shift() as string[];
+    const ci = (n: string) => head.indexOf(n);
+    const kk = (a: string, b: string) => `${a}|||${b}`;
+
+    /** 사람 판정 — 길건너 true / 같은편 false / 모르겠음은 넣지 않는다(결측). */
+    const human = new Map<string, boolean>();
+    for (const r of csv) {
+      const v = r[ci("판정")];
+      if (v === "길건너") human.set(kk(r[ci("매장명")], r[ci("경쟁점명")]), true);
+      else if (v === "같은편") human.set(kk(r[ci("매장명")], r[ci("경쟁점명")]), false);
+    }
+
+    const auto = new Map<string, boolean>();
+    const autoRoads = new Map<string, string[]>();
+    if (existsSync(OSM)) {
+      for (const r of JSON.parse(readFileSync(OSM, "utf8")).rows as Record<string, unknown>[]) {
+        const k = kk(String(r["매장명"]), String(r["경쟁점명"]));
+        auto.set(k, r["자동판정"] === "길건너");
+        autoRoads.set(k, (r["가로지른도로"] as string[]) ?? []);
+      }
+    }
+
+    // ── 1) 사람 vs OSM 자동 ────────────────────────────────────────────
+    let a11 = 0, a10 = 0, a01 = 0, a00 = 0;
+    for (const [k, h] of human) {
+      if (!auto.has(k)) continue;
+      const a = auto.get(k)!;
+      if (h && a) a11++; else if (h && !a) a10++; else if (!h && a) a01++; else a00++;
+    }
+    const n = a11 + a10 + a01 + a00;
+    const agree = n ? (a11 + a00) / n : 0;
+    const pe = n ? (((a11 + a10) / n) * ((a11 + a01) / n) + ((a01 + a00) / n) * ((a10 + a00) / n)) : 0;
+    const kappa = pe < 1 ? (agree - pe) / (1 - pe) : 0;
+    console.log(`\n══ (17) 사람 판정 vs OSM 자동 판정 — n=${n} ══`);
+    console.log(`                  자동:길건너   자동:같은편`);
+    console.log(`  사람:길건너  ${String(a11).padStart(10)}${String(a10).padStart(14)}`);
+    console.log(`  사람:같은편  ${String(a01).padStart(10)}${String(a00).padStart(14)}`);
+    console.log(`  일치율 ${(agree * 100).toFixed(1)}% · 카파 ${kappa.toFixed(3)} ` +
+      `(0.2↓ 없음 · 0.4↓ 약함 · 0.6↓ 보통 · 0.8↓ 높음)`);
+    const humanN = [...human.values()].filter(Boolean).length;
+    const autoN = [...auto.values()].filter(Boolean).length;
+    console.log(`  길건너 비율 — 사람 ${humanN}/${human.size} · 자동 ${autoN}/${auto.size}`);
+
+    // ── 2) 관문 — 길건너 경쟁점을 할인하면 점유율이 더 잘 맞나 ──────────
+    // W: 길건너 경쟁점에 곱하는 가중. W=1이면 지금과 같고, W=0이면 아예 안 센다.
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const WS = [0, 0.25, 0.5, 0.75, 1];
+    type Design = { label: string; useDist: boolean };
+    const DESIGNS: Design[] = [
+      { label: "거리 계단 유지 + 길건너 할인", useDist: true },
+      { label: "거리 버리고 상권 분리만", useDist: false },
+    ];
+
+    const shareWith = (r: Row, W: number, useDist: boolean, lab: (k: string) => boolean | undefined) => {
+      const oq = computeQualityScore(r.parts, W2);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (useDist && x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W2) ?? oq) / oq;
+        // 판정이 없으면 **세는 쪽**으로 둔다 — 결측을 유리하게 쓰지 않는다.
+        const across = lab(kk(r.n, x.name)) === true;
+        riv += x.ip * Math.pow(q, P.qualityExponent) * (across ? W : 1);
+      }
+      return r.pc / (r.pc + riv);
+    };
+
+    const W2 = DEFAULT_TEXTBOOK_PARAMS.qualityWeights;
+    const obs = cmp.map((r) => r.shareObs);
+    const scoreW = (W: number, useDist: boolean, lab: (k: string) => boolean | undefined) => {
+      const pred = cmp.map((r) => shareWith(r, W, useDist, lab));
+      return { mape: mean(pred.map((v, i) => Math.abs(v / obs[i] - 1))), r: pear(pred, obs) };
+    };
+
+    for (const src of [["사람", (k: string) => human.get(k)] as const,
+                       ["OSM", (k: string) => auto.get(k)] as const]) {
+      const [srcName, lab] = src;
+      if (srcName === "OSM" && !auto.size) continue;
+      console.log(`\n  ── ${srcName} 판정으로 ──`);
+      for (const d of DESIGNS) {
+        const line = WS.map((W) => {
+          const s = scoreW(W, d.useDist, lab);
+          return `W=${W} ${(s.mape * 100).toFixed(1)}%/${s.r.toFixed(3)}`;
+        }).join("  ");
+        console.log(`    ${d.label.padEnd(24)} ${line}`);
+      }
+    }
+
+    // 대조군 — 길건너 라벨을 쌍끼리 섞는다. 길건너 곳수는 보존한다.
+    let seed = 20260918 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuffled = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+
+    console.log(`\n══ 무작위 대조군 500회 — 길건너 라벨을 쌍끼리 섞는다 ══`);
+    for (const d of DESIGNS) {
+      for (const crit of ["mape", "r"] as const) {
+        const keys = [...human.keys()];
+        const pick = (lab: (k: string) => boolean | undefined) => {
+          let best = { W: 1, v: Infinity };
+          for (const W of WS) {
+            const s = scoreW(W, d.useDist, lab);
+            const v = crit === "mape" ? s.mape : -s.r;
+            if (v < best.v) best = { W, v };
+          }
+          return best;
+        };
+        const gainOf = (lab: (k: string) => boolean | undefined) => {
+          const base = scoreW(1, d.useDist, lab);
+          const b = pick(lab);
+          return crit === "mape" ? base.mape - scoreW(b.W, d.useDist, lab).mape
+                                 : scoreW(b.W, d.useDist, lab).r - base.r;
+        };
+        const real = gainOf((k) => human.get(k));
+        const gains: number[] = [];
+        for (let i = 0; i < 500; i++) {
+          const pool = shuffled(keys.map((k) => human.get(k)!));
+          const m = new Map(keys.map((k, j) => [k, pool[j]]));
+          gains.push(gainOf((k) => m.get(k)));
+        }
+        gains.sort((x, y) => x - y);
+        const pv = (gains.filter((g) => g >= real).length + 1) / (gains.length + 1);
+        const f = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+        console.log(`  ${d.label.padEnd(24)} [${crit === "mape" ? "MAPE" : "r"}] 실제 ${f(real)}` +
+          ` · 섞으면 중앙 ${f(med(gains))} · 95퍼센타일 ${f(gains[Math.floor(gains.length * 0.95)])}` +
+          ` · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+      }
+    }
+    expect(human.size).toBeGreaterThan(100);
   });
 });
