@@ -487,6 +487,76 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     expect(errs.length).toBeGreaterThan(30);
   });
 
+  it("정가가 매출에 충분히 반영되나 — 탄력도 β 검증 (2026-09-18)", () => {
+    // 사용자: *"적용되는 요금이 실제예상매출에 충분히 적용되고있나? 예를들어 1000원요금 >
+    //          1500원요금 요금제 33%정도차이나는데 이게 매출에 적용되었는가"*
+    //
+    // 정가는 **총단가의 PC몫에만** 들어가고 그것도 지수 β=0.546으로 눌려 들어간다.
+    //   총단가 = 기준정가 x (정가/기준정가)^β  +  상품몫(상수)
+    // 그래서 정가 차이가 매출 차이로 **그대로 옮겨가지 않는다.** 얼마나 옮겨가는지 먼저 찍고,
+    // 그 눌림이 **자료에 맞는지**(β가 너무 낮지 않은지) 잔차로 판정한다.
+    const { rateElasticity: beta0, referenceHourlyRate: ref } = P;
+    const pcMok = (rate: number, b: number) => ref * Math.pow(rate / ref, b);
+    const total = (rate: number, b: number, prod: number) => pcMok(rate, b) + prod;
+
+    const base = scoreTextbook(rows, P);
+    const prod = base.fittedProductUnitPrice;
+    console.log(`\n[정가 -> 총단가] 기준정가 ${ref}원 · β=${beta0} · 상품몫 ${Math.round(prod)}원(상수)`);
+    console.log("   정가     PC몫    상품몫    총단가   1000원 대비");
+    const t1000 = total(1000, beta0, prod);
+    for (const rate of [1000, 1200, 1343, 1500, 2000, 2500]) {
+      const t = total(rate, beta0, prod);
+      console.log(`  ${String(rate).padStart(5)}원 ${String(Math.round(pcMok(rate, beta0))).padStart(6)}원 ` +
+        `${String(Math.round(prod)).padStart(6)}원 ${String(Math.round(t)).padStart(7)}원 ` +
+        `${((t / t1000 - 1) * 100).toFixed(1).padStart(7)}%`);
+    }
+    const r15 = total(1500, beta0, prod) / t1000 - 1;
+    console.log(`\n  => 정가 1,000 -> 1,500원(+50.0%)일 때 총단가는 ${(r15 * 100).toFixed(1)}%만 오른다.`);
+    console.log(`     눌리는 이유 둘: (1) β=${beta0}<1 — 정가가 비쌀수록 정액권 할인이 커진다(건별 원장 8곳 실측)`);
+    console.log(`                     (2) 상품몫 ${Math.round(prod)}원은 상수 — 라면 값은 PC요금을 안 따라간다`);
+
+    // ── 판정: 눌림이 과한가? 잔차가 정가와 붙어 있으면 β가 낮은 것이다 ──────────────
+    // β가 너무 낮으면 **비싼 매장을 과소예측**하고 싼 매장을 과대예측한다. 그러면
+    // 잔차(예측/실제 - 1)가 정가와 **음의 상관**을 갖는다. 0에 가까우면 맞게 눌린 것이다.
+    const resid = (sc: ReturnType<typeof scoreTextbook>) => {
+      const xs: number[] = [], ys: number[] = [];
+      for (const r of sc.rows) {
+        const rate = rows.find((x) => x.input.storeCode === r.storeCode)?.input.hourlyRate;
+        if (rate == null || r.predicted == null || !(r.actual > 0)) continue;
+        xs.push(rate); ys.push(r.predicted / r.actual - 1);
+      }
+      return { r: pearson(xs, ys), n: xs.length };
+    };
+
+    console.log(`\n[β 훑기] 축척은 β마다 다시 맞춘다(상품몫이 같이 움직인다)`);
+    console.log("    β     MAPE    중앙   ±20%   최대   상품몫   잔차↔정가 r");
+    for (const b of [0, 0.25, 0.546, 0.75, 1.0, 1.5]) {
+      const sc = scoreTextbook(rows, { ...P, rateElasticity: b });
+      const rr = resid(sc);
+      console.log(`  ${b.toFixed(3)}  ${((sc.mape ?? 0) * 100).toFixed(2)}%  ` +
+        `${((sc.medianAbsErr ?? 0) * 100).toFixed(1)}%  ${((sc.within20 ?? 0) * 100).toFixed(0)}%  ` +
+        `${((sc.maxAbsErr ?? 0) * 100).toFixed(0)}%  ${String(Math.round(sc.fittedProductUnitPrice)).padStart(5)}원  ` +
+        `${rr.r >= 0 ? "+" : ""}${rr.r.toFixed(3)}${b === beta0 ? "   <- 지금 값" : ""}`);
+    }
+    const rb = resid(base);
+    // 상관은 **유의수준을 같이 봐야** 판정이 된다(n=38에서 |r|<0.32면 p>0.05다).
+    const tOf = (r: number, n: number) => Math.abs(r) * Math.sqrt(n - 2) / Math.sqrt(Math.max(1e-9, 1 - r * r));
+    const t = tOf(rb.r, rb.n);
+    const crit = 2.028; // t(36), 양측 5%
+    console.log(`\n  판정 기준: **잔차↔정가 상관이 0에 가까워야** 눌림이 맞게 들어간 것이다.`);
+    console.log(`    음수면 비싼 매장을 과소예측(β를 올려야) · 양수면 과대예측(β를 내려야).`);
+    console.log(`    지금 β=${beta0}에서 r=${rb.r >= 0 ? "+" : ""}${rb.r.toFixed(3)} (n=${rb.n}) · ` +
+      `t=${t.toFixed(2)} vs 임계 ${crit} -> ${t > crit ? "⚠️ 유의하게 어긋났다" : "유의하지 않다(어긋났다고 못 한다)"}`);
+    console.log(`    n=${rb.n}에서는 |r|이 약 0.32는 돼야 유의하다 — 위 훑기의 r 차이는 전부 그 아래다.`);
+    console.log(`    즉 **이 시험으로는 β를 0~1 사이에서 못 가른다.** 확실한 건 "너무 낮다는 증거는 없다"까지다`);
+    console.log(`    (β가 낮으면 비싼 매장이 과소예측돼 r이 음수로 나와야 하는데, 전부 양수다).`);
+    console.log(`\n  ⚠️ MAPE가 제일 낮은 β를 그냥 고르지 말 것 — 이 모델은 축척을 독점매장에서만`);
+    console.log(`     맞춰서 수준 이동이 MAPE에 그대로 찍힌다([[feedback_lab_mape_follows_level]]).`);
+    console.log(`     β는 건별 원장 실측(정가 1,700원 매장이 1,397원만 받는다)에서 나온 값이고,`);
+    console.log(`     자료로 재선택하는 대상이 아니다. 여기서는 **어긋났는지만** 본다.`);
+    expect(rb.n).toBeGreaterThan(30);
+  });
+
   it("유동 방향 ω를 올리면 — 측정만 한다, 켜지 않는다", () => {
     console.log("\n[유동 방향 ω] 지금은 0이다. 대조군을 못 넘어서 값만 채워둔 항목이다.");
     for (const omega of [0, 0.1, 0.25, 0.5, 1]) {

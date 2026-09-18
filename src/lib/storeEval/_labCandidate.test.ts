@@ -195,8 +195,36 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     const mg = candRows.map((r) => r.input.ownQualityParts?.management ?? null);
     const uniq = [...new Set(mg)];
     console.log(`\n[자 맞춤 점검]`);
-    console.log(`  관리 점수: 후보지 ${uniq.length}종 ${uniq.map((v) => v?.toFixed(2)).join(",")} ` +
-      `= 가맹점 평균 ${franchiseManagement?.toFixed(2)}`);
+
+    // ── QSC 가맹점 평균이 정확히 얼마인가 ────────────────────────────────────
+    // 두 가지를 섞지 말 것: **원점수(0~100)**와 **환산한 관리 점수(1~5)**는 다른 수다.
+    // 후보지에 들어가는 건 환산한 쪽이고, 평균도 **환산한 뒤에** 낸다
+    // (먼저 평균 내고 환산하면 다른 값이 나온다 — 환산이 1~5로 잘리는 구간이 있어서).
+    const raws = [...qscByStoreCode.values()];
+    if (raws.length) {
+      const rs = [...raws].sort((a, b) => a - b);
+      const avgRaw = raws.reduce((a, b) => a + b, 0) / raws.length;
+      console.log(`  QSC 원점수(0~100): 실측 ${raws.length}곳 · 평균 ${avgRaw.toFixed(2)} · ` +
+        `중앙 ${rs[Math.floor(rs.length / 2)].toFixed(1)} · ${rs[0].toFixed(1)}~${rs[rs.length - 1].toFixed(1)}`);
+      // 환산: 1 + (QSC-60) x (4/40), 1~5로 자름
+      const conv = raws.map((v) => Math.max(1, Math.min(5, 1 + (v - 60) * 0.1)));
+      const avgConv = conv.reduce((a, b) => a + b, 0) / conv.length;
+      const cs = [...conv].sort((a, b) => a - b);
+      console.log(`  -> 환산 관리 점수(1~5): 평균 ${avgConv.toFixed(3)} · ` +
+        `${cs[0].toFixed(2)}~${cs[cs.length - 1].toFixed(2)} (1점/5점에 걸린 곳 ` +
+        `${conv.filter((v) => v <= 1).length}/${conv.filter((v) => v >= 5).length}곳)`);
+      // 환산이 1~5로 잘리는 구간에 걸린 매장이 있으면 "평균 낸 뒤 환산"과 "환산한 뒤 평균"이
+      // 갈린다. 지금은 아무도 안 걸려서 같지만, 표본이 늘어 한 곳이라도 걸리면 갈라진다.
+      const avgThenConv = Math.max(1, Math.min(5, 1 + (avgRaw - 60) * 0.1));
+      const same = Math.abs(avgThenConv - avgConv) < 5e-4;
+      console.log(`  순서 점검: 평균낸뒤환산 ${avgThenConv.toFixed(3)} vs 환산한뒤평균 ${avgConv.toFixed(3)} — ` +
+        (same
+          ? "지금은 같다(1점/5점에 걸린 매장이 없어서다). 걸리는 매장이 생기면 갈라진다."
+          : "⚠️ 갈렸다. 쓰는 값은 환산한뒤평균이다."));
+      console.log(`  (채점 대상 38곳 기준으로 다시 내면 ${franchiseManagement?.toFixed(3)} — ` +
+        `실측 없는 매장이 평균을 받아 되먹임되므로 실측 ${raws.length}곳 평균과 조금 다르다)`);
+    }
+    console.log(`  후보지에 실제로 들어간 관리 점수: ${uniq.length}종 ${uniq.map((v) => v?.toFixed(3)).join(",")}`);
     // 후보지는 QSC가 없으니 **전부 같은 값(가맹점 평균)**이어야 한다. 갈라지면 어딘가에서
     // 저장된 ownManagementScore(4.00)가 새어 들어온 것이다.
     expect(uniq.length).toBe(1);
