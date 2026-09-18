@@ -419,6 +419,52 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
         `${b.capped ? ` (상한 ${(full.maxUtilization * 100).toFixed(0)}%에 걸렸다)` : ""}`);
       console.log(`  => 예상 월매출 ${b.monthlyRevenue == null ? "-" : Math.round(b.monthlyRevenue).toLocaleString()}원 (${manwon(b.monthlyRevenue)})`);
       if (b.missing.length) console.log(`  ⚠️ 자료없음: ${b.missing.join(", ")}`);
+
+      // ── 정가가 매출에 얼마를 보탰나 ──────────────────────────────────────
+      // 정가는 **총단가에만** 들어가고 이용시간(가동률)에는 안 들어간다. 그래서 매출은
+      // 총단가에 정확히 비례한다 — "정가를 평균으로 바꾸면 얼마가 되나"를 바로 잴 수 있다.
+      // ⚠️ 상한에 걸린 매장은 이 비례가 깨진다(이용시간이 잘려서다). 걸리면 같이 적는다.
+      const rate = r.input.hourlyRate;
+      if (rate != null && b.monthlyRevenue != null) {
+        const rates = (xs: { input: { hourlyRate: number | null } }[]) =>
+          xs.map((x) => x.input.hourlyRate).filter((v): v is number => v != null);
+        const exRates = rates(existingRows), caRates = rates(candRows);
+        const mean = (xs: number[]) => xs.reduce((a, x) => a + x, 0) / xs.length;
+        const pctile = (xs: number[], v: number) => xs.filter((x) => x < v).length / xs.length;
+        const bases: [string, number][] = [
+          ["기존 가맹점 평균", mean(exRates)],
+          ["후보지 평균", mean(caRates)],
+          ["산식 기준정가", full.referenceHourlyRate],
+        ];
+        console.log(`\n-- 정가 ${rate.toLocaleString()}원이 매출에 보탠 몫 --`);
+        console.log(`  견줄 값            정가차이     총단가          매출        이 매장이 더 번 몫`);
+        for (const [label, baseRate] of bases) {
+          const alt = computeTextbook({ ...r.input, hourlyRate: baseRate }, full);
+          if (alt.unitPrice == null || alt.monthlyRevenue == null || b.unitPrice == null) continue;
+          console.log(`  ${label.padEnd(16)} ${`${((rate / baseRate - 1) * 100).toFixed(1)}%`.padStart(7)}  ` +
+            `${Math.round(alt.unitPrice).toLocaleString()} -> ${Math.round(b.unitPrice).toLocaleString()}원 ` +
+            `(${((b.unitPrice / alt.unitPrice - 1) * 100).toFixed(1).padStart(5)}%)  ` +
+            `${manwon(alt.monthlyRevenue)} -> ${manwon(b.monthlyRevenue)}  ` +
+            `+${manwon(b.monthlyRevenue - alt.monthlyRevenue)}`);
+        }
+        console.log(`  정가 위치: 기존 가맹점 38곳 중 상위 ${((1 - pctile(exRates, rate)) * 100).toFixed(0)}% ` +
+          `(${Math.min(...exRates).toLocaleString()}~${Math.max(...exRates).toLocaleString()}원) · ` +
+          `후보지 12곳 중 상위 ${((1 - pctile(caRates, rate)) * 100).toFixed(0)}% ` +
+          `(${Math.min(...caRates).toLocaleString()}~${Math.max(...caRates).toLocaleString()}원)`);
+        console.log(`  ⚠️ 정가 차이가 매출 차이로 **그대로 안 간다** — β=${full.rateElasticity}로 눌리고,` +
+          ` 상품몫 ${Math.round(full.productUnitPrice).toLocaleString()}원은 요금과 무관하다.`);
+        if (b.capped) console.log(`  ⚠️ 이 매장은 가동률 상한에 걸려 있어 위 비례가 정확하지 않다.`);
+        // ⚠️ **외삽 경고.** β는 기존점 정가 범위 안에서 잰 값이다. 그 밖의 정가를 넣으면
+        //    "재본 적 없는 구간"으로 밀어 넣는 것이라, 눌림이 맞는지 아무도 확인한 적이 없다.
+        //    2026-09-18 구리돌다리점 2,000원이 실제로 이 경우였다(기존점 최고 1,800원).
+        const exMin = Math.min(...exRates), exMax = Math.max(...exRates);
+        if (rate > exMax || rate < exMin) {
+          console.log(`  🔴 **외삽이다** — 기존 가맹점 정가는 ${exMin.toLocaleString()}~${exMax.toLocaleString()}원인데 ` +
+            `이 매장은 ${rate.toLocaleString()}원이라 그 밖이다.`);
+          console.log(`     β=${full.rateElasticity}는 그 범위 **안에서** 잰 값이라, 이 구간에서도 맞는지는 확인된 바 없다.`);
+          console.log(`     정액권 할인이 정가에 비례해 더 커지면 실제 실수령은 여기 예측보다 낮을 수 있다.`);
+        }
+      }
     }
   });
 });
