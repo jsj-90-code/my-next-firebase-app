@@ -487,6 +487,104 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     expect(errs.length).toBeGreaterThan(30);
   });
 
+  it("경쟁상권 과소예측 — 자료 없는 경쟁점을 자사와 동급으로 세고 있다 (2026-09-18)", () => {
+    // 사용자: *"상권내 경쟁점으로 보기 어려운? 영향력적은 매장들은 제거하고 다시보는거어떤데"*
+    //
+    // ⚠️ **지금 산식은 "모르면 자사와 동급"으로 본다.** textbookModel의 ratio()가 경쟁점
+    //    품질을 못 구하면 1을 돌려준다 — 그러면 그 경쟁점은 PC수 전부가 무게로 들어간다.
+    //    주석은 "결측을 유리/불리로 해석하지 않는다"고 적혀 있지만, 경쟁점 평균 경쟁력이
+    //    자사보다 한참 낮으므로 **실제로는 가장 불리한 쪽(경쟁점 최대 강도)**을 고른 것이다.
+    //
+    //    그중 9곳은 조사자가 **"노후저경쟁력미조사"**로 적은 곳이다 — 약하다고 판단해서
+    //    조사를 생략한 매장인데, 산식은 그걸 자사와 같은 힘으로 센다. 정보를 거꾸로 쓴 셈이다.
+    //
+    // 여기서 보는 건 MAPE가 아니라 **독점 대비 경쟁상권 잔차 격차**다. 경쟁 항이 너무 세면
+    // 경쟁상권만 과소예측되고 독점은 멀쩡하다(축척을 독점에서 맞추므로).
+    const gap = (rs: LabRow[], label: string, pp: TextbookParams = P) => {
+      const sc = scoreTextbook(rs, pp);
+      const monoBy = new Map(rs.map((r) => [r.input.storeCode, !(r.input.competitorIp ?? 0)]));
+      const ok = sc.rows.filter((x) => x.predicted != null && x.actual > 0)
+        .map((x) => ({ e: (x.predicted as number) / x.actual - 1, mono: monoBy.get(x.storeCode) === true }));
+      const avg = (a: typeof ok) => a.length ? a.reduce((s2, x) => s2 + x.e, 0) / a.length : NaN;
+      const mo = avg(ok.filter((x) => x.mono)), co = avg(ok.filter((x) => !x.mono));
+      console.log(`  ${label.padEnd(30)} 독점 ${(mo * 100).toFixed(1).padStart(6)}% · 경쟁상권 ${(co * 100).toFixed(1).padStart(6)}%` +
+        ` · 격차 ${((co - mo) * 100).toFixed(1).padStart(6)}%p · MAPE ${((sc.mape ?? 0) * 100).toFixed(2)}%`);
+      return co - mo;
+    };
+    /** 경쟁점 목록을 손봐서 행을 다시 만든다. 원본은 안 건드린다. */
+    const build = (fn: (cs: Competitor[]) => Competitor[]) => {
+      const m = new Map<string, Competitor[]>();
+      for (const [k, v] of compsByCode) m.set(k, fn(v));
+      return buildLabRows({ stores, compsByCode: m, utilByStore, settings, qscByStoreCode });
+    };
+    const hasQ = (c: Competitor) =>
+      [c.foodScore, c.interiorScore, c.managementScore, c.vgaBase, c.cpu].some((v) => v != null);
+
+    // 경쟁점 평균 점수 — "모르면 평균"으로 채울 때 쓴다.
+    const sv = allCompetitors.filter((c) => c.investigationStatus !== "경쟁점없음");
+    const mean = (xs: (number | null | undefined)[]) => {
+      const v = xs.filter((x): x is number => x != null);
+      return v.reduce((a, b) => a + b, 0) / v.length;
+    };
+    const avgFood = mean(sv.map((c) => c.foodScore));
+    const avgInt = mean(sv.map((c) => c.interiorScore));
+    const avgMgmt = mean(sv.map((c) => c.managementScore));
+
+    console.log(`\n[경쟁상권 과소예측] 자료 없는 경쟁점을 어떻게 볼 것인가`);
+    console.log(`  조사대상 ${sv.length}곳 중 품질자료 전무 ${sv.filter((c) => !hasQ(c)).length}곳` +
+      ` (그중 노후저경쟁력미조사 ${sv.filter((c) => c.investigationStatus === "노후저경쟁력미조사").length}곳)`);
+    console.log(`  경쟁점 평균 점수 — 먹거리 ${avgFood.toFixed(2)} · 인테리어 ${avgInt.toFixed(2)} · 관리 ${avgMgmt.toFixed(2)}\n`);
+
+    // ⚠️ **자료 없는 20곳은 전부 후보지 경쟁점이고 기존점엔 0곳이다.** 그래서 아래 셋이
+    //    기존점 성적을 한 칸도 안 바꾼다. 이 문제는 **후보지 예측 전용**이라
+    //    `_labCandidate.test.ts`에서 잰다. 여기 남겨 두는 건 "기존점에선 원인이 아니다"를
+    //    기록하려는 것이다 — 안 적어두면 다음에 또 여기서 찾는다.
+    gap(rows, "지금 (모르면 자사와 동급)");
+    gap(build((cs) => cs.filter((c) => c.investigationStatus !== "노후저경쟁력미조사")),
+      "노후저경쟁력 빼기 (기존점 0곳)");
+    gap(build((cs) => cs.map((c) => hasQ(c) ? c : ({
+      ...c, foodScore: avgFood, interiorScore: avgInt, managementScore: avgMgmt,
+    }))), "자료없으면 평균으로 (기존점 0곳)");
+
+    // ── 그럼 기존점 경쟁상권 과소예측의 원인은 무엇인가 ────────────────────────
+    // 과소예측 = 점유율이 너무 낮다 = 경쟁점 무게가 너무 크다. 무게를 줄이는 손잡이는 둘이다.
+    //   θ ↑  — 자사보다 약한 경쟁점(비<1)이 더 빨리 작아진다
+    //   유효거리 ↓ — 먼 경쟁점이 아예 빠진다
+    console.log(`\n[손잡이 훑기] 격차를 0으로 가져가는 게 목표다 (지금 -15.6%p)`);
+    for (const th of [3, 4, 5, 6]) gap(rows, `  θ=${th}`, { ...P, qualityExponent: th });
+    for (const rr of [150, 200, 250, 300]) gap(rows, `  유효거리 ${rr}m`, { ...P, effectiveRadiusM: rr });
+    // 바깥선택지 — "PC방을 아예 안 가는 몫". 분모에 더해지므로 점유율을 **낮춘다**.
+    // 지금 0인데, 0이 아니면 과소예측이 더 심해진다. 방향 확인용으로만 찍는다.
+    for (const oo of [0, 50, 100]) gap(rows, `  바깥선택지 ${oo}`, { ...P, outsideOptionIp: oo });
+
+    // ── 두 문제가 묶여 있다 ────────────────────────────────────────────────
+    // θ를 올리면 격차는 닫히는데 MAPE가 나빠진다. θ는 **경쟁력 비**를 증폭하는 손잡이라,
+    // 자사 점수가 부풀려져 있으면 그 부풀림까지 같이 증폭한다. 그래서 자를 맞추기 전에는
+    // θ를 못 올린다. 자를 맞추면 여지가 생기는지 본다.
+    const sameRuler = (to: Record<string, number>) => rows.map((r) => {
+      const q = r.input.ownQualityParts;
+      if (!q) return r;
+      const next = { ...q };
+      for (const k of ["food", "interior", "management"] as const) if (next[k] != null) next[k] = to[k];
+      return { actualRevenue: r.actualRevenue, input: { ...r.input, ownQualityParts: next } };
+    });
+    const maxOf = (xs: (number | null | undefined)[]) =>
+      Math.max(...xs.filter((x): x is number => x != null));
+    const topRuler = sameRuler({
+      food: maxOf(sv.map((c) => c.foodScore)),
+      interior: maxOf(sv.map((c) => c.interiorScore)),
+      management: maxOf(sv.map((c) => c.managementScore)),
+    });
+    console.log(`\n[자를 맞춘 뒤 θ를 올리면] 자사 = 경쟁점 **최고값**(먹 3.5 / 인 4.5 / 관 4.5)`);
+    for (const th of [3, 4, 5, 6]) gap(topRuler, `  θ=${th}`, { ...P, qualityExponent: th });
+
+    console.log(`\n  격차가 0에 가까울수록 좋다 — 경쟁 항이 독점 대비 치우치지 않았다는 뜻이다.`);
+    console.log(`  ⚠️ **빼는 것과 채우는 것은 다르다.** 빼면 그 상권이 통째로 헐거워져 점유율이`);
+    console.log(`     올라가지만, 실제로 그 매장은 거기 있다. "모른다"를 "없다"로 바꾸면 안 된다.`);
+    console.log(`  ⚠️ 여기서 격차가 줄어도 **채택 근거가 아니다.** 무작위 대조군을 따로 세울 것.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
+
   it("자사와 경쟁점이 다른 자로 재고 있다 — 먹거리·인테리어·관리 (2026-09-18)", () => {
     // 사용자: *"관리같은경우 거의 하, 중하, 중, 중상, 상 이런형태로 평가하거든. 좀 모자라다하면
     //          중으로 표현한단말이지. 3점. 근대 우리는 자체 평균이 4.2잖아 이거 개념의 오류가있다.
