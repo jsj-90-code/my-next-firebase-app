@@ -510,6 +510,34 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
         `${String(Math.round(prod)).padStart(6)}원 ${String(Math.round(t)).padStart(7)}원 ` +
         `${((t / t1000 - 1) * 100).toFixed(1).padStart(7)}%`);
     }
+    // ── 억제가 두 겹인데, 겹치는 건 아닌가 (2026-09-18 사용자 질문) ─────────────
+    // 사용자: *"먹거리 제외되어야 하기 때문에 절반만 적용된다 하면 지금이 적절한건가?"*
+    //
+    // 겹치지 않는다. **둘은 서로 다른 자로 따로 잰 값이다.**
+    //   상품몫 상수 — 실매출 ÷ (PC x 720 x 실측가동률) − PC몫 으로 전 매장에서 직접 측정
+    //   β=0.546   — **실효단가 = PC매출 ÷ 참이용시간**의 log-log 회귀 기울기(settings.ts).
+    //               분자가 *PC매출*이라 **먹거리가 애초에 안 섞여 있다.**
+    // 그래서 "β로 한 번, 상품몫으로 또 한 번" 이중으로 깎는 게 아니다. β는 PC몫 안에서만
+    // 일하고, 상품몫은 요금과 무관한 몫을 따로 들고 있을 뿐이다.
+    //
+    // 그 증거: 이 PC몫 식은 운영 usageRevenue.ts effectiveHourlyRate와 글자 그대로 같고,
+    // 실측 PC몫 ÷ 이 식의 기하평균이 1.005였다(backlog 2026-09-16 저녁(3)).
+    //
+    // 아래는 **측정된 실효단가 비율과 이 식이 그리는 곡선을 직접 댄 것**이다.
+    // settings.ts에 적힌 38곳 측정값이 원자료다.
+    const measured: [number, number, number][] = [ // [정가, 곳수, 실효/정가 %]
+      [1000, 3, 112], [1200, 9, 101], [1300, 8, 97], [1500, 10, 90], [1700, 2, 88], [1800, 1, 83],
+    ];
+    console.log(`\n[β 검산] 측정된 실효단가 비율 vs 지금 식이 그리는 곡선 (38곳, settings.ts)`);
+    console.log("   정가   곳수   실측 실효/정가   식의 실효/정가   차이");
+    for (const [rate, n, pctMeasured] of measured) {
+      const model = (pcMok(rate, beta0) / rate) * 100;
+      console.log(`  ${String(rate).padStart(5)}원 ${String(n).padStart(3)}곳  ` +
+        `${pctMeasured.toFixed(0).padStart(9)}% ${model.toFixed(1).padStart(14)}% ` +
+        `${(model - pctMeasured >= 0 ? "+" : "")}${(model - pctMeasured).toFixed(1).padStart(5)}%p`);
+    }
+    console.log(`  (R²=0.346라 같은 1,500원도 매장별 72~108%로 벌어진다 — 낱개 차이는 잡음이다)`);
+
     const r15 = total(1500, beta0, prod) / t1000 - 1;
     console.log(`\n  => 정가 1,000 -> 1,500원(+50.0%)일 때 총단가는 ${(r15 * 100).toFixed(1)}%만 오른다.`);
     console.log(`     눌리는 이유 둘: (1) β=${beta0}<1 — 정가가 비쌀수록 정액권 할인이 커진다(건별 원장 8곳 실측)`);

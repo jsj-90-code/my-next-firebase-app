@@ -451,6 +451,26 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
           `(${Math.min(...exRates).toLocaleString()}~${Math.max(...exRates).toLocaleString()}원) · ` +
           `후보지 12곳 중 상위 ${((1 - pctile(caRates, rate)) * 100).toFixed(0)}% ` +
           `(${Math.min(...caRates).toLocaleString()}~${Math.max(...caRates).toLocaleString()}원)`);
+
+        // ── 이 상권의 경쟁점 요금과 견준다 (2026-09-18) ────────────────────
+        // ⚠️ **산식은 경쟁점 요금을 안 읽는다**(calc.ts·textbookModel.ts 어디에도 없다).
+        //    그래도 여기 찍는 이유는 "자사 정가를 실제로 받을 수 있나"가 예측값이 아니라
+        //    **이 판단으로 갈리기** 때문이다. 전국 평균보다 옆집이 훨씬 중요하다.
+        const localRates = (compsByCode.get(r.candidate.code) ?? [])
+          .filter((x) => x.investigationStatus !== "경쟁점없음")
+          .map((x) => ({ name: x.name ?? "", d: x.distanceM, min: x.ratePer1000Won, h: x.hourlyRateConverted }))
+          .filter((x): x is { name: string; d: number | null; min: number; h: number } => x.min != null && x.h != null);
+        if (localRates.length) {
+          const avgLocal = localRates.reduce((a, x) => a + x.h, 0) / localRates.length;
+          console.log(`  이 상권 경쟁점 요금:`);
+          for (const x of localRates.sort((a, y) => (a.d ?? 9e9) - (y.d ?? 9e9))) {
+            console.log(`     ${String(Math.round(x.d ?? 0)).padStart(4)}m ${x.name.padEnd(18)} ` +
+              `1,000원/${x.min}분 = ${x.h.toLocaleString()}원/시간 (자사 대비 ${((x.h / rate - 1) * 100).toFixed(0)}%)`);
+          }
+          console.log(`     경쟁점 평균 ${Math.round(avgLocal).toLocaleString()}원 · 자사 ${rate.toLocaleString()}원 ` +
+            `-> 자사가 ${((rate / avgLocal - 1) * 100).toFixed(1)}%`);
+          console.log(`     ⚠️ 경쟁점 요금은 산식에 안 들어간다. "이 정가를 받을 수 있나"를 사람이 볼 때만 쓴다.`);
+        }
         console.log(`  ⚠️ 정가 차이가 매출 차이로 **그대로 안 간다** — β=${full.rateElasticity}로 눌리고,` +
           ` 상품몫 ${Math.round(full.productUnitPrice).toLocaleString()}원은 요금과 무관하다.`);
         if (b.capped) console.log(`  ⚠️ 이 매장은 가동률 상한에 걸려 있어 위 비례가 정확하지 않다.`);
