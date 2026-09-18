@@ -269,4 +269,58 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
       `(중앙 ${bias ? `${(bias.med * 100).toFixed(1)}%` : "-"}) — 실매출 대비`);
     console.log("  ⚠️ 후보지 V62 대비 편차에서 이 치우침만큼은 원래 있던 것이다. 나머지가 설명할 몫이다.");
   });
+
+  it("(6) 유동인구가 비면 얼마나 깎이나 — 빈칸은 중립이 아니다", () => {
+    if (!candRows.length) return;
+    // ⚠️ **유동인구 빈칸은 중립이 아니다.** 수요는 덧셈 구조라(주거 + 유동x0.15) 유동이
+    //    없으면 그 몫이 **0으로 더해진다.** 입지 중심도(유동 300m ÷ 유동 1km)도 같이 빠진다.
+    //    이 파일의 다른 항목들("모르면 1배로 빼기")과 성질이 다르므로 따로 잰다.
+    //
+    // 2026-09-18 구리돌다리점(N015)이 실제로 이 상태로 들어왔다. 예측은 나오는데
+    // **말없이 낮다** — missing 열에만 적히고 숫자는 그럴듯해서 놓치기 쉽다.
+    const missingFlow = candRows.filter((r) => r.input.floatingByRadius[full.floatingRadius] == null);
+    const haveFlow = candRows.filter((r) => r.input.floatingByRadius[full.floatingRadius] != null);
+    if (!haveFlow.length) return;
+
+    // 유동이 있는 곳에서 유동 몫이 수요의 몇 %인지 — 빈 곳이 잃는 몫의 크기다.
+    const shares: number[] = [];
+    for (const r of haveFlow) {
+      const b = computeTextbook(r.input, full);
+      const base = (b.residentDemandUsers ?? 0) + (b.floatingDemandUsers ?? 0);
+      if (base > 0 && b.floatingDemandUsers != null) shares.push(b.floatingDemandUsers / base);
+    }
+    const avgShare = shares.reduce((a, b) => a + b, 0) / shares.length;
+    const srt = [...shares].sort((a, b) => a - b);
+    console.log(`\n[유동인구 빈칸의 값어치] 유동이 있는 ${haveFlow.length}곳 기준`);
+    console.log(`  수요 중 유동 몫: 평균 ${(avgShare * 100).toFixed(1)}% · ` +
+      `중앙 ${(srt[Math.floor(srt.length / 2)] * 100).toFixed(1)}% · ` +
+      `${(srt[0] * 100).toFixed(1)}~${(srt[srt.length - 1] * 100).toFixed(1)}%`);
+
+    if (!missingFlow.length) { console.log("  ✅ 유동인구가 빈 후보지는 없다."); return; }
+    console.log(`\n  [유동이 빈 ${missingFlow.length}곳] 지금 값은 그 몫이 통째로 빠진 값이다`);
+    for (const r of missingFlow) {
+      const now = computeTextbook(r.input, full);
+      // 같은 동네 후보지들의 "유동 ÷ 주거" 비로 유동을 메워 본 값 — **채택하는 값이 아니라
+      // 빈칸의 크기를 보여주는 눈금이다.** 실제로는 소상공인365에서 받아 채워야 한다.
+      const ratios = haveFlow
+        .map((h) => {
+          const f = h.input.floatingByRadius[full.floatingRadius];
+          return f != null && h.input.pop1km ? f / h.input.pop1km : null;
+        })
+        .filter((v): v is number => v != null);
+      const medRatio = [...ratios].sort((a, b) => a - b)[Math.floor(ratios.length / 2)];
+      const guessFlow = r.input.pop1km != null ? r.input.pop1km * medRatio : null;
+      const patched = guessFlow == null ? null : computeTextbook({
+        ...r.input,
+        floatingByRadius: { ...r.input.floatingByRadius, [full.floatingRadius]: guessFlow },
+      }, full);
+      const up = patched?.monthlyRevenue != null && now.monthlyRevenue != null && now.monthlyRevenue > 0
+        ? patched.monthlyRevenue / now.monthlyRevenue - 1 : null;
+      console.log(`  ${r.input.storeCode} ${r.input.storeName ?? ""} — 지금 ${manwon(now.monthlyRevenue)}` +
+        `  |  또래 비율로 메우면 ${manwon(patched?.monthlyRevenue)}` +
+        `${up == null ? "" : ` (+${(up * 100).toFixed(0)}%)`}`);
+      console.log(`     ⚠️ 메운 값은 **눈금일 뿐 채택값이 아니다.** 유동 400m/300m/1km를 실제로 받아 채울 것.`);
+      console.log(`     ⚠️ 중심도(유동 300m ÷ 1km)도 같이 빠져 입지 배율이 ${now.locationMultiplier?.toFixed(3) ?? "-"}에 머문다.`);
+    }
+  });
 });
