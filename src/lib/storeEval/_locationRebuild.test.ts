@@ -278,7 +278,8 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
     n: string; pc: number; loc: any; store: any;
     parts: QualityParts; floorScore: number | null;
     // name — 상권 분리 판정(매장명↔경쟁점명으로 맞춘다)을 붙이려고 2026-09-18에 넣었다.
-    rivals: { name: string; ip: number; d: number; parts: QualityParts; floorScore: number | null }[];
+    // id   — 소상공인365 100m 유동인구를 `competitor:<id>` 키로 찾으려고 같은 날 넣었다.
+    rivals: { name: string; id: string; ip: number; d: number; parts: QualityParts; floorScore: number | null }[];
     demand: number; util: number; t: number; shareObs: number;
   };
   const rows: Row[] = [];
@@ -307,7 +308,7 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
           // 거리는 **좌표로 잰 값**을 먼저 쓴다. 현장조사 거리(distanceM)는 초기 데이터라
           // 잘못 적힌 게 있다(2026-09-17 사용자 확인). 유효거리 300m 판정이 걸린 자리라
           // 틀리면 경쟁점이 통째로 빠지거나 없던 게 들어온다.
-          name: String(c.name ?? ""),
+          name: String(c.name ?? ""), id: String(c.id ?? ""),
           ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0), d: rivalDistanceM(s, c) ?? 0,
           parts: rivalParts(c),
           floorScore: computeLocationScoreFromFacts(c.floor ?? null, c.groundLevel ?? null, c.hasElevator ?? null),
@@ -2149,5 +2150,210 @@ describeIf("입지 재설계 — 먼저 잰다", () => {
       }
     }
     expect(human.size).toBeGreaterThan(100);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  // (18) 길건너를 둘로 가른다 — "어느 편에 사람이 많은가"를 자료로 답한다
+  //
+  // (17)은 길건너 33건을 전부 "경쟁이 약해진다"로 취급해 할인했다. 그런데 길건너에는
+  // 반대 방향 둘이 섞여 있다:
+  //   갑  경쟁점이 길 건너라 우리 손님을 못 뺏는다        -> 경쟁 약해짐
+  //   을  경쟁점이 길 건너 **수요 쪽**이고 우리만 반대편   -> 경쟁 세짐 (오송점이 이 경우)
+  // 둘을 한 칸에 넣으면 서로 상쇄된다. (17)이 p=0.078에서 멈춘 이유로 의심된다.
+  //
+  // 가르는 자는 사용자가 제안한 것이다(2026-09-18):
+  //   *"경쟁점이랑 우리중에 사람 어디가 더 많은지 제대로 알려면 상권365에서 100미터로
+  //     경쟁점 뽑아보면 될 거 아냐"*
+  // 사람한테 물었더니 길건너 16건 중 12건이 "모르겠음"이었다. 자료가 답할 질문이 맞았다.
+  // ────────────────────────────────────────────────────────────────────────
+  it("(18) 길건너 x 유동인구 비 — 갑·을을 갈라 다시 건다", () => {
+    const FILLED = ".local-tools/market-split-judgment-filled.csv";
+    const SBIZ = ".local-tools/sbiz-floating-population.json";
+    if (!existsSync(FILLED) || !existsSync(SBIZ)) { console.log("\n판정 CSV나 유동인구 자료가 없다."); return; }
+
+    const parseCsv = (text: string) => {
+      const out: string[][] = []; let row: string[] = [], f = "", q = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+        else if (c === '"') q = true;
+        else if (c === ",") { row.push(f); f = ""; }
+        else if (c === "\n") { row.push(f); out.push(row); row = []; f = ""; }
+        else if (c !== "\r") f += c;
+      }
+      if (f.length || row.length) { row.push(f); out.push(row); }
+      return out.filter((r) => r.length > 1 || (r[0] ?? "").trim() !== "");
+    };
+    const csv = parseCsv(readFileSync(FILLED, "utf8").replace(/^﻿/, ""));
+    if ((csv[0][0] ?? "").startsWith("#")) csv.shift();
+    const head = csv.shift() as string[];
+    const ci = (n: string) => head.indexOf(n);
+    const kk = (a: string, b: string) => `${a}|||${b}`;
+    const human = new Map<string, boolean>();
+    for (const r of csv) {
+      const v = r[ci("판정")];
+      if (v === "길건너") human.set(kk(r[ci("매장명")], r[ci("경쟁점명")]), true);
+      else if (v === "같은편") human.set(kk(r[ci("매장명")], r[ci("경쟁점명")]), false);
+    }
+
+    // 100m 유동인구 — 최근 달 값을 쓴다(selected 배열의 끝).
+    const sites = (JSON.parse(readFileSync(SBIZ, "utf8")).sites ?? {}) as Record<string, {
+      radii?: Record<string, { selected?: number[] }>;
+    }>;
+    const flow100 = (key: string): number | null => {
+      const sel = sites[key]?.radii?.["100"]?.selected;
+      if (!sel || !sel.length) return null;
+      const v = sel[sel.length - 1];
+      return Number.isFinite(v) && v > 0 ? v : null;
+    };
+
+    const W2 = DEFAULT_TEXTBOOK_PARAMS.qualityWeights;
+    const P = DEFAULT_TEXTBOOK_PARAMS;
+    const obs = cmp.map((r) => r.shareObs);
+
+    // 쌍마다 비(경쟁점 100m ÷ 자사 100m). 자료가 없으면 null -> 중립(비=1)으로 둔다.
+    let haveRatio = 0, wantRatio = 0;
+    const ratioOf = (storeCode: string, rivalId: string): number | null => {
+      const a = flow100(`existing:${storeCode}`), b = flow100(`competitor:${rivalId}`);
+      if (a == null || b == null) return null;
+      return b / a;
+    };
+    for (const r of cmp) for (const x of r.rivals) {
+      if (human.get(kk(r.n, x.name)) !== true) continue;
+      wantRatio++;
+      if (ratioOf(r.store.storeCode, x.id) != null) haveRatio++;
+    }
+    console.log(`\n══ (18) 길건너 x 유동인구 비 ══`);
+    console.log(`  길건너 경쟁점 중 100m 유동 자료가 있는 것 ${haveRatio}/${wantRatio}`);
+    if (haveRatio < wantRatio) {
+      console.log(`  ⚠️ 수집이 아직 안 끝났다. 끝난 뒤 다시 돌려야 결론이 선다.`);
+    }
+
+    // 분포를 먼저 본다 — 갑·을이 실제로 갈리나.
+    const ratios: { store: string; rival: string; ratio: number }[] = [];
+    for (const r of cmp) for (const x of r.rivals) {
+      if (human.get(kk(r.n, x.name)) !== true) continue;
+      const v = ratioOf(r.store.storeCode, x.id);
+      if (v != null) ratios.push({ store: r.n, rival: x.name, ratio: v });
+    }
+    ratios.sort((a, b) => a.ratio - b.ratio);
+    if (ratios.length) {
+      const lo = ratios.filter((v) => v.ratio < 1).length;
+      console.log(`  경쟁점 쪽이 한산(비<1) ${lo}건 · 붐빔(비≥1) ${ratios.length - lo}건`);
+      console.log(`  비 범위 ${ratios[0].ratio.toFixed(2)} ~ ${ratios[ratios.length - 1].ratio.toFixed(2)}`);
+    }
+
+    // 설계 C — 계수 하나. 길건너 경쟁점 가중 x= 비^ψ.
+    //   ψ=0  지금과 같다 (길건너를 무시)
+    //   ψ>0  경쟁점 쪽이 붐빌수록 더 세게 센다(을), 한산할수록 덜 센다(갑)
+    // 2026-09-18: 처음 [-1..1]로 훑었더니 최선이 **끝값 -1**이었고 LOO가 100% 그걸 골랐다.
+    // 끝으로 달리는 계수는 이 저장소가 두 번 속은 징후다(밀집도 r=0.660 · gamma=4).
+    // 범위를 넓혀 진짜 바닥이 안에 있는지 본다.
+    const PSIS = [-3, -2, -1.5, -1, -0.5, -0.25, 0, 0.25, 0.5, 1];
+    const shareWith = (r: Row, psi: number, lab: (k: string) => boolean | undefined) => {
+      const oq = computeQualityScore(r.parts, W2);
+      let riv = 0;
+      for (const x of r.rivals) {
+        if (x.d > P.effectiveRadiusM) continue;
+        const q = oq == null ? 1 : (computeQualityScore(x.parts, W2) ?? oq) / oq;
+        let w = 1;
+        if (lab(kk(r.n, x.name)) === true) {
+          const ratio = ratioOf(r.store.storeCode, x.id);
+          w = ratio == null ? 1 : Math.pow(ratio, psi);
+        }
+        riv += x.ip * Math.pow(q, P.qualityExponent) * w;
+      }
+      return r.pc / (r.pc + riv);
+    };
+    const scorePsi = (psi: number, lab: (k: string) => boolean | undefined) => {
+      const pred = cmp.map((r) => shareWith(r, psi, lab));
+      return { mape: mean(pred.map((v, i) => Math.abs(v / obs[i] - 1))), r: pear(pred, obs) };
+    };
+
+    console.log(`\n  ψ 훑기 (길건너 경쟁점 가중 = 비^ψ)`);
+    for (const psi of PSIS) {
+      const s = scorePsi(psi, (k) => human.get(k));
+      console.log(`    ψ=${String(psi).padStart(5)}  MAPE ${(s.mape * 100).toFixed(2)}%  r ${s.r.toFixed(3)}${psi === 0 ? "   <- 지금(길건너 무시)" : ""}`);
+    }
+
+    let seed = 20260918 >>> 0;
+    const rng = () => { seed += 0x6d2b79f5; let x = Math.imul(seed ^ (seed >>> 15), 1 | seed); x ^= x + Math.imul(x ^ (x >>> 7), 61 | x); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    const shuffled = <T,>(a: T[]) => { const s = [...a]; for (let i = s.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [s[i], s[j]] = [s[j], s[i]]; } return s; };
+
+    console.log(`\n══ LOO 홀드아웃 — 한 곳 빼고 ψ 고른 뒤 뺀 곳에서 채점 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const pickPsi = (idxs: number[]) => {
+        let best = { psi: 0, v: Infinity };
+        for (const psi of PSIS) {
+          const pred = idxs.map((i) => shareWith(cmp[i], psi, (k) => human.get(k)));
+          const o = idxs.map((i) => obs[i]);
+          const v = crit === "mape" ? mean(pred.map((p, j) => Math.abs(p / o[j] - 1))) : -pear(pred, o);
+          if (v < best.v) best = { psi, v };
+        }
+        return best.psi;
+      };
+      const all = cmp.map((_, i) => i);
+      const errs: number[] = [], picks: number[] = [];
+      for (let i = 0; i < cmp.length; i++) {
+        const psi = pickPsi(all.filter((j) => j !== i));
+        picks.push(psi);
+        errs.push(Math.abs(shareWith(cmp[i], psi, (k) => human.get(k)) / obs[i] - 1));
+      }
+      const ins = pickPsi(all);
+      const tally = [...new Set(picks)].map((p) => [p, picks.filter((x) => x === p).length] as const).sort((a, b) => b[1] - a[1]);
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 표본 안 ψ=${ins} ${(scorePsi(ins, (k) => human.get(k)).mape * 100).toFixed(2)}% → LOO ${(mean(errs) * 100).toFixed(2)}%`);
+      console.log(`     훈련이 고른 ψ: ${tally.map(([p, c]) => `${p} ${Math.round(c / picks.length * 100)}%`).join(" · ")}`);
+    }
+
+    console.log(`\n══ 무작위 대조군 500회 — 길건너 라벨을 쌍끼리 섞는다 ══`);
+    for (const crit of ["mape", "r"] as const) {
+      const pick = (lab: (k: string) => boolean | undefined) => {
+        let best = { psi: 0, v: Infinity };
+        for (const psi of PSIS) {
+          const s = scorePsi(psi, lab);
+          const v = crit === "mape" ? s.mape : -s.r;
+          if (v < best.v) best = { psi, v };
+        }
+        return best;
+      };
+      const gainOf = (lab: (k: string) => boolean | undefined) => {
+        const base = scorePsi(0, lab);
+        const b = pick(lab);
+        const s = scorePsi(b.psi, lab);
+        return crit === "mape" ? base.mape - s.mape : s.r - base.r;
+      };
+      const keys = [...human.keys()];
+      const real = gainOf((k) => human.get(k));
+      const gains: number[] = [];
+      for (let i = 0; i < 500; i++) {
+        const pool = shuffled(keys.map((k) => human.get(k)!));
+        const m = new Map(keys.map((k, j) => [k, pool[j]]));
+        gains.push(gainOf((k) => m.get(k)));
+      }
+      gains.sort((x, y) => x - y);
+      const pv = (gains.filter((g) => g >= real).length + 1) / (gains.length + 1);
+      const f = (v: number) => (crit === "mape" ? `${(v * 100).toFixed(2)}%p` : v.toFixed(3));
+      console.log(`  [${crit === "mape" ? "MAPE" : "r"}] 실제 ${f(real)} · 섞으면 중앙 ${f(med(gains))}` +
+        ` · 95퍼센타일 ${f(gains[Math.floor(gains.length * 0.95)])} · p=${pv.toFixed(3)} ${pv < 0.05 ? "✅" : "❌"}`);
+    }
+    // ── 위약 검정 ────────────────────────────────────────────────────────
+    // 같은 가중을 **같은편 경쟁점에** 걸어 본다. 거기서도 비슷하게 좋아지면 이 항이 하는 일은
+    // "길 건너"와 상관없이 그냥 **유동인구 비**를 쓰는 것이다. 그러면 경쟁 항이 아니라
+    // 수요식 반경의 그림자다(⑧에서 중심도에 물었던 것과 같은 질문).
+    const flipped = (k: string) => { const v = human.get(k); return v === undefined ? undefined : !v; };
+    console.log(`\n══ 위약 — 같은 가중을 '같은편' 경쟁점에 걸면 ══`);
+    for (const psi of [-3, -2, -1, 0]) {
+      const real = scorePsi(psi, (k) => human.get(k));
+      const plac = scorePsi(psi, flipped);
+      console.log(`    ψ=${String(psi).padStart(4)}  길건너에 ${(real.mape * 100).toFixed(2)}%` +
+        `   같은편에 ${(plac.mape * 100).toFixed(2)}%`);
+    }
+    const bestReal = Math.min(...PSIS.map((p) => scorePsi(p, (k) => human.get(k)).mape));
+    const bestPlac = Math.min(...PSIS.map((p) => scorePsi(p, flipped).mape));
+    const base0 = scorePsi(0, (k) => human.get(k)).mape;
+    console.log(`  최선 이득 — 길건너 ${((base0 - bestReal) * 100).toFixed(2)}%p · 같은편(위약) ${((base0 - bestPlac) * 100).toFixed(2)}%p`);
+    console.log(`  위약이 비슷하거나 더 크면, 이 항은 '길 건너'가 아니라 유동인구 비를 쓰는 것이다.`);
+
+    expect(cmp.length).toBeGreaterThan(20);
   });
 });
