@@ -578,6 +578,129 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     console.log(`\n[자를 맞춘 뒤 θ를 올리면] 자사 = 경쟁점 **최고값**(먹 3.5 / 인 4.5 / 관 4.5)`);
     for (const th of [3, 4, 5, 6]) gap(topRuler, `  θ=${th}`, { ...P, qualityExponent: th });
 
+    // ── 어느 매장이 얼마나 어긋났나 — 치우침이 고르지 않다면 빠진 변수가 있다 ──────
+    // 2026-09-18 사용자: *"강릉교동점은 라이킷, MX5 경쟁점 평가에서 뺴야할듯함"* —
+    // 사람이 상권이 갈렸다고 본 사례다. 그런 매장이 잔차에서도 눈에 띄는지 본다.
+    {
+      const sc = scoreTextbook(rows, P);
+      const monoBy = new Map(rows.map((r) => [r.input.storeCode, !(r.input.competitorIp ?? 0)]));
+      const inR = (r: LabRow) => (r.input.rivals ?? []).filter((v) => v.distanceM == null || v.distanceM <= P.effectiveRadiusM);
+      const byCode = new Map(rows.map((r) => [r.input.storeCode, r]));
+      const list = sc.rows
+        .filter((x) => x.predicted != null && x.actual > 0 && monoBy.get(x.storeCode) === false)
+        .map((x) => {
+          const r = byCode.get(x.storeCode);
+          const rv = r ? inR(r) : [];
+          return {
+            name: x.storeName ?? x.storeCode,
+            e: (x.predicted as number) / x.actual - 1,
+            n: rv.length,
+            ip: rv.reduce((a, v) => a + v.ip, 0),
+            pc: r?.input.pcCount ?? null,
+          };
+        })
+        .sort((a, b) => a.e - b.e);
+      console.log(`\n[경쟁상권 ${list.length}곳 — 어긋난 순] 음수가 과소예측이다`);
+      console.log("   매장                 잔차     유효거리내 경쟁점  경쟁PC  자사PC");
+      for (const x of list) {
+        console.log(`  ${x.name.slice(0, 18).padEnd(18)} ${(x.e * 100).toFixed(1).padStart(7)}%  ` +
+          `${String(x.n).padStart(6)}곳       ${String(x.ip).padStart(5)}  ${String(x.pc ?? "-").padStart(5)}`);
+      }
+      console.log(`  ⚠️ 과소예측이 심한 곳일수록 "경쟁점을 너무 세게 본" 후보다 —`);
+      console.log(`     사람이 상권이 갈렸다고 보는 매장과 겹치는지 대조할 것.`);
+
+      // ── 사람이 "상권이 갈렸다"고 판정한 짝 — 2026-09-18 사용자 ────────────────
+      //
+      // ⚠️ **이건 아직 자료가 아니라 시험용 표본이다.** 두 매장만 사람이 봤고, 여기 박아
+      //    둔 건 "이 방향이 값어치가 있나"를 재려는 것이다. 값어치가 확인되면 Firestore
+      //    필드로 옮기고 나머지 매장도 같은 방식으로 판정해야 한다 — **코드에 남겨 두면
+      //    안 된다**(숫자·자료를 글자로 박지 않는다는 이 저장소 규칙).
+      //
+      // 공통점: 둘 다 **한 방향으로 몰린 무리**다. 강릉교동은 남/남서, 부천상동역은 남서.
+      // 그리고 그 방향에서 300m로 이미 빠진 매장이 또 있다(헌터 392m · 철구 309m).
+      const SPLIT: Record<string, string[]> = {
+        "강릉교동점(신)": ["라이킷", "MX5"],
+        "부천상동역점": ["레벨업", "크리드", "더엑스"],
+      };
+      const splitRows = rows.map((r) => {
+        const names = SPLIT[r.input.storeName ?? ""];
+        if (!names) return r;
+        return {
+          actualRevenue: r.actualRevenue,
+          input: {
+            ...r.input,
+            rivals: (r.input.rivals ?? []).filter((v) => !names.some((n) => (v.name ?? "").includes(n))),
+          },
+        };
+      });
+      const after = scoreTextbook(splitRows, P);
+      console.log(`\n[상권 분리 시험] 사람이 "다른 상권"이라 본 경쟁점을 뺀다 (2곳만 판정됨)`);
+      console.log("   매장                 지금      뺀 뒤     경쟁점");
+      for (const name of Object.keys(SPLIT)) {
+        const b = sc.rows.find((x) => x.storeName === name);
+        const a = after.rows.find((x) => x.storeName === name);
+        if (!b || !a || b.predicted == null || a.predicted == null) continue;
+        const be = b.predicted / b.actual - 1, ae = a.predicted / a.actual - 1;
+        const rv = byCode.get(b.storeCode);
+        const n0 = rv ? inR(rv).length : 0;
+        console.log(`  ${name.padEnd(18)} ${(be * 100).toFixed(1).padStart(7)}% -> ${(ae * 100).toFixed(1).padStart(7)}%` +
+          `   ${n0}곳 -> ${n0 - SPLIT[name].length}곳`);
+      }
+      console.log(`  전체 MAPE ${((sc.mape ?? 0) * 100).toFixed(2)}% -> ${((after.mape ?? 0) * 100).toFixed(2)}%` +
+        ` · 중앙 ${((sc.medianAbsErr ?? 0) * 100).toFixed(1)}% -> ${((after.medianAbsErr ?? 0) * 100).toFixed(1)}%` +
+        ` · ±20% ${((sc.within20 ?? 0) * 100).toFixed(0)}% -> ${((after.within20 ?? 0) * 100).toFixed(0)}%`);
+      console.log(`  ⚠️ 2곳만 고친 것이라 전체 성적이 크게 움직이면 오히려 이상하다.`);
+      console.log(`     볼 것은 **그 두 매장이 제자리를 찾는가**다.`);
+
+      // ── ⭐ 위 숫자는 아직 근거가 아니다 ────────────────────────────────────
+      //
+      // 사용자가 스스로 짚었다(2026-09-18): *"근대내가 지금 예상매출 낮은매장만 보고있긴함"*
+      // **맞는 지적이다.** 과소예측 매장만 골라 경쟁점을 빼면 반드시 좋아진다 — 답안지를
+      // 보고 고른 것이다(이 저장소에서 반복되는 함정: "걸러낸 자료로 검증하면 항상 통과한다").
+      //
+      // 그래서 묻는 질문을 바꾼다. "빼면 좋아지나"가 아니라
+      //   **"하필 그 경쟁점들을 고른 것이 아무거나 고른 것보다 나은가"**
+      // 같은 수를 빼는 조합을 **전부** 세어 사람 판정이 몇 등인지 본다. 1등에 가까우면
+      // 사람이 옳은 것을 짚은 것이고, 중간이면 그냥 "빼면 좋아진다"일 뿐이다.
+      const combos = <T,>(xs: T[], k: number): T[][] => {
+        if (k === 0) return [[]];
+        if (xs.length < k) return [];
+        const [h, ...t] = xs;
+        return [...combos(t, k - 1).map((c) => [h, ...c]), ...combos(t, k)];
+      };
+      console.log(`\n[대조군] 같은 수를 빼는 **모든 조합**에서 사람 판정이 몇 등인가`);
+      for (const [name, picked] of Object.entries(SPLIT)) {
+        const row = rows.find((r) => r.input.storeName === name);
+        if (!row) continue;
+        const rv = inR(row);
+        const k = picked.length;
+        const all = combos(rv.map((_, i) => i), k);
+        const scoreOf = (drop: number[]) => {
+          const keep = new Set(rv.filter((_, i) => !drop.includes(i)).map((v) => v.name ?? ""));
+          const rs = rows.map((r) => r.input.storeName !== name ? r : ({
+            actualRevenue: r.actualRevenue,
+            input: { ...r.input, rivals: (r.input.rivals ?? []).filter((v) => keep.has(v.name ?? "")) },
+          }));
+          const x = scoreTextbook(rs, P).rows.find((y) => y.storeName === name);
+          return x?.predicted != null && x.actual > 0 ? Math.abs(x.predicted / x.actual - 1) : Infinity;
+        };
+        const results = all.map((d) => ({ d, err: scoreOf(d) })).sort((a, b) => a.err - b.err);
+        const humanIdx = rv.map((v, i) => picked.some((p) => (v.name ?? "").includes(p)) ? i : -1).filter((i) => i >= 0);
+        const humanErr = scoreOf(humanIdx);
+        const rank = results.filter((r) => r.err < humanErr - 1e-9).length + 1;
+        console.log(`  ${name} — ${rv.length}곳 중 ${k}곳 빼기 · 조합 ${all.length}가지`);
+        console.log(`     사람 판정 오차 ${(humanErr * 100).toFixed(1)}% -> **${rank}등 / ${all.length}**` +
+          ` (최선 ${(results[0].err * 100).toFixed(1)}% · 중앙 ${(results[Math.floor(results.length / 2)].err * 100).toFixed(1)}%` +
+          ` · 최악 ${(results[results.length - 1].err * 100).toFixed(1)}%)`);
+        console.log(`     백분위 상위 ${((rank / all.length) * 100).toFixed(0)}%` +
+          `${rank / all.length <= 0.2 ? "  ✅ 아무거나 고른 것보다 낫다" : "  ⚠️ 그냥 '빼면 좋아진다'와 구분이 안 된다"}`);
+      }
+      console.log(`\n  ⚠️ 이 검정도 **한계가 있다** — 판정한 2곳이 둘 다 과소예측 매장이다.`);
+      console.log(`     제대로 하려면 **잔차를 안 보고** 지도만으로 전 매장을 판정한 뒤 한꺼번에 재야 한다.`);
+      console.log(`     과대예측 매장(부경대 +56% · 수원망포 +32%)도 판정해야 가설이 시험된다 —`);
+      console.log(`     거기서도 "상권이 갈렸다"가 잔뜩 나오면 이 변수는 잔차와 무관한 것이다.`);
+    }
+
     console.log(`\n  격차가 0에 가까울수록 좋다 — 경쟁 항이 독점 대비 치우치지 않았다는 뜻이다.`);
     console.log(`  ⚠️ **빼는 것과 채우는 것은 다르다.** 빼면 그 상권이 통째로 헐거워져 점유율이`);
     console.log(`     올라가지만, 실제로 그 매장은 거기 있다. "모른다"를 "없다"로 바꾸면 안 된다.`);
