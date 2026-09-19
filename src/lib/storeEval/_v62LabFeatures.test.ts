@@ -41,7 +41,8 @@ import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import {
   computeCompetitorAppliedPcCount, computeCompetitorInvestigationSummary, computeCompetitorScores,
-  computeSpecScore, empiricalFeaturesFor, getV62Rate, summarizeValidationRows, toV61TrainingStore,
+  computeCompetitorZoneComposition, computeOwnZoneComposition, computeSpecScore, empiricalFeaturesFor,
+  getV62Rate, resolveZoneCompositionScore, summarizeValidationRows, toV61TrainingStore,
   type ValidationStoreInput,
 } from "./calc";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
@@ -542,5 +543,169 @@ describeIf("실험실 변수를 V62에 태워 본다", () => {
     console.log(`  움직임이 작으면 "실질적으로 후보지는 그대로"라고 말할 수 있고,`);
     console.log(`  크면 **검증 안 된 변경이 후보지에 그대로 나간다**는 뜻이라 신중해야 한다.`);
     expect(diffs.length).toBeGreaterThan(20);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  it("(8) 사양 + 존구성을 실험실 판으로 — **MAPE는 판정 기준이 아니라 대가다**", () => {
+    // 사용자(2026-09-19): *"v62라고 mape 위주로 진행하는 게 아니라, 근거가 명확한, 이런 값이라면
+    // 적중률이 떨어져도 적용해야지."*
+    //
+    // ⭐ 이 한 줄이 판정 기준을 바꾼다. 실험실에서 하루 종일 지킨 규율("MAPE로 값을 고르지
+    //    않는다")을 운영에도 그대로 적용하는 것이다. 그래서 아래 표의 MAPE는 **채택 근거가
+    //    아니라 치르는 대가**로 읽는다.
+    //
+    // ── 근거의 종류로 나누면 ────────────────────────────────────────────────
+    //   [사실 문제]  사양표 — RTX 3060 Ti(2.25) < RTX 4060(3.00)은 **사실과 어긋난다**
+    //                존구성 — VIP존·프렌즈존·퍼스트클래스존이 경쟁점 228건 전부 0건.
+    //                         우리 브랜드 용어라 조사자가 경쟁점의 같은 실체를 그 칸에 안 넣는다.
+    //                         종류를 세면 **자사가 항상 이긴다**(41/41곳)
+    //   [통계 근거]  QSC — 탄력도 0.84 · 대조군 통과. 사실 문제는 아니다
+    //   [근거 약함]  중심도 · 교과서식 예측 · 특수수요 배수 — 실험실 안에서만 뜻이 있다
+    //
+    // 비중: 경쟁력점수에서 사양 25% · 존구성 0.5 × 0.55 = **27.5%**
+    const wSpec = settings.competitivenessWeights.spec;
+    const wZone = settings.facilityWeights.zoneComposition * settings.competitivenessWeights.interior;
+    const labParts = new Map(labRows.map((r) => [r.input.storeCode, r.input.ownQualityParts]));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownZoneOp = (st: any) => resolveZoneCompositionScore(
+      computeOwnZoneComposition({
+        counts: {
+          singleSeatCount: st.ownSingleSeatCount ?? null, room1: st.ownRoom1 ?? null,
+          room2: st.ownRoom2 ?? null, teamRoom: st.ownTeamRoom ?? null,
+          coupleZone: st.ownCoupleZone ?? null, vipZone: st.ownVipZone ?? null,
+          friendsZone: st.ownFriendsZone ?? null, firstClassZone: st.ownFirstClassZone ?? null,
+        },
+        teamRoomTotalSeats: st.ownTeamRoomTotalSeats ?? null,
+        totalPcCount: st.evaluationPcCount ?? st.pcCount ?? null,
+      }).composition, st.ownSeatZoneScore ?? null);
+    const rivalZoneOp = (c: Competitor) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const x = c as any;
+      return computeCompetitorZoneComposition({
+        counts: {
+          singleSeatCount: x.singleSeatCount ?? null, room1: x.room1 ?? null, room2: x.room2 ?? null,
+          teamRoom: x.teamRoom ?? null, coupleZone: x.coupleZone ?? null, vipZone: x.vipZone ?? null,
+          friendsZone: x.friendsZone ?? null, firstClassZone: x.firstClassZone ?? null,
+        },
+        regularCoupleSeatCount: x.regularCoupleSeatCount ?? null,
+        teamRoomTotalSeats: x.teamRoomTotalSeats ?? null,
+        totalPcCount: computeCompetitorAppliedPcCount(c) ?? null,
+      }).composition;
+    };
+
+    const buildSwap = (useSpec: boolean, useZone: boolean) => {
+      let movedOwnS = 0, movedOwnZ = 0;
+      const out: ValidationStoreInput[] = [];
+      for (let i = 0; i < baseInputs.length; i++) {
+        const inp = baseInputs[i];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const st = stores[i] as any;
+        const parts = labParts.get(inp.storeCode);
+        let dOwn = 0;
+        if (useSpec) {
+          const op = computeSpecScore({
+            vgaBase: st.ownVgaBase, vgaTop: st.ownVgaTop, vgaTop2: st.ownVgaTop2,
+            cpu: st.ownCpu, cpuTop1: st.ownCpuTop1, cpuTop2: st.ownCpuTop2,
+            ram: st.ownRam, ramTop: st.ownRamTop,
+            monitorBase: st.ownMonitorBase, monitorTop: st.ownMonitorTop,
+          }, settings);
+          const lab = parts?.spec ?? null;
+          if (op != null && lab != null) { dOwn += (lab - op) * wSpec; if (Math.abs(lab - op) > 1e-9) movedOwnS++; }
+        }
+        if (useZone) {
+          const op = ownZoneOp(st), lab = parts?.zone ?? null;
+          if (op != null && lab != null) { dOwn += (lab - op) * wZone; if (Math.abs(lab - op) > 1e-9) movedOwnZ++; }
+        }
+        let wsum = 0, dsum = 0;
+        for (const c of competitorsByLookup.get(existingStoreSourceCode(stores[i])) ?? []) {
+          const w = computeCompetitorAppliedPcCount(c) ?? 0;
+          if (!(w > 0)) continue;
+          let d = 0;
+          if (useSpec) {
+            const op = computeCompetitorScores(c, settings).spec, lab = rivalQualityParts(c, settings).spec;
+            if (op != null && lab != null) d += (lab - op) * wSpec;
+          }
+          if (useZone) {
+            const op = rivalZoneOp(c), lab = rivalQualityParts(c, settings).zone;
+            if (op != null && lab != null) d += (lab - op) * wZone;
+          }
+          wsum += w; dsum += w * d;
+        }
+        const dAvg = wsum > 0 ? dsum / wsum : 0;
+        const own0 = inp.competitivenessScore ?? null, gap0 = inp.competitivenessGap ?? null;
+        const avg0 = own0 != null && gap0 != null && gap0 > 0 ? own0 / gap0 : null;
+        const own1 = own0 != null ? own0 + dOwn : null;
+        const avg1 = avg0 != null ? avg0 + dAvg : null;
+        out.push({ ...inp,
+          competitivenessScore: own1 ?? inp.competitivenessScore,
+          competitivenessGap: own1 != null && avg1 != null && avg1 > 0 ? own1 / avg1 : inp.competitivenessGap });
+      }
+      return { out, movedOwnS, movedOwnZ };
+    };
+
+    const scoreOf = (inputs: ValidationStoreInput[]) => {
+      const { rows } = runUsageCohortValidation(inputs, sales, settings) as never as {
+        rows: { brand: string | null; includedInCoreAccuracy: boolean }[];
+      };
+      return summarizeValidationRows(
+        rows.filter((r) => r.brand === "블랙라벨" && r.includedInCoreAccuracy) as never,
+        { mape: settings.targetMAE, medianAe: settings.targetMedianAE,
+          within10: settings.target10pctRatio, within20: settings.target20pctRatio, maxBias: settings.maxAvgBias });
+    };
+
+    console.log(`\n══ (8) 사실 교정을 적용하면 — 대가가 얼마인가 ══`);
+    console.log(`  경쟁력점수 비중: 사양 ${(wSpec * 100).toFixed(0)}% · 존구성 ${(wZone * 100).toFixed(1)}%\n`);
+    console.log(`  ${"".padEnd(26)}${"MAPE".padStart(9)}${"중앙".padStart(9)}${"±10%".padStart(8)}${"±20%".padStart(8)}`);
+    const base = measure(null).s;
+    const line = (label: string, s: ReturnType<typeof scoreOf>) => console.log(
+      `  ${label.padEnd(26)}${pct(s.meanAbsoluteErrorPct).padStart(9)}${pct(s.medianAbsoluteErrorPct).padStart(9)}` +
+      `${pct(s.within10PctRatio, 0).padStart(8)}${pct(s.within20PctRatio, 0).padStart(8)}`);
+    line("지금 (운영 잣대)", base);
+    const onlySpec = buildSwap(true, false);
+    const onlyZone = buildSwap(false, true);
+    const both = buildSwap(true, true);
+    line("사양만 실험실 판", scoreOf(onlySpec.out));
+    line("존구성만 실험실 판", scoreOf(onlyZone.out));
+    line("둘 다 실험실 판", scoreOf(both.out));
+    console.log(`\n  움직인 매장: 사양 ${onlySpec.movedOwnS}곳 · 존구성 ${onlyZone.movedOwnZ}곳 (자사 ${baseInputs.length}곳 중)`);
+    console.log(`\n  ⚠️ 이 표는 **채택 근거가 아니라 대가**다. 사용자 원칙:`);
+    console.log(`     *"v62라고 mape 위주로 진행하는 게 아니라, 근거가 명확한, 이런 값이라면`);
+    console.log(`       적중률이 떨어져도 적용해야지."*`);
+    console.log(`     사양표의 RTX 서열과 존구성의 자사 전용 이름표는 **사실 문제**다.`);
+    console.log(`     MAPE가 얼마든 틀린 값을 그대로 두는 게 더 나쁘다.`);
+
+    // ── 근거가 정말 '사실 문제'인지 여기서 확인한다 ──────────────────────────
+    // 존구성 대가가 크다(±10% 66% -> 47%). 그러니 **비대칭이 지금도 실재하는지**를 보고
+    // 결정해야 한다. V62는 2026-09-17에 이미 한 번 고쳤다(미조사 경쟁점이 최저점 받던 것).
+    const ownOp: number[] = [], ownLab: number[] = [];
+    for (let i = 0; i < baseInputs.length; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const v = ownZoneOp(stores[i] as any);
+      const l = labParts.get(baseInputs[i].storeCode)?.zone ?? null;
+      if (v != null) ownOp.push(v);
+      if (l != null) ownLab.push(l);
+    }
+    const rivOp: number[] = [], rivLab: number[] = [];
+    for (const c of allCompetitors) {
+      const v = rivalZoneOp(c), l = rivalQualityParts(c, settings).zone;
+      if (v != null) rivOp.push(v);
+      if (l != null) rivLab.push(l);
+    }
+    const med2 = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+    const winRate = (own: number[], riv: number[]) => {
+      const rm = med2(riv); if (rm == null) return null;
+      return own.filter((v) => v > rm).length / own.length;
+    };
+    console.log(`\n  ── 존구성 비대칭이 지금도 있나 (판단 근거) ──`);
+    console.log(`    ${"잣대".padEnd(10)}${"자사 중앙".padStart(10)}${"경쟁점 중앙".padStart(12)}${"자사가 경쟁 중앙보다 높은 비율".padStart(28)}`);
+    console.log(`    ${"운영".padEnd(10)}${(med2(ownOp) ?? 0).toFixed(2).padStart(10)}${(med2(rivOp) ?? 0).toFixed(2).padStart(12)}` +
+      `${pct(winRate(ownOp, rivOp), 0).padStart(28)}   (자사 ${ownOp.length}곳 · 경쟁 ${rivOp.length}곳)`);
+    console.log(`    ${"실험실".padEnd(10)}${(med2(ownLab) ?? 0).toFixed(2).padStart(10)}${(med2(rivLab) ?? 0).toFixed(2).padStart(12)}` +
+      `${pct(winRate(ownLab, rivLab), 0).padStart(28)}   (자사 ${ownLab.length}곳 · 경쟁 ${rivLab.length}곳)`);
+    console.log(`\n    운영 잣대에서 자사 승률이 100%에 가까우면 — 비대칭이 실재한다 = 사실 교정 대상.`);
+    console.log(`    비슷하면 2026-09-17 수정으로 이미 풀렸다는 뜻이고, 실험실 판은 '재정의'이지`);
+    console.log(`    '사실 교정'이 아니다 — 그럼 대가(±10% 66->47%)를 치를 이유가 약해진다.`);
+    expect(both.out.length).toBe(baseInputs.length);
   });
 });
