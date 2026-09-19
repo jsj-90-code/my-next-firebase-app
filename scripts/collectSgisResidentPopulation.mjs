@@ -29,7 +29,13 @@ import { selfTest, to5179 } from "./lib/tm.mjs";
 const SNAPSHOT = ".local-tools/validation-snapshot.json";
 const GEOCODED = ".local-tools/geocoded-sites.json";
 const OUT = ".local-tools/sgis-resident-population.json";
-const RADII = [100, 200, 300, 400, 500, 1000];
+// 2026-09-19 추가: 1500·2000m.
+// 사용자 관찰 — 양주덕정점은 300m 뭉치에 있는 PC방이 반경 2km의 전부이고(학교정화구역 때문에
+// 다른 상권엔 입점 불가), 그 2km가 초중고까지 있는 형성된 상권이다. 문경시청점도 점촌고·
+// 문경여중·점촌중에서 보면 우리 매장과 클라우드PC방(1.5km)까지의 거리가 비슷하다.
+// -> 두 곳 다 "유효 상권이 1km보다 넓다"가 유일하게 말이 되는 설명이라, 1km 밖 인구를 봐야 한다.
+// 이미 받아 둔 반경은 아래 루프에서 건너뛰므로 새 반경만 추가로 부른다.
+const RADII = [100, 200, 300, 400, 500, 1000, 1500, 2000];
 const BASE_YEAR = process.env.SGIS_BASE_YEAR || "2024";
 const DELAY_MS = Number(process.env.SGIS_DELAY_MS || 700);
 

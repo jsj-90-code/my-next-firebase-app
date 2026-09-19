@@ -154,3 +154,8 @@ src/**/_*.test.ts
 # 2026-09-19 — 필요 점유율 100% 초과 매장(전체 수요를 다 먹어도 실매출에 못 미치는 곳)을
 # 개별로 파는 하네스. 주변 PC방 밀도 · 유동인구 반경 단조성 · 가동률 원자료 · 단가층.
 !src/lib/storeEval/_underserved.test.ts
+
+# 2026-09-19 — "2km 안에 대체 PC방이 없다"가 과소예측을 설명하는지 검정하는 하네스.
+# 사용자 경고("결과맞추기일 수도 있다")에 따라 판정 기준을 파일 머리에 사전 등록해 뒀다.
+!src/lib/storeEval/_catchment.test.ts
+!/.local-tools/kakao-neighborhood.json
