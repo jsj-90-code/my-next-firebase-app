@@ -407,4 +407,47 @@ describeIf("수요를 다 먹어도 모자란 매장", () => {
     console.log(`     지금 단계는 "주거층에만 있는 현상인가"를 확인하는 데까지다.`);
     expect(probes.length).toBeGreaterThan(10);
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  it("(8) 주거 반경을 넓히면 얼마나 움직이나 — 민감도", () => {
+    // 사용자(2026-09-19): *"주변 반경 300미터 정도에 있는 PC방이 반경 2키로에 있는 전부다.
+    // 그 2키로가 죽은 상권이 아니라 다 상권이 형성되어 있고 초중고가 다 있다. 경쟁점 없는
+    // 이유는 학교정화구역 때문에 PC방 입점이 불가해서다."*
+    //
+    // -> 300m 뭉치 하나가 **2km 상권 전체를 먹는다**는 뜻이다. 산식은 주거 1km · 유동 400m만 센다.
+    //
+    // ⚠️ (2)에서 쓴 '공급부족도'가 왜 빗나갔는지도 이걸로 설명된다 — 분자(주거 1km)도
+    //    분모(경쟁 500m)도 **둘 다 상권보다 좁은 반경**으로 쟀다. 뭉치 바로 옆만 보면
+    //    "PC방 흔한 동네"로 보이지만, 상권 단위로 보면 정반대일 수 있다.
+    //
+    // 여기서는 자료 없이 답할 수 있는 것만 잰다: **수요에서 주거가 차지하는 몫**.
+    // 그래야 "주거를 2km로 넓히면 수요가 몇 배 되나"를 말할 수 있다.
+    console.log(`\n══ (8) 수요에서 주거·유동이 각각 얼마나 차지하나 ══`);
+    console.log(`  ${"매장".padEnd(14)}${"주거 몫".padStart(8)}${"유동 몫".padStart(8)}` +
+      `${"필요점유율".padStart(10)}   주거를 2배로 하면   3배로 하면`);
+    const shareRows: { name: string; rs: number; req: number | null }[] = [];
+    for (const p of probes) {
+      const b = computeTextbook(p.r.input, full);
+      const res = b.residentDemandUsers ?? 0, flo = b.floatingDemandUsers ?? 0;
+      if (res + flo <= 0) continue;
+      shareRows.push({ name: p.name, rs: res / (res + flo), req: p.req });
+    }
+    const over = probes.filter((x) => x.req != null && x.req > 1).map((x) => x.name);
+    for (const s of shareRows.filter((x) => over.includes(x.name))
+      .sort((a, b) => (b.req ?? 0) - (a.req ?? 0))) {
+      // 주거만 k배 하면 수요는 (1 + (k-1)*주거몫)배가 된다. 필요 점유율은 그 역수만큼 내려간다.
+      const f = (k: number) => 1 + (k - 1) * s.rs;
+      console.log(`  ${s.name.padEnd(14)}${pct(s.rs, 0).padStart(8)}${pct(1 - s.rs, 0).padStart(8)}` +
+        `${pct(s.req).padStart(10)}      ${pct(s.req == null ? null : s.req / f(2)).padStart(8)}` +
+        `      ${pct(s.req == null ? null : s.req / f(3)).padStart(8)}`);
+    }
+    const rs = shareRows.map((x) => x.rs).sort((a, b) => a - b);
+    console.log(`\n  38곳 주거 몫 — 중앙 ${pct(rs[Math.floor(rs.length / 2)], 0)} ·` +
+      ` 최소 ${pct(rs[0], 0)} · 최대 ${pct(rs[rs.length - 1], 0)}`);
+    console.log(`\n  읽는 법: 주거 몫이 절반쯤이면 주거를 2배로 해도 수요는 1.5배밖에 안 된다.`);
+    console.log(`  유동인구(400m)는 그대로니까 **반경을 넓혀도 절반만 움직인다.**`);
+    console.log(`  ⚠️ 이건 "2km로 넓히면 이렇게 된다"가 아니라 **민감도**다. 실제 2km 인구는`);
+    console.log(`     아직 수집 안 됐다(sgis는 100~1000m만 있다).`);
+    expect(shareRows.length).toBeGreaterThan(10);
+  });
 });
