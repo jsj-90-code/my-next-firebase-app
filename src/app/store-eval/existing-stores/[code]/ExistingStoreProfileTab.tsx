@@ -28,7 +28,7 @@ import {
   scoreFromVgaSpec,
 } from "@/lib/storeEval/calc";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getLocationEvaluation, getModelSettings, upsertExistingStore } from "@/lib/storeEval/store";
+import { getLocationEvaluation, getModelSettings, listManagementScores, upsertExistingStore } from "@/lib/storeEval/store";
 import type { ExistingStore, FoodBrand, GroundLevel, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 import {
   ComputedField,
@@ -87,6 +87,8 @@ function ExistingStoreProfileEditor({
   // 운영 설정이 없으면 기본 계수로, 입지평가가 없으면 수동 입력값으로 점수가 계산된다.
   // 점수가 조용히 달라지는 것이 로딩 실패보다 나쁘므로 표시한다.
   const [loadFailed, setLoadFailed] = useState<string | null>(null);
+  /** QSC 환산 관리 점수. null이면 자료가 없어 저장값을 그대로 쓴다. */
+  const [managementScore, setManagementScore] = useState<number | null>(null);
 
   useEffect(() => {
     getModelSettings()
@@ -97,6 +99,16 @@ function ExistingStoreProfileEditor({
         setLoadFailed("운영 설정을 불러오지 못했습니다 — 점수가 기본 계수로 계산됩니다."),
       );
   }, []);
+
+  // 2026-09-20 — 자사 관리 점수는 본사 QSC 환산값이다(calc.ts QSC_MANAGEMENT_FLOOR). 저장된
+  // 4.00을 그대로 그리면 이 화면만 모형과 다른 시설 점수를 보여준다.
+  useEffect(() => {
+    listManagementScores()
+      .then((m) => setManagementScore(m.scoreFor(store.storeCode)))
+      .catch(() =>
+        setLoadFailed("QSC 점검 자료를 불러오지 못했습니다 — 관리 점수가 저장값으로 계산됩니다."),
+      );
+  }, [store.storeCode]);
 
   useEffect(() => {
     const lookupCode = store.originCandidateCode ?? store.storeCode;
@@ -159,12 +171,12 @@ function ExistingStoreProfileEditor({
         {
           zoneComposition,
           interiorScore: facility.ownInteriorScore,
-          managementScore: facility.ownManagementScore,
+          managementScore: managementScore ?? facility.ownManagementScore,
         },
         settings,
       ),
     };
-  }, [form, locationEvaluation, settings]);
+  }, [form, locationEvaluation, settings, managementScore]);
 
   async function handleSave() {
     setSaving(true);
@@ -364,7 +376,13 @@ function ExistingStoreProfileEditor({
             step={0.5}
             hint="비우면 표준값 4 적용 · 위 기준표 참고"
           />
-          <ComputedField label="관리 점수" value={form.ownManagementScore ?? 4} hint="자사는 표준값 4" />
+          <ComputedField
+            label="관리 점수"
+            value={managementScore ?? form.ownManagementScore ?? 4}
+            hint={managementScore != null
+              ? "본사 QSC 점검 점수를 자동 환산(70점=1점, 100점=5점). 점검 기록이 없으면 가맹점 평균. ⚠️ 경쟁점은 점포개발자 상/중/하 평가라 자가 다릅니다"
+              : "자사는 표준값 4 (QSC 점검 자료를 못 읽었습니다)"}
+          />
           <ComputedField label="인테리어·좌석·관리 점수 (최종)" value={computedScores.interior} />
         </div>
         {(form.ownInteriorLevelScore != null || form.ownInteriorConditionScore != null || form.ownComfortScore != null) && (

@@ -34,6 +34,7 @@ import {
   getModelSettings,
   listCompetitors,
   listDemandPoints,
+  listManagementScores,
   listMarketDataUploads,
   saveCandidate,
   updateCandidateFields,
@@ -116,6 +117,8 @@ function BasicInfoTabForm({
   const [message, setMessage] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [settings, setSettings] = useState<ModelSettings>({ ...defaultModelSettings(), updatedAt: 0, updatedBy: null });
+  /** 후보지가 받을 관리 점수 = 가맹점 평균(QSC 환산 뒤). null이면 자료가 없어 표준 4를 쓴다. */
+  const [managementScore, setManagementScore] = useState<number | null>(null);
   // 2026-08-30(경쟁력 평가 기준 최종본 §12) — "입지 점수 (자동)" 미리보기가 이제 09_입지동선평가
   // 4요소 조합을 우선 쓰므로(computeOwnLocationScore), 이 탭에서도 그 값을 읽어둔다.
   const [locationEvaluation, setLocationEvaluation] = useState<LocationEvaluation | null>(null);
@@ -158,6 +161,23 @@ function BasicInfoTabForm({
       })
       .catch(() => {
         // 기본 설정을 유지한다. 이 조회 실패가 기본정보 입력 전체를 막으면 안 된다.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 2026-09-20 — 후보지의 관리 점수는 **가맹점 평균**이다. 신규점은 QSC 점검 기록이 있을 수
+  // 없으므로(개점 뒤에 매기는 점수다) 기존점 중 점검 기록이 없는 곳과 같은 값을 받는다
+  // (evaluate.ts candidateManagementScore와 **같은 값**이어야 한다).
+  useEffect(() => {
+    let cancelled = false;
+    listManagementScores()
+      .then((m) => {
+        if (!cancelled) setManagementScore(m.franchiseAverage);
+      })
+      .catch(() => {
+        // 못 읽으면 저장값(표준 4)을 그대로 쓴다. 이 조회 실패가 입력을 막으면 안 된다.
       });
     return () => {
       cancelled = true;
@@ -359,7 +379,7 @@ function BasicInfoTabForm({
         {
           zoneComposition,
           interiorScore: facility.ownInteriorScore,
-          managementScore: facility.ownManagementScore,
+          managementScore: managementScore ?? facility.ownManagementScore,
         },
         settings,
       ),
@@ -864,7 +884,13 @@ function BasicInfoTabForm({
             step={0.5}
             hint="비우면 표준값 4(신규오픈 기준) 적용 · 위 기준표 참고"
           />
-          <ComputedField label="관리 점수" value={form.ownManagementScore ?? 4} hint="자사는 표준값 4(신규오픈 기준)" />
+          <ComputedField
+            label="관리 점수"
+            value={managementScore ?? form.ownManagementScore ?? 4}
+            hint={managementScore != null
+              ? "후보지는 개점 전이라 본사 QSC 점검 기록이 없습니다 — 가맹점 평균을 씁니다. ⚠️ 경쟁점은 점포개발자 상/중/하 평가라 자가 다릅니다"
+              : "자사는 표준값 4(신규오픈 기준)"}
+          />
           <ComputedField label="인테리어·좌석·관리 점수 (최종)" value={computedScores.interior} />
         </div>
         {(form.ownInteriorLevelScore != null || form.ownInteriorConditionScore != null || form.ownComfortScore != null) && (

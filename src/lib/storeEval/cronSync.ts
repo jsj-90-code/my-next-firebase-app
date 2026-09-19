@@ -13,7 +13,8 @@
 import { google } from "googleapis";
 import type { Firestore } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import { computeStabilizedPerformance } from "./calc";
+import { computeStabilizedPerformance, resolveManagementScores } from "./calc";
+import { qscInWindowAverage, type QscRecord } from "./labInput";
 import { existingStoreEvaluationPatch, existingStoreSourceCode } from "./existingStoreEvaluation";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { mergeModelSettings } from "./settings";
@@ -140,7 +141,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   // 셋 다 서로 의존하지 않는 읽기라 순차 await 대신 병렬로 실행한다(2026-08-24, Cron 함수
   // 실행시간 제한 안에서 여유를 늘림). 값이 안 바뀐 문서는 다시 쓰지 않기 위해 기존 경쟁점
   // 데이터도 미리 읽어둔다.
-  const [storesSnap, competitorsSnap, settingsSnap, locationEvalsSnap] = await Promise.all([
+  const [storesSnap, competitorsSnap, settingsSnap, locationEvalsSnap, qscSnap] = await Promise.all([
     db.collection("storeEvalExistingStores").get(),
     db.collection("storeEvalCompetitors").get(),
     db.collection("storeEvalSettings").doc("current").get(),
@@ -149,11 +150,26 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     // 이 컬렉션은 09_입지동선평가 시트 동기화가 끊긴 뒤로 웹(AI 평가 화면)에서만 쓰이므로, 시트를
     // 다시 읽지 않고 Firestore 컬렉션을 통째로 한 번 읽어 맵으로 만든다(매장 133곳 순회 전 1회 조회).
     db.collection("storeEvalLocationEvaluations").get(),
+    // 2026-09-20 — 본사 QSC 점검 점수. 자사 **관리 점수**가 여기서 나온다(calc.ts
+    // QSC_MANAGEMENT_FLOOR 주석). ⚠️ 이걸 안 읽으면 크론이 관리 4.00으로 캐시를 다시 써서
+    // **화면과 캐시가 갈라진다** — 화면은 listQscScores로 같은 컬렉션을 읽기 때문이다.
+    // firebase-admin이라 store.ts의 listQscScores(클라이언트 SDK)를 못 쓴다. 그래서 여기서
+    // 직접 읽되, 평균 내는 규칙은 **같은 함수**(qscInWindowAverage)를 쓴다.
+    db.collection("storeEvalQscScores").get(),
   ]);
   const storeCodes = new Set(storesSnap.docs.map((d) => d.id));
   const storeDataByCode = new Map(storesSnap.docs.map((d) => [d.id, d.data()]));
   const existingCompByid = new Map(competitorsSnap.docs.map((d) => [d.id, migrateCompetitorInvestigationStatus(d.data())]));
   const locationEvalByCandidateCode = new Map(locationEvalsSnap.docs.map((d) => [d.id, d.data() as LocationEvaluation]));
+  // ⚠️ 저장된 평균값이 아니라 **원본 기록에서 여기서 계산한다**(store.ts readQscScores와 같은
+  //    이유 — 창 길이와 제외 규칙이 labInput.ts 한 곳에만 있어야 한다).
+  const qscByStoreCode = new Map<string, number>();
+  for (const d of qscSnap.docs) {
+    const v = d.data() as { storeCode?: string; openedAt?: string | null; records?: QscRecord[] };
+    if (!v.storeCode) continue;
+    const avg = qscInWindowAverage(v.records ?? [], v.openedAt ?? null);
+    if (avg != null && avg > 0) qscByStoreCode.set(v.storeCode, avg);
+  }
   const settings: ModelSettings = mergeModelSettings(settingsSnap.exists ? (settingsSnap.data() as Partial<ModelSettings>) : null);
 
   // ---- 01_점포기본정보 ----
@@ -373,6 +389,10 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   // (사용자 확정: "산식에서 핑봇가동률은 필수가 아니다") 매 동기화마다 원본입력 기준으로 다시
   // 계산해 캐시값을 항상 최신으로 맞춘다.
   let competitivenessRecalculated = 0;
+  // 2026-09-20 — 관리 점수를 QSC 환산값으로 갈아끼운다. ⚠️ 평균을 내는 매장 목록이 화면과
+  // 같아야 한다(화면은 listExistingStores 전부 = 여기 storeCodes 전부). 한쪽만 걸러 넣으면
+  // 가맹점 평균이 달라져 캐시와 화면이 조용히 갈라진다.
+  const management = resolveManagementScores([...storeCodes], qscByStoreCode);
   for (const code of storeCodes) {
     const store = storeDataByCode.get(code) as unknown as ExistingStore | undefined;
     if (!store) continue;
@@ -384,7 +404,7 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
     // 들어가야 한다").
     // 2026-08-30 — marketDemand/competitorIp도 같이 캐시한다(calc.ts empiricalFeaturesFor가
     // ownDemand 대신 이 둘을 분리된 학습 특징치로 쓰게 바뀜, empiricalFeaturesFor 주석 참고).
-    const patch = existingStoreEvaluationPatch(store, competitors, loc, settings);
+    const patch = existingStoreEvaluationPatch(store, competitors, loc, settings, management.scoreFor(code));
     if (!isSameData(store, patch)) {
       await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);
       storeDataByCode.set(code, { ...store, ...patch });

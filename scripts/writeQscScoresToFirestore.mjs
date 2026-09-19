@@ -17,9 +17,12 @@
 // 매장 문서에 필드로 붙이면 syncLabCollections.mjs가 운영 문서로 덮을 때 날아간다.
 // 로드뷰 판정(storeEvalLabRoadviewJudgments)과 같은 이유·같은 방식이다.
 //
-// ⚠️ **2026-09-19부터 운영 V62도 QSC를 읽는다**(storeEvalQscScores). 관리 수준이 학습 피처가
-//    됐다 — 이 스크립트를 --apply로 돌리면 **예상매출이 움직인다.** 그전까지는 실험실 전용이라
-//    "운영에 영향 없다"고 적혀 있었는데, 이제 아니다.
+// ⚠️ **2026-09-19부터 운영 V62도 QSC를 읽는다**(storeEvalQscScores). 이 스크립트를 --apply로
+//    돌리면 **예상매출이 움직인다.** 그전까지는 실험실 전용이라 "운영에 영향 없다"고 적혀
+//    있었는데, 이제 아니다.
+//    2026-09-20에 자리가 바뀌었다 — 학습 피처가 아니라 **자사 관리 점수**가 된다
+//    (calc.ts `QSC_MANAGEMENT_FLOOR`: 70점=1점, 100점=5점). 점수를 고치면 그 매장의 경쟁력
+//    점수가 움직이고, **가맹점 평균이 바뀌면 QSC 없는 매장과 후보지 전부가 같이 움직인다.**
 //
 // 원자료: `.local-tools/qsc-scores.json` (gitignore — 매장별 전체 점검 이력이라 매출은 없지만
 // 재수집에 로그인이 필요하다. 만드는 법은 인계 문서 6절).
@@ -160,5 +163,7 @@ for (const name of COLLECTIONS) {
   for (const id of stale) await db.doc(`${name}/${id}`).delete();
   console.log(`${name}: ${written}건 썼다${stale.length ? ` · 낡은 ${stale.length}건 지웠다` : ""}.`);
 }
-console.log("\n⚠️ 2026-09-19부터 **운영 V62가 storeEvalQscScores를 읽는다** — 예상매출이 움직인다.");
+console.log("\n⚠️ **운영 V62가 storeEvalQscScores를 읽는다** — 예상매출이 움직인다.");
+console.log("   2026-09-20부터 이 점수는 자사 **관리 점수**가 된다(70점=1점, 100점=5점).");
+console.log("   가맹점 평균이 바뀌면 QSC 없는 매장과 후보지도 같이 움직인다.");
 console.log("   검증 화면을 열어 적중률을 다시 확인할 것.");

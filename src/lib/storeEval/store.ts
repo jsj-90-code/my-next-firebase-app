@@ -28,6 +28,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { resolveManagementScores } from "./calc";
 import { mergeModelSettings } from "./settings";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { mergeInputChanges } from "./inputChanges";
@@ -504,6 +505,23 @@ export async function listLabQscScores(): Promise<Map<string, number>> {
  */
 export async function listQscScores(): Promise<Map<string, number>> {
   return readQscScores(QSC);
+}
+
+/**
+ * 매장코드 -> **관리 점수**(QSC 환산값, 없으면 가맹점 평균) (2026-09-20).
+ *
+ * 관리 점수를 **다시 계산해서 보여주는 화면**들이 쓴다(기존점 성적표·기존점 기본정보·후보지
+ * 기본정보). 그 화면들은 저장된 `ownManagementScore`(전부 4.00)를 그대로 그리고 있었는데,
+ * 2026-09-20부터 모형은 QSC 환산값을 쓴다 — 안 맞추면 **화면이 모형과 다른 숫자를 보여준다.**
+ *
+ * ⚠️ 평균을 내는 규칙은 `resolveManagementScores` 한 곳이고, 평균을 낼 **매장 목록도 같아야
+ *    한다**(전 기존점). 화면마다 다른 목록으로 평균을 내면 같은 매장이 화면마다 다른 관리
+ *    점수를 받는다.
+ * ⚠️ QSC 컬렉션이 비면 `enabled=false`가 되고 화면은 저장값을 그대로 쓴다(안전장치).
+ */
+export async function listManagementScores(): Promise<ReturnType<typeof resolveManagementScores>> {
+  const [stores, qsc] = await Promise.all([listExistingStores(), listQscScores()]);
+  return resolveManagementScores(stores.map((s) => s.storeCode), qsc);
 }
 
 async function readQscScores(collectionName: string): Promise<Map<string, number>> {

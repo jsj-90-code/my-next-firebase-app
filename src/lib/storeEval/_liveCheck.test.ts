@@ -27,7 +27,6 @@ import {
   isValidVisibilityScore,
   toV61TrainingStore,
   buildMinCoefficients,
-  qscFillerFor,
   empiricalFeaturesFor,
   type ValidationStoreInput,
 } from "./calc";
@@ -147,8 +146,10 @@ function buildInputs(
   salesRows: ExistingStoreMonthlySales[],
   settings: ModelSettings,
 ) {
-  const stores = prepareExistingStoresForEvaluation(storedStores, competitors, locations, settings);
   const qscByStoreCode = loadQscScores();
+  // ⚠️ 2026-09-20 — QSC가 **여기로** 들어간다(관리 점수가 되어 경쟁력점수로 흐른다).
+  //    검증 화면(validation/page.tsx)의 prepare 호출과 나란히 놓고 diff할 것.
+  const stores = prepareExistingStoresForEvaluation(storedStores, competitors, locations, settings, qscByStoreCode);
   const competitorsByCandidate = new Map<string, Competitor[]>();
   for (const c of competitors) {
     const list = competitorsByCandidate.get(c.candidateCode) ?? [];
@@ -201,8 +202,6 @@ function buildInputs(
       hasElevator: s.hasElevator,
       competitorSummary: computeCompetitorInvestigationSummary(comps),
       sheetV61Predicted: s.v61Predicted,
-      // 2026-09-19 — 검증 화면과 같다. 빈 곳은 여기서 메우지 않는다(calc.ts qscFillerFor가 한다).
-      qscScore: qscByStoreCode.get(s.storeCode) ?? null,
     };
   });
   return { inputs, salesRows, settings };
@@ -395,16 +394,11 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
       const useVis = settings.v61Training.modelVariant === "visibility-inflow";
       const core = inputs.filter(isCoreEligibleForV61Training)
         .filter((s) => !useVis || isValidVisibilityScore(s.visibilityScore));
-      // 2026-09-19 — 운영과 **같은 채움 규칙**을 써야 한다. 여기서만 QSC를 빼면 피처 길이가
-      // 어긋나 모형이 통째로 null이 된다(실제로 그렇게 터졌다).
-      const fillQsc = qscFillerFor(core);
-      const training = attachRevenueParts(
-        core.map((s) => ({ ...toV61TrainingStore(s, settings), ...fillQsc.valueFor(s) })),
-        parts2,
-      );
+      const training = attachRevenueParts(core.map((s) => toV61TrainingStore(s, settings)), parts2);
       const model = fitUsageRevenueModel(training, settings)!;
-      const floors = buildMinCoefficients(settings.v61Training, false, fillQsc.enabled).slice(1);
-      const names = ["IP당수요", "경쟁력점수", "경쟁력x格차", "배후수요더미", "가시성", "QSC관리수준"];
+      // 2026-09-20 — QSC 칸이 없어졌다(관리 점수로 옮겼다). 피처 목록이 짧아진 게 정상이다.
+      const floors = buildMinCoefficients(settings.v61Training, false).slice(1);
+      const names = ["IP당수요", "경쟁력점수", "경쟁력x格차", "배후수요더미", "가시성"];
       console.log(`\n적합 계수 (학습표본 ${training.length}곳) — 하한선에 붙어있으면 그 피처는 데이터가 아니라 하한선이 결정한 것`);
       console.log("피처            하한선   PC(이용시간)  먹거리   PC구속  먹거리구속");
       for (let i = 0; i < floors.length; i++) {

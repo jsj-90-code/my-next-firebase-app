@@ -133,14 +133,15 @@ async function loadValidationData(): Promise<{
     getModelSettings(),
     listAllCompetitors(),
     listAllLocationEvaluations(),
-    // 2026-09-19 — 본사 QSC 점검 점수(관리 수준). 학습 피처로 들어간다.
-    // 비어 있으면 칸이 안 붙고 2026-09-19까지와 똑같이 동작한다(calc.ts empiricalFeaturesFor).
+    // 2026-09-20 — 본사 QSC 점검 점수. 자사 **관리 점수**가 여기서 나온다(calc.ts
+    // QSC_MANAGEMENT_FLOOR). 비어 있으면 저장된 관리 4.00이 그대로 쓰여 예전과 똑같이 동작한다.
     listQscScores(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
   const settings: ModelSettings = settingsDoc ?? { ...defaultModelSettings(), updatedAt: 0, updatedBy: null };
-  const stores = prepareExistingStoresForEvaluation(storedStores, allCompetitors, allLocationEvaluations, settings);
+  // 2026-09-20 — QSC를 여기로 넘긴다. 관리 점수를 갈아끼우는 자리는 이 함수 한 곳이다.
+  const stores = prepareExistingStoresForEvaluation(storedStores, allCompetitors, allLocationEvaluations, settings, qscByStoreCode);
 
   const existingStoresByCode = new Map(stores.map((s) => [s.storeCode, s]));
   const allCompetitorsByCandidateCode = new Map<string, Competitor[]>();
@@ -197,9 +198,6 @@ async function loadValidationData(): Promise<{
         hasElevator: s.hasElevator,
         competitorSummary: computeCompetitorInvestigationSummary(competitors),
         sheetV61Predicted: s.v61Predicted,
-        // 2026-09-19 — 본사 QSC 점검 점수. **여기서 빈 곳을 메우지 않는다** — 학습표본 평균으로
-        // 메우는 건 calc.ts qscFillerFor가 한다(화면마다 각자 평균을 내면 조용히 갈라진다).
-        qscScore: qscByStoreCode.get(s.storeCode) ?? null,
       };
     });
 
@@ -543,11 +541,11 @@ function FormulaChangeNotice20260920() {
         </p>
         <p className="font-mono text-xs">
           2026-09-20 측정(리브원아웃 38곳) — 고치기 전 → 후<br />
-          MAPE 9.22% → <b>8.90%</b> · 중앙값 8.44% → <b>7.84%</b> ·
-          {" "}±10% 63%(24곳) → <b>58%(22곳)</b> · ±20% 95%(36곳) → <b>92%(35곳)</b>
+          MAPE 9.22% → <b>8.83%</b> · 중앙값 8.44% → <b>7.67%</b> ·
+          {" "}±10% 63%(24곳) → <b>61%(23곳)</b> · ±20% 95%(36곳) → <b>92%(35곳)</b>
         </p>
         <p className="text-xs">
-          평균 오차와 중앙값은 좋아졌고, <b>±10%·±20% 적중은 각각 두 곳·한 곳 잃었습니다.</b>
+          평균 오차와 중앙값은 좋아졌고, <b>±10%·±20% 적중은 각각 한 곳씩 잃었습니다.</b>
           틀린 값을 고친 대가입니다.
         </p>
         <p>
@@ -571,19 +569,27 @@ function FormulaChangeNotice20260920() {
           240Hz = 4.0점을 기준으로 연속으로 매기고 등급 가산을 붙입니다(고유값 61개).
         </p>
         <p>
-          <b>4. 매장 관리 수준(본사 QSC 점검)을 학습에 넣었습니다.</b> 지금까지 자사 관리 점수는
-          38곳 전부 4.00점 상수였습니다 — 칸은 있는데 아무것도 재고 있지 않았습니다. 그래서 관리가
-          낮은 매장을 과대예측하고 있었습니다(구미산동점 QSC 최저, 오차 +17.9% → +3.9%).
+          <b>4. 매장 관리 수준(본사 QSC 점검)을 관리 점수 칸에 넣었습니다.</b> 지금까지 자사 관리
+          점수는 38곳 전부 4.00점 상수였습니다 — 칸은 있는데 아무것도 재고 있지 않았습니다. 그래서
+          관리가 낮은 매장을 과대예측하고 있었습니다(구미산동점 QSC 최저, 오차 +17.9% → +9.4%).
+          이제 <b>QSC 70점을 1점, 100점을 5점</b>으로 환산해 그 칸을 채웁니다.
+        </p>
+        <p className="rounded-lg bg-[var(--sl-info-soft)] p-3">
+          ⚠️ <b>바닥을 70점으로 잡은 이유는 적중률이 아닙니다.</b> 자사는 본사 QSC로, 경쟁점은
+          점포개발자의 상·중·하 평가(평균 2.67점)로 재기 때문에 <b>서로 다른 자</b>입니다. 자사만
+          자를 바꾸면 자사/경쟁 비교가 통째로 한쪽으로 기웁니다. 바닥 70이면 자사 평균이
+          <b> 3.94점</b>으로 지금(4.00점)과 거의 같아, <b>자사와 경쟁점의 비교는 그대로 두고 자사
+          매장끼리의 변별만</b> 얻습니다. 그게 원래 목적입니다.
         </p>
         <p className="rounded-lg bg-[var(--sl-info-soft)] p-3">
           ⚠️ <b>QSC는 신규 후보지의 예측력을 올리지 않습니다.</b> QSC는 개점한 뒤에 매기는 점수라
-          후보지에는 있을 수가 없습니다. 후보지에는 <b>가맹점 평균</b>이 들어갑니다(= 중립).
-          위 개선은 <b>기존점을 사후에 설명하는 힘</b>이 좋아진 것입니다.
+          후보지에는 있을 수가 없습니다. 후보지에는 <b>가맹점 평균</b>이 들어갑니다 — 기존점 중
+          점검 기록이 없는 곳에 주는 값과 같은 값입니다. 위 개선은 <b>기존점을 사후에 설명하는
+          힘</b>이 좋아진 것입니다.
           <br />
           <br />
-          다만 <b>&ldquo;후보지는 한 톨도 안 바뀐다&rdquo;는 아닙니다.</b> 칸이 하나 늘면 나머지
-          계수가 다시 학습되기 때문입니다. 2026-09-19 측정에서 후보지 13곳은 네 변경을 합쳐
-          −5.3% ~ −0.7% 움직였고, 대부분은 존구성 교정 몫입니다(등급이 뒤집힐 크기는 아닙니다).
+          다만 <b>&ldquo;후보지는 한 톨도 안 바뀐다&rdquo;는 아닙니다.</b> 기존점의 관리 점수가
+          움직이면 학습 계수가 다시 잡히기 때문입니다.
         </p>
         <p className="rounded-lg bg-[var(--sl-warn-soft)] p-3">
           ⚠️ <b>모니터 등급 가산 일곱 개는 사람이 정한 값입니다.</b> GPU 성능지수는 공개 벤치마크라는

@@ -52,6 +52,9 @@ it.each(["N1", null])("동기화는 최신 기본정보와 올바른 연결 자�
     ],
     null,
     expect.any(Object),
+    // 2026-09-20 — QSC에서 환산한 관리 점수. 이 시험은 storeEvalQscScores가 비어 있으므로
+    // null이 넘어가야 한다 = **자료가 없으면 저장된 관리 점수를 그대로 쓴다**는 안전장치.
+    null,
   );
   expect(mocks.writes).toContainEqual({id:"S1",data:expect.objectContaining({competitivenessScore:4})});
   expect(mocks.writes).toContainEqual({id:"S1_시트 경쟁점",data:expect.objectContaining({candidateCode:originCode ?? "S1"})});

@@ -12,7 +12,7 @@ import {
   applyStandardOwnFacilityDefaults,
   buildMinCoefficients,
   buildV61TrainingStores,
-  resolveQscScores,
+  resolveManagementScores,
   computeAaBaselineRevenue,
   resolveBaselineOpenMonth,
   computeBoundedSales,
@@ -82,12 +82,16 @@ export type EvaluateContext = {
   /** Web callers supply monthly components to activate tariff-based revenue. Omit only for historical comparisons. */
   trainingSales?: ExistingStoreMonthlySales[];
   /**
-   * 학습용 기존점의 본사 QSC 점검 점수 (2026-09-19). **안 주면 QSC 칸이 아예 안 붙는다** —
-   * 그때는 이 평가가 2026-09-19까지와 완전히 같은 값을 낸다.
+   * 학습용 기존점의 본사 QSC 점검 점수 (2026-09-19, 2026-09-20 자리 이동).
    *
-   * ⚠️ 후보지에는 QSC가 있을 수 없다(개점 뒤에 매기는 점수다). 후보지는 **가맹점 평균**을
-   *    받는다 = 표준화 뒤 0 = 중립. 그러니 이 값은 **후보지 순위를 바꾸려고 넣는 게 아니다** —
-   *    기존점 학습이 관리 수준을 설명하게 해서 나머지 계수의 왜곡을 걷어내는 게 목적이다.
+   * 기존점의 **관리 점수**를 이 값에서 환산한다(`prepareExistingStoresForEvaluation`으로 넘어가
+   * `qscToManagementScore`가 처리한다). **안 주면 저장된 관리 점수 4.00이 그대로 쓰여
+   * 2026-09-19까지와 완전히 같은 값이 나온다.**
+   *
+   * ⚠️ 2026-09-19에는 이걸 학습 피처로 썼다가 2026-09-20에 관리 점수 칸으로 옮겼다
+   *    (calc.ts `QSC_MANAGEMENT_FLOOR` 주석에 근거가 있다). 피처로 되돌리면 이중계산이다.
+   * ⚠️ 후보지에는 QSC가 있을 수 없다(개점 뒤에 매기는 점수다). 후보지는 **기존점 중 QSC가
+   *    없는 곳과 같은 값**(가맹점 평균)을 받는다 — 아래 `candidateManagementScore` 참고.
    */
   trainingQscScores?: ReadonlyMap<string, number> | null;
   /**
@@ -110,6 +114,14 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // "비우면 표준 N개 적용" 근거, docs/data-issues.md 2026-08-21 갱신). 1인룸/2인룸은 표준값이
   // 없어(비우면 그대로 0) 대상이 아니다.
   const ownFacility = applyStandardOwnFacilityDefaults(c);
+  // 2026-09-20 — 후보지의 관리 점수. 신규점은 QSC 점검 기록이 있을 수가 없으므로(개점 뒤에
+  // 매기는 점수다) **기존점 중 QSC가 없는 곳에 주는 값과 같은 값**, 즉 가맹점 평균을 준다.
+  // ⚠️ 아래 prepareExistingStoresForEvaluation과 **같은 매장 목록·같은 함수**로 평균을 낸다.
+  //    한쪽만 다른 목록을 넣으면 후보지와 기존점이 다른 평균을 받아 조용히 갈라진다.
+  // ⚠️ QSC 자료가 없으면 franchiseAverage가 null이고, 저장된 4.00이 그대로 쓰인다(안전장치).
+  const candidateManagementScore =
+    resolveManagementScores(existingStores.map(s => s.storeCode), ctx.trainingQscScores).franchiseAverage
+    ?? ownFacility.ownManagementScore;
   const ownSpecScore = computeSpecScore(
     {
       vgaBase: c.ownVgaBase,
@@ -154,7 +166,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     {
       zoneComposition: ownZoneComposition,
       interiorScore: ownFacility.ownInteriorScore,
-      managementScore: ownFacility.ownManagementScore,
+      managementScore: candidateManagementScore,
     },
     settings,
   );
@@ -168,20 +180,14 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
 
   // ---- V61: 실측 학습모형 우선, 표본 부족 시에만 폴백 ----
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
+  // 2026-09-20 — QSC를 여기로 넘긴다. 기존점의 관리 점수가 QSC 환산값으로 갈아끼워지고,
+  // 그 결과가 경쟁력점수·격차를 거쳐 학습표본까지 그대로 흐른다(주입 지점은 이 한 곳이다).
   const refreshedStores = prepareExistingStoresForEvaluation(
-    existingStores, ctx.trainingCompetitors, ctx.trainingLocationEvaluations, settings,
+    existingStores, ctx.trainingCompetitors, ctx.trainingLocationEvaluations, settings, ctx.trainingQscScores,
   );
   const trainingStores = buildV61TrainingStores(
-    refreshedStores, ctx.trainingLocationEvaluations, settings, ctx.trainingQscScores,
+    refreshedStores, ctx.trainingLocationEvaluations, settings,
   );
-  // 후보지에 넣을 QSC — **학습표본이 쓴 것과 같은 가맹점 평균**이다(resolveQscScores 한 곳에서
-  // 낸 값을 그대로 읽는다). 후보지는 개점 전이라 자기 점검 기록이 있을 수 없다.
-  const candidateQsc = trainingStores.find(s => s.qscScore != null)
-    ? {
-      qscScore: resolveQscScores(trainingStores.map(s => s.storeCode), ctx.trainingQscScores).franchiseAverage!,
-      qscIsFranchiseAverage: true,
-    }
-    : {};
   const trainingSamples = trainingStores.map(toEmpiricalSample);
   const useUsageModel = ctx.trainingSales !== undefined;
   const usageTraining = useUsageModel ? attachRevenueParts(trainingStores, buildRevenuePartsByStore(refreshedStores, ctx.trainingSales!)) : [];
@@ -192,8 +198,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     pcCount:c.expectedPcCount??0,competitivenessScore:ownCompetitivenessScore??0,competitivenessGap,
     specialDemandType:loc?.specialDemandType,visibilityScore:useVisibility?loc?.visibilityScore:undefined,
     // 접근성 피처를 가시성×선점경쟁으로 쓸 때만 넣는다(calc.ts empiricalFeaturesFor 주석).
-    preemptionScore:useVisibility&&settings.v61Training.accessScoreMode==="visibility-x-preemption"?loc?.preemptionScore:undefined,
-    ...candidateQsc};
+    preemptionScore:useVisibility&&settings.v61Training.accessScoreMode==="visibility-x-preemption"?loc?.preemptionScore:undefined};
   const usageFeatures = empiricalFeaturesFor(usageFeatureInput);
   const usageDriverLabels = empiricalFeatureLabels(usageFeatureInput);
   const usagePrediction = usageModel && c.hourlyRate != null && c.expectedPcCount
@@ -203,8 +208,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     trainingSamples,
     settings.v61Training.ridgeLambda,
     settings.v61Training.minSampleCount,
-    // QSC 칸을 태웠으면 하한선 배열도 같이 늘려야 길이가 맞는다(2026-09-19).
-    buildMinCoefficients(settings.v61Training, false, trainingStores.every(s => s.qscScore != null) && trainingStores.length > 0),
+    buildMinCoefficients(settings.v61Training, false),
   );
 
   const expectedOwnDemand = computeExpectedOwnDemand(marketDemand, c.expectedPcCount, competitivenessGap, competitorIp);
@@ -226,7 +230,6 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       visibilityScore: useVisibility ? loc?.visibilityScore : undefined,
       preemptionScore: useVisibility && settings.v61Training.accessScoreMode === "visibility-x-preemption"
         ? loc?.preemptionScore : undefined,
-      ...candidateQsc,
     });
     const prediction = predictEmpiricalRevenue(
       trainedModel,

@@ -177,15 +177,9 @@ function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; cont
         <p className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">
           각 수치는 그 요인 하나만 놓고 본 영향이고, 실제 예측은 이것들이 함께 곱해져 나옵니다. 더하기로 맞아떨어지지 않는 게 정상입니다.
         </p>
-        {/* 2026-09-19 — QSC 칸이 생기면서 필요해진 안내. 이 줄이 없으면 "관리 수준 0%"가
-            "이 후보지는 관리가 평균이라고 평가했다"로 읽힌다(배후수요 더미와 같은 함정). */}
-        {rows.some((r) => r.label.includes("가맹점 평균")) && (
-          <p className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">
-            ⚠️ <b>매장 관리 수준</b>은 본사 QSC 점검 점수인데, 후보지는 아직 개점 전이라 점검 기록이
-            있을 수 없습니다. 그래서 <b>가맹점 평균</b>을 넣었고 영향이 0에 가깝게 나옵니다 —
-            이 후보지의 관리를 평가한 값이 아닙니다.
-          </p>
-        )}
+        {/* 2026-09-20 — "매장 관리 수준" 안내를 지웠다. QSC가 학습 피처에서 **관리 점수**로
+            옮겨가면서 그 라벨 자체가 없어졌다(관리는 이제 자사 경쟁력점수 안으로 들어간다).
+            안내를 남겨두면 있지도 않은 칸을 설명하게 된다. 근거: calc.ts QSC_MANAGEMENT_FLOOR */}
       </div>
     </details>
   );
@@ -761,8 +755,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         getModelSettings(),
         listAllLocationEvaluations(),
         listAllCompetitors(),
-        // 2026-09-19 — 기존점의 본사 QSC 점검 점수. 학습에만 쓰인다(후보지는 개점 전이라
-        // 자기 점검 기록이 없고 가맹점 평균 = 중립을 받는다. evaluate.ts trainingQscScores 주석).
+        // 2026-09-20 — 기존점의 본사 QSC 점검 점수. 기존점의 **관리 점수**가 여기서 나오고,
+        // 후보지는 개점 전이라 자기 점검 기록이 없으므로 **가맹점 평균**을 받는다
+        // (evaluate.ts trainingQscScores · candidateManagementScore 주석).
         listQscScores(),
       ]);
       const trainingSales = await listEvaluationSales(existingStores);

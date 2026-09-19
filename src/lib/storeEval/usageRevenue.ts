@@ -1,4 +1,4 @@
-import { buildMinCoefficients, empiricalFeaturesFor, fitEmpiricalRevenueModel, predictEmpiricalRevenue, getV62Rate, isCoreEligibleForV61Training, isValidQscScore, isValidVisibilityScore, qscFillerFor, runCohortValidation, toV61TrainingStore, computeCompetitorAppliedPcCount, computeCompetitorScores, redistributeCapacityConstrainedDemand, type ValidationStoreInput, type EmpiricalRevenueModel, type V61TrainingStore } from "./calc";
+import { buildMinCoefficients, empiricalFeaturesFor, fitEmpiricalRevenueModel, predictEmpiricalRevenue, getV62Rate, isCoreEligibleForV61Training, isValidVisibilityScore, runCohortValidation, toV61TrainingStore, computeCompetitorAppliedPcCount, computeCompetitorScores, redistributeCapacityConstrainedDemand, type ValidationStoreInput, type EmpiricalRevenueModel, type V61TrainingStore } from "./calc";
 import type { Competitor, ExistingStoreMonthlySales, ModelSettings } from "./types";
 export type RevenueParts = {
   pcRevenueAvg: number;
@@ -283,10 +283,7 @@ function fitRawUsageRevenueModel(stores: UsageTrainingStore[], settings: Pick<Mo
   // 2026-09-11 — 거리 피처를 넣은 표본이면 하한선도 같이 늘려야 길이가 맞는다.
   // 전부 있거나 전부 없어야 한다(섞이면 fitEmpiricalRevenueModel이 길이 불일치로 null).
   const withDistance = stores.length > 0 && stores.every(s => s.competitorDistanceRatio != null);
-  // 2026-09-19 — QSC 칸도 같은 규칙이다. 점검 기록이 없는 매장은 호출부가 **가맹점 평균**으로
-  // 채워서 넘기므로, 자료가 연결돼 있으면 전 매장이 값을 갖는다.
-  const withQsc = stores.length > 0 && stores.every(s => isValidQscScore(s.qscScore));
-  const rawFloors = buildMinCoefficients(settings.v61Training, withDistance, withQsc);
+  const rawFloors = buildMinCoefficients(settings.v61Training, withDistance);
   const allFloors = freeAllSigns ? rawFloors.map(() => TARIFF_COEF_LOWER_BOUND) : rawFloors;
   // 요금 계수만 음수를 허용하고 나머지 하한선은 그대로 둔다.
   const withTariffFloors = [TARIFF_COEF_LOWER_BOUND, ...allFloors.slice(1)];
@@ -447,16 +444,12 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const coreEligible = stores.filter(isCoreEligibleForV61Training)
     .filter(store => !useVisibility || isValidVisibilityScore(store.visibilityScore));
-  // 2026-09-19 — QSC를 빠짐없이 채운다. 평균 기준은 **학습 자격이 있는 매장 전체**(coreEligible)로
-  // 잡는다 — 아래 minTrainingCompletedMonths로 더 걸러진 표본을 기준으로 삼으면, 그 설정을 바꿀
-  // 때마다 "모르는 매장에 넣는 값"이 같이 흔들린다. 규칙은 calc.ts qscFillerFor 한 곳에 있다.
-  const fillQsc = qscFillerFor(coreEligible);
   const training = attachRevenueParts(coreEligible
     // 개점 직후 몇 달은 오픈 프로모션이 섞여 실적이 불안정하다. 그 매장을 **학습에서만** 뺄 수
     // 있게 한다(평가 대상에서는 빼지 않는다 — 빼면 코호트가 달라져 before/after 비교가 안 된다).
     .filter(store => store.completedMonths >= minTrainingCompletedMonths)
     .filter(store => !trainingSubset || trainingSubset.has(store.storeCode))
-    .map(store => ({ ...toV61TrainingStore(store, settings), ...fillQsc.valueFor(store) })), parts);
+    .map(store => toV61TrainingStore(store, settings)), parts);
   // 코호트 판정은 "학습 자격이 있는 매장" 전체로 유지한다. 학습에서 빠진 매장은 애초에 모형에
   // 안 들어갔으므로 리브원아웃에서 자기 자신을 뺄 것도 없다(누출 없음).
   const trainingStoreCodes = new Set(attachRevenueParts(coreEligible
@@ -474,8 +467,7 @@ export function runUsageCohortValidation(stores: ValidationStoreInput[], sales: 
         : fullModel;
       if (!model)
         return null;
-      // 예측도 학습과 **같은 칸 수**여야 한다. 점검 기록이 없는 매장은 여기서도 평균으로 메운다.
-      const features = empiricalFeaturesFor({ ...toV61TrainingStore(store, settings), ...fillQsc.valueFor(store) });
+      const features = empiricalFeaturesFor(toV61TrainingStore(store, settings));
       return predictUsageRevenue(model, features, pcCount, store.hourlyRate, settings, 1 + (getV62Rate(store.inflowRestriction ?? null, settings) ?? 0), store.extraPcHours ?? 0);
     },
   });

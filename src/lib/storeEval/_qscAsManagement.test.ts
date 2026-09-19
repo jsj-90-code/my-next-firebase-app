@@ -1,37 +1,39 @@
-// QSC를 **관리 점수로** 넣을 것인가, **학습 피처로** 넣을 것인가 (2026-09-20)
+// QSC를 관리 점수로 넣었을 때 적중률 (2026-09-20)
 //
-// ⚠️ 오늘(2026-09-19 밤) 운영 V62에 QSC를 **학습 피처**(log(QSC/92.6))로 넣었다. 그런데
-//    실험실은 같은 QSC를 **관리 점수 칸**에 넣는다(`qscToManagementScore`). 그리고 그 선택은
-//    사용자가 뜻으로 정한 것이었다:
+// ── 이 파일이 두 번 바뀌었다 ───────────────────────────────────────────────
+// 1차(2026-09-20 새벽) — QSC를 **학습 피처**로 넣을지 **관리 점수**로 넣을지 재려고 만들었다.
+//    그때는 관리 점수 갈래(B)를 운영 코드로 재지 못하고 **근사**했다. 경쟁력점수를
+//    `(새관리 - 옛관리) x 시설비중 x 관리내부비중`만큼 직접 밀어서 흉내 낸 것이다.
+// 2차(2026-09-20, 지금) — 관리 점수로 **실제로 옮긴 뒤**라, 근사를 걷어내고 운영과 **같은
+//    함수**(`existingStoreEvaluationPatch`)를 통과시킨다. 시설점수 재정규화·경쟁점 평균 대비
+//    격차 재계산이 근사식에는 없었으므로, 아래 숫자는 1차 표와 조금 다를 수 있다.
+//    **운영 화면과 맞춰야 하는 건 1차 표가 아니라 이쪽이다.**
 //
-//      *"나는 관리점수에 QSC가 반영되었으면한데, 배율적용하면 약간 보정값이잖아"*
+// ⚠️ 입력 조립은 `validation/page.tsx`의 `inputs`와 **나란히 놓고 diff**할 것. 2026-09-20에
+//    `_liveCheck`가 `preemptionScore`를 빠뜨려 하루치 측정을 통째로 버렸다.
 //
-//    `labInput.ts`가 그 원칙을 이렇게 적어 뒀다 — **"항목은 뜻으로 정하고 계수만 자료로
-//    정한다."** 학습 피처는 예측에 곱해지는 보정항이라, 사용자가 거부한 "배율"에 가깝다.
-//    즉 **내가 사용자 뜻과 다른 자리에 넣었을 수 있다.**
-//
-// ── 세 가지를 나란히 잰다 ──────────────────────────────────────────────────
-//   A 지금(피처)     관리 4.00 고정 + log(QSC/92.6)을 학습 피처로
-//   B 실험실 뜻      관리 = 1 + (QSC-60) x (4/40) · 피처 없음
-//   C 둘 다          ⚠️ 이중계산. 얼마나 겹치는지 보려고만 잰다 — 채택 후보가 아니다.
-//
-// ⚠️ **경쟁점에는 QSC가 없다.** 자사만 관리 점수가 움직이므로 경쟁력격차도 같이 움직인다.
-//    그게 B의 부작용이고, 그래서 A와 단순 비교가 안 된다는 점을 염두에 두고 읽어야 한다.
+// ── 바닥은 70으로 확정됐다 ─────────────────────────────────────────────────
+// 근거는 MAPE가 아니라 **자사/경쟁 비대칭**이다(calc.ts `QSC_MANAGEMENT_FLOOR` 주석).
+// 자사는 본사 QSC, 경쟁점은 점포개발자 상/중/하 평가라 자가 다르므로, 자사 평균이 지금(4.00)에서
+// 얼마나 벗어나는지가 "자사만 유리해지는가"를 가른다. 바닥 70이 평균 4.00에 제일 가깝다.
+// ⚠️ **아래 바닥 훑기는 참고용이다. MAPE로 바닥을 다시 고르지 말 것** — 대조군을 어느 바닥에서도
+//    못 넘는다(60 p=0.075 · 70 p=0.144 · 80 p=0.259).
 //
 // 실행:
 //   npx vitest run src/lib/storeEval/_qscAsManagement.test.ts --disable-console-intercept
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
+import { existingStoreEvaluationPatch, existingStoreSourceCode } from "./existingStoreEvaluation";
 import {
+  QSC_MANAGEMENT_FLOOR,
   computeCompetitorInvestigationSummary,
+  franchiseAverageManagement,
+  qscToManagementScore,
   summarizeValidationRows,
   type ValidationStoreInput,
 } from "./calc";
 import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
 import { qscInWindowAverage, type QscRecord } from "./labInput";
-/** 바닥을 바꿔가며 보려고 여기서 직접 환산한다(labInput의 qscToManagementScore와 같은 식). */
-const toMgmt = (q, floor) => q == null || !Number.isFinite(q) || q <= 0 ? null : Math.max(1, Math.min(5, 1 + (q - floor) * (4 / (100 - floor))));
 import { mergeModelSettings } from "./settings";
 import type { Competitor, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation, ModelSettings } from "./types";
 
@@ -53,14 +55,13 @@ function qscScores(): Map<string, number> {
   return out;
 }
 
-describe("QSC를 관리 점수로 넣을 것인가, 학습 피처로 넣을 것인가", () => {
+describe("QSC를 관리 점수로 넣었을 때 적중률", () => {
   const cache = JSON.parse(readFileSync(CACHE, "utf8")) as {
     storedStores: ExistingStore[]; competitors: Competitor[];
     locations: LocationEvaluation[]; salesRows: ExistingStoreMonthlySales[];
     settings: Partial<ModelSettings>;
   };
   const settings = mergeModelSettings(cache.settings);
-  const stores = prepareExistingStoresForEvaluation(cache.storedStores, cache.competitors, cache.locations, settings);
   const compsByCandidate = new Map<string, Competitor[]>();
   for (const c of cache.competitors) {
     compsByCandidate.set(c.candidateCode, [...(compsByCandidate.get(c.candidateCode) ?? []), c]);
@@ -68,27 +69,34 @@ describe("QSC를 관리 점수로 넣을 것인가, 학습 피처로 넣을 것�
   const locByCandidate = new Map(cache.locations.map((l) => [l.candidateCode, l]));
   const qsc = qscScores();
 
-  // 관리 점수 한 칸이 경쟁력점수에 미치는 무게 = 시설비중 x 관리 내부비중.
-  const wMgmt = settings.competitivenessWeights.interior * settings.facilityWeights.management;
-
-  // QSC가 없는 매장에는 **있는 곳들의 평균 관리 점수**를 넣는다(두 자가 섞이지 않게 —
-  // labInput.ts franchiseAverageManagement와 같은 규칙).
-  const mgmtFor = (floor: number) => {
-    const m = new Map<string, number>();
-    for (const s of stores) {
-      const v = toMgmt(qsc.get(s.storeCode) ?? null, floor);
-      if (v != null) m.set(s.storeCode, v);
-    }
-    const avg = [...m.values()].reduce((a, b) => a + b, 0) / (m.size || 1);
-    return { byCode: m, avg };
+  /**
+   * `prepareExistingStoresForEvaluation`과 **같은 일**을 하되 바닥을 바꿔 끼울 수 있게 한 것.
+   * 갈아끼우는 규칙(환산 -> 없으면 가맹점 평균)과 패치 함수는 운영과 같다.
+   * `floor = null`이면 아예 안 갈아끼운다 = 저장된 관리 4.00 = 2026-09-19까지의 운영.
+   */
+  const prepare = (floor: number | null): ExistingStore[] => {
+    const mgmtFor = (code: string) => floor == null ? null : qscToManagementScore(qsc.get(code), floor);
+    const avg = floor == null ? null
+      : franchiseAverageManagement(cache.storedStores.map((s) => mgmtFor(s.storeCode)));
+    return cache.storedStores.map((s) => {
+      const code = existingStoreSourceCode(s);
+      const management = avg == null ? null : (mgmtFor(s.storeCode) ?? avg);
+      const withManagement = management == null ? s : { ...s, ownManagementScore: management };
+      return {
+        ...withManagement,
+        ...existingStoreEvaluationPatch(
+          withManagement, compsByCandidate.get(code) ?? [], locByCandidate.get(code) ?? null, settings, management,
+        ),
+      };
+    });
   };
 
-  const build = (mode: "A" | "B" | "C", floor = 60): ValidationStoreInput[] => stores.map((s) => {
-    const { byCode: mgmtByCode, avg: mgmtAvg } = mgmtFor(floor);
+  /** ⚠️ validation/page.tsx의 inputs 조립과 나란히 놓고 diff할 것. */
+  const build = (stores: ExistingStore[]): ValidationStoreInput[] => stores.map((s) => {
     const code = existingStoreSourceCode(s);
     const loc = locByCandidate.get(code) ?? null;
     const comps = compsByCandidate.get(code) ?? [];
-    const base: ValidationStoreInput = {
+    return {
       storeCode: s.storeCode, storeName: s.storeName, brand: s.brandType ?? loc?.brandType ?? null,
       openedAt: s.openedAt, completedMonths: s.completedMonths ?? 0, franchiseStatus: s.franchiseStatus,
       isPostOpenIssue: s.excludedFromModel, postOpenIssueReason: s.excludedReason,
@@ -104,20 +112,6 @@ describe("QSC를 관리 점수로 넣을 것인가, 학습 피처로 넣을 것�
       floor: s.floor, groundLevel: s.groundLevel, hasElevator: s.hasElevator,
       competitorSummary: computeCompetitorInvestigationSummary(comps), sheetV61Predicted: s.v61Predicted,
     };
-    // 피처로 넣는 갈래(A·C)
-    if (mode === "A" || mode === "C") base.qscScore = qsc.get(s.storeCode) ?? null;
-    // 관리 점수로 넣는 갈래(B·C) — 자사 경쟁력점수를 그만큼 옮긴다(경쟁점은 QSC가 없어 그대로).
-    if (mode === "B" || mode === "C") {
-      const now = s.ownManagementScore ?? 4;
-      const next = mgmtByCode.get(s.storeCode) ?? mgmtAvg;
-      const d = (next - now) * wMgmt;
-      const own0 = base.competitivenessScore ?? null, gap0 = base.competitivenessGap ?? null;
-      const avg = own0 != null && gap0 != null && gap0 > 0 ? own0 / gap0 : null;
-      const own1 = own0 != null ? own0 + d : null;
-      base.competitivenessScore = own1 ?? base.competitivenessScore;
-      base.competitivenessGap = own1 != null && avg != null && avg > 0 ? own1 / avg : base.competitivenessGap;
-    }
-    return base;
   });
 
   const score = (inputs: ValidationStoreInput[]) => {
@@ -127,34 +121,43 @@ describe("QSC를 관리 점수로 넣을 것인가, 학습 피처로 넣을 것�
       within10: settings.target10pctRatio, within20: settings.target20pctRatio, maxBias: settings.maxAvgBias }), core };
   };
 
-  it("A(피처) · B(관리점수) · C(둘 다)", () => {
+  /** 자사 관리 점수 평균 — "자사만 유리해지는가"를 가르는 값이다. */
+  const ownAverage = (stores: ExistingStore[]) => {
+    const vs = stores.map((s) => s.ownManagementScore).filter((v): v is number => v != null);
+    return vs.reduce((a, b) => a + b, 0) / (vs.length || 1);
+  };
+
+  it("바닥 70(채택) · 기준선 · 바닥 훑기", () => {
     const pct = (v: number | null, d = 2) => (v == null ? "-" : `${(v * 100).toFixed(d)}%`);
-    console.log(`\n  QSC 있는 매장 ${mgmtFor(60).byCode.size}곳 · 지금 운영은 38곳 전부 4.00` +
-      ` · 관리 한 칸의 경쟁력 무게 ${(wMgmt * 100).toFixed(1)}%`);
-    console.log(`\n══ QSC를 어디에 넣나 (n=38 리브원아웃) ══`);
-    console.log(`  ${"".padEnd(30)}${"MAPE".padStart(9)}${"중앙".padStart(9)}${"±10%".padStart(8)}${"±20%".padStart(8)}${"최악".padStart(9)}`);
     const worst = (r: ReturnType<typeof score>) => Math.max(...r.core.map((x) => x.absoluteErrorPct ?? 0));
-    const line = (label: string, r: ReturnType<typeof score>) => console.log(
-      `  ${label.padEnd(30)}${pct(r.s.meanAbsoluteErrorPct).padStart(9)}${pct(r.s.medianAbsoluteErrorPct).padStart(9)}` +
-      `${pct(r.s.within10PctRatio, 0).padStart(8)}${pct(r.s.within20PctRatio, 0).padStart(8)}${pct(worst(r)).padStart(9)}`);
+    const line = (label: string, stores: ExistingStore[]) => {
+      const r = score(build(stores));
+      console.log(
+        `  ${label.padEnd(30)}${pct(r.s.meanAbsoluteErrorPct).padStart(9)}${pct(r.s.medianAbsoluteErrorPct).padStart(9)}` +
+        `${pct(r.s.within10PctRatio, 0).padStart(8)}${pct(r.s.within20PctRatio, 0).padStart(8)}${pct(worst(r)).padStart(9)}` +
+        `${ownAverage(stores).toFixed(2).padStart(9)}`);
+    };
 
-    // QSC를 아예 안 쓰는 기준선도 같이 본다.
-    const none = build("A").map((x) => ({ ...x, qscScore: null }));
-    line("QSC 안 씀 (기준선)", score(none));
-    line("A 학습 피처 (지금 운영)", score(build("A")));
-    line("C 둘 다 ⚠️이중계산", score(build("C")));
+    console.log(`\n  QSC 있는 매장 ${qsc.size}곳 · 확정 바닥 ${QSC_MANAGEMENT_FLOOR}`);
+    console.log(`\n══ QSC -> 관리 점수 (n=38 리브원아웃, 운영 코드 경로) ══`);
+    console.log(`  ${"".padEnd(30)}${"MAPE".padStart(9)}${"중앙".padStart(9)}${"±10%".padStart(8)}${"±20%".padStart(8)}${"최악".padStart(9)}${"자사평균".padStart(9)}`);
+    line("QSC 안 씀 (2026-09-19 운영)", prepare(null));
+    line(`바닥 ${QSC_MANAGEMENT_FLOOR} (채택 · 지금 운영)`, prepare(QSC_MANAGEMENT_FLOOR));
 
-    // ── 바닥을 훑는다 — 사용자: *"60이였나 70이였나"* ─────────────────────
-    // 바닥이 바뀌면 **자사 평균 관리점수의 수준**이 같이 움직인다. 경쟁점은 점포개발자
-    // 상/중/하 평가라 자가 다르므로, 자사 평균이 지금(4.00)에서 얼마나 벗어나는지가
-    // "자사만 유리해지는가"를 가른다.
-    console.log(`\n  ── B 관리 점수: 바닥을 어디로 두나 ──`);
-    for (const floor of [60, 65, 70, 75, 80]) {
-      const { avg } = mgmtFor(floor);
-      line(`B 바닥 ${floor} (자사평균 ${avg.toFixed(2)})`, score(build("B", floor)));
-    }
-    console.log(`\n  지금 운영의 자사 관리점수는 38곳 전부 4.00이다. 바닥 70이면 평균이 4.00 근처라`);
-    console.log(`  **수준은 그대로 두고 매장별 변별만 생긴다** — 자사/경쟁 비교를 안 건드린다.`);
-    expect(mgmtFor(60).byCode.size).toBeGreaterThan(20);
+    console.log(`\n  ── 참고: 바닥 훑기 (MAPE로 다시 고르지 말 것 — 위 주석) ──`);
+    for (const floor of [60, 65, 70, 75, 80]) line(`바닥 ${floor}`, prepare(floor));
+    console.log(`\n  자사 평균이 4.00에서 멀어질수록 자사/경쟁 비교가 한쪽으로 기운다.`);
+    console.log(`  경쟁점은 점포개발자 상/중/하 평가(평균 2.67)라 **자가 다르다**.`);
+  });
+
+  // 확정된 바닥이 코드에 그대로 있는지 못박는다. 여기가 바뀌면 위 표도 다시 재야 한다.
+  it("바닥은 70이고, QSC 없는 매장은 가맹점 평균을 받는다", () => {
+    expect(QSC_MANAGEMENT_FLOOR).toBe(70);
+    expect(qsc.size).toBeGreaterThan(20);
+    const withQsc = prepare(QSC_MANAGEMENT_FLOOR);
+    // 전 매장이 값을 갖는다 — 두 자가 섞이면 안 된다.
+    expect(withQsc.every((s) => s.ownManagementScore != null)).toBe(true);
+    // 자사 평균이 옛 4.00 근처에 남는다(바닥 70을 고른 이유 그 자체다).
+    expect(Math.abs(ownAverage(withQsc) - 4)).toBeLessThan(0.25);
   });
 });

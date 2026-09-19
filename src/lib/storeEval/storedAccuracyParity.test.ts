@@ -13,6 +13,7 @@ import {
   CORE_VALIDATION_MIN_MONTHS,
   computeCompetitorInvestigationSummary,
   computeStabilizedPerformance,
+  resolveManagementScores,
   summarizeValidationRows,
   type ValidationStoreInput,
 } from "./calc";
@@ -88,14 +89,17 @@ describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되
   const wantedSalesIds = new Set(evaluationSalesIds(snap.existingStores));
   const sales = snap.sales.filter((s) => wantedSalesIds.has(`${s.storeCode}_${s.yearMonth}`));
 
-  const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings);
+  // ⚠️ **검증 화면(validation/page.tsx)과 나란히 놓고 diff할 것.** 한 인자라도 빠지면 운영과
+  //    다른 모형을 재게 된다(2026-09-20에 _liveCheck가 preemptionScore를 빠뜨려 하루치 측정을
+  //    버렸다). 2026-09-20부터 QSC는 **여기로** 들어간다 — 관리 점수가 되어 경쟁력점수로 흐른다.
+  const qscByStoreCode = qscScoresFrom(snap);
+  const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings, qscByStoreCode);
 
   const competitorsByLookup = new Map<string, Competitor[]>();
   for (const c of allCompetitors) {
     competitorsByLookup.set(c.candidateCode, [...(competitorsByLookup.get(c.candidateCode) ?? []), c]);
   }
   const locByLookup = new Map(snap.locationEvaluations.map((l) => [l.candidateCode, l]));
-  const qscByStoreCode = qscScoresFrom(snap);
 
   const inputs: ValidationStoreInput[] = stores.map((s) => {
     const lookupCode = existingStoreSourceCode(s);
@@ -136,8 +140,6 @@ describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되
       hasElevator: s.hasElevator,
       competitorSummary: computeCompetitorInvestigationSummary(competitors),
       sheetV61Predicted: s.v61Predicted,
-      // 2026-09-19 — 화면과 같은 모양. 빈 곳은 calc.ts qscFillerFor가 학습표본 평균으로 메운다.
-      qscScore: qscByStoreCode.get(s.storeCode) ?? null,
     };
   });
 
@@ -264,6 +266,11 @@ describeIfSnapshot("기존점의 경쟁력·수요 캐시가 지금 설정으로
     return Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-12);
   };
 
+  // ⚠️ **cronSync와 나란히 놓고 diff할 것.** 이 캐시를 매일 06:00 KST에 쓰는 게 cronSync이고,
+  //    2026-09-20부터 거기서 관리 점수를 QSC 환산값으로 갈아끼운다. 여기서 안 넘기면 이 시험이
+  //    "캐시가 뒤처졌다"고 영영 우기게 된다(크론은 멀쩡한데).
+  const management = resolveManagementScores(snap.existingStores.map((s) => s.storeCode), qscScoresFrom(snap));
+
   const drift: string[] = [];
   for (const store of snap.existingStores) {
     const lookupCode = existingStoreSourceCode(store);
@@ -272,6 +279,7 @@ describeIfSnapshot("기존점의 경쟁력·수요 캐시가 지금 설정으로
       competitorsByLookup.get(lookupCode) ?? [],
       locByLookup.get(lookupCode) ?? null,
       settings,
+      management.scoreFor(store.storeCode),
     );
     for (const key of FIELDS) {
       const saved = (store as unknown as Record<string, unknown>)[key];
@@ -309,8 +317,8 @@ describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재
       trainingLocationEvaluations: snap.locationEvaluations,
       trainingCompetitors: allCompetitors,
       trainingSales: sales,
-      // 2026-09-19 — 후보지 결과 탭(ResultTab)과 같은 모양. 후보지 자신은 개점 전이라 점검
-      // 기록이 없고 가맹점 평균(중립)을 받는다 — 학습 쪽에만 실제 값이 들어간다.
+      // 2026-09-20 — 후보지 결과 탭(ResultTab)과 같은 모양. 기존점의 **관리 점수**가 여기서
+      // 나오고, 후보지 자신은 개점 전이라 점검 기록이 없어 **가맹점 평균**을 받는다.
       trainingQscScores: qscScoresFrom(snap),
     });
     const stored = (snap.results ?? []).find((r) => r.candidateCode === candidate.code) ?? null;

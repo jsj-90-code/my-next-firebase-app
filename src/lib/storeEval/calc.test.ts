@@ -71,10 +71,10 @@ import {
   empiricalFeaturesFor,
   empiricalFeatureLabels,
   buildMinCoefficients,
-  franchiseAverageQscScore,
-  qscFeatureValue,
-  qscFillerFor,
-  QSC_FEATURE_REFERENCE,
+  franchiseAverageManagement,
+  qscToManagementScore,
+  resolveManagementScores,
+  QSC_MANAGEMENT_FLOOR,
   fitEmpiricalRevenueModel,
   fitNonnegativeRidgeRegression,
   getV62Rate,
@@ -2913,83 +2913,84 @@ describe("empiricalFeatureLabels — 피처와 라벨이 어긋나지 않는다"
     expect(empiricalFeatureLabels(withDistance)).toHaveLength(empiricalFeaturesFor(withDistance).length);
   });
 
-  // 2026-09-19 — QSC(관리 수준) 칸.
-  it("QSC 칸이 붙어도 길이가 같고, 하한선 배열도 같이 늘어난다", () => {
-    const withQsc = { ...base, visibilityScore: 3, qscScore: 91.2 };
-    expect(empiricalFeatureLabels(withQsc)).toHaveLength(empiricalFeaturesFor(withQsc).length);
-    // ⚠️ 여기가 어긋나면 학습이 "길이 불일치"로 통째로 null이 된다(안전하게 실패하긴 하지만,
-    //    화면에는 예상매출이 아예 안 뜬다). 피처와 하한선은 항상 같이 늘어야 한다.
-    const v61 = { ...settings.v61Training, modelVariant: "visibility-inflow" as const };
-    expect(buildMinCoefficients(v61, false, true)).toHaveLength(empiricalFeaturesFor(withQsc).length);
-    expect(buildMinCoefficients(v61, false, false)).toHaveLength(empiricalFeaturesFor({ ...base, visibilityScore: 3 }).length);
-  });
-
-  it("QSC를 안 넣으면 칸이 아예 안 붙는다 — 2026-09-19 이전과 같게 동작한다", () => {
-    const before = empiricalFeaturesFor({ ...base, visibilityScore: 3 });
-    expect(empiricalFeaturesFor({ ...base, visibilityScore: 3, qscScore: null })).toEqual(before);
-    expect(empiricalFeaturesFor({ ...base, visibilityScore: 3, qscScore: 0 })).toEqual(before);
-  });
-
-  // 후보지·미점검 매장은 "관리를 평가받았다"로 읽히면 안 된다(배후수요 더미와 같은 규칙).
-  it("가맹점 평균으로 메운 자리는 라벨이 그렇다고 말한다", () => {
-    const measured = empiricalFeatureLabels({ ...base, qscScore: 91.2 });
-    const filled = empiricalFeatureLabels({ ...base, qscScore: 91.2, qscIsFranchiseAverage: true });
-    expect(measured.at(-1)).toBe("매장 관리 수준(본사 점검)");
-    expect(filled.at(-1)).toBe("매장 관리 수준(점검 기록 없어 가맹점 평균)");
-    // 표시만 다르고 값은 같다 — 라벨이 계산에 끼어들면 안 된다.
-    expect(empiricalFeaturesFor({ ...base, qscScore: 91.2, qscIsFranchiseAverage: true }))
-      .toEqual(empiricalFeaturesFor({ ...base, qscScore: 91.2 }));
-  });
-
   it("라벨에 내부 용어를 쓰지 않는다", () => {
     // 이 이름은 평가자 화면에 그대로 노출된다 — "IP당수요" 같은 내부 지표명이 새면 안 된다.
-    const labels = empiricalFeatureLabels({ ...base, visibilityScore: 4, qscScore: 91.2 }).join(" ");
+    const labels = empiricalFeatureLabels({ ...base, visibilityScore: 4 }).join(" ");
     for (const banned of ["IP", "V62", "V61", "더미", "log"]) {
       expect(labels).not.toContain(banned);
     }
   });
+
+  // 2026-09-20 — QSC를 학습 피처에서 관리 점수로 옮겼다. **피처 칸은 다시 생기면 안 된다**
+  // (관리 점수와 둘 다 두면 이중계산이다 — calc.ts QSC_MANAGEMENT_FLOOR 주석).
+  it("⭐ QSC 피처 칸이 되살아나지 않는다 — 관리 점수와 둘 다 두면 이중계산이다", () => {
+    const withVisibility = { ...base, visibilityScore: 3 };
+    const v61 = { ...settings.v61Training, modelVariant: "visibility-inflow" as const };
+    expect(empiricalFeatureLabels(withVisibility)).toHaveLength(empiricalFeaturesFor(withVisibility).length);
+    expect(buildMinCoefficients(v61, false)).toHaveLength(empiricalFeaturesFor(withVisibility).length);
+    // 관리 수준을 말하는 라벨이 피처 쪽에 있으면 안 된다 — 그건 경쟁력점수 안으로 들어갔다.
+    expect(empiricalFeatureLabels(withVisibility).join(" ")).not.toContain("관리");
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
-// QSC(본사 점검 관리 수준) — 2026-09-19 V62 피처로 추가
+// QSC(본사 점검 점수) -> 관리 점수 — 2026-09-20에 학습 피처에서 여기로 옮겼다
 //
 // 지금까지 자사 관리 점수는 38곳 전부 4.00 상수였다. "관리"라는 칸은 있는데 아무것도 재고
-// 있지 않았다는 뜻이다. QSC는 본사가 실제로 매긴 점수라 그 자리를 채운다.
-// ⚠️ 후보지 예측력이 느는 게 아니다 — QSC는 개점 뒤 점수라 후보지엔 없다.
-describe("QSC 관리 수준 피처", () => {
-  it("franchiseAverageQscScore — 기하평균이다(피처가 log이라 그래야 중립이 0이 된다)", () => {
-    // 산술평균이면 95, 기하평균은 sqrt(90*100)=94.868...
-    expect(franchiseAverageQscScore([90, 100])).toBeCloseTo(Math.sqrt(9000), 9);
-    expect(franchiseAverageQscScore([90, null, undefined, 0, 100])).toBeCloseTo(Math.sqrt(9000), 9);
-    expect(franchiseAverageQscScore([])).toBeNull();
-    expect(franchiseAverageQscScore([null, 0, -5])).toBeNull();
+// 있지 않았다는 뜻이다. QSC는 본사가 실제로 매긴 관리 점수라 그 자리를 채운다.
+// 바닥 70의 근거는 calc.ts QSC_MANAGEMENT_FLOOR 주석에 있다(MAPE가 아니라 자사/경쟁 비대칭).
+describe("QSC -> 관리 점수 환산", () => {
+  it("바닥이 1점, 100점이 5점이다 — 운영 바닥은 70", () => {
+    expect(QSC_MANAGEMENT_FLOOR).toBe(70);
+    expect(qscToManagementScore(70)).toBeCloseTo(1, 12);
+    expect(qscToManagementScore(100)).toBeCloseTo(5, 12);
+    expect(qscToManagementScore(85)).toBeCloseTo(3, 12);
   });
 
-  it("qscFeatureValue — 기준점에서 0이고, 같은 % 차이는 같은 크기로 들어간다", () => {
-    expect(qscFeatureValue(QSC_FEATURE_REFERENCE)).toBeCloseTo(0, 12);
-    // log이라 "10% 높다"와 "10% 낮다"가 대칭이다(탄력도로 읽을 수 있다).
-    const up = qscFeatureValue(QSC_FEATURE_REFERENCE * 1.1);
-    const down = qscFeatureValue(QSC_FEATURE_REFERENCE / 1.1);
-    expect(up).toBeCloseTo(-down, 12);
+  it("1~5 밖으로는 안 나간다 — 바닥 아래도 1점, 100점 위도 5점", () => {
+    expect(qscToManagementScore(50)).toBe(1);
+    expect(qscToManagementScore(120)).toBe(5);
   });
 
-  it("qscFillerFor — 기록 없는 매장에 학습표본 기하평균을 넣고, 라벨용 표시를 세운다", () => {
-    const core = [{ qscScore: 90 }, { qscScore: 100 }, { qscScore: null }];
-    const fill = qscFillerFor(core);
-    expect(fill.enabled).toBe(true);
-    expect(fill.valueFor({ qscScore: 90 })).toEqual({ qscScore: 90, qscIsFranchiseAverage: false });
-    const filled = fill.valueFor({ qscScore: null }) as { qscScore: number; qscIsFranchiseAverage: boolean };
-    expect(filled.qscScore).toBeCloseTo(Math.sqrt(9000), 9);
-    expect(filled.qscIsFranchiseAverage).toBe(true);
+  it("값이 없으면 null이다 — 지어내지 않는다", () => {
+    expect(qscToManagementScore(null)).toBeNull();
+    expect(qscToManagementScore(undefined)).toBeNull();
+    expect(qscToManagementScore(0)).toBeNull();
+    expect(qscToManagementScore(Number.NaN)).toBeNull();
+  });
+
+  // ⚠️ 실험실은 바닥 60을 쓴다(labInput.ts). 일부러 갈라 둔 것이라 환산자가 바닥을 받는다.
+  it("바닥을 바꾸면 기울기가 같이 바뀐다(실험실 60용)", () => {
+    expect(qscToManagementScore(60, 60)).toBeCloseTo(1, 12);
+    expect(qscToManagementScore(80, 60)).toBeCloseTo(3, 12);
+  });
+
+  it("franchiseAverageManagement — **환산한 뒤**의 평균이고, 빈 값은 빼고 센다", () => {
+    expect(franchiseAverageManagement([1, 3, 5])).toBeCloseTo(3, 12);
+    expect(franchiseAverageManagement([1, null, 5])).toBeCloseTo(3, 12);
+    expect(franchiseAverageManagement([])).toBeNull();
+    expect(franchiseAverageManagement([null, null])).toBeNull();
+  });
+
+  it("resolveManagementScores — QSC 없는 매장은 가맹점 평균을 받는다", () => {
+    // 85 -> 3.0, 100 -> 5.0 이므로 평균은 4.0. C는 QSC가 없으니 4.0을 받는다.
+    const m = resolveManagementScores(["A", "B", "C"], new Map([["A", 85], ["B", 100]]));
+    expect(m.enabled).toBe(true);
+    expect(m.scoreFor("A")).toBeCloseTo(3, 12);
+    expect(m.scoreFor("B")).toBeCloseTo(5, 12);
+    expect(m.franchiseAverage).toBeCloseTo(4, 12);
+    expect(m.scoreFor("C")).toBeCloseTo(4, 12);
   });
 
   // ⭐ 자료가 없으면 **예전 모습으로 돌아갈 뿐 깨지지 않는다**. 이게 중요하다 — 운영 컬렉션이
   //    비어 있거나 읽기에 실패해도 예상매출이 사라지면 안 된다.
-  it("⭐ 점검 기록이 하나도 없으면 칸을 안 붙인다(깨지지 않고 예전처럼 동작)", () => {
-    const fill = qscFillerFor([{ qscScore: null }, { qscScore: null }]);
-    expect(fill.enabled).toBe(false);
-    expect(fill.valueFor({ qscScore: null })).toEqual({});
-    expect(qscFillerFor([]).enabled).toBe(false);
+  it("⭐ QSC 자료가 없으면 갈아끼우지 않는다(깨지지 않고 예전처럼 동작)", () => {
+    for (const empty of [undefined, null, new Map<string, number>()]) {
+      const m = resolveManagementScores(["A"], empty);
+      expect(m.enabled).toBe(false);
+      expect(m.franchiseAverage).toBeNull();
+      expect(m.scoreFor("A")).toBeNull();
+    }
   });
 });
 

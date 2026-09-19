@@ -1545,6 +1545,97 @@ export function resolveFreshnessScore(manualScore: number | null, renovationYear
  * 셋 다 없을 때만 null이다. "한 항목 미입력"과 "아예 조사 안 됨"을 구분하는 게 원래 의도였는데,
  * 전자를 후자처럼 취급하는 바람에 오히려 정보가 통째로 버려지고 있었다.
  */
+// ── QSC(본사 점검 점수) -> 관리 점수 (2026-09-20) ─────────────────────────
+//
+// **자사 관리 점수는 여기서 만들어진다.** 2026-09-19까지 38곳 전부 4.00 상수였다 — 칸은
+// 있는데 아무것도 재고 있지 않았다. 본사 QSC 점검이 바로 그 "관리를 얼마나 잘하나"를 재므로
+// 그 값을 이 칸에 넣는다.
+//
+// ⚠️ 2026-09-19에는 같은 QSC를 **학습 피처**(log(QSC/92.6))로 넣었다가 2026-09-20에 걷어내고
+//    여기로 옮겼다. 사용자가 뜻으로 정한 자리가 관리 점수였다:
+//      *"나는 관리점수에 QSC가 반영되었으면한데, 배율적용하면 약간 보정값이잖아"*
+//    이 저장소 규칙이 그쪽이다 — **항목은 뜻으로 정하고 계수만 자료로 정한다.**
+//    ⚠️⚠️ **둘 다 두면 이중계산이다.** 그래서 피처 쪽(QSC_FEATURE_REFERENCE·qscFeatureValue·
+//    franchiseAverageQscScore·qscFillerFor·resolveQscScores)은 통째로 지웠다. 다시 넣지 말 것.
+//
+// ── 환산자 — 100점이 5점, 바닥이 1점 ────────────────────────────────────
+//   관리 = 1 + (QSC - 바닥) x (4 / (100 - 바닥)),  1~5로 자름
+// 앵커를 절대값으로 잡는다. "우리 표본에서 제일 낮은 곳이 몇 점"이 아니라 **"몇 점이면
+// 최하인가"**를 정한 것이라, 표본이 늘어도 점수의 뜻이 안 흔들린다.
+//
+// ── 왜 바닥이 70인가 — **MAPE 때문이 아니다** ───────────────────────────
+// 자사는 본사 QSC, 경쟁점은 점포개발자 상/중/하 평가(평균 2.67)다 — **자가 다르다.**
+// 자사만 자를 바꾸면 수준이 통째로 움직여 경쟁력격차가 한쪽으로 벌어진다.
+//   바닥 60 -> 자사 평균 4.20 (지금보다 +0.20 — 자사만 유리해진다)
+//   바닥 70 -> 자사 평균 3.94 (지금 4.00과 거의 같다)
+// **바닥 70이면 자사/경쟁 비교를 안 건드리고 자사 매장 간 변별만 얻는다.** 그게 원래 목적이다.
+// MAPE가 피처 방식보다 나은 건(8.85% vs 8.90%) 근거가 아니라 확인이다.
+//
+// ⚠️ **바닥을 MAPE로 다시 고르지 말 것.** 대조군을 어느 바닥에서도 못 넘는다
+//    (60 p=0.075 · 70 p=0.144 · 80 p=0.259). 75·80이 숫자는 더 좋지만 자사 평균이
+//    3.73/3.44로 내려가 위 비대칭이 생긴다. 재현: `_qscAsManagement.test.ts`
+//
+// ⚠️ **실험실(labInput.ts)은 바닥 60을 쓴다 — 알고 갈라 뒀다.** 교과서식 수요모형이라 산식이
+//    다르고, 그쪽 60은 그 모형의 매출 MAPE로 고른 값이다(근거표가 labInput.ts에 있다). 운영
+//    70을 실험실에 밀어넣으면 측정 없이 실험실 계수를 바꾸는 게 된다. 두 화면의 관리 점수가
+//    다르게 보이는 것은 실수가 아니다. (실험실 60이 옳은지는 따로 재봐야 할 거리로 남겨 뒀다 —
+//    운영에서 70을 고른 비대칭 논리가 실험실에도 그대로 적용된다.)
+export const QSC_MANAGEMENT_FLOOR = 70;
+const QSC_MANAGEMENT_TOP = 100;
+
+/** QSC 점수(0~100)를 관리 점수(1~5)로 환산한다. 값이 없으면 null — 지어내지 않는다. */
+export function qscToManagementScore(
+  qsc: number | null | undefined,
+  floor: number = QSC_MANAGEMENT_FLOOR,
+): number | null {
+  if (qsc == null || !Number.isFinite(qsc) || qsc <= 0) return null;
+  return Math.max(1, Math.min(5, 1 + (qsc - floor) * (4 / (QSC_MANAGEMENT_TOP - floor))));
+}
+
+/**
+ * QSC가 없는 매장·후보지에 쓸 관리 점수 — **가맹점 평균**이다.
+ *
+ * ⚠️ **환산한 뒤의 평균**이다. QSC를 먼저 평균 내고 환산하면 다른 값이 나온다(1~5로 자르므로).
+ * ⚠️ 왜 4.00으로 두지 않나: 어떤 매장은 QSC 자로, 어떤 매장은 옛 자(4.00)로 재면 **두 자가
+ *    섞인다.** 그러면 점검 기록이 없는 매장이 "관리를 잘하는 곳"으로 둔갑한다.
+ * ⚠️ 상수로 박지 않는다 — 박아두면 자료가 늘 때 조용히 낡는다.
+ */
+export function franchiseAverageManagement(mapped: readonly (number | null)[]): number | null {
+  const vs = mapped.filter((v): v is number => v != null);
+  return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null;
+}
+
+/**
+ * 한 코호트의 관리 점수를 **전 매장분 빠짐없이** 만들어 준다 (2026-09-20).
+ *
+ * ⚠️ **평균을 내는 자리는 여기 하나다.** 화면마다 각자 평균을 내면 같은 매장이 검증 화면과
+ *    후보지 화면에서 다른 관리 수준을 받는다(조용히 갈라진다).
+ *
+ * 자료가 아예 없으면(`qscByStoreCode`가 비었으면) `enabled=false`이고 호출부는 저장된
+ * `ownManagementScore`를 그대로 쓴다 — 2026-09-19까지와 완전히 같게 동작한다. 즉 컬렉션이
+ * 비어도 예상매출이 사라지지 않고 조용히 예전 모습이 될 뿐이다.
+ */
+export function resolveManagementScores(
+  storeCodes: readonly string[],
+  qscByStoreCode?: ReadonlyMap<string, number> | null,
+): {
+  enabled: boolean;
+  franchiseAverage: number | null;
+  /** 코드별 관리 점수. 그 매장에 QSC가 없으면 가맹점 평균. 자료가 아예 없으면 null. */
+  scoreFor: (code: string) => number | null;
+} {
+  const franchiseAverage = qscByStoreCode?.size
+    ? franchiseAverageManagement(storeCodes.map((c) => qscToManagementScore(qscByStoreCode.get(c))))
+    : null;
+  return {
+    enabled: franchiseAverage != null,
+    franchiseAverage,
+    scoreFor: (code) => franchiseAverage == null
+      ? null
+      : qscToManagementScore(qscByStoreCode?.get(code)) ?? franchiseAverage,
+  };
+}
+
 export function computeFacilityScore(
   input: { zoneComposition: number | null; interiorScore: number | null; managementScore: number | null },
   settings: Pick<ModelSettings, "facilityWeights">,
@@ -2387,12 +2478,6 @@ export function buildV61TrainingStores(
   stores: ExistingStore[],
   locations: LocationEvaluation[] = [],
   settings?: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
-  /**
-   * 매장코드 -> 본사 QSC 점검 점수 (2026-09-19). **안 주면 QSC 칸이 아예 안 붙는다** — 그때는
-   * 이 함수가 지금까지와 완전히 같은 결과를 낸다. 주면 점검 기록이 없는 매장에 가맹점 평균이
-   * 채워져 **전 매장이 값을 갖는다**(섞이면 학습이 null이 되므로 전부 아니면 전무여야 한다).
-   */
-  qscByStoreCode?: ReadonlyMap<string, number> | null,
 ): V61TrainingStore[] {
   const useVisibility = settings?.v61Training.modelVariant === "visibility-inflow";
   const locationsByCode = new Map(locations.map(l => [l.candidateCode, l]));
@@ -2402,9 +2487,6 @@ export function buildV61TrainingStores(
       // 곱 모드에서는 선점경쟁도 있어야 한다 — 섞이면 같은 칸에 두 척도가 들어간다.
       && (settings?.v61Training.accessScoreMode !== "visibility-x-preemption"
         || isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.preemptionScore))));
-  // 가맹점 평균은 **실제 학습에 들어가는 매장들**로 낸다. 후보지도 이 평균을 받으므로
-  // 계산하는 자리가 둘이 되면 안 된다(resolveQscScores 주석 참고).
-  const qsc = resolveQscScores(eligible.map(s => s.storeCode), qscByStoreCode);
   return eligible
     .map((s) => ({
     storeCode: s.storeCode,
@@ -2427,7 +2509,6 @@ export function buildV61TrainingStores(
         ? { preemptionScore: locationsByCode.get(s.originCandidateCode ?? s.storeCode)!.preemptionScore! } : {}),
       trainingRevenueFactor: 1 + (getV62Rate(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.inflowRestriction ?? null, settings!) ?? 0),
     } : {}),
-    ...(qsc.scoreFor(s.storeCode) ?? {}),
   }));
 }
 
@@ -2453,13 +2534,6 @@ export type V61TrainingStore = {
   specialDemandScore: number; // 0~3, computeSpecialDemandScore
   /** 2026-09-11 실험 — 경쟁PC 가중 평균거리 ÷ 500m. 없으면 거리 피처가 붙지 않는다. */
   competitorDistanceRatio?: number | null;
-  /**
-   * 2026-09-19 — 본사 QSC 점검 점수(0~100). 없으면 QSC 피처가 붙지 않는다.
-   * 점검 기록이 없는 매장에는 **가맹점 평균**을 채워서 넣는다(전부 넣거나 전부 빼야 한다).
-   */
-  qscScore?: number | null;
-  /** 위 값이 그 매장의 점검 기록이 아니라 가맹점 평균이면 true. 화면 라벨 전용. */
-  qscIsFranchiseAverage?: boolean;
 };
 
 /**
@@ -2559,36 +2633,6 @@ export function empiricalFeaturesFor(input: {
    * 설계 근거: docs/formula-full-review-20260911.md §10 "거리 후보의 최소 실험 설계".
    */
   competitorDistanceRatio?: number | null;
-  /**
-   * 본사 QSC 점검 점수(0~100). 2026-09-19 추가. **넣지 않으면 피처가 안 붙는다.**
-   *
-   * ── 무엇이고 왜 넣나 ──────────────────────────────────────────────────
-   * 매장 관리 수준을 본사가 직접 매긴 점수다(평가창 안 점검의 평균 — `qscInWindowAverage`).
-   * 지금까지 자사 관리 점수는 **38곳 전부 4.00 상수**였다. 즉 "관리"라는 칸은 있는데 아무
-   * 것도 재고 있지 않았다. 그래서 관리가 나쁜 매장을 과대예측하고 있었다 — 구미산동점이
-   * QSC 73.9로 최저인데 오차 +17.9%였다(이 피처를 넣으면 3.9%).
-   *
-   * 통과한 관문(2026-09-19 · `_v62LabFeatures.test.ts`):
-   *   탄력도 0.84(QSC 1%↑ -> 매출 0.84%↑) · 설명 분산 18.1%
-   *   위약군 5개(실험실이 기각한 항목) **전부 실패** · 난수 칸 40회 **전부 미달**
-   *
-   * ⚠️ **후보지 예측력이 느는 게 아니다.** QSC는 개점 뒤에 매기는 점수라 후보지에는 없다.
-   *    이건 **기존점 사후 설명력**이다. 후보지에는 가맹점 평균이 들어가고(= 중립), 그래도
-   *    나머지 계수가 다시 학습되므로 후보지 예측이 조금 움직인다(2026-09-19 측정 최대 1.71%).
-   *    "칸을 더해도 후보지는 한 톨도 안 바뀐다"는 틀린 말이다.
-   *
-   * ⚠️ 값이 있는 표본과 없는 표본을 섞으면 `fitEmpiricalRevenueModel`이 피처 길이 불일치로
-   *    null을 돌려준다. **전 매장에 넣거나 전 매장에서 빼야 한다**(competitorDistanceRatio와
-   *    같은 규칙). QSC 기록이 없는 매장에는 **가맹점 평균**을 넣는다 — 지어내는 게 아니라
-   *    "모른다 = 중립"이고, 표준화 뒤 0이 된다.
-   */
-  qscScore?: number | null;
-  /**
-   * 위 `qscScore`가 **그 매장의 점검 기록이 아니라 가맹점 평균**이면 true. 계산에는 안 쓰고
-   * `empiricalFeatureLabels`가 화면에 그렇게 적기 위해서만 본다 — 후보지와 미점검 매장이
-   * "관리를 평가받았다"로 읽히면 안 된다.
-   */
-  qscIsFranchiseAverage?: boolean;
 }): number[] {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
@@ -2612,101 +2656,7 @@ export function empiricalFeaturesFor(input: {
       : []),
     ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
       ? [input.competitorDistanceRatio] : []),
-    ...(isValidQscScore(input.qscScore) ? [qscFeatureValue(input.qscScore)] : []),
   ];
-}
-
-/**
- * QSC 로그를 0 근처에 두기 위한 **기준점**. 2026-09-19 가맹점 기하평균이 92.6이었다.
- *
- * ⚠️ 이 숫자는 **모형에 영향이 없다.** 피처는 학습 전에 표준화되므로 상수를 빼든 말든
- *    같은 값이 된다. 사람이 볼 때 "평균이면 0"으로 읽히라고 두는 기준점일 뿐이다.
- *    그래서 이 값이 낡아도 예측은 안 틀어진다(값이 낡았는지는 날짜로 판단한다).
- *    ⚠️ **QSC 없는 매장을 채울 때는 이 상수를 쓰지 마라** — 그때 쓸 값은 그 코호트의 실제
- *    평균이다(`franchiseAverageQscScore`). 상수로 채우면 표본이 바뀌어도 안 따라 움직인다.
- */
-export const QSC_FEATURE_REFERENCE = 92.6;
-
-export function isValidQscScore(score: unknown): score is number {
-  return typeof score === "number" && Number.isFinite(score) && score > 0;
-}
-
-/** QSC 점수 -> 학습 피처 값. log이라 "몇 % 차이"가 선형으로 들어간다(탄력도 해석이 가능해진다). */
-export function qscFeatureValue(qscScore: number): number {
-  return Math.log(qscScore / QSC_FEATURE_REFERENCE);
-}
-
-/**
- * QSC 기록이 **없는** 매장에 넣을 값 — 있는 매장들의 기하평균이다(후보지도 이 값을 받는다).
- *
- * 왜 기하평균인가: 피처가 log(QSC)라 로그 공간의 산술평균 = 원공간의 기하평균이고, 그래야
- * 표준화 뒤 정확히 "중립(0)"이 된다. 산술평균을 넣으면 아주 조금 위로 치우친다.
- *
- * ⚠️ 상수로 굳히지 않는다. 표본이 늘면 따라 움직여야 한다.
- */
-export function franchiseAverageQscScore(scores: (number | null | undefined)[]): number | null {
-  const logs = scores.filter(isValidQscScore).map((v) => Math.log(v));
-  if (logs.length === 0) return null;
-  return Math.exp(logs.reduce((a, b) => a + b, 0) / logs.length);
-}
-
-/**
- * 코호트의 QSC를 **빠짐없이 채우는 자** (2026-09-19).
- *
- * 무엇을 하나: 학습표본 중 점검 기록이 있는 곳들의 기하평균을 내고, 기록이 없는 매장에 그
- * 값을 넣어 준다. 그러면 전 매장이 값을 갖게 되어 피처 길이가 어긋나지 않고, 메운 자리는
- * 표준화 뒤 정확히 0(중립)이 된다.
- *
- * ⚠️ **평균을 내는 자리는 여기 하나다.** 화면마다 각자 평균을 내면 같은 매장이 검증 화면과
- *    후보지 화면에서 다른 관리 수준을 받는다(조용히 갈라진다).
- *
- * 학습표본에 점검 기록이 **하나도 없으면** `enabled=false`가 되고 QSC 칸이 아예 안 붙는다 —
- * 2026-09-19까지와 완전히 같게 동작한다. 즉 자료를 안 넣으면 예전 모습으로 돌아갈 뿐 안 깨진다.
- */
-export function qscFillerFor(coreStores: readonly { qscScore?: number | null }[]): {
-  enabled: boolean;
-  valueFor: (s: { qscScore?: number | null }) => { qscScore: number; qscIsFranchiseAverage: boolean } | Record<string, never>;
-} {
-  const franchiseAverage = franchiseAverageQscScore(coreStores.map(s => s.qscScore));
-  if (franchiseAverage == null) return { enabled: false, valueFor: () => ({}) };
-  return {
-    enabled: true,
-    valueFor: (s) => isValidQscScore(s.qscScore)
-      ? { qscScore: s.qscScore, qscIsFranchiseAverage: false }
-      : { qscScore: franchiseAverage, qscIsFranchiseAverage: true },
-  };
-}
-
-/**
- * 한 코호트의 QSC 값을 **전 매장분 빠짐없이** 만들어 준다 (2026-09-19).
- *
- * 학습표본과 후보지가 **같은 평균값**을 써야 한다 — 양쪽이 각자 평균을 내면 조용히 갈라진다.
- * 그래서 평균을 내는 자리를 여기 하나로 둔다.
- *
- * 자료가 아예 없으면(`qscByStoreCode`가 비었으면) `franchiseAverage`가 null이고, 호출부는
- * QSC 칸을 **안 붙인다** — 지금까지와 완전히 같게 동작한다.
- */
-export function resolveQscScores(
-  storeCodes: readonly string[],
-  qscByStoreCode?: ReadonlyMap<string, number> | null,
-): {
-  franchiseAverage: number | null;
-  /** 코드별 학습·예측에 넣을 값. 자료가 없으면 null(칸을 안 붙인다는 뜻). */
-  scoreFor: (code: string) => { qscScore: number; qscIsFranchiseAverage: boolean } | null;
-} {
-  const franchiseAverage = qscByStoreCode?.size
-    ? franchiseAverageQscScore(storeCodes.map((c) => qscByStoreCode.get(c) ?? null))
-    : null;
-  return {
-    franchiseAverage,
-    scoreFor: (code) => {
-      if (franchiseAverage == null) return null;
-      const own = qscByStoreCode?.get(code);
-      return isValidQscScore(own)
-        ? { qscScore: own, qscIsFranchiseAverage: false }
-        : { qscScore: franchiseAverage, qscIsFranchiseAverage: true };
-    },
-  };
 }
 
 /**
@@ -2735,11 +2685,6 @@ export function empiricalFeatureLabels(input: Parameters<typeof empiricalFeature
       : []),
     ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
       ? ["경쟁점 평균거리"] : []),
-    // 2026-09-19 — 후보지·미점검 매장은 가맹점 평균(중립)이 들어간다. 라벨이 그냥 "매장 관리
-    // 수준"이면 "우리 후보지 관리를 평가했다는 건가?"로 읽히므로 **상태를 그대로 드러낸다**
-    // (배후수요 더미에서 같은 문제를 겪고 2026-09-13에 세운 규칙이다).
-    ...(isValidQscScore(input.qscScore)
-      ? [input.qscIsFranchiseAverage ? "매장 관리 수준(점검 기록 없어 가맹점 평균)" : "매장 관리 수준(본사 점검)"] : []),
   ];
 }
 
@@ -2752,14 +2697,6 @@ export function buildMinCoefficients(
    * 자료가 지지하지 않는 매출 상승을 만든다(docs/formula-full-review-20260911.md §10).
    */
   withDistance = false,
-  /**
-   * `empiricalFeaturesFor`에 QSC 칸을 넣었으면 여기도 같이 늘려야 길이가 맞는다 (2026-09-19).
-   *
-   * 하한선은 0이다 — 부호만 막고(관리가 좋을수록 매출이 **안 낮아진다**) 크기는 자료가
-   * 정하게 둔다. 측정된 탄력도가 0.84로 양수였으니 이 제약은 걸리지 않는다. 0보다 큰 값을
-   * 박으면 자료가 지지하지 않는 매출 상승을 사람이 강제하게 된다.
-   */
-  withQsc = false,
 ): number[] {
   return [
     v61Training.minHourlyRateCoef,
@@ -2769,7 +2706,6 @@ export function buildMinCoefficients(
     v61Training.minBackingDemandCoef,
     ...(v61Training.modelVariant === "visibility-inflow" ? [v61Training.minVisibilityCoef ?? .05] : []),
     ...(withDistance ? [0] : []),
-    ...(withQsc ? [0] : []),
   ];
 }
 
@@ -3498,14 +3434,6 @@ export type ValidationStoreInput = {
    * 넣지 않으면 지금과 완전히 같게 동작한다(피처가 안 붙는다).
    */
   competitorDistanceRatio?: number | null;
-  /**
-   * 2026-09-19 — 본사 QSC 점검 점수(0~100). 넣지 않으면 지금과 완전히 같게 동작한다.
-   * ⚠️ 코호트 안에서 **전부 넣거나 전부 빼야 한다.** 점검 기록이 없는 매장에는 가맹점
-   *    평균(`franchiseAverageQscScore`)을 채워 넣는다 — 그게 "모른다 = 중립"이다.
-   */
-  qscScore?: number | null;
-  /** 위 값이 그 매장의 점검 기록이 아니라 가맹점 평균이면 true. 화면 라벨 전용. */
-  qscIsFranchiseAverage?: boolean;
   visibilityScore?: number | null;
   /** 선점경쟁 점수 — accessScoreMode가 "visibility-x-preemption"일 때 접근성 피처에 곱해진다. */
   preemptionScore?: number | null;
@@ -3910,7 +3838,6 @@ export function toV61TrainingStore(
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
     ...(s.competitorDistanceRatio != null ? { competitorDistanceRatio: s.competitorDistanceRatio } : {}),
-    ...(s.qscScore != null ? { qscScore: s.qscScore, qscIsFranchiseAverage: s.qscIsFranchiseAverage ?? false } : {}),
     ...(settings?.v61Training.modelVariant === "visibility-inflow" ? {
       visibilityScore: s.visibilityScore ?? undefined,
       ...(settings.v61Training.accessScoreMode === "visibility-x-preemption"
@@ -3939,13 +3866,8 @@ export function runCohortValidation(
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const coreStores = stores.filter(isCoreEligibleForV61Training)
     .filter(s => !useVisibility || isValidVisibilityScore(s.visibilityScore));
-  // 2026-09-19 — QSC 칸. 점검 기록이 **없는 매장은 학습표본 평균**으로 메워서 전원이 값을
-  // 갖게 한다(섞이면 피처 길이가 어긋나 학습이 null이 된다). 메우는 규칙은 qscFillerFor 한
-  // 곳에만 있다 — 호출부마다 평균을 내면 화면끼리 조용히 갈라진다.
-  const fillQsc = qscFillerFor(coreStores);
-  const withQsc = fillQsc.enabled;
-  const minCoefficients = buildMinCoefficients(settings.v61Training, false, withQsc);
-  const coreTraining = coreStores.map(s => ({ ...toV61TrainingStore(s, settings), ...fillQsc.valueFor(s) }));
+  const minCoefficients = buildMinCoefficients(settings.v61Training, false);
+  const coreTraining = coreStores.map(s => toV61TrainingStore(s, settings));
 
   // 리브-원-아웃: 핵심 학습표본끼리는 서로를 빼고 학습·예측한다(데이터 누출 방지).
   const loo = revenueModel ? { rows: [] } : runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minCoefficients);
@@ -3991,10 +3913,6 @@ export function runCohortValidation(
             specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
             specialDemandType: s.specialDemandType,
             visibilityScore: useVisibility ? s.visibilityScore : undefined,
-            // 2026-09-19 — 외부 검증군도 학습 모형과 **같은 칸 수**여야 한다. 학습이 QSC 칸을
-            // 쓰는데 여기서 빼면 길이가 어긋나 예측이 통째로 null이 된다. 점검 기록이 없는
-            // 매장(조기 코호트에 많다)은 fillQsc가 학습표본 평균으로 메운다.
-            ...fillQsc.valueFor(s),
           }),
           resolvedPcCount,
           ridgeWeight,

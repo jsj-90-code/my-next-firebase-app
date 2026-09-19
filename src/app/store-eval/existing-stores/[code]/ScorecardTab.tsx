@@ -29,7 +29,7 @@ import {
 } from "@/lib/storeEval/calc";
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getLocationEvaluation, getModelSettings, listCompetitors } from "@/lib/storeEval/store";
+import { getLocationEvaluation, getModelSettings, listCompetitors, listManagementScores } from "@/lib/storeEval/store";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 
 function fmt(v: number | string | null | undefined): string {
@@ -40,8 +40,18 @@ function fmtScore(v: number | null): string {
   return v == null ? "-" : v.toFixed(2);
 }
 
-function computeOwnBreakdown(store: ExistingStore, settings: ModelSettings, loc: LocationEvaluation | null) {
+function computeOwnBreakdown(
+  store: ExistingStore,
+  settings: ModelSettings,
+  loc: LocationEvaluation | null,
+  /**
+   * QSC 환산 관리 점수 (2026-09-20). 모형이 쓰는 값이다 — 여기서 저장된 4.00을 그리면
+   * **이 화면만 모형과 다른 경쟁력점수를 보여준다.** null이면 저장값을 그대로 쓴다.
+   */
+  managementScore: number | null,
+) {
   const facility = applyStandardOwnFacilityDefaults(store, EXISTING_STORE_FACILITY_DEFAULTS);
+  const ownManagementScore = managementScore ?? facility.ownManagementScore;
   const zoneComposition = resolveZoneCompositionScore(
     computeOwnZoneComposition({
       counts: {
@@ -75,7 +85,7 @@ function computeOwnBreakdown(store: ExistingStore, settings: ModelSettings, loc:
     settings,
   );
   const interior = computeFacilityScore(
-    { zoneComposition, interiorScore: facility.ownInteriorScore, managementScore: facility.ownManagementScore },
+    { zoneComposition, interiorScore: facility.ownInteriorScore, managementScore: ownManagementScore },
     settings,
   );
   const food = computeFoodScore({ brand: store.ownFoodBrand, legacyScore: facility.ownFoodScore }, settings);
@@ -103,7 +113,7 @@ function computeOwnBreakdown(store: ExistingStore, settings: ModelSettings, loc:
     spec,
     zoneComposition,
     interiorScore: facility.ownInteriorScore,
-    managementScore: facility.ownManagementScore,
+    managementScore: ownManagementScore,
     interior,
     foodBrand: store.ownFoodBrand,
     foodScore: facility.ownFoodScore,
@@ -186,6 +196,8 @@ type ScorecardLoadResult = {
   settings: ModelSettings;
   loc: LocationEvaluation | null;
   competitors: Competitor[];
+  /** QSC 환산 관리 점수. null이면 자료가 없어 저장값(4.00)을 그대로 쓴다. */
+  managementScore: number | null;
   error: string | null;
 };
 
@@ -198,19 +210,23 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
   const settings = activeLoadResult?.settings ?? SCORECARD_DEFAULT_SETTINGS;
   const loc = activeLoadResult?.loc ?? null;
   const competitors = activeLoadResult?.competitors ?? NO_COMPETITORS;
+  const managementScore = activeLoadResult?.managementScore ?? null;
   const loading = activeLoadResult == null;
 
   useEffect(() => {
     let cancelled = false;
 
-    void Promise.all([getModelSettings(), getLocationEvaluation(candidateCode), listCompetitors(candidateCode)])
-      .then(([modelSettings, locationEvaluation, loadedCompetitors]) => {
+    void Promise.all([getModelSettings(), getLocationEvaluation(candidateCode), listCompetitors(candidateCode), listManagementScores()])
+      .then(([modelSettings, locationEvaluation, loadedCompetitors, management]) => {
         if (cancelled) return;
         setLoadResult({
           candidateCode,
           settings: modelSettings ?? SCORECARD_DEFAULT_SETTINGS,
           loc: locationEvaluation,
           competitors: loadedCompetitors,
+          // 2026-09-20 — 자사 관리 점수는 본사 QSC에서 나온다. 저장된 4.00을 그리면 이 화면만
+          // 모형과 다른 숫자를 보여준다(store.ts listManagementScores 주석).
+          managementScore: management.scoreFor(store.storeCode),
           error: null,
         });
       })
@@ -221,6 +237,7 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
           settings: SCORECARD_DEFAULT_SETTINGS,
           loc: null,
           competitors: [],
+          managementScore: null,
           error: err instanceof Error ? err.message : "평가자료를 불러오지 못했습니다.",
         });
       });
@@ -228,9 +245,9 @@ export function ScorecardTab({ store, candidateCode }: { store: ExistingStore; c
     return () => {
       cancelled = true;
     };
-  }, [candidateCode]);
+  }, [candidateCode, store.storeCode]);
 
-  const own = useMemo(() => computeOwnBreakdown(store, settings, loc), [store, settings, loc]);
+  const own = useMemo(() => computeOwnBreakdown(store, settings, loc, managementScore), [store, settings, loc, managementScore]);
   const competitorRows = useMemo(() => competitors.map((c) => computeCompetitorBreakdown(c, settings)), [competitors, settings]);
   const demandEval = useMemo(() => computeExistingStoreDemandEvaluation(store, competitors, loc, settings), [store, competitors, loc, settings]);
   const competitorAvg = useMemo(() => computeCompetitorAvgCompetitiveness(competitors, settings), [competitors, settings]);
