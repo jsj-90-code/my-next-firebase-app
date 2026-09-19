@@ -52,6 +52,7 @@ import { mergeModelSettings } from "./settings";
 import { computeOverflowPcHours, predictUsageRevenue, runUsageCohortValidation } from "./usageRevenue";
 import { buildLabRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
 import { DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook } from "./textbookModel";
+import { computeLabZoneComposition } from "./labZoneComposition";
 import type { Competitor, ExistingStore, LocationEvaluation } from "./types";
 
 const QSC_FILE = ".local-tools/qsc-scores.json";
@@ -703,9 +704,126 @@ describeIf("실험실 변수를 V62에 태워 본다", () => {
       `${pct(winRate(ownOp, rivOp), 0).padStart(28)}   (자사 ${ownOp.length}곳 · 경쟁 ${rivOp.length}곳)`);
     console.log(`    ${"실험실".padEnd(10)}${(med2(ownLab) ?? 0).toFixed(2).padStart(10)}${(med2(rivLab) ?? 0).toFixed(2).padStart(12)}` +
       `${pct(winRate(ownLab, rivLab), 0).padStart(28)}   (자사 ${ownLab.length}곳 · 경쟁 ${rivLab.length}곳)`);
-    console.log(`\n    운영 잣대에서 자사 승률이 100%에 가까우면 — 비대칭이 실재한다 = 사실 교정 대상.`);
-    console.log(`    비슷하면 2026-09-17 수정으로 이미 풀렸다는 뜻이고, 실험실 판은 '재정의'이지`);
-    console.log(`    '사실 교정'이 아니다 — 그럼 대가(±10% 66->47%)를 치를 이유가 약해진다.`);
+    // ⚠️ 위 표는 **불공정하다** — 경쟁점 232곳에 존 자료가 아예 없는 곳이 섞여 있어
+    //    중앙이 기본값에 눌린다. 사용자 지적: *"실험실은 프렌즈존이 2인석·3인석으로
+    //    변환되었잖아."* 맞다. 실험실 판은 이름표를 좌석으로 바꾸는 **물리 재정의**다.
+    //    그게 비대칭을 고치는지 보려면 **조사된 경쟁점만** 놓고 견줘야 한다.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const surveyed = allCompetitors.filter((c: any) =>
+      [c.singleSeatCount, c.room1, c.room2, c.teamRoom, c.coupleZone, c.vipZone,
+        c.friendsZone, c.firstClassZone, c.regularCoupleSeatCount].some((v) => v != null));
+    const sOp: number[] = [], sLab: number[] = [];
+    for (const c of surveyed) {
+      const v = rivalZoneOp(c), l = rivalQualityParts(c, settings).zone;
+      if (v != null) sOp.push(v);
+      if (l != null) sLab.push(l);
+    }
+    console.log(`\n  ── ⭐ 조사된 경쟁점 ${surveyed.length}곳만 놓고 다시 (위 표는 미조사가 섞여 불공정) ──`);
+    console.log(`    ${"잣대".padEnd(10)}${"자사 중앙".padStart(10)}${"경쟁점 중앙".padStart(12)}${"자사 승률".padStart(10)}${"자사−경쟁 중앙차".padStart(18)}`);
+    const gapOf = (own: number[], riv: number[]) => (med2(own) ?? 0) - (med2(riv) ?? 0);
+    console.log(`    ${"운영".padEnd(10)}${(med2(ownOp) ?? 0).toFixed(2).padStart(10)}${(med2(sOp) ?? 0).toFixed(2).padStart(12)}` +
+      `${pct(winRate(ownOp, sOp), 0).padStart(10)}${gapOf(ownOp, sOp).toFixed(2).padStart(18)}`);
+    console.log(`    ${"실험실".padEnd(10)}${(med2(ownLab) ?? 0).toFixed(2).padStart(10)}${(med2(sLab) ?? 0).toFixed(2).padStart(12)}` +
+      `${pct(winRate(ownLab, sLab), 0).padStart(10)}${gapOf(ownLab, sLab).toFixed(2).padStart(18)}`);
+    console.log(`\n    (미조사 경쟁점 ${allCompetitors.length - surveyed.length}곳은 어느 잣대에서도 기본값을 받는다 —`);
+    console.log(`     그건 잣대로 못 고치고 **조사로만** 고친다)`);
+
+    // ── ⭐ 물어야 할 건 승률이 아니라 **우위의 출처**다 ──────────────────────
+    // 사용자(2026-09-19): *"경쟁점은 VIP존 프렌즈존이 없는데 자사는 있다. 그래서 자사의
+    // VIP존은 1인석으로 바꼈고 프렌즈존은 2인석·3인석으로 변환했잖아."*
+    //
+    // 그러면 판정 기준이 "자사 승률이 내려가나"가 **아니다.** 자사가 실제로 특화좌석이
+    // 많으면 이기는 게 맞다. 물어야 할 건:
+    //
+    //   **자사 우위가 [이름표 종류 수] 때문인가, [실재하는 좌석] 때문인가**
+    //
+    // 운영 잣대의 다양성 = 8개 존 **이름** 종류 수  <- 자사에만 있는 이름표가 그대로 점수
+    // 실험실 잣대의 다양성 = 룸 종류 수만(1인룸·2인룸·팀룸) <- 양쪽 다 조사되는 물리 사실
+    //                수용력 = 특화좌석 전부(이름 무관) <- VIP존은 1인석, 프렌즈존은 좌석으로
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ownParts = (st: any) => computeOwnZoneComposition({
+      counts: {
+        singleSeatCount: st.ownSingleSeatCount ?? null, room1: st.ownRoom1 ?? null,
+        room2: st.ownRoom2 ?? null, teamRoom: st.ownTeamRoom ?? null,
+        coupleZone: st.ownCoupleZone ?? null, vipZone: st.ownVipZone ?? null,
+        friendsZone: st.ownFriendsZone ?? null, firstClassZone: st.ownFirstClassZone ?? null,
+      },
+      teamRoomTotalSeats: st.ownTeamRoomTotalSeats ?? null,
+      totalPcCount: st.evaluationPcCount ?? st.pcCount ?? null,
+    });
+    const rivalParts = (c: Competitor) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const x = c as any;
+      return computeCompetitorZoneComposition({
+        counts: {
+          singleSeatCount: x.singleSeatCount ?? null, room1: x.room1 ?? null, room2: x.room2 ?? null,
+          teamRoom: x.teamRoom ?? null, coupleZone: x.coupleZone ?? null, vipZone: x.vipZone ?? null,
+          friendsZone: x.friendsZone ?? null, firstClassZone: x.firstClassZone ?? null,
+        },
+        regularCoupleSeatCount: x.regularCoupleSeatCount ?? null,
+        teamRoomTotalSeats: x.teamRoomTotalSeats ?? null,
+        totalPcCount: computeCompetitorAppliedPcCount(c) ?? null,
+      });
+    };
+    const ownLabParts = (i: number) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const st = stores[i] as any;
+      return computeLabZoneComposition({
+        counts: {
+          singleSeatCount: st.ownSingleSeatCount ?? null, room1: st.ownRoom1 ?? null,
+          room2: st.ownRoom2 ?? null, teamRoom: st.ownTeamRoom ?? null,
+          coupleZone: st.ownCoupleZone ?? null, vipZone: st.ownVipZone ?? null,
+          friendsZone: st.ownFriendsZone ?? null, firstClassZone: st.ownFirstClassZone ?? null,
+          regularCoupleSeatCount: null,
+        },
+        teamRoomTotalSeats: st.ownTeamRoomTotalSeats ?? null,
+        totalPcCount: st.evaluationPcCount ?? st.pcCount ?? null, own: true,
+      });
+    };
+    const ownD: number[] = [], ownC: number[] = [], ownLD: number[] = [], ownLC: number[] = [];
+    for (let i = 0; i < stores.length; i++) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const p = ownParts(stores[i] as any), l = ownLabParts(i);
+      if (p.diversity != null) ownD.push(p.diversity);
+      if (p.capacity != null) ownC.push(p.capacity);
+      if (l.diversity != null) ownLD.push(l.diversity);
+      if (l.capacity != null) ownLC.push(l.capacity);
+    }
+    const rivD: number[] = [], rivC: number[] = [], rivLD: number[] = [], rivLC: number[] = [];
+    for (const c of surveyed) {
+      const p = rivalParts(c), l = rivalQualityParts(c, settings);
+      if (p.diversity != null) rivD.push(p.diversity);
+      if (p.capacity != null) rivC.push(p.capacity);
+      void l;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const x = c as any;
+      const lz = computeLabZoneComposition({
+        counts: {
+          singleSeatCount: x.singleSeatCount ?? null, room1: x.room1 ?? null, room2: x.room2 ?? null,
+          teamRoom: x.teamRoom ?? null, coupleZone: x.coupleZone ?? null, vipZone: x.vipZone ?? null,
+          friendsZone: x.friendsZone ?? null, firstClassZone: x.firstClassZone ?? null,
+          regularCoupleSeatCount: x.regularCoupleSeatCount ?? null,
+        },
+        teamRoomTotalSeats: x.teamRoomTotalSeats ?? null,
+        totalPcCount: computeCompetitorAppliedPcCount(c) ?? null, own: false,
+      });
+      if (lz.diversity != null) rivLD.push(lz.diversity);
+      if (lz.capacity != null) rivLC.push(lz.capacity);
+    }
+    console.log(`\n  ── ⭐⭐ 자사 우위가 '이름표' 때문인가 '실재 좌석' 때문인가 ──`);
+    console.log(`    ${"".padEnd(24)}${"자사 중앙".padStart(10)}${"경쟁 중앙".padStart(10)}${"차이".padStart(9)}`);
+    const row = (label: string, o: number[], r: number[]) => console.log(
+      `    ${label.padEnd(24)}${(med2(o) ?? 0).toFixed(2).padStart(10)}${(med2(r) ?? 0).toFixed(2).padStart(10)}` +
+      `${((med2(o) ?? 0) - (med2(r) ?? 0)).toFixed(2).padStart(9)}`);
+    console.log(`    [운영 — 다양성 = 존 **이름** 종류 수]`);
+    row("  다양성", ownD, rivD);
+    row("  수용력", ownC, rivC);
+    console.log(`    [실험실 — 다양성 = **룸** 종류 수 · 수용력 = 좌석 전부]`);
+    row("  다양성", ownLD, rivLD);
+    row("  수용력", ownLC, rivLC);
+    console.log(`\n    읽는 법: 운영에서 **다양성 차이가 크고** 실험실에서 그게 줄면,`);
+    console.log(`    자사 우위의 상당 부분이 **이름표였다**는 뜻이다 — 사실 교정 대상이 맞다.`);
+    console.log(`    수용력 차이는 남아도 된다. 좌석은 실재하니까.`);
     expect(both.out.length).toBe(baseInputs.length);
   });
 });
