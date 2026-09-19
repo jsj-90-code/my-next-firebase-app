@@ -146,3 +146,7 @@ src/**/_*.test.ts
 !src/lib/storeEval/_specialDemand.test.ts
 !src/lib/storeEval/_rivalCapacity.test.ts
 !src/lib/storeEval/_demandGap.test.ts
+
+# 2026-09-19 — 수요 축척 A 자체를 재는 하네스. 독점 3곳에서만 A를 정하는 구조가
+# 흔들리는 정도(잭나이프)와, "정규화"가 항등변환이라는 사실을 굳혀 둔 자리다.
+!src/lib/storeEval/_demandScale.test.ts
