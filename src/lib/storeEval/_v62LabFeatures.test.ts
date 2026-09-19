@@ -40,14 +40,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import {
-  computeCompetitorInvestigationSummary, summarizeValidationRows, type ValidationStoreInput,
+  computeCompetitorAppliedPcCount, computeCompetitorInvestigationSummary, computeCompetitorScores,
+  computeSpecScore, empiricalFeaturesFor, getV62Rate, summarizeValidationRows, toV61TrainingStore,
+  type ValidationStoreInput,
 } from "./calc";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
-import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
-import { buildLabRows, qscInWindowAverage, utilizationByStore, type QscRecord } from "./labInput";
+import { computeOverflowPcHours, predictUsageRevenue, runUsageCohortValidation } from "./usageRevenue";
+import { buildLabRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
 import { DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook } from "./textbookModel";
 import type { Competitor, ExistingStore, LocationEvaluation } from "./types";
 
@@ -350,6 +352,195 @@ describeIf("실험실 변수를 V62에 태워 본다", () => {
     console.log(`     없으면 평균(=표준화 0)이 들어가 기여가 0이다. 즉 이 개선은 **기존점 사후`);
     console.log(`     설명력**이지 후보지 예측력이 아니다. 2026-09-15·09-17에 같은 이유로`);
     console.log(`     실험실에서 보류된 항목이고(docs/backlog.md "결정 대기"), V62에서도 같다.`);
+    expect(diffs.length).toBeGreaterThan(20);
+  });
+
+  it("(5) 정말 후보지가 안 바뀌나 — 계수는 다시 학습된다", () => {
+    // ⚠️ (4)에서 "후보지 예측은 한 톨도 안 바뀐다"고 적었는데, 그건 **QSC 항의 기여만** 0이라는
+    //    뜻이다. 칸을 하나 더하면 **나머지 계수도 같이 다시 학습된다.** 그러면 후보지 예측이
+    //    QSC를 거치지 않고도 움직인다. 이걸 안 보고 넘어가면 결정 근거가 틀린다.
+    const built = build((c) => { const q = qscByStoreCode.get(c); return q ? Math.log(q / 92.6) : null; });
+    if (!built) { console.log("  QSC 자료 부족"); return; }
+    const a = measure(null).model, b = measure(built.map).model;
+    if (!a || !b) { console.log("  학습 실패"); return; }
+    const NAMES = ["시간당 요금", "공급 대비 수요", "자사 경쟁력", "경쟁력 우위", "배후수요 더미", "**새 칸(QSC)**"];
+    console.log(`\n══ (5) 칸을 더하면 기존 계수가 얼마나 움직이나 ══`);
+    for (const [kind, ma, mb] of [["이용시간", a.usage, b.usage], ["먹거리", a.product, b.product]] as const) {
+      console.log(`  [${kind}]`);
+      for (let i = 0; i < Math.max(ma.coefficients.length, mb.coefficients.length); i++) {
+        const x = ma.coefficients[i], y = mb.coefficients[i];
+        const name = NAMES[i] ?? `피처${i}`;
+        if (x == null) { console.log(`    ${name.padEnd(14)}${"(없음)".padStart(10)} -> ${y.toFixed(4).padStart(9)}   <- 새 칸`); continue; }
+        const d = y - x;
+        console.log(`    ${name.padEnd(14)}${x.toFixed(4).padStart(10)} -> ${y.toFixed(4).padStart(9)}` +
+          `   ${`${d >= 0 ? "+" : ""}${(x !== 0 ? (d / Math.abs(x)) * 100 : 0).toFixed(1)}%`.padStart(9)}`);
+      }
+    }
+    console.log(`\n  => 기존 계수가 움직이면 **후보지 예측도 움직인다**(QSC 항을 안 거치고도).`);
+    console.log(`     "후보지는 한 톨도 안 바뀐다"는 말은 QSC **항의 기여**에 대해서만 맞다.`);
+    console.log(`     움직임이 작으면 실질적으로는 같다고 볼 수 있고, 크면 **후보지 예측이`);
+    console.log(`     검증 없이 바뀌는** 것이라 오히려 위험하다 — 후보지엔 맞출 실측이 없다.`);
+    expect(a.usage.coefficients.length).toBeGreaterThan(3);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  it("(6) 칸을 더하지 말고 **값을 고치면** — 사양 점수를 실험실 판으로", () => {
+    // 사용자(2026-09-19): *"그거 말고도 사양 먹거리 시설 관리 등 이런 쪽도 데이터는
+    // 실험실 데이터가 좀 더 맞는 거 아닌가?"*
+    //
+    // ⭐ **이게 QSC보다 나은 종류의 변경이다.** 둘은 성격이 다르다:
+    //
+    //   QSC        = 피처를 **한 칸 더한다**   -> 자유도 +1 · 후보지엔 값이 없음
+    //   사양 교체   = 기존 칸의 **값을 고친다** -> 자유도 그대로 · 후보지에도 그대로 적용됨
+    //
+    // 그리고 실험실은 운영 사양표가 **틀렸다는 근거**를 갖고 있다(labSpecScore.ts):
+    //   RTX 3060 Ti 2.25 < RTX 4060 3.00   (실제로는 3060 Ti가 빠르다 · 23건)
+    //   RTX 4070    3.50 < RTX 5060 4.00   (사용자 지적 · 9건)
+    //   i3 13100F   3.00 = i5 13400F 3.00  (티어를 아예 안 본다 · 자사 9곳)
+    // 운영은 "세대 산술"이고 세대 숫자는 출시 연도지 성능이 아니다.
+    //
+    // ── 어떻게 갈아끼우나 ────────────────────────────────────────────────────
+    // 경쟁력점수는 **선형 가중합**이다(computeCompetitivenessScore · computeFacilityScore ·
+    // computeCompetitorAvgCompetitiveness 전부). 그래서 사양만 바뀌면 차이가 그대로 전파된다:
+    //
+    //   Δ자사점수   = (실험실사양 − 운영사양) × w.spec
+    //   Δ경쟁평균   = PC수 가중평균( (실험실사양ᵢ − 운영사양ᵢ) × w.spec )
+    //   격차_new   = (자사 + Δ자사) / (경쟁평균 + Δ경쟁평균)
+    //
+    // 정확한 계산이다(근사가 아니다).
+    const wSpec = settings.competitivenessWeights.spec;
+    const labSpecOwn = new Map<string, number>();
+    for (const r of labRows) {
+      const v = r.input.ownQualityParts?.spec;
+      if (v != null) labSpecOwn.set(r.input.storeCode, v);
+    }
+
+    let movedOwn = 0, movedRival = 0, rivalTotal = 0;
+    const swapped: ValidationStoreInput[] = [];
+    const specDiffs: { name: string; op: number; lab: number }[] = [];
+    for (let i = 0; i < baseInputs.length; i++) {
+      const inp = baseInputs[i];
+      const store = stores[i];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const st = store as any;
+      const opOwn = computeSpecScore({
+        vgaBase: st.ownVgaBase, vgaTop: st.ownVgaTop, vgaTop2: st.ownVgaTop2,
+        cpu: st.ownCpu, cpuTop1: st.ownCpuTop1, cpuTop2: st.ownCpuTop2,
+        ram: st.ownRam, ramTop: st.ownRamTop,
+        monitorBase: st.ownMonitorBase, monitorTop: st.ownMonitorTop,
+      }, settings);
+      const labOwn = labSpecOwn.get(inp.storeCode) ?? null;
+      let dOwn = 0;
+      if (opOwn != null && labOwn != null) {
+        dOwn = (labOwn - opOwn) * wSpec;
+        if (Math.abs(labOwn - opOwn) > 1e-9) {
+          movedOwn++;
+          specDiffs.push({ name: inp.storeName, op: opOwn, lab: labOwn });
+        }
+      }
+      // 경쟁점 — PC수 가중평균의 차이
+      const comps = competitorsByLookup.get(existingStoreSourceCode(store)) ?? [];
+      let wsum = 0, dsum = 0;
+      for (const c of comps) {
+        const w = computeCompetitorAppliedPcCount(c) ?? 0;
+        if (!(w > 0)) continue;
+        const op = computeCompetitorScores(c, settings).spec;
+        const lab = rivalQualityParts(c, settings).spec;
+        rivalTotal++;
+        if (op == null || lab == null) continue;
+        if (Math.abs(lab - op) > 1e-9) movedRival++;
+        wsum += w; dsum += w * (lab - op) * wSpec;
+      }
+      const dAvg = wsum > 0 ? dsum / wsum : 0;
+      const own0 = inp.competitivenessScore ?? null;
+      const gap0 = inp.competitivenessGap ?? null;
+      // 격차에서 경쟁평균을 역산한다 — gap = own / avg 이므로 avg = own / gap
+      const avg0 = own0 != null && gap0 != null && gap0 > 0 ? own0 / gap0 : null;
+      const own1 = own0 != null ? own0 + dOwn : null;
+      const avg1 = avg0 != null ? avg0 + dAvg : null;
+      swapped.push({
+        ...inp,
+        competitivenessScore: own1 ?? inp.competitivenessScore,
+        competitivenessGap: own1 != null && avg1 != null && avg1 > 0 ? own1 / avg1 : inp.competitivenessGap,
+      });
+    }
+
+    const base = measure(null).s;
+    const { rows } = runUsageCohortValidation(swapped, sales, settings) as never as {
+      rows: { brand: string | null; includedInCoreAccuracy: boolean }[];
+    };
+    const s = summarizeValidationRows(
+      rows.filter((r) => r.brand === "블랙라벨" && r.includedInCoreAccuracy) as never,
+      { mape: settings.targetMAE, medianAe: settings.targetMedianAE,
+        within10: settings.target10pctRatio, within20: settings.target20pctRatio, maxBias: settings.maxAvgBias });
+
+    console.log(`\n══ (6) 사양 점수를 실험실 판으로 갈아끼움 (칸 수 그대로 · 자유도 그대로) ══`);
+    console.log(`  점수가 움직인 매장 ${movedOwn}/${baseInputs.length}곳 · 경쟁점 ${movedRival}/${rivalTotal}건` +
+      `  (경쟁력점수에서 사양 비중 ${(wSpec * 100).toFixed(0)}%)`);
+    console.log(`\n  ${"".padEnd(22)}${"MAPE".padStart(9)}${"중앙".padStart(9)}${"±10%".padStart(8)}${"±20%".padStart(8)}`);
+    console.log(`  ${"지금 (운영 사양표)".padEnd(22)}${pct(base.meanAbsoluteErrorPct).padStart(9)}` +
+      `${pct(base.medianAbsoluteErrorPct).padStart(9)}${pct(base.within10PctRatio, 0).padStart(8)}${pct(base.within20PctRatio, 0).padStart(8)}`);
+    console.log(`  ${"실험실 사양표".padEnd(22)}${pct(s.meanAbsoluteErrorPct).padStart(9)}` +
+      `${pct(s.medianAbsoluteErrorPct).padStart(9)}${pct(s.within10PctRatio, 0).padStart(8)}${pct(s.within20PctRatio, 0).padStart(8)}`);
+    if (specDiffs.length) {
+      console.log(`\n  자사 사양 점수가 바뀐 곳 (운영 -> 실험실)`);
+      for (const d of specDiffs.slice(0, 12)) {
+        console.log(`    ${d.name.padEnd(14)}${d.op.toFixed(2).padStart(6)} -> ${d.lab.toFixed(2).padStart(6)}` +
+          `  ${(d.lab > d.op ? "+" : "") + (d.lab - d.op).toFixed(2)}`);
+      }
+      if (specDiffs.length > 12) console.log(`    … 외 ${specDiffs.length - 12}곳`);
+    }
+    console.log(`\n  ⚠️ 이건 **자유도를 안 늘린다.** 좋아지면 "칸을 더 줘서"가 아니라 값이 더 맞아서다.`);
+    console.log(`     그리고 사양은 **후보지 조사에도 있는 값**이라 후보지 예측이 실제로 바뀐다.`);
+    expect(baseInputs.length).toBeGreaterThan(20);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  it("(7) ⭐ QSC를 넣으면 **후보지** 예측이 얼마나 움직이나", () => {
+    // (4)에서 "후보지는 한 톨도 안 바뀐다"고 적었는데 (5)가 그걸 뒤집었다 —
+    // 칸을 더하면 **공급 대비 수요 계수가 −29.6% 움직인다.** QSC 항을 안 거치고도
+    // 후보지 예측이 바뀐다는 뜻이다. 얼마나 바뀌는지 재야 결정을 할 수 있다.
+    //
+    // ── 후보지를 어떻게 흉내내나 ────────────────────────────────────────────
+    // 후보지 = "QSC가 없는 곳" = 평균이 들어가 QSC 항 기여가 0인 곳.
+    // 그래서 **전 매장 QSC를 평균으로 고정**하고 예측을 낸 뒤 기준선과 견준다.
+    // 남는 차이는 전부 **다시 학습된 나머지 계수** 때문이다 — 그게 곧 후보지가 겪을 변화다.
+    const built = build((c) => { const q = qscByStoreCode.get(c); return q ? Math.log(q / 92.6) : null; });
+    if (!built) { console.log("  QSC 자료 부족"); return; }
+    // ⚠️ 전 매장에 **같은 값**을 넣으면 안 된다 — 분산이 0이라 표준화에서 전부 0이 되고
+    //    학습 자체가 기준선과 같아진다(2026-09-19에 그렇게 짜서 변화 0.00%가 나왔다).
+    //    올바른 흉내는 **실제 QSC로 학습**한 뒤 **QSC를 평균으로 두고 예측**하는 것이다.
+    const mdlBase = measure(null).model;
+    const mdlQsc = measure(built.map).model;
+    if (!mdlBase || !mdlQsc) { console.log("  학습 실패"); return; }
+    const vals = [...built.map.values()];
+    const meanQsc = vals.reduce((x, y) => x + y, 0) / vals.length;
+
+    const inflow = (i: ValidationStoreInput) => 1 + (getV62Rate(i.inflowRestriction ?? null, settings) ?? 0);
+    const diffs: { name: string; d: number }[] = [];
+    for (const i of baseInputs) {
+      const pc = i.evaluationPcCount ?? i.pcCount;
+      if (!pc || i.hourlyRate == null) continue;
+      const fBase = empiricalFeaturesFor(toV61TrainingStore(i, settings));
+      // 후보지 = QSC가 없어 평균이 들어가는 곳
+      const fQsc = empiricalFeaturesFor(toV61TrainingStore({ ...i, competitorDistanceRatio: meanQsc }, settings));
+      const pA = predictUsageRevenue(mdlBase, fBase, pc, i.hourlyRate, settings, inflow(i), i.extraPcHours ?? 0);
+      const pB = predictUsageRevenue(mdlQsc, fQsc, pc, i.hourlyRate, settings, inflow(i), i.extraPcHours ?? 0);
+      const a0 = pA?.monthlyRevenue ?? null, b0 = pB?.monthlyRevenue ?? null;
+      if (a0 == null || b0 == null || a0 <= 0) continue;
+      diffs.push({ name: i.storeName, d: (b0 - a0) / a0 });
+    }
+    diffs.sort((x, y) => Math.abs(y.d) - Math.abs(x.d));
+    const abs = diffs.map((x) => Math.abs(x.d)).sort((x, y) => x - y);
+    const mean = abs.reduce((x, y) => x + y, 0) / abs.length;
+    console.log(`\n══ (7) QSC 칸을 넣되 QSC 값은 평균(=후보지 상황) — 예측이 얼마나 움직이나 ══`);
+    console.log(`  n=${diffs.length}  ·  평균 |변화| ${pct(mean)}  ·  중앙 ${pct(abs[Math.floor(abs.length / 2)])}` +
+      `  ·  최대 ${pct(abs[abs.length - 1])}`);
+    console.log(`  많이 움직인 5곳: ${diffs.slice(0, 5).map((x) => `${x.name} ${x.d >= 0 ? "+" : ""}${(x.d * 100).toFixed(1)}%`).join(" · ")}`);
+    console.log(`\n  이 변화는 **검증할 방법이 없다** — 후보지엔 맞출 실측이 없기 때문이다.`);
+    console.log(`  기존점 MAPE가 좋아지는 것과 별개로, 후보지 예측이 조용히 이만큼 움직인다.`);
+    console.log(`  움직임이 작으면 "실질적으로 후보지는 그대로"라고 말할 수 있고,`);
+    console.log(`  크면 **검증 안 된 변경이 후보지에 그대로 나간다**는 뜻이라 신중해야 한다.`);
     expect(diffs.length).toBeGreaterThan(20);
   });
 });
