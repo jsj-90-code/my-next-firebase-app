@@ -18,6 +18,7 @@ import {
   computeFreshnessFromYear,
   computeOwnLocationScore,
   computeOwnZoneComposition,
+  ZONE_COMPOSITION_WEIGHTS,
   computeSpecScore,
   resolveZoneCompositionScore,
   EXISTING_STORE_FACILITY_DEFAULTS,
@@ -112,7 +113,8 @@ function ExistingStoreProfileEditor({
 
   const computedScores = useMemo(() => {
     const facility = applyStandardOwnFacilityDefaults(form, EXISTING_STORE_FACILITY_DEFAULTS);
-    // 2026-08-31 — 존구성 점수를 새 시트 산식(존다양성×0.7+존수용력×0.3)으로 자동계산한다.
+    // 2026-09-19 — 존구성은 존 이름이 아니라 물리 좌석으로 센다(룸종류×0.3+특화좌석×0.7).
+    //               calc.ts 존구성 주석 참고 — 이름표가 자사에만 있어 비대칭이었다.
     const zoneComposition = resolveZoneCompositionScore(
       computeOwnZoneComposition({
         counts: {
@@ -344,7 +346,7 @@ function ExistingStoreProfileEditor({
             <ComputedField
               label="존구성 점수 (자동)"
               value={computedScores.zoneComposition}
-              hint="팀룸·2인룸·커플존·VIP존·프렌즈존·1인석·1인룸·퍼스트클래스존 개수로 자동계산"
+              hint={`룸종류(1인룸·2인룸·팀룸)×${ZONE_COMPOSITION_WEIGHTS.diversity * 100}% + 특화좌석 전부×${ZONE_COMPOSITION_WEIGHTS.capacity * 100}% — 존 이름이 아니라 물리 좌석을 센다(2026-09-19)`}
             />
           ) : (
             <ScoreSelectField

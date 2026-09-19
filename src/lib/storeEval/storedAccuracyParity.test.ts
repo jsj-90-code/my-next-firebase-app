@@ -17,6 +17,7 @@ import {
   type ValidationStoreInput,
 } from "./calc";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
+import { qscInWindowAverage, type QscRecord } from "./labInput";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import {
   existingStoreEvaluationPatch,
@@ -44,6 +45,13 @@ type Snapshot = {
   competitors: Record<string, unknown>[];
   locationEvaluations: LocationEvaluation[];
   sales: ExistingStoreMonthlySales[];
+  /**
+   * 본사 QSC 점검 기록. 2026-09-19부터 운영 V62가 관리 수준을 학습 피처로 쓴다 —
+   * 여기에 안 실으면 이 시험만 QSC 없이 계산해서 **화면과 다른 숫자**로 통과/실패한다.
+   * 스냅샷 키 이름은 실험실 시절 그대로지만(`labQscScores`), 내용은 운영이 읽는 것과 같은
+   * 원자료다(`scripts/writeQscScoresToFirestore.mjs`가 두 컬렉션에 같은 것을 쓴다).
+   */
+  labQscScores?: { storeCode?: string; openedAt?: string | null; records?: QscRecord[] }[];
   settings: Record<string, unknown> | null;
   storedAccuracy: {
     sampleCount: number;
@@ -58,6 +66,17 @@ type Snapshot = {
 };
 
 const describeIfSnapshot = hasValidationSnapshot() ? describe : describe.skip;
+
+/** 스냅샷의 QSC 원자료 -> 매장코드별 평균. 운영과 **같은 함수**(qscInWindowAverage)를 쓴다. */
+function qscScoresFrom(snap: { labQscScores?: Snapshot["labQscScores"] }): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const d of snap.labQscScores ?? []) {
+    if (!d.storeCode) continue;
+    const avg = qscInWindowAverage(d.records ?? [], d.openedAt ?? null);
+    if (avg != null && avg > 0) out.set(d.storeCode, avg);
+  }
+  return out;
+}
 
 describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되는가", () => {
   const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
@@ -76,6 +95,7 @@ describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되
     competitorsByLookup.set(c.candidateCode, [...(competitorsByLookup.get(c.candidateCode) ?? []), c]);
   }
   const locByLookup = new Map(snap.locationEvaluations.map((l) => [l.candidateCode, l]));
+  const qscByStoreCode = qscScoresFrom(snap);
 
   const inputs: ValidationStoreInput[] = stores.map((s) => {
     const lookupCode = existingStoreSourceCode(s);
@@ -116,6 +136,8 @@ describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되
       hasElevator: s.hasElevator,
       competitorSummary: computeCompetitorInvestigationSummary(competitors),
       sheetV61Predicted: s.v61Predicted,
+      // 2026-09-19 — 화면과 같은 모양. 빈 곳은 calc.ts qscFillerFor가 학습표본 평균으로 메운다.
+      qscScore: qscByStoreCode.get(s.storeCode) ?? null,
     };
   });
 
@@ -287,6 +309,9 @@ describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재
       trainingLocationEvaluations: snap.locationEvaluations,
       trainingCompetitors: allCompetitors,
       trainingSales: sales,
+      // 2026-09-19 — 후보지 결과 탭(ResultTab)과 같은 모양. 후보지 자신은 개점 전이라 점검
+      // 기록이 없고 가맹점 평균(중립)을 받는다 — 학습 쪽에만 실제 값이 들어간다.
+      trainingQscScores: qscScoresFrom(snap),
     });
     const stored = (snap.results ?? []).find((r) => r.candidateCode === candidate.code) ?? null;
     const storedValue = stored?.v62Final ?? null;

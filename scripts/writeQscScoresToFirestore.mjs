@@ -1,4 +1,4 @@
-// fcdaum QSC 점검 점수 -> `storeEvalLabQscScores` (실험실 전용).
+// fcdaum QSC 점검 점수 -> `storeEvalQscScores`(운영) + `storeEvalLabQscScores`(실험실).
 //
 //   node scripts/writeQscScoresToFirestore.mjs           # 미리보기(쓰지 않는다)
 //   node scripts/writeQscScoresToFirestore.mjs --apply
@@ -16,7 +16,10 @@
 // ── 왜 전용 컬렉션인가 ─────────────────────────────────────────────────────
 // 매장 문서에 필드로 붙이면 syncLabCollections.mjs가 운영 문서로 덮을 때 날아간다.
 // 로드뷰 판정(storeEvalLabRoadviewJudgments)과 같은 이유·같은 방식이다.
-// **운영 V62는 이 컬렉션을 아예 읽지 않는다** — 실험실 전용이다.
+//
+// ⚠️ **2026-09-19부터 운영 V62도 QSC를 읽는다**(storeEvalQscScores). 관리 수준이 학습 피처가
+//    됐다 — 이 스크립트를 --apply로 돌리면 **예상매출이 움직인다.** 그전까지는 실험실 전용이라
+//    "운영에 영향 없다"고 적혀 있었는데, 이제 아니다.
 //
 // 원자료: `.local-tools/qsc-scores.json` (gitignore — 매장별 전체 점검 이력이라 매출은 없지만
 // 재수집에 로그인이 필요하다. 만드는 법은 인계 문서 6절).
@@ -76,7 +79,12 @@ try {
 //    화면과 하네스가 `labInput.ts`의 qscInWindowAverage로 계산한다. 쓰는 쪽과 읽는 쪽이
 //    각자 계산하면 창을 바꿀 때 한쪽만 바뀌어 조용히 갈라진다 — 2026-09-17에 창을 12개월에서
 //    전체기간으로 바꾸다 그럴 뻔했다. 이 스크립트는 **자료를 옮기기만 한다.**
-const COLLECTION = "storeEvalLabQscScores";
+//
+// 2026-09-19 — **두 컬렉션에 같은 것을 쓴다.** 운영 V62가 관리 수준(QSC)을 학습 피처로 쓰기
+// 시작해서 운영 쪽 원본(`storeEvalQscScores`)이 생겼다. QSC는 실험실이 고치는 값이 아니라
+// 본사가 매긴 사실이라 월매출과 같은 취급이고, 두 벌이 갈라지면 실험실과 운영의 관리 점수가
+// 말없이 달라진다. 그래서 한 번에 둘 다 채운다.
+const COLLECTIONS = ["storeEvalQscScores", "storeEvalLabQscScores"];
 const rows = [];
 for (const [key, site] of Object.entries(raw.sites ?? {})) {
   const storeCode = key.startsWith("existing:") ? key.slice("existing:".length) : key;
@@ -94,8 +102,11 @@ for (const [key, site] of Object.entries(raw.sites ?? {})) {
   });
 }
 
-const existing = await db.collection(COLLECTION).get();
-const before = new Map(existing.docs.map((d) => [d.id, d.data()]));
+const before = new Map();
+for (const name of COLLECTIONS) {
+  const existing = await db.collection(name).get();
+  before.set(name, new Map(existing.docs.map((d) => [d.id, d.data()])));
+}
 rows.sort((a, b) => a.storeCode.localeCompare(b.storeCode));
 
 // 미리보기용 참고 계산. **이 값이 저장되는 게 아니다** — 화면은 저장된 records에서 다시 낸다.
@@ -118,25 +129,36 @@ for (const r of rows) {
 const ms = rows.map(avgOf).filter((a) => a != null).map(mgmt);
 console.log(`\n관리 점수 평균 ${(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(2)} · 범위 ${Math.min(...ms).toFixed(2)}~${Math.max(...ms).toFixed(2)} · ${ms.length}곳`);
 console.log(`(QSC 없는 매장과 후보지에는 이 평균이 들어간다 — 두 자가 섞이지 않게)`);
-console.log(`\n실험실 컬렉션 ${COLLECTION}: 기존 ${before.size}건 -> 쓸 것 ${rows.length}건 (원본 기록 그대로)`);
+for (const name of COLLECTIONS) {
+  console.log(`\n${name}: 기존 ${before.get(name).size}건 -> 쓸 것 ${rows.length}건 (원본 기록 그대로)`);
+}
+// 두 컬렉션이 이미 갈라져 있는지 눈에 보이게 찍는다 — 갈라지면 실험실과 운영의 관리 점수가
+// 말없이 달라진다. 이 스크립트를 인자 없이 돌리는 것만으로 대조가 된다.
+const [opBefore, labBefore] = COLLECTIONS.map((n) => before.get(n));
+const drift = [...new Set([...opBefore.keys(), ...labBefore.keys()])]
+  .filter((id) => JSON.stringify(opBefore.get(id)?.records ?? null) !== JSON.stringify(labBefore.get(id)?.records ?? null));
+if (drift.length) console.log(`⚠️ 두 컬렉션이 ${drift.length}곳에서 다르다: ${drift.slice(0, 8).join(", ")}${drift.length > 8 ? " ..." : ""}`);
 
 if (!process.argv.includes("--apply")) {
   console.log("\n미리보기다. 실제로 쓰려면 --apply 를 붙인다.");
   process.exit(0);
 }
 
-let written = 0;
-for (let i = 0; i < rows.length; i += 400) {
-  const batch = db.batch();
-  for (const r of rows.slice(i, i + 400)) {
-    batch.set(db.doc(`${COLLECTION}/${r.storeCode}`), r);
-    written++;
-  }
-  await batch.commit();
-}
-// 원자료에서 사라진 매장은 지운다 — 남겨두면 없는 점검이 계속 점수를 만든다.
 const keep = new Set(rows.map((r) => r.storeCode));
-const stale = [...before.keys()].filter((id) => !keep.has(id));
-for (const id of stale) await db.doc(`${COLLECTION}/${id}`).delete();
-console.log(`\n${written}건 썼다${stale.length ? ` · 낡은 ${stale.length}건 지웠다` : ""}.`);
-console.log("운영 V62는 이 컬렉션을 읽지 않는다 — 예상매출에 영향 없다.");
+for (const name of COLLECTIONS) {
+  let written = 0;
+  for (let i = 0; i < rows.length; i += 400) {
+    const batch = db.batch();
+    for (const r of rows.slice(i, i + 400)) {
+      batch.set(db.doc(`${name}/${r.storeCode}`), r);
+      written++;
+    }
+    await batch.commit();
+  }
+  // 원자료에서 사라진 매장은 지운다 — 남겨두면 없는 점검이 계속 점수를 만든다.
+  const stale = [...before.get(name).keys()].filter((id) => !keep.has(id));
+  for (const id of stale) await db.doc(`${name}/${id}`).delete();
+  console.log(`${name}: ${written}건 썼다${stale.length ? ` · 낡은 ${stale.length}건 지웠다` : ""}.`);
+}
+console.log("\n⚠️ 2026-09-19부터 **운영 V62가 storeEvalQscScores를 읽는다** — 예상매출이 움직인다.");
+console.log("   검증 화면을 열어 적중률을 다시 확인할 것.");

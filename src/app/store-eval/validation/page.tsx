@@ -40,7 +40,7 @@ import {
 } from "@/lib/storeEval/calc";
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores, listEvaluationSales, upsertModelAccuracySummary } from "@/lib/storeEval/store";
+import { getModelSettings, listAllCompetitors, listAllLocationEvaluations, listExistingStores, listEvaluationSales, listQscScores, upsertModelAccuracySummary } from "@/lib/storeEval/store";
 import { RevenueComparisonTable } from "./RevenueComparisonTable";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 
@@ -128,11 +128,14 @@ async function loadValidationData(): Promise<{
   // 컬렉션 전체를 한 번씩만 읽는 방식으로 교체했다(cronSync.ts가 이미 쓰고 있던 것과 동일한
   // 패턴). 이 화면을 열 때마다 Firestore 일일 읽기 할당량을 크게 소모하고 있었던 게 원인으로
   // 확인돼 급하게 고쳤다 - 계산 로직은 전혀 안 바꾸고 데이터 조회 방식만 바꾼다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, qscByStoreCode] = await Promise.all([
     listExistingStores(),
     getModelSettings(),
     listAllCompetitors(),
     listAllLocationEvaluations(),
+    // 2026-09-19 — 본사 QSC 점검 점수(관리 수준). 학습 피처로 들어간다.
+    // 비어 있으면 칸이 안 붙고 2026-09-19까지와 똑같이 동작한다(calc.ts empiricalFeaturesFor).
+    listQscScores(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -194,6 +197,9 @@ async function loadValidationData(): Promise<{
         hasElevator: s.hasElevator,
         competitorSummary: computeCompetitorInvestigationSummary(competitors),
         sheetV61Predicted: s.v61Predicted,
+        // 2026-09-19 — 본사 QSC 점검 점수. **여기서 빈 곳을 메우지 않는다** — 학습표본 평균으로
+        // 메우는 건 calc.ts qscFillerFor가 한다(화면마다 각자 평균을 내면 조용히 갈라진다).
+        qscScore: qscByStoreCode.get(s.storeCode) ?? null,
       };
     });
 
@@ -514,6 +520,65 @@ function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
  * 사람도 이해할 수 있게) 익숙한 사용자는 클릭 한 번으로 접을 수 있다. 판정/계산 로직과는
  * 무관한 순수 설명 텍스트라 여기 문구를 고쳐도 검증 결과에 영향을 주지 않는다.
  */
+/**
+ * 2026-09-19 산식 변경 안내.
+ *
+ * ⚠️ **이 문단이 없으면 화면이 거짓말을 한다.** 이날 ±20% 적중률이 한 곳 줄었는데, 설명이
+ * 없으면 "산식이 나빠졌다"로 읽힌다. 실제로는 **틀린 값을 고쳐서** 생긴 변화다.
+ *
+ * 숫자를 산문에 박았다(설정값이 아니라 그날 측정치라 읽어올 데가 없다). CLAUDE.md 규칙대로
+ * 날짜를 같이 적어 낡으면 티가 나게 한다 — 2026-09-19 리브원아웃 n=38 측정값이다.
+ */
+function FormulaChangeNotice20260920() {
+  return (
+    <details className="app-card rounded-xl p-4 text-sm leading-6">
+      <summary className="cursor-pointer font-semibold text-[#171310] dark:text-[#f2ede2]">
+        2026-09-19에 산식을 세 군데 고쳤습니다 — 적중률이 왜 이렇게 움직였나
+      </summary>
+      <div className="mt-3 space-y-3 text-[#5c5346] dark:text-[#c9bfae]">
+        <p>
+          <b>무엇을 봐야 하나:</b> 이날 바꾼 것은 <b>정확도를 올리려는 변경이 아니라 틀린 값을
+          고치는 변경</b>입니다. 그래서 일부 지표는 내려갑니다. 내려간 것이 산식이 나빠졌다는
+          뜻이 아닙니다.
+        </p>
+        <p className="font-mono text-xs">
+          2026-09-19 측정(리브원아웃 38곳) — 고치기 전 → 후<br />
+          MAPE 9.22% → <b>8.96%</b> · 중앙값 8.44% → <b>8.11%</b> ·
+          {" "}±10% 63% → <b>63%</b> · ±20% 95% → <b>92%</b>(36곳 → 35곳)
+        </p>
+        <p>
+          <b>1. 사양 점수 — 세대 숫자를 성능으로 읽고 있었습니다.</b> RTX 3060 Ti가 RTX 4060보다
+          낮게 깔리고(실제로는 3060 Ti가 빠릅니다 · 23건), i3와 i5가 같은 점수였습니다(자사 9곳).
+          이제 실측 성능지수표를 먼저 봅니다.
+        </p>
+        <p>
+          <b>2. 존구성 — 존 &ldquo;이름&rdquo;을 세고 있었습니다.</b> VIP존·프렌즈존·퍼스트클래스존은
+          우리 브랜드 용어라 경쟁점 조사 228건이 전부 0건이었습니다. 조사자가 경쟁점의 같은
+          실체(파티션 1인석 등)를 보고도 그 칸에 안 넣기 때문입니다. 즉{" "}
+          <b>경쟁점이 아무리 좋아도 자사를 못 따라잡는 자리</b>였습니다. 이제 양쪽 다 조사되는
+          물리 사실만 셉니다 — 룸 종류(1인룸·2인룸·팀룸)와 실재하는 특화좌석 수입니다. 자사와
+          경쟁점의 다양성 차이가 중앙값 2.50점에서 1.00점으로 줄었습니다.
+        </p>
+        <p>
+          <b>3. 매장 관리 수준(본사 QSC 점검)을 학습에 넣었습니다.</b> 지금까지 자사 관리 점수는
+          38곳 전부 4.00점 상수였습니다 — 칸은 있는데 아무것도 재고 있지 않았습니다. 그래서 관리가
+          낮은 매장을 과대예측하고 있었습니다(구미산동점 QSC 최저, 오차 +17.9% → +3.9%).
+        </p>
+        <p className="rounded-lg bg-[var(--sl-info-soft)] p-3">
+          ⚠️ <b>QSC는 신규 후보지의 예측력을 올리지 않습니다.</b> QSC는 개점한 뒤에 매기는 점수라
+          후보지에는 있을 수가 없습니다. 후보지에는 <b>가맹점 평균</b>이 들어갑니다(= 중립).
+          위 개선은 <b>기존점을 사후에 설명하는 힘</b>이 좋아진 것입니다.
+          <br />
+          <br />
+          다만 <b>&ldquo;후보지는 한 톨도 안 바뀐다&rdquo;는 아닙니다.</b> 칸이 하나 늘면 나머지
+          계수가 다시 학습되기 때문입니다. 2026-09-19 측정에서 후보지 13곳은 세 변경을 합쳐
+          −5.5% ~ +1.0% 움직였고, 대부분은 존구성 교정 몫입니다(등급이 뒤집힐 크기는 아닙니다).
+        </p>
+      </div>
+    </details>
+  );
+}
+
 function GlossarySection({ target10 }: { target10: number }) {
   return (
     <details className="app-card rounded-2xl p-5 text-sm leading-6">
@@ -1122,6 +1187,7 @@ export default function ValidationPage() {
           아래 적중률은 각 점포를 학습에서 제외한 재검증 결과이며, 새 점포의 적중률을 보장하지 않습니다.
         </p>
       )}
+      <FormulaChangeNotice20260920 />
       <GlossarySection target10={settings.target10pctRatio} />
       <PriceScenarioPanel baselines={state.rows.map(row=>({id:row.storeCode,label:row.storeName,revenue:row.v62PredictedRevenueAvg,hourlyRate:row.hourlyRate,pcRevenue:row.revenueBreakdown?.pcRevenue,productRevenue:row.revenueBreakdown?.productRevenue}))} productRatio={state.settings.measuredForecastProductRatio} />
 

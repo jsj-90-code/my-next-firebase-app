@@ -14,6 +14,7 @@ import {
   computeFoodScore,
   computeOwnLocationScore,
   computeOwnZoneComposition,
+  ZONE_COMPOSITION_WEIGHTS,
   resolveZoneCompositionScore,
   computeSpecScore,
   scoreFromCpuSpec,
@@ -309,7 +310,8 @@ function BasicInfoTabForm({
     // 비어있는 자사 시설 입력값은 회사 표준 존 구성으로 계산한다(evaluate.ts와 동일 규칙 —
     // 결과 탭에서 최종 계산할 때와 이 미리보기가 다르게 보이지 않도록 맞춘다).
     const facility = applyStandardOwnFacilityDefaults(form);
-    // 2026-08-31 — 존구성 점수를 새 시트 산식(존다양성×0.7+존수용력×0.3)으로 자동계산한다.
+    // 2026-09-19 — 존구성은 존 이름이 아니라 물리 좌석으로 센다(룸종류×0.3+특화좌석×0.7).
+    //               calc.ts 존구성 주석 참고 — 이름표가 자사에만 있어 비대칭이었다.
     const zoneComposition = resolveZoneCompositionScore(
       computeOwnZoneComposition({
         counts: {
@@ -844,7 +846,7 @@ function BasicInfoTabForm({
             <ComputedField
               label="존구성 점수 (자동)"
               value={computedScores.zoneComposition}
-              hint="팀룸·2인룸·커플존·VIP존·프렌즈존·1인석·1인룸·퍼스트클래스존 존다양성×70%+존수용력×30%"
+              hint={`룸종류(1인룸·2인룸·팀룸)×${ZONE_COMPOSITION_WEIGHTS.diversity * 100}% + 특화좌석 전부×${ZONE_COMPOSITION_WEIGHTS.capacity * 100}% — 존 이름이 아니라 물리 좌석을 센다(2026-09-19)`}
             />
           ) : (
             <ScoreSelectField

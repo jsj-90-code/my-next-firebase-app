@@ -12,6 +12,7 @@ import {
   applyStandardOwnFacilityDefaults,
   buildMinCoefficients,
   buildV61TrainingStores,
+  resolveQscScores,
   computeAaBaselineRevenue,
   resolveBaselineOpenMonth,
   computeBoundedSales,
@@ -80,6 +81,15 @@ export type EvaluateContext = {
   trainingCompetitors: Competitor[];
   /** Web callers supply monthly components to activate tariff-based revenue. Omit only for historical comparisons. */
   trainingSales?: ExistingStoreMonthlySales[];
+  /**
+   * 학습용 기존점의 본사 QSC 점검 점수 (2026-09-19). **안 주면 QSC 칸이 아예 안 붙는다** —
+   * 그때는 이 평가가 2026-09-19까지와 완전히 같은 값을 낸다.
+   *
+   * ⚠️ 후보지에는 QSC가 있을 수 없다(개점 뒤에 매기는 점수다). 후보지는 **가맹점 평균**을
+   *    받는다 = 표준화 뒤 0 = 중립. 그러니 이 값은 **후보지 순위를 바꾸려고 넣는 게 아니다** —
+   *    기존점 학습이 관리 수준을 설명하게 해서 나머지 계수의 왜곡을 걷어내는 게 목적이다.
+   */
+  trainingQscScores?: ReadonlyMap<string, number> | null;
   /**
    * 평가 시각. 기준매출의 오픈월을 "평가한 달의 다음 달"로 잡는 데만 쓴다(2026-09-13, calc.ts
    * resolveBaselineOpenMonth 참고). 안 주면 현재 시각 — 테스트에서 월을 고정하려고 열어둔다.
@@ -161,7 +171,17 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   const refreshedStores = prepareExistingStoresForEvaluation(
     existingStores, ctx.trainingCompetitors, ctx.trainingLocationEvaluations, settings,
   );
-  const trainingStores = buildV61TrainingStores(refreshedStores, ctx.trainingLocationEvaluations, settings);
+  const trainingStores = buildV61TrainingStores(
+    refreshedStores, ctx.trainingLocationEvaluations, settings, ctx.trainingQscScores,
+  );
+  // 후보지에 넣을 QSC — **학습표본이 쓴 것과 같은 가맹점 평균**이다(resolveQscScores 한 곳에서
+  // 낸 값을 그대로 읽는다). 후보지는 개점 전이라 자기 점검 기록이 있을 수 없다.
+  const candidateQsc = trainingStores.find(s => s.qscScore != null)
+    ? {
+      qscScore: resolveQscScores(trainingStores.map(s => s.storeCode), ctx.trainingQscScores).franchiseAverage!,
+      qscIsFranchiseAverage: true,
+    }
+    : {};
   const trainingSamples = trainingStores.map(toEmpiricalSample);
   const useUsageModel = ctx.trainingSales !== undefined;
   const usageTraining = useUsageModel ? attachRevenueParts(trainingStores, buildRevenuePartsByStore(refreshedStores, ctx.trainingSales!)) : [];
@@ -172,7 +192,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     pcCount:c.expectedPcCount??0,competitivenessScore:ownCompetitivenessScore??0,competitivenessGap,
     specialDemandType:loc?.specialDemandType,visibilityScore:useVisibility?loc?.visibilityScore:undefined,
     // 접근성 피처를 가시성×선점경쟁으로 쓸 때만 넣는다(calc.ts empiricalFeaturesFor 주석).
-    preemptionScore:useVisibility&&settings.v61Training.accessScoreMode==="visibility-x-preemption"?loc?.preemptionScore:undefined};
+    preemptionScore:useVisibility&&settings.v61Training.accessScoreMode==="visibility-x-preemption"?loc?.preemptionScore:undefined,
+    ...candidateQsc};
   const usageFeatures = empiricalFeaturesFor(usageFeatureInput);
   const usageDriverLabels = empiricalFeatureLabels(usageFeatureInput);
   const usagePrediction = usageModel && c.hourlyRate != null && c.expectedPcCount
@@ -182,7 +203,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     trainingSamples,
     settings.v61Training.ridgeLambda,
     settings.v61Training.minSampleCount,
-    buildMinCoefficients(settings.v61Training),
+    // QSC 칸을 태웠으면 하한선 배열도 같이 늘려야 길이가 맞는다(2026-09-19).
+    buildMinCoefficients(settings.v61Training, false, trainingStores.every(s => s.qscScore != null) && trainingStores.length > 0),
   );
 
   const expectedOwnDemand = computeExpectedOwnDemand(marketDemand, c.expectedPcCount, competitivenessGap, competitorIp);
@@ -204,6 +226,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
       visibilityScore: useVisibility ? loc?.visibilityScore : undefined,
       preemptionScore: useVisibility && settings.v61Training.accessScoreMode === "visibility-x-preemption"
         ? loc?.preemptionScore : undefined,
+      ...candidateQsc,
     });
     const prediction = predictEmpiricalRevenue(
       trainedModel,

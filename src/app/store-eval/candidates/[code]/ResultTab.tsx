@@ -19,6 +19,7 @@ import {
   listCompetitors,
   listExistingStores,
   listEvaluationSales,
+  listQscScores,
   listAllLocationEvaluations,
   listAllCompetitors,
   saveEvaluationResult,
@@ -176,6 +177,15 @@ function RevenueDriverBreakdown({ drivers }: { drivers: { labels: string[]; cont
         <p className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">
           각 수치는 그 요인 하나만 놓고 본 영향이고, 실제 예측은 이것들이 함께 곱해져 나옵니다. 더하기로 맞아떨어지지 않는 게 정상입니다.
         </p>
+        {/* 2026-09-19 — QSC 칸이 생기면서 필요해진 안내. 이 줄이 없으면 "관리 수준 0%"가
+            "이 후보지는 관리가 평균이라고 평가했다"로 읽힌다(배후수요 더미와 같은 함정). */}
+        {rows.some((r) => r.label.includes("가맹점 평균")) && (
+          <p className="text-[11px] leading-4 text-[var(--sl-ink-soft)]">
+            ⚠️ <b>매장 관리 수준</b>은 본사 QSC 점검 점수인데, 후보지는 아직 개점 전이라 점검 기록이
+            있을 수 없습니다. 그래서 <b>가맹점 평균</b>을 넣었고 영향이 0에 가깝게 나옵니다 —
+            이 후보지의 관리를 평가한 값이 아닙니다.
+          </p>
+        )}
       </div>
     </details>
   );
@@ -746,11 +756,14 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (!candidate) {
         throw new Error("후보지 기본정보가 없습니다. [기본정보] 탭에서 먼저 저장해주세요.");
       }
-      const [existingStores, modelSettingsDoc, trainingLocationEvaluations, trainingCompetitors] = await Promise.all([
+      const [existingStores, modelSettingsDoc, trainingLocationEvaluations, trainingCompetitors, trainingQscScores] = await Promise.all([
         listExistingStores(),
         getModelSettings(),
         listAllLocationEvaluations(),
         listAllCompetitors(),
+        // 2026-09-19 — 기존점의 본사 QSC 점검 점수. 학습에만 쓰인다(후보지는 개점 전이라
+        // 자기 점검 기록이 없고 가맹점 평균 = 중립을 받는다. evaluate.ts trainingQscScores 주석).
+        listQscScores(),
       ]);
       const trainingSales = await listEvaluationSales(existingStores);
       const competitors = trainingCompetitors.filter((competitor) => competitor.candidateCode === candidateCode);
@@ -761,7 +774,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       setExistingStoreCodes(new Set(existingStores.map((s) => s.storeCode)));
       setPeerStores(existingStores);
 
-      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales });
+      const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales, trainingQscScores });
       // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
       // 들어오더라도 새 결과가 항상 마지막에 저장되어 Firestore 최종값이 뒤집히지 않는다.
       const saveTask = saveQueue.current

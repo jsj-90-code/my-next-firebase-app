@@ -1113,24 +1113,57 @@ export function computeFoodScore(
 }
 
 /**
- * 2026-08-31 전면 재설계 — GPT를 통해 사용자가 새로 만든 05_경쟁점정보/01_점포기본정보 시트의
- * 존다양성·존수용력·존구성 셀 수식을 Sheets API로 직접 읽어(값이 아니라 수식) 그대로 이식했다
- * ("이전 버전 존 계산식으로 되돌리지 마" 요구사항 — 2026-08-30까지 쓰던 "존달성도"(개수÷기준개수
- * 가중합) 공식은 완전히 폐기, 아래는 그것과 다른 새 공식이다).
+ * 존구성 — 2026-09-19 **잣대 교체**. 존 *이름*을 세지 않고 *물리 좌석*을 센다.
  *
- * 존다양성점수 = "존이 하나라도 있는 유형의 개수"(distinct type count, 개수 크기는 안 봄) 기반.
- *   d = COUNTIF(8개 존유형,">0") [+ 경쟁점만: 일반2인석>0이면 +0.5]
- *   d==0 → 1,  else → MIN(5, 1+(1+d)*0.5)
- * 특화좌석비율 = 환산좌석수 ÷ (평가기준/적용 PC대수). 환산: 1인석×1+1인룸×1+2인룸×2+
- *   [팀룸총좌석수 있으면 그값, 없으면 팀룸개수×5(추정)]+커플존×2+VIP×1+프렌즈존×1+퍼스트클래스×1
- *   [+ 경쟁점만: 일반2인석×1]. PC대수 0 이하면 null.
- * 존수용력점수 = 특화좌석비율 구간화: <10%→1, <20%→2, <30%→3, <50%→4, else→5.
- * 존구성점수 = 존다양성*0.7 + 존수용력*0.3 (반올림 없음).
+ * ── 왜 바꿨나 (사실 문제) ──────────────────────────────────────────────────
+ * 2026-08-31에 시트에서 이식한 산식은 **존 이름 종류 수**로 다양성을 셌다. 그런데 그 이름표가
+ * 자사·경쟁점 사이에 비대칭이다:
  *
- * 자사(own)는 시트 수식에 `COUNTA(8개 존유형)<8 → 공백` 가드가 있다 — 8개 중 하나라도 완전히
- * 미기재(진짜 blank, 0 아님)면 존다양성부터 존구성까지 전체가 계산되지 않는다(정상 조사된 매장은
- * "없으면 0"으로 8칸이 다 채워지므로 실무에선 거의 항상 통과한다 — 이 가드는 "아직 아예 조사
- * 안 한 매장"을 걸러내기 위한 것). 경쟁점은 이 가드가 없다(미기재=0 취급).
+ *   VIP존 · 프렌즈존 · 퍼스트클래스존 -> 자사 29/19/19곳, **경쟁점 228건 전부 0건**
+ *
+ * 조사표에 칸은 있는데 경쟁점엔 한 건도 없다. 우리 브랜드 용어라서, 조사자가 경쟁점의 같은
+ * 실체(파티션 1인석 · 유리파티션 다인석)를 보고도 그 칸에 안 넣기 때문이다. 게다가 자사엔
+ * "일반 2인석" 칸이 아예 없어서 우리 2인석은 전부 커플존으로 계상된다. 결과적으로 **종류를
+ * 세면 자사가 항상 이겼다**(옛 잣대로 자사 41/41곳) — 경쟁점이 아무리 좋아도 못 따라잡는다.
+ *
+ * 이건 정확도 문제가 아니라 **사실 문제**다. 그래서 적중률을 대가로 치르더라도 고친다
+ * (사용자 2026-09-19: *"v62라고 mape 위주로 진행하는 게 아니라, 근거가 명확한, 이런 값이라면
+ * 적중률이 떨어져도 적용해야지."*). 치른 대가는 4절 화면과 릴리즈 노트에 적어 뒀다.
+ *
+ * ── 새 잣대 ────────────────────────────────────────────────────────────────
+ * 존다양성점수 = **룸 종류 수**(1인룸 · 2인룸 · 팀룸). 최대 3.
+ *   d==0 → 1,  else → MIN(5, 1+(1+d)*0.5)   <- 사다리는 그대로, 세는 대상만 바뀌었다
+ * 특화좌석비율 = 환산좌석수 ÷ (평가기준/적용 PC대수). **이름과 무관하게 실재하는 좌석 전부**를
+ *   센다: 1인석×1+1인룸×1+2인룸×2+[팀룸총좌석수 있으면 그값, 없으면 팀룸개수×5(추정)]+
+ *   커플존×2+VIP×1+프렌즈존×1+퍼스트클래스×11 [+ 경쟁점만: 일반2인석×1]. PC대수 0 이하면 null.
+ * 존수용력점수 = 특화좌석비율 구간화: <10%→1, <20%→2, <30%→3, <50%→4, else→5. (그대로)
+ * 존구성점수 = 존다양성*0.3 + 존수용력*0.7 (반올림 없음).  <- 7:3에서 **뒤집혔다**
+ *
+ * 룸은 정의가 명확하다 — 벽과 문이 있나 없나다. 파티션 높이·재질 판단(유리냐 목재냐)이 안
+ * 들어가고, 자사·경쟁점 양쪽 다 조사돼 있다(room1 · room2 · teamRoom). 반대로 **개방석은 모든
+ * PC방에 있으므로** 칸으로 세면 상수라 다양성에 기여를 못 한다. 그래서 개방형 이름표(1인석·
+ * VIP존·커플존·프렌즈존·일반2인석)는 **좌석으로만** 들어간다. 같은 이유로 경쟁점 일반2인석에
+ * 주던 다양성 +0.5 가산도 없앴다(자사엔 그 칸 자체가 없어 비대칭의 다른 얼굴이었다).
+ *
+ * 비중을 뒤집은 건, 룸만 세면 다양성이 0~3으로 좁아져 사실상 "팀룸 있나 없나"의 이진이 되기
+ * 때문이다. 거의 이진인 값에 무게를 싣는 건 뜻이 안 맞고, "특화좌석이 얼마나 되냐"가 더 많은
+ * 정보를 담는다. ⚠️ **MAPE로 고른 값이 아니다** — 뜻으로 고르고 숫자로 확인만 했다(존구성에는
+ * 매장별 순서 정보가 거의 없다는 게 `_zoneComposition.test.ts`의 결론이라, 여기서 MAPE가 낮다고
+ * 채택 근거가 되지 않는다).
+ *
+ * 퍼스트클래스존은 룸이고 다인이라 **팀룸과 같은 칸**이다(다양성에서 따로 안 센다). 고급
+ * 인테리어와 비싼 요금은 인테리어 항목과 단가가 이미 보는 것이라 존구성에서 또 세면 이중계산이고,
+ * **수요가 없어 접은 존에 다양성 가점**을 주는 것도 현실과 반대다. 좌석은 실재하므로 룸 1개 =
+ * 11석으로 센다(사용자: 10~12석, 매장마다 다름 — 중간값).
+ *
+ * ── 어디서 왔나 ────────────────────────────────────────────────────────────
+ * 잣대 자체는 2026-09-17에 실험실(`labZoneComposition.ts`)에서 만들어 검증한 것을 그대로 옮긴
+ * 것이다. 이제 **여기가 원본**이고, 실험실 파일은 이 구현을 다시 내보내기만 한다(잣대가 두 벌이면
+ * 실험실과 운영이 조용히 갈라진다). 근거와 측정값: `docs/releases/2026-09-17-zone-composition.md`
+ *
+ * ── 자사·경쟁점 차이 ───────────────────────────────────────────────────────
+ * 잣대는 하나다. 갈리는 건 **아예 조사가 안 된 경우**뿐이다 — 자사는 null(입력 누락이라 사람이
+ * 채운다), 경쟁점은 1.0(생략했다는 사실 자체가 "약하다"는 판단. 아래 상수 주석 참고).
  */
 export type ZoneCompositionCounts = {
   singleSeatCount: number | null;
@@ -1154,8 +1187,21 @@ const ZONE_COMPOSITION_KEYS: (keyof ZoneCompositionCounts)[] = [
   "firstClassZone",
 ];
 
-function countDistinctZoneTypes(counts: ZoneCompositionCounts): number {
-  return ZONE_COMPOSITION_KEYS.filter((k) => (counts[k] ?? 0) > 0).length;
+/** 퍼스트클래스존 룸 하나의 좌석 수. 사용자: 10~12석, 매장마다 다름 — 중간값. */
+export const FIRST_CLASS_ZONE_SEATS = 11;
+
+/** 존구성 = 다양성·수용력 가중합. 합이 1이다. */
+export const ZONE_COMPOSITION_WEIGHTS = { diversity: 0.3, capacity: 0.7 } as const;
+
+/**
+ * **룸 종류 수** — 1인룸 · 2인룸 · (팀룸 + 퍼스트클래스존). 최대 3이다.
+ *
+ * 퍼스트클래스존은 팀룸과 **한 칸**이다(둘 다 여러 명이 들어가는 룸이라 종류가 다르지 않다).
+ * 개방형 존(1인석·VIP존·커플존·프렌즈존·일반2인석)은 여기서 세지 않는다 — 위 주석 참고.
+ */
+export function countRoomTypes(counts: ZoneCompositionCounts): number {
+  const bigRoom = (counts.teamRoom ?? 0) + (counts.firstClassZone ?? 0);
+  return [counts.room1 ?? 0, counts.room2 ?? 0, bigRoom].filter((v) => v > 0).length;
 }
 
 /**
@@ -1177,7 +1223,7 @@ function isZoneCompositionUnsurveyed(counts: ZoneCompositionCounts): boolean {
  *
  * ── 왜 상수로 박는가 ────────────────────────────────────────────────────
  * 그전에도 **결과적으로는** 이 값이 나오고 있었다. 다만 규칙이 아니라 **사고**였다 —
- * 8항목이 전부 null인데 게이트가 없어서 countDistinctZoneTypes가 0을 세고, "존이 하나도
+ * 8항목이 전부 null인데 게이트가 없어서 존 종류 세기가 0을 세고, "존이 하나도
  * 없는 매장"으로 읽혀 최저점이 나왔다. 우연히 맞는 값이 나온 것이라, 나중에 그 36곳을
  * 실제로 조사하는 순간 점수가 튀면서 예상매출이 흔들릴 자리였다.
  *
@@ -1188,11 +1234,19 @@ function isZoneCompositionUnsurveyed(counts: ZoneCompositionCounts): boolean {
  */
 export const UNSURVEYED_COMPETITOR_ZONE_SCORE = 1.0;
 
-export function computeZoneDiversityScore(distinctTypeCount: number): number {
-  if (distinctTypeCount <= 0) return 1;
-  return Math.min(5, 1 + (1 + distinctTypeCount) * 0.5);
+/** 룸 종류 수 -> 1~5점. */
+export function computeZoneDiversityScore(roomTypeCount: number): number {
+  if (roomTypeCount <= 0) return 1;
+  return Math.min(5, 1 + (1 + roomTypeCount) * 0.5);
 }
 
+/**
+ * 환산좌석수 — 이름과 무관하게 실재하는 좌석을 전부 센다.
+ *
+ * ⚠️ 단위가 항목마다 다르다. 개수로 적힌 칸(2인룸·커플존·팀룸·퍼스트클래스존)은 좌석으로
+ *    환산하고, 좌석 수로 적힌 칸(1인석·VIP존·프렌즈존·일반2인석)은 그대로 쓴다.
+ *    프렌즈존은 구획 수가 아니라 **좌석 수**다(2026-09-17 사용자 확인).
+ */
 function convertedZoneSeats(counts: ZoneCompositionCounts, teamRoomTotalSeats: number | null, regularCoupleSeatCount: number | null): number {
   const teamRoomSeats = teamRoomTotalSeats ?? (counts.teamRoom ?? 0) * 5;
   return (
@@ -1203,9 +1257,18 @@ function convertedZoneSeats(counts: ZoneCompositionCounts, teamRoomTotalSeats: n
     (counts.coupleZone ?? 0) * 2 +
     (counts.vipZone ?? 0) * 1 +
     (counts.friendsZone ?? 0) * 1 +
-    (counts.firstClassZone ?? 0) * 1 +
+    (counts.firstClassZone ?? 0) * FIRST_CLASS_ZONE_SEATS +
     (regularCoupleSeatCount ?? 0) * 1
   );
+}
+
+/** 환산좌석수(점수 이전의 원자료). 화면에서 근거를 풀어 보여줄 때 쓴다. */
+export function computeConvertedZoneSeats(
+  counts: ZoneCompositionCounts,
+  teamRoomTotalSeats: number | null,
+  regularCoupleSeatCount: number | null,
+): number {
+  return convertedZoneSeats(counts, teamRoomTotalSeats, regularCoupleSeatCount);
 }
 
 export function computeSpecialtySeatRatio(
@@ -1229,10 +1292,19 @@ export function computeZoneCapacityScore(ratio: number | null): number | null {
 
 export function computeZoneCompositionScore(diversity: number | null, capacity: number | null): number | null {
   if (diversity == null || capacity == null) return null;
-  return diversity * 0.7 + capacity * 0.3;
+  return diversity * ZONE_COMPOSITION_WEIGHTS.diversity + capacity * ZONE_COMPOSITION_WEIGHTS.capacity;
 }
 
-export type ZoneCompositionResult = { diversity: number | null; ratio: number | null; capacity: number | null; composition: number | null };
+export type ZoneCompositionResult = {
+  /** 룸 종류 수(0~3). 점수가 아니라 원자료다. */
+  roomTypes: number | null;
+  diversity: number | null;
+  /** 환산좌석수. 점수가 아니라 원자료다. */
+  seats: number | null;
+  ratio: number | null;
+  capacity: number | null;
+  composition: number | null;
+};
 
 /** 경쟁점 존구성 — 미기재 가드 없음(0 취급), 일반2인석 반영. */
 export function computeCompetitorZoneComposition(input: {
@@ -1242,7 +1314,7 @@ export function computeCompetitorZoneComposition(input: {
   totalPcCount: number | null;
 }): ZoneCompositionResult {
   // 2026-09-17 — **하나도 안 적힌 경쟁점을 "존이 없는 매장"으로 읽고 있었다.**
-  // 이 함수엔 게이트가 없어서 8항목이 전부 null이어도 countDistinctZoneTypes가 0을 세고
+  // 이 함수엔 게이트가 없어서 8항목이 전부 null이어도 존 종류 세기가 0을 세고
   // 최저점(1.00)이 나왔다. 조사를 안 한 36곳이 전부 그랬다(간략 23 · 노후저경쟁력미조사 9 ·
   // 상세 4). 사양·먹거리는 applySurveyLevelDefault로 2.5점을 받는데 **존구성만 그 경로를
   // 못 타고** 최저점을 받았다 — 경쟁점이 부당하게 약하게 평가되고 우리 예상매출이 높아진다.
@@ -1254,13 +1326,17 @@ export function computeCompetitorZoneComposition(input: {
   //    158곳의 존 종류가 평균 0.46개인데, 4항목만 채운 10곳은 1.60개다. 다 채운 쪽이
   //    오히려 존이 적다는 건 **없는 존에 0을 성실히 적었다**는 뜻이다. 즉 안 적은 건 없는 것이다.
   if (isZoneCompositionUnsurveyed(input.counts)) {
-    return { diversity: null, ratio: null, capacity: null, composition: UNSURVEYED_COMPETITOR_ZONE_SCORE };
+    return { roomTypes: null, diversity: null, seats: null, ratio: null, capacity: null, composition: UNSURVEYED_COMPETITOR_ZONE_SCORE };
   }
-  const distinct = countDistinctZoneTypes(input.counts) + ((input.regularCoupleSeatCount ?? 0) > 0 ? 0.5 : 0);
-  const diversity = computeZoneDiversityScore(distinct);
+  // 2026-09-19 — 일반2인석에 주던 다양성 +0.5 가산을 뺐다. 자사엔 그 칸 자체가 없어서
+  // (우리 2인석은 커플존으로 들어간다) 경쟁점에만 붙는 가산인 척했지만, 실은 **이름표 비대칭의
+  // 다른 얼굴**이었다. 이제 일반2인석은 좌석으로만 센다.
+  const roomTypes = countRoomTypes(input.counts);
+  const diversity = computeZoneDiversityScore(roomTypes);
+  const seats = convertedZoneSeats(input.counts, input.teamRoomTotalSeats, input.regularCoupleSeatCount);
   const ratio = computeSpecialtySeatRatio(input.counts, input.teamRoomTotalSeats, input.regularCoupleSeatCount, input.totalPcCount);
   const capacity = computeZoneCapacityScore(ratio);
-  return { diversity, ratio, capacity, composition: computeZoneCompositionScore(diversity, capacity) };
+  return { roomTypes, diversity, seats, ratio, capacity, composition: computeZoneCompositionScore(diversity, capacity) };
 }
 
 /**
@@ -1279,12 +1355,15 @@ export function computeOwnZoneComposition(input: {
   totalPcCount: number | null;
 }): ZoneCompositionResult {
   if (isZoneCompositionUnsurveyed(input.counts)) {
-    return { diversity: null, ratio: null, capacity: null, composition: null };
+    return { roomTypes: null, diversity: null, seats: null, ratio: null, capacity: null, composition: null };
   }
-  const diversity = computeZoneDiversityScore(countDistinctZoneTypes(input.counts));
+  const roomTypes = countRoomTypes(input.counts);
+  const diversity = computeZoneDiversityScore(roomTypes);
+  // 자사 입력에는 "일반 2인석" 칸이 없다 — 우리 2인석은 커플존으로 들어간다. 그래서 null.
+  const seats = convertedZoneSeats(input.counts, input.teamRoomTotalSeats, null);
   const ratio = computeSpecialtySeatRatio(input.counts, input.teamRoomTotalSeats, null, input.totalPcCount);
   const capacity = computeZoneCapacityScore(ratio);
-  return { diversity, ratio, capacity, composition: computeZoneCompositionScore(diversity, capacity) };
+  return { roomTypes, diversity, seats, ratio, capacity, composition: computeZoneCompositionScore(diversity, capacity) };
 }
 
 /** 존구성 자동계산이 가능하면 그 값을, 정보가 아예 없으면 조사자 종합평가(legacy)로 폴백. */
@@ -2181,15 +2260,25 @@ export function buildV61TrainingStores(
   stores: ExistingStore[],
   locations: LocationEvaluation[] = [],
   settings?: Pick<ModelSettings, "v61Training" | "inflowAdjustment">,
+  /**
+   * 매장코드 -> 본사 QSC 점검 점수 (2026-09-19). **안 주면 QSC 칸이 아예 안 붙는다** — 그때는
+   * 이 함수가 지금까지와 완전히 같은 결과를 낸다. 주면 점검 기록이 없는 매장에 가맹점 평균이
+   * 채워져 **전 매장이 값을 갖는다**(섞이면 학습이 null이 되므로 전부 아니면 전무여야 한다).
+   */
+  qscByStoreCode?: ReadonlyMap<string, number> | null,
 ): V61TrainingStore[] {
   const useVisibility = settings?.v61Training.modelVariant === "visibility-inflow";
   const locationsByCode = new Map(locations.map(l => [l.candidateCode, l]));
-  return stores.filter(isEligibleForV61Training)
+  const eligible = stores.filter(isEligibleForV61Training)
     .filter(s => !useVisibility || ((s.completedMonths ?? 0) >= CORE_VALIDATION_MIN_MONTHS
       && isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.visibilityScore)
       // 곱 모드에서는 선점경쟁도 있어야 한다 — 섞이면 같은 칸에 두 척도가 들어간다.
       && (settings?.v61Training.accessScoreMode !== "visibility-x-preemption"
-        || isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.preemptionScore))))
+        || isValidVisibilityScore(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.preemptionScore))));
+  // 가맹점 평균은 **실제 학습에 들어가는 매장들**로 낸다. 후보지도 이 평균을 받으므로
+  // 계산하는 자리가 둘이 되면 안 된다(resolveQscScores 주석 참고).
+  const qsc = resolveQscScores(eligible.map(s => s.storeCode), qscByStoreCode);
+  return eligible
     .map((s) => ({
     storeCode: s.storeCode,
     storeName: s.storeName,
@@ -2211,6 +2300,7 @@ export function buildV61TrainingStores(
         ? { preemptionScore: locationsByCode.get(s.originCandidateCode ?? s.storeCode)!.preemptionScore! } : {}),
       trainingRevenueFactor: 1 + (getV62Rate(locationsByCode.get(s.originCandidateCode ?? s.storeCode)?.inflowRestriction ?? null, settings!) ?? 0),
     } : {}),
+    ...(qsc.scoreFor(s.storeCode) ?? {}),
   }));
 }
 
@@ -2236,6 +2326,13 @@ export type V61TrainingStore = {
   specialDemandScore: number; // 0~3, computeSpecialDemandScore
   /** 2026-09-11 실험 — 경쟁PC 가중 평균거리 ÷ 500m. 없으면 거리 피처가 붙지 않는다. */
   competitorDistanceRatio?: number | null;
+  /**
+   * 2026-09-19 — 본사 QSC 점검 점수(0~100). 없으면 QSC 피처가 붙지 않는다.
+   * 점검 기록이 없는 매장에는 **가맹점 평균**을 채워서 넣는다(전부 넣거나 전부 빼야 한다).
+   */
+  qscScore?: number | null;
+  /** 위 값이 그 매장의 점검 기록이 아니라 가맹점 평균이면 true. 화면 라벨 전용. */
+  qscIsFranchiseAverage?: boolean;
 };
 
 /**
@@ -2335,6 +2432,36 @@ export function empiricalFeaturesFor(input: {
    * 설계 근거: docs/formula-full-review-20260911.md §10 "거리 후보의 최소 실험 설계".
    */
   competitorDistanceRatio?: number | null;
+  /**
+   * 본사 QSC 점검 점수(0~100). 2026-09-19 추가. **넣지 않으면 피처가 안 붙는다.**
+   *
+   * ── 무엇이고 왜 넣나 ──────────────────────────────────────────────────
+   * 매장 관리 수준을 본사가 직접 매긴 점수다(평가창 안 점검의 평균 — `qscInWindowAverage`).
+   * 지금까지 자사 관리 점수는 **38곳 전부 4.00 상수**였다. 즉 "관리"라는 칸은 있는데 아무
+   * 것도 재고 있지 않았다. 그래서 관리가 나쁜 매장을 과대예측하고 있었다 — 구미산동점이
+   * QSC 73.9로 최저인데 오차 +17.9%였다(이 피처를 넣으면 3.9%).
+   *
+   * 통과한 관문(2026-09-19 · `_v62LabFeatures.test.ts`):
+   *   탄력도 0.84(QSC 1%↑ -> 매출 0.84%↑) · 설명 분산 18.1%
+   *   위약군 5개(실험실이 기각한 항목) **전부 실패** · 난수 칸 40회 **전부 미달**
+   *
+   * ⚠️ **후보지 예측력이 느는 게 아니다.** QSC는 개점 뒤에 매기는 점수라 후보지에는 없다.
+   *    이건 **기존점 사후 설명력**이다. 후보지에는 가맹점 평균이 들어가고(= 중립), 그래도
+   *    나머지 계수가 다시 학습되므로 후보지 예측이 조금 움직인다(2026-09-19 측정 최대 1.71%).
+   *    "칸을 더해도 후보지는 한 톨도 안 바뀐다"는 틀린 말이다.
+   *
+   * ⚠️ 값이 있는 표본과 없는 표본을 섞으면 `fitEmpiricalRevenueModel`이 피처 길이 불일치로
+   *    null을 돌려준다. **전 매장에 넣거나 전 매장에서 빼야 한다**(competitorDistanceRatio와
+   *    같은 규칙). QSC 기록이 없는 매장에는 **가맹점 평균**을 넣는다 — 지어내는 게 아니라
+   *    "모른다 = 중립"이고, 표준화 뒤 0이 된다.
+   */
+  qscScore?: number | null;
+  /**
+   * 위 `qscScore`가 **그 매장의 점검 기록이 아니라 가맹점 평균**이면 true. 계산에는 안 쓰고
+   * `empiricalFeatureLabels`가 화면에 그렇게 적기 위해서만 본다 — 후보지와 미점검 매장이
+   * "관리를 평가받았다"로 읽히면 안 된다.
+   */
+  qscIsFranchiseAverage?: boolean;
 }): number[] {
   return [
     Math.log(Math.max(1, input.hourlyRate)),
@@ -2358,7 +2485,101 @@ export function empiricalFeaturesFor(input: {
       : []),
     ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
       ? [input.competitorDistanceRatio] : []),
+    ...(isValidQscScore(input.qscScore) ? [qscFeatureValue(input.qscScore)] : []),
   ];
+}
+
+/**
+ * QSC 로그를 0 근처에 두기 위한 **기준점**. 2026-09-19 가맹점 기하평균이 92.6이었다.
+ *
+ * ⚠️ 이 숫자는 **모형에 영향이 없다.** 피처는 학습 전에 표준화되므로 상수를 빼든 말든
+ *    같은 값이 된다. 사람이 볼 때 "평균이면 0"으로 읽히라고 두는 기준점일 뿐이다.
+ *    그래서 이 값이 낡아도 예측은 안 틀어진다(값이 낡았는지는 날짜로 판단한다).
+ *    ⚠️ **QSC 없는 매장을 채울 때는 이 상수를 쓰지 마라** — 그때 쓸 값은 그 코호트의 실제
+ *    평균이다(`franchiseAverageQscScore`). 상수로 채우면 표본이 바뀌어도 안 따라 움직인다.
+ */
+export const QSC_FEATURE_REFERENCE = 92.6;
+
+export function isValidQscScore(score: unknown): score is number {
+  return typeof score === "number" && Number.isFinite(score) && score > 0;
+}
+
+/** QSC 점수 -> 학습 피처 값. log이라 "몇 % 차이"가 선형으로 들어간다(탄력도 해석이 가능해진다). */
+export function qscFeatureValue(qscScore: number): number {
+  return Math.log(qscScore / QSC_FEATURE_REFERENCE);
+}
+
+/**
+ * QSC 기록이 **없는** 매장에 넣을 값 — 있는 매장들의 기하평균이다(후보지도 이 값을 받는다).
+ *
+ * 왜 기하평균인가: 피처가 log(QSC)라 로그 공간의 산술평균 = 원공간의 기하평균이고, 그래야
+ * 표준화 뒤 정확히 "중립(0)"이 된다. 산술평균을 넣으면 아주 조금 위로 치우친다.
+ *
+ * ⚠️ 상수로 굳히지 않는다. 표본이 늘면 따라 움직여야 한다.
+ */
+export function franchiseAverageQscScore(scores: (number | null | undefined)[]): number | null {
+  const logs = scores.filter(isValidQscScore).map((v) => Math.log(v));
+  if (logs.length === 0) return null;
+  return Math.exp(logs.reduce((a, b) => a + b, 0) / logs.length);
+}
+
+/**
+ * 코호트의 QSC를 **빠짐없이 채우는 자** (2026-09-19).
+ *
+ * 무엇을 하나: 학습표본 중 점검 기록이 있는 곳들의 기하평균을 내고, 기록이 없는 매장에 그
+ * 값을 넣어 준다. 그러면 전 매장이 값을 갖게 되어 피처 길이가 어긋나지 않고, 메운 자리는
+ * 표준화 뒤 정확히 0(중립)이 된다.
+ *
+ * ⚠️ **평균을 내는 자리는 여기 하나다.** 화면마다 각자 평균을 내면 같은 매장이 검증 화면과
+ *    후보지 화면에서 다른 관리 수준을 받는다(조용히 갈라진다).
+ *
+ * 학습표본에 점검 기록이 **하나도 없으면** `enabled=false`가 되고 QSC 칸이 아예 안 붙는다 —
+ * 2026-09-19까지와 완전히 같게 동작한다. 즉 자료를 안 넣으면 예전 모습으로 돌아갈 뿐 안 깨진다.
+ */
+export function qscFillerFor(coreStores: readonly { qscScore?: number | null }[]): {
+  enabled: boolean;
+  valueFor: (s: { qscScore?: number | null }) => { qscScore: number; qscIsFranchiseAverage: boolean } | Record<string, never>;
+} {
+  const franchiseAverage = franchiseAverageQscScore(coreStores.map(s => s.qscScore));
+  if (franchiseAverage == null) return { enabled: false, valueFor: () => ({}) };
+  return {
+    enabled: true,
+    valueFor: (s) => isValidQscScore(s.qscScore)
+      ? { qscScore: s.qscScore, qscIsFranchiseAverage: false }
+      : { qscScore: franchiseAverage, qscIsFranchiseAverage: true },
+  };
+}
+
+/**
+ * 한 코호트의 QSC 값을 **전 매장분 빠짐없이** 만들어 준다 (2026-09-19).
+ *
+ * 학습표본과 후보지가 **같은 평균값**을 써야 한다 — 양쪽이 각자 평균을 내면 조용히 갈라진다.
+ * 그래서 평균을 내는 자리를 여기 하나로 둔다.
+ *
+ * 자료가 아예 없으면(`qscByStoreCode`가 비었으면) `franchiseAverage`가 null이고, 호출부는
+ * QSC 칸을 **안 붙인다** — 지금까지와 완전히 같게 동작한다.
+ */
+export function resolveQscScores(
+  storeCodes: readonly string[],
+  qscByStoreCode?: ReadonlyMap<string, number> | null,
+): {
+  franchiseAverage: number | null;
+  /** 코드별 학습·예측에 넣을 값. 자료가 없으면 null(칸을 안 붙인다는 뜻). */
+  scoreFor: (code: string) => { qscScore: number; qscIsFranchiseAverage: boolean } | null;
+} {
+  const franchiseAverage = qscByStoreCode?.size
+    ? franchiseAverageQscScore(storeCodes.map((c) => qscByStoreCode.get(c) ?? null))
+    : null;
+  return {
+    franchiseAverage,
+    scoreFor: (code) => {
+      if (franchiseAverage == null) return null;
+      const own = qscByStoreCode?.get(code);
+      return isValidQscScore(own)
+        ? { qscScore: own, qscIsFranchiseAverage: false }
+        : { qscScore: franchiseAverage, qscIsFranchiseAverage: true };
+    },
+  };
 }
 
 /**
@@ -2387,6 +2608,11 @@ export function empiricalFeatureLabels(input: Parameters<typeof empiricalFeature
       : []),
     ...(input.competitorDistanceRatio != null && Number.isFinite(input.competitorDistanceRatio)
       ? ["경쟁점 평균거리"] : []),
+    // 2026-09-19 — 후보지·미점검 매장은 가맹점 평균(중립)이 들어간다. 라벨이 그냥 "매장 관리
+    // 수준"이면 "우리 후보지 관리를 평가했다는 건가?"로 읽히므로 **상태를 그대로 드러낸다**
+    // (배후수요 더미에서 같은 문제를 겪고 2026-09-13에 세운 규칙이다).
+    ...(isValidQscScore(input.qscScore)
+      ? [input.qscIsFranchiseAverage ? "매장 관리 수준(점검 기록 없어 가맹점 평균)" : "매장 관리 수준(본사 점검)"] : []),
   ];
 }
 
@@ -2399,6 +2625,14 @@ export function buildMinCoefficients(
    * 자료가 지지하지 않는 매출 상승을 만든다(docs/formula-full-review-20260911.md §10).
    */
   withDistance = false,
+  /**
+   * `empiricalFeaturesFor`에 QSC 칸을 넣었으면 여기도 같이 늘려야 길이가 맞는다 (2026-09-19).
+   *
+   * 하한선은 0이다 — 부호만 막고(관리가 좋을수록 매출이 **안 낮아진다**) 크기는 자료가
+   * 정하게 둔다. 측정된 탄력도가 0.84로 양수였으니 이 제약은 걸리지 않는다. 0보다 큰 값을
+   * 박으면 자료가 지지하지 않는 매출 상승을 사람이 강제하게 된다.
+   */
+  withQsc = false,
 ): number[] {
   return [
     v61Training.minHourlyRateCoef,
@@ -2408,6 +2642,7 @@ export function buildMinCoefficients(
     v61Training.minBackingDemandCoef,
     ...(v61Training.modelVariant === "visibility-inflow" ? [v61Training.minVisibilityCoef ?? .05] : []),
     ...(withDistance ? [0] : []),
+    ...(withQsc ? [0] : []),
   ];
 }
 
@@ -3136,6 +3371,14 @@ export type ValidationStoreInput = {
    * 넣지 않으면 지금과 완전히 같게 동작한다(피처가 안 붙는다).
    */
   competitorDistanceRatio?: number | null;
+  /**
+   * 2026-09-19 — 본사 QSC 점검 점수(0~100). 넣지 않으면 지금과 완전히 같게 동작한다.
+   * ⚠️ 코호트 안에서 **전부 넣거나 전부 빼야 한다.** 점검 기록이 없는 매장에는 가맹점
+   *    평균(`franchiseAverageQscScore`)을 채워 넣는다 — 그게 "모른다 = 중립"이다.
+   */
+  qscScore?: number | null;
+  /** 위 값이 그 매장의 점검 기록이 아니라 가맹점 평균이면 true. 화면 라벨 전용. */
+  qscIsFranchiseAverage?: boolean;
   visibilityScore?: number | null;
   /** 선점경쟁 점수 — accessScoreMode가 "visibility-x-preemption"일 때 접근성 피처에 곱해진다. */
   preemptionScore?: number | null;
@@ -3540,6 +3783,7 @@ export function toV61TrainingStore(
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
     ...(s.competitorDistanceRatio != null ? { competitorDistanceRatio: s.competitorDistanceRatio } : {}),
+    ...(s.qscScore != null ? { qscScore: s.qscScore, qscIsFranchiseAverage: s.qscIsFranchiseAverage ?? false } : {}),
     ...(settings?.v61Training.modelVariant === "visibility-inflow" ? {
       visibilityScore: s.visibilityScore ?? undefined,
       ...(settings.v61Training.accessScoreMode === "visibility-x-preemption"
@@ -3564,12 +3808,17 @@ export function runCohortValidation(
   },
 ): { rows: ValidationStoreRow[] } {
   const { ridgeLambda, ridgeWeight, baselineWeight, minSampleCount } = settings.v61Training;
-  const minCoefficients = buildMinCoefficients(settings.v61Training);
 
   const useVisibility = settings.v61Training.modelVariant === "visibility-inflow";
   const coreStores = stores.filter(isCoreEligibleForV61Training)
     .filter(s => !useVisibility || isValidVisibilityScore(s.visibilityScore));
-  const coreTraining = coreStores.map(s => toV61TrainingStore(s, settings));
+  // 2026-09-19 — QSC 칸. 점검 기록이 **없는 매장은 학습표본 평균**으로 메워서 전원이 값을
+  // 갖게 한다(섞이면 피처 길이가 어긋나 학습이 null이 된다). 메우는 규칙은 qscFillerFor 한
+  // 곳에만 있다 — 호출부마다 평균을 내면 화면끼리 조용히 갈라진다.
+  const fillQsc = qscFillerFor(coreStores);
+  const withQsc = fillQsc.enabled;
+  const minCoefficients = buildMinCoefficients(settings.v61Training, false, withQsc);
+  const coreTraining = coreStores.map(s => ({ ...toV61TrainingStore(s, settings), ...fillQsc.valueFor(s) }));
 
   // 리브-원-아웃: 핵심 학습표본끼리는 서로를 빼고 학습·예측한다(데이터 누출 방지).
   const loo = revenueModel ? { rows: [] } : runLeaveOneOutValidation(coreTraining, ridgeLambda, ridgeWeight, baselineWeight, minSampleCount, minCoefficients);
@@ -3615,6 +3864,10 @@ export function runCohortValidation(
             specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
             specialDemandType: s.specialDemandType,
             visibilityScore: useVisibility ? s.visibilityScore : undefined,
+            // 2026-09-19 — 외부 검증군도 학습 모형과 **같은 칸 수**여야 한다. 학습이 QSC 칸을
+            // 쓰는데 여기서 빼면 길이가 어긋나 예측이 통째로 null이 된다. 점검 기록이 없는
+            // 매장(조기 코호트에 많다)은 fillQsc가 학습표본 평균으로 메운다.
+            ...fillQsc.valueFor(s),
           }),
           resolvedPcCount,
           ridgeWeight,

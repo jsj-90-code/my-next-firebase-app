@@ -84,8 +84,20 @@ const LAB_SETTINGS = "storeEvalLabSettings";
 const LAB_ROADVIEW = "storeEvalLabRoadviewJudgments";
 // QSC 점검 기록(관리 점수의 원자료). 로드뷰 판정과 **같은 이유로** 매장 문서가 아니라
 // 따로 둔다 — syncLabCollections.mjs가 운영 문서로 실험실 문서를 통째로 덮으므로, 매장
-// 문서에 넣으면 다음 동기화 때 날아간다. 운영 V62는 이 컬렉션을 아예 읽지 않는다.
+// 문서에 넣으면 다음 동기화 때 날아간다.
 const LAB_QSC = "storeEvalLabQscScores";
+/**
+ * **운영 V62가 읽는 QSC 컬렉션** (2026-09-19 신설).
+ *
+ * 왜 실험실 것을 그냥 안 읽나: 2026-09-16에 "실험실에서 고친 값이 운영을 움직이면 안 된다"고
+ * 컬렉션을 갈라놨다. 그런데 QSC는 실험실이 고치는 값이 아니라 **본사가 매긴 점검 기록**이다 —
+ * 월매출과 같은 성격의 사실이라 원본이 운영 쪽에 있는 게 맞다. 그래서 같은 원자료를 양쪽에
+ * 쓴다(`scripts/writeQscScoresToFirestore.mjs`가 한 번에 둘 다 채운다).
+ *
+ * ⚠️ 두 컬렉션의 내용은 **같아야 한다.** 갈라지면 실험실과 운영의 관리 점수가 말없이 달라진다.
+ *    갈라졌는지는 그 스크립트를 인자 없이(미리보기) 돌려 보면 양쪽 차이가 찍힌다.
+ */
+const QSC = "storeEvalQscScores";
 
 const AUDIT_LOG = "storeEvalAuditLog";
 const RESTORE_LOG = "storeEvalRestoreLog";
@@ -481,7 +493,21 @@ export async function listLabRoadviewJudgments(): Promise<Map<string, { flowBloc
  * 채우는 건 `scripts/writeQscScoresToFirestore.mjs`다(fcdaum 수집물이 원자료).
  */
 export async function listLabQscScores(): Promise<Map<string, number>> {
-  const snap = await getDocs(collection(requireDb(), LAB_QSC));
+  return readQscScores(LAB_QSC);
+}
+
+/**
+ * 매장코드 -> QSC 평균. **운영 V62가 쓰는 쪽**이다 (2026-09-19).
+ *
+ * 값이 없으면 빈 Map을 돌려주고, 그러면 학습에 QSC 칸이 **안 붙는다** — 2026-09-19까지와
+ * 완전히 같게 동작한다. 즉 이 컬렉션이 비어도 예측이 깨지지 않고 조용히 예전 모습이 된다.
+ */
+export async function listQscScores(): Promise<Map<string, number>> {
+  return readQscScores(QSC);
+}
+
+async function readQscScores(collectionName: string): Promise<Map<string, number>> {
+  const snap = await getDocs(collection(requireDb(), collectionName));
   const out = new Map<string, number>();
   snap.forEach((d) => {
     const v = d.data() as { storeCode?: string; openedAt?: string | null; records?: QscRecord[] };

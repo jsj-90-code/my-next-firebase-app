@@ -27,9 +27,11 @@ import {
   isValidVisibilityScore,
   toV61TrainingStore,
   buildMinCoefficients,
+  qscFillerFor,
   empiricalFeaturesFor,
   type ValidationStoreInput,
 } from "./calc";
+import { qscInWindowAverage, type QscRecord } from "./labInput";
 import { computeOverflowPcHours, runUsageCohortValidation, buildRevenuePartsByStore, attachRevenueParts, fitUsageRevenueModel, predictUsageRevenue } from "./usageRevenue";
 import { defaultModelSettings, mergeModelSettings } from "./settings";
 import type {
@@ -66,6 +68,32 @@ function loadEnvLocal() {
  * 최신 데이터로 다시 읽으려면 STORE_EVAL_LIVE_REFRESH=1 을 준다.
  */
 const CACHE_PATH = new URL("../../../.local-tools/liveCheck-cache.json", import.meta.url);
+
+/**
+ * 본사 QSC 점검 점수 (2026-09-19) — 검증 화면과 **같은 모양**으로 입력에 실어야 한다.
+ * 운영 컬렉션은 `storeEvalQscScores`지만, 여기서는 이미 받아 둔 스냅샷을 쓴다(Firestore를 또
+ * 읽지 않으려고). 원자료가 같으므로 값은 같다 — 평균 내는 규칙도 운영과 같은 함수를 쓴다.
+ *
+ * 파일이 없으면 **빈 지도**를 돌려주고, 그러면 QSC 칸이 안 붙어서 2026-09-19까지와 똑같이
+ * 측정된다(PC를 옮기면 이 파일이 없다 — 깨지는 게 아니라 예전 모습이 된다).
+ */
+const QSC_SNAPSHOT = new URL("../../../.local-tools/validation-snapshot.json", import.meta.url);
+function loadQscScores(): Map<string, number> {
+  const out = new Map<string, number>();
+  try {
+    const snap = JSON.parse(readFileSync(QSC_SNAPSHOT, "utf8")) as {
+      labQscScores?: { storeCode?: string; openedAt?: string | null; records?: QscRecord[] }[];
+    };
+    for (const d of snap.labQscScores ?? []) {
+      if (!d.storeCode) continue;
+      const avg = qscInWindowAverage(d.records ?? [], d.openedAt ?? null);
+      if (avg != null && avg > 0) out.set(d.storeCode, avg);
+    }
+  } catch {
+    console.log("[QSC] 스냅샷 없음 — QSC 칸 없이(2026-09-19 이전과 같게) 잰다.");
+  }
+  return out;
+}
 
 async function loadAll() {
   loadEnvLocal();
@@ -120,6 +148,7 @@ function buildInputs(
   settings: ModelSettings,
 ) {
   const stores = prepareExistingStoresForEvaluation(storedStores, competitors, locations, settings);
+  const qscByStoreCode = loadQscScores();
   const competitorsByCandidate = new Map<string, Competitor[]>();
   for (const c of competitors) {
     const list = competitorsByCandidate.get(c.candidateCode) ?? [];
@@ -166,6 +195,8 @@ function buildInputs(
       hasElevator: s.hasElevator,
       competitorSummary: computeCompetitorInvestigationSummary(comps),
       sheetV61Predicted: s.v61Predicted,
+      // 2026-09-19 — 검증 화면과 같다. 빈 곳은 여기서 메우지 않는다(calc.ts qscFillerFor가 한다).
+      qscScore: qscByStoreCode.get(s.storeCode) ?? null,
     };
   });
   return { inputs, salesRows, settings };
@@ -356,15 +387,18 @@ describe.skipIf(!process.env.STORE_EVAL_LIVE_CHECK)("실서비스 데이터 측�
     {
       const parts2 = buildRevenuePartsByStore(inputs, salesRows);
       const useVis = settings.v61Training.modelVariant === "visibility-inflow";
+      const core = inputs.filter(isCoreEligibleForV61Training)
+        .filter((s) => !useVis || isValidVisibilityScore(s.visibilityScore));
+      // 2026-09-19 — 운영과 **같은 채움 규칙**을 써야 한다. 여기서만 QSC를 빼면 피처 길이가
+      // 어긋나 모형이 통째로 null이 된다(실제로 그렇게 터졌다).
+      const fillQsc = qscFillerFor(core);
       const training = attachRevenueParts(
-        inputs.filter(isCoreEligibleForV61Training)
-          .filter((s) => !useVis || isValidVisibilityScore(s.visibilityScore))
-          .map((s) => toV61TrainingStore(s, settings)),
+        core.map((s) => ({ ...toV61TrainingStore(s, settings), ...fillQsc.valueFor(s) })),
         parts2,
       );
       const model = fitUsageRevenueModel(training, settings)!;
-      const floors = buildMinCoefficients(settings.v61Training).slice(1);
-      const names = ["IP당수요", "경쟁력점수", "경쟁력x格차", "배후수요더미", "가시성"];
+      const floors = buildMinCoefficients(settings.v61Training, false, fillQsc.enabled).slice(1);
+      const names = ["IP당수요", "경쟁력점수", "경쟁력x格차", "배후수요더미", "가시성", "QSC관리수준"];
       console.log(`\n적합 계수 (학습표본 ${training.length}곳) — 하한선에 붙어있으면 그 피처는 데이터가 아니라 하한선이 결정한 것`);
       console.log("피처            하한선   PC(이용시간)  먹거리   PC구속  먹거리구속");
       for (let i = 0; i < floors.length; i++) {

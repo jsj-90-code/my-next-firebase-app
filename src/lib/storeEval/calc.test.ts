@@ -53,6 +53,9 @@ import {
   computeV62Final,
   computeValidationRow,
   computeZoneDiversityScore,
+  countRoomTypes,
+  FIRST_CLASS_ZONE_SEATS,
+  ZONE_COMPOSITION_WEIGHTS,
   computeSpecialtySeatRatio,
   computeZoneCapacityScore,
   computeZoneCompositionScore,
@@ -67,6 +70,11 @@ import {
   diagnoseLoocvSensitivity,
   empiricalFeaturesFor,
   empiricalFeatureLabels,
+  buildMinCoefficients,
+  franchiseAverageQscScore,
+  qscFeatureValue,
+  qscFillerFor,
+  QSC_FEATURE_REFERENCE,
   fitEmpiricalRevenueModel,
   fitNonnegativeRidgeRegression,
   getV62Rate,
@@ -707,16 +715,28 @@ describe("computeFreshnessFromYear/resolveFreshnessScore (경쟁력 평가 기�
   });
 });
 
-describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대로 이식, 이전 존달성도 공식 폐기)", () => {
+describe("존구성 산식 (2026-09-19 잣대 교체 — 존 이름이 아니라 물리 좌석을 센다)", () => {
   const blankCounts = { teamRoom: null, room2: null, coupleZone: null, vipZone: null, friendsZone: null, singleSeatCount: null, room1: null, firstClassZone: null };
 
-  it("computeZoneDiversityScore — d=0이면 1, else MIN(5,1+(1+d)*0.5)", () => {
+  it("countRoomTypes — 1인룸·2인룸·(팀룸+퍼스트클래스존) 세 칸. 개방형 존은 안 센다", () => {
+    expect(countRoomTypes(blankCounts)).toBe(0);
+    // 개방형 이름표만 잔뜩 있어도 룸은 0이다 — 이게 이름표 우위를 걷어내는 자리다.
+    expect(countRoomTypes({ ...blankCounts, singleSeatCount: 20, vipZone: 10, friendsZone: 15, coupleZone: 5 })).toBe(0);
+    expect(countRoomTypes({ ...blankCounts, teamRoom: 2 })).toBe(1);
+    // 퍼스트클래스존은 팀룸과 **한 칸**이다(둘 다 여러 명이 들어가는 룸).
+    expect(countRoomTypes({ ...blankCounts, teamRoom: 2, firstClassZone: 1 })).toBe(1);
+    expect(countRoomTypes({ ...blankCounts, firstClassZone: 1 })).toBe(1);
+    expect(countRoomTypes({ ...blankCounts, room1: 1, room2: 1, teamRoom: 1 })).toBe(3); // 최대
+  });
+
+  it("computeZoneDiversityScore — d=0이면 1, else MIN(5,1+(1+d)*0.5). d는 이제 **룸 종류 수**(0~3)", () => {
     expect(computeZoneDiversityScore(0)).toBe(1);
     expect(computeZoneDiversityScore(1)).toBe(2);
     expect(computeZoneDiversityScore(2)).toBe(2.5);
-    expect(computeZoneDiversityScore(3)).toBe(3);
+    expect(computeZoneDiversityScore(3)).toBe(3); // 룸 종류 최대치
+    // 사다리 자체는 그대로 남겨 뒀다(상한 클램프 포함). 세는 대상만 바뀐 것이다.
     expect(computeZoneDiversityScore(4)).toBe(3.5);
-    expect(computeZoneDiversityScore(8)).toBe(5); // 상한 클램프
+    expect(computeZoneDiversityScore(8)).toBe(5);
   });
 
   it("computeSpecialtySeatRatio — 환산좌석수/PC대수, 팀룸총좌석수 없으면 개수×5 추정", () => {
@@ -731,6 +751,14 @@ describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대
     expect(computeSpecialtySeatRatio(counts, null, null, null)).toBeNull();
   });
 
+  // 2026-09-19 — 퍼스트클래스존은 **룸 1개 = 11석**이다(사용자: 10~12석, 중간값).
+  // 옛 잣대는 룸 개수를 좌석 1석으로 셌다 — 11석짜리 룸이 1인석 하나와 같은 무게였다.
+  it("computeSpecialtySeatRatio — 퍼스트클래스존은 룸 1개를 11석으로 센다", () => {
+    const counts = { ...blankCounts, firstClassZone: 2 };
+    expect(computeSpecialtySeatRatio(counts, null, null, 100)).toBeCloseTo(0.22, 6);
+    expect(FIRST_CLASS_ZONE_SEATS).toBe(11);
+  });
+
   it("computeZoneCapacityScore — 비율 구간화 <10%→1,<20%→2,<30%→3,<50%→4,else→5", () => {
     expect(computeZoneCapacityScore(0.05)).toBe(1);
     expect(computeZoneCapacityScore(0.15)).toBe(2);
@@ -740,8 +768,12 @@ describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대
     expect(computeZoneCapacityScore(null)).toBeNull();
   });
 
-  it("computeZoneCompositionScore — 존다양성*0.7+존수용력*0.3, 반올림 없음", () => {
-    expect(computeZoneCompositionScore(2, 1)).toBeCloseTo(2 * 0.7 + 1 * 0.3, 6);
+  // 2026-09-19 — 7:3에서 **3:7로 뒤집었다**. 룸만 세면 다양성이 0~3으로 좁아져 사실상
+  // "팀룸 있나 없나"의 이진이 되는데, 거의 이진인 값에 무게를 싣는 건 뜻이 안 맞는다.
+  // ⚠️ MAPE로 고른 값이 아니다(calc.ts 존구성 주석 참고).
+  it("computeZoneCompositionScore — 존다양성*0.3+존수용력*0.7, 반올림 없음", () => {
+    expect(ZONE_COMPOSITION_WEIGHTS.diversity + ZONE_COMPOSITION_WEIGHTS.capacity).toBeCloseTo(1, 12);
+    expect(computeZoneCompositionScore(2, 1)).toBeCloseTo(2 * 0.3 + 1 * 0.7, 6);
     expect(computeZoneCompositionScore(null, 1)).toBeNull();
   });
 
@@ -762,13 +794,17 @@ describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대
     });
     expect(partiallyWritten.diversity).toBe(1); // d=0
     expect(partiallyWritten.capacity).toBe(1); // ratio=0
+    // 2026-09-19 — 일반2인석의 다양성 +0.5 가산을 없앴다. 자사엔 그 칸 자체가 없어서
+    // (우리 2인석은 커플존으로 들어간다) 경쟁점에만 붙는 것처럼 보였지만, 실은 이름표
+    // 비대칭의 다른 얼굴이었다. 이제 일반2인석은 **좌석으로만** 들어간다.
     const withRegularCouple = computeCompetitorZoneComposition({
       counts: { ...blankCounts, teamRoom: 1 },
       regularCoupleSeatCount: 2,
       teamRoomTotalSeats: null,
       totalPcCount: 100,
     });
-    expect(withRegularCouple.diversity).toBe(computeZoneDiversityScore(1.5)); // 팀룸(1) + 일반2인석 보너스(0.5)
+    expect(withRegularCouple.diversity).toBe(computeZoneDiversityScore(1)); // 룸 종류는 팀룸 하나뿐
+    expect(withRegularCouple.seats).toBe(1 * 5 + 2); // 팀룸 추정 5석 + 일반2인석 2석
   });
 
   // 2026-09-17 — 경쟁점과 **같은 잣대**로 맞췄다(하나라도 적히면 계산, 하나도 없으면 null).
@@ -786,6 +822,55 @@ describe("존구성 산식 (2026-08-31 전면 재설계 — 시트 수식 그대
     const result = computeOwnZoneComposition({ counts: allFilled, teamRoomTotalSeats: null, totalPcCount: 100 });
     expect(result.diversity).toBe(2); // d=1(팀룸만)
     expect(result.composition).not.toBeNull();
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ⭐ 2026-09-19 **이 시험이 잣대를 교체한 이유 자체를 잠근다.**
+  //
+  // VIP존·프렌즈존·퍼스트클래스존은 우리 브랜드 용어다. 조사표에 칸은 있지만 경쟁점 228건이
+  // 전부 0건이다 — 조사자가 경쟁점의 **같은 실체**(파티션 1인석, 유리파티션 다인석)를 보고도
+  // 그 칸에 안 넣고 "1인석"·"일반 2인석"에 넣기 때문이다.
+  //
+  // 옛 잣대는 존 **이름** 종류를 셌으므로, 같은 가게를 우리 말로 적으면 점수가 올라가고
+  // 조사자 말로 적으면 내려갔다. 그러면 경쟁점은 아무리 좋아도 자사를 못 따라잡는다.
+  // 새 잣대에서는 **같은 실체면 같은 점수**여야 한다.
+  it("⭐ 같은 실체를 우리 이름표로 적든 조사자 말로 적든 점수가 같다 (이름표 우위 제거)", () => {
+    const pc = 100;
+    // 같은 가게다. 위는 우리 조사표 어휘, 아래는 경쟁점 조사표 어휘로 적은 것뿐이다.
+    const ours = computeOwnZoneComposition({
+      counts: { ...blankCounts, vipZone: 20, friendsZone: 10, coupleZone: 5 },
+      teamRoomTotalSeats: null,
+      totalPcCount: pc,
+    });
+    const theirs = computeCompetitorZoneComposition({
+      counts: { ...blankCounts, singleSeatCount: 20, coupleZone: 5 },
+      regularCoupleSeatCount: 10,
+      teamRoomTotalSeats: null,
+      totalPcCount: pc,
+    });
+    // 둘 다 룸이 없다 -> 다양성 최저. 옛 잣대라면 자사 3종류(3.00) vs 경쟁 2.5종류(2.75)로 갈렸다.
+    expect(ours.roomTypes).toBe(0);
+    expect(theirs.roomTypes).toBe(0);
+    expect(ours.diversity).toBe(theirs.diversity);
+    // 좌석은 양쪽 다 실재하는 40석(20 + 10 + 커플존 5×2)으로 똑같이 세어진다.
+    expect(ours.seats).toBe(40);
+    expect(theirs.seats).toBe(40);
+    expect(ours.composition).toBe(theirs.composition);
+  });
+
+  // 남는 우위는 **실재하는 좌석**에서만 나와야 한다 — 그건 걷어낼 대상이 아니다.
+  it("특화좌석이 실제로 더 많으면 그만큼은 여전히 이긴다", () => {
+    const pc = 100;
+    const many = computeOwnZoneComposition({
+      counts: { ...blankCounts, vipZone: 30, friendsZone: 20 },
+      teamRoomTotalSeats: null, totalPcCount: pc,
+    });
+    const few = computeCompetitorZoneComposition({
+      counts: { ...blankCounts, singleSeatCount: 5 },
+      regularCoupleSeatCount: null, teamRoomTotalSeats: null, totalPcCount: pc,
+    });
+    expect(many.capacity!).toBeGreaterThan(few.capacity!);
+    expect(many.composition!).toBeGreaterThan(few.composition!);
   });
 
   it("resolveZoneCompositionScore — 자동계산 우선, null이면 legacy 직접입력으로 폴백", () => {
@@ -1484,14 +1569,15 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     );
     expect(result.excludedReason).toBeNull();
     // hardware(spec): GPU(RTX5060=4) — CPU/RAM/모니터 없어서 GPU 가중치만 재정규화. food=4
-    // (원본 규칙대로 4). 2026-08-31 — 존구성은 새 산식(존다양성×0.7+존수용력×0.3)으로 자동계산:
-    // 표준존구성(팀룸2·커플존3·VIP존5·프렌즈존15, 나머지0)에서 존다양성=4종류→3.5,
-    // 특화좌석비율=(팀룸2×5+커플존3×2+VIP5+프렌즈15)/100=0.36→존수용력4 → 존구성=3.5*.7+4*.3=3.65.
-    // interior(facility) = 존구성3.65*.5+인테리어4(표준값)*.3+관리4(표준값)*.2 = 3.825. location=4.0
+    // (원본 규칙대로 4). 2026-09-19 — 존구성 잣대 교체(존다양성×0.3+존수용력×0.7, 다양성은
+    // **룸 종류 수**): 표준존구성(팀룸2·커플존3·VIP존5·프렌즈존15, 나머지0)에서 룸 종류는
+    // 팀룸 하나뿐이라 다양성=1종류→2.0(옛 잣대는 이름표 4종류를 세서 3.5였다),
+    // 특화좌석비율=(팀룸2×5+커플존3×2+VIP5+프렌즈15)/100=0.36→존수용력4 → 존구성=2.0*.3+4*.7=3.40.
+    // interior(facility) = 존구성3.40*.5+인테리어4(표준값)*.3+관리4(표준값)*.2 = 3.70. location=4.0
     // 2026-09-15 재배분(사용자 확정): 사양 25% / 먹거리 5% / 시설 55% / 입지 15%
-    // → 4*.25 + 4*.05 + 3.825*.55 + 4*.15 = 3.90375
+    // → 4*.25 + 4*.05 + 3.70*.55 + 4*.15 = 3.835   (잣대 교체 전: 3.90375)
     // (먹거리가 자사 38곳 전부 4.00점 상수라 비중을 줄였다 — settings.ts 주석 참고)
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.90375, 3);
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.835, 3);
   });
 
   it("경쟁점 정보가 없으면 제외한다", () => {
@@ -1515,12 +1601,12 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     expect(result.excludedReason).toBeNull();
     // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합. 하드웨어점수는
     // GPU(RTX5060=4), 모니터(240Hz=3.5) — (4*.4+3.5*.25)/(0.4+0.25)=3.808. food=4.
-    // interior(facility)는 위 테스트와 동일 존구성(3.65)+인테리어4(직접입력, 표준값과 동일)+
-    // 관리4(표준값) = 3.65*.5+4*.3+4*.2 = 3.825. location=4
+    // interior(facility)는 위 테스트와 동일 존구성(3.40)+인테리어4(직접입력, 표준값과 동일)+
+    // 관리4(표준값) = 3.40*.5+4*.3+4*.2 = 3.70. location=4
     // 2026-09-03(8차) 하드:시설:입지 20:50:20 재배분(먹거리 16.667% 유지):
     // 2026-09-15 재배분: 사양 25% / 먹거리 5% / 시설 55% / 입지 15%
-    // → 3.808*.25 + 4*.05 + 3.825*.55 + 4*.15 = 3.855673
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.855673, 3);
+    // → 3.808*.25 + 4*.05 + 3.70*.55 + 4*.15 = 3.786923   (존구성 잣대 교체 전: 3.855673)
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.786923, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
@@ -2758,12 +2844,83 @@ describe("empiricalFeatureLabels — 피처와 라벨이 어긋나지 않는다"
     expect(empiricalFeatureLabels(withDistance)).toHaveLength(empiricalFeaturesFor(withDistance).length);
   });
 
+  // 2026-09-19 — QSC(관리 수준) 칸.
+  it("QSC 칸이 붙어도 길이가 같고, 하한선 배열도 같이 늘어난다", () => {
+    const withQsc = { ...base, visibilityScore: 3, qscScore: 91.2 };
+    expect(empiricalFeatureLabels(withQsc)).toHaveLength(empiricalFeaturesFor(withQsc).length);
+    // ⚠️ 여기가 어긋나면 학습이 "길이 불일치"로 통째로 null이 된다(안전하게 실패하긴 하지만,
+    //    화면에는 예상매출이 아예 안 뜬다). 피처와 하한선은 항상 같이 늘어야 한다.
+    const v61 = { ...settings.v61Training, modelVariant: "visibility-inflow" as const };
+    expect(buildMinCoefficients(v61, false, true)).toHaveLength(empiricalFeaturesFor(withQsc).length);
+    expect(buildMinCoefficients(v61, false, false)).toHaveLength(empiricalFeaturesFor({ ...base, visibilityScore: 3 }).length);
+  });
+
+  it("QSC를 안 넣으면 칸이 아예 안 붙는다 — 2026-09-19 이전과 같게 동작한다", () => {
+    const before = empiricalFeaturesFor({ ...base, visibilityScore: 3 });
+    expect(empiricalFeaturesFor({ ...base, visibilityScore: 3, qscScore: null })).toEqual(before);
+    expect(empiricalFeaturesFor({ ...base, visibilityScore: 3, qscScore: 0 })).toEqual(before);
+  });
+
+  // 후보지·미점검 매장은 "관리를 평가받았다"로 읽히면 안 된다(배후수요 더미와 같은 규칙).
+  it("가맹점 평균으로 메운 자리는 라벨이 그렇다고 말한다", () => {
+    const measured = empiricalFeatureLabels({ ...base, qscScore: 91.2 });
+    const filled = empiricalFeatureLabels({ ...base, qscScore: 91.2, qscIsFranchiseAverage: true });
+    expect(measured.at(-1)).toBe("매장 관리 수준(본사 점검)");
+    expect(filled.at(-1)).toBe("매장 관리 수준(점검 기록 없어 가맹점 평균)");
+    // 표시만 다르고 값은 같다 — 라벨이 계산에 끼어들면 안 된다.
+    expect(empiricalFeaturesFor({ ...base, qscScore: 91.2, qscIsFranchiseAverage: true }))
+      .toEqual(empiricalFeaturesFor({ ...base, qscScore: 91.2 }));
+  });
+
   it("라벨에 내부 용어를 쓰지 않는다", () => {
     // 이 이름은 평가자 화면에 그대로 노출된다 — "IP당수요" 같은 내부 지표명이 새면 안 된다.
-    const labels = empiricalFeatureLabels({ ...base, visibilityScore: 4 }).join(" ");
+    const labels = empiricalFeatureLabels({ ...base, visibilityScore: 4, qscScore: 91.2 }).join(" ");
     for (const banned of ["IP", "V62", "V61", "더미", "log"]) {
       expect(labels).not.toContain(banned);
     }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// QSC(본사 점검 관리 수준) — 2026-09-19 V62 피처로 추가
+//
+// 지금까지 자사 관리 점수는 38곳 전부 4.00 상수였다. "관리"라는 칸은 있는데 아무것도 재고
+// 있지 않았다는 뜻이다. QSC는 본사가 실제로 매긴 점수라 그 자리를 채운다.
+// ⚠️ 후보지 예측력이 느는 게 아니다 — QSC는 개점 뒤 점수라 후보지엔 없다.
+describe("QSC 관리 수준 피처", () => {
+  it("franchiseAverageQscScore — 기하평균이다(피처가 log이라 그래야 중립이 0이 된다)", () => {
+    // 산술평균이면 95, 기하평균은 sqrt(90*100)=94.868...
+    expect(franchiseAverageQscScore([90, 100])).toBeCloseTo(Math.sqrt(9000), 9);
+    expect(franchiseAverageQscScore([90, null, undefined, 0, 100])).toBeCloseTo(Math.sqrt(9000), 9);
+    expect(franchiseAverageQscScore([])).toBeNull();
+    expect(franchiseAverageQscScore([null, 0, -5])).toBeNull();
+  });
+
+  it("qscFeatureValue — 기준점에서 0이고, 같은 % 차이는 같은 크기로 들어간다", () => {
+    expect(qscFeatureValue(QSC_FEATURE_REFERENCE)).toBeCloseTo(0, 12);
+    // log이라 "10% 높다"와 "10% 낮다"가 대칭이다(탄력도로 읽을 수 있다).
+    const up = qscFeatureValue(QSC_FEATURE_REFERENCE * 1.1);
+    const down = qscFeatureValue(QSC_FEATURE_REFERENCE / 1.1);
+    expect(up).toBeCloseTo(-down, 12);
+  });
+
+  it("qscFillerFor — 기록 없는 매장에 학습표본 기하평균을 넣고, 라벨용 표시를 세운다", () => {
+    const core = [{ qscScore: 90 }, { qscScore: 100 }, { qscScore: null }];
+    const fill = qscFillerFor(core);
+    expect(fill.enabled).toBe(true);
+    expect(fill.valueFor({ qscScore: 90 })).toEqual({ qscScore: 90, qscIsFranchiseAverage: false });
+    const filled = fill.valueFor({ qscScore: null }) as { qscScore: number; qscIsFranchiseAverage: boolean };
+    expect(filled.qscScore).toBeCloseTo(Math.sqrt(9000), 9);
+    expect(filled.qscIsFranchiseAverage).toBe(true);
+  });
+
+  // ⭐ 자료가 없으면 **예전 모습으로 돌아갈 뿐 깨지지 않는다**. 이게 중요하다 — 운영 컬렉션이
+  //    비어 있거나 읽기에 실패해도 예상매출이 사라지면 안 된다.
+  it("⭐ 점검 기록이 하나도 없으면 칸을 안 붙인다(깨지지 않고 예전처럼 동작)", () => {
+    const fill = qscFillerFor([{ qscScore: null }, { qscScore: null }]);
+    expect(fill.enabled).toBe(false);
+    expect(fill.valueFor({ qscScore: null })).toEqual({});
+    expect(qscFillerFor([]).enabled).toBe(false);
   });
 });
 
