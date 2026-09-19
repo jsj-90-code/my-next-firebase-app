@@ -51,6 +51,7 @@ import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./e
 import { mergeModelSettings } from "./settings";
 import { computeOverflowPcHours, predictUsageRevenue, runUsageCohortValidation } from "./usageRevenue";
 import { buildLabRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
+import { labComputeSpecScore } from "./labSpecScore";
 import { DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook } from "./textbookModel";
 import { computeLabZoneComposition } from "./labZoneComposition";
 import type { Competitor, ExistingStore, LocationEvaluation } from "./types";
@@ -824,6 +825,71 @@ describeIf("실험실 변수를 V62에 태워 본다", () => {
     console.log(`\n    읽는 법: 운영에서 **다양성 차이가 크고** 실험실에서 그게 줄면,`);
     console.log(`    자사 우위의 상당 부분이 **이름표였다**는 뜻이다 — 사실 교정 대상이 맞다.`);
     console.log(`    수용력 차이는 남아도 된다. 좌석은 실재하니까.`);
+
+    // ── ⚠️ 사양에서 **사실 교정**과 **판단**을 갈라야 한다 ────────────────────
+    // 실험실 사양은 변환표뿐 아니라 **비중도** 바꾼다(VGA 0.40->0.50 · 모니터 0.25->0.15).
+    // 그런데 `labSpecScore.ts`가 스스로 적어 둔다:
+    //   *"0.50은 **뜻으로 고른 값**이고, 자료는 반대하지 않는 정도다"*
+    //   *"이 값을 자료로 다시 고르려 하지 말 것"*
+    // 즉 비중은 **판단**이지 RTX 서열 같은 검증 가능한 사실이 아니다.
+    // 사실 교정 명목으로 판단을 끼워 넣으면 안 되므로, **변환표만 바꾸고 비중은 운영 값**을
+    // 유지한 변형을 따로 잰다. 이게 실제로 적용할 것이다.
+    const buildSpecTablesOnly = () => {
+      const out: ValidationStoreInput[] = [];
+      for (let i = 0; i < baseInputs.length; i++) {
+        const inp = baseInputs[i];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const st = stores[i] as any;
+        const opts = { specWeights: settings.specWeights }; // ← 비중은 운영 값 유지
+        const op = computeSpecScore({
+          vgaBase: st.ownVgaBase, vgaTop: st.ownVgaTop, vgaTop2: st.ownVgaTop2,
+          cpu: st.ownCpu, cpuTop1: st.ownCpuTop1, cpuTop2: st.ownCpuTop2,
+          ram: st.ownRam, ramTop: st.ownRamTop,
+          monitorBase: st.ownMonitorBase, monitorTop: st.ownMonitorTop,
+        }, settings);
+        const lab = labComputeSpecScore({
+          vgaBase: st.ownVgaBase ?? null, vgaTop: st.ownVgaTop ?? null, vgaTop2: st.ownVgaTop2 ?? null,
+          cpu: st.ownCpu ?? null, cpuTop1: st.ownCpuTop1 ?? null, cpuTop2: st.ownCpuTop2 ?? null,
+          ram: st.ownRam ?? null, ramTop: st.ownRamTop ?? null,
+          monitorBase: st.ownMonitorBase ?? null, monitorTop: st.ownMonitorTop ?? null,
+        }, settings, opts);
+        const dOwn = op != null && lab != null ? (lab - op) * wSpec : 0;
+        let wsum = 0, dsum = 0;
+        for (const c of competitorsByLookup.get(existingStoreSourceCode(stores[i])) ?? []) {
+          const w = computeCompetitorAppliedPcCount(c) ?? 0;
+          if (!(w > 0)) continue;
+          const o = computeCompetitorScores(c, settings).spec;
+          const l = labComputeSpecScore({
+            vgaBase: c.vgaBase ?? null, vgaTop: c.vgaTop ?? null, vgaTop2: c.vgaTop2 ?? null,
+            cpu: c.cpu ?? null, cpuTop1: c.cpuTop1 ?? null, cpuTop2: c.cpuTop2 ?? null,
+            ram: c.ram ?? null, ramTop: c.ramTop ?? null,
+            monitorBase: c.monitorBase ?? null, monitorTop: c.monitorTop ?? null,
+          }, settings, opts);
+          wsum += w; dsum += w * (o != null && l != null ? (l - o) * wSpec : 0);
+        }
+        const dAvg = wsum > 0 ? dsum / wsum : 0;
+        const own0 = inp.competitivenessScore ?? null, gap0 = inp.competitivenessGap ?? null;
+        const avg0 = own0 != null && gap0 != null && gap0 > 0 ? own0 / gap0 : null;
+        const own1 = own0 != null ? own0 + dOwn : null;
+        const avg1 = avg0 != null ? avg0 + dAvg : null;
+        out.push({ ...inp,
+          competitivenessScore: own1 ?? inp.competitivenessScore,
+          competitivenessGap: own1 != null && avg1 != null && avg1 > 0 ? own1 / avg1 : inp.competitivenessGap });
+      }
+      return out;
+    };
+    console.log(`\n  ── ⚠️ 사양: 변환표만 vs 변환표+비중 (비중은 '판단'이라 갈라야 한다) ──`);
+    console.log(`    ${"".padEnd(30)}${"MAPE".padStart(9)}${"중앙".padStart(9)}${"±10%".padStart(8)}${"±20%".padStart(8)}`);
+    line("  지금 (운영)", base);
+    line("  변환표만 실험실 (비중 운영 유지)", scoreOf(buildSpecTablesOnly()));
+    line("  변환표+비중 둘 다 실험실", scoreOf(onlySpec.out));
+    console.log(`\n    GPU 성능지수(RTX 3060 Ti > RTX 4060) · CPU 성능지수(i3 ≠ i5)는 **사실 교정**이다.`);
+    console.log(`    비중 0.40/0.25 -> 0.50/0.15는 실험실 자신이 "뜻으로 고른 값"이라고 적었다 —`);
+    console.log(`    **판단**이므로 사실 교정과 같이 묶어 넘기면 안 된다.`);
+    console.log(`\n  ── 먹거리·인테리어는? ──`);
+    console.log(`    실험실이 **그대로 통과**시킨다(ownQualityParts·rivalQualityParts 모두).`);
+    console.log(`    갈아끼울 잣대가 없다. 2026-09-18에 자사 기준값도 4.0 유지로 확정했다.`);
+    console.log(`    남은 건 잣대가 아니라 **자료**다 — 미확인이라 2점 받은 경쟁점 73곳.`);
     expect(both.out.length).toBe(baseInputs.length);
   });
 });
