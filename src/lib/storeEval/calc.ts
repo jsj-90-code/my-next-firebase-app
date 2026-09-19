@@ -421,8 +421,166 @@ export const AMD_GPU_TO_NVIDIA_EQUIVALENT: Record<string, number> = {
   "7900": 4080,
 };
 
+// ── 성능지수표 (2026-09-19 운영 채택) ─────────────────────────────────────
+//
+// ⚠️ **왜 세대 산술을 버렸나** — 아래 `scoreFromVga`의 옛 식은 `4 + (세대 − 5) + 티어보너스`
+//    였다. 세대 숫자는 **출시 연도**지 성능이 아니라, 실제 서열과 어긋나는 자리가 여러 곳이었다:
+//
+//      RTX 3060 Ti  2.25점  <  RTX 4060  3.00점     (실제로는 3060 Ti가 빠르다 · 23건)
+//      RTX 3070     2.50점  <  RTX 4060  3.00점     (실제로는 3070이 한참 빠르다 · 12건)
+//      RTX 4070     3.50점  <  RTX 5060  4.00점     (사용자 지적 · 9건)
+//      i3 13100F    3.00점  =  i5 13400F 3.00점     (티어를 아예 안 본다 · 자사 9곳)
+//
+//    같은 세대 안에서 티어(60/70/80 · i3/i5/i7)가 만드는 차이가 세대 하나보다 큰 경우가 흔하다.
+//
+// 사용자 원칙(2026-09-19): *"v62라고 mape 위주로 진행하는 게 아니라, 근거가 명확한, 이런
+// 값이라면 적중률이 떨어져도 적용해야지."* — 이건 **틀린 서술을 고치는 것**이라 적중률과
+// 무관하게 적용한다. (재 보니 실제로는 MAPE 9.17% → 9.06%로 오히려 좋아졌다.
+//  근거·측정: `docs/releases/2026-09-19-v62-lab-features.md` 20절)
+//
+// ⚠️ **사양 비중(settings.specWeights)은 안 건드린다.** 실험실은 VGA 0.40→0.50 ·
+//    모니터 0.25→0.15도 같이 바꾸는데, 그건 실험실 자신이 *"뜻으로 고른 값"*이라고 적어 둔
+//    **판단**이다. 사실 교정과 같이 넘기면 안 된다(같은 문서 20절).
+//
+// 표는 2026-09-18에 실험실(`labSpecScore.ts`)에서 만든 것을 그대로 옮겼다. 이제 **여기가
+// 원본**이고 실험실이 이걸 읽는다 — 두 벌로 갈라져 어긋나는 걸 막는다.
+
+/** 앵커 = 블랙라벨 현재 표준(RTX 5060)을 100으로 놓은 상대 성능. 클수록 빠르다. */
+export const GPU_PERF_INDEX: Record<string, number> = {
+  // 50 시리즈
+  RTX5090: 300, RTX5080: 235, RTX5070TI: 180, RTX5070: 145, RTX5060TI: 118, RTX5060: 100, RTX5050: 72,
+  // 40 시리즈
+  RTX4090: 265, RTX4080: 200, RTX4070TI: 160, RTX4070: 130, RTX4060TI: 99, RTX4060: 83,
+  // 30 시리즈
+  RTX3090: 160, RTX3080: 135, RTX3070TI: 112, RTX3070: 104, RTX3060TI: 93, RTX3060: 72, RTX3050: 48,
+  // 20 시리즈
+  RTX2080TI: 120, RTX2080SUPER: 92, RTX2080: 85, RTX2070SUPER: 82, RTX2070: 72,
+  RTX2060SUPER: 68, RTX2060: 58,
+  // GTX 10·16 시리즈
+  GTX1080TI: 88, GTX1080: 64, GTX1070TI: 62, GTX1070: 55,
+  GTX1660TI: 52, GTX1660SUPER: 55, GTX1660: 45, GTX1650: 32,
+  GTX1060: 38, GTX1050TI: 22,
+};
+
+/**
+ * 앵커 = 블랙라벨 현재 표준(i5 14400F)을 100으로 놓은 상대 성능. **게임 기준**이다.
+ *
+ * ⚠️ 열쇠는 **모델번호만** 쓴다(i3/i5/i7 글자를 안 본다). 인텔 모델번호가 이미 티어를 담고
+ *    있기 때문이다 — 13100=i3 · 13400=i5 · 13700=i7 · 13900=i9. 덕분에 조사 오기도 바로
+ *    읽힌다: 자료에 "i5 8700"이 2건 있는데 8700은 실물이 i7-8700이다.
+ */
+export const CPU_PERF_INDEX: Record<string, number> = {
+  // 코어 울트라 200S (Arrow Lake) — 세대는 14세대 위지만 **게임 성능은 거의 같다**.
+  "울트라5-225": 102, "울트라5-235": 105, "울트라5-245": 112, "울트라5-250": 114, "울트라5-255": 115,
+  "울트라7-265": 128, "울트라9-285": 140,
+  // 14세대 (Raptor Lake Refresh)
+  "14100": 86, "14400": 100, "14500": 106, "14600": 118, "14700": 140, "14900": 152,
+  // 13세대 (Raptor Lake) — 14세대와 사실상 같은 칩이다. 클럭만 조금 낮다.
+  "13100": 82, "13400": 97, "13500": 104, "13600": 116, "13700": 136, "13900": 150,
+  // 12세대 (Alder Lake)
+  "12100": 78, "12400": 88, "12500": 90, "12600": 100, "12700": 110, "12900": 122,
+  // 11세대 이하 — 어차피 바닥(1.00) 근처다.
+  "11400": 78, "11600": 84, "11700": 92,
+  "10100": 60, "10400": 70, "10600": 78, "10700": 88, "10900": 95,
+  "9100": 52, "9400": 62, "9600": 70, "9700": 78, "9900": 85,
+  "8100": 48, "8400": 58, "8500": 60, "8700": 72,
+  "7100": 40, "7500": 48, "7600": 52, "7700": 62,
+};
+
+/** 성능지수 → 점수. 앵커 100 = 4.00, 칸당 성능 ×0.83(사용자 사다리 5060/4060/3060/2060 = 4/3/2/1). */
+export const PERF_ANCHOR_SCORE = 4;
+export const PERF_LOG_STEP = 0.1816; // ln(58/100)/3
+/** 앵커 위쪽 기울기 — 앵커보다 빠른 카드에만 쓴다. 클수록 완만하다. */
+export const PERF_LOG_STEP_UP = 0.45;
+/** GPU 세대 벌점 — 성능이 같아도 오래된 칩은 그만큼 뒤로 민다. */
+export const GPU_GEN_PENALTY = 0.15;
+export const GPU_ANCHOR_GENERATION = 5;
+/** CPU 앵커 세대 — i5 14400F. */
+export const CPU_ANCHOR_GENERATION = 14;
+/** CPU 세대 벌점 — 티어 구분은 살리고 세대 간격은 다시 벌린다(2026-09-18 2차). */
+export const CPU_GEN_PENALTY = 0.3;
+
+/** GPU 열쇠 → 세대. GTX 16xx는 튜링이라 RTX 20과 같은 세대로 본다. */
+export function gpuGeneration(key: string | null): number | null {
+  if (!key) return null;
+  const m = key.match(/(\d{4})/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  if (n >= 5000) return 5;
+  if (n >= 4000) return 4;
+  if (n >= 3000) return 3;
+  if (n >= 2000) return 2;
+  if (n >= 1600) return 2;
+  return 1;
+}
+
+/**
+ * GPU 모델 텍스트 → 표 조회용 열쇠. "RTX 5060Ti" · "RTX 5060 Ti" · "5060"을 다 같은 칸으로.
+ * 한 칸에 여러 모델이 적혀 있으면 **첫 번째**를 쓴다.
+ */
+export function gpuPerfKey(text: string | null): string | null {
+  if (!text) return null;
+  const cleaned = text.toUpperCase().replace(/[\s\-_]/g, "");
+  // 칸 착오 가드 — CPU 모델명이 GPU 칸에 적힌 경우(실제 1건: "i7 12700KF").
+  if (/^(?:I[3579]|울트라|ULTRA|RYZEN|라이젠|R[3579]\d)/.test(cleaned) && !/RTX|GTX|RADEON|RX\d/.test(cleaned)) return null;
+  const m = cleaned.match(/(RTX|GTX)?(\d{4})(TI|SUPER)?/);
+  if (!m) return null;
+  const num = m[2];
+  const prefix = m[1] ?? (Number(num) < 2000 ? "GTX" : "RTX");
+  const suffix = m[3] ?? (/SUPER/.test(cleaned) ? "SUPER" : /\d{3,4}TI/.test(cleaned) ? "TI" : "");
+  return `${prefix}${num}${suffix}`;
+}
+
+/** 성능지수 → 1~5점. 앵커 위아래로 기울기가 다르고, 세대 벌점을 뺀다. */
+export function scoreFromPerfIndex(
+  index: number | null,
+  logStep = PERF_LOG_STEP,
+  logStepUp = PERF_LOG_STEP_UP,
+  generation: number | null = null,
+  genPenalty = GPU_GEN_PENALTY,
+  anchorGeneration = GPU_ANCHOR_GENERATION,
+): number | null {
+  if (index == null || !(index > 0)) return null;
+  const rel = Math.log(index / 100);
+  const aged = generation == null ? 0 : genPenalty * Math.max(0, anchorGeneration - generation);
+  const raw = PERF_ANCHOR_SCORE + rel / (rel > 0 ? logStepUp : logStep) - aged;
+  return Math.max(1, Math.min(5, raw));
+}
+
+/** CPU 모델 텍스트 → 표 조회용 열쇠. 라이젠은 자릿수 뜻이 정반대라 표를 안 쓴다. */
+export function cpuPerfKey(text: string | null): string | null {
+  if (!text) return null;
+  if (/\b(?:RTX|GTX|라데온|RADEON|RX\s*\d)/i.test(text)) return null;
+  const ultra = text.match(/(?:울트라|ultra)\s*([579])\D{0,8}(\d{3})/i);
+  if (ultra) return `울트라${ultra[1]}-${ultra[2]}`;
+  if (/(?:ryzen|라이젠|\bR[3579]\b)/i.test(text)) return null;
+  const modelM = text.match(/(\d{4,5})/);
+  if (modelM) return modelM[1];
+  const genLabel = text.match(/(\d{1,2})\s*세대/);
+  if (!genLabel) return null;
+  const tierM = text.match(/i([3579])/i);
+  const tier = tierM ? tierM[1] : "5";
+  const base = tier === "3" ? "100" : tier === "5" ? "400" : tier === "7" ? "700" : "900";
+  return `${genLabel[1]}${base}`;
+}
+
+/** CPU 표 열쇠 → 세대. 울트라 200S는 14세대 **다음**이라 15로 본다. */
+export function cpuPerfGeneration(key: string | null): number | null {
+  if (!key) return null;
+  if (key.startsWith("울트라")) return 15;
+  const m = key.match(/^(\d{4,5})$/);
+  if (!m) return null;
+  return m[1].length === 5 ? Number(m[1].slice(0, 2)) : Number(m[1].slice(0, 1));
+}
+
 export function scoreFromVga(text: string | null): number | null {
   if (!text) return null;
+  // 2026-09-19 — **성능지수표를 먼저 본다.** 표에 없는 모델만 아래 세대 산술로 떨어진다.
+  const perfKey = gpuPerfKey(text);
+  if (perfKey != null) {
+    const idx = GPU_PERF_INDEX[perfKey];
+    if (idx != null) return scoreFromPerfIndex(idx, PERF_LOG_STEP, PERF_LOG_STEP_UP, gpuGeneration(perfKey));
+  }
   const cleaned = text.toUpperCase().replace(/\s/g, "");
   const amdM = cleaned.match(/(?:RX|라데온|RADEON)(\d{3,4})/);
   let num: number | null = null;
@@ -655,6 +813,18 @@ export function scoreFromCpu(text: string | null): number | null {
   if (!text) return null;
   // 칸 착오 — GPU 모델명이 CPU 칸에 적힌 경우. 숫자를 뽑으면 엉뚱한 세대가 되므로 안 읽는다.
   if (/\b(?:RTX|GTX|라데온|RADEON|RX\s*\d)/i.test(text)) return null;
+
+  // 2026-09-19 — **성능지수표를 먼저 본다.** 세대 산술은 티어를 아예 안 봐서
+  // `i3 13100F`와 `i5 13400F`가 둘 다 3.00점이었다(자사 9곳). 틀린 서술이다.
+  // 표에 없는 모델(라이젠 등)만 아래 세대 산술로 떨어진다.
+  const perfKey = cpuPerfKey(text);
+  if (perfKey != null) {
+    const idx = CPU_PERF_INDEX[perfKey];
+    if (idx != null) {
+      return scoreFromPerfIndex(idx, PERF_LOG_STEP, PERF_LOG_STEP, cpuPerfGeneration(perfKey),
+        CPU_GEN_PENALTY, CPU_ANCHOR_GENERATION);
+    }
+  }
 
   // "울트라5 225F" · "울트라5 시리즈 225" 둘 다 받는다(사이에 낱말이 껴도 된다).
   const ultraM = text.match(/(?:울트라|ultra)\s*([579])\D{0,8}(\d{3})/i);

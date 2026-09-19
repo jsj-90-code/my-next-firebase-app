@@ -356,15 +356,28 @@ describe("scoreFromCpu (2026-08-27 추가 — 세대 기반 CPU 점수, 14세대
   it("'N세대' 텍스트에서 뽑는다", () => {
     expect(scoreFromCpu("i5 14세대")).toBe(4);
   });
-  it("인텔 5자리 모델번호(앞 2자리=세대)에서 뽑는다", () => {
+  // 2026-09-19 — **성능지수표로 바뀌었다.** 세대 산술(`세대 − 10`)은 티어를 아예 안 봐서
+  // i3 13100F와 i5 13400F가 둘 다 3.00점이었다(자사 9곳). 틀린 서술이라 고쳤다.
+  // 이제 앵커(14400=4.00)에서 성능비로 내려가고 세대 벌점(0.3/세대)을 뺀다.
+  it("인텔 모델번호를 성능지수표로 읽는다 (앵커 14400 = 4점)", () => {
     expect(scoreFromCpu("14400")).toBe(4);
     expect(scoreFromCpu("14400F")).toBe(4); // 사용자 확정 앵커
-    expect(scoreFromCpu("13400")).toBe(3);
-    expect(scoreFromCpu("12400")).toBe(2);
+    // 13400은 14400의 97% 성능 + 세대 벌점 0.3 -> 3.53. 옛 식은 3.00이었다.
+    expect(scoreFromCpu("13400")).toBeCloseTo(3.53, 2);
+    expect(scoreFromCpu("12400")).toBeCloseTo(2.70, 2);
+  });
+  // ⭐ 이게 성능지수표를 켠 이유다 — 세대 산술은 티어를 못 본다.
+  it("같은 세대 안에서 티어가 갈린다 (i3 ≠ i5 ≠ i7)", () => {
+    const i3 = scoreFromCpu("i3 13100F") as number;
+    const i5 = scoreFromCpu("i5 13400F") as number;
+    const i7 = scoreFromCpu("i7 13700F") as number;
+    expect(i3).toBeLessThan(i5); // 옛 식은 **둘 다 3.00**이었다
+    expect(i5).toBeLessThan(i7);
   });
   it("세대가 낮으면 clamp 하한(1), 높으면 상한(5)", () => {
-    expect(scoreFromCpu("11400")).toBe(1); // 11세대 -> 1
-    expect(scoreFromCpu("16400")).toBe(5); // 16세대 -> 6 -> 5로 clamp
+    expect(scoreFromCpu("11400")).toBeCloseTo(1.73, 2); // 옛 식은 1.00(하한)
+    expect(scoreFromCpu("7100")).toBe(1); // 표에 있어도 바닥에서 clamp
+    expect(scoreFromCpu("16400")).toBe(5); // 표에 없어 세대 산술로 떨어진다 -> 6 -> 5로 clamp
   });
   // 2026-09-17 — 예전에는 4자리 모델번호(7~9세대)를 못 읽고 null로 뒀다. 그게 "지어내지
   // 않는다"로 적혀 있었지만, i5-9400이 9세대인 건 지어내는 게 아니라 사실이다. 그리고 null이
@@ -390,7 +403,8 @@ describe("scoreFromCpu (2026-08-27 추가 — 세대 기반 CPU 점수, 14세대
   });
   // 사용자 방향(2026-09-17): "울트라5 시리즈 225"처럼 사이에 낱말이 껴도 읽는다.
   it("울트라 표기에 낱말이 껴도 읽는다", () => {
-    expect(scoreFromCpu("울트라5 시리즈 225")).toBe(4);
+    // 2026-09-19 성능지수표 — 울트라5 225는 14400의 102% 성능(세대는 위지만 게임은 거의 같다)
+    expect(scoreFromCpu("울트라5 시리즈 225")).toBeCloseTo(4.11, 2);
   });
   it("세대/모델 패턴을 못 뽑으면 null - 지어내지 않는다", () => {
     expect(scoreFromCpu("울트라5 시리즈2 225F")).toBeNull();
@@ -430,17 +444,29 @@ describe("scoreFromVga (GPU, 2026-08-28 재보정 — RTX5060=4점 앵커)", () 
   it("RTX5060은 앵커값 4점 그대로", () => {
     expect(scoreFromVga("RTX 5060")).toBe(4);
   });
-  it("RTX5070은 세대는 같고 티어만 높아 4.5점", () => {
-    expect(scoreFromVga("RTX 5070")).toBe(4.5);
+  it("RTX5070은 앵커보다 빠르다 (앵커 위쪽은 기울기가 완만하다)", () => {
+    expect(scoreFromVga("RTX 5070")).toBeCloseTo(4.83, 2);
   });
   it("RTX5080은 티어가 더 높아 5점", () => {
     expect(scoreFromVga("RTX 5080")).toBe(5);
   });
-  it("RTX4060은 한 세대 아래라 3점", () => {
-    expect(scoreFromVga("RTX 4060")).toBe(3);
+  it("RTX4060은 앵커의 83% 성능 + 세대 벌점", () => {
+    expect(scoreFromVga("RTX 4060")).toBeCloseTo(2.82, 2);
   });
-  it("RTX3060은 두 세대 아래라 2점", () => {
-    expect(scoreFromVga("RTX 3060")).toBe(2);
+  it("RTX3060은 앵커의 72% 성능 + 세대 벌점 2회", () => {
+    expect(scoreFromVga("RTX 3060")).toBeCloseTo(1.89, 2);
+  });
+  // ⭐⭐ 성능지수표를 켠 이유. 옛 세대 산술은 3060 Ti(2.25) < 4060(3.00)이었는데
+  //     실제로는 3060 Ti가 빠르다. 서열이 뒤집혀 있었다(23건).
+  it("세대가 낮아도 티어가 높으면 이긴다 — 옛 세대 산술이 뒤집던 자리", () => {
+    const ti3060 = scoreFromVga("RTX 3060 Ti") as number;
+    const r4060 = scoreFromVga("RTX 4060") as number;
+    const r3070 = scoreFromVga("RTX 3070") as number;
+    const r4070 = scoreFromVga("RTX 4070") as number;
+    const r5060 = scoreFromVga("RTX 5060") as number;
+    expect(ti3060).toBeGreaterThan(r4060); // 옛 식: 2.25 < 3.00 (틀렸다)
+    expect(r3070).toBeGreaterThan(r4060);  // 옛 식: 2.50 < 3.00 (틀렸다)
+    expect(r4070).toBeGreaterThan(r5060);  // 옛 식: 3.50 < 4.00 (틀렸다)
   });
   it("RTX2060은 세 세대 아래라 1점(하한 clamp)", () => {
     expect(scoreFromVga("RTX 2060")).toBe(1);
@@ -448,8 +474,8 @@ describe("scoreFromVga (GPU, 2026-08-28 재보정 — RTX5060=4점 앵커)", () 
 });
 
 describe("scoreFromCpu (2026-08-28 확장 — 울트라 신형 네이밍 + 기존 세대 파싱)", () => {
-  it("울트라5 225F(블랙라벨 현재 표준)는 앵커값 4점", () => {
-    expect(scoreFromCpu("울트라5 225F")).toBe(4);
+  it("울트라5 225F(블랙라벨 현재 표준)는 앵커 근처", () => {
+    expect(scoreFromCpu("울트라5 225F")).toBeCloseTo(4.11, 2);
   });
   it("울트라7은 같은 200번대에서 티어가 높아 5점(clamp)", () => {
     expect(scoreFromCpu("Ultra 7 265K")).toBe(5);
@@ -579,14 +605,14 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
   });
   it("GPU — 기본+특화1(2종류) combineHardwareTiers로 결합", () => {
     // RTX4060=3, RTX5060=4 → 3*.8+4*.2=3.2
-    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", null)).toBeCloseTo(3.2, 2);
+    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", null)).toBeCloseTo(3.06, 2);
   });
   it("GPU — 기본+특화1+특화2(3종류)", () => {
     // RTX4060=3, RTX5060=4, RTX5070=4.5 → 3*.8+(4+4.5)/2*.2=2.4+0.85=3.25
-    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", "RTX 5070")).toBeCloseTo(3.25, 2);
+    expect(scoreFromVgaSpec("RTX 4060", "RTX 5060", "RTX 5070")).toBeCloseTo(3.14, 2);
   });
   it("CPU — 기본+특화1(14400=4, 13400=3) → 4*.8+3*.2=3.8", () => {
-    expect(scoreFromCpuSpec("14400", "13400", null)).toBeCloseTo(3.8, 2);
+    expect(scoreFromCpuSpec("14400", "13400", null)).toBeCloseTo(3.91, 2);
   });
   it("RAM — 기본+특화(16G=3.5, 32G=4점 2026-09-01 재확정) → 3.5*.8+4*.2=3.6", () => {
     expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(3.6, 2);
@@ -613,20 +639,21 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
 describe("computeSpecScore (하드웨어점수 = GPU40%+모니터25%+CPU20%+RAM15%, 2026-08-28 전면개편)", () => {
   const blankItems = { vgaBase: null, vgaTop: null, vgaTop2: null, cpu: null, cpuTop1: null, cpuTop2: null, ram: null, ramTop: null, monitorBase: null, monitorTop: null };
   it("GPU만 있으면 GPU 점수 그대로", () => {
-    expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060" }, settings)).toBeCloseTo(3, 10);
+    expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060" }, settings)).toBeCloseTo(2.82, 2);
   });
   it("모니터만 있으면 모니터 점수 그대로", () => {
     expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz" }, settings)).toBe(4.5);
   });
   it("GPU+CPU+RAM+모니터가 다 있으면 40/20/15/25 가중평균", () => {
-    // GPU: RTX4060(3점) / CPU: 14400(4점) / RAM: 32G(2026-09-01 재확정 4점) / 모니터: 240Hz(3.5점)
-    // 3*.4 + 3.5*.25 + 4*.15 + 4*.2 = 1.2+0.875+0.6+0.8 = 3.475
+    // 2026-09-19 성능지수표 적용 후 — **비중은 그대로 40/25/15/20**이고 GPU 점수만 바뀌었다.
+    // GPU: RTX4060(2.82점) / CPU: 14400(4점) / RAM: 32G(4점) / 모니터: 240Hz(3.5점)
+    // 2.82*.4 + 3.5*.25 + 4*.15 + 4*.2 = 1.130+0.875+0.6+0.8 = 3.405
     expect(
       computeSpecScore(
         { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null },
         settings,
       ),
-    ).toBeCloseTo(3.475, 2);
+    ).toBeCloseTo(3.405, 2);
   });
   it("전부 없으면 null(지어내지 않음)", () => {
     expect(computeSpecScore(blankItems, settings)).toBeNull();
