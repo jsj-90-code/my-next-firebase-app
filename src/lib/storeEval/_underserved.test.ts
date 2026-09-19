@@ -572,4 +572,54 @@ describeIf("수요를 다 먹어도 모자란 매장", () => {
     console.log(`     38곳 전체 성적·LOO·대조군은 _catchment.test.ts (5)(6)에 있고, 일률 2km는 거기서 기각됐다.`);
     expect(targets.length).toBeGreaterThan(0);
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  it("(11) 문경 수요는 어디서 오나 — 주거냐 유동이냐", () => {
+    // 사용자(2026-09-19): *"문경 새끼 수요 어디서 오는 거야, 점촌터미널인가?"*
+    //
+    // 카카오로 확인한 문경시청점 주변 (2026-09-19):
+    //   점촌터미널 233m · 음식점 300m 71곳 / 500m 163곳 · 대형마트 300m 4곳
+    //   학원 1km 59곳 · 문경중앙시장 1,094m · 영화관 0곳
+    //   유동인구 고리 밀도(명/km²): 0~100m 185,000 · 100~200m 120,000 · 500~1000m 10,200
+    //
+    // -> **점촌 시내 상업핵 한복판이고, 시외버스터미널이 233m다.** 문경시는 911km²에 인구
+    //    6만 남짓인데 그게 점촌 한 곳으로 모인다. 사용자 짐작이 맞다.
+    //
+    // 그럼 물어야 할 게 바뀐다. 이 자리 수요는 **1km 주민**이 아니라 **시 전역에서 흘러드는
+    // 사람**이다. 그런데 산식은 이 매장을 주거 83% : 유동 17%로 센다. 왜 그런가:
+    //
+    //   유동 400m 27,745명 > 주거 1km 18,786명   <- 원자료는 유동이 더 크다
+    //   그런데 floatingFactor = 0.15를 곱한다    <- "스쳐 가는 사람이 대부분"이라서
+    //   -> 유동 기여가 1/6로 줄어 주거가 83%가 된다
+    //
+    // ⚠️ floatingFactor(α)는 **전역 계수**다. 여기서 고르면 38곳이 다 움직인다.
+    //    `docs/backlog.md`에 이미 "0.15냐 0.2냐, 나중에 조정할 때 같이 볼 것"으로 열려 있다.
+    //    여기서는 **문경이 원하는 값**과 **전체가 치르는 대가**를 나란히 재기만 한다.
+    const mg = probes.find((p) => /문경시청/.test(p.name));
+    if (!mg) { console.log("  문경시청점 없음"); return; }
+    console.log(`\n══ (11) floatingFactor(유동 반영률) 훑기 ══`);
+    console.log(`  지금 값 ${DEFAULT_TEXTBOOK_PARAMS.floatingFactor}` +
+      `  ·  문경 유동400m ${num(mg.f400)}명 vs 주거1km ${num(mg.pop1km)}명\n`);
+    console.log(`  ${"α".padStart(6)}${"MAPE".padStart(9)}${"중앙".padStart(8)}${"±20%".padStart(7)}${"최대".padStart(7)}` +
+      `${"100%초과".padStart(9)}${"문경 필요점유율".padStart(15)}${"문경 유동몫".padStart(12)}`);
+    for (const a of [0.15, 0.2, 0.3, 0.5, 0.75, 1.0]) {
+      const P = { ...DEFAULT_TEXTBOOK_PARAMS, floatingFactor: a };
+      const s = scoreTextbook(rows, P);
+      const f = fittedParams(P, s);
+      const row = s.rows.find((x) => x.storeCode === mg.r.input.storeCode);
+      const b = computeTextbook(mg.r.input, f);
+      const res = b.residentDemandUsers ?? 0, flo = b.floatingDemandUsers ?? 0;
+      console.log(`  ${a.toFixed(2).padStart(6)}${pct(s.mape, 2).padStart(9)}${pct(s.medianAbsErr).padStart(8)}` +
+        `${pct(s.within20, 0).padStart(7)}${pct(s.maxAbsErr, 0).padStart(7)}` +
+        `${String(s.requiredShare?.overOne ?? 0).padStart(7)}곳` +
+        `${pct(row?.requiredShare).padStart(15)}${pct(res + flo > 0 ? flo / (res + flo) : null, 0).padStart(12)}` +
+        `${a === DEFAULT_TEXTBOOK_PARAMS.floatingFactor ? "   <- 지금" : ""}`);
+    }
+    console.log(`\n  ⚠️ **여기서 α를 고르지 말 것.** MAPE가 제일 낮은 칸을 집으면 그게 눈금 옮기기다`);
+    console.log(`     (2026-09-18에 두 번 밟았다). α는 "스쳐 가는 사람 중 몇 %가 손님이냐"라는`);
+    console.log(`     물리량이라, 성적이 아니라 **자료로** 재야 하는 값이다.`);
+    console.log(`     이 표의 쓸모는 하나다 — **문경을 유동으로 설명하려면 α가 얼마나 필요한지,`);
+    console.log(`     그리고 그 대가를 38곳이 얼마나 치르는지.**`);
+    expect(mg).toBeTruthy();
+  });
 });
