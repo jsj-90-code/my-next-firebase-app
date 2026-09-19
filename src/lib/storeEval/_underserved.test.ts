@@ -450,4 +450,126 @@ describeIf("수요를 다 먹어도 모자란 매장", () => {
     console.log(`     아직 수집 안 됐다(sgis는 100~1000m만 있다).`);
     expect(shareRows.length).toBeGreaterThan(10);
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  it("(9) 주차 착상 — 지금 있는 자료로 닿을 수 있는 데까지", () => {
+    // 사용자(2026-09-19): *"크라우드 주차가 안 돼, 근처에. 근데 보면 고객이 주거지역에서
+    // 매장까지의 거리가 멀잖아. 이것도 고려하면 좋을 듯."*
+    //
+    // 착상은 둘로 갈린다:
+    //   (가) **경쟁력 항목**으로서의 주차 — 우리는 되고 경쟁점은 안 된다
+    //        -> 경쟁 항이다. 문경시청은 필요 점유율 226%라 경쟁 항 천장이 3.6%p뿐이다(backlog).
+    //   (나) **상권 반경 요인**으로서의 주차 — 차로 오니까 먼 데서도 온다
+    //        -> 수요 항이다. 천장이 없다. 오늘 나온 "저인구 동네 과소예측"과 결이 같다.
+    //
+    // ⚠️ **주차 자료가 한 건도 없다** — 기존점·경쟁점·입지평가 전부. 새 칸을 만들어야 한다.
+    //    그래서 여기서는 "지금 있는 자료로 닿는 데까지"만 본다:
+    //      1. 가장 가까운 개념인 `inflowRestriction`(유입제한)이 자국을 남기나
+    //      2. (나)의 밑바탕인 "손님이 멀리서 온다"가 자료에 있나 — 주거 밀도로 대신 잰다
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const leByCode = new Map<string, any>();
+    for (const l of (snap.locationEvaluations ?? [])) leByCode.set(l.candidateCode, l);
+    const mean2 = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+    const med2 = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+    const rank2 = (v: number[]) => {
+      const idx = v.map((x, i) => [x, i] as const).sort((p, q) => p[0] - q[0]);
+      const o = new Array(v.length).fill(0); idx.forEach(([, i], k) => { o[i] = k; }); return o;
+    };
+    const spear2 = (a: number[], b: number[]) => {
+      const ra = rank2(a), rb = rank2(b), ma = mean2(ra), mb = mean2(rb);
+      let n = 0, da = 0, db = 0;
+      for (let i = 0; i < ra.length; i++) { n += (ra[i] - ma) * (rb[i] - mb); da += (ra[i] - ma) ** 2; db += (rb[i] - mb) ** 2; }
+      return da > 0 && db > 0 ? n / Math.sqrt(da * db) : 0;
+    };
+
+    console.log(`\n══ (9) 주차 착상 — 자료가 없어 대신 잴 수 있는 것 ══`);
+    console.log(`\n  [1] 가장 가까운 기존 항목: inflowRestriction(유입제한) ↔ 부호 있는 매출 오차`);
+    const ORDER: Record<string, number> = { "없음": 0, "보통": 1, "강함": 2 };
+    const g = probes.filter((p) => p.signed != null && ORDER[leByCode.get(p.r.input.storeCode)?.inflowRestriction] != null);
+    if (g.length > 5) {
+      const x = g.map((p) => ORDER[leByCode.get(p.r.input.storeCode).inflowRestriction]);
+      const y = g.map((p) => p.signed as number);
+      const r = spear2(x, y);
+      const t = Math.abs(r) * Math.sqrt((g.length - 2) / Math.max(1e-9, 1 - r * r));
+      console.log(`    r = ${r.toFixed(3)}  n=${g.length}  t = ${t.toFixed(2)} (선 2.03)  ${t > 2.03 ? "유의" : "**유의하지 않다**"}`);
+      for (const k of ["없음", "보통", "강함"]) {
+        const sub = g.filter((p) => leByCode.get(p.r.input.storeCode).inflowRestriction === k);
+        if (!sub.length) continue;
+        console.log(`      ${k.padEnd(4)} n=${String(sub.length).padStart(2)}  부호오차 중앙 ${pct(med2(sub.map((p) => p.signed as number)))}`);
+      }
+      console.log(`    ⚠️ 유입제한은 주차가 아니다(물리적 진입 장벽 쪽이다). 산식에도 안 쓰인다.`);
+      console.log(`       "접근 편의"류가 자국을 남기는지 보는 참고 자료로만 읽을 것.`);
+    }
+
+    console.log(`\n  [2] (나)의 밑바탕 — "손님이 멀리서 온다"는 자료에 있나`);
+    console.log(`      주거인구 1km ↔ 부호오차 r=+0.340 (유의 · (6)(7)절) — 저인구 동네를 과소예측한다.`);
+    console.log(`      즉 **먼 거리에서 오는 상권을 산식이 작게 센다는 자국은 이미 있다.**`);
+    console.log(`      빠진 건 "그 이유가 주차냐"다. 그건 주차 자료 없이는 못 가른다.`);
+
+    console.log(`\n  [3] 그래서 재려면 무엇이 필요한가`);
+    console.log(`      (나) 수요 쪽만 보려면 **자사 41곳 주차 가능 여부**만 있으면 된다 — 경쟁점 229곳은 필요 없다.`);
+    console.log(`           우리 손님이 얼마나 멀리서 오느냐는 우리 주차 사정만의 문제이기 때문이다.`);
+    console.log(`      (가) 경쟁력 쪽까지 보려면 경쟁점 229곳도 채워야 한다.`);
+    console.log(`      ⚠️ 자사만 채우면 '자사 전용 이름표 함정'을 조심할 것 — 다만 (나)는 자사 안에서`);
+    console.log(`         갈리는 값이라(되는 곳/안 되는 곳) 그 함정에 걸리지 않는다.`);
+    expect(probes.length).toBeGreaterThan(10);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  it("(10) 주거 반경을 1.5km·2km로 하면 문경 수요가 얼마가 되나", () => {
+    // 사용자(2026-09-19): *"문경 주거수요를 반경 2키로 아님 1.5키로 이렇게 하면 수요 어떤데."*
+    //
+    // 주거인구만 갈아끼우고 나머지는 그대로 둔다. 유동인구(400m)는 못 바꾼다 — 소상공인365에
+    // 1.5km·2km가 없다. 그래서 **수요는 주거 몫만큼만 움직인다.**
+    const SGIS = ".local-tools/sgis-resident-population.json";
+    if (!existsSync(SGIS)) { console.log("  sgis 자료 없음 — 건너뜀"); return; }
+    const sg = JSON.parse(readFileSync(SGIS, "utf8")) as {
+      sites: Record<string, { code?: string; radii?: Record<string, { totalPopulation?: number | null }> }>;
+    };
+    const popByCode = new Map<string, Record<string, number | null>>();
+    for (const v of Object.values(sg.sites)) {
+      if (!v.code) continue;
+      const m: Record<string, number | null> = {};
+      for (const [r, x] of Object.entries(v.radii ?? {})) m[r] = x?.totalPopulation ?? null;
+      popByCode.set(String(v.code), m);
+    }
+    const RAD = ["500", "1000", "1500", "2000"] as const;
+
+    console.log(`\n══ (10) 주거 반경별 — 필요 점유율이 어디까지 내려가나 ══`);
+    console.log(`  (유동 400m은 그대로다. 수요는 주거 몫만큼만 움직인다)\n`);
+    const targets = probes.filter((p) => p.req != null && p.req > 1)
+      .sort((a, b) => (b.req as number) - (a.req as number));
+    console.log(`  ${"매장".padEnd(14)}${"주거몫".padStart(7)}${"기준(1km)".padStart(11)}` +
+      RAD.map((r) => `${r === "1000" ? "1km" : r === "500" ? "500m" : `${Number(r) / 1000}km`}`.padStart(11)).join(""));
+    console.log(`  ${"".padEnd(14)}${"".padStart(7)}${"필요점유율".padStart(11)}` +
+      RAD.map(() => "필요점유율".padStart(11)).join(""));
+    for (const p of targets) {
+      const pops = popByCode.get(p.r.input.storeCode);
+      const base = pops?.["1000"];
+      if (!pops || !base || p.req == null) continue;
+      const b = computeTextbook(p.r.input, full);
+      const res = b.residentDemandUsers ?? 0, flo = b.floatingDemandUsers ?? 0;
+      const rs = res + flo > 0 ? res / (res + flo) : 0;
+      const cells = RAD.map((r) => {
+        const v = pops[r];
+        if (v == null) return "-".padStart(11);
+        const k = v / base;
+        const f = 1 + (k - 1) * rs; // 수요 배수 — 주거 몫만큼만 움직인다
+        return `${((p.req as number) / f * 100).toFixed(1)}%`.padStart(11);
+      });
+      console.log(`  ${p.name.padEnd(14)}${pct(rs, 0).padStart(7)}${pct(p.req).padStart(11)}${cells.join("")}`);
+    }
+    console.log(`\n  ── 문경시청점 주거인구 ──`);
+    const mg = popByCode.get(probes.find((p) => /문경시청/.test(p.name))?.r.input.storeCode ?? "");
+    if (mg) {
+      console.log(`    500m ${num(mg["500"])} · 1km ${num(mg["1000"])} · 1.5km ${num(mg["1500"])} · 2km ${num(mg["2000"])}`);
+      console.log(`    1km 대비:  1.5km ${(Number(mg["1500"]) / Number(mg["1000"])).toFixed(2)}배` +
+        ` · 2km ${(Number(mg["2000"]) / Number(mg["1000"])).toFixed(2)}배`);
+      console.log(`    (참고: 원 면적비는 1.5km 2.25배 · 2km 4배다. 그보다 훨씬 작다 =` +
+        ` **1km 밖은 사람이 얇다**)`);
+    }
+    console.log(`\n  ⚠️ 이건 "반경을 바꾸면 이렇게 된다"는 산수지 채택 근거가 아니다.`);
+    console.log(`     38곳 전체 성적·LOO·대조군은 _catchment.test.ts (5)(6)에 있고, 일률 2km는 거기서 기각됐다.`);
+    expect(targets.length).toBeGreaterThan(0);
+  });
 });
