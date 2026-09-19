@@ -159,3 +159,7 @@ src/**/_*.test.ts
 # 사용자 경고("결과맞추기일 수도 있다")에 따라 판정 기준을 파일 머리에 사전 등록해 뒀다.
 !src/lib/storeEval/_catchment.test.ts
 !/.local-tools/kakao-neighborhood.json
+
+# 2026-09-19 — 실험실에서 나온 변수를 운영 V62에 하나씩 태워 보는 하네스.
+# 사용자 설계: 실험실이 **기각한** 항목들을 위약군으로 같이 태워서, 개선이 진짜인지 잡음인지 가른다.
+!src/lib/storeEval/_v62LabFeatures.test.ts
