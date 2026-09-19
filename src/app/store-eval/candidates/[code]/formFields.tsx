@@ -6,6 +6,7 @@
 import { useId } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { formatNumber } from "@/lib/storeEval/format";
+import { MONITOR_BONUS } from "@/lib/storeEval/calc";
 
 const inputClass = "app-input w-full px-2.5 py-1.5 text-sm";
 const labelClass = "text-xs font-medium text-[var(--sl-ink-soft)]";
@@ -358,15 +359,34 @@ export function HardwareScoringGuide() {
         <strong>RAM</strong> — 8GB 이하=1.5 · 16GB=3.5 · 32GB=4.0 · 64GB 이상=5.0.
       </p>
       <p className="mt-2">
-        <strong>모니터</strong> — 주사율(Hz) 기준: 120Hz 미만=1.5 · 120~143=2.0 · 144~165=3.0 · 166~200=3.25 ·
-        201~240=3.5 · 241~299=4.0 · 300~359=4.5 · 360~399=4.75 · 400 이상=5.0. QHD/WQHD 해상도면 +1.0(최대 5.0).
-        OLED·4K는 무조건 5.0. <strong>“ZOWIE”라는 단어가 텍스트에 있어야</strong> BenQ ZOWIE 계열이 최소 4.5점으로
-        인식됩니다(예: “벤큐 27 FHD 240”은 그냥 3.5점, “BenQ ZOWIE XL2566K 240Hz”라고 적어야 4.5점) — 아래 입력칸을
-        클릭하면 자주 쓰는 모델 목록이 나오니 거기서 고르면 실수를 줄일 수 있습니다.
+        <strong>모니터</strong> — <strong>240Hz = 4.0점</strong>을 기준으로 주사율에 따라 연속으로 오르내립니다
+        (144Hz면 3.0점, 600Hz면 5.0점). 여기에 등급 가산이 붙습니다: OLED +{MONITOR_BONUS.oled} ·
+        4K +{MONITOR_BONUS.uhd4k} · QHD +{MONITOR_BONUS.qhd.toFixed(2)} · BenQ ZOWIE +{MONITOR_BONUS.zowie} ·
+        BenQ 일반 +{MONITOR_BONUS.benq} · 정품 게이밍 브랜드(LG 울트라기어·삼성 오디세이·ASUS·DELL 등)
+        +{MONITOR_BONUS.gamingBrand} · 울트라와이드 +{MONITOR_BONUS.ultrawide}. 해상도와 브랜드는 각각
+        <strong> 한 등급만</strong> 붙습니다(4K면 QHD는 안 봄, ZOWIE면 BenQ 일반은 안 봄). 최종 1~5점.
+      </p>
+      <p className="mt-2">
+        ⚠️ <strong>브랜드·해상도는 텍스트에 적혀 있어야 인식됩니다.</strong> “벤큐 27 FHD 240”은 BenQ 일반으로만
+        잡히고, “BenQ ZOWIE XL2566K 27인치 FHD 240Hz”라고 적어야 ZOWIE 가산이 붙습니다 — 아래 입력칸을 클릭하면
+        자주 쓰는 모델 목록이 나오니 거기서 고르면 실수를 줄일 수 있습니다.
+      </p>
+      <p className="mt-2">
+        ⚠️ <strong>듀얼모니터의 보조 화면은 모니터 점수에서 뺍니다.</strong> 보조 화면은 작아서(10인치 60Hz 등)
+        평균에 넣으면 그 매장 점수가 부당하게 낮아지는데, 그건 모니터가 나빠서가 아니라 보조 화면이라 작은 것입니다.
+        <strong> 듀얼 좌석의 프리미엄은 존구성이 이미 셉니다</strong>(1인석 = 칸막이·듀얼모니터 좌석) — 여기서 또
+        주면 이중계산이라 가점도 감점도 없이 빼기만 합니다. “듀얼”이라고 적어주시면 자동으로 걸러집니다.
       </p>
       <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">
         위 4항목 모두 “기본”(대부분 좌석) + “특화”(일부 좌석만 업그레이드) 텍스트를 따로 입력하면 기본80%+특화20%로
-        결합합니다(모니터만 기본65%+특화35%, 콤마로 여러 모델 나열 가능·기본과 같거나 낮은 특화는 자동 제외).
+        결합합니다(모니터만 기본65%+특화35%, <strong>줄바꿈이나 콤마</strong>로 여러 모델 나열 가능 · 기본과 같거나
+        낮은 특화는 자동 제외).
+      </p>
+      <p className="mt-2 text-[11px] text-[var(--sl-ink-soft)]">
+        📌 모니터 채점은 <strong>2026-09-19에 바뀌었습니다.</strong> 전에는 계단식 구간표였는데 140Hz와 144Hz가
+        1점 갈리고(같은 물건인데 4Hz 차이로), 4K·OLED는 Hz를 무시하고 무조건 5점이었습니다. 그리고 줄바꿈으로
+        나열한 모델이 한 덩어리로 뭉개져 엉뚱한 점수가 나왔습니다. ⚠️ 위 가산값 일곱 개는 원가·프리미엄 등급을
+        대리지표로 삼아 <strong>사람이 정한 값</strong>입니다(GPU 성능지수와 달리 검증할 외부 기준이 없습니다).
       </p>
     </div>
   );

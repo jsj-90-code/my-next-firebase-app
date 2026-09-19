@@ -627,9 +627,10 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             </div>
             <div className="mt-1">
               <b>모니터도 같은 구조입니다</b> — 앵커는 자사 표준 <b>240Hz = 4.00</b>,
-              기울기는 아래 {LAB_MONITOR_HZ_STEP} · 위 {LAB_MONITOR_HZ_STEP_UP}입니다. 운영은 구간표였는데
+              기울기는 아래 {LAB_MONITOR_HZ_STEP} · 위 {LAB_MONITOR_HZ_STEP_UP}입니다. 예전 운영은 구간표였는데
               경계가 실제 값 바로 위에 걸려 <b>140Hz(2.00)와 144Hz(3.00)가 1점 갈렸고</b>,
               4K·OLED는 Hz를 무시하고 5점 고정이었습니다(4K 60Hz도 만점).
+              ✅ <b>2026-09-19에 이 잣대가 운영 V62로 넘어갔습니다</b> — 지금은 운영도 같은 식을 씁니다.
             </div>
             <div className="mt-1">
               모니터는 GPU처럼 성능 지표가 하나로 안 나오니 <b>원가·프리미엄 등급</b>을 대리지표로 씁니다:
@@ -637,8 +638,8 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               BenQ ZOWIE +{LAB_MONITOR_BONUS.zowie} · BenQ 일반 +{LAB_MONITOR_BONUS.benq} ·
               정품 게이밍 브랜드 +{LAB_MONITOR_BONUS.gamingBrand} ·
               울트라와이드 +{LAB_MONITOR_BONUS.ultrawide} · QHD +{LAB_MONITOR_BONUS.qhd.toFixed(2)}.
-              한 칸에 여러 모델이 적힌 14건은 <b>낱개로 쪼개 각각 채점한 뒤 평균</b>냅니다 — 운영처럼
-              Hz를 먼저 평균내면 해상도·브랜드 가산이 뒤섞입니다.
+              한 칸에 여러 모델이 적힌 14건은 <b>낱개로 쪼개 각각 채점한 뒤 평균</b>냅니다 — 예전 운영처럼
+              Hz를 먼저 평균내면 해상도·브랜드 가산이 뒤섞입니다(이 파싱 교정도 2026-09-19에 운영으로 넘어갔습니다).
             </div>
             <div className="mt-1">
               ⭐ <b>QHD +{LAB_MONITOR_BONUS.qhd.toFixed(2)}는 사용자가 준 등가점에서 역산한 값입니다.</b>

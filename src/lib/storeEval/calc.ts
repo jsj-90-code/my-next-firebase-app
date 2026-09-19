@@ -697,7 +697,15 @@ export const MONITOR_MODEL_HZ_TABLE: Record<string, number> = {
  * 않는다(데이터 입력 시점에 조사자가 실제 해상도를 직접 적도록 안내 — 34인치만 예외로 별도 처리,
  * LG가 아니면 WQHD가 사실상 표준이라 근사가 안전하다).
  */
-export function scoreFromMonitor(text: string | null, modelHzTable: Record<string, number> = MONITOR_MODEL_HZ_TABLE): number | null {
+/**
+ * **2026-09-19 이전 구간표.** 비교 기준선으로만 남긴다 — 지금 채점은 아래 `scoreFromMonitor`다.
+ *
+ * ⚠️ **새 코드에서 쓰지 말 것.** 실험실 하네스가 "옛 잣대로 재면 어떻게 되나"를 볼 때만 쓴다.
+ *    Hz를 못 읽는 텍스트의 폴백으로도 여전히 쓰인다(4K/OLED만 적히고 Hz가 없는 칸 등).
+ *
+ * 왜 갈아치웠나는 `scoreFromMonitor` 주석에 있다.
+ */
+export function scoreFromMonitorStepTable(text: string | null, modelHzTable: Record<string, number> = MONITOR_MODEL_HZ_TABLE): number | null {
   if (!text) return null;
   const upper = text.toUpperCase();
   if (/4K|UHD|OLED/.test(upper)) return 5; // §10: OLED·4K 고정 최고점
@@ -734,6 +742,124 @@ export function scoreFromMonitor(text: string | null, modelHzTable: Record<strin
   return score;
 }
 
+/**
+ * 모니터 — 2026-09-19 **잣대 교체**. 계단 구간표에서 **연속 눈금 + 등급 가산**으로 바꿨다.
+ *
+ * ── 왜 바꿨나 (변별력 · 측정된 사실) ───────────────────────────────────────
+ * 옛 구간표는 매장을 못 갈랐다. 자사+경쟁 196칸을 채점해 보면:
+ *
+ *   고유값 **21개** · 상위 3개 동점 덩어리에 **118칸(60%)**이 뭉침(3.50점 49곳 · 3.00점 35곳)
+ *   자사 38곳은 표준편차 0.15 — 사실상 **상수**였다
+ *
+ * 새 잣대는 고유값 61개 · 동점 덩어리 32%다. 사용자 지적(2026-09-19): *"모니터가산까지
+ * 들어가야할거같은데? 기존값은 변별력이 좀 떨어질텐데"* — 재보니 맞는 말이었다.
+ *
+ * 같이 고친 **파싱 오류**가 사실 더 크다. 옛 코드는 칸을 **콤마로만** 쪼갰는데 조사 자료는
+ * 모델을 **줄바꿈**으로 나열한다. 그래서 여러 모델이 한 덩어리가 되고 Hz를 **먼저 평균낸 뒤**
+ * 한 번 채점했다:
+ *
+ *   "Geekstar QHD 144Hz / AMH FHD 60Hz / 삼성 144Hz"
+ *     옛: Hz 평균 116 -> **1.50점**      새: 낱개 3.20/1.29/3.00 -> **2.50점**
+ *
+ * ── ⚠️ 이 값들이 어디서 왔는지 (중요) ──────────────────────────────────────
+ * **가산 일곱 개는 전부 [감각] 계수다.** GPU 성능지수는 공개 벤치마크라는 외부 기준이 있어서
+ * "RTX 3060 Ti > RTX 4060"이 참/거짓으로 갈렸지만, **모니터는 그런 기준이 없다.**
+ *
+ * 그래서 이 표는 **"맞는 값을 찾았다"가 아니라 "지금 손에 있는 최선의 추정치"**다. 크기 순서는
+ * 사용자가 원가·프리미엄 등급으로 정했다(2026-09-18): *"OLED가 비용적이나 이런거봤을떄 가산이
+ * 제일높을거같고, 그다음이 BenQ / 4K 정도? 그담이 울트라기어나 에이수스 DELL정도? 그담이
+ * 울트라와이드 그담이 QHD"*
+ *
+ * 📌 **나중에 외부 기준(벤치마크·패널 등급 자료 등)이 생기면 여기를 먼저 열 것.** 지금 값이
+ *    틀렸다고 드러나도 놀랄 일이 아니다 — 애초에 검증된 적이 없다.
+ *
+ * ⚠️ **QHD 0.7336만은 역산된 값이라 성격이 다르다.** 사용자가 준 등가점(*"32인치 FHD 240Hz와
+ *    27인치 QHD 165Hz는 두개사실 비슷함"*)에서 `ln(165/240)/0.5108 = -0.7336`으로 뽑았다.
+ *    감각이지만 **앵커가 있는** 감각이다.
+ *
+ * ⚠️ **울트라와이드 0.3은 자사 27 / 경쟁 3으로 쏠려 있다.** 오늘 존구성에서 걷어낸 "자사 전용
+ *    이름표"와 같은 모양이라 작게 뒀다. 나머지 여섯은 양쪽에 다 있거나 경쟁점 쪽이 많다
+ *    (OLED·4K는 자사 0건 — 우리에게 **불리한** 방향이다).
+ *
+ * ── 자기기만 검사 (통과) ───────────────────────────────────────────────────
+ *   자사÷경쟁 모니터 점수 비율 1.12 -> **1.12 불변**. 절대값은 양쪽 다 오르지만 모델이 쓰는
+ *   비율은 안 움직인다 — 존구성 이름표처럼 우리만 이득 보는 구조가 아니다.
+ *
+ * 대가(리브원아웃 n=38, 2026-09-19): MAPE 8.96 -> 8.88% · 중앙 8.11 -> **7.60%** ·
+ * ±10% 63% 유지 · ±20% 92 -> 89%(35곳 -> 34곳).
+ * 근거와 측정값: `docs/releases/2026-09-19-v62-port.md`
+ */
+export const MONITOR_HZ_ANCHOR = 240;
+/** 앵커 아래쪽 기울기 — ln(144/240). 240Hz -> 144Hz가 정확히 1점 떨어지게 잡은 값이다. */
+export const MONITOR_HZ_STEP = 0.5108;
+/** 앵커 위쪽 기울기. 600Hz ZOWIE가 딱 5.00이 되는 값이다(위쪽은 체감이 둔해서 기울기가 완만). */
+export const MONITOR_HZ_STEP_UP = 2.29;
+
+/** 등급 가산. ⚠️ 전부 [감각] 계수다 — 위 주석 참고. */
+export const MONITOR_BONUS = {
+  /** 응답속도 0.03ms · 명암비. 원가가 제일 높다. 자사 0 · 경쟁 5개. */
+  oled: 1.5,
+  /** 세로 2160. QHD 위. 자사 0 · 경쟁 6개. */
+  uhd4k: 1.0,
+  /** BenQ ZOWIE — e스포츠 전용(DyAc 모션블러 저감). 자사 31 · 경쟁 56개. */
+  zowie: 0.6,
+  /** BenQ 일반 라인(EX·MOBIUZ·GW). 자사 0 · 경쟁 30개. */
+  benq: 0.4,
+  /** 정품 게이밍 브랜드 — LG 울트라기어·삼성 오디세이·ASUS·DELL·GIGABYTE·MSI. 자사 19 · 경쟁 50개. */
+  gamingBrand: 0.4,
+  /** 울트라와이드(WWQHD 3440x1440) — 시야. ⚠️ 자사 27 · 경쟁 3개로 거의 자사 전용이라 작게 뒀다. */
+  ultrawide: 0.3,
+  /** QHD(=WQHD 2560x1440). 사용자가 준 등가점에서 역산 — 위 주석 참고. 자사 29 · 경쟁 26개. */
+  qhd: 0.7336,
+} as const;
+
+const MONITOR_UW_RE = /WWQHD|UWQHD|울트라와이드|ULTRAWIDE|21:9/i;
+const MONITOR_GAMING_BRAND_RE = /ASUS|에이수스|TUF|ROG|DELL|ALIENWARE|에일리언웨어|울트라기어|ULTRAGEAR|오디세이|ODYSSEY|GIGABYTE|AORUS|\bMSI\b/i;
+
+/**
+ * 모니터 **한 대**를 채점한다. Hz를 못 읽으면 옛 구간표로 떨어진다(모델명 표 등).
+ *
+ * ⚠️ **듀얼모니터 보조 화면은 채점에서 뺀다**(null을 돌려준다). 보조 화면은 10인치 60Hz처럼
+ *    작은데, 그건 **모니터 품질이 나쁜 게 아니라 보조 화면이라 작은 것**이다. 평균에 넣으면
+ *    "32인치 240Hz + 10인치 듀얼 60Hz"가 같이 적힌 경쟁점이 부당하게 낮아진다 — 우리에게
+ *    유리한 왜곡이다. 그리고 **듀얼 좌석의 프리미엄은 존구성이 이미 센다**(`types.ts`: *1인석 =
+ *    칸막이·듀얼모니터만 있는 개방형 좌석*). 여기서 또 주면 이중계산이라 **가점도 감점도 없이
+ *    빼기만** 한다.
+ */
+export function scoreFromMonitor(text: string | null, modelHzTable: Record<string, number> = MONITOR_MODEL_HZ_TABLE): number | null {
+  if (!text || !text.trim()) return null;
+  if (/듀얼|DUAL/i.test(text)) return null;
+  const u = text.toUpperCase();
+  const hs = [...text.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
+  if (hs.length === 0) return scoreFromMonitorStepTable(text, modelHzTable);
+  const hz = hs.reduce((a, b) => a + b, 0) / hs.length;
+  const rel = Math.log(hz / MONITOR_HZ_ANCHOR);
+  let sc = 4 + rel / (rel > 0 ? MONITOR_HZ_STEP_UP : MONITOR_HZ_STEP);
+  // 해상도 — 4K가 걸리면 QHD는 안 본다(이중계산).
+  if (/4K|\bUHD\b/.test(u)) sc += MONITOR_BONUS.uhd4k;
+  else if (/QHD/.test(u)) sc += MONITOR_BONUS.qhd;
+  if (MONITOR_UW_RE.test(u)) sc += MONITOR_BONUS.ultrawide; // 해상도와 별개로 시야
+  if (/OLED/.test(u)) sc += MONITOR_BONUS.oled;
+  // 브랜드 — 한 등급만 걸린다.
+  if (/ZOWIE/.test(u)) sc += MONITOR_BONUS.zowie;
+  else if (/BENQ|벤큐/i.test(text)) sc += MONITOR_BONUS.benq;
+  else if (MONITOR_GAMING_BRAND_RE.test(u)) sc += MONITOR_BONUS.gamingBrand;
+  return Math.max(1, Math.min(5, sc));
+}
+
+/**
+ * 칸 하나 — **줄바꿈·콤마로 쪼개 낱개로 채점하고 평균**낸다 (2026-09-19).
+ *
+ * 옛 코드는 콤마로만 쪼갰는데 조사 자료는 줄바꿈으로 나열한다. 위 주석의 파싱 오류가 그거다.
+ */
+export function scoreFromMonitorCell(text: string | null, modelHzTable: Record<string, number> = MONITOR_MODEL_HZ_TABLE): number | null {
+  if (!text || !text.trim()) return null;
+  const units = text.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  const scores = units.map((t) => scoreFromMonitor(t, modelHzTable)).filter((v): v is number => v != null);
+  if (scores.length === 0) return null;
+  return scores.reduce((a, b) => a + b, 0) / scores.length;
+}
+
 // 2026-09-01 재설계(사용자 확정) — 모니터는 GPU/CPU와 달리 특화 슬롯이 "특화1/특화2" 고정 2칸이
 // 아니라 한 텍스트에 콤마로 여러 모델을 나열하는 방식이라, combineHardwareTiers의 공용 80/20
 // 결합을 그대로 쓰면 두 가지 문제가 있었다: ① 나열된 모델 전체를 하나의 문자열로 뭉쳐 Hz를
@@ -750,10 +876,11 @@ export function scoreFromMonitor(text: string | null, modelHzTable: Record<strin
 const MONITOR_SPECIALTY_WEIGHT = 0.35;
 
 export function scoreFromMonitorSpec(monitorBase: string | null, monitorTop: string | null): number | null {
-  const base = scoreFromMonitor(monitorBase);
-  if (!monitorTop) return base;
+  // 2026-09-19 — 쪼개는 기준이 콤마에서 **줄바꿈·콤마**로 바뀌었다(scoreFromMonitorCell 주석).
+  const base = scoreFromMonitorCell(monitorBase);
+  if (!monitorTop || !monitorTop.trim()) return base;
   const qualifying = monitorTop
-    .split(",")
+    .split(/[\n,]/)
     .map((part) => scoreFromMonitor(part.trim()))
     .filter((score): score is number => score != null && (base == null || score > base));
   if (qualifying.length === 0) return base;

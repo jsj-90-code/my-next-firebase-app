@@ -143,7 +143,10 @@
 //    **4.11점**이 된다(14400F는 4.00). 지금의 "같은 점수"가 크게 틀린 건 아니었다는 뜻이고,
 //    그래도 방향은 맞게 섰다. 해당 6건은 전부 경쟁점이고 자사엔 없다.
 
-import { scoreFromVga, scoreFromCpu, scoreFromRam, scoreFromMonitor, combineHardwareTiers } from "@/lib/storeEval/calc";
+import {
+  scoreFromVga, scoreFromCpu, scoreFromRam, scoreFromMonitor, scoreFromMonitorStepTable,
+  combineHardwareTiers, MONITOR_HZ_ANCHOR, MONITOR_HZ_STEP, MONITOR_HZ_STEP_UP, MONITOR_BONUS,
+} from "@/lib/storeEval/calc";
 import type { ModelSettings } from "@/lib/storeEval/types";
 
 /** 앵커 = 블랙라벨 현재 표준(RTX 5060)을 100으로 놓은 상대 성능. 클수록 빠르다. */
@@ -457,108 +460,55 @@ export function labScoreFromRam(text: string | null, gap = LAB_RAM_GAP): number 
 //
 // ⚠️ 가산 일곱 개가 전부 **[감각] 계수**다. GPU 성능지수는 공개 벤치마크라는 외부 기준이
 //    있었지만 여기는 없다. 채택 근거는 `_specScore.test.ts`의 대조군이 댄다.
-export const LAB_MONITOR_HZ_ANCHOR = 240;
-export const LAB_MONITOR_HZ_STEP = 0.5108; // ln(144/240) — 240 -> 144 를 1점
-export const LAB_MONITOR_HZ_STEP_UP = 2.29; // 600Hz ZOWIE가 딱 5.00이 되는 값
-
-export const LAB_MONITOR_BONUS = {
-  /** 응답속도 0.03ms · 명암비. 원가가 제일 높다. 자사 0 · 경쟁 5개. */
-  oled: 1.5,
-  /** 세로 2160. QHD 위. 자사 0 · 경쟁 6개. */
-  uhd4k: 1.0,
-  /** BenQ ZOWIE — e스포츠 전용(DyAc 모션블러 저감). 자사 31 · 경쟁 56개. */
-  zowie: 0.6,
-  /** BenQ 일반 라인(EX·MOBIUZ·GW). 자사 0 · 경쟁 30개. */
-  benq: 0.4,
-  /**
-   * 정품 게이밍 브랜드 — LG 울트라기어·삼성 오디세이·ASUS·DELL·GIGABYTE·MSI. 자사 19 · 경쟁 50개.
-   *
-   * ⚠️ **무명 벌점을 따로 두지 않는다.** 사용자가 물었다(2026-09-18): *"FHD 240Hz 중소기업제품이
-   * 점수가좀 높은것같기도? 아닌가"* -> *"모르겠어 감안오네. 크기를 측정하기가"*
-   *
-   * 안 만든 이유가 셋이다.
-   *   1. **이미 들어가 있다.** 무명 벌점과 브랜드 가산은 같은 축의 앞뒤라, 지금도 정품 240Hz(4.40)
-   *      대 무명 240Hz(4.00)로 0.4 차이가 있다. 나중에 조절하려면 **이 값 하나만 올리면** 된다.
-   *   2. **성적에 영향이 거의 없다.** 모델은 점수의 절대값을 안 쓰고 자사÷경쟁 **비율**만 쓴다.
-   *      모니터를 전부 -0.4 해도 비율은 1.22 -> 1.25로 거의 안 움직인다.
-   *   3. **자료도 감각도 크기를 못 준다.** 그런 계수는 0으로 둔다 — 넣으면 자사가 경쟁점보다 더
-   *      많이 내려간다(자사 무명 70% vs 경쟁 58%). 근거 없이 우리 예상매출을 낮추는 일이 된다.
-   */
-  gamingBrand: 0.4,
-  /** 울트라와이드(WWQHD 3440x1440) — 시야. ⚠️ 자사 27 · 경쟁 3개로 거의 자사 전용이라 작게 뒀다. */
-  ultrawide: 0.3,
-  /**
-   * QHD(=WQHD 2560x1440). 자사 29 · 경쟁 26개.
-   *
-   * ⭐ **이 값은 사용자가 준 등가점에서 역산했다** (2026-09-18). 처음엔 08-30 확정값 +1.0을
-   * 썼다가 "높다"는 지적에 +0.2로 내렸는데, 그러면 **원가가 비싼 QHD·울트라와이드가 싼 기본보다
-   * 낮아지는** 모순이 생겼다(자사 특화 74개가 "기본보다 낮음"으로 제외됐다). 사용자 판단:
-   *
-   *   *"두개사실 비슷함. 이용목적에대한 차이일뿐 가격이나 뭐이런것들 다 비슷해서 잘모르겠다"*
-   *   (32인치 FHD 240Hz 기본 ↔ 27인치 QHD 165Hz)
-   *
-   * 두 물건이 동급이면 QHD 가산은 **165Hz의 Hz 손실을 정확히 상쇄**해야 한다:
-   *   ln(165/240) / 0.5108 = -0.7336  ->  QHD = +0.7336
-   * 그러면 27인치 QHD 165Hz가 딱 4.00이 되어 기본과 같아진다. 추측이 아니라 **사용자가 아는
-   * 등가점을 앵커로 쓴 값**이다.
-   *
-   * 덕분에 34인치 WWQHD 165Hz는 4.30(QHD 0.73 + 울트라와이드 0.3)으로 **특화 자격이 생기고**,
-   * 27인치 QHD 165Hz처럼 진짜로 기본과 동급인 것만 제외된다.
-   */
-  qhd: 0.7336,
-};
-
-const UW_RE = /WWQHD|UWQHD|울트라와이드|ULTRAWIDE|21:9/i;
-const GAMING_BRAND_RE = /ASUS|에이수스|TUF|ROG|DELL|ALIENWARE|에일리언웨어|울트라기어|ULTRAGEAR|오디세이|ODYSSEY|GIGABYTE|AORUS|\bMSI\b/i;
+// ── 모니터: 잣대는 이제 `calc.ts`에 있다 (2026-09-19 운영 이식) ────────────
+//
+// 위 설계 메모는 **왜 이 잣대인지**를 적은 것이라 그대로 둔다. 다만 **구현과 계수는 운영으로
+// 옮겨갔다** — 사용자 지적(*"모니터가산까지 들어가야할거같은데? 기존값은 변별력이 좀 떨어질텐데"*)
+// 을 재보니 맞았고(고유값 21 -> 61개), 파싱 오류까지 같이 드러나서 운영 V62에 넣었다.
+//
+// ⚠️ **여기에 잣대를 다시 적지 말 것.** 두 벌이 되면 실험실과 운영이 조용히 갈라진다.
+//    아래는 실험실 코드·하네스가 쓰던 이름만 남긴 껍데기다.
+export const LAB_MONITOR_HZ_ANCHOR = MONITOR_HZ_ANCHOR;
+export const LAB_MONITOR_HZ_STEP = MONITOR_HZ_STEP;
+export const LAB_MONITOR_HZ_STEP_UP = MONITOR_HZ_STEP_UP;
+export const LAB_MONITOR_BONUS: Record<keyof typeof MONITOR_BONUS, number> = { ...MONITOR_BONUS };
 
 /**
- * 모니터 **한 대**를 채점한다. Hz가 없으면 운영 처리로 떨어진다(모델명 표 등).
+ * 모니터 한 대. `calc.ts`의 `scoreFromMonitor`를 부른다.
+ *
+ * ⚠️ `bonus`·`stepUp`을 **기본값과 다르게 주면 훑기 전용 경로로 빠진다**(운영과 다른 값이 나온다).
+ *    계수를 훑어볼 때만 쓸 것 — 기본값으로 부르면 운영과 정확히 같다.
  */
 export function labScoreFromMonitorUnit(
   text: string | null,
   bonus: typeof LAB_MONITOR_BONUS = LAB_MONITOR_BONUS,
   stepUp = LAB_MONITOR_HZ_STEP_UP,
 ): number | null {
+  const sameAsOperational = stepUp === MONITOR_HZ_STEP_UP
+    && (Object.keys(MONITOR_BONUS) as (keyof typeof MONITOR_BONUS)[]).every((k) => bonus[k] === MONITOR_BONUS[k]);
+  if (sameAsOperational) return scoreFromMonitor(text);
+  // ── 훑기 전용: 계수를 갈아끼운 판 ──────────────────────────────────────
+  // 운영과 **같은 식**이어야 훑기 결과가 뜻이 있다. 식을 고칠 일이 생기면 calc.ts와 여기를
+  // 같이 고쳐야 한다(그게 싫으면 계수 훑기를 접고 이 갈래를 지우면 된다).
   if (!text || !text.trim()) return null;
-  // ── 듀얼모니터 보조 화면은 채점에서 뺀다 (2026-09-18 사용자 지적) ─────────
-  // *"모니터중에 듀얼모니터있는데, 이거는 해당모니터의 스펙만보는게아니라 좌석에 모니터가
-  //   두개가있다는걸봐야하는데, 이런좌석은 프리미엄석이고..."*
-  //
-  // 보조 화면은 10인치 60Hz처럼 작다(1.29점). 그런데 그건 **모니터 품질이 나쁜 게 아니라
-  // 보조 화면이라 작은 것**이다. 사양 평균에 넣으면 한 칸에 "32인치 240Hz + 10인치 듀얼 60Hz"가
-  // 같이 적힌 경쟁점 점수가 (4.00+1.29)/2 = 2.65로 부당하게 낮아진다 — 우리에게 유리한 왜곡이다.
-  //
-  // ⚠️ 그리고 **듀얼 좌석의 프리미엄은 존구성이 이미 센다.** 조사 필드 정의가 그렇다
-  //    (`types.ts`: *1인석 = 칸막이·듀얼모니터만 있는 개방형 좌석*). `singleSeatCount`가
-  //    labZoneComposition의 **특화좌석**에 들어간다. 하드웨어에서 또 가산을 주면 이중계산이다.
-  //    그래서 여기서는 **가점도 감점도 주지 않고 빼기만** 한다.
   if (/듀얼|DUAL/i.test(text)) return null;
   const u = text.toUpperCase();
   const hs = [...text.matchAll(/(\d{2,3})\s*hz/gi)].map((m) => Number(m[1]));
-  if (hs.length === 0) return scoreFromMonitor(text);
+  if (hs.length === 0) return scoreFromMonitorStepTable(text);
   const hz = hs.reduce((a, b) => a + b, 0) / hs.length;
-  const rel = Math.log(hz / LAB_MONITOR_HZ_ANCHOR);
-  let sc = 4 + rel / (rel > 0 ? stepUp : LAB_MONITOR_HZ_STEP);
-  // 해상도 — 4K가 걸리면 QHD는 안 본다(이중계산).
+  const rel = Math.log(hz / MONITOR_HZ_ANCHOR);
+  let sc = 4 + rel / (rel > 0 ? stepUp : MONITOR_HZ_STEP);
   if (/4K|\bUHD\b/.test(u)) sc += bonus.uhd4k;
   else if (/QHD/.test(u)) sc += bonus.qhd;
-  if (UW_RE.test(u)) sc += bonus.ultrawide; // 해상도와 별개로 시야
+  if (/WWQHD|UWQHD|울트라와이드|ULTRAWIDE|21:9/i.test(u)) sc += bonus.ultrawide;
   if (/OLED/.test(u)) sc += bonus.oled;
-  // 브랜드 — 한 등급만 걸린다.
   if (/ZOWIE/.test(u)) sc += bonus.zowie;
-  else if (/BENQ/.test(u)) sc += bonus.benq;
-  else if (GAMING_BRAND_RE.test(u)) sc += bonus.gamingBrand;
+  else if (/BENQ|벤큐/i.test(text)) sc += bonus.benq;
+  else if (/ASUS|에이수스|TUF|ROG|DELL|ALIENWARE|에일리언웨어|울트라기어|ULTRAGEAR|오디세이|ODYSSEY|GIGABYTE|AORUS|\bMSI\b/i.test(u)) sc += bonus.gamingBrand;
   return Math.max(1, Math.min(5, sc));
 }
 
-/**
- * 칸 하나 — **줄바꿈·콤마로 쪼개 낱개로 채점하고 평균**낸다.
- *
- * ⚠️ 운영은 칸 전체에서 Hz를 뽑아 **먼저 평균낸 뒤** 채점한다. 한 칸에 여러 모델이 적힌
- *    14건에서 그게 틀린 답을 낸다 — 예를 들어 "Geekstar QHD 144Hz / AMH FHD 60Hz /
- *    삼성 144Hz"가 운영에서는 Hz 평균 116으로 **1.50점**인데, 낱개로 채점하면
- *    3.20 / 1.29 / 3.00 -> **2.50점**이다. 해상도·브랜드 가산이 각 모델에 맞게 붙기 때문이다.
- */
+/** 칸 하나 — 줄바꿈·콤마로 쪼개 낱개 채점 후 평균. */
 export function labScoreFromMonitorCell(
   text: string | null,
   bonus: typeof LAB_MONITOR_BONUS = LAB_MONITOR_BONUS,
@@ -574,10 +524,7 @@ export function labScoreFromMonitorCell(
 /** 모니터 특화 결합 비율 — 운영 `scoreFromMonitorSpec`과 같은 65/35. */
 const LAB_MONITOR_SPECIALTY_WEIGHT = 0.35;
 
-/**
- * 기본 + 특화 결합. 운영과 같은 원칙이다 — 기본보다 낮은 특화는 "특화 자격 없음"으로 제외하고,
- * 65/35로 섞는다(정직하게 다 적어도 손해 안 보게).
- */
+/** 기본 + 특화 결합. 기본보다 낮은 특화는 "특화 자격 없음"으로 제외하고 65/35로 섞는다. */
 export function labScoreFromMonitorSpec(
   base: string | null,
   top: string | null,
@@ -677,9 +624,12 @@ export type LabSpecOptions = {
  * 실험실 본체는 위 `labScoreFromMonitorSpec`(연속 눈금 + 등급 가산)을 쓴다.
  */
 function opScoreFromMonitorSpec(base: string | null, top: string | null, baseOnly: boolean): number | null {
-  const b = scoreFromMonitor(base);
+  // ⚠️ **2026-09-19 이전 운영 잣대**를 그대로 재현한다 — 구간표(`scoreFromMonitorStepTable`)로
+  //    채점하고 **콤마로만** 쪼갠다. 그날 운영이 이 파일 것으로 갈아탔기 때문에, 그냥
+  //    `scoreFromMonitor`를 부르면 "옛 잣대로 재면 어떤가"가 아니라 자기 자신과 비교하게 된다.
+  const b = scoreFromMonitorStepTable(base);
   if (baseOnly || !top) return b;
-  const qualifying = top.split(",").map((p) => scoreFromMonitor(p.trim()))
+  const qualifying = top.split(",").map((p) => scoreFromMonitorStepTable(p.trim()))
     .filter((s): s is number => s != null && (b == null || s > b));
   if (qualifying.length === 0) return b;
   const avg = qualifying.reduce((a, c) => a + c, 0) / qualifying.length;

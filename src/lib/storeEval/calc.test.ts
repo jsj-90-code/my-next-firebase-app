@@ -88,6 +88,9 @@ import {
   scoreFromCpu,
   scoreFromCpuSpec,
   scoreFromMonitor,
+  scoreFromMonitorCell,
+  scoreFromMonitorStepTable,
+  MONITOR_BONUS,
   scoreFromMonitorSpec,
   scoreFromRam,
   scoreFromRamSpec,
@@ -534,76 +537,138 @@ describe("combineHardwareTiers (기본80%+특화들 균등분배20%, 2026-08-28 
   });
 });
 
-describe("scoreFromMonitor (모니터, 2026-08-30 재보정 — 경쟁력 평가 기준 최종본 §10)", () => {
-  it("400Hz 이상은 5점", () => {
-    expect(scoreFromMonitor("400Hz")).toBe(5);
+// ══════════════════════════════════════════════════════════════════════════
+// 모니터 — 2026-09-19 잣대 교체(계단 구간표 -> 연속 눈금 + 등급 가산).
+//
+// 왜 바꿨는지는 calc.ts `scoreFromMonitor` 주석에 있다. 요지는 둘:
+//   1. 옛 구간표가 매장을 못 갈랐다(고유값 21개 · 196칸 중 118칸이 동점 덩어리 3개에 뭉침)
+//   2. 칸을 콤마로만 쪼개서, 줄바꿈으로 나열된 모델이 한 덩어리로 뭉개졌다(파싱 오류)
+//
+// ⚠️ 가산 일곱 개는 **감각 계수**다(검증할 외부 기준이 없다). 그래서 아래 시험은 개별 가산의
+//    "옳은 크기"를 잠그지 않는다 — 그건 자료가 못 대는 주장이다. 대신 **뜻이 통하는지**를
+//    잠근다: 앵커가 4점인가 · Hz가 높으면 점수가 높은가 · 서열이 뒤집히지 않는가.
+describe("scoreFromMonitor (모니터, 2026-09-19 연속 눈금 + 등급 가산)", () => {
+  const near = (v: number | null, x: number) => expect(v!).toBeCloseTo(x, 4);
+
+  it("앵커 240Hz = 4.00 — GPU(RTX 5060)·CPU(i5 14400F)와 같은 원칙(자사 표준이 4점)", () => {
+    near(scoreFromMonitor("240Hz"), 4);
+    near(scoreFromMonitor("32인치 FHD 240Hz"), 4);
   });
-  it("360~399Hz는 4.75점", () => {
-    expect(scoreFromMonitor("360Hz")).toBe(4.75);
+
+  it("아래쪽 기울기는 240Hz -> 144Hz가 정확히 1점", () => {
+    // 0.5108은 ln(144/240)을 소수 4자리로 반올림한 값이라 딱 1점은 아니고 그 근처다.
+    expect(scoreFromMonitor("144Hz")!).toBeCloseTo(3, 3);
   });
-  it("300~359Hz는 4.5점", () => {
-    expect(scoreFromMonitor("300Hz")).toBe(4.5);
+
+  it("⭐ Hz가 높으면 점수가 높다 — 계단이 아니라 연속이라 같은 값으로 뭉치지 않는다", () => {
+    const hz = [100, 120, 144, 165, 200, 240, 280, 300, 360, 400, 600];
+    const scores = hz.map((h) => scoreFromMonitor(`FHD ${h}Hz`)!);
+    for (let i = 1; i < scores.length; i++) expect(scores[i]).toBeGreaterThan(scores[i - 1]);
+    // 옛 구간표는 144와 165가 똑같이 3.00이었다. 이제 갈린다.
+    expect(scoreFromMonitor("FHD 165Hz")!).toBeGreaterThan(scoreFromMonitor("FHD 144Hz")!);
+    // 그리고 140Hz와 144Hz가 1점 갈리던 경계 절벽도 없어졌다.
+    expect(Math.abs(scoreFromMonitor("FHD 144Hz")! - scoreFromMonitor("FHD 140Hz")!)).toBeLessThan(0.1);
   });
-  it("241~299Hz는 4점", () => {
-    expect(scoreFromMonitor("280Hz")).toBe(4);
+
+  it("600Hz ZOWIE가 상한 5.00에 닿는다 — 위쪽 기울기를 그 값으로 잡았다", () => {
+    near(scoreFromMonitor("BenQ ZOWIE XL2586X+ 24.1인치 FHD 600Hz"), 5);
+    // 상한을 넘지 않는다.
+    expect(scoreFromMonitor("OLED 4K 600Hz")!).toBeLessThanOrEqual(5);
   });
-  it("201~240Hz(32인치FHD240Hz 기준점 포함)는 3.5점", () => {
-    expect(scoreFromMonitor("240Hz")).toBe(3.5);
-    expect(scoreFromMonitor("200Hz")).not.toBe(3.5); // 200은 아래 구간
+
+  it("⭐ 4K·OLED도 Hz를 본다 — 옛 잣대는 Hz를 무시하고 고정 5점이었다", () => {
+    // OLED 60Hz와 OLED 240Hz가 똑같이 5.00이던 자리다.
+    expect(scoreFromMonitor("OLED 240Hz")!).toBeGreaterThan(scoreFromMonitor("OLED 60Hz")!);
+    expect(scoreFromMonitor("4K 240Hz")!).toBeGreaterThan(scoreFromMonitor("4K 60Hz")!);
   });
-  it("166~200Hz는 3.25점", () => {
-    expect(scoreFromMonitor("200Hz")).toBe(3.25);
+
+  it("해상도 가산 — 4K가 걸리면 QHD는 안 본다(이중계산)", () => {
+    const base = scoreFromMonitor("FHD 240Hz")!;
+    near(scoreFromMonitor("QHD 240Hz"), base + MONITOR_BONUS.qhd);
+    near(scoreFromMonitor("4K 240Hz"), base + MONITOR_BONUS.uhd4k);
+    // "4K QHD"가 같이 적혀도 4K 하나만 붙는다.
+    near(scoreFromMonitor("4K QHD 240Hz"), base + MONITOR_BONUS.uhd4k);
   });
-  it("144~165Hz(32인치FHD144-165Hz 기준점)는 3점", () => {
-    expect(scoreFromMonitor("165Hz")).toBe(3);
-    expect(scoreFromMonitor("144Hz")).toBe(3);
+
+  // ⭐ 이 등가점이 QHD 가산값의 출처다(사용자: "두개사실 비슷함").
+  it("⭐ 32인치 FHD 240Hz와 27인치 QHD 165Hz가 같은 점수 — QHD 가산의 앵커", () => {
+    near(scoreFromMonitor("32인치 FHD 240Hz"), 4);
+    // QHD 0.7336은 ln(165/240)/0.5108을 소수 4자리로 끊은 값이라 딱 4.00은 아니고 그 근처다.
+    expect(scoreFromMonitor("27인치 QHD 165Hz")!).toBeCloseTo(4, 3);
   });
-  it("120~143Hz는 2점", () => {
-    expect(scoreFromMonitor("120Hz")).toBe(2);
+
+  it("울트라와이드는 해상도와 별개로 시야 가산이 따로 붙는다", () => {
+    const qhd = scoreFromMonitor("QHD 165Hz")!;
+    near(scoreFromMonitor("WWQHD 165Hz"), qhd + MONITOR_BONUS.ultrawide);
   });
-  it("120Hz 미만은 1.5점", () => {
-    expect(scoreFromMonitor("100Hz")).toBe(1.5);
+
+  it("브랜드는 한 등급만 걸린다 — ZOWIE > BenQ 일반 > 정품 게이밍 > 무명", () => {
+    const hz = "FHD 240Hz";
+    const plain = scoreFromMonitor(hz)!;
+    const gaming = scoreFromMonitor(`ASUS ROG ${hz}`)!;
+    const benq = scoreFromMonitor(`BenQ MOBIUZ ${hz}`)!;
+    const zowie = scoreFromMonitor(`BenQ ZOWIE ${hz}`)!;
+    expect(plain).toBeLessThan(gaming);
+    expect(gaming).toBeLessThanOrEqual(benq);
+    expect(benq).toBeLessThan(zowie);
+    // ZOWIE는 BenQ이기도 하지만 가산은 하나만 — 두 번 더하지 않는다.
+    near(zowie, plain + MONITOR_BONUS.zowie);
   });
+
+  it("점수는 1~5로 자른다", () => {
+    expect(scoreFromMonitor("FHD 30Hz")!).toBeGreaterThanOrEqual(1);
+    expect(scoreFromMonitor("BenQ ZOWIE OLED 4K WWQHD 600Hz")!).toBeLessThanOrEqual(5);
+  });
+
+  // ⚠️ 듀얼 보조화면은 **빼기만** 한다 — 가점도 감점도 없다. 듀얼 좌석의 프리미엄은
+  //    존구성(1인석 = 칸막이·듀얼모니터 좌석)이 이미 세므로 여기서 또 주면 이중계산이다.
+  it("⭐ 듀얼모니터 보조화면은 채점에서 뺀다(null) — 평균을 끌어내리면 안 된다", () => {
+    expect(scoreFromMonitor("삼성전자 S24C310 (24인치·FHD·75Hz·듀얼모니터)")).toBeNull();
+    expect(scoreFromMonitor("10인치 60Hz DUAL")).toBeNull();
+    // 한 칸에 같이 적혀 있어도 본 화면만 세어진다.
+    near(scoreFromMonitorCell("32인치 FHD 240Hz\n10인치 FHD 60Hz 듀얼모니터"), 4);
+  });
+
   it("Hz를 못 뽑거나 텍스트가 없으면(모델 사전에도 없으면) null", () => {
     expect(scoreFromMonitor("BenQ XL2540X")).toBeNull();
     expect(scoreFromMonitor(null)).toBeNull();
+    expect(scoreFromMonitor("")).toBeNull();
   });
-  it("OLED·4K·UHD는 Hz와 무관하게 고정 5점", () => {
-    expect(scoreFromMonitor("144Hz OLED")).toBe(5);
-    expect(scoreFromMonitor("4K 60Hz")).toBe(5);
-  });
-  it("같은 Hz라도 QHD/WQHD면 +1.0(최대 5) — 27인치QHD165Hz=4.0 기준점", () => {
-    expect(scoreFromMonitor("165Hz QHD")).toBe(4); // 32인치FHD165Hz(3.0)+1.0
-    expect(scoreFromMonitor("165Hz FHD")).toBe(3); // FHD 명시는 가산 없음
-  });
-  it("34인치는 LG가 아니면 WQHD로 간주해 가산한다", () => {
-    expect(scoreFromMonitor("34인치 165Hz")).toBe(4); // 3.0+1.0
-    expect(scoreFromMonitor("LG 34인치 165Hz")).toBe(3); // LG는 가산 없음(§10 자사 34인치 예외)
-  });
-  it("BenQ ZOWIE는 계산값과 4.5 중 큰 값(특화 사양 하한)", () => {
-    expect(scoreFromMonitor("BenQ ZOWIE 165Hz")).toBe(4.5); // 3.0보다 4.5가 큼
-    expect(scoreFromMonitor("BenQ ZOWIE 400Hz")).toBe(5); // 5.0이 4.5보다 큼
-  });
-  it("한 줄에 Hz가 여러 개면 평균 낸다", () => {
-    // (240+300)/2 = 270Hz → 241~299 구간=4점
-    expect(scoreFromMonitor("240Hz, 300Hz")).toBe(4);
-  });
-  it("Hz가 없으면 모델명 사전(MONITOR_MODEL_HZ_TABLE)에서 찾는다(대소문자·공백 무시, 부분일치)", () => {
+
+  it("Hz가 없으면 옛 구간표로 떨어진다 — 모델명 사전에서 찾는다", () => {
     const table = { "2546K": 240, "27GP850": 165 };
-    expect(scoreFromMonitor("벤큐 2546K", table)).toBe(3.5); // 240Hz로 매칭
-  });
-  it("콤마로 여러 모델이 나열돼 있으면 매칭된 모델들의 Hz를 평균한다", () => {
-    const table = { "2546K": 240, "27GP850": 165 };
-    // 매칭: 2546K(240)+27GP850(165) → 평균 202.5Hz → 201~240 구간=3.5점 (GP750은 표에 없어 무시)
-    expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750, LG 27GP850", table)).toBe(3.5);
-  });
-  it("사전에도 없는 모델명이면 null(지어내지 않음)", () => {
+    expect(scoreFromMonitor("벤큐 2546K", table)).toBe(3.5); // 구간표 240Hz = 3.5
     expect(scoreFromMonitor("벤큐 2546K, LG울트라기어 GP750", {})).toBeNull();
   });
-  it("기본 MONITOR_MODEL_HZ_TABLE(사용자 확인, 2026-08-28)로 실제 매장 문구를 채점한다", () => {
-    // 전대후문점 실사례: 벤큐2546K(240)+벤큐2746K(240)+GP750(240)+GP850(165) 평균=221.25Hz → 3.5점
-    expect(scoreFromMonitor("벤큐 2546K, 벤큐 2746K, LG울트라기어 GP750, LG울트라기어 GP850")).toBe(3.5);
-    expect(scoreFromMonitor("DELL")).toBe(4.75); // 360Hz
+
+  it("한 줄에 Hz가 여러 개면 평균 낸다", () => {
+    // (240+300)/2 = 270Hz
+    near(scoreFromMonitor("240Hz, 300Hz"), scoreFromMonitor("270Hz")!);
+  });
+});
+
+// ⚠️ 옛 구간표는 **비교 기준선으로만** 남아 있다. 지워도 산식은 안 바뀌지만, 실험실이
+//    "옛 잣대로 재면 어떤가"를 볼 때 쓰므로 동작을 잠가 둔다.
+describe("scoreFromMonitorStepTable (2026-09-19 이전 구간표 — 비교 기준선)", () => {
+  it("옛 구간표 그대로 동작한다", () => {
+    expect(scoreFromMonitorStepTable("400Hz")).toBe(5);
+    expect(scoreFromMonitorStepTable("360Hz")).toBe(4.75);
+    expect(scoreFromMonitorStepTable("300Hz")).toBe(4.5);
+    expect(scoreFromMonitorStepTable("280Hz")).toBe(4);
+    expect(scoreFromMonitorStepTable("240Hz")).toBe(3.5);
+    expect(scoreFromMonitorStepTable("200Hz")).toBe(3.25);
+    expect(scoreFromMonitorStepTable("165Hz")).toBe(3);
+    expect(scoreFromMonitorStepTable("144Hz")).toBe(3);
+    expect(scoreFromMonitorStepTable("120Hz")).toBe(2);
+    expect(scoreFromMonitorStepTable("100Hz")).toBe(1.5);
+  });
+  it("옛 잣대가 왜 문제였는지 — 이 두 줄이 그 자리다", () => {
+    // ① Hz를 무시하고 고정 만점
+    expect(scoreFromMonitorStepTable("144Hz OLED")).toBe(5);
+    expect(scoreFromMonitorStepTable("4K 60Hz")).toBe(5);
+    // ② 140Hz와 144Hz가 구간 경계로 1점 갈린다(같은 물건인데 4Hz 차이로)
+    expect(scoreFromMonitorStepTable("140Hz")).toBe(2);
+    expect(scoreFromMonitorStepTable("144Hz")).toBe(3);
   });
 });
 
@@ -625,16 +690,17 @@ describe("scoreFromVgaSpec/scoreFromCpuSpec/scoreFromRamSpec/scoreFromMonitorSpe
   it("RAM — 기본+특화(16G=3.5, 32G=4점 2026-09-01 재확정) → 3.5*.8+4*.2=3.6", () => {
     expect(scoreFromRamSpec("16G", "32G")).toBeCloseTo(3.6, 2);
   });
-  it("모니터 — 기본+특화(240Hz=3.5, 300Hz=4.5) → 3.5*.65+4.5*.35=3.85(2026-09-01 모니터 전용 65/35 재설계)", () => {
-    expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(3.85, 2);
+  // 2026-09-19 잣대 교체로 낱개 점수가 바뀌었다(240Hz=4.00 · 300Hz=4.10 · 280Hz=4.07 · 200Hz=3.64).
+  // 결합 규칙(기본보다 높은 특화만, 65/35)은 그대로다.
+  it("모니터 — 기본+특화(240Hz=4.00, 300Hz=4.10) → 4.00*.65+4.10*.35(2026-09-01 모니터 전용 65/35)", () => {
+    expect(scoreFromMonitorSpec("240Hz", "300Hz")).toBeCloseTo(4.0341, 3);
   });
-  it("모니터 — 콤마로 나열된 특화 중 기본과 같거나 낮은 항목은 제외하고 평균(정직하게 다 적어도 손해 안 봄)", () => {
-    // 기본 240Hz=3.5, 특화: 300Hz=4.5(자격O)/280Hz=4.0(자격O)/240Hz=3.5(기본과 동점 → 자격 없음, 제외)
-    // 자격 있는 두 개(4.5, 4.0) 평균=4.25 -> 3.5*.65+4.25*.35=3.7625
-    expect(scoreFromMonitorSpec("240Hz", "300Hz, 280Hz, 240Hz")).toBeCloseTo(3.5 * 0.65 + 4.25 * 0.35, 2);
+  it("모니터 — 나열된 특화 중 기본과 같거나 낮은 항목은 제외하고 평균(정직하게 다 적어도 손해 안 봄)", () => {
+    // 기본 240Hz=4.00, 특화: 300Hz=4.10(자격O)/280Hz=4.07(자격O)/240Hz=4.00(기본과 동점 → 제외)
+    expect(scoreFromMonitorSpec("240Hz", "300Hz, 280Hz, 240Hz")).toBeCloseTo(4.0288, 3);
   });
   it("모니터 — 특화가 전부 기본 이하이면 특화 자격 없음, 기본 그대로", () => {
-    expect(scoreFromMonitorSpec("300Hz", "240Hz, 200Hz")).toBeCloseTo(4.5, 2);
+    expect(scoreFromMonitorSpec("300Hz", "240Hz, 200Hz")).toBeCloseTo(4.0974, 3);
   });
   it("전부 없으면 null", () => {
     expect(scoreFromVgaSpec(null, null, null)).toBeNull();
@@ -650,18 +716,20 @@ describe("computeSpecScore (하드웨어점수 = GPU40%+모니터25%+CPU20%+RAM1
     expect(computeSpecScore({ ...blankItems, vgaBase: "RTX 4060" }, settings)).toBeCloseTo(2.82, 2);
   });
   it("모니터만 있으면 모니터 점수 그대로", () => {
-    expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz" }, settings)).toBe(4.5);
+    // 2026-09-19 잣대 교체 — 300Hz는 4 + ln(300/240)/2.29 = 4.0974 (옛 구간표에서는 4.50)
+    expect(computeSpecScore({ ...blankItems, monitorBase: "300Hz" }, settings)).toBeCloseTo(4.0974, 3);
   });
   it("GPU+CPU+RAM+모니터가 다 있으면 40/20/15/25 가중평균", () => {
-    // 2026-09-19 성능지수표 적용 후 — **비중은 그대로 40/25/15/20**이고 GPU 점수만 바뀌었다.
-    // GPU: RTX4060(2.82점) / CPU: 14400(4점) / RAM: 32G(4점) / 모니터: 240Hz(3.5점)
-    // 2.82*.4 + 3.5*.25 + 4*.15 + 4*.2 = 1.130+0.875+0.6+0.8 = 3.405
+    // **비중은 그대로 40/25/15/20**이다. 2026-09-19에 GPU(성능지수표)와 모니터(연속 눈금)의
+    // 점수가 바뀌었을 뿐이다.
+    // GPU: RTX4060(2.82점) / CPU: 14400(4점) / RAM: 32G(4점) / 모니터: 240Hz(**4점**, 앵커)
+    // 2.82*.4 + 4*.25 + 4*.15 + 4*.2 = 1.130+1.0+0.6+0.8 = 3.530
     expect(
       computeSpecScore(
         { vgaBase: "RTX 4060", vgaTop: null, vgaTop2: null, cpu: "14400", cpuTop1: null, cpuTop2: null, ram: "32G", ramTop: null, monitorBase: "240Hz", monitorTop: null },
         settings,
       ),
-    ).toBeCloseTo(3.405, 2);
+    ).toBeCloseTo(3.53, 2);
   });
   it("전부 없으면 null(지어내지 않음)", () => {
     expect(computeSpecScore(blankItems, settings)).toBeNull();
@@ -1600,13 +1668,14 @@ describe("computeExistingStoreMeasuredForecast (기존 가맹점 실측기반 �
     const result = computeExistingStoreMeasuredForecast(baseStore(), competitors, null, settings);
     expect(result.excludedReason).toBeNull();
     // 표준 존구성(팀룸2·커플존3·VIP존5·프렌즈존15)+지하1층·엘리베이터없음 조합. 하드웨어점수는
-    // GPU(RTX5060=4), 모니터(240Hz=3.5) — (4*.4+3.5*.25)/(0.4+0.25)=3.808. food=4.
+    // GPU(RTX5060=4), 모니터(240Hz=**4.0**, 2026-09-19 앵커) — (4*.4+4*.25)/(0.4+0.25)=4.0. food=4.
     // interior(facility)는 위 테스트와 동일 존구성(3.40)+인테리어4(직접입력, 표준값과 동일)+
     // 관리4(표준값) = 3.40*.5+4*.3+4*.2 = 3.70. location=4
     // 2026-09-03(8차) 하드:시설:입지 20:50:20 재배분(먹거리 16.667% 유지):
     // 2026-09-15 재배분: 사양 25% / 먹거리 5% / 시설 55% / 입지 15%
-    // → 3.808*.25 + 4*.05 + 3.70*.55 + 4*.15 = 3.786923   (존구성 잣대 교체 전: 3.855673)
-    expect(result.ownCompetitivenessScore).toBeCloseTo(3.786923, 3);
+    // → 4.0*.25 + 4*.05 + 3.70*.55 + 4*.15 = 3.835
+    // (2026-09-19 이전: 존구성 3.855673 -> 존구성 교체 후 3.786923 -> 모니터까지 교체 후 3.835)
+    expect(result.ownCompetitivenessScore).toBeCloseTo(3.835, 3);
 
     const capture = lookupDemandCapture(result.competitivenessGap, settings.demandCaptureTable);
     expect(result.demandCaptureRate).toBe(capture?.captureRate ?? null);
