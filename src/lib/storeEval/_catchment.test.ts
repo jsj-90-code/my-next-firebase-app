@@ -460,4 +460,175 @@ describeIf("유효 상권 — 2km 안 대체 PC방", () => {
     console.log(`     다만 **문턱 2곳은 내가 자료를 보고 정했다.** 그건 여전히 자유도다.`);
     expect(gap2.length).toBeGreaterThan(0);
   });
+
+  // ────────────────────────────────────────────────────────────────────────
+  it("(7) 상권은 원이 아니다 — 방위별로 펼쳐 본다", () => {
+    // 사용자(2026-09-19), 광주각화점을 두고:
+    //   *"좌측에 고속도로 지난 상권은 완전분리니까 거기 뭐 PC방 있든 상관없는 곳이고,
+    //     위쪽은 상권 끝났으니까 아래쪽 매장만 이제 상권이 겹치겠지. 매장 기준 위쪽은 다
+    //     우리 꺼고, 아래쪽이 조금 겹치는데 (...) 아파트 쪽이 우리 쪽이 유입경로가 너무 좋기
+    //     때문에 아파트는 아래로 안 넘어갈 것 같고, 아파트 단지 조금 더 아래 주택가
+    //     이쪽은 경쟁 쪽으로 볼 수 있을 듯?"*
+    //
+    // ⚠️ 앞 절에서 내가 "광주각화 2km 안에 PC방 27곳"이라고 적은 건 **원으로만 센 수**다.
+    //    방향도 장벽도 안 봤다. 사용자 지적이 맞다 — 고속도로 건너편은 같은 상권이 아니다.
+    //    여기서는 방위·거리로 펼쳐서 그 수가 실제로 어디에 있는지 보인다.
+    //
+    // (어제 '길건너 할인'이 위약은 깨끗했는데 표본이 모자라 기각된 것과 같은 개념이다 —
+    //  `docs/releases/2026-09-18-*` 6·7번. 여기서 계수를 만들지 않는다. 지도를 그릴 뿐이다.)
+    const bearing = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+      const toRad = (v: number) => (v * Math.PI) / 180;
+      const dLng = toRad(bLng - aLng);
+      const y = Math.sin(dLng) * Math.cos(toRad(bLat));
+      const x = Math.cos(toRad(aLat)) * Math.sin(toRad(bLat))
+        - Math.sin(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.cos(dLng);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    };
+    const dirOf = (deg: number) => ["북", "북동", "동", "남동", "남", "남서", "서", "북서"][Math.round(deg / 45) % 8];
+
+    for (const p of probes.filter((x) => /광주각화|양주덕정|문경시청/.test(x.name))) {
+      console.log(`\n══ (7) ${p.name} — 2km 안 PC방 ${p.pcDocs.length}곳을 방위·거리로 ══`);
+      const byDir = new Map<string, { n: number; nearest: number }>();
+      const rowsOut = p.pcDocs
+        .map((d) => ({ d, deg: bearing(p.lat, p.lng, d.lat, d.lng), dist: d.distanceM ?? 0 }))
+        .sort((a, b) => a.dist - b.dist);
+      console.log(`  ${"PC방".padEnd(24)}${"거리".padStart(8)}${"방위".padStart(6)}  (도)`);
+      for (const x of rowsOut) {
+        const dir = dirOf(x.deg);
+        const cur = byDir.get(dir) ?? { n: 0, nearest: 9e9 };
+        byDir.set(dir, { n: cur.n + 1, nearest: Math.min(cur.nearest, x.dist) });
+        if (rowsOut.length <= 12 || x.dist <= 1200) {
+          console.log(`  ${String(x.d.name ?? "-").slice(0, 23).padEnd(24)}${`${Math.round(x.dist)}m`.padStart(8)}` +
+            `${dir.padStart(6)}  (${Math.round(x.deg)}°)`);
+        }
+      }
+      if (rowsOut.length > 12) console.log(`  … 1200m 밖 ${rowsOut.filter((x) => x.dist > 1200).length}곳은 생략`);
+      console.log(`  ─ 방위별 요약 ─`);
+      for (const [dir, v] of [...byDir.entries()].sort((a, b) => a[1].nearest - b[1].nearest)) {
+        console.log(`    ${dir.padEnd(4)} ${String(v.n).padStart(2)}곳  최단 ${Math.round(v.nearest)}m`);
+      }
+      // 학교도 같은 자로 — 수요가 어느 쪽에 있는지 봐야 "겹치는 쪽"을 판단할 수 있다
+      const sc = p.schools.filter((s) => /초등학교|중학교|고등학교/.test(s.name ?? ""));
+      const scDir = new Map<string, number>();
+      for (const s of sc) {
+        const dir = dirOf(bearing(p.lat, p.lng, s.lat, s.lng));
+        scDir.set(dir, (scDir.get(dir) ?? 0) + 1);
+      }
+      console.log(`  ─ 학교 ${sc.length}곳 방위 ─  ${[...scDir.entries()].sort((a, b) => b[1] - a[1]).map(([d, n]) => `${d} ${n}`).join(" · ")}`);
+    }
+
+    console.log(`\n  ⚠️ 이 표는 **지도**지 계수가 아니다. "몇 곳"이라는 수 하나로 상권을 세면`);
+    console.log(`     고속도로 건너편과 바로 옆 골목이 같은 무게로 들어간다. 앞 절 (1)~(6)의`);
+    console.log(`     '대체재 수'도 같은 한계를 안고 있다 — 그래서 꼬리 3곳에만 통했을 수 있다.`);
+    expect(probes.length).toBeGreaterThan(0);
+  });
+
+  // ────────────────────────────────────────────────────────────────────────
+  it("(8) 계수 없이 기하로만 — '가장 가까운 PC방이 우리인 땅'의 인구", () => {
+    // (7)에서 드러난 것: 상권은 원이 아니다. 광주각화는 북쪽 반원이 통째로 비어 있고
+    // 27곳이 전부 남·서쪽에 있다. 사용자 읽기 그대로다.
+    //
+    // 그럼 반경을 고르는 대신 **기하로 직접 세면** 된다. 자유계수가 하나도 없다:
+    //
+    //   1. 주거인구를 고리별로 쪼갠다 (sgis 100~2000m 누적값의 차)
+    //   2. 각 고리를 5°씩 72칸으로 나눈다
+    //   3. 칸마다 **가장 가까운 PC방**을 찾는다 (우리 포함, 카카오 2km 낱개 좌표)
+    //   4. 우리가 제일 가까운 칸의 인구만 더한다  -> **유효 주거인구**
+    //
+    // 이게 교과서의 보로노이(최근접 시설) 배분이다. 고를 값이 없으니 어제 열 번 밟은
+    // "계수 고르기" 함정에서 자유롭다.
+    //
+    // ⚠️ 한계 셋 — 숨기지 말 것
+    //    (가) 고리 안에서 인구가 **방향으로 고르다**고 본다. 실제로는 안 고르다.
+    //    (나) 경쟁 PC방 목록이 **우리 기준 2km까지**다. 가장자리 칸은 밖의 PC방을 못 본다.
+    //    (다) 고속도로 같은 **장벽**을 못 본다. 각화 서쪽이 그 경우다(사용자 지적).
+    //         즉 이 계산은 서쪽을 **실제보다 많이 뺏긴 것으로** 셀 것이다 — 보수적이다.
+    const RADII = [0, 100, 200, 300, 400, 500, 1000, 1500, 2000];
+    const CELLS = 72;
+    const toRad = (v: number) => (v * Math.PI) / 180;
+    /** 출발점에서 방위 deg로 dist m 간 지점 */
+    const offset = (lat: number, lng: number, deg: number, dist: number) => {
+      const R = 6371000;
+      const d = dist / R, b = toRad(deg), la = toRad(lat);
+      const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+      const lo2 = toRad(lng) + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2));
+      return { lat: (la2 * 180) / Math.PI, lng: (lo2 * 180) / Math.PI };
+    };
+
+    const voronoiPop = (p: Probe) => {
+      const pops = popByCode.get(p.r.input.storeCode);
+      if (!pops) return null;
+      let ours = 0, total = 0;
+      for (let i = 1; i < RADII.length; i++) {
+        const inner = RADII[i - 1], outer = RADII[i];
+        const pOuter = pops[String(outer)], pInner = inner === 0 ? 0 : pops[String(inner)];
+        if (pOuter == null || pInner == null) continue;
+        const ringPop = pOuter - pInner;
+        if (!(ringPop > 0)) continue;
+        total += ringPop;
+        const mid = (inner + outer) / 2;
+        let mine = 0;
+        for (let c = 0; c < CELLS; c++) {
+          const deg = (360 / CELLS) * c;
+          const pt = offset(p.lat, p.lng, deg, mid);
+          // 우리까지의 거리는 mid다. 경쟁점 중 더 가까운 게 있으면 그 칸은 뺏긴다.
+          let lost = false;
+          for (const d of p.pcDocs) {
+            if (haversine(pt.lat, pt.lng, d.lat, d.lng) < mid) { lost = true; break; }
+          }
+          if (!lost) mine++;
+        }
+        ours += ringPop * (mine / CELLS);
+      }
+      return { ours, total };
+    };
+
+    console.log(`\n══ (8) 최근접 배분으로 센 유효 주거인구 (2km · ${CELLS}방위 · 자유계수 0개) ══`);
+    console.log(`  ${"매장".padEnd(14)}${"주거1km".padStart(9)}${"주거2km".padStart(9)}${"유효(우리땅)".padStart(12)}` +
+      `${"유효/1km".padStart(9)}${"우리땅 비율".padStart(11)}${"부호오차".padStart(9)}${"필요점유율".padStart(10)}`);
+    const vor = new Map<string, number>();
+    const listed = [...probes].sort((a, b) => (b.req ?? 0) - (a.req ?? 0));
+    for (const p of listed) {
+      const v = voronoiPop(p);
+      if (!v || !p.pop1km) continue;
+      vor.set(p.r.input.storeCode, v.ours);
+      console.log(`  ${p.name.padEnd(14)}${num(p.pop1km).padStart(9)}${num(p.pop2km).padStart(9)}${num(v.ours).padStart(12)}` +
+        `${(v.ours / p.pop1km).toFixed(2).padStart(9)}${pct(v.ours / v.total, 0).padStart(11)}` +
+        `${pct(p.signed).padStart(9)}${pct(p.req).padStart(10)}`);
+    }
+
+    // ── 이 값으로 수요를 세면 38곳이 어떻게 되나 ────────────────────────────
+    // ⚠️ 유효 주거인구는 **이미 경쟁을 반영한 값**이다. 그래서 점유율 항을 또 곱하면
+    //    이중계산이 된다. 두 가지로 다 재서 보여준다.
+    const swap = rows.map((r) => {
+      const v = vor.get(r.input.storeCode);
+      const p1 = r.input.pop1km;
+      if (v == null || !p1) return r;
+      const k = v / p1;
+      const ages = r.input.residentAges;
+      const input: TextbookInput = {
+        ...r.input, pop1km: p1 * k,
+        residentAges: ages ? Object.fromEntries(Object.entries(ages).map(([a, x]) => [a, (x as number) * k])) as typeof ages : ages,
+      };
+      return { ...r, input };
+    });
+    const show = (label: string, rs: typeof rows, share: "quality" | "off") => {
+      const s = scoreTextbook(rs, { ...DEFAULT_TEXTBOOK_PARAMS, shareMode: share });
+      const reqs = s.rows.map((x) => x.requiredShare).filter((v): v is number => v != null);
+      const logs = reqs.map((v) => Math.log(v));
+      const m = logs.reduce((a, b) => a + b, 0) / logs.length;
+      const sd = Math.sqrt(logs.reduce((a, b) => a + (b - m) ** 2, 0) / logs.length);
+      console.log(`  ${label.padEnd(34)} MAPE ${pct(s.mape, 2)}  중앙 ${pct(s.medianAbsErr)}  ±20% ${pct(s.within20, 0)}` +
+        `  최대 ${pct(s.maxAbsErr, 0)}  ·  필요점유율 중앙 ${pct(s.requiredShare?.median)} 흩어짐(로그SD) ${sd.toFixed(3)} 100%초과 ${s.requiredShare?.overOne}곳`);
+    };
+    console.log(`\n  [점유율 항 그대로 — 경쟁을 두 번 세는 셈이라 참고용]`);
+    show("지금 (주거 1km)", rows, "quality");
+    show("유효 주거인구로 갈아끼움", swap, "quality");
+    console.log(`\n  [점유율 항을 끔 — 유효 주거인구가 경쟁을 이미 반영하므로 이쪽이 맞는 견줌이다]`);
+    show("지금 (주거 1km) · 점유율 끔", rows, "off");
+    show("유효 주거인구 · 점유율 끔", swap, "off");
+    console.log(`\n  판정 자: **필요 점유율이 1 근처로 모이나**(흩어짐이 줄어드나). 수요를 제대로 셌다면`);
+    console.log(`  "이 매장이 실제로 먹은 몫"이 매장마다 비슷해야 한다. MAPE보다 이게 앞선다.`);
+    expect(vor.size).toBeGreaterThan(10);
+  });
 });
