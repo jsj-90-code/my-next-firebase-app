@@ -189,6 +189,12 @@ function buildInputs(
       specialDemandIntensity: s.specialDemandIntensity,
       inflowRestriction: loc?.inflowRestriction ?? null,
       visibilityScore: loc?.visibilityScore ?? null,
+      // ⚠️ 2026-09-20 — 이 줄이 빠져 있었다. 운영 기본값이 `accessScoreMode:
+      // "visibility-x-preemption"`이라 접근성 피처가 log(가시성 × 선점경쟁)인데, 선점경쟁을
+      // 안 넘기면 **가시성 단독**으로 떨어진다(calc.ts empiricalFeaturesFor). 즉 이 하네스가
+      // 운영과 **다른 모형**을 재고 있었다 — 검증 화면은 ±10% 22곳인데 여기서는 24곳이 나왔다.
+      // 화면(validation/page.tsx)과 같은 줄을 넣는 게 이 파일의 존재 이유다.
+      preemptionScore: loc?.preemptionScore ?? null,
       hasLocationEvaluation: loc != null,
       floor: s.floor,
       groundLevel: s.groundLevel,
