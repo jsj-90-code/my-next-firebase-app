@@ -664,6 +664,77 @@ describeIf("축척 기준점에 배수를 안 걸면", () => {
     expect(xs.length).toBeGreaterThan(30);
   });
 
+  // ── 유형별로 켜고 끈다 (2026-09-20 사용자 착상) ──────────────────────────
+  //
+  // 사용자: *"걸거면 같이 걸어야 되는 거 아님? 안 걸 거면 다 안 걸고, 걸어야 하는
+  // 특수상권만 걸어야 하는 거 아닌가? 예를 들어 산업, 기타는 안 걸고 나머지는 걸고"*
+  //
+  // 맞는 지적이다. 앞 (다)의 "기준점 면제"는 **같은 산업단지인데 독점이면 안 걸고
+  // 경쟁상권이면 거는** 규칙이라 뜻이 안 선다. 유형으로 가르는 게 일관된다.
+  //
+  // 📌 그리고 이쪽이 **더 깔끔하게 풀린다.** 축척 기준점 3곳이 탕정역(산업단지)·
+  //    남악(기타)·광주각화(없음)인데, 산업단지와 기타를 1.00으로 끄면 **셋 다 자동으로
+  //    1.00**이 된다. 예외 규칙 없이 순환이 끊긴다.
+  //
+  // 끄는 근거는 성적이 아니라 **재도출값**이다(위 (5)절) — 자를 고친 뒤 다시 뽑으니
+  // 산업단지 1.08 · 기타 0.94로 사실상 1이었다. 반대로 군부대 2.22 · 대학가 1.45는
+  // 자를 고쳐도 그대로였다. 즉 **산업단지·기타의 옛 값(1.39·1.25)은 순환이 만든 것**이다.
+  it("(7) 유형별로 켜고 끈다 — 일관된 규칙", () => {
+    const M = P.specialDemandMultipliers;
+    const mk = (over: Record<string, number>): TextbookParams =>
+      ({ ...P, specialDemandMultipliers: { ...M, ...over } });
+
+    const show = (label: string, rs: LabRow[], p: TextbookParams) => {
+      const sc = scoreTextbook(rs, p);
+      const over = sc.rows.filter((x) => (x.requiredShare ?? 0) > 1);
+      const mono = rows.filter(isMono).map((r) => sc.rows.find((y) => y.storeCode === r.input.storeCode)?.requiredShare ?? NaN);
+      const spread = Math.max(...mono) / Math.min(...mono);
+      console.log(`  ${label.padEnd(30)}${((sc.mape ?? 0) * 100).toFixed(2).padStart(6)}%  ` +
+        `${((sc.medianAbsErr ?? 0) * 100).toFixed(1).padStart(5)}%  ${((sc.within20 ?? 0) * 100).toFixed(0).padStart(3)}%  ` +
+        `${sc.fittedHoursPerUser.toFixed(3).padStart(7)}  ${String(over.length).padStart(4)}곳  ${spread.toFixed(3).padStart(7)}배`);
+      return sc;
+    };
+    console.log(`\n[유형별 켜고 끄기] 축척 기준점 = 탕정역(산업단지) · 남악(기타) · 광주각화(없음)`);
+    console.log("  갈래                            MAPE     중앙   ±20%    축척A  100%초과  기준점벌어짐");
+    show("가) 지금 — 전부 켬", rows, P);
+    show("나) 전부 끔", allAsNone(rows), P);
+    show("다) 기준점만 면제 (일관성 없음)", monoAsNone(rows), P);
+    show("사) 산업단지·기타만 끔", rows, mk({ "산업단지": 1, "기타": 1 }));
+    show("아) 위 + 재도출값(군 2.22)", rows, mk({ "산업단지": 1, "기타": 1, "군부대": 2.22 }));
+    show("자) 기타만 끔", rows, mk({ "기타": 1 }));
+    show("차) 산업단지만 끔", rows, mk({ "산업단지": 1 }));
+
+    // LOO — 축척까지 훈련겹에서만.
+    const loo = (p: TextbookParams, tf: (rs: LabRow[]) => LabRow[] = (r) => r) => {
+      const errs: number[] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const train = tf(rows.filter((_, k) => k !== i));
+        const fp = fittedParams(p, scoreTextbook(train, p));
+        const one = tf([rows[i]])[0];
+        const b = computeTextbook(one.input, fp);
+        const a = rows[i].actualRevenue;
+        if (b.monthlyRevenue != null && a > 0) errs.push(Math.abs(b.monthlyRevenue - a) / a);
+      }
+      const s = [...errs].sort((x, y) => x - y);
+      return { mape: errs.reduce((x, y) => x + y, 0) / errs.length, median: s[Math.floor(s.length / 2)], w20: errs.filter((v) => v <= 0.2).length / errs.length };
+    };
+    console.log(`\n  [LOO 홀드아웃]`);
+    const cases: [string, TextbookParams, ((rs: LabRow[]) => LabRow[])?][] = [
+      ["가) 지금", P, undefined],
+      ["나) 전부 끔", P, allAsNone],
+      ["다) 기준점만 면제", P, monoAsNone],
+      ["사) 산업단지·기타만 끔", mk({ "산업단지": 1, "기타": 1 }), undefined],
+      ["아) 위 + 군 2.22", mk({ "산업단지": 1, "기타": 1, "군부대": 2.22 }), undefined],
+    ];
+    for (const [label, p, tf] of cases) {
+      const l = loo(p, tf);
+      console.log(`  ${label.padEnd(24)}${(l.mape * 100).toFixed(2).padStart(6)}%  ${(l.median * 100).toFixed(1).padStart(5)}%  ${(l.w20 * 100).toFixed(0).padStart(3)}%`);
+    }
+    console.log(`  ⚠️ (사)가 (다)와 성적이 비슷하면 **일관된 규칙으로 같은 것을 얻은 것**이다 —`);
+    console.log(`     그러면 뜻이 서는 (사)를 고르는 게 맞다.`);
+    expect(rows.length).toBeGreaterThan(30);
+  });
+
   it("(4) LOO 홀드아웃 — 축척까지 훈련겹에서만", () => {
     // ⚠️ 표본 안 성적만 보면 안 된다. 갈래마다 안 본 매장을 맞혀 본다.
     const looOf = (transform: (rs: LabRow[]) => LabRow[]) => {
