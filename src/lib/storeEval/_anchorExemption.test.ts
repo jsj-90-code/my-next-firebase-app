@@ -39,6 +39,7 @@ import { mergeModelSettings } from "./settings";
 import {
   DEFAULT_TEXTBOOK_PARAMS,
   computeTextbook,
+  fitProductUnitPrice,
   fittedParams,
   scoreTextbook,
   type TextbookParams,
@@ -381,6 +382,129 @@ describeIf("축척 기준점에 배수를 안 걸면", () => {
     }
     console.log("  ⚠️ 흔들림이 크면 **중앙값으로 잡아도 값을 못 믿는다**는 뜻이다.");
     expect(errs.length).toBeGreaterThan(30);
+  });
+
+  // ── 축척 표본에 "100% 초과 매장"을 같이 넣는다 (2026-09-20 사용자 착상) ──────
+  //
+  // 사용자: *"배수끄고 실제매출이 점유율 100퍼 초과하는애들이 있으니까, 이런 매장들까지
+  // 포함해서 수요식 다시잡고 배수를 거기에맞춰 넣어보자"*
+  //
+  // ── 왜 말이 되나 ───────────────────────────────────────────────────────
+  // 지금 축척은 **독점 3곳**에서만 맞춘다. 독점은 점유율이 1이라 수요식을 직접 잴 수 있어서다.
+  // 그런데 **필요 점유율 100% 초과도 수요식을 직접 재는 자다** — 경쟁을 아예 없다고 쳐도
+  // 예측이 실매출에 못 미친다는 뜻이라, 경쟁 항과 무관하게 **"수요가 최소한 이만큼은 있다"**는
+  // 하한을 준다. 독점이 등식 제약이라면 이쪽은 부등식 제약이다. 버릴 정보가 아니다.
+  //
+  // ⚠️ 2026-09-19에 기각한 "축척 표본 넓히기"와 **다르다.** 그때는 독점도(경쟁이 얼마나
+  //    적은가) 문턱을 낮춰 표본을 넓혔고, 여기서는 **필요 점유율이 넘친 매장**을 넣는다.
+  //    고르는 자가 다르다.
+  //
+  // ⚠️ 대가가 있다. A를 올리면 독점 3곳이 **과대예측**으로 간다(점유율 100%를 못 채운다).
+  //    그게 틀린 건 아니다 — 독점이라고 동네 수요를 다 먹으란 법은 없다(집·모바일·다른 동네).
+  //    다만 **지금까지 세워 온 "독점은 100%를 먹는다"는 가정을 버리는 것**이라 크게 갈린다.
+  it("(7) 축척을 올리면 — 100% 초과를 자에 같이 넣는다", () => {
+    // 배수를 끈 상태에서 본다(사용자 순서: 끄고 -> 수요 다시 -> 배수 다시).
+    const off = allAsNone(rows);
+    const A0 = scoreTextbook(off, P).fittedHoursPerUser;
+    const base = scoreTextbook(off, P);
+    const reqAt0 = new Map(base.rows.map((x) => [x.storeCode, x.requiredShare ?? NaN]));
+
+    /** 축척 A를 **고정**해서 채점한다. 상품몫은 실측 가동률로 재므로 A와 무관하다. */
+    const at = (A: number) => {
+      const p: TextbookParams = { ...P, hoursPerUserPerMonth: A };
+      const full: TextbookParams = { ...p, productUnitPrice: fitProductUnitPrice(off, p) };
+      const errs: number[] = [];
+      const signed: { e: number; mono: boolean }[] = [];
+      let over = 0, maxReq = 0;
+      for (const r of off) {
+        const b = computeTextbook(r.input, full);
+        if (b.monthlyRevenue != null && r.actualRevenue > 0) {
+          errs.push(Math.abs(b.monthlyRevenue - r.actualRevenue) / r.actualRevenue);
+          signed.push({ e: b.monthlyRevenue / r.actualRevenue - 1, mono: isMono(r) });
+        }
+        const req = (reqAt0.get(r.input.storeCode) ?? NaN) * (A0 / A); // 필요점유율 ∝ 1/A
+        if (Number.isFinite(req)) { if (req > 1) over++; maxReq = Math.max(maxReq, req); }
+      }
+      const sorted = [...errs].sort((a, b) => a - b);
+      const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+      return {
+        mape: avg(errs), median: sorted[Math.floor(sorted.length / 2)],
+        within20: errs.filter((v) => v <= 0.2).length / errs.length,
+        mono: avg(signed.filter((x) => x.mono).map((x) => x.e)),
+        comp: avg(signed.filter((x) => !x.mono).map((x) => x.e)),
+        over, maxReq,
+      };
+    };
+
+    // 자를 어디까지 올릴 수 있나 — 후보 셋을 뜻으로 정한다.
+    const reqs = [...reqAt0.values()].filter(Number.isFinite);
+    const monoReqs = off.filter(isMono).map((r) => reqAt0.get(r.input.storeCode) ?? 1);
+    const geo = (a: number[]) => Math.exp(a.reduce((x, y) => x + Math.log(y), 0) / a.length);
+    const overSet = off.filter((r) => (reqAt0.get(r.input.storeCode) ?? 0) > 1)
+      .map((r) => reqAt0.get(r.input.storeCode) as number);
+    const A_now = A0;                                   // 지금 — 독점 3곳만
+    const A_union = A0 * geo([...monoReqs, ...overSet]); // 독점 + 100%초과를 같이 기하평균
+    const A_all = A0 * Math.max(...reqs);                // 전부 100% 이하가 되는 최소 A
+
+    console.log(`\n[축척을 올리면] 배수 끈 상태 · 지금 A=${A0.toFixed(3)}`);
+    console.log(`  후보:  지금 ${A_now.toFixed(2)} · 독점+초과 같이 ${A_union.toFixed(2)} · 전부 100%이하 ${A_all.toFixed(2)}`);
+    console.log("      A     A배율     독점잔차   경쟁상권잔차     MAPE     중앙   ±20%  100%초과  최대필요점유율");
+    const grid = [...new Set([A_now, A_now * 1.1, A_union, A_now * 1.4, A_now * 1.6, A_now * 1.8, A_all])]
+      .sort((a, b) => a - b);
+    for (const A of grid) {
+      const s = at(A);
+      const tag = Math.abs(A - A_now) < 1e-9 ? " <- 지금" : Math.abs(A - A_union) < 1e-9 ? " <- 독점+초과" :
+        Math.abs(A - A_all) < 1e-9 ? " <- 전부 100%이하" : "";
+      console.log(`  ${A.toFixed(2).padStart(6)}  ${(A / A_now).toFixed(2).padStart(6)}배  ` +
+        `${(s.mono * 100).toFixed(1).padStart(8)}%  ${(s.comp * 100).toFixed(1).padStart(10)}%  ` +
+        `${(s.mape * 100).toFixed(2).padStart(7)}%  ${(s.median * 100).toFixed(1).padStart(5)}%  ` +
+        `${(s.within20 * 100).toFixed(0).padStart(3)}%  ${String(s.over).padStart(6)}곳  ` +
+        `${(s.maxReq * 100).toFixed(0).padStart(11)}%${tag}`);
+    }
+    console.log("  ⚠️ 독점잔차가 양수로 커지는 게 대가다 — '독점은 동네 수요를 다 먹는다'를 버리는 것이다.");
+    console.log("     경쟁상권잔차가 0에 붙는 자리와 독점잔차가 버틸 수 있는 자리 사이에서 고른다.");
+    expect(grid.length).toBeGreaterThan(3);
+  });
+
+  it("(8) 올린 축척 위에서 배수를 다시 뽑으면", () => {
+    const off = allAsNone(rows);
+    const A0 = scoreTextbook(off, P).fittedHoursPerUser;
+    const reqAt0 = new Map(scoreTextbook(off, P).rows.map((x) => [x.storeCode, x.requiredShare ?? NaN]));
+    const monoReqs = off.filter(isMono).map((r) => reqAt0.get(r.input.storeCode) ?? 1);
+    const overSet = off.filter((r) => (reqAt0.get(r.input.storeCode) ?? 0) > 1)
+      .map((r) => reqAt0.get(r.input.storeCode) as number);
+    const geo = (a: number[]) => Math.exp(a.reduce((x, y) => x + Math.log(y), 0) / a.length);
+
+    const median = (a: number[]) => {
+      const s = [...a].sort((x, y) => x - y);
+      return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 1;
+    };
+    /** 주어진 A에서 유형별 배수를 다시 뽑는다. 필요점유율은 A에 반비례하므로 비는 **A와 무관**하다. */
+    const derive = (label: string, A: number) => {
+      const byType = new Map<string, number[]>();
+      for (const r of rows) {
+        if (isMono(r)) continue;
+        const req = (reqAt0.get(r.input.storeCode) ?? NaN) * (A0 / A);
+        if (!Number.isFinite(req)) continue;
+        const t = r.input.specialDemandType ?? "없음";
+        byType.set(t, [...(byType.get(t) ?? []), req]);
+      }
+      const baseline = median(byType.get("없음") ?? [1]);
+      console.log(`\n  ${label} (A=${A.toFixed(2)}) · "없음" 중앙 ${(baseline * 100).toFixed(1)}%`);
+      for (const t of ["군부대", "대학가", "산업단지", "기타", "관광·유흥"]) {
+        const v = byType.get(t);
+        if (!v) continue;
+        console.log(`    ${t.padEnd(9)}${String(v.length).padStart(3)}곳  중앙 ${(median(v) * 100).toFixed(1).padStart(6)}%` +
+          `  -> 배수 ${(median(v) / baseline).toFixed(2)}  (지금 ${(P.specialDemandMultipliers[t] ?? 1).toFixed(2)})`);
+      }
+    };
+    console.log(`\n[배수 재도출 — 축척을 올려도 값이 같은가]`);
+    derive("지금 축척", A0);
+    derive("독점+초과 같이", A0 * geo([...monoReqs, ...overSet]));
+    console.log(`\n  ⚠️ **배수는 유형끼리의 비라서 A를 올려도 안 바뀐다.** 위 두 줄이 같은 게 그 증거다.`);
+    console.log(`     즉 "수요를 다시 잡고 배수를 다시 뽑는다"에서 **배수는 축척과 따로 논다** —`);
+    console.log(`     축척은 '전체 수준', 배수는 '유형 간 차이'라 서로 다른 것을 재기 때문이다.`);
+    expect(A0).toBeGreaterThan(0);
   });
 
   it("(4) LOO 홀드아웃 — 축척까지 훈련겹에서만", () => {
