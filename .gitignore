@@ -177,3 +177,6 @@ src/**/_*.test.ts
 # 2026-09-19 — 실험실에서 나온 변수를 운영 V62에 하나씩 태워 보는 하네스.
 # 사용자 설계: 실험실이 **기각한** 항목들을 위약군으로 같이 태워서, 개선이 진짜인지 잡음인지 가른다.
 !src/lib/storeEval/_v62LabFeatures.test.ts
+
+# 2026-09-20 — 오차 분해 하네스
+!src/lib/storeEval/_worstErrors.test.ts
