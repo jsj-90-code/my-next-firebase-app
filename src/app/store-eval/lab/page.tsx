@@ -551,7 +551,8 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                     </div>
                     <div className="mt-1">
                       정직한 홀드아웃(축척과 기울기까지 훈련겹에서만 맞춤, 38곳)에서
-                      <b> 손 안 댄 중심도 ν=0.25의 23.15%가 잔차화 ν=0.5에서 22.02%</b>로 좋아졌습니다.
+                      <b> 손 안 댄 중심도 ν=0.25의 24.40%가 잔차화 ν=0.5에서 22.12%</b>로 좋아졌습니다
+                      (2026-09-20 오후 기준 · 같은 날 특수수요 배수를 고치면서 기준선이 옮겨졌습니다).
                       무작위 대조군 200회도 통과했습니다(p=0.005).
                     </div>
                     <div className="mt-1">

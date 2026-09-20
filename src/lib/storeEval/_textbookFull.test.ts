@@ -29,7 +29,9 @@ import { buildLabRows, utilizationByStore, qscInWindowAverage, type LabRow, type
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
-import { DEFAULT_TEXTBOOK_PARAMS, scoreTextbook, type TextbookParams } from "./textbookModel";
+import {
+  DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook, type TextbookParams,
+} from "./textbookModel";
 import type { Competitor } from "./types";
 
 /** QSC 수집물. gitignore라 PC마다 있을 수도 없을 수도 있다 — 없으면 관리가 4.00으로 남는다. */
@@ -316,6 +318,65 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     }
     expect(rows.length).toBeGreaterThan(30);
   }, 600_000);
+
+  // ── 2026-09-20 하루 전/후 ─────────────────────────────────────────────────
+  //
+  // 그날 채택이 둘이었다. 나중에 "그래서 얼마나 좋아졌나"를 다시 물을 자리라 박아 둔다.
+  //   ① 잔차화 중심도 ν=0.5 (오전)   ② 산업단지·기타 배수 1.00 (오후)
+  //
+  // ⚠️ 둘을 **따로** 찍는다. 합쳐 놓으면 어느 쪽이 한 일인지 영영 모른다
+  //    (2026-09-19 ⑦ "사실 교정과 통계 채택을 서로의 근거로 쓰지 말 것"과 같은 이유).
+  it("2026-09-20 전/후 — 그날 채택 둘을 갈라서 본다", () => {
+    const OLD_MUL: Record<string, number> = {
+      ...P.specialDemandMultipliers, "산업단지": 1.39, "기타": 1.25,
+    };
+    const v = (label: string, p: TextbookParams) => {
+      const sc = scoreTextbook(rows, p);
+      const monoBy = new Map(rows.map((r) => [r.input.storeCode, !(r.input.competitorIp ?? 0)]));
+      const e = sc.rows.filter((x) => x.predicted != null && x.actual > 0)
+        .map((x) => ({ e: (x.predicted as number) / x.actual - 1, mono: monoBy.get(x.storeCode) === true }));
+      const avg = (a: number[]) => a.reduce((s, y) => s + y, 0) / a.length;
+      const comp = avg(e.filter((x) => !x.mono).map((x) => x.e));
+      console.log(`  ${label.padEnd(34)}MAPE ${((sc.mape ?? 0) * 100).toFixed(2).padStart(6)}%  ` +
+        `중앙 ${((sc.medianAbsErr ?? 0) * 100).toFixed(1).padStart(5)}%  ±20% ${((sc.within20 ?? 0) * 100).toFixed(0).padStart(3)}%  ` +
+        `최대 ${((sc.maxAbsErr ?? 0) * 100).toFixed(0).padStart(4)}%  경쟁상권 ${(comp * 100).toFixed(1).padStart(6)}%  ` +
+        `100%초과 ${String(sc.requiredShare?.overOne ?? "-").padStart(2)}곳`);
+    };
+    console.log(`\n[2026-09-20 전/후]`);
+    v("① 그날 시작 (날중심도 ν0.25·옛배수)", {
+      ...P, centralityResidual: null, specialDemandMultipliers: OLD_MUL,
+      locationExponents: { ...P.locationExponents, centrality: 0.25 },
+    });
+    v("② +잔차화 ν0.5 (오전 채택)", { ...P, specialDemandMultipliers: OLD_MUL });
+    v("③ +배수 끄기 (오후 채택) = 지금", P);
+    console.log("  ⚠️ ②는 MAPE를 낮추고 ③은 되레 올린다. ③의 근거는 MAPE가 아니라");
+    console.log("     '축척 기준점의 순환을 끊는다'이고, 홀드아웃에서는 손해가 없다.");
+
+    // 표본 안 성적은 과적합을 못 가른다. **안 본 매장**으로 같은 셋을 다시 잰다.
+    const loo = (p: TextbookParams) => {
+      const errs: number[] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const train = rows.filter((_, k) => k !== i);
+        const fp = fittedParams(p, scoreTextbook(train, p));
+        const b = computeTextbook(rows[i].input, fp);
+        const a = rows[i].actualRevenue;
+        if (b.monthlyRevenue != null && a > 0) errs.push(Math.abs(b.monthlyRevenue - a) / a);
+      }
+      const s = [...errs].sort((x, y) => x - y);
+      return { mape: errs.reduce((x, y) => x + y, 0) / errs.length, med: s[Math.floor(s.length / 2)] };
+    };
+    console.log(`\n  [LOO 홀드아웃] 축척까지 훈련겹에서만`);
+    const cases: [string, TextbookParams][] = [
+      ["① 그날 시작", { ...P, centralityResidual: null, specialDemandMultipliers: OLD_MUL, locationExponents: { ...P.locationExponents, centrality: 0.25 } }],
+      ["② +잔차화", { ...P, specialDemandMultipliers: OLD_MUL }],
+      ["③ +배수 끄기 = 지금", P],
+    ];
+    for (const [label, p] of cases) {
+      const l = loo(p);
+      console.log(`  ${label.padEnd(22)}MAPE ${(l.mape * 100).toFixed(2).padStart(6)}%  중앙 ${(l.med * 100).toFixed(1).padStart(5)}%`);
+    }
+    expect(rows.length).toBeGreaterThan(30);
+  });
 
   it("입지가 전체 성적에 얼마를 하는가", () => {
     console.log("\n[입지 항목별] 계수는 기본값 — 중심도 ν=0.5(잔차화) · 접근성 κ=0.25 · 유동방향 ω=0");

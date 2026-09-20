@@ -82,8 +82,23 @@ describeIf("잔차화 중심도 — 본체로 옮기기 전 확인", () => {
 
   const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode });
   const P = DEFAULT_TEXTBOOK_PARAMS;
-  const withNu = (nu: number): TextbookParams =>
-    ({ ...P, locationExponents: { ...P.locationExponents, centrality: nu } });
+  /**
+   * ⚠️⚠️ **`centralityResidual: null`을 반드시 끼운다 — 2026-09-20에 이 파일이 이중
+   *      잔차화로 틀린 숫자를 내고 있었다.**
+   *
+   * 이 하네스는 **자기 손으로** 잔차화한 행(`applyResidual`)을 넘긴다. 그런데 같은 날 오후
+   * 잔차화가 **본체에 채택되면서** `DEFAULT_TEXTBOOK_PARAMS.centralityResidual`이 켜졌다.
+   * 그대로 두면 잔차화가 **두 번** 걸려서 ν=0.5가 21.59%가 아니라 27.77%로 찍혔다.
+   * (`_textbookFull.test.ts`에서는 같은 문제를 그날 아침에 고쳤는데 이 파일을 놓쳤다.)
+   *
+   * 여기서는 "옮기기 전/후"를 직접 비교하는 게 목적이라, **본체 잔차화는 끄고** 하네스가
+   * 손으로 하는 쪽만 쓴다. 그래야 채택 당시의 판단 근거가 그대로 재현된다.
+   */
+  const withNu = (nu: number): TextbookParams => ({
+    ...P,
+    centralityResidual: null,
+    locationExponents: { ...P.locationExponents, centrality: nu },
+  });
 
   /**
    * 잔차화에 필요한 상수 셋을 **주어진 행에서만** 적합한다.
@@ -188,7 +203,8 @@ describeIf("잔차화 중심도 — 본체로 옮기기 전 확인", () => {
       return errs.reduce((a, b) => a + b, 0) / errs.length;
     })();
     const baseIn = scoreTextbook(rows, withNu(0.25)).mape ?? NaN;
-    console.log(`\n  (견줄 기준) 지금 본체 — 손 안 댄 중심도 ν=0.25`);
+    // ⚠️ 2026-09-20 오후부터 본체는 **잔차화를 쓴다**. 이 줄은 "옛 본체"가 견줄 대상이다.
+    console.log(`\n  (견줄 기준) 옛 본체 — 손 안 댄 중심도 ν=0.25`);
     console.log(`     표본 안 ${(baseIn * 100).toFixed(2)}%  ·  홀드아웃 ${(baseHoldout * 100).toFixed(2)}%`);
     console.log("\n  ⚠️ 볼 것은 **홀드아웃 두 열의 차이**다. 겹마다 재적합했을 때 크게 나빠지면");
     console.log("     지금 기록된 '벌어짐 −0.05%p'는 기울기가 홀드아웃을 봐서 나온 값이다.");
