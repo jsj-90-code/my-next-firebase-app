@@ -248,6 +248,141 @@ describeIf("축척 기준점에 배수를 안 걸면", () => {
     expect(aNow).toBeGreaterThan(0);
   });
 
+  // ── 배수를 **다시** 뽑는다 ───────────────────────────────────────────────
+  //
+  // 지금 배수(군부대 2.25 · 대학가 1.45 · 산업단지 1.39 · 기타 1.25)는 2026-09-16에
+  // **오염된 자 위에서** 뽑은 값이다 — 그때도 축척 기준점 2곳이 배수를 받고 있었다.
+  //
+  // ⚠️ **기준점을 면제하면 순환이 끊긴다.** 독점 3곳이 배수를 안 받으므로 축척 A가
+  //    배수와 **무관**해진다(어떤 배수를 넣어도 A=6.796 고정). 그래서 이제 배수를
+  //    자유롭게 다시 뽑아도 자가 안 흔들린다. 2026-09-19에 "순환"이라고 지목했던 자리가
+  //    바로 여기다(docs/releases/2026-09-19-수요축척.md 5절 3번).
+  //
+  // 뽑는 법은 2026-09-16과 **같다** — 유형별 필요 점유율 중앙값을 "없음" 대비로 나눈다.
+  // 사용자(2026-09-20): *"값은 수요 다시잡아보고 전체값중 가장 중간값으로 적용하는쪽으로?
+  // 검증이안되니"* — 중앙값을 쓰는 건 검증이 안 될 때의 보수적 선택이다.
+  //
+  // ⚠️ **유도에서 독점 3곳을 뺀다.** 그 셋은 필요 점유율이 100%에 **박혀 있다**(A가 그렇게
+  //    맞춰진다). 넣으면 그 유형만 근거 없이 높게 잡힌다. 기준점 면제와 짝이 맞는 처리다.
+  const deriveMultipliers = () => {
+    // 배수를 전부 끈 상태에서 잰다 — 축척은 기준점 면제와 **같은 값**(6.796)이다.
+    const sc = scoreTextbook(allAsNone(rows), P);
+    const byType = new Map<string, number[]>();
+    for (const r of rows) {
+      if (isMono(r)) continue; // 유도에서 독점 제외
+      const req = sc.rows.find((x) => x.storeCode === r.input.storeCode)?.requiredShare;
+      if (req == null || !Number.isFinite(req)) continue;
+      const t = r.input.specialDemandType ?? "없음";
+      byType.set(t, [...(byType.get(t) ?? []), req]);
+    }
+    const median = (a: number[]) => {
+      const s = [...a].sort((x, y) => x - y);
+      return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+    };
+    const baseline = median(byType.get("없음") ?? [1]);
+    const out = new Map<string, { n: number; med: number; mul: number }>();
+    for (const [t, vals] of byType) {
+      out.set(t, { n: vals.length, med: median(vals), mul: median(vals) / baseline });
+    }
+    return { out, baseline, hours: sc.fittedHoursPerUser };
+  };
+
+  it("(5) 자를 고친 뒤 배수를 다시 뽑으면 얼마가 나오나", () => {
+    const { out, baseline, hours } = deriveMultipliers();
+    console.log(`\n[배수 재도출] 배수 끈 상태 · 축척 A=${hours.toFixed(3)} · 독점 3곳은 유도에서 제외`);
+    console.log(`  "없음" 중앙 필요점유율 ${(baseline * 100).toFixed(1)}% 를 1.00으로 놓는다`);
+    console.log("  유형        곳수   중앙 필요점유율   새 배수    지금 배수");
+    const order = ["군부대", "대학가", "산업단지", "기타", "관광·유흥", "없음"];
+    for (const t of order) {
+      const v = out.get(t);
+      if (!v) continue;
+      const now = P.specialDemandMultipliers[t] ?? 1;
+      console.log(`  ${t.padEnd(9)}${String(v.n).padStart(3)}곳  ${(v.med * 100).toFixed(1).padStart(12)}%  ` +
+        `${v.mul.toFixed(2).padStart(8)}  ${now.toFixed(2).padStart(9)}`);
+    }
+    console.log("  ⚠️ 곳수 2~5곳이다. 중앙값이라도 **한 곳이 빠지면 크게 흔들린다.**");
+    console.log("     방향(군부대 > 나머지 > 없음)만 보고, 값은 보수적으로 잡을 자리다.");
+    expect(out.size).toBeGreaterThan(1);
+  });
+
+  it("(6) 새 배수를 기준점 면제와 같이 쓰면", () => {
+    const { out } = deriveMultipliers();
+    // 관광·유흥은 n=2라 지금처럼 1.00으로 둔다(값을 지어내지 않는다).
+    const fresh: Record<string, number> = { ...P.specialDemandMultipliers };
+    for (const t of ["군부대", "대학가", "산업단지", "기타"]) {
+      const v = out.get(t);
+      if (v) fresh[t] = Number(v.mul.toFixed(2));
+    }
+    const freshP: TextbookParams = { ...P, specialDemandMultipliers: fresh };
+
+    const show = (label: string, rs: LabRow[], p: TextbookParams) => {
+      const sc = scoreTextbook(rs, p);
+      const over = sc.rows.filter((x) => (x.requiredShare ?? 0) > 1).length;
+      console.log(`  ${label.padEnd(34)}${((sc.mape ?? 0) * 100).toFixed(2).padStart(6)}%  ` +
+        `${((sc.medianAbsErr ?? 0) * 100).toFixed(1).padStart(5)}%  ${((sc.within20 ?? 0) * 100).toFixed(0).padStart(3)}%  ` +
+        `${sc.fittedHoursPerUser.toFixed(3).padStart(7)}  ${String(over).padStart(5)}곳`);
+      return sc;
+    };
+    console.log(`\n[새 배수 적용] ` + Object.entries(fresh)
+      .filter(([k]) => ["군부대", "대학가", "산업단지", "기타"].includes(k))
+      .map(([k, v]) => `${k} ${v}`).join(" · "));
+    console.log("  갈래                                MAPE     중앙   ±20%    축척A   100%초과");
+    // ⚠️ **배수가 1 아래로 내려가면 뜻이 안 맞는다.** 배수는 "인구 통계에 안 잡히는 수요원"이라
+    //    최소가 1이다(추가 수요원이 있는데 수요가 줄 수는 없다). 1 아래는 "그 유형은 특수수요가
+    //    아니다"로 읽고 1.00으로 올린다 — 값을 지어내지 않되, 뜻에 어긋나는 값도 안 쓴다.
+    const floored: Record<string, number> = { ...fresh };
+    for (const t of ["군부대", "대학가", "산업단지", "기타"]) floored[t] = Math.max(1, fresh[t] ?? 1);
+    const flooredP: TextbookParams = { ...P, specialDemandMultipliers: floored };
+
+    show("가) 지금 배수 · 기준점 안 면제", rows, P);
+    show("다) 지금 배수 · 기준점 면제", monoAsNone(rows), P);
+    show("마) 새 배수 · 기준점 면제", monoAsNone(rows), freshP);
+    show("바) 새 배수(1 아래는 1로) · 기준점 면제", monoAsNone(rows), flooredP);
+    console.log(`     바) 값: ` + ["군부대", "대학가", "산업단지", "기타"].map((t) => `${t} ${floored[t].toFixed(2)}`).join(" · "));
+
+    // LOO — 배수를 **겹마다 다시 뽑으면** 얼마나 흔들리나. 여기가 진짜 관문이다.
+    const errs: number[] = [];
+    const picked: Record<string, number[]> = { 군부대: [], 대학가: [], 산업단지: [], 기타: [] };
+    for (let i = 0; i < rows.length; i++) {
+      const trainRaw = rows.filter((_, k) => k !== i);
+      const sc0 = scoreTextbook(allAsNone(trainRaw), P);
+      const byType = new Map<string, number[]>();
+      for (const r of trainRaw) {
+        if (isMono(r)) continue;
+        const req = sc0.rows.find((x) => x.storeCode === r.input.storeCode)?.requiredShare;
+        if (req == null || !Number.isFinite(req)) continue;
+        const t = r.input.specialDemandType ?? "없음";
+        byType.set(t, [...(byType.get(t) ?? []), req]);
+      }
+      const med = (a: number[]) => {
+        const s = [...a].sort((x, y) => x - y);
+        return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 1;
+      };
+      const base = med(byType.get("없음") ?? [1]);
+      const m: Record<string, number> = { ...P.specialDemandMultipliers };
+      for (const t of Object.keys(picked)) {
+        const vals = byType.get(t);
+        // 표본 2곳 미만이면 유도하지 않는다 — 지금 값을 그대로 쓴다.
+        if (vals && vals.length >= 2) { m[t] = med(vals) / base; picked[t].push(m[t]); }
+      }
+      const p2: TextbookParams = { ...P, specialDemandMultipliers: m };
+      const full = fittedParams(p2, scoreTextbook(monoAsNone(trainRaw), p2));
+      const one = monoAsNone([rows[i]])[0];
+      const b = computeTextbook(one.input, full);
+      const a = rows[i].actualRevenue;
+      if (b.monthlyRevenue != null && a > 0) errs.push(Math.abs(b.monthlyRevenue - a) / a);
+    }
+    const loo = errs.reduce((a, b) => a + b, 0) / errs.length;
+    console.log(`\n[LOO] 겹마다 배수를 **다시 뽑는다** -> 홀드아웃 MAPE ${(loo * 100).toFixed(2)}%`);
+    console.log("  겹마다 뽑힌 배수의 흔들림 폭:");
+    for (const [t, vals] of Object.entries(picked)) {
+      if (!vals.length) { console.log(`    ${t.padEnd(6)} — 유도 못 함(표본 2곳 미만)`); continue; }
+      console.log(`    ${t.padEnd(6)} ${Math.min(...vals).toFixed(2)} ~ ${Math.max(...vals).toFixed(2)}  (${vals.length}겹)`);
+    }
+    console.log("  ⚠️ 흔들림이 크면 **중앙값으로 잡아도 값을 못 믿는다**는 뜻이다.");
+    expect(errs.length).toBeGreaterThan(30);
+  });
+
   it("(4) LOO 홀드아웃 — 축척까지 훈련겹에서만", () => {
     // ⚠️ 표본 안 성적만 보면 안 된다. 갈래마다 안 본 매장을 맞혀 본다.
     const looOf = (transform: (rs: LabRow[]) => LabRow[]) => {
