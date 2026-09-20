@@ -1,0 +1,184 @@
+# 인계 — 2026-09-21 회사 PC (집 PC에서 넘김)
+
+2026-09-20 밤 작업 마감. **채택 1건**(실험실 대학가 배수 1.00), 나머지는 전부 측정·기각이다.
+
+---
+
+## 다음 세션에서 이걸 붙여넣으세요
+
+```
+점포평가 이어서 하자. docs/handoff-20260921-office.md 읽고 시작해.
+회사 PC다. 집 PC에서 넘어온 거라 **git pull부터** 해라.
+
+[시작 절차]
+1. git pull                                  <- 회사 PC가 낡아 있다. 이걸 빼먹지 마라
+2. git log --oneline -1   ->  ddbf981 이어야 한다
+3. node scripts/dumpValidationSnapshot.mjs   <- ⚠️ 빼먹으면 storedAccuracyParity가 빨갛다
+4. npx vitest run --exclude "**/_*.test.ts"  ->  803 통과
+
+[오늘 할 일 — 위에서부터]
+(a) 내가 문경시청점 전표를 받아 온다. 받으면 그걸로 대조해라.
+    볼 것: PC 98대가 맞나 · 실효요금 1,200원이 맞나 (상품비중 52%는 평균이라 볼 것 없다)
+(b) 전표가 아직이면 **광주첨단점(-54.6%)**을 열어라. 꼬리 6곳 중 제일 큰데 아무도 안 봤다.
+(c) 그다음은 진주혁신도시본점(-52.9%) · 야당점(-45.4%) · 수원인계점(-38.5%).
+
+[규칙 — 안 지키면 오늘 일이 헛수고가 된다]
+- 계수·점수를 내 확인 없이 고르지 마라. 재고 표로 남겨라. (어제 채택은 1건뿐이다)
+- 운영 V62 금지 (calc.ts·evaluate.ts·usageRevenue.ts·cronSync.ts·settings.ts)
+- Firestore 쓰기 금지 · 파일 삭제 금지
+- 셸(sed·node -e)로 파일 고치지 마라. Edit/Write만. 읽기·분석용 node -e는 괜찮다
+- ⚠️ 훑기 결과를 ±0.32로 판정하지 마라. 9가지만 훑어도 우연히 0.41이 나온다
+- ⚠️ 새 변수를 재기 전에 "과녁에 이 재료가 들어가 있나"를 적고, 재료를 뺀 판을 관문으로 박아라
+- ⚠️ **아래 '닫힌 갈래'를 다시 파지 마라.** 어제 밤에 여덟 개를 닫았다
+```
+
+---
+
+## 0. 지금 상태
+
+```
+  마지막 커밋   ddbf981
+  운영 V62     MAPE 8.832%   ← 2026-09-20에 한 글자도 안 고쳤다. 산식 종결 상태
+  실험실       LOO 19.02% · 중앙 15.5% · ±20% 63% · ±30% 79% · 최악 54.7%
+  시험 803 통과 · 빌드 통과 · lint 0 errors
+```
+
+### ✅ 어제 채택한 것 하나 — 실험실 대학가 배수 1.45 → 1.00
+
+근거 셋이 같은 곳을 가리켰다. **MAPE는 근거가 아니라 확인이다.**
+
+1. **대학가는 방학에 안 뛴다** — 방학÷학기 가동률이 없음 1.178 · 군부대 1.260 · **대학가 1.019**.
+   대학생이 방학에 고향으로 간다. 우리가 맞히는 건 **연평균**이라 대학가는 연평균 수요가
+   낮아야 맞는데 배수를 **올려서** 주고 있었다.
+2. **경쟁까지 넣은 함축배수가 1.03** — 1.45는 5곳 중 아무에게도 안 맞았다.
+3. **교차검증이 1.45를 한 번도 안 골랐다** — 38겹 중 30겹이 1.1, 7겹이 1.0.
+
+성적: LOO 22.16% → **19.02%** · ±20% 58% → **63%** · **최악 70.2% → 54.7%**
+
+⚠️ 이제 1이 아닌 배수는 **군부대 2.25 하나뿐**이다.
+
+---
+
+## 1. ⛔ 닫힌 갈래 여덟 — 다시 파지 말 것
+
+| 갈래 | 기각 근거 | 재현 |
+|---|---|---|
+| 대학가 배수 더 만지기 | 1.0이 최선. 1.1도 비슷(19.34%) | `_labFrontier` |
+| 재학생 수 덧셈·규모비례 | 상관 부호가 **반대** (r=−0.68) | `_universityTowns` |
+| 자사 사양 | 전체 38곳 r=−0.024 · 3분위 **U자** | `_overUnderSplit` (4) |
+| 5km 상권("지방은 시 전체") | 문경 51/54위 — 넓히면 **더** 나빠짐 | `_wideCatchment` |
+| 통학 유입(학교) | 사전 관문 **넷 다 미달**, 부호도 반대 | `_schoolInflow` |
+| 시장 공급(경쟁점 PC) | 관문 셋 통과했는데 **순환 걷어내니 죽음** | `_marketSupply` |
+| 대체 여가시설 | 문경은 오히려 **많은 쪽**(1만명당 28/38위) | `_leisureAlternatives` |
+| 과대/과소 가르는 변수 | 19개 훑어 p=0.078, 셋 중 둘은 순환 | `_overUnderSplit` (2) |
+
+### 🟡 보류 하나 — 유효 상권(대체 PC방 없음)
+
+사장님이 92행을 지도로 판정해 **오염률 26.6%**를 확인했다. 보정하니 신호가 **세졌다**
+(최단거리 r −0.473 → −0.556). 구간별로 완벽히 단조롭다(0~2곳 −50.9% → 20곳+ +9.2%).
+
+**그런데 사전 등록 관문 1을 못 넘는다** — 두 곳을 빼면 0~2 무리에 2곳만 남아 검정력이 없다.
+👉 **더 판정해도 안 갈린다**(미판정 매장이 0~2에 들려면 폐업률 75%가 필요, 관측은 26.6%).
+표본이 쌓여야 갈리는 문제다. 판정 원본은 `docs/review-needed/2km-경쟁점-판정-20260920.csv`.
+
+---
+
+## 2. ⭐ 오늘 할 일 — 꼬리 6곳을 하나씩
+
+### 왜 이것뿐인가
+
+어제 밤에 **산식을 더 짜낼 수 없다**는 걸 확인했다.
+
+```
+손잡이 12개를 전부 최적화하면
+  표본 안 최선                 18.13%   ← 허수
+  중첩 교차검증(진짜 새 매장)    24.16%   ← 지금(19.02%)보다 나쁨
+```
+38곳으로 손잡이 12개는 **과적합**이다. 대학가 하나만 바꾼 게 유일한 수확이었다.
+
+그리고 꼬리를 겨냥한 손잡이는 **전부 트레이드오프**다 — 꼬리를 깎으면 가운데가 무너진다.
+
+**개점 전 정보로 "이 예측은 불안하다"를 가릴 수도 없다**(p=0.36). 그래서 신뢰 등급도 못 붙인다.
+
+### 남은 꼬리 (대학가 1.0 적용 후)
+
+```
+광주첨단점      −54.6%     ← 제일 크고 **아무도 안 봤다**
+진주혁신도시본점  −52.9%     ← 500m 밖 대체재 0곳
+문경시청점      −51.8%     ← 수요식 갈래 전부 닫힘. 전표 대기
+양주덕정점      −50.9%     ← 500m 밖 대체재 0곳(판정으로 확인)
+야당점         −45.4%
+수원인계점      −38.5%
+```
+
+**전부 과소예측이다.** 공통 변수 찾기는 여덟 번 다 실패했다. **개별 조사는 아직 안 했다.**
+
+### 어떻게
+
+한 곳씩 `_worstErrors` 식으로 층을 갈라라 — 수요인가 경쟁인가 단가인가.
+그다음 그 매장의 **원자료**(가동률·요금·PC수·경쟁점 조사)가 맞는지 본다.
+문경에서 했던 방식 그대로다. 문경은 그 결과 "수요식이 아니라 매장 자료를 봐야 한다"까지 왔다.
+
+---
+
+## 3. 알아 둘 숫자 둘
+
+**적중률의 바닥은 약 5.6%다.** 목표값(개점 2~12개월차 평균)이 그만큼 흔들린다
+(1년차/2년차 비의 퍼짐 SD 0.096). **운영 V62의 8.832%는 이미 바닥에 가깝다** — 더 짜내는 건
+품에 비해 남는 게 없다. 실험실 19.02%는 아직 여지가 있다. (`_accuracyCeiling`)
+
+**정직한 구간 폭:** 80%를 덮으려면 ±32%, 90%를 덮으려면 ±51%가 필요하다. V62가 쓰는 ±15%
+폭을 실험실에 그대로 주면 실제로 덮는 건 47%뿐이다. **이게 "아직 못 쓴다"의 정확한 뜻이다** —
+산식이 틀려서가 아니라 정직하게 구간을 주면 너무 넓어서다. (`_errorSpread`)
+
+---
+
+## 4. 2026-09-20에 밟은 함정 다섯 (같은 걸 또 밟지 말 것)
+
+1. **변동계수(CV)로 단위가 다른 둘을 견줬다** — 덧셈 쪽은 평균이 0 근처라 CV가 발산해
+   **결론이 뒤집혔다.** 상수를 맞춘 뒤 남는 **로그오차 SD**로 같은 눈금에 올려야 한다.
+2. **분류 기준에 들어간 양을 증거로 쓸 뻔했다** — '경쟁 과대/과소'는 예측 점유율로 가르는데
+   그건 경쟁 IP로 만든 값이다. *분류에 쓴 재료는 분류를 설명할 수 없다.*
+3. **훑기 유의선** — n=38에서 단일은 ±0.32가 맞지만 **9가지만 훑으면 ±0.41**이다.
+4. **후보가 나오면 값싼 검사 셋부터** — 전체 표본에서도 보이나 · 한 곳 빼도 버티나 ·
+   분위가 단조로운가. 자사 사양이 여기서 반나절을 아꼈다.
+5. **계수를 바꾸면 라벨도 같이 고쳐라** — `_textbookFull`의 "③ = 지금"에 대학가 변경이
+   섞여서 어느 쪽이 한 일인지 모르게 될 뻔했다. ③/④로 갈랐다.
+
+---
+
+## 5. 어제 만든 하네스 (전부 `.gitignore` 예외 편입, 이유는 거기 적혀 있다)
+
+```bash
+npx vitest run src/lib/storeEval/_universityTowns.test.ts   --disable-console-intercept  # 대학가
+npx vitest run src/lib/storeEval/_overUnderSplit.test.ts    --disable-console-intercept  # 과대/과소·자사사양
+npx vitest run src/lib/storeEval/_wideCatchment.test.ts     --disable-console-intercept  # 5km·자연대조군
+npx vitest run src/lib/storeEval/_schoolInflow.test.ts      --disable-console-intercept  # 통학·훑기유의선
+npx vitest run src/lib/storeEval/_marketSupply.test.ts      --disable-console-intercept  # 시장공급(순환 본보기)
+npx vitest run src/lib/storeEval/_leisureAlternatives.test.ts --disable-console-intercept # 여가시설
+npx vitest run src/lib/storeEval/_catchmentRejudged.test.ts --disable-console-intercept  # 판정 반영 재검정
+npx vitest run src/lib/storeEval/_accuracyCeiling.test.ts   --disable-console-intercept  # 바닥·방학효과
+npx vitest run src/lib/storeEval/_labFrontier.test.ts       --disable-console-intercept  # 손잡이 한계선
+npx vitest run src/lib/storeEval/_errorSpread.test.ts       --disable-console-intercept  # 오차 퍼짐
+```
+
+⚠️ `_qscResidual.test.ts`는 `.local-tools/qsc-scores.json`(gitignore)이 없으면 ENOENT로
+실패한다. **코드 문제가 아니다.**
+
+⚠️ `storedAccuracyParity`가 빨간 건 거의 항상 **스냅샷이 낡아서**다. 산식을 의심하기 전에
+`node scripts/dumpValidationSnapshot.mjs`부터 돌려라.
+
+## 6. 어제 바꾼 파일
+
+| 파일 | 무엇 |
+|---|---|
+| `textbookModel.ts` | **대학가 배수 1.45 → 1.00** + 3차 근거 주석 |
+| `lab/page.tsx` | "대학가도 1.00으로 껐습니다(3차)" 블록 신설 |
+| `_textbookFull.test.ts` | 전/후 사다리를 ③ 낮 / ④ 밤으로 갈랐다 |
+| 하네스 8종 · `scripts/buildRival2kmReview.mjs` · `scripts/collectKakaoLeisure.mjs` | 신설 |
+| `scripts/collectSgisResidentPopulation.mjs` | `RADII`에 5000 추가 |
+| `.local-tools/{sgis-resident-population,kakao-leisure,rival-judgments}.json` | 수집물·판정 |
+| `docs/review-needed/` | 2km 대조표 + 사장님 판정 원본 |
+
+**운영 V62(`calc.ts`·`evaluate.ts`·`usageRevenue.ts`·`cronSync.ts`·`settings.ts`)는
+한 글자도 안 고쳤다.**
