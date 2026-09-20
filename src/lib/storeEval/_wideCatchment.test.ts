@@ -22,8 +22,16 @@
 //   npx vitest run src/lib/storeEval/_wideCatchment.test.ts --disable-console-intercept
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
+import { buildLabRows, utilizationByStore, qscInWindowAverage, type QscRecord } from "./labInput";
+import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
+import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
+import { mergeModelSettings } from "./settings";
+import { DEFAULT_TEXTBOOK_PARAMS, scoreTextbook } from "./textbookModel";
+import type { Competitor } from "./types";
 
 const SGIS_FILE = ".local-tools/sgis-resident-population.json";
+const QSC_FILE = ".local-tools/qsc-scores.json";
 const describeIf = existsSync(SGIS_FILE) ? describe : describe.skip;
 const num = (v: number | null | undefined) =>
   v == null ? "-" : v.toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -112,6 +120,111 @@ describeIf("넓힌 상권 — 5km 주거인구", () => {
     });
     console.log("\n  📌 위쪽은 전부 **수도권·광역시**다. 반경을 넓히면 도시가 압도적으로 유리해진다 —");
     console.log("     '지방 소도시를 살리려고' 반경을 넓히면 정확히 반대 결과가 난다.");
+  });
+
+  it("(5) ⚠️ 이 검정이 기각한 것과 **안** 기각한 것", () => {
+    // 정직하게 짚어 둔다. (2)~(4)절은 **"모든 매장에 같은 반경을 쓴다"**를 기각한다.
+    // 사용자 가설의 글자는 *"지방 소도시는 상권이 넓다"* 즉 **동네마다 다른 반경**이고,
+    // 그건 다른 이야기다. 다만 그걸 모형으로 만들려면 **규칙**이 있어야 한다
+    // (매장마다 손으로 고르는 건 모형이 아니라 41개의 자유계수다).
+    //
+    // 제일 그럴듯한 규칙이 **'고정 인구 상권'**이다 — "반경은 다르되 담는 사람 수는 같다."
+    // 그러면 반경이 자동으로 밀도에 반응한다. 그 규칙이 문경에 먹히는지만 본다.
+    const target = med(rows.map((x) => x.p1)); // 기준: 1km 주거인구의 중앙값
+    console.log(`\n[고정 인구 상권 규칙] "반경은 다르되 담는 사람은 같게" · 기준 ${num(target)}명(1km 인구 중앙값)`);
+    const reach: { name: string; need: string; p5: number }[] = [];
+    for (const name of [...TARGETS, ...rows.slice(0, 0).map((x) => x.name)]) {
+      const site = Object.values(sg.sites).find((s) => s.name === name);
+      if (!site) continue;
+      const radii = [100, 200, 300, 400, 500, 1000, 1500, 2000, 5000];
+      let need = "5km로도 못 채운다";
+      for (const r of radii) {
+        const v = site.radii?.[String(r)]?.totalPopulation;
+        if (v != null && v >= target) { need = `${r}m`; break; }
+      }
+      const p5 = site.radii?.["5000"]?.totalPopulation ?? 0;
+      reach.push({ name, need, p5 });
+    }
+    for (const x of reach) {
+      console.log(`  ${x.name.padEnd(12)}${num(target)}명을 담으려면 → **${x.need}**   (5km에 ${num(x.p5)}명)`);
+    }
+    const cannot = rows.filter((x) => x.p5 < target);
+    console.log(`\n  5km로도 기준 인구를 못 채우는 매장: ${cannot.length}곳` +
+      (cannot.length ? ` — ${cannot.map((c) => `${c.name}(${num(c.p5)})`).join(", ")}` : ""));
+    console.log("\n  📌 **문경은 어떤 반경 규칙으로도 안 된다.** 5km에 44,935명이고 더 넓히면");
+    console.log("     문경시를 벗어난다. 담을 사람이 없는데 반경만 넓히는 건 뜻이 없다.");
+    console.log("\n  👉 그래서 '반경'이라는 갈래는 **규칙을 어떻게 만들든** 문경을 못 고친다.");
+    console.log("     남는 건 반경이 아니라 **이용률**(같은 인구에서 더 많이 온다)이거나");
+    console.log("     수요식 바깥이다.");
+    console.log("\n  ⚠️ 그런데 '지방은 이용률이 높다'도 표본이 지지하지 않는다 —");
+    console.log("     `_worstErrors`에서 log(주거1km) ↔ log(필요÷예측) r=−0.193으로 유의선 아래다.");
+    console.log("     **인구 적은 동네를 체계적으로 작게 세고 있지 않다.** 문경은 규칙이 아니라");
+    console.log("     **한 곳의 특이값**이다. 그 한 곳을 설명하려고 변수를 만들면 관문 1에 걸린다.");
+  });
+
+  it("(6) ⭐⭐ 자연 대조군 — 문경과 같은 처지인 두 곳은 멀쩡하다", () => {
+    // (5)절에서 **5km로도 기준 인구를 못 채우는 매장이 셋**이라는 게 나왔다:
+    //   영월점 · 문경시청점 · 증평점
+    // 셋 다 "담을 사람이 없는 작은 동네"다. 사용자 가설이 **동네의 성질**에 관한 것이라면
+    // **셋 다 똑같이 틀려야 한다.** 한 곳만 틀리면 그건 동네 성질이 아니라 그 매장 사정이다.
+    //
+    // 👉 이게 손으로 고른 대조군이 아니라 **자료가 골라 준 대조군**이라 값이 있다.
+    if (!hasValidationSnapshot()) { console.log("\n  스냅샷이 없어 건너뛴다."); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const snap = loadValidationSnapshot<any>();
+    const settings = mergeModelSettings(snap.settings);
+    const comps: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+    const stores = prepareExistingStoresForEvaluation(snap.existingStores, comps, snap.locationEvaluations, settings);
+    const byCode = new Map<string, Competitor[]>();
+    for (const c of comps) byCode.set(c.candidateCode, [...(byCode.get(c.candidateCode) ?? []), c]);
+    type QscSite = { openedAt?: string; records?: QscRecord[] };
+    const qscSites = new Map<string, QscSite>();
+    for (const d of (snap.labQscScores ?? []) as ({ storeCode?: string; id?: string } & QscSite)[]) {
+      const code = d.storeCode ?? d.id;
+      if (code) qscSites.set(code, d);
+    }
+    if (!qscSites.size && existsSync(QSC_FILE)) {
+      const s = JSON.parse(readFileSync(QSC_FILE, "utf8")).sites as Record<string, QscSite>;
+      for (const [k, v] of Object.entries(s)) qscSites.set(k.replace(/^existing:/, ""), v);
+    }
+    const qscBy = new Map<string, number>();
+    for (const [c, s] of qscSites) {
+      const a = qscInWindowAverage(s.records ?? [], s.openedAt ?? null);
+      if (a != null) qscBy.set(c, a);
+    }
+    const labRows = buildLabRows({
+      stores, compsByCode: byCode, utilByStore: utilizationByStore(snap.sales ?? [], snap.existingStores),
+      settings, qscByStoreCode: qscBy,
+    });
+    const sc = scoreTextbook(labRows, DEFAULT_TEXTBOOK_PARAMS);
+
+    const target = med(rows.map((x) => x.p1));
+    const small = rows.filter((x) => x.p5 < target).map((x) => x.name);
+    console.log(`\n[자연 대조군] 5km로도 기준 인구(${num(target)}명)를 못 채우는 ${small.length}곳`);
+    console.log("  매장          5km인구   매출오차   필요점유율   예측점유율   1km인구");
+    for (const name of small) {
+      const r = sc.rows.find((y) => y.storeName === name);
+      const w = rows.find((y) => y.name === name)!;
+      if (!r || r.predicted == null || !(r.actual > 0)) {
+        console.log(`  ${name.padEnd(12)}${num(w.p5).padStart(9)}   (검증 표본에 없다)`);
+        continue;
+      }
+      const err = r.predicted / r.actual - 1;
+      console.log(
+        `  ${name.padEnd(12)}${num(w.p5).padStart(9)}${`${(err * 100).toFixed(1)}%`.padStart(11)}` +
+        `${r.requiredShare != null ? `${(r.requiredShare * 100).toFixed(0)}%`.padStart(12) : "-".padStart(12)}` +
+        `${r.share != null ? `${(r.share * 100).toFixed(0)}%`.padStart(13) : "-".padStart(13)}${num(w.p1).padStart(10)}`,
+      );
+    }
+    console.log("\n  📌 **판정** — 영월점은 검증 표본 밖이라(학습 제외) 견줄 수 있는 건 증평점이다.");
+    console.log("     그런데 **증평은 5km 인구가 40,292명으로 문경(44,935명)보다 오히려 적다.**");
+    console.log("     그런데도 오차 +15.9% · 필요 점유율 65%로 멀쩡하다.");
+    console.log("\n     즉 *'작은 동네라서 수요를 작게 센다'*는 **동네 성질이 아니다.**");
+    console.log("     더 작은 동네가 더 잘 맞는다. 인구 크기로는 설명이 안 선다.");
+    console.log("\n  ⛔ 문경은 **규칙이 아니라 한 곳의 특이값**이다. 그 한 곳을 설명하려고");
+    console.log("     변수를 만들면 사전 등록 관문 1(두 곳 빼고도 되는가)에 걸린다.");
+    console.log("     👉 다음에 볼 곳은 수요식이 아니라 **문경 그 매장의 자료**다 —");
+    console.log("        실측 가동률·실매출·PC수·요금이 맞게 들어와 있는지.");
   });
 
   it("(4) 문경은 이미 시 전체를 담고 있다 — 가설이 깨지는 까닭", () => {
