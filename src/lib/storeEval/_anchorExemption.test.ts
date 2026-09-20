@@ -507,6 +507,163 @@ describeIf("축척 기준점에 배수를 안 걸면", () => {
     expect(A0).toBeGreaterThan(0);
   });
 
+  // ── 문경시청점을 빼고 같은 것을 다시 (2026-09-20 사용자 착상) ─────────────
+  //
+  // 사용자: *"그럼 문경을 빼고 잰다면? 문경은 내생각에 일반매장보다 수요범위가 큰거같아"*
+  //
+  // 앞 (7)절에서 **문경 한 곳이 191%를 요구해서** 전체 자를 1.91배로 끌고 가야 했고,
+  // 그 바람에 나머지 37곳이 무너졌다. 문경이 "상권 반경이 다른 매장"이라면 같은 자로
+  // 재는 것 자체가 틀린 것이고, 빼고 보는 게 맞다.
+  //
+  // ⚠️ **이건 "틀린 매장을 빼면 성적이 좋아진다"와 구분해야 한다.** 빼는 근거가 성적이면
+  //    결과 맞추기다. 여기서 빼는 근거는 **"상권 반경이 다르다"는 물리적 주장**이고,
+  //    그 주장 자체는 아래 (10)절에서 따로 검사한다.
+  it("(9) 문경시청점을 빼면 자를 올릴 수 있나", () => {
+    const EXCLUDE = "문경시청점";
+    const off = allAsNone(rows).filter((r) => r.input.storeName !== EXCLUDE);
+    const dropped = rows.find((r) => r.input.storeName === EXCLUDE);
+    console.log(`\n[${EXCLUDE} 제외] ${rows.length}곳 -> ${off.length}곳` +
+      (dropped ? ` (뺀 곳: 주거1km ${dropped.input.pop1km?.toLocaleString()} · 표본 최소)` : ""));
+
+    const A0 = scoreTextbook(off, P).fittedHoursPerUser;
+    const base = scoreTextbook(off, P);
+    const reqAt0 = new Map(base.rows.map((x) => [x.storeCode, x.requiredShare ?? NaN]));
+
+    const at = (A: number) => {
+      const p: TextbookParams = { ...P, hoursPerUserPerMonth: A };
+      const full: TextbookParams = { ...p, productUnitPrice: fitProductUnitPrice(off, p) };
+      const errs: number[] = [];
+      const signed: { e: number; mono: boolean }[] = [];
+      let over = 0, maxReq = 0;
+      for (const r of off) {
+        const b = computeTextbook(r.input, full);
+        if (b.monthlyRevenue != null && r.actualRevenue > 0) {
+          errs.push(Math.abs(b.monthlyRevenue - r.actualRevenue) / r.actualRevenue);
+          signed.push({ e: b.monthlyRevenue / r.actualRevenue - 1, mono: isMono(r) });
+        }
+        const req = (reqAt0.get(r.input.storeCode) ?? NaN) * (A0 / A);
+        if (Number.isFinite(req)) { if (req > 1) over++; maxReq = Math.max(maxReq, req); }
+      }
+      const sorted = [...errs].sort((a, b) => a - b);
+      const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+      return {
+        mape: avg(errs), median: sorted[Math.floor(sorted.length / 2)],
+        within20: errs.filter((v) => v <= 0.2).length / errs.length,
+        mono: avg(signed.filter((x) => x.mono).map((x) => x.e)),
+        comp: avg(signed.filter((x) => !x.mono).map((x) => x.e)),
+        over, maxReq,
+      };
+    };
+    const reqs = [...reqAt0.values()].filter(Number.isFinite);
+    const A_all = A0 * Math.max(...reqs);
+    console.log(`  지금 A=${A0.toFixed(3)} · 전부 100% 이하가 되는 A=${A_all.toFixed(2)} (${(A_all / A0).toFixed(2)}배)`);
+    console.log("      A     A배율     독점잔차   경쟁상권잔차     MAPE     중앙   ±20%  100%초과  최대필요점유율");
+    const grid = [...new Set([A0, A0 * 1.05, A0 * 1.1, A0 * 1.15, A_all, A0 * 1.3])].sort((a, b) => a - b);
+    for (const A of grid) {
+      const s = at(A);
+      const tag = Math.abs(A - A0) < 1e-9 ? " <- 지금" : Math.abs(A - A_all) < 1e-9 ? " <- 전부 100%이하" : "";
+      console.log(`  ${A.toFixed(2).padStart(6)}  ${(A / A0).toFixed(2).padStart(6)}배  ` +
+        `${(s.mono * 100).toFixed(1).padStart(8)}%  ${(s.comp * 100).toFixed(1).padStart(10)}%  ` +
+        `${(s.mape * 100).toFixed(2).padStart(7)}%  ${(s.median * 100).toFixed(1).padStart(5)}%  ` +
+        `${(s.within20 * 100).toFixed(0).padStart(3)}%  ${String(s.over).padStart(6)}곳  ` +
+        `${(s.maxReq * 100).toFixed(0).padStart(11)}%${tag}`);
+    }
+    expect(off.length).toBe(rows.length - 1);
+  });
+
+  // ── "문경은 상권 반경이 크다"를 자료로 검사한다 ────────────────────────────
+  //
+  // 빼는 근거가 성적이면 결과 맞추기다. **물리적 주장이 자료에서 보이는지** 따로 본다.
+  //
+  // ⚠️ **주거인구는 500m·1km 둘뿐이다.** 2km를 못 봐서 "1km 밖에서 온다"를 직접은 못 잰다.
+  //    대신 있는 자료로 대리 지표 셋을 본다. 셋이 같은 방향이면 주장에 무게가 실린다.
+  it("(10) 문경이 정말 '수요 범위가 큰' 매장인가 — 있는 자료로", () => {
+    type Row = { name: string; spread: number; flowPerRes: number; flowSpread: number; req: number };
+    const sc = scoreTextbook(allAsNone(rows), P);
+    // ⚠️ `floatingByRadius`에는 **100~500m만** 담긴다(labInput.ts). 1km는 원자료에서 따로 집는다.
+    const f1kBy = new Map<string, number | null>(
+      (stores as { storeCode?: string; floating1000Avg?: number | null }[])
+        .map((s) => [String(s.storeCode ?? ""), s.floating1000Avg ?? null]),
+    );
+    const xs: Row[] = [];
+    for (const r of rows) {
+      const p500 = r.input.pop500m, p1k = r.input.pop1km;
+      const f500 = r.input.floatingByRadius[500], f1k = f1kBy.get(r.input.storeCode) ?? null;
+      const req = sc.rows.find((x) => x.storeCode === r.input.storeCode)?.requiredShare;
+      if (p500 == null || p1k == null || !p500 || f500 == null || f1k == null || !f500 || req == null) continue;
+      xs.push({
+        name: r.input.storeName ?? r.input.storeCode,
+        spread: p1k / p500,        // 주거가 밖으로 얼마나 퍼져 있나
+        flowPerRes: f1k / p1k,     // 사는 사람 대비 오가는 사람 (밖에서 오는 정도)
+        flowSpread: f1k / f500,    // 유동이 밖으로 얼마나 퍼져 있나
+        req,
+      });
+    }
+    const rank = (key: keyof Row) => {
+      const s = [...xs].sort((a, b) => (b[key] as number) - (a[key] as number));
+      return s.findIndex((x) => x.name === "문경시청점") + 1;
+    };
+    const med = (key: keyof Row) => {
+      const s = [...xs].map((x) => x[key] as number).sort((a, b) => a - b);
+      return s[Math.floor(s.length / 2)];
+    };
+    const mg = xs.find((x) => x.name === "문경시청점");
+    console.log(`\n[문경이 정말 넓은 상권인가] n=${xs.length} · 순위는 큰 쪽부터`);
+    if (mg) {
+      console.log(`  주거 1km÷500m (밖으로 퍼짐)     문경 ${mg.spread.toFixed(2)}  · 중앙 ${med("spread").toFixed(2)}  · ${rank("spread")}위`);
+      console.log(`  유동1km÷주거1km (밖에서 옴)     문경 ${mg.flowPerRes.toFixed(2)}  · 중앙 ${med("flowPerRes").toFixed(2)}  · ${rank("flowPerRes")}위`);
+      console.log(`  유동 1km÷500m (유동 퍼짐)      문경 ${mg.flowSpread.toFixed(2)}  · 중앙 ${med("flowSpread").toFixed(2)}  · ${rank("flowSpread")}위`);
+    }
+    // 대리 지표가 진짜 신호라면 **전 매장에서** 필요 점유율과 붙어야 한다.
+    const pearson = (a: number[], b: number[]) => {
+      const n = a.length, ma = a.reduce((x, y) => x + y, 0) / n, mb = b.reduce((x, y) => x + y, 0) / n;
+      let sxy = 0, sxx = 0, syy = 0;
+      for (let i = 0; i < n; i++) { const dx = a[i] - ma, dy = b[i] - mb; sxy += dx * dy; sxx += dx * dx; syy += dy * dy; }
+      return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : 0;
+    };
+    const reqv = xs.map((x) => x.req);
+    console.log(`\n  전 매장에서 필요 점유율과의 상관 (유의선 ±0.32, n=${xs.length})`);
+    for (const k of ["spread", "flowPerRes", "flowSpread"] as const) {
+      const r = pearson(xs.map((x) => x[k] as number), reqv);
+      console.log(`    ${k.padEnd(12)} r = ${r.toFixed(3)}  ${Math.abs(r) > 0.32 ? "유의" : "-"}`);
+    }
+    // ── 2km 주거인구로 **직접** 본다 ────────────────────────────────────────
+    // 2026-09-19에 사용자가 양주덕정 2km를 관찰하면서 SGIS 수집 반경에 1500·2000m를
+    // 넣어 뒀다(`scripts/collectSgisResidentPopulation.mjs` RADII). 그래서 직접 잴 수 있다.
+    // ⚠️ `.local-tools/`는 gitignore다 — 파일이 없는 PC에서는 이 블록만 건너뛴다.
+    const SGIS = ".local-tools/sgis-resident-population.json";
+    if (existsSync(SGIS)) {
+      type Site = { kind?: string; name?: string; radii?: Record<string, { totalPopulation?: number | null;
+        pops?: { tot_ppltn_cnt?: number | null } }> };
+      const sites = Object.values(
+        (JSON.parse(readFileSync(SGIS, "utf8")) as { sites: Record<string, Site> }).sites,
+      ).filter((s) => s.kind === "existing");
+      const pop = (s: Site, r: string) => s.radii?.[r]?.totalPopulation ?? s.radii?.[r]?.pops?.tot_ppltn_cnt ?? null;
+      const ratios = sites
+        .map((s) => ({ name: s.name ?? "", p1: pop(s, "1000"), p2: pop(s, "2000") }))
+        .filter((x): x is { name: string; p1: number; p2: number } => !!x.p1 && !!x.p2)
+        .map((x) => ({ ...x, ratio: x.p2 / x.p1 }))
+        .sort((a, b) => b.ratio - a.ratio);
+      const idx = ratios.findIndex((x) => x.name === "문경시청점");
+      const medR = [...ratios].map((x) => x.ratio).sort((a, b) => a - b)[Math.floor(ratios.length / 2)];
+      console.log(`\n  [2km 주거인구로 직접] n=${ratios.length} · 2km÷1km가 클수록 상권이 밖으로 퍼진 것`);
+      if (idx >= 0) {
+        const m = ratios[idx];
+        console.log(`    문경시청점  1km ${m.p1.toLocaleString()} -> 2km ${m.p2.toLocaleString()}  비 ${m.ratio.toFixed(2)}` +
+          `  =>  ${idx + 1}위 / ${ratios.length} (중앙 ${medR.toFixed(2)})`);
+        console.log(`    제일 퍼진 곳: ${ratios.slice(0, 3).map((x) => `${x.name} ${x.ratio.toFixed(2)}`).join(" · ")}`);
+      }
+      console.log(`    ⚠️ **2km 안에서는 문경이 오히려 제일 안 퍼진 축이다 — 가설과 반대 방향이다.**`);
+      console.log(`       다만 지방 소도시는 상권이 시 전체(5~10km)일 수 있고, 그 반경은 아직 안 모았다.`);
+      console.log(`       모으려면 위 스크립트의 RADII에 5000을 넣고 다시 돌리면 된다.`);
+    } else {
+      console.log(`\n  (2km 자료 ${SGIS} 없음 — 건너뜀)`);
+    }
+    console.log("\n  ⚠️ 문경이 순위에서 눈에 띄지 않고 상관도 유의하지 않으면, '반경이 크다'는");
+    console.log("     **있는 자료로는 못 보이는** 주장이다 — 틀렸다는 뜻이 아니다.");
+    expect(xs.length).toBeGreaterThan(30);
+  });
+
   it("(4) LOO 홀드아웃 — 축척까지 훈련겹에서만", () => {
     // ⚠️ 표본 안 성적만 보면 안 된다. 갈래마다 안 본 매장을 맞혀 본다.
     const looOf = (transform: (rs: LabRow[]) => LabRow[]) => {
