@@ -11,7 +11,7 @@
 //
 // ── 무엇을 재나 ────────────────────────────────────────────────────────────
 // 1) 입지를 통째로 뺀 성적(location: null)
-// 2) 지금 계수 그대로 붙인 성적 (중심도 ν=0.25 · 접근성 κ=0.25 · 나머지 0)
+// 2) 지금 계수 그대로 붙인 성적 (중심도 ν=0.5(잔차화) · 접근성 κ=0.25 · 나머지 0)
 // 3) 항목을 하나씩 켜 보며 각 항이 얼마를 하는지
 // 4) 유동 방향 ω를 0에서 올려 보며 — **켤지 말지는 사용자 결정**이고 여기선 숫자만 낸다
 //
@@ -318,7 +318,7 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   }, 600_000);
 
   it("입지가 전체 성적에 얼마를 하는가", () => {
-    console.log("\n[입지 항목별] 계수는 기본값 — 중심도 ν=0.25 · 접근성 κ=0.25 · 유동방향 ω=0");
+    console.log("\n[입지 항목별] 계수는 기본값 — 중심도 ν=0.5(잔차화) · 접근성 κ=0.25 · 유동방향 ω=0");
     const none = line("입지 없음", withLocation("none"));
     line("중심도만", withLocation(["centrality"]));
     line("접근성만", withLocation(["access"]));
@@ -336,7 +336,7 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     for (const nu of [0, 0.1, 0.25, 0.5]) {
       line(`ν=${nu}`, rows, { ...P, locationExponents: { ...P.locationExponents, centrality: nu } });
     }
-    console.log("\n[접근성 κ] 중심도 ν=0.25 고정");
+    console.log("\n[접근성 κ] 중심도 ν=0.5 고정");
     for (const kappa of [0, 0.1, 0.25, 0.5]) {
       line(`κ=${kappa}`, rows, { ...P, locationExponents: { ...P.locationExponents, access: kappa } });
     }
@@ -345,63 +345,41 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     expect(rows.length).toBeGreaterThan(30);
   });
 
-  // ── 이중계산을 걷어낸 중심도 ─────────────────────────────────────────────
+  // ── 이중계산을 걷어낸 중심도 — **2026-09-20 본체 채택됨** ─────────────────
   //
-  // 중심도의 뜻은 "동네 규모를 감안했을 때 우리가 상권 중심이냐 끝이냐"다. 그런데 지금 값에는
-  // **동네 규모 자체가 섞여 있다**(수요식 유동400m와 r=0.605). 그래서 수요가 이미 센 것을
-  // 점유율에서 한 번 더 곱한다.
+  // 중심도의 뜻은 "동네 규모를 감안했을 때 우리가 상권 중심이냐 끝이냐"다. 그런데 날값에는
+  // **동네 규모 자체가 섞여 있다**(수요식 유동400m와 r=0.599). 그래서 수요가 이미 센 것을
+  // 점유율에서 한 번 더 곱했다. log(중심도)를 log(유동400m)에 회귀시켜 **잔차만** 쓰면
+  // 남는 게 원래 재려던 그것이다.
   //
-  // 섞인 부분만 빼낸다: log(중심도)를 log(유동400m)에 회귀시키고 **잔차만** 쓴다. 남는 건
-  // "같은 규모의 동네끼리 비교했을 때 우리가 중심이냐 끝이냐"다 — 원래 재려던 그것이다.
-  // 새로 모을 자료가 없다. 있는 값으로 계산만 다시 한다.
-  //
-  // 기하평균을 기준값에 맞춰 되돌린다. 곱셈 보정 (x/기준)^지수는 표본 전체에서 평균 1배여야
-  // 중립인데, 그러려면 로그 공간의 중심 = 기하평균이 기준과 같아야 한다(2026-09-16 ⑫와 같은 이유).
-  const residualCentralityRows: LabRow[] = (() => {
-    const idx: number[] = [];
-    const xs: number[] = [];
-    const ys: number[] = [];
-    rows.forEach((r, i) => {
-      const c = r.input.location?.centrality ?? null;
-      const f = r.input.floatingByRadius[400] ?? null;
-      if (c != null && c > 0 && f != null && f > 0) { idx.push(i); xs.push(Math.log(f)); ys.push(Math.log(c)); }
-    });
-    const n = xs.length;
-    if (n < 3) return rows;
-    const mx = xs.reduce((a, b) => a + b, 0) / n;
-    const my = ys.reduce((a, b) => a + b, 0) / n;
-    let sxy = 0, sxx = 0;
-    for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; }
-    const slope = sxx > 0 ? sxy / sxx : 0;
-    const ref = Math.log(P.locationReferences.centrality);
-    const fixed = new Map<number, number>();
-    for (let i = 0; i < n; i++) {
-      const resid = ys[i] - (my + slope * (xs[i] - mx));
-      fixed.set(idx[i], Math.exp(resid + ref));
-    }
-    console.log(`\n[중심도 잔차화] log-log 기울기 ${slope.toFixed(3)} · n=${n}`);
-    return rows.map((r, i) => ({
-      actualRevenue: r.actualRevenue,
-      input: { ...r.input, location: r.input.location ? { ...r.input.location, centrality: fixed.get(i) ?? null } : null },
-    }));
-  })();
+  // ⚠️ **이 계산은 이제 하네스가 아니라 본체(`textbookModel.ts`)에 있다** — 파라미터
+  //    `centralityResidual`이다. 여기서 또 하면 **이중 잔차화**가 되어 숫자가 망가진다.
+  //    그래서 "손 안 댄 중심도"는 잔차화를 **끄는 것**(null)으로 만든다.
+  const rawP: TextbookParams = { ...P, centralityResidual: null };
 
   it("이중계산을 걷어낸 중심도 — 그래도 쓸모가 있나", () => {
-    const before = rows
+    // 겹침이 얼마나 걷혔나. 본체가 쓰는 상수로 직접 잔차화해서 상관만 본다.
+    const CR = P.centralityResidual!;
+    const pair = rows
       .map((r) => [r.input.location?.centrality ?? null, r.input.floatingByRadius[400] ?? null] as const)
       .filter((x): x is readonly [number, number] => x[0] != null && x[1] != null);
-    const after = residualCentralityRows
-      .map((r) => [r.input.location?.centrality ?? null, r.input.floatingByRadius[400] ?? null] as const)
-      .filter((x): x is readonly [number, number] => x[0] != null && x[1] != null);
-    console.log(`  수요식 유동400m와의 겹침: ${pearson(before.map((x) => x[0]), before.map((x) => x[1])).toFixed(3)}` +
-      ` -> ${pearson(after.map((x) => x[0]), after.map((x) => x[1])).toFixed(3)}`);
+    const resid = pair.map(([c, f]) =>
+      P.locationReferences.centrality * (c / CR.geoMeanCentrality) * Math.pow(CR.geoMeanFloating400 / f, CR.slope));
+    console.log(`\n[중심도 잔차화] 본체 상수 — 기울기 ${CR.slope} · G_c ${CR.geoMeanCentrality} · G_f ${CR.geoMeanFloating400}`);
+    console.log(`  수요식 유동400m와의 겹침: ${pearson(pair.map((x) => x[0]), pair.map((x) => x[1])).toFixed(3)}` +
+      ` -> ${pearson(resid, pair.map((x) => x[1])).toFixed(3)}`);
 
-    console.log("\n[잔차화 중심도 ν] 접근성 κ=0.25 고정");
+    console.log("\n[잔차화 중심도 ν] 접근성 κ=0.25 고정 · **본체 기본값**");
     for (const nu of [0, 0.1, 0.25, 0.5, 1]) {
-      line(`ν=${nu}`, residualCentralityRows, { ...P, locationExponents: { ...P.locationExponents, centrality: nu } });
+      line(`ν=${nu}`, rows, { ...P, locationExponents: { ...P.locationExponents, centrality: nu } });
     }
-    console.log("  (비교) 손 안 댄 중심도 ν=0.25 -> 45.86% · ν=0 -> 38.64%");
-    expect(residualCentralityRows.length).toBe(rows.length);
+    console.log("\n[손 안 댄 중심도 ν] 잔차화를 끈 옛 동작 — 견줄 대상");
+    for (const nu of [0, 0.1, 0.25, 0.5, 1]) {
+      line(`ν=${nu}`, rows, { ...rawP, locationExponents: { ...rawP.locationExponents, centrality: nu } });
+    }
+    console.log("  ⚠️ 정직한 홀드아웃(축척·기울기까지 훈련겹에서만)은 `_residualCentralityPort.test.ts`에 있다:");
+    console.log("     손 안 댄 ν=0.25 23.15%  ->  잔차화 ν=0.5 22.02%");
+    expect(rows.length).toBeGreaterThan(30);
   });
 
   // ── 관문 ──────────────────────────────────────────────────────────────────
@@ -416,6 +394,7 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   //
   // ⚠️ LOO에서 축척(hoursPerUser/productUnitPrice)은 38곳 전부로 다시 맞춰진다. 계수 선택만
   //    홀드아웃이고 축척은 아니라, 벌어짐이 **실제보다 작게** 나온다. 낙관적인 쪽 편향이다.
+  //    축척까지 훈련겹에서만 맞춘 정직한 판은 `_residualCentralityPort.test.ts`에 있다.
   const NU_GRID = [0, 0.1, 0.25, 0.5, 0.75, 1];
   const mapeAt = (rs: LabRow[], nu: number) =>
     scoreTextbook(rs, { ...P, locationExponents: { ...P.locationExponents, centrality: nu } }).mape ?? Number.POSITIVE_INFINITY;
@@ -444,8 +423,10 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   }
 
   it("관문 1 — 무작위 대조군", () => {
-    const base = mapeAt(residualCentralityRows, 0);
-    const real = pickNu(residualCentralityRows);
+    // 본체가 잔차화를 하므로 `rows`를 그대로 쓴다. 섞는 것은 **날 중심도**이고, 섞인 값이
+    // 그 매장의 유동400m로 잔차화된다 — 매장↔중심도 짝만 깨지는 정직한 귀무가설이다.
+    const base = mapeAt(rows, 0);
+    const real = pickNu(rows);
     const realGain = base - real.mape;
     console.log(`\n[대조군] 진짜 중심도: ν=${real.nu} · MAPE ${(base * 100).toFixed(2)}% -> ${(real.mape * 100).toFixed(2)}% (좋아진 폭 ${(realGain * 100).toFixed(2)}%p)`);
 
@@ -456,7 +437,7 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     const TRIALS = 200;
     const gains: number[] = [];
     for (let t = 0; t < TRIALS; t++) {
-      const sh = shuffleCentrality(residualCentralityRows, rand);
+      const sh = shuffleCentrality(rows, rand);
       gains.push(mapeAt(sh, 0) - pickNu(sh).mape);
     }
     gains.sort((a, b) => a - b);
@@ -469,15 +450,20 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   });
 
   it("관문 2 — 한 곳 빼고 고른 뒤 그 한 곳 맞히기 (LOO)", () => {
-    const inSample = pickNu(residualCentralityRows);
+    // ⚠️ **2026-09-20 버그 수정.** 예전에는 `sc.rows[i]`로 홀드아웃 매장을 집었는데,
+    //    `scoreTextbook`은 rows를 **오차 내림차순으로 정렬해서** 돌려준다. 그래서 i번째
+    //    매장이 아니라 "i번째로 오차가 큰 매장"을 집었고, 겹마다 고른 ν가 거의 같다 보니
+    //    결국 표본 안 MAPE를 그대로 다시 센 꼴이었다 — 벌어짐이 −0.05%p로 찍힌 이유다.
+    //    매장코드로 짚는다.
+    const inSample = pickNu(rows);
     const errs: number[] = [];
     const picked = new Map<number, number>();
-    for (let i = 0; i < residualCentralityRows.length; i++) {
-      const train = residualCentralityRows.filter((_, k) => k !== i);
+    for (let i = 0; i < rows.length; i++) {
+      const train = rows.filter((_, k) => k !== i);
       const nu = pickNu(train).nu;
       picked.set(nu, (picked.get(nu) ?? 0) + 1);
-      const sc = scoreTextbook(residualCentralityRows, { ...P, locationExponents: { ...P.locationExponents, centrality: nu } });
-      const e = sc.rows[i]?.absErrPct;
+      const sc = scoreTextbook(rows, { ...P, locationExponents: { ...P.locationExponents, centrality: nu } });
+      const e = sc.rows.find((x) => x.storeCode === rows[i].input.storeCode)?.absErrPct;
       if (e != null) errs.push(e);
     }
     const loo = errs.reduce((a, b) => a + b, 0) / errs.length;

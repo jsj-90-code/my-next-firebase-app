@@ -486,7 +486,8 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           )}
           {p.shareMode !== "off" && (() => {
             const on = ([
-              ["상권 중심도", p.locationExponents.centrality, "자료"],
+              // 중심도는 2026-09-20부터 **잔차화**해서 들어갑니다(아래 설명 참고).
+              [p.centralityResidual ? "잔차화 중심도" : "상권 중심도", p.locationExponents.centrality, "자료"],
               ["접근성(층수)", p.locationExponents.access, "자료"],
               ["유동 방향", p.locationExponents.direction, "보류"],
               ["동선 방해", p.locationExponents.flowBlock, "보류"],
@@ -503,6 +504,31 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                   나눗셈이 아니라 곱셈입니다.
                   {on.length > 0 && <> 지금 켜진 항목은 <b>{on.map(([n, , l]) => `${n}[${l}]`).join(" · ")}</b>입니다.</>}
                 </div>
+                {p.centralityResidual && p.locationExponents.centrality !== 0 && (
+                  <div className="mt-2 rounded border border-[var(--sl-line)] p-2">
+                    <div className="font-semibold">중심도는 &quot;동네 규모&quot;를 걷어내고 씁니다 (2026-09-20)</div>
+                    <div className="mt-1 font-mono text-[11px]">
+                      잔차화 중심도 = 기준 × (중심도 ÷ {p.centralityResidual.geoMeanCentrality})
+                      × ({p.centralityResidual.geoMeanFloating400.toLocaleString()} ÷ 유동400m)^{p.centralityResidual.slope}
+                    </div>
+                    <div className="mt-1">
+                      중심도가 뜻하려던 것은 <b>&quot;같은 규모의 동네끼리 비교했을 때 우리가 상권 중심이냐 끝이냐&quot;</b>입니다.
+                      그런데 날값에는 <b>동네 규모 자체가 섞여</b> 있었습니다 — 수요식이 쓰는 유동400m와 상관이 0.599라,
+                      수요에서 이미 센 것을 점유율에서 <b>한 번 더</b> 곱하고 있었습니다.
+                      유동400m 몫을 회귀로 걷어내니 겹침이 <b>0.599 → −0.154</b>로 사라집니다.
+                    </div>
+                    <div className="mt-1">
+                      정직한 홀드아웃(축척과 기울기까지 훈련겹에서만 맞춤, 38곳)에서
+                      <b> 손 안 댄 중심도 ν=0.25의 23.15%가 잔차화 ν=0.5에서 22.02%</b>로 좋아졌습니다.
+                      무작위 대조군 200회도 통과했습니다(p=0.005).
+                    </div>
+                    <div className="mt-1">
+                      ⚠️ 위 상수 셋은 <b>기존점 38곳에서 적합한 정규화</b>입니다(MAPE로 고른 자유계수가 아니라
+                      회귀 기울기와 기하평균입니다). <b>표본이 늘면 다시 적합해야 합니다.</b>
+                      유동400m가 없는 곳은 중심도 항을 <b>통째로 뺍니다</b> — 날값으로 되돌리지 않습니다.
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -805,7 +831,10 @@ function ParamSummary({ p, counts }: {
     {
       title: "입지 (점유율에 곱한다)",
       rows: [
-        { label: "상권 중심도 ν", value: num(p.locationExponents.centrality), tag: "자료" },
+        {
+          label: p.centralityResidual ? "잔차화 중심도 ν" : "상권 중심도 ν",
+          value: num(p.locationExponents.centrality), tag: "자료",
+        },
         { label: "접근성(층수) κ", value: num(p.locationExponents.access), tag: "자료" },
         { label: "유동 방향 ω", value: num(p.locationExponents.direction), tag: "보류" },
         { label: "동선 방해", value: num(p.locationExponents.flowBlock), tag: "보류" },

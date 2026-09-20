@@ -117,22 +117,56 @@ describe("입지 — 점유율에 곱하는 독립 항", () => {
   // 경쟁점을 하나 둬야 점유율이 1 미만이라 배율이 보인다 (1은 상한에 걸린다).
   const base = { ownQualityParts: parts(3), rivals: [{ ip: 100, distanceM: 100, parts: parts(3) }] };
 
+  // ⚠️ **중심도는 2026-09-20부터 잔차화해서 들어간다**(`centralityResidual`). 유동400m를
+  //    같이 주지 않으면 항이 통째로 빠지므로, 중심도를 보는 시험은 반드시 유동400m를 준다.
+  //    기하평균 G_f를 주면 잔차화가 (중심도/G_c)만 남겨 눈금이 단순해진다.
+  const CR = P.centralityResidual!;
+  const atGeoMean = (centrality: number) => ({
+    ...base,
+    location: L({ centrality }),
+    floatingByRadius: { 400: CR.geoMeanFloating400 },
+  });
+
   it("기준값이면 1배다 — 아무 일도 안 한다", () => {
-    const ref = P.locationReferences;
-    const b = computeTextbook(input({ ...base, location: L({ centrality: ref.centrality, access: ref.access }) }), P);
+    // 잔차화 뒤 기준값이 되는 자리는 **기하평균**이다(유동400m도 G_f일 때).
+    const b = computeTextbook(input({
+      ...atGeoMean(CR.geoMeanCentrality),
+      location: L({ centrality: CR.geoMeanCentrality, access: P.locationReferences.access }),
+    }), P);
     expect(b.locationMultiplier).toBeCloseTo(1, 10);
     expect(b.share).toBeCloseTo(0.5, 10);
   });
 
   it("상권 중심이면 점유율이 올라가고, 상권 끝이면 내려간다", () => {
-    const ref = P.locationReferences.centrality;
-    const mid = computeTextbook(input({ ...base, location: L({ centrality: ref }) }), P).share!;
-    const core = computeTextbook(input({ ...base, location: L({ centrality: ref * 2 }) }), P).share!;
-    const edge = computeTextbook(input({ ...base, location: L({ centrality: ref / 2 }) }), P).share!;
+    const g = CR.geoMeanCentrality;
+    const mid = computeTextbook(input(atGeoMean(g)), P).share!;
+    const core = computeTextbook(input(atGeoMean(g * 2)), P).share!;
+    const edge = computeTextbook(input(atGeoMean(g / 2)), P).share!;
     expect(core).toBeGreaterThan(mid);
     expect(edge).toBeLessThan(mid);
-    // nu=0.25이면 중심도 2배가 2^0.25 = 1.189배다
+    // ν=0.5이면 중심도 2배가 2^0.5 = 1.414배다
     expect(core / mid).toBeCloseTo(Math.pow(2, P.locationExponents.centrality), 10);
+  });
+
+  it("같은 중심도라도 동네가 크면 덜 쳐준다 — 잔차화가 하는 일", () => {
+    // 이게 잔차화의 뜻이다. 날값이 같아도 유동400m가 크면 "그 동네가 원래 빽빽한 것"이라
+    // 우리 공은 덜 된다. 기울기 0.48이면 유동이 2배일 때 2^-0.48배로 깎인다.
+    const small = computeTextbook(input({
+      ...base, location: L({ centrality: 4 }), floatingByRadius: { 400: CR.geoMeanFloating400 },
+    }), P).share!;
+    const big = computeTextbook(input({
+      ...base, location: L({ centrality: 4 }), floatingByRadius: { 400: CR.geoMeanFloating400 * 2 },
+    }), P).share!;
+    expect(big).toBeLessThan(small);
+    expect(big / small).toBeCloseTo(Math.pow(Math.pow(2, -CR.slope), P.locationExponents.centrality), 10);
+  });
+
+  it("유동400m가 없으면 중심도 항을 통째로 뺀다 — 날값으로 되돌리지 않는다", () => {
+    // ν=0.5는 **잔차 눈금**에 맞춘 값이다. 날 중심도에 그대로 먹이면 딴 걸 재게 되므로,
+    // 잔차화를 못 하면 1배로 빼는 게 맞다(없는 값을 지어내지 않는다와 같은 규칙).
+    const b = computeTextbook(input({ ...base, location: L({ centrality: 8 }) }), P);
+    expect(b.locationFactors.map((f) => f.key)).toEqual([]);
+    expect(b.locationMultiplier).toBe(1);
   });
 
   it("층이 높으면(접근성 점수가 낮으면) 점유율이 내려간다", () => {
@@ -164,7 +198,10 @@ describe("입지 — 점유율에 곱하는 독립 항", () => {
   });
 
   it("어느 항목이 얼마를 곱했는지 내놓는다 (화면 표시용)", () => {
-    const b = computeTextbook(input({ ...base, location: L({ centrality: 8, access: 5 }) }), P);
+    const b = computeTextbook(input({
+      ...base, location: L({ centrality: 8, access: 5 }),
+      floatingByRadius: { 400: CR.geoMeanFloating400 },
+    }), P);
     expect(b.locationFactors.map((f) => f.key).sort()).toEqual(["access", "centrality"]);
     expect(b.locationFactors.reduce((a, f) => a * f.value, 1)).toBeCloseTo(b.locationMultiplier!, 10);
   });

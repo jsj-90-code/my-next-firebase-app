@@ -389,6 +389,47 @@ export type TextbookParams = {
    * λ를 풀면 표본 안 MAPE는 비슷한데(24.04%) LOO 벌어짐이 1.79%p -> 6.45%p로 커진다.
    */
   locationReferences: { centrality: number; access: number };
+  /**
+   * **중심도 잔차화** — 중심도에서 *동네 규모* 몫을 걷어낸다 (2026-09-20 채택).
+   *
+   * ── 왜 필요한가 (이중계산) ────────────────────────────────────────────────
+   * 중심도의 뜻은 *"동네 규모를 감안했을 때 우리가 상권 중심이냐 끝이냐"*다. 그런데 날값에는
+   * **동네 규모 자체가 섞여 있다** — 수요식이 쓰는 유동400m와 r=0.599다. 그래서 수요에서
+   * 이미 센 것을 점유율에서 한 번 더 곱했다. log(중심도)를 log(유동400m)에 회귀시켜
+   * **잔차만** 쓰면 남는 게 원래 재려던 그것이다. 겹침이 0.599 -> **−0.154**로 사라진다.
+   *
+   *     잔차화 중심도 = 기준 x (중심도 / G_c) x (G_f / 유동400m)^기울기
+   *
+   * ── 근거 (`_residualCentralityPort.test.ts`) ──────────────────────────────
+   *   정직한 홀드아웃(축척·기울기를 **훈련겹에서만** 맞춤, n=38)
+   *     손 안 댄 중심도 ν=0.25 (옛 본체)   23.15%
+   *     잔차화 ν=0.5                      **22.02%**   <- 1.13%p 좋아짐
+   *   겹마다 기울기를 다시 적합해도 유지된다(기울기 고정 22.17% vs 재적합 22.02%) —
+   *   즉 예전 하네스가 적어 둔 '벌어짐 −0.05%p'는 누수가 아니었다.
+   *   무작위 대조군 200회 p=0.005 · 훈련겹 38회 중 37회가 ν=0.5를 골랐다(`_textbookFull`).
+   *
+   * ⚠️ **이 셋은 표본에서 적합한 상수다 — 자유계수가 아니라 정규화다.** MAPE로 고르지
+   *    않았다(OLS 기울기와 기하평균이라 고를 여지 자체가 없다). locationReferences와 같은
+   *    부류다. 다만 **표본이 늘면 다시 적합해야 한다** — `_residualCentralityPort.test.ts`의
+   *    (1)번 시험이 지금 표본의 값을 찍어 준다.
+   *
+   * ⚠️ 인계 문서(2026-09-21)에 *"새로 고를 계수가 없다"*고 적혀 있었는데 **정확하지 않다.**
+   *    굳혀야 하는 상수가 셋이고 ν도 0.25 -> 0.5로 바뀐다. 옮겨도 되는 이유는 "고를 게
+   *    없어서"가 아니라 **고른 값이 정직한 홀드아웃에서 버텨서**다.
+   *
+   * ⚠️ **유동400m가 없으면 중심도 항을 통째로 뺀다**(1배). 날값으로 되돌리지 않는다 —
+   *    ν=0.5는 잔차 눈금에 맞춘 값이라 날값에 그대로 먹이면 딴 걸 재게 된다.
+   *
+   * null로 두면 잔차화를 끄고 날 중심도를 쓴다(옛 동작).
+   */
+  centralityResidual: {
+    /** log(중심도) ~ log(유동400m) OLS 기울기. */
+    slope: number;
+    /** 중심도의 기하평균 G_c. */
+    geoMeanCentrality: number;
+    /** 유동400m의 기하평균 G_f. */
+    geoMeanFloating400: number;
+  } | null;
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
@@ -466,9 +507,14 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 합이 0.83인 건 입지 몫이 빠져서다 — computeQualityScore가 있는 항목의 합으로 나눈다.
   qualityWeights: { spec: 0.264, food: 0.075, zone: 0.238, interior: 0.102, management: 0.151 },
   // 입지 — [자료] 둘만 켜져 있고 [보류] 셋은 0이다. 자세한 근거는 타입 쪽 주석.
-  locationExponents: { centrality: 0.25, access: 0.25, direction: 0, flowBlock: 0, visibility: 0 },
+  // ⚠️ 중심도 ν는 2026-09-20에 0.25 -> 0.5로 바뀌었다. **잔차화와 한 묶음이다** —
+  //    잔차화를 끄면(centralityResidual: null) ν도 0.25로 돌려야 한다. 0.5는 잔차 눈금 값이다.
+  locationExponents: { centrality: 0.5, access: 0.25, direction: 0, flowBlock: 0, visibility: 0 },
   // 기준값 — 경쟁상권 29곳의 **기하평균**. 중앙값이 아니다(위 주석의 이유).
   locationReferences: { centrality: 3.22, access: 3.42 },
+  // 중심도 잔차화 상수 — 기존점 38곳에서 적합(2026-09-20). 표본이 늘면 다시 적합할 것.
+  // `_residualCentralityPort.test.ts`의 (1)번 시험이 지금 표본의 값을 찍어 준다.
+  centralityResidual: { slope: 0.4801, geoMeanCentrality: 3.2719, geoMeanFloating400: 75093 },
   // 2026-09-16 측정값. 표본 2~5곳이라 확정값이 아니다 — 조절판에서 돌려볼 것.
   specialDemandMultipliers: { "군부대": 2.25, "대학가": 1.45, "산업단지": 1.39, "기타": 1.25, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
   maxUtilization: 0.55,
@@ -713,7 +759,20 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
       if (v == null || !Number.isFinite(v) || !(v > 0) || !(ref > 0) || exp === 0) return;
       locFactors.push({ key, value: Math.pow(v / ref, exp) });
     };
-    mul("centrality", L.centrality, E.centrality, R.centrality);
+    // 중심도는 **잔차화해서** 넣는다 — 날값에는 동네 규모(유동400m)가 섞여 있어 수요식과
+    // 이중계산이 된다. 자세한 근거와 상수의 성격은 `centralityResidual` 타입 주석에 있다.
+    // ⚠️ 유동400m가 없으면 **항을 통째로 뺀다**(null). 날값으로 되돌리지 않는다 —
+    //    ν=0.5는 잔차 눈금에 맞춘 값이라 날값에 먹이면 딴 걸 재게 된다.
+    const CR = p.centralityResidual;
+    const f400 = input.floatingByRadius[400] ?? null;
+    const centrality = (() => {
+      if (!CR) return L.centrality; // 잔차화를 끈 상태 — 옛 동작(ν도 0.25로 돌릴 것)
+      if (L.centrality == null || !(L.centrality > 0)) return null;
+      if (f400 == null || !(f400 > 0)) return null;
+      return R.centrality * (L.centrality / CR.geoMeanCentrality)
+        * Math.pow(CR.geoMeanFloating400 / f400, CR.slope);
+    })();
+    mul("centrality", centrality, E.centrality, R.centrality);
     mul("access", L.access, E.access, R.access);
     // 편심도는 클수록 불리하므로 (1 - 편심도)를 쓴다. 기준 0.75는 실측 중앙 편심도 0.25의 여집합.
     if (L.direction != null && Number.isFinite(L.direction) && E.direction !== 0) {
