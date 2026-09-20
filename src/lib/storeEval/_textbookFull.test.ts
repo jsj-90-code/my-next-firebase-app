@@ -327,9 +327,12 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
   // ⚠️ 둘을 **따로** 찍는다. 합쳐 놓으면 어느 쪽이 한 일인지 영영 모른다
   //    (2026-09-19 ⑦ "사실 교정과 통계 채택을 서로의 근거로 쓰지 말 것"과 같은 이유).
   it("2026-09-20 전/후 — 그날 채택 둘을 갈라서 본다", () => {
+    // 그날 아침의 배수 — 산업단지·기타는 낮에, 대학가는 밤에 껐다.
     const OLD_MUL: Record<string, number> = {
-      ...P.specialDemandMultipliers, "산업단지": 1.39, "기타": 1.25,
+      ...P.specialDemandMultipliers, "산업단지": 1.39, "기타": 1.25, "대학가": 1.45,
     };
+    /** 낮 채택까지만 반영한 배수(대학가는 아직 1.45). */
+    const NOON_MUL: Record<string, number> = { ...P.specialDemandMultipliers, "대학가": 1.45 };
     const v = (label: string, p: TextbookParams) => {
       const sc = scoreTextbook(rows, p);
       const monoBy = new Map(rows.map((r) => [r.input.storeCode, !(r.input.competitorIp ?? 0)]));
@@ -348,9 +351,12 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
       locationExponents: { ...P.locationExponents, centrality: 0.25 },
     });
     v("② +잔차화 ν0.5 (오전 채택)", { ...P, specialDemandMultipliers: OLD_MUL });
-    v("③ +배수 끄기 (오후 채택) = 지금", P);
+    v("③ +산업단지·기타 끄기 (낮 채택)", { ...P, specialDemandMultipliers: NOON_MUL });
+    v("④ +대학가 끄기 (밤 채택) = 지금", P);
     console.log("  ⚠️ ②는 MAPE를 낮추고 ③은 되레 올린다. ③의 근거는 MAPE가 아니라");
     console.log("     '축척 기준점의 순환을 끊는다'이고, 홀드아웃에서는 손해가 없다.");
+    console.log("  📌 ④는 MAPE도 크게 내리지만 그것도 근거가 아니다 — 근거는 '대학가는 방학에");
+    console.log("     안 뛴다'(계절 패턴)와 '경쟁까지 넣은 함축배수가 1.03'이다. textbookModel 주석 참고.");
 
     // 표본 안 성적은 과적합을 못 가른다. **안 본 매장**으로 같은 셋을 다시 잰다.
     const loo = (p: TextbookParams) => {
@@ -369,7 +375,8 @@ describeIf("교과서식 — 입지까지 붙인 전체 성적", () => {
     const cases: [string, TextbookParams][] = [
       ["① 그날 시작", { ...P, centralityResidual: null, specialDemandMultipliers: OLD_MUL, locationExponents: { ...P.locationExponents, centrality: 0.25 } }],
       ["② +잔차화", { ...P, specialDemandMultipliers: OLD_MUL }],
-      ["③ +배수 끄기 = 지금", P],
+      ["③ +산업단지·기타 끄기", { ...P, specialDemandMultipliers: NOON_MUL }],
+      ["④ +대학가 끄기 = 지금", P],
     ];
     for (const [label, p] of cases) {
       const l = loo(p);
