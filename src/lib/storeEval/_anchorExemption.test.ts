@@ -680,9 +680,15 @@ describeIf("축척 기준점에 배수를 안 걸면", () => {
   // 산업단지 1.08 · 기타 0.94로 사실상 1이었다. 반대로 군부대 2.22 · 대학가 1.45는
   // 자를 고쳐도 그대로였다. 즉 **산업단지·기타의 옛 값(1.39·1.25)은 순환이 만든 것**이다.
   it("(7) 유형별로 켜고 끈다 — 일관된 규칙", () => {
-    const M = P.specialDemandMultipliers;
+    // ⚠️ **1차 값(2026-09-16)을 여기 박아 둔다.** 본체 기본값은 2026-09-20에 산업단지·기타를
+    //    1.00으로 껐으므로, `P`를 그대로 쓰면 "끈 것"과 "안 끈 것"이 같아져 표가 무의미해진다.
+    const M1: Record<string, number> = {
+      ...P.specialDemandMultipliers,
+      "군부대": 2.25, "대학가": 1.45, "산업단지": 1.39, "기타": 1.25,
+    };
     const mk = (over: Record<string, number>): TextbookParams =>
-      ({ ...P, specialDemandMultipliers: { ...M, ...over } });
+      ({ ...P, specialDemandMultipliers: { ...M1, ...over } });
+    const P1: TextbookParams = { ...P, specialDemandMultipliers: M1 }; // 1차 값 그대로
 
     const show = (label: string, rs: LabRow[], p: TextbookParams) => {
       const sc = scoreTextbook(rs, p);
@@ -696,13 +702,15 @@ describeIf("축척 기준점에 배수를 안 걸면", () => {
     };
     console.log(`\n[유형별 켜고 끄기] 축척 기준점 = 탕정역(산업단지) · 남악(기타) · 광주각화(없음)`);
     console.log("  갈래                            MAPE     중앙   ±20%    축척A  100%초과  기준점벌어짐");
-    show("가) 지금 — 전부 켬", rows, P);
-    show("나) 전부 끔", allAsNone(rows), P);
-    show("다) 기준점만 면제 (일관성 없음)", monoAsNone(rows), P);
-    show("사) 산업단지·기타만 끔", rows, mk({ "산업단지": 1, "기타": 1 }));
+    show("가) 1차 값 — 전부 켬", rows, P1);
+    show("나) 전부 끔", allAsNone(rows), P1);
+    show("다) 기준점만 면제 (일관성 없음)", monoAsNone(rows), P1);
+    show("사) 산업단지·기타만 끔 ★채택", rows, mk({ "산업단지": 1, "기타": 1 }));
     show("아) 위 + 재도출값(군 2.22)", rows, mk({ "산업단지": 1, "기타": 1, "군부대": 2.22 }));
     show("자) 기타만 끔", rows, mk({ "기타": 1 }));
     show("차) 산업단지만 끔", rows, mk({ "산업단지": 1 }));
+    console.log(`  (확인) 본체 기본값 = ${Object.entries(P.specialDemandMultipliers)
+      .filter(([k, v]) => v !== 1 && k !== "관광유흥").map(([k, v]) => `${k} ${v}`).join(" · ")}`);
 
     // LOO — 축척까지 훈련겹에서만.
     const loo = (p: TextbookParams, tf: (rs: LabRow[]) => LabRow[] = (r) => r) => {
@@ -720,10 +728,10 @@ describeIf("축척 기준점에 배수를 안 걸면", () => {
     };
     console.log(`\n  [LOO 홀드아웃]`);
     const cases: [string, TextbookParams, ((rs: LabRow[]) => LabRow[])?][] = [
-      ["가) 지금", P, undefined],
-      ["나) 전부 끔", P, allAsNone],
-      ["다) 기준점만 면제", P, monoAsNone],
-      ["사) 산업단지·기타만 끔", mk({ "산업단지": 1, "기타": 1 }), undefined],
+      ["가) 1차 값", P1, undefined],
+      ["나) 전부 끔", P1, allAsNone],
+      ["다) 기준점만 면제", P1, monoAsNone],
+      ["사) 산업단지·기타만 끔 ★", mk({ "산업단지": 1, "기타": 1 }), undefined],
       ["아) 위 + 군 2.22", mk({ "산업단지": 1, "기타": 1, "군부대": 2.22 }), undefined],
     ];
     for (const [label, p, tf] of cases) {
