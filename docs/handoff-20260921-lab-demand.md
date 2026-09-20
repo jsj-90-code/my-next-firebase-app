@@ -12,7 +12,7 @@
 같은 집 PC다. git pull 이나 재수집 필요 없고, 워킹트리 깨끗한 것만 확인해라.
 
 [먼저 확인]
-1. git log --oneline -1   ->  57fac49 이어야 한다
+1. git log --oneline -1   ->  b308a34 이어야 한다
 2. node scripts/dumpValidationSnapshot.mjs     <- ⚠️ 이 줄을 빼먹지 마라
 3. npx vitest run --exclude "**/_*.test.ts"    ->  803 통과여야 한다
 
@@ -42,7 +42,7 @@
 ## 0. 지금 상태
 
 ```
-  마지막 커밋   57fac49
+  마지막 커밋   b308a34 (이 문서 커밋) · 코드 마지막은 57fac49
   시험         803 통과 · 31 skip · 실패 0 · 빌드 통과 · lint 0 errors
   운영 V62     MAPE 8.832%  ← 오늘 한 글자도 안 고쳤다
   실험실       표본 안 MAPE 22.08% · LOO 22.16% · 중앙 16.0% · ±20% 58% (n=38)
