@@ -188,6 +188,11 @@ src/**/_*.test.ts
 # ⚠️ 이 파일은 **자료를 받기 전에** 커밋했다 — 사전 등록한 관문 다섯이 머리에 있고,
 # 결과를 보고 기준을 고치지 않았다는 근거다. 커밋 순서로 확인할 수 있다.
 !src/lib/storeEval/_leisureAlternatives.test.ts
+
+# 2026-09-20 밤 — 사용자가 지도로 92행을 판정한 결과(오염률 26.6%)와 그걸로 다시 돌린
+# 유효상권 검정. 사전 등록 관문은 _catchment.test.ts 것을 그대로 쓴다(고치지 않았다).
+!/.local-tools/rival-judgments.json
+!src/lib/storeEval/_catchmentRejudged.test.ts
 # 수집물도 같이 올린다 — 안 그러면 다른 PC에서 하네스가 skip돼 기각 근거를 못 재현한다
 # (kakao-neighborhood·sgis와 같은 관례). 54곳 102초면 다시 받을 수도 있다.
 !/.local-tools/kakao-leisure.json
