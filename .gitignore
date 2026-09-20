@@ -180,3 +180,6 @@ src/**/_*.test.ts
 
 # 2026-09-20 — 오차 분해 하네스
 !src/lib/storeEval/_worstErrors.test.ts
+
+# 2026-09-20 — 거리 감쇠 기각 근거. "문경 373m 경쟁점이 안 세진다"는 얘기가 또 나올 자리다.
+!src/lib/storeEval/_rivalDecay.test.ts

@@ -430,6 +430,56 @@ export type TextbookParams = {
     /** 유동400m의 기하평균 G_f. */
     geoMeanFloating400: number;
   } | null;
+  /**
+   * **경쟁점 거리 감쇠** — `effectiveRadiusM`의 계단 함수를 대신한다 (2026-09-20 신설).
+   *
+   * ── 왜 필요한가 ───────────────────────────────────────────────────────────
+   * 지금은 **300m 안이면 100%, 밖이면 0%**로 자른다. 임의의 자이고, 지방에서 깨진다:
+   *   문경시청점 — 373m 콤마PC가 **0으로** 세진다(23m 차이). 1.5km의 4곳도 0이다.
+   *              그래서 산식상 완전 독점인데 실제로는 시내 PC방들과 나눠 먹는다.
+   * Huff 모형의 원형은 계단이 아니라 **거리에 따라 완만히 줄어드는 곡선**이다.
+   *
+   *     무게 = 1                                   (거리 ≤ plateauM)
+   *          = exp(−(거리 − plateauM) ÷ scaleM)      (그 밖)
+   *
+   * **평지 + 감쇠**다. plateauM 안쪽은 지금과 **똑같이** 100%로 세고, 그 밖만 완만히 줄인다.
+   *
+   * ⚠️ 첫 설계(평지 없이 exp(−d/scaleM))는 **근거리 경쟁점 무게까지 바꿔서** 300m 밖에
+   *    경쟁점이 하나도 없는 도시 매장 23곳도 평균 7.68%p나 움직였다(2026-09-20 측정).
+   *    그건 "거리를 반영했다"가 아니라 "경쟁을 통째로 줄였다"이고, 실제로 무작위 대조군을
+   *    못 넘었다. 평지를 두면 **300m 안이 전부인 매장은 정확히 0 움직인다** — 가설을
+   *    제대로 겨냥하게 된다.
+   *
+   * ⚠️ **지금 동작을 포함한다(중첩 모형).** plateauM = effectiveRadiusM이고 scaleM → 0이면
+   *    계단 함수와 정확히 같다. 그래서 "계단 vs 감쇠"를 공정하게 견줄 수 있다.
+   *    자유도는 scaleM 하나만 늘고, plateauM은 기존 값을 그대로 쓴다.
+   *
+   * ⚠️ 거리를 모르는 경쟁점은 **1배(가장 가까운 것처럼)** 센다. 지금 계단 규칙이 "모르면
+   *    유효거리 안으로 본다"인 것과 같은 방향이다 — 빼는 쪽이 아니라 세는 쪽이 보수적이다.
+   *
+   * ── ⛔ 2026-09-20 측정 결과 — **기각. 계단이 낫다** (`_rivalDecay.test.ts`) ───────
+   * 평지를 둔 뒤 확인 기준 1은 통과했다(300m 밖 경쟁점이 없는 23곳은 **정확히 0.00%p**
+   * 움직인다). 그런데 **모든 scaleM에서 성적이 단조롭게 나빠진다**:
+   *
+   *     계단300     MAPE 21.59%   LOO 22.17%   경쟁상권 잔차 −16.9%
+   *     감쇠 100m   MAPE 23.36%   LOO 24.33%   경쟁상권 잔차 −19.5%
+   *     감쇠 300m   MAPE 24.27%   LOO 24.85%   경쟁상권 잔차 −21.1%
+   *     감쇠 500m   MAPE 24.52%   LOO 25.09%   경쟁상권 잔차 −21.6%
+   *
+   * 기전이 분명하다 — 먼 경쟁점을 **새로 세면** 경쟁무게가 늘어 점유율이 내려가는데,
+   * 경쟁상권은 **이미 과소예측**이라 더 나빠진다. 대조군도 미달(p=0.408).
+   *
+   * 📌 이 결과는 `_worstErrors.test.ts` (4)절과 **같은 방향을 가리킨다** — 과소예측 8곳은
+   *    경쟁무게를 지금의 **0.38배로 줄여야** 맞는다. 즉 **경쟁을 더 세는 방향은 전부 틀린다.**
+   *    "문경의 373m 경쟁점이 안 세진다"는 관찰은 맞았지만, 그걸 세면 더 나빠진다 —
+   *    문경의 병목은 경쟁이 아니라 수요다(필요 점유율 229%).
+   *
+   * 다시 열 자리: 경쟁무게를 **전반적으로 줄이는** 손잡이를 먼저 찾은 뒤, 그 위에서 거리를
+   * 다시 본다. 순서가 반대였다.
+   *
+   * null이면 옛 계단 동작(`effectiveRadiusM`)을 쓴다. **기본값은 null이고, 기각된 상태다.**
+   */
+  rivalDistanceDecay: { plateauM: number; scaleM: number } | null;
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
@@ -515,6 +565,9 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 중심도 잔차화 상수 — 기존점 38곳에서 적합(2026-09-20). 표본이 늘면 다시 적합할 것.
   // `_residualCentralityPort.test.ts`의 (1)번 시험이 지금 표본의 값을 찍어 준다.
   centralityResidual: { slope: 0.4801, geoMeanCentrality: 3.2719, geoMeanFloating400: 75093 },
+  // 거리 감쇠는 **기본 꺼짐**이다. 켜면 effectiveRadiusM(계단)을 안 쓴다. 측정 중이다
+  // (`_rivalDecay.test.ts`). 채택 전까지 운영·화면 동작을 바꾸지 않는다.
+  rivalDistanceDecay: null,
   // 2026-09-16 측정값. 표본 2~5곳이라 확정값이 아니다 — 조절판에서 돌려볼 것.
   specialDemandMultipliers: { "군부대": 2.25, "대학가": 1.45, "산업단지": 1.39, "기타": 1.25, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
   maxUtilization: 0.55,
@@ -728,11 +781,22 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     };
     ownWeight = pc;
     let rivalWeight = 0;
+    const decay = p.rivalDistanceDecay;
     for (const r of input.rivals ?? []) {
       if (!(r.ip > 0)) continue;
       // 거리를 모르면 유효거리 안으로 본다 — 경쟁점을 빼는 쪽이 아니라 세는 쪽이 보수적이다.
-      if (r.distanceM != null && r.distanceM > p.effectiveRadiusM) continue;
-      rivalWeight += r.ip * Math.pow(ratio(r.parts), p.qualityExponent);
+      // 감쇠를 켜면 계단 대신 exp(−d/scaleM)으로 센다(타입 쪽 주석 참고). 모르면 1배.
+      let w = 1;
+      if (decay) {
+        // 평지 안쪽은 1배(지금과 같다). 밖만 완만히 줄인다. scaleM<=0이면 계단과 동일.
+        const d = r.distanceM;
+        if (d != null && d > decay.plateauM) {
+          w = decay.scaleM > 0 ? Math.exp(-(d - decay.plateauM) / decay.scaleM) : 0;
+        }
+      } else if (r.distanceM != null && r.distanceM > p.effectiveRadiusM) {
+        continue;
+      }
+      rivalWeight += r.ip * Math.pow(ratio(r.parts), p.qualityExponent) * w;
     }
     denom = ownWeight + rivalWeight + p.outsideOptionIp;
   } else {
