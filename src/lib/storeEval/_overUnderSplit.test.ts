@@ -249,6 +249,95 @@ describeIf("경쟁 과대 vs 경쟁 과소 — 무엇이 가르나", () => {
     }
   });
 
+  it("(4) ⭐ 자사 사양 후보 — 견고한가 (판정)", () => {
+    // (2)절에서 순환을 걸러내고 남은 유일한 후보다. 채택 전에 **값싼 검사부터** 한다.
+    // 여기서 깨지면 대조군·홀드아웃을 돌릴 것도 없다.
+    //
+    //   가) 전체 38곳에서도 보이나   — 양끝 14곳에서만 보이면 꼬리 잡음일 공산이 크다
+    //   나) 한 곳을 빼도 버티나       — z가 한두 매장에 업혀 있으면 끝이다
+    //   다) 3분위로 갈라도 단조로운가 — 방향이 일관돼야 기전이 있다고 말할 수 있다
+    const tgt = (c: Case) => Math.log(c.req / c.share); // log(필요÷예측) — 수요가 약분되는 과녁
+    const spec = (c: Case) => c.vars["자사 사양"];
+
+    // 가) 전체 표본 순위상관
+    const all = cases.filter((c) => spec(c) != null && Number.isFinite(tgt(c)));
+    const rank = (v: number[]) => {
+      const idx = v.map((x, i) => [x, i] as const).sort((p, q) => p[0] - q[0]);
+      const out = new Array(v.length).fill(0);
+      idx.forEach(([, i], k) => { out[i] = k; });
+      return out;
+    };
+    const pear = (a: number[], b: number[]) => {
+      const ma = a.reduce((x, y) => x + y, 0) / a.length, mb = b.reduce((x, y) => x + y, 0) / b.length;
+      let n = 0, da = 0, db = 0;
+      for (let i = 0; i < a.length; i++) { n += (a[i] - ma) * (b[i] - mb); da += (a[i] - ma) ** 2; db += (b[i] - mb) ** 2; }
+      return da > 0 && db > 0 ? n / Math.sqrt(da * db) : 0;
+    };
+    const rs = pear(rank(all.map((c) => spec(c)!)), rank(all.map(tgt)));
+    const line = 2 / Math.sqrt(all.length);
+    console.log(`\n[가) 전체 표본에서도 보이나]  n=${all.length}`);
+    console.log(`  자사 사양 ↔ log(필요÷예측)   순위상관 r = ${rs.toFixed(3)}   (유의선 ±${line.toFixed(2)})` +
+      `  ${Math.abs(rs) >= line ? "**유의**" : "<- 유의선 아래"}`);
+    console.log("  📌 양끝 14곳에서만 z=2.45가 나오고 전체 38곳에서는 안 보이면,");
+    console.log("     **양끝을 고른 행위 자체가 만든 것**일 수 있다(꼬리에서만 사는 효과).");
+
+    // 나) 한 곳씩 빼 보기
+    const zOf = (a: Case[], b: Case[]) => {
+      const av = a.map(spec).filter((v): v is number => v != null);
+      const bv = b.map(spec).filter((v): v is number => v != null);
+      return rankSumZ(av, bv);
+    };
+    const base = zOf(under, over);
+    const pool = [...under, ...over];
+    const loo: { name: string; z: number }[] = [];
+    for (const drop of pool) {
+      const z = zOf(under.filter((c) => c !== drop), over.filter((c) => c !== drop));
+      if (z != null) loo.push({ name: drop.name, z });
+    }
+    loo.sort((a, b) => a.z - b.z);
+    console.log(`\n[나) 한 곳을 빼면]  기준 z = ${base?.toFixed(2)}`);
+    console.log(`  최저 ${loo[0].z.toFixed(2)} (${loo[0].name} 뺐을 때) ~ 최고 ${loo[loo.length - 1].z.toFixed(2)} (${loo[loo.length - 1].name})`);
+    const stillSig = loo.filter((x) => Math.abs(x.z) >= 1.96).length;
+    console.log(`  14번 중 유의선을 지킨 횟수: ${stillSig}/${loo.length}` +
+      (stillSig === loo.length ? "   <- 전부 버틴다" : "   <- 한두 매장에 업혀 있다"));
+
+    // 다) 3분위
+    console.log("\n[다) 사양 3분위별 log(필요÷예측)]  0보다 크면 과소예측");
+    const sorted = [...all].sort((a, b) => spec(a)! - spec(b)!);
+    const t = Math.ceil(sorted.length / 3);
+    const labels = ["낮은 1/3", "가운데", "높은 1/3"];
+    const bandMeds: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const g = sorted.slice(i * t, (i + 1) * t);
+      if (!g.length) continue;
+      const m = med(g.map(tgt));
+      bandMeds.push(m);
+      console.log(
+        `  ${labels[i].padEnd(9)}${String(g.length).padStart(3)}곳   사양 ${num(med(g.map((c) => spec(c)!)), 2).padStart(5)}` +
+        `   log(필요÷예측) 중앙 ${m >= 0 ? "+" : ""}${m.toFixed(3)}   (배로 ${Math.exp(m).toFixed(2)})`,
+      );
+    }
+    const mono = bandMeds.length === 3 &&
+      ((bandMeds[0] <= bandMeds[1] && bandMeds[1] <= bandMeds[2]) || (bandMeds[0] >= bandMeds[1] && bandMeds[1] >= bandMeds[2]));
+    console.log(`  단조로운가: ${mono ? "예" : "**아니다** — 방향이 가운데서 뒤집힌다"}`);
+
+    // 판정
+    console.log("\n[판정]");
+    const passA = Math.abs(rs) >= line;
+    const passB = stillSig === loo.length;
+    console.log(`  가) 전체 표본에서도 보인다   ${passA ? "통과" : "⛔ 미달"}`);
+    console.log(`  나) 한 곳을 빼도 버틴다      ${passB ? "통과" : "⛔ 미달"}`);
+    console.log(`  다) 3분위가 단조롭다         ${mono ? "통과" : "⛔ 미달"}`);
+    if (!passA || !passB || !mono) {
+      console.log("\n  ⛔ **값싼 검사에서 깨진다. 대조군·홀드아웃까지 갈 것 없다.**");
+      console.log("     (2)절의 z=2.45는 **20% 넘는 양끝 14곳만 골라서** 나온 값이고,");
+      console.log("     그 고르기 자체가 효과를 만든 것으로 보인다. 후보에서 내린다.");
+    } else {
+      console.log("\n  ✅ 값싼 검사를 다 통과했다 -> 다음은 무작위 대조군 + 홀드아웃이다(사용자 확인 뒤).");
+    }
+    console.log("  ⚠️ 어느 쪽이든 **채택하지 않았다.**");
+  });
+
   it("(3) 자사 품질 5항목 — 변별이 되나", () => {
     console.log("\n[자사 품질 항목의 변별력] 전 매장에서 값이 갈리는가");
     console.log("  항목              n   최소     중앙     최대   서로 다른 값  판정");
