@@ -89,6 +89,9 @@ src/**/_*.test.ts
 # 바깥선택지는 값을 사용자가 정할 때까지 **다시 돌릴 일이 남아 있다**.
 !src/lib/storeEval/_residualCentralityPort.test.ts
 !src/lib/storeEval/_outsideOption.test.ts
+# 2026-09-20 — 축척 기준점(독점 3곳)에 특수수요 배수를 거는 순환을 재는 하네스.
+# 사용자 결정이 남아 있어 다시 돌릴 일이 있다.
+!src/lib/storeEval/_anchorExemption.test.ts
 # 2026-09-16 — 교과서식 개선 작업용. 집/회사 PC를 오가며 같은 걸 다시 만드는 낭비가 반복돼
 # (docs/handoff-office-20260916.md 3절) 편입한다.
 !src/lib/storeEval/_textbookSweep.test.ts
