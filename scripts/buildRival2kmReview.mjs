@@ -75,6 +75,27 @@ for (const c of snap.competitors ?? []) {
   compsByCode.set(c.candidateCode, list);
 }
 
+/**
+ * 매장별 **때**를 붙인다 — 사용자 요청(2026-09-20):
+ * *"기존점 오픈일자 좀 적어줘라. 중간에 폐업하는 경우도 있으니까 오픈일자 참고해야 할 듯."*
+ *
+ * 맞는 지적이다. 지금 "폐업"이라고 찍으면 **언제 기준인지**가 빠진다. 경쟁점이 우리
+ * 매출 기간 **중간에** 닫았으면, 그 기간 동안은 실제로 경쟁하고 있었던 것이다.
+ * 그래서 오픈일과 **매출 자료가 있는 기간**을 같이 보여준다. 판정할 때 견줄 자가 된다.
+ */
+const storeTiming = new Map();
+for (const s of snap.existingStores ?? []) {
+  const code = String(s.storeCode ?? s.id ?? "");
+  if (!code) continue;
+  storeTiming.set(code, { openedAt: s.openedAt ?? null, months: s.completedMonths ?? null, first: null, last: null });
+}
+for (const row of snap.sales ?? []) {
+  const t = storeTiming.get(String(row.storeCode ?? ""));
+  if (!t || !row.yearMonth) continue;
+  if (!t.first || row.yearMonth < t.first) t.first = row.yearMonth;
+  if (!t.last || row.yearMonth > t.last) t.last = row.yearMonth;
+}
+
 const isPcRoom = (d) => (d.category ?? "").includes("PC방");
 
 /** 매장 하나를 표 한 덩어리로 만든다. */
@@ -138,11 +159,14 @@ function buildSite(site) {
   });
   inside.forEach((r) => { r.tier = "-"; });
 
+  const timing = storeTiming.get(code) ?? null;
+
   return {
     key: `${site.kind}:${code}`,
     code,
     kind: site.kind,
     name: site.name ?? code,
+    timing,
     lat: site.lat,
     lng: site.lng,
     truncated: !!site.pcRooms?.truncated,
@@ -182,8 +206,10 @@ const csvEsc = (v) => {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 const csvLines = [
-  "# 2km 경쟁점 폐업 대조 — 판정칸(영업/폐업/모름)은 비어 있다. 채우지 않은 칸은 '모름'이다.",
-  ["등급", "매장명", "매장코드", "구분", "거리m", "상호", "주소", "위도", "경도", "공식DB", "같은자리의심", "카카오맵링크", "판정", "메모"]
+  "# 2km 경쟁점 폐업 대조 — 판정칸은 비어 있다. 채우지 않은 칸은 '모름'이다.",
+  "# 판정: 영업 / 중간폐업(우리 매출 기간엔 있었고 그 뒤 닫힘 — 경쟁점으로 센다) / 폐업(매출 기간에도 없었음) / 모름",
+  `# 카카오 자료를 받은 때: ${(nbr.collectedAt ?? "").slice(0, 10)}`,
+  ["등급", "매장명", "매장코드", "개점일", "매출기간", "구분", "거리m", "상호", "주소", "위도", "경도", "공식DB", "같은자리의심", "카카오맵링크", "판정", "메모"]
     .map(csvEsc)
     .join(","),
 ];
@@ -194,6 +220,8 @@ for (const s of sites) {
         r.tier,
         s.name,
         s.code,
+        s.timing?.openedAt ? String(s.timing.openedAt).slice(0, 10) : "",
+        s.timing?.first && s.timing?.last ? `${s.timing.first} ~ ${s.timing.last}` : "",
         r.distanceM > CLUSTER_M ? "500m밖" : "500m안",
         r.distanceM,
         r.name,
@@ -232,6 +260,7 @@ function rowHtml(s, r) {
     <div class="addr">${esc(r.address)}</div></td>
   <td class="judge">
     <label><input type="radio" name="j-${esc(id)}" value="영업"><span class="j j-open">영업</span></label>
+    <label><input type="radio" name="j-${esc(id)}" value="중간폐업"><span class="j j-mid">중간폐업</span></label>
     <label><input type="radio" name="j-${esc(id)}" value="폐업"><span class="j j-closed">폐업</span></label>
     <label><input type="radio" name="j-${esc(id)}" value="모름"><span class="j j-unk">모름</span></label>
   </td>
@@ -244,10 +273,15 @@ function siteHtml(s) {
   const cls = s.outsideCount <= SPARSE_MAX ? "sparse" : "dense";
   const outRows = s.outside.map((r) => rowHtml(s, r)).join("\n");
   const inRows = s.inside.map((r) => rowHtml(s, r)).join("\n");
-  return `<details class="site ${cls}" data-site="${esc(s.code)}" data-need="${need}" open>
+  const t = s.timing;
+  const ymd = (v) => (v ? String(v).slice(0, 10) : null);
+  const openTxt = ymd(t?.openedAt);
+  const range = t?.first && t?.last ? `${t.first} ~ ${t.last}` : null;
+  return `<details class="site ${cls}" data-site="${esc(s.code)}" data-need="${need}" data-open-at="${esc(openTxt ?? "")}" data-range="${esc(range ?? "")}" open>
   <summary>
     <span class="sname">${esc(s.name)}</span>
     <span class="smeta">500m 밖 <b>${s.outsideCount}</b>곳 · 최단 <b>${s.nearestOutsideM}m</b> · 볼 것 <b class="need">${need}</b>곳</span>
+    ${openTxt || range ? `<span class="when">${openTxt ? `개점 <b>${esc(openTxt)}</b>` : ""}${openTxt && range ? " · " : ""}${range ? `매출 <b>${esc(range)}</b>` : ""}</span>` : ""}
     <span class="prog" data-prog="${esc(s.code)}">0 / ${need}</span>
     ${s.truncated ? '<span class="b b-warn" title="카카오가 목록을 잘랐다 — 실제로는 더 많다">잘림</span>' : ""}
     ${s.kind === "candidate" ? '<span class="b b-cand">후보지</span>' : ""}
@@ -319,7 +353,9 @@ const html = `<!doctype html>
   details.site > summary::before { content: "▸"; color: var(--dim); margin-right: 2px; }
   details.site[open] > summary::before { content: "▾"; }
   .sname { font-weight: 700; }
-  .smeta, .prog { color: var(--dim); font-size: 13px; }
+  .smeta, .prog, .when { color: var(--dim); font-size: 13px; }
+  .when { border-left: 1px solid var(--line); padding-left: 10px; }
+  .when b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
   .prog { margin-left: auto; font-variant-numeric: tabular-nums; }
   .prog.done { color: var(--ok); font-weight: 700; }
   .sbody { padding: 0 14px 12px; border-top: 1px solid var(--line); }
@@ -332,11 +368,12 @@ const html = `<!doctype html>
   td.nm a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
   td.nm a:hover { color: var(--accent); }
   .addr { color: var(--dim); font-size: 12px; }
-  td.judge { width: 210px; white-space: nowrap; }
+  td.judge { width: 290px; white-space: nowrap; }
   td.judge label { cursor: pointer; }
   td.judge input { position: absolute; opacity: 0; pointer-events: none; }
   .j { display: inline-block; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; margin-right: 3px; }
   input:checked + .j-open { background: var(--ok); border-color: var(--ok); color: #fff; }
+  input:checked + .j-mid { background: var(--warn); border-color: var(--warn); color: #fff; }
   input:checked + .j-closed { background: var(--accent); border-color: var(--accent); color: #fff; }
   input:checked + .j-unk { background: var(--dim); border-color: var(--dim); color: #fff; }
   input:focus-visible + .j { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -352,6 +389,9 @@ const html = `<!doctype html>
   .none { color: var(--dim); font-size: 14px; }
   details.inside { margin-top: 10px; }
   details.inside > summary { cursor: pointer; color: var(--dim); font-size: 13px; padding: 6px 0; }
+  table.legend { border-collapse: collapse; margin: 10px 0 0; font-size: 13px; }
+  table.legend td { padding: 4px 10px 4px 0; vertical-align: top; }
+  table.legend td:first-child { white-space: nowrap; }
   body.only-need tr.tier-C, body.only-need details.inside { display: none; }
   body.only-need tr.tier-C.seen { display: table-row; }
   @media (max-width: 640px) {
@@ -386,8 +426,22 @@ const html = `<!doctype html>
 <div class="card">
   <h2>어떻게 보나</h2>
   <p>1. 매장 줄의 <b>“지도에서 이 매장 열기”</b>를 눌러 카카오맵을 연다. 그 화면에서 <b>PC방</b>을 검색하면 주변 목록이 뜬다.</p>
-  <p>2. 아래 목록과 대조해서 <b>영업 / 폐업 / 모름</b>을 누른다. <b>모르면 비워 둬라</b> — 추측해서 채우면 자료가 더 나빠진다.</p>
+  <p>2. 아래 목록과 대조해서 판정을 누른다. <b>모르면 비워 둬라</b> — 추측해서 채우면 자료가 더 나빠진다.</p>
   <p>3. 다 하면 <b>CSV 내보내기</b>를 눌러 파일을 저장한다. 그 파일을 주면 검정을 다시 돌린다.</p>
+  <table class="legend">
+    <tr><td><span class="j j-open" style="background:var(--ok);border-color:var(--ok);color:#fff">영업</span></td>
+        <td>지금 영업 중이다. <b>경쟁점으로 센다.</b></td></tr>
+    <tr><td><span class="j j-mid" style="background:var(--warn);border-color:var(--warn);color:#fff">중간폐업</span></td>
+        <td><b>우리 매출 기간에는 있었는데</b> 그 뒤에 닫았다. 그 기간 동안은 실제로 경쟁했으므로
+            <b>경쟁점으로 센다.</b> 닫은 시기를 알면 메모에 적어 달라.</td></tr>
+    <tr><td><span class="j j-closed" style="background:var(--accent);border-color:var(--accent);color:#fff">폐업</span></td>
+        <td>우리 매출 기간에도 <b>이미 없었다.</b> 카카오 자료가 틀린 것이라 <b>빼야 한다.</b></td></tr>
+    <tr><td><span class="j j-unk" style="background:var(--dim);border-color:var(--dim);color:#fff">모름</span></td>
+        <td>판단이 안 선다. <b>비워 두는 것과 같다.</b></td></tr>
+  </table>
+  <p class="sub" style="margin-top:8px">📌 매장 줄에 <b>개점일</b>과 <b>매출 자료 기간</b>을 같이 적어 뒀다.
+     "중간폐업"인지 "폐업"인지는 그 기간을 자로 삼아 가르면 된다.
+     자료를 받은 때는 <b>${esc((nbr.collectedAt ?? "").slice(0, 10))}</b>이다.</p>
   <p class="sub" style="margin-top:10px">기록은 브라우저에 자동 저장된다. 다만 파일을 직접 여는 방식(<code>file://</code>)에서는
      브라우저가 저장을 막을 수 있다 — 그러면 맨 위에 빨간 경고가 뜬다. 그때는 <b>중간중간 CSV로 내보내라.</b></p>
 </div>
@@ -518,16 +572,18 @@ ${sites.map(siteHtml).join("\n")}
       var s = String(v == null ? "" : v);
       return /[",\\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    var out = ["매장명,매장코드,거리m,상호,주소,위도,경도,등급,판정,메모"];
+    var out = ["매장명,매장코드,개점일,매출기간,거리m,상호,주소,위도,경도,등급,판정,메모"];
     document.querySelectorAll("details.site").forEach(function (d) {
       var sname = d.querySelector(".sname").textContent;
       var scode = d.dataset.site;
+      var openAt = d.dataset.openAt || "";
+      var range = d.dataset.range || "";
       d.querySelectorAll("tr.row").forEach(function (tr) {
         var parts = tr.dataset.id.split("|")[1].split(",");
         var checked = tr.querySelector("input:checked");
         var memo = tr.querySelector(".memo-in");
         out.push([
-          sname, scode,
+          sname, scode, openAt, range,
           tr.querySelector(".dist").textContent.replace("m", ""),
           tr.querySelector(".nm a").textContent,
           tr.querySelector(".addr").textContent,
