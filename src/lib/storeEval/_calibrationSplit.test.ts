@@ -92,8 +92,9 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
   //    그래서 지금 산식에는 해당이 없다 — 되살릴 때 참고하라고 기록만 남긴다.
   expect(P.indexCalibration).toEqual({ ratioExponent: 1, locationExponent: .169, referenceUtilization: .3011 });
   expect(P.shareMode).toBe("quality");
-  // 2026-09-21 밤 채택 — 독점매장에서 관측한 "안 가는 몫" 20대. 위 기록은 0일 때 잰 값이다.
-  expect(P.outsideOptionIp).toBe(20);
+  // 2026-09-22 — "안 가는 몫"을 다시 0으로 뺐다(점 3개 적합이었고 정체가 반경 밖 경쟁점이다).
+  // 위 기록은 0일 때 잰 값이라 지금 산식과 다시 맞다. 하루 동안만 20이었다.
+  expect(P.outsideOptionIp).toBe(0);
   const B = P.indexCalibration!.ratioExponent, C = P.indexCalibration!.locationExponent;
   const REF = P.indexCalibration!.referenceUtilization;
 

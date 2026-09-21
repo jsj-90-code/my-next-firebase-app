@@ -49,8 +49,8 @@ it("가동률 전용: 동일기간, nested LOO MAE로 선택", () => {
   //    지금 출력과 다르다. 다시 돌려 새로 적을 것.
   expect(P.rivalDistanceDecay).toEqual({ plateauM: 200, scaleM: 200, weightFactor: .9593 });
   expect(P.shareMode).toBe("quality");
-  // 2026-09-21 밤 채택 — 독점매장에서 관측한 "안 가는 몫" 20대(그전엔 0).
-  expect(P.outsideOptionIp).toBe(20);
+  // 2026-09-22 — "안 가는 몫"을 다시 0으로 뺐다(하루만 20이었다. 정체가 반경 밖 경쟁점이다).
+  expect(P.outsideOptionIp).toBe(0);
   const settings = mergeModelSettings(snap.settings);
   const competitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
   const compsByCode = new Map<string, Competitor[]>();
