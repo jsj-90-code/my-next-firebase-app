@@ -1067,24 +1067,47 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     mul("visibility", L.visibility, E.visibility, 3);
   }
   const locationMultiplier = locFactors.reduce((a, f) => a * f.value, 1);
-  // 지수 눈금 보정(2026-09-21) — 타입 쪽 주석 참고. null이면 지금까지 동작과 같다.
-  // 입지 지수를 c÷b로 넣는 이유: 아래에서 전체를 b제곱하므로 **최종 지수가 c**가 된다.
+
+  // ── 4) 가동률 — 순서대로 읽히게 쓴다 ────────────────────────────────────
+  //
+  // 사용자 요청(2026-09-21): 보정을 **수요 구하는 자리**로 옮겨 달라. 전에는 계산을 다 한 뒤
+  // 맨 끝에 지수를 붙여서 "가동률에 제곱이 붙네?"로 잘못 읽혔다. 결과 숫자는 같고 순서만 바꿨다.
+  //
+  //   (1) 날 가동률 = 수요시간 ÷ 총공급 ÷ 720      ← 순수한 산수. 손 안 댄다
+  //   (2) 눈금 보정 = 그 값의 눈금만 고친다         ← 수요·총공급이 구성 지수라서
+  //   (3) 입지배율을 곱한다
+  //   (4) 두 상한 — 동네 수요보다 많이 못 먹는다 · 좌석이 모자라 못 받는다
+
   const cal = p.indexCalibration;
+  // 입지 지수를 c÷b로 넣는다 — 아래 (3)에서 전체를 b제곱하므로 **최종 지수가 c**가 된다.
   const locExpInShare = cal && cal.ratioExponent !== 0 ? cal.locationExponent / cal.ratioExponent : 1;
-  // 점유율은 1을 넘을 수 없다 — 입지가 좋아도 그 동네 수요보다 많이 먹지는 못한다.
-  // ⚠️ 사용자 확인(2026-09-21): *"입지 때문에 수요가 늘어나진 않잖아, 수요에서 점유율에
-  //    작용하는 부분 아님?"* — 맞다. 그래서 입지는 점유율에 곱하고 상한도 여기 그대로 둔다.
+
+  // (1) **우리 몫** — 경쟁과 입지로 정해진다. 1을 넘을 수 없다(동네 수요보다 많이 못 먹는다).
+  //     ⚠️ 사용자 확인(2026-09-21): *"입지 때문에 수요가 늘어나진 않잖아, 수요에서 점유율에
+  //        작용하는 부분 아님?"* — 맞다. 그래서 입지는 여기, 점유율에 곱한다.
   const share = Math.min(1, rawShare * Math.pow(locationMultiplier, locExpInShare));
 
-  // ── 4) 매출 ─────────────────────────────────────────────────────────────
-  const rawOwnHoursLinear = totalHours * share;
-  // 지수 보정을 **가동률 눈금에서** 건다. 닻(referenceUtilization)에서는 값이 안 움직인다.
-  const rawOwnHours = cal
-    ? Math.pow(cal.referenceUtilization, 1 - cal.ratioExponent)
-      * Math.pow(Math.max(0, rawOwnHoursLinear) / (pc * MONTH_HOURS), cal.ratioExponent)
-      * (pc * MONTH_HOURS)
-    : rawOwnHoursLinear;
+  // (2) **날 가동률** — 여기까지가 순수한 산수다. 손 안 댄다.
+  //       우리 이용시간 = 수요시간 x 우리 몫 ·  가동률 = 그 시간 ÷ (자사PC x 720)
+  const rawUtil = totalHours * share / (pc * MONTH_HOURS);
+
+  // (3) **눈금 보정** — 산수를 고치는 게 아니라 **들어간 추정치의 눈금**을 고친다.
+  //     수요도 총공급도 우리가 만든 지수라 실측할 방법이 없고, 매장 간 차이를 과장한다
+  //     (자세한 근거는 타입 쪽 `indexCalibration` 주석).
+  //     닻(referenceUtilization)에서 배율이 정확히 1이라 그 값은 안 움직이고,
+  //     그보다 낮게 나온 건 올리고 높게 나온 건 내린다 — **전 매장 같은 곡선 하나**다.
+  //     ⚠️ 매장별로 맞추지 않는다(사용자 확인: *"매장마다 수요를 값에 맞추려고 하지 말고
+  //        일관된 산식으로"*). 쓰이는 수는 ratioExponent·referenceUtilization **둘뿐**이다.
+  //     ⚠️ 순서를 "수요 구하는 자리"로 옮기는 건 **수학적으로 안 된다** — 2026-09-21에
+  //        해 봤다가 축척 적합이 망가졌다(상한이 배율 1에서 엉뚱하게 걸려 133배가 나왔다).
+  //        (1)의 상한을 먼저 먹인 뒤 보정해야 한다.
+  const calibratedUtil = cal && rawUtil > 0
+    ? Math.pow(cal.referenceUtilization, 1 - cal.ratioExponent) * Math.pow(rawUtil, cal.ratioExponent)
+    : rawUtil;
+
+  // (4) 좌석이 모자라 못 받는 상한.
   const capHours = pc * MONTH_HOURS * p.maxUtilization;
+  const rawOwnHours = calibratedUtil * pc * MONTH_HOURS;
   const capped = rawOwnHours > capHours;
   const ownHours = Math.min(rawOwnHours, capHours);
   const utilization = ownHours / (pc * MONTH_HOURS);
