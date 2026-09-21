@@ -10,7 +10,8 @@ import { describe, expect, it } from "vitest";
 import { computeTextbook, computeQualityScore, DEFAULT_TEXTBOOK_PARAMS, type QualityParts, type TextbookInput, type TextbookParams } from "./textbookModel";
 
 // ⚠️ `rivalDistanceDecay: null` — 아래 "품질 모드 점유율" 묶음은 **계단 동작**을 검증한다.
-// 2026-09-21에 본체 기본값이 감쇠로 바뀌었는데(plateauM 300 · scaleM 150 · weightFactor 0.90),
+// 2026-09-21에 본체 기본값이 감쇠로 바뀌었는데(그날 저녁 기준 plateauM 200 · scaleM 200 ·
+// weightFactor 0.9593 — 값은 또 바뀔 수 있다. 확정값은 맨 아래 "거리 감쇠" 묶음이 고정한다),
 // 그 묶음은 "유효거리 밖은 아예 안 센다" 같은 계단 성질을 확인하는 자리라 계단으로 고정한다.
 // 감쇠 동작은 이 파일 맨 아래 "거리 감쇠" 묶음이 따로 본다.
 const P: TextbookParams = {
@@ -250,10 +251,13 @@ describe("모드끼리 섞이지 않는다", () => {
 describe("거리 감쇠 (2026-09-21 채택 기본값)", () => {
   const D = DEFAULT_TEXTBOOK_PARAMS.rivalDistanceDecay!;
 
-  it("기본값이 켜져 있다 — 평지 300m · 감쇠 150m · 총량 정규화 0.90", () => {
-    expect(D.plateauM).toBe(300);
-    expect(D.scaleM).toBe(150);
-    expect(D.weightFactor).toBeCloseTo(0.9, 10);
+  // ⚠️ 2026-09-21 저녁에 값이 바뀌었다 — R300 λ150(매출 MAPE로 고름) -> R200 λ200.
+  //    사용자가 판정 기준을 **가동률**로 바꿔서 다시 골랐다(DEFAULT_TEXTBOOK_PARAMS 주석).
+  //    weightFactor는 (R, λ)마다 다시 재는 값이라 같이 바뀐다(0.90 -> 0.9593).
+  it("기본값이 켜져 있다 — 평지 200m · 감쇠 200m · 총량 정규화 0.9593", () => {
+    expect(D.plateauM).toBe(200);
+    expect(D.scaleM).toBe(200);
+    expect(D.weightFactor).toBeCloseTo(0.9593, 10);
   });
 
   it("유효거리 밖 경쟁점도 **센다** — 계단이 아니다 (오송점 342m 문제)", () => {
@@ -264,11 +268,12 @@ describe("거리 감쇠 (2026-09-21 채택 기본값)", () => {
     expect(decay).toBeLessThan(1); // 감쇠: 세진다
   });
 
-  it("평지 안쪽은 거리가 달라도 같다 — 실무 의견(유효거리 안이면 거리가 크게 작용 안 한다)", () => {
+  it("평지 안쪽은 거리가 달라도 같다 — 실무 의견(가까운 구간은 거리가 크게 작용 안 한다)", () => {
     const at = (d: number) =>
       computeTextbook(input({ ownQualityParts: parts(3), rivals: [{ ip: 100, distanceM: d, parts: parts(3) }] }),
         DEFAULT_TEXTBOOK_PARAMS).share;
-    expect(at(50)).toBeCloseTo(at(299)!, 10);
+    // 평지 경계(plateauM)를 코드에서 읽는다 — 값이 또 바뀌어도 이 시험은 안 낡는다.
+    expect(at(50)).toBeCloseTo(at(D.plateauM - 1)!, 10);
   });
 
   it("멀수록 단조롭게 줄어든다 — 401m 문제가 구조적으로 없다", () => {

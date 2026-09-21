@@ -513,14 +513,17 @@ export type TextbookParams = {
    *    못 넘었다. 평지를 두면 **300m 안이 전부인 매장은 정확히 0 움직인다** — 가설을
    *    제대로 겨냥하게 된다.
    *
-   * ⚠️ **지금 동작을 포함한다(중첩 모형).** plateauM = effectiveRadiusM이고 scaleM → 0이면
+   * ⚠️ **계단 동작을 포함한다(중첩 모형).** plateauM = effectiveRadiusM이고 scaleM → 0이면
    *    계단 함수와 정확히 같다. 그래서 "계단 vs 감쇠"를 공정하게 견줄 수 있다.
-   *    자유도는 scaleM 하나만 늘고, plateauM은 기존 값을 그대로 쓴다.
+   *    ⚠️ 2026-09-21 저녁부터 plateauM은 **200**이다(effectiveRadiusM 300과 다르다) —
+   *       가동률 기준으로 다시 골랐다. 자세한 경위는 DEFAULT_TEXTBOOK_PARAMS 쪽 주석에 있다.
    *
    * ⚠️ 거리를 모르는 경쟁점은 **1배(가장 가까운 것처럼)** 센다. 지금 계단 규칙이 "모르면
    *    유효거리 안으로 본다"인 것과 같은 방향이다 — 빼는 쪽이 아니라 세는 쪽이 보수적이다.
    *
-   * ── ⛔ 2026-09-20 측정 결과 — **기각. 계단이 낫다** (`_rivalDecay.test.ts`) ───────
+   * ── 📜 2026-09-20 측정 결과 — 그날은 **기각**이었다 (`_rivalDecay.test.ts`) ───────
+   * ⚠️ 아래는 **지나간 기록이다.** 2026-09-21에 총량 정규화(weightFactor)를 넣고 다시 재서
+   *    채택했다. 그때 기각된 이유가 정확히 "총량을 안 묶었다"였다는 게 아래에 적혀 있다.
    * 평지를 둔 뒤 확인 기준 1은 통과했다(300m 밖 경쟁점이 없는 23곳은 **정확히 0.00%p**
    * 움직인다). 그런데 **모든 scaleM에서 성적이 단조롭게 나빠진다**:
    *
@@ -540,7 +543,8 @@ export type TextbookParams = {
    * 다시 열 자리: 경쟁무게를 **전반적으로 줄이는** 손잡이를 먼저 찾은 뒤, 그 위에서 거리를
    * 다시 본다. 순서가 반대였다.
    *
-   * null이면 옛 계단 동작(`effectiveRadiusM`)을 쓴다. **기본값은 null이고, 기각된 상태다.**
+   * null이면 계단 동작(`effectiveRadiusM`)을 쓴다. **2026-09-21 채택 이후 기본값은 null이
+   * 아니다** — `DEFAULT_TEXTBOOK_PARAMS`를 볼 것. null은 "계단으로 되돌리기"에 쓴다.
    */
   /**
    * ⚠️ `weightFactor` — **총량 정규화 상수** (2026-09-21 추가). 자의적 계수가 아니다.
@@ -553,8 +557,13 @@ export type TextbookParams = {
    * 그래서 **계단과 같은 총 경쟁량을 유지하는 전역 상수 하나**를 곱한다:
    *     weightFactor = Σ(ip x 계단무게) ÷ Σ(ip x 감쇠무게)      기존점 38곳에서 잰 값
    * 이 정규화를 넣어야 수준이 약분되고 **거리 구조만** 남는다. 실제로 그렇게 재서
-   * 최악 오차가 54.7% -> 51.9%로 줄었다(`_rivalDecayNormalized`). 빼면 그 개선이 사라진다.
+   * 매출 최악 오차가 54.7% -> 51.9%로 줄었다(`_rivalDecayNormalized`, R300 λ150 시절).
+   * 빼면 그 개선이 사라진다.
    *
+   * ⚠️ **(R, λ)마다 값이 다르다. 바꾸면 반드시 다시 잰다.** 0.90은 R300 λ150 전용이었고
+   *    지금(R200 λ200)은 0.9593이다. 옛 값을 그대로 물려 쓰면 총량이 안 맞아서, 재려던
+   *    "거리 구조"가 아니라 **총량 차이**를 재게 된다(2026-09-21에 한 번 그럴 뻔했다).
+   *    재는 식은 위 그대로이고, `_decayUnderUtilization`·`_decayShapeSelection`이 찍어 준다.
    * ⚠️ 표본이 늘면 다시 잰다 — 38곳에서 나온 값이다.
    */
   rivalDistanceDecay: { plateauM: number; scaleM: number; weightFactor?: number } | null;
@@ -645,29 +654,50 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   centralityResidual: { slope: 0.4801, geoMeanCentrality: 3.2719, geoMeanFloating400: 75093 },
   // ✅ **2026-09-21 채택 — 거리 감쇠를 켠다.** 켜면 effectiveRadiusM(계단)은 안 쓰인다.
   //
-  //   무게 = 1                        (거리 <= 300m)
-  //        = exp(−(거리 − 300) ÷ 150)  (그 밖)
-  //   곡선: 300m 100% · 350m 72% · 400m 51% · 500m 26% · 700m 7% · 1km 1%
+  //   무게 = 1                        (거리 <= 200m)
+  //        = exp(−(거리 − 200) ÷ 200)  (그 밖)
+  //   곡선: 200m 100% · 300m 61% · 350m 47% · 400m 37% · 500m 22% · 700m 8% · 1km 2%
+  //   (표시값은 정규화 0.9593을 곱하기 전의 날무게다)
   //
-  // 사용자 결정(*"감쇠로가자. 개념이 그게맞을것같다. (...) **나중에 401m 나오면그건어쩔건데.**"*).
+  // 개념은 사용자가 택했다(*"감쇠로가자. (...) **나중에 401m 나오면그건어쩔건데.**"*).
   // 계단의 근본 문제를 짚은 말이다 — 경계를 어디에 두든 **그 바로 밖 사례가 계속 나온다.**
   // 오송점 팀플PC가 342m라 0으로 세졌고, 400으로 옮기면 하안금당 407m가 같은 신세가 된다.
   //
-  // ⚠️ **성적으로는 계단이 낫다. 그런데 자료가 그 차이를 못 고른다** — 짝지은 부트스트랩
-  //    2000회에서 MAPE 차이 95% 구간이 [-0.02, +4.57]%p로 0을 품는다. 반면 **최악 오차는
-  //    54.7% -> 51.9%로 줄고**(구간 상한 0.0) SD도 준다. 지표가 서로 다른 말을 할 때
-  //    자료가 못 고르면 실무 판단이 이긴다는 게 이 프로젝트 관례다(2026-09-21 오송점).
+  // ── ⚠️ 값은 2026-09-21 저녁에 R300 λ150 -> R200 λ200으로 **다시 골랐다** ──────────
   //
-  // ⚠️ λ=150을 고른 이유 — λ=50이 성적은 낫지만(LOO 19.96%) 350m에서 이미 37%로 떨어져
-  //    **사실상 계단이다.** 개념을 사기로 한 결정이라 그 개념이 작동하는 값을 골랐다.
-  // ⚠️ plateau를 400으로 안 넓힌 이유 — 격자에서 R=400은 r이 오히려 떨어진다(0.803~0.809).
-  //    감쇠를 켜면 342m가 이미 세지므로 넓힐 이유가 없다.
+  // 처음 값(R300 λ150)은 **매출 MAPE**로 고른 것이었다. 그날 사용자가 판정 기준을 바꿨다:
+  //   *"지금 mape가 매출이잖아. 매출단가가 정확하지 않잖아? 같은 가동률이라도 실제매출이랑
+  //    오차가 큰 편이긴 해. (...) 가동률로 판단하고 가동률을 맞춘 후에 매출로 넘어가는
+  //    구조가 맞는 것 같다."*  그리고 값에 대해:
+  //   *"거리감쇠는 적용하되, 수치값은 **가동률 오차폭과 평균을 줄일 수 있는 값**을 넣자."*
   //
-  // 근거·격자 전체: `_rivalDecayNormalized.test.ts` (6)(7)절.
-  // ⚠️ 넣고 나서 **장산점**을 따로 볼 것 — 302m·345m에 211/193대가 새로 세지며 오차가
-  //    2.2% -> 40.5%로 벌어진다(측정 당시 총량 고정 기준).
-  // weightFactor 0.90 — 기존점 38곳에서 Σ(ip x 계단) ÷ Σ(ip x 감쇠)로 잰 총량 정규화 상수.
-  rivalDistanceDecay: { plateauM: 300, scaleM: 150, weightFactor: 0.90 },
+  // 그 전제가 옳은지부터 쟀다(`_decayUnderUtilization` (1)절) — 단가만의 오차가 평균 10.0%로
+  // 있고 가동률 오차와 **무관하다**(r=−0.060). 매출 오차 분산의 17%가 단가 몫이다.
+  // 지배적이진 않지만 **무관한 잡음**이라, 매출로 거리 계수를 고르면 그 잡음에 맞추게 된다.
+  //
+  // 가동률 자로 격자를 다시 훑고(42칸), 사용자 기준 그대로 **MAE와 SD를 동시에** 봤다:
+  //
+  //            가동률 MAE   SD       최악
+  //   계단300     6.06%p   4.58%p   52.4%
+  //   R300 λ150   6.51%p   4.25%p   48.2%   <- 옛 값(매출로 고른 것)
+  //   R200 λ200   6.34%p   4.19%p   49.0%   <- 지금. 옛 값보다 평균·폭 **둘 다** 낫다
+  //
+  // ⚠️ 셋의 차이는 **자료가 못 가른다** — 짝지은 부트스트랩 2000회에서 R200 λ200의 MAE
+  //    개선 95% 구간이 [−0.45, +0.10]%p로 0을 품는다(R200 λ150·R150 λ200도 마찬가지).
+  //    자료가 못 고르면 실무 판단이 이긴다는 관례에 따라, **사용자 기준(평균·폭 동시 개선)을
+  //    만족하면서 최악 손해가 제일 작은 칸**(+0.7%p)을 골랐다.
+  //
+  // ⚠️ MAE만 쫓으면 R150 λ125(6.02%p)가 낫지만 **최악이 53.8%로 벌어진다** — 폭을 줄이라는
+  //    지시를 어긴다. 중첩 LOO가 그 칸을 38번 중 34번 뽑는데도 안 쓴 이유가 그것이다.
+  // ⚠️ 감쇠는 **어떤 값을 넣어도 계단300보다 평균·폭을 동시에 개선하지 못한다**(42칸 전부).
+  //    계단보다 MAE는 지고 SD·최악은 이긴다. 감쇠를 쓰는 건 성적이 아니라 개념 때문이다.
+  //
+  // 근거: `_decayUnderUtilization.test.ts` (4)(5)(6)절. 매출 자 판정은 `_decayShapeSelection`.
+  // ⚠️ **장산점**을 따로 볼 것 — 300m 밖 넷(211·193·111·131대)이 새로 세지며 경쟁량이
+  //    54% 늘어 오차가 크게 벌어진다. 경계 문제가 아니라 총량 문제다(`_jangsanDecay`).
+  // weightFactor 0.9593 — 기존점 38곳에서 Σ(ip x 계단300) ÷ Σ(ip x 감쇠)로 잰 총량 정규화
+  //    상수다. 자의적 계수가 아니고, **(R, λ)를 바꾸면 반드시 다시 재야 한다**(타입 쪽 주석).
+  rivalDistanceDecay: { plateauM: 200, scaleM: 200, weightFactor: 0.9593 },
   // 2026-09-16 측정값에서 **산업단지·기타를 2026-09-20에 1.00으로 껐다**(자세한 근거는
   // 타입 쪽 주석). 그 둘이 축척 기준점(탕정역·남악)을 부풀려 자를 휘게 하고 있었고,
   // 자를 바로잡고 다시 뽑으니 1.08 · 0.94로 사실상 1이었다. 표본 2~5곳이라 확정값이
@@ -798,6 +828,30 @@ export function flatUsageRate(w: AgeUsageWeights): number {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
+/**
+ * 경쟁점 **한 곳의 거리 무게**(0~1 남짓). 분모에 `ip x (품질비)^θ x 이 값`으로 들어간다.
+ *
+ * ⚠️ **산식과 화면이 반드시 같이 써야 하는 함수다.** 2026-09-21에 실험실 화면이 이 계산을
+ *    따로 들고 있었고, 본체가 계단 -> 감쇠로 바뀐 뒤에도 화면만 계단으로 남아 "302m 경쟁점은
+ *    안 셈"이라고 **거짓으로** 그리고 있었다. 한 곳에 두면 그 종류의 사고가 구조적으로 안 난다.
+ *
+ * - `rivalDistanceDecay`가 있으면: 평지 안 1배, 밖은 exp 감쇠, 전체에 총량 정규화를 곱한다.
+ * - 없으면(null): 옛 계단 — `effectiveRadiusM` 안이면 1, 밖이면 0.
+ * - 거리를 모르면 **1배(가장 가까운 것처럼)** 센다. 빼는 쪽이 아니라 세는 쪽이 보수적이다.
+ */
+export function rivalDistanceWeight(
+  distanceM: number | null | undefined,
+  p: Pick<TextbookParams, "rivalDistanceDecay" | "effectiveRadiusM">,
+): number {
+  const d = distanceM ?? null;
+  const decay = p.rivalDistanceDecay;
+  if (!decay) return d == null || d <= p.effectiveRadiusM ? 1 : 0;
+  const raw = d == null || d <= decay.plateauM
+    ? 1
+    : decay.scaleM > 0 ? Math.exp(-(d - decay.plateauM) / decay.scaleM) : 0;
+  return raw * (decay.weightFactor ?? 1);
+}
+
 export function computeTextbook(input: TextbookInput, p: TextbookParams): TextbookBreakdown {
   const missing: string[] = [];
   const empty: TextbookBreakdown = {
@@ -889,19 +943,11 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
       if (!(r.ip > 0)) continue;
       // 거리를 모르면 유효거리 안으로 본다 — 경쟁점을 빼는 쪽이 아니라 세는 쪽이 보수적이다.
       // 감쇠를 켜면 계단 대신 exp(−d/scaleM)으로 센다(타입 쪽 주석 참고). 모르면 1배.
-      let w = 1;
-      if (decay) {
-        // 평지 안쪽은 1배(지금과 같다). 밖만 완만히 줄인다. scaleM<=0이면 계단과 동일.
-        const d = r.distanceM;
-        if (d != null && d > decay.plateauM) {
-          w = decay.scaleM > 0 ? Math.exp(-(d - decay.plateauM) / decay.scaleM) : 0;
-        }
-        // 총량 정규화 — 감쇠가 늘린 총 경쟁량을 계단 수준으로 되돌린다(타입 쪽 주석 참고).
-        // 축척은 독점매장에서만 맞춰서 이 증가를 못 흡수하므로, 안 하면 전 매장이 아래로 밀린다.
-        w *= decay.weightFactor ?? 1;
-      } else if (r.distanceM != null && r.distanceM > p.effectiveRadiusM) {
-        continue;
-      }
+      // ⚠️ 무게 계산은 `rivalDistanceWeight` **한 곳**에만 둔다 — 화면(실험실 경쟁점 인식표)이
+      //    같은 함수를 쓴다. 2026-09-21에 화면이 따로 계단을 구현해 두는 바람에, 산식은 302m를
+      //    89%로 세는데 화면은 "안 셈"이라고 그리고 있었다.
+      const w = rivalDistanceWeight(r.distanceM, p);
+      if (w <= 0) continue;
       rivalWeight += r.ip * Math.pow(ratio(r.parts), p.qualityExponent) * w;
     }
     denom = ownWeight + rivalWeight + p.outsideOptionIp;

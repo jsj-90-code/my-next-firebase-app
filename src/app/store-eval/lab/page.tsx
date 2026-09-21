@@ -42,7 +42,7 @@ import {
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
   DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, computeQualityScore,
-  computeTextbook, fittedParams, scoreTextbook,
+  computeTextbook, fittedParams, scoreTextbook, rivalDistanceWeight,
   type FloatingRadius, type ResidentRadius,
   type TextbookInput, type TextbookParams, type TextbookScore,
 } from "@/lib/storeEval/textbookModel";
@@ -519,14 +519,26 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           ) : p.shareMode === "quality" ? (
             <>
               <div className="mt-1 font-mono text-[11px]">
-                점유율 = 자사PC ÷ (자사PC + Σ<sub>[{p.effectiveRadiusM}m 안]</sub> 경쟁PC × (경쟁품질÷자사품질)<sup>{p.qualityExponent}</sup>)
+                점유율 = 자사PC ÷ (자사PC + Σ 경쟁PC × (경쟁품질÷자사품질)<sup>{p.qualityExponent}</sup>
+                {p.rivalDistanceDecay ? " × 거리무게" : <sub>[{p.effectiveRadiusM}m 안]</sub>})
                 {p.outsideOptionIp > 0 ? ` + 안가는몫 ${p.outsideOptionIp}` : ""}
               </div>
-              <div className="mt-1">
-                <b>유효거리 {p.effectiveRadiusM}m 안</b>에 있는 경쟁점만 진짜 경쟁자로 셉니다. 그 안에서는
-                거리가 아니라 <b>품질이 가릅니다</b> — 실무 의견이고 자료도 그쪽입니다(지수 감쇠는
-                r=0.510, 계단은 0.560).
-              </div>
+              {p.rivalDistanceDecay ? (
+                <div className="mt-1">
+                  거리무게는 <b>{p.rivalDistanceDecay.plateauM}m 안이면 1</b>,
+                  그 밖은 <b>exp(−(거리−{p.rivalDistanceDecay.plateauM})÷{p.rivalDistanceDecay.scaleM})</b>로
+                  줄어듭니다(전체 ×{(p.rivalDistanceDecay.weightFactor ?? 1).toFixed(4)}).
+                  평지 안에서는 거리가 아니라 <b>품질이 가릅니다</b> — 실무 의견이고 자료도 그쪽입니다.
+                  평지 밖은 경계에 <b>절벽이 없습니다</b>(“401m는 어쩔 건가” 문제가 구조적으로 사라집니다).
+                  <b> 값은 가동률 오차의 평균·폭을 같이 보고 골랐습니다</b>(2026-09-21).
+                </div>
+              ) : (
+                <div className="mt-1">
+                  <b>유효거리 {p.effectiveRadiusM}m 안</b>에 있는 경쟁점만 진짜 경쟁자로 셉니다. 그 안에서는
+                  거리가 아니라 <b>품질이 가릅니다</b> — 실무 의견이고 자료도 그쪽입니다(지수 감쇠는
+                  r=0.510, 계단은 0.560).
+                </div>
+              )}
               <div className="mt-1">
                 품질 지수 <b>{p.qualityExponent}</b>는 두 경로가 따로 찾아와 만난 값입니다. 자료로 고른
                 최선이 3이고, 매출 변화폭에서 역산한 값이 2.74~4.92·중앙 3.25입니다.
@@ -1255,9 +1267,10 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount }: {
 //    조립하면 순서·필터가 어긋나 "엉뚱한 매장이 잡혔다"는 오해를 만든다. 이름도 그 배열에
 //    같이 실어 뒀다(textbookModel.ts rivals.name).
 //
-// 지금 산식이 경쟁점을 세는 방식은 **이진 절단**이다 — 유효거리(300m) 안이면 100% 세고,
-// 1m라도 밖이면 0이다. 거리 감쇠도, 도로 같은 장벽 개념도 없다. 이 표는 그 절단이 어디서
-// 일어나는지 눈으로 보라고 만든 것이다.
+// ⚠️ **2026-09-21에 뜻이 바뀌었다.** 그 전에는 이진 절단이었다(유효거리 안이면 100%, 1m라도
+//    밖이면 0). 지금은 **거리 감쇠**다 — 평지 안은 100%, 밖은 exp로 완만히 줄여서 센다.
+//    이 표가 계속 계단으로 그리고 있어서 화면이 "302m는 안 셈"이라고 거짓말하고 있었다.
+//    이제 **산식과 같은 무게 함수**를 써서 몇 %로 세는지를 그대로 보여준다.
 function RivalRecognition({ groups, p }: {
   groups: { kind: "기존점" | "후보지"; input: TextbookInput }[];
   p: TextbookParams;
@@ -1267,12 +1280,15 @@ function RivalRecognition({ groups, p }: {
     const oq = input.ownQualityParts ? computeQualityScore(input.ownQualityParts, p.qualityWeights) : null;
     const rivals = (input.rivals ?? []).map((v) => {
       const q = v.parts ? computeQualityScore(v.parts, p.qualityWeights) : null;
-      const inRange = v.distanceM == null || v.distanceM <= p.effectiveRadiusM;
+      // ⚠️ **산식과 같은 식**을 쓴다(textbookModel의 computeTextbook 품질 모드).
+      //    여기서 따로 구현하면 화면과 산식이 어긋난다 — 실제로 2026-09-21에 그랬다.
+      const dw = rivalDistanceWeight(v.distanceM, p);
       // 분모에 실제로 더해지는 무게. 자사 PC와 견줘야 크기가 읽힌다.
       const ratio = oq != null && oq > 0 && q != null && q > 0 ? q / oq : 1;
-      return { ...v, q, inRange, weight: inRange ? v.ip * Math.pow(ratio, p.qualityExponent) : 0 };
+      return { ...v, q, distWeight: dw, inRange: dw > 0, weight: v.ip * Math.pow(ratio, p.qualityExponent) * dw };
     }).sort((a, b) => (a.distanceM ?? 9e9) - (b.distanceM ?? 9e9));
-    const counted = rivals.filter((r) => r.inRange);
+    // "센다"의 기준 — 무게 20% 미만은 사실상 안 세는 것으로 본다(점검표와 같은 문턱).
+    const counted = rivals.filter((r) => r.distWeight >= 0.2);
     const rivalWeight = rivals.reduce((a, r) => a + r.weight, 0);
     return { kind, input, oq, rivals, counted, rivalWeight };
   }).sort((a, b) => (b.rivals.length - b.counted.length) - (a.rivals.length - a.counted.length));
@@ -1289,9 +1305,21 @@ function RivalRecognition({ groups, p }: {
       </div>
       <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
         산식이 <b>어느 매장을 경쟁점으로 세고 있는지</b> 그대로 보여줍니다. 지금 방식은
-        <b> 유효거리 {p.effectiveRadiusM}m 안이면 100% 세고, 1m라도 밖이면 0</b>입니다 —
-        거리에 따라 점점 약해지지도 않고, 도로 같은 장벽도 보지 않습니다.
-        조사된 경쟁점 중 <b>{droppedTotal}곳</b>이 거리 때문에 빠져 있습니다.
+        {p.rivalDistanceDecay ? (
+          <>
+            {" "}<b>거리 감쇠</b>입니다 — <b>{p.rivalDistanceDecay.plateauM}m 안은 100%</b>로 세고,
+            그 밖은 <b>exp(−(거리−{p.rivalDistanceDecay.plateauM})÷{p.rivalDistanceDecay.scaleM})</b>로
+            완만히 줄여서 셉니다(전체에 ×{(p.rivalDistanceDecay.weightFactor ?? 1).toFixed(4)} 총량 정규화).
+            거리 경계에서 <b>절벽이 없습니다</b>. 다만 도로 같은 장벽은 아직 안 봅니다.
+            무게 20% 미만이라 사실상 안 세지는 곳이 <b>{droppedTotal}곳</b>입니다.
+          </>
+        ) : (
+          <>
+            {" "}<b>유효거리 {p.effectiveRadiusM}m 안이면 100% 세고, 1m라도 밖이면 0</b>입니다 —
+            거리에 따라 점점 약해지지도 않고, 도로 같은 장벽도 보지 않습니다.
+            조사된 경쟁점 중 <b>{droppedTotal}곳</b>이 거리 때문에 빠져 있습니다.
+          </>
+        )}
       </p>
       <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
         <b>무게</b>는 분모에 실제로 더해지는 값입니다 — 경쟁점 PC수 × (경쟁력비)<sup>{p.qualityExponent}</sup>.
@@ -1309,7 +1337,7 @@ function RivalRecognition({ groups, p }: {
                   {kind} · 자사 {input.pcCount ?? "-"}대 · 경쟁력 {oq?.toFixed(2) ?? "-"}
                   {" · "}조사 {rivals.length}곳 중 <b>{counted.length}곳</b> 셈
                   {rivals.length > counted.length && (
-                    <span className="text-amber-700 dark:text-amber-400"> ({rivals.length - counted.length}곳 거리초과)</span>
+                    <span className="text-amber-700 dark:text-amber-400"> ({rivals.length - counted.length}곳 거리로 사실상 빠짐)</span>
                   )}
                   {" · "}무게합 {rivalWeight.toFixed(1)}
                 </span>
@@ -1325,13 +1353,14 @@ function RivalRecognition({ groups, p }: {
                       <th scope="col" className="py-1 pr-2 text-right">PC</th>
                       <th scope="col" className="py-1 pr-2 text-right">경쟁력</th>
                       <th scope="col" className="py-1 pr-2 text-right">자사대비</th>
+                      <th scope="col" className="py-1 pr-2 text-right">거리무게</th>
                       <th scope="col" className="py-1 pr-2 text-right">무게</th>
-                      <th scope="col" className="py-1">셈/뺌</th>
+                      <th scope="col" className="py-1">얼마나 세나</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rivals.map((v, i) => (
-                      <tr key={`${v.name ?? "?"}-${i}`} className={v.inRange ? "" : "opacity-50"}>
+                      <tr key={`${v.name ?? "?"}-${i}`} className={v.distWeight >= 0.2 ? "" : "opacity-50"}>
                         <td className="py-1 pr-2">{v.name ?? "(이름없음)"}</td>
                         <td className="py-1 pr-2 text-right tabular-nums">
                           {v.distanceM == null ? "모름" : `${Math.round(v.distanceM)}m`}
@@ -1341,13 +1370,21 @@ function RivalRecognition({ groups, p }: {
                         <td className="py-1 pr-2 text-right tabular-nums">
                           {oq && v.q ? `${((v.q / oq - 1) * 100).toFixed(0)}%` : "-"}
                         </td>
+                        {/* 거리무게를 따로 보여준다 — 감쇠는 0/1이 아니라 **몇 %인지**가 요점이다. */}
+                        <td className="py-1 pr-2 text-right tabular-nums">
+                          {`${(v.distWeight * 100).toFixed(0)}%`}
+                        </td>
                         <td className="py-1 pr-2 text-right tabular-nums font-semibold">
-                          {v.inRange ? v.weight.toFixed(1) : "0"}
+                          {v.weight.toFixed(1)}
                         </td>
                         <td className="py-1">
-                          {v.inRange
-                            ? <span className="text-[var(--sl-ink-soft)]">셈</span>
-                            : <span className="text-amber-700 dark:text-amber-400">뺌 ({p.effectiveRadiusM}m 초과)</span>}
+                          {v.distWeight >= 0.999
+                            ? <span className="text-[var(--sl-ink-soft)]">온전히 셈</span>
+                            : v.distWeight >= 0.2
+                              ? <span className="text-[var(--sl-ink-soft)]">부분으로 셈</span>
+                              : <span className="text-amber-700 dark:text-amber-400">
+                                  사실상 안 셈{p.rivalDistanceDecay ? "" : ` (${p.effectiveRadiusM}m 초과)`}
+                                </span>}
                         </td>
                       </tr>
                     ))}

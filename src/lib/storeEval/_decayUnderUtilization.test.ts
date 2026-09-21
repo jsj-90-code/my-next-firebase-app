@@ -254,7 +254,9 @@ describeIf("거리 감쇠 — 가동률 기준으로 다시 고른다", () => {
 
   it("(3) 채택 판정 — 가동률 자에서 짝지은 부트스트랩", () => {
     const A = looBoth(() => P_STEP);
-    const cand: [string, number, number][] = [["R300 λ150(지금)", 300, 150], ["R200 λ200", 200, 200]];
+    // ⚠️ 라벨 주의 — R300 λ150은 **2026-09-21 저녁에 교체된 옛 값**이다. 지금은 R200 λ200.
+    //    이 절은 그날 낮의 판정을 재현하려고 남겨 둔 것이라 두 값을 다 찍는다.
+    const cand: [string, number, number][] = [["R300 λ150(옛값)", 300, 150], ["R200 λ200(지금)", 200, 200]];
     console.log(`\n[채택 판정] 기준선 계단300 · 가동률 MAE 차이(음수 = 감쇠가 낫다) · 2000회`);
     for (const [key, R, L] of cand) {
       const B = looBoth((rest) => mk(R, L, rest));
@@ -276,5 +278,142 @@ describeIf("거리 감쇠 — 가동률 기준으로 다시 고른다", () => {
     console.log(`     그때는 매출 자에서 세운 근거(최악 54.7 -> 51.9%)가 유일한 근거로 남는데,`);
     console.log(`     그 자는 단가 잡음이 섞여 있다((1)절). 사용자에게 알리고 정해야 한다.`);
     expect(cand.length).toBe(2);
+  });
+
+  // ── 사용자 결정 (2026-09-21) ────────────────────────────────────────────
+  //
+  //   *"거리감쇠는 적용하되, 수치값은 가동률 오차폭과 평균을 줄일 수 있는 값을 넣는 게 어떤데?"*
+  //
+  // 기준이 **사전에 확정됐다.** 감쇠는 켠다(개념). 고를 것은 (R, λ)뿐이고, 판정 기준은
+  // **가동률 MAE(평균)와 오차폭(SD·최악)을 같이 줄이는가**다. 결과를 보고 기준을 바꾸지 않는다.
+  //
+  // ⚠️ 오차폭의 주지표는 **SD**로 둔다. 최악은 매장 한 곳이 만드는 값이라 표본 38곳에서
+  //    너무 잘 흔들린다(문경시청점 하나가 좌우한다). 최악은 같이 찍되 보조로 본다.
+  it("(4) ⭐ 사용자 기준으로 고른다 — 가동률 평균과 오차폭을 같이 줄이는 (R, λ)", () => {
+    const RS = [100, 150, 200, 250, 300, 350];
+    const LS = [75, 100, 125, 150, 200, 250, 350];
+    const S = looBoth(() => P_STEP).util;
+    // 비교 기준선은 **교체 직전 값**(R300 λ150)이다. "이 교체가 지시를 만족했나"를 보는 절이라
+    // 기준선을 지금 값으로 바꾸면 물음 자체가 사라진다. 지금 값은 아래에 따로 찍는다.
+    const A = looBoth((rest) => mk(300, 150, rest)).util;
+    const err = (v: Pair[]) => v.map((x) => Math.abs(x.pred - x.act));
+    const base0 = { mae: mae(S), sd: sd(err(S)), worst: worst(S) };
+    const now = { mae: mae(A), sd: sd(err(A)), worst: worst(A) };
+    console.log(`\n[사용자 기준] 감쇠는 켠다. (R, λ)는 **가동률 평균 + 오차폭**으로 고른다.`);
+    console.log(`  기준선 계단300      MAE ${pp(base0.mae)} · SD ${pp(base0.sd)} · 최악 ${pct(base0.worst)}`);
+    console.log(`  옛값 R300 λ150     MAE ${pp(now.mae)} · SD ${pp(now.sd)} · 최악 ${pct(now.worst)}  <- 교체 전, 아래 비교의 기준선`);
+    const D0 = DEFAULT_TEXTBOOK_PARAMS.rivalDistanceDecay;
+    if (D0) {
+      const C = looBoth((rest) => mk(D0.plateauM, D0.scaleM, rest)).util;
+      console.log(`  ✅ 지금 R${D0.plateauM} λ${D0.scaleM}    MAE ${pp(mae(C))} · SD ${pp(sd(err(C)))} · 최악 ${pct(worst(C))}  <- 산식에 박힌 값`);
+    }
+
+    type Cell = { key: string; R: number; L: number; mae: number; sd: number; worst: number; w302: number; w342: number };
+    const grid: Cell[] = [];
+    for (const R of RS) for (const L of LS) {
+      const v = looBoth((rest) => mk(R, L, rest)).util;
+      const w = (d: number) => (d <= R ? 1 : Math.exp(-(d - R) / L));
+      grid.push({ key: `R${R} λ${L}`, R, L, mae: mae(v), sd: sd(err(v)), worst: worst(v), w302: w(302), w342: w(342) });
+    }
+    // **파레토 앞면** — MAE와 SD 둘 다에서 더 나은 칸이 없는 칸들. 두 목표를 같이 줄이라는
+    // 지시를 그대로 옮긴 것이다(하나를 가중치로 합치면 그 가중치를 내가 고르는 게 된다).
+    const pareto = grid.filter((c) => !grid.some((o) => o !== c && o.mae <= c.mae && o.sd <= c.sd
+      && (o.mae < c.mae || o.sd < c.sd)));
+    console.log(`\n  [파레토 앞면] ${grid.length}칸 중 ${pareto.length}칸 — MAE·SD 둘 다 더 나은 칸이 없는 것들`);
+    console.log(`  손잡이        MAE      SD      최악    지금 대비 MAE   지금 대비 SD   302m   342m`);
+    for (const c of [...pareto].sort((a, b) => a.mae - b.mae)) {
+      const dM = c.mae - now.mae, dS = c.sd - now.sd;
+      console.log(`  ${c.key.padEnd(12)}${pp(c.mae).padStart(8)}${pp(c.sd).padStart(9)}${pct(c.worst).padStart(9)}` +
+        `${((dM >= 0 ? "+" : "") + (dM * 100).toFixed(2) + "%p").padStart(14)}${((dS >= 0 ? "+" : "") + (dS * 100).toFixed(2) + "%p").padStart(14)}` +
+        `${(c.w302 * 100).toFixed(0).padStart(6)}%${(c.w342 * 100).toFixed(0).padStart(6)}%`);
+    }
+    // 지시를 곧이곧대로 — **지금 값보다 MAE도 SD도 나쁘지 않은** 칸만 남긴다.
+    const better = grid.filter((c) => c.mae <= now.mae && c.sd <= now.sd && (c.mae < now.mae || c.sd < now.sd));
+    console.log(`\n  [옛값(R300 λ150)을 양쪽에서 이기는 칸] ${better.length}개 — 사용자 지시를 곧이곧대로 만족하는 것들`);
+    for (const c of [...better].sort((a, b) => (a.mae + a.sd) - (b.mae + b.sd)).slice(0, 8)) {
+      console.log(`    ${c.key.padEnd(12)}MAE ${pp(c.mae)} (${((c.mae - now.mae) * 100).toFixed(2)}%p) · SD ${pp(c.sd)} (${((c.sd - now.sd) * 100).toFixed(2)}%p) · 최악 ${pct(c.worst)}`);
+    }
+    const beatStep = better.filter((c) => c.mae <= base0.mae && c.sd <= base0.sd);
+    console.log(`\n  그중 **계단300까지 양쪽에서 이기는 칸**: ${beatStep.length ? beatStep.map((c) => c.key).join(" · ") : "없음"}`);
+    console.log(`  ⚠️ 없으면 — 감쇠는 어떤 값을 넣어도 계단보다 평균·폭을 동시에 개선하지는 못한다는 뜻이다.`);
+    console.log(`     그래도 사용자가 개념으로 감쇠를 택했으므로, **감쇠 안에서** 제일 나은 칸을 고른다.`);
+    expect(grid.length).toBe(RS.length * LS.length);
+  });
+
+  it("(5) 고른 칸이 처음 보는 매장에서도 버티나 — 중첩 LOO + 부트스트랩", () => {
+    // ⚠️ (4)에서 고른 칸은 **38곳을 다 보고 고른 것**이다. 고르는 행위까지 검증한다.
+    const RS = [100, 150, 200, 250, 300, 350];
+    const LS = [75, 100, 125, 150, 200, 250, 350];
+    const CELLS = RS.flatMap((R) => LS.map((L) => ({ R, L, key: `R${R} λ${L}` })));
+    const picked: string[] = [];
+    const errs: number[] = [];
+    for (let i = 0; i < base.length; i++) {
+      const au = base[i].input.actualUtilization;
+      if (au == null || !(au > 0)) continue;
+      const rest = base.filter((_, k) => k !== i);
+      let bestKey = "", best = Infinity, bR = 0, bL = 0;
+      for (const c of CELLS) {
+        // 안쪽 루프: rest 안에서만 LOO. 뺀 매장은 절대 안 본다.
+        const inner: number[] = [];
+        for (let j = 0; j < rest.length; j++) {
+          const a2 = rest[j].input.actualUtilization;
+          if (a2 == null || !(a2 > 0)) continue;
+          const rest2 = rest.filter((_, k) => k !== j);
+          const p = mk(c.R, c.L, rest2);
+          const b = computeTextbook(rest[j].input, fittedParams(p, scoreTextbook(rest2, p)));
+          if (b.utilization != null) inner.push(Math.abs(b.utilization - a2));
+        }
+        // 지시가 "평균과 폭을 같이"이므로 안쪽 판정도 **MAE + SD**로 한다(기준을 일관되게).
+        const score = mean(inner) + sd(inner);
+        if (score < best) { best = score; bestKey = c.key; bR = c.R; bL = c.L; }
+      }
+      const p = mk(bR, bL, rest);
+      const b = computeTextbook(base[i].input, fittedParams(p, scoreTextbook(rest, p)));
+      if (b.utilization != null) errs.push(Math.abs(b.utilization - au));
+      picked.push(bestKey);
+    }
+    const S = looBoth(() => P_STEP).util, A = looBoth((rest) => mk(300, 150, rest)).util;
+    const e = (v: Pair[]) => v.map((x) => Math.abs(x.pred - x.act));
+    console.log(`\n[중첩 LOO] 매장 하나를 빼고 나머지에서 (R,λ)를 고른 뒤 그 매장을 맞힌다`);
+    console.log(`  계단300          MAE ${pp(mae(S))} · SD ${pp(sd(e(S)))}`);
+    console.log(`  R300 λ150(옛값)  MAE ${pp(mae(A))} · SD ${pp(sd(e(A)))}`);
+    console.log(`  매번 새로 고름    MAE ${pp(mean(errs))} · SD ${pp(sd(errs))}  <- 고르는 행위까지 포함한 정직한 성적`);
+    const tally = new Map<string, number>();
+    for (const k of picked) tally.set(k, (tally.get(k) ?? 0) + 1);
+    console.log(`\n  뽑힌 칸 (${picked.length}번 중)`);
+    for (const [k, v] of [...tally].sort((a, b) => b[1] - a[1]).slice(0, 5)) console.log(`    ${k.padEnd(12)}${String(v).padStart(3)}번`);
+    console.log(`  ⚠️ 한 칸이 거의 다 뽑히면 그 값은 표본에 안 휘둘린다. 갈리면 "최적값"이 못 미덥다.`);
+    expect(picked.length).toBeGreaterThan(30);
+  }, 120_000); // 중첩 루프라 오래 걸린다(38 x 42칸 x 37겹). 기본 5초로는 못 끝낸다.
+
+  it("(6) 최종 후보를 지금 값과 맞대본다 — 짝지은 부트스트랩", () => {
+    // (4)의 기준(지금 값보다 MAE도 SD도 나쁘지 않을 것)을 만족한 칸 셋을 맞대본다.
+    // ⚠️ 0.2%p짜리 차이라 **유의한지 반드시 확인해야 한다.** 안 그러면 잡음에 산식을 맞추게 된다.
+    const A = looBoth((rest) => mk(300, 150, rest)).util;       // 지금
+    const cands: [string, number, number][] = [["R200 λ200", 200, 200], ["R200 λ150", 200, 150], ["R150 λ200", 150, 200]];
+    console.log(`\n[최종 판정] 기준선 = 옛값 R300 λ150 · 가동률 오차 · 짝지은 부트스트랩 2000회`);
+    console.log(`  (이 중 R200 λ200이 채택돼 지금 산식에 들어가 있다 — 최악 손해가 제일 작아서다)`);
+    console.log(`  후보          MAE 차이      95% 구간              SD 차이   최악 차이   판정`);
+    for (const [key, R, L] of cands) {
+      const B = looBoth((rest) => mk(R, L, rest)).util;
+      const ns = A.map((x) => x.n).filter((n) => B.some((y) => y.n === n));
+      const dm = ns.map((n) => {
+        const a = A.find((x) => x.n === n)!, b = B.find((x) => x.n === n)!;
+        return Math.abs(b.pred - b.act) - Math.abs(a.pred - a.act);
+      });
+      let seed = 20260921;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+      const boot: number[] = [];
+      for (let k = 0; k < 2000; k++) boot.push(mean(ns.map(() => dm[Math.floor(rnd() * ns.length)])));
+      boot.sort((a, b) => a - b);
+      const eA = A.map((x) => Math.abs(x.pred - x.act)), eB = B.map((x) => Math.abs(x.pred - x.act));
+      const zero = boot[50] <= 0 && boot[1949] >= 0;
+      console.log(`  ${key.padEnd(12)}${pp(mean(dm)).padStart(10)}   [${pp(boot[50])}, ${pp(boot[1949])}]`.padEnd(56) +
+        `${pp(sd(eB) - sd(eA)).padStart(9)}${pct(worst(B) - worst(A)).padStart(11)}   ${zero ? "0을 품는다" : mean(dm) < 0 ? "**유의하게 낫다**" : "유의하게 나쁘다"}`);
+    }
+    console.log(`\n  ⚠️ 전부 "0을 품는다"로 나오면 — 자료는 이 셋을 **가르지 못한다.**`);
+    console.log(`     그러면 이 프로젝트 관례가 적용된다: 자료가 못 고르면 실무 판단·개념이 이긴다.`);
+    console.log(`     (2026-09-21 오송점에서 세운 규칙 · \`_effectiveRadiusRetest\`)`);
+    expect(cands.length).toBe(3);
   });
 });
