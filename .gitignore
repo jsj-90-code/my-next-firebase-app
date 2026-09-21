@@ -519,3 +519,12 @@ src/**/_*.test.ts
 !src/lib/storeEval/_rivalDirectionOuter.test.ts
 !src/lib/storeEval/_shareLoyaltyFloor.test.ts
 !src/lib/storeEval/_demandCeilingDiagnosis.test.ts
+
+# 2026-09-21 밤(3) — 눈금 보정 b=0.327을 **항별로 쪼개 본** 진단.
+# 수요항(p)·점유율항(q)에 따로 지수를 주고 LOO로 훑었다. 결론은 "쪼갤 이유가 없다":
+# 격자 최적이 대각선 위(p=q=.25)에 있고 nested LOO는 훈련평균과 사실상 같다(4.317 vs 4.373).
+# b가 작아야 하는 이유는 **퍼짐 2.05배**(날 로그SD .3785 vs 실측 .1844)이고,
+# 희석(잡음) 가설은 기각됐다 — 반경 100~500m가 서로 r=.90이라 독립 반복측정이 아니다.
+# ⚠️ 곁다리 발견: 입지배율의 날 상관이 **음수**(-.2632)이고 기존점 2곳(구미산동·문경시청)이
+#    이미 입지 때문에 점유율 100%로 잘려 있다. 인계문 4절(영월)과 같은 병이다.
+!src/lib/storeEval/_calibrationSplit.test.ts

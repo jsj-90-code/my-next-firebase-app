@@ -139,7 +139,13 @@ it("가동률 구성요소 제거: 수요·경쟁·입지와 축척의 역할", 
         : Math.exp(mean(anchors.map((i) => Math.log(actual[i] / x[i]))));
       if (stage.demand && calibration === "monopoly") {
         const native = fitHoursPerUser(train.map((i) => variants(stage)[i]), p);
-        expect(scale).toBeCloseTo(native, 12);
+        // ⚠️ 2026-09-21 밤(3) Claude 수정 — 지수 눈금 보정을 켠 뒤 이 단언이 낡았다.
+        // `fitHoursPerUser`가 돌려주는 건 **수요축척 H**이고, 여기 `scale`은 모양 x에
+        // 곱하는 배율이다. 예측이 x ∝ (H·D·S)^b 이므로 배율은 H가 아니라 **H^b**다.
+        // (실측: scale 2.0044 · native 8.3854 · 8.3854^0.327 = 2.0045.)
+        // 바로 아래 예측값 항등식은 원래부터 통과했다 — 본체는 멀쩡하고 이 줄만 틀렸었다.
+        const bExp = p.indexCalibration?.ratioExponent ?? 1;
+        expect(scale).toBeCloseTo(Math.pow(native, bExp), 12);
         const nativePrediction = computeTextbook({ ...variants(stage)[held].input, actualUtilization: null }, { ...p, hoursPerUserPerMonth: native }).utilization;
         expect(Math.min(cap, x[held] * scale)).toBeCloseTo(nativePrediction!, 12);
       }
