@@ -151,8 +151,17 @@ describe("입지 — 점유율에 곱하는 독립 항", () => {
     const edge = computeTextbook(input(atGeoMean(g / 2)), P).share!;
     expect(core).toBeGreaterThan(mid);
     expect(edge).toBeLessThan(mid);
-    // ν=0.5이면 중심도 2배가 2^0.5 = 1.414배다
-    expect(core / mid).toBeCloseTo(Math.pow(2, P.locationExponents.centrality), 10);
+    // ν=0.5이면 중심도 2배가 **입지배율**에서 2^0.5 = 1.414배다.
+    // ⚠️ 2026-09-21부터 점유율에는 입지배율이 **c÷b 제곱**으로 들어간다(지수 눈금 보정).
+    //    뒤에서 전체를 b제곱하므로 가동률에서의 최종 지수가 c가 된다. 그래서 여기서
+    //    1.414를 그대로 기대하면 안 된다 — 코드에서 읽어 계산한다(값이 또 바뀌어도 안 낡게).
+    const cal = P.indexCalibration;
+    const inShare = cal && cal.ratioExponent !== 0 ? cal.locationExponent / cal.ratioExponent : 1;
+    expect(core / mid).toBeCloseTo(Math.pow(2, P.locationExponents.centrality * inShare), 10);
+    // 입지배율 자체는 보정과 무관하게 ν만 따른다 — 그건 여기서 따로 못 박는다.
+    const mulMid = computeTextbook(input(atGeoMean(g)), P).locationMultiplier!;
+    const mulCore = computeTextbook(input(atGeoMean(g * 2)), P).locationMultiplier!;
+    expect(mulCore / mulMid).toBeCloseTo(Math.pow(2, P.locationExponents.centrality), 10);
   });
 
   it("같은 중심도라도 동네가 크면 덜 쳐준다 — 잔차화가 하는 일", () => {
@@ -165,7 +174,11 @@ describe("입지 — 점유율에 곱하는 독립 항", () => {
       ...base, location: L({ centrality: 4 }), floatingByRadius: { 400: CR.geoMeanFloating400 * 2 },
     }), P).share!;
     expect(big).toBeLessThan(small);
-    expect(big / small).toBeCloseTo(Math.pow(Math.pow(2, -CR.slope), P.locationExponents.centrality), 10);
+    // ⚠️ 위 시험과 같은 이유로 점유율에는 c÷b 제곱이 더 걸린다(2026-09-21 지수 눈금 보정).
+    const cal2 = P.indexCalibration;
+    const inShare2 = cal2 && cal2.ratioExponent !== 0 ? cal2.locationExponent / cal2.ratioExponent : 1;
+    expect(big / small).toBeCloseTo(
+      Math.pow(Math.pow(2, -CR.slope), P.locationExponents.centrality * inShare2), 10);
   });
 
   it("유동400m가 없으면 중심도 항을 통째로 뺀다 — 날값으로 되돌리지 않는다", () => {

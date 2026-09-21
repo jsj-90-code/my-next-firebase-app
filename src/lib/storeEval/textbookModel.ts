@@ -567,6 +567,61 @@ export type TextbookParams = {
    * ⚠️ 표본이 늘면 다시 잰다 — 38곳에서 나온 값이다.
    */
   rivalDistanceDecay: { plateauM: number; scaleM: number; weightFactor?: number } | null;
+  /**
+   * **지수 눈금 보정** (2026-09-21 신설). 가동률 = A x (수요÷총공급)^b x 입지^c 의 b·c다.
+   *
+   * ── 왜 필요한가 ───────────────────────────────────────────────────────────
+   * 지금까지 산식은 **b=1 · c=1을 강제**했다. Huff 모형의 교과서 형태를 그대로 쓴 것이고,
+   * 자료로 고른 적이 한 번도 없다. 판정 기준을 가동률로 바꾸고(2026-09-21) 물어보니
+   * 자료가 **1을 명확히 거부**한다:
+   *
+   *     b = 0.327   (38겹 재적합 0.284~0.371 · SD 0.017 · 1을 안 품는다)
+   *     c = 0.169   (38겹 재적합 0.099~0.254 · SD 0.028 · 1을 안 품는다)
+   *
+   * ── 실무 뜻 — "값에 맞춘 것"이 아니다 ─────────────────────────────────────
+   * 사용자 정리(2026-09-21): *"수요 > 가동률 이 산식이 현재 검증 가능한 부분이 없으니까
+   * 값에 맞추는 형태로 하는 게 최선이라고 보긴 함."*
+   *
+   * 맞는 구분이다. **수요도 공급도 우리가 만든 지수**이고 실측할 방법이 없다 —
+   *   수요   = 인구 x 연령별이용률 x 1인월시간 x 특수수요배수
+   *   총공급 = 자사PC + Σ(경쟁PC x 품질비^θ x 거리무게)   ← 날PC수는 자사 것뿐이다
+   * 절대 크기에도 매장 간 비율에도 검증할 근거가 없다. **눈금 없는 막대**다.
+   * 그러면 눈금은 실측 가동률에 맞춰 새길 수밖에 없고, 그게 b·c다.
+   * b<1은 **"그 지수가 매장 간 차이를 과장한다"**는 뜻이다(실측보다 2.3배 넓었다).
+   *
+   * ⚠️ 내가 한 번 틀린 길 — "공급은 PC를 셀 수 있으니 −1로 고정하고 수요만 보정하자"고
+   *    했는데 **더 나빠진다**(MAE 6.57%p · 최악 105%). 총공급도 품질비 3제곱을 먹인
+   *    구성 지수라서, 수요·공급을 **같은 만큼 눌러 비로 묶어야** 한다(p = −q).
+   *
+   * ── 성적 (기존점 33곳 · LOO · 점유율 상한 걸린 5곳 제외) ──────────────────
+   *                      MAE      SD      최악(%p)   ±5%p
+   *     지금(b=c=1)      6.26%p  5.26%p   16.6%p     16/33
+   *     전부 훈련평균      4.41%p  4.03%p   —          22/33
+   *     b=.327 c=.169    4.43%p  3.06%p   13.6%p     23/33
+   *
+   * ⚠️ **상대% 자로 보면 최악이 59.8 → 69.8%로 나빠 보인다.** 증평점 하나 때문이다
+   *    (실측 17.6%로 표본 최저 · %p로는 10.5 → 12.3%p로 1.8%p 차이인데 분모가 작아 튄다).
+   *    같은 자(%p)로 보면 최악도 16.6 → 13.6%p로 좋아진다.
+   *
+   * ── 구현 ──────────────────────────────────────────────────────────────────
+   *   share  = min(1, 날점유율 x 입지배율^(c÷b))      ← 상한은 그대로 둔다
+   *   가동률 = 기준가동률^(1−b) x (수요 x share ÷ 용량)^b
+   * 입지 지수를 c÷b로 넣는 이유: 뒤에서 전체를 b제곱하므로 **최종 지수가 c**가 된다.
+   * `referenceUtilization`은 **닻**이다 — 이 값에서는 예측이 안 움직인다. 기존점 실측
+   * 가동률의 기하평균이라 hoursPerUserPerMonth가 뜻을 유지한다(크기는 축척이 흡수한다).
+   *
+   * ⚠️ **null이면 지금까지 동작과 정확히 같다**(중첩 모형). b=c=1도 마찬가지다.
+   * ⚠️ 38곳에서 잰 값이다. **표본이 늘면 다시 잰다.**
+   * 근거: `_demandSupplyExponents.test.ts` · `_ratioExponent.test.ts`
+   */
+  indexCalibration: {
+    /** (수요 ÷ 총공급)에 걸리는 지수. 1이면 지금 동작. */
+    ratioExponent: number;
+    /** 입지배율에 걸리는 **최종** 지수. 1이면 지금 동작. */
+    locationExponent: number;
+    /** 닻 — 이 가동률에서는 예측이 안 움직인다. 기존점 실측 기하평균. */
+    referenceUtilization: number;
+  } | null;
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
@@ -703,6 +758,19 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 자를 바로잡고 다시 뽑으니 1.08 · 0.94로 사실상 1이었다. 표본 2~5곳이라 확정값이
   // 아니다 — 조절판에서 돌려볼 것.
   specialDemandMultipliers: { "군부대": 2.25, "대학가": 1.0, "산업단지": 1.0, "기타": 1.0, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
+  // ✅ **2026-09-21 채택 — 지수 눈금 보정을 켠다** (자세한 근거는 타입 쪽 주석).
+  //
+  //   가동률 = 0.3011^(1−0.327) x (수요 x 점유율 ÷ 용량)^0.327,  점유율에 입지^(0.169÷0.327)
+  //
+  // 사용자 결정: *"산식 건드려도 돼. 기존에 매출 MAPE로 기대값 잡고 했다면 현재는 가동률
+  // 기준으로 잡아야 하니 바꾸는 게 적합하다면 바꿔도 되지."* + *"수요 > 가동률 이 산식이
+  // 현재 검증 가능한 부분이 없으니까 값에 맞추는 형태로 하는 게 최선이라고 보긴 함."*
+  //
+  // b=0.327 · c=0.169은 기존점 33곳에서 잰 값이고 38겹 재적합에서 **1을 전혀 안 품는다**
+  // (b 0.284~0.371 · c 0.099~0.254). 표본이 늘면 다시 잰다.
+  // 닻 0.3011 = 기존점 평가창 실측 가동률의 기하평균(40곳). 크기는 축척이 흡수하므로
+  // 정확한 값이 성적을 바꾸지는 않는다 — hoursPerUserPerMonth가 뜻을 유지하게 하는 용도다.
+  indexCalibration: { ratioExponent: 0.327, locationExponent: 0.169, referenceUtilization: 0.3011 },
   maxUtilization: 0.55,
 };
 
@@ -999,11 +1067,23 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     mul("visibility", L.visibility, E.visibility, 3);
   }
   const locationMultiplier = locFactors.reduce((a, f) => a * f.value, 1);
+  // 지수 눈금 보정(2026-09-21) — 타입 쪽 주석 참고. null이면 지금까지 동작과 같다.
+  // 입지 지수를 c÷b로 넣는 이유: 아래에서 전체를 b제곱하므로 **최종 지수가 c**가 된다.
+  const cal = p.indexCalibration;
+  const locExpInShare = cal && cal.ratioExponent !== 0 ? cal.locationExponent / cal.ratioExponent : 1;
   // 점유율은 1을 넘을 수 없다 — 입지가 좋아도 그 동네 수요보다 많이 먹지는 못한다.
-  const share = Math.min(1, rawShare * locationMultiplier);
+  // ⚠️ 사용자 확인(2026-09-21): *"입지 때문에 수요가 늘어나진 않잖아, 수요에서 점유율에
+  //    작용하는 부분 아님?"* — 맞다. 그래서 입지는 점유율에 곱하고 상한도 여기 그대로 둔다.
+  const share = Math.min(1, rawShare * Math.pow(locationMultiplier, locExpInShare));
 
   // ── 4) 매출 ─────────────────────────────────────────────────────────────
-  const rawOwnHours = totalHours * share;
+  const rawOwnHoursLinear = totalHours * share;
+  // 지수 보정을 **가동률 눈금에서** 건다. 닻(referenceUtilization)에서는 값이 안 움직인다.
+  const rawOwnHours = cal
+    ? Math.pow(cal.referenceUtilization, 1 - cal.ratioExponent)
+      * Math.pow(Math.max(0, rawOwnHoursLinear) / (pc * MONTH_HOURS), cal.ratioExponent)
+      * (pc * MONTH_HOURS)
+    : rawOwnHoursLinear;
   const capHours = pc * MONTH_HOURS * p.maxUtilization;
   const capped = rawOwnHours > capHours;
   const ownHours = Math.min(rawOwnHours, capHours);
@@ -1098,7 +1178,10 @@ export function fitHoursPerUser(
     if (b.utilization == null || b.utilization <= 0) continue;
     byUtil.push(Math.log(actual / b.utilization));
   }
-  if (byUtil.length) return logMean(byUtil);
+  // ⚠️ 지수 보정이 켜져 있으면 예측이 hours^b에 비례한다 — 그래서 **b로 나눠야** 맞는 배율이
+  //    나온다(2026-09-21). 안 나누면 축척이 b배만큼 어긋나고 전 매장 수준이 틀어진다.
+  const bExp = p.indexCalibration?.ratioExponent ?? 1;
+  if (byUtil.length) return Math.exp(Math.log(logMean(byUtil)) / (bExp !== 0 ? bExp : 1));
 
   // ── 되돌림: 실측 가동률이 없으면 매출로 맞춘다 (예전 방식) ──────────────────────
   const byRevenue: number[] = [];
