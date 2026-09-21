@@ -264,4 +264,68 @@ describeIf("거리 차등 — 총량 고정", () => {
     console.log(`     "342m가 0으로 세지지 않는다"를 사는 것이다. 그 교환을 할지는 사람이 정한다.`);
     expect(shapes.length).toBe(4);
   });
+
+  // ── 사용자 결정(2026-09-21): **감쇠로 간다** ────────────────────────────
+  //
+  // *"감쇠로가자. 개념이 그게맞을것같다. 기본 거리는 100으로보고, 기준 거리초과하는매장은
+  //  감쇠. 이게 개념이 맞는거같은데. **나중에 401m 나오면그건어쩔건데.**"*
+  //
+  // 계단의 근본 문제를 정확히 짚었다 — 경계를 어디에 두든 **그 바로 밖 사례가 계속 나온다.**
+  // 오송점 342m가 그랬고, 400으로 옮기면 하안금당 407m가 그렇다. 감쇠는 그게 구조적으로 없다.
+  // 성적은 대가를 치른다. 그 안에서 제일 나은 (R, λ)를 고르는 게 이 절이다.
+  //
+  //   무게 = 1                        (거리 <= R)
+  //        = exp(−(거리 − R) ÷ λ)      (그 밖)
+  it("(6) 감쇠 격자 — 기준거리 R x 감쇠폭 λ", () => {
+    const l0 = loo(base, P);
+    const ranked = [...l0.entries()].sort((a, b) => a[1] - b[1]).map(([k]) => k);
+    const qn = Math.ceil(ranked.length / 4);
+    const g1 = new Set(ranked.slice(0, qn));
+    const RS = [250, 300, 350, 400];
+    const LS = [50, 100, 150, 250, 400];
+    console.log(`\n[감쇠 격자] 무게 = 1 (d<=R) · exp(−(d−R)/λ) (밖) · 총량 고정`);
+    console.log(`  기준선 계단300 — r 0.804 · LOO 19.02% · 1분위 3.5%`);
+    // ⚠️ 사용자 규칙 — MAPE만 보면 안 된다. **오차 스프레드(최악·SD)를 항상 같이 본다.**
+    //    2026-09-21에 이걸 빼먹고 격자를 찍었다가 "최대오차는 어떻게 됐냐"는 질문을 받았다.
+    const worst = (m: Map<string, number>) => Math.max(...m.values());
+    const sdOf = (m: Map<string, number>) => {
+      const v = [...m.values()], mu = mean(v);
+      return Math.sqrt(mean(v.map((x) => (x - mu) ** 2)));
+    };
+    const b0 = loo(base, P);
+    console.log(`  기준선 최악 ${(worst(b0) * 100).toFixed(1)}% · SD ${(sdOf(b0) * 100).toFixed(1)}%p`);
+    console.log(`  각 칸: r / LOO / 최악 / 1분위(가운데)`);
+    console.log("      R │" + LS.map((L) => `λ=${L}`.padStart(25)).join(""));
+    const grid: { key: string; r: number; mape: number; q1: number; worst: number; sd: number }[] = [];
+    for (const R of RS) {
+      const cells: string[] = [];
+      for (const L of LS) {
+        const f = (d: number | null) => (d == null || d <= R ? 1 : Math.exp(-(d - R) / L));
+        const rows = apply(f);
+        const sl = slope(rows), LL = loo(rows);
+        const q1 = mean([...LL.entries()].filter(([x]) => g1.has(x)).map(([, v]) => v));
+        grid.push({ key: `R=${R} λ=${L}`, r: sl.r, mape: mape(LL), q1, worst: worst(LL), sd: sdOf(LL) });
+        cells.push(`${sl.r.toFixed(3)} ${(mape(LL) * 100).toFixed(1)} ${(worst(LL) * 100).toFixed(0)} ${(q1 * 100).toFixed(1)}`.padStart(25));
+      }
+      console.log(`  ${String(R).padStart(7)} │` + cells.join(""));
+    }
+    const byR = [...grid].sort((a, b) => b.r - a.r);
+    const byM = [...grid].sort((a, b) => a.mape - b.mape);
+    console.log(`\n  r 높은 순    ${byR.slice(0, 4).map((x) => `${x.key}(${x.r.toFixed(3)})`).join(" · ")}`);
+    console.log(`  MAPE 낮은 순 ${byM.slice(0, 4).map((x) => `${x.key}(${(x.mape * 100).toFixed(2)}%)`).join(" · ")}`);
+    const byW = [...grid].sort((a, b) => a.worst - b.worst);
+    console.log(`  최악 낮은 순 ${byW.slice(0, 4).map((x) => `${x.key}(${(x.worst * 100).toFixed(0)}%)`).join(" · ")}`);
+    console.log(`  SD 낮은 순   ${[...grid].sort((a, b) => a.sd - b.sd).slice(0, 4).map((x) => `${x.key}(${(x.sd * 100).toFixed(1)}%p)`).join(" · ")}`);
+
+    // 고른 값이 오송점·하안금당 경쟁점을 몇 %로 세는지 — 실무에서 바로 보는 숫자다.
+    console.log(`\n  [그 값이 실제 경쟁점을 몇 %로 세나]`);
+    for (const [R, L] of [[300, 150], [300, 250], [350, 150], [400, 150]] as [number, number][]) {
+      const w = (d: number) => (d <= R ? 1 : Math.exp(-(d - R) / L));
+      console.log(`    R=${R} λ=${L}  오송 팀플PC 342m ${(w(342) * 100).toFixed(0)}%` +
+        `  ·  하안금당 407m ${(w(407) * 100).toFixed(0)}% / 446m ${(w(446) * 100).toFixed(0)}% / 480m ${(w(480) * 100).toFixed(0)}%` +
+        `  ·  문경 371m ${(w(371) * 100).toFixed(0)}% · 1500m ${(w(1500) * 100).toFixed(0)}%`);
+    }
+    console.log(`\n  ⚠️ 감쇠는 어떤 조합도 계단300(19.02%)을 못 이긴다. **개념을 사고 성적을 내주는 거래**다.`);
+    expect(grid.length).toBe(20);
+  });
 });
