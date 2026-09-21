@@ -138,7 +138,10 @@ it("가동률 구성요소 제거: 수요·경쟁·입지와 축척의 역할", 
       const scale = calibration === "all" ? optimalScale(x, train)
         : Math.exp(mean(anchors.map((i) => Math.log(actual[i] / x[i]))));
       if (stage.demand && calibration === "monopoly") {
-        const native = fitHoursPerUser(train.map((i) => variants(stage)[i]), p);
+        // ⚠️ 2026-09-21 저녁 — 축척이 **원장 실측으로 못 박혔다**(hoursPerUserFixed). 이 줄은
+        //    "내 앵커 적합이 본체의 적합과 같은가"를 보는 자리라 **옛 적합 경로**를 일부러 켠다.
+        //    안 켜면 본체가 겹마다 같은 상수(8.20)를 돌려주므로 비교가 사라진다.
+        const native = fitHoursPerUser(train.map((i) => variants(stage)[i]), { ...p, hoursPerUserFixed: false });
         // ⚠️ 2026-09-21 밤(3) Claude 수정 — 지수 눈금 보정을 켠 뒤 이 단언이 낡았다.
         // `fitHoursPerUser`가 돌려주는 건 **수요축척 H**이고, 여기 `scale`은 모양 x에
         // 곱하는 배율이다. 예측이 x ∝ (H·D·S)^b 이므로 배율은 H가 아니라 **H^b**다.

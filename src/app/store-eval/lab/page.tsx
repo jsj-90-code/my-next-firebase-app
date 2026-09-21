@@ -268,7 +268,7 @@ export default function LabPage() {
 
       {score && data && (
         <>
-          <ScoreBoard score={score} current={data.current} />
+          <ScoreBoard score={score} current={data.current} p={p} />
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
             scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
           <ParamSummary p={p} counts={counts} />
@@ -298,7 +298,7 @@ export default function LabPage() {
   );
 }
 
-function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded["current"] }) {
+function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Loaded["current"]; p: TextbookParams }) {
   const cells: { label: string; lab: string; now: string; better?: boolean }[] = [
     { label: "MAPE (평균오차)", lab: pct(score.mape), now: pct(current?.mape), better: score.mape != null && current?.mape != null && score.mape < current.mape },
     { label: "±10% 적중", lab: pct(score.within10), now: pct(current?.within10), better: score.within10 != null && current?.within10 != null && score.within10 > current.within10 },
@@ -341,9 +341,10 @@ function ScoreBoard({ score, current }: { score: TextbookScore; current: Loaded[
         </div>
       )}
       <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-        표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) · 축척 둘은 매번 자동으로 맞춥니다
-        (1인당 월이용시간 {score.fittedHoursPerUser.toFixed(2)}시간 ← 독점 실측가동률 ·
-        상품몫 {Math.round(score.fittedProductUnitPrice).toLocaleString()}원/PC·시간 ← 독점 실매출).
+        표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) ·
+        1인당 월이용시간 {score.fittedHoursPerUser.toFixed(2)}시간
+        {p.hoursPerUserFixed ? <> ← <b>가맹점 원장 실측</b>(안 맞춥니다)</> : <> ← 독점 실측가동률에서 역산</>} ·
+        상품몫 {Math.round(score.fittedProductUnitPrice).toLocaleString()}원/PC·시간 ← 실측으로 매번 맞춥니다.
         {score.utilizationMape != null && (
           <> 가동률 자체의 오차는 {pct(score.utilizationMape)}입니다(실측 있는 {score.utilizationSampleCount}곳)
           — 매출 오차와 따로 봐야 어느 층이 틀렸는지 갈립니다.</>
@@ -429,7 +430,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             <div className="font-semibold">산업단지·기타는 2026-09-20 낮에, 대학가는 그날 밤에 껐습니다</div>
             <div className="mt-1">
               1차 값(2026-09-16)은 <b>산업단지 ×1.39 · 기타 ×1.25</b>였는데, <b>순환에 오염돼</b>
-              있었습니다. 수요의 크기(축척)는 <b>독점 매장 3곳</b>에서 맞추는데 그 3곳이
+              있었습니다. 그때 수요의 크기(축척)는 <b>독점 매장 3곳</b>에서 맞췄는데 그 3곳이
               탕정역(산업단지)·남악(기타)·광주각화(없음)입니다 — <b>두 유형이 자기 자신을 재는 자를
               부풀리고</b> 있었습니다.
             </div>
@@ -444,6 +445,10 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               <b> 산업단지 1.08(1.39) · 기타 0.94(1.25)</b>
             </div>
             <div className="mt-1">
+              ※ 2026-09-21에 축척을 <b>원장 실측으로 못 박으면서</b> 이 순환 경로 자체가 없어졌습니다
+              (축척이 더는 독점 3곳에서 안 옵니다). 다만 배수를 끈 판단은 그대로 둡니다 —
+              당시 근거가 순환 하나만은 아니었습니다.
+              <br />
               이때는 군부대·대학가를 <b>진짜 신호</b>로 보고 남겼고, 산업단지·기타만 껐습니다.
               끄고 나니 기준점 3곳이 전부 배수 1.00이 되어
               <b> 예외 규칙 없이 순환이 끊깁니다</b> — 기준점 벌어짐 1.416배 → <b>1.019배</b>,
@@ -866,14 +871,22 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
         </li>
 
         <li>
-          <b className="text-[#171310] dark:text-[#f2ede2]">축척은 둘이고, 각각 실측값에 맞춥니다</b>
+          <b className="text-[#171310] dark:text-[#f2ede2]">축척은 둘이고, 각각 실측값에서 옵니다</b>
           <div className="mt-1">
-            층마다 실측값이 따로 있으니(가동률은 매출DB, 매출도 매출DB) 축척도 따로 맞춥니다.
+            층마다 실측값이 따로 있으니(가동률은 매출DB, 매출도 매출DB) 축척도 따로 둡니다.
             하나로 겸하게 하면 매출 환산이 틀린 만큼이 <b>가동률로 되밀려 들어갑니다</b> —
             2026-09-16까지 그랬고, 그래서 독점 3곳 가동률이 −3.2~−5.3% 어긋나 보였습니다.
           </div>
           <div className="mt-1">
-            ① 1인당 월이용시간 <b>{fitted.toFixed(3)}시간</b> ← 독점매장 <b>실측 가동률</b>
+            ① 1인당 월이용시간 <b>{fitted.toFixed(3)}시간</b>
+            {p.hoursPerUserFixed ? (
+              <> ← <b>가맹점 건별 매출원장 실측</b>입니다(2026-09-21부터). 자료에 맞추는 게 아니라
+              <b> 못 박은 값</b>이라, 여기서 남는 어긋남이 곧 &ldquo;수요 추정이 몇 배 틀렸나&rdquo;가 됩니다.
+              원장 8곳 중 <b>오픈 1년 안 4곳</b>의 평균입니다 — 1년 넘은 매장은 1인당 시간이
+              1.41배로 늘어(단골 축적) 평가창과 시점이 안 맞아 뺐습니다.</>
+            ) : (
+              <> ← 독점매장 <b>실측 가동률</b>에서 역산한 값입니다(2026-09-21 이전 방식).</>
+            )}
             {usersPerPc != null && <> (환산수요 <b>{usersPerPc.toLocaleString()}명</b>이 PC 1대를 100% 채우는 셈)</>}
           </div>
           <div className="mt-1">
@@ -1014,9 +1027,10 @@ function StoreTable({ score, qscByStore }: { score: TextbookScore; qscByStore: L
       <p className="mt-1 rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
         2026-09-16에 이 두 열이 말이 안 되게 나오던 문제를 고쳤습니다. 화면이 &ldquo;PC방 안 가는 몫&rdquo;을
         모델 기본값(0) 대신 <b>500으로 덮어쓰고</b> 있었습니다. 그러면 경쟁점이 0곳인 독점 매장도
-        점유율이 17%로 계산되는데, <b>수요 축척은 &ldquo;독점이면 점유율 1&rdquo;을 전제로 독점 매장에
-        맞춥니다.</b> 전제가 깨지니 수요가 6배 부풀려졌고, 점유율이 그만큼 작아져 매출만 얼추 맞는
+        점유율이 17%로 계산되는데, <b>그때 수요 축척은 &ldquo;독점이면 점유율 1&rdquo;을 전제로 독점 매장에
+        맞췄습니다.</b> 전제가 깨지니 수요가 6배 부풀려졌고, 점유율이 그만큼 작아져 매출만 얼추 맞는
         상태였습니다. 지금은 독점 매장이 점유율 100%를 받고 전체 MAPE도 41.8% → 23.4%로 내려갔습니다.
+        {" "}(2026-09-21부터 축척은 원장 실측으로 못 박혀 있어 독점 매장에 맞추지 않습니다.)
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">
@@ -1221,8 +1235,10 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
       </h2>
       <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
         후보지는 <b>실매출이 없어 채점할 수 없습니다</b> — 그래서 오차 열이 없습니다. 대신
-        기존 가맹점 {existingCount}곳에서 맞춘 축척(1인 월 {p.hoursPerUserPerMonth.toFixed(2)}시간 ·
-        상품몫 {Math.round(p.productUnitPrice).toLocaleString()}원/PC·시간)을 <b>그대로 받아</b> 예측만 합니다.
+        축척 둘(1인 월 {p.hoursPerUserPerMonth.toFixed(2)}시간
+        {p.hoursPerUserFixed ? " ← 원장 실측" : ` ← 기존 가맹점 ${existingCount}곳에서 역산`} ·
+        상품몫 {Math.round(p.productUnitPrice).toLocaleString()}원/PC·시간 ← 기존 가맹점
+        {" "}{existingCount}곳 실측)을 <b>그대로 받아</b> 예측만 합니다.
         후보지로 축척을 다시 맞추면 예측값으로 예측값을 맞추는 순환이 됩니다.
       </p>
       <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">

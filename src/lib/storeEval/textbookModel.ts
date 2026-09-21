@@ -16,9 +16,9 @@
 //   3) 자사수요 = 총수요 x 점유율   -> 가동률 = 자사수요 / (자사PC x 720)
 //   4) 매출     = 자사PC x 720 x 가동률 x 총단가,  총단가 = PC몫(정가) + 상품몫(상수)
 //
-// ── 축척은 두 개다 (2026-09-16 구조 변경) ────────────────────────────────
+// ── 축척은 두 개다 (2026-09-16 구조 변경 · 2026-09-21 앞엣것을 원장 실측으로 고정) ──
 //   층마다 실측값이 따로 있으니 축척도 따로 맞춘다. 자세한 근거는 fitHoursPerUser 위 주석.
-//     hoursPerUserPerMonth <- 독점매장 **실측 가동률**
+//     hoursPerUserPerMonth <- **가맹점 원장 실측** 8.20h (오픈 1년 안 4곳 평균)
 //     productUnitPrice     <- **전 매장** 실매출÷실측가동률 (직접 측정되므로 독점 제약 없음)
 //   그전에는 축척 하나가 둘을 겸해서, 환산층이 틀린 만큼이 가동률로 되밀려 들어갔다.
 //
@@ -102,6 +102,27 @@ export type TextbookParams = {
   ageWeights: AgeUsageWeights;
   /** 이용자 1인당 월 PC방 이용시간. 총수요를 시간 단위로 바꾸는 계수. */
   hoursPerUserPerMonth: number;
+  /**
+   * 축척을 **원장 실측값으로 못 박을지** (2026-09-21 채택. 사용자 지시).
+   *
+   * true면 `fitHoursPerUser`가 역산을 안 하고 `hoursPerUserPerMonth`를 그대로 돌려준다.
+   * 그전에는 독점매장 실측 가동률에서 **역산**했는데, 그러면 축척 하나가 두 일을 겸했다.
+   *   (가) 한 사람이 한 달에 몇 시간 쓰나        ← 가맹점 원장으로 **실측 가능**
+   *   (나) 수요 추정이 몇 배 틀렸나(이용률표·반경) ← 못 잰다
+   * (가)를 실측으로 못 박으면 남는 어긋남이 곧 (나)가 되어 **수요식 검증 경로가 열린다.**
+   *
+   * 값 8.20h의 근거: 가맹점 건별 매출원장 8곳 중 **오픈 1년 안** 4곳의 평균
+   * (광주첨단 8.58 · 문산 9.39 · 증평 7.88 · 발산역 6.95). `_ledgerPerUser.test.ts`.
+   * ⚠️ 1년 초과 4곳은 평균 11.58h로 1.41배 크다(단골 축적). 평가창이 오픈 1년이라
+   *    **섞으면 안 된다** — 섞은 값(11.58)으로 재면 편향이 +3.02%p로 혼자 튄다.
+   *
+   * 못 박아도 성적으로 치르는 값이 없다는 게 채택 근거다(`_scaleMeasured.test.ts`,
+   * 2026-09-21): 역산 8.3854h에서 MAE 3.874%p → 실측 8.20h에서 3.836%p.
+   * 실측 범위(6.95~9.39) 전체에서 3.82~4.11%p로 **성적이 축척에 둔감하다.**
+   *
+   * ⚠️ 원장이 늘면 이 값을 갱신한다. 되돌리려면 false로 두면 옛 역산으로 돌아간다.
+   */
+  hoursPerUserFixed: boolean;
   /** 점유율에서 경쟁력격차를 얼마나 세게 볼지. 1이면 기존 구조와 같다. */
   gapExponent: number;
   /**
@@ -678,7 +699,10 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 연령가중 자체는 남녀 이용률을 지역 성비로 섞어 그때그때 만든다(blendUsageByGender).
   // 여기 값은 성비를 모를 때(남녀 1:1)의 기본값이다.
   ageWeights: blendUsageByGender(0.5),
-  hoursPerUserPerMonth: 1.0,
+  // 원장 실측 — 오픈 1년 안 4곳 평균(2026-09-21). 아래 hoursPerUserFixed가 true라 이 값이
+  // 그대로 쓰인다. 그전에는 여기 1.0을 두고 독점매장에서 역산했다.
+  hoursPerUserPerMonth: 8.20,
+  hoursPerUserFixed: true,
   gapExponent: 4.0,
   outsideOptionIp: 0,
   agglomerationFactor: 0,
@@ -1161,10 +1185,13 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
  * 들어갔다** — 독점 3곳 가동률이 화면에서 −3.2~−5.3% 어긋나 보이던 원인이 이것이다.
  * 수요식은 멀쩡했는데 환산층 오차를 대신 뒤집어쓰고 있었다.
  *
- *   1) hoursPerUserPerMonth ← 독점매장 **실측 가동률**   (fitHoursPerUser)
+ *   1) hoursPerUserPerMonth ← **가맹점 원장 실측** 8.20h  (2026-09-21부터. 안 맞춘다)
  *   2) productUnitPrice     ← **전 매장** 실매출·실측가동률 (fitProductUnitPrice)
  *
  * 순서가 중요하다. 1)을 먼저 정해 가동률을 고정한 뒤, 2)가 남은 몫만 맡는다.
+ *
+ * ⚠️ 1)은 2026-09-16~09-21 사이 독점매장 실측 가동률에서 **역산**했다. 지금은 원장으로
+ *    직접 재서 못 박는다 — 근거는 `hoursPerUserFixed` 타입 주석. `false`로 두면 옛 역산.
  */
 
 /** 독점매장이 있으면 거기서만 고른다. 없으면 전체를 쓴다. */
@@ -1182,15 +1209,23 @@ function calibrationTarget<T extends { input: TextbookInput }>(rows: T[]): T[] {
 const logMean = (xs: number[]) => Math.exp(xs.reduce((a, b) => a + b, 0) / xs.length);
 
 /**
- * 수요 축척(hoursPerUserPerMonth)을 **독점매장 실측 가동률**에 맞춘다.
+ * 수요 축척(hoursPerUserPerMonth)을 정한다.
  *
- * 실측 가동률이 하나도 없으면 매출로 떨어진다(예전 방식). 그 경우 가동률과 매출을 한 축척이
+ * **2026-09-21부터 기본은 '안 맞추는 것'이다** — `hoursPerUserFixed: true`면 원장 실측값을
+ * 그대로 돌려준다. 1인당 이용시간은 가맹점 원장으로 **직접 잴 수 있는 값**이라, 역산으로
+ * 구하면 잴 수 있는 것을 굳이 추정하고 그 자리에 수요식 오차까지 숨기게 된다.
+ * 근거와 값은 `hoursPerUserFixed` 타입 주석에 있다.
+ *
+ * 아래는 `hoursPerUserFixed: false`일 때의 옛 경로다 — 독점매장 **실측 가동률**에 맞춘다.
+ * 실측 가동률이 하나도 없으면 매출로 떨어진다(더 옛 방식). 그 경우 가동률과 매출을 한 축척이
  * 겸하게 되므로 위에 적은 되밀림이 다시 생긴다 — 반환값만 보고 넘어가지 말 것.
  */
 export function fitHoursPerUser(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): number {
+  // 원장 실측으로 못 박은 상태 — 자료에 맞추지 않는다. 이게 기본이다.
+  if (p.hoursPerUserFixed) return p.hoursPerUserPerMonth;
   const target = calibrationTarget(rows);
 
   const byUtil: number[] = [];
@@ -1281,11 +1316,18 @@ export type TextbookScore = {
   within10: number | null;
   within20: number | null;
   maxAbsErr: number | null;
-  /** 배율까지 맞춘 뒤의 hoursPerUserPerMonth. 화면에 그대로 보여준다. */
+  /**
+   * 실제로 쓰인 hoursPerUserPerMonth. 화면에 그대로 보여준다.
+   * `hoursPerUserFixed`면 원장 실측값이 그대로 나오고, 끄면 옛 역산값이 나온다.
+   */
   fittedHoursPerUser: number;
   /** 전 매장 실측으로 구한 productUnitPrice(상품몫, 원/PC·시간). 화면에 그대로 보여준다. */
   fittedProductUnitPrice: number;
-  /** 수요 축척을 실측 가동률로 맞췄는지. false면 매출로 떨어진 것이라 두 층이 다시 엉킨다. */
+  /**
+   * 수요 축척이 **매출로 떨어지지 않았는지**. false면 가동률과 매출을 한 축척이 겸하게 되어
+   * 두 층이 다시 엉킨다(화면에 경고를 띄운다).
+   * 원장 실측으로 못 박은 상태(`hoursPerUserFixed`)면 그럴 일이 없으므로 항상 true다.
+   */
   scaledOnUtilization: boolean;
   /** 가동률 성적 — 실측 가동률이 있는 매장만. 매출과 따로 봐야 층별 판정이 된다. */
   utilizationMape: number | null;
@@ -1315,10 +1357,10 @@ export function scoreTextbook(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
 ): TextbookScore {
-  // 축척 둘을 맞춘다. 1) 수요 축척은 **독점** 실측 가동률에(수요는 직접 관측이 안 되므로),
-  // 2) 상품몫은 **전 매장** 실측 가동률로 직접 측정한다(산식을 안 거치므로 독점 제약이 없다).
+  // 축척 둘. 1) 수요 축척은 **가맹점 원장 실측**으로 못 박혀 있다(2026-09-21부터. 그전에는
+  // 독점 실측 가동률에서 역산했다), 2) 상품몫은 **전 매장** 실측 가동률로 직접 측정한다.
   const fitted = fitHoursPerUser(rows, p);
-  const scaledOnUtilization = rows.some((r) => (r.input.actualUtilization ?? 0) > 0);
+  const scaledOnUtilization = p.hoursPerUserFixed || rows.some((r) => (r.input.actualUtilization ?? 0) > 0);
   const withFit: TextbookParams = { ...p, hoursPerUserPerMonth: fitted };
   const fittedProductUnitPrice = fitProductUnitPrice(rows, withFit);
   const full: TextbookParams = { ...withFit, productUnitPrice: fittedProductUnitPrice };
