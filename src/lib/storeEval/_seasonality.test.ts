@@ -48,17 +48,36 @@ import type { Competitor } from "./types";
 const QSC_FILE = ".local-tools/qsc-scores.json";
 const describeIf = hasValidationSnapshot() ? describe : describe.skip;
 
-/** 개점 다음 달부터 12개월 — evaluationSalesPeriod.evaluationMonths와 같은 규칙. */
-function evalMonths(openedAt: string | null): string[] {
+const monthNo = (ym: string) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7));
+
+/**
+ * **목표값에 실제로 들어가는 달**을 돌려준다.
+ *
+ * ⚠️ 2026-09-21에 한 칸 틀렸다가 고쳤다. `evaluationSalesPeriod.evaluationMonths`는
+ *    개점월+1부터 12개월을 주는데, 목표값(`actualMonthlyRevenueAvg`)을 만드는
+ *    `calc.ts computeStabilizedPerformance`는 그보다 **한 달 늦게 시작한다**:
+ *
+ *      inWindow   = elapsedMonths 1~12   (개점월이 elapsed 0)
+ *      누적평균     = 그중 elapsedMonths >= 2   <- 1개월차는 오픈 효과가 커서 뺀다
+ *      단, 2개월차 이후가 아직 없으면 1개월차라도 쓴다(fallback)
+ *
+ *    이 함수는 그 규칙을 그대로 따른다. 저장된 목표 38곳과 전부(±0.5%) 맞는 걸 확인했다.
+ *    창을 한 칸 어긋나게 잡으면 어린 매장의 계절·램프 지수가 통째로 틀린다 —
+ *    진주혁신은 2026-07을 목표에 **안** 넣는데 넣는 줄 알고 계산했었다.
+ */
+function targetMonths(openedAt: string | null, have: Set<string>): { ym: string; elapsed: number }[] {
   const m = openedAt?.match(/^(\d{4})-(0[1-9]|1[0-2])/);
   if (!m) return [];
-  const start = Number(m[1]) * 12 + Number(m[2]) - 1;
-  return Array.from({ length: 12 }, (_, i) => {
-    const mm = start + i + 1;
-    return `${Math.floor(mm / 12)}-${String((mm % 12) + 1).padStart(2, "0")}`;
-  });
+  const open = Number(m[1]) * 12 + Number(m[2]);
+  const inWin: { ym: string; elapsed: number }[] = [];
+  for (let e = 1; e <= 12; e++) {
+    const mm = open + e;
+    const ym = `${Math.floor((mm - 1) / 12)}-${String(((mm - 1) % 12) + 1).padStart(2, "0")}`;
+    if (have.has(ym)) inWin.push({ ym, elapsed: e });
+  }
+  const from2 = inWin.filter((x) => x.elapsed >= 2);
+  return from2.length ? from2 : inWin;
 }
-const monthNo = (ym: string) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7));
 const calMonth = (ym: string) => Number(ym.slice(5, 7));
 const med = (a: number[]) => { const b = [...a].sort((p, q) => p - q); return b[Math.floor(b.length / 2)]; };
 const mean = (a: number[]) => a.reduce((p, q) => p + q, 0) / a.length;
@@ -179,16 +198,19 @@ describeIf("계절 — 목표값에 섞인 성수기", () => {
         if (!m.opened || !m.target || !(m.target > 0) || (m.months ?? 0) < 12) continue;
         const sv = sales.get(code);
         if (!sv) continue;
-        const win = evalMonths(m.opened);
-        const ym = win[n - 1];
-        const rev = ym ? sv.get(ym) : undefined;
+        const have = new Set(sv.keys());
+        // 개점월 + n = elapsed n 인 달
+        const om = m.opened.match(/^(\d{4})-(0[1-9]|1[0-2])/);
+        if (!om) continue;
+        const mm = Number(om[1]) * 12 + Number(om[2]) + n;
+        const ym = `${Math.floor((mm - 1) / 12)}-${String(((mm - 1) % 12) + 1).padStart(2, "0")}`;
+        const rev = sv.get(ym);
         if (rev == null) continue;
-        // 목표도 같은 방식으로 계절 보정한다 — 분모가 안 바뀌면 비교가 안 된다.
-        const wv = win.map((w) => ({ w, v: sv.get(w) })).filter((x) => x.v != null);
-        if (wv.length < 6) continue;
-        const tgtAdj = mean(wv.map((x) => x.v! / idxFor(m, x.w)));
-        r.push(rev / mean(wv.map((x) => x.v!)));
-        a.push((rev / idxFor(m, ym)) / tgtAdj);
+        // 분모는 **목표값을 만드는 달들**이다(elapsed 2~12). 창을 맞춰야 비교가 된다.
+        const tm = targetMonths(m.opened, have);
+        if (tm.length < 6) continue;
+        r.push(rev / mean(tm.map((x) => sv.get(x.ym)!)));
+        a.push((rev / idxFor(m, ym)) / mean(tm.map((x) => sv.get(x.ym)! / idxFor(m, x.ym))));
       }
       if (r.length < 5) continue;
       if (n === 1) { raw2.push(...r); adj2.push(...a); }
@@ -217,8 +239,8 @@ describeIf("계절 — 목표값에 섞인 성수기", () => {
       if (e == null || p == null) continue;
       const sv = sales.get(code);
       if (!sv) continue;
-      // 목표에 실제로 들어간 달 = 평가창 중 매출이 있는 달
-      const used = evalMonths(m.opened).filter((w) => sv.get(w) != null);
+      // 목표에 **실제로 들어간 달** (elapsed 2~12, 없으면 1~12)
+      const used = targetMonths(m.opened, new Set(sv.keys())).map((x) => x.ym);
       if (!used.length) continue;
       // 그 달들의 평균 계절 지수로 목표를 나눈다(= 연평균 수준으로 되돌린다).
       const k = mean(used.map((w) => idxFor(m, w)));
@@ -260,13 +282,15 @@ describeIf("계절 — 목표값에 섞인 성수기", () => {
         if (!m.opened || (m.months ?? 0) < 12) continue;
         const sv = sales.get(code);
         if (!sv) continue;
-        const win = evalMonths(m.opened);
-        const ym = win[n - 1];
-        const rev = ym ? sv.get(ym) : undefined;
+        const om = m.opened.match(/^(\d{4})-(0[1-9]|1[0-2])/);
+        if (!om) continue;
+        const mm = Number(om[1]) * 12 + Number(om[2]) + n;
+        const ym = `${Math.floor((mm - 1) / 12)}-${String(((mm - 1) % 12) + 1).padStart(2, "0")}`;
+        const rev = sv.get(ym);
         if (rev == null) continue;
-        const wv = win.map((w) => ({ w, v: sv.get(w) })).filter((x) => x.v != null);
-        if (wv.length < 6) continue;
-        a.push((rev / idxFor(m, ym)) / mean(wv.map((x) => x.v! / idxFor(m, x.w))));
+        const tm = targetMonths(m.opened, new Set(sv.keys()));
+        if (tm.length < 6) continue;
+        a.push((rev / idxFor(m, ym)) / mean(tm.map((x) => sv.get(x.ym)! / idxFor(m, x.ym))));
       }
       if (a.length >= 5) ramp.set(n, med(a));
     }
@@ -284,11 +308,10 @@ describeIf("계절 — 목표값에 섞인 성수기", () => {
       if (e == null || p == null) continue;
       const sv = sales.get(code);
       if (!sv) continue;
-      const win = evalMonths(m.opened);
-      const used = win.map((w, i) => ({ w, i: i + 1, v: sv.get(w) })).filter((x) => x.v != null);
+      const used = targetMonths(m.opened, new Set(sv.keys()));
       if (!used.length) continue;
-      const ks = mean(used.map((x) => idxFor(m, x.w)));               // 계절
-      const kr = mean(used.map((x) => ramp.get(x.i) ?? 1));           // 램프
+      const ks = mean(used.map((x) => idxFor(m, x.ym)));              // 계절
+      const kr = mean(used.map((x) => ramp.get(x.elapsed) ?? 1));     // 램프
       out.push({ name: m.name, months: m.months ?? 0, err: e, e1: p / (m.target / ks) - 1, e2: p / (m.target / (ks * kr)) - 1, ks, kr });
     }
     const young = out.filter((x) => x.months <= 2), old = out.filter((x) => x.months > 2);
