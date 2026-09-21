@@ -147,4 +147,47 @@ describeIf("경쟁점 대수 결측을 운영 규칙으로 채우면", () => {
     console.log(`     성적은 "크게 나빠지지 않는지"만 확인하는 용도다.`);
     expect(A.length).toBe(B.length);
   });
+
+  // ── 사용자 의견 (2026-09-21) ────────────────────────────────────────────
+  //   *"실험실도 간략조사 90대로 치자. 근데 90대가 좀 많은 것 같긴 한데
+  //    일단 뭐 적용해봐. 75~90 이 사이에 답 있을 듯?"*
+  //
+  // 90은 적용했다(운영과 잣대 통일). 여기서는 **감도만 재고 표로 남긴다.**
+  // ⚠️ 이 값을 실험실에서만 바꾸면 잣대가 다시 갈라진다. 바꾸려면 운영 상수
+  //    `DEFAULT_UNSURVEYED_PC_COUNT`를 고쳐야 하고, 그건 운영 V62를 건드리는 일이라
+  //    **별도 승인**이 필요하다. 그래서 여기서는 고르지 않는다.
+  // ⚠️ 기존점은 8곳만 해당한다 — **이 표로 값을 정하면 안 된다.** 표본이 없다.
+  //    표의 쓸모는 "이 범위에서 성적이 뒤집힐 만큼 민감한가"를 보는 것뿐이다.
+  it("(3) 재고 표 — 기본대수 70~100 감도 (고르지 않는다)", () => {
+    const withDefault = (d: number): LabRow[] => before.map((r) => {
+      const s = storeByCode.get(r.input.storeCode);
+      const cs = (compsByCode.get(r.input.storeCode) ?? []).filter((c) => c.investigationStatus !== "경쟁점없음");
+      if (!s) return r;
+      const rivals = cs.map((c) => {
+        const real = Number(c.appliedPcCount ?? c.totalPcCount ?? 0);
+        // 실측이 있으면 그대로. 없고 운영 규칙이 채워 주는 경우만 d로 바꿔 본다.
+        const filled = computeCompetitorAppliedPcCount(c) ?? 0;
+        return {
+          ip: real > 0 ? real : (filled > 0 ? d : 0),
+          distanceM: rivalDistanceM(s, c),
+          parts: rivalQualityParts(c, settings),
+          name: c.name ?? null,
+        };
+      }).filter((x) => x.ip > 0);
+      return { ...r, input: { ...r.input, rivals } };
+    });
+    console.log(`\n[재고 표] 미조사 경쟁점 기본대수 감도 — 기존점 8곳만 바뀐다`);
+    console.log(`  기본대수     MAE       최악      편향      ±5%p     SD`);
+    for (const d of [0, 70, 75, 80, 85, 90, 95, 100]) {
+      const v = loo(withDefault(d));
+      const e = v.map((x) => Math.abs(x.pred - x.act));
+      console.log(`  ${(d === 0 ? "안 채움" : `${d}대`).padEnd(11)}${pp(mae(v)).padStart(9)}${pct(worst(v)).padStart(10)}` +
+        `${pp(bias(v)).padStart(10)}${(v.filter((x) => Math.abs(x.pred - x.act) <= 0.05).length + "/" + v.length).padStart(9)}` +
+        `${pp(sd(e)).padStart(10)}${d === 90 ? "   <- 지금(운영과 통일)" : ""}`);
+    }
+    console.log(`\n  ⚠️ 이 범위에서 MAE가 거의 안 움직이면 — **자료로는 못 고른다.**`);
+    console.log(`     그러면 90(운영과 같은 값)을 쓰는 게 맞다. 잣대를 둘로 가를 이유가 없다.`);
+    console.log(`     크게 움직이면 운영 상수를 같이 재검토할 근거가 된다(별도 승인 필요).`);
+    expect(before.length).toBeGreaterThan(30);
+  });
 });

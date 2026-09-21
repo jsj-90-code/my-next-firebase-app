@@ -13,6 +13,7 @@
 import {
   applyStandardOwnFacilityDefaults,
   computeCompetitorIp,
+  computeCompetitorAppliedPcCount,
   computeLocationScoreFromFacts,
 } from "@/lib/storeEval/calc";
 import { computeLabZoneComposition } from "@/lib/storeEval/labZoneComposition";
@@ -442,8 +443,18 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
         rivals: cs
           .filter((c) => c.investigationStatus !== "경쟁점없음")
           .map((c) => ({
-            // 경쟁점 pcCount는 전 문서가 0이다 — appliedPcCount/totalPcCount를 써야 한다.
-            ip: Number(c.appliedPcCount ?? c.totalPcCount ?? 0),
+            // ⚠️ **운영과 같은 함수를 쓴다** (2026-09-21 사용자 결정: "실험실도 간략조사 90대로 치자").
+            //    경쟁점 pcCount는 전 문서가 0이라 appliedPcCount/totalPcCount를 써야 하는데,
+            //    그 둘이 다 비는 경우가 있다. 그때 운영 V62는 조사수준 "간략"·"노후저경쟁력미조사"·
+            //    "오픈예정"을 간략_기본대수(90대)로 채우는데 **실험실만 그 규칙을 안 써서**
+            //    그런 경쟁점이 배열에서 통째로 빠지고 있었다(`.filter(ip > 0)`).
+            //    거리도 품질도 멀쩡한데 대수 한 칸 때문에 "경쟁이 없는 셈"이 되던 구멍이다.
+            //    결측 33곳 전부가 저 조건이라 이 함수 하나로 100% 채워진다(못 채움 0곳).
+            //    품질점수 쪽이 이미 같은 원칙을 쓴다 — "잣대가 둘이면 비대칭이 또 생긴다".
+            // ⚠️ 90대가 조금 많아 보인다는 의견이 있다(사용자: "75~90 이 사이에 답 있을 듯").
+            //    감도는 `_rivalPcDefault.test.ts`가 재고 표로 찍는다. 바꾸려면 운영 상수
+            //    `DEFAULT_UNSURVEYED_PC_COUNT`를 건드려야 하므로 **별도 승인**이 필요하다.
+            ip: computeCompetitorAppliedPcCount(c) ?? 0,
             distanceM: rivalDistanceM(s, c),
             parts: rivalQualityParts(c, settings),
             // 화면 표시용. 계산에는 안 쓰지만 **모델이 든 배열에 같이 실어야** 화면이
@@ -632,8 +643,9 @@ export function buildLabCandidateRows({
         rivals: cs
           .filter((x) => x.investigationStatus !== "경쟁점없음")
           .map((x) => ({
-            // 경쟁점 pcCount는 전 문서가 0이다 — appliedPcCount/totalPcCount를 써야 한다.
-            ip: Number(x.appliedPcCount ?? x.totalPcCount ?? 0),
+            // 기존점 쪽과 **같은 함수**를 쓴다(위 주석 참고). 후보지가 더 크게 영향받는다 —
+            // 결측 25곳이 후보지에 몰려 있어서, 안 채우면 예측이 한쪽(위로)으로 밀린다.
+            ip: computeCompetitorAppliedPcCount(x) ?? 0,
             distanceM: rivalDistanceM(c, x),
             parts: rivalQualityParts(x, settings),
             name: x.name ?? null,
