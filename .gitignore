@@ -507,3 +507,15 @@ src/**/_*.test.ts
 #    영월은 θ=1.5부터 이미 잘린다(입지배율 2.054 탓이 크다).
 #    즉 잘림의 주범은 θ만이 아니라 **입지배율**이기도 하다.
 !src/lib/storeEval/_qualityExponentDown.test.ts
+
+# 2026-09-21 — Astra(Codex)가 남긴 하네스 넷. 토큰 소진으로 멈춰서 Claude가 이어받았다.
+# 산식이 바뀌며(감쇠 R200 λ200 · 지수 눈금 보정 · 미조사 경쟁점 90대) 잠금장치가 걸려
+# 세 파일을 고쳤다: 감쇠 단언값 갱신 · 손으로 베낀 감쇠식을 `rivalDistanceWeight`로 교체 ·
+# 경쟁점 필터를 운영과 같은 `computeCompetitorAppliedPcCount`로 교체.
+# ⚠️ 각 파일 머리에 적힌 Astra의 **기준선 수치는 옛 산식에서 잰 것**이라 지금 출력과 다르다.
+#    다시 돌려 새로 적어야 한다. 사전 등록한 관문·가설은 **손대지 않았다.**
+!src/lib/storeEval/_utilizationObjective.test.ts
+!src/lib/storeEval/_utilizationAblation.test.ts
+!src/lib/storeEval/_rivalDirectionOuter.test.ts
+!src/lib/storeEval/_shareLoyaltyFloor.test.ts
+!src/lib/storeEval/_demandCeilingDiagnosis.test.ts
