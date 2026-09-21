@@ -52,8 +52,11 @@ const cov = (a: number[], b: number[]) => {
   return mean(a.map((_, i) => (a[i] - ma) * (b[i] - mb)));
 };
 const sdOf = (a: number[]) => Math.sqrt(varOf(a));
+const corr = (a: number[], b: number[]) => cov(a, b) / (sdOf(a) * sdOf(b));
 const pp = (v: number, d = 2) => `${(v * 100).toFixed(d)}%p`;
 const MONTH_HOURS = 24 * 30;
+/** n=38 단일 유의선. ⚠️ 여러 개를 훑으면 ±0.41까지 우연히 나온다(`_schoolInflow` 4절). */
+const SIG = 0.32;
 
 describeIf("가동률 과장은 어느 항이 만드나", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -188,6 +191,104 @@ describeIf("가동률 과장은 어느 항이 만드나", () => {
     console.log(`\n  ⚠️ 한 항만 눌러서 전부 누른 것만큼 좋아지면 **그 항이 과장의 주범**이다.`);
     console.log(`     아무 항도 혼자서 못 따라가면 과장은 **특정 항이 아니라 구조**에서 온다.`);
     expect(U.length).toBeGreaterThan(25);
+  });
+
+  // ── ⚠️ (1)(2)의 분해에 결함이 있었다 (2026-09-21, 같은 세션에서 발견) ──────
+  //
+  // D = log(수요시간 ÷ (자사PC x 720)) 와 S = log(자사PC ÷ (자사PC + 경쟁가중)) 에는
+  // **자사PC가 양쪽에 들어가 서로 약분된다:**
+  //
+  //   D + S = log(수요시간) − log(자사PC x 720) + log(자사PC) − log(자사PC + 경쟁가중)
+  //         = log(수요시간) − log(자사PC + 경쟁가중) − log(720)
+  //
+  // 그래서 2Cov(D,S)=−0.169라는 "상쇄"의 상당 부분이 **쪼개는 방식이 만든 가짜**다.
+  // Var(D)=229%·Var(S)=165% 같은 숫자도 그 때문에 부풀려졌다.
+  // "두 큰 수를 빼서 작은 잔차를 만든다"는 내 앞선 진단은 **이 인공물을 보고 한 말**이다.
+  //
+  // 겸사겸사 알게 된 것 하나 — 실험실 산식은 이미 운영 V62의 `computeIpPerDemand`와
+  // **같은 형태**다(수요 ÷ 총IP). 두 단계로 쪼개 보일 뿐 대수적으로 하나다.
+  // 그래서 "합치면 어떻게 되나"는 물을 필요가 없다. 이미 합쳐져 있다.
+  //
+  // 겹치지 않는 올바른 분해는 이것이다:
+  //   log(가동률) = log(수요시간) − log(자사PC + 경쟁가중) + log(입지배율) − log(720)
+  //                 └─ H 수요 ─┘   └──── T 공급 ────┘   └── L 입지 ──┘
+  it("(4) ⭐ 분해를 다시 한다 — 수요(H) vs 공급(T) vs 입지(L)", () => {
+    const U = T.filter((x) => !x.capped && !x.shareCapped);
+    // D = log(수요시간) − log(pc x 720) · S = log(pc) − log(pc+경쟁) 이므로
+    //   H = log(수요시간) = D + log(pc x 720)
+    //   T항 = log(pc + 경쟁가중) = log(pc) − S
+    // pc를 되살리려면 원본이 필요하다 — base에서 다시 읽는다.
+    const pcOf = new Map(base.map((r) => [r.input.storeName ?? r.input.storeCode, r.input.pcCount ?? 0]));
+    const H: number[] = [], Tsup: number[] = [], L: number[] = [], A: number[] = [], Pl: number[] = [];
+    for (const x of U) {
+      const pc = pcOf.get(x.n) ?? 0;
+      if (!(pc > 0)) continue;
+      H.push(x.D + Math.log(pc * MONTH_HOURS));
+      Tsup.push(Math.log(pc) - x.S);
+      L.push(x.L);
+      A.push(Math.log(x.act));
+      Pl.push(Math.log(x.pred));
+    }
+    const vP = varOf(Pl);
+    console.log(`\n[올바른 분해] log(가동률) = H − T + L − log(720)   n=${H.length}`);
+    const recomposed = H.map((_, i) => H[i] - Tsup[i] + L[i] - Math.log(MONTH_HOURS));
+    console.log(`  되맞춤 확인: 최대 어긋남 ${Math.max(...recomposed.map((v, i) => Math.abs(v - Pl[i]))).toExponential(2)}`);
+    console.log(`\n  항            SD(log)    분산    전체 대비   실측과 상관   k*=Cov÷Var`);
+    for (const [k, v, sign] of [["H 수요", H, +1], ["T 공급(자사+경쟁)", Tsup, -1], ["L 입지", L, +1]] as [string, number[], number][]) {
+      // 부호를 반영한 기여도로 봐야 한다 — T는 빼는 항이다.
+      const eff = v.map((x) => sign * x);
+      console.log(`  ${k.padEnd(16)}${sdOf(v).toFixed(4)}${varOf(v).toFixed(4).padStart(9)}${(varOf(v) / vP * 100).toFixed(0).padStart(11)}%` +
+        `${corr(eff, A).toFixed(3).padStart(14)}${(cov(eff, A) / varOf(eff)).toFixed(3).padStart(13)}`);
+    }
+    const negT = Tsup.map((x) => -x);
+    console.log(`\n  공분산(부호 반영): 2Cov(H,−T) ${(2 * cov(H, negT)).toFixed(4)} · 2Cov(H,L) ${(2 * cov(H, L)).toFixed(4)} · 2Cov(−T,L) ${(2 * cov(negT, L)).toFixed(4)}`);
+    const sum = varOf(H) + varOf(Tsup) + varOf(L) + 2 * cov(H, negT) + 2 * cov(H, L) + 2 * cov(negT, L);
+    console.log(`  합계 ${sum.toFixed(4)} vs Var(log 예측) ${vP.toFixed(4)}  ${Math.abs(sum - vP) < 1e-9 ? "**일치**" : "❌"}`);
+    console.log(`\n  H와 T의 상관 r = ${corr(H, Tsup).toFixed(3)} — 양수면 **수요 많은 곳에 공급도 많다**(시장이 스스로 맞춘다).`);
+    console.log(`  ⚠️ 앞의 (1)절 숫자(Var 229%/165%, 2Cov(D,S)=−0.169)는 자사PC가 양쪽에 들어간`);
+    console.log(`     **인공물**이다. 이 표가 맞는 그림이다.`);
+    expect(Math.abs(sum - vP)).toBeLessThan(1e-9);
+  });
+
+  it("(5) ⭐ 산식이 강제하는 지수 1이 맞나 — 자료가 원하는 지수", () => {
+    // 지금 산식은 가동률 ∝ (수요 ÷ 총공급)^1 을 **강제**한다. 지수를 자유롭게 두면?
+    //   log(실측) = a + b x log(수요 ÷ 총공급) + c x log(입지)
+    // b < 1이면 산식이 그 비에 **과하게 반응**하는 것이다. 그게 과장의 정체다.
+    // ⚠️ 이건 계수를 고르자는 제안이 아니라 **진단**이다. b가 1에서 얼마나 먼지를 잰다.
+    const U = T.filter((x) => !x.capped && !x.shareCapped);
+    const pcOf = new Map(base.map((r) => [r.input.storeName ?? r.input.storeCode, r.input.pcCount ?? 0]));
+    const X: number[] = [], Lx: number[] = [], A: number[] = [];
+    for (const x of U) {
+      const pc = pcOf.get(x.n) ?? 0;
+      if (!(pc > 0)) continue;
+      X.push(x.D + x.S);            // = log(수요시간 ÷ 총공급) − log(720)
+      Lx.push(x.L);
+      A.push(Math.log(x.act));
+    }
+    const b1 = cov(X, A) / varOf(X);
+    console.log(`\n[강제된 지수 검사] 지금 산식은 b=1, c=1을 강제한다`);
+    console.log(`  단순회귀  log(실측) = a + b x log(수요÷총공급)`);
+    console.log(`    b = ${b1.toFixed(3)}   (산식은 1을 쓴다)  ·  r = ${corr(X, A).toFixed(3)}${Math.abs(corr(X, A)) > SIG ? " *" : ""}`);
+    console.log(`    → 산식이 이 비에 **${(1 / Math.max(1e-6, b1)).toFixed(1)}배 과하게 반응**한다`);
+    // 입지를 같이 넣은 2변수 회귀 (정규방정식)
+    const n = X.length;
+    const mX = mean(X), mL = mean(Lx), mA = mean(A);
+    const sxx = mean(X.map((v) => (v - mX) ** 2)), sll = mean(Lx.map((v) => (v - mL) ** 2));
+    const sxl = cov(X, Lx), sxa = cov(X, A), sla = cov(Lx, A);
+    const det = sxx * sll - sxl * sxl;
+    const b = (sll * sxa - sxl * sla) / det;
+    const c = (sxx * sla - sxl * sxa) / det;
+    console.log(`\n  2변수회귀  log(실측) = a + b x log(수요÷총공급) + c x log(입지배율)`);
+    console.log(`    b = ${b.toFixed(3)} (산식 1) · c = ${c.toFixed(3)} (산식 1) · n = ${n}`);
+    const pred = X.map((v, i) => mA + b * (v - mX) + c * (Lx[i] - mL));
+    const ss = 1 - mean(pred.map((v, i) => (v - A[i]) ** 2)) / varOf(A);
+    console.log(`    설명력 R² = ${ss.toFixed(3)}`);
+    console.log(`\n  ⚠️ b가 1보다 훨씬 작으면 — **지금 산식은 수요÷공급 비를 과하게 믿는다.**`);
+    console.log(`     그게 1.55배 과장의 구조적 정체다. 출력에 수축을 거는 것과 같은 효과지만,`);
+    console.log(`     **뜻이 있는 자리**(비에 대한 반응 강도)에 걸리므로 설명할 수 있다.`);
+    console.log(`  ⚠️ 다만 b를 자료로 고르는 건 계수 추가다 — 사용자 확인 없이 안 넣는다.`);
+    console.log(`     그리고 이 b는 같은 38곳에서 잰 값이라 홀드아웃이 따로 필요하다.`);
+    expect(n).toBeGreaterThan(25);
   });
 
   it("(3) 상한에 걸리는 게 문제 아닌가 — 수요층 단독의 크기", () => {
