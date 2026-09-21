@@ -95,6 +95,9 @@ src/**/_*.test.ts
 # 2026-09-22 — 2km 경쟁점이 산식을 움직이는지 상한/하한으로 잰다. 인허가 자료가 들어오면
 # 그 판정이 이 구간 **어디에 떨어지는지**로 검증한다. 인허가 연결이 끝날 때까지 계속 돌린다.
 !src/lib/storeEval/_rival2kmBounds.test.ts
+# 2026-09-22 — 인허가 자료로 평가창 당시 영업 여부를 자동 판정한다. 대수 규칙 재고 표가
+# 여기 있고 **사용자 결정이 남아 있다**. 자료는 scripts/collectPcBangPermits.mjs가 뜬다.
+!src/lib/storeEval/_rival2kmPermit.test.ts
 # 2026-09-20 — 축척 기준점(독점 3곳)에 특수수요 배수를 거는 순환을 재는 하네스.
 # 사용자 결정이 남아 있어 다시 돌릴 일이 있다.
 !src/lib/storeEval/_anchorExemption.test.ts
