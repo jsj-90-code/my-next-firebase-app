@@ -54,6 +54,7 @@ import {
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
   utilizationByStore, type LabRow, type LabCandidateRow,
 } from "@/lib/storeEval/labInput";
+import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
   LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP, LAB_PERF_LOG_STEP_UP,
@@ -82,6 +83,15 @@ type Loaded = {
    * "실측 2.39점"과 "몰라서 평균 4.21점"을 사람이 헷갈리지 않는다.
    */
   qscByStore: Map<string, { qsc: number | null; management: number | null }>;
+  /**
+   * 매장코드 -> 평가창이 **얼마나 찼나** (2026-09-21).
+   *
+   * 실측 가동률은 평가창(개점 다음 달부터 12개월) 평균인데, 갓 연 매장은 몇 달치뿐이다.
+   * 그 값은 12개월 완주 평균과 **같은 자가 아니고**, 달이 갈수록 움직인다. 송도점이 그 경우다
+   * (2026-07 22% · 08 25%로 아직 오르는 중인데 2달 평균 23.5%를 실측으로 쓴다).
+   * 사용자가 사정을 알고 넣으라고 했으므로, 숨기지 말고 **표에 티를 낸다.**
+   */
+  windowFillByStore: Map<string, { filled: number; total: number }>;
   /** 하드웨어 내부비중 — 화면 설명이 이 값을 읽어 그린다(숫자를 글자로 박지 않는다). */
   specWeights: ModelSettings["specWeights"];
   /**
@@ -161,9 +171,17 @@ async function loadLabData(): Promise<Loaded | null> {
   const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode });
   // 모델에서 빠진 매장(송도점·동탄북광장점 등) — 2026-09-18 사용자 요청으로 화면에만 띄운다.
   // ⚠️ `rows`와 절대 합치지 말 것. 합치면 축척과 계수가 가격전쟁·운영문제까지 배운다.
+  // 2026-09-21 사용자 지시: *"검단사거리점은 아예 빼줘 표에서."*
+  // **폐점 매장은 이 표의 대상이 아니다.** 이 표는 "그 사정이 없었다면 얼마"를 보는 자리인데,
+  // 폐점은 사정이 아니라 매장이 없어진 것이다. 검단사거리점은 개점일조차 없어서 평가창이
+  // 0달이고(가동률 5% · 0%로 두 달치뿐) 산식에는 애초에 못 들어간다 — 표에만 보이고 있었다.
+  // ⚠️ 자료는 **안 지운다.** 기존점 목록·매출DB에는 그대로 남는다. 화면에서만 뺀다.
+  const closedStoreCodes = new Set(
+    stores.filter((s) => (s.franchiseStatus ?? "").includes("폐점")).map((s) => s.storeCode),
+  );
   const excludedRows = buildLabRows({
     stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode, which: "excluded",
-  });
+  }).filter((r) => !closedStoreCodes.has(r.input.storeCode));
 
   let current: Loaded["current"] = null;
   try {
@@ -202,12 +220,20 @@ async function loadLabData(): Promise<Loaded | null> {
   // ── 신규후보지 (2026-09-18) ────────────────────────────────────────────────
   // 조립은 labInput.ts 한 곳에 있다 — 하네스(_labCandidate.test.ts)가 **같은 함수**를 부른다.
   // 관리 점수는 기존점 행에 실제로 들어간 값의 평균을 그대로 넘긴다(여기서 다시 환산하지 않는다).
+  // 평가창이 얼마나 찼나 — 실측 가동률을 만든 달 수를 그대로 센다(위 타입 주석).
+  const windowFillByStore = new Map(stores.map((s) => {
+    const w = evaluationMonths(s.openedAt);
+    const filled = sales.filter((x) => x.storeCode === s.storeCode && w.includes(x.yearMonth)
+      && (x.pcSales ?? 0) + (x.productSales ?? 0) > 0).length;
+    return [s.storeCode, { filled, total: w.length }] as const;
+  }));
   const franchiseManagement = franchiseManagementFromRows(rows);
   const candRows = buildLabCandidateRows({
     candidates, compsByCode, locByCode, settings, roadviewByKey, franchiseManagement,
   });
 
-  return { rows, excludedRows, current, qsc, qscByStore, specWeights: settings.specWeights, candRows, franchiseManagement };
+  return { rows, excludedRows, current, qsc, qscByStore, windowFillByStore,
+    specWeights: settings.specWeights, candRows, franchiseManagement };
 }
 
 export default function LabPage() {
@@ -272,7 +298,7 @@ export default function LabPage() {
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
             scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
           <ParamSummary p={p} counts={counts} />
-          <StoreTable score={score} qscByStore={data.qscByStore} p={p} />
+          <StoreTable score={score} qscByStore={data.qscByStore} p={p} windowFill={data.windowFillByStore} />
           <ExcludedTable rows={data.excludedRows} p={fittedParams(p, score)} />
           <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
             franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount}
@@ -344,7 +370,8 @@ function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Load
         표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) ·
         1인당 월이용시간 {score.fittedHoursPerUser.toFixed(2)}시간
         {p.hoursPerUserFixed ? <> ← <b>가맹점 원장 실측</b>(안 맞춥니다)</> : <> ← 독점 실측가동률에서 역산</>} ·
-        상품몫 {Math.round(score.fittedProductUnitPrice).toLocaleString()}원/PC·시간 ← 실측으로 매번 맞춥니다.
+        상품몫 {Math.round(score.fittedProductUnitPrice).toLocaleString()}원/PC·시간
+        {p.productUnitPriceFixed ? <> ← <b>직접 측정으로 못 박은 값</b>(안 맞춥니다)</> : <> ← 실측으로 매번 맞춥니다</>}.
         {score.utilizationMape != null && (
           <> 가동률 자체의 오차는 {pct(score.utilizationMape)}입니다(실측 있는 {score.utilizationSampleCount}곳)
           — 매출 오차와 따로 봐야 어느 층이 틀렸는지 갈립니다.</>
@@ -918,9 +945,25 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             {" "}운영 산식(<code>usageRevenue.ts</code> <code>effectiveHourlyRate</code>)과 <b>같은 식</b>입니다.
           </div>
           <div className="mt-1">
-            상품몫은 <b>후보지에서 예측할 방법이 아직 없습니다.</b> PC대수 r=0.251 · 정가 r=−0.015 ·
-            가동률 r=0.118로 전부 유의선 0.354 미만입니다. 그래서 전 매장 같은 값(독점 실매출로
-            맞춘 상수)을 씁니다. 상품매출 비율은 이제 <b>파라미터가 아니라 결과</b>입니다.
+            상품몫은 <b>후보지에서 예측할 방법이 아직 없습니다.</b> 2026-09-21에 후보지에서 아는
+            변수 20개를 다시 훑었는데, 유의선(±0.41)을 넘은 건 <b>유동인구 하나</b>였고
+            (500m r=0.434) 그마저 <b>홀드아웃에서 상수를 못 이깁니다</b>(LOO 189 vs 204원,
+            95% 구간이 0을 품습니다). 뜻은 통하니 갈래를 닫지는 않고, 표본 45~50곳에서 다시 잽니다.
+            {" "}그래서 전 매장 같은 값 하나를 씁니다. 상품매출 비율은 <b>파라미터가 아니라 결과</b>입니다.
+          </div>
+          <div className="mt-1">
+            {p.productUnitPriceFixed ? (
+              <>
+                ⭐ 그 값은 <b>한 번 재서 못 박았습니다</b>(2026-09-21). 그전에는 표본 평균으로
+                <b> 매번 다시 맞췄는데</b>, 그러면 매장을 하나 넣고 빼는 것만으로 산식이 움직입니다.
+                {" "}출처도 바꿨습니다 — 전에는 &ldquo;총매출 − 정가로 만든 PC몫&rdquo;이라는 <b>잔차</b>였고,
+                지금은 매출DB의 <b>상품매출을 직접</b> 잰 값입니다. 평균은 같지만(둘 다 1,493원)
+                퍼짐이 다릅니다: 직접 SD 242원 vs 잔차 SD <b>328원</b>. 그 차이는 먹거리 차이가 아니라
+                <b> PC요금 모형이 틀린 만큼</b>이 상품몫으로 흘러든 것입니다.
+              </>
+            ) : (
+              <>⚠️ 지금은 그 값을 <b>표본 평균으로 매번 다시 맞추고</b> 있습니다 — 표본이 바뀌면 값도 바뀝니다.</>
+            )}
           </div>
         </li>
 
@@ -944,7 +987,11 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             {usersPerPc != null && <> (환산수요 <b>{usersPerPc.toLocaleString()}명</b>이 PC 1대를 100% 채우는 셈)</>}
           </div>
           <div className="mt-1">
-            ② 상품몫 <b>{Math.round(productUnitPrice).toLocaleString()}원</b> ← 독점매장 <b>실매출</b> (PC몫은 정가에서 바로 나오므로 맞출 게 없습니다)
+            ② 상품몫 <b>{Math.round(productUnitPrice).toLocaleString()}원</b>
+            {p.productUnitPriceFixed
+              ? <> ← 기존점 <b>상품매출 직접 측정</b>(2026-09-21). 자료에 맞추는 게 아니라 <b>못 박은 값</b>입니다</>
+              : <> ← 전 매장 <b>실매출</b>에서 매번 맞춥니다</>}
+            {" "}(PC몫은 정가에서 바로 나오므로 맞출 게 없습니다)
           </div>
           {!scaledOnUtilization && (
             <div className="mt-1 text-[var(--sl-warn,#b4530a)]">
@@ -1066,7 +1113,10 @@ function ParamSummary({ p, counts }: {
   );
 }
 
-function StoreTable({ score, qscByStore, p }: { score: TextbookScore; qscByStore: Loaded["qscByStore"]; p: TextbookParams }) {
+function StoreTable({ score, qscByStore, p, windowFill }: {
+  score: TextbookScore; qscByStore: Loaded["qscByStore"]; p: TextbookParams;
+  windowFill: Loaded["windowFillByStore"];
+}) {
   /** QSC가 있는 매장이 하나라도 있을 때만 두 열을 그린다. 없으면 빈 칸만 늘어난다. */
   const hasQsc = [...qscByStore.values()].some((v) => v.qsc != null);
   return (
@@ -1159,6 +1209,16 @@ function StoreTable({ score, qscByStore, p }: { score: TextbookScore; qscByStore
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.share)}</td>
                   <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
+                    {/* 평가창이 덜 찬 매장은 실측 가동률이 12개월 완주 평균이 아니다 — 티를 낸다. */}
+                    {(() => {
+                      const w = windowFill.get(r.storeCode);
+                      if (!w || w.total === 0 || w.filled >= w.total) return null;
+                      return (
+                        <b className="text-[var(--sl-warn,#b4530a)]" title="실측 가동률이 12개월 완주 평균이 아닙니다. 달이 차면 값이 움직입니다.">
+                          ⚠ 평가창 {w.filled}/{w.total}달{" "}
+                        </b>
+                      );
+                    })()}
                     {r.capped && "가동률 상한 "}
                     {r.missing.length > 0 && `자료없음: ${r.missing.join(", ")}`}
                   </td>
@@ -1301,8 +1361,9 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
         후보지는 <b>실매출이 없어 채점할 수 없습니다</b> — 그래서 오차 열이 없습니다. 대신
         축척 둘(1인 월 {p.hoursPerUserPerMonth.toFixed(2)}시간
         {p.hoursPerUserFixed ? " ← 원장 실측" : ` ← 기존 가맹점 ${existingCount}곳에서 역산`} ·
-        상품몫 {Math.round(p.productUnitPrice).toLocaleString()}원/PC·시간 ← 기존 가맹점
-        {" "}{existingCount}곳 실측)을 <b>그대로 받아</b> 예측만 합니다.
+        상품몫 {Math.round(p.productUnitPrice).toLocaleString()}원/PC·시간
+        {p.productUnitPriceFixed ? " ← 상품매출 직접 측정, 고정" : ` ← 기존 가맹점 ${existingCount}곳에서 매번 적합`})을
+        {" "}<b>그대로 받아</b> 예측만 합니다.
         후보지로 축척을 다시 맞추면 예측값으로 예측값을 맞추는 순환이 됩니다.
       </p>
       <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">

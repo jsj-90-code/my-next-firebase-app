@@ -404,6 +404,32 @@ export type BuildLabRowsArgs = {
  * 값을 지어내지 않는다 — 자료가 없는 항목은 null로 넘기고, 모델이 그 항을 중립(1배)으로
  * 빼도록 둔다. 빠진 자리를 평균이나 0으로 메우면 "모른다"가 "나쁘다"로 둔갑한다.
  */
+/**
+ * **운영 V62에서는 빼두고 실험실 표본에는 넣는 매장** (2026-09-21 사용자 결정).
+ *
+ * ── 왜 목록이 코드에 있나 ──────────────────────────────────────────────────
+ * `excludedFromModel`은 Firestore 필드인데 **운영 V62와 실험실이 같이 본다**
+ * (`calc.ts`의 `isEligibleForV61Training`). 그래서 실험실에 넣으려고 그 값을 false로 바꾸면
+ * **운영 산식의 학습 표본까지 바뀐다.** 실제로 2026-09-21에 그렇게 써 봤더니
+ * V62 MAPE가 8.83% → 9.79%로 오르고 후보지 예상매출이 −0.5~−3.9% 내려갔다(결재 숫자다).
+ *
+ * 사용자 결정: *"실험실에만 넣자."* 그래서 Firestore는 되돌리고, **실험실 쪽 판단만**
+ * 여기 목록으로 둔다. 필드를 새로 만들지 않은 이유는 운영 자료 모형과 크론을 안 건드리려는
+ * 것이고, 코드에 두면 git에 판단 근거가 남아 나중에 왜 넣었는지 추적된다.
+ *
+ * ⚠️ 여기 넣어도 `LabRow.excluded`는 **true 그대로다** — 그게 "운영에서 빠진 매장"이라는
+ *    사실이고, 화면이 그 값으로 사유를 그린다. 바꾸면 화면이 거짓말을 한다.
+ *
+ *   20250124421 동탄북광장점  운영 제외 사유 "오픈 후 운영관리 문제"
+ *   20260515431 송도점        운영 제외 사유 "오픈 후 경쟁점 500원 가격전쟁"
+ *     ⚠️ 송도점은 평가창 12달 중 **2달치뿐**이다(2026-07 22% · 08 25%, 아직 오르는 중).
+ *        사용자가 사정을 알고 넣으라고 했다. 성적이 달마다 흔들리면 이걸 먼저 의심할 것.
+ */
+export const LAB_ONLY_INCLUDED_STORE_CODES: ReadonlySet<string> = new Set([
+  "20250124421",
+  "20260515431",
+]);
+
 export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
   // QSC를 쓸 때만 계산한다. 가맹점 평균은 **환산한 뒤**의 평균이다 — 점수를 먼저 평균 내고
   // 환산하면 다른 값이 나온다(환산이 1~5로 잘리는 구간이 있어서).
@@ -414,7 +440,9 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
   for (const s of stores) {
     // 실매출이 없으면 어느 쪽이든 못 쓴다 — 채점도 대조도 안 된다.
     if (!s.actualMonthlyRevenueAvg) continue;
-    if (which === "excluded" ? !s.excludedFromModel : s.excludedFromModel) continue;
+    // 실험실 표본에 드는가 — 운영 플래그가 기본이고, 위 목록이 그걸 실험실에서만 뒤집는다.
+    const inLab = !s.excludedFromModel || LAB_ONLY_INCLUDED_STORE_CODES.has(s.storeCode);
+    if (which === "excluded" ? inLab : !inLab) continue;
     const code = existingStoreSourceCode(s);
     const cs = compsByCode.get(code) ?? [];
     const rv = roadviewByKey?.get(`existing:${s.storeCode}`) ?? null;
