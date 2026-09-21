@@ -330,6 +330,123 @@ describeIf("2km 경쟁점 — 인허가 자동 판정", () => {
     console.log(`     실험실에서만 바꿀 길을 따로 내야 한다.`);
   });
 
+  it("(3-다) ⭐ 규칙을 우리가 답을 아는 구간에서 채점한다 — 500m 안", () => {
+    // 500m 안은 **사람이 직접 조사했다**(경쟁점 DB 219곳). 거기서는 진실을 안다.
+    // 그러니 "인허가가 영업이라는데 실재하는가"와 "실체확인 규칙이 맞는가"를 채점할 수 있다.
+    // 성적에 맞추는 게 아니라 **진실 라벨로 규칙을 시험하는 것**이다.
+    const surveyed = (allCompetitors as unknown as { lat?: number; lng?: number; investigationStatus?: string }[])
+      .filter((c) => c.lat != null && c.lng != null && c.investigationStatus !== "경쟁점없음");
+    let real = 0, realInMap = 0, noSurvey = 0, noSurveyInMap = 0;
+    const realAreas: number[] = [], ghostAreas: number[] = [];
+    for (const r of rows) {
+      const c = coordOf(r.input.storeCode);
+      if (!c) continue;
+      const docs = (neighbor.sites[`existing:${r.input.storeCode}`] as { pcRooms?: { docs?: { lat: number; lng: number }[] } } | undefined)
+        ?.pcRooms?.docs ?? [];
+      for (const p of permits) {
+        const d = distanceM(c.lat, c.lng, p.lat, p.lng);
+        if (d > OFFICIAL_RADIUS_M || d <= SELF_M || p.close) continue;
+        const isReal = surveyed.some((q) => distanceM(q.lat!, q.lng!, p.lat, p.lng) <= 80);
+        const inMap = docs.some((q) => distanceM(q.lat, q.lng, p.lat, p.lng) <= 80);
+        if (isReal) { real++; if (inMap) realInMap++; if (p.area) realAreas.push(p.area); }
+        else { noSurvey++; if (inMap) noSurveyInMap++; else if (p.area) ghostAreas.push(p.area); }
+      }
+    }
+    const med = (a: number[]) => { const v = [...a].sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
+    console.log(`\n[500m 채점] 사람이 조사한 구간에서 인허가 "영업"을 채점한다`);
+    console.log(`  조사로 실재 확인   ${real}건 · 그중 지도에도 있다 ${realInMap}건 (${(realInMap / real * 100).toFixed(0)}%)`);
+    console.log(`  조사DB에 없음      ${noSurvey}건 · 그중 지도엔 있다 ${noSurveyInMap}건 · 지도에도 없다 ${noSurvey - noSurveyInMap}건`);
+    console.log(`  시설면적 중앙: 실재 ${med(realAreas).toFixed(0)}㎡ vs 조사DB에 없음 ${med(ghostAreas).toFixed(0)}㎡`);
+    console.log(`\n  ⭐ 읽는 법 — 보증되는 것과 안 되는 것이 다르다.`);
+    console.log(`     보증된다 : "지도에 있으면 실재한다"(${(realInMap / real * 100).toFixed(0)}%).`);
+    console.log(`     ⛔ 보증 안 된다 : "지도에 없으면 없다". 카카오는 **매장당 40건쯤에서 잘린다**`);
+    console.log(`        (전대후문 인허가 216건 vs 카카오 32건). 조밀한 도시 매장일수록 더 놓치므로,`);
+    console.log(`        "지도에 없으면 뺀다"를 쓰면 **도시 매장 경쟁점만 체계적으로 덜 세어진다.**`);
+    console.log(`     그리고 작은 곳은 유령이 아니라 **조사를 안 한 소형 PC방**일 수 있다`);
+    console.log(`     (우리 DB에 "노후저경쟁력미조사"가 따로 있다). 그러면 답은 빼는 게 아니라 작게 세는 것이다.`);
+    expect(real).toBeGreaterThan(50);
+  });
+
+  it("(3-라) ⛔ 면적으로 대수를 잡는 건 우리 자료로 검증이 안 된다", () => {
+    // 면적 -> 대수는 **기전은 있다**(PC 한 대가 차지하는 넓이는 물리적으로 정해져 있다).
+    // 그런데 계수를 우리 자료가 못 고른다. 이유 둘을 여기 박아 둔다 — 또 파지 않도록.
+    const pairs: { name: string; pc: number; area: number }[] = [];
+    for (const r of rows) {
+      const c = coordOf(r.input.storeCode);
+      const pc = r.input.pcCount;
+      if (!c || !pc) continue;
+      let best: { p: Permit; d: number } | null = null;
+      for (const p of permits) {
+        const d = distanceM(c.lat, c.lng, p.lat, p.lng);
+        if (d <= 60 && p.area && (!best || d < best.d)) best = { p, d };
+      }
+      if (best?.p.area) pairs.push({ name: r.input.storeName ?? r.input.storeCode, pc, area: best.p.area });
+    }
+    // 대당 2㎡ 미만은 등록 면적이 틀린 것이다(PC 한 대에 2㎡는 물리적으로 불가능하다).
+    const bad = pairs.filter((x) => x.area / x.pc < 2);
+    const ok = pairs.filter((x) => x.area / x.pc >= 2);
+    const n = ok.length;
+    const sx = ok.reduce((a, b) => a + b.area, 0), sy = ok.reduce((a, b) => a + b.pc, 0);
+    const sxx = ok.reduce((a, b) => a + b.area ** 2, 0), sxy = ok.reduce((a, b) => a + b.area * b.pc, 0);
+    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), icept = (sy - slope * sx) / n;
+    const my = sy / n;
+    const r2 = 1 - ok.reduce((a, b) => a + (b.pc - (slope * b.area + icept)) ** 2, 0)
+      / ok.reduce((a, b) => a + (b.pc - my) ** 2, 0);
+    console.log(`\n[면적->대수] 우리 매장 ${pairs.length}곳을 인허가에 맞대어 잰다`);
+    console.log(`  ⚠️ 등록면적이 말이 안 되는 곳 ${bad.length}곳 (대당 2㎡ 미만 — 예: ${bad[0]?.name} ${bad[0]?.pc}대에 ${bad[0]?.area}㎡)`);
+    console.log(`  남은 ${n}곳: 대수 = ${slope.toFixed(4)} × 면적 + ${icept.toFixed(1)}  ·  **R² = ${r2.toFixed(3)}**`);
+    console.log(`\n  ⛔ 못 고른다. 이유 둘:`);
+    console.log(`     1. 우리 매장은 전부 90~110대 규격형이라 **대수 방향으로 퍼져 있지 않다.**`);
+    console.log(`        기울기를 잴 지렛대가 없다(R²=${r2.toFixed(3)}).`);
+    console.log(`     2. 등록면적 자체가 ${(bad.length / pairs.length * 100).toFixed(0)}% 구멍이다.`);
+    console.log(`  => 우리 매장으로는 못 잰다. **경쟁점 쪽 표본으로 넘어간다**(아래 3-마).`);
+    expect(r2).toBeLessThan(0.5);   // 잘 되면 이 잠금이 깨지고, 그때 다시 본다
+  });
+
+  it("(3-마) ⭐ 경쟁점 표본에서는 면적→대수가 실재한다 — 다만 구간이 좁다", () => {
+    // 우리 매장은 규격형이라 못 쟀다. **조사한 경쟁점은 대수가 넓게 퍼져 있다**(61~400대).
+    // 거기서 재면 관계가 분명히 나온다.
+    const surveyed = (allCompetitors as unknown as {
+      name?: string; lat?: number; lng?: number; totalPcCount?: number | null; appliedPcCount?: number | null;
+    }[]).filter((c) => c.lat != null && c.lng != null);
+    const pairs: { pc: number; area: number }[] = [];
+    for (const c of surveyed) {
+      const pc = (c.totalPcCount && c.totalPcCount > 0 ? c.totalPcCount : null)
+        ?? (c.appliedPcCount && c.appliedPcCount > 0 ? c.appliedPcCount : null);
+      if (!pc) continue;
+      let best: { p: Permit; d: number } | null = null;
+      for (const p of permits) {
+        const d = distanceM(c.lat!, c.lng!, p.lat, p.lng);
+        if (d <= 80 && p.area && (!best || d < best.d)) best = { p, d };
+      }
+      if (best?.p.area) pairs.push({ pc, area: best.p.area });
+    }
+    // 대당 2㎡ 미만은 등록 면적이 틀린 것이다(위와 같은 자).
+    const ok = pairs.filter((x) => x.area / x.pc >= 2);
+    const n = ok.length;
+    const sx = ok.reduce((a, b) => a + b.area, 0), sy = ok.reduce((a, b) => a + b.pc, 0);
+    const sxx = ok.reduce((a, b) => a + b.area ** 2, 0), sxy = ok.reduce((a, b) => a + b.area * b.pc, 0);
+    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), icept = (sy - slope * sx) / n;
+    const mx = sx / n, my = sy / n;
+    const sdx = Math.sqrt(ok.reduce((a, b) => a + (b.area - mx) ** 2, 0) / n);
+    const sdy = Math.sqrt(ok.reduce((a, b) => a + (b.pc - my) ** 2, 0) / n);
+    const r = ok.reduce((a, b) => a + (b.area - mx) * (b.pc - my), 0) / n / (sdx * sdy);
+    const pcSorted = [...ok].map((x) => x.pc).sort((a, b) => a - b);
+    const areaSorted = [...ok].map((x) => x.area).sort((a, b) => a - b);
+    console.log(`\n[면적->대수 · 경쟁점] 대수 실측이 있고 인허가에 면적까지 붙은 ${pairs.length}곳`
+      + ` (등록면적 오류 ${pairs.length - n}곳 제외 -> ${n}곳)`);
+    console.log(`  대수 = ${slope.toFixed(4)} × 면적 + ${icept.toFixed(1)}   R² = `
+      + `${(r * r).toFixed(3)} · r = ${r.toFixed(3)}  (유의선 ±0.41 — **넘는다**)`);
+    console.log(`  표본 범위: 대수 ${pcSorted[0]}~${pcSorted[n - 1]}대 · 면적 ${areaSorted[0].toFixed(0)}~${areaSorted[n - 1].toFixed(0)}㎡`);
+    console.log(`\n  ⚠️ **그런데 쓸 수가 없다 — 구간이 안 맞는다.**`);
+    console.log(`     우리가 조사한 경쟁점은 **최소가 ${pcSorted[0]}대**다. 작은 곳은 조사를 안 했다.`);
+    console.log(`     그래서 절편 ${icept.toFixed(1)}대는 "조사할 만한 크기" 안에서만 뜻이 있다.`);
+    console.log(`     500m 밖 인허가의 면적 중앙은 49㎡라 **측정 구간 한참 아래**다.`);
+    console.log(`     거기에 이 식을 대면 ${(slope * 49 + icept).toFixed(0)}대가 나오는데 그건 외삽이다.`);
+    console.log(`  => 다음 과녁은 **소형 경쟁점의 대수**다. 그게 풀리면 2km가 바로 들어온다.`);
+    expect(Math.abs(r)).toBeGreaterThan(0.41);
+  });
+
   it("(4) 매장별로 얼마나 붙었나 — 독점이라던 3곳 포함", () => {
     console.log(`\n[매장별] 평가창 영업으로 판정된 ${OFFICIAL_RADIUS_M}m 밖 경쟁점`);
     console.log(`  매장                건수  유효경쟁IP   예측변화(가동률)`);
