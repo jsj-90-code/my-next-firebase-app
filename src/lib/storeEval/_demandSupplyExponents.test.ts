@@ -363,6 +363,48 @@ describeIf("수요와 공급의 지수를 따로 풀면", () => {
     console.log(`    1을 품나: b ${Math.max(...bs) >= 1 ? "품는다" : "**안 품는다**"} · c ${Math.max(...cs) >= 1 ? "품는다" : "**안 품는다**"}`);
     console.log(`\n    실무 뜻: b<1은 **"우리가 만든 수요·공급 지수가 매장 간 차이를 과장한다"**는 뜻이다.`);
     console.log(`    사용자 정리대로 이 층은 실측할 방법이 없으므로 **눈금을 실측에 맞춰 새기는 것**이 맞다.`);
+
+    // ── ⚠️ 사용자 물음(2026-09-21): "오차폭이 크게 개선되는데 최악이 어케 나빠지지?" ──
+    // 내 표에 **단위가 섞여 있었다.** SD는 %p(절대 차이)이고 최악은 상대%(실측 대비 비율)다.
+    // 가동률이 낮은 매장은 %p로 조금 틀려도 상대%로는 크게 틀린다. 둘 다 찍어서 가른다.
+    const nowM = loo({ p: 1, q: -1, c: 1 });
+    const candM = (() => {
+      const out: Out = [];
+      for (let i = 0; i < R.length; i++) {
+        const tr = R.filter((_, k) => k !== i);
+        const X = tr.map((x) => x.H - x.S), L = tr.map((x) => x.L), y = tr.map((x) => Math.log(x.act));
+        const sxx = varOf(X), sll = varOf(L), sxl = cov(X, L);
+        const det = sxx * sll - sxl * sxl;
+        const bb = (sll * cov(X, y) - sxl * cov(L, y)) / det;
+        const cc = (sxx * cov(L, y) - sxl * cov(X, y)) / det;
+        const aa = mean(y) - bb * mean(X) - cc * mean(L);
+        out.push({ n: R[i].n, pred: Math.exp(aa + bb * (R[i].H - R[i].S) + cc * R[i].L), act: R[i].act, p: bb, q: -bb, c: cc });
+      }
+      return out;
+    })();
+    const topRel = (v: Out) => [...v].sort((a, b) =>
+      Math.abs(b.pred - b.act) / b.act - Math.abs(a.pred - a.act) / a.act).slice(0, 4);
+    const topPp = (v: Out) => [...v].sort((a, b) => Math.abs(b.pred - b.act) - Math.abs(a.pred - a.act)).slice(0, 4);
+    console.log(`\n  ── "오차폭은 좋아지는데 최악이 나빠진다"의 정체 ──`);
+    console.log(`  ⚠️ 내 표에서 SD는 **%p**(절대 차이), 최악은 **상대%**(실측 대비)였다. 단위가 달랐다.`);
+    console.log(`\n  [최악 — 상대% 기준]`);
+    for (const [k, v] of [["지금 산식", nowM], ["채택 후보", candM]] as [string, Out][]) {
+      console.log(`    ${k}`);
+      for (const x of topRel(v)) {
+        console.log(`      ${x.n.padEnd(14)}실측 ${pct(x.act)} → 예측 ${pct(x.pred)}` +
+          `  상대 ${pct(Math.abs(x.pred - x.act) / x.act)}  ·  %p로는 ${pp(Math.abs(x.pred - x.act), 1)}`);
+      }
+    }
+    console.log(`\n  [최악 — %p 기준(같은 자로 견주기)]`);
+    for (const [k, v] of [["지금 산식", nowM], ["채택 후보", candM]] as [string, Out][]) {
+      const w = topPp(v);
+      console.log(`    ${k.padEnd(10)}최악 ${pp(Math.abs(w[0].pred - w[0].act), 1)} (${w[0].n})` +
+        `  ·  2위 ${pp(Math.abs(w[1].pred - w[1].act), 1)} (${w[1].n})` +
+        `  ·  3위 ${pp(Math.abs(w[2].pred - w[2].act), 1)} (${w[2].n})`);
+    }
+    console.log(`\n  ⚠️ **%p 자로 견주면 방향이 뒤집힐 수 있다.** 어느 자로 볼지는 실무 판단이다 —`);
+    console.log(`     "가동률 17%인 매장을 5%p 틀리는 것"과 "45%인 매장을 5%p 틀리는 것"을`);
+    console.log(`     같게 볼 것인가(=%p), 아니면 앞쪽을 더 나쁘게 볼 것인가(=상대%).`);
     expect(rows.length).toBe(9);
   });
 
