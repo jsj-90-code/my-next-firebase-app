@@ -826,6 +826,39 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               ±20% 58% → 61% · 최대오차 76% → 62%. 운영 산식(V62)의 사양 점수는 그대로입니다.
             </div>
           </div>
+          {/* 2026-09-21 — 눈금 보정을 채택하고도 화면이 이 단계를 아예 말하지 않고 있었다.
+              숫자는 전부 p에서 읽는다(글자로 박지 않는다). */}
+          {p.indexCalibration && (
+            <div className="mt-2 rounded border border-[var(--sl-line)] p-2">
+              <div className="font-semibold">그 다음 — 눈금을 실측에 맞춰 다시 새깁니다</div>
+              <div className="mt-1 font-mono text-[11px]">
+                가동률 = {p.indexCalibration.referenceUtilization}<sup>(1−{p.indexCalibration.ratioExponent})</sup>
+                {" "}× (수요 × 점유율 ÷ 용량)<sup>{p.indexCalibration.ratioExponent}</sup>
+              </div>
+              <div className="mt-1">
+                수요도 총공급도 <b>우리가 만든 지수</b>입니다 — 총공급은 경쟁점 PC에 품질비를
+                {" "}{p.qualityExponent}제곱해 더한 값이라 실측할 방법이 없고, 매장 간 차이를 과장합니다.
+                그래서 예측 전체를 <b>닻 {pct(p.indexCalibration.referenceUtilization)}</b>(기존점 실측
+                가동률의 기하평균) 쪽으로 당깁니다. 닻에서는 안 움직이고, 그보다 낮게 나온 건 올리고
+                높게 나온 건 내립니다. <b>매장마다 맞추는 게 아니라 전 매장 같은 곡선 하나</b>입니다.
+              </div>
+              <div className="mt-1">
+                지수 <b>{p.indexCalibration.ratioExponent}</b>는 <b>자료가 고른 값이 아니라 용도로 고른
+                값</b>입니다 — 자료는 이 값을 못 고릅니다(중첩 교차검증이 훈련평균과 같습니다).
+                낮출수록 평균 오차가 줄고, 높일수록 매장 간 차이를 크게 말합니다.
+                2026-09-21 저녁에 <b>0.327 → 0.45</b>로 올렸습니다: 가동률·매출의 <b>최악 오차가
+                둘 다 줄고</b>(13.2→11.9%p · 56.9→51.8%) 후보지 간격이 1.62→2.03배로 돌아옵니다.
+                대신 평균 오차가 가동률 0.35%p·매출 1.07%p 늘어납니다.
+              </div>
+              <div className="mt-1 text-[var(--sl-ink-soft)]">
+                입지는 지수 <b>{p.indexCalibration.locationExponent}</b>로 점유율에 곱합니다
+                (식에는 {p.indexCalibration.locationExponent}÷{p.indexCalibration.ratioExponent}로 넣고
+                뒤에서 전체를 {p.indexCalibration.ratioExponent}제곱하므로 최종 지수가
+                {" "}{p.indexCalibration.locationExponent}가 됩니다).
+                ⚠️ 이 보정은 <b>순위를 거의 안 바꿉니다</b> — 바뀌는 건 간격입니다.
+              </div>
+            </div>
+          )}
           <div className="mt-1">
             가동률 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
             (실측 월평균 최대가 46.5%, 월 최대의 최대가 52.0%).
@@ -1199,9 +1232,15 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
    * 떨어진다(창원상남 7.8% · 영월 8.6% · 울산삼산 13.5% · 춘천퇴계 16.9%).
    * 그 숫자들은 "그만큼 나쁘다"가 아니라 **"산식이 그만큼 벌린다"**일 수 있다.
    *
-   * 사용자 결정(2026-09-21): **산식은 안 고치고 경고만 띄운다.** 지수를 고치면
+   * 사용자 결정(2026-09-21 낮): **산식은 안 고치고 경고만 띄운다.** 지수를 고치면
    * (b=0.30·c=0.135) 평균은 좋아지지만 최악이 49 → 62%로 나빠지고, 그래도 '전부 평균'을
    * 유의하게 못 이기기 때문이다. 계수를 늘리는 대신 **읽는 사람이 알게** 하는 쪽을 택했다.
+   *
+   * ⚠️ **그날 저녁에 결정이 바뀌었다** — 지수 눈금 보정을 채택했고(b=0.327), 같은 날 밤
+   *    변별력 때문에 b를 0.45로 올렸다(`textbookModel`의 `indexCalibration` 주석).
+   *    그래서 위 "2.42배 넓게 퍼진다"는 **보정 전** 이야기다. 지금은 보정이 폭을 줄여
+   *    범위 밖 후보지가 0곳이라 이 경고가 안 뜬다. 경고는 그대로 남겨 둔다 —
+   *    표본이나 계수가 바뀌어 다시 범위 밖으로 나가면 그때 알려 줘야 한다.
    *
    * ⚠️ 이건 "산식이 틀렸다"는 표시가 아니다. 표본 38곳은 **우리가 골라서 연** 자리들이라
    *    가동률이 좁게 모여 있다(열위 표본은 영원히 안 나온다). 그러니 범위 밖은
@@ -1257,9 +1296,11 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
           <b> 실측</b> 가동률은 {pct(actualUtilRange.min)}~{pct(actualUtilRange.max)}인데, 이 후보지들의 예측은 그 밖입니다.
           {" "}<b>한 번도 관측한 적 없는 구간</b>이라 숫자를 그대로 믿으면 안 됩니다.
           <br />
-          이유: 가동률 자로 재 보니 후보지 예측이 기존점 실측보다 <b>2.42배 넓게 퍼집니다</b>.
-          산식이 &ldquo;동네 수요 ÷ 총공급&rdquo;에 <b>지수 1</b>을 쓰는데 자료가 원하는 값은 <b>0.37</b>이라,
-          차이를 실제보다 크게 벌립니다.
+          이유: &ldquo;동네 수요 ÷ 총공급&rdquo;은 <b>우리가 만든 지수</b>라 매장 간 차이를 실제보다 크게
+          벌립니다. 그래서 예측을 가운데로 당기는 보정을 먹이는데
+          {p.indexCalibration ? <> (지금 지수 <b>{p.indexCalibration.ratioExponent}</b>,
+          닻 {pct(p.indexCalibration.referenceUtilization)})</> : <> (지금은 <b>꺼져 있습니다</b>)</>},
+          그러고도 범위를 벗어났다면 당기기 전 값이 아주 멀었다는 뜻입니다.
           {" "}<b>그래서 범위 밖 숫자는 &ldquo;그만큼 나쁘다&rdquo;가 아니라 &ldquo;산식이 그만큼 벌린다&rdquo;일 수 있습니다.</b>
           <br />
           ⚠️ 다만 이건 산식이 틀렸다는 뜻이 아닙니다 — 기존점 {existingCount}곳은 <b>우리가 골라서 연 자리들</b>이라

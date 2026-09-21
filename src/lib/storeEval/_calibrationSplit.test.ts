@@ -85,7 +85,10 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
   const P = structuredClone(DEFAULT_TEXTBOOK_PARAMS);
   // 산식이 바뀌면 아래 수치가 낡으므로 잠금장치를 건다.
   expect(P.rivalDistanceDecay).toEqual({ plateauM: 200, scaleM: 200, weightFactor: .9593 });
-  expect(P.indexCalibration).toEqual({ ratioExponent: .327, locationExponent: .169, referenceUtilization: .3011 });
+  // ⚠️ 위 기록은 **b=0.327** 시절 값이다. 2026-09-21 저녁에 **0.45로 올렸다** — 자료가 아니라
+  //    변별력(용도)으로 고른 값이다(`_spreadChoice.test.ts`). 여기 2절의 "b=0.327을 그대로
+  //    두는 게 맞다"는 **자료가 못 고른다**는 뜻이었고, 그 판정은 그대로다.
+  expect(P.indexCalibration).toEqual({ ratioExponent: .45, locationExponent: .169, referenceUtilization: .3011 });
   expect(P.shareMode).toBe("quality");
   expect(P.outsideOptionIp).toBe(0);
   const B = P.indexCalibration!.ratioExponent, C = P.indexCalibration!.locationExponent;
