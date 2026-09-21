@@ -287,3 +287,7 @@ src/**/_*.test.ts
 # 하안금당사거리는 오송점과 같은 문제인데 경쟁점이 3곳이라 더 심하다.
 # **새 후보지를 등록할 때마다 돌릴 것.** 개점하면 늦는다.
 !src/lib/storeEval/_candidateRedFlags.test.ts
+
+# 2026-09-21 — 선점경쟁 점수 감도. `_osongLocationScores`가 N016에 박혀 있어 매장마다
+# 다시 만들게 돼서 일반화했다. 등급 경계(AA/A+/A)까지 같이 찍는다 — 그게 결재선이다.
+!src/lib/storeEval/_preemptionWhatIf.test.ts
