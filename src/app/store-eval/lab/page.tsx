@@ -275,7 +275,16 @@ export default function LabPage() {
           <StoreTable score={score} qscByStore={data.qscByStore} />
           <ExcludedTable rows={data.excludedRows} p={fittedParams(p, score)} />
           <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
-            franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount} />
+            franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount}
+            actualUtilRange={(() => {
+              // 기존점 **실측** 가동률의 범위. 후보지 예측이 이 밖이면 외삽 경고를 띄운다.
+              // ⚠️ 예측이 아니라 실측이어야 한다 — 예측 범위로 재면 "산식이 벌린 만큼"이
+              //    기준이 돼서 경고가 영영 안 뜬다(자기 자신을 기준 삼는 순환).
+              const v = data.rows
+                .map((r) => r.input.actualUtilization)
+                .filter((x): x is number => x != null && x > 0);
+              return v.length ? { min: Math.min(...v), max: Math.max(...v) } : null;
+            })()} />
           <RivalRecognition
             groups={[
               ...data.rows.map((r) => ({ kind: "기존점" as const, input: r.input })),
@@ -1161,12 +1170,31 @@ function ExcludedTable({ rows, p }: { rows: LabRow[]; p: TextbookParams }) {
 // ⚠️ **이 표에는 오차 열이 없다. 없는 게 맞다.** 후보지는 실매출이 아직 없어서 채점할
 //    대상이 자체가 없다. 나중에 "적중률이 왜 안 보이지" 하고 열을 만들지 말 것 — 만들려면
 //    개점 후 실매출이 쌓여 기존점으로 넘어간 뒤다(그때는 위 매장별 표가 잡는다).
-function CandidateTable({ rows, p, franchiseManagement, existingCount }: {
+function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUtilRange }: {
   rows: LabCandidateRow[];
   /** 기존점에서 **맞춰진 축척까지 먹인** 파라미터. 후보지로 다시 맞추지 않는다. */
   p: TextbookParams;
   franchiseManagement: number | null;
   existingCount: number;
+  /**
+   * 기존점 **실측** 가동률의 최소~최대 (2026-09-21 신설).
+   *
+   * ── 왜 이걸 표에 들고 오나 ────────────────────────────────────────────────
+   * 가동률 자로 산식을 다시 재 보니 **후보지 예측이 기존점 실측보다 2.42배 넓게** 퍼진다
+   * (SD(log) 0.459 vs 0.189). 13곳 중 4곳은 우리가 **한 번도 관측한 적 없는** 낮은 구간에
+   * 떨어진다(창원상남 7.8% · 영월 8.6% · 울산삼산 13.5% · 춘천퇴계 16.9%).
+   * 그 숫자들은 "그만큼 나쁘다"가 아니라 **"산식이 그만큼 벌린다"**일 수 있다.
+   *
+   * 사용자 결정(2026-09-21): **산식은 안 고치고 경고만 띄운다.** 지수를 고치면
+   * (b=0.30·c=0.135) 평균은 좋아지지만 최악이 49 → 62%로 나빠지고, 그래도 '전부 평균'을
+   * 유의하게 못 이기기 때문이다. 계수를 늘리는 대신 **읽는 사람이 알게** 하는 쪽을 택했다.
+   *
+   * ⚠️ 이건 "산식이 틀렸다"는 표시가 아니다. 표본 38곳은 **우리가 골라서 연** 자리들이라
+   *    가동률이 좁게 모여 있다(열위 표본은 영원히 안 나온다). 그러니 범위 밖은
+   *    "나쁘다"가 아니라 **"검증된 적 없다"**는 뜻이다.
+   * 근거: `_candidateUtilTrust.test.ts` · `_ratioExponent.test.ts`
+   */
+  actualUtilRange: { min: number; max: number } | null;
 }) {
   const computed = rows.map((r) => ({ row: r, b: computeTextbook(r.input, p) }))
     .sort((a, b) => (b.b.monthlyRevenue ?? 0) - (a.b.monthlyRevenue ?? 0));
@@ -1182,6 +1210,10 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount }: {
   }
   // 자료가 모자란 곳이 몇 곳인지 — 숫자를 글자로 박지 않고 여기서 세어 그린다.
   const shortCount = computed.filter((c) => c.b.missing.length > 0).length;
+  // 기존점 실측 가동률 범위 밖으로 나간 후보지 수. 같은 이유로 **세어서** 그린다.
+  const outOfRange = actualUtilRange == null ? 0 : computed.filter((c) =>
+    c.b.utilization != null && !c.b.capped
+    && (c.b.utilization < actualUtilRange.min || c.b.utilization > actualUtilRange.max)).length;
   return (
     <section className="mt-10">
       <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
@@ -1202,6 +1234,23 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount }: {
         자사 시설 빈칸은 결측이 아니라 <b>회사 표준 구성</b>으로 채웁니다.
         {shortCount > 0 && <> 지금 자료가 모자란 곳이 <b>{shortCount}곳</b> 있습니다(맨 오른쪽 열).</>}
       </p>
+      {/* 2026-09-21 — 가동률 외삽 경고. 사용자 결정으로 산식은 안 고치고 경고만 띄운다. */}
+      {actualUtilRange && outOfRange > 0 && (
+        <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs leading-relaxed text-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+          <b>🔴 예상 가동률 {outOfRange}곳이 검증 범위 밖입니다.</b> 기존 가맹점 {existingCount}곳의
+          <b> 실측</b> 가동률은 {pct(actualUtilRange.min)}~{pct(actualUtilRange.max)}인데, 이 후보지들의 예측은 그 밖입니다.
+          {" "}<b>한 번도 관측한 적 없는 구간</b>이라 숫자를 그대로 믿으면 안 됩니다.
+          <br />
+          이유: 가동률 자로 재 보니 후보지 예측이 기존점 실측보다 <b>2.42배 넓게 퍼집니다</b>.
+          산식이 &ldquo;동네 수요 ÷ 총공급&rdquo;에 <b>지수 1</b>을 쓰는데 자료가 원하는 값은 <b>0.37</b>이라,
+          차이를 실제보다 크게 벌립니다.
+          {" "}<b>그래서 범위 밖 숫자는 &ldquo;그만큼 나쁘다&rdquo;가 아니라 &ldquo;산식이 그만큼 벌린다&rdquo;일 수 있습니다.</b>
+          <br />
+          ⚠️ 다만 이건 산식이 틀렸다는 뜻이 아닙니다 — 기존점 {existingCount}곳은 <b>우리가 골라서 연 자리들</b>이라
+          가동률이 좁게 모여 있는 게 당연합니다. 범위 밖은 <b>&ldquo;나쁘다&rdquo;가 아니라 &ldquo;검증된 적 없다&rdquo;</b>는 뜻입니다.
+          순위는 참고가 되지만(r≈0.5) <b>폭은 과장돼 있습니다.</b>
+        </p>
+      )}
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
@@ -1229,6 +1278,18 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount }: {
                 <td className="px-3 py-2 text-right tabular-nums">
                   {pct(b.utilization)}
                   {b.capped && <span className="ml-1 text-xs text-amber-700 dark:text-amber-400" title="가동률 상한에 걸려 매출이 깎였다">상한</span>}
+                  {/* 외삽 경고 — 기존점 실측 범위 밖이면 검증된 적 없는 구간이다(2026-09-21). */}
+                  {actualUtilRange && b.utilization != null && !b.capped
+                    && (b.utilization < actualUtilRange.min || b.utilization > actualUtilRange.max) && (
+                    <span
+                      className="ml-1 text-xs font-semibold text-rose-700 dark:text-rose-400"
+                      title={`기존점 ${existingCount}곳의 실측 가동률은 ${pct(actualUtilRange.min)}~${pct(actualUtilRange.max)}입니다.`
+                        + ` 이 후보지 예측(${pct(b.utilization)})은 그 밖이라 검증된 적이 없는 구간입니다.`
+                        + ` "그만큼 나쁘다"가 아니라 "산식이 그만큼 벌린다"일 수 있으니 숫자를 그대로 믿지 마세요.`}
+                    >
+                      🔴 검증범위 밖
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{pct(b.share)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">
