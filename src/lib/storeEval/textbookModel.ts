@@ -542,7 +542,22 @@ export type TextbookParams = {
    *
    * null이면 옛 계단 동작(`effectiveRadiusM`)을 쓴다. **기본값은 null이고, 기각된 상태다.**
    */
-  rivalDistanceDecay: { plateauM: number; scaleM: number } | null;
+  /**
+   * ⚠️ `weightFactor` — **총량 정규화 상수** (2026-09-21 추가). 자의적 계수가 아니다.
+   *
+   * 감쇠를 켜면 plateauM 밖 경쟁점이 새로 세져 **총 경쟁량이 늘어난다**. 그런데 축척
+   * (hoursPerUserPerMonth)은 **독점매장(경쟁 0)에서만** 맞추므로 그 증가를 못 흡수하고,
+   * 전 매장이 통째로 아래로 밀린다. 2026-09-20에 이 설계가 실패한 이유가 바로 그것이다
+   * (`_rivalDecay` 대조군 p=0.995 — "거리를 반영했다"가 아니라 "경쟁을 늘렸다"였다).
+   *
+   * 그래서 **계단과 같은 총 경쟁량을 유지하는 전역 상수 하나**를 곱한다:
+   *     weightFactor = Σ(ip x 계단무게) ÷ Σ(ip x 감쇠무게)      기존점 38곳에서 잰 값
+   * 이 정규화를 넣어야 수준이 약분되고 **거리 구조만** 남는다. 실제로 그렇게 재서
+   * 최악 오차가 54.7% -> 51.9%로 줄었다(`_rivalDecayNormalized`). 빼면 그 개선이 사라진다.
+   *
+   * ⚠️ 표본이 늘면 다시 잰다 — 38곳에서 나온 값이다.
+   */
+  rivalDistanceDecay: { plateauM: number; scaleM: number; weightFactor?: number } | null;
   /** 가동률 물리적 상한. 이 위로는 좌석이 모자라 못 받는다. */
   maxUtilization: number;
 };
@@ -628,9 +643,31 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 중심도 잔차화 상수 — 기존점 38곳에서 적합(2026-09-20). 표본이 늘면 다시 적합할 것.
   // `_residualCentralityPort.test.ts`의 (1)번 시험이 지금 표본의 값을 찍어 준다.
   centralityResidual: { slope: 0.4801, geoMeanCentrality: 3.2719, geoMeanFloating400: 75093 },
-  // 거리 감쇠는 **기본 꺼짐**이다. 켜면 effectiveRadiusM(계단)을 안 쓴다. 측정 중이다
-  // (`_rivalDecay.test.ts`). 채택 전까지 운영·화면 동작을 바꾸지 않는다.
-  rivalDistanceDecay: null,
+  // ✅ **2026-09-21 채택 — 거리 감쇠를 켠다.** 켜면 effectiveRadiusM(계단)은 안 쓰인다.
+  //
+  //   무게 = 1                        (거리 <= 300m)
+  //        = exp(−(거리 − 300) ÷ 150)  (그 밖)
+  //   곡선: 300m 100% · 350m 72% · 400m 51% · 500m 26% · 700m 7% · 1km 1%
+  //
+  // 사용자 결정(*"감쇠로가자. 개념이 그게맞을것같다. (...) **나중에 401m 나오면그건어쩔건데.**"*).
+  // 계단의 근본 문제를 짚은 말이다 — 경계를 어디에 두든 **그 바로 밖 사례가 계속 나온다.**
+  // 오송점 팀플PC가 342m라 0으로 세졌고, 400으로 옮기면 하안금당 407m가 같은 신세가 된다.
+  //
+  // ⚠️ **성적으로는 계단이 낫다. 그런데 자료가 그 차이를 못 고른다** — 짝지은 부트스트랩
+  //    2000회에서 MAPE 차이 95% 구간이 [-0.02, +4.57]%p로 0을 품는다. 반면 **최악 오차는
+  //    54.7% -> 51.9%로 줄고**(구간 상한 0.0) SD도 준다. 지표가 서로 다른 말을 할 때
+  //    자료가 못 고르면 실무 판단이 이긴다는 게 이 프로젝트 관례다(2026-09-21 오송점).
+  //
+  // ⚠️ λ=150을 고른 이유 — λ=50이 성적은 낫지만(LOO 19.96%) 350m에서 이미 37%로 떨어져
+  //    **사실상 계단이다.** 개념을 사기로 한 결정이라 그 개념이 작동하는 값을 골랐다.
+  // ⚠️ plateau를 400으로 안 넓힌 이유 — 격자에서 R=400은 r이 오히려 떨어진다(0.803~0.809).
+  //    감쇠를 켜면 342m가 이미 세지므로 넓힐 이유가 없다.
+  //
+  // 근거·격자 전체: `_rivalDecayNormalized.test.ts` (6)(7)절.
+  // ⚠️ 넣고 나서 **장산점**을 따로 볼 것 — 302m·345m에 211/193대가 새로 세지며 오차가
+  //    2.2% -> 40.5%로 벌어진다(측정 당시 총량 고정 기준).
+  // weightFactor 0.90 — 기존점 38곳에서 Σ(ip x 계단) ÷ Σ(ip x 감쇠)로 잰 총량 정규화 상수.
+  rivalDistanceDecay: { plateauM: 300, scaleM: 150, weightFactor: 0.90 },
   // 2026-09-16 측정값에서 **산업단지·기타를 2026-09-20에 1.00으로 껐다**(자세한 근거는
   // 타입 쪽 주석). 그 둘이 축척 기준점(탕정역·남악)을 부풀려 자를 휘게 하고 있었고,
   // 자를 바로잡고 다시 뽑으니 1.08 · 0.94로 사실상 1이었다. 표본 2~5곳이라 확정값이
@@ -859,6 +896,9 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
         if (d != null && d > decay.plateauM) {
           w = decay.scaleM > 0 ? Math.exp(-(d - decay.plateauM) / decay.scaleM) : 0;
         }
+        // 총량 정규화 — 감쇠가 늘린 총 경쟁량을 계단 수준으로 되돌린다(타입 쪽 주석 참고).
+        // 축척은 독점매장에서만 맞춰서 이 증가를 못 흡수하므로, 안 하면 전 매장이 아래로 밀린다.
+        w *= decay.weightFactor ?? 1;
       } else if (r.distanceM != null && r.distanceM > p.effectiveRadiusM) {
         continue;
       }

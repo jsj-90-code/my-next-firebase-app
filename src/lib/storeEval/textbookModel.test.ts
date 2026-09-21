@@ -9,7 +9,13 @@
 import { describe, expect, it } from "vitest";
 import { computeTextbook, computeQualityScore, DEFAULT_TEXTBOOK_PARAMS, type QualityParts, type TextbookInput, type TextbookParams } from "./textbookModel";
 
-const P: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS, shareMode: "quality", outsideOptionIp: 0 };
+// ⚠️ `rivalDistanceDecay: null` — 아래 "품질 모드 점유율" 묶음은 **계단 동작**을 검증한다.
+// 2026-09-21에 본체 기본값이 감쇠로 바뀌었는데(plateauM 300 · scaleM 150 · weightFactor 0.90),
+// 그 묶음은 "유효거리 밖은 아예 안 센다" 같은 계단 성질을 확인하는 자리라 계단으로 고정한다.
+// 감쇠 동작은 이 파일 맨 아래 "거리 감쇠" 묶음이 따로 본다.
+const P: TextbookParams = {
+  ...DEFAULT_TEXTBOOK_PARAMS, shareMode: "quality", outsideOptionIp: 0, rivalDistanceDecay: null,
+};
 
 /** 수요층은 이 테스트의 관심사가 아니다 — 인구를 고정해 점유율만 본다. */
 function input(over: Partial<TextbookInput>): TextbookInput {
@@ -236,5 +242,49 @@ describe("모드끼리 섞이지 않는다", () => {
     // competitorIp=400이지만 유효거리 밖이면 0으로 겨룬다 — 두 값은 일부러 다르다.
     const far = { ...over, rivals: [{ ip: 400, distanceM: 900, parts: parts(2) }] };
     expect(shareOf(far)).toBe(1);
+  });
+});
+
+// 2026-09-21 채택 — 거리 감쇠가 기본값이 됐다. 그 동작을 여기서 고정한다.
+//   무게 = 1 (거리 <= plateauM) · exp(−(거리 − plateauM) ÷ scaleM) (밖) · x weightFactor
+describe("거리 감쇠 (2026-09-21 채택 기본값)", () => {
+  const D = DEFAULT_TEXTBOOK_PARAMS.rivalDistanceDecay!;
+
+  it("기본값이 켜져 있다 — 평지 300m · 감쇠 150m · 총량 정규화 0.90", () => {
+    expect(D.plateauM).toBe(300);
+    expect(D.scaleM).toBe(150);
+    expect(D.weightFactor).toBeCloseTo(0.9, 10);
+  });
+
+  it("유효거리 밖 경쟁점도 **센다** — 계단이 아니다 (오송점 342m 문제)", () => {
+    const rivals = [{ ip: 100, distanceM: 342, parts: parts(3) }];
+    const step = computeTextbook(input({ ownQualityParts: parts(3), rivals }), { ...P, rivalDistanceDecay: null }).share;
+    const decay = computeTextbook(input({ ownQualityParts: parts(3), rivals }), DEFAULT_TEXTBOOK_PARAMS).share;
+    expect(step).toBe(1); // 계단: 300m 밖이라 통째로 빠져 독점이 된다
+    expect(decay).toBeLessThan(1); // 감쇠: 세진다
+  });
+
+  it("평지 안쪽은 거리가 달라도 같다 — 실무 의견(유효거리 안이면 거리가 크게 작용 안 한다)", () => {
+    const at = (d: number) =>
+      computeTextbook(input({ ownQualityParts: parts(3), rivals: [{ ip: 100, distanceM: d, parts: parts(3) }] }),
+        DEFAULT_TEXTBOOK_PARAMS).share;
+    expect(at(50)).toBeCloseTo(at(299)!, 10);
+  });
+
+  it("멀수록 단조롭게 줄어든다 — 401m 문제가 구조적으로 없다", () => {
+    const at = (d: number) =>
+      computeTextbook(input({ ownQualityParts: parts(3), rivals: [{ ip: 100, distanceM: d, parts: parts(3) }] }),
+        DEFAULT_TEXTBOOK_PARAMS).share!;
+    // 경쟁이 약해질수록 자사 점유율은 올라간다. 400m와 401m 사이에 절벽이 없다.
+    expect(at(401)).toBeGreaterThan(at(400));
+    expect(at(400) - at(399)).toBeLessThan(0.005);
+    expect(at(1500)).toBeGreaterThan(at(500));
+  });
+
+  it("scaleM=0이면 계단과 같다 — 중첩 모형이다", () => {
+    const rivals = [{ ip: 100, distanceM: 342, parts: parts(3) }];
+    const zero = computeTextbook(input({ ownQualityParts: parts(3), rivals }),
+      { ...P, rivalDistanceDecay: { plateauM: 300, scaleM: 0, weightFactor: 1 } }).share;
+    expect(zero).toBe(1);
   });
 });
