@@ -121,6 +121,10 @@ describeIf("감쇠 모양을 성적으로 고르는 게 정당한가", () => {
   const SD = (m: Map<string, number>) => sd(names.map((n) => m.get(n)!));
 
   it("(1) 관문 1 — R200 λ200의 이득이 잡음인가 (짝지은 부트스트랩)", () => {
+    // 채택할 때 산식에 박을 값이다 — 소수 넷째 자리까지 찍는다(전 매장에서 잰 정규화 상수).
+    for (const [R, L] of [[300, 150], [200, 200]] as [number, number][]) {
+      console.log(`  [wf] R${R} λ${L} → weightFactor ${mk(R, L, base).rivalDistanceDecay!.weightFactor!.toFixed(4)}`);
+    }
     console.log(`\n[출발점] n=${names.length}`);
     for (const [k, m] of [["계단300", S], ["R300 λ150(지금)", A], ["R200 λ200", B]] as [string, Map<string, number>][]) {
       console.log(`  ${k.padEnd(16)}MAPE ${pct(M(m))} · 최악 ${pct(W(m), 1)} · SD ${(SD(m) * 100).toFixed(1)}%p`);
