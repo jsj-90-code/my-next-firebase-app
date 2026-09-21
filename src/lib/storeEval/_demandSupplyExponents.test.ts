@@ -307,13 +307,63 @@ describeIf("수요와 공급의 지수를 따로 풀면", () => {
         return out;
       })()],
       ["전부 자유 (p·q·c)", loo({})],
+      // ── 사용자 정리(2026-09-21) — 층마다 검증 가능성이 다르다 ──────────────
+      //   *"수요 > 가동률 이 산식이 현재 검증 가능한 부분이 없으니까
+      //    값에 맞추는 형태로 하는 게 최선이라고 보긴 함"*
+      //
+      // 맞는 구분이다. **공급은 셀 수 있다** — 자사PC도 경쟁점 PC도 실측이고,
+      // "그 동네 PC가 2배면 한 대당 손님은 절반"은 물리적으로 확실하다. q=−1이 맞다.
+      // **수요는 실측할 방법이 없다** — 인구 x 이용률 x 시간으로 우리가 만든 지수이고,
+      // 절대 크기에도 매장 간 비율에도 검증할 근거가 없다. 눈금 없는 막대다.
+      // 그러면 눈금은 실측 가동률에 맞춰 새길 수밖에 없고, 그게 p다.
+      // ⇒ "값에 맞춘다"가 아니라 **"우리가 만든 지수에 눈금을 새긴다"**가 된다.
+      ["⭐ 공급 −1 고정, 수요 눈금만 (p 자유, c 자유)", loo({ q: -1 })],
+      ["공급 −1 · 입지 1 고정, 수요 눈금만 (p만 자유)", loo({ q: -1, c: 1 })],
     ];
     for (const [k, v] of rows) {
       console.log(`  ${k.padEnd(36)}${pp(mae(v)).padStart(9)}${pp(sdE(v)).padStart(9)}${pct(wst(v)).padStart(9)}${(w5(v) + "/" + v.length).padStart(9)}`);
     }
     console.log(`\n  ⚠️ '수요 안 봄'이 '지금 산식'을 이기면 — **상권 크기를 재는 일 자체가 값을 못 한다**는 뜻이다.`);
     console.log(`     사용자 착상이 자료로 지지되는지가 이 한 줄에서 갈린다.`);
-    expect(rows.length).toBe(7);
+
+    // ── ⚠️ 2026-09-21 — 내 "공급 −1은 물리적으로 확실하다"가 틀렸다 ────────
+    // 나는 "PC는 셀 수 있으니 공급 지수는 −1이 맞다"고 했는데, **공급도 구성된 지수다.**
+    //   총공급 = 자사PC + Σ(경쟁PC x 품질비^3 x 거리무게)
+    // 날PC수는 자사 것뿐이고, 경쟁 쪽은 품질비 **3제곱**과 거리무게를 먹인 값이다.
+    // 그래서 공급도 눈금이 과장될 수 있고, 실제로 −1로 묶으니 6.57%p로 더 나빠진다.
+    // 자료가 원하는 건 **수요와 공급을 같은 만큼 눌러 비로 묶는 것**(p = −q)이다.
+    console.log(`\n  ⚠️ '공급 −1 고정'이 더 나쁘다는 게 중요하다 — 내가 "PC는 셀 수 있으니 −1이 물리적으로`);
+    console.log(`     확실하다"고 했는데 **틀렸다.** 총공급도 구성된 지수다:`);
+    console.log(`     총공급 = 자사PC + Σ(경쟁PC x 품질비^${P.qualityExponent} x 거리무게). 날PC수는 자사 것뿐이다.`);
+    console.log(`     자료가 원하는 건 수요·공급을 **같은 만큼 눌러 비로 묶는 것**(p = −q)이다.`);
+
+    // 채택 후보의 계수를 찍는다 — 사용자가 값을 보고 정해야 한다.
+    const f = (() => {
+      const X = R.map((x) => x.H - x.S), L = R.map((x) => x.L), y = A;
+      const sxx = varOf(X), sll = varOf(L), sxl = cov(X, L);
+      const det = sxx * sll - sxl * sxl;
+      const b = (sll * cov(X, y) - sxl * cov(L, y)) / det;
+      const c = (sxx * cov(L, y) - sxl * cov(X, y)) / det;
+      return { b, c, a: mean(y) - b * mean(X) - c * mean(L) };
+    })();
+    console.log(`\n  [채택 후보 '비만 봄'의 계수]  가동률 = A x (수요÷총공급)^b x 입지^c`);
+    console.log(`    b = ${f.b.toFixed(3)}  (지금 1)  ·  c = ${f.c.toFixed(3)}  (지금 1)`);
+    // 38겹 재적합 분포 — 표본에 휘둘리는지
+    const bs: number[] = [], cs: number[] = [];
+    for (let i = 0; i < R.length; i++) {
+      const tr = R.filter((_, k) => k !== i);
+      const X = tr.map((x) => x.H - x.S), L = tr.map((x) => x.L), y = tr.map((x) => Math.log(x.act));
+      const sxx = varOf(X), sll = varOf(L), sxl = cov(X, L);
+      const det = sxx * sll - sxl * sxl;
+      bs.push((sll * cov(X, y) - sxl * cov(L, y)) / det);
+      cs.push((sxx * cov(L, y) - sxl * cov(X, y)) / det);
+    }
+    console.log(`    겹마다: b ${Math.min(...bs).toFixed(3)}~${Math.max(...bs).toFixed(3)} (SD ${sdOf(bs).toFixed(3)})` +
+      ` · c ${Math.min(...cs).toFixed(3)}~${Math.max(...cs).toFixed(3)} (SD ${sdOf(cs).toFixed(3)})`);
+    console.log(`    1을 품나: b ${Math.max(...bs) >= 1 ? "품는다" : "**안 품는다**"} · c ${Math.max(...cs) >= 1 ? "품는다" : "**안 품는다**"}`);
+    console.log(`\n    실무 뜻: b<1은 **"우리가 만든 수요·공급 지수가 매장 간 차이를 과장한다"**는 뜻이다.`);
+    console.log(`    사용자 정리대로 이 층은 실측할 방법이 없으므로 **눈금을 실측에 맞춰 새기는 것**이 맞다.`);
+    expect(rows.length).toBe(9);
   });
 
   it("(4) 계수가 겹마다 흔들리나 + 대조군", () => {
