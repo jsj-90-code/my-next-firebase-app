@@ -380,6 +380,37 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
     slopeIfPerfectR: +(sd(logA) / sd(parts.map((x) => Math.log(x.d * Math.min(1, x.sr))))).toFixed(4),
   };
 
+  // ── 독점매장만 따로 — 점유율이 1로 확정이라 **수요식만 남는다** ──────────
+  // 2026-09-21 밤(3). 원장으로 1인당 이용시간이 실측되면서(오픈 1년 8.06h vs 산식 8.39h,
+  // 차이 4%) 축척이 옳다는 게 확인됐다. 그러면 가동률 오차 = **이용자 수 오차**이고,
+  // 독점매장은 점유율이 1이니 그 오차가 통째로 **수요식 오차**다. 원장 없이도 잴 수 있다.
+  const monopoly = ids.filter((i) => !(rows[i].input.competitorIp ?? 0));
+  const monopolyScan = (() => {
+    if (monopoly.length < 3) return null;
+    const d = monopoly.map((i) => parts[i].d), a = monopoly.map((i) => actual[i]);
+    // 축척만 기하평균으로 맞추고 지수 b를 바꿔 가며 독점 3곳 안에서 채점한다.
+    // (LOO가 아니다 — 3곳뿐이라 수준은 못 가르고 **퍼짐이 맞는지**만 본다.)
+    const score = (b: number) => {
+      const A = Math.exp(mean(monopoly.map((i, k) => Math.log(a[k]) - b * Math.log(d[k]))));
+      const pred = d.map((v) => A * Math.pow(v, b));
+      return { b, maePp: mean(pred.map((v, k) => Math.abs(v - a[k]))) * 100,
+        predRange: Math.max(...pred) / Math.min(...pred), pred };
+    };
+    return {
+      매장: monopoly.map((i) => rows[i].input.storeName),
+      실측: a.map((v) => +(v * 100).toFixed(2)),
+      "실측 최대÷최소": +(Math.max(...a) / Math.min(...a)).toFixed(4),
+      수요밀도: d.map((v) => +v.toFixed(4)),
+      "수요 최대÷최소": +(Math.max(...d) / Math.min(...d)).toFixed(4),
+      // ⭐ 이 둘이 같으면 수요식이 매장 간 차이를 **정확히** 맞히고 있다는 뜻이다.
+      "순위 일치": monopoly.map((_, k) => k).sort((x, y) => d[y] - d[x]).join(",")
+        === monopoly.map((_, k) => k).sort((x, y) => a[y] - a[x]).join(","),
+      후보: [1, .8, .6, .5, .4, B, .25].map(score).map((s) => ({
+        b: +s.b.toFixed(3), maePp: +s.maePp.toFixed(3), "예측 최대÷최소": +s.predRange.toFixed(4),
+        예측: s.pred.map((v) => +(v * 100).toFixed(2)) })),
+    };
+  })();
+
   // ── 출력 ─────────────────────────────────────────────────────────────────
   console.log("[재현]", JSON.stringify({ snapshot: snap.fetchedAt, n: rows.length,
     snapshotSha256: snapshotHash, modelSha256: modelHash,
@@ -398,6 +429,7 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
   console.log("[IV 부트스트랩·무작위 대조군]", JSON.stringify(ivBoot));
   console.log("[수요항 분해]", JSON.stringify(Object.fromEntries(
     Object.entries(demandScan).map(([k, v]) => [k, { slope: +v.slope.toFixed(4), r: +v.r.toFixed(4) }]))));
+  console.log("[⭐ 독점매장만: 점유율=1이라 수요식만 남는다]", JSON.stringify(monopolyScan));
   console.log("[퍼짐 비: b가 작아야 하는 이유]", JSON.stringify(spreadRatio));
   console.log("[PC대수와 수요의 관계]", JSON.stringify(pcVsDemand));
   console.log("[유동 반경별 신호]", JSON.stringify(radiusScan));
@@ -432,6 +464,15 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
         fixedPp: +(fixedBy.get(nested.picks[i])!.errors[i] * 100).toFixed(4),
         nestedPp: +(nested.fold.errors[i] * 100).toFixed(4) })) }));
   }
+  // 수요가 실제로 어떻게 쌓이는지 — 설명용. 축척 1 기준이라 "사람 수"로 읽으면 된다.
+  console.log("[수요 쌓이는 과정]", JSON.stringify(rows.map((row, i) => ({
+    name: row.input.storeName,
+    주거인구1km: row.input.pop1km, 유동인구400m: row.input.floatingByRadius[400],
+    주거수요: demandParts[i].res == null ? null : +demandParts[i].res!.toFixed(1),
+    유동수요: demandParts[i].flo == null ? null : +demandParts[i].flo!.toFixed(1),
+    특수수요: row.input.specialDemandType ?? "없음",
+    합계수요: +(demandParts[i].hours).toFixed(1), PC: demandParts[i].pc,
+    실측가동률: +(actual[i] * 100).toFixed(1) }))));
   console.log("[매장별]", JSON.stringify(rows.map((row, i) => ({ name: row.input.storeName,
     actualPct: +(actual[i] * 100).toFixed(2), adoptedPct: +(adopted.predictions[i] * 100).toFixed(2),
     nestedPct: +(nested.fold.predictions[i] * 100).toFixed(2),
