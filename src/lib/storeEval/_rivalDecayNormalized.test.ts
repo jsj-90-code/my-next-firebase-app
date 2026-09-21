@@ -325,7 +325,43 @@ describeIf("거리 차등 — 총량 고정", () => {
         `  ·  하안금당 407m ${(w(407) * 100).toFixed(0)}% / 446m ${(w(446) * 100).toFixed(0)}% / 480m ${(w(480) * 100).toFixed(0)}%` +
         `  ·  문경 371m ${(w(371) * 100).toFixed(0)}% · 1500m ${(w(1500) * 100).toFixed(0)}%`);
     }
-    console.log(`\n  ⚠️ 감쇠는 어떤 조합도 계단300(19.02%)을 못 이긴다. **개념을 사고 성적을 내주는 거래**다.`);
+    console.log(`\n  ⚠️ MAPE로는 계단이 낫고 **최악·SD로는 감쇠가 낫다.** 지표가 서로 다른 말을 한다.`);
     expect(grid.length).toBe(20);
+  });
+
+  // ── 채택 판정 — R=300 λ=150의 손해가 유의한가 ──────────────────────────
+  //
+  // MAPE가 19.02 -> 21.11%로 나빠진다. 그게 **자료가 계단을 고른 것**인지
+  // **잡음 안인지**를 가른다. 짝지은 부트스트랩 — 매장 단위로 재표집한다.
+  // 같이 최악·SD도 부트스트랩한다(사용자 규칙: 스프레드를 항상 같이 본다).
+  it("(7) 채택 판정 — 짝지은 부트스트랩", () => {
+    const R = 300, L = 150;
+    const f = (d: number | null) => (d == null || d <= R ? 1 : Math.exp(-(d - R) / L));
+    const A = loo(base, P), B = loo(apply(f));
+    const names = [...A.keys()].filter((n) => B.has(n));
+    const dMape = names.map((n) => B.get(n)! - A.get(n)!); // 양수 = 감쇠가 더 틀림
+    let seed = 20260921;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const bootMape: number[] = [], bootWorst: number[] = [];
+    for (let k = 0; k < 2000; k++) {
+      const idx = names.map(() => Math.floor(rnd() * names.length));
+      bootMape.push(mean(idx.map((i) => dMape[i])));
+      bootWorst.push(Math.max(...idx.map((i) => B.get(names[i])!)) - Math.max(...idx.map((i) => A.get(names[i])!)));
+    }
+    bootMape.sort((a, b) => a - b); bootWorst.sort((a, b) => a - b);
+    const wA = Math.max(...A.values()), wB = Math.max(...B.values());
+    console.log(`\n[채택 판정] 계단300 vs 감쇠 R=${R} λ=${L} · 짝지은 부트스트랩 2000회 · n=${names.length}`);
+    console.log(`  MAPE 차이   실제 ${(mean(dMape) * 100).toFixed(2)}%p (감쇠가 더 틀림)` +
+      `  95% 구간 [${(bootMape[50] * 100).toFixed(2)}, ${(bootMape[1949] * 100).toFixed(2)}]%p` +
+      `  ${bootMape[50] > 0 || bootMape[1949] < 0 ? "**0을 안 품는다 — 자료가 계단을 골랐다**" : "**0을 품는다 — 자료가 못 고른다**"}`);
+    console.log(`  최악 차이   실제 ${((wB - wA) * 100).toFixed(1)}%p (${(wA * 100).toFixed(1)}% -> ${(wB * 100).toFixed(1)}%)` +
+      `  95% 구간 [${(bootWorst[50] * 100).toFixed(1)}, ${(bootWorst[1949] * 100).toFixed(1)}]%p`);
+    console.log(`\n  매장별로 누가 좋아지고 누가 나빠지나 (변화 큰 순)`);
+    const moved = names.map((n) => ({ n, d: B.get(n)! - A.get(n)! })).sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+    for (const x of moved.slice(0, 10)) {
+      console.log(`    ${x.n.padEnd(16)}${(A.get(x.n)! * 100).toFixed(1).padStart(6)}% -> ${(B.get(x.n)! * 100).toFixed(1).padStart(6)}%   ${x.d > 0 ? "나빠짐" : "좋아짐"} ${(Math.abs(x.d) * 100).toFixed(1)}%p`);
+    }
+    console.log(`\n  좋아진 곳 ${moved.filter((x) => x.d < 0).length}곳 · 나빠진 곳 ${moved.filter((x) => x.d > 0).length}곳`);
+    expect(names.length).toBeGreaterThan(30);
   });
 });
