@@ -58,7 +58,8 @@ it("가동률 구성요소 제거: 수요·경쟁·입지와 축척의 역할", 
   // ⚠️ 파일 머리에 적힌 Astra의 기준선 수치는 **옛 감쇠에서 잰 것**이라 아래 출력과 다르다.
   expect(P.rivalDistanceDecay).toEqual({ plateauM: 200, scaleM: 200, weightFactor: .9593 });
   expect(P.shareMode).toBe("quality");
-  expect(P.outsideOptionIp).toBe(0);
+  // 2026-09-21 밤 채택 — 독점매장에서 관측한 "안 가는 몫" 20대(그전엔 0).
+  expect(P.outsideOptionIp).toBe(20);
   const settings = mergeModelSettings(snap.settings);
   const competitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
   const compsByCode = new Map<string, Competitor[]>();

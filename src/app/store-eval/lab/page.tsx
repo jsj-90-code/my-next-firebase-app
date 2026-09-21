@@ -272,7 +272,7 @@ export default function LabPage() {
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
             scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
           <ParamSummary p={p} counts={counts} />
-          <StoreTable score={score} qscByStore={data.qscByStore} />
+          <StoreTable score={score} qscByStore={data.qscByStore} p={p} />
           <ExcludedTable rows={data.excludedRows} p={fittedParams(p, score)} />
           <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
             franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount}
@@ -828,6 +828,27 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           </div>
           {/* 2026-09-21 — 눈금 보정을 채택하고도 화면이 이 단계를 아예 말하지 않고 있었다.
               숫자는 전부 p에서 읽는다(글자로 박지 않는다). */}
+          {!p.indexCalibration && (
+            <div className="mt-2 rounded border border-[var(--sl-line)] p-2">
+              <div className="font-semibold">⛔ 여기 있던 &ldquo;눈금 보정&rdquo;은 껐습니다 (2026-09-21 밤)</div>
+              <div className="mt-1">
+                날 산식은 매장 간 차이를 실측의 <b>약 2배로 벌립니다.</b> 그래서 하루 동안 예측을
+                가운데로 당기는 지수 보정을 켜 뒀는데, <b>그건 기전이 아니라 출력을 누르는 보정</b>이라
+                껐습니다. 누르면 <b>어디서 넓어지는지가 안 보입니다.</b>
+              </div>
+              <div className="mt-1">
+                대신 그 보정이 삼키던 <b>수준 오차</b>는 관측된 기전이 받습니다 —
+                아래 점유율 식의 <b>&ldquo;안 가는 몫&rdquo; {p.outsideOptionIp}대</b>입니다(독점매장에서 직접 나온 값).
+                지금 남은 문제는 <b>퍼짐 과장 하나</b>이고, 그게 다음 과녁입니다.
+              </div>
+              <div className="mt-1 text-[var(--sl-ink-soft)]">
+                치른 값은 적지 않습니다: 가동률 평균오차 4.18 → <b>6.52%p</b> · ±5%p 24 → 18곳 ·
+                매출 MAPE 16.2 → <b>24.6%</b>. 실험실 산식은 <b>운영에 안 들어갑니다</b>
+                (결재 숫자는 V62) — 그래서 성적을 주고 정직한 형태를 샀습니다.
+                되살리려면 <code>indexCalibration</code>의 지수를 1에서 내리면 됩니다.
+              </div>
+            </div>
+          )}
           {p.indexCalibration && (
             <div className="mt-2 rounded border border-[var(--sl-line)] p-2">
               <div className="font-semibold">그 다음 — 눈금을 실측에 맞춰 다시 새깁니다</div>
@@ -1045,7 +1066,7 @@ function ParamSummary({ p, counts }: {
   );
 }
 
-function StoreTable({ score, qscByStore }: { score: TextbookScore; qscByStore: Loaded["qscByStore"] }) {
+function StoreTable({ score, qscByStore, p }: { score: TextbookScore; qscByStore: Loaded["qscByStore"]; p: TextbookParams }) {
   /** QSC가 있는 매장이 하나라도 있을 때만 두 열을 그린다. 없으면 빈 칸만 늘어난다. */
   const hasQsc = [...qscByStore.values()].some((v) => v.qsc != null);
   return (
@@ -1062,8 +1083,12 @@ function StoreTable({ score, qscByStore }: { score: TextbookScore; qscByStore: L
         모델 기본값(0) 대신 <b>500으로 덮어쓰고</b> 있었습니다. 그러면 경쟁점이 0곳인 독점 매장도
         점유율이 17%로 계산되는데, <b>그때 수요 축척은 &ldquo;독점이면 점유율 1&rdquo;을 전제로 독점 매장에
         맞췄습니다.</b> 전제가 깨지니 수요가 6배 부풀려졌고, 점유율이 그만큼 작아져 매출만 얼추 맞는
-        상태였습니다. 지금은 독점 매장이 점유율 100%를 받고 전체 MAPE도 41.8% → 23.4%로 내려갔습니다.
-        {" "}(2026-09-21부터 축척은 원장 실측으로 못 박혀 있어 독점 매장에 맞추지 않습니다.)
+        상태였습니다. 그걸 0으로 되돌리자 전체 MAPE가 41.8% → 23.4%로 내려갔습니다.
+        <br />
+        ⚠️ <b>2026-09-21에 다시 0이 아니게 됐습니다 — 다만 이번엔 지어낸 값이 아닙니다.</b> 축척을
+        원장 실측으로 못 박고 나니 독점 매장에서 수요식이 <b>19% 과대</b>인 게 드러났고(점유율이 1이라
+        그 초과분이 곧 &ldquo;안 가는 몫&rdquo;입니다), 매장별로 20.9 · 19.8 · 19.3대가 나와
+        <b> {p.outsideOptionIp}대</b>를 씁니다. 그래서 지금 독점 매장 점유율은 100%가 아니라 약 84%입니다.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">

@@ -88,9 +88,12 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
   // ⚠️ 위 기록은 **b=0.327** 시절 값이다. 2026-09-21 저녁에 **0.45로 올렸다** — 자료가 아니라
   //    변별력(용도)으로 고른 값이다(`_spreadChoice.test.ts`). 여기 2절의 "b=0.327을 그대로
   //    두는 게 맞다"는 **자료가 못 고른다**는 뜻이었고, 그 판정은 그대로다.
-  expect(P.indexCalibration).toEqual({ ratioExponent: .45, locationExponent: .169, referenceUtilization: .3011 });
+  // ⛔ 2026-09-21 밤에 **b를 아예 껐다**(b=1). 이 하네스가 재던 "b를 어떻게 쪼갤까"는
+  //    그래서 지금 산식에는 해당이 없다 — 되살릴 때 참고하라고 기록만 남긴다.
+  expect(P.indexCalibration).toEqual({ ratioExponent: 1, locationExponent: .169, referenceUtilization: .3011 });
   expect(P.shareMode).toBe("quality");
-  expect(P.outsideOptionIp).toBe(0);
+  // 2026-09-21 밤 채택 — 독점매장에서 관측한 "안 가는 몫" 20대. 위 기록은 0일 때 잰 값이다.
+  expect(P.outsideOptionIp).toBe(20);
   const B = P.indexCalibration!.ratioExponent, C = P.indexCalibration!.locationExponent;
   const REF = P.indexCalibration!.referenceUtilization;
 
@@ -457,7 +460,9 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
       worseN: gap.filter((g) => g.diffPp > 1e-9).length, betterN: gap.filter((g) => g.diffPp < -1e-9).length }));
     // 항등식 검사: nested의 겹 오차는 그 겹이 고른 (p,q)의 고정 LOO 오차와 **같아야** 한다.
     // 어긋나면 nested 구현 버그다(선택잡음이 아니다).
-    const fixedBy = new Map(["0.25/0.2", "0.25/0.25", "0.2/0.2", "0.2/0.25"].map((k) => {
+    // ⚠️ 여기 키 넷을 글자로 박아 뒀다가 2026-09-21 밤에 깨졌다 — b를 끄니 겹들이 다른 칸을
+    //    고르는데 지도에 그 칸이 없어서 터졌다. **실제로 고른 칸**에서 만든다.
+    const fixedBy = new Map([...new Set(nested.picks)].map((k) => {
       const [p, q] = k.split("/").map(Number);
       return [k, loo(p, q, C)];
     }));
