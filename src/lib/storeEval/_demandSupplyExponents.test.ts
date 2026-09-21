@@ -170,8 +170,45 @@ describeIf("수요와 공급의 지수를 따로 풀면", () => {
       }
     }
     console.log(`    합계 ${nCap}곳`);
-    console.log(`  ⚠️ 수요 축척은 **독점매장에서** 잡는다. 그 자리에서 입지항이 버려지면`);
-    console.log(`     축척이 그 왜곡을 흡수한다 — 전 매장 수준이 그만큼 틀어진다.`);
+    // ── ⚠️ 2026-09-21 사용자 지적으로 해석을 고친다 ────────────────────────
+    // 처음에 나는 "상한 순서가 뒤집혔다, 입지를 곱하기 전에 잘라야 한다"고 했는데 **틀렸다.**
+    // 사용자: *"입지 때문에 수요가 늘어나진 않잖아, 수요에서 점유율에 작용하는 부분 아님?"*
+    // 맞는 말이다 — 입지가 좋다고 동네 수요가 커지는 게 아니라 **같은 수요 중 우리 몫이
+    // 커지는** 것이다. 그러니 입지를 점유율에 곱하는 것도, 100% 상한도 **둘 다 옳다.**
+    // 독점매장이 좋은 자리라고 동네 수요보다 많이 팔 수는 없다.
+    //
+    // 그러면 잘린다는 건 **버그가 아니라 신호**다: "이 매장은 동네 수요를 다 먹어야
+    // (또는 그보다 더 먹어야) 실측이 나온다" — 즉 **수요 추정이 모자란다**는 뜻이다.
+    // 아래에서 필요 점유율(실측 ÷ 경쟁 없다고 볼 때의 예측)로 그걸 직접 확인한다.
+    console.log(`\n  [그래서 무슨 신호인가] 필요 점유율 = 실측가동률 ÷ (경쟁 없다고 볼 때 예측)`);
+    for (const r of base) {
+      const b = computeTextbook(r.input, full);
+      const bNo = computeTextbook(r.input, { ...full, shareMode: "off", maxUtilization: Number.POSITIVE_INFINITY });
+      const pc = r.input.pcCount, act = r.input.actualUtilization;
+      if (!pc || act == null || !(act > 0) || b.locationMultiplier == null || bNo.utilization == null) continue;
+      const oq = r.input.ownQualityParts ? computeQualityScore(r.input.ownQualityParts, P.qualityWeights) : null;
+      let rw = 0;
+      for (const v of r.input.rivals ?? []) {
+        if (!(v.ip > 0)) continue;
+        const q = v.parts ? computeQualityScore(v.parts, P.qualityWeights) : null;
+        const ratio = oq != null && oq > 0 && q != null && q > 0 ? q / oq : 1;
+        rw += v.ip * Math.pow(ratio, P.qualityExponent) * rivalDistanceWeight(v.distanceM, P);
+      }
+      const raw = pc / (pc + rw + P.outsideOptionIp);
+      if (raw * b.locationMultiplier <= 1 - 1e-12) continue;
+      const need = act / bNo.utilization;
+      console.log(`    ${(r.input.storeName ?? "").padEnd(14)}필요 점유율 ${(need * 100).toFixed(0)}%` +
+        `${need > 1 ? "  🔴 **100% 넘는다 — 동네 수요를 다 먹어도 모자란다**" : "  ⚪ 100% 안"}`);
+    }
+    console.log(`\n  ⚠️ 필요 점유율이 100%를 넘으면 그건 입지·상한 문제가 아니라 **수요 추정이 작은 것**이다.`);
+    console.log(`     100% 안이면 상한이 그냥 제 일을 한 것이고 문제가 아니다. 둘을 갈라 봐야 한다.`);
+    console.log(`\n  ── 2026-09-21 결론: **상한은 제 일을 하고 있다. 구조 문제가 아니었다.** ──`);
+    console.log(`     독점 3곳(탕정역 99% · 광주각화 101% · 남악 101%)이 100% 언저리인 건 **정의상 당연하다** —`);
+    console.log(`     축척을 "경쟁 0인 그 3곳에서 실측 가동률을 맞추도록" 잡으므로 필요 점유율이 100%가 된다.`);
+    console.log(`     순환이지 왜곡이 아니다. 구미산동(87%)은 상한이 정상 작동한 경우다.`);
+    console.log(`     **진짜 문제는 문경시청점(191%) 하나뿐이고, 그건 이미 오래 알려진 수요 부족**이다`);
+    console.log(`     (5km 상권·통학유입·대체여가 등으로 여러 번 파서 전부 닫힌 갈래다).`);
+    console.log(`     내가 처음에 "축척이 왜곡을 흡수한다"고 한 건 **과한 경보**였다. 취소한다.`);
     expect(gap).toBeLessThan(1e-9);
   });
 
