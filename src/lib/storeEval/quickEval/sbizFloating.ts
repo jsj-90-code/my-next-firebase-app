@@ -26,6 +26,25 @@ const HEADERS = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const num = (s: unknown) => Number(String(s).replace(/,/g, ""));
 
+/**
+ * 네트워크 단계 실패의 **원인을 드러낸다.**
+ *
+ * undici(Node fetch)는 DNS 실패·연결 거부·TLS 오류·타임아웃을 전부 `fetch failed`라는 한 문장으로
+ * 뭉갠다. 2026-09-22에 배포 서버에서 정확히 그 메시지만 보고 원인을 못 짚었다 — 로컬(한국 IP)은
+ * 200이었으니 "어디서 어떻게 막혔나"가 유일한 단서인데 그게 안 보였다.
+ *
+ * 그래서 `cause.code`(ENOTFOUND·ECONNREFUSED·ETIMEDOUT·CERT_*)와 **어느 리전에서 돌았는지**를
+ * 같이 싣는다. 진단 문구를 화면에 그대로 띄우는 게 목적이다.
+ */
+export function describeFetchFailure(err: unknown, label: string): string {
+  const region = process.env.VERCEL_REGION ?? "로컬";
+  const base = err instanceof Error ? err.message : String(err);
+  const cause = err instanceof Error ? (err.cause as { code?: string; message?: string } | undefined) : undefined;
+  const code = cause?.code ? ` [${cause.code}]` : "";
+  const detail = cause?.message && cause.message !== base ? ` (${cause.message})` : "";
+  return `${label}: ${base}${code}${detail} · 실행 위치 ${region}`;
+}
+
 export type SbizFloatingDemographics = {
   total: number;
   male: number;
@@ -54,26 +73,32 @@ export type SbizFloatingResult = {
 };
 
 async function issueAnalyNo(input: { lat: number; lng: number; tm: { x: number; y: number }; radius: number }) {
-  const res = await fetch(`${BASE}/gis/com/report/capture.json`, {
-    method: "POST",
-    headers: { ...HEADERS, "Content-Type": "application/json;charset=utf-8" },
-    body: JSON.stringify({
-      type: "circleRadius",
-      analyType: "bizonAnls",
-      centerX: input.lat, // 이름과 달리 centerX가 위도다 (원본 앱이 그렇게 보낸다)
-      centerY: input.lng,
-      transformX: input.tm.x,
-      transformY: input.tm.y,
-      upjongCd: PCBANG_UPJONG,
-      kakaoPathStr: "",
-      pathStr: "",
-      radius: input.radius,
-      mapLevelDecision: input.radius,
-      apiLogin: "N",
-      sprNo: 0,
-    }),
-    signal: AbortSignal.timeout(30000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/gis/com/report/capture.json`, {
+      method: "POST",
+      headers: { ...HEADERS, "Content-Type": "application/json;charset=utf-8" },
+      body: JSON.stringify({
+        type: "circleRadius",
+        analyType: "bizonAnls",
+        centerX: input.lat, // 이름과 달리 centerX가 위도다 (원본 앱이 그렇게 보낸다)
+        centerY: input.lng,
+        transformX: input.tm.x,
+        transformY: input.tm.y,
+        upjongCd: PCBANG_UPJONG,
+        kakaoPathStr: "",
+        pathStr: "",
+        radius: input.radius,
+        mapLevelDecision: input.radius,
+        apiLogin: "N",
+        sprNo: 0,
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (err) {
+    // 네트워크 단계 실패 — `fetch failed` 한 줄로 뭉개지지 않게 원인과 실행 리전을 싣는다.
+    throw new Error(describeFetchFailure(err, "소상공인365 접속 실패(capture.json)"));
+  }
   if (!res.ok) throw new Error(`소상공인365 capture.json HTTP ${res.status}`);
   const json = (await res.json()) as { analyNo?: string; analyDate?: string };
   if (!json.analyNo) throw new Error("소상공인365가 analyNo를 주지 않았다(사이트 구조 변경 가능)");
@@ -82,10 +107,15 @@ async function issueAnalyNo(input: { lat: number; lng: number; tm: { x: number; 
 
 async function fetchTab(tab: number, params: Record<string, string>): Promise<string> {
   const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${BASE}/gis/bizonAnls/report/sg/sang_gwon${tab}.sg?${qs}`, {
-    headers: HEADERS,
-    signal: AbortSignal.timeout(30000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/gis/bizonAnls/report/sg/sang_gwon${tab}.sg?${qs}`, {
+      headers: HEADERS,
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (err) {
+    throw new Error(describeFetchFailure(err, `소상공인365 접속 실패(sang_gwon${tab})`));
+  }
   if (!res.ok) throw new Error(`소상공인365 sang_gwon${tab} HTTP ${res.status}`);
   return res.text();
 }

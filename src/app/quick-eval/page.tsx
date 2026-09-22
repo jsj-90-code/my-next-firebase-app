@@ -52,6 +52,7 @@ import {
   QUICK_EVAL_RADII,
   QUICK_EVAL_USAGE_LIMIT,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
+import { buildQuickEvalPeers, type QuickEvalPeerSummary } from "@/lib/storeEval/quickEval/quickEvalPeers";
 import type { EvaluationResult, GroundLevel, ModelSettings } from "@/lib/storeEval/types";
 
 type CollectResponse = QuickEvalCollected & {
@@ -106,6 +107,7 @@ export default function QuickEvalPage() {
   } | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [peers, setPeers] = useState<QuickEvalPeerSummary | null>(null);
   const lock = useRef(false);
 
   const headline = ADDRESS_ONLY_ACCURACY.levels[ADDRESS_ONLY_ACCURACY.headlineLevelIndex];
@@ -128,6 +130,56 @@ export default function QuickEvalPage() {
     [plan],
   );
 
+  /**
+   * AI 평가문을 받아온다.
+   *
+   * ⚠️ 상태(result/assembly)가 아니라 **인자로** 받는다 — 조회가 끝난 직후 같은 함수 안에서
+   *    바로 부르려면 setState가 반영되기를 기다릴 수 없기 때문이다(사용자 요청: 조회 누르면
+   *    AI 평가가 같이 나오게).
+   */
+  const runReview = useCallback(
+    async (args: {
+      result: EvaluationResult;
+      assembly: QuickEvalAssembly;
+      collectErrors: string[];
+      locationDraftRationale: string | null;
+      peers: QuickEvalPeerSummary | null;
+    }) => {
+      setReviewing(true);
+      setReviewError(null);
+      try {
+        const token = await user?.getIdToken();
+        const response = await fetch("/api/quick-eval/ai-review", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify(args),
+        });
+        const data = await readJsonOrText<{
+          review: string;
+          model: string;
+          usingFreeTierKey: boolean;
+          usage: { inputTokens: number | null; outputTokens: number | null };
+        }>(response);
+        if (!response.ok || data.error) throw new Error(data.error ?? "AI 평가문 생성에 실패했습니다.");
+        setReview(data.review ?? null);
+        setReviewMeta(
+          data.model
+            ? {
+                model: data.model,
+                usingFreeTierKey: data.usingFreeTierKey ?? false,
+                usage: data.usage ?? { inputTokens: null, outputTokens: null },
+              }
+            : null,
+        );
+      } catch (err) {
+        setReviewError(err instanceof Error ? err.message : "AI 평가문 생성에 실패했습니다.");
+      } finally {
+        setReviewing(false);
+      }
+    },
+    [user],
+  );
+
   const run = useCallback(async () => {
     if (lock.current) return;
     if (!plan.address.trim()) {
@@ -143,6 +195,7 @@ export default function QuickEvalPage() {
     setReview(null);
     setReviewMeta(null);
     setReviewError(null);
+    setPeers(null);
     try {
       // 1) 자동수집 — 좌표·주거인구·유동인구·경쟁점·입지평가 초안
       const token = await user?.getIdToken();
@@ -199,53 +252,42 @@ export default function QuickEvalPage() {
         trainingQscScores,
       });
       setResult(evaluated);
+
+      // 4) 가맹점 실적 비교표 — AI가 **자체 매출 판단**의 근거로 쓴다(사용자 요청 2026-09-22:
+      //    "우리 가맹점 데이터 어떠한 부분을 봤을 때 예상 매출 어느정도 예상한다").
+      //    화면이 이미 기존점을 불러왔으니 여기서 만든다 — 서버가 Firestore를 또 읽지 않는다.
+      const peerSummary = buildQuickEvalPeers(existingStores, evaluated.marketDemand);
+      setPeers(peerSummary);
+
+      // 5) AI 평가문을 **바로** 띄운다. 조회 한 번으로 평가까지 나오게 하라는 지시였다.
+      //    무료 티어라 비용은 안 들지만 좌석배치도와 할당량을 공유하므로, 실패해도 위 결과는 남는다.
+      await runReview({
+        result: evaluated,
+        assembly: built,
+        collectErrors: payload.errors ?? [],
+        locationDraftRationale: payload.locationDraft?.rationale ?? null,
+        peers: peerSummary,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "평가에 실패했습니다.");
     } finally {
       setRunning(false);
       lock.current = false;
     }
-  }, [plan.address, planInput, user]);
+  }, [plan.address, planInput, runReview, user]);
 
+
+  /** [다시 쓰기] 버튼 — 화면에 떠 있는 결과로 다시 부른다. */
   const requestReview = useCallback(async () => {
     if (!result || !assembly) return;
-    setReviewing(true);
-    setReviewError(null);
-    try {
-      const token = await user?.getIdToken();
-      const response = await fetch("/api/quick-eval/ai-review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({
-          result,
-          assembly,
-          collectErrors: collected?.errors ?? [],
-          locationDraftRationale: collected?.locationDraft?.rationale ?? null,
-        }),
-      });
-      const data = await readJsonOrText<{
-        review: string;
-        model: string;
-        usingFreeTierKey: boolean;
-        usage: { inputTokens: number | null; outputTokens: number | null };
-      }>(response);
-      if (!response.ok || data.error) throw new Error(data.error ?? "AI 평가문 생성에 실패했습니다.");
-      setReview(data.review ?? null);
-      setReviewMeta(
-        data.model
-          ? {
-              model: data.model,
-              usingFreeTierKey: data.usingFreeTierKey ?? false,
-              usage: data.usage ?? { inputTokens: null, outputTokens: null },
-            }
-          : null,
-      );
-    } catch (err) {
-      setReviewError(err instanceof Error ? err.message : "AI 평가문 생성에 실패했습니다.");
-    } finally {
-      setReviewing(false);
-    }
-  }, [assembly, collected, result, user]);
+    await runReview({
+      result,
+      assembly,
+      collectErrors: collected?.errors ?? [],
+      locationDraftRationale: collected?.locationDraft?.rationale ?? null,
+      peers,
+    });
+  }, [assembly, collected, peers, result, runReview]);
 
   const counted = assembly?.competitorRows.filter((r) => r.counted) ?? [];
   const excluded = assembly?.competitorRows.filter((r) => !r.counted) ?? [];
@@ -405,7 +447,96 @@ export default function QuickEvalPage() {
                 가동률 상한에 걸려 매출이 깎였습니다 — 수요가 대수보다 많다는 신호입니다.
               </p>
             ) : null}
+            <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">위 금액은 V62 산식값입니다.</p>
           </section>
+
+          {/* ── AI 자체 평가 — 조회하면 자동으로 나온다 ── */}
+          <section className="app-card relative overflow-hidden rounded-2xl p-4">
+            <span className="app-stripe-neutral absolute inset-y-0 left-0 w-[3px]" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">AI 상권평가</h2>
+              <button
+                type="button"
+                className="app-btn-outline rounded-xl px-4 py-1.5 text-xs"
+                disabled={reviewing}
+                onClick={requestReview}
+              >
+                {reviewing ? "쓰는 중…" : "다시 쓰기"}
+              </button>
+            </div>
+            {reviewing && !review ? (
+              <p className="mt-3 text-sm text-[var(--sl-ink-soft)]">
+                상권 성격·장단점과 가맹점 실적 비교를 쓰고 있습니다… (10~20초)
+              </p>
+            ) : null}
+            {reviewError ? <p className="mt-3 text-sm text-[var(--sl-danger)]">{reviewError}</p> : null}
+            {review ? (
+              <>
+                <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-[#171310] dark:text-[#f2ede2]">
+                  {review}
+                </pre>
+                <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+                  AI가 가맹점 실적표와 대 보고 스스로 판단한 것이라 위 산식값과 다를 수 있습니다 — 다른 이유는
+                  평가문 안에 적혀 있습니다.
+                  {reviewMeta
+                    ? ` · ${reviewMeta.model}${reviewMeta.usingFreeTierKey ? " (무료 티어 — 좌석배치도와 할당량 공유)" : ""}`
+                    : ""}
+                </p>
+              </>
+            ) : null}
+          </section>
+
+          {/* ── AI가 근거로 쓴 가맹점 실적표 — 사람도 같은 걸 볼 수 있게 ── */}
+          {peers && peers.nearest.length ? (
+            <details className="app-card rounded-2xl p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
+                AI가 비교한 가맹점 {peers.nearest.length}곳 보기 (실적 있는 {peers.totalCount}곳 중)
+              </summary>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[620px] text-sm">
+                  <thead>
+                    <tr className="text-left text-xs text-[var(--sl-ink-soft)]">
+                      <th className="py-1 pr-3">매장</th>
+                      <th className="py-1 pr-3">개점</th>
+                      <th className="py-1 pr-3 text-right">상권수요</th>
+                      <th className="py-1 pr-3 text-right">경쟁IP</th>
+                      <th className="py-1 pr-3 text-right">대수</th>
+                      <th className="py-1 pr-3 text-right">시급</th>
+                      <th className="py-1 pr-3 text-right">실제월매출</th>
+                      <th className="py-1 text-right">대당</th>
+                    </tr>
+                  </thead>
+                  <tbody className="tabular-nums">
+                    {peers.nearest.map((peer) => (
+                      <tr key={peer.storeName}>
+                        <td className="py-1 pr-3">{peer.storeName}</td>
+                        <td className="py-1 pr-3 text-xs text-[var(--sl-ink-soft)]">{peer.openedAt ?? "-"}</td>
+                        <td className="py-1 pr-3 text-right">
+                          {fmtInt(peer.marketDemand)}
+                          {peer.demandRatio != null ? (
+                            <span className="ml-1 text-xs text-[var(--sl-ink-soft)]">
+                              ({peer.demandRatio.toFixed(2)}배)
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="py-1 pr-3 text-right">{fmtInt(peer.competitorIp)}</td>
+                        <td className="py-1 pr-3 text-right">{fmtInt(peer.pcCount)}</td>
+                        <td className="py-1 pr-3 text-right">{fmtInt(peer.hourlyRate)}</td>
+                        <td className="py-1 pr-3 text-right">{formatManwonRough(peer.actualMonthlyRevenueAvg)}</td>
+                        <td className="py-1 text-right">{formatManwonRough(peer.revenuePerPc)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+                상권수요가 이 후보지와 가까운 순입니다. 대당 월매출 최소 {formatManwonRough(peers.nearestRevenuePerPc.min)}{" "}
+                · 중앙 {formatManwonRough(peers.nearestRevenuePerPc.median)} · 최대{" "}
+                {formatManwonRough(peers.nearestRevenuePerPc.max)}. ⚠️ 개점 시점이 다르면 시급·이용시간이 달라
+                대당매출도 달라집니다.
+              </p>
+            </details>
+          ) : null}
 
           {warnings.length ? (
             <section className="app-card rounded-2xl p-4">
@@ -466,35 +597,6 @@ export default function QuickEvalPage() {
                 </tbody>
               </table>
             </div>
-          </section>
-
-          {/* ── AI 평가문 ── */}
-          <section className="app-card rounded-2xl p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">AI 평가문</h2>
-              <button
-                type="button"
-                className="app-btn-outline rounded-xl px-4 py-2 text-sm"
-                disabled={reviewing}
-                onClick={requestReview}
-              >
-                {reviewing ? "쓰는 중…" : review ? "다시 쓰기" : "평가문 만들기"}
-              </button>
-            </div>
-            {reviewError ? <p className="mt-3 text-sm text-[var(--sl-danger)]">{reviewError}</p> : null}
-            {review ? (
-              <>
-                <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-[#171310] dark:text-[#f2ede2]">
-                  {review}
-                </pre>
-                {reviewMeta ? (
-                  <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-                    {reviewMeta.model}
-                    {reviewMeta.usingFreeTierKey ? " (무료 티어 — 좌석배치도와 할당량 공유)" : " (전용 유료 키)"}
-                  </p>
-                ) : null}
-              </>
-            ) : null}
           </section>
 
           {/* ── 자동수집 수치: 필요할 때만 펼친다 ── */}

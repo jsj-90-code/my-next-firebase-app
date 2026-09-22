@@ -1,8 +1,14 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
       "path": "/api/store-eval/cron-sync",
       "schedule": "0 21 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/quick-eval/collect/route.ts": {
+      "regions": ["icn1"]
+    }
+  }
 }

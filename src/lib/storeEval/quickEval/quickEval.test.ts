@@ -15,6 +15,7 @@ import { computeCompetitorAppliedPcCount, DEFAULT_UNSURVEYED_PC_COUNT } from "..
 import { haversineM } from "./kakaoPcBangs";
 import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
 import { appendSiteFactsToContext, describeSiteFacts } from "./quickEvalLocationContext";
+import { buildQuickEvalPeers } from "./quickEvalPeers";
 import { defaultModelSettings } from "../settings";
 
 describe("좌표변환", () => {
@@ -287,6 +288,101 @@ describe("AI 입지평가 초안 옮기기", () => {
 
   it("초안이 없으면 null — 입지 항이 통째로 빠진다", () => {
     expect(buildQuickLocationEvaluation(PLAN, null)).toBeNull();
+  });
+});
+
+describe("가맹점 실적 비교표 (AI 자체 매출 판단의 근거)", () => {
+  const store = (over: Partial<ExistingStore>): ExistingStore =>
+    ({
+      storeCode: over.storeCode ?? "S1",
+      storeName: over.storeName ?? "가",
+      brandType: "블랙라벨",
+      excludedFromModel: false,
+      openedAt: "2025-01-01",
+      pcCount: 100,
+      evaluationPcCount: null,
+      hourlyRate: 1400,
+      marketDemand: 10000,
+      competitorIp: 200,
+      actualMonthlyRevenueAvg: 50_000_000,
+      ...over,
+    }) as ExistingStore;
+
+  it("블랙라벨·학습제외 아님·실매출 있음만 쓴다", () => {
+    const peers = buildQuickEvalPeers(
+      [
+        store({ storeCode: "A", storeName: "블랙" }),
+        store({ storeCode: "B", storeName: "리그", brandType: "리그PC방" }),
+        store({ storeCode: "C", storeName: "제외", excludedFromModel: true }),
+        store({ storeCode: "D", storeName: "매출없음", actualMonthlyRevenueAvg: null }),
+      ],
+      10000,
+    );
+    expect(peers.totalCount).toBe(1);
+    expect(peers.nearest.map((p) => p.storeName)).toEqual(["블랙"]);
+  });
+
+  it("대당 월매출을 계산한다 — 대수가 다른 매장을 비교할 수 있게", () => {
+    const peers = buildQuickEvalPeers([store({ pcCount: 100, actualMonthlyRevenueAvg: 60_000_000 })], 10000);
+    expect(peers.nearest[0].revenuePerPc).toBe(600_000);
+  });
+
+  it("평가용 대수가 있으면 그걸 쓴다(현재 운영 대수보다 우선)", () => {
+    const peers = buildQuickEvalPeers(
+      [store({ pcCount: 120, evaluationPcCount: 100, actualMonthlyRevenueAvg: 50_000_000 })],
+      10000,
+    );
+    expect(peers.nearest[0].pcCount).toBe(100);
+    expect(peers.nearest[0].revenuePerPc).toBe(500_000);
+  });
+
+  it("⭐ 상권수요가 가까운 순으로 고른다 — 배수로 재서 크고 작은 쪽을 같게 취급한다", () => {
+    const peers = buildQuickEvalPeers(
+      [
+        store({ storeCode: "A", storeName: "절반", marketDemand: 5_000 }),
+        store({ storeCode: "B", storeName: "두배", marketDemand: 20_000 }),
+        store({ storeCode: "C", storeName: "근접", marketDemand: 10_500 }),
+        store({ storeCode: "D", storeName: "열배", marketDemand: 100_000 }),
+      ],
+      10_000,
+      3,
+    );
+    expect(peers.nearest.map((p) => p.storeName)).toEqual(["근접", "절반", "두배"]);
+    expect(peers.nearest[0].demandRatio).toBeCloseTo(1.05, 5);
+  });
+
+  it("후보지 상권수요를 모르면(수집 실패) 매출 높은 순으로 대신 고른다", () => {
+    const peers = buildQuickEvalPeers(
+      [
+        store({ storeCode: "A", storeName: "작음", actualMonthlyRevenueAvg: 30_000_000 }),
+        store({ storeCode: "B", storeName: "큼", actualMonthlyRevenueAvg: 90_000_000 }),
+      ],
+      null,
+      2,
+    );
+    expect(peers.nearest.map((p) => p.storeName)).toEqual(["큼", "작음"]);
+    expect(peers.nearest[0].demandRatio).toBeNull();
+  });
+
+  it("대당매출 범위와 중앙값을 같이 준다 — AI가 이 안에서 가늠하게 하는 근거다", () => {
+    const peers = buildQuickEvalPeers(
+      [
+        store({ storeCode: "A", pcCount: 100, actualMonthlyRevenueAvg: 40_000_000 }),
+        store({ storeCode: "B", pcCount: 100, actualMonthlyRevenueAvg: 50_000_000 }),
+        store({ storeCode: "C", pcCount: 100, actualMonthlyRevenueAvg: 60_000_000 }),
+      ],
+      10000,
+    );
+    expect(peers.nearestRevenuePerPc.min).toBe(400_000);
+    expect(peers.nearestRevenuePerPc.median).toBe(500_000);
+    expect(peers.nearestRevenuePerPc.max).toBe(600_000);
+  });
+
+  it("비교할 매장이 없으면 빈 표를 준다 — 지어낸 근거를 만들지 않는다", () => {
+    const peers = buildQuickEvalPeers([], 10000);
+    expect(peers.totalCount).toBe(0);
+    expect(peers.nearest).toEqual([]);
+    expect(peers.medians.revenuePerPc).toBeNull();
   });
 });
 
