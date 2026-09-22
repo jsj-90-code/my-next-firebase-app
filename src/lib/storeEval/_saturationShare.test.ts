@@ -301,4 +301,284 @@ describeIf("포화도 — 경쟁점도 좌석 천장이 있다", () => {
     console.log(`  ⛔ 좋아 보여도 여기서 고르지 마라 — 중첩 LOO부터다.`);
     expect(n).toBeGreaterThan(30);
   });
+
+  it("(6) ⭐⭐⭐ 흡인력과 경쟁 세기를 **같이** 움직인다 — 수준을 지키면서", () => {
+    // (5)에서 흡인력만 켜니 분별력은 올랐는데 **수준이 떴다**(편향 +7.2%p).
+    // 당연하다 — 수요를 키웠으니 예측이 통째로 올라간다.
+    //
+    // ⭐ 그런데 **짝이 있다.** 탕정역 사례가 말한 게 "경쟁점을 더 세게 세야 한다"였다
+    //    (우리가 더 약한데 산식은 경쟁점을 0.196배로 깎는다).
+    //    수요를 키우고(예측 ↑) 경쟁을 세게 세면(예측 ↓) **수준은 지키면서 매장 간 패턴만
+    //    바뀐다.** 그게 우리가 원하는 것이다 — 지금 수준은 맞고 분별력이 나쁘니까.
+    //
+    // 그래서 (a, θ)를 **격자로** 훑는다. θ를 내리면 품질비 0.581의 세제곱이 덜 깎여
+    // 경쟁점이 세진다.
+    // ⛔ 값을 고르지 않는다. 능선이 있는지만 본다.
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+    const score = (a: number, th: number) => {
+      const P2 = { ...P, agglomerationFactor: a, qualityExponent: th };
+      const preds = use.map(({ r }) => computeTextbook(r.input, P2).utilization ?? NaN);
+      if (preds.some((v) => !Number.isFinite(v))) return null;
+      const abs = preds.map((v, i) => Math.abs(v - acts[i]));
+      const pl = preds.map(Math.log);
+      const sp = sdOf(pl) / sdOf(actLog), rr = corr(pl, actLog);
+      const k = Math.exp(mean(actLog) - mean(pl));
+      return {
+        mae: mean(abs), bias: mean(preds.map((v, i) => v - acts[i])),
+        within5: abs.filter((v) => v <= 0.05).length,
+        spread: sp, r: rr, gap: rr - sp / 2,
+        maeLvl: mean(preds.map((v, i) => Math.abs(v * k - acts[i]))),
+        worst: Math.max(...abs), preds,
+      };
+    };
+    const AS = [0, 0.1, 0.2, 0.3, 0.4], THS = [3, 2.5, 2, 1.5, 1];
+    console.log(`\n[격자] 흡인력 a x 품질지수 θ · ⭐ 바닥: 전부 평균(LOO) ${(baseMae * 100).toFixed(2)}%p · n=${n}`);
+    console.log(`  ⭐ 칸 안은 **분별력 r / 편향%p** — r이 크고 편향이 0에 가까운 칸을 찾는다`);
+    console.log(`        ${THS.map((t) => `θ=${t.toFixed(1)}`.padStart(14)).join("")}`);
+    for (const a of AS) {
+      let line = `  a=${a.toFixed(1)}`;
+      for (const th of THS) {
+        const s = score(a, th);
+        line += s ? `${`${s.r.toFixed(3)}/${(s.bias * 100).toFixed(1)}`.padStart(14)}` : "".padStart(14);
+      }
+      console.log(line + (a === 0 ? "   ← 지금 줄(θ=3이 지금 칸)" : ""));
+    }
+    // 편향이 작은 칸들만 추려서 자세히 — 수준을 지키는 조합이 무엇을 주나
+    console.log(`\n  [편향 ±1.5%p 안인 칸만] 수준을 지키면서 분별력이 어떻게 되나`);
+    console.log(`   a     θ      MAE     최악   편향   ±5%p  퍼짐 분별력r  남은거리  수준보정`);
+    const keep: { a: number; th: number; s: NonNullable<ReturnType<typeof score>> }[] = [];
+    for (const a of [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4]) {
+      for (const th of [3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1]) {
+        const s = score(a, th);
+        if (!s || Math.abs(s.bias) > 0.015) continue;
+        keep.push({ a, th, s });
+      }
+    }
+    for (const { a, th, s } of keep.sort((x, y) => y.s.gap - x.s.gap).slice(0, 12)) {
+      console.log(`  ${a.toFixed(2).padStart(4)}${th.toFixed(2).padStart(7)}`
+        + `${(s.mae * 100).toFixed(2).padStart(9)}%p${(s.worst * 100).toFixed(1).padStart(7)}%p`
+        + `${(s.bias * 100).toFixed(1).padStart(7)}%p  ${String(s.within5).padStart(2)}/${n}`
+        + `${s.spread.toFixed(2).padStart(6)}배${s.r.toFixed(3).padStart(8)}`
+        + `${s.gap.toFixed(3).padStart(10)}${(s.maeLvl * 100).toFixed(2).padStart(10)}%p`
+        + (a === 0 && th === 3 ? "  ← 지금" : ""));
+    }
+    const now = score(0, 3)!;
+    console.log(`\n  지금 칸(a=0·θ=3): MAE ${(now.mae * 100).toFixed(2)}%p · r ${now.r.toFixed(3)}`
+      + ` · 남은거리 ${now.gap.toFixed(3)} · 수준보정 ${(now.maeLvl * 100).toFixed(2)}%p`);
+    console.log(`\n  ⭐ **남은거리(= r − 퍼짐÷2)가 0을 넘으면 '전부 평균'을 이긴다.**`);
+    console.log(`     편향을 지키면서 그게 좋아지는 칸이 있으면 그게 진짜 후보다.`);
+    console.log(`  ⛔ 여기서 고르지 않는다 — (7)번 중첩 LOO가 판정이다.`);
+    expect(n).toBeGreaterThan(30);
+  });
+
+  it("(7) ⭐⭐⭐ 자료가 (a, θ)를 고를 수 있나 — 중첩 LOO", () => {
+    // 이 저장소의 잣대다: 한 곳을 빼고 나머지로 고른 뒤 **안 본 그 곳**을 맞힌다.
+    // 겹마다 고른 값이 갈리면 자료가 못 고르는 것이다(눈금 보정 b가 여기서 떨어졌다).
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const n = acts.length;
+    const AS = [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3];
+    const THS = [3, 2.75, 2.5, 2.25, 2, 1.75, 1.5];
+    const cells: { a: number; th: number; preds: number[] }[] = [];
+    for (const a of AS) {
+      for (const th of THS) {
+        const P2 = { ...P, agglomerationFactor: a, qualityExponent: th };
+        const preds = use.map(({ r }) => computeTextbook(r.input, P2).utilization ?? NaN);
+        if (preds.some((v) => !Number.isFinite(v))) continue;
+        cells.push({ a, th, preds });
+      }
+    }
+    const maeOn = (c: typeof cells[number], idx: number[]) =>
+      mean(idx.map((i) => Math.abs(c.preds[i] - acts[i])));
+    const all = use.map((_, i) => i);
+    const picked: string[] = [];
+    const looErr: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const train = all.filter((j) => j !== i);
+      let best = cells[0], bs = Infinity;
+      for (const c of cells) { const s = maeOn(c, train); if (s < bs) { bs = s; best = c; } }
+      picked.push(`a=${best.a.toFixed(2)} θ=${best.th.toFixed(2)}`);
+      looErr.push(Math.abs(best.preds[i] - acts[i]));
+    }
+    const counts = new Map<string, number>();
+    for (const p of picked) counts.set(p, (counts.get(p) ?? 0) + 1);
+    const spread = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    console.log(`\n[중첩 LOO] 칸 ${cells.length}개 · 한 곳 빼고 ${n - 1}곳으로 고른 뒤 안 본 그 곳을 맞힌다`);
+    console.log(`  겹마다 고른 칸: ${spread.map(([k, c]) => `${k}(${c}회)`).join(" · ")}`);
+    console.log(`  **자료가 고를 수 있나**: ${counts.size === 1 ? `✅ ${n}겹 전부 같은 칸`
+      : counts.size <= 3 ? `✅ ${counts.size}가지로 좁다` : `⚠️ 겹마다 ${counts.size}가지로 갈린다`}`);
+    console.log(`  중첩 LOO MAE = ${(mean(looErr) * 100).toFixed(2)}%p`);
+    const fixed = (a: number, th: number) => {
+      const c = cells.find((x) => x.a === a && x.th === th);
+      return c ? mean(all.map((i) => Math.abs(c.preds[i] - acts[i]))) : NaN;
+    };
+    console.log(`  비교 — 지금 칸(a=0·θ=3) 고정 = ${(fixed(0, 3) * 100).toFixed(2)}%p`);
+    console.log(`\n  ⭐ 중첩 LOO MAE가 지금 칸보다 나쁘면 **고르는 행위 자체가 손해**다.`);
+    console.log(`     겹마다 갈리면 자료가 못 고르는 것이니 지금 값을 둔다.`);
+    expect(n).toBeGreaterThan(30);
+  });
+
+  it("(8) ⭐⭐⭐ 검산이 가리킨 영역까지 — \"수요 3~4배 · 순수 PC 비율\"", () => {
+    // (4)번 검산이 말한 것을 식으로 옮기면 이렇다:
+    //   · 경쟁점들이 우리와 비슷하게(30% 안팎) 돈다면 동네 수요는 지금 추정의 **3~4배**다
+    //   · 그러면 우리 점유율은 지금(중앙 48.6%)이 아니라 **순수 PC 비율**(99 ÷ 총PC ≈ 16%)이어야
+    //     수준이 맞는다 — 즉 품질 보정을 거의 안 하는 것(θ→0)이다
+    // 이게 사실 **교과서 그대로**다. 지금 산식은 거기서 두 번 벗어나 있고(수요 축소 + 품질 과보정),
+    // 두 이탈이 서로 상쇄돼서 수준만 맞고 있다.
+    //
+    // 앞 격자는 a≤0.4 · θ≥1이라 그 영역을 못 봤다. **넓혀서 본다.**
+    //   1 + a·ln(1+경쟁점 수) 에서 경쟁점 10곳이면 a=1.0이 배율 3.4배다.
+    // ⛔ 값을 고르지 않는다. **그 영역이 존재하는지**만 본다.
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+    const score = (a: number, th: number) => {
+      const P2 = { ...P, agglomerationFactor: a, qualityExponent: th };
+      const preds = use.map(({ r }) => computeTextbook(r.input, P2).utilization ?? NaN);
+      if (preds.some((v) => !Number.isFinite(v))) return null;
+      const abs = preds.map((v, i) => Math.abs(v - acts[i]));
+      const pl = preds.map(Math.log);
+      const sp = sdOf(pl) / sdOf(actLog), rr = corr(pl, actLog);
+      const k = Math.exp(mean(actLog) - mean(pl));
+      // 검산 — 이 설정에서 경쟁점들이 몇 %로 도는 셈인가(사람 눈으로 말이 되나)
+      let implied: number[] = [];
+      for (const { r, act } of use) {
+        const b = computeTextbook(r.input, P2);
+        const pc = r.input.pcCount ?? 0;
+        let rivalPc = 0;
+        for (const rv of r.input.rivals ?? []) {
+          if (!(rv.ip > 0)) continue;
+          const w = rivalDistanceWeight(rv.distanceM, P2);
+          if (w > 0) rivalPc += rv.ip * w;
+        }
+        if (b.totalDemandHours == null || rivalPc < 20 || !(pc > 0)) continue;
+        implied.push((b.totalDemandHours - pc * MONTH_HOURS * act) / (rivalPc * MONTH_HOURS));
+      }
+      implied = implied.sort((x, y) => x - y);
+      return {
+        mae: mean(abs), worst: Math.max(...abs), bias: mean(preds.map((v, i) => v - acts[i])),
+        within5: abs.filter((v) => v <= 0.05).length, spread: sp, r: rr, gap: rr - sp / 2,
+        maeLvl: mean(preds.map((v, i) => Math.abs(v * k - acts[i]))),
+        rivalUtil: implied.length ? implied[Math.floor(implied.length / 2)] : NaN,
+      };
+    };
+    console.log(`\n[넓힌 격자] ⭐ 바닥: 전부 평균(LOO) ${(baseMae * 100).toFixed(2)}%p · n=${n}`);
+    console.log(`  ⭐ 칸 = **분별력r / 편향%p / 경쟁점가동률%** (경쟁점 가동률이 20~40%면 말이 된다)`);
+    const THS = [3, 2, 1, 0.5, 0];
+    console.log(`        ${THS.map((t) => `θ=${t}`.padStart(20)).join("")}`);
+    for (const a of [0, 0.25, 0.5, 0.75, 1.0, 1.5]) {
+      let line = `  a=${a.toFixed(2)}`;
+      for (const th of THS) {
+        const s = score(a, th);
+        line += s
+          ? `${`${s.r.toFixed(3)}/${(s.bias * 100).toFixed(1)}/${(s.rivalUtil * 100).toFixed(0)}`.padStart(20)}`
+          : "".padStart(20);
+      }
+      console.log(line + (a === 0 ? "   ← 지금 줄" : ""));
+    }
+    console.log(`\n  [편향 ±1.5%p 안 · 경쟁점 가동률 15~45% 안인 칸] — 수준도 맞고 말도 되는 칸`);
+    console.log(`   a     θ      MAE     최악   편향   ±5%p  퍼짐 분별력r  남은거리  수준보정  경쟁가동률`);
+    const keep: { a: number; th: number; s: NonNullable<ReturnType<typeof score>> }[] = [];
+    for (let a = 0; a <= 1.51; a += 0.125) {
+      for (const th of [3, 2.5, 2, 1.5, 1, 0.5, 0]) {
+        const s = score(Math.round(a * 1000) / 1000, th);
+        if (!s || Math.abs(s.bias) > 0.015) continue;
+        if (!(s.rivalUtil > 0.15 && s.rivalUtil < 0.45)) continue;
+        keep.push({ a: Math.round(a * 1000) / 1000, th, s });
+      }
+    }
+    if (!keep.length) console.log(`   (그런 칸이 없다)`);
+    for (const { a, th, s } of keep.sort((x, y) => y.s.gap - x.s.gap).slice(0, 10)) {
+      console.log(`  ${a.toFixed(3).padStart(5)}${th.toFixed(1).padStart(6)}`
+        + `${(s.mae * 100).toFixed(2).padStart(9)}%p${(s.worst * 100).toFixed(1).padStart(7)}%p`
+        + `${(s.bias * 100).toFixed(1).padStart(7)}%p  ${String(s.within5).padStart(2)}/${n}`
+        + `${s.spread.toFixed(2).padStart(6)}배${s.r.toFixed(3).padStart(8)}`
+        + `${s.gap.toFixed(3).padStart(10)}${(s.maeLvl * 100).toFixed(2).padStart(10)}%p`
+        + `${(s.rivalUtil * 100).toFixed(0).padStart(10)}%`);
+    }
+    const now = score(0, 3)!;
+    console.log(`\n  지금 칸(a=0·θ=3): MAE ${(now.mae * 100).toFixed(2)}%p · 최악 ${(now.worst * 100).toFixed(1)}%p`
+      + ` · r ${now.r.toFixed(3)} · 남은거리 ${now.gap.toFixed(3)}`
+      + ` · 수준보정 ${(now.maeLvl * 100).toFixed(2)}%p · **경쟁점 가동률 ${(now.rivalUtil * 100).toFixed(0)}%**`);
+    console.log(`\n  ⭐⭐ 읽는 법`);
+    console.log(`     · 지금 칸은 경쟁점 가동률이 ${(now.rivalUtil * 100).toFixed(0)}%로 **말이 안 된다**`);
+    console.log(`     · 말이 되는 칸(15~45%)이 있으면서 성적도 비슷하면, 그쪽이 **구조가 맞는 자리**다`);
+    console.log(`     · 말이 되는 칸이 전부 성적이 크게 나쁘면 -> 수요·대수 자료 자체를 의심해야 한다`);
+    expect(n).toBeGreaterThan(30);
+  });
+
+  it("(9) ⭐⭐⭐ 핑봇 실측이 판정한다 — 경쟁점은 진짜 몇 %로 도나", () => {
+    // ⭐ **새 검증 자료를 찾았다.** 경쟁점 문서에 `pingbotUtilization`(핑봇 실측 가동률)이
+    //    있다. 57곳에 값이 있고 중앙 21.1%다.
+    //
+    // 이게 왜 큰가: 지금까지 우리는 **자사 40곳**으로만 판정했고, 그걸로는 작은 차이를
+    // 못 가른다([[feedback_forty_stores_cannot_judge]]). 핑봇은 **독립 관측 57개**다.
+    // 그리고 산식은 경쟁점 가동률을 **함의한다** — 동네 수요에서 우리 몫을 빼면 남는 게
+    // 경쟁점들 몫이니까. 그 함의값을 실측과 대면 **수요층을 직접 검증**할 수 있다.
+    //
+    // ⚠️ 핑봇 값은 2026-08 주간 측정이고 우리 평가창은 매장마다 과거 12달이다. 시점이
+    //    다르므로 **수준 비교(2배냐 아니냐)까지만** 하고 매장별 순위 판정엔 안 쓴다.
+    const pingByCode = new Map<string, number[]>();
+    for (const c of allCompetitors) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const v = (c as any).pingbotUtilization as number | null | undefined;
+      if (v == null || !(v > 0)) continue;
+      pingByCode.set(c.candidateCode, [...(pingByCode.get(c.candidateCode) ?? []), v / 100]);
+    }
+    const allPing = [...pingByCode.values()].flat().sort((a, b) => a - b);
+    console.log(`\n[핑봇 실측] 경쟁점 ${allPing.length}곳에 실측 가동률이 있다`);
+    console.log(`  중앙 ${(allPing[Math.floor(allPing.length / 2)] * 100).toFixed(1)}%`
+      + ` · 4분위 ${(allPing[Math.floor(allPing.length * 0.25)] * 100).toFixed(1)}~${(allPing[Math.floor(allPing.length * 0.75)] * 100).toFixed(1)}%`
+      + ` · 범위 ${(allPing[0] * 100).toFixed(1)}~${(allPing[allPing.length - 1] * 100).toFixed(1)}%`);
+    console.log(`  우리 매장 실측 중앙 ${(([...rows.map((r) => r.act)].sort((a, b) => a - b))[Math.floor(rows.length / 2)] * 100).toFixed(1)}%`);
+
+    // ── 매장별로 — 산식 함의 vs 핑봇 실측 ───────────────────────────────────
+    console.log(`\n  매장별 — 산식이 함의하는 경쟁점 가동률 vs 그 동네 핑봇 실측`);
+    console.log(`    매장            핑봇n  핑봇실측   산식함의   배율(실측÷함의)`);
+    const ratios: number[] = [];
+    for (const r of base) {
+      const ping = pingByCode.get(r.input.storeCode);
+      if (!ping || ping.length < 2) continue;
+      const act = r.input.actualUtilization;
+      const b = computeTextbook(r.input, P);
+      const pc = r.input.pcCount ?? 0;
+      if (act == null || !(act > 0) || b.totalDemandHours == null || !(pc > 0)) continue;
+      let rivalPc = 0;
+      for (const rv of r.input.rivals ?? []) {
+        if (!(rv.ip > 0)) continue;
+        const w = rivalDistanceWeight(rv.distanceM, P);
+        if (w > 0) rivalPc += rv.ip * w;
+      }
+      if (rivalPc < 20) continue;
+      const implied = (b.totalDemandHours - pc * MONTH_HOURS * act) / (rivalPc * MONTH_HOURS);
+      const obs = mean(ping);
+      if (implied > 0) ratios.push(obs / implied);
+      console.log(`    ${(r.input.storeName ?? "").padEnd(14)}${String(ping.length).padStart(4)}`
+        + `${(obs * 100).toFixed(1).padStart(9)}%${(implied * 100).toFixed(1).padStart(10)}%`
+        + `${implied > 0 ? `${(obs / implied).toFixed(2)}배`.padStart(14) : "".padStart(14)}`);
+    }
+    if (ratios.length) {
+      const s = [...ratios].sort((a, b) => a - b);
+      console.log(`\n  ⭐ **배율 중앙 ${s[Math.floor(s.length / 2)].toFixed(2)}배** (n=${ratios.length}곳)`
+        + ` · 4분위 ${s[Math.floor(s.length * 0.25)].toFixed(2)}~${s[Math.floor(s.length * 0.75)].toFixed(2)}배`);
+      console.log(`     1배면 산식의 수요가 맞다. 1보다 크면 **수요가 그만큼 작다**는 뜻이다.`);
+    }
+    console.log(`\n  ⚠️ 시점이 다르다(핑봇 2026-08 주간 vs 평가창 과거 12달). **수준만** 읽는다.`);
+    console.log(`  ⚠️ 경쟁점 대수가 과대해도 같은 방향으로 나온다 — 이 자료로는 둘을 못 가른다.`);
+    console.log(`     가르려면 핑봇이 있는 경쟁점의 **실제 대수**가 필요하다.`);
+    console.log(`\n  📌 **이건 40곳 판정력 문제를 우회하는 새 검증 축이다.**`);
+    console.log(`     앞으로 수요층을 바꿀 때 "핑봇 실측과 맞나"를 같이 봐야 한다.`);
+    expect(allPing.length).toBeGreaterThan(10);
+  });
 });
