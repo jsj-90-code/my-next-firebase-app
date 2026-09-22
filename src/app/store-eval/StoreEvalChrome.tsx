@@ -10,6 +10,8 @@ const NAV_ITEMS = [
   { href: "/store-eval", label: "대시보드" },
   { href: "/store-eval/how-it-works", label: "매출 계산법" },
   { href: "/store-eval/candidates", label: "신규후보지" },
+  // 2026-09-22 — 주소만 넣는 초기평가(별도 화면). 신규후보지와 산식은 같고 입력 자료만 다르다.
+  { href: "/store-eval/quick-eval", label: "주소만 초기평가" },
   { href: "/store-eval/existing-stores", label: "기존 가맹점 관리" },
   { href: "/store-eval/validation", label: "기존 가맹점 검증" },
   { href: "/store-eval/competitor-coords", label: "경쟁점 좌표" },
