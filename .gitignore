@@ -98,6 +98,9 @@ src/**/_*.test.ts
 # 2026-09-22 — 인허가 자료로 평가창 당시 영업 여부를 자동 판정한다. 대수 규칙 재고 표가
 # 여기 있고 **사용자 결정이 남아 있다**. 자료는 scripts/collectPcBangPermits.mjs가 뜬다.
 !src/lib/storeEval/_rival2kmPermit.test.ts
+# 2026-09-22 — 가동률 오차를 이용자 수와 1인당 시간으로 쪼갠다. 원장이 있어야 돌고,
+# 독점 3곳 원장을 받으면 **다시 돌려서 수요층을 직접 볼 파일**이다.
+!src/lib/storeEval/_ledgerUserSplit.test.ts
 # 2026-09-20 — 축척 기준점(독점 3곳)에 특수수요 배수를 거는 순환을 재는 하네스.
 # 사용자 결정이 남아 있어 다시 돌릴 일이 있다.
 !src/lib/storeEval/_anchorExemption.test.ts
