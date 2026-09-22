@@ -14,6 +14,7 @@ import { buildQuickCandidate, buildQuickLocationEvaluation, type QuickEvalPlanIn
 import { computeCompetitorAppliedPcCount, DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
 import { haversineM } from "./kakaoPcBangs";
 import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
+import { appendSiteFactsToContext, describeSiteFacts } from "./quickEvalLocationContext";
 import { defaultModelSettings } from "../settings";
 
 describe("좌표변환", () => {
@@ -222,6 +223,41 @@ describe("V62 입력 조립", () => {
     const noPlan = buildQuickCandidate({ ...PLAN, expectedPcCount: null, hourlyRate: null }, COLLECTED, 1);
     expect(noPlan.missing.join(" ")).toContain("PC대수");
     expect(noPlan.missing.join(" ")).toContain("요금");
+  });
+});
+
+describe("AI에게 넘기는 물건 정보(층·엘리베이터)", () => {
+  it("층·엘리베이터를 사람이 읽는 한 줄로 만든다", () => {
+    expect(describeSiteFacts({ floor: 2, groundLevel: "지상", hasElevator: true })).toBe(
+      "지상 2층 · 엘리베이터 있음",
+    );
+    expect(describeSiteFacts({ floor: 1, groundLevel: "지하", hasElevator: false })).toBe(
+      "지하 1층 · 엘리베이터 없음",
+    );
+  });
+
+  it("모르는 값을 빈칸으로 두지 않는다 — 비우면 AI가 1층으로 가정해 후하게 매긴다", () => {
+    const text = appendSiteFactsToContext("기존자료", { floor: null, groundLevel: null, hasElevator: null });
+    expect(text).toContain("층수 모름");
+    expect(text).toContain("1층으로 가정하지 말고");
+  });
+
+  it("1층이 아니면 불리하다는 사실을 AI에게 분명히 넘긴다", () => {
+    const upstairs = appendSiteFactsToContext("기존자료", { floor: 3, groundLevel: "지상", hasElevator: false });
+    expect(upstairs).toContain("1층이 아니다");
+    const basement = appendSiteFactsToContext("기존자료", { floor: 1, groundLevel: "지하", hasElevator: true });
+    expect(basement).toContain("1층이 아니다");
+  });
+
+  it("1층이면 불리 경고를 붙이지 않는다", () => {
+    const ground = appendSiteFactsToContext("기존자료", { floor: 1, groundLevel: "지상", hasElevator: true });
+    expect(ground).not.toContain("1층이 아니다");
+    expect(ground).not.toContain("층수 모름");
+  });
+
+  it("운영 공용 컨텍스트를 덮지 않고 뒤에 붙인다", () => {
+    const text = appendSiteFactsToContext("원래자료 첫줄", { floor: 2, groundLevel: "지상", hasElevator: null });
+    expect(text.startsWith("원래자료 첫줄")).toBe(true);
   });
 });
 

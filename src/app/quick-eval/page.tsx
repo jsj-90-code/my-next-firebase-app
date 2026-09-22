@@ -149,7 +149,15 @@ export default function QuickEvalPage() {
       const response = await fetch("/api/quick-eval/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ address: plan.address.trim(), name: planInput.name }),
+        body: JSON.stringify({
+          address: plan.address.trim(),
+          name: planInput.name,
+          // 층·엘리베이터는 **AI 입지평가에 넘겨야** 접근가시성에 반영된다(2026-09-22).
+          // 안 넘기면 AI가 층수를 모른 채 매기고, 입력한 층수가 결과를 못 움직인다.
+          floor: planInput.floor,
+          groundLevel: planInput.groundLevel,
+          hasElevator: planInput.hasElevator,
+        }),
       });
       // 외부 API를 여러 번 부르는 라우트라 타임아웃 시 HTML이 온다(readJsonOrText 주석 참고).
       const data = await readJsonOrText<CollectResponse>(response);
@@ -285,37 +293,40 @@ export default function QuickEvalPage() {
               }}
             />
           </label>
+          <label className="block w-[92px] text-sm">
+            <span className="text-[var(--sl-ink-soft)]">지상/지하</span>
+            <select
+              className="app-input mt-1 w-full rounded-lg px-3 py-2"
+              value={plan.groundLevel}
+              onChange={(e) => setPlan((p) => ({ ...p, groundLevel: e.target.value as GroundLevel }))}
+            >
+              {GROUND_LEVELS.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block w-[72px] text-sm">
+            <span className="text-[var(--sl-ink-soft)]">층</span>
+            <input
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 tabular-nums"
+              inputMode="numeric"
+              value={plan.floor}
+              onChange={(e) => setPlan((p) => ({ ...p, floor: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") run();
+              }}
+            />
+          </label>
           <button type="button" className="app-btn-primary rounded-xl px-5 py-2 text-sm" disabled={running} onClick={run}>
             {running ? "조회 중… (30초쯤)" : "조회"}
           </button>
         </div>
 
         <details className="mt-3">
-          <summary className="cursor-pointer text-xs text-[var(--sl-ink-soft)]">추가 입력 (층·엘리베이터·후보지명)</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-4">
-            <label className="block text-sm">
-              <span className="text-[var(--sl-ink-soft)]">지상/지하</span>
-              <select
-                className="app-input mt-1 w-full rounded-lg px-3 py-2"
-                value={plan.groundLevel}
-                onChange={(e) => setPlan((p) => ({ ...p, groundLevel: e.target.value as GroundLevel }))}
-              >
-                {GROUND_LEVELS.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-[var(--sl-ink-soft)]">층</span>
-              <input
-                className="app-input mt-1 w-full rounded-lg px-3 py-2 tabular-nums"
-                inputMode="numeric"
-                value={plan.floor}
-                onChange={(e) => setPlan((p) => ({ ...p, floor: e.target.value }))}
-              />
-            </label>
+          <summary className="cursor-pointer text-xs text-[var(--sl-ink-soft)]">추가 입력 (엘리베이터·후보지명)</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <label className="block text-sm">
               <span className="text-[var(--sl-ink-soft)]">엘리베이터</span>
               <select
@@ -328,7 +339,7 @@ export default function QuickEvalPage() {
                 <option value="없음">없음</option>
               </select>
             </label>
-            <label className="block text-sm">
+            <label className="block text-sm sm:col-span-2">
               <span className="text-[var(--sl-ink-soft)]">후보지명</span>
               <input
                 className="app-input mt-1 w-full rounded-lg px-3 py-2"
@@ -342,6 +353,10 @@ export default function QuickEvalPage() {
             먹거리는 {OWN_FOOD_BRAND} 고정, 예상 오픈월은 안 받습니다(평가한 달의 다음 달로 잡습니다).
           </p>
         </details>
+        <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+          층수는 AI 입지평가의 접근가시성 판단에 그대로 넘어갑니다 — 비우면 &quot;층수 모름&quot;으로 보수적으로
+          매깁니다.
+        </p>
 
         <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
           초기 선별용입니다 — ±20% 안에 {formatPercent(headline.within20, 1)}(기존 가맹점{" "}

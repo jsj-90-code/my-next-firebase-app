@@ -22,7 +22,8 @@ import { DEMAND_POINT_TARGETS } from "@/lib/storeEval/demandPointTargets";
 import { haversineDistanceMeters } from "@/lib/storeEval/geo";
 import { buildLocationEvalContext } from "@/lib/storeEval/locationEvalContext";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
-import type { DemandPoint } from "@/lib/storeEval/types";
+import type { DemandPoint, GroundLevel } from "@/lib/storeEval/types";
+import { appendSiteFactsToContext } from "@/lib/storeEval/quickEval/quickEvalLocationContext";
 import { collectKakaoPcBangs } from "@/lib/storeEval/quickEval/kakaoPcBangs";
 import { collectSgisRadiusPopulation } from "@/lib/storeEval/quickEval/sgisRadiusPopulation";
 import { collectSbizFloating } from "@/lib/storeEval/quickEval/sbizFloating";
@@ -35,7 +36,17 @@ import { tmSelfTestFailures } from "@/lib/storeEval/quickEval/tm";
 // 모자란다. Fluid Compute에서 긴 함수가 허용되므로 넉넉히 준다.
 export const maxDuration = 300;
 
-type CollectBody = { address?: string; name?: string; skipFloating?: boolean; skipAi?: boolean };
+type CollectBody = {
+  address?: string;
+  name?: string;
+  skipFloating?: boolean;
+  skipAi?: boolean;
+  // 물건 정보 — AI 입지평가의 **접근가시성 판단에 넘긴다**(2026-09-22 추가). 안 넘기면 AI가
+  // 층수를 모른 채 가시성을 매긴다(quickEvalLocationContext.ts 머리 주석).
+  floor?: number | null;
+  groundLevel?: GroundLevel | null;
+  hasElevator?: boolean | null;
+};
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -122,7 +133,7 @@ export async function POST(request: Request) {
     const countedCompetitors = pcBangs
       .filter((p) => judgePcBangName(p).counted)
       .map((p) => ({ name: p.name, distanceM: p.distanceM }));
-    const contextText = buildLocationEvalContext({
+    const baseContext = buildLocationEvalContext({
       candidate: {
         name: body.name?.trim() || address,
         address,
@@ -139,6 +150,12 @@ export async function POST(request: Request) {
       competitors: countedCompetitors as never,
       demandPoints,
       adminDongReference: null,
+    });
+    // 층·엘리베이터를 사실로 덧붙인다 — 이게 없으면 AI가 층수를 모른 채 가시성을 매긴다.
+    const contextText = appendSiteFactsToContext(baseContext, {
+      floor: body.floor ?? null,
+      groundLevel: body.groundLevel ?? null,
+      hasElevator: body.hasElevator ?? null,
     });
     try {
       locationDraft = await runLocationEvalDraft({ contextText });

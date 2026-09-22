@@ -95,7 +95,8 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     label: "입지평가(가시성·선점경쟁·상권위치·특수수요·유입제약)",
     source: "AI 판정",
     basis:
-      "기존 입지동선평가 AI 초안(Gemini + 웹검색 + 지도)을 그대로 부른다. " +
+      "기존 입지동선평가 AI 초안(Gemini + 웹검색)을 그대로 부른다. **입력한 층·엘리베이터를 사실로 함께 넘겨** " +
+      "접근가시성에 반영시킨다(2026-09-22 — 그전엔 AI가 층수를 모른 채 매겼다). " +
       "⚠️ 아래 오차표는 가시성을 표본 중앙값으로 고정해서 잰 값이다 — AI 판정의 오차는 아직 안 쟀다",
     needsFieldCheck: true,
   },
