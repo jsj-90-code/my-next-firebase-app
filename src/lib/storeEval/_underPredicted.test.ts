@@ -24,7 +24,7 @@ import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnaps
 import { buildLabRows, utilizationByStore, qscInWindowAverage, type QscRecord } from "./labInput";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { evaluationMonths } from "./evaluationSalesPeriod";
-import { existingSiteKey, rival2kmForWindow } from "./rival2km";
+import { existingSiteKey, rival2kmForWindow, rival2kmRecords } from "./rival2km";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
 import {
@@ -2119,6 +2119,264 @@ describeIf("낮게 본 매장 — 과장의 기전", () => {
     console.log(`     · 곡선이 평평하고 구간이 0을 품으면 -> **바꿀 근거가 없다.** 지금 값을 둔다`);
     console.log(`  ⚠️ 어느 쪽이든 **표본이 늘면 다시 잰다**(지금 40곳).`);
     expect(n).toBeGreaterThan(30);
+  });
+
+  it("(Z) ⭐⭐⭐ 40곳으로 **애초에 뭘 가를 수 있나** — 판정력을 잰다", () => {
+    // 사용자(2026-09-24): *"뭐해야 되냐. 실험실 산식 어떻게 개선해야 되지. 뭐가 문제야.
+    //   뭐가 문제인지 모르는 게 문제지."*
+    //
+    // 오늘 손잡이 아홉 개를 돌렸는데 전부 안 됐다. 그런데 내가 **안 물어본 게 하나** 있다:
+    // **표본 40곳으로 애초에 얼마만 한 차이를 가를 수 있나?**
+    //
+    // 오늘 손잡이들이 움직인 폭은 MAE 0.1~0.5%p였다. 그게 **잡음보다 작으면**,
+    // 오늘 한 일은 전부 잡음을 쫓은 것이다. 그러면 "뭐가 문제인지 모르겠다"가 아니라
+    // **"40곳으로는 알 수 없다"**가 정확한 진단이 된다. 둘은 전혀 다른 처방을 낳는다.
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const preds = use.map(({ r }) => computeTextbook(r.input, P).utilization ?? NaN);
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+
+    const B = 4000;
+    let seed = 20260925;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+
+    // ── (1) 산식이 바닥에 진다는 것 자체가 자료를 견디나 ────────────────────
+    const dBase: number[] = [];
+    for (let b = 0; b < B; b++) {
+      let sm = 0, sb = 0;
+      for (let k = 0; k < n; k++) {
+        const i = Math.floor(rnd() * n);
+        sm += Math.abs(preds[i] - acts[i]); sb += Math.abs(looMean[i] - acts[i]);
+      }
+      dBase.push((sm - sb) / n);
+    }
+    dBase.sort((a, b) => a - b);
+    const lo95 = dBase[Math.floor(B * 0.025)], hi95 = dBase[Math.floor(B * 0.975)];
+    console.log(`\n[판정력 1] "산식이 전부 평균에 진다"가 자료를 견디나 · n=${n} · 부트스트랩 ${B}회`);
+    console.log(`  산식 MAE − 바닥 MAE = ${((mean(preds.map((v, i) => Math.abs(v - acts[i])))
+      - mean(looMean.map((v, i) => Math.abs(v - acts[i])))) * 100).toFixed(2)}%p`);
+    console.log(`  95% 구간 [${(lo95 * 100).toFixed(2)}, ${(hi95 * 100).toFixed(2)}]%p`);
+    console.log(`  ${lo95 < 0 && hi95 > 0 ? "⚠️ **구간이 0을 품는다 — 진다는 것조차 단정 못 한다**"
+      : "✅ 구간이 0을 안 품는다 — 진다는 건 확실하다"}`);
+
+    // ── (2) 분별력 r의 구간 — 이기는 선 0.659를 품나 ────────────────────────
+    const rs: number[] = [];
+    const pl0 = preds.map(Math.log);
+    for (let b = 0; b < B; b++) {
+      const xs: number[] = [], ys: number[] = [];
+      for (let k = 0; k < n; k++) { const i = Math.floor(rnd() * n); xs.push(pl0[i]); ys.push(actLog[i]); }
+      const v = corr(xs, ys);
+      if (Number.isFinite(v)) rs.push(v);
+    }
+    rs.sort((a, b) => a - b);
+    const kNow = sdOf(pl0) / sdOf(actLog);
+    console.log(`\n[판정력 2] 분별력 r의 95% 구간 — **이기는 선은 r > ${(kNow / 2).toFixed(3)}** 이다`);
+    console.log(`  r = ${corr(pl0, actLog).toFixed(3)} · 95% 구간 [${rs[Math.floor(rs.length * 0.025)].toFixed(3)}, `
+      + `${rs[Math.floor(rs.length * 0.975)].toFixed(3)}]`);
+    console.log(`  ${rs[Math.floor(rs.length * 0.975)] > kNow / 2
+      ? "⚠️ **구간이 이기는 선을 넘는다 — 지금 산식이 이미 이기고 있을 수도 있다**"
+      : "✅ 구간 전체가 이기는 선 아래 — 확실히 못 이긴다"}`);
+
+    // ── (3) 40곳으로 가를 수 있는 **최소 효과 크기** ────────────────────────
+    // 같은 매장에 두 산식을 돌려 MAE 차이를 볼 때, 그 차이의 표준오차가 얼마인가.
+    // 오늘 손잡이들이 움직인 폭(0.1~0.5%p)과 견준다.
+    const absNow = preds.map((v, i) => Math.abs(v - acts[i]));
+    const seOfDiff = (other: number[]) => {
+      const d = other.map((v, i) => Math.abs(v - acts[i]) - absNow[i]);
+      return sdOf(d) / Math.sqrt(n);
+    };
+    // 대표적인 "작은 변화" 몇 개로 표준오차를 잰다(값 자체가 아니라 **폭**을 본다)
+    const variants: { name: string; p: number[] }[] = [
+      { name: "기본값 3.5", p: use.map(({ r }) => computeTextbook({
+        ...r.input,
+        ownQualityParts: r.input.ownQualityParts
+          ? { ...r.input.ownQualityParts, food: 3.5, interior: 3.5 } : r.input.ownQualityParts,
+      }, P).utilization ?? NaN) },
+      { name: "입지 지수 0.169", p: use.map(({ r }) => computeTextbook(r.input,
+        { ...P, indexCalibration: { ...P.indexCalibration!, locationExponent: 0.169 } }).utilization ?? NaN) },
+      { name: "θ = 2.5", p: use.map(({ r }) => computeTextbook(r.input, { ...P, qualityExponent: 2.5 }).utilization ?? NaN) },
+      { name: "유동 x0.10", p: use.map(({ r }) => computeTextbook(r.input, { ...P, floatingFactor: 0.10 }).utilization ?? NaN) },
+    ];
+    console.log(`\n[판정력 3] 40곳으로 가를 수 있는 **최소 효과 크기**`);
+    console.log(`  손잡이               MAE 변화    그 차이의 표준오차   가르려면 필요한 크기(2SE)`);
+    let seSum = 0, seCnt = 0;
+    for (const v of variants) {
+      if (v.p.some((x) => !Number.isFinite(x))) continue;
+      const dm = mean(v.p.map((x, i) => Math.abs(x - acts[i]))) - mean(absNow);
+      const se = seOfDiff(v.p);
+      seSum += se; seCnt += 1;
+      console.log(`  ${v.name.padEnd(20)}${(dm * 100).toFixed(2).padStart(8)}%p`
+        + `${(se * 100).toFixed(3).padStart(18)}%p`
+        + `${(2 * se * 100).toFixed(2).padStart(22)}%p`
+        + (Math.abs(dm) < 2 * se ? "   ⚠️ 잡음 안" : "   ✅ 잡음 밖"));
+    }
+    const seAvg = seCnt ? seSum / seCnt : NaN;
+    console.log(`\n  ⭐ 지금 표본에서 **2SE ≈ ${(2 * seAvg * 100).toFixed(2)}%p** 보다 작은 변화는 못 가른다.`);
+    console.log(`     오늘 돌린 손잡이 아홉 개가 움직인 폭은 대부분 **0.1~0.5%p**였다.`);
+
+    // ── (4) 그럼 표본이 몇 곳이어야 하나 ────────────────────────────────────
+    // ⚠️ **두 물음을 섞으면 안 된다.** 오차가 얼마나 닮았느냐에 따라 정밀도가 완전히 다르다:
+    //   (가) **산식 vs 바닥** — 서로 아주 다른 예측이라 매장별 오차 차이가 크게 흔들린다
+    //   (나) **산식 vs 산식+손잡이** — 거의 같은 예측이라 오차가 짝지어 움직여 훨씬 정밀하다
+    // 그래서 "바닥을 이겼다고 말하려면"과 "손잡이가 먹혔다고 말하려면"의 필요 표본이 다르다.
+    const sdKnob = seAvg * Math.sqrt(n);                 // (나) 손잡이 비교
+    const dBaseArr = preds.map((v, i) => Math.abs(v - acts[i]) - Math.abs(looMean[i] - acts[i]));
+    const sdBase = sdOf(dBaseArr);                        // (가) 바닥 비교
+    const needFor = (sd: number, target: number) => Math.ceil(Math.pow((2 * sd) / target, 2));
+    console.log(`\n[판정력 4] 표본이 몇 곳이어야 가르나 (2SE 기준)`);
+    console.log(`  매장별 차이의 SD — 바닥 비교 ${(sdBase * 100).toFixed(2)}%p`
+      + ` · 손잡이 비교 ${(sdKnob * 100).toFixed(2)}%p (오차가 짝지어 움직여 훨씬 작다)`);
+    console.log(`\n  가르려는 MAE 차이    바닥과 견줄 때    손잡이끼리 견줄 때`);
+    for (const target of [0.005, 0.01, 0.015, 0.02]) {
+      const a = needFor(sdBase, target), b2 = needFor(sdKnob, target);
+      console.log(`  ${(target * 100).toFixed(1).padStart(8)}%p${`${a}곳`.padStart(16)}${`${b2}곳`.padStart(20)}`);
+    }
+    console.log(`\n  ⭐ 지금 격차(산식이 바닥에 ${((mean(absNow) - mean(looMean.map((v, i) => Math.abs(v - acts[i])))) * 100).toFixed(2)}%p 뒤진다)를`);
+    console.log(`     **"진짜 지는 것"이라고 말하려면 ${needFor(sdBase, Math.abs(mean(absNow) - mean(looMean.map((v, i) => Math.abs(v - acts[i])))))}곳**이 필요하다.`);
+    console.log(`     반대로 **"이겼다"고 말하려면**도 같은 크기가 필요하다 — 지금은 어느 쪽도 못 한다.`);
+    console.log(`\n  ⭐⭐ 읽는 법`);
+    console.log(`     · (1)이 0을 품으면 **"지금 산식이 바닥에 진다"조차 단정 못 하는 것**이다`);
+    console.log(`     · (3)(4)가 말하는 건 **"작은 개선은 40곳으론 영원히 확인 못 한다"**는 것이다`);
+    console.log(`     · 그러면 처방이 바뀐다 — 산식을 더 돌리는 게 아니라 **표본·자료를 늘린다**`);
+    expect(n).toBeGreaterThan(30);
+  });
+
+  it("(AB) 독점매장이 어디어디인가 — 축척을 여기서 맞춘다", () => {
+    // 사용자(2026-09-24): *"잠시만 독점매장 어디어디였지?"*
+    //
+    // 산식에서 "독점"의 뜻은 하나뿐이다 — `calibrationTarget`이 쓰는 **competitorIp = 0**,
+    // 즉 **500m 안 조사 경쟁점이 없는 매장**이다. 축척(hoursPerUserPerMonth)을 여기서만
+    // 맞춘다("독점상권은 점유율이 1이라 수요식만 남는다").
+    // ⚠️ **2km 안에는 경쟁점이 있다.** 이름만 독점이다 — 그래서 아래에 2km 경쟁도 같이 찍는다.
+    type M = { name: string; act: number | null; pred: number | null; ip: number; n500: number; w2km: number; n2km: number; share: number | null };
+    const all: M[] = [];
+    for (const r of base) {
+      const b = computeTextbook(r.input, P);
+      let w = 0, cnt = 0;
+      for (const rv of r.input.rivals ?? []) {
+        if (!(rv.ip > 0)) continue;
+        const dw = rivalDistanceWeight(rv.distanceM, P);
+        if (dw > 0) { w += rv.ip * dw; cnt += 1; }
+      }
+      const n500 = (r.input.rivals ?? []).filter((rv) => rv.ip > 0 && (rv.distanceM == null || rv.distanceM <= 500)).length;
+      all.push({
+        name: r.input.storeName ?? r.input.storeCode,
+        act: r.input.actualUtilization, pred: b.utilization,
+        ip: r.input.competitorIp ?? 0, n500, w2km: w, n2km: cnt, share: b.share,
+      });
+    }
+    const mono = all.filter((x) => !x.ip);
+    console.log(`\n[독점매장] 정의 = **competitorIp 0**(500m 안 조사 경쟁점 없음) · 전체 ${all.length}곳 중 **${mono.length}곳**`);
+    console.log(`  매장            실측     예측    점유율   500m조사  2km경쟁무게  2km수`);
+    for (const x of mono.sort((a, b2) => (b2.act ?? 0) - (a.act ?? 0))) {
+      console.log(`  ${x.name.padEnd(14)}${x.act == null ? "    —" : `${(x.act * 100).toFixed(1).padStart(6)}%`}`
+        + `${x.pred == null ? "    —" : `${(x.pred * 100).toFixed(1).padStart(8)}%`}`
+        + `${x.share == null ? "    —" : `${(x.share * 100).toFixed(1).padStart(8)}%`}`
+        + `${String(x.n500).padStart(8)}곳${x.w2km.toFixed(0).padStart(11)}${String(x.n2km).padStart(7)}곳`);
+    }
+    console.log(`\n  ⚠️ **이름만 독점이다** — 2km 안에는 전부 경쟁점이 있다.`);
+    console.log(`     "500m 안에 없을 뿐"이고, 그래서 2026-09-22에 외부옵션 20대를 뺐다.`);
+    // 사실상 독점에 가까운 매장(점유율 90% 이상)도 같이 — 축척 얘기할 때 헷갈리는 자리다
+    const near = all.filter((x) => x.ip && x.share != null && x.share >= 0.9);
+    if (near.length) {
+      console.log(`\n  [참고] competitorIp는 있지만 **점유율 90% 이상**인 매장 ${near.length}곳`);
+      console.log(`  매장            실측     예측    점유율   500m조사  2km경쟁무게`);
+      for (const x of near.sort((a, b2) => (b2.share ?? 0) - (a.share ?? 0))) {
+        console.log(`  ${x.name.padEnd(14)}${x.act == null ? "    —" : `${(x.act * 100).toFixed(1).padStart(6)}%`}`
+          + `${x.pred == null ? "    —" : `${(x.pred * 100).toFixed(1).padStart(8)}%`}`
+          + `${(x.share! * 100).toFixed(1).padStart(8)}%${String(x.n500).padStart(8)}곳${x.w2km.toFixed(0).padStart(11)}`);
+      }
+    }
+    expect(all.length).toBeGreaterThan(30);
+  });
+
+  it("(AC) ⭐⭐⭐ 자연실험이 몇 건이나 있나 — 경쟁점 개·폐업 전후", () => {
+    // (Z)에서 나온 진단: **40곳으로는 판정이 안 된다.** 매장을 옆으로 비교하는 한
+    // 바닥과의 1.02%p 격차를 가르려면 154곳이 필요하다.
+    //
+    // ── 그런데 옆으로만 볼 이유가 없다 ─────────────────────────────────────
+    // 우리에겐 매장마다 **월별 가동률**이 있다(850건). 그리고 2km 경쟁점에는
+    // **인허가 개업일·폐업일**이 붙어 있다(`rival2km.json`).
+    //
+    // 그러면 **자연실험**이 된다: 경쟁점이 문을 열면(닫으면) 우리 가동률이 얼마나
+    // 움직이나. 이건 매장 고유 요인(입지·수요·운영)이 **전후로 그대로**라서 저절로
+    // 통제된다 — 옆으로 비교할 때 우리를 괴롭히던 교란이 통째로 빠진다.
+    //
+    // 그리고 이건 **경쟁 항을 직접 겨냥한다** — 오늘 (L)에서 산식이 무너진다고 좁혀 놓은 자리다.
+    // 전례도 있다: 탕정역점이 2026-03부터 급락했는데 competitorIp가 0이었다.
+    //
+    // ⚠️ 여기서는 **실현 가능한지(사건이 몇 건이나 되는지)만** 센다. 분석은 다음이다.
+    const sales = (snap.sales ?? []) as Array<{ storeCode: string; yearMonth: string; utilizationRate?: number | null }>;
+    const byCode = new Map<string, { ym: string; v: number }[]>();
+    for (const s of sales) {
+      const v = s.utilizationRate;
+      if (v == null || !(v > 0)) continue;
+      byCode.set(s.storeCode, [...(byCode.get(s.storeCode) ?? []), { ym: s.yearMonth, v }]);
+    }
+    const ymAdd = (ym: string, k: number) => {
+      const [y, m] = ym.split("-").map(Number);
+      const t = y * 12 + (m - 1) + k;
+      return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
+    };
+    const WIN = 3; // 전후 몇 달을 볼 것인가
+    let opens = 0, closes = 0, usableOpen = 0, usableClose = 0;
+    const openDeltas: { store: string; rival: string; ym: string; before: number; after: number }[] = [];
+    const closeDeltas: typeof openDeltas = [];
+    for (const r of base) {
+      const code = r.input.storeCode;
+      const ms = (byCode.get(code) ?? []).slice().sort((a, b) => a.ym.localeCompare(b.ym));
+      if (ms.length < 2 * WIN) continue;
+      const have = new Map(ms.map((m) => [m.ym, m.v]));
+      const span = { from: ms[0].ym, to: ms[ms.length - 1].ym };
+      for (const rec of rival2kmRecords(existingSiteKey(code))) {
+        const ev = (d: string | null, kind: "open" | "close") => {
+          if (!d || !/^\d{4}-\d{2}/.test(d)) return;
+          const ym = d.slice(0, 7);
+          if (ym < span.from || ym > span.to) return;
+          if (kind === "open") opens += 1; else closes += 1;
+          const before: number[] = [], after: number[] = [];
+          for (let k = 1; k <= WIN; k++) {
+            const b = have.get(ymAdd(ym, -k)); if (b != null) before.push(b);
+            const a = have.get(ymAdd(ym, k)); if (a != null) after.push(a);
+          }
+          if (before.length < WIN || after.length < WIN) return;
+          const row = { store: r.input.storeName ?? code, rival: rec.name ?? "(이름없음)", ym, before: mean(before), after: mean(after) };
+          if (kind === "open") { usableOpen += 1; openDeltas.push(row); }
+          else { usableClose += 1; closeDeltas.push(row); }
+        };
+        ev(rec.open, "open");
+        ev(rec.close, "close");
+      }
+    }
+    console.log(`\n[자연실험 재고] 매장 월별 가동률 ${sales.length}건 · 전후 ${WIN}달씩 필요`);
+    console.log(`  경쟁점 **개업** 사건 ${opens}건 중 전후 자료가 다 있는 건 **${usableOpen}건**`);
+    console.log(`  경쟁점 **폐업** 사건 ${closes}건 중 전후 자료가 다 있는 건 **${usableClose}건**`);
+    const show = (label: string, xs: typeof openDeltas, expect2: string) => {
+      if (!xs.length) { console.log(`\n  ${label}: 사건 없음`); return; }
+      const d = xs.map((x) => (x.after - x.before) * 100);
+      console.log(`\n  ${label} ${xs.length}건 — 가동률 변화(뒤 − 앞) · 기대 방향: ${expect2}`);
+      console.log(`    평균 ${mean(d).toFixed(2)}%p · 중앙 ${[...d].sort((a, b) => a - b)[Math.floor(d.length / 2)].toFixed(2)}%p`
+        + ` · SD ${sdOf(d).toFixed(2)}%p · 내린 건 ${d.filter((v) => v < 0).length}/${d.length}건`);
+      const se = sdOf(d) / Math.sqrt(d.length);
+      console.log(`    표준오차 ${se.toFixed(2)}%p -> **2SE = ${(2 * se).toFixed(2)}%p** (이보다 큰 효과만 보인다)`);
+      for (const x of xs.slice(0, 6)) {
+        console.log(`      ${x.store.padEnd(14)}${x.ym}  ${x.rival.slice(0, 18).padEnd(20)}`
+          + `${(x.before * 100).toFixed(1).padStart(6)}% -> ${(x.after * 100).toFixed(1)}%`
+          + ` (${((x.after - x.before) * 100).toFixed(1)}%p)`);
+      }
+      if (xs.length > 6) console.log(`      ... 외 ${xs.length - 6}건`);
+    };
+    show("개업", openDeltas, "우리 가동률이 **내려간다**");
+    show("폐업", closeDeltas, "우리 가동률이 **올라간다**");
+    console.log(`\n  ⭐ 읽는 법`);
+    console.log(`     · 사건이 30건을 넘으면 **매장 40곳보다 판정력이 좋을 수 있다** —`);
+    console.log(`       매장 고유 요인(입지·수요·운영)이 전후로 같아서 저절로 통제되기 때문이다`);
+    console.log(`     · 그리고 이건 **경쟁 항을 직접 겨냥한다** — 오늘 좁혀 놓은 그 자리다`);
+    console.log(`  ⚠️ 여기서는 **셈만** 한다. 계절성·추세를 안 뺐으니 이 숫자로 판정하지 마라.`);
+    expect(base.length).toBeGreaterThan(30);
   });
 
   it("(C) 낮게 본 무리 vs 높게 본 무리 — 층별 평균을 갈라 본다", () => {
