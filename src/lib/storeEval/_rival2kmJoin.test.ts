@@ -416,6 +416,32 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     console.log(`     >=60/180    재현  88% · 오탐  31%           F 0.893`);
     console.log(`  => 규모 필터의 추가 이득은 작다. **실체(상가업소)+업종(인허가)+영업(폐업일자)**`);
     console.log(`     세 필터가 이미 대부분 거른다. 다만 구리돌다리처럼 소형이 몰린 곳에서는 크게 갈린다.`);
+
+    // ── 사용자 결정(2026-09-22): **영세점은 거의 안 가져간다 -> 뺀다.** ──────
+    // 그러면 남는 편향 +1.79%p는 다른 원인이다. 짚이는 게 있다 —
+    // **남은 대형 경쟁점에 90대를 주고 있는데 우리 조사 경쟁점의 실제 대수 중앙은 110대다.**
+    // 그리고 게임기수가 70 이상이면 그게 진짜 대수다(±20% 안에서 78% 일치, `_rival2kmPermit` 3-바).
+    // 새 계수를 고르는 게 아니라 **실측값을 쓰는 것**이다.
+    const cardMeasured = (gameMin: number, areaMin: number) => card((r) => {
+      const extra = (joinedByCode.get(r.input.storeCode) ?? [])
+        .filter((j) => j.share > 0 && big(j.permit, gameMin, areaMin))
+        .map((j) => ({
+          // 게임기수가 믿을 수 있는 구간이면 그 값, 아니면 운영과 같은 기본대수.
+          ip: ((j.permit?.gameCount != null && j.permit.gameCount >= gameMin)
+            ? j.permit.gameCount : DEFAULT_UNSURVEYED_PC_COUNT) * j.share,
+          distanceM: j.distanceM, parts: null, name: j.q.name,
+        }));
+      return { ...r.input, rivals: [...(r.input.rivals ?? []), ...extra] };
+    });
+    console.log(`\n[재고 표 2] 영세점을 빼고(사용자 결정), 남은 곳엔 **게임기수를 대수로** 쓴다`);
+    console.log(`  규칙                              MAE       SD      최악            편향      ±5%p  퍼짐`);
+    line("지금 — 2km를 안 센다", card((r) => r.input));
+    for (const [g, a] of [[60, 180], [70, 200], [70, 250]] as [number, number][]) {
+      line(`>=${g}/${a} · 대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 일괄`, cardBig(g, a));
+      line(`>=${g}/${a} · 대수 **게임기수 실측**`, cardMeasured(g, a));
+    }
+    console.log(`\n  ⚠️ 게임기수가 없고 면적으로만 통과한 곳은 기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대가 그대로 간다.`);
+    console.log(`     그건 운영과 같은 규칙이라 새로 고른 값이 아니다.`);
   });
 
   it("(3) 매장별로 얼마나 붙었나", () => {

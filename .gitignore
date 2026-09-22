@@ -550,3 +550,6 @@ src/**/_*.test.ts
 # 2026-09-22 밤 — 2km 경쟁점의 **채택 후보**다. 상가업소가 실체, 인허가가 시점.
 # 편향 검정 둘과 민감도를 여기서 돌린다. 사용자 결정 대기.
 !src/lib/storeEval/_rival2kmJoin.test.ts
+# 2026-09-22 밤 — "주소만 넣으면 얼마나 맞히나"(점포개발 초기 모드). 별도 자동화 세션의
+# 출발점 숫자다. 기본값 규칙을 바꾸면 여기서 다시 잰다.
+!src/lib/storeEval/_addressOnlyMode.test.ts
