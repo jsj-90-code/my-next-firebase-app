@@ -360,27 +360,27 @@ export default function QuickEvalPage() {
               }}
             />
           </label>
+          <label className="block w-[96px] text-sm">
+            <span className="text-[var(--sl-ink-soft)]">엘리베이터</span>
+            <select
+              className="app-input mt-1 w-full rounded-lg px-3 py-2"
+              value={plan.hasElevator}
+              onChange={(e) => setPlan((p) => ({ ...p, hasElevator: e.target.value as Plan["hasElevator"] }))}
+            >
+              <option value="미정">미정</option>
+              <option value="있음">있음</option>
+              <option value="없음">없음</option>
+            </select>
+          </label>
           <button type="button" className="app-btn-primary rounded-xl px-5 py-2 text-sm" disabled={running} onClick={run}>
             {running ? "조회 중… (30초쯤)" : "조회"}
           </button>
         </div>
 
         <details className="mt-3">
-          <summary className="cursor-pointer text-xs text-[var(--sl-ink-soft)]">추가 입력 (엘리베이터·후보지명)</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <label className="block text-sm">
-              <span className="text-[var(--sl-ink-soft)]">엘리베이터</span>
-              <select
-                className="app-input mt-1 w-full rounded-lg px-3 py-2"
-                value={plan.hasElevator}
-                onChange={(e) => setPlan((p) => ({ ...p, hasElevator: e.target.value as Plan["hasElevator"] }))}
-              >
-                <option value="미정">미정</option>
-                <option value="있음">있음</option>
-                <option value="없음">없음</option>
-              </select>
-            </label>
-            <label className="block text-sm sm:col-span-2">
+          <summary className="cursor-pointer text-xs text-[var(--sl-ink-soft)]">추가 입력 (후보지명)</summary>
+          <div className="mt-3">
+            <label className="block text-sm sm:max-w-sm">
               <span className="text-[var(--sl-ink-soft)]">후보지명</span>
               <input
                 className="app-input mt-1 w-full rounded-lg px-3 py-2"
