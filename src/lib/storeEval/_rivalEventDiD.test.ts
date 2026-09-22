@@ -530,6 +530,166 @@ describeIf("경쟁점 개·폐업 이중차분", () => {
     expect(ks.length).toBeGreaterThan(0);
   });
 
+  it("(7) ⭐⭐⭐ 탕정역 미등록 경쟁점 둘을 찾는다 — 레드포스·레벨업", () => {
+    // 사용자(2026-09-24): *"레드포스랑 레벨업 두 개 생김. 언제 생긴진 모르겠어.
+    //   두 개 다 100미터 안에 있음."*
+    //
+    // 이름과 대략 거리를 알았으니 **인허가에서 개업일**, **카카오에서 실재·거리**를 찾는다.
+    // 개업일이 2026-03 근처면 (6)번의 꺾임과 짝이 맞고, 그러면 이 사례가 **경쟁 항을 직접
+    // 검증하는 자연실험**이 된다.
+    const target = [...nameByCode.entries()].find(([, nm]) => nm.includes("탕정"));
+    if (!target) { console.log(`\n[탕정역 경쟁점 찾기] 매장을 못 찾았다`); return; }
+    const [code, nm] = target;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const st = (snap.existingStores ?? []).find((s: any) => s.storeCode === code);
+    if (!st?.lat || !st?.lng) { console.log(`\n[${nm}] 좌표가 없다`); return; }
+    const distM = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+      const R = 6371000, rad = Math.PI / 180;
+      const dLat = (bLat - aLat) * rad, dLng = (bLng - aLng) * rad;
+      const s = Math.sin(dLat / 2) ** 2
+        + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    };
+    const WANT = /레드포스|레벨업/;
+    console.log(`\n[탕정역 경쟁점 찾기] ${nm} (${st.lat.toFixed(5)}, ${st.lng.toFixed(5)}) · 개점 ${st.openedAt}`);
+
+    // ── 카카오 — 실재와 거리 ────────────────────────────────────────────────
+    const GRID = ".local-tools/kakao-pcbangs-grid.json";
+    type Doc = { id: string; name: string; lat: number; lng: number; distanceM: number };
+    const found: Doc[] = [];
+    if (existsSync(GRID)) {
+      const grid = JSON.parse(readFileSync(GRID, "utf8")) as {
+        sites: Record<string, { pcRooms?: { docs?: Doc[] } }>;
+      };
+      const docs = grid.sites[`existing:${code}`]?.pcRooms?.docs ?? [];
+      console.log(`\n  [카카오] 2km 안 PC방 ${docs.length}곳 · 그중 500m 안 ${docs.filter((d) => d.distanceM <= 500).length}곳`);
+      console.log(`    가까운 순 8곳`);
+      for (const d of [...docs].sort((a, b) => a.distanceM - b.distanceM).slice(0, 8)) {
+        console.log(`      ${String(Math.round(d.distanceM)).padStart(5)}m  ${d.name}`
+          + (WANT.test(d.name) ? "   ⭐ 사용자가 말한 곳" : ""));
+      }
+      found.push(...docs.filter((d) => WANT.test(d.name)));
+    }
+
+    // ── 인허가 — 개업일 ─────────────────────────────────────────────────────
+    const PERMITS = ".local-tools/pcbang-permits.json";
+    if (existsSync(PERMITS)) {
+      type Permit = { name: string; lat: number; lng: number; open?: string | null; close?: string | null; totalMachines?: number | null };
+      const permits = (JSON.parse(readFileSync(PERMITS, "utf8")).rows as Permit[])
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+      const near = permits
+        .map((p) => ({ p, d: distM(st.lat, st.lng, p.lat, p.lng) }))
+        .filter((x) => x.d <= 600)
+        .sort((a, b) => a.d - b.d);
+      console.log(`\n  [인허가] 600m 안 등록 ${near.length}건 (같은 건물 다중등록이 섞여 있다)`);
+      console.log(`    거리     개업일        폐업일       상호`);
+      for (const x of near.slice(0, 14)) {
+        console.log(`    ${String(Math.round(x.d)).padStart(4)}m  ${(x.p.open ?? "-").slice(0, 10).padEnd(12)}`
+          + `${(x.p.close ?? "-").slice(0, 10).padEnd(12)}${x.p.name}`
+          + (WANT.test(x.p.name ?? "") ? "   ⭐" : ""));
+      }
+      const hits = near.filter((x) => WANT.test(x.p.name ?? ""));
+      if (hits.length) {
+        console.log(`\n  ⭐ **사용자가 말한 두 곳의 인허가**`);
+        for (const x of hits) {
+          console.log(`    ${x.p.name} — ${Math.round(x.d)}m · 개업 ${x.p.open ?? "?"}`
+            + ` · 폐업 ${x.p.close ?? "-"}`
+            + (x.p.totalMachines != null ? ` · 총게임기수 ${x.p.totalMachines}` : ""));
+        }
+        console.log(`    ⚠️ 총게임기수는 **PC 대수가 아니다**(작은 값은 가짜) — 대수는 조사해야 한다.`);
+      } else {
+        console.log(`\n  ⚠️ 600m 안 인허가에서 "레드포스/레벨업"을 못 찾았다.`);
+        // 인허가 자료가 이 동네를 아예 안 덮는 건지부터 본다 — 반경을 넓혀서 확인
+        for (const R of [1000, 2000, 5000, 20000]) {
+          const cnt = permits.filter((p) => distM(st.lat, st.lng, p.lat, p.lng) <= R).length;
+          console.log(`     ${String(R).padStart(5)}m 안 인허가 ${cnt}건`);
+        }
+        const nearest = permits
+          .map((p) => ({ p, d: distM(st.lat, st.lng, p.lat, p.lng) }))
+          .sort((a, b) => a.d - b.d)[0];
+        if (nearest) {
+          console.log(`     제일 가까운 인허가: ${Math.round(nearest.d)}m · ${nearest.p.name}`
+            + ` · 개업 ${nearest.p.open ?? "?"}`);
+        }
+        // 이름으로 전국에서 찾아본다 — 좌표가 틀린 건지 자료에 없는 건지 가른다
+        const byName = permits.filter((p) => WANT.test(p.name ?? ""));
+        console.log(`\n     전국 인허가에서 이름으로 찾기 — "레드포스/레벨업" ${byName.length}건`);
+        for (const p of byName.slice(0, 8)) {
+          console.log(`       ${p.name} · 개업 ${(p.open ?? "?").slice(0, 10)}`
+            + ` · ${Math.round(distM(st.lat, st.lng, p.lat, p.lng) / 1000)}km 떨어짐`);
+        }
+        console.log(`\n     ⭐ 이름은 있는데 좌표가 멀면 **좌표 변환 문제**(EPSG:5174)다.`);
+        console.log(`        전국에 이름이 아예 없으면 **자료가 아직 안 올라온 것**이다(신규 등록 지연).`);
+      }
+    }
+    if (found.length) {
+      console.log(`\n  ⭐ 카카오에서 찾은 거리: ${found.map((d) => `${d.name} ${Math.round(d.distanceM)}m`).join(" · ")}`);
+    }
+    expect(true).toBe(true);
+  });
+
+  it("(8) ⭐⭐⭐ 두 곳을 넣으면 산식이 관측을 맞히나 — 탕정역 검산", () => {
+    // 사용자 제보대로 **100m 안에 두 곳**을 넣어 보고, (6)의 이중차분(log −30.7%)과 견준다.
+    // 하나·150m로 봤을 때는 품질비 0.75가 필요했다. 둘·100m면 훨씬 세지므로
+    // **지금 산식의 품질비(0.581)로도 맞을 수 있다** — 그러면 산식이 틀린 게 아니라
+    // **경쟁점이 빠져 있던 것**이 된다. 둘은 처방이 전혀 다르다.
+    const target = [...nameByCode.entries()].find(([, nm]) => nm.includes("탕정"));
+    if (!target) return;
+    const [code] = target;
+    const inp = inputByCode.get(code);
+    if (!inp) return;
+    const before = computeTextbook(inp, P).utilization;
+    if (before == null || !(before > 0)) return;
+    const oq = inp.ownQualityParts;
+    const scaled = (ratio: number) => (oq ? {
+      spec: oq.spec == null ? null : oq.spec * ratio,
+      food: oq.food == null ? null : oq.food * ratio,
+      zone: oq.zone == null ? null : oq.zone * ratio,
+      interior: oq.interior == null ? null : oq.interior * ratio,
+      management: oq.management == null ? null : oq.management * ratio,
+    } : null);
+    // 카카오가 확인해 준 **실제 거리**를 쓴다((7)번): 레벨업 74m · 레드포스 91m
+    const RIVALS: { name: string; distanceM: number }[] = [
+      { name: "레벨업PC방 탕정역점", distanceM: 74 },
+      { name: "레드포스PC아레나 아산탕정점", distanceM: 91 },
+    ];
+    const dropWith = (count: number, ratio: number, ip: number) => {
+      const add = RIVALS.slice(0, count).map((r) => ({
+        ip, distanceM: r.distanceM, parts: scaled(ratio), name: r.name,
+      }));
+      const after = computeTextbook({ ...inp, rivals: [...(inp.rivals ?? []), ...add] }, P).utilization;
+      return after == null || !(after > 0) ? NaN : Math.log(after / before);
+    };
+    const OBS = -0.307; // (6)번 이중차분
+    console.log(`\n[탕정역 검산] 관측 이중차분 **log ${(OBS * 100).toFixed(1)}%** 와 견준다`);
+    console.log(`  지금 예측 ${(before * 100).toFixed(1)}% · 실측(평가창 12달) ${((inp.actualUtilization ?? 0) * 100).toFixed(1)}%`);
+    console.log(`  넣는 경쟁점: ${RIVALS.map((r) => `${r.name}(${r.distanceM}m)`).join(" · ")}`);
+    console.log(`  ⚠️ 개업일은 인허가에 없다. 다만 가동률이 **2026-03에 꺾였고** 둘 다 그때 연 것으로 본다.`);
+    const table = (count: number, label: string) => {
+      console.log(`\n  ${label}`);
+      console.log(`  대수    품질비 0.581   0.700   0.800   1.000`);
+      for (const ip of [60, 90, 120]) {
+        const cells = [0.581, 0.7, 0.8, 1.0].map((rr) => {
+          const d = dropWith(count, rr, ip);
+          const near = Math.abs(d - OBS) < 0.03;
+          return `${(d * 100).toFixed(1)}%${near ? "*" : " "}`.padStart(9);
+        });
+        console.log(`  ${String(ip).padStart(4)}대${cells.join("")}`
+          + (ip === 90 ? "   ← 미조사 기본대수" : ""));
+      }
+    };
+    table(2, `경쟁점 **둘 다**(74m·91m) — 사용자 제보`);
+    table(1, `[참고] 레벨업 하나만(74m)`);
+    console.log(`\n  * 표시 = 관측 ${(OBS * 100).toFixed(1)}%와 3%p 안`);
+    console.log(`\n  ⭐ 읽는 법`);
+    console.log(`     · **0.581 칸에서 맞으면** -> 산식은 멀쩡하고 **경쟁점이 빠져 있던 것**이다.`);
+    console.log(`       처방: 탕정역 경쟁점을 등록한다. 품질 항은 손대지 않는다`);
+    console.log(`     · **0.581로 한참 모자라면** -> 품질 항이 경쟁을 약하게 본다.`);
+    console.log(`       처방: 품질비/θ를 다시 본다`);
+    console.log(`  ⚠️ 대수를 아직 모른다(60·90·120대를 다 찍은 이유다). 조사하면 칸이 하나로 좁혀진다.`);
+    expect(before).toBeGreaterThan(0);
+  });
+
   it("(4) 가까운 경쟁점만 — 감쇠가 맞는지 거리로 갈라 본다", () => {
     const bands: [string, number, number][] = [["0~500m", 0, 500], ["500~1000m", 500, 1000], ["1km 밖", 1000, 1e9]];
     console.log(`\n[거리별] 가까울수록 효과가 커야 한다 — 감쇠 곡선이 맞나`);
