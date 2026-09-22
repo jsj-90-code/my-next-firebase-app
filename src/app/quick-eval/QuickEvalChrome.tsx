@@ -3,10 +3,15 @@
 // 주소만 초기평가 전용 껍데기. **점포평가(StoreEvalChrome)와 공유하지 않는다** — 그 파일에
 // 메뉴를 걸면 "V62 웹 안의 한 화면"이 되어 버리기 때문이다(사용자 지시 2026-09-22).
 //
-// 여기서 하는 일은 셋뿐이다: 로그인 관문(AutoAuthGate) · 홈으로 돌아가는 링크 · 테마 토글.
+// 여기서 하는 일은 둘뿐이다: 로그인 관문(AutoAuthGate) · 테마 토글.
 // 메뉴가 없는 건 의도다 — 이 도구는 화면이 하나다.
+//
+// ⚠️ **다른 화면으로 가는 링크를 넣지 마라**(사용자 지시 2026-09-22: "홈버튼 없애줘 홈으로
+//    못가게해. 이거 페이지 점포팀에 공유할건데"). 이 페이지는 점포개발팀에 공유하는 것이고,
+//    홈 화면에는 다른 사내 도구들이 걸려 있다. 홈으로 가는 길을 내면 그것들이 노출된다.
+//    링크를 지우는 게 접근 통제는 아니지만(주소를 직접 치면 열린다), 길을 내지 않는 건
+//    의도적인 선택이다.
 
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { AutoAuthGate } from "@/components/seatLayout/AutoAuthGate";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -23,12 +28,6 @@ export function QuickEvalChrome({ children }: { children: ReactNode }) {
         </a>
         <header className="border-b border-[#171310]/[0.08] bg-[#fffdf7] dark:border-white/[0.08] dark:bg-[#1c1912]">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-            <Link
-              href="/"
-              className="text-xs text-[var(--sl-ink-soft)] transition hover:text-[#171310] dark:hover:text-[#f2ede2]"
-            >
-              ← 홈으로
-            </Link>
             <span className="flex items-center gap-2 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
               <svg
                 viewBox="0 0 24 24"

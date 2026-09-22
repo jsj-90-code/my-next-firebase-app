@@ -17,6 +17,7 @@ import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
 import { appendSiteFactsToContext, describeSiteFacts } from "./quickEvalLocationContext";
 import { buildQuickEvalPeers } from "./quickEvalPeers";
 import { defaultModelSettings } from "../settings";
+import type { ExistingStore } from "../types";
 
 describe("좌표변환", () => {
   it("scripts/lib/tm.mjs와 같은 검산점을 통과한다", () => {

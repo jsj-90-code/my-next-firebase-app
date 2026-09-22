@@ -24,7 +24,6 @@
 //    글자로 박지 않는다(CLAUDE.md 규칙 — 계수가 바뀌면 화면이 조용히 거짓말을 한다).
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { formatManwonRough, formatPercent } from "@/lib/storeEval/format";
@@ -400,13 +399,11 @@ export default function QuickEvalPage() {
           매깁니다.
         </p>
 
+        {/* ⚠️ 다른 화면으로 가는 링크를 넣지 않는다(QuickEvalChrome 머리 주석 — 점포팀에 공유하는
+            페이지다). 그래서 "점포평가 시스템"은 링크가 아니라 글자로만 둔다. */}
         <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
           초기 선별용입니다 — ±20% 안에 {formatPercent(headline.within20, 1)}(기존 가맹점{" "}
-          {ADDRESS_ONLY_ACCURACY.sampleCount}곳으로 측정). 결재 숫자는{" "}
-          <Link href="/store-eval/candidates" className="underline">
-            점포평가 시스템
-          </Link>
-          에서 냅니다.
+          {ADDRESS_ONLY_ACCURACY.sampleCount}곳으로 측정). 결재 숫자는 점포평가 시스템의 정식 평가로 냅니다.
         </p>
         {error ? <p className="mt-3 text-sm text-[var(--sl-danger)]">{error}</p> : null}
       </section>
