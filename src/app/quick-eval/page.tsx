@@ -50,6 +50,7 @@ import {
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
   QUICK_EVAL_BACKTEST,
+  QUICK_EVAL_INPUT_SENSITIVITY,
   QUICK_EVAL_RADII,
   QUICK_EVAL_USAGE_LIMIT,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
@@ -412,10 +413,15 @@ export default function QuickEvalPage() {
 
         {/* ⚠️ 입력칸은 이 한 줄이 전부다(사용자 지시 2026-09-22). 접이식 "추가 입력"을 다시
             만들지 마라 — 후보지명 칸을 없애고 주소를 이름으로 쓴다. */}
+        {/* ⚠️ "층수를 넣어도 금액이 안 바뀐다"를 반드시 알려야 한다 — 안 적으면 고장으로 오해한다.
+            측정값은 quickEvalDefaults에서 읽는다(화면에 숫자를 글자로 박지 않는다). */}
         <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-          층·엘리베이터는 AI 입지평가의 접근가시성 판단에 그대로 넘어갑니다 — 비우면 &quot;모름&quot;으로
-          보수적으로 매깁니다. 먹거리는 {OWN_FOOD_BRAND} 고정이고 예상 오픈월은 안 받습니다(평가한 달의
-          다음 달로 잡습니다).
+          층·엘리베이터는 <strong>V62 금액 계산에는 직접 들어가지 않습니다</strong>(바꿔도{" "}
+          {formatPercent(QUICK_EVAL_INPUT_SENSITIVITY.floorDirectEffect, 1)}). 대신 <strong>AI 접근가시성 판단</strong>
+          에 사실로 넘어가고, 가시성은 결과를 크게 움직입니다(
+          {formatPercent(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.low, 1)} ~ +
+          {formatPercent(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.high, 1)}). 비우면 &quot;모름&quot;으로
+          보수적으로 매깁니다. 먹거리는 {OWN_FOOD_BRAND} 고정이고 예상 오픈월은 안 받습니다.
         </p>
 
         {/* ⚠️ 다른 화면으로 가는 링크를 넣지 않는다(QuickEvalChrome 머리 주석 — 점포팀에 공유하는

@@ -121,9 +121,20 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     needsFieldCheck: false,
   },
   {
-    label: "자사 PC대수·시급·층·엘리베이터",
+    label: "자사 PC대수·시급",
     source: "사람이 입력",
-    basis: "조사값이 아니라 **기획값**이다. 점포개발 초기에도 사람이 정한다 — 비우면 재는 대상이 달라진다",
+    basis:
+      "조사값이 아니라 **기획값**이다. 재 보니 결과를 제일 크게 움직인다 — PC 80→130대에서 " +
+      "−15.7%~+29.4%, 시급 1000→1800원에서 −6.3%~+9.1%. 비우면 계산이 안 된다",
+    needsFieldCheck: false,
+  },
+  {
+    label: "자사 층·지상지하·엘리베이터",
+    source: "사람이 입력",
+    basis:
+      "⚠️ **V62 계산에는 직접 안 들어간다**(측정: 아무리 바꿔도 0.0%) — 입지평가가 있으면 " +
+      "산식이 층수를 안 보기 때문이다. 대신 **AI 접근가시성 판정에 사실로 넘어가고**, 가시성은 " +
+      "결과를 크게 움직인다(1점 −16.5% ~ 5점 +9.4%). 비우면 '모름'으로 보수적으로 매겨진다",
     needsFieldCheck: false,
   },
   {
@@ -184,6 +195,31 @@ export const QUICK_EVAL_BACKTEST = {
   overCount: 30,
   /** 고치기 전(학습만 실측이던 비대칭 배선) */
   before: { mape: 0.4635, within20: 0.2632, medianRatio: 1.461, overCount: 35 },
+} as const;
+
+/**
+ * ⭐ 입력 칸별 **민감도 측정값** (2026-09-22, `_quickEvalSensitivity.test.ts`).
+ *
+ * 사용자: *"엘베랑 층수 입력하는 게 기대값 딱히 없음"* — 맞는 관찰이었다. 재 보니
+ * `computeOwnLocationScore`는 **입지평가가 있으면 층수를 아예 안 본다**(없을 때만 폴백).
+ * 도구는 AI 입지평가를 항상 돌리므로 **층·엘리베이터는 V62 계산에 도달하지 못한다.**
+ *
+ * 그래도 입력은 **남긴다**(사용자 결정 2026-09-22: *"층수 남기고 AI에만 넘기는 쪽으로 해줘"*) —
+ * 층수가 닿는 유일한 경로가 **AI의 접근가시성 판정**이고, 가시성은 결과를 크게 움직인다.
+ * 대신 화면에 "V62 계산엔 직접 안 들어간다"를 적어 준다. 안 적으면 넣어도 값이 안 바뀌는 걸
+ * 보고 "고장났나?" 하게 된다.
+ */
+export const QUICK_EVAL_INPUT_SENSITIVITY = {
+  measuredAt: "2026-09-22",
+  testFile: "src/lib/storeEval/_quickEvalSensitivity.test.ts",
+  /** 층·지상지하·엘리베이터를 아무리 바꿔도 V62 예상매출이 움직이는 폭 */
+  floorDirectEffect: 0,
+  /** 가시성 1점 -> 5점일 때의 예상매출 변화 폭 */
+  visibilityEffect: { low: -0.165, high: 0.094 },
+  /** PC대수 80 -> 130대 */
+  pcCountEffect: { low: -0.157, high: 0.294 },
+  /** 시급 1000 -> 1800원 */
+  hourlyRateEffect: { low: -0.063, high: 0.091 },
 } as const;
 
 /** 초기 모드 숫자를 결재에 쓰지 못하게 화면에 박는 문구(인계문 6-2). */
