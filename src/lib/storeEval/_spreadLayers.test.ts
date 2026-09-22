@@ -265,6 +265,51 @@ describeIf("퍼짐 과장 — 어느 층이 과장하나", () => {
     expect(picked.length).toBe(use.length);
   });
 
+  it("(0) ⭐⭐ 이거 그냥 평균 맞추기 아니냐 — '전부 평균'을 이기나", () => {
+    // 사용자(2026-09-22): *"매장별 편차가 없어서 신뢰가 안 된다. 매장들이 다 예상 가동률이
+    //   비슷했어서, 이거 뭐 그냥 평균 맞추기 한 거 아냐? 실제 데이터 값이 보정값으로 눌러서
+    //   평균 맞춘 느낌 나서 얘기했던 거였어."*
+    //
+    // **제일 중요한 물음이다.** 산식이 매장을 가르는 게 아니라 전부 비슷한 값을 뱉으면,
+    // 오차가 작아도 아무 쓸모가 없다(후보지마다 같은 답이 나온다는 뜻이라서다).
+    //
+    // 이 저장소에 전례가 있다 — 2026-09-21에 *"산식은 '전부 평균'보다 못하다(6.33 vs 4.26%p)"*
+    // 였다. **모든 매장에 똑같은 값을 찍는 것보다 나빴다.**
+    //
+    // 판정: **LOO 전부 평균**(그 매장을 뺀 나머지의 평균을 그 매장 예측으로 쓴다)과 견준다.
+    // 이게 "아무것도 모를 때"의 바닥이다. 이걸 못 이기면 산식은 값을 못 한다.
+    const acts = rows.map((r) => r.act);
+    const preds = rows.map((r) => r.pred);
+    const n = rows.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const mae = (p: number[]) => mean(p.map((v, i) => Math.abs(v - acts[i])));
+    const worst = (p: number[]) => Math.max(...p.map((v, i) => Math.abs(v - acts[i])));
+    const within = (p: number[]) => p.filter((v, i) => Math.abs(v - acts[i]) <= 0.05).length;
+    console.log(`\n[바닥 대조] n=${n} · "아무것도 모를 때"보다 나은가`);
+    console.log(`  경우                  MAE       최악      ±5%p    예측 퍼짐(SD)`);
+    const line = (name: string, p: number[]) => console.log(
+      `  ${name.padEnd(20)}${(mae(p) * 100).toFixed(2).padStart(7)}%p`
+      + `${(worst(p) * 100).toFixed(2).padStart(9)}%p  ${String(within(p)).padStart(2)}/${n}`
+      + `${(sdOf(p) * 100).toFixed(2).padStart(13)}%p`);
+    line("전부 평균(LOO)", looMean);
+    line("지금 산식", preds);
+    console.log(`  ${"실측".padEnd(20)}${"—".padStart(7)}  ${"—".padStart(9)}  ${"—".padStart(5)}`
+      + `${(sdOf(acts) * 100).toFixed(2).padStart(13)}%p`);
+    const win = mae(preds) < mae(looMean);
+    console.log(`\n  ⭐ ${win ? "**이긴다**" : "⛔ **진다**"} — 산식 ${(mae(preds) * 100).toFixed(2)}%p vs 전부 평균 ${(mae(looMean) * 100).toFixed(2)}%p`);
+    console.log(`     예측 퍼짐 ${(sdOf(preds) * 100).toFixed(2)}%p vs 실측 퍼짐 ${(sdOf(acts) * 100).toFixed(2)}%p`);
+    console.log(`     (전부 평균은 퍼짐이 0에 가깝다 — 매장을 하나도 안 가른다는 뜻이다)`);
+    // 예측이 실제로 갈리는지 **눈으로** 본다. 숫자만 보면 "비슷하다"는 느낌을 확인 못 한다.
+    const sorted = rows.map((r, i) => ({ ...r, i })).sort((a, b) => a.pred - b.pred);
+    console.log(`\n  매장별 예측 가동률 — 낮은 5곳 / 높은 5곳 (예측 vs 실측)`);
+    for (const x of sorted.slice(0, 5)) console.log(`    ${x.name.padEnd(16)}${(x.pred * 100).toFixed(1).padStart(6)}%  (실측 ${(x.act * 100).toFixed(1)}%)`);
+    console.log(`    ...`);
+    for (const x of sorted.slice(-5)) console.log(`    ${x.name.padEnd(16)}${(x.pred * 100).toFixed(1).padStart(6)}%  (실측 ${(x.act * 100).toFixed(1)}%)`);
+    console.log(`    예측 범위 ${(Math.min(...preds) * 100).toFixed(1)}~${(Math.max(...preds) * 100).toFixed(1)}%`
+      + ` · 실측 범위 ${(Math.min(...acts) * 100).toFixed(1)}~${(Math.max(...acts) * 100).toFixed(1)}%`);
+    expect(n).toBeGreaterThan(30);
+  });
+
   it("(2) 층을 하나씩 평균으로 눌러 본다 — ⚠️ 진단일 뿐 채택 후보가 아니다", () => {
     const A = rows.map((r) => Math.log(r.act));
     const geoOf = (v: number[]) => Math.exp(mean(v));
