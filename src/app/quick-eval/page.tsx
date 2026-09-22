@@ -65,7 +65,6 @@ const GROUND_LEVELS: GroundLevel[] = ["지상", "지하"];
 
 type Plan = {
   address: string;
-  name: string;
   expectedPcCount: string;
   hourlyRate: string;
   floor: string;
@@ -75,7 +74,6 @@ type Plan = {
 
 const INITIAL_PLAN: Plan = {
   address: "",
-  name: "",
   expectedPcCount: "",
   hourlyRate: "",
   floor: "",
@@ -114,7 +112,8 @@ export default function QuickEvalPage() {
 
   const planInput = useMemo<QuickEvalPlanInput>(
     () => ({
-      name: plan.name.trim() || plan.address.trim(),
+      // 후보지명 칸을 없앴다 — 주소가 곧 이름이다(사용자 지시 2026-09-22).
+      name: plan.address.trim(),
       address: plan.address.trim(),
       expectedPcCount: toNumberOrNull(plan.expectedPcCount),
       hourlyRate: toNumberOrNull(plan.hourlyRate),
@@ -377,26 +376,12 @@ export default function QuickEvalPage() {
           </button>
         </div>
 
-        <details className="mt-3">
-          <summary className="cursor-pointer text-xs text-[var(--sl-ink-soft)]">추가 입력 (후보지명)</summary>
-          <div className="mt-3">
-            <label className="block text-sm sm:max-w-sm">
-              <span className="text-[var(--sl-ink-soft)]">후보지명</span>
-              <input
-                className="app-input mt-1 w-full rounded-lg px-3 py-2"
-                value={plan.name}
-                onChange={(e) => setPlan((p) => ({ ...p, name: e.target.value }))}
-                placeholder="비우면 주소"
-              />
-            </label>
-          </div>
-          <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-            먹거리는 {OWN_FOOD_BRAND} 고정, 예상 오픈월은 안 받습니다(평가한 달의 다음 달로 잡습니다).
-          </p>
-        </details>
+        {/* ⚠️ 입력칸은 이 한 줄이 전부다(사용자 지시 2026-09-22). 접이식 "추가 입력"을 다시
+            만들지 마라 — 후보지명 칸을 없애고 주소를 이름으로 쓴다. */}
         <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-          층수는 AI 입지평가의 접근가시성 판단에 그대로 넘어갑니다 — 비우면 &quot;층수 모름&quot;으로 보수적으로
-          매깁니다.
+          층·엘리베이터는 AI 입지평가의 접근가시성 판단에 그대로 넘어갑니다 — 비우면 &quot;모름&quot;으로
+          보수적으로 매깁니다. 먹거리는 {OWN_FOOD_BRAND} 고정이고 예상 오픈월은 안 받습니다(평가한 달의
+          다음 달로 잡습니다).
         </p>
 
         {/* ⚠️ 다른 화면으로 가는 링크를 넣지 않는다(QuickEvalChrome 머리 주석 — 점포팀에 공유하는
