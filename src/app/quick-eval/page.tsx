@@ -38,6 +38,7 @@ import {
   listQscScores,
 } from "@/lib/storeEval/store";
 import {
+  blankCompetitorForTraining,
   buildQuickCandidate,
   buildQuickLocationEvaluation,
   type QuickEvalAssembly,
@@ -48,6 +49,7 @@ import {
   ADDRESS_ONLY_ACCURACY,
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
+  QUICK_EVAL_BACKTEST,
   QUICK_EVAL_RADII,
   QUICK_EVAL_USAGE_LIMIT,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
@@ -245,7 +247,11 @@ export default function QuickEvalPage() {
         settings,
         existingStores,
         trainingLocationEvaluations,
-        trainingCompetitors,
+        // ⭐ 학습 표본의 경쟁점도 **같은 수준으로 비운다**(2026-09-22). 후보지는 기본값인데
+        //    학습만 실측이면 경쟁IP가 과소평가돼 매출이 높게 나온다 — 기존매장 38곳 재평가에서
+        //    예측÷실측 중앙이 1.461이었고, 대칭으로 맞추면 1.211이 된다
+        //    (`blankCompetitorForTraining` 주석 · `_quickEvalBias.test.ts`).
+        trainingCompetitors: trainingCompetitors.map(blankCompetitorForTraining),
         trainingSales,
         trainingQscScores,
       });
@@ -386,9 +392,16 @@ export default function QuickEvalPage() {
 
         {/* ⚠️ 다른 화면으로 가는 링크를 넣지 않는다(QuickEvalChrome 머리 주석 — 점포팀에 공유하는
             페이지다). 그래서 "점포평가 시스템"은 링크가 아니라 글자로만 둔다. */}
+        {/* ⚠️ 여기에 13.40%를 쓰면 안 된다 — 그건 검증 배선으로 잰 값이고 이 도구의 성적이
+            아니다. 도구를 되짚어 잰 값(QUICK_EVAL_BACKTEST)을 쓴다. */}
         <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
-          초기 선별용입니다 — ±20% 안에 {formatPercent(headline.within20, 1)}(기존 가맹점{" "}
-          {ADDRESS_ONLY_ACCURACY.sampleCount}곳으로 측정). 결재 숫자는 점포평가 시스템의 정식 평가로 냅니다.
+          초기 선별용입니다. 기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳을 후보지인 척 되짚어 재 보니
+          평균오차 {formatPercent(QUICK_EVAL_BACKTEST.mape, 1)}이고{" "}
+          <strong>
+            실제보다 {((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤 높게 나오는 경향
+          </strong>
+          이 있습니다({QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳). 줄 세우기에 쓰고,
+          금액 자체는 점포평가 시스템의 정식 평가로 확정하세요.
         </p>
         {error ? <p className="mt-3 text-sm text-[var(--sl-danger)]">{error}</p> : null}
       </section>

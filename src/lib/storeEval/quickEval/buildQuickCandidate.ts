@@ -151,6 +151,41 @@ function blankCompetitorFromPlace(place: KakaoPcBangPlace, now: number): Competi
   };
 }
 
+/**
+ * ⭐ **학습 표본의 경쟁점도 같은 수준으로 비운다** (2026-09-22 밤 — 측정으로 찾은 최대 결함).
+ *
+ * 왜 필요한가: 도구는 후보지 경쟁점을 전부 기본값(90대·품질 결측)으로 넣는데, **학습은 사람이
+ * 다 조사한 실측 경쟁점**으로 하고 있었다. 학습은 큰 경쟁점을 보고 계수를 정했는데 후보지엔
+ * 작은 경쟁점만 놓이니 경쟁IP가 과소평가되고 점유율이 과대평가된다 => 매출이 높게 나왔다.
+ *
+ * 기존매장 38곳을 후보지인 척 재평가해 잰 값(`_quickEvalBias.test.ts`, 자기 자신은 학습에서 뺌):
+ *
+ *   비대칭(고치기 전)  MAPE 46.35% · ±20% 26.32% · 예측÷실측 중앙 **1.461** · 35/38곳 과대
+ *   대칭(고친 뒤)      MAPE 27.79% · ±20% 42.11% · 예측÷실측 중앙 **1.211** · 30/38곳 과대
+ *
+ * ⚠️ 기본대수를 90 -> 200으로 올려도 배율이 1.211 -> 1.166으로 조금 움직일 뿐이다. 그건 근거
+ *    없는 값이라(실측 분포와 안 맞고 38곳에 과적합) 안 쓴다. 구조를 맞추는 게 먼저다.
+ * ⚠️ 남은 과대(1.21) 중 큰 몫은 **자사를 표준값으로 두는 것**(+14.2%)이다. 그건 "지금 새로
+ *    지으면"이라 후보지 평가의 본질이고 정밀 평가도 똑같다 — 도구만의 결함이 아니다.
+ */
+export function blankCompetitorForTraining(c: Competitor): Competitor {
+  const out = { ...c } as unknown as Record<string, unknown>;
+  for (const key of [
+    "singleSeatCount", "room1", "room2", "teamRoom", "coupleZone", "vipZone",
+    "friendsZone", "firstClassZone", "regularCoupleSeatCount", "teamRoomTotalSeats",
+    "vgaBase", "vgaTop", "vgaTop2", "cpu", "cpuTop1", "cpuTop2",
+    "ram", "ramTop", "monitorBase", "monitorTop",
+    "foodScore", "interiorScore", "managementScore",
+  ]) {
+    out[key] = null;
+  }
+  out.totalPcCount = null;
+  out.appliedPcCount = null;
+  // 대수를 모르면 조사수준도 "간략"이다 — 그래야 기본대수 장치가 작동한다.
+  out.surveyLevel = "간략";
+  return out as unknown as Competitor;
+}
+
 /** 자동수집 결과를 V62 입력으로 조립한다. */
 export function buildQuickCandidate(
   plan: QuickEvalPlanInput,

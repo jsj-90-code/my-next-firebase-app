@@ -160,6 +160,32 @@ export const ADDRESS_ONLY_ACCURACY = {
   headlineLevelIndex: 3,
 } as const;
 
+/**
+ * ⭐ **이 도구 자체를 되짚어 잰 값** (2026-09-22 밤, `_quickEvalBias.test.ts`).
+ *
+ * 위 `ADDRESS_ONLY_ACCURACY`는 검증 배선으로 잰 것이라 **도구의 성적이 아니다.** 도구는
+ * 후보지 배선(evaluateCandidate)을 쓰고 자사를 표준값으로 두므로 조건이 다르다. 그래서
+ * 기존매장 38곳을 **후보지인 척**(조사 자료를 지우고, 자기 자신은 학습에서 뺀 채) 도구와 같은
+ * 배선으로 돌려 실제 매출과 견줬다.
+ *
+ * ⚠️ 과대예측의 큰 몫은 **자사를 표준값으로 두는 것**(+14.2%)이다. 이건 "지금 새로 지으면"이라
+ *    후보지 평가의 본질이고 정밀 평가도 똑같다 — 결함이 아니라 성질이다. 그래도 화면에는
+ *    "높게 나오는 경향"을 반드시 알려야 한다. 안 그러면 그 숫자를 그대로 믿는다.
+ */
+export const QUICK_EVAL_BACKTEST = {
+  measuredAt: "2026-09-22",
+  sampleCount: 38,
+  testFile: "src/lib/storeEval/_quickEvalBias.test.ts",
+  /** 학습 경쟁점도 같이 비우도록 고친 뒤의 값 */
+  mape: 0.2779,
+  within20: 0.4211,
+  /** 예측 ÷ 실제매출의 중앙값. 1보다 크면 높게 나온다는 뜻 */
+  medianRatio: 1.211,
+  overCount: 30,
+  /** 고치기 전(학습만 실측이던 비대칭 배선) */
+  before: { mape: 0.4635, within20: 0.2632, medianRatio: 1.461, overCount: 35 },
+} as const;
+
 /** 초기 모드 숫자를 결재에 쓰지 못하게 화면에 박는 문구(인계문 6-2). */
 export const QUICK_EVAL_USAGE_LIMIT =
   "후보 선별·줄 세우기 전용입니다. 결재에는 쓰지 마세요 — 결재 숫자는 [신규후보지]의 정밀 평가로 냅니다.";
