@@ -190,9 +190,79 @@ describeIf("퍼짐 과장 — 어느 층이 과장하나", () => {
         + `${(s.worst * 100).toFixed(2).padStart(9)}%p${(s.bias * 100).toFixed(2).padStart(9)}%p`
         + `  ${String(s.within5).padStart(2)}/${rowsU.length}  ${s.spread.toFixed(2)}배${tag}`);
     }
-    console.log(`\n  ⛔ **값을 고르지 않는다.** 사용자가 정할 자리다.`);
-    console.log(`  ⚠️ 지수를 올리면 퍼짐이 늘 수 있다 — MAE만 보지 말고 퍼짐·최악을 같이 봐라.`);
+    console.log(`\n  ⛔ **표본 안 성적으로 고르면 안 된다.** 아래 (4)가 진짜 판정이다.`);
     expect(named.length).toBeGreaterThan(30);
+  });
+
+  it("(4) ⭐ 자료가 입지 지수를 고를 수 있나 — 중첩 LOO + 분별력", () => {
+    // 사용자(2026-09-22): *"입지지수는 가정치라 결과에 맞춰야 하나? 다만 분별력은 있어야 함."*
+    //
+    // 맞는 구분이다. **입지배율 자체는 측정값**이고(유동 300/1000 · 층·엘리베이터),
+    // **그게 얼마나 세게 작용하나는 잴 방법이 없다 = 가정치**다.
+    //
+    // 가정치를 자료로 골라도 되는 조건은 어제 눈금 보정 b에 쓴 잣대와 같다:
+    //   (가) **자료가 고를 수 있나** — 겹마다 다른 값이 나오면 못 고르는 것이다
+    //   (나) **홀드아웃에서 재현되나** — 표본 안 최선은 허수다
+    // 통과하면 자료가 고른 값을 쓰고, 못 하면 **교과서 1**을 쓴다.
+    // 그리고 분별력(순서를 제대로 매기나)을 같이 본다 — 오차가 작아도 순서를 못 매기면
+    // 후보지 평가에 못 쓴다.
+    const GRID = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2];
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    /** 지수 e로 낸 예측(캐시해 둔다 — 겹마다 다시 안 돌린다). */
+    const predBy = new Map<number, number[]>();
+    for (const e of GRID) {
+      const P2 = { ...P, indexCalibration: { ...P.indexCalibration!, locationExponent: e } };
+      predBy.set(e, use.map(({ r }) => computeTextbook(r.input, P2).utilization ?? NaN));
+    }
+    const acts = use.map((x) => x.act);
+    const maeOn = (e: number, idx: number[]) =>
+      mean(idx.map((i) => Math.abs((predBy.get(e) as number[])[i] - acts[i])));
+
+    // ── 중첩 LOO — 한 곳을 빼고 **나머지로 지수를 고른 뒤** 안 본 그 곳을 맞힌다 ──
+    const picked: number[] = [];
+    const looErr: number[] = [];
+    for (let i = 0; i < use.length; i++) {
+      const train = use.map((_, j) => j).filter((j) => j !== i);
+      let bestE = GRID[0], bestV = Infinity;
+      for (const e of GRID) { const v = maeOn(e, train); if (v < bestV) { bestV = v; bestE = e; } }
+      picked.push(bestE);
+      looErr.push(Math.abs((predBy.get(bestE) as number[])[i] - acts[i]));
+    }
+    const counts = new Map<number, number>();
+    for (const e of picked) counts.set(e, (counts.get(e) ?? 0) + 1);
+    const spread = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    console.log(`\n[중첩 LOO] 한 곳을 빼고 나머지 ${use.length - 1}곳으로 지수를 고른 뒤, 안 본 그 곳을 맞힌다`);
+    console.log(`  겹마다 고른 지수: ${spread.map(([e, n]) => `${e.toFixed(1)}(${n}회)`).join(" · ")}`);
+    console.log(`  **자료가 고를 수 있나**: ${counts.size === 1 ? "✅ 40겹 전부 같은 값 — 고른다" : `겹마다 ${counts.size}가지로 갈린다`}`);
+    console.log(`  중첩 LOO MAE = ${(mean(looErr) * 100).toFixed(2)}%p`);
+    console.log(`\n  비교 — 고정값으로 갔을 때 (같은 표본)`);
+    console.log(`  지수     MAE      최악      분별력 r(log)   순위 분별력`);
+    const all = use.map((_, i) => i);
+    const actLog = acts.map(Math.log);
+    const rankOf = (v: number[]) => {
+      const idx = v.map((x, i) => [x, i] as const).sort((a, b) => a[0] - b[0]);
+      const rk = new Array(v.length).fill(0);
+      idx.forEach(([, i], k) => { rk[i] = k + 1; });
+      return rk;
+    };
+    const actRank = rankOf(acts);
+    for (const e of [0, 0.169, 0.5, 1.0]) {
+      const P2 = { ...P, indexCalibration: { ...P.indexCalibration!, locationExponent: e } };
+      const pr = use.map(({ r }) => computeTextbook(r.input, P2).utilization ?? NaN);
+      const errs = pr.map((v, i) => Math.abs(v - acts[i]));
+      console.log(`  ${e.toFixed(3).padStart(5)}${(mean(errs) * 100).toFixed(2).padStart(8)}%p`
+        + `${(Math.max(...errs) * 100).toFixed(2).padStart(9)}%p`
+        + `${corr(pr.map(Math.log), actLog).toFixed(3).padStart(14)}`
+        + `${corr(rankOf(pr), actRank).toFixed(3).padStart(14)}`);
+    }
+    void all;
+    console.log(`\n  ⭐ 읽는 법`);
+    console.log(`     · 겹마다 고른 값이 갈리면 **자료가 못 고르는 것**이다 -> 교과서 1을 쓴다`);
+    console.log(`     · 중첩 LOO MAE가 고정값들보다 나쁘면 **고르는 행위 자체가 손해**다`);
+    console.log(`     · 분별력 r은 **순서를 제대로 매기나**다. 오차가 작아도 순서를 못 매기면`);
+    console.log(`       후보지 평가에 못 쓴다(사용자: "다만 분별력은 있어야 함").`);
+    expect(picked.length).toBe(use.length);
   });
 
   it("(2) 층을 하나씩 평균으로 눌러 본다 — ⚠️ 진단일 뿐 채택 후보가 아니다", () => {
