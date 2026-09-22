@@ -86,7 +86,11 @@ const INITIAL_PLAN: Plan = {
   hourlyRate: "",
   floor: "",
   groundLevel: "지상",
-  hasElevator: "미정",
+  // 엘리베이터는 **"있음"이 기본**이다(사용자 지시 2026-09-23). "미정"은 고를 수는 있지만
+  // 처음부터 놓지 않는다 — 후보 건물은 대개 엘리베이터가 있어서 매번 바꿔 주는 게 일이었다.
+  // ⚠️ 이 값은 V62 금액 계산에 안 들어가고 **AI 접근가시성 판정에만** 사실로 넘어간다
+  //    (quickEvalDefaults의 재고표 "자사 층·지상지하·엘리베이터" 항목).
+  hasElevator: "있음",
 };
 
 function toNumberOrNull(raw: string): number | null {

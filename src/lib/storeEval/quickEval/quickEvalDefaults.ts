@@ -190,7 +190,9 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       `⚠️ **V62 계산에는 직접 안 들어간다**(측정: 아무리 바꿔도 ${(QUICK_EVAL_INPUT_SENSITIVITY.floorDirectEffect * 100).toFixed(1)}%)` +
       " — 입지평가가 있으면 산식이 층수를 안 보기 때문이다. 대신 **AI 접근가시성 판정에 사실로 넘어가고**, " +
       `가시성은 결과를 크게 움직인다(1점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.low)} ~ ` +
-      `5점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.high)}). 비우면 '모름'으로 보수적으로 매겨진다`,
+      `5점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.high)}). ` +
+      "⚠️ 엘리베이터는 **'있음'이 기본값**이다(2026-09-23 사용자 지시 — 후보 건물은 대개 있다). " +
+      "없는 건물이면 직접 '없음'으로 바꿔야 한다. '미정'을 고르면 AI가 '모름'으로 보수적으로 매긴다",
     needsFieldCheck: false,
   },
   {
