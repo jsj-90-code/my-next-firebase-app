@@ -139,6 +139,30 @@ export const QUICK_EVAL_OWN_HARDWARE = {
  *
  * ⚠️ 이 값을 바꾸면 `quickEvalDefaults.QUICK_EVAL_BACKTEST`도 같이 고쳐야 한다.
  */
+/**
+ * ⭐⭐⭐ 미조사 경쟁점에 넣는 **PC 대수** (2026-09-22 밤 4차).
+ *
+ * 운영 V62의 간략_기본대수(`DEFAULT_UNSURVEYED_PC_COUNT` = 90대)를 쓰지 않고 이 값을 쓴다.
+ *
+ * ── 왜 90대가 아닌가 ──────────────────────────────────────────────────────
+ * 실측으로 대수를 아는 경쟁점 159곳: 최소 61 · 1사분위 97 · 중앙 111 · 3사분위 150 · 최대 400 ·
+ * **평균 129.1**. 90대보다 작은 건 14%뿐이라 90대는 분포의 아래쪽이다.
+ *
+ * ⚠️ 3차까지는 이걸 고쳐도 소용없었다 — 학습 쪽도 같이 비워서 수준 변화를 재학습이 흡수했기
+ *    때문이다(90 -> 300대에 배율 1.211 -> 1.199). 3차에서 **학습을 실측으로 되돌리자 대수
+ *    비대칭이 다시 살아났고**(학습은 진짜 대수, 후보지만 90대), 그때부터 지렛대가 된다.
+ *
+ * ── 왜 중앙값(111)이 아니라 평균(129)인가 ─────────────────────────────────
+ * 경쟁IP는 경쟁점 대수의 **합계**다(`calc.computeCompetitorIp` — reduce로 더한다).
+ * n개 경쟁점 합계의 기댓값은 n × **평균**이지 n × 중앙값이 아니다. 대수 분포가 오른쪽으로
+ * 치우쳐 있어(최대 400대) 중앙값을 넣으면 합계를 과소평가한다.
+ * 측정도 같은 답을 준다: 중앙 111대 MAPE 19.72% vs 평균 129대 **19.34%**.
+ *
+ * ⚠️ 3사분위(150대)를 넣으면 18.98%로 더 좋아진다. **안 쓴다** — 근거가 없는 지점이고,
+ *    "좋아질 때까지 올리기"는 이 저장소가 지수 눈금 보정에서 이미 겪은 실패다.
+ */
+export const RIVAL_PC_COUNT_WHEN_UNSURVEYED = 129;
+
 export const RIVAL_TYPICAL_WHEN_UNSURVEYED = {
   singleSeatCount: 0,
   room1: 0,
@@ -175,15 +199,18 @@ function blankCompetitorFromPlace(place: KakaoPcBangPlace, now: number): Competi
     id: `${QUICK_EVAL_CANDIDATE_CODE}_kakao_${place.id}`,
     candidateCode: QUICK_EVAL_CANDIDATE_CODE,
     name: place.name,
-    // ⭐ 조사수준 "간략" — 이 한 줄이 간략_기본대수(90대) 장치를 켠다. `_addressOnlyMode.test.ts`의
-    //    L2/L3가 같은 처리를 한다("대수를 모르면 조사수준도 간략이다").
+    // ⭐ 조사수준은 "간략"으로 남긴다 — 실사한 값이 아니라는 표시다.
+    //    다만 **대수는 장치 기본값(90대)에 맡기지 않고 직접 채운다**(아래 appliedPcCount).
+    //    appliedPcCount가 있으면 computeCompetitorAppliedPcCount가 그 값을 먼저 쓴다.
     surveyLevel: "간략",
     investigationStatus: "조사완료",
     distanceM: place.distanceM,
     floor: null,
     groundLevel: null,
     totalPcCount: null,
-    appliedPcCount: null,
+    // ⭐ 실측 경쟁점 159곳의 **평균** 대수. 경쟁IP가 합계라서 중앙값이 아니라 평균이 맞다
+    //    (RIVAL_PC_COUNT_WHEN_UNSURVEYED 주석에 근거가 다 있다).
+    appliedPcCount: RIVAL_PC_COUNT_WHEN_UNSURVEYED,
     hasElevator: null,
     cpu: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpu,
     cpuTop1: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpuTop1,

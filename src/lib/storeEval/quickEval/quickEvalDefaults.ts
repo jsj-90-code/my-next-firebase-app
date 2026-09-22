@@ -12,6 +12,7 @@
 //    한다(`DEFAULT_UNSURVEYED_PC_COUNT` 등 실제 상수를 import해서 쓴다).
 
 import { DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
+import { RIVAL_PC_COUNT_WHEN_UNSURVEYED } from "./buildQuickCandidate";
 import type { FoodBrand } from "../types";
 
 /**
@@ -110,7 +111,12 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     label: "경쟁점 PC 대수",
     source: "기본값",
     basis:
-      `전부 미조사로 두고 운영 V62의 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대를 쓴다. ` +
+      `실측 경쟁점 159곳의 **평균 ${RIVAL_PC_COUNT_WHEN_UNSURVEYED}대**를 넣는다(2026-09-22 밤 조정). ` +
+      `운영 V62의 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대는 안 쓴다 — 실측 분포(최소 61·중앙 111·최대 400)에서 ` +
+      `${DEFAULT_UNSURVEYED_PC_COUNT}대보다 작은 건 14%뿐이라 아래쪽 값이다. ` +
+      "중앙값(111)이 아니라 평균을 쓰는 건 **경쟁IP가 대수의 합계**여서다 — 합계의 기댓값은 n×평균이다. " +
+      "측정도 같은 답을 준다(중앙 19.72% vs 평균 19.34%). " +
+      "⚠️ 3사분위(150대)면 더 좋아지지만 근거가 없어 안 쓴다. " +
       "면적→대수 회귀는 소형 구간이 외삽이라(R²=0.679, 표본 61~243대) 아직 못 쓴다",
     needsFieldCheck: true,
   },
@@ -122,7 +128,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "⚠️ 예전엔 빈칸으로 뒀는데, 빈칸은 '동급'이 아니라 경쟁점을 **약하게** 매긴다: 경쟁점 " +
       "경쟁력점수가 실측 2.448 대비 1.921까지 떨어지고 격차가 1.455 → 1.904로 벌어졌다. 자사 점수는 " +
       "3.700 → 3.735로 거의 안 변했으니, 예상매출이 높게 나온 건 자사를 후하게 봐서가 아니라 " +
-      "**경쟁점을 약하게 봐서**였다. 채운 뒤 배율 1.140 → 1.105, ±20% 47.4% → 71.1%. " +
+      "**경쟁점을 약하게 봐서**였다. 채운 뒤 배율 1.140 → 1.105, ±20% 47.4% → 73.7%(대수까지 채운 값). " +
       "⚠️ 점수를 더 올리면 성적이 계속 좋아지지만 그건 산식의 과한 퍼짐을 누르는 것이라 안 한다 — " +
       "실측 중앙값(3점)에서 멈춘다. " +
       "⚠️ 대수만 채우고 품질을 비우면 오히려 더 틀린다(측정: 12.57% vs 10.82%) — 조사가 들어오면 둘을 같이 채워라",
@@ -243,12 +249,14 @@ export const QUICK_EVAL_BACKTEST = {
   measuredAt: "2026-09-22",
   sampleCount: 38,
   testFile: "src/lib/storeEval/_quickEvalBias.test.ts",
-  /** 후보지 경쟁점을 실측 대표값으로 채우고 학습은 실측 그대로 둔 뒤의 값(2026-09-22 밤 3차) */
-  mape: 0.2023,
-  within20: 0.7105,
+  /** 경쟁점 품질 + **대수**까지 실측 대표값으로 채운 뒤의 값(2026-09-22 밤 4차) */
+  mape: 0.1934,
+  within20: 0.7368,
   /** 예측 ÷ 실제매출의 중앙값. 1보다 크면 높게 나온다는 뜻 */
   medianRatio: 1.105,
   overCount: 26,
+  /** 4차 직전 — 품질만 채우고 대수는 90대 기본값이던 때 */
+  beforeRivalPcCount: { mape: 0.2023, within20: 0.7105, medianRatio: 1.105, overCount: 26 },
   /** 3차 직전 — 학습·후보지 양쪽을 비우던 배선 */
   beforeRivalFill: { mape: 0.2314, within20: 0.4737, medianRatio: 1.14, overCount: 29 },
   /** 2차 직전 — 자사 사양이 표준 기획값이던 때 */
@@ -261,7 +269,7 @@ export const QUICK_EVAL_BACKTEST = {
    * (17.04 -> 16.94%), **경쟁점을 채우는 건 내렸다**(-> 15.81%) — 버렸던 정보를 되살린
    * 것이라 성질이 다르다. 정밀 평가는 10.10%이고 그 격차는 경쟁점 실측 자료가 있어야 메워진다.
    */
-  leveledMape: 0.1581,
+  leveledMape: 0.1551,
   leveledMapeBefore: 0.1694,
   preciseLeveledMape: 0.101,
   /**

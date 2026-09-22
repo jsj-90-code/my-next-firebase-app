@@ -4,8 +4,8 @@
 //   1. **좌표변환** — 틀리면 SGIS·소상공인365가 에러 없이 빈 결과를 준다(조용한 실패).
 //   2. **이름 규칙** — 성인PC방·오락실이 경쟁점으로 새어들면 경쟁IP가 부풀려진다.
 //   3. **조립** — `_addressOnlyMode.test.ts`가 잰 L3 조건과 같은 모양이어야 화면의 오차율이
-//      거짓이 되지 않는다(경쟁점 대수 null + 조사수준 "간략" + 품질은 실측 대표값).
-//      ⚠️ 품질은 2026-09-22 밤 3차에 null -> 대표값으로 바뀌었다(RIVAL_TYPICAL_WHEN_UNSURVEYED).
+//      거짓이 되지 않는다(경쟁점 대수·품질 모두 **실측 대표값**, 조사수준은 "간략" 유지).
+//      ⚠️ 품질은 3차(2026-09-22 밤), 대수는 4차에 null -> 대표값으로 바뀌었다.
 //
 // 실행: npx vitest run src/lib/storeEval/quickEval/quickEval.test.ts
 import { describe, expect, it } from "vitest";
@@ -14,6 +14,7 @@ import { judgePcBangName, NON_PCBANG_NAME_PATTERN } from "./pcBangNameFilter";
 import {
   buildQuickCandidate,
   buildQuickLocationEvaluation,
+  RIVAL_PC_COUNT_WHEN_UNSURVEYED,
   RIVAL_TYPICAL_WHEN_UNSURVEYED,
   type QuickEvalPlanInput,
 } from "./buildQuickCandidate";
@@ -170,13 +171,18 @@ describe("V62 입력 조립", () => {
     expect(built.candidate.floating500_20s).toBe(20000);
   });
 
-  it("⭐ 경쟁점은 대수 미조사 + 조사수준 간략 — 기본대수 장치가 켜져야 한다", () => {
+  it("⭐ 경쟁점 대수는 실측 평균으로 채운다 — 장치 기본값(90대)에 안 맡긴다", () => {
+    // 2026-09-22 밤 4차에 바뀌었다. 학습을 실측으로 되돌리자(3차) 대수 비대칭이 살아났다 —
+    // 학습은 진짜 대수(중앙 111·평균 129)를 보는데 후보지만 90대를 받고 있었다.
+    // 중앙값이 아니라 평균인 이유: 경쟁IP가 대수의 **합계**라서(computeCompetitorIp).
     for (const c of built.competitors) {
       expect(c.totalPcCount).toBeNull();
-      expect(c.appliedPcCount).toBeNull();
+      expect(c.appliedPcCount).toBe(RIVAL_PC_COUNT_WHEN_UNSURVEYED);
+      // 실사값이 아니라는 표시는 남긴다.
       expect(c.surveyLevel).toBe("간략");
-      // 이 한 줄이 L2/L3 측정 조건과 같은지를 지킨다.
-      expect(computeCompetitorAppliedPcCount(c)).toBe(DEFAULT_UNSURVEYED_PC_COUNT);
+      // appliedPcCount가 장치 기본값보다 우선한다 — 이게 깨지면 조용히 90대로 돌아간다.
+      expect(computeCompetitorAppliedPcCount(c)).toBe(RIVAL_PC_COUNT_WHEN_UNSURVEYED);
+      expect(RIVAL_PC_COUNT_WHEN_UNSURVEYED).not.toBe(DEFAULT_UNSURVEYED_PC_COUNT);
     }
   });
 
