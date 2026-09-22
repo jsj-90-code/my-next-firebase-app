@@ -47,6 +47,7 @@ import type { Competitor, ExistingStore } from "./types";
 
 const PERMIT_FILE = ".local-tools/pcbang-permits.json";
 const SBIZ_FILE = ".local-tools/sbiz-pcbang-2km.json";
+const NEIGHBOR_FILE = ".local-tools/kakao-neighborhood.json";
 const QSC_FILE = ".local-tools/qsc-scores.json";
 const OFFICIAL_RADIUS_M = 500;
 const SELF_M = 50;
@@ -144,6 +145,12 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     collectedAt: string; radiusM: number;
     sites: Record<string, { lat: number; lng: number; name: string; stores: SbizStore[] }>;
   };
+  /** 카카오 장소 — 2026-09-22에 **실체 판정의 정답**으로 밝혀졌다(2-바). */
+  const neighbor = existsSync(NEIGHBOR_FILE)
+    ? JSON.parse(readFileSync(NEIGHBOR_FILE, "utf8")) as {
+      sites: Record<string, { pcRooms?: { docs?: { lat: number; lng: number; name: string; distanceM: number }[]; truncated?: boolean } }>;
+    }
+    : { sites: {} };
 
   type Joined = { q: SbizStore; distanceM: number; permit: Permit | null; share: number };
   const joinedByCode = new Map<string, Joined[]>();
@@ -442,6 +449,73 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     }
     console.log(`\n  ⚠️ 게임기수가 없고 면적으로만 통과한 곳은 기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대가 그대로 간다.`);
     console.log(`     그건 운영과 같은 규칙이라 새로 고른 값이 아니다.`);
+  });
+
+  it("(2-바) ⭐⭐ 실체 자료를 카카오로 바꾼다 — 사용자 확인으로 순위가 정해졌다", () => {
+    // 사용자(2026-09-22): 구리돌다리 500m의 나머지 7곳은 *"네이버지도에 안 떠, 폐업으로 추측됨"*
+    // => **상가업소와 인허가는 폐업을 못 따라온다.** 둘 다 낡은 목록을 들고 있다.
+    //
+    // 카카오를 대조해 보니 답이 나왔다. 구리돌다리 500m 카카오 목록:
+    //   13m 불독PC방⭐ · 69m 진주게임랜드(성인) · 155m 녹스피씨방⭐ · 227m G1피시방(=지원)⭐ ·
+    //   235m 지원오티티스크린허브 · 448m 레드포스PC아레나⭐ · 498m 제로백 구리역점
+    // **사용자가 꼽은 4곳이 전부 있고, 폐업 추정 7곳은 하나도 없다.**
+    // 500m 채점에서도 카카오는 실재 273건 중 270건(99%)을 맞혔다.
+    //
+    // => 실체 판정의 순위는 **카카오 > 상가업소 > 인허가**다.
+    // ⚠️ 카카오의 약점은 **매장당 40건쯤에서 잘리는 것** 하나뿐이다(전대후문 등 4곳).
+    //    반경을 격자로 쪼개 조회하면 우회할 수 있다 — 아직 안 했다.
+    // ⚠️ 그리고 성인PC방이 섞인다(진주게임랜드). 인허가 짝으로 거를 수 있지만 **레드포스처럼
+    //    최근 개점한 진짜 PC방도 같이 빠진다**(인허가에 아직 없다). 둘 다 재서 비교한다.
+    const kakaoOf = (code: string) =>
+      (neighbor.sites[`existing:${code}`] as { pcRooms?: { docs?: { lat: number; lng: number; name: string; distanceM: number }[] } } | undefined)
+        ?.pcRooms?.docs ?? [];
+    const buildKakao = (requirePermit: boolean) => {
+      const map = new Map<string, Joined[]>();
+      for (const r of rows) {
+        const months = evaluationMonths(storeByCode.get(r.input.storeCode)?.openedAt ?? null);
+        const out: Joined[] = [];
+        for (const d of kakaoOf(r.input.storeCode)) {
+          if (d.distanceM <= OFFICIAL_RADIUS_M || d.distanceM <= SELF_M) continue;
+          const cand = permits.map((p) => ({ p, dd: distanceM(d.lat, d.lng, p.lat, p.lng) })).filter((x) => x.dd <= JOIN_M);
+          const best = cand.map((x) => ({ ...x, sc: nameSimilarity(d.name, x.p.name) }))
+            .sort((a, b) => b.sc - a.sc || a.dd - b.dd)[0];
+          const permit = best && (best.sc >= JOIN_SIM || cand.length === 1) ? best.p : null;
+          if (requirePermit && !permit) continue;          // 성인PC방을 거르지만 최근 개점도 뺀다
+          out.push({ q: { id: "", name: d.name, lat: d.lat, lng: d.lng, addr: "" }, distanceM: d.distanceM, permit, share: operatingShare(permit, months) });
+        }
+        map.set(r.input.storeCode, out);
+      }
+      return map;
+    };
+    const scoreOf = (map: Map<string, Joined[]>) => card((r) => {
+      const extra = (map.get(r.input.storeCode) ?? []).filter((j) => j.share > 0)
+        .map((j) => ({ ip: DEFAULT_UNSURVEYED_PC_COUNT * j.share, distanceM: j.distanceM, parts: null, name: j.q.name }));
+      return { ...r.input, rivals: [...(r.input.rivals ?? []), ...extra] };
+    });
+    const kAll = buildKakao(false), kPermit = buildKakao(true);
+    /**
+     * 성인PC방·오락실은 **상호에 드러난다.** 카카오 500m 밖 고유 상호 728개 중 26개(3.6%)가
+     * 걸린다 — 게임랜드·오락실·게임장·VR·사격·멀티방 따위다(지구성인게임랜드·메가오락실·
+     * 인형뽑기왕오락실·슈팅존스크린사격 …). 인허가 짝으로 거르는 것과 달리 **최근 개점을
+     * 안 뺀다.** ⚠️ 이건 이름 규칙이라 새 업태가 생기면 갱신해야 한다.
+     */
+    const ARCADE = /게임랜드|게임장|오락|성인|스크린|멀티방|다트|보드게임|만화|플스|VR|사격|당구|노래/i;
+    const kClean = new Map([...kAll].map(([k, v]) => [k, v.filter((j) => !ARCADE.test(j.q.name))]));
+    const n = (m: Map<string, Joined[]>) => [...m.values()].flat().filter((j) => j.share > 0).length;
+    const line = (name: string, c: Card) => console.log(
+      `  ${name.padEnd(32)}${pp(c.mae).padStart(8)} ${pp(c.sd).padStart(8)}`
+      + ` ${(pp(c.worst) + " " + c.worstName).padEnd(22)} ${pp(c.bias).padStart(8)}`
+      + `  ${String(c.within5).padStart(2)}/${c.n}  ${c.spread.toFixed(2)}배    ${String(c.capped).padStart(2)}곳`);
+    console.log(`\n[성적표] 실체 자료를 바꿔 본다 · 시점=인허가 · 대수=${DEFAULT_UNSURVEYED_PC_COUNT}대 일괄`);
+    console.log(`  시나리오                            MAE       SD      최악            편향      ±5%p  퍼짐   점유율100%`);
+    line("지금 — 2km를 안 센다", card((r) => r.input));
+    line(`실체=상가업소 (${n(joinedByCode)}건)`, card((r) => withJoined(r, (j) => j.share)));
+    line(`실체=카카오 (${n(kAll)}건)`, scoreOf(kAll));
+    line(`⭐ 실체=카카오 − 오락실류 (${n(kClean)}건)`, scoreOf(kClean));
+    line(`실체=카카오∩인허가 (${n(kPermit)}건)`, scoreOf(kPermit));
+    console.log(`\n  ⚠️ 카카오∩인허가는 성인PC방을 거르지만 **최근 개점(레드포스)도 같이 뺀다.**`);
+    console.log(`     성적만 보고 고르지 마라 — 무엇을 잘못 빼는지가 다르다.`);
+    console.log(`  ⚠️ 카카오 40건 상한은 **아직 안 풀었다.** 반경을 격자로 쪼개 조회하면 된다.`);
   });
 
   it("(3) 매장별로 얼마나 붙었나", () => {
