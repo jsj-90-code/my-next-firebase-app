@@ -14,7 +14,23 @@
 //    쓰는 값과 미세하게 다를 수 있고, 프롬프트에 그렇게 적는다.
 // ⚠️ 학습제외 매장과 실매출 없는 매장은 뺀다 — 비교 대상이 아니다.
 
+import { LAB_ONLY_INCLUDED_STORE_CODES } from "../labInput";
 import type { ExistingStore } from "../types";
+
+/**
+ * 이 도구가 **학습·비교에 쓰는 매장인가** (2026-09-22 사용자: *"송도 동탄은 둘 다 넣어줘라"*).
+ *
+ * `excludedFromModel`이 켜진 매장 둘(송도점·동탄북광장점)을 이 도구에서는 포함한다.
+ * ⚠️ **운영 Firestore는 안 건드린다.** 그 플래그를 풀면 운영 V62 학습 표본까지 바뀌어
+ *    결재 숫자가 움직인다(2026-09-21 실측: MAPE 8.83 -> 9.79%, 후보지 매출 −0.5~−3.9%.
+ *    그때 사용자가 "실험실에만 넣자"로 되돌렸다 — `scripts/writeSampleInclusion.mjs`).
+ *    그래서 실험실이 쓰는 것과 **같은 목록**으로, 이 도구 안에서만 포함한다.
+ */
+export function isUsableForQuickEval(s: ExistingStore): boolean {
+  if (s.brandType !== "블랙라벨") return false;
+  if ((s.actualMonthlyRevenueAvg ?? 0) <= 0) return false;
+  return !s.excludedFromModel || LAB_ONLY_INCLUDED_STORE_CODES.has(s.storeCode);
+}
 
 export type QuickEvalPeer = {
   storeName: string;
@@ -64,13 +80,7 @@ export function buildQuickEvalPeers(
   candidateMarketDemand: number | null,
   nearestCount = 8,
 ): QuickEvalPeerSummary {
-  const usable = stores.filter(
-    (s) =>
-      s.brandType === "블랙라벨" &&
-      !s.excludedFromModel &&
-      s.actualMonthlyRevenueAvg != null &&
-      s.actualMonthlyRevenueAvg > 0,
-  );
+  const usable = stores.filter(isUsableForQuickEval);
 
   const toPeer = (s: ExistingStore): QuickEvalPeer => {
     const revenue = s.actualMonthlyRevenueAvg as number;

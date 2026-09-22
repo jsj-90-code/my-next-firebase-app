@@ -23,6 +23,7 @@
 //    상권 판단은 V62 값과 AI 평가문이 한다 — 화면에서 **둘을 나란히** 보여주는 이유다.
 // ⚠️ 점포평가 시스템(/store-eval)에는 넣지 않는다(사용자 지시). 여기서만 쓴다.
 
+import { isUsableForQuickEval } from "./quickEvalPeers";
 import type { ExistingStore } from "../types";
 
 /** 이 산식이 쓰는 입력 — 자동화가 아니라 **사람이 넣는 기획값** 둘뿐이다. */
@@ -56,7 +57,9 @@ function standardize(values: number[]): { mean: number; sd: number } {
  */
 export function fitQuickEvalOwnModel(stores: ExistingStore[]): QuickEvalOwnModel | null {
   const rows = stores
-    .filter((s) => s.brandType === "블랙라벨" && !s.excludedFromModel && (s.actualMonthlyRevenueAvg ?? 0) > 0)
+    // 송도점·동탄북광장점을 포함한다(사용자 2026-09-22). 운영 Firestore는 안 건드린다 —
+    // 그 이유와 실측 영향은 `isUsableForQuickEval` 주석에 있다.
+    .filter(isUsableForQuickEval)
     .map((s) => {
       const pc = s.evaluationPcCount ?? s.pcCount;
       if (!pc || pc <= 0 || !s.hourlyRate || s.hourlyRate <= 0) return null;
