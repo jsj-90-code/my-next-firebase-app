@@ -112,13 +112,15 @@ export const OWN_HARDWARE_PLANNED_STANDARD = {
  *    ⛔ 정밀 평가(`/store-eval`)를 이 판단으로 고치지 마라 — 사용자 지시로 이 도구 전용이다.
  * ⚠️ 이 값을 되돌리면 `quickEvalDefaults.QUICK_EVAL_BACKTEST`의 숫자도 같이 되돌려야 한다.
  */
-export const QUICK_EVAL_OWN_HARDWARE = {
-  ownCpu: "i5 14400F",
-  ownRam: "16GB",
-  ownVgaBase: "RTX 4060",
-  ownMonitorBase: "제이씨현 (32인치·FHD·240Hz)",
-  ownMonitorTop: "제이씨현 (27인치·FHD·240Hz)\n주연테크 Nano IPS (27인치·FHD·240Hz)",
-} as const;
+// ⛔⛔ 2026-09-23 **되돌렸다** — 표본 최빈 사양(i5 14400F · RTX 4060)으로 낮췄던 걸
+//     표준 기획값으로 원복했다. 위 주석의 근거(표본 밖 외삽)는 여전히 맞지만, **되짚기가
+//     실제 도구를 대표하지 못했다**: 되짚기로는 −10%였는데 실제 후보지에서는 전부 −45%가
+//     나왔다(사용자 확인, 인천 호구포점 등 여러 곳). 되짚기는 기존점의 **조사된** 경쟁점
+//     (중앙 4곳·최대 10곳)으로 도는데 실제는 카카오 500m(10~20곳)이라, 경쟁점을 통해
+//     작동하는 변경의 충격을 크게 과소평가했다.
+//     ⚠️ 대표성 없는 측정에 기대어 값을 바꾸면 안 된다. **카카오 경쟁점 수를 반영한
+//        되짚기를 새로 만든 뒤에** 다시 판단한다.
+export const QUICK_EVAL_OWN_HARDWARE = OWN_HARDWARE_PLANNED_STANDARD;
 
 /**
  * ⭐⭐⭐ 미조사 경쟁점에 넣는 **PC 대수** (2026-09-22 밤 4차).
@@ -211,18 +213,18 @@ function blankCompetitorFromPlace(place: KakaoPcBangPlace, now: number): Competi
     totalPcCount: null,
     // ⭐ 실측 경쟁점 159곳의 **평균** 대수. 경쟁IP가 합계라서 중앙값이 아니라 평균이 맞다
     //    (RIVAL_PC_COUNT_WHEN_UNSURVEYED 주석에 근거가 다 있다).
-    appliedPcCount: RIVAL_PC_COUNT_WHEN_UNSURVEYED,
+    appliedPcCount: null,
     hasElevator: null,
-    cpu: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpu,
-    cpuTop1: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpuTop1,
-    cpuTop2: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpuTop2,
-    vgaBase: RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaBase,
-    vgaTop: RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaTop,
-    vgaTop2: RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaTop2,
-    ram: RIVAL_TYPICAL_WHEN_UNSURVEYED.ram,
-    ramTop: RIVAL_TYPICAL_WHEN_UNSURVEYED.ramTop,
-    monitorBase: RIVAL_TYPICAL_WHEN_UNSURVEYED.monitorBase,
-    monitorTop: RIVAL_TYPICAL_WHEN_UNSURVEYED.monitorTop,
+    cpu: null,
+    cpuTop1: null,
+    cpuTop2: null,
+    vgaBase: null,
+    vgaTop: null,
+    vgaTop2: null,
+    ram: null,
+    ramTop: null,
+    monitorBase: null,
+    monitorTop: null,
     ratePer1000Won: null,
     hourlyRateConverted: null,
     paidDeduction: null,
@@ -233,27 +235,27 @@ function blankCompetitorFromPlace(place: KakaoPcBangPlace, now: number): Competi
     pingbotUtilization: null,
     pingbotPeriod: null,
     renovationYear: null,
-    foodScore: RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore,
+    foodScore: null,
     foodBasis: null,
     foodBrand: null,
-    interiorScore: RIVAL_TYPICAL_WHEN_UNSURVEYED.interiorScore,
+    interiorScore: null,
     interiorBasis: null,
     interiorLevelScore: null,
     interiorConditionScore: null,
     monitorBasis: null,
     seatZoneScore: null,
     comfortScore: null,
-    singleSeatCount: RIVAL_TYPICAL_WHEN_UNSURVEYED.singleSeatCount,
-    room1: RIVAL_TYPICAL_WHEN_UNSURVEYED.room1,
-    room2: RIVAL_TYPICAL_WHEN_UNSURVEYED.room2,
-    teamRoom: RIVAL_TYPICAL_WHEN_UNSURVEYED.teamRoom,
-    coupleZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.coupleZone,
-    vipZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.vipZone,
-    friendsZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.friendsZone,
-    firstClassZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.firstClassZone,
-    managementScore: RIVAL_TYPICAL_WHEN_UNSURVEYED.managementScore,
-    regularCoupleSeatCount: RIVAL_TYPICAL_WHEN_UNSURVEYED.regularCoupleSeatCount,
-    teamRoomTotalSeats: RIVAL_TYPICAL_WHEN_UNSURVEYED.teamRoomTotalSeats,
+    singleSeatCount: null,
+    room1: null,
+    room2: null,
+    teamRoom: null,
+    coupleZone: null,
+    vipZone: null,
+    friendsZone: null,
+    firstClassZone: null,
+    managementScore: null,
+    regularCoupleSeatCount: null,
+    teamRoomTotalSeats: null,
     teamRoomTotalSeatsBasis: null,
     source: "kakao",
     sourcePlaceId: place.id,

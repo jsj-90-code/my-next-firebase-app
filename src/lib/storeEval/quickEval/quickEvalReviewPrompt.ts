@@ -137,11 +137,14 @@ export function buildQuickEvalReviewContext(input: {
       + `(${QUICK_EVAL_BACKTEST.overCount}/${QUICK_EVAL_BACKTEST.sampleCount}곳이 실제보다 높게 나왔다)`,
   );
   lines.push(
-    // ⚠️ 정밀 평가와 견줄 때 **같은 자**를 써야 한다 — 줄 세우기 오차끼리 견준다.
+    // ⚠️ 정밀 평가와 견줄 때 **같은 자**를 써야 한다 — 수준보정 오차끼리 견준다.
     //    정밀의 일반 MAPE(8.83%)와 견주면 단위가 다른 값을 나란히 놓는 셈이다.
-    `수준을 맞춘 뒤 남는 줄 세우기 오차는 ${pct(QUICK_EVAL_BACKTEST.leveledMape, 2)}다`
+    // ⛔ 2026-09-23 정정 — 여기 "금액 수준보다 순서가 이 도구의 쓸모다"라고 넘기고 있었다.
+    //    **틀렸다.** 이 도구는 후보지를 줄 세우는 게 아니라 **개별 점포를 평가**한다
+    //    (사용자 2026-09-23). 그러니 AI에게도 "순서만 보면 된다"고 말하면 안 된다.
+    `배율을 뺀 뒤에도 ${pct(QUICK_EVAL_BACKTEST.leveledMape, 2)}의 오차가 남는다`
       + `(현장조사를 다 한 정밀 평가는 같은 자로 ${pct(QUICK_EVAL_BACKTEST.preciseLeveledMape, 2)}).`
-      + " **금액 수준보다 순서가 이 도구의 쓸모다.**",
+      + " **이 도구는 개별 후보지를 평가하는 것이므로, 금액을 단정하지 말고 범위로 말하라.**",
   );
   lines.push(
     "⚠️ 위 측정은 기존 가맹점으로 잰 것이고, 가시성을 표본 중앙값으로 고정해서 쟀다."

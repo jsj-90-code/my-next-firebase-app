@@ -14,8 +14,6 @@ import { judgePcBangName, NON_PCBANG_NAME_PATTERN } from "./pcBangNameFilter";
 import {
   buildQuickCandidate,
   buildQuickLocationEvaluation,
-  RIVAL_PC_COUNT_WHEN_UNSURVEYED,
-  RIVAL_TYPICAL_WHEN_UNSURVEYED,
   type QuickEvalPlanInput,
 } from "./buildQuickCandidate";
 import { computeCompetitorAppliedPcCount, DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
@@ -172,31 +170,25 @@ describe("V62 입력 조립", () => {
     expect(built.candidate.floating500_20s).toBe(20000);
   });
 
-  it("⭐ 경쟁점 대수는 실측 평균으로 채운다 — 장치 기본값(90대)에 안 맡긴다", () => {
-    // 2026-09-22 밤 4차에 바뀌었다. 학습을 실측으로 되돌리자(3차) 대수 비대칭이 살아났다 —
-    // 학습은 진짜 대수(중앙 111·평균 129)를 보는데 후보지만 90대를 받고 있었다.
-    // 중앙값이 아니라 평균인 이유: 경쟁IP가 대수의 **합계**라서(computeCompetitorIp).
+  // ⛔ 2026-09-23 **되돌렸다** — 대수 129대·품질 대표값으로 채웠다가 원복했다.
+  //    되짚기로는 좋아졌는데 실제 후보지 예상매출이 45% 떨어졌다(되짚기가 조사된 경쟁점
+  //    중앙 4곳으로 도는 탓에 카카오 10~20곳 구간을 대표하지 못했다).
+  it("⭐ 경쟁점은 대수 미조사 + 조사수준 간략 — 기본대수 장치가 켜져야 한다", () => {
     for (const c of built.competitors) {
       expect(c.totalPcCount).toBeNull();
-      expect(c.appliedPcCount).toBe(RIVAL_PC_COUNT_WHEN_UNSURVEYED);
-      // 실사값이 아니라는 표시는 남긴다.
+      expect(c.appliedPcCount).toBeNull();
       expect(c.surveyLevel).toBe("간략");
-      // appliedPcCount가 장치 기본값보다 우선한다 — 이게 깨지면 조용히 90대로 돌아간다.
-      expect(computeCompetitorAppliedPcCount(c)).toBe(RIVAL_PC_COUNT_WHEN_UNSURVEYED);
-      expect(RIVAL_PC_COUNT_WHEN_UNSURVEYED).not.toBe(DEFAULT_UNSURVEYED_PC_COUNT);
+      expect(computeCompetitorAppliedPcCount(c)).toBe(DEFAULT_UNSURVEYED_PC_COUNT);
     }
   });
 
-  it("⭐ 경쟁점 품질 칸은 실측 대표값으로 채운다 — 비우면 경쟁점을 약하게 본다", () => {
-    // 2026-09-22 밤 3차에 바뀌었다. 예전엔 전부 null이었는데, 비우면 V62가 동급으로 보는 게
-    // 아니라 경쟁점 경쟁력점수를 끌어내려(2.448 -> 1.921) 예상매출이 높게 나온다.
-    // 근거와 측정값은 `RIVAL_TYPICAL_WHEN_UNSURVEYED` 주석에 있다.
+  it("⭐ 경쟁점 품질 칸은 전부 비어 있다 — 반만 채우면 오히려 더 틀린다", () => {
     for (const c of built.competitors) {
-      expect(c.vgaBase).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaBase);
-      expect(c.foodScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore);
-      expect(c.interiorScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.interiorScore);
-      expect(c.managementScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.managementScore);
-      expect(c.singleSeatCount).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.singleSeatCount);
+      expect(c.vgaBase).toBeNull();
+      expect(c.foodScore).toBeNull();
+      expect(c.interiorScore).toBeNull();
+      expect(c.managementScore).toBeNull();
+      expect(c.singleSeatCount).toBeNull();
     }
   });
 

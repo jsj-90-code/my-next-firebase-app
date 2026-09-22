@@ -41,7 +41,7 @@ import {
 import {
   buildQuickCandidate,
   buildQuickLocationEvaluation,
-  RIVAL_PC_COUNT_WHEN_UNSURVEYED,
+  blankCompetitorForTraining,
   type QuickEvalAssembly,
   type QuickEvalCollected,
   type QuickEvalPlanInput,
@@ -270,8 +270,13 @@ export default function QuickEvalPage() {
         //
         // 당연한 결과다 — 기존점 경쟁점은 사람이 **실제로 조사한 값**이다. 그걸 버리면 매장끼리
         // 구별하는 정보가 같이 사라진다. 후보지 쪽은 `RIVAL_TYPICAL_WHEN_UNSURVEYED`로 채운다.
-        // ⛔ 다시 `blankCompetitorForTraining`을 끼우지 마라.
-        trainingCompetitors,
+        // ⛔⛔ 2026-09-23 **되돌렸다** — 다시 `blankCompetitorForTraining`을 쓴다.
+        //     위 비교표(−10%)는 **되짚기 기준**인데, 실제 후보지에서는 오늘 변경 셋이
+        //     합쳐서 −45%를 냈다(사용자 확인, 여러 곳). 되짚기가 조사된 경쟁점(중앙 4곳)으로
+        //     도는 탓에 카카오 경쟁점(10~20곳) 구간을 대표하지 못한 것이다.
+        //     그래서 오늘 산식 변경 셋을 전부 원복했다(사용자 결정: "A로 가자").
+        //     ⚠️ 되살리려면 **카카오 경쟁점 수를 반영한 되짚기부터** 만들어라.
+        trainingCompetitors: trainingCompetitors.map(blankCompetitorForTraining),
         trainingSales,
         // 동탄북광장점은 QSC 기록이 없어 관리가 '가맹점 평균'으로 들어간다 — 관리 불량이
         // 전달되지 않는다. 사용자 지시로 **가맹점 최저점**을 이 화면에서만 채운다.
@@ -566,8 +571,8 @@ export default function QuickEvalPage() {
               {QUICK_EVAL_RADII.competitor}m
             </h2>
             <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-              카카오 기준입니다. PC 대수는 전부 미확인이라 실측 경쟁점의 평균{" "}
-              {RIVAL_PC_COUNT_WHEN_UNSURVEYED}대로 계산됐습니다 — 이 목록이 맞는지 보는 게 현장에서 할 일입니다.
+              카카오 기준입니다. PC 대수는 전부 미확인이라 기본값으로 계산됐습니다 — 이 목록이 맞는지 보는 게
+              현장에서 할 일입니다.
             </p>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full min-w-[520px] text-sm">
@@ -675,10 +680,14 @@ export default function QuickEvalPage() {
             {QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳).
           </li>
           <li>
-            수준을 맞춘 뒤 남는 <strong>줄 세우기 오차</strong>는{" "}
-            {formatPercent(QUICK_EVAL_BACKTEST.leveledMape, 2)}입니다(정밀 평가는{" "}
-            {formatPercent(QUICK_EVAL_BACKTEST.preciseLeveledMape, 2)}). 금액 수준보다 <strong>순서</strong>가 이
-            도구의 쓸모입니다.
+            {/* ⛔ 2026-09-23 정정 — 여기 "금액 수준보다 순서가 이 도구의 쓸모"라고 적혀 있었다.
+                **틀렸다.** 사용자: *"이도구는 순서를 구분할려는게아니다. 후보지 나열해서 이거보다
+                저게높으니까 저걸로하자 이개념이 없어. 그냥 점포개인별 평가할뿐이야."*
+                => 개별 후보지를 그 금액 하나로 판단한다. 그러면 **절대 금액 정확도와 배율이
+                제일 중요한 지표**다. 순서 논거로 배율 문제를 덮지 마라. */}
+            체계적으로 실제보다 높게 나오는 정도(배율)를 뺀 뒤에도{" "}
+            {formatPercent(QUICK_EVAL_BACKTEST.leveledMape, 2)}의 오차가 남습니다(정밀 평가는{" "}
+            {formatPercent(QUICK_EVAL_BACKTEST.preciseLeveledMape, 2)}).
           </li>
           <li>⚠️ {QUICK_EVAL_USAGE_LIMIT}</li>
         </ul>
