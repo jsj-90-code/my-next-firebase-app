@@ -1854,6 +1854,161 @@ describeIf("낮게 본 매장 — 과장의 기전", () => {
     expect(n).toBeGreaterThan(30);
   });
 
+  it("(X) ⭐⭐⭐ 먹거리·인테리어 **기본값 수준**을 훑는다 — 매장별 채점이 아니다", () => {
+    // 사용자(2026-09-24, (W)를 보고 정정): *"인테리어는 가맹점 평가는 똑같아야 함. 왜냐면
+    //   똑같은 컨셉에 똑같은 도면으로 작업한 거니까. (...) 내가 말한 조정은 4점에서
+    //   일괄적으로 좀 내린다 이런 걸 얘기한 거임. 먹거리도 마찬가지로 매장별 조정이 아니라
+    //   **기본값 자체를 조정한다** 이런 의미로 얘기한 거임."*
+    //
+    // ⛔ **(W)의 "천장 재기"는 뜻이 없는 시험이었다.** 매장별 변동을 넣어 봤는데,
+    //    인테리어는 같은 도면·같은 컨셉이라 **가맹점끼리 같은 게 맞다.** 먹거리도 같은
+    //    프랜차이즈 메뉴다. 그 둘은 **매장을 가를 수 없는 항목**이다 — 그러니 분별력을
+    //    올리는 데는 애초에 쓸 수 없다. 그 시험은 무시할 것.
+    //
+    // ── 그럼 기본값 수준은 무엇을 정하나 ───────────────────────────────────
+    // 품질은 **비**로만 들어간다: 분모 몫 = 경쟁PC x (경쟁품질 ÷ 자사품질)^θ x 거리무게.
+    // 자사 기본값을 내리면 **모든 경쟁점이 한꺼번에 세진다.** 그래서 이건
+    //   · 분별력(어느 매장이 더 잘 되나) 손잡이가 **아니고**
+    //   · **"경쟁점을 얼마나 세게 볼 것인가"** 손잡이다.
+    // 다만 경쟁점이 세지면 경쟁점 수가 많은 매장이 더 크게 깎이므로, **퍼짐과 분별력에도
+    // 간접 영향**이 있다. 그래서 둘 다 찍는다.
+    //
+    // ⚠️ θ와 **같은 자리를 만진다** — 실제로 작용하는 건 (품질비)^θ 하나다.
+    //    그래서 그 값(×배)을 표에 같이 찍는다.
+    // ⛔ 값은 사용자가 고른다. 여기서는 재고 표만 남긴다.
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+    const hiSet = new Set([...rows].sort((a, b) => a.rivalW - b.rivalW).slice(Math.floor(rows.length / 2)).map((r) => r.name));
+    const hiIdx = use.map((_, i) => i).filter((i) => hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+    const loIdx = use.map((_, i) => i).filter((i) => !hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+
+    /** 자사 먹거리=f, 인테리어=i로 두었을 때의 예측. 매장마다 같은 값이다(가맹점이니까). */
+    const predsAt = (f: number | null, iv: number | null) => use.map(({ r }) => computeTextbook({
+      ...r.input,
+      ownQualityParts: r.input.ownQualityParts
+        ? { ...r.input.ownQualityParts, ...(f == null ? {} : { food: f }), ...(iv == null ? {} : { interior: iv }) }
+        : r.input.ownQualityParts,
+    }, P).utilization ?? NaN);
+    /** 그 설정에서 경쟁점 한 곳이 분모에서 몇 배로 줄어드나. */
+    const shrinkAt = (f: number | null, iv: number | null) => {
+      const rs: number[] = [];
+      for (const { r } of use) {
+        const oqRaw = r.input.ownQualityParts;
+        if (!oqRaw) continue;
+        const oq = { ...oqRaw, ...(f == null ? {} : { food: f }), ...(iv == null ? {} : { interior: iv }) };
+        const o = computeQualityScoreLocal(oq);
+        if (o == null || !(o > 0)) continue;
+        for (const rv of r.input.rivals ?? []) {
+          if (!(rv.ip > 0) || rivalDistanceWeight(rv.distanceM, P) <= 0 || !rv.parts) continue;
+          const v = computeQualityScoreLocal(rv.parts);
+          if (v == null || !(v > 0)) continue;
+          rs.push(v / o);
+        }
+      }
+      const g = rs.length ? Math.exp(mean(rs.map(Math.log))) : NaN;
+      return { ratio: g, shrink: Math.pow(g, P.qualityExponent) };
+    };
+    const line = (label: string, f: number | null, iv: number | null, mark = "") => {
+      const preds = predsAt(f, iv);
+      if (preds.some((v) => !Number.isFinite(v))) { console.log(`  ${label.padEnd(18)}(계산 불가)`); return; }
+      const abs = preds.map((v, i) => Math.abs(v - acts[i]));
+      const pl = preds.map(Math.log);
+      const kk = Math.exp(mean(actLog) - mean(pl));
+      const absL = preds.map((v, i) => Math.abs(v * kk - acts[i]));
+      const spread = sdOf(pl) / sdOf(actLog);
+      const rr = corr(pl, actLog);
+      const s = shrinkAt(f, iv);
+      console.log(`  ${label.padEnd(18)}${(mean(abs) * 100).toFixed(2).padStart(6)}%p`
+        + `${(Math.max(...abs) * 100).toFixed(1).padStart(7)}%p`
+        + `${(mean(preds.map((v, i) => v - acts[i])) * 100).toFixed(1).padStart(7)}%p`
+        + `  ${String(abs.filter((v) => v <= 0.05).length).padStart(2)}/${n}`
+        + `${spread.toFixed(2).padStart(6)}배${rr.toFixed(3).padStart(8)}`
+        + `${(mean(hiIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(10)}%p`
+        + `${(mean(loIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(9)}%p |`
+        + `${(mean(absL) * 100).toFixed(2).padStart(8)}%p`
+        + `${s.ratio.toFixed(3).padStart(8)}${s.shrink.toFixed(3).padStart(8)}`
+        + `${(rr - spread / 2).toFixed(3).padStart(9)}${mark}`);
+    };
+    console.log(`\n[재고 표 — 둘 다 같이 내린다] ⭐ 바닥: 전부 평균(LOO) ${(baseMae * 100).toFixed(2)}%p · n=${n}`);
+    console.log(`  경쟁점 평균은 먹거리 2.53 · 인테리어 2.55 다`);
+    console.log(`  자사 점수           MAE     최악   편향   ±5%p  퍼짐 분별력r   경쟁 센   약한 | 수준보정  품질비  ×배  남은거리`);
+    for (const v of [5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0]) line(`먹거리=인테리어=${v.toFixed(1)}`, v, v, v === 4 ? "  ← 지금" : "");
+    console.log(`\n[재고 표 — 하나씩 따로]`);
+    console.log(`  자사 점수           MAE     최악   편향   ±5%p  퍼짐 분별력r   경쟁 센   약한 | 수준보정  품질비  ×배  남은거리`);
+    for (const v of [4.0, 3.5, 3.0, 2.5]) line(`먹거리만 ${v.toFixed(1)}`, v, null, v === 4 ? "  ← 지금" : "");
+    for (const v of [4.0, 3.5, 3.0, 2.5]) line(`인테리어만 ${v.toFixed(1)}`, null, v, v === 4 ? "  ← 지금" : "");
+
+    // ── 자료가 이 값을 고를 수 있나 — 중첩 LOO ──────────────────────────────
+    // 가정치를 자료로 고를 때의 잣대다(어제 눈금 보정 b가 여기서 탈락했고 입지 지수는 통과했다).
+    const GRID = [5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0];
+    const predBy = new Map<number, number[]>(GRID.map((v) => [v, predsAt(v, v)]));
+    const maeOn = (v: number, idx: number[]) => mean(idx.map((i) => Math.abs((predBy.get(v) as number[])[i] - acts[i])));
+    const picked: number[] = [], looErr: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const train = use.map((_, j) => j).filter((j) => j !== i);
+      let bestV = GRID[0], bestS = Infinity;
+      for (const v of GRID) { const s = maeOn(v, train); if (s < bestS) { bestS = s; bestV = v; } }
+      picked.push(bestV);
+      looErr.push(Math.abs((predBy.get(bestV) as number[])[i] - acts[i]));
+    }
+    const counts = new Map<number, number>();
+    for (const v of picked) counts.set(v, (counts.get(v) ?? 0) + 1);
+    console.log(`\n[중첩 LOO] 한 곳 빼고 ${n - 1}곳으로 기본값을 고른 뒤 안 본 그 곳을 맞힌다`);
+    console.log(`  겹마다 고른 값: ${[...counts.entries()].sort((a, b) => b[1] - a[1]).map(([v, c]) => `${v.toFixed(1)}(${c}회)`).join(" · ")}`);
+    console.log(`  **자료가 고를 수 있나**: ${counts.size === 1 ? `✅ ${n}겹 전부 같은 값` : `겹마다 ${counts.size}가지로 갈린다`}`);
+    console.log(`  중첩 LOO MAE = ${(mean(looErr) * 100).toFixed(2)}%p`);
+
+    // ── ⭐ 핵심 확인 — 4.0이 **θ를 대신 맞추고 있는 건 아닌가** ─────────────
+    // 자료가 4.0을 만장일치로 골랐다고 해서 "현장 기준으로 4.0이 맞다"는 뜻은 아니다.
+    // 작용하는 건 (품질비)^θ 하나이므로, 기본값을 내리면 **θ를 내려서 되돌릴 수 있다.**
+    // 그러면 기본값은 **현장 판단으로 정하고 θ는 자료가 맞추는** 분업이 가능하다.
+    //   · 각 기본값에서 제일 좋은 θ를 찾았을 때 성적이 **4.0·θ3과 비슷하면**
+    //     -> 둘은 서로 바꿔칠 수 있다. 기본값은 사용자가 뜻으로 정하면 된다
+    //   · 4.0에서만 유독 좋으면 -> 4.0에 진짜 정보가 있는 것이다
+    console.log(`\n[θ를 다시 맞추면 — 기본값을 내려도 되돌릴 수 있나]`);
+    console.log(`  기본값   제일 좋은 θ    MAE     퍼짐  분별력r   ×배    남은거리`);
+    for (const v of [5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0]) {
+      let best: { th: number; mae: number; sp: number; rr: number; sh: number } | null = null;
+      for (let th = 1.0; th <= 6.01; th += 0.25) {
+        const P2 = { ...P, qualityExponent: th };
+        const preds = use.map(({ r }) => computeTextbook({
+          ...r.input,
+          ownQualityParts: r.input.ownQualityParts
+            ? { ...r.input.ownQualityParts, food: v, interior: v } : r.input.ownQualityParts,
+        }, P2).utilization ?? NaN);
+        if (preds.some((x) => !Number.isFinite(x))) continue;
+        const mae = mean(preds.map((x, i) => Math.abs(x - acts[i])));
+        if (best && mae >= best.mae) continue;
+        const pl = preds.map(Math.log);
+        best = {
+          th, mae, sp: sdOf(pl) / sdOf(actLog), rr: corr(pl, actLog),
+          sh: Math.pow(shrinkAt(v, v).ratio, th),
+        };
+      }
+      if (!best) continue;
+      console.log(`  ${v.toFixed(1).padStart(5)}${best.th.toFixed(2).padStart(11)}`
+        + `${(best.mae * 100).toFixed(2).padStart(10)}%p${best.sp.toFixed(2).padStart(7)}배`
+        + `${best.rr.toFixed(3).padStart(9)}${best.sh.toFixed(3).padStart(8)}`
+        + `${(best.rr - best.sp / 2).toFixed(3).padStart(11)}`
+        + (v === 4 ? "  ← 지금 자리(θ=3)" : ""));
+    }
+    console.log(`\n  ⭐ **×배 칸이 어느 기본값에서나 비슷하면** 둘은 서로 바꿔칠 수 있다는 뜻이다 —`);
+    console.log(`     기본값은 **현장 판단으로** 정하고, θ가 그 자리를 메우면 성적이 안 상한다.`);
+
+    console.log(`\n  ⭐ 읽는 법`);
+    console.log(`     · 이건 **분별력 손잡이가 아니다.** 가맹점끼리 같은 값이라 매장을 못 가른다`);
+    console.log(`     · 실제로 작용하는 건 **×배**(경쟁점 한 곳이 분모에서 줄어드는 배수) 하나다`);
+    console.log(`     · 그래서 **θ와 같은 자리를 만진다** — 따로 고르면 두 번 맞추게 된다`);
+    console.log(`  ⛔ 성적으로 고르지 마라. 이 점수는 **현장 채점 기준**이 정할 값이고,`);
+    console.log(`     표는 "그 판단이 산식을 얼마나 움직이나"만 말해 준다.`);
+    expect(n).toBeGreaterThan(30);
+  });
+
   it("(C) 낮게 본 무리 vs 높게 본 무리 — 층별 평균을 갈라 본다", () => {
     const sorted = [...rows].sort((a, b) => a.pred - b.pred);
     const lo = sorted.slice(0, 8), hi = sorted.slice(-8);
