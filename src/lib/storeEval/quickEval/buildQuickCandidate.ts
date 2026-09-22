@@ -5,7 +5,9 @@
 // `src/lib/storeEval/_addressOnlyMode.test.ts`가 잰 **L3(주소만) 조건과 같은 모양**으로 맞춘다.
 // 그 측정이 이 도구가 화면에 띄우는 오차의 근거이므로, 조립을 다르게 하면 그 숫자가 거짓이 된다.
 //
-//   경쟁점 품질 칸 전부 null      -> 운영 V62가 결측으로 처리(동급 취급)
+//   경쟁점 품질 칸 -> **실측 대표값으로 채운다**(RIVAL_TYPICAL_WHEN_UNSURVEYED).
+//     ⚠️ 2026-09-22 밤 3차에 바뀌었다. 예전엔 비웠는데, 비우면 V62가 동급으로 보는 게 아니라
+//     경쟁점을 **약하게** 매겨(점수 2.448 -> 1.921) 예상매출이 높게 나온다.
 //   경쟁점 대수 null + 조사수준 "간략" -> 간략_기본대수(90대) 장치가 작동한다
 //   자사 시설 칸 null             -> 회사 표준 존 구성이 들어간다
 //
@@ -90,7 +92,9 @@ export const OWN_HARDWARE_PLANNED_STANDARD = {
  * 보정말고 값을 조정하면되자나"* — 그래서 조정할 수 있는 값을 다 재 봤다.
  *
  *   경쟁점 기본대수(90 -> 300대, 학습·후보지 양쪽 같이) : 배율 1.211 -> 1.199. **안 움직인다**
- *   경쟁점 품질을 실측 대표값으로 메움                  : 배율 1.240으로 **나빠진다**
+ *   경쟁점 품질을 실측 대표값으로 메움(학습도 같이 비운 조건) : 배율 1.240으로 나빠졌다
+ *     ⚠️ 이 줄은 **그 조건에서만** 맞다. 학습을 실측으로 두고 후보지만 채우면 크게 좋아진다
+ *     (배율 1.105 · MAPE 20.23%) — 3차에서 그쪽으로 바꿨다.
  *   자사 사양을 비움(미정)                            : V62가 금액을 **못 낸다**(n=0)
  *   **자사 사양을 표본 최빈으로**                       : 배율 1.211 -> **1.140**, MAPE 27.79 -> **23.14%**
  *
@@ -115,6 +119,52 @@ export const QUICK_EVAL_OWN_HARDWARE = {
   ownMonitorTop: "제이씨현 (27인치·FHD·240Hz)\n주연테크 Nano IPS (27인치·FHD·240Hz)",
 } as const;
 
+/**
+ * ⭐⭐⭐ 미조사 경쟁점에 넣는 **실측 대표값** (2026-09-22 밤 3차, `_quickEvalBias.test.ts`).
+ *
+ * 사용자: *"그럼 주소만초기평가에서 경쟁점 점수를 좀 높여야겠네."* — 맞는 판단이었고, 재 보니
+ * 효과가 컸다.
+ *
+ * ── 왜 비워 두면 안 되나 ──────────────────────────────────────────────────
+ * 품질 칸을 비우면 V62가 **동급(중립)으로 보지 않는다.** 경쟁점 경쟁력점수가 실측 2.448에서
+ * **1.921로 떨어지고** 경쟁력격차가 1.455 -> 1.904로 벌어진다. 자사 점수는 거의 안 변한다
+ * (3.700 -> 3.735) — 즉 **예상매출이 높게 나온 건 자사를 후하게 봐서가 아니라 경쟁점을 약하게
+ * 봐서**였다.
+ *
+ * ── 값의 근거 ─────────────────────────────────────────────────────────────
+ * 실측으로 품질을 아는 경쟁점 **159곳**의 대표값이다. 숫자 칸은 중앙값, 사양(문자)은 최빈값.
+ * 먹거리·인테리어·관리 점수의 중앙값이 3점이라 3점을 쓴다 — "좋아질 때까지 올린" 값이 아니다
+ * (4·5점으로 올리면 성적이 더 좋아지지만, 그건 산식의 과한 퍼짐을 누르는 것이라 안 한다.
+ * 이 저장소는 2026-09-21에 지수 눈금 보정으로 같은 짓을 했다가 껐다).
+ *
+ * ⚠️ 이 값을 바꾸면 `quickEvalDefaults.QUICK_EVAL_BACKTEST`도 같이 고쳐야 한다.
+ */
+export const RIVAL_TYPICAL_WHEN_UNSURVEYED = {
+  singleSeatCount: 0,
+  room1: 0,
+  room2: 0,
+  teamRoom: 0,
+  coupleZone: 0,
+  vipZone: 0,
+  friendsZone: 0,
+  firstClassZone: 0,
+  regularCoupleSeatCount: 0,
+  teamRoomTotalSeats: 0,
+  foodScore: 3,
+  interiorScore: 3,
+  managementScore: 3,
+  vgaBase: "RTX 4060",
+  vgaTop: "RTX 3060 Ti",
+  vgaTop2: "RTX 4060",
+  cpu: "i5 12400F",
+  cpuTop1: "i5 13400F",
+  cpuTop2: "i5 13400F",
+  ram: "16GB",
+  ramTop: "32GB",
+  monitorBase: "(32인치·FHD·240Hz)",
+  monitorTop: "BenQ ZOWIE XL2746K (27인치·FHD·240Hz)",
+} as const;
+
 function ratio(part: number | null | undefined, whole: number | null | undefined): number | null {
   if (part == null || whole == null || whole <= 0) return null;
   return part / whole;
@@ -135,16 +185,16 @@ function blankCompetitorFromPlace(place: KakaoPcBangPlace, now: number): Competi
     totalPcCount: null,
     appliedPcCount: null,
     hasElevator: null,
-    cpu: null,
-    cpuTop1: null,
-    cpuTop2: null,
-    vgaBase: null,
-    vgaTop: null,
-    vgaTop2: null,
-    ram: null,
-    ramTop: null,
-    monitorBase: null,
-    monitorTop: null,
+    cpu: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpu,
+    cpuTop1: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpuTop1,
+    cpuTop2: RIVAL_TYPICAL_WHEN_UNSURVEYED.cpuTop2,
+    vgaBase: RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaBase,
+    vgaTop: RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaTop,
+    vgaTop2: RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaTop2,
+    ram: RIVAL_TYPICAL_WHEN_UNSURVEYED.ram,
+    ramTop: RIVAL_TYPICAL_WHEN_UNSURVEYED.ramTop,
+    monitorBase: RIVAL_TYPICAL_WHEN_UNSURVEYED.monitorBase,
+    monitorTop: RIVAL_TYPICAL_WHEN_UNSURVEYED.monitorTop,
     ratePer1000Won: null,
     hourlyRateConverted: null,
     paidDeduction: null,
@@ -155,27 +205,27 @@ function blankCompetitorFromPlace(place: KakaoPcBangPlace, now: number): Competi
     pingbotUtilization: null,
     pingbotPeriod: null,
     renovationYear: null,
-    foodScore: null,
+    foodScore: RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore,
     foodBasis: null,
     foodBrand: null,
-    interiorScore: null,
+    interiorScore: RIVAL_TYPICAL_WHEN_UNSURVEYED.interiorScore,
     interiorBasis: null,
     interiorLevelScore: null,
     interiorConditionScore: null,
     monitorBasis: null,
     seatZoneScore: null,
     comfortScore: null,
-    singleSeatCount: null,
-    room1: null,
-    room2: null,
-    teamRoom: null,
-    coupleZone: null,
-    vipZone: null,
-    friendsZone: null,
-    firstClassZone: null,
-    managementScore: null,
-    regularCoupleSeatCount: null,
-    teamRoomTotalSeats: null,
+    singleSeatCount: RIVAL_TYPICAL_WHEN_UNSURVEYED.singleSeatCount,
+    room1: RIVAL_TYPICAL_WHEN_UNSURVEYED.room1,
+    room2: RIVAL_TYPICAL_WHEN_UNSURVEYED.room2,
+    teamRoom: RIVAL_TYPICAL_WHEN_UNSURVEYED.teamRoom,
+    coupleZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.coupleZone,
+    vipZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.vipZone,
+    friendsZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.friendsZone,
+    firstClassZone: RIVAL_TYPICAL_WHEN_UNSURVEYED.firstClassZone,
+    managementScore: RIVAL_TYPICAL_WHEN_UNSURVEYED.managementScore,
+    regularCoupleSeatCount: RIVAL_TYPICAL_WHEN_UNSURVEYED.regularCoupleSeatCount,
+    teamRoomTotalSeats: RIVAL_TYPICAL_WHEN_UNSURVEYED.teamRoomTotalSeats,
     teamRoomTotalSeatsBasis: null,
     source: "kakao",
     sourcePlaceId: place.id,
@@ -187,6 +237,19 @@ function blankCompetitorFromPlace(place: KakaoPcBangPlace, now: number): Competi
 }
 
 /**
+ * ⛔⛔ **이제 도구가 안 쓴다** (2026-09-22 밤 3차). 측정 시험(`_quickEvalSensitivity.test.ts`)이
+ * 아직 부르고 있어서 남겨 둘 뿐이다. 아래 설명은 **그날 낮의 판단**이고, 밤에 뒤집혔다.
+ *
+ * 비대칭을 없애는 길은 둘인데 여기서는 **정보를 버리는 쪽**을 골랐다. 반대로 후보지 쪽을
+ * 실측 대표값으로 **채우면**(`RIVAL_TYPICAL_WHEN_UNSURVEYED`) 모든 지표에서 이긴다:
+ *
+ *   학습 비움 + 후보지 비움(이 함수)  MAPE 23.14% · ±20% 47.37% · 배율 1.140
+ *   학습 실측 + 후보지 대표값(지금)   MAPE 20.23% · ±20% 71.05% · 배율 1.105
+ *
+ * 기존점 경쟁점은 사람이 **실제로 조사한 값**이다. 그걸 버리면 매장끼리 구별하는 정보가 같이
+ * 사라진다. ⛔ 화면 배선에 이 함수를 다시 끼우지 마라.
+ *
+ * ── 아래는 그날 낮의 기록(맥락 보존용) ────────────────────────────────────
  * ⭐ **학습 표본의 경쟁점도 같은 수준으로 비운다** (2026-09-22 밤 — 측정으로 찾은 최대 결함).
  *
  * 왜 필요한가: 도구는 후보지 경쟁점을 전부 기본값(90대·품질 결측)으로 넣는데, **학습은 사람이

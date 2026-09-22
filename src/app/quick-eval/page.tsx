@@ -38,7 +38,6 @@ import {
   listQscScores,
 } from "@/lib/storeEval/store";
 import {
-  blankCompetitorForTraining,
   buildQuickCandidate,
   buildQuickLocationEvaluation,
   type QuickEvalAssembly,
@@ -256,11 +255,21 @@ export default function QuickEvalPage() {
         //    Firestore의 excludedFromModel은 안 건드린다 — 풀면 결재 숫자가 움직인다.
         existingStores: prepareQuickEvalTrainingStores(existingStores),
         trainingLocationEvaluations,
-        // ⭐ 학습 표본의 경쟁점도 **같은 수준으로 비운다**(2026-09-22). 후보지는 기본값인데
-        //    학습만 실측이면 경쟁IP가 과소평가돼 매출이 높게 나온다 — 기존매장 38곳 재평가에서
-        //    예측÷실측 중앙이 1.461이었고, 대칭으로 맞추면 1.211이 된다
-        //    (`blankCompetitorForTraining` 주석 · `_quickEvalBias.test.ts`).
-        trainingCompetitors: trainingCompetitors.map(blankCompetitorForTraining),
+        // ⭐⭐ 학습 경쟁점은 **실측 그대로** 쓴다 (2026-09-22 밤 3차에 방향을 바꿨다).
+        //
+        // 그날 낮에는 여기서 `blankCompetitorForTraining`으로 학습 쪽도 비웠다. 후보지가
+        // 기본값인데 학습만 실측이면 비대칭이라는 이유였고, 그 방향도 맞긴 했다(1.461 -> 1.211).
+        // 그런데 비대칭을 없애는 길은 둘이고, **정보를 버리는 쪽을 골랐던 게 반쪽**이었다.
+        // 후보지 쪽을 실측 대표값으로 **채우는** 쪽이 모든 지표에서 이긴다
+        // (`_quickEvalBias.test.ts`, 기존점 38곳 되짚기):
+        //
+        //   학습 비움 + 후보지 비움(그날 낮)   MAPE 23.14% · ±20% 47.37% · 배율 1.140
+        //   학습 실측 + 후보지 대표값(지금)    MAPE 20.23% · ±20% 71.05% · 배율 1.105
+        //
+        // 당연한 결과다 — 기존점 경쟁점은 사람이 **실제로 조사한 값**이다. 그걸 버리면 매장끼리
+        // 구별하는 정보가 같이 사라진다. 후보지 쪽은 `RIVAL_TYPICAL_WHEN_UNSURVEYED`로 채운다.
+        // ⛔ 다시 `blankCompetitorForTraining`을 끼우지 마라.
+        trainingCompetitors,
         trainingSales,
         // 동탄북광장점은 QSC 기록이 없어 관리가 '가맹점 평균'으로 들어간다 — 관리 불량이
         // 전달되지 않는다. 사용자 지시로 **가맹점 최저점**을 이 화면에서만 채운다.

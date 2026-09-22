@@ -4,13 +4,19 @@
 //   1. **좌표변환** — 틀리면 SGIS·소상공인365가 에러 없이 빈 결과를 준다(조용한 실패).
 //   2. **이름 규칙** — 성인PC방·오락실이 경쟁점으로 새어들면 경쟁IP가 부풀려진다.
 //   3. **조립** — `_addressOnlyMode.test.ts`가 잰 L3 조건과 같은 모양이어야 화면의 오차율이
-//      거짓이 되지 않는다(경쟁점 대수 null + 조사수준 "간략" + 품질 전부 null).
+//      거짓이 되지 않는다(경쟁점 대수 null + 조사수준 "간략" + 품질은 실측 대표값).
+//      ⚠️ 품질은 2026-09-22 밤 3차에 null -> 대표값으로 바뀌었다(RIVAL_TYPICAL_WHEN_UNSURVEYED).
 //
 // 실행: npx vitest run src/lib/storeEval/quickEval/quickEval.test.ts
 import { describe, expect, it } from "vitest";
 import { TM_SELFTEST_CASES, to5179, to5181, tmSelfTestFailures } from "./tm";
 import { judgePcBangName, NON_PCBANG_NAME_PATTERN } from "./pcBangNameFilter";
-import { buildQuickCandidate, buildQuickLocationEvaluation, type QuickEvalPlanInput } from "./buildQuickCandidate";
+import {
+  buildQuickCandidate,
+  buildQuickLocationEvaluation,
+  RIVAL_TYPICAL_WHEN_UNSURVEYED,
+  type QuickEvalPlanInput,
+} from "./buildQuickCandidate";
 import { computeCompetitorAppliedPcCount, DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
 import { haversineM } from "./kakaoPcBangs";
 import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
@@ -174,13 +180,16 @@ describe("V62 입력 조립", () => {
     }
   });
 
-  it("⭐ 경쟁점 품질 칸은 전부 비어 있다 — 반만 채우면 오히려 더 틀린다", () => {
+  it("⭐ 경쟁점 품질 칸은 실측 대표값으로 채운다 — 비우면 경쟁점을 약하게 본다", () => {
+    // 2026-09-22 밤 3차에 바뀌었다. 예전엔 전부 null이었는데, 비우면 V62가 동급으로 보는 게
+    // 아니라 경쟁점 경쟁력점수를 끌어내려(2.448 -> 1.921) 예상매출이 높게 나온다.
+    // 근거와 측정값은 `RIVAL_TYPICAL_WHEN_UNSURVEYED` 주석에 있다.
     for (const c of built.competitors) {
-      expect(c.vgaBase).toBeNull();
-      expect(c.foodScore).toBeNull();
-      expect(c.interiorScore).toBeNull();
-      expect(c.managementScore).toBeNull();
-      expect(c.singleSeatCount).toBeNull();
+      expect(c.vgaBase).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaBase);
+      expect(c.foodScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore);
+      expect(c.interiorScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.interiorScore);
+      expect(c.managementScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.managementScore);
+      expect(c.singleSeatCount).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.singleSeatCount);
     }
   });
 
