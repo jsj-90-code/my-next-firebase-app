@@ -48,6 +48,8 @@ import type { Competitor, ExistingStore } from "./types";
 const PERMIT_FILE = ".local-tools/pcbang-permits.json";
 const SBIZ_FILE = ".local-tools/sbiz-pcbang-2km.json";
 const NEIGHBOR_FILE = ".local-tools/kakao-neighborhood.json";
+/** 잘림을 푼 카카오 수집물(적응형 격자). `scripts/collectKakaoPcBangsGrid.mjs`가 뜬다. */
+const NEIGHBOR_GRID_FILE = ".local-tools/kakao-pcbangs-grid.json";
 const QSC_FILE = ".local-tools/qsc-scores.json";
 const OFFICIAL_RADIUS_M = 500;
 const SELF_M = 50;
@@ -146,11 +148,14 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     sites: Record<string, { lat: number; lng: number; name: string; stores: SbizStore[] }>;
   };
   /** 카카오 장소 — 2026-09-22에 **실체 판정의 정답**으로 밝혀졌다(2-바). */
-  const neighbor = existsSync(NEIGHBOR_FILE)
-    ? JSON.parse(readFileSync(NEIGHBOR_FILE, "utf8")) as {
-      sites: Record<string, { pcRooms?: { docs?: { lat: number; lng: number; name: string; distanceM: number }[]; truncated?: boolean } }>;
-    }
-    : { sites: {} };
+  type KakaoFile = {
+    sites: Record<string, { pcRooms?: { docs?: { lat: number; lng: number; name: string; distanceM: number }[]; truncated?: boolean } }>;
+  };
+  const neighbor: KakaoFile = existsSync(NEIGHBOR_FILE)
+    ? JSON.parse(readFileSync(NEIGHBOR_FILE, "utf8")) : { sites: {} };
+  /** 잘림을 푼 판(적응형 격자). 없으면 위 파일로 대신한다. */
+  const grid: KakaoFile = existsSync(NEIGHBOR_GRID_FILE)
+    ? JSON.parse(readFileSync(NEIGHBOR_GRID_FILE, "utf8")) : neighbor;
 
   type Joined = { q: SbizStore; distanceM: number; permit: Permit | null; share: number };
   const joinedByCode = new Map<string, Joined[]>();
@@ -494,6 +499,29 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     });
     const kAll = buildKakao(false), kPermit = buildKakao(true);
     /**
+     * 2026-09-22 밤 — **잘림을 풀었다.** 적응형 격자로 다시 받았다(안 잘릴 때까지 4분할).
+     * 늘어난 곳은 다섯이고 나머지 49곳은 건수가 **정확히 같다**(안 잘린 곳은 안 바뀌어야 맞다):
+     *   신중동 45->67 · 전대후문 45->55 · 수원인계 45->54 · 전대상대 45->49 · 부천상동역 45->47
+     */
+    const gridOf = (code: string) => grid.sites[`existing:${code}`]?.pcRooms?.docs ?? [];
+    const buildGrid = () => {
+      const map = new Map<string, Joined[]>();
+      for (const r of rows) {
+        const months = evaluationMonths(storeByCode.get(r.input.storeCode)?.openedAt ?? null);
+        const out: Joined[] = [];
+        for (const d of gridOf(r.input.storeCode)) {
+          if (d.distanceM <= OFFICIAL_RADIUS_M || d.distanceM <= SELF_M) continue;
+          const cand = permits.map((p) => ({ p, dd: distanceM(d.lat, d.lng, p.lat, p.lng) })).filter((x) => x.dd <= JOIN_M);
+          const best = cand.map((x) => ({ ...x, sc: nameSimilarity(d.name, x.p.name) }))
+            .sort((a, b) => b.sc - a.sc || a.dd - b.dd)[0];
+          const permit = best && (best.sc >= JOIN_SIM || cand.length === 1) ? best.p : null;
+          out.push({ q: { id: "", name: d.name, lat: d.lat, lng: d.lng, addr: "" }, distanceM: d.distanceM, permit, share: operatingShare(permit, months) });
+        }
+        map.set(r.input.storeCode, out);
+      }
+      return map;
+    };
+    /**
      * 성인PC방·오락실은 **상호에 드러난다.** 카카오 500m 밖 고유 상호 728개 중 26개(3.6%)가
      * 걸린다 — 게임랜드·오락실·게임장·VR·사격·멀티방 따위다(지구성인게임랜드·메가오락실·
      * 인형뽑기왕오락실·슈팅존스크린사격 …). 인허가 짝으로 거르는 것과 달리 **최근 개점을
@@ -511,11 +539,20 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     line("지금 — 2km를 안 센다", card((r) => r.input));
     line(`실체=상가업소 (${n(joinedByCode)}건)`, card((r) => withJoined(r, (j) => j.share)));
     line(`실체=카카오 (${n(kAll)}건)`, scoreOf(kAll));
-    line(`⭐ 실체=카카오 − 오락실류 (${n(kClean)}건)`, scoreOf(kClean));
+    line(`실체=카카오 − 오락실류 (${n(kClean)}건)`, scoreOf(kClean));
     line(`실체=카카오∩인허가 (${n(kPermit)}건)`, scoreOf(kPermit));
+    const gAll = buildGrid();
+    const gClean = new Map([...gAll].map(([k, v]) => [k, v.filter((j) => !ARCADE.test(j.q.name))]));
+    line(`격자(잘림 품) (${n(gAll)}건)`, scoreOf(gAll));
+    line(`⭐⭐ 격자 − 오락실류 (${n(gClean)}건)`, scoreOf(gClean));
     console.log(`\n  ⚠️ 카카오∩인허가는 성인PC방을 거르지만 **최근 개점(레드포스)도 같이 뺀다.**`);
     console.log(`     성적만 보고 고르지 마라 — 무엇을 잘못 빼는지가 다르다.`);
-    console.log(`  ⚠️ 카카오 40건 상한은 **아직 안 풀었다.** 반경을 격자로 쪼개 조회하면 된다.`);
+    console.log(`\n  ⭐ **40건 상한은 풀었고, 풀어 보니 문제가 아니었다**(2026-09-22 밤).`);
+    console.log(`     적응형 격자로 다시 받아 잘림이 0곳이 됐는데 성적은 6.26 -> 6.26%p로 그대로다.`);
+    console.log(`     카카오는 **가까운 순**으로 45건을 주므로 잘린 건 전부 먼 것들인데,`);
+    console.log(`     거리 감쇠가 1km에서 0.018배·1.5km에서 0.0015배라 90대가 0.14대로 들어간다. 사실상 0이다.`);
+    console.log(`     => 아침에 이 상한을 "편향의 원인"으로 지목한 건 틀렸다. 대신 **자료가 조금 빠져도`);
+    console.log(`        결과가 안 흔들린다**는 게 확인됐다 — 채택 근거로는 오히려 낫다.`);
   });
 
   it("(3) 매장별로 얼마나 붙었나", () => {
