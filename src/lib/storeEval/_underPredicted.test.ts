@@ -2009,6 +2009,118 @@ describeIf("낮게 본 매장 — 과장의 기전", () => {
     expect(n).toBeGreaterThan(30);
   });
 
+  it("(Y) ⭐⭐⭐ 기본값을 **0.1 단위로** 훑는다 — 자료가 고르게 한다", () => {
+    // 사용자(2026-09-24): *"맞는 거 같긴 해. 미세하게 높은 거 같기도 하고.
+    //   애매하니까 **결과값에 맞추는 쪽**이 좋을 듯?"*
+    //
+    // ── 이건 규칙 위반이 아니다 ────────────────────────────────────────────
+    // `항목은 뜻으로, 계수만 자료로` — **항목**(먹거리·인테리어가 경쟁력에 들어간다)은
+    // 뜻으로 이미 정해져 있고, 여기서 정하는 건 **계수**(기본값 수준)다. 사용자가
+    // 현장 감각으로 "애매하다"고 판정했으니 자료가 고르는 게 맞는 자리다.
+    // 다만 이 저장소의 잣대를 그대로 댄다: **중첩 LOO로 "자료가 고를 수 있나"부터.**
+    //
+    // ── ⚠️ 먹거리와 인테리어는 **따로 못 고른다** ──────────────────────────
+    // 둘 다 매장마다 같은 값이라, 자사 품질점수에 주는 영향이
+    //     (0.075 x Δ먹거리 + 0.102 x Δ인테리어) ÷ 0.83
+    // 한 덩어리로만 나타난다. **한 축밖에 없다** — 따로 고르면 같은 자리를 두 번 맞추는 것이다.
+    // 그래서 **둘을 같은 값으로** 움직인다.
+    //
+    // ── ⚠️ θ도 같은 자리를 만진다 ──────────────────────────────────────────
+    // (X)에서 봤듯 작용하는 건 (품질비)^θ 하나다. **θ는 3으로 고정하고** 기본값만 고른다.
+    // 둘 다 자유롭게 두면 자료가 짝을 못 고른다(같은 ×배를 내는 조합이 무수히 많다).
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+
+    const GRID: number[] = [];
+    for (let v = 3.0; v <= 5.001; v += 0.1) GRID.push(Math.round(v * 10) / 10);
+    const predsAt = (v: number) => use.map(({ r }) => computeTextbook({
+      ...r.input,
+      ownQualityParts: r.input.ownQualityParts
+        ? { ...r.input.ownQualityParts, food: v, interior: v } : r.input.ownQualityParts,
+    }, P).utilization ?? NaN);
+    const predBy = new Map<number, number[]>(GRID.map((v) => [v, predsAt(v)]));
+    const maeOn = (v: number, idx: number[]) => mean(idx.map((i) => Math.abs((predBy.get(v) as number[])[i] - acts[i])));
+    const all = use.map((_, i) => i);
+
+    // ── 표본 안 최선 ────────────────────────────────────────────────────────
+    let bestV = GRID[0], bestS = Infinity;
+    for (const v of GRID) { const s = maeOn(v, all); if (s < bestS) { bestS = s; bestV = v; } }
+    console.log(`\n[0.1 단위 훑기] n=${n} · θ=3 고정 · ⭐ 바닥: 전부 평균(LOO) ${(baseMae * 100).toFixed(2)}%p`);
+    console.log(`  표본 안 최선 = **${bestV.toFixed(1)}점** (MAE ${(bestS * 100).toFixed(3)}%p)`);
+    console.log(`\n  4.0 언저리를 펼쳐 본다 — 곡선이 평평하면 자료가 못 고르는 것이다`);
+    console.log(`  점수     MAE       퍼짐  분별력r   편향     남은거리`);
+    for (const v of [3.6, 3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4]) {
+      const pr = predBy.get(v) as number[];
+      const abs = pr.map((x, i) => Math.abs(x - acts[i]));
+      const pl = pr.map(Math.log);
+      const sp = sdOf(pl) / sdOf(actLog), rr = corr(pl, actLog);
+      console.log(`  ${v.toFixed(1).padStart(4)}${(mean(abs) * 100).toFixed(3).padStart(10)}%p`
+        + `${sp.toFixed(3).padStart(8)}배${rr.toFixed(3).padStart(9)}`
+        + `${(mean(pr.map((x, i) => x - acts[i])) * 100).toFixed(2).padStart(9)}%p`
+        + `${(rr - sp / 2).toFixed(3).padStart(11)}`
+        + (v === 4 ? "  ← 지금" : v === bestV ? "  ← 표본 안 최선" : ""));
+    }
+
+    // ── 중첩 LOO — 자료가 고를 수 있나 ──────────────────────────────────────
+    const picked: number[] = [], looErr: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const train = all.filter((j) => j !== i);
+      let bv = GRID[0], bs = Infinity;
+      for (const v of GRID) { const s = maeOn(v, train); if (s < bs) { bs = s; bv = v; } }
+      picked.push(bv);
+      looErr.push(Math.abs((predBy.get(bv) as number[])[i] - acts[i]));
+    }
+    const counts = new Map<number, number>();
+    for (const v of picked) counts.set(v, (counts.get(v) ?? 0) + 1);
+    const spread = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    console.log(`\n[중첩 LOO] 한 곳 빼고 ${n - 1}곳으로 고른 뒤 안 본 그 곳을 맞힌다`);
+    console.log(`  겹마다 고른 값: ${spread.map(([v, c]) => `${v.toFixed(1)}(${c}회)`).join(" · ")}`);
+    console.log(`  **자료가 고를 수 있나**: ${counts.size === 1 ? `✅ ${n}겹 전부 같은 값` : counts.size <= 3 ? `✅ ${counts.size}가지로 좁다` : `⚠️ 겹마다 ${counts.size}가지로 갈린다`}`);
+    console.log(`  중첩 LOO MAE = ${(mean(looErr) * 100).toFixed(3)}%p`
+      + ` · 4.0 고정 = ${(maeOn(4.0, all) * 100).toFixed(3)}%p`
+      + ` · ${bestV.toFixed(1)} 고정 = ${(maeOn(bestV, all) * 100).toFixed(3)}%p`);
+
+    // ── 얼마까지 움직여도 자료가 못 가르나 — 사용자 판단의 여유 폭 ──────────
+    // 표본 안 최선이 지금 값과 같으면 "바꿀 근거가 없다"로 끝난다. 더 쓸모 있는 물음은
+    // **"뜻으로 얼마까지 옮겨도 자료가 반대하지 않나"**다. 그게 사용자가 자유롭게 정할 폭이다.
+    const B = 2000;
+    let seed = 20260924;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const pRef = predBy.get(4.0) as number[];
+    console.log(`\n[부트스트랩 ${B}회] 4.0점과 견주어 — 구간이 0을 품으면 **자료가 못 가른다**`);
+    console.log(`  견줄 값   MAE 차이(vs 4.0)    95% 구간            판정`);
+    for (const v of [3.0, 3.5, 3.8, 4.2, 4.5, 5.0]) {
+      const pA = predBy.get(v) as number[];
+      const diffs: number[] = [];
+      for (let b = 0; b < B; b++) {
+        let sa = 0, sb = 0;
+        for (let k = 0; k < n; k++) {
+          const i = Math.floor(rnd() * n);
+          sa += Math.abs(pA[i] - acts[i]); sb += Math.abs(pRef[i] - acts[i]);
+        }
+        diffs.push((sa - sb) / n);
+      }
+      diffs.sort((a, b) => a - b);
+      const lo2 = diffs[Math.floor(B * 0.025)], hi2 = diffs[Math.floor(B * 0.975)];
+      const crosses = lo2 < 0 && hi2 > 0;
+      console.log(`  ${v.toFixed(1).padStart(5)}점`
+        + `${((maeOn(v, all) - maeOn(4.0, all)) * 100).toFixed(3).padStart(15)}%p`
+        + `   [${(lo2 * 100).toFixed(3).padStart(6)}, ${(hi2 * 100).toFixed(3).padStart(6)}]%p`
+        + `   ${crosses ? "⚠️ 못 가른다 — 뜻으로 정해도 된다" : "✅ 자료가 가른다(4.0이 낫다)"}`);
+    }
+
+    console.log(`\n  ⭐ 읽는 법`);
+    console.log(`     · 중첩 LOO가 좁게 모이고 부트스트랩이 0을 안 품으면 -> 자료가 고른 값을 쓴다`);
+    console.log(`     · 곡선이 평평하고 구간이 0을 품으면 -> **바꿀 근거가 없다.** 지금 값을 둔다`);
+    console.log(`  ⚠️ 어느 쪽이든 **표본이 늘면 다시 잰다**(지금 40곳).`);
+    expect(n).toBeGreaterThan(30);
+  });
+
   it("(C) 낮게 본 무리 vs 높게 본 무리 — 층별 평균을 갈라 본다", () => {
     const sorted = [...rows].sort((a, b) => a.pred - b.pred);
     const lo = sorted.slice(0, 8), hi = sorted.slice(-8);
