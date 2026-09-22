@@ -13,7 +13,8 @@ import { judgePcBangName, NON_PCBANG_NAME_PATTERN } from "./pcBangNameFilter";
 import { buildQuickCandidate, buildQuickLocationEvaluation, type QuickEvalPlanInput } from "./buildQuickCandidate";
 import { computeCompetitorAppliedPcCount, DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
 import { haversineM } from "./kakaoPcBangs";
-import { QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
+import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
+import { defaultModelSettings } from "../settings";
 
 describe("좌표변환", () => {
   it("scripts/lib/tm.mjs와 같은 검산점을 통과한다", () => {
@@ -261,5 +262,21 @@ describe("재고 표", () => {
 
   it("현장 확인이 필요한 항목이 표시돼 있다(= 조사 체크리스트)", () => {
     expect(QUICK_EVAL_FIELD_NOTES.filter((n) => n.needsFieldCheck).length).toBeGreaterThan(0);
+  });
+
+  it("먹거리 고정 브랜드는 운영 설정에 점수가 있는 브랜드다 — 없는 이름을 박으면 점수가 빈다", () => {
+    const scores = defaultModelSettings().foodBrandScores as Record<string, number>;
+    expect(Object.keys(scores)).toContain(OWN_FOOD_BRAND);
+    expect(scores[OWN_FOOD_BRAND]).toBeGreaterThan(0);
+  });
+
+  it("먹거리·예상오픈월이 입력칸에서 빠진 사실이 재고 표에 적혀 있다", () => {
+    const labels = QUICK_EVAL_FIELD_NOTES.map((n) => n.label).join(" ");
+    expect(labels).toContain("먹거리");
+    expect(labels).toContain("오픈월");
+    // 입력받는 항목 목록에는 더 이상 브랜드·오픈월이 없어야 한다(화면과 설명이 어긋나지 않게).
+    const humanNote = QUICK_EVAL_FIELD_NOTES.find((n) => n.source === "사람이 입력");
+    expect(humanNote?.label).not.toContain("브랜드");
+    expect(humanNote?.label).not.toContain("오픈월");
   });
 });

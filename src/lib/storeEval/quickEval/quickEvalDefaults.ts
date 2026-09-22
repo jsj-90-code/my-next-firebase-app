@@ -12,6 +12,14 @@
 //    한다(`DEFAULT_UNSURVEYED_PC_COUNT` 등 실제 상수를 import해서 쓴다).
 
 import { DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
+import type { FoodBrand } from "../types";
+
+/**
+ * 자사 먹거리 브랜드 — **고정값**이다. 자사 브랜드라 후보지마다 다를 일이 없어서 입력칸을
+ * 없앴다(사용자 확인 2026-09-22: "먹거리 브랜드는 자사니까 어차피 쉐프앤클릭이거든").
+ * 점수는 이 값으로 `settings.foodBrandScores`에서 읽는다 — 여기에 점수를 박지 않는다.
+ */
+export const OWN_FOOD_BRAND: FoodBrand = "쉐프앤클릭";
 
 /** 이 도구가 쓰는 반경. 500m는 V62 산식이 읽는 반경이고(경쟁IP·유동인구), 1km는 주거인구다. */
 export const QUICK_EVAL_RADII = { competitor: 500, floating: 500, resident1km: 1000, resident500: 500 } as const;
@@ -92,6 +100,14 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     needsFieldCheck: true,
   },
   {
+    label: "자사 먹거리 브랜드",
+    source: "기본값",
+    basis:
+      `${OWN_FOOD_BRAND} 고정. 자사 브랜드라 후보지마다 다를 일이 없다(사용자 확인 2026-09-22) — ` +
+      "입력칸을 없애고 여기서 정한다. 다른 브랜드를 쓸 일이 생기면 정밀 평가에서 고른다",
+    needsFieldCheck: false,
+  },
+  {
     label: "자사 시설 구성(존·좌석)",
     source: "기본값",
     basis: "회사 표준 존 구성(applyStandardOwnFacilityDefaults). 운영 후보지도 비우면 같은 값이 들어간다",
@@ -104,9 +120,17 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     needsFieldCheck: false,
   },
   {
-    label: "자사 PC대수·시급·층·엘리베이터·브랜드·예상오픈월",
+    label: "자사 PC대수·시급·층·엘리베이터",
     source: "사람이 입력",
     basis: "조사값이 아니라 **기획값**이다. 점포개발 초기에도 사람이 정한다 — 비우면 재는 대상이 달라진다",
+    needsFieldCheck: false,
+  },
+  {
+    label: "예상 오픈월",
+    source: "기본값",
+    basis:
+      "입력칸을 없앴다(사용자 확인 2026-09-22). 비우면 운영 V62가 '평가한 달의 다음 달'로 잡는다" +
+      "(resolveBaselineOpenMonth) — 기준매출 계산에만 쓰이고 초기 선별에서는 그 차이가 작다",
     needsFieldCheck: false,
   },
 ];
