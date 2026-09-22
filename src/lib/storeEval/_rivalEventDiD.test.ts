@@ -690,6 +690,82 @@ describeIf("경쟁점 개·폐업 이중차분", () => {
     expect(before).toBeGreaterThan(0);
   });
 
+  it("(9) ⭐⭐⭐ 우리가 더 약하다면? — 탕정역이 산식을 반박한다", () => {
+    // 사용자(2026-09-24): *"탕정역 같은 경우에 우리 매장이 경쟁력 제일 떨어짐."*
+    //   + *"관리 부분 제외하고 얘기하는 거임. 관리는 되게 잘할 듯."*
+    //
+    // ⚠️ **(8)번의 결론이 뒤집힌다.** 거기서는 품질비(경쟁÷자사)를 조사 표본 평균 0.581로
+    //    놓고 "관측과 맞는다"고 했는데, 0.581은 **경쟁점이 우리보다 한참 못하다**는 뜻이다.
+    //    현장 판단은 정반대다 — 관리 빼고는 **우리가 제일 못하다**(품질비 > 1).
+    //
+    // 비중으로 따지면: 사양 26.4% · 존구성 23.8% · 인테리어 10.2% · 먹거리 7.5% = **67.9%**에서
+    // 우리가 지고, 관리 15.1%에서만 이긴다. 그러면 전체 품질비는 **1 언저리나 그 위**다.
+    //
+    // 그 값을 넣으면 산식이 뭐라고 하나. 그리고 관측을 내려면 실효 경쟁량이 얼마여야 하나.
+    const target = [...nameByCode.entries()].find(([, nm]) => nm.includes("탕정"));
+    if (!target) return;
+    const [code] = target;
+    const inp = inputByCode.get(code);
+    if (!inp) return;
+    const before = computeTextbook(inp, P).utilization;
+    const pc = inp.pcCount ?? 0;
+    if (before == null || !(before > 0) || !(pc > 0)) return;
+    const OBS = -0.307;
+    const oq = inp.ownQualityParts;
+    const scaled = (ratio: number) => (oq ? {
+      spec: oq.spec == null ? null : oq.spec * ratio,
+      food: oq.food == null ? null : oq.food * ratio,
+      zone: oq.zone == null ? null : oq.zone * ratio,
+      interior: oq.interior == null ? null : oq.interior * ratio,
+      management: oq.management == null ? null : oq.management * ratio,
+    } : null);
+    const RIVALS = [{ name: "레벨업", d: 74 }, { name: "레드포스", d: 91 }];
+    const dropAt = (ratio: number, ip: number) => {
+      const add = RIVALS.map((r) => ({ ip, distanceM: r.d, parts: scaled(ratio), name: r.name }));
+      const after = computeTextbook({ ...inp, rivals: [...(inp.rivals ?? []), ...add] }, P).utilization;
+      return after == null || !(after > 0) ? NaN : Math.log(after / before);
+    };
+    console.log(`\n[탕정역 — 우리가 더 약하다면] 관측 이중차분 log ${(OBS * 100).toFixed(1)}%`);
+    console.log(`  사용자 판단: **관리 빼고는 우리가 제일 못하다** -> 품질비(경쟁÷자사) ≥ 1`);
+    console.log(`\n  품질비   90대 둘일 때   120대 둘일 때`);
+    for (const rr of [0.581, 0.8, 1.0, 1.1, 1.3]) {
+      console.log(`  ${rr.toFixed(3).padStart(6)}${(dropAt(rr, 90) * 100).toFixed(1).padStart(13)}%`
+        + `${(dropAt(rr, 120) * 100).toFixed(1).padStart(15)}%`
+        + (rr === 0.581 ? "   ← (8)번이 쓴 값(조사 표본 평균)" : rr === 1.0 ? "   ← 품질이 같다면" : ""));
+    }
+
+    // ── 관측을 내려면 실효 경쟁량이 얼마여야 하나 — 품질·θ를 통째로 건너뛰고 역산 ──
+    // 점유율 = 자사PC ÷ (자사PC + 실효경쟁량).  관측 배율 = 뒤/앞 이므로 거기서 푼다.
+    const shareBefore = computeTextbook(inp, P).share ?? 1;
+    const wanted = shareBefore * Math.exp(OBS);          // 관측이 말하는 뒤쪽 점유율
+    const effW = wanted > 0 ? pc * (1 / wanted - 1) : NaN; // 그걸 내는 분모 속 경쟁량
+    // 지금 이미 들어가 있는 경쟁량(2km 넷)을 빼면 새 둘의 몫이 나온다
+    let curW = 0;
+    for (const rv of inp.rivals ?? []) {
+      if (!(rv.ip > 0)) continue;
+      const dw = rivalDistanceWeight(rv.distanceM, P);
+      if (dw > 0) curW += rv.ip * dw;
+    }
+    const addW = effW - curW;
+    console.log(`\n  [역산] 품질·θ를 건너뛰고 **실효 경쟁량**만 푼다`);
+    console.log(`    자사 PC ${pc}대 · 유입 전 점유율 ${(shareBefore * 100).toFixed(1)}%`);
+    console.log(`    관측대로면 유입 후 점유율 ${(wanted * 100).toFixed(1)}%`);
+    console.log(`    -> 분모에 필요한 총 경쟁량 ${effW.toFixed(0)}대 · 기존 ${curW.toFixed(0)}대`);
+    console.log(`    -> **새 둘이 합쳐서 ${addW.toFixed(0)}대 값어치**로만 들어간다`);
+    for (const ip of [60, 90, 120]) {
+      console.log(`       실제 각 ${ip}대라면(합 ${ip * 2}대) 분모엔 **${(addW / (ip * 2) * 100).toFixed(0)}%**만 들어간 셈`);
+    }
+    console.log(`\n  ⭐⭐ 읽는 법 — 여기서 갈린다`);
+    console.log(`     · 품질비 0.581을 쓰면 관측과 맞는다. 그런데 그 값은 **"경쟁점이 우리보다`);
+    console.log(`       한참 못하다"**는 뜻이라 현장 판단과 **정반대**다`);
+    console.log(`     · 현장 판단대로 품질비 ≥ 1을 넣으면 산식은 관측의 **두 배 넘게** 떨어뜨린다`);
+    console.log(`     · 즉 (8)에서 숫자가 맞은 건 **오차 둘이 상쇄된 것**일 수 있다:`);
+    console.log(`       품질비를 후하게 잡은 오차 × 가까운 경쟁점이 생각보다 덜 뺏어가는 현실`);
+    console.log(`\n  ⚠️ 이건 θ를 바꿔서 못 고친다 — 품질비가 1 이상이면 어떤 θ를 써도 경쟁량이`);
+    console.log(`     PC 대수보다 **커지지** 작아지지 않는다. 고칠 자리는 θ가 아니라 **점유율 식 자체**다.`);
+    expect(before).toBeGreaterThan(0);
+  });
+
   it("(4) 가까운 경쟁점만 — 감쇠가 맞는지 거리로 갈라 본다", () => {
     const bands: [string, number, number][] = [["0~500m", 0, 500], ["500~1000m", 500, 1000], ["1km 밖", 1000, 1e9]];
     console.log(`\n[거리별] 가까울수록 효과가 커야 한다 — 감쇠 곡선이 맞나`);
