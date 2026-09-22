@@ -862,6 +862,396 @@ describeIf("낮게 본 매장 — 과장의 기전", () => {
     expect(n).toBeGreaterThan(30);
   });
 
+  it("(O) ⭐⭐⭐ 500m 조사 구멍 — 경쟁 센 절반의 분모는 96%가 이 구간이다", () => {
+    // ── 왜 여기인가 ────────────────────────────────────────────────────────
+    // (L) 산식이 무너지는 건 **경쟁 센 절반**이고, (M) 거기 분모의 **96%가 500m 안**이다.
+    // 500m 안은 2km 자료가 일부러 비켜 간다(`rival2km.ts`: "같은 가게를 두 번 세면 안 된다").
+    // 즉 그 구간은 **전적으로 사람이 조사한 DB**에 기대고 있는데, 인계문서 5절에
+    // *"인허가 영업이고 지도에도 있는데 조사DB에 없는 게 104건"*이 열린 채 남아 있다.
+    //
+    // 빠진 경쟁점이 있으면 분모가 작아지고 -> 점유율이 후해지고 -> **과대예측**한다.
+    // 경쟁 센 절반이 정확히 과대예측이다(시흥배곧 48->36 · 일산탄현 46->33 · 금촌역 46->37).
+    //
+    // ── 재는 법 ────────────────────────────────────────────────────────────
+    // 카카오 원자료(`kakao-pcbangs-grid.json`)에는 **500m 안도 다 들어 있다.**
+    // 조사DB와 이름·거리로 짝지어 보고, 짝 못 찾은 카카오 가게를 "구멍"으로 센다.
+    //
+    // ⚠️ 500m는 **운영 V62가 쓰는 구간**이다. 여기서는 **실험실 입력만** 고쳐서 재고,
+    //    조사DB나 Firestore는 **건드리지 않는다**.
+    const GRID = ".local-tools/kakao-pcbangs-grid.json";
+    if (!existsSync(GRID)) { console.log(`\n[500m 조사 구멍] ${GRID}가 없다 — 건너뛴다`); return; }
+    type Doc = { id: string; name: string; lat: number; lng: number; distanceM: number };
+    const grid = JSON.parse(readFileSync(GRID, "utf8")) as {
+      sites: Record<string, { code: string | null; name: string | null; pcRooms?: { docs?: Doc[] } }>;
+    };
+    // 생성기와 **같은 규칙**을 쓴다 — 잣대가 둘이면 비교가 뜻이 없어진다.
+    const ARCADE = /게임랜드|게임장|오락|성인|스크린|멀티방|다트|보드게임|만화|플스|VR|사격|당구|노래/i;
+    const SELF_M = 50, OFFICIAL_M = 500;
+    const norm = (t: string | null | undefined) => String(t ?? "")
+      .replace(/\(.*?\)/g, "").replace(/피씨|피시/gi, "PC")
+      .replace(/[^0-9A-Za-z가-힣]/g, "").toUpperCase();
+    const sim = (a: string | null | undefined, b: string | null | undefined) => {
+      const x = norm(a), y = norm(b);
+      if (!x || !y) return 0;
+      if (x === y) return 1;
+      if (x.includes(y) || y.includes(x)) return 0.9;
+      const n2 = Math.min(x.length, y.length);
+      let c = 0;
+      for (let i = 0; i < n2; i++) if (x[i] === y[i]) c++;
+      return c / Math.max(x.length, y.length);
+    };
+
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+
+    /** 매장별 — 조사DB가 못 담은 500m 안 카카오 가게들 */
+    const holes: Doc[][] = use.map(({ r }) => {
+      const site = grid.sites[`existing:${r.input.storeCode}`];
+      const docs = (site?.pcRooms?.docs ?? [])
+        .filter((d) => d.distanceM > SELF_M && d.distanceM <= OFFICIAL_M)
+        .filter((d) => !ARCADE.test(d.name ?? ""));
+      // 같은 가게가 여러 건으로 잡히는 걸 먼저 접는다(30m 안 + 이름 비슷).
+      const uniq: Doc[] = [];
+      for (const d of docs) {
+        if (uniq.some((u) => sim(u.name, d.name) >= 0.6
+          && Math.hypot(u.lat - d.lat, u.lng - d.lng) * 111000 <= 30)) continue;
+        uniq.push(d);
+      }
+      // 조사된 500m 경쟁점과 짝짓는다 — 이름이 비슷하면 같은 가게로 본다.
+      const surveyed = (r.input.rivals ?? [])
+        .filter((rv) => rv.distanceM == null || rv.distanceM <= OFFICIAL_M);
+      const used = new Set<number>();
+      const missed: Doc[] = [];
+      for (const d of uniq) {
+        let bi = -1, bs = 0;
+        surveyed.forEach((rv, k) => {
+          if (used.has(k)) return;
+          const s = sim(rv.name, d.name);
+          if (s > bs) { bs = s; bi = k; }
+        });
+        if (bs >= 0.6 && bi >= 0) { used.add(bi); continue; }
+        missed.push(d);
+      }
+      return missed;
+    });
+
+    const nSurveyed = use.map(({ r }) => (r.input.rivals ?? [])
+      .filter((rv) => rv.distanceM == null || rv.distanceM <= OFFICIAL_M).length);
+    const rowIdx = use.map(({ r }) => rows.findIndex((x) => x.name === (r.input.storeName ?? r.input.storeCode)));
+    const resid = use.map((_, i) => (rowIdx[i] >= 0 ? Math.log(rows[rowIdx[i]].act / rows[rowIdx[i]].pred) : NaN));
+    const hiSet = new Set([...rows].sort((a, b) => a.rivalW - b.rivalW).slice(Math.floor(rows.length / 2)).map((r) => r.name));
+    const isHi = use.map(({ r }) => hiSet.has(r.input.storeName ?? r.input.storeCode));
+
+    console.log(`\n[500m 조사 구멍] 카카오 500m 안 vs 조사DB · n=${n}`);
+    console.log(`  조사된 500m 경쟁점 합계 ${nSurveyed.reduce((a, b) => a + b, 0)}곳`
+      + ` · 카카오에만 있는 것 **${holes.reduce((a, b) => a + b.length, 0)}곳**`);
+    console.log(`  매장당 구멍: 중앙 ${[...holes.map((h) => h.length)].sort((a, b) => a - b)[Math.floor(n / 2)]}곳`
+      + ` · 범위 ${Math.min(...holes.map((h) => h.length))}~${Math.max(...holes.map((h) => h.length))}곳`);
+    console.log(`  경쟁 약한 절반 평균 ${mean(holes.filter((_, i) => !isHi[i]).map((h) => h.length)).toFixed(1)}곳`
+      + ` · 경쟁 센 절반 평균 ${mean(holes.filter((_, i) => isHi[i]).map((h) => h.length)).toFixed(1)}곳`);
+    const hv = holes.map((h) => h.length);
+    console.log(`  구멍 개수와 잔차의 상관 r = ${corr(hv, resid).toFixed(3)}  (음수면 의심이 맞다 — 구멍 많을수록 과대예측)`);
+    console.log(`\n  구멍이 큰 5곳 (매장 · 조사 · 구멍 · 예측 -> 실측)`);
+    const order = use.map((_, i) => i).sort((a, b) => hv[b] - hv[a]).slice(0, 5);
+    for (const i of order) {
+      const rr = rowIdx[i] >= 0 ? rows[rowIdx[i]] : null;
+      console.log(`    ${(use[i].r.input.storeName ?? "").padEnd(14)}조사 ${String(nSurveyed[i]).padStart(2)}곳`
+        + ` · 구멍 ${String(hv[i]).padStart(2)}곳`
+        + (rr ? `  ${(rr.pred * 100).toFixed(1)}% -> ${(rr.act * 100).toFixed(1)}%` : ""));
+      console.log(`      빠진 것: ${holes[i].slice(0, 4).map((d) => `${d.name}(${d.distanceM}m)`).join(" · ")}`);
+    }
+
+    // ── 메워 보기 — 실험실 입력에만 넣는다 ─────────────────────────────────
+    // 대수는 500m 안 미조사와 **같은 기본대수**를 쓴다(잣대를 둘로 만들지 않는다).
+    // 품질은 모른다 -> null(자사와 같은 품질로 본다). 2km 경쟁점과 같은 대우다.
+    console.log(`\n[재고 표 — 구멍을 메우면] ⭐ 바닥: 전부 평균(LOO) MAE ${(baseMae * 100).toFixed(2)}%p`);
+    console.log(`  가정 대수      MAE      최악    편향   ±5%p  퍼짐  분별력 r   경쟁 센 절반  약한 절반`);
+    const hiIdx = use.map((_, i) => i).filter((i) => isHi[i]);
+    const loIdx = use.map((_, i) => i).filter((i) => !isHi[i]);
+    const scoreFill = (pcAssumed: number | null) => {
+      const preds = use.map(({ r }, i) => {
+        const add = pcAssumed == null ? [] : holes[i].map((d) => ({
+          ip: pcAssumed, distanceM: d.distanceM, parts: null as QualityParts | null, name: d.name,
+        }));
+        return computeTextbook({ ...r.input, rivals: [...(r.input.rivals ?? []), ...add] }, P).utilization ?? NaN;
+      });
+      const abs = preds.map((v, i) => Math.abs(v - acts[i]));
+      const pl = preds.map(Math.log);
+      return { abs, pl, preds };
+    };
+    for (const pcA of [null, 45, 60, 90]) {
+      const { abs, pl, preds } = scoreFill(pcA);
+      console.log(`  ${(pcA == null ? "안 메움" : `${pcA}대`).padStart(6)}`
+        + `${(mean(abs) * 100).toFixed(2).padStart(10)}%p${(Math.max(...abs) * 100).toFixed(1).padStart(8)}%p`
+        + `${(mean(preds.map((v, i) => v - acts[i])) * 100).toFixed(1).padStart(7)}%p`
+        + `  ${String(abs.filter((v) => v <= 0.05).length).padStart(2)}/${n}`
+        + `${(sdOf(pl) / sdOf(actLog)).toFixed(2).padStart(6)}배${corr(pl, actLog).toFixed(3).padStart(9)}`
+        + `${(mean(hiIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(13)}%p`
+        + `${(mean(loIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(10)}%p`
+        + (pcA == null ? "  ← 지금" : ""));
+    }
+    console.log(`\n  ⛔ **자동으로 채택하지 않는다.** 카카오가 실체는 99% 맞히지만 (1) 대수를 모르고`);
+    console.log(`     (2) 그 가게가 평가창에 영업했는지도 여기선 안 따졌다(2km 쪽은 인허가로 따진다).`);
+    console.log(`     성적이 좋아지면 **조사DB를 채우는 일**로 넘기는 게 맞다 — 500m는 운영 V62 구간이다.`);
+    expect(n).toBeGreaterThan(30);
+  });
+
+  it("(P) ⭐⭐⭐ 구멍 메우기를 **공정하게** 다시 — 인허가로 영업 시점을 따진다", () => {
+    // (O)의 메우기는 **불공정했다.** 카카오는 2026-09에 찍은 **지금** 목록인데, 평가창은
+    // 매장마다 과거 12달이다. 2026년에 문 연 가게를 2023년 평가창에 넣으면 당연히
+    // 경쟁이 과하게 잡힌다 — 2km 쪽은 그래서 **인허가로 영업 비중을 매긴다.**
+    // 같은 잣대를 500m에도 대야 비교가 뜻이 있다.
+    //
+    // 그리고 θ도 같이 훑는다. (N)에서 θ=3이 **수준을 크게 흡수**하고 있었다
+    // (θ=0이면 편향 −16%p). 경쟁점 수가 늘면 맞는 θ도 달라지는 게 당연하다 —
+    // 경쟁점 목록과 θ를 **같이** 봐야 "목록이 틀렸나 θ가 틀렸나"를 가를 수 있다.
+    const GRID = ".local-tools/kakao-pcbangs-grid.json";
+    const PERMITS = ".local-tools/pcbang-permits.json";
+    if (!existsSync(GRID) || !existsSync(PERMITS)) {
+      console.log(`\n[공정한 구멍 메우기] 원자료가 없다 — 건너뛴다`); return;
+    }
+    type Doc = { id: string; name: string; lat: number; lng: number; distanceM: number };
+    const grid = JSON.parse(readFileSync(GRID, "utf8")) as {
+      sites: Record<string, { pcRooms?: { docs?: Doc[] } }>;
+    };
+    type Permit = { name: string; lat: number; lng: number; open?: string | null; close?: string | null };
+    const permits = (JSON.parse(readFileSync(PERMITS, "utf8")).rows as Permit[])
+      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    const ARCADE = /게임랜드|게임장|오락|성인|스크린|멀티방|다트|보드게임|만화|플스|VR|사격|당구|노래/i;
+    const norm = (t: string | null | undefined) => String(t ?? "")
+      .replace(/\(.*?\)/g, "").replace(/피씨|피시/gi, "PC")
+      .replace(/[^0-9A-Za-z가-힣]/g, "").toUpperCase();
+    const sim = (a: string | null | undefined, b: string | null | undefined) => {
+      const x = norm(a), y = norm(b);
+      if (!x || !y) return 0;
+      if (x === y) return 1;
+      if (x.includes(y) || y.includes(x)) return 0.9;
+      const n2 = Math.min(x.length, y.length);
+      let c = 0;
+      for (let i = 0; i < n2; i++) if (x[i] === y[i]) c++;
+      return c / Math.max(x.length, y.length);
+    };
+    const distM = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+      const R = 6371000, rad = Math.PI / 180;
+      const dLat = (bLat - aLat) * rad, dLng = (bLng - aLng) * rad;
+      const s = Math.sin(dLat / 2) ** 2
+        + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    };
+    const ymd = (s: string | null | undefined) => (s && /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null);
+
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+
+    /** 매장별 구멍 + 평가창 영업 비중 */
+    let joined = 0, unjoined = 0;
+    const holes: { d: Doc; share: number }[][] = use.map(({ r }) => {
+      const site = grid.sites[`existing:${r.input.storeCode}`];
+      const docs = (site?.pcRooms?.docs ?? [])
+        .filter((d) => d.distanceM > 50 && d.distanceM <= 500)
+        .filter((d) => !ARCADE.test(d.name ?? ""));
+      const uniq: Doc[] = [];
+      for (const d of docs) {
+        if (uniq.some((u) => sim(u.name, d.name) >= 0.6
+          && distM(u.lat, u.lng, d.lat, d.lng) <= 30)) continue;
+        uniq.push(d);
+      }
+      const surveyed = (r.input.rivals ?? []).filter((rv) => rv.distanceM == null || rv.distanceM <= 500);
+      const used = new Set<number>();
+      const out: { d: Doc; share: number }[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const meta = (snap.existingStores ?? []).find((s: any) => s.storeCode === r.input.storeCode);
+      const months = evaluationMonths(meta?.openedAt ?? null);
+      for (const d of uniq) {
+        let bi = -1, bs = 0;
+        surveyed.forEach((rv, k) => {
+          if (used.has(k)) return;
+          const s = sim(rv.name, d.name);
+          if (s > bs) { bs = s; bi = k; }
+        });
+        if (bs >= 0.6 && bi >= 0) { used.add(bi); continue; }
+        // 인허가 짝짓기 — 생성기와 같은 자(60m · 유사도 0.6)
+        const cand = permits
+          .map((p) => ({ p, dd: distM(d.lat, d.lng, p.lat, p.lng) }))
+          .filter((x) => x.dd <= 60)
+          .map((x) => ({ ...x, sc: sim(d.name, x.p.name) }))
+          .sort((a, b) => b.sc - a.sc || a.dd - b.dd)[0];
+        let share = 1;
+        if (cand && cand.sc >= 0.6) {
+          joined += 1;
+          const open = ymd(cand.p.open), close = ymd(cand.p.close);
+          // rival2km의 operatingShareInWindow와 같은 뜻 — 평가창 달 중 영업한 달의 비중
+          const live = months.filter((m) => {
+            const last = `${m}-31`, first = `${m}-01`;
+            if (open && open > last) return false;
+            if (close && close < first) return false;
+            return true;
+          }).length;
+          share = months.length ? live / months.length : 1;
+        } else {
+          unjoined += 1; // 시점을 모르면 **세는 쪽**(=1). 2km 쪽과 같은 원칙
+        }
+        if (share > 0) out.push({ d, share });
+      }
+      return out;
+    });
+
+    const rawN = holes.reduce((a, b) => a + b.length, 0);
+    const wSum = holes.reduce((a, b) => a + b.reduce((p, q) => p + q.share, 0), 0);
+    console.log(`\n[공정한 구멍 메우기] 인허가로 평가창 영업 비중을 매긴 뒤`);
+    console.log(`  구멍 ${rawN}곳 · 인허가 짝 ${joined}곳 / 못 찾음 ${unjoined}곳(=세는 쪽 1.0)`);
+    console.log(`  영업 비중 합 ${wSum.toFixed(1)} — **${((1 - wSum / rawN) * 100).toFixed(0)}%가 평가창엔 없던 가게였다**`);
+
+    const hiSet = new Set([...rows].sort((a, b) => a.rivalW - b.rivalW).slice(Math.floor(rows.length / 2)).map((r) => r.name));
+    const hiIdx = use.map((_, i) => i).filter((i) => hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+    const loIdx = use.map((_, i) => i).filter((i) => !hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+    const line = (label: string, preds: number[], mark = "") => {
+      const abs = preds.map((v, i) => Math.abs(v - acts[i]));
+      const pl = preds.map(Math.log);
+      const k = Math.exp(mean(actLog) - mean(pl));
+      const absL = preds.map((v, i) => Math.abs(v * k - acts[i]));
+      console.log(`  ${label.padEnd(22)}${(mean(abs) * 100).toFixed(2).padStart(7)}%p`
+        + `${(Math.max(...abs) * 100).toFixed(1).padStart(8)}%p`
+        + `${(mean(preds.map((v, i) => v - acts[i])) * 100).toFixed(1).padStart(7)}%p`
+        + `  ${String(abs.filter((v) => v <= 0.05).length).padStart(2)}/${n}`
+        + `${(sdOf(pl) / sdOf(actLog)).toFixed(2).padStart(6)}배${corr(pl, actLog).toFixed(3).padStart(9)}`
+        + `${(mean(hiIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(13)}%p`
+        + `${(mean(loIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(10)}%p |`
+        + `${(mean(absL) * 100).toFixed(2).padStart(9)}%p${mark}`);
+    };
+    const predsFor = (pcAssumed: number | null, theta: number) => {
+      const P2 = { ...P, qualityExponent: theta };
+      return use.map(({ r }, i) => {
+        const add = pcAssumed == null ? [] : holes[i].map((h) => ({
+          ip: pcAssumed * h.share, distanceM: h.d.distanceM,
+          parts: null as QualityParts | null, name: h.d.name,
+        }));
+        return computeTextbook({ ...r.input, rivals: [...(r.input.rivals ?? []), ...add] }, P2).utilization ?? NaN;
+      });
+    };
+    console.log(`\n[재고 표] ⭐ 바닥: 전부 평균(LOO) MAE ${(baseMae * 100).toFixed(2)}%p · n=${n}`);
+    console.log(`  경우                    MAE     최악    편향   ±5%p  퍼짐  분별력 r   경쟁 센   약한 | 수준보정`);
+    line("안 메움 · θ3", predsFor(null, 3), "  ← 지금");
+    for (const pcA of [45, 60, 90]) {
+      for (const th of [3, 4, 5, 6]) line(`메움 ${pcA}대 · θ${th}`, predsFor(pcA, th));
+    }
+    console.log(`\n  ⭐ 읽는 법: 목록을 채웠을 때 **어떤 θ에서도 지금보다 분별력 r이 안 오르면**`);
+    console.log(`     그 구멍은 진짜 경쟁점이 아니거나(카카오 오분류) 실제로 안 겨루는 것이다.`);
+    console.log(`     r이 오르는 칸이 있으면 **조사DB를 채우는 일**이 값어치가 있다는 뜻이다.`);
+    console.log(`  ⛔ 여기서 값을 고르지 않는다. 500m는 운영 V62 구간이라 더더욱 그렇다.`);
+    expect(n).toBeGreaterThan(30);
+  });
+
+  it("(Q) ⭐⭐⭐ 품질을 아는 경쟁점만 θ³로 줄어든다 — 조사가 잘 된 매장이 손해를 본다", () => {
+    // ── 의심 ───────────────────────────────────────────────────────────────
+    // 분모 몫 = 경쟁PC x (경쟁품질 ÷ 자사품질)³ x 거리무게. 그런데 **품질을 모르면 비를 1로
+    // 둔다**("모른다 = 중립"). 우리는 새 가맹점이라 품질이 늘 높아서, 품질을 **아는** 경쟁점은
+    // 비가 1보다 작고 세제곱되어 **평균 31%까지 쪼그라든다**((N)에서 쟀다).
+    //
+    // 그러면 이런 비대칭이 생긴다:
+    //   · 경쟁점을 꼼꼼히 조사한 매장 -> 경쟁이 **작게** 세진다 -> 점유율 후함 -> **과대예측**
+    //   · 조사가 덜 된 매장          -> 경쟁이 1배로 통째로 세진다 -> **과소예측**
+    // 이건 상권의 성질이 아니라 **자료가 있고 없고**다. 기전 없는 편향이다.
+    //
+    // ⚠️ "모른다 = 중립"이라는 원칙 자체는 옳다. 문제는 **중립의 자리가 1이 아니라는 것**이다 —
+    //    아는 경쟁점들의 평균 비가 1보다 한참 작으면, 모르는 경쟁점에도 그 평균을 줘야
+    //    같은 자로 재는 것이 된다. 지금은 모르는 쪽만 유리하게(우리에게 불리하게) 센다.
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+
+    // 매장별 — 품질을 아는 경쟁점이 날 경쟁량에서 차지하는 몫
+    const knownFrac: number[] = [], ratios: number[] = [];
+    for (const { r } of use) {
+      const oq = r.input.ownQualityParts;
+      let known = 0, all = 0;
+      for (const rv of r.input.rivals ?? []) {
+        if (!(rv.ip > 0)) continue;
+        const dw = rivalDistanceWeight(rv.distanceM, P);
+        if (dw <= 0) continue;
+        all += rv.ip * dw;
+        if (oq && rv.parts) {
+          const o = computeQualityScoreLocal(oq), v = computeQualityScoreLocal(rv.parts);
+          if (o != null && o > 0 && v != null && v > 0) { known += rv.ip * dw; ratios.push(v / o); }
+        }
+      }
+      knownFrac.push(all > 0 ? known / all : 0);
+    }
+    const resid = use.map(({ r }) => {
+      const b = computeTextbook(r.input, P);
+      const i = use.findIndex((x) => x.r === r);
+      return Math.log(acts[i] / (b.utilization ?? NaN));
+    });
+    const gRatio = Math.exp(mean(ratios.map(Math.log)));
+    console.log(`\n[품질 자료의 비대칭] n=${n}`);
+    console.log(`  품질을 아는 경쟁점 몫: 중앙 ${([...knownFrac].sort((a, b) => a - b)[Math.floor(n / 2)] * 100).toFixed(0)}%`
+      + ` · 범위 ${(Math.min(...knownFrac) * 100).toFixed(0)}~${(Math.max(...knownFrac) * 100).toFixed(0)}%`);
+    console.log(`  아는 경쟁점들의 품질비(경쟁÷자사) 기하평균 **${gRatio.toFixed(3)}** -> θ=3이면 x${Math.pow(gRatio, 3).toFixed(3)}`);
+    console.log(`  모르는 경쟁점은 비를 **1.000**으로 둔다 -> x1.000. 같은 자가 아니다.`);
+    console.log(`  아는 몫과 잔차의 상관 r = ${corr(knownFrac, resid).toFixed(3)}  (음수면 의심이 맞다 — 잘 조사할수록 과대예측)`);
+
+    // ── 재고 표 — 모르는 경쟁점에 **아는 것들의 평균 비**를 준다 ────────────
+    // ⛔ 값을 고르는 게 아니다. 자리를 1에서 "표본이 말해 주는 중립"으로 옮기는 것이다.
+    //    쓰는 수는 **표본에서 잰 기하평균 하나**뿐이고 자유 계수가 아니다.
+    const predsWithNeutral = (neutral: number | null, theta: number) => {
+      const P2 = { ...P, qualityExponent: theta };
+      return use.map(({ r }) => {
+        if (neutral == null) return computeTextbook(r.input, P2).utilization ?? NaN;
+        // 품질 모르는 경쟁점의 ip에 neutral^θ를 미리 곱해 넣는다 —
+        // computeTextbook은 parts=null이면 비를 1로 두므로 결과가 같아진다.
+        const rivals = (r.input.rivals ?? []).map((rv) => {
+          const oq = r.input.ownQualityParts;
+          const known = oq && rv.parts
+            && (computeQualityScoreLocal(oq) ?? 0) > 0 && (computeQualityScoreLocal(rv.parts) ?? 0) > 0;
+          return known ? rv : { ...rv, ip: rv.ip * Math.pow(neutral, theta) };
+        });
+        return computeTextbook({ ...r.input, rivals }, P2).utilization ?? NaN;
+      });
+    };
+    const hiSet = new Set([...rows].sort((a, b) => a.rivalW - b.rivalW).slice(Math.floor(rows.length / 2)).map((r) => r.name));
+    const hiIdx = use.map((_, i) => i).filter((i) => hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+    const loIdx = use.map((_, i) => i).filter((i) => !hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+    const line = (label: string, preds: number[], mark = "") => {
+      const abs = preds.map((v, i) => Math.abs(v - acts[i]));
+      const pl = preds.map(Math.log);
+      const k = Math.exp(mean(actLog) - mean(pl));
+      const absL = preds.map((v, i) => Math.abs(v * k - acts[i]));
+      console.log(`  ${label.padEnd(26)}${(mean(abs) * 100).toFixed(2).padStart(7)}%p`
+        + `${(Math.max(...abs) * 100).toFixed(1).padStart(8)}%p`
+        + `${(mean(preds.map((v, i) => v - acts[i])) * 100).toFixed(1).padStart(7)}%p`
+        + `  ${String(abs.filter((v) => v <= 0.05).length).padStart(2)}/${n}`
+        + `${(sdOf(pl) / sdOf(actLog)).toFixed(2).padStart(6)}배${corr(pl, actLog).toFixed(3).padStart(9)}`
+        + `${(mean(hiIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(13)}%p`
+        + `${(mean(loIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(10)}%p |`
+        + `${(mean(absL) * 100).toFixed(2).padStart(9)}%p${mark}`);
+    };
+    console.log(`\n[재고 표 — 모르는 경쟁점의 중립값] ⭐ 바닥: 전부 평균(LOO) MAE ${(baseMae * 100).toFixed(2)}%p`);
+    console.log(`  경우                        MAE     최악    편향   ±5%p  퍼짐  분별력 r   경쟁 센   약한 | 수준보정`);
+    line("중립 1.000 (지금) · θ3", predsWithNeutral(null, 3), "  ← 지금");
+    for (const th of [3, 4]) {
+      line(`중립 ${gRatio.toFixed(3)}(표본) · θ${th}`, predsWithNeutral(gRatio, th));
+    }
+    console.log(`\n  ⭐ 읽는 법: **분별력 r이 오르면** 그건 진짜다 — 자료 있고 없고로 생기던`);
+    console.log(`     비대칭을 없앤 것이지 성적을 누른 게 아니다.`);
+    console.log(`     r이 그대로고 편향만 움직이면 수준을 만진 것이므로 채택 근거가 안 된다.`);
+    console.log(`  ⛔ 값을 고르지 않는다. 좋아 보이면 **중첩 LOO**부터 돌리고 사용자에게 가져간다.`);
+    expect(n).toBeGreaterThan(30);
+  });
+
   it("(C) 낮게 본 무리 vs 높게 본 무리 — 층별 평균을 갈라 본다", () => {
     const sorted = [...rows].sort((a, b) => a.pred - b.pred);
     const lo = sorted.slice(0, 8), hi = sorted.slice(-8);
