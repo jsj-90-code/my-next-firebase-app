@@ -45,6 +45,8 @@ import type { Competitor, ExistingStore } from "./types";
 
 const PERMIT_FILE = ".local-tools/pcbang-permits.json";
 const NEIGHBOR_FILE = ".local-tools/kakao-neighborhood.json";
+/** 소상공인 상가업소 — 전국 동일 기준. `scripts/collectSbizPcBangs.mjs`가 뜬다. */
+const SBIZ_FILE = ".local-tools/sbiz-pcbang-2km.json";
 const QSC_FILE = ".local-tools/qsc-scores.json";
 const OFFICIAL_RADIUS_M = 500;
 const SELF_M = 50;
@@ -359,10 +361,14 @@ describeIf("2km 경쟁점 — 인허가 자동 판정", () => {
     console.log(`  시설면적 중앙: 실재 ${med(realAreas).toFixed(0)}㎡ vs 조사DB에 없음 ${med(ghostAreas).toFixed(0)}㎡`);
     console.log(`\n  ⭐ 읽는 법 — 보증되는 것과 안 되는 것이 다르다.`);
     console.log(`     보증된다 : "지도에 있으면 실재한다"(${(realInMap / real * 100).toFixed(0)}%).`);
-    console.log(`     ⛔ 보증 안 된다 : "지도에 없으면 없다". 카카오는 **매장당 40건쯤에서 잘린다**`);
-    console.log(`        (전대후문 인허가 216건 vs 카카오 32건). 조밀한 도시 매장일수록 더 놓치므로,`);
-    console.log(`        "지도에 없으면 뺀다"를 쓰면 **도시 매장 경쟁점만 체계적으로 덜 세어진다.**`);
-    console.log(`     그리고 작은 곳은 유령이 아니라 **조사를 안 한 소형 PC방**일 수 있다`);
+    console.log(`     보증 안 된다 : "지도에 없으면 없다". 카카오는 **매장당 40건쯤에서 잘린다**`);
+    console.log(`        (전대후문 인허가 216건 vs 카카오 32건).`);
+    console.log(`\n  ⚠️ **2026-09-22 정정.** 처음엔 그 잘림이 "조밀한 도시 매장만 덜 세게 만든다"고 보고`);
+    console.log(`     이 규칙을 기각했다. **근거가 약했다** — 밀도 높은 몇 곳(전대후문 26%)과 낮은 몇 곳`);
+    console.log(`     (장산 67%)만 눈으로 비교한 것이다. 38곳 전체로 상관을 재면 **r=-0.14로 유의선 아래**다`);
+    console.log(`     (한산한 곳도 적중률이 낮은 데가 많다 — 남악 13% · 양주덕정 17% · 진주혁신 0%).`);
+    console.log(`     편향 검정은 3-사에서 제대로 한다. **눈으로 고르지 말고 재라.**`);
+    console.log(`\n     그리고 작은 곳은 유령이 아니라 **조사를 안 한 소형 PC방**일 수 있다`);
     console.log(`     (우리 DB에 "노후저경쟁력미조사"가 따로 있다). 그러면 답은 빼는 게 아니라 작게 세는 것이다.`);
     expect(real).toBeGreaterThan(50);
   });
@@ -526,6 +532,88 @@ describeIf("2km 경쟁점 — 인허가 자동 판정", () => {
     console.log(`     (이미 collectSbiz*로 쓰고 있다 — 건수 상한도 지자체 관행도 안 탄다).`);
     expect(withG.length).toBeGreaterThan(50);
     expect(Math.abs(rBias)).toBeGreaterThan(0.41);   // 편향이 사라지면 이 잠금이 깨지고, 그때 다시 본다
+  });
+
+  it("(3-사) ⭐⭐ 소상공인 상가업소로 실체를 본다 — 편향 검정을 통과한 첫 조합", () => {
+    // 오늘 셋을 기각한 병은 하나였다: **자료의 결측이 매장 밀도와 붙어 있다.**
+    // 소상공인 상가업소는 매장마다 반경 조회를 따로 하므로 건수 상한이 안 걸리고,
+    // 전국을 한 기관이 같은 기준으로 모으므로 지자체 관행도 안 탄다.
+    if (!existsSync(SBIZ_FILE)) {
+      console.log(`\n[상가업소] ${SBIZ_FILE}이 없다 — node scripts/collectSbizPcBangs.mjs 먼저.`);
+      return;
+    }
+    const sbiz = JSON.parse(readFileSync(SBIZ_FILE, "utf8")) as {
+      collectedAt: string; radiusM: number;
+      sites: Record<string, { lat: number; lng: number; stores: { lat: number; lng: number; name: string }[] }>;
+    };
+    /** 그 매장 반경 안에 상가업소가 아는 PC방이 있나(80m 안이면 같은 가게로 본다). */
+    const inSbiz = (code: string, p: Permit) => {
+      const site = sbiz.sites[`existing:${code}`];
+      if (!site) return false;
+      return site.stores.some((q) => distanceM(q.lat, q.lng, p.lat, p.lng) <= 80);
+    };
+
+    // ── 편향 검정을 먼저 한다. 통과 못 하면 성적은 볼 것도 없다 ──────────────
+    const ratioSbiz: number[] = [], ratioKakao: number[] = [], dens: number[] = [];
+    for (const r of rows) {
+      const near = (nearByCode.get(r.input.storeCode) ?? []).filter((n) => !n.p.close);
+      if (near.length < 5) continue;
+      const docs = (neighbor.sites[`existing:${r.input.storeCode}`] as { pcRooms?: { docs?: { lat: number; lng: number }[] } } | undefined)
+        ?.pcRooms?.docs ?? [];
+      ratioSbiz.push(near.filter((n) => inSbiz(r.input.storeCode, n.p)).length / near.length);
+      ratioKakao.push(near.filter((n) => docs.some((q) => distanceM(q.lat, q.lng, n.p.lat, n.p.lng) <= 80)).length / near.length);
+      dens.push(Math.log(near.length));
+    }
+    const corr = (a: number[], b: number[]) => {
+      const ma = mean(a), mb = mean(b);
+      return mean(a.map((v, i) => (v - ma) * (b[i] - mb))) / (sdOf(a) * sdOf(b));
+    };
+    const rS = corr(ratioSbiz, dens), rK = corr(ratioKakao, dens);
+    console.log(`\n[편향 검정] 실체 자료가 잡아내는 비율 vs 2km 경쟁점 밀도(log) · n=${dens.length} · 유의선 ±0.41`);
+    console.log(`  소상공인 상가업소   적중률 평균 ${(mean(ratioSbiz) * 100).toFixed(0)}%   r = ${rS.toFixed(3)}   ${Math.abs(rS) >= 0.41 ? "⛔ 넘는다" : "✅ 통과"}`);
+    console.log(`  카카오 장소        적중률 평균 ${(mean(ratioKakao) * 100).toFixed(0)}%   r = ${rK.toFixed(3)}   ${Math.abs(rK) >= 0.41 ? "⛔ 넘는다" : "✅ 통과"}`);
+    console.log(`  (참고) 인허가 게임기 70+ 규칙은 같은 검정에서 **r=-0.486으로 탈락**했다 — 3-바.`);
+    console.log(`\n  ⚠️ **둘 다 통과한다.** 처음에 카카오를 "도시 편향"으로 기각했는데 그건 눈대중이었다(3-다 정정).`);
+    console.log(`     둘의 진짜 차이는 편향이 아니라 **적중률**이다 — 상가업소가 더 많이 찾아낸다.`);
+
+    // ── 실체 × 시점 — 둘은 서로 다른 것을 안다 ──────────────────────────────
+    // 상가업소 = 지금 실체가 있는가 (시점은 모름) · 인허가 = 그때 영업했는가 (실체는 모름)
+    // 폐업한 곳은 상가업소에 **없는 게 당연**하므로 실체 확인을 면제한다.
+    const keep = (code: string, n: Near) => n.p.close != null || inSbiz(code, n.p);
+    const cardSbiz = card((r) => {
+      const extra = (nearByCode.get(r.input.storeCode) ?? [])
+        .filter((n) => n.share > 0 && keep(r.input.storeCode, n))
+        .map((n) => ({ ip: DEFAULT_UNSURVEYED_PC_COUNT * n.share, distanceM: n.distanceM, parts: null, name: n.p.name }));
+      return { ...r.input, rivals: [...(r.input.rivals ?? []), ...extra] };
+    });
+    const now = card((r) => r.input);
+    const line = (name: string, c: Card) => console.log(
+      `  ${name.padEnd(28)}${pp(c.mae).padStart(8)} ${pp(c.sd).padStart(8)}`
+      + ` ${(pp(c.worst) + " " + c.worstName).padEnd(22)} ${pp(c.bias).padStart(8)}`
+      + `  ${String(c.within5).padStart(2)}/${c.n}  ${c.spread.toFixed(2)}배    ${String(c.capped).padStart(2)}곳`);
+    // 카카오 쪽도 같은 자로 재서 나란히 놓는다 — 편향 검정을 둘 다 통과했으니 비교가 성립한다.
+    const cardKakao = card((r) => {
+      const docs = (neighbor.sites[`existing:${r.input.storeCode}`] as { pcRooms?: { docs?: { lat: number; lng: number }[] } } | undefined)
+        ?.pcRooms?.docs ?? [];
+      const extra = (nearByCode.get(r.input.storeCode) ?? [])
+        .filter((n) => n.share > 0
+          && (n.p.close != null || docs.some((q) => distanceM(q.lat, q.lng, n.p.lat, n.p.lng) <= 80)))
+        .map((n) => ({ ip: DEFAULT_UNSURVEYED_PC_COUNT * n.share, distanceM: n.distanceM, parts: null, name: n.p.name }));
+      return { ...r.input, rivals: [...(r.input.rivals ?? []), ...extra] };
+    });
+    console.log(`\n[성적표] 시점=인허가 · 대수=운영과 같은 ${DEFAULT_UNSURVEYED_PC_COUNT}대 일괄 · 실체 자료만 바꾼다`);
+    console.log(`  시나리오                        MAE       SD      최악            편향      ±5%p  퍼짐   점유율100%`);
+    line("지금 — 2km를 안 센다", now);
+    line("실체=카카오 + 인허가 시점", cardKakao);
+    line("⭐ 실체=상가업소 + 인허가 시점", cardSbiz);
+    line("실체 안 봄 — 인허가만", card((r) => withPermits(r, (n) => n.share)));
+    console.log(`\n  ⚠️ 대수는 일괄 ${DEFAULT_UNSURVEYED_PC_COUNT}대다 — 전 매장에 같은 자를 대므로 편향은 안 생기지만`);
+    console.log(`     **수준은 틀릴 수 있다.** 네 줄의 편향이 전부 음수인 게 그 증거다(-2.5 ~ -6.5%p).`);
+    console.log(`     많이 찾을수록 더 음수다 — 소형 경쟁점을 ${DEFAULT_UNSURVEYED_PC_COUNT}대로 세니 그렇다.`);
+    console.log(`\n  ⛔ **그래서 자료원을 성적으로 고르면 안 된다.** 카카오가 제일 좋아 보이는 건`);
+    console.log(`     적중률이 낮아(43% vs 47%) 대수 과대를 덜 타기 때문일 수 있다. 덜 찾는 게 상이 된다.`);
+    console.log(`     => 자료원 선택은 **대수를 바로잡은 뒤에** 한다. 지금 고르면 틀린 이유로 고르는 것이다.`);
+    expect(Math.abs(rS)).toBeLessThan(0.41);   // 편향이 생기면 여기서 걸린다
   });
 
   it("(4) 매장별로 얼마나 붙었나 — 독점이라던 3곳 포함", () => {
