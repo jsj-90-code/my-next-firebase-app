@@ -46,6 +46,10 @@ import {
   type FloatingRadius, type ResidentRadius,
   type TextbookInput, type TextbookParams, type TextbookScore,
 } from "@/lib/storeEval/textbookModel";
+// 2km 경쟁점 자료의 기준일·반경을 화면이 그대로 보여 준다 — 숫자를 글자로 박지 않는다.
+import {
+  RIVAL_2KM_BUILT_AT, RIVAL_2KM_OFFICIAL_RADIUS_M, RIVAL_2KM_OUTER_RADIUS_M,
+} from "@/lib/storeEval/rival2km";
 import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 
 // 모델 입력 조립은 labInput.ts에 있다 — 측정 하네스와 **같은 코드**를 써야 한다.
@@ -580,6 +584,33 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                   r=0.510, 계단은 0.560).
                 </div>
               )}
+              <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
+                <div className="font-semibold">
+                  🆕 2km 경쟁점을 셉니다 (2026-09-22 채택 · 자료 {RIVAL_2KM_BUILT_AT.slice(0, 10)})
+                </div>
+                <div className="mt-1">
+                  공식 경쟁점 DB는 <b>{RIVAL_2KM_OFFICIAL_RADIUS_M}m까지 사람이 조사</b>한 것입니다.
+                  그 밖은 아무것도 안 세고 있었고, 그게 예측이 평균 <b>+3.28%p 높던</b> 원인이었습니다.
+                  지금은 <b>{RIVAL_2KM_OUTER_RADIUS_M}m까지</b> 셉니다.
+                </div>
+                <div className="mt-1">
+                  <b>어디에 있나</b>는 카카오 장소로 봅니다(오락실·성인PC방은 상호로 거릅니다).
+                  <b> 그때 영업했나</b>는 공공데이터 인허가의 개업일·폐업일로 봅니다 — 지도는
+                  &ldquo;지금&rdquo;만 알고 산식은 <b>평가창 당시</b>가 필요하기 때문입니다.
+                  창 중간에 문을 닫았으면 <b>그 달 수만큼만</b> 셉니다.
+                </div>
+                <div className="mt-1 text-[var(--sl-ink-soft)]">
+                  얻은 것: 평균오차 7.72 → <b>6.26%p</b> · 최악 24.07 → <b>17.68%p</b> ·
+                  편향 +3.28 → <b>−0.63%p</b> · ±5%p 15 → 19곳 · 퍼짐 1.76 → 1.46배 ·
+                  동네 수요를 통째로 먹는다고 나오던 매장 3 → <b>0곳</b>.
+                  <b> 고른 계수는 하나도 없습니다.</b>
+                </div>
+                <div className="mt-1 text-[var(--sl-ink-soft)]">
+                  ⚠️ <b>경쟁점 대수는 아직 모릅니다</b> — 500m 안 미조사 경쟁점과 같은 기본대수를
+                  씁니다. 인허가에도 지도에도 대수가 없고, 2026-09-22에 하루 종일 파고도 못 풀었습니다.
+                  ⚠️ 후보지는 평가창이 없어(개점 전) <b>지금 영업 중인 곳만</b> 셉니다.
+                </div>
+              </div>
               <div className="mt-1">
                 품질 지수 <b>{p.qualityExponent}</b>는 두 경로가 따로 찾아와 만난 값입니다. 자료로 고른
                 최선이 3이고, 매출 변화폭에서 역산한 값이 2.74~4.92·중앙 3.25입니다.
@@ -870,9 +901,10 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                 때문입니다 — 500m 밖 2km 안에 남악 6곳 · 탕정역 3곳 · 광주각화 27건(미판정)이 있습니다.
               </div>
               <div className="mt-1">
-                그래서 지금은 <b>수준 오차가 드러나 있습니다</b>(전체 +2.69%p · 경쟁 없는 3곳이 19% 과대).
-                가리지 않고 두는 이유는 그게 곧 <b>&ldquo;2km 경쟁점을 아직 안 셌다&rdquo;는 표시등</b>이기
-                때문입니다. 남은 과녁은 그 수준 오차와 <b>퍼짐 과장</b> 둘이고, 2km 판정 뒤에 다시 잽니다.
+                그 자리가 <b>2026-09-22 밤에 채워졌습니다</b> — 상수가 아니라 <b>진짜 2km 경쟁점</b>으로요.
+                빼고 나서 드러났던 수준 오차 +3.28%p가 <b>−0.63%p</b>가 됐고, 동네 수요를 통째로
+                먹는다고 나오던 매장 3곳도 <b>0곳</b>이 됐습니다. 상수 하나로는 못 하는 일이었습니다
+                (상수는 전 매장을 똑같이 누르는데, 경쟁점은 매장마다 다르게 깎습니다).
               </div>
               <div className="mt-1 text-[var(--sl-ink-soft)]">
                 치른 값은 적지 않습니다: 가동률 평균오차 4.18 → <b>6.52%p</b> · ±5%p 24 → 18곳 ·
@@ -1148,8 +1180,10 @@ function StoreTable({ score, qscByStore, p, windowFill }: {
         그 3곳이 사실 독점이 아니기 때문입니다 — 500m 안에 없을 뿐 2km 안에는 영업 중인 경쟁점이
         있습니다(남악 6곳 · 탕정역 3곳 · 광주각화 27건 미판정). 필요한 몫도 매장마다 달라서
         남악 10.4대 vs 광주각화 <b>51.9대</b>입니다 — 상수가 아니라 <b>반경 밖 경쟁점</b>입니다.
-        그래서 지금 그 3곳의 점유율은 다시 100%이고, <b>19% 과대가 그대로 보입니다</b>. 그게
-        &ldquo;2km를 아직 안 셌다&rdquo;는 표시등입니다.
+        <br />
+        ✅ <b>그 반경 밖 경쟁점을 2026-09-22 밤에 실제로 넣었습니다</b>(아래 &ldquo;2km 경쟁점&rdquo; 설명).
+        그래서 이 칸은 <b>{p.outsideOptionIp}대로 두는 게 맞습니다</b> — 상수로 메우던 자리를
+        진짜 경쟁점이 대신 채웠습니다.
       </p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[720px] text-left text-sm">

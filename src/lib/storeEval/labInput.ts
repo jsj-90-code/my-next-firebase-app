@@ -15,11 +15,16 @@ import {
   computeCompetitorIp,
   computeCompetitorAppliedPcCount,
   computeLocationScoreFromFacts,
+  // 2km 경쟁점도 **운영과 같은 기본대수**를 쓴다. 잣대를 둘로 만들지 않는다.
+  DEFAULT_UNSURVEYED_PC_COUNT,
 } from "@/lib/storeEval/calc";
 import { computeLabZoneComposition } from "@/lib/storeEval/labZoneComposition";
 import { labComputeSpecScore } from "@/lib/storeEval/labSpecScore";
 import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation";
+import {
+  candidateRival2km, candidateSiteKey, existingSiteKey, rival2kmForWindow,
+} from "@/lib/storeEval/rival2km";
 import type { QualityParts, TextbookInput } from "@/lib/storeEval/textbookModel";
 import type {
   CandidateInput, Competitor, ExistingStore, LocationEvaluation, ModelSettings,
@@ -489,7 +494,23 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
             // 딴 데서 다시 짝지으며 어긋나지 않는다.
             name: c.name ?? null,
           }))
-          .filter((r) => r.ip > 0),
+          .filter((r) => r.ip > 0)
+          .map((r): NonNullable<TextbookInput["rivals"]>[number] => r)
+          // ── 2km 경쟁점 (2026-09-22 채택) ─────────────────────────────────
+          // 위 목록은 **사람이 조사한 500m까지**다. 그 밖은 아무것도 안 세고 있었고,
+          // 그게 예측이 평균 +3.28%p 높던 원인이었다. 실체는 카카오(오락실류 제외),
+          // 시점은 인허가로 판정한다 — 자세한 건 `rival2km.ts` 머리.
+          // ⚠️ 대수는 500m 안 미조사 경쟁점과 **같은 기본대수**를 쓴다. 잣대를 둘로 만들지 않는다.
+          // ⚠️ 품질은 모른다 -> parts: null. 이것도 500m 안 미조사와 같은 대우다.
+          .concat(
+            rival2kmForWindow(existingSiteKey(s.storeCode), evaluationMonths(s.openedAt))
+              .map((r) => ({
+                ip: DEFAULT_UNSURVEYED_PC_COUNT * r.share,
+                distanceM: r.distanceM,
+                parts: null as QualityParts | null,
+                name: r.name,
+              })),
+          ),
         // 입지 5항목 (2026-09-17). 기존 주관 3항목(상권위치·동선/선점경쟁/접근가시성)은 안 쓴다 —
         // 1~5점인데 실제로 3~4개 값만 쓰였고 셋 다 유의선 미달이었다.
         location: {
@@ -678,7 +699,19 @@ export function buildLabCandidateRows({
             parts: rivalQualityParts(x, settings),
             name: x.name ?? null,
           }))
-          .filter((r) => r.ip > 0),
+          .filter((r) => r.ip > 0)
+          .map((r): NonNullable<TextbookInput["rivals"]>[number] => r)
+          // 2km 경쟁점 — 기존점과 **같은 규칙**이다(위 주석).
+          // ⚠️ 다만 후보지는 **평가창이 없다**(아직 개점 전). 시점 판정을 못 하므로
+          //    "지금 영업 중"만 센다 — 개점 시점의 경쟁 환경이 그것이라 이게 맞다.
+          .concat(
+            candidateRival2km(candidateSiteKey(c.code)).map((r) => ({
+              ip: DEFAULT_UNSURVEYED_PC_COUNT * r.share,
+              distanceM: r.distanceM,
+              parts: null as QualityParts | null,
+              name: r.name,
+            })),
+          ),
         location: {
           centrality: c.floating300Avg != null && c.floating1000Avg != null && c.floating1000Avg > 0
             ? (c.floating300Avg / c.floating1000Avg) * (1000 / 300) ** 2
