@@ -428,6 +428,118 @@ describeIf("경쟁점을 주인공으로 — 본 산식", () => {
     expect(hoods.length).toBeGreaterThan(20);
   });
 
+  it("(6) ⭐⭐⭐ 품질 **항목별로** 바깥 표본이 검증한다 — 어느 항목이 진짜 일하나", () => {
+    // 사용자(2026-09-23): *"매장별 편차가 커서 평균값으로 보기 어렵다. 요즘 팀룸 같은 룸
+    //   형태의 시설들이 최근 3년 정도에 많이 확산되었는데 기존 PC방은 없는 거니까 이게
+    //   있고 없고의 편차가 큰 상황이나, 최근 매장이 아니면 룸 형태는 많이 없어서."*
+    //
+    // -> 존구성은 **평균으로 볼 값이 아니라 "룸이 있냐 없냐"의 이분법**에 가깝고,
+    //    **개점 시기**와 얽혀 있다. 그러면 두 가지가 갈린다:
+    //      (가) 룸이 진짜로 손님을 더 끈다     -> 항목이 맞다. 세기만 보면 된다
+    //      (나) 그냥 "최근 매장"의 표시일 뿐이다 -> 경쟁력이 아니라 **코호트**를 재고 있다
+    //
+    // ⭐ 이건 **바깥 표본으로 직접 가를 수 있다.** 경쟁점 47곳에 핑봇 실측이 있으니,
+    //    "존구성이 높은 경쟁점이 실제로 잘 도나"를 재면 된다.
+    //    ⚠️ 경쟁점끼리 견주면 자사 편향이 안 낀다 — 이게 이 시험의 값어치다.
+    type Row = { name: string; util: number; parts: ReturnType<typeof rivalQualityParts>; pc: number };
+    const rs: Row[] = [];
+    for (const h of hoods) {
+      for (const cm of h.comps) {
+        const pv = ping(cm.c);
+        if (pv == null || !(pv > 0)) continue;
+        rs.push({ name: cm.c.name ?? "?", util: pv / 100, parts: rivalQualityParts(cm.c, settings), pc: cm.pc });
+      }
+    }
+    const KEYS = ["spec", "food", "zone", "interior", "management"] as const;
+    const KO: Record<typeof KEYS[number], string> = {
+      spec: "사양", food: "먹거리", zone: "존구성", interior: "인테리어", management: "관리",
+    };
+    console.log(`\n[항목별 — 경쟁점 ${rs.length}곳 · 핑봇 실측으로 검증]`);
+    console.log(`  ⚠️ 경쟁점끼리만 견준다 — 자사 편향이 안 낀다`);
+    console.log(`\n  항목      비중    있는곳  평균   SD    범위        **핑봇 가동률과 r**`);
+    for (const k of KEYS) {
+      const vs = rs.map((r) => r.parts[k]).filter((v): v is number => v != null && Number.isFinite(v));
+      const pr = rs.map((r) => [r.parts[k], r.util] as const)
+        .filter((q): q is readonly [number, number] => q[0] != null && Number.isFinite(q[0]));
+      if (pr.length < 8) { console.log(`  ${KO[k].padEnd(9)}(표본 부족 ${pr.length}곳)`); continue; }
+      const rr = corr(pr.map((q) => q[0]), pr.map((q) => q[1]));
+      const w = P.qualityWeights[k] ?? 0;
+      console.log(`  ${KO[k].padEnd(8)}${(w * 100).toFixed(1).padStart(5)}%${String(vs.length).padStart(7)}`
+        + `${mean(vs).toFixed(2).padStart(7)}${sdOf(vs).toFixed(2).padStart(6)}`
+        + `  ${Math.min(...vs).toFixed(1)}~${Math.max(...vs).toFixed(1)}`.padEnd(13)
+        + `${rr.toFixed(3).padStart(12)}`
+        + (Math.abs(rr) >= 0.29 ? "  ⭐ 유의" : ""));
+    }
+    console.log(`  (n=${rs.length}에서 유의선은 대략 ±0.29)`);
+
+    // 존구성의 이분법성 — 사용자 설명대로면 낮은 쪽에 몰려 있어야 한다
+    const zs = rs.map((r) => r.parts.zone).filter((v): v is number => v != null).sort((a, b) => a - b);
+    if (zs.length) {
+      const lo = zs.filter((v) => v <= 1.2).length;
+      console.log(`\n  [존구성 분포] 1.2 이하가 ${lo}/${zs.length}곳 (${(lo / zs.length * 100).toFixed(0)}%)`
+        + ` — 사용자 설명대로면 "룸 없는 곳"이 여기 몰린다`);
+      const hi = rs.filter((r) => (r.parts.zone ?? 0) > 1.2);
+      const loR = rs.filter((r) => (r.parts.zone ?? 9) <= 1.2);
+      if (hi.length >= 5 && loR.length >= 5) {
+        console.log(`  룸 있는 쪽(>1.2) ${hi.length}곳 가동률 평균 ${(mean(hi.map((r) => r.util)) * 100).toFixed(1)}%`
+          + ` vs 룸 없는 쪽 ${loR.length}곳 ${(mean(loR.map((r) => r.util)) * 100).toFixed(1)}%`);
+        const d = mean(hi.map((r) => r.util)) - mean(loR.map((r) => r.util));
+        const se = Math.sqrt(sdOf(hi.map((r) => r.util)) ** 2 / hi.length + sdOf(loR.map((r) => r.util)) ** 2 / loR.length);
+        console.log(`  차이 ${(d * 100).toFixed(1)}%p · 2SE ${(2 * se * 100).toFixed(1)}%p`
+          + ` -> ${Math.abs(d) > 2 * se ? "✅ **룸이 있으면 실제로 잘 돈다**" : "⚠️ 자료가 차이를 못 본다"}`);
+      }
+    }
+
+    // 비중을 0으로 만들어 보며 바깥 성적이 어떻게 되나 — 항목을 끄는 시험
+    console.log(`\n  [항목을 끄면 바깥(경쟁점) 성적이 어떻게 되나]`);
+    console.log(`  끈 항목        경쟁MAE  경쟁r  | 짝적중  짝r  짝과장 | 자사우위 실측/예측`);
+    const runWithout = (drop: typeof KEYS[number] | null) => {
+      const w = { ...P.qualityWeights };
+      if (drop) w[drop] = 0;
+      const p2 = { ...P, qualityWeights: w };
+      const obs = collect(p2);
+      const riv = obs.filter((o) => !o.isOurs);
+      const byHood = new Map<string, Obs[]>();
+      for (const o of obs) byHood.set(o.hood, [...(byHood.get(o.hood) ?? []), o]);
+      let pairs = 0, hit = 0;
+      const gO: number[] = [], gP: number[] = [], relO: number[] = [], relP: number[] = [];
+      for (const g of byHood.values()) {
+        for (let x = 0; x < g.length; x++) for (let y = x + 1; y < g.length; y++) {
+          pairs += 1;
+          const ao = g[x].act / g[y].act, ap = g[x].pred / g[y].pred;
+          if (Math.sign(ao - 1) === Math.sign(ap - 1)) hit += 1;
+          gO.push(Math.log(ao)); gP.push(Math.log(ap));
+        }
+        const o = g.find((z) => z.isOurs), rr2 = g.filter((z) => !z.isOurs);
+        if (o && rr2.length) {
+          relO.push(Math.log(o.act / mean(rr2.map((z) => z.act))));
+          relP.push(Math.log(o.pred / mean(rr2.map((z) => z.pred))));
+        }
+      }
+      return {
+        rivMae: mean(riv.map((x) => Math.abs(x.pred - x.act))),
+        rivR: corr(riv.map((x) => Math.log(x.pred)), riv.map((x) => Math.log(x.act))),
+        pairHit: hit / pairs, pairR: corr(gP, gO), pairSpread: sdOf(gP) / sdOf(gO),
+        gapObs: Math.exp(med(relO)), gapPred: Math.exp(med(relP)),
+      };
+    };
+    for (const k of [null, ...KEYS] as const) {
+      const s = runWithout(k);
+      console.log(`  ${(k ? KO[k] : "안 끔(지금)").padEnd(13)}`
+        + `${(s.rivMae * 100).toFixed(1).padStart(7)}%p${s.rivR.toFixed(3).padStart(7)} |`
+        + `${(s.pairHit * 100).toFixed(0).padStart(6)}%${s.pairR.toFixed(3).padStart(7)}${s.pairSpread.toFixed(2).padStart(7)}배 |`
+        + `${s.gapObs.toFixed(2).padStart(9)}/${s.gapPred.toFixed(2)}배`
+        + (k === null ? "  ← 지금" : ""));
+    }
+    console.log(`\n  ⭐⭐ 읽는 법`);
+    console.log(`     · 껐더니 **짝 r이 오르고 짝 과장이 1에 가까워지면** 그 항목이 잡음이다`);
+    console.log(`     · 껐더니 나빠지면 그 항목은 **진짜 일을 하고 있다**`);
+    console.log(`     · 존구성이 핑봇과 유의하게 상관이면 -> 룸은 진짜 경쟁력이다(코호트 대리변수가 아니다)`);
+    console.log(`  ⚠️ 경쟁점 품질은 조사 시점(가맹점 오픈 당시) 기준이고 핑봇은 2026-08이다.`);
+    console.log(`     그 사이 리뉴얼한 경쟁점은 점수가 낡았다 — 상관을 약하게 만드는 쪽이다.`);
+    expect(rs.length).toBeGreaterThan(20);
+  });
+
   it("(3) 자사 성적이 본 산식과 맞는지 — 검산", () => {
     // 간이판에서는 자사 MAE가 8.0%p였다(본 산식 5.85%p). 여기서는 본 산식을 그대로 썼으니
     // **자사 성적이 평소 값과 같아야 한다.** 다르면 내가 입력을 잘못 만든 것이다.
