@@ -40,12 +40,12 @@ import {
 import {
   buildQuickCandidate,
   buildQuickLocationEvaluation,
+  RIVAL_PC_COUNT_WHEN_UNSURVEYED,
   type QuickEvalAssembly,
   type QuickEvalCollected,
   type QuickEvalPlanInput,
 } from "@/lib/storeEval/quickEval/buildQuickCandidate";
 import {
-  ADDRESS_ONLY_ACCURACY,
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
   QUICK_EVAL_BACKTEST,
@@ -118,9 +118,6 @@ export default function QuickEvalPage() {
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [peers, setPeers] = useState<QuickEvalPeerSummary | null>(null);
   const lock = useRef(false);
-
-  const headline = ADDRESS_ONLY_ACCURACY.levels[ADDRESS_ONLY_ACCURACY.headlineLevelIndex];
-  const precise = ADDRESS_ONLY_ACCURACY.levels[0];
 
   const planInput = useMemo<QuickEvalPlanInput>(
     () => ({
@@ -413,8 +410,9 @@ export default function QuickEvalPage() {
             *"이거는 삭제해도될듯"*. 조회 화면 머리를 깨끗하게 두라는 뜻이다.
             ⚠️ **다시 붙이지 마라.** 두 내용 다 사라진 게 아니라 아래 접이식
             ("이 숫자를 얼마나 믿나")으로 옮겼다 — 층수 0.0%는 재고표의 항목 설명에,
-            되짚기 성적은 오차표 아래 한 줄에 있다. 지우면 화면에 13.40%만 남아
-            도구 성적을 실제보다 좋게 보여주게 된다. */}
+            되짚기 성적은 그 접이식 첫 줄들에 있다. 도구가 실제보다 얼마나 높게 나오는지는
+            어딘가에 반드시 남아 있어야 한다(2026-09-23에 L0~L3 사다리를 빼면서 그 자리를
+            되짚기 값만 남기도록 정리했다). */}
         {error ? <p className="mt-3 text-sm text-[var(--sl-danger)]">{error}</p> : null}
       </section>
 
@@ -570,8 +568,8 @@ export default function QuickEvalPage() {
               {QUICK_EVAL_RADII.competitor}m
             </h2>
             <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-              카카오 기준입니다. PC 대수는 전부 미확인이라 기본값으로 계산됐습니다 — 이 목록이 맞는지 보는 게
-              현장에서 할 일입니다.
+              카카오 기준입니다. PC 대수는 전부 미확인이라 실측 경쟁점의 평균{" "}
+              {RIVAL_PC_COUNT_WHEN_UNSURVEYED}대로 계산됐습니다 — 이 목록이 맞는지 보는 게 현장에서 할 일입니다.
             </p>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full min-w-[520px] text-sm">
@@ -658,56 +656,24 @@ export default function QuickEvalPage() {
           이 숫자를 얼마나 믿나 · 무엇을 기본값으로 채웠나
         </summary>
 
-        <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
-          {ADDRESS_ONLY_ACCURACY.measuredAt} 기준 {ADDRESS_ONLY_ACCURACY.sampleLabel}으로 실제로 재 본 값입니다
-          (<code className="text-[11px]">{ADDRESS_ONLY_ACCURACY.testFile}</code>).
-        </p>
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[480px] text-sm">
-            <thead>
-              <tr className="text-left text-xs text-[var(--sl-ink-soft)]">
-                <th className="py-1 pr-3">조사 단계</th>
-                <th className="py-1 pr-3 text-right">평균오차</th>
-                <th className="py-1 pr-3 text-right">±10% 안</th>
-                <th className="py-1 text-right">±20% 안</th>
-              </tr>
-            </thead>
-            <tbody className="tabular-nums">
-              {ADDRESS_ONLY_ACCURACY.levels.map((level, index) => {
-                const isHere = index === ADDRESS_ONLY_ACCURACY.headlineLevelIndex;
-                return (
-                  <tr key={level.name} className={isHere ? "font-semibold" : ""}>
-                    <td className="py-1 pr-3">
-                      {level.name}
-                      {isHere ? <span className="ml-1 app-badge app-badge-info">이 화면</span> : null}
-                    </td>
-                    <td className="py-1 pr-3 text-right">{formatPercent(level.mape, 2)}</td>
-                    <td className="py-1 pr-3 text-right">{formatPercent(level.within10, 1)}</td>
-                    <td className="py-1 text-right">{formatPercent(level.within20, 1)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <ul className="mt-2 space-y-1 text-xs text-[var(--sl-ink-soft)]">
+        {/* ⚠️ 2026-09-23 사용자 지시 — L0~L3 조사단계 사다리를 화면에서 **뺐다**.
+            ("L0 L1 L2 L3 이거 구분 사용자에게 알려줄필요있나? 현 산식에 대한 정보만
+            주면될것같은데" · "주소만넣으면평균오차가 어쩌구 (…) 필요없는멘트인듯")
+            그 표는 **검증 배선**(자사는 각 매장 실측)으로 잰 다른 조건이라 이 화면의 성적이
+            아니었고, 하필 L3(13.40%)가 실제 성적보다 좋아 보여 화면이 도구를 과대평가했다.
+            측정 자체는 `ADDRESS_ONLY_ACCURACY`에 그대로 남아 있다 — 화면에서만 뺐다
+            (L1>L2 역전이 "반만 채우지 마라"의 근거라 상수를 버리면 안 된다).
+            ⛔ 화면에 다시 붙이지 마라. 여기에는 **이 도구를 되짚어 잰 값**만 적는다. */}
+        <ul className="mt-3 space-y-1 text-xs text-[var(--sl-ink-soft)]">
           <li>
-            주소만 넣으면 평균오차가 정밀 평가의 {(headline.mape / precise.mape).toFixed(2)}배입니다(
-            {formatPercent(precise.mape, 2)} → {formatPercent(headline.mape, 2)}).
+            {QUICK_EVAL_BACKTEST.measuredAt} 기준, 기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳을
+            후보지인 척(자기 자신은 학습에서 빼고) 이 화면과 같은 배선으로 돌려 실제 매출과 견줬습니다
+            (<code className="text-[11px]">{QUICK_EVAL_BACKTEST.testFile}</code>).
           </li>
           <li>
-            ⚠️ 위 측정은 <strong>기존 가맹점</strong>으로 잰 것이고 가시성을 표본 중앙값으로 고정해서 쟀습니다. 이
-            화면은 가시성을 AI로 매기므로 조건이 완전히 같지 않습니다. 후보지는 경쟁점 자료가 더 부실해 실제로는
-            이보다 나쁠 수 있습니다.
-          </li>
-          {/* ⚠️ 2026-09-22 밤 — 조회 화면 머리에 있던 되짚기 문구를 사용자 지시로 지웠다.
-              그런데 위 표(ADDRESS_ONLY_ACCURACY)는 **검증 배선**으로 잰 값이라 이 도구의
-              성적이 아니다. 이 줄을 지우면 화면에 좋은 숫자만 남는다 — 지우지 마라. */}
-          <li>
-            ⭐ <strong>이 도구 자체를 되짚어 잰 값</strong>은 위 표와 다릅니다. 기존 가맹점{" "}
-            {QUICK_EVAL_BACKTEST.sampleCount}곳을 후보지인 척(자기 자신은 학습에서 빼고) 돌려 보면 평균오차{" "}
-            {formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}이고 실제보다{" "}
-            {((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤 높게 나옵니다(
+            평균오차 <strong>{formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}</strong> · ±20% 안{" "}
+            <strong>{formatPercent(QUICK_EVAL_BACKTEST.within20, 1)}</strong> · 실제보다{" "}
+            <strong>{((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤 높게</strong> 나옵니다(
             {QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳).
           </li>
           <li>

@@ -11,7 +11,11 @@
 
 import { formatManwonRough } from "../format";
 import type { EvaluationResult } from "../types";
-import { ADDRESS_ONLY_ACCURACY, QUICK_EVAL_FIELD_NOTES, QUICK_EVAL_USAGE_LIMIT } from "./quickEvalDefaults";
+import {
+  QUICK_EVAL_BACKTEST,
+  QUICK_EVAL_FIELD_NOTES,
+  QUICK_EVAL_USAGE_LIMIT,
+} from "./quickEvalDefaults";
 import type { QuickEvalAssembly } from "./buildQuickCandidate";
 import type { QuickEvalPeerSummary } from "./quickEvalPeers";
 
@@ -78,8 +82,6 @@ export function buildQuickEvalReviewContext(input: {
 }): string {
   const { result, assembly, collectErrors } = input;
   const c = assembly.candidate;
-  const level = ADDRESS_ONLY_ACCURACY.levels[ADDRESS_ONLY_ACCURACY.headlineLevelIndex];
-  const precise = ADDRESS_ONLY_ACCURACY.levels[0];
 
   const counted = assembly.competitorRows.filter((r) => r.counted);
   const excluded = assembly.competitorRows.filter((r) => !r.counted);
@@ -109,16 +111,27 @@ export function buildQuickEvalReviewContext(input: {
   lines.push(`학습모형: ${result.v61ModelLabel} (학습표본 ${result.v61TrainingSampleCount}곳)`);
   lines.push("");
 
-  lines.push("[이 추정의 오차 — 실제로 측정된 값]");
+  // ⛔ 2026-09-23 정정 — 여기서 `ADDRESS_ONLY_ACCURACY`의 L3(13.40%)를 "이 도구의 오차"로
+  //    넘기고 있었다. **틀렸다.** 그건 검증 배선으로 자사 실측을 쓴 사다리고, 하필 도구의
+  //    실제 성적보다 좋아 보인다 — AI가 그 숫자를 근거로 더 자신 있게 쓰게 된다.
+  //    도구를 되짚어 잰 `QUICK_EVAL_BACKTEST`를 넘긴다.
+  lines.push("[이 추정의 오차 — 이 도구를 되짚어 잰 값]");
   lines.push(
-    `${ADDRESS_ONLY_ACCURACY.measuredAt} 기준 ${ADDRESS_ONLY_ACCURACY.sampleLabel}으로 재 봤다.`,
+    `${QUICK_EVAL_BACKTEST.measuredAt} 기준 기존 가맹점 ${QUICK_EVAL_BACKTEST.sampleCount}곳을`
+      + " **후보지인 척**(조사 자료를 지우고, 자기 자신은 학습에서 뺀 채) 이 도구와 같은 배선으로"
+      + " 돌려 실제 매출과 견줬다.",
   );
   lines.push(
-    `주소만 아는 단계(${level.name}): 평균오차 ${pct(level.mape, 2)} · 중앙값 ${pct(level.median, 2)}`
-      + ` · ±10% 안 ${pct(level.within10, 1)} · ±20% 안 ${pct(level.within20, 1)}`,
+    `평균오차 ${pct(QUICK_EVAL_BACKTEST.mape, 2)} · ±20% 안 ${pct(QUICK_EVAL_BACKTEST.within20, 1)}`
+      + ` · 예측÷실측 중앙 ${QUICK_EVAL_BACKTEST.medianRatio.toFixed(3)}`
+      + `(${QUICK_EVAL_BACKTEST.overCount}/${QUICK_EVAL_BACKTEST.sampleCount}곳이 실제보다 높게 나왔다)`,
   );
   lines.push(
-    `현장조사를 다 한 정밀 평가(${precise.name}): 평균오차 ${pct(precise.mape, 2)} · ±20% 안 ${pct(precise.within20, 1)}`,
+    // ⚠️ 정밀 평가와 견줄 때 **같은 자**를 써야 한다 — 줄 세우기 오차끼리 견준다.
+    //    정밀의 일반 MAPE(8.83%)와 견주면 단위가 다른 값을 나란히 놓는 셈이다.
+    `수준을 맞춘 뒤 남는 줄 세우기 오차는 ${pct(QUICK_EVAL_BACKTEST.leveledMape, 2)}다`
+      + `(현장조사를 다 한 정밀 평가는 같은 자로 ${pct(QUICK_EVAL_BACKTEST.preciseLeveledMape, 2)}).`
+      + " **금액 수준보다 순서가 이 도구의 쓸모다.**",
   );
   lines.push(
     "⚠️ 위 측정은 기존 가맹점으로 잰 것이고, 가시성을 표본 중앙값으로 고정해서 쟀다."
