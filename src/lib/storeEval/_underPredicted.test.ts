@@ -1252,6 +1252,279 @@ describeIf("낮게 본 매장 — 과장의 기전", () => {
     expect(n).toBeGreaterThan(30);
   });
 
+  it("(R) ⭐⭐⭐ 점유율 100% 잘림 — 누가 잘리고, 잘리면 무엇을 잃나", () => {
+    // 사용자(2026-09-24): *"현재 문제로 보이는 건 산식 점유율 부분인 거 같아.
+    //   구미산동점 점유율 100퍼 뜨는 거, 문경시청점 100퍼 뜨는 거 등 문제 있는 거 아닌가?"*
+    //
+    // ── 자름이 어디서 오나 ─────────────────────────────────────────────────
+    // 본체(computeTextbook)의 한 줄이다:
+    //     share = Math.min(1, rawShare x 입지배율^(입지지수 ÷ 눈금지수))
+    // 그런데 `rawShare = 자사PC ÷ (자사PC + 경쟁점무게)`는 **구조상 1을 못 넘는다.**
+    // 즉 저 min(1, ...)이 실제로 무는 건 **입지배율이 곱해질 때뿐**이다.
+    // 자름은 경쟁 구조가 만든 게 아니라 **입지 항이 만든다.**
+    //
+    // ── 잘리면 무엇을 잃나 ─────────────────────────────────────────────────
+    // 잘린 매장끼리는 점유율이 **전부 정확히 100%**가 된다. 그러면 그 매장들 사이에서
+    // 산식이 쓸 수 있는 건 수요/좌석 하나뿐이고, **입지 정보는 통째로 버려진다.**
+    // 후보지 평가에서는 "입지가 좋다"가 점수에 안 실린다는 뜻이다.
+    const cal = P.indexCalibration;
+    const locExpInShare = cal && cal.ratioExponent !== 0 ? cal.locationExponent / cal.ratioExponent : 1;
+    console.log(`\n[자름 진단] 입지 지수 ${cal?.locationExponent} ÷ 눈금 지수 ${cal?.ratioExponent}`
+      + ` = 점유율에 곱하는 지수 **${locExpInShare}**`);
+
+    type Cut = {
+      name: string; act: number; pred: number;
+      rawShare: number; locPow: number; want: number; got: number; lost: number;
+      demandPerSeat: number; rivalW: number; rivalN: number; loc: number;
+    };
+    const cuts: Cut[] = [];
+    for (const r of base) {
+      const act = r.input.actualUtilization;
+      if (act == null || !(act > 0)) continue;
+      const b = computeTextbook(r.input, P);
+      if (b.utilization == null || !(b.utilization > 0) || b.share == null || b.locationMultiplier == null) continue;
+      const pc = r.input.pcCount ?? 0;
+      if (!(pc > 0) || b.totalDemandHours == null) continue;
+      const locPow = Math.pow(b.locationMultiplier, locExpInShare);
+      // rawShare를 되돌린다 — share가 안 잘렸으면 share÷locPow가 rawShare다.
+      // 잘렸으면 되돌릴 수 없으니 경쟁 항을 직접 다시 센다.
+      let rivalW = 0, rivalN = 0;
+      const oq = r.input.ownQualityParts;
+      for (const rv of r.input.rivals ?? []) {
+        if (!(rv.ip > 0)) continue;
+        const dw = rivalDistanceWeight(rv.distanceM, P);
+        if (dw <= 0) continue;
+        let ratio = 1;
+        if (oq && rv.parts) {
+          const o = computeQualityScoreLocal(oq), v = computeQualityScoreLocal(rv.parts);
+          if (o != null && o > 0 && v != null && v > 0) ratio = v / o;
+        }
+        rivalW += rv.ip * Math.pow(ratio, P.qualityExponent) * dw;
+        rivalN += 1;
+      }
+      const rawShare = pc / (pc + rivalW + P.outsideOptionIp);
+      const want = rawShare * locPow;
+      cuts.push({
+        name: r.input.storeName ?? r.input.storeCode, act, pred: b.utilization,
+        rawShare, locPow, want, got: b.share, lost: Math.max(0, want - 1),
+        demandPerSeat: b.totalDemandHours / (pc * 720),
+        rivalW, rivalN, loc: b.locationMultiplier,
+      });
+    }
+    const clipped = cuts.filter((c) => c.want > 1.0005);
+    const near = cuts.filter((c) => c.want > 0.9 && c.want <= 1.0005);
+    console.log(`\n  잘린 매장 **${clipped.length}곳** · 자름 문턱 코앞(90~100%) ${near.length}곳 · 전체 ${cuts.length}곳`);
+    console.log(`\n  매장            경쟁만의몫  x입지^${locExpInShare}   =원래값   ->잘린값  버린몫   예측 -> 실측`);
+    for (const c of [...clipped, ...near].sort((a, b) => b.want - a.want)) {
+      console.log(`  ${c.name.padEnd(14)}${(c.rawShare * 100).toFixed(1).padStart(8)}%`
+        + `${c.locPow.toFixed(3).padStart(11)}`
+        + `${(c.want * 100).toFixed(1).padStart(10)}%`
+        + `${(c.got * 100).toFixed(1).padStart(9)}%`
+        + `${(c.lost * 100).toFixed(1).padStart(8)}%p`
+        + `${(c.pred * 100).toFixed(1).padStart(9)}% -> ${(c.act * 100).toFixed(1)}%`);
+    }
+    console.log(`\n  ⭐ **경쟁만의 몫(rawShare)은 아무도 1을 안 넘는다.** 자름은 전부 입지 항이 만든다.`);
+    console.log(`     잘린 매장끼리는 점유율이 전부 100%로 같아져서 **입지 정보가 버려진다.**`);
+
+    // 잘린 무리 안에서 산식이 무엇으로 매장을 가르고 있나 — 사실상 수요/좌석 하나뿐이다.
+    if (clipped.length >= 2) {
+      console.log(`\n  잘린 무리 안에서 — 산식이 남겨 둔 유일한 차이는 수요/좌석이다`);
+      console.log(`    매장            수요/좌석   예측    실측   (순서가 맞나)`);
+      for (const c of [...clipped].sort((a, b) => a.demandPerSeat - b.demandPerSeat)) {
+        console.log(`    ${c.name.padEnd(14)}${c.demandPerSeat.toFixed(2).padStart(9)}`
+          + `${(c.pred * 100).toFixed(1).padStart(8)}%${(c.act * 100).toFixed(1).padStart(8)}%`);
+      }
+    }
+
+    // ── 자름을 실제로 풀면 어떻게 되나 ─────────────────────────────────────
+    // 자름의 뜻: "동네 수요보다 많이 못 먹는다". 그런데 **수요를 1km 원으로 정의**한 건
+    // 우리 편의지 손님의 사정이 아니다 — 지방은 그 원 밖에서도 온다. 그러니 1을 넘는 게
+    // 개념상 틀렸다고 단정할 수 없다. 실제로 재 본다.
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts2 = use.map((x) => x.act);
+    const actLog2 = acts2.map(Math.log);
+    const n2 = acts2.length;
+    const loo2 = acts2.map((_, i) => mean(acts2.filter((__, j) => j !== i)));
+    const baseMae2 = mean(loo2.map((v, i) => Math.abs(v - acts2[i])));
+    const wantByCode = new Map(cuts.map((c) => [c.name, c.want]));
+    console.log(`\n[재고 표 — 점유율 자름을 풀면] ⭐ 바닥: 전부 평균(LOO) MAE ${(baseMae2 * 100).toFixed(2)}%p`);
+    console.log(`  경우              MAE      최악    편향   ±5%p  퍼짐  분별력 r`);
+    for (const uncap of [false, true]) {
+      const preds = use.map(({ r }) => {
+        const b = computeTextbook(r.input, P);
+        const pc = r.input.pcCount ?? 0;
+        if (b.share == null || b.totalDemandHours == null || !(pc > 0)) return NaN;
+        const dps = b.totalDemandHours / (pc * 720);
+        const want = wantByCode.get(r.input.storeName ?? r.input.storeCode);
+        const sh = uncap && want != null ? want : b.share;
+        // 좌석 상한(maxUtilization)은 **물리적 제약**이라 그대로 둔다
+        return Math.min(P.maxUtilization, dps * sh);
+      });
+      if (preds.some((v) => !Number.isFinite(v))) continue;
+      const abs = preds.map((v, i) => Math.abs(v - acts2[i]));
+      const pl = preds.map(Math.log);
+      console.log(`  ${(uncap ? "자름 없음" : "자름 있음(지금)").padEnd(16)}${(mean(abs) * 100).toFixed(2).padStart(6)}%p`
+        + `${(Math.max(...abs) * 100).toFixed(1).padStart(8)}%p`
+        + `${(mean(preds.map((v, i) => v - acts2[i])) * 100).toFixed(1).padStart(7)}%p`
+        + `  ${String(abs.filter((v) => v <= 0.05).length).padStart(2)}/${n2}`
+        + `${(sdOf(pl) / sdOf(actLog2)).toFixed(2).padStart(6)}배${corr(pl, actLog2).toFixed(3).padStart(9)}`);
+    }
+    console.log(`\n  ⭐ 자름은 2곳에서 1.4~1.8%p만 깎는다 — **푼다고 성적이 달라지지 않는다.**`);
+    console.log(`     자름은 병이 아니라 **표시등**이다: "이 매장은 동네 수요를 다 먹어야 겨우 맞는다".`);
+    expect(cuts.length).toBeGreaterThan(30);
+  });
+
+  it("(S) ⭐⭐⭐ 필요 점유율 — 실측을 맞히려면 몇 %를 먹어야 하나", () => {
+    // (R)에서 문경시청은 **점유율 100%인데도 예측 19.4%**, 실측 30.6%였다.
+    // 점유율이 100%면 예측 가동률 = 수요/좌석이므로, 그 매장은 산식이 **무슨 값을 넣어도
+    // 도달할 수 없다.** 실측이 동네 수요 전체보다 많다는 뜻이다.
+    //
+    // 그래서 매장마다 **필요 점유율 = 실측 가동률 ÷ (수요/좌석)** 을 낸다.
+    // 이건 2026-09-16에 사용자가 설계한 `shareMode="off"` 진단과 같은 값이다 —
+    // "이 매장이 실제로 먹은 몫". 이 값으로 **수요식을 2차 검증**할 수 있다.
+    //
+    //   · 필요 점유율 > 100%  -> 수요 추정이 **확실히 낮다**(구조적으로 못 맞힌다)
+    //   · 필요 점유율이 90% 언저리에 몰림 -> 점유율 층이 **여유가 없다**
+    //   · 필요 점유율과 산식 점유율의 상관 -> 점유율 층이 **제 일을 하나**
+    type S = { name: string; act: number; dps: number; need: number; got: number; rivalW: number; rivalN: number };
+    const ss: S[] = [];
+    for (const r of base) {
+      const act = r.input.actualUtilization;
+      if (act == null || !(act > 0)) continue;
+      const b = computeTextbook(r.input, P);
+      if (b.utilization == null || b.share == null || b.totalDemandHours == null) continue;
+      const pc = r.input.pcCount ?? 0;
+      if (!(pc > 0)) continue;
+      const dps = b.totalDemandHours / (pc * 720);
+      if (!(dps > 0)) continue;
+      let rivalW = 0, rivalN = 0;
+      for (const rv of r.input.rivals ?? []) {
+        if (!(rv.ip > 0)) continue;
+        const dw = rivalDistanceWeight(rv.distanceM, P);
+        if (dw > 0) { rivalW += rv.ip * dw; rivalN += 1; }
+      }
+      ss.push({ name: r.input.storeName ?? r.input.storeCode, act, dps, need: act / dps, got: b.share, rivalW, rivalN });
+    }
+    const impossible = ss.filter((x) => x.need > 1);
+    const tight = ss.filter((x) => x.need > 0.85 && x.need <= 1);
+    console.log(`\n[필요 점유율] 실측 ÷ (수요/좌석) · n=${ss.length}`);
+    console.log(`  ⛔ **100%를 넘는 매장 ${impossible.length}곳** — 산식이 구조적으로 못 맞힌다`);
+    console.log(`  ⚠️ 85~100%로 여유 없는 매장 ${tight.length}곳`);
+    const needs = ss.map((x) => x.need).sort((a, b) => a - b);
+    console.log(`  필요 점유율 분포: 중앙 ${(needs[Math.floor(ss.length / 2)] * 100).toFixed(0)}%`
+      + ` · 범위 ${(needs[0] * 100).toFixed(0)}~${(needs[needs.length - 1] * 100).toFixed(0)}%`);
+
+    console.log(`\n  필요 점유율이 높은 10곳 (수요 추정이 의심스러운 순서)`);
+    console.log(`    매장            수요/좌석  필요 점유율  산식 점유율   실측    경쟁점`);
+    for (const x of [...ss].sort((a, b) => b.need - a.need).slice(0, 10)) {
+      console.log(`    ${x.name.padEnd(14)}${x.dps.toFixed(2).padStart(8)}`
+        + `${(x.need * 100).toFixed(0).padStart(10)}%${(x.got * 100).toFixed(0).padStart(11)}%`
+        + `${(x.act * 100).toFixed(1).padStart(8)}%${String(x.rivalN).padStart(8)}곳`
+        + (x.need > 1 ? "  ⛔" : ""));
+    }
+
+    // ── 점유율 층이 제 일을 하나 ────────────────────────────────────────────
+    const need = ss.map((x) => Math.log(x.need)), got = ss.map((x) => Math.log(x.got));
+    const dps = ss.map((x) => Math.log(x.dps));
+    console.log(`\n[점유율 층 검산] 전부 log`);
+    console.log(`  산식 점유율 vs **필요 점유율**       r = ${corr(got, need).toFixed(3)}   ← 이게 점유율 층의 성적표다`);
+    console.log(`  수요/좌석  vs **필요 점유율**       r = ${corr(dps, need).toFixed(3)}   ← 강한 음수면 수요 오차를 점유율이 뒤집어쓴다`);
+    console.log(`  산식 점유율 퍼짐 ${sdOf(got).toFixed(3)} vs 필요 점유율 퍼짐 ${sdOf(need).toFixed(3)}`
+      + ` · **과장 ${(sdOf(got) / sdOf(need)).toFixed(2)}배**`);
+    const ma = mean(need), mb = mean(got);
+    console.log(`  기울기(필요를 산식으로 회귀) = ${(mean(got.map((v, i) => (v - mb) * (need[i] - ma))) / (sdOf(need) ** 2)).toFixed(3)}  (교과서 값 1.000)`);
+    console.log(`\n  ⭐ 읽는 법`);
+    console.log(`     · 필요 점유율이 100%를 넘는 매장이 있으면 **수요층이 그 매장에서 낮다** —`);
+    console.log(`       점유율을 아무리 고쳐도 못 맞힌다. 고칠 자리는 점유율이 아니라 수요다`);
+    console.log(`     · 산식 점유율이 필요 점유율보다 **더 넓게 퍼져 있으면** 점유율 층이 과장한다`);
+    expect(ss.length).toBeGreaterThan(30);
+  });
+
+  it("(T) ⭐⭐⭐ 왜 두 층이 다 멀쩡한데 합치면 지나 — 오차 예산을 맞춰 본다", () => {
+    // (S)에서 점유율 층은 필요 점유율을 r=0.838로 따라가고 퍼짐도 0.95배(과장 아님)였다.
+    // 그런데 산식 전체는 r=0.516이고 '전부 평균'에 진다. 모순처럼 보인다. 왜인가.
+    //
+    // ── 산수로 풀린다 ──────────────────────────────────────────────────────
+    //   log(실측)  = log(수요/좌석) + log(필요 점유율)
+    //   log(예측)  = log(수요/좌석) + log(산식 점유율)
+    // **수요/좌석 항이 양쪽에 똑같이 들어 있다.** 그래서 오차는 정확히
+    //   오차 = log(필요 점유율) − log(산식 점유율)
+    // 이다. 문제는 **필요 점유율의 퍼짐이 실측 가동률의 퍼짐보다 훨씬 크다**는 것이다.
+    // 필요 점유율은 수요/좌석이 만든 퍼짐을 **되돌려야** 하기 때문이다.
+    //
+    // 즉 산식은 **크고 서로 반대로 움직이는 두 수를 곱해서 작은 수를 만들려고** 한다.
+    // 어느 한쪽의 오차가 작아도, 만들려는 답이 더 작아서 오차가 답을 덮는다.
+    const A: number[] = [], D: number[] = [], G: number[] = [], N: number[] = [];
+    for (const r of base) {
+      const act = r.input.actualUtilization;
+      if (act == null || !(act > 0)) continue;
+      const b = computeTextbook(r.input, P);
+      if (b.utilization == null || b.share == null || b.totalDemandHours == null) continue;
+      const pc = r.input.pcCount ?? 0;
+      if (!(pc > 0)) continue;
+      const dps = b.totalDemandHours / (pc * 720);
+      if (!(dps > 0)) continue;
+      A.push(Math.log(act)); D.push(Math.log(dps)); G.push(Math.log(b.share)); N.push(Math.log(act / dps));
+    }
+    const resid = N.map((v, i) => v - G[i]);
+    console.log(`\n[오차 예산] 전부 log 퍼짐(SD) · n=${A.length}`);
+    console.log(`  맞히려는 것 — 실측 가동률        ${sdOf(A).toFixed(3)}`);
+    console.log(`  수요/좌석 (양쪽에 공통)          ${sdOf(D).toFixed(3)}`);
+    console.log(`  필요 점유율 (수요를 되돌려야 함)   ${sdOf(N).toFixed(3)}  ← 맞히려는 것보다 **${(sdOf(N) / sdOf(A)).toFixed(1)}배 크다**`);
+    console.log(`  산식 점유율                     ${sdOf(G).toFixed(3)}`);
+    console.log(`  남는 오차 = 필요 − 산식          ${sdOf(resid).toFixed(3)}  ← 실측 퍼짐 ${sdOf(A).toFixed(3)}보다 **크다**`);
+    console.log(`\n  점유율 층이 필요 점유율의 분산을 얼마나 설명하나`
+      + ` = ${((1 - (sdOf(resid) ** 2) / (sdOf(N) ** 2)) * 100).toFixed(0)}%`);
+    console.log(`  그런데 그 나머지(${sdOf(resid).toFixed(3)})가 **답의 퍼짐(${sdOf(A).toFixed(3)})보다 커서** 바닥에 진다.`);
+
+    // ── 그럼 수요/좌석의 퍼짐을 줄이면 어떻게 되나 — **천장만 잰다** ────────
+    // ⚠️ 이건 채택 후보가 **아니다.** 지수를 붙이는 건 기전이 아니다(어제 끈 눈금 보정 b와 같다).
+    //    다만 "수요 퍼짐이 진짜 병목인가"를 가르는 데는 이 천장이 답을 준다:
+    //    · 줄여도 r이 안 오르면 -> 수요 퍼짐은 병목이 아니다. 딴 데를 파라
+    //    · 크게 오르면 -> **상권 반경이 밀도에 따라 달라진다**는 기전을 진짜로 구현할 값이 있다
+    //      (지방은 상권이 넓어 1km 원 밖에서도 오고, 도심은 좁다. 지금은 반경이 고정이다)
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const looMean = acts.map((_, i) => mean(acts.filter((__, j) => j !== i)));
+    const baseMae = mean(looMean.map((v, i) => Math.abs(v - acts[i])));
+    const hiSet = new Set([...rows].sort((a, b) => a.rivalW - b.rivalW).slice(Math.floor(rows.length / 2)).map((r) => r.name));
+    const hiIdx = use.map((_, i) => i).filter((i) => hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+    const loIdx = use.map((_, i) => i).filter((i) => !hiSet.has(use[i].r.input.storeName ?? use[i].r.input.storeCode));
+    const gD = Math.exp(mean(D));
+    console.log(`\n[천장 재기 — 수요/좌석 퍼짐을 α제곱으로 줄이면] ⭐ 바닥: 전부 평균 ${(baseMae * 100).toFixed(2)}%p`);
+    console.log(`  ⚠️ **채택 후보가 아니다.** 방향이 살아 있는지만 본다`);
+    console.log(`  α        MAE      최악    편향   ±5%p  퍼짐  분별력 r   경쟁 센   약한`);
+    for (const a of [1, 0.8, 0.6, 0.4, 0.2, 0]) {
+      const preds = use.map(({ r }) => {
+        const b = computeTextbook(r.input, P);
+        const pc = r.input.pcCount ?? 0;
+        if (b.share == null || b.totalDemandHours == null || !(pc > 0)) return NaN;
+        const dps = b.totalDemandHours / (pc * 720);
+        // 기하평균 기준으로 눌러서 **수준은 안 건드린다** — 퍼짐만 바꾼다
+        const dps2 = gD * Math.pow(dps / gD, a);
+        return Math.min(P.maxUtilization, dps2 * b.share);
+      });
+      if (preds.some((v) => !Number.isFinite(v))) continue;
+      const abs = preds.map((v, i) => Math.abs(v - acts[i]));
+      const pl = preds.map(Math.log);
+      console.log(`  ${a.toFixed(1).padStart(3)}${(mean(abs) * 100).toFixed(2).padStart(9)}%p`
+        + `${(Math.max(...abs) * 100).toFixed(1).padStart(8)}%p`
+        + `${(mean(preds.map((v, i) => v - acts[i])) * 100).toFixed(1).padStart(7)}%p`
+        + `  ${String(abs.filter((v) => v <= 0.05).length).padStart(2)}/${n}`
+        + `${(sdOf(pl) / sdOf(actLog)).toFixed(2).padStart(6)}배${corr(pl, actLog).toFixed(3).padStart(9)}`
+        + `${(mean(hiIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(11)}%p`
+        + `${(mean(loIdx.map((i) => abs[i])) * 100).toFixed(2).padStart(9)}%p`
+        + (a === 1 ? "  ← 지금" : ""));
+    }
+    console.log(`\n  ⭐ α=0은 "수요/좌석을 전 매장 같은 값으로" — 점유율 층 혼자 맞히는 경우다.`);
+    console.log(`     거기서 r이 지금보다 높으면 **수요 층이 순손해**라는 뜻이다.`);
+    expect(A.length).toBeGreaterThan(30);
+  });
+
   it("(C) 낮게 본 무리 vs 높게 본 무리 — 층별 평균을 갈라 본다", () => {
     const sorted = [...rows].sort((a, b) => a.pred - b.pred);
     const lo = sorted.slice(0, 8), hi = sorted.slice(-8);
