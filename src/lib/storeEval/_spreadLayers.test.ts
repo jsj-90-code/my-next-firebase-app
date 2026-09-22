@@ -107,6 +107,94 @@ describeIf("퍼짐 과장 — 어느 층이 과장하나", () => {
     expect(rows.length).toBeGreaterThan(30);
   });
 
+  it("(3) ⭐ 입지 두 조각을 따로 본다 — 개념은 맞는데 계산이 틀렸다면 어디인가", () => {
+    // 사용자(2026-09-22): *"경쟁점 1층인데 우리 7층이야. 유입에 불리함.
+    //   우리매장 상권 끝에 있어, 점포 옆은 그냥 공터야. 이러면 유입에 불리함. 이런 개념이지."*
+    // => **항목은 맞다.** `항목은 뜻으로, 계수만 자료로` — 빼지 않는다. 계산을 파야 한다.
+    //
+    // 그 두 예시가 산식의 두 조각과 그대로 대응한다:
+    //   "우리 7층"      -> 접근성(access)   = 층·지상여부·엘리베이터
+    //   "상권 끝, 공터"  -> 중심도(centrality) = 유동 300m ÷ 1km (반경비로 정규화)
+    // 합쳐서 실측과 음의 상관인데, **둘 다 음수인지 한쪽이 끌어내리는지**를 갈라 본다.
+    const A: number[] = [], cen: number[] = [], acc: number[] = [], resid: number[] = [];
+    const named: { name: string; act: number; cen: number | null; acc: number | null; loc: number }[] = [];
+    for (const r of base) {
+      const act = r.input.actualUtilization;
+      if (act == null || !(act > 0)) continue;
+      const b = computeTextbook(r.input, P);
+      if (b.utilization == null || !(b.utilization > 0) || b.locationMultiplier == null) continue;
+      const c = r.input.location?.centrality ?? null;
+      const a = r.input.location?.access ?? null;
+      named.push({ name: r.input.storeName ?? r.input.storeCode, act, cen: c, acc: a, loc: b.locationMultiplier });
+      A.push(Math.log(act));
+      // 잔차 = 실측 ÷ 예측. 입지를 빼고 본 예측 대비 남는 몫이 입지와 맞아야 한다.
+      resid.push(Math.log(act) - (Math.log(b.utilization) - Math.log(b.locationMultiplier) * P.indexCalibration!.locationExponent));
+      cen.push(c != null && c > 0 ? Math.log(c) : NaN);
+      acc.push(a != null && a > 0 ? Math.log(a) : NaN);
+    }
+    const pairs = (x: number[], y: number[]) => {
+      const idx = x.map((v, i) => (Number.isFinite(v) && Number.isFinite(y[i]) ? i : -1)).filter((i) => i >= 0);
+      return [idx.map((i) => x[i]), idx.map((i) => y[i])] as const;
+    };
+    const show = (label: string, v: number[]) => {
+      const [a1, b1] = pairs(v, A);
+      const [a2, b2] = pairs(v, resid);
+      console.log(`  ${label.padEnd(16)}n=${String(a1.length).padStart(3)}`
+        + `   실측 가동률과 r = ${corr(a1, b1).toFixed(3).padStart(7)}`
+        + `   입지 뺀 잔차와 r = ${corr(a2, b2).toFixed(3).padStart(7)}`);
+    };
+    console.log(`\n[입지 두 조각] 유의선 ±0.41(여러 개를 훑을 때의 자) · 둘 다 log`);
+    show("중심도", cen);
+    show("접근성", acc);
+    show("입지배율(합)", named.map((x) => Math.log(x.loc)));
+    console.log(`\n  ⭐ "입지 뺀 잔차와의 상관"이 진짜 판정이다 — 입지가 설명해야 할 몫과 맞물리나.`);
+    console.log(`     양수면 방향이 맞고(더 좋은 입지 = 더 잘 됨), 음수면 **반대로 작동**한다.`);
+    // 극단 매장을 눈으로 확인한다 — 숫자만 보면 자료 오류를 못 잡는다.
+    const byAcc = named.filter((x) => x.acc != null).sort((a, b) => (a.acc as number) - (b.acc as number));
+    console.log(`\n  접근성 낮은 5곳 / 높은 5곳 (점수 · 실측 가동률)`);
+    for (const x of byAcc.slice(0, 5)) console.log(`    ${x.name.padEnd(16)}${(x.acc as number).toFixed(2)}점  ${(x.act * 100).toFixed(1)}%`);
+    console.log(`    ...`);
+    for (const x of byAcc.slice(-5)) console.log(`    ${x.name.padEnd(16)}${(x.acc as number).toFixed(2)}점  ${(x.act * 100).toFixed(1)}%`);
+    const byCen = named.filter((x) => x.cen != null).sort((a, b) => (a.cen as number) - (b.cen as number));
+    console.log(`\n  중심도 낮은 5곳 / 높은 5곳 (지수 · 실측 가동률)`);
+    for (const x of byCen.slice(0, 5)) console.log(`    ${x.name.padEnd(16)}${(x.cen as number).toFixed(2)}  ${(x.act * 100).toFixed(1)}%`);
+    console.log(`    ...`);
+    for (const x of byCen.slice(-5)) console.log(`    ${x.name.padEnd(16)}${(x.cen as number).toFixed(2)}  ${(x.act * 100).toFixed(1)}%`);
+    // ── 그럼 세기가 맞나 — 지금 지수는 0.169다 ──────────────────────────────
+    // 잔차와 r=0.48인데 성적이 안 움직인다면, 방향이 아니라 **세기**가 문제일 수 있다.
+    // ⛔ 여기서 값을 고르지 않는다. 재고 표만 남긴다.
+    const rowsU = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const scoreAt = (exp: number) => {
+      const P2 = { ...P, indexCalibration: { ...P.indexCalibration!, locationExponent: exp } };
+      const errs: number[] = [], preds: number[] = [];
+      for (const { r, act } of rowsU) {
+        const b = computeTextbook(r.input, P2);
+        if (b.utilization == null || !(b.utilization > 0)) continue;
+        errs.push(b.utilization - act); preds.push(Math.log(b.utilization));
+      }
+      const abs = errs.map(Math.abs);
+      const actLog = rowsU.map((x) => Math.log(x.act));
+      return {
+        mae: mean(abs), worst: Math.max(...abs), bias: mean(errs),
+        within5: abs.filter((v) => v <= 0.05).length,
+        spread: sdOf(preds) / sdOf(actLog),
+      };
+    };
+    console.log(`\n[재고 표] 입지 지수(locationExponent)를 바꿔 본다 · 지금 ${P.indexCalibration!.locationExponent}`);
+    console.log(`  지수      MAE       최악      편향     ±5%p   퍼짐`);
+    for (const e of [0, 0.169, 0.3, 0.5, 0.75, 1.0]) {
+      const s = scoreAt(e);
+      const tag = e === P.indexCalibration!.locationExponent ? "  ← 지금" : e === 1 ? "  ← 교과서" : "";
+      console.log(`  ${e.toFixed(3).padStart(5)}${(s.mae * 100).toFixed(2).padStart(9)}%p`
+        + `${(s.worst * 100).toFixed(2).padStart(9)}%p${(s.bias * 100).toFixed(2).padStart(9)}%p`
+        + `  ${String(s.within5).padStart(2)}/${rowsU.length}  ${s.spread.toFixed(2)}배${tag}`);
+    }
+    console.log(`\n  ⛔ **값을 고르지 않는다.** 사용자가 정할 자리다.`);
+    console.log(`  ⚠️ 지수를 올리면 퍼짐이 늘 수 있다 — MAE만 보지 말고 퍼짐·최악을 같이 봐라.`);
+    expect(named.length).toBeGreaterThan(30);
+  });
+
   it("(2) 층을 하나씩 평균으로 눌러 본다 — ⚠️ 진단일 뿐 채택 후보가 아니다", () => {
     const A = rows.map((r) => Math.log(r.act));
     const geoOf = (v: number[]) => Math.exp(mean(v));
@@ -127,8 +215,14 @@ describeIf("퍼짐 과장 — 어느 층이 과장하나", () => {
       { name: "지금 그대로", get: (r) => r.pred },
       { name: "수요를 전부 평균으로", get: (r) => mDemand * r.share * r.loc / r.cap },
       { name: "점유율을 전부 평균으로", get: (r) => r.demandH * mShare * r.loc / r.cap },
-      { name: "입지를 전부 평균으로", get: (r) => r.demandH * r.share * mLoc / r.cap },
+      // ⛔ **입지 행은 뺐다 — 내가 틀리게 쟀다**(2026-09-22 정정).
+      //    `b.share`에는 **이미 입지배율이 지수와 함께 반영돼 있다**
+      //    (textbookModel: share = rawShare × locationMultiplier^locExp).
+      //    여기서 `r.loc`을 또 곱하면 입지를 **두 번**, 그것도 지수 없이 1제곱으로 곱한 것이다.
+      //    그 잘못된 값으로 "입지는 일을 안 한다"는 결론을 냈다가 (3)번에서 뒤집혔다.
+      //    입지의 영향은 **산식 안에서 지수를 바꿔** 재야 한다 — (3)번 재고 표가 그것이다.
     ];
+    void mLoc;
     console.log(`\n[층 누르기] 그 층의 매장별 차이를 없애면 어떻게 되나`);
     console.log(`  경우                      MAE       최악      편향     ±5%p   퍼짐`);
     for (const c of cases) {
