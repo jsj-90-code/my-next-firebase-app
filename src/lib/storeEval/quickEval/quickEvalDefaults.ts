@@ -178,12 +178,12 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     needsFieldCheck: false,
   },
   {
-    label: "자사 PC대수·시급",
+    label: "자사 PC대수·기본요금",
     source: "사람이 입력",
     basis:
       "조사값이 아니라 **기획값**이다. 재 보니 결과를 제일 크게 움직인다 — PC 80→130대에서 " +
       `${pct(QUICK_EVAL_INPUT_SENSITIVITY.pcCountEffect.low)}~${pct(QUICK_EVAL_INPUT_SENSITIVITY.pcCountEffect.high)}, ` +
-      `시급 1000→1800원에서 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.low)}~` +
+      `기본요금 1,000→1,800원에서 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.low)}~` +
       `${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.high)}. 비우면 계산이 안 된다`,
     needsFieldCheck: false,
   },

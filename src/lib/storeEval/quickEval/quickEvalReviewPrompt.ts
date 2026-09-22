@@ -9,7 +9,7 @@
 //    인용하게 하고, 프롬프트에서 "계산을 다시 하지 말라"고 못 박는다. 이 저장소의 오래된
 //    원칙이다(AI는 추정값을 만들지 않는다 — locationEvalAi.ts 머리 주석과 같은 이유).
 
-import { formatManwonRough } from "../format";
+import { formatManwonPerPc, formatManwonRough } from "../format";
 import type { EvaluationResult } from "../types";
 import {
   QUICK_EVAL_BACKTEST,
@@ -67,6 +67,11 @@ export const QUICK_EVAL_REVIEW_SYSTEM_PROMPT = [
 const pct = (v: number | null | undefined, digits = 1) =>
   v == null ? "자료 없음" : `${(v * 100).toFixed(digits)}%`;
 const won = (v: number | null | undefined) => (v == null ? "자료 없음" : formatManwonRough(v));
+// ⚠️ **대당 매출에 won()을 쓰지 마라.** formatManwonRough는 100만원 단위로 반올림해서
+//    65만원을 "100만원"으로, 38만원을 "0만원"으로 뭉갠다(실측 대당은 37.8만~87.9만 범위다).
+//    2026-09-23에 화면·프롬프트 8곳이 그렇게 돌고 있었다 — AI가 그 뭉갠 값으로 자기 매출을
+//    셈하고 있었으므로 결과에 직접 영향이 있었다. 대당은 언제나 formatManwonPerPc다.
+const wonPerPc = (v: number | null | undefined) => (v == null ? "자료 없음" : formatManwonPerPc(v));
 const int = (v: number | null | undefined) =>
   v == null ? "자료 없음" : Math.round(v).toLocaleString("ko-KR");
 
@@ -91,7 +96,7 @@ export function buildQuickEvalReviewContext(input: {
   lines.push("[후보지]");
   lines.push(`이름: ${c.name || "(무명)"}`);
   lines.push(`주소: ${c.roadAddress ?? c.address}`);
-  lines.push(`자사 기획값: 예상 PC ${int(c.expectedPcCount)}대 · 시간당 ${int(c.hourlyRate)}원`
+  lines.push(`자사 기획값: 예상 PC ${int(c.expectedPcCount)}대 · 기본요금 ${int(c.hourlyRate)}원`
     + ` · ${c.floor == null ? "층 미정" : `${c.groundLevel ?? ""}${c.floor}층`}`
     + ` · 엘리베이터 ${c.hasElevator == null ? "미정" : c.hasElevator ? "있음" : "없음"}`);
   lines.push("");
@@ -175,28 +180,28 @@ export function buildQuickEvalReviewContext(input: {
         (hasDemand ? "이 후보지와 상권수요가 가까운 순" : "⚠️ 후보지 상권수요를 몰라 매출 높은 순") +
         `으로 ${p.nearest.length}곳:`,
     );
-    lines.push("  매장 / 개점 / 상권수요(후보지 대비) / 경쟁IP / PC대수 / 시급 / 실제월매출 / 대당월매출");
+    lines.push("  매장 / 개점 / 상권수요(후보지 대비) / 경쟁IP / PC대수 / 기본요금 / 실제월매출 / 대당월매출");
     for (const peer of p.nearest) {
       lines.push(
         `  - ${peer.storeName} / ${peer.openedAt ?? "개점일 모름"}` +
           ` / ${int(peer.marketDemand)}${peer.demandRatio != null ? `(${peer.demandRatio.toFixed(2)}배)` : ""}` +
           ` / ${int(peer.competitorIp)} / ${int(peer.pcCount)}대 / ${int(peer.hourlyRate)}원` +
-          ` / ${won(peer.actualMonthlyRevenueAvg)} / ${won(peer.revenuePerPc)}`,
+          ` / ${won(peer.actualMonthlyRevenueAvg)} / ${wonPerPc(peer.revenuePerPc)}`,
       );
     }
     lines.push(
-      `  가까운 ${p.nearest.length}곳의 대당월매출: 최소 ${won(p.nearestRevenuePerPc.min)}` +
-        ` · 중앙 ${won(p.nearestRevenuePerPc.median)} · 최대 ${won(p.nearestRevenuePerPc.max)}`,
+      `  가까운 ${p.nearest.length}곳의 대당월매출: 최소 ${wonPerPc(p.nearestRevenuePerPc.min)}` +
+        ` · 중앙 ${wonPerPc(p.nearestRevenuePerPc.median)} · 최대 ${wonPerPc(p.nearestRevenuePerPc.max)}`,
     );
     lines.push(
       `  가맹점 전체 중앙값: 상권수요 ${int(p.medians.marketDemand)} · ${int(p.medians.pcCount)}대` +
-        ` · 시급 ${int(p.medians.hourlyRate)}원 · 월매출 ${won(p.medians.actualMonthlyRevenueAvg)}` +
-        ` · 대당 ${won(p.medians.revenuePerPc)}`,
+        ` · 기본요금 ${int(p.medians.hourlyRate)}원 · 월매출 ${won(p.medians.actualMonthlyRevenueAvg)}` +
+        ` · 대당 ${wonPerPc(p.medians.revenuePerPc)}`,
     );
     lines.push(
       "  ⚠️ 이 표의 값은 저장된 기존점 자료를 그대로 쓴 것이라 산식이 쓰는 값과 미세하게 다를 수 있다.",
     );
-    lines.push("  ⚠️ 개점 시점이 다르면 시급·1인당 이용시간이 달라 대당매출도 달라진다 — 개점일을 같이 보라.");
+    lines.push("  ⚠️ 개점 시점이 다르면 기본요금·1인당 이용시간이 달라 대당매출도 달라진다 — 개점일을 같이 보라.");
     lines.push("");
   } else {
     lines.push("[우리 가맹점 실적표]");

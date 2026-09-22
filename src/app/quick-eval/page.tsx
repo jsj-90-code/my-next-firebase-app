@@ -349,7 +349,7 @@ export default function QuickEvalPage() {
             />
           </label>
           <label className="block w-[120px] text-sm">
-            <span className="text-[var(--sl-ink-soft)]">시간당요금</span>
+            <span className="text-[var(--sl-ink-soft)]">기본요금</span>
             <input
               className="app-input mt-1 w-full rounded-lg px-3 py-2 tabular-nums"
               inputMode="numeric"
@@ -513,9 +513,8 @@ export default function QuickEvalPage() {
                       <th className="py-1 pr-3 text-right">상권수요</th>
                       <th className="py-1 pr-3 text-right">경쟁IP</th>
                       <th className="py-1 pr-3 text-right">대수</th>
-                      <th className="py-1 pr-3 text-right">시급</th>
-                      <th className="py-1 pr-3 text-right">실제월매출</th>
-                      <th className="py-1 text-right">대당</th>
+                      <th className="py-1 pr-3 text-right">기본요금</th>
+                      <th className="py-1 text-right">실제월매출</th>
                     </tr>
                   </thead>
                   <tbody className="tabular-nums">
@@ -534,18 +533,15 @@ export default function QuickEvalPage() {
                         <td className="py-1 pr-3 text-right">{fmtInt(peer.competitorIp)}</td>
                         <td className="py-1 pr-3 text-right">{fmtInt(peer.pcCount)}</td>
                         <td className="py-1 pr-3 text-right">{fmtInt(peer.hourlyRate)}</td>
-                        <td className="py-1 pr-3 text-right">{formatManwonRough(peer.actualMonthlyRevenueAvg)}</td>
-                        <td className="py-1 text-right">{formatManwonRough(peer.revenuePerPc)}</td>
+                        <td className="py-1 text-right">{formatManwonRough(peer.actualMonthlyRevenueAvg)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-                상권수요가 이 후보지와 가까운 순입니다. 대당 월매출 최소 {formatManwonRough(peers.nearestRevenuePerPc.min)}{" "}
-                · 중앙 {formatManwonRough(peers.nearestRevenuePerPc.median)} · 최대{" "}
-                {formatManwonRough(peers.nearestRevenuePerPc.max)}. ⚠️ 개점 시점이 다르면 시급·이용시간이 달라
-                대당매출도 달라집니다.
+                상권수요가 이 후보지와 가까운 순입니다. ⚠️ 개점 시점이 다르면 기본요금·이용시간이 달라
+                같은 대수라도 매출이 달라집니다 — 개점일을 같이 보세요.
               </p>
             </details>
           ) : null}
