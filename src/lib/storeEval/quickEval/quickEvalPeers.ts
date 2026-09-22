@@ -27,9 +27,51 @@ import type { ExistingStore } from "../types";
  *    그래서 실험실이 쓰는 것과 **같은 목록**으로, 이 도구 안에서만 포함한다.
  */
 export function isUsableForQuickEval(s: ExistingStore): boolean {
+  return isQuickEvalIncluded(s) && (s.actualMonthlyRevenueAvg ?? 0) > 0;
+}
+
+/** 브랜드·학습제외만 본다(실매출 조건은 쓰는 쪽에서 따로 건다). */
+function isQuickEvalIncluded(s: ExistingStore): boolean {
   if (s.brandType !== "블랙라벨") return false;
-  if ((s.actualMonthlyRevenueAvg ?? 0) <= 0) return false;
   return !s.excludedFromModel || LAB_ONLY_INCLUDED_STORE_CODES.has(s.storeCode);
+}
+
+/** QSC 기록이 없는 매장 — 관리가 '가맹점 평균'으로 들어가 버린다. */
+const QUICK_EVAL_NO_QSC_STORE_CODES: ReadonlySet<string> = new Set(["20250124421"]); // 동탄북광장점
+
+/**
+ * ⭐ **이 도구 안에서만** 두 매장을 V62 학습에도 넣는다 (사용자 2026-09-22:
+ * *"송도 동탄은 둘 다 넣어줘라"* · *"주소만 자동화에만 적용하는 거다. 딴 곳에는 적용하지 말고"*).
+ *
+ * `excludedFromModel`을 **Firestore에서 풀지 않는다** — 그러면 운영 V62 학습 표본이 같이 바뀌어
+ * 결재 숫자가 움직인다(2026-09-21 실측: MAPE 8.83 -> 9.79%, 후보지 매출 −0.5~−3.9%. 그때
+ * 사용자가 되돌렸다). 대신 **사본에서만** 플래그를 내려 이 화면의 계산에만 반영한다.
+ */
+export function prepareQuickEvalTrainingStores(stores: ExistingStore[]): ExistingStore[] {
+  return stores.map((s) =>
+    s.excludedFromModel && LAB_ONLY_INCLUDED_STORE_CODES.has(s.storeCode)
+      ? { ...s, excludedFromModel: false }
+      : s,
+  );
+}
+
+/**
+ * QSC가 없는 매장에 **가맹점 최저점**을 넣는다 (사용자 2026-09-22: *"동탄북광장 최저점 넣어서
+ * 해 그냥. 가맹점 최저점"*). 동탄북광장점은 관리가 나쁜데 QSC 기록이 없어서, 그냥 넣으면
+ * 관리가 '가맹점 평균'으로 들어가 관리 불량이 산식에 전달되지 않는다.
+ *
+ * ⚠️ 최저점을 **상수로 박지 않고 그때그때 최저값을 찾아 쓴다** — 점검이 쌓이면 따라 움직인다.
+ * ⚠️ Firestore의 QSC 자료는 안 건드린다. 이 화면의 계산에만 쓰는 사본이다.
+ */
+export function applyQuickEvalQscFloor(qsc: ReadonlyMap<string, number>): Map<string, number> {
+  const out = new Map(qsc);
+  const values = [...qsc.values()].filter((v) => Number.isFinite(v) && v > 0);
+  if (!values.length) return out;
+  const lowest = Math.min(...values);
+  for (const code of QUICK_EVAL_NO_QSC_STORE_CODES) {
+    if (!out.has(code)) out.set(code, lowest);
+  }
+  return out;
 }
 
 export type QuickEvalPeer = {

@@ -53,7 +53,12 @@ import {
   QUICK_EVAL_RADII,
   QUICK_EVAL_USAGE_LIMIT,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
-import { buildQuickEvalPeers, type QuickEvalPeerSummary } from "@/lib/storeEval/quickEval/quickEvalPeers";
+import {
+  applyQuickEvalQscFloor,
+  buildQuickEvalPeers,
+  prepareQuickEvalTrainingStores,
+  type QuickEvalPeerSummary,
+} from "@/lib/storeEval/quickEval/quickEvalPeers";
 import {
   fitQuickEvalOwnModel,
   predictQuickEvalOwnRevenue,
@@ -253,7 +258,9 @@ export default function QuickEvalPage() {
         competitors: built.competitors,
         locationEvaluation: buildQuickLocationEvaluation(planInput, payload.locationDraft),
         settings,
-        existingStores,
+        // ⭐ 송도점·동탄북광장점을 **이 화면에서만** 학습에 넣는다(사용자 2026-09-22).
+        //    Firestore의 excludedFromModel은 안 건드린다 — 풀면 결재 숫자가 움직인다.
+        existingStores: prepareQuickEvalTrainingStores(existingStores),
         trainingLocationEvaluations,
         // ⭐ 학습 표본의 경쟁점도 **같은 수준으로 비운다**(2026-09-22). 후보지는 기본값인데
         //    학습만 실측이면 경쟁IP가 과소평가돼 매출이 높게 나온다 — 기존매장 38곳 재평가에서
@@ -261,7 +268,9 @@ export default function QuickEvalPage() {
         //    (`blankCompetitorForTraining` 주석 · `_quickEvalBias.test.ts`).
         trainingCompetitors: trainingCompetitors.map(blankCompetitorForTraining),
         trainingSales,
-        trainingQscScores,
+        // 동탄북광장점은 QSC 기록이 없어 관리가 '가맹점 평균'으로 들어간다 — 관리 불량이
+        // 전달되지 않는다. 사용자 지시로 **가맹점 최저점**을 이 화면에서만 채운다.
+        trainingQscScores: applyQuickEvalQscFloor(trainingQscScores),
       });
       setResult(evaluated);
 
