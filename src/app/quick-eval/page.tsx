@@ -24,6 +24,7 @@
 //    글자로 박지 않는다(CLAUDE.md 규칙 — 계수가 바뀌면 화면이 조용히 거짓말을 한다).
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { QuickEvalReview } from "./QuickEvalReview";
 import { useAuth } from "@/contexts/AuthContext";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { formatManwonRough, formatPercent } from "@/lib/storeEval/format";
@@ -484,9 +485,10 @@ export default function QuickEvalPage() {
             {reviewError ? <p className="mt-3 text-sm text-[var(--sl-danger)]">{reviewError}</p> : null}
             {review ? (
               <>
-                <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-[#171310] dark:text-[#f2ede2]">
-                  {review}
-                </pre>
+                {/* ⭐ 2026-09-23 — `<pre>`로 통째로 뿌리던 걸 렌더러로 바꿨다(사용자:
+                    *"가시성이 좀 떨어지니까 (…) 헤더를 굵은글씨로 하는등의"*). 프롬프트가
+                    마크다운을 요구하는데 렌더링을 안 해서 `##`와 `**`가 글자로 보였다. */}
+                <QuickEvalReview markdown={review} />
                 <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
                   AI가 가맹점 실적표와 대 보고 스스로 판단한 것이라 위 산식값과 다를 수 있습니다 — 다른 이유는
                   평가문 안에 적혀 있습니다.

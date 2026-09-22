@@ -22,6 +22,7 @@ import { computeCompetitorAppliedPcCount, DEFAULT_UNSURVEYED_PC_COUNT } from "..
 import { haversineM } from "./kakaoPcBangs";
 import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
 import { appendSiteFactsToContext, describeSiteFacts } from "./quickEvalLocationContext";
+import { QUICK_EVAL_REVIEW_SYSTEM_PROMPT } from "./quickEvalReviewPrompt";
 import { applyQuickEvalQscFloor, buildQuickEvalPeers, prepareQuickEvalTrainingStores } from "./quickEvalPeers";
 import {
   fitQuickEvalOwnModel,
@@ -497,5 +498,28 @@ describe("재고 표", () => {
     const humanNote = QUICK_EVAL_FIELD_NOTES.find((n) => n.source === "사람이 입력");
     expect(humanNote?.label).not.toContain("브랜드");
     expect(humanNote?.label).not.toContain("오픈월");
+  });
+});
+
+// ⭐ 2026-09-23 사용자 지시 — AI 평가문에서 **예상매출을 맨 위로** 올렸다
+//    ("AI 예상매출부분을 위로좀 올려달라는말"). 화면(QuickEvalReview)은 제목 이름이 아니라
+//    **첫 번째 제목**을 카드로 강조하므로, 순서가 뒤집히면 엉뚱한 섹션이 강조된다.
+describe("AI 평가문 형식", () => {
+  const headings = QUICK_EVAL_REVIEW_SYSTEM_PROMPT.split("\n")
+    .filter((line) => line.startsWith("## "))
+    .map((line) => line.slice(3).trim());
+
+  it("제목 목록이 비어 있지 않다 — 시험이 아무것도 안 재는 상태를 막는다", () => {
+    expect(headings.length).toBeGreaterThan(3);
+  });
+
+  it("⭐ 예상매출이 첫 번째 제목이다", () => {
+    expect(headings[0]).toContain("예상매출");
+  });
+
+  it("나머지 섹션도 그대로 남아 있다 — 순서만 바꾼 것이지 지운 게 아니다", () => {
+    for (const must of ["한 줄 결론", "이 상권은 어떤 상권인가", "장점", "단점·특이점", "현장에서 확인할 것"]) {
+      expect(headings.some((h) => h.includes(must)), must).toBe(true);
+    }
   });
 });
