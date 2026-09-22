@@ -41,7 +41,10 @@ export const QUICK_EVAL_REVIEW_SYSTEM_PROMPT = [
   "   대학가, 산업단지 배후 등). 무엇을 근거로 그렇게 봤는지 수치를 들어 말하세요.",
   "2. **장점과 단점·특이점**을 각각 짚으세요. 좋은 말만 쓰지 마세요 — 단점을 빼면 쓸모가 없습니다.",
   "3. **우리 가맹점 실적표와 대 보고 예상 월매출 범위를 당신이 제시하세요.** 어느 매장과 비슷하게",
-  "   봤는지, 대당 월매출을 얼마로 잡았는지, PC 몇 대를 곱했는지 계산 과정을 보이세요.",
+  "   봤는지, 대당 매출을 얼마로 잡았는지, PC 몇 대를 곱했는지 계산 과정을 보이세요.",
+  "   ⚠️ 대당은 **'월 대당'과 '하루 대당'을 반드시 구분해서** 쓰세요. 실적표에 둘 다 있습니다.",
+  "   현장에서 쓰는 \"대당매출\"은 보통 **하루 대당**입니다(예: 100대 매장이 월 3,000만원이면",
+  "   하루 100만원, 하루 대당 10,000원). 계산은 월 단위로 하되, 결론에는 **하루 대당도 같이** 적으세요.",
   "   **산식값과 달라도 됩니다** — 다르면 왜 다르게 봤는지 쓰세요(그게 이 평가의 값입니다).",
   "4. 마지막에 **현장에서 확인할 항목**을 체크리스트로 주세요. 담당자가 그대로 들고 나갑니다.",
   "",
@@ -77,6 +80,16 @@ const won = (v: number | null | undefined) => (v == null ? "자료 없음" : for
 //    2026-09-23에 화면·프롬프트 8곳이 그렇게 돌고 있었다 — AI가 그 뭉갠 값으로 자기 매출을
 //    셈하고 있었으므로 결과에 직접 영향이 있었다. 대당은 언제나 formatManwonPerPc다.
 const wonPerPc = (v: number | null | undefined) => (v == null ? "자료 없음" : formatManwonPerPc(v));
+/**
+ * ⭐ **PC 1대당 하루 매출** — 점포개발에서 "대당매출"이라고 하면 보통 이쪽이다
+ * (사용자 2026-09-23: *"100대 월평균 3천만원이면, 일 당 100만원, 하루1대당매출은 10000원"*).
+ * 코드가 들고 있는 `revenuePerPc`는 **월** 대당이라 30으로 나눠 맞춘다.
+ * ⚠️ 월 대당도 같이 준다 — AI가 예상 월매출을 셈할 땐 월 단위가 필요하다. 둘을 섞지 않게
+ *    라벨을 반드시 "월"/"하루"로 붙인다.
+ */
+const DAYS_PER_MONTH = 30;
+const wonPerPcPerDay = (v: number | null | undefined) =>
+  v == null ? "자료 없음" : `${Math.round(v / DAYS_PER_MONTH).toLocaleString("ko-KR")}원`;
 const int = (v: number | null | undefined) =>
   v == null ? "자료 없음" : Math.round(v).toLocaleString("ko-KR");
 
@@ -188,13 +201,14 @@ export function buildQuickEvalReviewContext(input: {
         (hasDemand ? "이 후보지와 상권수요가 가까운 순" : "⚠️ 후보지 상권수요를 몰라 매출 높은 순") +
         `으로 ${p.nearest.length}곳:`,
     );
-    lines.push("  매장 / 개점 / 상권수요(후보지 대비) / 경쟁IP / PC대수 / 기본요금 / 실제월매출 / 대당월매출");
+    lines.push("  매장 / 개점 / 상권수요(후보지 대비) / 경쟁IP / PC대수 / 기본요금 / 실제월매출 / 월대당 / **하루대당**");
     for (const peer of p.nearest) {
       lines.push(
         `  - ${peer.storeName} / ${peer.openedAt ?? "개점일 모름"}` +
           ` / ${int(peer.marketDemand)}${peer.demandRatio != null ? `(${peer.demandRatio.toFixed(2)}배)` : ""}` +
           ` / ${int(peer.competitorIp)} / ${int(peer.pcCount)}대 / ${int(peer.hourlyRate)}원` +
-          ` / ${won(peer.actualMonthlyRevenueAvg)} / ${wonPerPc(peer.revenuePerPc)}`,
+          ` / ${won(peer.actualMonthlyRevenueAvg)} / ${wonPerPc(peer.revenuePerPc)}` +
+          ` / ${wonPerPcPerDay(peer.revenuePerPc)}`,
       );
     }
     lines.push(
@@ -204,7 +218,7 @@ export function buildQuickEvalReviewContext(input: {
     lines.push(
       `  가맹점 전체 중앙값: 상권수요 ${int(p.medians.marketDemand)} · ${int(p.medians.pcCount)}대` +
         ` · 기본요금 ${int(p.medians.hourlyRate)}원 · 월매출 ${won(p.medians.actualMonthlyRevenueAvg)}` +
-        ` · 대당 ${wonPerPc(p.medians.revenuePerPc)}`,
+        ` · 월대당 ${wonPerPc(p.medians.revenuePerPc)} · 하루대당 ${wonPerPcPerDay(p.medians.revenuePerPc)}`,
     );
     lines.push(
       "  ⚠️ 이 표의 값은 저장된 기존점 자료를 그대로 쓴 것이라 산식이 쓰는 값과 미세하게 다를 수 있다.",
