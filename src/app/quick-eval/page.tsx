@@ -60,11 +60,8 @@ import {
   prepareQuickEvalTrainingStores,
   type QuickEvalPeerSummary,
 } from "@/lib/storeEval/quickEval/quickEvalPeers";
-import {
-  fitQuickEvalOwnModel,
-  predictQuickEvalOwnRevenue,
-  QUICK_EVAL_OWN_MODEL_ACCURACY,
-} from "@/lib/storeEval/quickEval/quickEvalOwnModel";
+// ⛔ 자동화 전용 산식(quickEvalOwnModel)은 **화면에서 뺐다**(사용자 2026-09-22). 적중률은 더
+//    높았지만 상권을 못 봐서 후보지 줄 세우기를 못 한다. 산식과 측정 기록은 그 파일에 남아 있다.
 import type { EvaluationResult, GroundLevel, ModelSettings } from "@/lib/storeEval/types";
 
 type CollectResponse = QuickEvalCollected & {
@@ -118,8 +115,6 @@ export default function QuickEvalPage() {
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [peers, setPeers] = useState<QuickEvalPeerSummary | null>(null);
-  /** 자동화 전용 산식 값 — 이 화면에서만 쓴다(점포평가 시스템에는 안 들어간다). */
-  const [ownModelRevenue, setOwnModelRevenue] = useState<number | null>(null);
   const lock = useRef(false);
 
   const headline = ADDRESS_ONLY_ACCURACY.levels[ADDRESS_ONLY_ACCURACY.headlineLevelIndex];
@@ -209,7 +204,6 @@ export default function QuickEvalPage() {
     setReviewMeta(null);
     setReviewError(null);
     setPeers(null);
-    setOwnModelRevenue(null);
     try {
       // 1) 자동수집 — 좌표·주거인구·유동인구·경쟁점·입지평가 초안
       const token = await user?.getIdToken();
@@ -274,17 +268,6 @@ export default function QuickEvalPage() {
         trainingQscScores: applyQuickEvalQscFloor(trainingQscScores),
       });
       setResult(evaluated);
-
-      // 3-2) 자동화 전용 산식 — **이 화면에서만** 쓴다(사용자 지시 2026-09-22).
-      //      자동화로 실제 얻는 값(PC대수·시급)만으로 세운 회귀식이라 V62를 비워 쓰는 것보다
-      //      적중률이 높다(17.95% vs 27.79%). 대신 상권을 못 본다 — 그래서 V62 값과 나란히 둔다.
-      const fitted = fitQuickEvalOwnModel(existingStores);
-      setOwnModelRevenue(
-        predictQuickEvalOwnRevenue(fitted, {
-          pcCount: planInput.expectedPcCount,
-          hourlyRate: planInput.hourlyRate,
-        }),
-      );
 
       // 4) 가맹점 실적 비교표 — AI가 **자체 매출 판단**의 근거로 쓴다(사용자 요청 2026-09-22:
       //    "우리 가맹점 데이터 어떠한 부분을 봤을 때 예상 매출 어느정도 예상한다").
@@ -478,30 +461,12 @@ export default function QuickEvalPage() {
             ) : null}
             <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">위 금액은 V62 산식값입니다.</p>
 
-            {/* ⭐ 자동화 전용 산식 — 이 화면에서만 쓴다(사용자 지시 2026-09-22).
-                V62를 덮지 않고 **나란히** 놓는다: 적중률은 이쪽이 높지만 상권을 못 본다. */}
-            {ownModelRevenue != null ? (
-              <div className="app-card-sm mt-3 rounded-xl p-3">
-                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <span className="text-xs text-[var(--sl-ink-soft)]">자동화 전용 산식</span>
-                  <span className="text-lg font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">
-                    {formatManwonRough(ownModelRevenue)}
-                  </span>
-                  {result.v62Final ? (
-                    <span className="text-xs text-[var(--sl-ink-soft)]">
-                      V62 대비 {(((ownModelRevenue - result.v62Final) / result.v62Final) * 100).toFixed(0)}%
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-                  기존 가맹점 {QUICK_EVAL_OWN_MODEL_ACCURACY.sampleCount}곳 실적으로 매번 다시 맞추는
-                  회귀식입니다. 리브원아웃 평균오차 {formatPercent(QUICK_EVAL_OWN_MODEL_ACCURACY.mape, 1)}로 위
-                  V62 값({formatPercent(QUICK_EVAL_BACKTEST.mape, 1)})보다 잘 맞지만,{" "}
-                  <strong>PC대수와 시급만 봅니다 — 상권은 못 봅니다.</strong> 같은 대수·요금이면 어느 동네든
-                  같은 값이 나옵니다. 상권 판단은 위 V62 값과 아래 AI 평가로 하세요.
-                </p>
-              </div>
-            ) : null}
+            {/* ⛔ 자동화 전용 산식(PC대수+시급 회귀)은 **화면에서 뺐다**(사용자 2026-09-22:
+                "작은값은 없어도될것같은데?"). 적중률은 그쪽이 높았지만(18.27% vs 27.79%)
+                **상권을 못 봐서** 후보지를 같은 대수·요금으로 잡으면 전부 같은 값이 나온다 —
+                이 도구의 핵심인 줄 세우기를 못 한다. 그래서 금액은 V62 하나만 보여준다.
+                산식 자체와 측정 기록은 `quickEvalOwnModel.ts`에 남겨 뒀다(다시 쓸 일이 있으면
+                이 블록을 되살리면 된다). 지우지 않은 이유: 오늘 측정 결과의 근거다. */}
           </section>
 
           {/* ── AI 자체 평가 — 조회하면 자동으로 나온다 ── */}
