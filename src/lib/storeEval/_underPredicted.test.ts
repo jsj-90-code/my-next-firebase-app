@@ -1525,6 +1525,115 @@ describeIf("낮게 본 매장 — 과장의 기전", () => {
     expect(A.length).toBeGreaterThan(30);
   });
 
+  it("(V) ⭐ 자기검토 — 내가 한 말이 견디나 세 가지를 다시 잰다", () => {
+    // 2026-09-24 사용자: *"나 흐름을 많이 놓쳐서 너가 한번 검토해봐"*
+    // 오늘 내가 한 말 중 **과하게 말했을 수 있는 것** 셋을 다시 잰다.
+    const use = base.map((r) => ({ r, act: r.input.actualUtilization }))
+      .filter((x): x is { r: typeof base[number]; act: number } => x.act != null && x.act > 0);
+    const acts = use.map((x) => x.act);
+    const actLog = acts.map(Math.log);
+    const n = acts.length;
+    const preds0 = use.map(({ r }) => computeTextbook(r.input, P).utilization ?? NaN);
+
+    // ── 검토 1. "오차는 점유율 층에 있다"는 말이 뜻이 있나 ──────────────────
+    // (S)(T)에서 **필요 점유율 = 실측 ÷ (수요/좌석)** 으로 정의했다. 그러면
+    //   필요 − 산식 = log(실측) − log(예측) = **산식 전체의 잔차**
+    // 다. 정의상 그렇게 된다. 즉 "점유율 층 잔차"는 **전체 잔차와 같은 수**이고,
+    // 오차가 점유율 층에 있다고 **국한한 게 아니다.** 수치로 확인한다.
+    const residAll = preds0.map((v, i) => Math.log(acts[i]) - Math.log(v));
+    const residShare: number[] = [];
+    for (const { r } of use) {
+      const b = computeTextbook(r.input, P);
+      const pc = r.input.pcCount ?? 0;
+      if (b.share == null || b.totalDemandHours == null || !(pc > 0)) { residShare.push(NaN); continue; }
+      const dps = b.totalDemandHours / (pc * 720);
+      const i = residShare.length;
+      residShare.push(Math.log(acts[i] / dps) - Math.log(b.share));
+    }
+    console.log(`\n[검토 1] "점유율 층 잔차"와 "전체 잔차"가 같은 수인가`);
+    console.log(`  전체 잔차 SD      ${sdOf(residAll).toFixed(4)}`);
+    console.log(`  점유율 층 잔차 SD  ${sdOf(residShare.filter(Number.isFinite)).toFixed(4)}`);
+    console.log(`  두 값의 상관 r = ${corr(residAll, residShare).toFixed(4)}`);
+    console.log(`  ⚠️ 같은 수라면 **"오차가 점유율 층에 있다"는 건 국한이 아니라 항등식**이다.`);
+    console.log(`     목표 숫자(0.250 -> 0.213)는 여전히 맞지만, 그게 "점유율을 고쳐라"를 뜻하진 않는다.`);
+    console.log(`     상한 걸린 매장(자름·좌석상한) 때문에 아주 조금 어긋날 수 있다.`);
+
+    // ── 검토 2. 경쟁 약한/센 절반 가르기가 견고한가 ────────────────────────
+    // 걱정: 약한 절반은 **실측 자체가 더 퍼져 있어서** 바닥(전부 평균)이 원래 나쁠 수 있다.
+    // 그러면 "산식이 이긴다"가 일부는 착시다. 실측 퍼짐을 같이 찍고, 분별력 r도 본다
+    // (r은 수준·퍼짐에 안 끌려다닌다). 그리고 짝지은 부트스트랩으로 차이가 자료를 견디나 본다.
+    const rowByName = new Map(rows.map((r) => [r.name, r]));
+    const idx = use.map((_, i) => i);
+    const rivalWOf = (i: number) => rowByName.get(use[i].r.input.storeName ?? use[i].r.input.storeCode)?.rivalW ?? 0;
+    const sorted = [...idx].sort((a, b) => rivalWOf(a) - rivalWOf(b));
+    const lo = sorted.slice(0, Math.floor(n / 2)), hi = sorted.slice(Math.floor(n / 2));
+    console.log(`\n[검토 2] 경쟁 세기로 가른 게 착시가 아닌가`);
+    console.log(`  무리          n   실측 퍼짐   바닥 MAE   산식 MAE   차이     분별력 r`);
+    const show = (label: string, g: number[]) => {
+      const a = g.map((i) => acts[i]);
+      const loo = a.map((_, k) => mean(a.filter((__, j) => j !== k)));
+      const bm = mean(loo.map((v, k) => Math.abs(v - a[k])));
+      const mm = mean(g.map((i) => Math.abs(preds0[i] - acts[i])));
+      console.log(`  ${label.padEnd(12)}${String(g.length).padStart(3)}`
+        + `${(sdOf(a) * 100).toFixed(2).padStart(10)}%p${(bm * 100).toFixed(2).padStart(10)}%p`
+        + `${(mm * 100).toFixed(2).padStart(10)}%p${((mm - bm) * 100).toFixed(2).padStart(8)}%p`
+        + `${corr(g.map((i) => Math.log(preds0[i])), g.map((i) => actLog[i])).toFixed(3).padStart(11)}`);
+      return mm - bm;
+    };
+    const dLo = show("경쟁 약한", lo);
+    const dHi = show("경쟁 센", hi);
+    // 짝지은 부트스트랩 — "약한 절반에서 이긴다"가 표본을 바꿔도 남나
+    const B = 2000;
+    let winLo = 0, winHi = 0;
+    let seed = 20260924;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    for (let b = 0; b < B; b++) {
+      const pick = (g: number[]) => Array.from({ length: g.length }, () => g[Math.floor(rnd() * g.length)]);
+      const dOf = (g: number[]) => {
+        const s = pick(g);
+        const a = s.map((i) => acts[i]);
+        const loo = a.map((_, k) => mean(a.filter((__, j) => j !== k)));
+        return mean(s.map((i) => Math.abs(preds0[i] - acts[i]))) - mean(loo.map((v, k) => Math.abs(v - a[k])));
+      };
+      if (dOf(lo) < 0) winLo++;
+      if (dOf(hi) < 0) winHi++;
+    }
+    console.log(`  부트스트랩 ${B}회 — 약한 절반에서 산식이 이길 확률 **${(winLo / B * 100).toFixed(0)}%**`
+      + ` · 센 절반 ${(winHi / B * 100).toFixed(0)}%`);
+    console.log(`  ⚠️ 약한 절반은 실측이 더 퍼져 있어 바닥이 원래 나쁘다 — 그만큼은 착시다.`);
+    console.log(`     그래도 **분별력 r**(수준·퍼짐에 안 끌림)이 ${corr(lo.map((i) => Math.log(preds0[i])), lo.map((i) => actLog[i])).toFixed(3)}`
+      + ` vs ${corr(hi.map((i) => Math.log(preds0[i])), hi.map((i) => actLog[i])).toFixed(3)}로 갈린다.`);
+    void dLo; void dHi;
+
+    // ── 검토 3. 입지 지수 0.5는 기전인가 눌러 담기인가 ─────────────────────
+    // (G)에서 입지를 얼려도 **분별력 r이 0.516 그대로**였다. 그러면 입지 항이 하는 일은
+    // 퍼짐 축소뿐일 수 있다 — 그건 사용자가 어제 끈 눈금 보정 b와 **같은 성격**이다.
+    // 지수를 훑으며 r과 **순위 분별력**을 같이 본다.
+    const rankOf = (v: number[]) => {
+      const o = v.map((x, i) => [x, i] as const).sort((a, b) => a[0] - b[0]);
+      const rk = new Array(v.length).fill(0);
+      o.forEach(([, i], k) => { rk[i] = k + 1; });
+      return rk;
+    };
+    const actRank = rankOf(acts);
+    console.log(`\n[검토 3] 입지 지수는 분별력을 주나, 퍼짐만 줄이나`);
+    console.log(`  지수     MAE      퍼짐   분별력 r   순위 분별력`);
+    for (const e of [0, 0.169, 0.3, 0.5, 0.75, 1.0]) {
+      const P2 = { ...P, indexCalibration: { ...P.indexCalibration!, locationExponent: e } };
+      const pr = use.map(({ r }) => computeTextbook(r.input, P2).utilization ?? NaN);
+      const abs = pr.map((v, i) => Math.abs(v - acts[i]));
+      console.log(`  ${e.toFixed(3).padStart(5)}${(mean(abs) * 100).toFixed(2).padStart(9)}%p`
+        + `${(sdOf(pr.map(Math.log)) / sdOf(actLog)).toFixed(2).padStart(7)}배`
+        + `${corr(pr.map(Math.log), actLog).toFixed(3).padStart(11)}`
+        + `${corr(rankOf(pr), actRank).toFixed(3).padStart(13)}`
+        + (e === P.indexCalibration!.locationExponent ? "  ← 지금" : ""));
+    }
+    console.log(`\n  ⚠️ 지수를 올려도 **분별력 r이 안 오르고 순위 분별력이 떨어지면**, 입지 항은`);
+    console.log(`     "어느 매장이 더 잘 되나"를 못 가르고 **퍼짐만 줄이는** 것이다.`);
+    console.log(`     그건 기전이 아니라 보정이다 — 사용자가 눈금 보정 b를 끈 이유와 같다.`);
+    expect(n).toBeGreaterThan(30);
+  });
+
   it("(C) 낮게 본 무리 vs 높게 본 무리 — 층별 평균을 갈라 본다", () => {
     const sorted = [...rows].sort((a, b) => a.pred - b.pred);
     const lo = sorted.slice(0, 8), hi = sorted.slice(-8);
