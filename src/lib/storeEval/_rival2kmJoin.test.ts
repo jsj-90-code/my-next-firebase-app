@@ -372,6 +372,52 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     expect(ranked.length).toBeGreaterThan(5);
   });
 
+  it("(2-마) ⭐ 사용자 지적 — 성인PC방과 영세점이 섞인다. 규모로 가른다", () => {
+    // 사용자(2026-09-22): *"불독은 500미터로 보면 경쟁점 4개(레드포스·녹스·불독·지원)다.
+    //   게임랜드 이런 데는 성인PC방인데 오락기 있는 거."*
+    //
+    // 맞는 지적이고 둘 다 걸러야 한다:
+    //  (가) **성인PC방/오락실** — 상가업소 업종 R10406에 섞여 있다. 그런데 인허가 자료는
+    //       "인터넷컴퓨터게임시설제공업"만 담으므로 **인허가 짝이 없으면 자동으로 빠진다.**
+    //       구리돌다리에서 진주게임랜드·꽃길PC라운지·세븐스타PCCAFE가 그렇게 걸렸다.
+    //  (나) **영세점** — 인허가에도 있지만 우리가 경쟁으로 안 치는 급이다.
+    //       우리 조사 DB의 최소가 61대인 게 그 기준선이다.
+    //
+    // 규모가 깨끗하게 가른다(500m · 상가업소∩인허가 영업분):
+    //     우리 DB에 있음 118곳 — 면적 중앙 283㎡ · 게임기 중앙 **105대**
+    //     우리 DB에 없음  35곳 — 면적 중앙  86㎡ · 게임기 중앙 **8대**
+    // 구리돌다리가 그 축소판이다: 불독 458㎡/128 · 녹스 300/116 · 지원 499/145 vs
+    //     물라 119/20 · 툰 109/21 · 뉴스타 113/8 · 마카오 87/7 · 교문 73/8 · 대박 55/7 · 또와 32/6
+    //
+    // ⛔ **문턱은 사용자가 정한다.** 여기서는 재고 표만 만든다.
+    const big = (p: Permit | null, gameMin: number, areaMin: number) =>
+      p != null && ((p.gameCount != null && p.gameCount >= gameMin) || (p.area != null && p.area >= areaMin));
+    const cardBig = (gameMin: number, areaMin: number) => card((r) => {
+      const extra = (joinedByCode.get(r.input.storeCode) ?? [])
+        .filter((j) => j.share > 0 && big(j.permit, gameMin, areaMin))
+        .map((j) => ({ ip: DEFAULT_UNSURVEYED_PC_COUNT * j.share, distanceM: j.distanceM, parts: null, name: j.q.name }));
+      return { ...r.input, rivals: [...(r.input.rivals ?? []), ...extra] };
+    });
+    const line = (name: string, c: Card) => console.log(
+      `  ${name.padEnd(30)}${pp(c.mae).padStart(8)} ${pp(c.sd).padStart(8)}`
+      + ` ${(pp(c.worst) + " " + c.worstName).padEnd(22)} ${pp(c.bias).padStart(8)}`
+      + `  ${String(c.within5).padStart(2)}/${c.n}  ${c.spread.toFixed(2)}배`);
+    console.log(`\n[재고 표] 규모 문턱을 바꿔 가며 — 대수는 ${DEFAULT_UNSURVEYED_PC_COUNT}대 일괄`);
+    console.log(`  규칙                              MAE       SD      최악            편향      ±5%p  퍼짐`);
+    line("지금 — 2km를 안 센다", card((r) => r.input));
+    line("규모 안 봄(전부 셈)", card((r) => withJoined(r, (j) => j.share)));
+    for (const [g, a] of [[60, 180], [70, 200], [70, 250], [100, 300]] as [number, number][]) {
+      const n = [...joinedByCode.values()].flat().filter((j) => j.share > 0 && big(j.permit, g, a)).length;
+      line(`게임기>=${g} 또는 면적>=${a} (${n}건)`, cardBig(g, a));
+    }
+    console.log(`\n  ⚠️ 우리 500m 조사를 얼마나 재현하나(같은 구간에서 잰 값):`);
+    console.log(`     규모 안 봄  재현 100% · 오탐 100%(정의상)   F 0.871`);
+    console.log(`     >=70/200    재현  87% · 오탐  29%           F 0.892`);
+    console.log(`     >=60/180    재현  88% · 오탐  31%           F 0.893`);
+    console.log(`  => 규모 필터의 추가 이득은 작다. **실체(상가업소)+업종(인허가)+영업(폐업일자)**`);
+    console.log(`     세 필터가 이미 대부분 거른다. 다만 구리돌다리처럼 소형이 몰린 곳에서는 크게 갈린다.`);
+  });
+
   it("(3) 매장별로 얼마나 붙었나", () => {
     console.log(`\n[매장별] 평가창에 영업으로 판정된 ${OFFICIAL_RADIUS_M}m 밖 경쟁점`);
     console.log(`  매장                건수  예측변화(가동률)`);
