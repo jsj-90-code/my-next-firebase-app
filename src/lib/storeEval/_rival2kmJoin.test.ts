@@ -30,7 +30,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { buildLabRows, utilizationByStore, qscInWindowAverage, type LabRow, type QscRecord } from "./labInput";
+import {
+  buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
+  utilizationByStore, qscInWindowAverage, type LabRow, type QscRecord,
+} from "./labInput";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
@@ -308,6 +311,65 @@ describeIf("2km 경쟁점 — 상가업소가 실체, 인허가가 시점", () =
     }
     console.log(`\n  ⚠️ 여기서 크게 안 흔들리면 그건 손잡이가 아니라 **결합 방식일 뿐**이다.`);
     console.log(`     흔들리면 값을 고르는 일이 되므로 사용자 확인이 필요하다.`);
+  });
+
+  it("(2-라) ⭐ 신규 후보지는 어떻게 되나 — 실제로 쓰이는 자리다", () => {
+    // 사용자 물음(2026-09-22): *"이거 넣었을 때 신규후보지는 어케 되는데?"*
+    // 기존점 성적이 좋아져도 **후보지 예상값이 말이 안 되게 움직이면 못 쓴다.**
+    // 후보지는 실측이 없으므로 성적을 못 재고, **얼마나·어느 쪽으로 움직이는지**를 본다.
+    const locByCode = new Map((snap.locationEvaluations ?? []).map(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (l: any) => [l.candidateCode ?? l.code ?? l.id, l],
+    ));
+    const candRows = buildLabCandidateRows({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      candidates: (snap.candidates ?? []) as any, compsByCode,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      locByCode: locByCode as any, settings,
+      franchiseManagement: franchiseManagementFromRows(base),
+    });
+    console.log(`\n[후보지] ${candRows.length}곳 · 2km를 넣으면 예상값이 어떻게 움직이나`);
+    console.log(`  후보지              2km경쟁점  가동률(전->후)        예상매출(전->후)      변화`);
+    const moves: number[] = [];
+    const ranked: { name: string; before: number; after: number }[] = [];
+    for (const c of candRows) {
+      const site = sbiz.sites[`candidate:${c.input.storeCode}`];
+      // 후보지는 아직 개점 전이라 평가창이 없다 -> **시점 판정을 못 한다.**
+      // 지금 영업 중인 것만 세는 게 맞다(그게 개점 시점의 경쟁 환경이다).
+      const extra = (site?.stores ?? [])
+        .map((q) => ({ q, d: distanceM(site!.lat, site!.lng, q.lat, q.lng) }))
+        .filter((x) => x.d > OFFICIAL_RADIUS_M && x.d > SELF_M)
+        .map((x) => ({ ip: DEFAULT_UNSURVEYED_PC_COUNT, distanceM: x.d, parts: null, name: x.q.name }));
+      const before = computeTextbook(c.input, P);
+      const after = computeTextbook({ ...c.input, rivals: [...(c.input.rivals ?? []), ...extra] }, P);
+      if (before.utilization == null || after.utilization == null) {
+        console.log(`  ${(c.input.storeName ?? "").padEnd(18)}${String(extra.length).padStart(7)}   값이 안 나온다`);
+        continue;
+      }
+      const bR = before.monthlyRevenue ?? 0, aR = after.monthlyRevenue ?? 0;
+      const pct = bR > 0 ? (aR / bR - 1) * 100 : NaN;
+      moves.push(pct);
+      ranked.push({ name: c.input.storeName ?? c.input.storeCode, before: bR, after: aR });
+      console.log(`  ${(c.input.storeName ?? "").padEnd(18)}${String(extra.length).padStart(7)}`
+        + `   ${(before.utilization * 100).toFixed(1).padStart(5)}% -> ${(after.utilization * 100).toFixed(1).padStart(5)}%`
+        + `   ${(bR / 1e4).toFixed(0).padStart(6)} -> ${(aR / 1e4).toFixed(0).padStart(6)}만`
+        + `   ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`);
+    }
+    // 순위가 바뀌는가 — 후보지 결정은 대개 **줄 세우기**라 이게 실무에서 제일 중요하다.
+    const rankOf = (key: "before" | "after") =>
+      [...ranked].sort((a, b) => b[key] - a[key]).map((x) => x.name);
+    const rb = rankOf("before"), ra = rankOf("after");
+    let moved = 0;
+    for (let i = 0; i < rb.length; i++) if (rb[i] !== ra[i]) moved++;
+    console.log(`\n  예상매출 변화: 중앙 ${[...moves].sort((a, b) => a - b)[Math.floor(moves.length / 2)].toFixed(1)}%`
+      + ` · 최소 ${Math.min(...moves).toFixed(1)}% · 최대 ${Math.max(...moves).toFixed(1)}%`);
+    console.log(`  순위가 바뀐 자리 ${moved}/${rb.length}`);
+    console.log(`  전  ${rb.join(" > ")}`);
+    console.log(`  후  ${ra.join(" > ")}`);
+    console.log(`\n  ⚠️ 후보지는 **평가창이 없다**(아직 개점 전) — 시점 판정을 못 하고 "지금 영업 중"만 센다.`);
+    console.log(`     기존점과 자가 살짝 다르다. 다만 후보지는 개점 시점의 경쟁 환경이 맞는 값이라 이게 옳다.`);
+    console.log(`  ⚠️ 후보지엔 실측이 없다 — **이 표는 성적이 아니라 "얼마나 움직이나"다.**`);
+    expect(ranked.length).toBeGreaterThan(5);
   });
 
   it("(3) 매장별로 얼마나 붙었나", () => {
