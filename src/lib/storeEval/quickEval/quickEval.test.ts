@@ -14,6 +14,8 @@ import { judgePcBangName, NON_PCBANG_NAME_PATTERN } from "./pcBangNameFilter";
 import {
   buildQuickCandidate,
   buildQuickLocationEvaluation,
+  RIVAL_PC_COUNT_WHEN_UNSURVEYED,
+  RIVAL_TYPICAL_WHEN_UNSURVEYED,
   type QuickEvalPlanInput,
 } from "./buildQuickCandidate";
 import { computeCompetitorAppliedPcCount, DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
@@ -176,19 +178,19 @@ describe("V62 입력 조립", () => {
   it("⭐ 경쟁점은 대수 미조사 + 조사수준 간략 — 기본대수 장치가 켜져야 한다", () => {
     for (const c of built.competitors) {
       expect(c.totalPcCount).toBeNull();
-      expect(c.appliedPcCount).toBeNull();
+      expect(c.appliedPcCount).toBe(RIVAL_PC_COUNT_WHEN_UNSURVEYED);
       expect(c.surveyLevel).toBe("간략");
-      expect(computeCompetitorAppliedPcCount(c)).toBe(DEFAULT_UNSURVEYED_PC_COUNT);
+      expect(computeCompetitorAppliedPcCount(c)).toBe(RIVAL_PC_COUNT_WHEN_UNSURVEYED);
     }
   });
 
   it("⭐ 경쟁점 품질 칸은 전부 비어 있다 — 반만 채우면 오히려 더 틀린다", () => {
     for (const c of built.competitors) {
-      expect(c.vgaBase).toBeNull();
-      expect(c.foodScore).toBeNull();
-      expect(c.interiorScore).toBeNull();
-      expect(c.managementScore).toBeNull();
-      expect(c.singleSeatCount).toBeNull();
+      expect(c.vgaBase).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaBase);
+      expect(c.foodScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore);
+      expect(c.interiorScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.interiorScore);
+      expect(c.managementScore).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.managementScore);
+      expect(c.singleSeatCount).toBe(RIVAL_TYPICAL_WHEN_UNSURVEYED.singleSeatCount);
     }
   });
 
