@@ -447,6 +447,87 @@ describeIf("2km 경쟁점 — 인허가 자동 판정", () => {
     expect(Math.abs(r)).toBeGreaterThan(0.41);
   });
 
+  it("(3-바) ⭐ 총게임기수는 **조건부로** 정확하다 — 70 이상이면 실측 대수다", () => {
+    // 2026-09-22. 어제 인계문은 "인허가에 PC 대수는 없다"였고, 오늘 처음엔 나도 그렇게 봤다
+    // (채움률 71%·중앙 7대). **틀렸다. 구간을 나눠 보면 갈린다.**
+    const surveyed = (allCompetitors as unknown as {
+      lat?: number; lng?: number; totalPcCount?: number | null; appliedPcCount?: number | null;
+    }[]).filter((c) => c.lat != null && c.lng != null);
+    const pairs: { pc: number; g: number | null; area: number | null }[] = [];
+    for (const c of surveyed) {
+      const pc = (c.totalPcCount && c.totalPcCount > 0 ? c.totalPcCount : null)
+        ?? (c.appliedPcCount && c.appliedPcCount > 0 ? c.appliedPcCount : null);
+      if (!pc) continue;
+      let best: { p: Permit; d: number } | null = null;
+      for (const p of permits) {
+        const d = distanceM(c.lat!, c.lng!, p.lat, p.lng);
+        if (d <= 80 && (!best || d < best.d)) best = { p, d };
+      }
+      if (best) pairs.push({ pc, g: best.p.gameCount, area: best.p.area });
+    }
+    const withG = pairs.filter((x) => x.g != null && x.g > 0) as { pc: number; g: number; area: number | null }[];
+    console.log(`\n[총게임기수] 대수 실측이 있는 경쟁점 ${pairs.length}곳 · 게임기수가 적힌 곳 ${withG.length}곳`);
+    console.log(`  게임기 구간      n    비율(게임기÷실측) 중앙   ±20% 적중`);
+    for (const [lo, hi] of [[1, 40], [40, 70], [70, 120], [120, 1e9]] as [number, number][]) {
+      const g = withG.filter((x) => x.g >= lo && x.g < hi);
+      if (!g.length) continue;
+      const r = g.map((x) => x.g / x.pc).sort((a, b) => a - b);
+      const ok = g.filter((x) => Math.abs(x.g / x.pc - 1) <= 0.2).length;
+      console.log(`  ${String(lo).padStart(4)}~${(hi > 1e8 ? "∞" : String(hi)).padEnd(5)}${String(g.length).padStart(5)}`
+        + `${r[Math.floor(r.length / 2)].toFixed(2).padStart(16)}${(ok + "/" + g.length).padStart(14)}`);
+    }
+    console.log(`\n  ⭐ **70 이상이면 실측 대수와 사실상 같다.** 40 미만은 다른 걸 적은 것이다.`);
+    console.log(`  ⚠️ 우리 표본은 전부 61대 이상이라 "게임기 7"이 등록 부실인지 진짜 7대인지는 못 가린다.`);
+    const lowG = withG.filter((x) => x.g < 40);
+    const lowGSmallArea = lowG.filter((x) => x.area != null && x.area < 100).length;
+    console.log(`  ⛔ 면적으로도 못 가린다 — 게임기<40인 ${lowG.length}곳 중 ${lowGSmallArea}곳은 **면적도 100㎡ 미만**이다.`);
+    console.log(`     61대 이상인 걸 아는데 면적 32㎡로 등록된 곳이 있다. **면적·게임기수를 둘 다 줄여 적은 무리**다.`);
+    console.log(`     그 무리를 식별할 방법이 없다 -> 작은 값은 통째로 못 믿는다.`);
+
+    // 그래서 "믿을 수 있는 것만 센다"를 재 본다. 전 매장에 같은 자를 대므로 부분 적용이 아니다.
+    const TRUST = 70;
+    const trusted = (n: Near) => (n.p.gameCount != null && n.p.gameCount >= TRUST ? n.p.gameCount : 0);
+    const cardTrusted = card((r) => {
+      const extra = (nearByCode.get(r.input.storeCode) ?? [])
+        .filter((n) => n.share > 0 && trusted(n) > 0)
+        .map((n) => ({ ip: trusted(n) * n.share, distanceM: n.distanceM, parts: null, name: n.p.name }));
+      return { ...r.input, rivals: [...(r.input.rivals ?? []), ...extra] };
+    });
+    const now = card((r) => r.input);
+    const line = (name: string, c: Card) => console.log(
+      `  ${name.padEnd(26)}${pp(c.mae).padStart(8)} ${pp(c.sd).padStart(8)}`
+      + ` ${(pp(c.worst) + " " + c.worstName).padEnd(22)} ${pp(c.bias).padStart(8)}`
+      + `  ${String(c.within5).padStart(2)}/${c.n}  ${c.spread.toFixed(2)}배`);
+    console.log(`\n[재고 표] 게임기수 ${TRUST} 이상만 센다 — 실체도 대수도 아는 경쟁점만`);
+    console.log(`  시나리오                      MAE       SD      최악            편향      ±5%p  퍼짐`);
+    line("지금 — 2km를 안 센다", now);
+    line(`게임기 ${TRUST}+ 만, 그 대수로`, cardTrusted);
+    // ── ⛔ 그런데 기각했다 — 지역 편향이 매장 특성과 상관된다 ────────────────
+    const ratios: number[] = [], counts: number[] = [];
+    for (const r of rows) {
+      const near = (nearByCode.get(r.input.storeCode) ?? []).filter((n) => !n.p.close);
+      if (near.length < 5) continue;
+      ratios.push(near.filter((n) => (n.p.gameCount ?? 0) >= TRUST).length / near.length);
+      counts.push(Math.log(near.length));
+    }
+    const mr = mean(ratios), mc = mean(counts);
+    const rBias = mean(ratios.map((v, i) => (v - mr) * (counts[i] - mc))) / (sdOf(ratios) * sdOf(counts));
+    console.log(`\n  ⛔ **기각한다 — 지역 편향이 매장 특성과 붙어 있다.**`);
+    console.log(`     지자체마다 등록 관행이 다르다: 게임기 70+ 비율이 부산 43% · 대구 31% vs 충북 13% · 울산 9%`);
+    console.log(`     (게임기를 아예 안 적는 비율도 서울 53% vs 울산 4%로 갈린다).`);
+    console.log(`     70+ 비율 vs 2km 경쟁점 수(log)  **r = ${rBias.toFixed(3)}** (유의선 ±0.41) — 넘는다.`);
+    console.log(`     => **경쟁점이 많은 동네일수록 등록이 부실하다.** 조밀한 도시 매장만 덜 세어진다.`);
+    console.log(`        편향 +0.07%p가 좋아 보인 건 도시 매장을 덜 세서 우연히 맞아떨어진 것일 수 있다.`);
+    console.log(`\n  ⚠️ **오늘 기각한 셋이 전부 같은 병이다:**`);
+    console.log(`       카카오 40건 상한 · 인허가 면적 축소등록 · 인허가 게임기 미등록`);
+    console.log(`       셋 다 **조밀한 도시 매장의 경쟁점을 덜 세게** 만든다. 그리고 그 방향이 하필`);
+    console.log(`       퍼짐 과장의 원인으로 지목한 바로 그것이다 — 그래서 성적이 좋아 보여도 못 믿는다.`);
+    console.log(`  => 다음 과녁: **전국 동일 기준으로 수집된 2km 경쟁점 자료**. 후보는 소상공인 상가업소 DB`);
+    console.log(`     (이미 collectSbiz*로 쓰고 있다 — 건수 상한도 지자체 관행도 안 탄다).`);
+    expect(withG.length).toBeGreaterThan(50);
+    expect(Math.abs(rBias)).toBeGreaterThan(0.41);   // 편향이 사라지면 이 잠금이 깨지고, 그때 다시 본다
+  });
+
   it("(4) 매장별로 얼마나 붙었나 — 독점이라던 3곳 포함", () => {
     console.log(`\n[매장별] 평가창 영업으로 판정된 ${OFFICIAL_RADIUS_M}m 밖 경쟁점`);
     console.log(`  매장                건수  유효경쟁IP   예측변화(가동률)`);
