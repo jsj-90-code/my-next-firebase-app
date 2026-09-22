@@ -66,18 +66,53 @@ export type QuickEvalAssembly = {
 };
 
 /**
- * 하드웨어 기본값 — 신규후보지 생성 화면(`candidates/[code]/page.tsx` blankCandidate)이 쓰는
- * 것과 **같은 값**이다. "블랙라벨 현재 표준" 실제 구매 사양이라 기획값에 해당한다.
- * ⚠️ 그 화면의 값이 바뀌면 여기도 같이 바꿔야 한다 — 두 곳이 갈라지면 같은 후보지가 도구와
- *    정밀 평가에서 다른 자사 경쟁력점수를 받는다.
+ * 신규후보지 생성 화면(`candidates/[code]/page.tsx` blankCandidate)이 쓰는 **표준 기획값**.
+ * "블랙라벨 현재 표준" 실제 구매 사양이다.
+ *
+ * ⚠️ 이 도구는 이 값을 **안 쓴다**(아래 QUICK_EVAL_OWN_HARDWARE 주석). 여기 남겨 둔 건
+ *    두 값의 관계를 한눈에 보이게 하려는 것이고, 그 화면의 값이 바뀌면 여기도 같이 고쳐서
+ *    "무엇과 무엇이 다른가"가 계속 맞게 유지하기 위한 것이다.
  */
-export const QUICK_EVAL_OWN_HARDWARE = {
+export const OWN_HARDWARE_PLANNED_STANDARD = {
   ownCpu: "울트라5 225F",
   ownRam: "16GB",
   ownVgaBase: "RTX 5060",
   ownMonitorBase: "제이씨현 32인치 FHD 240Hz",
   ownMonitorTop:
     "QNIX IPS 27인치 FHD 300Hz, BenQ ZOWIE XL2540X+ 24.1인치 FHD 280Hz, 비트엠 34인치 WWQHD 165Hz, 비트엠 27인치 FHD 240Hz",
+} as const;
+
+/**
+ * ⭐⭐ 이 도구가 자사 사양으로 넣는 값 — **기존 가맹점 38곳의 최빈 사양**이다.
+ *
+ * ── 왜 표준 기획값이 아닌가 (2026-09-22 밤, `_quickEvalBias.test.ts`) ──────────
+ * 사용자: *"실제보다 21퍼 높게나오는 경향있따고했잖아. 이걸 산식을통해 개선하면되지않니?
+ * 보정말고 값을 조정하면되자나"* — 그래서 조정할 수 있는 값을 다 재 봤다.
+ *
+ *   경쟁점 기본대수(90 -> 300대, 학습·후보지 양쪽 같이) : 배율 1.211 -> 1.199. **안 움직인다**
+ *   경쟁점 품질을 실측 대표값으로 메움                  : 배율 1.240으로 **나빠진다**
+ *   자사 사양을 비움(미정)                            : V62가 금액을 **못 낸다**(n=0)
+ *   **자사 사양을 표본 최빈으로**                       : 배율 1.211 -> **1.140**, MAPE 27.79 -> **23.14%**
+ *
+ * 표준 기획값(울트라5 225F · RTX 5060)은 **학습 표본에 없는 사양 구간**이다. 기존점은 전부
+ * i5 14400F · RTX 4060 세대라, 표준 기획값을 넣으면 모형이 표본 밖으로 외삽한다. 그 사양
+ * 프리미엄이 진짜인지는 확인할 길이 없다 — 신사양 매장의 실매출이 아직 없고, 사양과 개점
+ * 시점이 얽혀 있다(코호트 교란). 그래서 **표본 안쪽 값**을 쓴다.
+ *
+ * ⚠️ 이 값은 **화면에도 AI 평가문에도 안 나온다**(2026-09-22 확인 — grep으로 확인했다).
+ *    V62 경쟁력점수 계산에만 들어가므로, 낮춰도 화면에 거짓 사양을 적는 일은 없다.
+ * ⚠️ 그래서 이 도구와 정밀 평가는 같은 후보지에 **다른 자사 경쟁력점수**를 준다(도구가 약
+ *    6% 낮다). 일부러 그렇게 뒀다 — 정밀 평가도 표준 기획값 때문에 실제보다 13% 높게 나온다는
+ *    게 같은 측정에서 나왔고(②단계 배율 1.132), 그쪽에 맞추는 건 같이 틀리자는 뜻이 된다.
+ *    ⛔ 정밀 평가(`/store-eval`)를 이 판단으로 고치지 마라 — 사용자 지시로 이 도구 전용이다.
+ * ⚠️ 이 값을 되돌리면 `quickEvalDefaults.QUICK_EVAL_BACKTEST`의 숫자도 같이 되돌려야 한다.
+ */
+export const QUICK_EVAL_OWN_HARDWARE = {
+  ownCpu: "i5 14400F",
+  ownRam: "16GB",
+  ownVgaBase: "RTX 4060",
+  ownMonitorBase: "제이씨현 (32인치·FHD·240Hz)",
+  ownMonitorTop: "제이씨현 (27인치·FHD·240Hz)\n주연테크 Nano IPS (27인치·FHD·240Hz)",
 } as const;
 
 function ratio(part: number | null | undefined, whole: number | null | undefined): number | null {

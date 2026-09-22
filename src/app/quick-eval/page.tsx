@@ -50,7 +50,6 @@ import {
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
   QUICK_EVAL_BACKTEST,
-  QUICK_EVAL_INPUT_SENSITIVITY,
   QUICK_EVAL_RADII,
   QUICK_EVAL_USAGE_LIMIT,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
@@ -396,30 +395,13 @@ export default function QuickEvalPage() {
 
         {/* ⚠️ 입력칸은 이 한 줄이 전부다(사용자 지시 2026-09-22). 접이식 "추가 입력"을 다시
             만들지 마라 — 후보지명 칸을 없애고 주소를 이름으로 쓴다. */}
-        {/* ⚠️ "층수를 넣어도 금액이 안 바뀐다"를 반드시 알려야 한다 — 안 적으면 고장으로 오해한다.
-            측정값은 quickEvalDefaults에서 읽는다(화면에 숫자를 글자로 박지 않는다). */}
-        <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-          층·엘리베이터는 <strong>V62 금액 계산에는 직접 들어가지 않습니다</strong>(바꿔도{" "}
-          {formatPercent(QUICK_EVAL_INPUT_SENSITIVITY.floorDirectEffect, 1)}). 대신 <strong>AI 접근가시성 판단</strong>
-          에 사실로 넘어가고, 가시성은 결과를 크게 움직입니다(
-          {formatPercent(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.low, 1)} ~ +
-          {formatPercent(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.high, 1)}). 비우면 &quot;모름&quot;으로
-          보수적으로 매깁니다. 먹거리는 {OWN_FOOD_BRAND} 고정이고 예상 오픈월은 안 받습니다.
-        </p>
-
-        {/* ⚠️ 다른 화면으로 가는 링크를 넣지 않는다(QuickEvalChrome 머리 주석 — 점포팀에 공유하는
-            페이지다). 그래서 "점포평가 시스템"은 링크가 아니라 글자로만 둔다. */}
-        {/* ⚠️ 여기에 13.40%를 쓰면 안 된다 — 그건 검증 배선으로 잰 값이고 이 도구의 성적이
-            아니다. 도구를 되짚어 잰 값(QUICK_EVAL_BACKTEST)을 쓴다. */}
-        <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
-          초기 선별용입니다. 기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳을 후보지인 척 되짚어 재 보니
-          평균오차 {formatPercent(QUICK_EVAL_BACKTEST.mape, 1)}이고{" "}
-          <strong>
-            실제보다 {((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤 높게 나오는 경향
-          </strong>
-          이 있습니다({QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳). 줄 세우기에 쓰고,
-          금액 자체는 점포평가 시스템의 정식 평가로 확정하세요.
-        </p>
+        {/* ⚠️ 2026-09-22 밤 — 여기 있던 안내문 둘(층·엘리베이터 설명 / 되짚기 오차 설명)을
+            사용자 지시로 지웠다: *"조회했을떄 이런 문구뜨는데, 쓸때 없는내용빼라"* ·
+            *"이거는 삭제해도될듯"*. 조회 화면 머리를 깨끗하게 두라는 뜻이다.
+            ⚠️ **다시 붙이지 마라.** 두 내용 다 사라진 게 아니라 아래 접이식
+            ("이 숫자를 얼마나 믿나")으로 옮겼다 — 층수 0.0%는 재고표의 항목 설명에,
+            되짚기 성적은 오차표 아래 한 줄에 있다. 지우면 화면에 13.40%만 남아
+            도구 성적을 실제보다 좋게 보여주게 된다. */}
         {error ? <p className="mt-3 text-sm text-[var(--sl-danger)]">{error}</p> : null}
       </section>
 
@@ -704,6 +686,22 @@ export default function QuickEvalPage() {
             ⚠️ 위 측정은 <strong>기존 가맹점</strong>으로 잰 것이고 가시성을 표본 중앙값으로 고정해서 쟀습니다. 이
             화면은 가시성을 AI로 매기므로 조건이 완전히 같지 않습니다. 후보지는 경쟁점 자료가 더 부실해 실제로는
             이보다 나쁠 수 있습니다.
+          </li>
+          {/* ⚠️ 2026-09-22 밤 — 조회 화면 머리에 있던 되짚기 문구를 사용자 지시로 지웠다.
+              그런데 위 표(ADDRESS_ONLY_ACCURACY)는 **검증 배선**으로 잰 값이라 이 도구의
+              성적이 아니다. 이 줄을 지우면 화면에 좋은 숫자만 남는다 — 지우지 마라. */}
+          <li>
+            ⭐ <strong>이 도구 자체를 되짚어 잰 값</strong>은 위 표와 다릅니다. 기존 가맹점{" "}
+            {QUICK_EVAL_BACKTEST.sampleCount}곳을 후보지인 척(자기 자신은 학습에서 빼고) 돌려 보면 평균오차{" "}
+            {formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}이고 실제보다{" "}
+            {((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤 높게 나옵니다(
+            {QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳).
+          </li>
+          <li>
+            수준을 맞춘 뒤 남는 <strong>줄 세우기 오차</strong>는{" "}
+            {formatPercent(QUICK_EVAL_BACKTEST.leveledMape, 2)}입니다(정밀 평가는{" "}
+            {formatPercent(QUICK_EVAL_BACKTEST.preciseLeveledMape, 2)}). 금액 수준보다 <strong>순서</strong>가 이
+            도구의 쓸모입니다.
           </li>
           <li>⚠️ {QUICK_EVAL_USAGE_LIMIT}</li>
         </ul>

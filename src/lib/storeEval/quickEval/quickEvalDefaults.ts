@@ -27,6 +27,37 @@ export const QUICK_EVAL_RADII = { competitor: 500, floating: 500, resident1km: 1
 /** SGIS 주거인구 기준연도. 운영 자료(52곳)를 다시 받을 때 쓴 것과 같은 해로 맞춘다. */
 export const SGIS_BASE_YEAR = "2024";
 
+/**
+ * ⭐ 입력 칸별 **민감도 측정값** (2026-09-22, `_quickEvalSensitivity.test.ts`).
+ *
+ * 사용자: *"엘베랑 층수 입력하는 게 기대값 딱히 없음"* — 맞는 관찰이었다. 재 보니
+ * `computeOwnLocationScore`는 **입지평가가 있으면 층수를 아예 안 본다**(없을 때만 폴백).
+ * 도구는 AI 입지평가를 항상 돌리므로 **층·엘리베이터는 V62 계산에 도달하지 못한다.**
+ *
+ * 그래도 입력은 **남긴다**(사용자 결정 2026-09-22: *"층수 남기고 AI에만 넘기는 쪽으로 해줘"*) —
+ * 층수가 닿는 유일한 경로가 **AI의 접근가시성 판정**이고, 가시성은 결과를 크게 움직인다.
+ * 대신 화면에 "V62 계산엔 직접 안 들어간다"를 적어 준다. 안 적으면 넣어도 값이 안 바뀌는 걸
+ * 보고 "고장났나?" 하게 된다.
+ */
+export const QUICK_EVAL_INPUT_SENSITIVITY = {
+  measuredAt: "2026-09-22",
+  testFile: "src/lib/storeEval/_quickEvalSensitivity.test.ts",
+  /** 층·지상지하·엘리베이터를 아무리 바꿔도 V62 예상매출이 움직이는 폭 */
+  floorDirectEffect: 0,
+  /** 가시성 1점 -> 5점일 때의 예상매출 변화 폭 */
+  visibilityEffect: { low: -0.165, high: 0.094 },
+  /** PC대수 80 -> 130대 */
+  pcCountEffect: { low: -0.157, high: 0.294 },
+  /** 시급 1000 -> 1800원 */
+  hourlyRateEffect: { low: -0.063, high: 0.091 },
+} as const;
+
+/**
+ * 아래 재고표 문장에 측정값을 **읽어서** 끼우기 위한 것. 숫자를 글자로 박으면 계수가
+ * 바뀔 때 설명만 낡는다(CLAUDE.md 규칙 · `project_stale_explanation_pattern`).
+ */
+const pct = (v: number, digits = 1) => `${v >= 0 ? "+" : "−"}${(Math.abs(v) * 100).toFixed(digits)}%`;
+
 export type DefaultSource = "자동수집" | "기본값" | "사람이 입력" | "AI 판정";
 
 export type QuickEvalFieldNote = {
@@ -109,6 +140,16 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     needsFieldCheck: false,
   },
   {
+    label: "자사 하드웨어 사양(CPU·VGA·RAM·모니터)",
+    source: "기본값",
+    basis:
+      "기존 가맹점 38곳의 **최빈 사양**을 가정한다(2026-09-22 밤 조정). 표준 기획값(최신 세대)은 " +
+      "학습 표본에 없는 사양 구간이라 모형이 표본 밖으로 외삽하고, 되짚어 재 보니 실제보다 21% 높게 " +
+      "나왔다 — 표본 안쪽 사양으로 두면 14%로 줄어든다. 사양 문자열은 화면·AI 평가문에 안 나오고 " +
+      "경쟁력점수 계산에만 쓰인다. ⚠️ 그래서 같은 후보지에 정밀 평가보다 약 6% 낮은 점수를 준다",
+    needsFieldCheck: false,
+  },
+  {
     label: "자사 시설 구성(존·좌석)",
     source: "기본값",
     basis: "회사 표준 존 구성(applyStandardOwnFacilityDefaults). 운영 후보지도 비우면 같은 값이 들어간다",
@@ -125,16 +166,19 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     source: "사람이 입력",
     basis:
       "조사값이 아니라 **기획값**이다. 재 보니 결과를 제일 크게 움직인다 — PC 80→130대에서 " +
-      "−15.7%~+29.4%, 시급 1000→1800원에서 −6.3%~+9.1%. 비우면 계산이 안 된다",
+      `${pct(QUICK_EVAL_INPUT_SENSITIVITY.pcCountEffect.low)}~${pct(QUICK_EVAL_INPUT_SENSITIVITY.pcCountEffect.high)}, ` +
+      `시급 1000→1800원에서 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.low)}~` +
+      `${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.high)}. 비우면 계산이 안 된다`,
     needsFieldCheck: false,
   },
   {
     label: "자사 층·지상지하·엘리베이터",
     source: "사람이 입력",
     basis:
-      "⚠️ **V62 계산에는 직접 안 들어간다**(측정: 아무리 바꿔도 0.0%) — 입지평가가 있으면 " +
-      "산식이 층수를 안 보기 때문이다. 대신 **AI 접근가시성 판정에 사실로 넘어가고**, 가시성은 " +
-      "결과를 크게 움직인다(1점 −16.5% ~ 5점 +9.4%). 비우면 '모름'으로 보수적으로 매겨진다",
+      `⚠️ **V62 계산에는 직접 안 들어간다**(측정: 아무리 바꿔도 ${(QUICK_EVAL_INPUT_SENSITIVITY.floorDirectEffect * 100).toFixed(1)}%)` +
+      " — 입지평가가 있으면 산식이 층수를 안 보기 때문이다. 대신 **AI 접근가시성 판정에 사실로 넘어가고**, " +
+      `가시성은 결과를 크게 움직인다(1점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.low)} ~ ` +
+      `5점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.high)}). 비우면 '모름'으로 보수적으로 매겨진다`,
     needsFieldCheck: false,
   },
   {
@@ -175,52 +219,44 @@ export const ADDRESS_ONLY_ACCURACY = {
  * ⭐ **이 도구 자체를 되짚어 잰 값** (2026-09-22 밤, `_quickEvalBias.test.ts`).
  *
  * 위 `ADDRESS_ONLY_ACCURACY`는 검증 배선으로 잰 것이라 **도구의 성적이 아니다.** 도구는
- * 후보지 배선(evaluateCandidate)을 쓰고 자사를 표준값으로 두므로 조건이 다르다. 그래서
+ * 후보지 배선(evaluateCandidate)을 쓰고 자사를 기본값으로 두므로 조건이 다르다. 그래서
  * 기존매장 38곳을 **후보지인 척**(조사 자료를 지우고, 자기 자신은 학습에서 뺀 채) 도구와 같은
  * 배선으로 돌려 실제 매출과 견줬다.
  *
- * ⚠️ 과대예측의 큰 몫은 **자사를 표준값으로 두는 것**(+14.2%)이다. 이건 "지금 새로 지으면"이라
- *    후보지 평가의 본질이고 정밀 평가도 똑같다 — 결함이 아니라 성질이다. 그래도 화면에는
- *    "높게 나오는 경향"을 반드시 알려야 한다. 안 그러면 그 숫자를 그대로 믿는다.
+ * ── 2026-09-22 밤(2차) — 과대예측을 값으로 줄였다 ──────────────────────────────
+ * 과대예측의 큰 몫은 **자사를 표준 기획값으로 두는 것**이었다. 예전 주석은 이걸 "새로 지으면
+ * 사양이 진짜 좋으니 정상"이라고 적어 뒀는데, 재 보니 그 사양은 **학습 표본에 아예 없는 구간**
+ * 이었다(기존점은 전부 i5 14400F · RTX 4060 세대). 검증할 수 없는 외삽이므로 표본 안쪽
+ * 사양으로 내렸다 — `buildQuickCandidate.QUICK_EVAL_OWN_HARDWARE` 주석에 근거가 다 있다.
+ *
+ * ⚠️ 그래도 배율은 여전히 1보다 크다. 남은 몫은 **값으로는 못 줄인다**(기본대수·품질 다 재
+ *    봤고, 곱셈 보정과 수학적으로 같다는 것까지 확인했다 — `leveledMape` 참고). 그러니 화면에
+ *    "높게 나오는 경향"을 계속 알려야 한다. 안 그러면 그 숫자를 그대로 믿는다.
  */
 export const QUICK_EVAL_BACKTEST = {
   measuredAt: "2026-09-22",
   sampleCount: 38,
   testFile: "src/lib/storeEval/_quickEvalBias.test.ts",
-  /** 학습 경쟁점도 같이 비우도록 고친 뒤의 값 */
-  mape: 0.2779,
-  within20: 0.4211,
+  /** 자사 사양을 표본 최빈값으로 낮춘 뒤의 값(2026-09-22 밤 2차) */
+  mape: 0.2314,
+  within20: 0.4737,
   /** 예측 ÷ 실제매출의 중앙값. 1보다 크면 높게 나온다는 뜻 */
-  medianRatio: 1.211,
-  overCount: 30,
-  /** 고치기 전(학습만 실측이던 비대칭 배선) */
+  medianRatio: 1.14,
+  overCount: 29,
+  /** 자사 사양을 표준 기획값으로 두던 때(= 이 조정 직전) */
+  beforeOwnSpecFix: { mape: 0.2779, within20: 0.4211, medianRatio: 1.211, overCount: 30 },
+  /** 그보다 더 전 — 학습만 실측이던 비대칭 배선 */
   before: { mape: 0.4635, within20: 0.2632, medianRatio: 1.461, overCount: 35 },
+  /**
+   * ⭐ **수준을 1에 맞춘 뒤 남는 오차 = 줄 세우기 실력.** 값 조정이 이걸 못 내리면
+   * 그 조정은 곱셈 보정과 수학적으로 같은 것이다 — 실제로 못 내렸다(17.04 -> 16.94%).
+   * 정밀 평가는 10.10%이고, 그 격차는 값으로 안 메워진다(경쟁점 실측 자료가 필요하다).
+   */
+  leveledMape: 0.1694,
+  leveledMapeBefore: 0.1704,
+  preciseLeveledMape: 0.101,
 } as const;
 
-/**
- * ⭐ 입력 칸별 **민감도 측정값** (2026-09-22, `_quickEvalSensitivity.test.ts`).
- *
- * 사용자: *"엘베랑 층수 입력하는 게 기대값 딱히 없음"* — 맞는 관찰이었다. 재 보니
- * `computeOwnLocationScore`는 **입지평가가 있으면 층수를 아예 안 본다**(없을 때만 폴백).
- * 도구는 AI 입지평가를 항상 돌리므로 **층·엘리베이터는 V62 계산에 도달하지 못한다.**
- *
- * 그래도 입력은 **남긴다**(사용자 결정 2026-09-22: *"층수 남기고 AI에만 넘기는 쪽으로 해줘"*) —
- * 층수가 닿는 유일한 경로가 **AI의 접근가시성 판정**이고, 가시성은 결과를 크게 움직인다.
- * 대신 화면에 "V62 계산엔 직접 안 들어간다"를 적어 준다. 안 적으면 넣어도 값이 안 바뀌는 걸
- * 보고 "고장났나?" 하게 된다.
- */
-export const QUICK_EVAL_INPUT_SENSITIVITY = {
-  measuredAt: "2026-09-22",
-  testFile: "src/lib/storeEval/_quickEvalSensitivity.test.ts",
-  /** 층·지상지하·엘리베이터를 아무리 바꿔도 V62 예상매출이 움직이는 폭 */
-  floorDirectEffect: 0,
-  /** 가시성 1점 -> 5점일 때의 예상매출 변화 폭 */
-  visibilityEffect: { low: -0.165, high: 0.094 },
-  /** PC대수 80 -> 130대 */
-  pcCountEffect: { low: -0.157, high: 0.294 },
-  /** 시급 1000 -> 1800원 */
-  hourlyRateEffect: { low: -0.063, high: 0.091 },
-} as const;
 
 /** 초기 모드 숫자를 결재에 쓰지 못하게 화면에 박는 문구(인계문 6-2). */
 export const QUICK_EVAL_USAGE_LIMIT =

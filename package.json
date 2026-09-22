@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node --max-old-space-size=8192 ./node_modules/next/dist/bin/next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:rules": "node scripts/run-rules-tests.mjs"
+    "test:rules": "node scripts/run-rules-tests.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
