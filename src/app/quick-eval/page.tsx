@@ -1,6 +1,10 @@
 "use client";
 
-// 주소만 넣는 **초기평가** 화면. (2026-09-22 신설 · 새 페이지, 기존 화면은 건드리지 않는다)
+// 주소만 넣는 **초기평가** 화면. (2026-09-22 신설)
+//
+// ⚠️ **점포평가 시스템(/store-eval)과 완전히 분리된 독립 도구다** — 사용자 지시
+//    ("링크를 완전히 분리해줘 v62웹에넣지말고"). 주소도 /quick-eval로 따로 있고, 점포평가
+//    메뉴에도 안 걸린다. 입구는 홈 화면의 도구 카드다. 껍데기는 QuickEvalChrome.
 //
 // ── 무엇이 다른가 ─────────────────────────────────────────────────────────
 // [신규후보지]는 사람이 경쟁점을 조사하고 입지를 평가해서 **결재 숫자**를 내는 화면이다.
@@ -149,7 +153,7 @@ export default function QuickEvalPage() {
     try {
       // 1) 자동수집 — 좌표·주거인구·유동인구·경쟁점·입지평가 초안
       const token = await user?.getIdToken();
-      const response = await fetch("/api/store-eval/quick-eval/collect", {
+      const response = await fetch("/api/quick-eval/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ address: plan.address.trim(), name: planInput.name, skipFloating }),
@@ -209,7 +213,7 @@ export default function QuickEvalPage() {
     setReviewError(null);
     try {
       const token = await user?.getIdToken();
-      const response = await fetch("/api/store-eval/quick-eval/ai-review", {
+      const response = await fetch("/api/quick-eval/ai-review", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({

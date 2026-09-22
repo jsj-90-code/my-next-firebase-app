@@ -1,6 +1,10 @@
 # 주소만 초기평가 도구 — 만든 것과 안 만든 것 (2026-09-22)
 
-화면: `/store-eval/quick-eval` · 인계문: `docs/handoff-address-only-tool.md`
+화면: **`/quick-eval`** (독립 주소) · 인계문: `docs/handoff-address-only-tool.md`
+
+⚠️ **점포평가 시스템(`/store-eval`) 안에 있지 않다.** 사용자 지시로 주소·화면을 완전히 분리했다
+("링크를 완전히 분리해줘 v62웹에넣지말고", 2026-09-22). 점포평가 메뉴에 걸면 안 되고, 입구는
+홈 화면(`/`)의 도구 카드 하나다. 산식만 운영 V62를 그대로 부른다 — 계산을 따로 만들지 않았다.
 
 ---
 
@@ -140,8 +144,13 @@ src/lib/storeEval/quickEval/
   quickEvalReviewPrompt.ts AI 평가문 프롬프트(순수함수)
   quickEvalReviewAi.ts     Gemini 호출(무료 티어 키)
   quickEval.test.ts        27건 — 좌표검산·이름규칙·조립·기본값 장치
-src/app/api/store-eval/quick-eval/collect/route.ts     자동수집
-src/app/api/store-eval/quick-eval/ai-review/route.ts   평가문
-src/app/store-eval/quick-eval/page.tsx                 화면
-src/app/store-eval/StoreEvalChrome.tsx                 메뉴 한 줄
+src/app/api/quick-eval/collect/route.ts      자동수집
+src/app/api/quick-eval/ai-review/route.ts    평가문
+src/app/quick-eval/page.tsx                  화면
+src/app/quick-eval/layout.tsx                라우트 전용 title
+src/app/quick-eval/QuickEvalChrome.tsx       전용 껍데기(로그인 관문·홈으로·테마) — 점포평가와 공유하지 않는다
+src/app/page.tsx                             홈 도구 카드(유일한 입구)
 ```
+
+⚠️ `src/app/store-eval/` 아래에는 **아무것도 두지 않는다.** 점포평가 메뉴
+(`StoreEvalChrome.tsx`)에 이 도구를 걸지 마라 — 분리한 이유가 무너진다.
