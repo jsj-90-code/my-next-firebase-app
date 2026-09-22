@@ -16,6 +16,11 @@ import { haversineM } from "./kakaoPcBangs";
 import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
 import { appendSiteFactsToContext, describeSiteFacts } from "./quickEvalLocationContext";
 import { buildQuickEvalPeers } from "./quickEvalPeers";
+import {
+  fitQuickEvalOwnModel,
+  predictQuickEvalOwnRevenue,
+  QUICK_EVAL_OWN_MODEL_ACCURACY,
+} from "./quickEvalOwnModel";
 import { defaultModelSettings } from "../settings";
 import type { ExistingStore } from "../types";
 
@@ -384,6 +389,53 @@ describe("가맹점 실적 비교표 (AI 자체 매출 판단의 근거)", () =>
     expect(peers.totalCount).toBe(0);
     expect(peers.nearest).toEqual([]);
     expect(peers.medians.revenuePerPc).toBeNull();
+  });
+});
+
+describe("자동화 전용 산식", () => {
+  const store = (pc: number, rate: number, revenue: number, code: string): ExistingStore =>
+    ({
+      storeCode: code, storeName: code, brandType: "블랙라벨", excludedFromModel: false,
+      openedAt: "2025-01-01", pcCount: pc, evaluationPcCount: null, hourlyRate: rate,
+      actualMonthlyRevenueAvg: revenue,
+    }) as ExistingStore;
+
+  /** 대수·시급이 커질수록 매출이 커지는 가짜 자료. 계수 부호가 맞는지 본다. */
+  const sample = Array.from({ length: 20 }, (_, i) =>
+    store(80 + i * 3, 1000 + i * 40, (80 + i * 3) * (1000 + i * 40) * 300, `S${i}`),
+  );
+
+  it("표본이 모자라면 산식을 만들지 않는다 — 계수를 지어내지 않는다", () => {
+    expect(fitQuickEvalOwnModel(sample.slice(0, 5))).toBeNull();
+  });
+
+  it("학습 대상은 V62와 같은 조건이다(블랙라벨·학습제외 아님·실매출 있음)", () => {
+    const dirty = [
+      ...sample,
+      { ...sample[0], storeCode: "X1", brandType: "리그PC방" } as ExistingStore,
+      { ...sample[0], storeCode: "X2", excludedFromModel: true } as ExistingStore,
+      { ...sample[0], storeCode: "X3", actualMonthlyRevenueAvg: null } as ExistingStore,
+    ];
+    expect(fitQuickEvalOwnModel(dirty)?.sampleCount).toBe(sample.length);
+  });
+
+  it("대수가 많을수록 예측이 커진다", () => {
+    const model = fitQuickEvalOwnModel(sample);
+    const small = predictQuickEvalOwnRevenue(model, { pcCount: 90, hourlyRate: 1300 });
+    const big = predictQuickEvalOwnRevenue(model, { pcCount: 120, hourlyRate: 1300 });
+    expect(small).not.toBeNull();
+    expect(big as number).toBeGreaterThan(small as number);
+  });
+
+  it("입력이 비면 null — 지어내지 않는다", () => {
+    const model = fitQuickEvalOwnModel(sample);
+    expect(predictQuickEvalOwnRevenue(model, { pcCount: null, hourlyRate: 1300 })).toBeNull();
+    expect(predictQuickEvalOwnRevenue(model, { pcCount: 100, hourlyRate: null })).toBeNull();
+    expect(predictQuickEvalOwnRevenue(null, { pcCount: 100, hourlyRate: 1300 })).toBeNull();
+  });
+
+  it("측정값이 기준선(전부 평균)을 이긴다고 적혀 있다 — 못 이기면 쓸 이유가 없다", () => {
+    expect(QUICK_EVAL_OWN_MODEL_ACCURACY.mape).toBeLessThan(QUICK_EVAL_OWN_MODEL_ACCURACY.flatBaselineMape);
   });
 });
 
