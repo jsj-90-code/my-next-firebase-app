@@ -90,7 +90,8 @@ it("눈금 보정을 수요항·점유율항으로 쪼갠다", () => {
   //    두는 게 맞다"는 **자료가 못 고른다**는 뜻이었고, 그 판정은 그대로다.
   // ⛔ 2026-09-21 밤에 **b를 아예 껐다**(b=1). 이 하네스가 재던 "b를 어떻게 쪼갤까"는
   //    그래서 지금 산식에는 해당이 없다 — 되살릴 때 참고하라고 기록만 남긴다.
-  expect(P.indexCalibration).toEqual({ ratioExponent: 1, locationExponent: .169, referenceUtilization: .3011 });
+  // 2026-09-22 밤 — 입지 지수를 0.169 -> 0.5로 올렸다(중첩 LOO가 고른 값. `_spreadLayers` 4번).
+  expect(P.indexCalibration).toEqual({ ratioExponent: 1, locationExponent: .5, referenceUtilization: .3011 });
   expect(P.shareMode).toBe("quality");
   // 2026-09-22 — "안 가는 몫"을 다시 0으로 뺐다(점 3개 적합이었고 정체가 반경 밖 경쟁점이다).
   // 위 기록은 0일 때 잰 값이라 지금 산식과 다시 맞다. 하루 동안만 20이었다.
