@@ -36,7 +36,8 @@ import {
 import type { Competitor } from "./types";
 
 const SGIS_FILE = ".local-tools/sgis-resident-population.json";
-const describeIf = hasValidationSnapshot() && existsSync(SGIS_FILE) ? describe : describe.skip;
+// 2026-09-24 — 고리 인구는 스냅샷(storeEvalLabResidentRings)에 있으므로 SGIS 파일은 필수가 아니다(집 PC에는 그 파일이 없다).
+const describeIf = hasValidationSnapshot() ? describe : describe.skip;
 const mean = (a: number[]) => a.reduce((p, q) => p + q, 0) / a.length;
 const sdOf = (a: number[]) => { const m = mean(a); return Math.sqrt(mean(a.map((x) => (x - m) ** 2))); };
 const corr = (a: number[], b: number[]) => {
@@ -70,8 +71,9 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
   const ringDocs = (snap.labResidentRings ?? []) as LabResidentRingsDoc[];
   const residentRingsByCode = ringDocs.length
     ? residentRingsByCodeFromDocs(ringDocs)
-    : residentRingsByCodeFromSgis(JSON.parse(readFileSync(SGIS_FILE, "utf8")) as SgisFile);
-  const ringSource = ringDocs.length ? `스냅샷 storeEvalLabResidentRings ${ringDocs.length}건` : "SGIS 파일";
+    : existsSync(SGIS_FILE) ? residentRingsByCodeFromSgis(JSON.parse(readFileSync(SGIS_FILE, "utf8")) as SgisFile)
+    : new Map<string, never>() as unknown as ReturnType<typeof residentRingsByCodeFromDocs>;
+  const ringSource = ringDocs.length ? `스냅샷 storeEvalLabResidentRings ${ringDocs.length}건` : existsSync(SGIS_FILE) ? "SGIS 파일" : "없음(고리 항 빠짐)";
   // 항아리 판정(2026-09-23 밤 채택) — 화면과 같은 컬렉션. 안 넘기면 useRingEnclosure가 켜져도 안 깎여 "새 기본값" 줄이 낡는다.
   const ringBlockedByCode = new Map<string, number>();
   for (const j of (snap.labTradeAreaJudgments ?? []) as { code?: string; ringCutCount?: number | null; blockedCount?: number | null }[]) {
