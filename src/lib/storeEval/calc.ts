@@ -268,7 +268,8 @@ export function describeMarketGradeThresholds(
 ): string {
   const t = settings.marketGradeAbsoluteThresholds;
   const n = (v: number) => Math.round(v).toLocaleString("ko-KR");
-  return `상권수요 기준 절대평가 · SS ${n(t.SS)}↑ · S ${n(t.S)}↑ · A ${n(t.A)}↑ · B 그 미만`;
+  // 2026-09-23 — "상권수요 기준 절대평가" 머리말은 뺐다(사용자: 기준만 적어도 충분히 이해된다).
+  return `SS ${n(t.SS)}↑ · S ${n(t.S)}↑ · A ${n(t.A)}↑ · B 그 미만`;
 }
 
 // ---------------------------------------------------------------------------
