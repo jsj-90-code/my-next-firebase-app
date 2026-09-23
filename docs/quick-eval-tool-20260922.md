@@ -696,3 +696,77 @@ calc.ts 1443행이 경고한다: 미조사 경쟁점의 존 8항목이 **전부 
 위 숫자는 전부 **가시성을 표본 중앙값으로 고정**해서 잰 값이다. 실제 도구는 AI가 매긴다.
 그래서 **도구의 진짜 성적은 아직 모른다.** 재려면 기존점 38곳에 AI 초안을 돌려야 한다
 (유료 호출 약 76회). 사용자 판단으로 보류 중이다.
+
+---
+
+## 11. ⭐ 상권수요 천장 — 시골·펜션촌에서 3천만원이 나오던 것을 막았다 (2026-09-23)
+
+사용자: *"완전시골이랑 펜션촌 이런데로 주소찍어서 상권수요 10명 100명 이런데 주소넣었는데 매출
+개높음 ㅋ 수요 10명인데 3천예상, 100명인데 5100만원"*
+
+### 왜 그랬나
+
+V62 매출의 40%는 **대당 중앙값 × 대수**라 수요를 아예 안 본다. 나머지 60% 회귀식에도 수요는
+`log(수요 ÷ (자사+경쟁IP))` 항 하나로 약하게 들어간다(`project_v62_insensitive_to_demand`: 수요
+×1.6에 매출 +2%). 그래서 상권에 사람이 10명이어도 100대를 놓으면 대당 중앙값이 바닥을 깔아
+3천만원이 나온다. 가동률 상한(55%)은 "우리 좌석이 낼 수 있는 최대"를 막지만 "상권 사람이 채울 수
+있는 최대"는 아무도 막지 않았다.
+
+### 무엇을 붙였나
+
+`calc.ts applyDemandCeiling` — 예측매출이 함의하는 월 PC 이용시간이 **자사수요(상권수요 × 점유율)
+× 1명당 시간**을 넘으면 그 비율로 매출을 깎는다. 가동률 상한 바로 뒤에 붙어 있고(`evaluate.ts`),
+비율로 깎으므로 PC·먹거리 구성은 그대로다. 걸리면 화면·AI 평가문·산식 풀이에 "천장 전 값"과
+함께 표시된다.
+
+**운영 V62는 끈다**(`settings.demandCeilingHoursPerUser = null`). 이 도구만 `withQuickEvalSettings`로
+70시간을 켠다. 정밀 평가(신규후보지)는 안 바뀐다.
+
+### 천장 높이 70시간의 근거 — 봉투(envelope)다
+
+기존점 40곳에서 **실제 PC 이용시간(PC매출 ÷ 요금) ÷ 자사수요**를 재니:
+
+```
+  최대 68.2h(문경시청점) · p90 30.2h · 중앙 15.6h · 최소 3.9h(송도)
+  가동률 필드로 재면 최대 53.9h · 중앙 15.8h
+```
+
+70시간은 이 최대치 위다. 그래서 **기존점은 한 곳도 안 걸리고**, 되짚기(`_quickEvalBias.test.ts`
+"수요 천장")에서 켜고 끈 예측값이 매장별로 전부 같다 — 표본 안 성적(MAPE 16.39%·분별력)은 그대로고
+표본 밖(자사수요 수백 명 이하)에서만 작동한다.
+
+⚠️ "1명이 68시간 쓴다"가 아니다. V62 상권수요가 실제 손님 수를 몇 배 작게 잡는다는 뜻이다
+(`project_pingbot_validates_demand`: 산식 수요가 2.66배 작다). 그래서 이건 물리 상수가 아니라
+**관측 최대치 위에 놓은 봉투**다. 재는 자리: `_quickEvalDemandCeiling.test.ts` — 최대치가 70을
+넘으면 깨진다.
+
+### 무엇이 바뀌나 (100대 · 1,200원 · 경쟁점 없음 기준)
+
+| 자사수요 | 천장 이용시간 | 천장 전 | 천장 후 |
+|---|---|---|---|
+| 10명 | 700h | 약 3,000만원 | 약 170만원 |
+| 100명 | 7,000h | 약 5,100만원 | 약 1,700만원 |
+| 570명 이상 | 39,900h+ | (55% 상한 39,600h 아래) | 안 걸림 |
+
+### 왜 교과서식으로 갈아타지 않았나
+
+사용자가 같은 날 제안한 구조 — "기존점 가동률로 인구→수요 산식을 맞춰 후보지에 대입" — 는
+실험실의 교과서식 산식과 같다. 수요가 적으면 매출이 떨어지는 성질은 맞지만, 기존점 40곳 안에서는
+'전부 평균'보다 못 맞힌다(가동률 MAE 5.85%p vs 4.26%p, `project_textbook_overspreads_utilization`).
+인구 자료에 매장을 구별하는 신호가 거의 없어서(최대 r 0.25) 분별력이 사라진다. 그래서 표본 안은
+V62를 그대로 두고, 표본 밖에서만 교과서식의 물리 제약을 천장으로 쓰는 절충을 택했다.
+
+### 파일
+
+```
+src/lib/storeEval/calc.ts                       applyDemandCeiling
+src/lib/storeEval/evaluate.ts                   가동률 상한 뒤에 적용 · demandCapped/demandCeilingHours/v62FinalBeforeDemandCap
+src/lib/storeEval/types.ts · settings.ts        demandCeilingHoursPerUser (운영 기본 null)
+src/lib/storeEval/quickEval/quickEvalDefaults.ts QUICK_EVAL_DEMAND_CEILING · withQuickEvalSettings · 재고표 항목
+src/app/quick-eval/page.tsx                     설정 덧씌우기 · 걸렸을 때 안내문
+src/lib/storeEval/quickEval/quickEvalReviewPrompt.ts  AI 평가문 컨텍스트
+src/lib/storeEval/calcWalkthrough.ts            산식 풀이 행
+src/lib/storeEval/_quickEvalDemandCeiling.test.ts     높이 근거(봉투 측정)
+src/lib/storeEval/_quickEvalBias.test.ts        "수요 천장" — 켜고 끈 예측값 대조
+src/lib/storeEval/calc.test.ts                  applyDemandCeiling 단위 테스트
+```

@@ -525,6 +525,11 @@ export type ModelSettings = {
   // 깎는다(적중률 위해 계수를 역산하는 것과는 성격이 다름 — 실측 데이터에 맞추는 게 아니라
   // 물리적으로 불가능한 값을 거르는 것). calc.ts applyCapacityCeiling 참고.
   v62MaxUtilizationRate: number; // 0.55
+  // 2026-09-23 신설 — **상권수요 천장**. 자사 수요(상권수요 × 점유율) 1명당 월 PC 이용시간이 이 값을 넘는
+  // 예측매출은 그 비율로 깎는다(calc.ts applyDemandCeiling). null이면 끈다 — 운영 기본값은 null이고,
+  // 주소만 초기평가만 켠다(quickEvalDefaults.QUICK_EVAL_DEMAND_CEILING). 시골·펜션촌처럼 수요가 두 자릿수인
+  // 주소에서 100대 × 대당 중앙값이 바닥을 깔아 3천만원이 나오던 것을 막는 장치다.
+  demandCeilingHoursPerUser: number | null;
   // 2026-08-30 추가(사용자 확인 실측치) — 경쟁점도 자사와 같은 물리적 가동률 상한을 갖는다고 보고,
   // 경쟁점이 상한을 넘겨 못 받는 수요(초과분)를 자사 쪽으로 재배분할 때 쓰는 "방문객 수 ↔ 가동률"
   // 환산계수. calc.ts computeMaxCustomersPerPc/redistributeCapacityConstrainedDemand 참고.
@@ -653,6 +658,10 @@ export type EvaluationResult = {
   v62Final: number | null; // V62 최종예상월매출 (가동률 상한 적용 후 — settings.v62MaxUtilizationRate 참고)
   v62FinalBeforeCap: number | null; // 상한 적용 전 원래 예측값(참고용, 상한 안 걸리면 v62Final과 동일)
   capacityCapped: boolean; // true면 가동률 상한에 걸려 v62Final이 깎였다는 뜻
+  // 2026-09-23 신설 — 상권수요 천장(calc.ts applyDemandCeiling). settings.demandCeilingHoursPerUser가 null이면 항상 false.
+  demandCapped: boolean; // true면 상권 인원이 이 대수를 채울 수 없어 v62Final이 깎였다는 뜻
+  demandCeilingHours: number | null; // 천장이 허용한 월 PC 이용시간(자사수요 × 1인당 시간). 꺼져 있으면 null
+  v62FinalBeforeDemandCap: number | null; // 천장 적용 전 값(가동률 상한은 이미 적용된 상태)
   competitorOverflowRevenueBonus: number; // 경쟁점이 자기 상한을 넘겨 못 받은 수요를 자사로 재배분한 매출(0이면 해당 없음)
   conservativeSales: number | null; // 보수판단매출 85%
   upperSales: number | null; // 상한참고매출 115%

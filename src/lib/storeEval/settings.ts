@@ -153,6 +153,9 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     // 환산가동률(24시간 평균)이 전부 20~49%(최대 48.7%)였던 걸 근거로 55%로 잡았다 - 최대관측치에
     // 여유를 좀 둔 값(calc.ts applyCapacityCeiling 참고).
     v62MaxUtilizationRate: 0.55,
+    // 2026-09-23 신설 — 상권수요 천장(types.ts 주석). 운영은 **끈다(null)**. 켜는 건 주소만 초기평가만이고
+    // 그 값(70시간)과 근거는 quickEvalDefaults.QUICK_EVAL_DEMAND_CEILING에 있다.
+    demandCeilingHoursPerUser: null,
     // 2026-08-30 추가(사용자 확인 실측치) — 고객 1명 월평균 방문횟수 3.7회, 1회 평균 이용시간 3시간.
     customerVisitsPerMonth: 3.7,
     customerSessionHours: 3,

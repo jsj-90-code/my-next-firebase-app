@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyCapacityCeiling,
+  applyDemandCeiling,
   bucketizeErrors,
   computeCapacityOverflowRevenueBonus,
   computeMaxCustomersPerPc,
@@ -141,6 +142,34 @@ const VALIDATION_ROWS: [string, string, number, number, "없음" | "보통" | "�
   ["20230818398", "하남덕풍점", 50434909.09, 54371461, "보통", -0.03, 52740317, 0.045710559424929284, 0.04571055942492919, "양호", 44829269, 60651365, "블랙라벨", "사용"],
   ["20230928403", "화명대로점", 50356827.27, 51143852, "보통", -0.03, 49609536, 0.014839919693113757, -0.014839919693113712, "양호", 42168106, 57050966, "블랙라벨", "사용"],
 ];
+
+describe("applyDemandCeiling — 상권수요 천장 (2026-09-23)", () => {
+  it("꺼져 있으면(null) 그대로 통과한다", () => {
+    expect(applyDemandCeiling(30_000_000, 25_000, 10, null)).toEqual({ cappedRevenue: 30_000_000, demandCapped: false, ceilingHours: null });
+  });
+  it("재료가 없으면 그대로 통과한다", () => {
+    expect(applyDemandCeiling(30_000_000, null, 10, 70).demandCapped).toBe(false);
+    expect(applyDemandCeiling(30_000_000, 25_000, null, 70).demandCapped).toBe(false);
+    expect(applyDemandCeiling(null, 25_000, 10, 70).cappedRevenue).toBeNull();
+  });
+  it("예측 이용시간이 천장 안이면 안 깎는다", () => {
+    // 기존점 규모: 자사수요 1,000명 × 70h = 70,000h > 100대 55% 상한 39,600h — 표본 안에서는 절대 안 걸린다
+    const r = applyDemandCeiling(60_000_000, 25_000, 1000, 70);
+    expect(r).toEqual({ cappedRevenue: 60_000_000, demandCapped: false, ceilingHours: 70_000 });
+  });
+  it("시골(수요 10명)은 비율로 깎인다 — 3천만원이 168만원", () => {
+    // 100대·1,200원에서 3천만원이 함의하는 PC 이용시간 ≈ 12,500h(상품비율 0.5). 천장 10명 × 70h = 700h.
+    const r = applyDemandCeiling(30_000_000, 12_500, 10, 70);
+    expect(r.demandCapped).toBe(true);
+    expect(r.ceilingHours).toBe(700);
+    expect(r.cappedRevenue).toBe(Math.round(30_000_000 * (700 / 12_500)));
+  });
+  it("수요 100명이면 5,100만원이 약 1,680만원으로", () => {
+    const r = applyDemandCeiling(51_000_000, 21_250, 100, 70);
+    expect(r.demandCapped).toBe(true);
+    expect(r.cappedRevenue).toBe(Math.round(51_000_000 * (7_000 / 21_250)));
+  });
+});
 
 describe("V62 보정 (12_운영판정!G열: ROUND(V61×(1+보정률)))", () => {
   it.each(VALIDATION_ROWS)("%s %s", (code, name, actual, v61, inflow, _rate, expectedV62, expectedAbsErr, expectedBias, expectedJudgement, expected85, expected115) => {

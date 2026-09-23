@@ -51,9 +51,11 @@ import {
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
   QUICK_EVAL_BACKTEST,
+  QUICK_EVAL_DEMAND_CEILING,
   QUICK_EVAL_ENTRY_THRESHOLD_WON,
   QUICK_EVAL_PLAN_DEFAULTS,
   QUICK_EVAL_RADII,
+  withQuickEvalSettings,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
 import {
   applyQuickEvalQscFloor,
@@ -263,8 +265,11 @@ export default function QuickEvalPage() {
           listQscScores(),
         ]);
       const trainingSales = await listEvaluationSales(existingStores);
-      const settings: ModelSettings =
-        settingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null };
+      // ⭐ 2026-09-23 — 이 화면만 **상권수요 천장**을 켠다(quickEvalDefaults.QUICK_EVAL_DEMAND_CEILING 주석).
+      //    운영 설정 문서는 그대로다 — 정밀 평가는 안 바뀐다.
+      const settings: ModelSettings = withQuickEvalSettings(
+        settingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null },
+      );
       const evaluated = evaluateCandidate({
         candidate: built.candidate,
         competitors: built.competitors,
@@ -503,6 +508,14 @@ export default function QuickEvalPage() {
             {result.capacityCapped ? (
               <p className="mt-2 text-xs text-[var(--sl-warn)]">
                 가동률 상한에 걸려 매출이 깎였습니다 — 수요가 대수보다 많다는 신호입니다.
+              </p>
+            ) : null}
+            {/* 2026-09-23 — 상권수요 천장(QUICK_EVAL_DEMAND_CEILING). 숫자는 결과·상수에서 읽는다. */}
+            {result.demandCapped ? (
+              <p className="mt-2 text-xs text-[var(--sl-warn)]">
+                상권수요 천장에 걸려 매출이 깎였습니다 — 상권 인원(자사수요 {fmtInt(result.expectedOwnDemand)}명 ×{" "}
+                {QUICK_EVAL_DEMAND_CEILING.hoursPerOwnDemandUser}시간 = 월 {fmtInt(result.demandCeilingHours)}시간)이 이 대수를 채울 수
+                없다는 뜻입니다. 천장 전 산식값은 {formatManwonRough(result.v62FinalBeforeDemandCap)}이었습니다.
               </p>
             ) : null}
             <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">위 금액은 V62 산식값입니다.</p>

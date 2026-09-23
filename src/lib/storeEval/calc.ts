@@ -1918,6 +1918,52 @@ export function applyCapacityCeiling(
   return { cappedRevenue: capped?.monthlyRevenue ?? revenue, capacityCapped: true, impliedUtilizationBeforeCap };
 }
 
+export type DemandCeilingResult = {
+  cappedRevenue: number | null;
+  demandCapped: boolean;
+  /** 천장이 허용한 월 PC 이용시간(자사수요 × 1인당 시간). 꺼져 있거나 재료가 없으면 null */
+  ceilingHours: number | null;
+};
+
+/**
+ * 2026-09-23 신설(사용자 지시: "완전시골이랑 펜션촌… 수요 10명인데 3천, 100명인데 5100만원") —
+ * **상권수요 천장.** 예측매출이 함의하는 월 PC 이용시간이 "자사 수요 × 1명당 시간"을 넘으면 그
+ * 비율로 매출을 깎는다.
+ *
+ * ── 왜 필요한가 ───────────────────────────────────────────────────────────
+ * V62의 40%는 "대당 중앙값 × 대수"라 수요를 아예 안 보고, 나머지 60% 회귀식에도 수요는 log 항
+ * 하나로 약하게만 들어간다(`project_v62_insensitive_to_demand`: 수요 ×1.6에 매출 +2%). 그래서
+ * 상권에 사람이 10명이어도 100대를 놓으면 3천만원이 나온다. 가동률 상한(applyCapacityCeiling)은
+ * "우리 좌석이 낼 수 있는 최대"를 막지만 "상권 사람이 채울 수 있는 최대"는 아무도 막지 않았다.
+ *
+ * ── 천장 높이의 근거 (2026-09-23, 기존점 40곳, `_quickEvalDemandCeiling.test.ts`) ─────────
+ * 실제 PC 이용시간(PC매출 ÷ 요금) ÷ 자사수요(상권수요 × 점유율)를 매장마다 재니 **4~68시간**,
+ * 중앙값 16시간이었다(최대 문경시청점 68.2h). 이 숫자가 "1명이 68시간 쓴다"는 뜻은 아니다 —
+ * V62의 상권수요가 실제 손님 수를 몇 배 작게 잡는다는 뜻이다(`project_pingbot_validates_demand`).
+ * 그래서 이 천장은 물리 상수가 아니라 **관측 최대치 위에 놓은 봉투(envelope)**다: 기존점은
+ * 하나도 안 걸리고, 표본 밖(자사수요 수백 명 이하)에서만 작동한다.
+ *
+ * ⚠️ 운영 V62는 기본 **꺼짐**(settings.demandCeilingHoursPerUser = null). 주소만 초기평가만 켠다.
+ * ⚠️ 비교 대상은 **예측** 이용시간이다(실측이 아니다). 그래서 채택 전에 기존점 되짚기에서 한 곳도
+ *    안 깎이는지 확인했다(`_quickEvalBias.test.ts` "수요 천장").
+ * ⚠️ 비율로 깎으므로 각 경로(이용량 모형 / 회귀식)의 PC·먹거리 구성은 그대로 유지된다.
+ */
+export function applyDemandCeiling(
+  revenue: number | null,
+  impliedPcHours: number | null,
+  ownDemand: number | null,
+  hoursPerUser: number | null,
+): DemandCeilingResult {
+  if (hoursPerUser == null || !(hoursPerUser > 0) || revenue == null || ownDemand == null || impliedPcHours == null) {
+    return { cappedRevenue: revenue, demandCapped: false, ceilingHours: null };
+  }
+  const ceilingHours = Math.max(0, ownDemand) * hoursPerUser;
+  if (!(impliedPcHours > 0) || impliedPcHours <= ceilingHours) {
+    return { cappedRevenue: revenue, demandCapped: false, ceilingHours };
+  }
+  return { cappedRevenue: Math.round(revenue * (ceilingHours / impliedPcHours)), demandCapped: true, ceilingHours };
+}
+
 /**
  * 2026-08-30 신설(사용자 확인) — PC 1대가 물리적 상한(v62MaxUtilizationRate) 안에서 한 달에
  * 받을 수 있는 "서로 다른 고객 수". 좌석-시간 예산(24시간×30일×상한)을 방문 1회당 이용시간으로

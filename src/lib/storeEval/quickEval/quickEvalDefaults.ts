@@ -13,7 +13,7 @@
 
 import { DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
 import { RIVAL_PC_COUNT_WHEN_UNSURVEYED, RIVAL_TYPICAL_WHEN_UNSURVEYED } from "./buildQuickCandidate";
-import type { FoodBrand } from "../types";
+import type { FoodBrand, ModelSettings } from "../types";
 
 /**
  * 자사 먹거리 브랜드 — **고정값**이다. 자사 브랜드라 후보지마다 다를 일이 없어서 입력칸을
@@ -44,6 +44,39 @@ export const QUICK_EVAL_PLAN_DEFAULTS = {
  * 2026-09-23: "5500만원 넘으면 가능한 기준임"). 화면 최상단 핵심 카드가 이 값을 읽는다.
  */
 export const QUICK_EVAL_ENTRY_THRESHOLD_WON = 55_000_000;
+
+/**
+ * ⭐ **상권수요 천장** — 이 도구만 켠다 (2026-09-23, 사용자: "완전시골이랑 펜션촌 이런데로 주소찍어서
+ * 상권수요 10명 100명 이런데 주소넣었는데 매출 개높음").
+ *
+ * 무엇인가: 예측매출이 함의하는 월 PC 이용시간이 `자사수요(상권수요 × 점유율) × hoursPerOwnDemandUser`를
+ * 넘으면 그 비율로 매출을 깎는다(calc.ts applyDemandCeiling). V62는 매출의 40%가 "대당 중앙값 × 대수"라
+ * 수요를 안 보고, 회귀식의 수요 항도 약해서(수요 ×1.6에 +2%) 수요 10명짜리 상권에 100대를 놓아도 3천만원이
+ * 나왔다. 가동률 상한(55%)은 "우리 좌석의 최대"만 막고 "상권 사람의 최대"는 아무도 막지 않았다.
+ *
+ * 높이의 근거(측정): 기존점 40곳에서 실제 PC 이용시간(PC매출 ÷ 요금) ÷ 자사수요를 재니 아래 observed다.
+ * 최대치(문경시청점) 위에 놓아 **기존점은 한 곳도 안 걸린다** — 되짚기 예측값이 한 곳도 안 바뀌는 것까지
+ * 확인했다(`_quickEvalBias.test.ts` "수요 천장"). 즉 표본 안 성적(MAPE·분별력)은 그대로고 표본 밖
+ * (자사수요 수백 명 이하)에서만 작동한다. 이 숫자는 "1명이 70시간 쓴다"가 아니라 V62 상권수요가 실제 손님
+ * 수를 몇 배 작게 잡는다는 뜻이다 — 물리 상수가 아닌 **관측 최대치 위의 봉투**다.
+ *
+ * ⚠️ 운영 V62(신규후보지 정밀 평가)는 **끈다**(settings 기본 null). 이 도구가 `withQuickEvalSettings`로만 켠다.
+ * ⚠️ 재는 자리: `_quickEvalDemandCeiling.test.ts` — observed가 이 값을 넘게 되면 테스트가 깨진다.
+ */
+export const QUICK_EVAL_DEMAND_CEILING = {
+  /** 자사수요 1명당 허용하는 월 PC 이용시간 */
+  hoursPerOwnDemandUser: 70,
+  measuredAt: "2026-09-23",
+  sampleCount: 40,
+  /** 기존점 40곳 실측: 실제 PC 이용시간 ÷ 자사수요 (시간/명·월) */
+  observed: { max: 68.2, maxStore: "문경시청점", p90: 30.2, median: 15.6, min: 3.9 },
+  testFile: "src/lib/storeEval/_quickEvalDemandCeiling.test.ts",
+} as const;
+
+/** 이 도구가 운영 설정 위에 덧씌우는 것 — 지금은 상권수요 천장 하나다. 운영 설정 문서는 건드리지 않는다. */
+export function withQuickEvalSettings(settings: ModelSettings): ModelSettings {
+  return { ...settings, demandCeilingHoursPerUser: QUICK_EVAL_DEMAND_CEILING.hoursPerOwnDemandUser };
+}
 
 export const QUICK_EVAL_RADII = { competitor: 500, floating: 500, resident1km: 1000, resident500: 500 } as const;
 
@@ -163,6 +196,17 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "주소만으로 입지평가를 얻는 길이 이 AI뿐이라 오차를 알아도 **바꿀 선택지가 없다.** " +
       "다시 제안하지 마라",
     needsFieldCheck: true,
+  },
+  {
+    label: "상권수요 천장",
+    source: "기본값",
+    basis:
+      `예측 이용시간이 자사수요(상권수요 × 점유율) × ${QUICK_EVAL_DEMAND_CEILING.hoursPerOwnDemandUser}시간을 넘으면 그 비율로 매출을 깎는다. ` +
+      `기존점 ${QUICK_EVAL_DEMAND_CEILING.sampleCount}곳 실측은 1명당 ${QUICK_EVAL_DEMAND_CEILING.observed.min}~${QUICK_EVAL_DEMAND_CEILING.observed.max}시간` +
+      `(중앙 ${QUICK_EVAL_DEMAND_CEILING.observed.median}, 최대 ${QUICK_EVAL_DEMAND_CEILING.observed.maxStore})이라 기존점은 한 곳도 안 걸린다(${QUICK_EVAL_DEMAND_CEILING.measuredAt}). ` +
+      "시골·펜션촌처럼 수요가 수백 명 아래인 주소에서만 작동한다 — 그전엔 수요 10명에도 100대 × 대당 중앙값으로 3천만원이 나왔다. " +
+      "⚠️ 정밀 평가(신규후보지)에는 없다 — 이 도구만 켠다",
+    needsFieldCheck: false,
   },
   {
     label: "자사 먹거리 브랜드",

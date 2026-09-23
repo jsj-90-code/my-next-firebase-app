@@ -60,6 +60,7 @@ type WalkSettings = Pick<
   | "marketDemandEffectiveRate"
   | "marketGradeAbsoluteThresholds"
   | "lowerBoundFactor"
+  | "demandCeilingHoursPerUser"
   | "upperBoundFactor"
   | "v62MaxUtilizationRate"
 >;
@@ -277,6 +278,15 @@ function buildRevenueStep(result: EvaluationResult, settings: WalkSettings): Wal
       value: b.revenueBeforeCap,
       kind: "won",
       note: `우리 좌석으로 물리적으로 받을 수 있는 한계(가동률 ${Math.round(settings.v62MaxUtilizationRate * 100)}%)를 넘어서 깎였다`,
+    });
+  }
+  // 2026-09-23 — 상권수요 천장(calc.ts applyDemandCeiling). 운영은 꺼져 있어 안 뜨고, 주소만 초기평가에서만 뜬다.
+  if (result.demandCapped) {
+    rows.push({
+      label: "상권수요 천장에 걸리기 전 값",
+      value: result.v62FinalBeforeDemandCap,
+      kind: "won",
+      note: `상권 인원(자사수요 ${(result.expectedOwnDemand ?? 0).toLocaleString("ko-KR")}명 × ${settings.demandCeilingHoursPerUser ?? "-"}시간 = 월 ${Math.round(result.demandCeilingHours ?? 0).toLocaleString("ko-KR")}시간)이 채울 수 있는 이용시간을 넘어서 그 비율로 깎였다`,
     });
   }
   rows.push({

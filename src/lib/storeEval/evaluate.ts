@@ -9,6 +9,7 @@
 
 import {
   applyCapacityCeiling,
+  applyDemandCeiling,
   applyStandardOwnFacilityDefaults,
   buildMinCoefficients,
   buildV61TrainingStores,
@@ -337,7 +338,31 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // 위 보너스를 더한 뒤에도 자사 상한은 다시 확인한다(이중 안전장치).
   const capacity = useUsageModel ? {cappedRevenue:usageFinal?.monthlyRevenue??null,capacityCapped:usageFinal?.capacityCapped??false}
     : applyCapacityCeiling(v62FinalBeforeCap, c.hourlyRate, c.expectedPcCount, settings);
-  const v62Final = capacity.cappedRevenue;
+  // 2026-09-23 신설 — **상권수요 천장**(calc.ts applyDemandCeiling 주석). 가동률 상한이 "우리 좌석이 낼 수
+  // 있는 최대"라면 이건 "상권 사람이 채울 수 있는 최대"다. 운영은 settings.demandCeilingHoursPerUser가
+  // null이라 여기서 그대로 통과한다 — 주소만 초기평가만 켠다(quickEvalDefaults.QUICK_EVAL_DEMAND_CEILING).
+  // 비교 대상 이용시간은 경로마다 그 경로가 이미 계산한 값을 쓴다(새 계산 아님): 이용량 모형은 상한
+  // 적용 후 pcHours, 회귀식은 매출을 거꾸로 푼 가동률(computeImpliedUtilizationFromRevenue) × 좌석시간.
+  const impliedPcHoursBeforeDemandCap: number | null = useUsageModel
+    ? (usageFinal?.pcHours ?? null)
+    : (() => {
+        const u = computeImpliedUtilizationFromRevenue(capacity.cappedRevenue, c.hourlyRate, settings.measuredForecastProductRatio, c.expectedPcCount);
+        return u == null || !c.expectedPcCount ? null : u * 24 * 30 * c.expectedPcCount;
+      })();
+  const demandCeiling = applyDemandCeiling(
+    capacity.cappedRevenue,
+    impliedPcHoursBeforeDemandCap,
+    expectedOwnDemand,
+    settings.demandCeilingHoursPerUser ?? null,
+  );
+  const v62Final = demandCeiling.cappedRevenue;
+  // 천장에 걸리면 화면의 "그 안의 PC 매출·먹거리 매출·이용시간"도 같은 비율로 줄여야 최종값과 맞는다
+  // (calcWalkthrough가 이 분해를 그대로 그린다). 비율로 깎으므로 PC·먹거리 구성은 유지된다.
+  const demandCapScale = demandCeiling.demandCapped && capacity.cappedRevenue ? (v62Final ?? 0) / capacity.cappedRevenue : 1;
+  const usageFinalShown = usageFinal && demandCapScale !== 1
+    ? { ...usageFinal, pcHours: usageFinal.pcHours * demandCapScale, pcRevenue: Math.round(usageFinal.pcRevenue * demandCapScale),
+        productRevenue: Math.round(usageFinal.productRevenue * demandCapScale), monthlyRevenue: v62Final ?? usageFinal.monthlyRevenue }
+    : usageFinal;
   const { conservativeSales, upperSales } = computeBoundedSales(v62Final, settings);
 
   const completionStatus = computeCompletionStatus({
@@ -364,7 +389,10 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
   // 2026-08-27 — V62 최종예상월매출(v62Final, 위에서 이미 계산됨)을 같은 공식으로 거꾸로 풀어 "이
   // 매출이 나오려면 가동률이 몇%여야 하는가"를 구한다. 경쟁점 실측(핑봇) 데이터 품질과 무관하게
   // V62 자체와 항상 정합적이다(사용자 질문: "예상매출액 있으니 그걸로 가동률 환산하면 되잖아").
-  const v62ImpliedUtilization = useUsageModel ? (usageFinal&&c.expectedPcCount?usageFinal.pcHours/(720*c.expectedPcCount):null) : computeImpliedUtilizationFromRevenue(
+  // 2026-09-23 — 상권수요 천장에 걸렸으면 천장이 허용한 이용시간으로 가동률을 낸다(금액과 항상 맞게).
+  const v62ImpliedUtilization = demandCeiling.demandCapped && c.expectedPcCount && demandCeiling.ceilingHours != null
+    ? demandCeiling.ceilingHours / (720 * c.expectedPcCount)
+    : useUsageModel ? (usageFinal&&c.expectedPcCount?usageFinal.pcHours/(720*c.expectedPcCount):null) : computeImpliedUtilizationFromRevenue(
     v62Final,
     c.hourlyRate,
     settings.measuredForecastProductRatio,
@@ -414,11 +442,11 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     v61IsFallback,
     v61ModelLabel: useUsageModel ? (usageFinal?"PC 이용량·먹거리 분리 학습":"PC 이용량 학습자료 부족") : v61IsFallback ? "임시 근사치·검증 전" : useVisibility ? "V61 가시성 학습모형·외부유입 정합" : "V61 실측 학습모형",
     v61TrainingSampleCount: useUsageModel ? usageTraining.length : trainingStores.length,
-    ...(usageFinal?{revenueBreakdown:{...usageFinal,
+    ...(usageFinalShown?{revenueBreakdown:{...usageFinalShown,
       // 라벨을 여기서 붙인다 — 요금 피처 없이 적합된 모형이면 첫 칸(시간당 요금)을 잘라야 맞는다.
-      usageDrivers: usageFinal.usageDrivers
-        ? {labels: usageFinal.usageDroppedTariff ? usageDriverLabels.slice(1) : usageDriverLabels,
-           contributions: usageFinal.usageDrivers.contributions}
+      usageDrivers: usageFinalShown.usageDrivers
+        ? {labels: usageFinalShown.usageDroppedTariff ? usageDriverLabels.slice(1) : usageDriverLabels,
+           contributions: usageFinalShown.usageDrivers.contributions}
         : null}}:{}),
     v61ValidationMeanAbsError: null, // 후보지 평가 화면에서는 채우지 않는다 - 검증 화면(validation/page.tsx)에서 별도 계산
     v61TrainedModelExplain,
@@ -428,6 +456,9 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
     v62Final,
     v62FinalBeforeCap,
     capacityCapped: capacity.capacityCapped,
+    demandCapped: demandCeiling.demandCapped,
+    demandCeilingHours: demandCeiling.ceilingHours,
+    v62FinalBeforeDemandCap: capacity.cappedRevenue,
     competitorOverflowRevenueBonus,
     conservativeSales,
     upperSales,
