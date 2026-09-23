@@ -258,6 +258,19 @@ export function computeMarketGrade(
   return "B";
 }
 
+/**
+ * 2026-09-23 — 상권등급 기준을 화면에 같이 적기 위한 한 줄 설명. 사용자가 "절대평가인지 상대평가인지,
+ * 기준을 모르니 없애든가 기준을 보여주든가" 해서 기준을 보여주는 쪽으로 했다. 숫자는 settings에서
+ * 읽어 만든다(설명 자리에 숫자를 글자로 박지 않는다 — CLAUDE.md).
+ */
+export function describeMarketGradeThresholds(
+  settings: Pick<ModelSettings, "marketGradeAbsoluteThresholds">,
+): string {
+  const t = settings.marketGradeAbsoluteThresholds;
+  const n = (v: number) => Math.round(v).toLocaleString("ko-KR");
+  return `상권수요 기준 절대평가 · SS ${n(t.SS)}↑ · S ${n(t.S)}↑ · A ${n(t.A)}↑ · B 그 미만`;
+}
+
 // ---------------------------------------------------------------------------
 // 3.2 경쟁
 // ---------------------------------------------------------------------------

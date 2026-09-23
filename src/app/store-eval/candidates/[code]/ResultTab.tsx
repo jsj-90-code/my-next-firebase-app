@@ -27,6 +27,7 @@ import {
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
+import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
 import { readJsonOrText } from "@/lib/readJsonOrText";
@@ -1222,7 +1223,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <h3 className={sectionTitleClass}>상권 / 경쟁 지표</h3>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard label="상권수요" value={formatNumber(result.marketDemand)} />
-          <ResultCard label="상권등급" value={result.marketGrade ?? "-"} />
+          {/* 2026-09-23 — 등급 기준(절대평가 경계선)을 같이 적는다. 숫자는 계산에 쓴 settings에서 읽는다. */}
+          <ResultCard
+            label="상권등급"
+            value={result.marketGrade ?? "-"}
+            hint={describeMarketGradeThresholds(settingsUsed)}
+          />
           <ResultCard label="상권성격" value={result.marketCharacter ?? "-"} />
           <ResultCard label="경쟁IP" value={formatNumber(result.competitorIp)} />
           <ResultCard label="IP당수요" value={formatScore(result.ipPerDemand)} hint="여유 >15 / 포화 <7 (08_계산기준)" />

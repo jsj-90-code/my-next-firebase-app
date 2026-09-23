@@ -29,6 +29,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { formatManwon, formatManwonRough, formatPercent } from "@/lib/storeEval/format";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
+import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   getModelSettings,
@@ -117,6 +118,8 @@ export default function QuickEvalPage() {
   const [collected, setCollected] = useState<CollectResponse | null>(null);
   const [assembly, setAssembly] = useState<QuickEvalAssembly | null>(null);
   const [result, setResult] = useState<EvaluationResult | null>(null);
+  // 계산에 실제로 쓴 설정 — 상권등급 기준선 같은 "설명 숫자"를 여기서 읽어 그린다(글자로 박지 않는다).
+  const [settingsUsed, setSettingsUsed] = useState<ModelSettings | null>(null);
   const [review, setReview] = useState<string | null>(null);
   const [reviewMeta, setReviewMeta] = useState<{
     model: string;
@@ -297,6 +300,7 @@ export default function QuickEvalPage() {
         trainingQscScores: applyQuickEvalQscFloor(trainingQscScores),
       });
       setResult(evaluated);
+      setSettingsUsed(settings);
 
       // 4) 가맹점 실적 비교표 — AI가 **자체 매출 판단**의 근거로 쓴다(사용자 요청 2026-09-22:
       //    "우리 가맹점 데이터 어떠한 부분을 봤을 때 예상 매출 어느정도 예상한다").
@@ -480,7 +484,13 @@ export default function QuickEvalPage() {
             </p>
             <div className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
               <Stat label="상권수요" value={fmtInt(result.marketDemand)} />
-              <Stat label="상권등급 / 성격" value={`${result.marketGrade ?? "-"} / ${result.marketCharacter ?? "-"}`} />
+              {/* 2026-09-23 — 등급 기준을 같이 적는다(사용자: "기준을 모르니 없애든가 보여주든가").
+                  절대평가라 옆 상권수요 숫자를 설정 경계선으로 자른 것뿐이다. 숫자는 settings에서 읽는다. */}
+              <Stat
+                label="상권등급 / 성격"
+                value={`${result.marketGrade ?? "-"} / ${result.marketCharacter ?? "-"}`}
+                note={settingsUsed ? describeMarketGradeThresholds(settingsUsed) : undefined}
+              />
               <Stat label="경쟁IP" value={fmtInt(result.competitorIp)} />
               <Stat label="IP당수요" value={result.ipPerDemand == null ? "-" : result.ipPerDemand.toFixed(1)} />
               {/* 2026-09-23 저녁 — expectedUtilization은 경쟁점 핑봇 실측으로 내는 값이라 주소만으로는 늘 비었다
@@ -833,11 +843,12 @@ function KeyVerdict({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
     <div className="app-card-sm rounded-xl p-3">
       <p className="text-xs text-[var(--sl-ink-soft)]">{label}</p>
       <p className="mt-1 font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">{value}</p>
+      {note ? <p className="mt-1 text-[11px] leading-snug text-[var(--sl-ink-soft)]">{note}</p> : null}
     </div>
   );
 }

@@ -12,7 +12,7 @@
 // 표시 형식은 화면이 정한다 — 여기서는 숫자와 "어떤 종류의 숫자인지"만 돌려준다
 // (revenueDrivers.ts·peerPosition.ts와 같은 방식).
 
-import { computeMarketDemand, type MarketDemandInput } from "./calc";
+import { computeMarketDemand, describeMarketGradeThresholds, type MarketDemandInput } from "./calc";
 import type { EvaluationResult, ModelSettings } from "./types";
 
 /** 화면이 formatWon/formatPercent 중 무엇을 쓸지 고르는 데 쓴다. */
@@ -56,7 +56,12 @@ export type Walkthrough = {
 
 type WalkSettings = Pick<
   ModelSettings,
-  "marketCharacterThreshold" | "marketDemandEffectiveRate" | "lowerBoundFactor" | "upperBoundFactor" | "v62MaxUtilizationRate"
+  | "marketCharacterThreshold"
+  | "marketDemandEffectiveRate"
+  | "marketGradeAbsoluteThresholds"
+  | "lowerBoundFactor"
+  | "upperBoundFactor"
+  | "v62MaxUtilizationRate"
 >;
 
 const EFFECTIVE_RATE_KEY = {
@@ -140,7 +145,7 @@ function buildDemandStep(
     note: "이 동네 PC방 전체가 나눠 가질 파이. 아직 우리 것이 아니다",
   });
   if (result.marketGrade) {
-    rows.push({ label: "상권 등급", value: result.marketGrade, kind: "text", note: "상권수요 크기로 정해지는 절대평가 등급" });
+    rows.push({ label: "상권 등급", value: result.marketGrade, kind: "text", note: describeMarketGradeThresholds(settings) });
   }
 
   return {
