@@ -1221,7 +1221,9 @@ function StoreTable({ score, qscByStore, p, windowFill }: {
   const hasQsc = [...qscByStore.values()].some((v) => v.qsc != null);
   return (
     <section className="mt-6">
-      <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 (오차 큰 순)</h2>
+      {/* 2026-09-24 사용자: "매장별 표에 가동률 순서로 나열해줘. 일단 가동률 우선 작업 중이니까" — 오차 큰 순에서
+          실측 가동률 높은 순으로. 실측이 없는 행은 뒤로. */}
+      <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 (실측 가동률 높은 순)</h2>
       <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
         <b>가동률차</b>는 예상 − 실측을 <b>퍼센트포인트</b>로 적은 값입니다 — 양수면 예상이 높다는 뜻입니다.
         <b> 수요 전부라면</b>은 점유율 항을 끈 값 — 이 동네 수요가 전부 우리에게 온다면 PC가 몇 % 도는가입니다.
@@ -1273,7 +1275,7 @@ function StoreTable({ score, qscByStore, p, windowFill }: {
             </tr>
           </thead>
           <tbody>
-            {score.rows.map((r) => {
+            {[...score.rows].sort((a, b) => (b.actualUtilization ?? -1) - (a.actualUtilization ?? -1)).map((r) => {
               const bad = (r.absErrPct ?? 0) > 0.2;
               const q = qscByStore.get(r.storeCode);
               return (
@@ -1354,7 +1356,8 @@ function ExcludedTable({ rows, p }: { rows: LabRow[]; p: TextbookParams }) {
   if (!rows.length) return null;
   const computed = rows
     .map((r) => ({ row: r, b: computeTextbook(r.input, p) }))
-    .sort((a, b) => (b.b.monthlyRevenue ?? 0) - (a.b.monthlyRevenue ?? 0));
+    // 2026-09-24 사용자 요청: 가동률 우선 작업 중이라 표를 예상 가동률 높은 순으로(매출 순이었다).
+    .sort((a, b) => (b.b.utilization ?? -1) - (a.b.utilization ?? -1));
   return (
     <section className="mt-6">
       <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
@@ -1444,7 +1447,8 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
   actualUtilRange: { min: number; max: number } | null;
 }) {
   const computed = rows.map((r) => ({ row: r, b: computeTextbook(r.input, p) }))
-    .sort((a, b) => (b.b.monthlyRevenue ?? 0) - (a.b.monthlyRevenue ?? 0));
+    // 2026-09-24 사용자 요청: 가동률 우선 작업 중이라 표를 예상 가동률 높은 순으로(매출 순이었다).
+    .sort((a, b) => (b.b.utilization ?? -1) - (a.b.utilization ?? -1));
   if (!computed.length) {
     return (
       <section className="mt-10">
