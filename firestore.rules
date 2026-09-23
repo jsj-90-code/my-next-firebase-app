@@ -155,6 +155,14 @@ service cloud.firestore {
       allow read, write: if isCompanyAccount();
     }
 
+    // 1km 밖 고리 인구(SGIS 1.5km·2km·5km 누적 원, 연령 분해) (2026-09-23). 실험실 산식의
+    // residentRingDecayM만 읽는다. 위 둘과 같은 이유로 매장 문서 밖에 따로 둔다. 채우는 건
+    // writeLabResidentRingsToFirestore.mjs(firebase-admin)라 규칙을 우회한다 — 화면이 읽게 하는 게 목적.
+    // ⚠️ 새 실험실 컬렉션을 만들면 여기도 같이 — 2026-09-19(ea09041)와 2026-09-23에 빠뜨려 화면이 안 열렸다.
+    match /storeEvalLabResidentRings/{siteKey} {
+      allow read, write: if isCompanyAccount();
+    }
+
     // 같은 QSC 기록의 **운영 쪽 원본** (2026-09-19). 운영 V62가 관리 수준을 학습 피처로
     // 쓰면서 생겼다. 실험실 복제본과 내용이 같고 채우는 스크립트도 같다 — 갈라놓은 건
     // 컬렉션뿐이고, QSC 자체는 실험실이 고치는 값이 아니라 본사가 매긴 사실이다.
