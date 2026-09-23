@@ -148,6 +148,12 @@ export function buildQuickEvalReviewContext(input: {
       + ` · 예측÷실측 중앙 ${QUICK_EVAL_BACKTEST.medianRatio.toFixed(3)}`
       + `(${QUICK_EVAL_BACKTEST.overCount}/${QUICK_EVAL_BACKTEST.sampleCount}곳이 실제보다 높게 나왔다)`,
   );
+  // 2026-09-23 — 되짚기는 기존점의 조사 경쟁점으로 돌아서 경쟁점이 많은 후보지를 대표하지 못한다.
+  //    AI가 위 오차를 경쟁점 15곳짜리 후보지에도 그대로 믿지 않게 범위를 같이 넘긴다.
+  lines.push(
+    `⚠️ 이 되짚기는 경쟁점 중앙 ${QUICK_EVAL_BACKTEST.rivalCountMedian}곳·최대 ${QUICK_EVAL_BACKTEST.rivalCountMax}곳인`
+      + " 상권에서만 쟀다. 이 후보지 경쟁점이 그보다 많으면 위 오차는 적용되지 않는다(잰 적 없음).",
+  );
   lines.push(
     // ⚠️ 정밀 평가와 견줄 때 **같은 자**를 써야 한다 — 수준보정 오차끼리 견준다.
     //    정밀의 일반 MAPE(8.83%)와 견주면 단위가 다른 값을 나란히 놓는 셈이다.

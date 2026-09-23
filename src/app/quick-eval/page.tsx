@@ -27,7 +27,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { QuickEvalReview } from "./QuickEvalReview";
 import { useAuth } from "@/contexts/AuthContext";
 import { readJsonOrText } from "@/lib/readJsonOrText";
-import { formatManwonRough, formatPercent } from "@/lib/storeEval/format";
+import { formatManwon, formatManwonRough, formatPercent } from "@/lib/storeEval/format";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
@@ -50,6 +50,8 @@ import {
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
   QUICK_EVAL_BACKTEST,
+  QUICK_EVAL_ENTRY_THRESHOLD_WON,
+  QUICK_EVAL_PLAN_DEFAULTS,
   QUICK_EVAL_RADII,
   QUICK_EVAL_USAGE_LIMIT,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
@@ -125,8 +127,9 @@ export default function QuickEvalPage() {
       // 후보지명 칸을 없앴다 — 주소가 곧 이름이다(사용자 지시 2026-09-22).
       name: plan.address.trim(),
       address: plan.address.trim(),
-      expectedPcCount: toNumberOrNull(plan.expectedPcCount),
-      hourlyRate: toNumberOrNull(plan.hourlyRate),
+      // 비우면 기본값(사용자 지시 2026-09-23 — PC 100대 · 기본요금 1,200원). 입력칸엔 옅은 글씨로 보인다.
+      expectedPcCount: toNumberOrNull(plan.expectedPcCount) ?? QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount,
+      hourlyRate: toNumberOrNull(plan.hourlyRate) ?? QUICK_EVAL_PLAN_DEFAULTS.hourlyRate,
       floor: toNumberOrNull(plan.floor),
       groundLevel: plan.floor.trim() ? plan.groundLevel : null,
       hasElevator: plan.hasElevator === "미정" ? null : plan.hasElevator === "있음",
@@ -335,7 +338,7 @@ export default function QuickEvalPage() {
           <label className="col-span-6 block text-sm sm:min-w-[260px] sm:flex-1">
             <span className="text-[var(--sl-ink-soft)]">주소</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
+              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base sm:text-sm"
               value={plan.address}
               enterKeyHint="search"
               onChange={(e) => setPlan((p) => ({ ...p, address: e.target.value }))}
@@ -349,9 +352,10 @@ export default function QuickEvalPage() {
           <label className="col-span-3 block text-sm sm:w-[110px]">
             <span className="text-[var(--sl-ink-soft)]">PC대수</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
+              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
               inputMode="numeric"
               value={plan.expectedPcCount}
+              placeholder={`${QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount} (기본값)`}
               onChange={(e) => setPlan((p) => ({ ...p, expectedPcCount: e.target.value }))}
               onKeyDown={(e) => {
                 if (e.key === "Enter") run();
@@ -361,9 +365,10 @@ export default function QuickEvalPage() {
           <label className="col-span-3 block text-sm sm:w-[120px]">
             <span className="text-[var(--sl-ink-soft)]">기본요금</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
+              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
               inputMode="numeric"
               value={plan.hourlyRate}
+              placeholder={`${QUICK_EVAL_PLAN_DEFAULTS.hourlyRate.toLocaleString("ko-KR")} (기본값)`}
               onChange={(e) => setPlan((p) => ({ ...p, hourlyRate: e.target.value }))}
               onKeyDown={(e) => {
                 if (e.key === "Enter") run();
@@ -373,7 +378,7 @@ export default function QuickEvalPage() {
           <label className="col-span-2 block text-sm sm:w-[92px]">
             <span className="text-[var(--sl-ink-soft)]">지상/지하</span>
             <select
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
+              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base sm:text-sm"
               value={plan.groundLevel}
               onChange={(e) => setPlan((p) => ({ ...p, groundLevel: e.target.value as GroundLevel }))}
             >
@@ -387,7 +392,7 @@ export default function QuickEvalPage() {
           <label className="col-span-2 block text-sm sm:w-[72px]">
             <span className="text-[var(--sl-ink-soft)]">층</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
+              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
               inputMode="numeric"
               value={plan.floor}
               onChange={(e) => setPlan((p) => ({ ...p, floor: e.target.value }))}
@@ -399,7 +404,7 @@ export default function QuickEvalPage() {
           <label className="col-span-2 block text-sm sm:w-[96px]">
             <span className="text-[var(--sl-ink-soft)]">엘리베이터</span>
             <select
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
+              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base sm:text-sm"
               value={plan.hasElevator}
               onChange={(e) => setPlan((p) => ({ ...p, hasElevator: e.target.value as Plan["hasElevator"] }))}
             >
@@ -429,6 +434,20 @@ export default function QuickEvalPage() {
       {/* ── 결과 ── */}
       {result && assembly ? (
         <>
+          {/* ── ⭐ 핵심 두 칸: 예상매출 · 입점 가능여부 (사용자 지시 2026-09-23) ──
+              "이게 핵심 내용이 되게할거니까 중요한 부분인것처럼" — 주소 입력 바로 아래에 크게 둔다.
+              예상매출은 범위 없이 V62 값 하나, 입점 기준은 QUICK_EVAL_ENTRY_THRESHOLD_WON(초과면 가능).
+              ⚠️ 판정은 반올림 전 값으로 한다. 화면은 100만원 단위라 기준선 근처에선 표시값과 판정이
+                 어긋나 보일 수 있어, 그때만 반올림 전 금액을 같이 적는다. */}
+          <KeyVerdict
+            v62Final={result.v62Final}
+            pcCount={planInput.expectedPcCount}
+            hourlyRate={planInput.hourlyRate}
+            pcIsDefault={toNumberOrNull(plan.expectedPcCount) == null}
+            rateIsDefault={toNumberOrNull(plan.hourlyRate) == null}
+            rivalCount={counted.length}
+          />
+
           <section className="app-card relative overflow-hidden rounded-2xl p-4">
             <span className="app-stripe-info absolute inset-y-0 left-0 w-[3px]" />
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -725,8 +744,17 @@ export default function QuickEvalPage() {
           <li>
             평균오차 <strong>{formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}</strong> · ±20% 안{" "}
             <strong>{formatPercent(QUICK_EVAL_BACKTEST.within20, 1)}</strong> · 실제보다{" "}
-            <strong>{((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤 높게</strong> 나옵니다(
-            {QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳).
+            <strong>
+              {Math.abs((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤{" "}
+              {QUICK_EVAL_BACKTEST.medianRatio >= 1 ? "높게" : "낮게"}
+            </strong>{" "}
+            나옵니다(실제보다 높게 나온 곳 {QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳).
+          </li>
+          <li>
+            {/* 2026-09-23 — 되짚기가 실제 후보지를 대표하지 못한다는 걸 숨기지 않는다(인계문 1절). */}
+            ⚠️ 이 되짚기는 기존 가맹점이 사람이 조사한 경쟁점(중앙 {QUICK_EVAL_BACKTEST.rivalCountMedian}곳 · 최대{" "}
+            {QUICK_EVAL_BACKTEST.rivalCountMax}곳)으로 돌았습니다. 카카오 경쟁점이 그보다 많은 후보지에서의 오차는
+            아직 재지 못했습니다.
           </li>
           <li>
             {/* ⛔ 2026-09-23 정정 — 여기 "금액 수준보다 순서가 이 도구의 쓸모"라고 적혀 있었다.
@@ -738,7 +766,8 @@ export default function QuickEvalPage() {
             {formatPercent(QUICK_EVAL_BACKTEST.leveledMape, 2)}의 오차가 남습니다(정밀 평가는{" "}
             {formatPercent(QUICK_EVAL_BACKTEST.preciseLeveledMape, 2)}).
           </li>
-          <li>⚠️ {QUICK_EVAL_USAGE_LIMIT}</li>
+          {/* 상수는 AI 프롬프트와 같이 쓰느라 마크다운 굵게(**)가 들어 있다 — 화면에선 떼고 그린다. */}
+          <li>⚠️ {QUICK_EVAL_USAGE_LIMIT.split("**").join("")}</li>
         </ul>
 
         <h3 className="mt-4 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">자동 / 기본값 경계</h3>
@@ -759,6 +788,67 @@ export default function QuickEvalPage() {
         </p>
       </details>
     </div>
+  );
+}
+
+function KeyVerdict({
+  v62Final,
+  pcCount,
+  hourlyRate,
+  pcIsDefault,
+  rateIsDefault,
+  rivalCount,
+}: {
+  v62Final: number | null;
+  pcCount: number | null;
+  hourlyRate: number | null;
+  pcIsDefault: boolean;
+  rateIsDefault: boolean;
+  rivalCount: number;
+}) {
+  const possible = v62Final == null ? null : v62Final > QUICK_EVAL_ENTRY_THRESHOLD_WON;
+  // 100만원 단위로 반올림하면 기준선과 같아 보이는 경우 — 그때만 반올림 전 금액을 같이 보여준다.
+  const nearLine =
+    v62Final != null && Math.round(v62Final / 1_000_000) * 1_000_000 === QUICK_EVAL_ENTRY_THRESHOLD_WON;
+  const tone =
+    possible == null
+      ? "border-[var(--sl-hairline)]"
+      : possible
+        ? "border-[var(--sl-ok)] bg-[var(--sl-ok-soft)]"
+        : "border-[var(--sl-danger)] bg-[var(--sl-danger-soft)]";
+  const toneText = possible == null ? "" : possible ? "text-[var(--sl-ok)]" : "text-[var(--sl-danger)]";
+  return (
+    <section aria-label="핵심 결과" className="space-y-2">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="app-card rounded-2xl border-2 border-[var(--sl-gold)] p-5">
+          <p className="text-sm font-semibold text-[var(--sl-ink-soft)]">예상 월매출</p>
+          <p className="mt-1 text-4xl font-bold tabular-nums text-[#171310] dark:text-[#f2ede2]">
+            {formatManwonRough(v62Final)}
+          </p>
+          <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+            PC {pcCount ?? "-"}대{pcIsDefault ? "(기본값)" : ""} · 기본요금{" "}
+            {hourlyRate == null ? "-" : hourlyRate.toLocaleString("ko-KR")}원{rateIsDefault ? "(기본값)" : ""} 기준
+          </p>
+        </div>
+        <div className={`app-card rounded-2xl border-2 p-5 ${tone}`}>
+          <p className="text-sm font-semibold text-[var(--sl-ink-soft)]">입점 가능여부</p>
+          <p className={`mt-1 text-4xl font-bold ${toneText}`}>
+            {possible == null ? "판정 불가" : possible ? "입점 가능" : "입점 불가"}
+          </p>
+          <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+            기준: 예상 월매출 {formatManwon(QUICK_EVAL_ENTRY_THRESHOLD_WON)} 초과
+            {nearLine && v62Final != null ? ` · 기준선 근처(반올림 전 ${formatManwon(v62Final)})` : ""}
+            {possible == null ? " · 예상매출을 계산하지 못했습니다" : ""}
+          </p>
+        </div>
+      </div>
+      {rivalCount > QUICK_EVAL_BACKTEST.rivalCountMax ? (
+        <p className="text-xs text-[var(--sl-warn)]">
+          ⚠️ 이 후보지 경쟁점 {rivalCount}곳은 오차를 재 본 범위(최대 {QUICK_EVAL_BACKTEST.rivalCountMax}곳)
+          밖입니다 — 예상매출이 얼마나 맞는지 아직 모릅니다.
+        </p>
+      ) : null}
+    </section>
   );
 }
 

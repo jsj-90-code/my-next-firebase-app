@@ -22,6 +22,19 @@ import type { FoodBrand } from "../types";
 export const OWN_FOOD_BRAND: FoodBrand = "쉐프앤클릭";
 
 /** 이 도구가 쓰는 반경. 500m는 V62 산식이 읽는 반경이고(경쟁IP·유동인구), 1km는 주거인구다. */
+/**
+ * ⭐ 자사 기획값을 **비웠을 때** 쓰는 기본값 (사용자 지시 2026-09-23: "PC대수 안넣으면 기본
+ * 100대로 적용되게해주고, 기본요금은 1200원으로"). 입력칸에 옅은 글씨로 "(기본값)"과 함께 보인다.
+ * ⚠️ 화면·AI 평가문은 이 상수를 읽어 그린다 — 숫자를 다른 곳에 글자로 박지 마라.
+ */
+export const QUICK_EVAL_PLAN_DEFAULTS = { expectedPcCount: 100, hourlyRate: 1200 } as const;
+
+/**
+ * ⭐ 입점 가능여부 기준 — 월 예상매출(V62)이 이 값을 **넘으면** "입점 가능" (사용자 지시
+ * 2026-09-23: "5500만원 넘으면 가능한 기준임"). 화면 최상단 핵심 카드가 이 값을 읽는다.
+ */
+export const QUICK_EVAL_ENTRY_THRESHOLD_WON = 55_000_000;
+
 export const QUICK_EVAL_RADII = { competitor: 500, floating: 500, resident1km: 1000, resident500: 500 } as const;
 
 /** SGIS 주거인구 기준연도. 운영 자료(52곳)를 다시 받을 때 쓴 것과 같은 해로 맞춘다. */
@@ -178,7 +191,8 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "조사값이 아니라 **기획값**이다. 재 보니 결과를 제일 크게 움직인다 — PC 80→130대에서 " +
       `${pct(QUICK_EVAL_INPUT_SENSITIVITY.pcCountEffect.low)}~${pct(QUICK_EVAL_INPUT_SENSITIVITY.pcCountEffect.high)}, ` +
       `기본요금 1,000→1,800원에서 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.low)}~` +
-      `${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.high)}. 비우면 계산이 안 된다`,
+      `${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.high)}. 비우면 기본값 ` +
+      `${QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount}대·${QUICK_EVAL_PLAN_DEFAULTS.hourlyRate.toLocaleString("ko-KR")}원이 들어간다`,
     needsFieldCheck: false,
   },
   {
@@ -258,16 +272,27 @@ export const ADDRESS_ONLY_ACCURACY = {
  *    봤고, 곱셈 보정과 수학적으로 같다는 것까지 확인했다 — `leveledMape` 참고). 그러니 화면에
  *    "높게 나오는 경향"을 계속 알려야 한다. 안 그러면 그 숫자를 그대로 믿는다.
  */
+// ⭐⭐ 2026-09-23 갱신 — **지금 배선 그대로** 다시 쟀다(커밋 57f87a3 배선: 자사 표준 기획값 ·
+// 학습 경쟁점 비움 · 후보지 경쟁점 129대+실측 대표품질). 테스트: "지금 배선 그대로".
+// 그전 화면 값(27.79% · 21% 높게)은 **다른 조합**(후보지도 비움)에서 잰 것이었는데 그대로
+// 떠 있었다 — 인계문 0절에서 "인용하지 마라"고 적어 둔 바로 그 숫자다.
+// ⚠️ 이 되짚기는 기존점의 **조사 경쟁점**(중앙 rivalCountMedian곳 · 최대 rivalCountMax곳)으로
+//    돈다. 카카오 500m가 10~20곳인 실제 후보지를 대표하지 못한다 — 화면에 같이 적는다.
 export const QUICK_EVAL_BACKTEST = {
-  measuredAt: "2026-09-22",
+  measuredAt: "2026-09-23",
   sampleCount: 38,
   testFile: "src/lib/storeEval/_quickEvalBias.test.ts",
-  /** 경쟁점 품질 + **대수**까지 실측 대표값으로 채운 뒤의 값(2026-09-22 밤 4차) */
-  mape: 0.2779,
-  within20: 0.4211,
+  /** 지금 배선(학습 비움 · 후보지 129대+대표품질 · 표준 사양) */
+  mape: 0.1697,
+  within20: 0.7105,
   /** 예측 ÷ 실제매출의 중앙값. 1보다 크면 높게 나온다는 뜻 */
-  medianRatio: 1.211,
-  overCount: 30,
+  medianRatio: 1.05,
+  overCount: 21,
+  /** 되짚기에 쓰인 기존점 조사 경쟁점 수 — 이 범위를 넘는 후보지는 잰 적이 없다 */
+  rivalCountMedian: 4,
+  rivalCountMax: 10,
+  /** 2026-09-22 화면에 떠 있던 값(후보지도 비우던 조합) — 지금 배선이 아니다 */
+  before20260923: { mape: 0.2779, within20: 0.4211, medianRatio: 1.211, overCount: 30, leveledMape: 0.1704 },
   /** 4차 직전 — 품질만 채우고 대수는 90대 기본값이던 때 */
   beforeRivalPcCount: { mape: 0.2023, within20: 0.7105, medianRatio: 1.105, overCount: 26 },
   /** 3차 직전 — 학습·후보지 양쪽을 비우던 배선 */
@@ -282,7 +307,7 @@ export const QUICK_EVAL_BACKTEST = {
    * (17.04 -> 16.94%), **경쟁점을 채우는 건 내렸다**(-> 15.81%) — 버렸던 정보를 되살린
    * 것이라 성질이 다르다. 정밀 평가는 10.10%이고 그 격차는 경쟁점 실측 자료가 있어야 메워진다.
    */
-  leveledMape: 0.1704,
+  leveledMape: 0.1582,
   leveledMapeBefore: 0.1694,
   preciseLeveledMape: 0.101,
   /**
