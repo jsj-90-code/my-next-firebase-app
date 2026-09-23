@@ -57,15 +57,21 @@ const PROMPT = `이 지도는 한 PC방 매장(중앙 마커)을 중심으로 �
   - 바다·호수·저수지·간척지·비어 있는 미개발지
 답: 예 / 아니오. 예면 무엇인지 한 단어(예: "하천", "철도", "산지").
 
-문항 B. 2km 원 안에 이 매장 주변보다 **더 큰 상업 중심**(철도역 앞 번화가·대형 상권·중심상업지)이 보이는가?
-답: 예 / 아니오. 예면 방향(동/서/남/북/북동 등)과 이름을 지도에서 읽을 수 있으면 적는다.
+문항 B (핵심). 동·서·남·북 네 방향 각각에 대해: 매장에서 그 방향으로 **고리(1~2km) 구간**에 **사람이 사는 동네**(아파트 단지·주택가·
+시가지)가 있는가? 논밭·공장/산업단지·산·물·미개발지·창고만 있으면 "아니오". 지도의 건물 밀집·동네 이름·아파트 표기로 판단한다.
+답: 예 / 아니오. 예면 무엇인지 한 단어(예: "아파트단지", "주택가", "시가지"). 아니오면 대신 무엇이 있는지(예: "논밭", "산단", "산지").
 
-문항 C. 1km 원 안 주거지가 아파트 대단지·신도시 블록 위주인가(예), 아니면 저층 주거·상가가 섞인 시가지인가(아니오)?
+문항 C. 2km 원 안에 매장 주변 상가 밀집 말고 **다른 상권**(다른 동네의 상가 밀집·역 앞 번화가·중심상업지)이 보이는가?
+답: 예 / 아니오. 예면 방향과 이름을 지도에서 읽을 수 있으면 적는다. 아니오면 이 매장 주변이 2km 안 유일한 상권이다.
+
+문항 D. 1km 원 안 주거지가 아파트 대단지·신도시 블록 위주인가(예), 아니면 저층 주거·상가가 섞인 시가지인가(아니오)?
 
 JSON으로만 답한다:
 {"blocked":{"N":true|false,"E":true|false,"S":true|false,"W":true|false},
  "blockedBy":{"N":"","E":"","S":"","W":""},
- "biggerCenterWithin2km":true|false,"biggerCenterNote":"",
+ "residential":{"N":true|false,"E":true|false,"S":true|false,"W":true|false},
+ "residentialNote":{"N":"","E":"","S":"","W":""},
+ "otherCommercialWithin2km":true|false,"otherCommercialNote":"",
  "aptBlock":true|false,
  "note":"한두 문장. 지도에서 본 사실만"}`;
 
@@ -94,7 +100,7 @@ async function generate(b64) {
   throw lastErr;
 }
 // 실패로 남은 항목(error만 있고 blockedCount 없음)은 다시 대상에 넣는다
-const targets = Object.values(shots).filter((s) => s.ok && (!only || s.kind === only) && (REDO || out.sites[`${s.kind}:${s.code}`]?.blockedCount == null)).slice(0, LIMIT);
+const targets = Object.values(shots).filter((s) => s.ok && (!only || s.kind === only) && (REDO || out.sites[`${s.kind}:${s.code}`]?.ringCutCount == null)).slice(0, LIMIT);
 console.log(`판정 대상 ${targets.length}곳 · 모델 ${MODELS.join(" → ")}`);
 let n = 0, fail = 0;
 for (const s of targets) {
@@ -104,10 +110,14 @@ for (const s of targets) {
   try {
     const { text, model: usedModel } = await generate(b64);
     const j = JSON.parse(text);
-    const blockedCount = ["N", "E", "S", "W"].filter((d) => j.blocked?.[d] === true).length;
-    out.sites[key] = { key, kind: s.kind, code: s.code, name: s.name, ...j, blockedCount, judgedAt: new Date().toISOString(), model: usedModel };
-    const dirs = ["N", "E", "S", "W"].filter((d) => j.blocked?.[d]).map((d) => `${d}:${j.blockedBy?.[d] ?? ""}`).join(" ");
-    console.log(`${String(n).padStart(2)}/${targets.length} ${s.name.padEnd(12)} 막힘 ${blockedCount}/4 ${dirs.padEnd(28)} 큰상권 ${j.biggerCenterWithin2km ? "예" : "아니오"} 아파트단지 ${j.aptBlock ? "예" : "아니오"}`);
+    const DIRS = ["N", "E", "S", "W"];
+    const blockedCount = DIRS.filter((d) => j.blocked?.[d] === true).length;
+    // ⭐ 산식이 쓰는 값 — 사용자 정의(2026-09-23): 항아리 = 반경 밖에 상권·동네가 없다. 고리에 주거가 없는 방향 수.
+    const noResidentialCount = DIRS.filter((d) => j.residential?.[d] === false).length;
+    out.sites[key] = { key, kind: s.kind, code: s.code, name: s.name, ...j, blockedCount, noResidentialCount,
+      ringCutCount: noResidentialCount, ringCutBasis: "noResidential", judgedAt: new Date().toISOString(), model: usedModel };
+    const empty = DIRS.filter((d) => j.residential?.[d] === false).map((d) => `${d}:${j.residentialNote?.[d] ?? ""}`).join(" ");
+    console.log(`${String(n).padStart(2)}/${targets.length} ${s.name.padEnd(12)} 주거없음 ${noResidentialCount}/4 ${empty.padEnd(30)} 다른상권 ${j.otherCommercialWithin2km ? "예" : "아니오"} 단절 ${blockedCount}/4`);
   } catch (e) {
     fail++;
     out.sites[key] = { key, kind: s.kind, code: s.code, name: s.name, error: String(e?.message ?? e), judgedAt: new Date().toISOString(), model: MODEL };
@@ -117,6 +127,7 @@ for (const s of targets) {
   await new Promise((r) => setTimeout(r, 5000)); // 무료 할당량(분당 요청) 보호 — 1.5초로는 429가 났다(2026-09-23)
 }
 console.log(`\n${n - fail}곳 판정 · 실패 ${fail} -> ${OUT}`);
-const all = Object.values(out.sites).filter((s) => s.blockedCount != null);
-const hist = [0, 1, 2, 3, 4].map((k) => `${k}방향 ${all.filter((s) => s.blockedCount === k).length}곳`).join(" · ");
-console.log(`막힌 방향 수 분포: ${hist}`);
+const all = Object.values(out.sites).filter((s) => s.ringCutCount != null);
+const hist = [0, 1, 2, 3, 4].map((k) => `${k}방향 ${all.filter((s) => s.ringCutCount === k).length}곳`).join(" · ");
+console.log(`고리에 주거 없는 방향 수 분포: ${hist}`);
+console.log(`2km 안 다른 상권 없음(유일 상권): ${all.filter((s) => s.otherCommercialWithin2km === false).length}곳`);

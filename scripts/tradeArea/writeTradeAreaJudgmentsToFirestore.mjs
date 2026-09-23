@@ -43,7 +43,10 @@ for (const s of Object.values(file.sites ?? {})) {
     doc: {
       key: s.key, kind: s.kind, code: String(s.code), name: s.name ?? null,
       blocked: s.blocked ?? null, blockedBy: s.blockedBy ?? null, blockedCount: s.blockedCount,
-      biggerCenterWithin2km: s.biggerCenterWithin2km ?? null, biggerCenterNote: s.biggerCenterNote ?? null,
+      // 산식이 읽는 값 — 2차(사용자 정의): 고리에 주거 없는 방향 수
+      residential: s.residential ?? null, residentialNote: s.residentialNote ?? null,
+      ringCutCount: s.ringCutCount ?? s.noResidentialCount ?? null, ringCutBasis: s.ringCutBasis ?? null,
+      otherCommercialWithin2km: s.otherCommercialWithin2km ?? null, otherCommercialNote: s.otherCommercialNote ?? null,
       aptBlock: s.aptBlock ?? null, note: s.note ?? null,
       judgedAt: s.judgedAt ?? null, model: s.model ?? file.model ?? null,
       method: "카카오 지도 반경 2km 캡처 + AI 방향별 단절 예/아니오 사실 판정 (사람 표본 대조 후 저장)",
@@ -53,7 +56,7 @@ for (const s of Object.values(file.sites ?? {})) {
 const app = getApps().length > 0 ? getApps()[0] : initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
 const db = getFirestore(app);
 const current = await loadCollectionMap(db, COLLECTION);
-const flat = (d) => ({ ...d, blocked: JSON.stringify(d.blocked), blockedBy: JSON.stringify(d.blockedBy) });
+const flat = (d) => ({ ...d, blocked: JSON.stringify(d.blocked), blockedBy: JSON.stringify(d.blockedBy), residential: JSON.stringify(d.residential), residentialNote: JSON.stringify(d.residentialNote) });
 for (const p of plan) { const c = current.get(p.id); p.changed = needsWrite(c ? flat(c) : undefined, flat(p.doc), { merge: false }); }
 const toWrite = plan.filter((p) => p.changed);
 console.log(`\n대상 ${plan.length}곳 · 값이 달라진 곳 ${toWrite.length}곳 · 건너뜀 ${skipped.length}건 · 컬렉션에 이미 ${current.size}건`);

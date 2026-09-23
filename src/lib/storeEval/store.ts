@@ -521,8 +521,10 @@ export async function listLabTradeAreaJudgments(): Promise<Map<string, number>> 
   const snap = await getDocs(collection(requireDb(), LAB_TRADE_AREA));
   const out = new Map<string, number>();
   snap.forEach((d) => {
-    const v = d.data() as { code?: string; blockedCount?: number | null };
-    if (v.code && typeof v.blockedCount === "number") out.set(String(v.code), v.blockedCount);
+    // ringCutCount = 산식이 깎는 방향 수(2026-09-23 2차: 고리에 주거 없는 방향, 사용자 정의). 없으면 1차 단절 수로.
+    const v = d.data() as { code?: string; ringCutCount?: number | null; blockedCount?: number | null };
+    const c = v.ringCutCount ?? v.blockedCount;
+    if (v.code && typeof c === "number") out.set(String(v.code), c);
   });
   return out;
 }

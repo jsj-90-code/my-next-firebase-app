@@ -575,17 +575,19 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
   it("(8) ⭐⭐ 막힌 상권 보정 — AI 판정(막힌 방향 수)으로 고리를 깎으면", () => {
     // 사용자(2026-09-23): 항아리상권은 AI 자동화로. scripts/tradeArea → .local-tools/trade-area-judgments.json (또는 스냅샷 컬렉션).
     // 고리 인구 × (1 − 막힌 방향 수 ÷ 4). 사실 개수라 맞춘 계수가 없다. ⚠️ AI 판정은 사람 표본 대조 전이다.
-    type J = { code?: string; name?: string; blockedCount?: number | null; blockedBy?: Record<string, string>; error?: string };
+    // 2차(사용자 정의): 항아리 = 반경 밖에 상권·동네가 없다 → ringCutCount = 고리에 주거 없는 방향 수. 1차 단절(blockedCount)은 참고.
+    type J = { code?: string; name?: string; blockedCount?: number | null; ringCutCount?: number | null; residentialNote?: Record<string, string>; otherCommercialWithin2km?: boolean | null; error?: string };
     const fromSnap = ((snap.labTradeAreaJudgments ?? []) as J[]);
     const file = ".local-tools/trade-area-judgments.json";
     const fromFile = existsSync(file) ? (Object.values((JSON.parse(readFileSync(file, "utf8")) as { sites?: Record<string, J> }).sites ?? {}) as J[]) : [];
     const judged = fromSnap.length ? fromSnap : fromFile;
     const blockedByCode = new Map<string, number>();
-    for (const j of judged) if (j.code && typeof j.blockedCount === "number") blockedByCode.set(String(j.code), j.blockedCount);
-    console.log(`\n[막힌 상권 보정] 판정 ${blockedByCode.size}곳 (출처: ${fromSnap.length ? "스냅샷" : "로컬 파일"})`);
+    for (const j of judged) { const c = j.ringCutCount ?? j.blockedCount; if (j.code && typeof c === "number") blockedByCode.set(String(j.code), c); }
+    const basis = judged.some((j) => typeof j.ringCutCount === "number") ? "고리에 주거 없는 방향(2차·사용자 정의)" : "단절 방향(1차)";
+    console.log(`\n[막힌 상권 보정] 판정 ${blockedByCode.size}곳 (출처: ${fromSnap.length ? "스냅샷" : "로컬 파일"} · 기준: ${basis})`);
     if (!blockedByCode.size) { console.log("  판정 자료가 없다 — judge.mjs를 먼저 돌린다"); return; }
     const hist = [0, 1, 2, 3, 4].map((k) => `${k}방향 ${[...blockedByCode.values()].filter((v) => v === k).length}곳`).join(" · ");
-    console.log(`  막힌 방향 수 분포: ${hist}`);
+    console.log(`  깎는 방향 수 분포: ${hist} · 2km 안 유일 상권: ${judged.filter((j) => j.otherCommercialWithin2km === false).length}곳`);
     const withJ = (s: Subject): TextbookInput => ({ ...s.input, ringBlockedDirections: blockedByCode.get(s.code) ?? null });
     const runE = (on: boolean): Obs[] => {
       const p2: TextbookParams = { ...P, useRingEnclosure: on };
@@ -595,17 +597,37 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     };
     const off = runE(false), on = runE(true);
     const so = score(off), sn = score(on);
+    // 변형 C — 사용자 정의 그대로: "2km 안 다른 상권 없음(유일 상권)"이면 항아리 → 고리를 통째로 끈다(방향 4)
+    const solo = new Set(judged.filter((j) => j.otherCommercialWithin2km === false && j.code).map((j) => String(j.code)));
+    const runSolo = (): Obs[] => {
+      const p2: TextbookParams = { ...P, useRingEnclosure: true };
+      const out: Obs[] = [];
+      for (const s of subjects) {
+        const cut = solo.has(s.code) ? 4 : (blockedByCode.get(s.code) ?? null);
+        const u = computeTextbook({ ...s.input, ringBlockedDirections: cut }, p2).utilization;
+        if (u != null && u > 0) out.push({ ...s, pred: u });
+      }
+      return out;
+    };
+    const soloObs = runSolo(), ss = score(soloObs);
+    console.log(`  유일 상권 ${solo.size}곳: ${judged.filter((j) => solo.has(String(j.code ?? ""))).map((j) => j.name).join(" · ")}`);
     const sdP = (g: Obs[]) => sdOf(g.map((o) => o.pred)) * 100;
     const w5 = (g: Obs[]) => g.filter((o) => Math.abs(o.pred - o.act) <= 0.05).length;
     const line8 = (label: string, s: Score, g: Obs[]) => console.log(`  ${label.padEnd(8)} 자사 MAE ${(s.ourMae * 100).toFixed(2)}%p 편향 ${(s.ourBias * 100).toFixed(1)} r ${s.ourR.toFixed(3)} 예측SD ${sdP(s.ours).toFixed(1)} ±5%p ${w5(s.ours)} | 경쟁 MAE ${(s.rivMae * 100).toFixed(1)} 편향 ${(s.rivBias * 100).toFixed(1)} | 짝r ${s.pairR.toFixed(3)} | 자사우위 ${s.gapPred.toFixed(2)}`
       + (g.length ? "" : ""));
-    line8("끔(지금)", so, off); line8("켬", sn, on);
+    line8("끔(지금)", so, off); line8("켬", sn, on); line8("켬+유일상권 고리0", ss, soloObs);
+    const soloBy = new Map(soloObs.map((o) => [o.input.storeCode, o]));
+    console.log(`  [유일 상권 자사 매장] 실측 / 끔 / 켬 / 켬+고리0`);
+    for (const o of off.filter((x) => x.isOurs && solo.has(x.code))) {
+      const onP = on.find((x) => x.input.storeCode === o.input.storeCode)?.pred ?? 0;
+      console.log(`  ${o.hood.padEnd(10)} 실측 ${(o.act * 100).toFixed(1)}% · 끔 ${(o.pred * 100).toFixed(1)}% · 켬 ${(onP * 100).toFixed(1)}% · 고리0 ${((soloBy.get(o.input.storeCode)?.pred ?? 0) * 100).toFixed(1)}%`);
+    }
     console.log(`\n  [매장별 — 막힌 방향 2 이상인 자사 매장] 실측 / 끔 / 켬`);
     const onBy = new Map(on.map((o) => [o.input.storeCode, o]));
     for (const o of off.filter((x) => x.isOurs && (blockedByCode.get(x.code) ?? 0) >= 2).sort((a, b) => (blockedByCode.get(b.code) ?? 0) - (blockedByCode.get(a.code) ?? 0))) {
       const j = judged.find((x) => String(x.code) === o.code);
-      const dirs = j?.blockedBy ? Object.entries(j.blockedBy).filter(([, v]) => v).map(([k, v]) => `${k}:${v}`).join(" ") : "";
-      console.log(`  ${o.hood.padEnd(10)} 막힘 ${blockedByCode.get(o.code)}/4 [${dirs}]  실측 ${(o.act * 100).toFixed(1)}% · 끔 ${(o.pred * 100).toFixed(1)}% · 켬 ${((onBy.get(o.input.storeCode)?.pred ?? 0) * 100).toFixed(1)}%`);
+      const dirs = j?.residentialNote ? Object.entries(j.residentialNote).filter(([, v]) => v).map(([k, v]) => `${k}:${v}`).join(" ") : "";
+      console.log(`  ${o.hood.padEnd(10)} 깎음 ${blockedByCode.get(o.code)}/4 [${dirs}] 유일상권 ${j?.otherCommercialWithin2km === false ? "예" : "아니오"}  실측 ${(o.act * 100).toFixed(1)}% · 끔 ${(o.pred * 100).toFixed(1)}% · 켬 ${((onBy.get(o.input.storeCode)?.pred ?? 0) * 100).toFixed(1)}%`);
     }
     console.log(`\n  ⭐ 읽는 법 — 켰을 때 자사 MAE·예측 SD·최악이 줄고 편향이 크게 안 움직이면 판정이 일하는 것. 구미산동이 2방향 이상이어야 사용자 감각과 맞다.`);
     console.log(`  ⚠️ 판정이 사람 대조 전이면 채택하지 않는다. 대조용 표본: 막힌 방향 3~4 매장 + 0 매장 몇 곳.`);
