@@ -57,6 +57,8 @@ exp-out.txt
 !/.local-tools/sbiz-floating-population.json
 !/.local-tools/sbiz-report-tabs.json
 !/.local-tools/sgis-resident-population.json
+# 항아리상권 AI 판정 결과(2026-09-23). 작은 JSON이고 사람 대조·재판정의 기준선이라 따라다녀야 한다. 지도 PNG는 안 넣는다.
+!/.local-tools/trade-area-judgments.json
 !/.local-tools/geocoded-sites.json
 # 게토 시간대별 가동률 — 매출이 아니라 가동률(%)이라 공개 통계와 같은 급으로 본다.
 !/.local-tools/geto-utilization.json

@@ -1,0 +1,1358 @@
+{
+  "judgedAt": "2026-09-23T03:33:56.130Z",
+  "model": "gemini-3.6-flash",
+  "sites": {
+    "existing:20230324392": {
+      "key": "existing:20230324392",
+      "kind": "existing",
+      "code": "20230324392",
+      "name": "시흥능곡점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "철도",
+        "E": "산지",
+        "S": "산지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "북쪽은 철도, 동쪽은 관무산, 남쪽은 군차봉 등의 산지가 고리 구간에 위치하며 1km 원 내외는 아파트 단지 위주로 구성되어 있다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:34:48.810Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20230707397": {
+      "key": "existing:20230707397",
+      "kind": "existing",
+      "code": "20230707397",
+      "name": "안산선부점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "고속도로",
+        "E": "산지",
+        "S": "공원",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "남동쪽 안산시청 및 중앙역 중심상권, 남서쪽 안산역 상권",
+      "aptBlock": true,
+      "note": "매장 1km 반경 내부(선부역 주변)는 주공 및 브랜드 아파트 대단지가 밀집해 있습니다. 1~2km 고리 구간 북쪽에는 영동고속도로, 동쪽에는 광덕산, 남쪽에는 화랑유원지가 형성되어 있습니다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:35:13.189Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20230818398": {
+      "key": "existing:20230818398",
+      "kind": "existing",
+      "code": "20230818398",
+      "name": "하남덕풍점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 반경 1km 및 2km 내에 아파트 단지가 고루 분포하며, 이동을 가로막는 대형 장애물은 뚜렷하게 보이지 않는다.",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T03:36:12.256Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20230829399": {
+      "key": "existing:20230829399",
+      "kind": "existing",
+      "code": "20230829399",
+      "name": "청주터미널점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": "산지"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "서쪽 고리 구간에 부모산(산지)이 위치하며, 1km 원 안은 주로 아파트 단지들로 구성되어 있다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:37:09.686Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20230901400": {
+      "key": "existing:20230901400",
+      "kind": "existing",
+      "code": "20230901400",
+      "name": "구미산동점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "골프장",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "1km 반경 이내는 신도시 아파트 대단지 위주로 구성되어 있으며, 동쪽 1~2km 고리 구간에는 대규모 골프장 녹지가 위치해 있습니다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:37:34.495Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20230908401": {
+      "key": "existing:20230908401",
+      "kind": "existing",
+      "code": "20230908401",
+      "name": "창원남양점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "서쪽에 롯데백화점 창원점 및 상남동 상권 위치",
+      "aptBlock": true,
+      "note": "매장 동쪽 1~2km 구간은 비음산 등 산지로 막혀 있으며, 반경 1km 이내는 성원아파트·우성아파트 등 아파트 대단지 위주로 구성되어 있습니다. 서쪽 2km 이내에는 롯데백화점과 상남동 상권이 존재합니다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:27:28.697Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20230915402": {
+      "key": "existing:20230915402",
+      "kind": "existing",
+      "code": "20230915402",
+      "name": "청주지웰시티점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "서쪽 롯데마트 서청주점 주변 상권",
+      "aptBlock": true,
+      "note": "매장을 중심으로 반경 1km 내외에 아파트 단지들이 밀집해 있으며, 서쪽으로 중부고속도로와 롯데마트 서청주점 일대의 상업시설이 위치해 있습니다.",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T03:38:32.801Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20230928403": {
+      "key": "existing:20230928403",
+      "kind": "existing",
+      "code": "20230928403",
+      "name": "화명대로점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "",
+        "W": "하천"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장 서쪽은 낙동강 하천으로 차단되며, 동쪽은 금정산 자락의 산지가 위치하고 있습니다. 북쪽과 남쪽 방향의 고리 구간 내에는 대규모 아파트 단지와 도로가 이어져 있습니다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T03:39:32.763Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20231019404": {
+      "key": "existing:20231019404",
+      "kind": "existing",
+      "code": "20231019404",
+      "name": "양주덕정점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 반경 1km 내외에 덕정역 및 아파트 단지들이 위치하며, 고리 구간(1~2km)과 2km 원 안에는 대규모 자연 장애물이나 더 큰 상업 중심지는 보이지 않습니다.",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T03:40:30.888Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20231023405": {
+      "key": "existing:20231023405",
+      "kind": "existing",
+      "code": "20231023405",
+      "name": "시흥은계점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "고속도로",
+        "E": "고속도로",
+        "S": "고속도로",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "서쪽 (신천역·대야역 주변 상권)",
+      "aptBlock": true,
+      "note": "매장이 위치한 1km 이내는 은계지구 아파트 대단지 중심이며, 북·동·남쪽은 수도권제1순환고속도로 및 제2경인고속도로로 차단되어 있습니다. 서쪽 2km 이내에는 신천역과 대야역 중심의 상권이 형성되어 있습니다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:27:53.347Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20231215406": {
+      "key": "existing:20231215406",
+      "kind": "existing",
+      "code": "20231215406",
+      "name": "전대후문점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "철도",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "남쪽 (광주역 및 NC백화점 주변 상권)",
+      "aptBlock": false,
+      "note": "1km 반경 내에는 전남대학교 광주캠퍼스와 저층 주거 및 상가가 섞인 시가지가 위치하며, 남쪽 1~2km 구간에는 광주선 철도가 지나갑니다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:28:09.369Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20240126408": {
+      "key": "existing:20240126408",
+      "kind": "existing",
+      "code": "20240126408",
+      "name": "전대상대점",
+      "blocked": {
+        "N": true,
+        "E": false,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "",
+        "S": "철도",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "남쪽에 광주역 및 NC백화점, 남서쪽 경계에 광주신세계 등 대형 상업 시설이 존재합니다.",
+      "aptBlock": false,
+      "note": "매장 중심 1km 원 내부는 전남대학교 캠퍼스와 저층 주거·상가가 섞인 기존 시가지 형태입니다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T03:29:02.033Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20240412409": {
+      "key": "existing:20240412409",
+      "kind": "existing",
+      "code": "20240412409",
+      "name": "청주대점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": false,
+      "note": "매장 중심 1km 원 안에는 구청, 시청(예정) 등 관공서와 일반 시가지가 섞여 있으며, 2km 고리 동쪽에는 우암산 산지가 위치한다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:41:28.308Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20240507410": {
+      "0": {
+        "blocked": {
+          "N": true,
+          "E": false,
+          "S": false,
+          "W": true
+        },
+        "blockedBy": {
+          "N": "하천",
+          "E": "",
+          "S": "",
+          "W": "바다"
+        },
+        "biggerCenterWithin2km": false,
+        "biggerCenterNote": "",
+        "aptBlock": true,
+        "note": "북쪽은 군자천 등 하천, 서쪽은 바다(배곧대교 인근 해역)가 고리 구간 내에 위치하여 단절 요인이 된다."
+      },
+      "key": "existing:20240507410",
+      "kind": "existing",
+      "code": "20240507410",
+      "name": "시흥배곧점",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T03:42:26.113Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20240517411": {
+      "key": "existing:20240517411",
+      "kind": "existing",
+      "code": "20240517411",
+      "name": "시흥정왕점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "고속도로",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "동쪽에 평택시흥고속도로(고속도로)가 1~2km 고리 구간을 지나며, 매장 반경 1km 내외는 아파트 대단지 위주로 구성되어 있습니다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:43:23.256Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20240517412": {
+      "key": "existing:20240517412",
+      "kind": "existing",
+      "code": "20240517412",
+      "name": "수원망포점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "동북쪽 영통역 상권",
+      "aptBlock": true,
+      "note": "매장을 중심으로 1km 원 안에는 대규모 아파트 단지들이 위치하며, 동쪽 고리 구간에 아람산 등 산지/녹지가 있다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:44:26.167Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20240530413": {
+      "key": "existing:20240530413",
+      "kind": "existing",
+      "code": "20240530413",
+      "name": "문경시청점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "하천",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": false,
+      "note": "매장 동쪽에 하천이 지나며, 1km 원 안에는 저층 주거 및 상가가 섞인 시가지 형태가 나타납니다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:45:23.712Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20240607414": {
+      "key": "existing:20240607414",
+      "kind": "existing",
+      "code": "20240607414",
+      "name": "탕정역점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "철도",
+        "S": "하천",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "동쪽 천안아산역 및 갤러리아백화점 센터시티점 주변 상권",
+      "aptBlock": true,
+      "note": "1km 이내 상권은 한들물빛도시 등 신도시 아파트 대단지 중심이며, 동쪽 2km 이내에 천안아산역 대형 상권이 위치해 있습니다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:30:47.613Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20240621415": {
+      "key": "existing:20240621415",
+      "kind": "existing",
+      "code": "20240621415",
+      "name": "부경대점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 반경 1km 내에는 대연동 일대의 아파트 단지들이 넓게 분포하고 있으며, 1km~2km 고리 구간에도 특별한 단절 요소 없이 도심 시가지와 아파트 단지가 이어져 있다.",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T03:46:21.477Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20240628416": {
+      "key": "existing:20240628416",
+      "kind": "existing",
+      "code": "20240628416",
+      "name": "부천상동역점",
+      "blocked": {
+        "N": true,
+        "E": false,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "고속도로",
+        "E": "",
+        "S": "철도",
+        "W": "하천"
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "서쪽 부평역 상권",
+      "aptBlock": true,
+      "note": "상동역 주변 매장이며, 북쪽 경인고속도로, 서쪽 하천과 상동호수공원, 남쪽 경인선 철도가 고리 구간 내에 위치함.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:47:19.092Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20240705417": {
+      "key": "existing:20240705417",
+      "kind": "existing",
+      "code": "20240705417",
+      "name": "김포구래점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "산지",
+        "W": "고속도로"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "1km 원 내부에는 구래역을 중심으로 신도시 아파트 대단지가 조성되어 있으며, 1~2km 구간 서쪽에는 고속도로, 남쪽에는 산지가 위치해 있습니다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T03:31:45.504Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20241017418": {
+      "key": "existing:20241017418",
+      "kind": "existing",
+      "code": "20241017418",
+      "name": "수원인계점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": false,
+      "note": "매장 주변 1~2km 고리 구간 내에 이동을 심각하게 차단하는 대규모 자연 지형이나 대형 시설물은 뚜렷하게 관측되지 않는다. 1km 원 내부는 아파트 단지와 상가, 저층 주거 지역이 혼재되어 있으며, 지도 내에 이 매장을 압도할 만한 더 큰 상업 중심지는 확인되지 않는다.",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T03:48:17.388Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20250110420": {
+      "key": "existing:20250110420",
+      "kind": "existing",
+      "code": "20250110420",
+      "name": "울산대점",
+      "blocked": {
+        "N": true,
+        "E": false,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "하천",
+        "E": "",
+        "S": "산지",
+        "W": "고속도로"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "1km 반경 내에 옥현주공 등 아파트 대단지와 울산대학교가 위치하며, 북쪽은 태화강(하천), 서쪽은 고속도로, 남쪽은 산지로 가로막혀 있습니다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:32:35.780Z",
+      "model": "gemini-3.6-flash"
+    },
+    "existing:20250124421": {
+      "key": "existing:20250124421",
+      "kind": "existing",
+      "code": "20250124421",
+      "name": "동탄북광장점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "반경 1km~2km 고리 구간 내에 이동을 크게 가로막는 장애물(철도, 하천, 산지 등)은 뚜렷하게 보이지 않으며, 1km 원 안쪽은 신도시 아파트 블록과 대규모 공원(개나리공원 등)으로 이루어져 있다.",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T03:49:14.938Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20250124422": {
+      "key": "existing:20250124422",
+      "kind": "existing",
+      "code": "20250124422",
+      "name": "증평점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "산지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": false,
+      "note": "매장 남쪽 고리 구간에 산지가 위치한다. 1km 원 안은 아파트 단지보다는 저층 주거·상가가 섞인 시가지 형태이다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:50:13.164Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20250314423": {
+      "key": "existing:20250314423",
+      "kind": "existing",
+      "code": "20250314423",
+      "name": "남악점",
+      "blocked": {
+        "N": true,
+        "E": false,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "",
+        "S": "하천",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "북쪽 고리 구간에는 오룡산 등 산지가 위치하며, 남쪽 고리 구간에는 영산강과 남창천 등 하천이 흐르고 있습니다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T03:51:12.383Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20250530424": {
+      "key": "existing:20250530424",
+      "kind": "existing",
+      "code": "20250530424",
+      "name": "금촌역점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "철도",
+        "S": "하천",
+        "W": "하천"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "금촌역을 중심으로 반경 1km 내외에 아파트 단지와 상업시설이 형성되어 있으며, 사방으로 하천, 철도, 산지 등이 위치한다.",
+      "blockedCount": 4,
+      "judgedAt": "2026-09-23T03:52:10.441Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20251107426": {
+      "key": "existing:20251107426",
+      "kind": "existing",
+      "code": "20251107426",
+      "name": "야당점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "하천",
+        "E": "골프장",
+        "S": "철도",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "야당역 중심 반경 1~2km 고리 구간에서 북쪽은 공릉천, 동쪽은 오성골프클럽, 남쪽은 경의선 철도 및 관련 시설이 위치하며, 주거지는 대부분 아파트 단지로 구성되어 있습니다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:53:08.525Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20251114427": {
+      "key": "existing:20251114427",
+      "kind": "existing",
+      "code": "20251114427",
+      "name": "일산탄현점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "철도",
+        "E": "공원",
+        "S": "철도",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 북쪽과 남쪽에 철도 노선 및 경의선 철도가 지나며, 동쪽에는 중산체육공원 등 녹지 공간이 위치한다. 1km 원 내부는 대규모 아파트 단지 위주로 구성되어 있다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:54:07.322Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20251121428": {
+      "key": "existing:20251121428",
+      "kind": "existing",
+      "code": "20251121428",
+      "name": "발산역점",
+      "blocked": {
+        "N": true,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "하천",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "북동쪽 양천향교역 및 마곡나루역 일대 상권",
+      "aptBlock": true,
+      "note": "북쪽 고리 구간에 한강이 위치하여 이동을 제한하며, 1km 원 안은 대규모 아파트 단지와 블록 위주로 구성되어 있다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T03:55:06.320Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260123429": {
+      "key": "existing:20260123429",
+      "kind": "existing",
+      "code": "20260123429",
+      "name": "강릉교동점(신)",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "철도",
+        "S": "하천",
+        "W": "산지"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 북쪽과 서쪽에 산지(오죽헌 및 대학교 캠퍼스 일대 녹지), 동쪽에 철도, 남쪽에 하천이 위치하며, 1km 원 내부는 아파트 단지와 블록형 시가지 위주로 구성되어 있다.",
+      "blockedCount": 4,
+      "judgedAt": "2026-09-23T03:56:03.804Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260320430": {
+      "key": "existing:20260320430",
+      "kind": "existing",
+      "code": "20260320430",
+      "name": "장산점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "산지",
+        "S": "바다",
+        "W": "산지"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장 반경 1km~2km 고리는 북쪽 산지, 동쪽 산지(달맞이길 주변), 남쪽 바다, 서쪽 산지 및 녹지로 둘러싸여 있다. 1km 안쪽은 대규모 아파트 단지와 상업시설이 혼재되어 있다.",
+      "blockedCount": 4,
+      "judgedAt": "2026-09-23T03:57:02.168Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260515431": {
+      "key": "existing:20260515431",
+      "kind": "existing",
+      "code": "20260515431",
+      "name": "송도점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "고속도로",
+        "E": "철도",
+        "S": "공원",
+        "W": "고속도로"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장 주변 1~2km 고리 구간 내에 고속도로, 철도, 공원 등이 각 방향을 가로지르고 있으며, 지도 내 주거지는 대규모 아파트 단지 위주로 구성되어 있습니다.",
+      "blockedCount": 4,
+      "judgedAt": "2026-09-23T03:58:01.427Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260529432": {
+      "key": "existing:20260529432",
+      "kind": "existing",
+      "code": "20260529432",
+      "name": "검단사거리점",
+      "blocked": {
+        "N": true,
+        "E": false,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "",
+        "S": "산지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "북쪽과 남쪽에 산지와 녹지가 고리 구간에 걸쳐 있으며, 1km 원 안은 아파트 단지 위주로 구성되어 있습니다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T03:58:59.545Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260605433": {
+      "key": "existing:20260605433",
+      "kind": "existing",
+      "code": "20260605433",
+      "name": "인천서창점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "고속도로",
+        "E": "산지",
+        "S": "녹지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 북쪽은 고속도로, 동쪽은 장아산 등 산지와 녹지, 남쪽은 대규모 녹지 및 하천이 1~2km 고리 구간 내에 위치하여 접근성이 일부 제한됨.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T03:59:57.553Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260626435": {
+      "key": "existing:20260626435",
+      "kind": "existing",
+      "code": "20260626435",
+      "name": "진주혁신도시본점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "고속도로",
+        "W": "하천"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 동쪽에는 산지, 남쪽에는 고속도로, 서쪽에는 하천이 고리 구간 내에 위치하여 접근성이 일부 제한되며, 1km 원 안은 아파트 단지 위주로 구성되어 있다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T04:00:55.255Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260626436": {
+      "key": "existing:20260626436",
+      "kind": "existing",
+      "code": "20260626436",
+      "name": "평내호평점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "산지",
+        "S": "산지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "중앙 마커 주변 반경 1km 내외는 평내호평역 일대의 아파트 단지들로 구성되어 있으며, 북쪽과 동쪽, 남쪽 고리 구간은 산지로 둘러싸여 있다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T04:01:53.988Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260703437": {
+      "key": "existing:20260703437",
+      "kind": "existing",
+      "code": "20260703437",
+      "name": "문산점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "하천",
+        "E": "산지",
+        "S": "하천",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "중앙 문산점 주변 1km 원 안에는 파주한양수자인리버팰리스아파트와 문산어울림아파트 등 아파트 단지가 분포하며, 북쪽과 남쪽에는 하천이, 동쪽에는 통일공원 등 녹지/산지가 위치한다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T04:02:51.211Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260706438": {
+      "key": "existing:20260706438",
+      "kind": "existing",
+      "code": "20260706438",
+      "name": "야탑점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "철도",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "중앙 매장은 야탑역 부근에 위치하며, 동쪽은 산지, 남쪽은 철도/하천 구역이 1~2km 고리에 걸쳐 있고, 주변은 주로 아파트 단지들로 구성되어 있다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:03:51.611Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20260717439": {
+      "key": "existing:20260717439",
+      "kind": "existing",
+      "code": "20260717439",
+      "name": "광주첨단점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "하천",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "동쪽 고리 구간에 영산강 하천이 있어 접근을 제약하며, 1km 원 내부는 아파트 단지 위주로 구성되어 있습니다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T04:04:50.497Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "existing:20241108419": {
+      "key": "existing:20241108419",
+      "kind": "existing",
+      "code": "20241108419",
+      "name": "광주각화점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "산지",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "북쪽과 동쪽 고리 구간에 산지와 구릉지대가 위치하며, 1km 원 내부는 아파트 단지 위주로 구성되어 있습니다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:05:49.075Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N001": {
+      "key": "candidate:N001",
+      "kind": "candidate",
+      "code": "N001",
+      "name": "신중동점",
+      "blocked": {
+        "N": false,
+        "E": false,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 1km 원 내외에 대규모 아파트 단지들이 잘 발달해 있으며, 1~2km 고리 구간 내에 이동을 크게 제한할 만한 산지나 철도, 하천 등의 거대한 물리적 장벽은 보이지 않는다.",
+      "blockedCount": 0,
+      "judgedAt": "2026-09-23T04:06:46.831Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N002": {
+      "key": "candidate:N002",
+      "kind": "candidate",
+      "code": "N002",
+      "name": "춘천퇴계점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "하천",
+        "E": "하천",
+        "S": "산지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장 중심 1km 내외에 대단지 아파트와 CGV, 홈플러스 등이 밀집해 있으며 북·동쪽은 하천, 남쪽은 산지가 고리 구간에 걸쳐 있음.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T04:07:45.132Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N003": {
+      "key": "candidate:N003",
+      "kind": "candidate",
+      "code": "N003",
+      "name": "호구포역점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "하천",
+        "S": "녹지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "동쪽 고리 구간에 하천과 소래포구가 위치하며, 남쪽 고리 구간에는 대규모 녹지와 바다가 위치한다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:08:42.795Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N004": {
+      "key": "candidate:N004",
+      "kind": "candidate",
+      "code": "N004",
+      "name": "하안금당사거리",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "철도",
+        "S": "산지",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "중앙 마커 주변 1km 원 내부는 대규모 아파트 단지 위주로 구성되어 있으며, 동쪽에는 철도(1호선/선로), 남쪽에는 구름산 등 산지가 위치한다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:09:40.597Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N005": {
+      "key": "candidate:N005",
+      "kind": "candidate",
+      "code": "N005",
+      "name": "울산삼산점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "하천",
+        "E": "철도",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "동쪽 태화강역 일대",
+      "aptBlock": false,
+      "note": "북쪽은 태화강 하천, 동쪽은 동해선 철도(태화강역 등)가 1~2km 고리 구간을 지나며, 1km 원 안은 고층 아파트 외에도 저층 주거 및 상업 구역이 함께 섞여 있다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:10:38.849Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N009": {
+      "key": "candidate:N009",
+      "kind": "candidate",
+      "code": "N009",
+      "name": "평택소사벌점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "동쪽 고리(1~2km) 구간에 백운산 산지가 위치한다. 1km 원 안은 평택소사벌지구 아파트 단지 위주로 구성되어 있다.",
+      "blockedCount": 1,
+      "judgedAt": "2026-09-23T04:11:36.029Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N010": {
+      "key": "candidate:N010",
+      "kind": "candidate",
+      "code": "N010",
+      "name": " 창원상남점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": false,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "산지",
+        "S": "",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "북쪽과 동쪽 고리 구간에는 산지가 위치하며, 1km 원 내부는 아파트 대단지와 중심 상업 시설이 혼재되어 있습니다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:12:33.530Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N011": {
+      "key": "candidate:N011",
+      "kind": "candidate",
+      "code": "N011",
+      "name": "마산산호점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "산지",
+        "S": "하천",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "북쪽과 동쪽은 산지, 남쪽은 하천이 고리 구간 내에 위치하며, 매장 주변 1km 안쪽은 아파트 단지 위주로 구성되어 있습니다.",
+      "blockedCount": 3,
+      "judgedAt": "2026-09-23T04:13:32.976Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N012": {
+      "key": "candidate:N012",
+      "kind": "candidate",
+      "code": "N012",
+      "name": "산본점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "철도",
+        "E": "철도",
+        "S": "철도",
+        "W": "산지"
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "북동쪽 금정역 역세권 상권",
+      "aptBlock": true,
+      "note": "매장을 중심으로 반경 1km 내외에 산지와 철도, 고속도로 등이 인접해 있으며, 주거지는 아파트 단지 위주로 구성되어 있습니다.",
+      "blockedCount": 4,
+      "judgedAt": "2026-09-23T04:14:31.175Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N013": {
+      "key": "candidate:N013",
+      "kind": "candidate",
+      "code": "N013",
+      "name": "김포풍무점",
+      "blocked": {
+        "N": true,
+        "E": false,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "",
+        "S": "철도",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "북동쪽 사우역 주변 상업지",
+      "aptBlock": true,
+      "note": "북쪽은 장릉산 등 산지가 고리 구간에 걸쳐 있고, 남쪽은 철도가 지나간다. 1km 원 안에는 대규모 아파트 단지가 분포한다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:15:29.018Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N014": {
+      "key": "candidate:N014",
+      "kind": "candidate",
+      "code": "N014",
+      "name": "영월점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "산지",
+        "S": "하천",
+        "W": ""
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": false,
+      "note": "북쪽과 서쪽은 고리 구간 내 특별한 장애물이 없고, 동쪽은 산지, 남쪽은 강(하천)으로 둘러싸여 있다. 아파트 대단지보다는 저층 주거 및 시가지 형태이다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:16:29.588Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N015": {
+      "key": "candidate:N015",
+      "kind": "candidate",
+      "code": "N015",
+      "name": "구리돌다리점",
+      "blocked": {
+        "N": true,
+        "E": true,
+        "S": true,
+        "W": true
+      },
+      "blockedBy": {
+        "N": "산지",
+        "E": "하천",
+        "S": "하천",
+        "W": "산지"
+      },
+      "biggerCenterWithin2km": false,
+      "biggerCenterNote": "",
+      "aptBlock": true,
+      "note": "매장을 중심으로 1km 원 안에는 아파트 단지들이 밀집해 있으며, 1~2km 고리 구간에는 북쪽과 서쪽에 산지, 동쪽과 남쪽에 하천 등이 위치해 있다.",
+      "blockedCount": 4,
+      "judgedAt": "2026-09-23T04:17:26.975Z",
+      "model": "gemini-3.5-flash-lite"
+    },
+    "candidate:N016": {
+      "key": "candidate:N016",
+      "kind": "candidate",
+      "code": "N016",
+      "name": "오송점",
+      "blocked": {
+        "N": false,
+        "E": true,
+        "S": true,
+        "W": false
+      },
+      "blockedBy": {
+        "N": "",
+        "E": "하천",
+        "S": "철도",
+        "W": ""
+      },
+      "biggerCenterWithin2km": true,
+      "biggerCenterNote": "남동쪽 오송역 상권",
+      "aptBlock": true,
+      "note": "동쪽은 미호강 하천, 남쪽은 철도가 1~2km 고리지역을 지나며, 매장 반경 1km 내외는 아파트 대단지와 오송생명과학단지 중심으로 구성되어 있다.",
+      "blockedCount": 2,
+      "judgedAt": "2026-09-23T04:18:24.908Z",
+      "model": "gemini-3.5-flash-lite"
+    }
+  }
+}
