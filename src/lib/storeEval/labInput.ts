@@ -25,7 +25,7 @@ import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation
 import {
   candidateRival2km, candidateSiteKey, existingSiteKey, rival2kmForWindow,
 } from "@/lib/storeEval/rival2km";
-import type { QualityParts, TextbookInput } from "@/lib/storeEval/textbookModel";
+import type { QualityParts, ResidentAges, ResidentRingRadius, TextbookInput } from "@/lib/storeEval/textbookModel";
 import type {
   CandidateInput, Competitor, ExistingStore, LocationEvaluation, ModelSettings,
 } from "@/lib/storeEval/types";
@@ -388,6 +388,12 @@ export type BuildLabRowsArgs = {
    */
   roadviewByKey?: Map<string, RoadviewJudgment>;
   /**
+   * 매장코드 -> 1km 밖 **누적 원** 연령 인구(1.5km·2km·5km). `residentRingDecayM`을 켤 때만 쓴다.
+   * 없으면 그 매장은 고리 없이 1km만으로 계산되고 `missing`에 적힌다. 지어내지 않는다.
+   * 출처는 SGIS 파일이고 변환은 `labResidentRings.ts` — 화면(Firestore 복제본)에는 아직 없다.
+   */
+  residentRingsByCode?: Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>>;
+  /**
    * 매장코드 -> QSC 평균. 주면 자사 **관리 점수를 이 값으로 갈아끼운다**
    * (qscToManagementScore). 안 주면 저장된 `ownManagementScore`(전부 4.00)를 그대로 쓴다.
    * QSC가 없는 매장에는 있는 곳들의 평균을 넣는다 — 두 자가 섞이지 않게.
@@ -435,7 +441,7 @@ export const LAB_ONLY_INCLUDED_STORE_CODES: ReadonlySet<string> = new Set([
   "20260515431",
 ]);
 
-export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
+export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
   // QSC를 쓸 때만 계산한다. 가맹점 평균은 **환산한 뒤**의 평균이다 — 점수를 먼저 평균 내고
   // 환산하면 다른 값이 나온다(환산이 1~5로 잘리는 구간이 있어서).
   const qscAvg = qscByStoreCode?.size
@@ -548,6 +554,8 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
           age30s: sr.age1km_30_39 ?? 0, age40s: sr.age1km_40_49 ?? 0, age50s: sr.age1km_50_59 ?? 0,
           age60plus: (sr.age1km_60_69 ?? 0) + (sr.age1km_70_79 ?? 0) + (sr.age1km_80plus ?? 0),
         },
+        // 1km 밖 고리(2026-09-23) — 넘겨준 매장만. 없으면 null이라 고리 항이 빠진다.
+        residentAgesByRadius: residentRingsByCode?.get(s.storeCode) ?? null,
         // 2026-09-15 — 100/200/300/400m 수집 경로를 열었다(소상공인365 반경 선택). 아직 안 모은
         // 매장은 null이라 그 반경을 고르면 "자료없음"으로 빠진다.
         floatingByRadius: {
@@ -638,6 +646,8 @@ export type BuildLabCandidateRowsArgs = {
    * 찍었다). 계수가 0이라 결과에 영향이 없어 비워 둔다 — 채우면 저절로 들어온다.
    */
   roadviewByKey?: Map<string, RoadviewJudgment>;
+  /** 후보지코드 -> 1km 밖 누적 원 연령 인구. 기존점과 같은 뜻(BuildLabRowsArgs 주석). SGIS 파일엔 후보지도 있다. */
+  residentRingsByCode?: Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>>;
   /**
    * 관리 점수로 쓸 **가맹점 평균**(1~5). 기존점 행에서 구한 값을 그대로 넘긴다
    * (franchiseManagementFromRows) — 여기서 다시 계산하면 자가 둘이 된다.
@@ -653,7 +663,7 @@ export type BuildLabCandidateRowsArgs = {
  * 중립으로 빼게 둔다. 단 **자사 시설 빈칸만은 예외**다(위 4번: 결측이 아니라 표준 구성).
  */
 export function buildLabCandidateRows({
-  candidates, compsByCode, locByCode, settings, roadviewByKey, franchiseManagement,
+  candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, franchiseManagement,
 }: BuildLabCandidateRowsArgs): LabCandidateRow[] {
   const rows: LabCandidateRow[] = [];
   for (const c of candidates) {
@@ -735,6 +745,8 @@ export function buildLabCandidateRows({
           age30s: c.age1km_30_39 ?? 0, age40s: c.age1km_40_49 ?? 0, age50s: c.age1km_50_59 ?? 0,
           age60plus: (c.age1km_60_69 ?? 0) + (c.age1km_70_79 ?? 0) + (c.age1km_80plus ?? 0),
         },
+        // 1km 밖 고리(2026-09-23) — 넘겨준 후보지만. 없으면 고리를 켜도 "1km 밖 고리 인구" 자료없음으로 1km만 센다.
+        residentAgesByRadius: residentRingsByCode?.get(c.code) ?? null,
         floatingByRadius: {
           100: c.floating100Avg ?? null, 200: c.floating200Avg ?? null,
           300: c.floating300Avg ?? null, 400: c.floating400Avg ?? null,

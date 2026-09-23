@@ -448,7 +448,17 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           <b className="text-[#171310] dark:text-[#f2ede2]">2. 주거를 기본으로, 유동을 보태 수요를 만든다</b>
           <div className="mt-1 font-mono text-[11px]">
             수요 = 환산(주거 {p.residentRadius === 1000 ? "1km" : `${p.residentRadius}m`})
+            {p.residentRingDecayM > 0 ? ` + Σ 고리 × e^(−(r−1000)/${p.residentRingDecayM})` : ""}
             {" + "}환산(유동 {p.floatingRadius}m) × {p.floatingFactor}
+          </div>
+          <div className="mt-1">
+            <b>1km 밖 고리</b> — {p.residentRingDecayM > 0
+              ? <>켜져 있습니다(λ={p.residentRingDecayM}m). 1~1.5km · 1.5~2km · 2~5km 고리 인구를 연령가중해 더하되, 멀수록
+                덜 셉니다(1.25km 고리 무게 {Math.exp(-250 / p.residentRingDecayM).toFixed(2)} · 1.75km {Math.exp(-750 / p.residentRingDecayM).toFixed(2)}
+                {" "}· 3.5km {Math.exp(-2500 / p.residentRingDecayM).toFixed(2)}). 고리 인구가 없는 매장은 &ldquo;자료없음&rdquo;으로 1km만 셉니다.</>
+              : <>꺼져 있습니다. PC방은 목적지형이라 1km 밖에서도 오는데, 지금 점유율(θ={p.qualityExponent}·존구성 포함)이
+                우리 몫을 크게 잡고 있어 수요를 키우면 자사가 과대예측됩니다. 존구성 뺌·θ≈2와 <b>묶음으로만</b> 켤 수
+                있습니다(2026-09-23 측정, 재고 표는 인계문 handoff-20260926 8절).</>}
           </div>
           <div className="mt-1">
             <b>특수수요 배수</b> — 군부대·대학가는 <b>인구 통계에 안 잡히는 이용자</b>를
@@ -1074,6 +1084,7 @@ function ParamSummary({ p, counts }: {
         { label: "유동인구 반경", value: `${p.floatingRadius}m` },
         { label: "주거인구 반경", value: `${p.residentRadius}m` },
         { label: "유동 계수", value: num(p.floatingFactor) },
+        { label: "1km 밖 고리 감쇠 λ", value: p.residentRingDecayM > 0 ? `${p.residentRingDecayM}m` : "끔" },
         { label: "상권 흡인력", value: num(p.agglomerationFactor) },
       ],
     },

@@ -87,6 +87,23 @@ export function blendUsageByGender(maleRatio: number | null): AgeUsageWeights {
  * 500m는 원래 갖고 있던 값이라 출처가 다르다 — 반경끼리 비교할 땐 100~400m 안에서 본다.
  */
 export type FloatingRadius = 100 | 200 | 300 | 400 | 500;
+/** 주거 연령 분해 한 벌 — 1km 원과 1km 밖 고리(누적 원)에 같은 모양을 쓴다. */
+export type ResidentAges = {
+  age0s: number; age10s: number; age20s: number; age30s: number;
+  age40s: number; age50s: number; age60plus: number;
+};
+/** 1km 밖 고리의 바깥 반경(m). 값은 **그 반경 원의 누적 인구**다(고리 인구는 계산에서 뺀다). */
+export type ResidentRingRadius = 1500 | 2000 | 5000;
+/** 고리 띠 — 안쪽부터. 무게는 중간반경에서 잰다(`residentRingWeight`). */
+export const RESIDENT_RING_BANDS: readonly { from: 1000 | ResidentRingRadius; to: ResidentRingRadius; midM: number }[] = [
+  { from: 1000, to: 1500, midM: 1250 },
+  { from: 1500, to: 2000, midM: 1750 },
+  { from: 2000, to: 5000, midM: 3500 },
+];
+/** 고리 무게 = exp(−(중간반경 − 1000) ÷ λ). λ≤0이면 0(꺼짐). 1km 안은 항상 1이다. */
+export function residentRingWeight(midM: number, decayM: number): number {
+  return decayM > 0 ? Math.exp(-(midM - 1000) / decayM) : 0;
+}
 /** 주거인구를 어느 반경으로 쓸지. 500m는 연령 분해가 없어 총수만 쓸 수 있다. */
 export type ResidentRadius = 500 | 1000;
 
@@ -99,6 +116,29 @@ export type TextbookParams = {
   useFloatingAgeWeights: boolean;
   /** 유동인구를 수요로 볼 때 깎는 비율. 스쳐 가는 사람이 대부분이라 1.0일 수 없다. */
   floatingFactor: number;
+  /**
+   * **1km 밖 고리 감쇠 λ(m)** — 2026-09-23 신설. **0이면 끈 것**(지금 기본값). 주거 1km에서만 작동한다.
+   *
+   * PC방은 평균 3시간·월 3.7회 오는 **목적지형**이라 1km 밖에서도 온다. 1km 원 밖의 고리
+   * (1~1.5km · 1.5~2km · 2~5km) 인구를 연령가중해서 더하되, 멀수록 덜 센다:
+   *
+   *   고리 무게 w = exp(−(고리 중간반경 − 1000) ÷ λ)     (1km 안은 무게 1)
+   *   λ=1000이면 1.25km 고리 0.78 · 1.75km 0.47 · 3.5km 0.08
+   *
+   * ── 왜 이 경로인가 (2026-09-23 측정, `_demandPathOutside.test.ts`) ─────────────
+   * 수요 수준이 약 1.5배 작다는 게 바깥 표본(경쟁점 핑봇 47곳·실측 수요 14동네)에서 드러났다.
+   * 상수배(×1.5)는 수준만 옮기고 매장 간 순서(r)를 못 움직인다. 고리는 같은 수준을 만들면서
+   * 자사 r 0.29→0.35 · 경쟁 r 0.15→0.22(존구성 뺌·θ2 배선)로 **순서까지 움직였다** — 모양이
+   * 맞는 쪽이라는 증거다. 주거 500m·유동 ×0.30·경쟁점 11.58h는 같은 자리에서 기각됐다.
+   *
+   * ⚠️ **지금 배선(θ=3·존구성 있음)에서 켜면 자사를 +6~13%p 과대예측한다.** 점유율이 우리 몫을
+   *    너무 크게 잡고 있어 수요를 키울 자리가 없다. 존구성 뺌 + θ≈2와 **묶음으로만** 뜻이 있다.
+   * ⚠️ 고리 인구는 `TextbookInput.residentAgesByRadius`(누적 원 인구)로 들어온다. 자료가 없으면
+   *    `missing`에 "1km 밖 고리 인구"를 적고 1km만으로 계산한다 — 지어내지 않는다.
+   *    자료 출처: SGIS 반경 집계(`.local-tools/sgis-resident-population.json`, 40곳 전부).
+   *    화면(실험실 Firestore 복제본)에는 아직 없다 — 동기화 스크립트가 필요하다.
+   */
+  residentRingDecayM: number;
   ageWeights: AgeUsageWeights;
   /** 이용자 1인당 월 PC방 이용시간. 총수요를 시간 단위로 바꾸는 계수. */
   hoursPerUserPerMonth: number;
@@ -755,6 +795,8 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   useResidentAgeWeights: true,
   useFloatingAgeWeights: true,
   floatingFactor: 0.15,
+  // 1km 밖 고리 — **꺼짐**. 켜는 건 존구성 뺌·θ≈2와 묶음이어야 한다(타입 주석). 재고 표: `_bundleCandidate.test.ts`.
+  residentRingDecayM: 0,
   // 연령가중 자체는 남녀 이용률을 지역 성비로 섞어 그때그때 만든다(blendUsageByGender).
   // 여기 값은 성비를 모를 때(남녀 1:1)의 기본값이다.
   ageWeights: blendUsageByGender(0.5),
@@ -992,7 +1034,13 @@ export type TextbookInput = {
   /** 주거 — 500m는 총수만, 1km는 연령 분해까지 있다. */
   pop500m: number | null;
   pop1km: number | null;
-  residentAges: { age0s: number; age10s: number; age20s: number; age30s: number; age40s: number; age50s: number; age60plus: number } | null;
+  residentAges: ResidentAges | null;
+  /**
+   * **1km 밖 누적 원 인구**(연령 분해) — 1.5km · 2km · 5km. `residentRingDecayM`이 켜졌을 때만 쓴다.
+   * 누적값이다(고리 인구가 아니다). 없으면 null — 고리 항은 빠지고 `missing`에 적힌다.
+   * 출처: SGIS 반경 집계(2026-09-20 수집). 2026-09-23 신설.
+   */
+  residentAgesByRadius: Partial<Record<ResidentRingRadius, ResidentAges | null>> | null;
   /**
    * 주거인구의 남성비율(0~1). 연령별 이용률을 성비로 섞는 데 쓴다(blendUsageByGender).
    * 없으면 남녀 1:1로 본다.
@@ -1006,7 +1054,10 @@ export type TextbookInput = {
 };
 
 export type TextbookBreakdown = {
+  /** 주거 이용자 — 1km + (켜져 있으면) 1km 밖 고리까지 합친 값. */
   residentDemandUsers: number | null;
+  /** 그중 1km 밖 고리 몫. 고리를 끈 상태나 자료가 없으면 null. 화면에 "얼마가 밖에서 왔나"를 그린다. */
+  residentRingUsers: number | null;
   floatingDemandUsers: number | null;
   totalDemandUsers: number | null;
   totalDemandHours: number | null;
@@ -1082,7 +1133,7 @@ export function rivalDistanceWeight(
 export function computeTextbook(input: TextbookInput, p: TextbookParams): TextbookBreakdown {
   const missing: string[] = [];
   const empty: TextbookBreakdown = {
-    residentDemandUsers: null, floatingDemandUsers: null, totalDemandUsers: null,
+    residentDemandUsers: null, residentRingUsers: null, floatingDemandUsers: null, totalDemandUsers: null,
     totalDemandHours: null, share: null, locationMultiplier: null, locationFactors: [], ownDemandHours: null, utilization: null,
     capped: false, unitPrice: null, pcUnitPrice: null, pcRevenue: null, productRevenue: null,
     monthlyRevenue: null, productRatio: null, missing,
@@ -1107,6 +1158,36 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     // 500m는 연령 분해가 없다 — 총수 x 평균 이용률만 가능하다.
     if (input.pop500m != null) residentUsers = input.pop500m * flatUsageRate(residentWeights);
     else missing.push("500m 주거인구");
+  }
+
+  // ── 1b) 1km 밖 고리 (2026-09-23 신설 · 기본 꺼짐) ──────────────────────────
+  // 누적 원 인구에서 안쪽 원을 빼 고리 인구를 만들고, 멀수록 덜 센다(타입 쪽 `residentRingDecayM` 주석).
+  // 자료가 없으면 지어내지 않는다 — missing에 적고 1km만으로 간다.
+  let ringUsers: number | null = null;
+  if (p.residentRingDecayM > 0 && p.residentRadius === 1000) {
+    const cum = input.residentAgesByRadius;
+    const core = input.residentAges;
+    const usersOf = (a: ResidentAges) => p.useResidentAgeWeights
+      ? weightedAges(a, residentWeights)
+      : (a.age0s + a.age10s + a.age20s + a.age30s + a.age40s + a.age50s + a.age60plus) * flatUsageRate(residentWeights);
+    if (!cum || !core) {
+      missing.push("1km 밖 고리 인구");
+    } else {
+      let acc = 0, prev: ResidentAges = core, any = false;
+      for (const band of RESIDENT_RING_BANDS) {
+        const outer = cum[band.to];
+        if (!outer) break; // 바깥 고리가 없으면 거기서 멈춘다(있는 고리까지만 센다)
+        const ring: ResidentAges = {
+          age0s: Math.max(0, outer.age0s - prev.age0s), age10s: Math.max(0, outer.age10s - prev.age10s),
+          age20s: Math.max(0, outer.age20s - prev.age20s), age30s: Math.max(0, outer.age30s - prev.age30s),
+          age40s: Math.max(0, outer.age40s - prev.age40s), age50s: Math.max(0, outer.age50s - prev.age50s),
+          age60plus: Math.max(0, outer.age60plus - prev.age60plus),
+        };
+        acc += residentRingWeight(band.midM, p.residentRingDecayM) * usersOf(ring);
+        prev = outer; any = true;
+      }
+      if (any) { ringUsers = acc; residentUsers = (residentUsers ?? 0) + acc; } else missing.push("1km 밖 고리 인구");
+    }
   }
 
   // ── 2) 유동 수요 ────────────────────────────────────────────────────────
@@ -1139,7 +1220,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
 
   // ── 3) 점유율 ───────────────────────────────────────────────────────────
   const pc = input.pcCount;
-  if (!pc) { missing.push("PC대수"); return { ...empty, residentDemandUsers: residentUsers, floatingDemandUsers: floatingUsers, totalDemandUsers: totalUsers, totalDemandHours: totalHours }; }
+  if (!pc) { missing.push("PC대수"); return { ...empty, residentDemandUsers: residentUsers, residentRingUsers: ringUsers, floatingDemandUsers: floatingUsers, totalDemandUsers: totalUsers, totalDemandHours: totalHours }; }
   const gap = input.competitivenessGap ?? 1;
   const rivalIp = input.competitorIp ?? 0;
   let ownWeight: number;
@@ -1295,6 +1376,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
 
   return {
     residentDemandUsers: residentUsers,
+    residentRingUsers: ringUsers,
     floatingDemandUsers: floatingUsers,
     totalDemandUsers: totalUsers,
     totalDemandHours: totalHours,
