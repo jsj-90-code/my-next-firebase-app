@@ -156,9 +156,12 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
 
   // ── 격자 칸 ──────────────────────────────────────────────────────────────
   type Cell = { zoneIn: boolean; theta: number; lambda: number };
+  // ⚠️ 2026-09-23에 기본값이 묶음(θ1.75·존 0.06·λ600)으로 바뀌었다. 이 표의 "지금" 줄은 **옛 배선**
+  //    (θ3·존 0.238·λ0)을 뜻하므로 P의 값이 아니라 상수로 고정한다 — 그래야 (0) 검산 5.84%p가 뜻을 유지한다.
+  const OLD_ZONE_W = 0.238;
   const paramsOf = (c: Cell): TextbookParams => ({
     ...P, qualityExponent: c.theta, residentRingDecayM: c.lambda,
-    qualityWeights: { ...P.qualityWeights, zone: c.zoneIn ? P.qualityWeights.zone : 0 },
+    qualityWeights: { ...P.qualityWeights, zone: c.zoneIn ? OLD_ZONE_W : 0 },
   });
   const label = (c: Cell) => `${c.zoneIn ? "존있음" : "존뺌  "} θ${c.theta.toFixed(2)} λ${String(c.lambda).padStart(4)}`;
   type Obs = Subject & { pred: number };
@@ -218,8 +221,11 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
 
   it("(0) 검산 — λ=0이면 어제와 같아야 한다 · 고리가 수요를 얼마나 키우나", () => {
     const now = score(run(NOW));
-    console.log(`\n[검산] 지금 배선(λ=0): 자사 ${now.ours.length}곳 MAE ${(now.ourMae * 100).toFixed(2)}%p (어제 5.84%p) · 경쟁점 ${now.riv.length}곳 편향 ${(now.rivBias * 100).toFixed(1)}%p (어제 −10.9%p)`);
+    console.log(`\n[검산] 옛 배선(θ3·존 0.238·λ0): 자사 ${now.ours.length}곳 MAE ${(now.ourMae * 100).toFixed(2)}%p (2026-09-22 5.84%p) · 경쟁점 ${now.riv.length}곳 편향 ${(now.rivBias * 100).toFixed(1)}%p (−10.9%p)`);
     console.log(`  ${Math.abs(now.ourMae - 0.0584) < 0.002 ? "✅ 같다 — 배선이 λ=0에서 아무것도 안 바꿨다" : "⚠️ 다르다 — 배선을 다시 볼 것"}`);
+    // 새 기본값(P 그대로) — 채택 칸이 재현되는지
+    const cur = score((() => { const out: Obs[] = []; for (const s of subjects) { const u = computeTextbook(s.input, P).utilization; if (u != null && u > 0) out.push({ ...s, pred: u }); } return out; })());
+    console.log(`  새 기본값(θ${P.qualityExponent}·존 ${P.qualityWeights.zone}·λ${P.residentRingDecayM}): 자사 MAE ${(cur.ourMae * 100).toFixed(2)}%p · 자사편향 ${(cur.ourBias * 100).toFixed(1)}%p · 경쟁편향 ${(cur.rivBias * 100).toFixed(1)}%p · 자사우위 ${cur.gapPred.toFixed(2)}배`);
     const withRings = base.filter((r) => r.input.residentAgesByRadius).length;
     console.log(`  고리 인구가 실린 매장 ${withRings}/${base.length} (출처: ${ringSource})`);
     console.log(`\n  λ별 고리 무게 (1.25km / 1.75km / 3.5km) 와 주거 이용자 배율(1km 대비, 중앙)`);
@@ -359,5 +365,51 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     console.log(`     비대칭(수요 2km · 경쟁 500m)은 남는다. 해법은 감쇠 확대가 아니라 **고리 수요를 거리로 배분하는 구조**(중력형)여야 한다 — 다음 갈래.`);
     console.log(`  ⚠️ 2km 밖 경쟁점 자료가 없어 경쟁λ1000은 2km에서 잘린다. 고리도 2km까지로 읽는 게 맞다.`);
     expect(subjects.length).toBeGreaterThan(40);
+  });
+
+  it("(5) ⭐⭐⭐ 빼는 게 정답인가 — 존구성 비중을 0과 지금(23.8%) 사이로 놓으면", () => {
+    // 사용자(2026-09-23): *"빼는 게 정답임?"* — 맞는 질문이다. 지금까지는 "있음(23.8%)" vs "뺌(0)"만 봤다.
+    // 규칙 [[feedback_item_vs_coefficient]]: 항목은 뜻으로 두고 **계수만** 자료로 고른다. 팀룸 유입 기전은
+    // 사용자가 댔으니 항목을 자르는 건 규칙에 어긋난다. 그러면 물어야 할 건 "비중을 얼마로 두면 되나"다.
+    // ⚠️ 바깥 표본(경쟁점 47곳)은 존구성을 못 본다 — 큰룸 있는 경쟁점 11곳, 2SE 54%. "0이 맞다"는 증거가 아니라
+    //    "자료로는 못 고른다"는 뜻이다. 그래서 여기서는 **수준(두 편향)과 격차(자사우위)**만으로 본다.
+    type Cell5 = { zoneW: number; theta: number; lambda: number };
+    const ZW = [0, 0.06, 0.12, 0.18, 0.238];
+    const paramsOf5 = (c: Cell5): TextbookParams => ({
+      ...P, qualityExponent: c.theta, residentRingDecayM: c.lambda,
+      qualityWeights: { ...P.qualityWeights, zone: c.zoneW },
+    });
+    const run5 = (c: Cell5): Obs[] => {
+      const p2 = paramsOf5(c);
+      const out: Obs[] = [];
+      for (const s of subjects) { const u = computeTextbook(s.input, p2).utilization; if (u != null && u > 0) out.push({ ...s, pred: u }); }
+      return out;
+    };
+    console.log(`\n[존구성 비중 재고 표] 비중 0 = 뺌 · 0.238 = 지금. 나머지 네 항목 비중은 그대로(합으로 나눠 정규화)`);
+    console.log(`  존비중  θ     λ    자사MAE 자사편향 자사r | 경쟁MAE 경쟁편향 경쟁r | 짝r  짝과장 | 자사우위 예측(목표 1.74)`);
+    const rows5: { c: Cell5; s: Score }[] = [];
+    for (const zoneW of ZW) {
+      for (const theta of [2, 1.75]) for (const lambda of [500, 600, 700]) {
+        const c = { zoneW, theta, lambda };
+        const s = score(run5(c));
+        rows5.push({ c, s });
+        const pass = Math.abs(s.ourBias) <= 0.03 && Math.abs(s.rivBias) <= 0.03;
+        console.log(`  ${zoneW.toFixed(3)}  ${theta.toFixed(2)}  ${String(lambda).padStart(4)}`
+          + `${(s.ourMae * 100).toFixed(2).padStart(7)}%p${(s.ourBias * 100).toFixed(1).padStart(6)}%p${s.ourR.toFixed(3).padStart(6)} |`
+          + `${(s.rivMae * 100).toFixed(1).padStart(6)}%p${(s.rivBias * 100).toFixed(1).padStart(6)}%p${s.rivR.toFixed(3).padStart(6)} |`
+          + `${s.pairR.toFixed(3).padStart(6)}${s.pairSpread.toFixed(2).padStart(5)}배 |`
+          + `${s.gapPred.toFixed(2).padStart(8)}배${pass ? "  *" : ""}`);
+      }
+      console.log("");
+    }
+    const passing5 = rows5.filter(({ s }) => Math.abs(s.ourBias) <= 0.03 && Math.abs(s.rivBias) <= 0.03)
+      .sort((a, b) => Math.abs(a.s.gapPred - TARGET_GAP_YOUNG) - Math.abs(b.s.gapPred - TARGET_GAP_YOUNG) || b.s.ourR - a.s.ourR);
+    console.log(`  [사전 등록 기준 순위 — 비중까지 포함]`);
+    passing5.slice(0, 8).forEach(({ c, s }, i) => console.log(`  ${String(i + 1).padStart(3)}  존비중 ${c.zoneW.toFixed(3)} θ${c.theta.toFixed(2)} λ${c.lambda}`
+      + `  자사우위 ${s.gapPred.toFixed(2)} (|목표차| ${Math.abs(s.gapPred - TARGET_GAP_YOUNG).toFixed(2)})  자사r ${s.ourR.toFixed(3)}  짝r ${s.pairR.toFixed(3)}  자사MAE ${(s.ourMae * 100).toFixed(2)}%p`));
+    console.log(`\n  ⭐ 읽는 법 — 비중을 조금 남겨도(0.06~0.12) 두 편향과 자사우위가 기준 안이면 **항목을 자르지 않아도 된다.**`);
+    console.log(`     그 경우 "뺌"이 아니라 "비중 축소"가 답이고, 기전(팀룸 유입)을 산식에 남길 수 있다.`);
+    console.log(`     자사 r·짝 r이 비중을 남길 때 더 높으면 존구성이 순서 맞히기에는 일하고 있다는 뜻이다.`);
+    expect(rows5.length).toBe(ZW.length * 6);
   });
 });

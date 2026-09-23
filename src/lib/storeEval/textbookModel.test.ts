@@ -72,8 +72,9 @@ describe("품질 모드 점유율", () => {
     const weak = shareOf({ ownQualityParts: parts(2), rivals })!;
     const strong = shareOf({ ownQualityParts: parts(4), rivals })!;
     expect(strong).toBeGreaterThan(weak);
-    // theta=3이면 품질 2배가 경쟁점을 8분의 1로 만든다 -> 100/(100+100/8)
-    expect(strong).toBeCloseTo(100 / (100 + 100 / 8), 10);
+    // 품질 2배면 경쟁점 무게가 2^θ 분의 1이 된다 -> 100/(100+100/2^θ).
+    // (θ=3이던 때는 1/8이었다. 2026-09-23에 θ가 1.75로 바뀌어 기본값에서 읽는다 — 숫자를 박으면 낡는다.)
+    expect(strong).toBeCloseTo(100 / (100 + 100 / Math.pow(2, P.qualityExponent)), 10);
   });
 
   it("유효거리 밖의 경쟁점은 아예 안 센다 (계단)", () => {

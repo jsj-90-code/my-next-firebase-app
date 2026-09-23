@@ -458,9 +458,9 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               ? <>켜져 있습니다(λ={p.residentRingDecayM}m). 1~1.5km · 1.5~2km · 2~5km 고리 인구를 연령가중해 더하되, 멀수록
                 덜 셉니다(1.25km 고리 무게 {Math.exp(-250 / p.residentRingDecayM).toFixed(2)} · 1.75km {Math.exp(-750 / p.residentRingDecayM).toFixed(2)}
                 {" "}· 3.5km {Math.exp(-2500 / p.residentRingDecayM).toFixed(2)}). 고리 인구가 없는 매장은 &ldquo;자료없음&rdquo;으로 1km만 셉니다.</>
-              : <>꺼져 있습니다. PC방은 목적지형이라 1km 밖에서도 오는데, 지금 점유율(θ={p.qualityExponent}·존구성 포함)이
-                우리 몫을 크게 잡고 있어 수요를 키우면 자사가 과대예측됩니다. 존구성 뺌·θ≈2와 <b>묶음으로만</b> 켤 수
-                있습니다(2026-09-23 측정, 재고 표는 인계문 handoff-20260926 8절).</>}
+              : <>꺼져 있습니다. PC방은 목적지형이라 1km 밖에서도 오는데, 옛 점유율(θ=3·존구성 0.238)이
+                우리 몫을 크게 잡고 있어 수요를 키우면 자사가 과대예측됩니다. 존구성 비중 축소·θ 1.75와 <b>묶음으로만</b> 켤 수
+                있습니다(2026-09-23 측정, 재고 표는 `_bundleCandidate.test.ts`).</>}
           </div>
           <div className="mt-1">
             <b>특수수요 배수</b> — 군부대·대학가는 <b>인구 통계에 안 잡히는 이용자</b>를
@@ -624,9 +624,11 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                 </div>
               </div>
               <div className="mt-1">
-                품질 지수 <b>{p.qualityExponent}</b>는 두 경로가 따로 찾아와 만난 값입니다. 자료로 고른
-                최선이 3이고, 매출 변화폭에서 역산한 값이 2.74~4.92·중앙 3.25입니다.
-                <b> 감각은 매출액, 측정은 가동률 — 경로가 완전히 다릅니다.</b>
+                품질 지수 <b>{p.qualityExponent}</b>는 2026-09-23에 3에서 내린 값입니다. 3은 자사 40곳
+                안에서 고른 값이었는데, 경쟁점 핑봇 47곳을 바깥 표본으로 세우자 자사우위를 3.50배로 예측했고
+                실측은 1.74배(1년차 자사 vs 성숙 경쟁점)였습니다. <b>존구성 비중 {p.qualityWeights.zone}·1km 밖 고리
+                λ{p.residentRingDecayM}m와 한 묶음</b>입니다 — θ 혼자 내리면 자사·경쟁점이 같이 −10%p 과소예측됩니다.
+                (옛 근거: 매출 변화폭 역산 2.74~4.92·중앙 3.25 — 감각은 매출액, 측정은 가동률로 경로가 달랐습니다.)
               </div>
               <div className="mt-1">
                 ⚠️ 이 항이 잘하는 건 <b>순서</b>지 오차 크기가 아닙니다. 실측 점유율과의 상관이
@@ -787,6 +789,13 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               움직입니다. 그래서 이 변경은 <b>정확도가 아니라 뜻을 고친 것</b>입니다 —
               &quot;왜 우리가 이기는가&quot;의 답이 이름표여서는 안 되기 때문입니다.
               2026-09-17 측정: MAPE 22.02% → 22.60%. 운영 산식(V62)의 존구성은 그대로입니다.
+            </div>
+            <div className="mt-1 text-[var(--sl-ink-soft)]">
+              ✅ <b>2026-09-23 — 경쟁력점수 안 존구성 비중을 0.238 → {p.qualityWeights.zone}로 줄였습니다(항목은 남깁니다).</b>
+              {" "}자사 존구성 평균 3.19 vs 경쟁점 1.39로 2.3배인데 실측 자사우위는 1.74배라, 옛 비중이면 우리 몫이
+              3.50배로 부풀었습니다. 비중 0~0.238을 돌리자 남길수록 순서(자사 r·짝 r)는 좋아지고 세게 두면 우위를
+              부풀려, 사전 기준 1위가 {p.qualityWeights.zone}이었습니다. θ {p.qualityExponent}·1km 밖 고리와 한 묶음입니다.
+              &quot;빼는 게 정답&quot;은 아닙니다 — 팀룸 유입 기전은 살아 있습니다.
             </div>
           </div>
           <div className="mt-3 rounded border border-[var(--sl-line)] p-2">

@@ -25,6 +25,7 @@
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import { buildLabRows, utilizationByStore, rivalQualityParts } from "./labInput";
+import { residentRingsByCodeFromDocs } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
@@ -61,7 +62,10 @@ describeIf("경쟁점을 주인공으로 — 본 산식", () => {
   for (const c of allCompetitors) compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
   const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings);
   const utilByStore = utilizationByStore(snap.sales ?? [], snap.existingStores);
-  const base = buildLabRows({ stores, compsByCode, utilByStore, settings });
+  // ⚠️ 2026-09-23부터 기본값이 1km 밖 고리(λ600)를 켠다. 고리 인구를 안 넘기면 산식이 1km만 세서
+  //    **조용히 −10%p 과소예측**한다 — 화면(lab/page.tsx)과 같은 컬렉션을 스냅샷에서 넘긴다.
+  const base = buildLabRows({ stores, compsByCode, utilByStore, settings,
+    residentRingsByCode: residentRingsByCodeFromDocs(snap.labResidentRings ?? []) });
   const P = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(base, DEFAULT_TEXTBOOK_PARAMS));
   const storeByCode = new Map(stores.map((s) => [s.storeCode, s]));
 

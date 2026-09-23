@@ -24,6 +24,7 @@
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import { buildLabRows, utilizationByStore } from "./labInput";
+import { residentRingsByCodeFromDocs } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
@@ -52,7 +53,9 @@ describeIf("동네 수요 실측 — 핑봇 + 우리 매장", () => {
   for (const c of allCompetitors) compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
   const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings);
   const utilByStore = utilizationByStore(snap.sales ?? [], snap.existingStores);
-  const base = buildLabRows({ stores, compsByCode, utilByStore, settings });
+  // ⚠️ 2026-09-23부터 기본값이 1km 밖 고리(λ600)를 켠다. 고리 인구를 안 넘기면 조용히 −10%p 과소예측한다.
+  const base = buildLabRows({ stores, compsByCode, utilByStore, settings,
+    residentRingsByCode: residentRingsByCodeFromDocs(snap.labResidentRings ?? []) });
   const P = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(base, DEFAULT_TEXTBOOK_PARAMS));
 
   // 월별 가동률 — 시점을 맞추는 데 쓴다
