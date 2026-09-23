@@ -328,12 +328,16 @@ export default function QuickEvalPage() {
     <div className="space-y-5">
       {/* ── 입력: 주소가 중심이다 ── */}
       <section className="app-card rounded-2xl p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="min-w-[260px] flex-1 block text-sm">
+        {/* 📱 2026-09-23 모바일 대응 — 휴대폰에선 6칸 격자로 줄을 맞춘다(주소 / PC대수·기본요금 /
+            지상지하·층·엘리베이터 / 조회). sm(640px) 이상은 예전 한 줄 그대로다.
+            입력칸 글씨는 모바일에서 16px(text-base) — 그보다 작으면 iOS가 누를 때마다 확대한다. */}
+        <div className="grid grid-cols-6 items-end gap-3 sm:flex sm:flex-wrap">
+          <label className="col-span-6 block text-sm sm:min-w-[260px] sm:flex-1">
             <span className="text-[var(--sl-ink-soft)]">주소</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2"
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
               value={plan.address}
+              enterKeyHint="search"
               onChange={(e) => setPlan((p) => ({ ...p, address: e.target.value }))}
               onKeyDown={(e) => {
                 if (e.key === "Enter") run();
@@ -342,10 +346,10 @@ export default function QuickEvalPage() {
               autoFocus
             />
           </label>
-          <label className="block w-[110px] text-sm">
+          <label className="col-span-3 block text-sm sm:w-[110px]">
             <span className="text-[var(--sl-ink-soft)]">PC대수</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 tabular-nums"
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
               inputMode="numeric"
               value={plan.expectedPcCount}
               onChange={(e) => setPlan((p) => ({ ...p, expectedPcCount: e.target.value }))}
@@ -354,10 +358,10 @@ export default function QuickEvalPage() {
               }}
             />
           </label>
-          <label className="block w-[120px] text-sm">
+          <label className="col-span-3 block text-sm sm:w-[120px]">
             <span className="text-[var(--sl-ink-soft)]">기본요금</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 tabular-nums"
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
               inputMode="numeric"
               value={plan.hourlyRate}
               onChange={(e) => setPlan((p) => ({ ...p, hourlyRate: e.target.value }))}
@@ -366,10 +370,10 @@ export default function QuickEvalPage() {
               }}
             />
           </label>
-          <label className="block w-[92px] text-sm">
+          <label className="col-span-2 block text-sm sm:w-[92px]">
             <span className="text-[var(--sl-ink-soft)]">지상/지하</span>
             <select
-              className="app-input mt-1 w-full rounded-lg px-3 py-2"
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
               value={plan.groundLevel}
               onChange={(e) => setPlan((p) => ({ ...p, groundLevel: e.target.value as GroundLevel }))}
             >
@@ -380,10 +384,10 @@ export default function QuickEvalPage() {
               ))}
             </select>
           </label>
-          <label className="block w-[72px] text-sm">
+          <label className="col-span-2 block text-sm sm:w-[72px]">
             <span className="text-[var(--sl-ink-soft)]">층</span>
             <input
-              className="app-input mt-1 w-full rounded-lg px-3 py-2 tabular-nums"
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
               inputMode="numeric"
               value={plan.floor}
               onChange={(e) => setPlan((p) => ({ ...p, floor: e.target.value }))}
@@ -392,10 +396,10 @@ export default function QuickEvalPage() {
               }}
             />
           </label>
-          <label className="block w-[96px] text-sm">
+          <label className="col-span-2 block text-sm sm:w-[96px]">
             <span className="text-[var(--sl-ink-soft)]">엘리베이터</span>
             <select
-              className="app-input mt-1 w-full rounded-lg px-3 py-2"
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm"
               value={plan.hasElevator}
               onChange={(e) => setPlan((p) => ({ ...p, hasElevator: e.target.value as Plan["hasElevator"] }))}
             >
@@ -404,7 +408,7 @@ export default function QuickEvalPage() {
               <option value="없음">없음</option>
             </select>
           </label>
-          <button type="button" className="app-btn-primary rounded-xl px-5 py-2 text-sm" disabled={running} onClick={run}>
+          <button type="button" className="app-btn-primary col-span-6 rounded-xl px-5 py-2.5 text-sm sm:py-2" disabled={running} onClick={run}>
             {running ? "조회 중… (30초쯤)" : "조회"}
           </button>
         </div>
@@ -443,7 +447,7 @@ export default function QuickEvalPage() {
             <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
               {assembly.candidate.roadAddress ?? assembly.candidate.address}
             </p>
-            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
               <Stat label="상권수요" value={fmtInt(result.marketDemand)} />
               <Stat label="상권등급 / 성격" value={`${result.marketGrade ?? "-"} / ${result.marketCharacter ?? "-"}`} />
               <Stat label="경쟁IP" value={fmtInt(result.competitorIp)} />
@@ -511,7 +515,25 @@ export default function QuickEvalPage() {
               <summary className="cursor-pointer text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
                 AI가 비교한 가맹점 {peers.nearest.length}곳 보기 (실적 있는 {peers.totalCount}곳 중)
               </summary>
-              <div className="mt-3 overflow-x-auto">
+              {/* 📱 휴대폰은 카드 목록 — 7열 표를 손가락으로 밀지 않게(2026-09-23). 내용은 표와 같다. */}
+              <ul className="mt-3 space-y-2 sm:hidden">
+                {peers.nearest.map((peer) => (
+                  <li key={peer.storeName} className="app-card-sm rounded-xl p-3 text-sm">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-medium text-[#171310] dark:text-[#f2ede2]">{peer.storeName}</span>
+                      <span className="shrink-0 font-semibold tabular-nums">
+                        {formatManwonRough(peer.actualMonthlyRevenueAvg)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs tabular-nums text-[var(--sl-ink-soft)]">
+                      개점 {peer.openedAt ?? "-"} · 수요 {fmtInt(peer.marketDemand)}
+                      {peer.demandRatio != null ? `(${peer.demandRatio.toFixed(2)}배)` : ""} · 경쟁IP{" "}
+                      {fmtInt(peer.competitorIp)} · {fmtInt(peer.pcCount)}대 · 기본요금 {fmtInt(peer.hourlyRate)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 hidden overflow-x-auto sm:block">
                 <table className="w-full min-w-[620px] text-sm">
                   <thead>
                     <tr className="text-left text-xs text-[var(--sl-ink-soft)]">
@@ -574,7 +596,34 @@ export default function QuickEvalPage() {
               카카오 기준입니다. PC 대수는 전부 미확인이라 기본값으로 계산됐습니다 — 이 목록이 맞는지 보는 게
               현장에서 할 일입니다.
             </p>
-            <div className="mt-3 overflow-x-auto">
+            {/* 📱 휴대폰은 카드 목록(2026-09-23). 내용은 아래 표와 같다. */}
+            <ul className="mt-3 divide-y divide-[var(--sl-line)] sm:hidden">
+              {assembly.competitorRows.map((row) => (
+                <li key={row.place.id} className={`py-2 text-sm ${row.counted ? "" : "opacity-60"}`}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 break-words">{row.place.name}</span>
+                    <span className="shrink-0 tabular-nums text-[var(--sl-ink-soft)]">{row.place.distanceM}m</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                    {row.counted ? (
+                      <span className="app-badge app-badge-ok">셈</span>
+                    ) : (
+                      <span className="text-[var(--sl-ink-soft)]">제외 — {row.excludedReason}</span>
+                    )}
+                    <span className="text-[var(--sl-ink-soft)]">
+                      {row.place.categoryName ?? <span className="app-badge app-badge-warn">업종 미확인</span>}
+                    </span>
+                  </div>
+                </li>
+              ))}
+              {assembly.competitorRows.length === 0 ? (
+                <li className="py-2 text-sm text-[var(--sl-ink-soft)]">
+                  반경 {QUICK_EVAL_RADII.competitor}m 안에서 PC방을 찾지 못했습니다. 수집 실패가 아닌지 위 경고를
+                  확인하세요.
+                </li>
+              ) : null}
+            </ul>
+            <div className="mt-3 hidden overflow-x-auto sm:block">
               <table className="w-full min-w-[520px] text-sm">
                 <thead>
                   <tr className="text-left text-xs text-[var(--sl-ink-soft)]">
@@ -619,7 +668,7 @@ export default function QuickEvalPage() {
             <summary className="cursor-pointer text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
               자동수집한 자료 보기
             </summary>
-            <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
               <Stat label={`주거인구 ${QUICK_EVAL_RADII.resident500}m`} value={fmtInt(assembly.candidate.pop500m)} />
               <Stat label={`주거인구 ${QUICK_EVAL_RADII.resident1km}m`} value={fmtInt(assembly.candidate.pop1km)} />
               <Stat label="1km 남 비율" value={formatPercent(assembly.candidate.male1kmRatio, 1)} />
@@ -671,7 +720,7 @@ export default function QuickEvalPage() {
           <li>
             {QUICK_EVAL_BACKTEST.measuredAt} 기준, 기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳을
             후보지인 척(자기 자신은 학습에서 빼고) 이 화면과 같은 배선으로 돌려 실제 매출과 견줬습니다
-            (<code className="text-[11px]">{QUICK_EVAL_BACKTEST.testFile}</code>).
+            (<code className="break-all text-[11px]">{QUICK_EVAL_BACKTEST.testFile}</code>).
           </li>
           <li>
             평균오차 <strong>{formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}</strong> · ±20% 안{" "}
