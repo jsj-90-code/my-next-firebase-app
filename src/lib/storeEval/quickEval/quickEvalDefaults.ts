@@ -37,13 +37,6 @@ export const QUICK_EVAL_PLAN_DEFAULTS = { expectedPcCount: 100, hourlyRate: 1200
  */
 export const QUICK_EVAL_ENTRY_THRESHOLD_WON = 55_000_000;
 
-/**
- * ⭐ 기준선 ± 이 비율 안은 "검토 필요"로 띄운다 (사용자 승인 2026-09-23 — 광명 범안로 건).
- * 도구 오차가 ±17% 안팎이라 기준선을 조금 밑돈 값을 "불가"로 자르면 오차 안의 차이로 판정하게 된다.
- * 예: 5,500만원 ±10% = 4,950만 ~ 6,050만원.
- */
-export const QUICK_EVAL_ENTRY_REVIEW_BAND = 0.1;
-
 export const QUICK_EVAL_RADII = { competitor: 500, floating: 500, resident1km: 1000, resident500: 500 } as const;
 
 /** SGIS 주거인구 기준연도. 운영 자료(52곳)를 다시 받을 때 쓴 것과 같은 해로 맞춘다. */
