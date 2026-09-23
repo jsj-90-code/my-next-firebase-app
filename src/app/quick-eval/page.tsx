@@ -754,7 +754,10 @@ export default function QuickEvalPage() {
         <ul className="mt-3 space-y-1 text-xs text-[var(--sl-ink-soft)]">
           <li>
             {QUICK_EVAL_BACKTEST.measuredAt} 기준, 기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳을
-            후보지인 척(자기 자신은 학습에서 빼고) 이 화면과 같은 배선으로 돌려 실제 매출과 견줬습니다
+            후보지인 척(자기 자신은 학습에서 빼고) 이 화면과 같은 배선으로(AI 입지평가 포함) 돌려 실제 매출과 견줬습니다
+            {QUICK_EVAL_BACKTEST.sampleCount < QUICK_EVAL_BACKTEST.sampleTotal
+              ? ` — 전체 ${QUICK_EVAL_BACKTEST.sampleTotal}곳 중 ${QUICK_EVAL_BACKTEST.sampleTotal - QUICK_EVAL_BACKTEST.sampleCount}곳은 아직 못 쟀습니다`
+              : ""}
             (<code className="break-all text-[11px]">{QUICK_EVAL_BACKTEST.testFile}</code>).
           </li>
           <li>

@@ -142,7 +142,10 @@ export function buildQuickEvalReviewContext(input: {
   lines.push(
     `${QUICK_EVAL_BACKTEST.measuredAt} 기준 기존 가맹점 ${QUICK_EVAL_BACKTEST.sampleCount}곳을`
       + " **후보지인 척**(조사 자료를 지우고, 자기 자신은 학습에서 뺀 채) 이 도구와 같은 배선으로"
-      + " 돌려 실제 매출과 견줬다.",
+      + " 돌려(AI 입지평가 포함) 실제 매출과 견줬다."
+      + (QUICK_EVAL_BACKTEST.sampleCount < QUICK_EVAL_BACKTEST.sampleTotal
+        ? ` (전체 ${QUICK_EVAL_BACKTEST.sampleTotal}곳 중 ${QUICK_EVAL_BACKTEST.sampleCount}곳만 쟀다)`
+        : ""),
   );
   lines.push(
     `평균오차 ${pct(QUICK_EVAL_BACKTEST.mape, 2)} · ±20% 안 ${pct(QUICK_EVAL_BACKTEST.within20, 1)}`
