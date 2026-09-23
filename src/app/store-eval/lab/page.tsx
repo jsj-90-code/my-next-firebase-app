@@ -37,7 +37,7 @@ import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/l
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   getLabModelSettings, listLabCandidates, listLabCompetitors, listLabLocationEvaluations,
-  listLabExistingStores, listLabRoadviewJudgments, listLabQscScores, listEvaluationSales,
+  listLabExistingStores, listLabRoadviewJudgments, listLabQscScores, listLabResidentRings, listEvaluationSales,
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
@@ -119,7 +119,7 @@ async function loadLabData(): Promise<Loaded | null> {
   //    실험실에서 시설·사양을 고칠 때 운영 V62가 같이 움직인다 — 갈라놓은 뜻이 없어진다.
   //    복제본은 scripts/syncLabCollections.mjs로 **명시적으로** 채운다(자동 동기화 없음).
   //    월매출만 운영 것을 그대로 읽는다 — 실측 사실이라 두 벌로 둘 이유가 없다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode, candidates] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode, candidates, residentRingsByCode] = await Promise.all([
     listLabExistingStores(),
     getLabModelSettings(),
     listLabCompetitors(),
@@ -131,6 +131,8 @@ async function loadLabData(): Promise<Loaded | null> {
     // 신규후보지 (2026-09-18). 경쟁점·입지평가는 위에서 이미 통째로 읽으므로 따로 안 읽는다 —
     // 후보지코드와 기존점코드는 안 겹쳐서 같은 맵에 담아도 된다.
     listLabCandidates(),
+    // 1km 밖 고리 인구(2026-09-23). residentRingDecayM이 0이면 산식이 안 읽는다 — 값만 실어 둔다.
+    listLabResidentRings(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -172,7 +174,7 @@ async function loadLabData(): Promise<Loaded | null> {
   }
 
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode });
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, qscByStoreCode });
   // 모델에서 빠진 매장(송도점·동탄북광장점 등) — 2026-09-18 사용자 요청으로 화면에만 띄운다.
   // ⚠️ `rows`와 절대 합치지 말 것. 합치면 축척과 계수가 가격전쟁·운영문제까지 배운다.
   // 2026-09-21 사용자 지시: *"검단사거리점은 아예 빼줘 표에서."*
@@ -184,7 +186,7 @@ async function loadLabData(): Promise<Loaded | null> {
     stores.filter((s) => (s.franchiseStatus ?? "").includes("폐점")).map((s) => s.storeCode),
   );
   const excludedRows = buildLabRows({
-    stores, compsByCode, utilByStore, settings, roadviewByKey, qscByStoreCode, which: "excluded",
+    stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, qscByStoreCode, which: "excluded",
   }).filter((r) => !closedStoreCodes.has(r.input.storeCode));
 
   let current: Loaded["current"] = null;
@@ -233,7 +235,7 @@ async function loadLabData(): Promise<Loaded | null> {
   }));
   const franchiseManagement = franchiseManagementFromRows(rows);
   const candRows = buildLabCandidateRows({
-    candidates, compsByCode, locByCode, settings, roadviewByKey, franchiseManagement,
+    candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, franchiseManagement,
   });
 
   return { rows, excludedRows, current, qsc, qscByStore, windowFillByStore,

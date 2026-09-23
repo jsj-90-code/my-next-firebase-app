@@ -33,6 +33,8 @@ import { mergeModelSettings } from "./settings";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { mergeInputChanges } from "./inputChanges";
 import { qscInWindowAverage, type QscRecord } from "./labInput";
+import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
+import type { ResidentAges, ResidentRingRadius } from "./textbookModel";
 import type {
   AdminDongReference,
   CandidateInput,
@@ -87,6 +89,9 @@ const LAB_ROADVIEW = "storeEvalLabRoadviewJudgments";
 // 따로 둔다 — syncLabCollections.mjs가 운영 문서로 실험실 문서를 통째로 덮으므로, 매장
 // 문서에 넣으면 다음 동기화 때 날아간다.
 const LAB_QSC = "storeEvalLabQscScores";
+// 1km 밖 고리 인구(SGIS 1.5km·2km·5km 누적 원, 연령 분해). 실험실 산식의 residentRingDecayM만 읽는다.
+// 채우는 건 scripts/writeLabResidentRingsToFirestore.mjs (2026-09-23).
+const LAB_RESIDENT_RINGS = "storeEvalLabResidentRings";
 /**
  * **운영 V62가 읽는 QSC 컬렉션** (2026-09-19 신설).
  *
@@ -495,6 +500,15 @@ export async function listLabRoadviewJudgments(): Promise<Map<string, { flowBloc
  */
 export async function listLabQscScores(): Promise<Map<string, number>> {
   return readQscScores(LAB_QSC);
+}
+
+/**
+ * 코드(매장코드·후보지코드) -> 1km 밖 누적 원 연령 인구. `buildLabRows`/`buildLabCandidateRows`의
+ * `residentRingsByCode`에 그대로 넘긴다. 컬렉션이 비면 빈 Map — 고리를 켜도 "자료없음"으로 1km만 센다.
+ */
+export async function listLabResidentRings(): Promise<Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>>> {
+  const snap = await getDocs(collection(requireDb(), LAB_RESIDENT_RINGS));
+  return residentRingsByCodeFromDocs(snap.docs.map((d) => d.data() as LabResidentRingsDoc));
 }
 
 /**

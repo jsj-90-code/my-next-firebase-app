@@ -54,7 +54,7 @@ async function dumpCollection(name) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, settingsDoc, accuracyDoc] =
+const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, settingsDoc, accuracyDoc] =
   await Promise.all([
     dumpCollection("storeEvalCandidates"),
     dumpCollection("storeEvalResults"),
@@ -67,6 +67,9 @@ const [candidates, results, existingStores, competitors, locationEvaluations, sa
     // 없으면 하네스는 관리 4.00으로, 화면은 QSC 값으로 돌아 **성적이 조용히 갈라진다**
     // (2026-09-17: 하네스가 운영 자료를 뜨고 화면은 실험실 자료를 읽어 실제로 갈라져 있었다).
     dumpCollection("storeEvalLabQscScores"),
+    // 1km 밖 고리 인구(실험실 전용, 2026-09-23). 원본 SGIS 파일은 gitignore 예외라 따라오지만,
+    // 화면과 하네스가 **같은 자료**를 읽어야 성적이 갈라지지 않으므로 여기도 담는다.
+    dumpCollection("storeEvalLabResidentRings"),
     db.collection("storeEvalSettings").doc("current").get(),
     db.collection("storeEvalSystemStatus").doc("accuracy").get(),
   ]);
@@ -80,13 +83,14 @@ const snapshot = {
   locationEvaluations,
   sales,
   labQscScores,
+  labResidentRings,
   settings: settingsDoc.exists ? settingsDoc.data() : null,
   storedAccuracy: accuracyDoc.exists ? accuracyDoc.data() : null,
 };
 
 writeFileSync(new URL("../.local-tools/validation-snapshot.json", import.meta.url), JSON.stringify(snapshot, null, 2), "utf8");
 const total = candidates.length + results.length + existingStores.length + competitors.length + locationEvaluations.length + sales.length + labQscScores.length;
-console.log(`후보지 ${candidates.length} · 결과 ${results.length} · 기존점 ${existingStores.length} · 경쟁점 ${competitors.length} · 입지평가 ${locationEvaluations.length} · 월매출 ${sales.length} · 실험실QSC ${labQscScores.length} (총 ${total}건 읽음)`);
+console.log(`후보지 ${candidates.length} · 결과 ${results.length} · 기존점 ${existingStores.length} · 경쟁점 ${competitors.length} · 입지평가 ${locationEvaluations.length} · 월매출 ${sales.length} · 실험실QSC ${labQscScores.length} · 고리인구 ${labResidentRings.length} (총 ${total + labResidentRings.length}건 읽음)`);
 console.log("저장된 적중률:", JSON.stringify(snapshot.storedAccuracy && {
   modelVersion: snapshot.storedAccuracy.modelVersion,
   sampleCount: snapshot.storedAccuracy.sampleCount,

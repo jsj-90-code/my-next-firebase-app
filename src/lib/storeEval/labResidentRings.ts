@@ -17,6 +17,31 @@ export type SgisSite = {
 };
 export type SgisFile = { collectedAt?: string; baseYear?: number; sites?: Record<string, SgisSite> };
 
+/**
+ * Firestore `storeEvalLabResidentRings` 문서 모양(scripts/writeLabResidentRingsToFirestore.mjs가 쓴다).
+ * `rings`는 반경(문자열 "1500"·"2000"·"5000")별 **누적 원** 연령 인구다.
+ */
+export type LabResidentRingsDoc = {
+  key?: string; kind?: string; code?: string; name?: string | null;
+  rings?: Partial<Record<string, ResidentAges | null>>;
+};
+
+/** Firestore 문서들 -> 코드별 고리 맵. 화면(store.ts)과 스냅샷 하네스가 같은 함수를 쓴다. */
+export function residentRingsByCodeFromDocs(docs: LabResidentRingsDoc[]): Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>> {
+  const map = new Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>>();
+  for (const d of docs) {
+    if (!d.code || !d.rings) continue;
+    const out: Partial<Record<ResidentRingRadius, ResidentAges | null>> = {};
+    let any = false;
+    for (const r of RING_RADII) {
+      const a = d.rings[String(r)];
+      if (a && Number.isFinite(a.age10s)) { out[r] = a; any = true; }
+    }
+    if (any) map.set(String(d.code), out);
+  }
+  return map;
+}
+
 const RING_RADII: readonly ResidentRingRadius[] = [1500, 2000, 5000];
 
 /** SGIS 연령 9구간 -> 산식 7구간. age_2가 없으면 연령 분해가 없는 반경이다(null). */

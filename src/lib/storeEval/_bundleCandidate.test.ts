@@ -22,7 +22,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import { buildLabRows, utilizationByStore, rivalQualityParts } from "./labInput";
-import { residentRingsByCodeFromSgis, type SgisFile } from "./labResidentRings";
+import { residentRingsByCodeFromDocs, residentRingsByCodeFromSgis, type LabResidentRingsDoc, type SgisFile } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
@@ -63,7 +63,13 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
   for (const c of allCompetitors) compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
   const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings);
   const utilByStore = utilizationByStore(snap.sales ?? [], snap.existingStores);
-  const residentRingsByCode = residentRingsByCodeFromSgis(JSON.parse(readFileSync(SGIS_FILE, "utf8")) as SgisFile);
+  // 고리 인구 — **화면과 같은 자료**(스냅샷의 storeEvalLabResidentRings)를 먼저 쓴다. 없으면 SGIS 파일로.
+  // 2026-09-17에 하네스와 화면이 다른 자료를 읽어 성적이 조용히 갈라진 적이 있다.
+  const ringDocs = (snap.labResidentRings ?? []) as LabResidentRingsDoc[];
+  const residentRingsByCode = ringDocs.length
+    ? residentRingsByCodeFromDocs(ringDocs)
+    : residentRingsByCodeFromSgis(JSON.parse(readFileSync(SGIS_FILE, "utf8")) as SgisFile);
+  const ringSource = ringDocs.length ? `스냅샷 storeEvalLabResidentRings ${ringDocs.length}건` : "SGIS 파일";
   // ⭐ 배선된 경로 — 고리 인구를 입력에 실어 넣는다. λ=0이면 산식이 그 입력을 안 읽는다.
   const base = buildLabRows({ stores, compsByCode, utilByStore, settings, residentRingsByCode });
   const P = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(base, DEFAULT_TEXTBOOK_PARAMS));
@@ -215,7 +221,7 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     console.log(`\n[검산] 지금 배선(λ=0): 자사 ${now.ours.length}곳 MAE ${(now.ourMae * 100).toFixed(2)}%p (어제 5.84%p) · 경쟁점 ${now.riv.length}곳 편향 ${(now.rivBias * 100).toFixed(1)}%p (어제 −10.9%p)`);
     console.log(`  ${Math.abs(now.ourMae - 0.0584) < 0.002 ? "✅ 같다 — 배선이 λ=0에서 아무것도 안 바꿨다" : "⚠️ 다르다 — 배선을 다시 볼 것"}`);
     const withRings = base.filter((r) => r.input.residentAgesByRadius).length;
-    console.log(`  고리 인구가 실린 매장 ${withRings}/${base.length}`);
+    console.log(`  고리 인구가 실린 매장 ${withRings}/${base.length} (출처: ${ringSource})`);
     console.log(`\n  λ별 고리 무게 (1.25km / 1.75km / 3.5km) 와 주거 이용자 배율(1km 대비, 중앙)`);
     for (const lam of LAMBDAS.filter((l) => l > 0)) {
       const ratios: number[] = [];
