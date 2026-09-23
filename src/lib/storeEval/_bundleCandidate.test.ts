@@ -544,6 +544,31 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     }
     console.log(`\n  ⭐ 읽는 법 — 대학가 **경쟁점** 편향도 음수면 그 동네 수요가 작은 것이라 배수가 정당하다. 경쟁점 편향이 0인데 자사만 음수면 배수가 아니다.`);
     console.log(`     n이 5곳(자사)·몇 곳(경쟁점)이라 값은 못 고른다 — 방향만 본다. 값은 사용자와 정한다.`);
+
+    // ── (7b) 사용자(2026-09-23): "특수상권 배수 켤 수 있는 건 켜보자 — 대학상권·군인·산업단지" ──
+    // 유형마다 배수를 훑어 **자사·경쟁점 편향이 같이 0에 가까운 값**을 찍는다(사전 기준: |자사편향|+|경쟁편향| 최소,
+    // 둘 다 ±3%p 안이면 통과). 다른 유형은 지금 값 그대로 두고 한 유형만 바꾼다(유형 간 간섭 없음 — 배수는 그 유형에만 곱한다).
+    console.log(`\n  [유형별 배수 재고 표] 한 유형만 바꾸고 나머지는 지금 값. * = 자사·경쟁점 편향 둘 다 ±3%p 안`);
+    for (const type of ["대학가", "산업단지", "군부대"]) {
+      const cands = type === "군부대" ? [1.0, 1.5, 1.75, 2.0, 2.25, 2.5] : [1.0, 1.2, 1.3, 1.4, 1.5, 1.7, 2.0];
+      console.log(`  ── ${type} (지금 ${P.specialDemandMultipliers[type] ?? 1}) ──   배수   자사편향(n)   경쟁편향(n)   |합|   전체 자사MAE 자사r`);
+      let best: { m: number; sum: number } | null = null;
+      for (const m of cands) {
+        const p2: TextbookParams = { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, [type]: m } };
+        const o2: Obs[] = [];
+        for (const s of subjects) { const u = computeTextbook(s.input, p2).utilization; if (u != null && u > 0) o2.push({ ...s, pred: u }); }
+        const sc = score(o2);
+        const uo = o2.filter((o) => o.isOurs && o.input.specialDemandType === type), ur = o2.filter((o) => !o.isOurs && o.input.specialDemandType === type);
+        const bias = (xs: Obs[]) => (xs.length ? mean(xs.map((o) => o.pred - o.act)) : NaN);
+        const bo = bias(uo), br = bias(ur), sum = Math.abs(bo) + (Number.isFinite(br) ? Math.abs(br) : 0);
+        const pass = Math.abs(bo) <= 0.03 && (!Number.isFinite(br) || Math.abs(br) <= 0.03);
+        if (!best || sum < best.sum) best = { m, sum };
+        console.log(`  ${"".padEnd(24)}${m.toFixed(2).padStart(6)}${(bo * 100).toFixed(1).padStart(9)}%p(${uo.length})${(br * 100).toFixed(1).padStart(9)}%p(${ur.length})`
+          + `${(sum * 100).toFixed(1).padStart(7)}${(sc.ourMae * 100).toFixed(2).padStart(12)}%p${sc.ourR.toFixed(3).padStart(7)}${pass ? "  *" : ""}`
+          + (m === (P.specialDemandMultipliers[type] ?? 1) ? "  ← 지금" : ""));
+      }
+      if (best) console.log(`  ${"".padEnd(24)}→ |합| 최소: ${best.m.toFixed(2)}  (표본이 작으면 값이 아니라 방향으로 읽을 것)`);
+    }
     expect(obs.length).toBeGreaterThan(40);
   });
 });

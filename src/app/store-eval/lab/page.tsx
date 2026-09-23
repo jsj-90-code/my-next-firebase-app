@@ -475,7 +475,18 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               .map(([k, v]) => `${k} ×${v}`).join(" · ") || "전부 1.0"}.
           </div>
           <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
-            <div className="font-semibold">산업단지·기타는 2026-09-20 낮에, 대학가는 그날 밤에 껐습니다</div>
+            <div className="font-semibold">✅ 2026-09-23 저녁 — 대학가·산업단지를 다시 켜고 군부대를 내렸습니다</div>
+            <div className="mt-1">
+              지금 값: 대학가 <b>×{p.specialDemandMultipliers["대학가"]}</b> · 산업단지 <b>×{p.specialDemandMultipliers["산업단지"]}</b> ·
+              군부대 <b>×{p.specialDemandMultipliers["군부대"]}</b>. 껐던 이유(축척을 독점 3곳에서 맞추던 순환)는 2026-09-21에
+              축척을 원장 실측으로 고정하면서 사라졌습니다. 이번엔 <b>그 동네 경쟁점 핑봇(바깥 표본)</b>을 같이 봤습니다 —
+              대학가 동네는 우리 매장 5곳(−8.9%p)도 경쟁점 5곳(−3.3%p)도 과소예측돼 있었습니다. 우리만 그랬다면 점유율
+              문제지만 경쟁점도 같으면 그 동네 <b>수요</b>가 작게 잡힌 것입니다. 값은 두 편향의 합이 최소인 곳입니다.
+              ⚠️ 산업단지(우리 2곳·경쟁점 1곳)·군부대(2곳·2곳)는 표본이 작아 <b>값이 아니라 방향</b>입니다.
+            </div>
+          </div>
+          <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
+            <div className="font-semibold">산업단지·기타는 2026-09-20 낮에, 대학가는 그날 밤에 껐습니다 (기록)</div>
             <div className="mt-1">
               1차 값(2026-09-16)은 <b>산업단지 ×1.39 · 기타 ×1.25</b>였는데, <b>순환에 오염돼</b>
               있었습니다. 그때 수요의 크기(축척)는 <b>독점 매장 3곳</b>에서 맞췄는데 그 3곳이
