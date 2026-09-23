@@ -104,6 +104,19 @@ export const RESIDENT_RING_BANDS: readonly { from: 1000 | ResidentRingRadius; to
 export function residentRingWeight(midM: number, decayM: number): number {
   return decayM > 0 ? Math.exp(-(midM - 1000) / decayM) : 0;
 }
+/**
+ * 우리에서 거리 d(m)인 경쟁점이, 우리 중심 반경 r(m) 원 위의 주민 중 **우리보다 가까운** 비율.
+ * 원 위 점 P에 대해 |P−경쟁점| < |P−우리| ⇔ P가 수직이등분선 너머 ⇔ 각도 조건 → arccos(d/2r)/π.
+ * d ≥ 2r면 원 위 어느 점도 경쟁점이 더 가깝지 않다(0). 거리를 모르면 보수적으로 0.5(반반).
+ * ("gravity" 고리 점유율용. 기하라 맞춘 계수가 없다.)
+ */
+export function ringRivalFraction(distanceM: number | null | undefined, ringMidM: number): number {
+  if (distanceM == null || !Number.isFinite(distanceM)) return 0.5;
+  if (!(ringMidM > 0)) return 0;
+  const x = distanceM / (2 * ringMidM);
+  if (x >= 1) return 0;
+  return Math.acos(Math.max(0, x)) / Math.PI;
+}
 /** 주거인구를 어느 반경으로 쓸지. 500m는 연령 분해가 없어 총수만 쓸 수 있다. */
 export type ResidentRadius = 500 | 1000;
 
@@ -117,7 +130,8 @@ export type TextbookParams = {
   /** 유동인구를 수요로 볼 때 깎는 비율. 스쳐 가는 사람이 대부분이라 1.0일 수 없다. */
   floatingFactor: number;
   /**
-   * **1km 밖 고리 감쇠 λ(m)** — 2026-09-23 신설, **같은 날 600으로 채택**. 0이면 끈 것. 주거 1km에서만 작동한다.
+   * **1km 밖 고리 감쇠 λ(m)** — 2026-09-23 신설, 같은 날 600으로 채택 → **저녁에 800**(고리 점유율을 gravity로
+   * 바꾸며 다시 고름. 아래 `residentRingShare`). 0이면 끈 것. 주거 1km에서만 작동한다.
    *
    * PC방은 평균 3시간·월 3.7회 오는 **목적지형**이라 1km 밖에서도 온다. 1km 원 밖의 고리
    * (1~1.5km · 1.5~2km · 2~5km) 인구를 연령가중해서 더하되, 멀수록 덜 센다:
@@ -141,6 +155,28 @@ export type TextbookParams = {
    *    화면(실험실 Firestore 복제본)에는 아직 없다 — 동기화 스크립트가 필요하다.
    */
   residentRingDecayM: number;
+  /**
+   * **고리 수요의 점유율을 어떻게 구하나** (2026-09-23 신설).
+   *
+   *   "core"    — 고리 수요도 1km 안 수요와 **같은 점유율**을 먹는다(우리 매장 기준 경쟁점 거리감쇠).
+   *               λ600 채택 직후의 동작. ⚠️ 밀집 도심이 부푼다 — 1~2km 고리 사람은 2km까지 세면서
+   *               그 사람들 곁의 PC방은 경쟁으로 안 세기 때문(경쟁 감쇠는 사실상 500m).
+   *               사용자(2026-09-23): 자사 예측 SD 8.1→9.9, 최악이 발산역 +23·수원망포 +21%p.
+   *   "gravity" — 고리 사람은 **우리와 그 근처 PC방 중 가까운 쪽으로 간다.** 우리에서 거리 d인 경쟁점이
+   *               반경 r 고리 주민 중 얼마에게 우리보다 가까운지는 **기하로 정해진다**:
+   *                   g(d, r) = arccos(d ÷ 2r) ÷ π     (d ≥ 2r면 0)
+   *               예: d=500·r=1250 → 44% · d=1000·r=1250 → 37% · d=1900·r=1250 → 23%.
+   *               고리 띠마다 점유율 = 자사PC ÷ (자사PC + Σ 경쟁PC × 품질비^θ × g)로 따로 구하고,
+   *               1km 안 점유율(기존 그대로)과 **이용자 수로 가중평균**한다. 맞춘 계수가 없다.
+   *               ⚠️ 500m 밖 경쟁점 대수는 미조사 기본값이다. g ≤ 0.5라 한 경쟁점이 분모를 휩쓸진 않지만
+   *                  대수 자체의 불확실성은 그대로 들어온다.
+   * ✅ 2026-09-23 저녁 **"gravity" 채택**(`_bundleCandidate` (6), 경쟁점 주인공에도 2km 경쟁점을 넣은 공정한 하네스):
+   *   core λ600     자사 MAE 7.82 · 편향 +1.3 · r 0.337 · 예측 SD 9.9 · ±5%p 14 | 경쟁 −3.3 | 짝 r 0.551 | 우위 1.84 | 최악 발산역 +23
+   *   gravity λ800  자사 MAE 6.88 · 편향 −1.2 · r 0.187 · 예측 SD 6.7 · ±5%p 15 | 경쟁 −2.7 | 짝 r 0.533 | 우위 1.65 | 최악 구미산동 +21
+   * 퍼짐이 실측(6.4)으로 돌아오고 밀집 도심 과대가 사라진다. 치르는 값은 동네 간 순서(자사 r). 남은 최악
+   * 구미산동 +21·전대후문 −18은 고리 문제가 아니라 그 매장 사정일 가능성 — 현장에 물을 것.
+   */
+  residentRingShare: "core" | "gravity";
   ageWeights: AgeUsageWeights;
   /** 이용자 1인당 월 PC방 이용시간. 총수요를 시간 단위로 바꾸는 계수. */
   hoursPerUserPerMonth: number;
@@ -814,7 +850,15 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   floatingFactor: 0.15,
   // ✅ **2026-09-23 채택 — 600m.** θ1.75·존구성 0.06과 한 묶음(타입 주석). 재고 표: `_bundleCandidate.test.ts`.
   //    주거 이용자가 1km만 셀 때의 중앙 1.64배가 된다(범위 1.22~2.52). 고리 인구 없는 매장은 1km만 센다.
-  residentRingDecayM: 600,
+  // ✅ 2026-09-23 저녁 — 600 → **800**. 고리 점유율을 "gravity"로 바꾸면 고리 몫이 줄어 수준이 내려가므로,
+  //    사전 기준(두 편향 ±3%p)으로 λ를 다시 골랐다. **눈금 값이고 자료로 고른 것이다** — 그 사실을 적어 둔다.
+  //    λ800·gravity: 자사 MAE 6.88 · 자사편향 −1.2 · 경쟁편향 −2.7 · 예측 SD 6.7(실측 6.4) · 자사우위 1.65(실측 1.74).
+  residentRingDecayM: 800,
+  // ✅ 2026-09-23 저녁 — **"gravity"** 채택. 사용자: *"편차가 커진 게 별로다. 근거가 있으면 감수, 값을 위해
+  //    조정한 거면 별로."* core는 밀집 도심을 부풀렸다(발산역 +23·수원망포 +21%p, 자사 예측 SD 9.9 vs 실측 6.4) —
+  //    1~2km 사람은 세면서 그 곁 PC방은 안 센 비대칭. gravity(가까운 쪽으로 간다, 기하)로 SD 6.7·최악 사라짐·
+  //    짝 r 0.55→0.53 유지. 치르는 값: 자사 r 0.337→0.187(동네 간 순서, n=37에서 1SE 안팎). 타입 쪽 주석.
+  residentRingShare: "gravity",
   // 연령가중 자체는 남녀 이용률을 지역 성비로 섞어 그때그때 만든다(blendUsageByGender).
   // 여기 값은 성비를 모를 때(남녀 1:1)의 기본값이다.
   ageWeights: blendUsageByGender(0.5),
@@ -1079,6 +1123,8 @@ export type TextbookBreakdown = {
   residentDemandUsers: number | null;
   /** 그중 1km 밖 고리 몫. 고리를 끈 상태나 자료가 없으면 null. 화면에 "얼마가 밖에서 왔나"를 그린다. */
   residentRingUsers: number | null;
+  /** 고리 수요에 적용된 점유율(입지 곱하기 전). "gravity"일 때만 값이 있고 "core"면 null(1km 안과 같다). */
+  residentRingShare: number | null;
   floatingDemandUsers: number | null;
   totalDemandUsers: number | null;
   totalDemandHours: number | null;
@@ -1154,7 +1200,7 @@ export function rivalDistanceWeight(
 export function computeTextbook(input: TextbookInput, p: TextbookParams): TextbookBreakdown {
   const missing: string[] = [];
   const empty: TextbookBreakdown = {
-    residentDemandUsers: null, residentRingUsers: null, floatingDemandUsers: null, totalDemandUsers: null,
+    residentDemandUsers: null, residentRingUsers: null, residentRingShare: null, floatingDemandUsers: null, totalDemandUsers: null,
     totalDemandHours: null, share: null, locationMultiplier: null, locationFactors: [], ownDemandHours: null, utilization: null,
     capped: false, unitPrice: null, pcUnitPrice: null, pcRevenue: null, productRevenue: null,
     monthlyRevenue: null, productRatio: null, missing,
@@ -1185,6 +1231,8 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   // 누적 원 인구에서 안쪽 원을 빼 고리 인구를 만들고, 멀수록 덜 센다(타입 쪽 `residentRingDecayM` 주석).
   // 자료가 없으면 지어내지 않는다 — missing에 적고 1km만으로 간다.
   let ringUsers: number | null = null;
+  /** 띠별 고리 이용자(무게 먹인 값)와 중간반경 — "gravity" 점유율에 쓴다. */
+  const ringBands: { users: number; midM: number }[] = [];
   if (p.residentRingDecayM > 0 && p.residentRadius === 1000) {
     const cum = input.residentAgesByRadius;
     const core = input.residentAges;
@@ -1204,7 +1252,9 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
           age40s: Math.max(0, outer.age40s - prev.age40s), age50s: Math.max(0, outer.age50s - prev.age50s),
           age60plus: Math.max(0, outer.age60plus - prev.age60plus),
         };
-        acc += residentRingWeight(band.midM, p.residentRingDecayM) * usersOf(ring);
+        const bandUsers = residentRingWeight(band.midM, p.residentRingDecayM) * usersOf(ring);
+        acc += bandUsers;
+        ringBands.push({ users: bandUsers, midM: band.midM });
         prev = outer; any = true;
       }
       if (any) { ringUsers = acc; residentUsers = (residentUsers ?? 0) + acc; } else missing.push("1km 밖 고리 인구");
@@ -1241,7 +1291,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
 
   // ── 3) 점유율 ───────────────────────────────────────────────────────────
   const pc = input.pcCount;
-  if (!pc) { missing.push("PC대수"); return { ...empty, residentDemandUsers: residentUsers, residentRingUsers: ringUsers, floatingDemandUsers: floatingUsers, totalDemandUsers: totalUsers, totalDemandHours: totalHours }; }
+  if (!pc) { missing.push("PC대수"); return { ...empty, residentDemandUsers: residentUsers, residentRingUsers: ringUsers, residentRingShare: null, floatingDemandUsers: floatingUsers, totalDemandUsers: totalUsers, totalDemandHours: totalHours }; }
   const gap = input.competitivenessGap ?? 1;
   const rivalIp = input.competitorIp ?? 0;
   let ownWeight: number;
@@ -1291,7 +1341,39 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   // shareMode="off"면 점유율을 아예 1로 둔다 — 경쟁 항을 통째로 들어낸 상태다.
   // 그러면 화면의 "필요 점유율"(실측가동률 ÷ 이 예측)이 **이 매장이 실제로 먹은 몫**이 되고,
   // 그 값으로 수요식을 2차 검증할 수 있다(2026-09-16 사용자 설계).
-  const rawShare = p.shareMode === "off" ? 1 : (denom > 0 ? ownWeight / denom : 1);
+  const coreShare = p.shareMode === "off" ? 1 : (denom > 0 ? ownWeight / denom : 1);
+
+  // ── 3b) 고리 수요의 점유율 — "gravity"면 띠마다 따로 구해 이용자 수로 가중평균 ─────────
+  // 1km 안 사람의 점유율(coreShare)은 그대로 두고, 고리 사람에게는 "우리와 그 근처 PC방 중 가까운
+  // 쪽으로 간다"를 적용한다(타입 쪽 `residentRingShare` 주석). 경쟁점의 품질비^θ는 1km 안과 같은 값.
+  let ringShare: number | null = null;
+  let rawShare = coreShare;
+  if (p.shareMode === "quality" && p.residentRingShare === "gravity" && ringBands.length && ringUsers && ringUsers > 0) {
+    const oq2 = input.ownQualityParts ? computeQualityScore(input.ownQualityParts, p.qualityWeights) : null;
+    const ratio2 = (parts: QualityParts | null) => {
+      if (oq2 == null || !(oq2 > 0) || !parts) return 1;
+      const v = computeQualityScore(parts, p.qualityWeights);
+      return v == null || !(v > 0) ? 1 : v / oq2;
+    };
+    let ringOwnHoursW = 0;
+    for (const b of ringBands) {
+      if (!(b.users > 0)) continue;
+      let rw = 0;
+      for (const r of input.rivals ?? []) {
+        if (!(r.ip > 0)) continue;
+        const g = ringRivalFraction(r.distanceM, b.midM);
+        if (g <= 0) continue;
+        rw += r.ip * Math.pow(ratio2(r.parts), p.qualityExponent) * g;
+      }
+      const sb = pc / (pc + rw + p.outsideOptionIp);
+      ringOwnHoursW += b.users * sb;
+    }
+    ringShare = ringOwnHoursW / ringUsers;
+    // 1km 안(주거 1km + 유동)과 고리를 이용자 수로 가중평균 — 배수(흡인력·밀집도·특수수요)는 양쪽에
+    // 똑같이 걸리므로 비에는 영향이 없다.
+    const coreUsers = Math.max(0, baseUsers - ringUsers);
+    rawShare = baseUsers > 0 ? (coreUsers * coreShare + ringUsers * ringShare) / baseUsers : coreShare;
+  }
 
   // ── 입지 — 점유율에 곱한다 (2026-09-17) ────────────────────────────────
   // 경쟁력점수 안이 아니라 **밖**이다. 접근성은 "경쟁점보다 낮은 층인가"가 아니라
@@ -1398,6 +1480,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   return {
     residentDemandUsers: residentUsers,
     residentRingUsers: ringUsers,
+    residentRingShare: ringShare,
     floatingDemandUsers: floatingUsers,
     totalDemandUsers: totalUsers,
     totalDemandHours: totalHours,

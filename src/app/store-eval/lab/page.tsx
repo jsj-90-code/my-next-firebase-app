@@ -457,7 +457,12 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             <b>1km 밖 고리</b> — {p.residentRingDecayM > 0
               ? <>켜져 있습니다(λ={p.residentRingDecayM}m). 1~1.5km · 1.5~2km · 2~5km 고리 인구를 연령가중해 더하되, 멀수록
                 덜 셉니다(1.25km 고리 무게 {Math.exp(-250 / p.residentRingDecayM).toFixed(2)} · 1.75km {Math.exp(-750 / p.residentRingDecayM).toFixed(2)}
-                {" "}· 3.5km {Math.exp(-2500 / p.residentRingDecayM).toFixed(2)}). 고리 인구가 없는 매장은 &ldquo;자료없음&rdquo;으로 1km만 셉니다.</>
+                {" "}· 3.5km {Math.exp(-2500 / p.residentRingDecayM).toFixed(2)}). 고리 인구가 없는 매장은 &ldquo;자료없음&rdquo;으로 1km만 셉니다.
+                {" "}고리 사람의 점유율은 {p.residentRingShare === "gravity"
+                  ? <><b>&ldquo;우리와 그 근처 PC방 중 가까운 쪽으로 간다&rdquo;</b>로 띠마다 따로 구합니다 — 우리에서 d 떨어진
+                    경쟁점이 반경 r 고리 주민 중 우리보다 가까운 비율 arccos(d÷2r)÷π를 그 경쟁점 무게로 씁니다(기하라 맞춘 계수가 없습니다).</>
+                  : <><b>1km 안과 같은 점유율</b>을 씁니다. ⚠️ 그러면 1~2km 사람은 세면서 그 곁의 PC방은 경쟁으로 안 세게 되어
+                    밀집 도심이 부풉니다(2026-09-23 측정: 발산역 +23 · 수원망포 +21%p). &ldquo;가까운 쪽으로&rdquo; 방식을 재고 표로 비교 중입니다.</>}</>
               : <>꺼져 있습니다. PC방은 목적지형이라 1km 밖에서도 오는데, 옛 점유율(θ=3·존구성 0.238)이
                 우리 몫을 크게 잡고 있어 수요를 키우면 자사가 과대예측됩니다. 존구성 비중 축소·θ 1.75와 <b>묶음으로만</b> 켤 수
                 있습니다(2026-09-23 측정, 재고 표는 `_bundleCandidate.test.ts`).</>}
@@ -1096,6 +1101,7 @@ function ParamSummary({ p, counts }: {
         { label: "주거인구 반경", value: `${p.residentRadius}m` },
         { label: "유동 계수", value: num(p.floatingFactor) },
         { label: "1km 밖 고리 감쇠 λ", value: p.residentRingDecayM > 0 ? `${p.residentRingDecayM}m` : "끔" },
+        { label: "고리 수요의 점유율", value: p.residentRingShare === "gravity" ? "가까운 쪽으로(기하)" : "1km 안과 같게" },
         { label: "상권 흡인력", value: num(p.agglomerationFactor) },
       ],
     },

@@ -26,10 +26,12 @@ import { residentRingsByCodeFromDocs, residentRingsByCodeFromSgis, type LabResid
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
-import { computeLocationScoreFromFacts } from "./calc";
+import { DEFAULT_UNSURVEYED_PC_COUNT, computeLocationScoreFromFacts } from "./calc";
+import { existingSiteKey, operatingShareInWindow, rival2kmRecords } from "./rival2km";
+import { evaluationMonths } from "./evaluationSalesPeriod";
 import {
   DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook, rivalDistanceWeight, residentRingWeight,
-  type TextbookInput, type TextbookParams,
+  type QualityParts, type TextbookInput, type TextbookParams,
 } from "./textbookModel";
 import type { Competitor } from "./types";
 
@@ -98,9 +100,17 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     comps.forEach((me, k) => {
       const pv = ping(me.c);
       if (pv == null || !(pv > 0)) return;
+      // ⚠️ 2026-09-23 — 경쟁점 주인공에도 **2km 경쟁점**을 넣는다(거리는 주인공 기준으로 다시 잼, 대수는
+      //    우리 매장과 같은 기본대수 90 x 평가창 영업비중, 품질 null). 그전엔 우리 입력에만 2km가 있어서
+      //    gravity에서 우리만 2km 경쟁에 깎이는 비대칭이 있었다(core에선 무게 ~0이라 티가 안 났다).
+      const months = evaluationMonths(st.openedAt);
+      const twoKm = rival2kmRecords(existingSiteKey(r.input.storeCode))
+        .map((x) => ({ ip: DEFAULT_UNSURVEYED_PC_COUNT * operatingShareInWindow(x, months), distanceM: distM(me.lat, me.lng, x.lat, x.lng), parts: null as QualityParts | null, name: x.name }))
+        .filter((x) => x.ip > 0);
       const rivals: NonNullable<TextbookInput["rivals"]> = [
         { ip: r.input.pcCount as number, distanceM: distM(me.lat, me.lng, st.lat!, st.lng!), parts: r.input.ownQualityParts, name: r.input.storeName },
         ...comps.filter((_, j) => j !== k).map((o) => ({ ip: o.pc, distanceM: distM(me.lat, me.lng, o.lat, o.lng), parts: rivalQualityParts(o.c, settings), name: o.c.name ?? null })),
+        ...twoKm,
       ];
       subjects.push({
         hood, code, isOurs: false, act: pv / 100,
@@ -226,6 +236,23 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     // 새 기본값(P 그대로) — 채택 칸이 재현되는지
     const cur = score((() => { const out: Obs[] = []; for (const s of subjects) { const u = computeTextbook(s.input, P).utilization; if (u != null && u > 0) out.push({ ...s, pred: u }); } return out; })());
     console.log(`  새 기본값(θ${P.qualityExponent}·존 ${P.qualityWeights.zone}·λ${P.residentRingDecayM}): 자사 MAE ${(cur.ourMae * 100).toFixed(2)}%p · 자사편향 ${(cur.ourBias * 100).toFixed(1)}%p · 경쟁편향 ${(cur.rivBias * 100).toFixed(1)}%p · 자사우위 ${cur.gapPred.toFixed(2)}배`);
+
+    // 사용자(2026-09-23): *"예상가동률 편차가 더 커진 것 같은데? 기분 탓인가"* — 옛/새를 나란히.
+    const dist = (label: string, g: Obs[]) => {
+      const pred = g.map((o) => o.pred), act = g.map((o) => o.act), err = g.map((o) => o.pred - o.act);
+      const within5 = err.filter((e) => Math.abs(e) <= 0.05).length, within10 = err.filter((e) => Math.abs(e) <= 0.10).length;
+      const worst = [...g].sort((a, b) => Math.abs(b.pred - b.act) - Math.abs(a.pred - a.act)).slice(0, 4)
+        .map((o) => `${o.hood} ${((o.pred - o.act) * 100).toFixed(0)}`).join(" · ");
+      console.log(`  ${label.padEnd(10)} 예측 ${(Math.min(...pred) * 100).toFixed(0)}~${(Math.max(...pred) * 100).toFixed(0)}% (SD ${(sdOf(pred) * 100).toFixed(1)})`
+        + ` · 실측 ${(Math.min(...act) * 100).toFixed(0)}~${(Math.max(...act) * 100).toFixed(0)}% (SD ${(sdOf(act) * 100).toFixed(1)})`
+        + ` · 오차 SD ${(sdOf(err) * 100).toFixed(1)}%p · ±5%p ${within5}/${g.length} · ±10%p ${within10}/${g.length}`
+        + ` · 최악: ${worst}`);
+    };
+    console.log(`\n  [퍼짐 — 자사 37곳] 예측이 실측보다 넓게 벌어지나`);
+    dist("옛 배선", now.ours); dist("새 기본값", cur.ours);
+    console.log(`  [퍼짐 — 경쟁점 47곳]`);
+    dist("옛 배선", now.riv); dist("새 기본값", cur.riv);
+    console.log(`  ⭐ 예측 SD가 실측 SD보다 크면 산식이 매장 차이를 과장하는 것이다. 새 배선이 더 벌어지면 사용자 감각이 맞다.`);
     const withRings = base.filter((r) => r.input.residentAgesByRadius).length;
     console.log(`  고리 인구가 실린 매장 ${withRings}/${base.length} (출처: ${ringSource})`);
     console.log(`\n  λ별 고리 무게 (1.25km / 1.75km / 3.5km) 와 주거 이용자 배율(1km 대비, 중앙)`);
@@ -411,5 +438,48 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     console.log(`     그 경우 "뺌"이 아니라 "비중 축소"가 답이고, 기전(팀룸 유입)을 산식에 남길 수 있다.`);
     console.log(`     자사 r·짝 r이 비중을 남길 때 더 높으면 존구성이 순서 맞히기에는 일하고 있다는 뜻이다.`);
     expect(rows5.length).toBe(ZW.length * 6);
+  });
+
+  it("(6) ⭐⭐⭐ 고리 수요의 점유율 — 1km 안과 같게(core) vs 가까운 쪽으로(gravity)", () => {
+    // 사용자(2026-09-23): 채택 뒤 *"편차가 커진 게 별로다. 근거가 있으면 감수, 값을 위해 조정한 거면 별로."*
+    // 커진 편차의 출처는 밀집 도심 과대(발산역 +23·수원망포 +21)이고, 원인은 비대칭이다 — 1~2km 사람은
+    // 세면서 그 곁의 PC방은 경쟁으로 안 센다. 고치는 방법도 기전으로: **가까운 쪽으로 간다(기하)**.
+    // ⚠️ gravity는 고리 수요의 우리 몫을 줄이므로 수준이 내려간다. 같은 λ에서 먼저 견주고, 수준을 맞추는
+    //    λ도 같이 찍는다(λ는 기전 상수가 아니라 눈금이므로 사전 기준으로 고르되 그 사실을 적는다).
+    type Cell6 = { mode: "core" | "gravity"; lambda: number; theta: number; zoneW: number };
+    const run6 = (c: Cell6): Obs[] => {
+      const p2: TextbookParams = { ...P, residentRingShare: c.mode, residentRingDecayM: c.lambda, qualityExponent: c.theta,
+        qualityWeights: { ...P.qualityWeights, zone: c.zoneW } };
+      const out: Obs[] = [];
+      for (const s of subjects) { const u = computeTextbook(s.input, p2).utilization; if (u != null && u > 0) out.push({ ...s, pred: u }); }
+      return out;
+    };
+    const spreadLine = (label: string, obs: Obs[]) => {
+      const s = score(obs);
+      const g = s.ours, pred = g.map((o) => o.pred), err = g.map((o) => o.pred - o.act);
+      const within5 = err.filter((e) => Math.abs(e) <= 0.05).length;
+      const worst = [...g].sort((a, b) => Math.abs(b.pred - b.act) - Math.abs(a.pred - a.act)).slice(0, 3)
+        .map((o) => `${o.hood} ${((o.pred - o.act) * 100).toFixed(0)}`).join("·");
+      const pass = Math.abs(s.ourBias) <= 0.03 && Math.abs(s.rivBias) <= 0.03;
+      console.log(`  ${label.padEnd(30)}`
+        + `${(s.ourMae * 100).toFixed(2).padStart(6)}%p${(s.ourBias * 100).toFixed(1).padStart(6)}%p${s.ourR.toFixed(3).padStart(6)}`
+        + ` SD${(sdOf(pred) * 100).toFixed(1).padStart(5)} ±5:${String(within5).padStart(2)} |`
+        + `${(s.rivMae * 100).toFixed(1).padStart(6)}%p${(s.rivBias * 100).toFixed(1).padStart(6)}%p${s.rivR.toFixed(3).padStart(6)} |`
+        + `${s.pairR.toFixed(3).padStart(6)} |${s.gapPred.toFixed(2).padStart(6)}배 | ${worst}${pass ? "  *" : ""}`);
+      return s;
+    };
+    console.log(`\n[고리 점유율 방식] 실측 자사 SD 6.4 · 옛 배선 예측 SD 8.1 · 채택(core λ600) 9.9`);
+    console.log(`  칸                            자사MAE 자사편향 자사r 예측SD ±5%p | 경쟁MAE 경쟁편향 경쟁r | 짝r  | 자사우위 | 자사 최악 3곳`);
+    const th = P.qualityExponent, zw = P.qualityWeights.zone;
+    console.log(`  ── 같은 λ에서 방식만 바꾸면 (θ${th}·존 ${zw}) ──`);
+    for (const lambda of [600]) for (const mode of ["core", "gravity"] as const) spreadLine(`${mode.padEnd(7)} λ${lambda}`, run6({ mode, lambda, theta: th, zoneW: zw }));
+    console.log(`  ── gravity에서 λ를 올리면 (수준을 되찾는 데 얼마나 필요한가) ──`);
+    for (const lambda of [800, 1000, 1500, 2000, 3000]) spreadLine(`gravity λ${lambda}`, run6({ mode: "gravity", lambda, theta: th, zoneW: zw }));
+    console.log(`  ── 대조: core에서 같은 λ ──`);
+    for (const lambda of [800, 1000]) spreadLine(`core    λ${lambda}`, run6({ mode: "core", lambda, theta: th, zoneW: zw }));
+    console.log(`\n  ⭐ 읽는 법 — gravity가 같은 수준(편향)에서 **예측 SD와 최악 매장을 줄이고 자사 r을 안 깎으면** 비대칭이 범인이었고 고친 것이다.`);
+    console.log(`     gravity에서 수준을 맞추는 λ가 훨씬 커야 하면(예: 2000 이상) 고리가 "먼 사람을 많이 세되 대부분 남에게 준다"는 뜻 — 그것도 기전상 자연스럽다.`);
+    console.log(`     ⚠️ 500m 밖 경쟁점 대수는 미조사 기본값이다. gravity는 그 대수를 더 쓴다.`);
+    expect(subjects.length).toBeGreaterThan(40);
   });
 });
