@@ -54,22 +54,40 @@ export const QUICK_EVAL_ENTRY_THRESHOLD_WON = 55_000_000;
  * 수요를 안 보고, 회귀식의 수요 항도 약해서(수요 ×1.6에 +2%) 수요 10명짜리 상권에 100대를 놓아도 3천만원이
  * 나왔다. 가동률 상한(55%)은 "우리 좌석의 최대"만 막고 "상권 사람의 최대"는 아무도 막지 않았다.
  *
- * 높이의 근거(측정): 기존점 40곳에서 실제 PC 이용시간(PC매출 ÷ 요금) ÷ 자사수요를 재니 아래 observed다.
- * 최대치(문경시청점) 위에 놓아 **기존점은 한 곳도 안 걸린다** — 되짚기 예측값이 한 곳도 안 바뀌는 것까지
- * 확인했다(`_quickEvalBias.test.ts` "수요 천장"). 즉 표본 안 성적(MAPE·분별력)은 그대로고 표본 밖
- * (자사수요 수백 명 이하)에서만 작동한다. 이 숫자는 "1명이 70시간 쓴다"가 아니라 V62 상권수요가 실제 손님
- * 수를 몇 배 작게 잡는다는 뜻이다 — 물리 상수가 아닌 **관측 최대치 위의 봉투**다.
+ * 높이의 근거 — **되짚기 스윕**(같은 날 밤, `_quickEvalBias.test.ts` "천장 높이 스윕"). 처음엔 기존점 실측
+ * 최대(문경시청점 68.2h) 위에 70h를 놓았는데, 양주 삼숭로(폐점 자리, 상권수요 744명)가 입점 가능으로 떴다.
+ * 양주를 잡으려면 31h 아래여야 하고 그러면 문경이 반토막 난다. 사용자 결정: **"문경 일단 버리자. 검증할 수가
+ * 없는 매장이야"** — 문경은 군 단위 소도시라 반경 1km 수요가 실제 상권을 크게 놓쳐(실험실 진단 O/H 1.88)
+ * 수요 측정 자체가 틀린 매장이다. 문경을 채점에서 빼고 천장을 내려 보니:
+ *
+ *   k=70~35h  걸린 0곳  MAPE 19.05%
+ *   k=30h     걸린 2곳  MAPE 18.10%  ← 채택. 하남덕풍 5,875→5,140(실제 5,043) · 구미산동 6,739→5,981(실제 3,662) — 둘 다 실제로 **가까워진다**
+ *   k=25h     걸린 7곳  MAPE 18.16%  안산선부·전대후문 같은 과소예측 매장이 더 깎이기 시작
+ *   k=20h     걸린 13곳 MAPE 16.87%  ±20% 적중 75.7→70.3%로 나빠짐
+ *
+ * 30h는 "예측이 실제에서 멀어지는 기존점이 하나도 없는" 가장 낮은 값이다. 실제 1명당 시간이 30h를 넘는
+ * 매장(양주덕정 42.7 · 전대후문 31.6 · 안산선부 30.2)은 예측이 실제보다 낮아 천장에 닿지 않는다 — 천장은
+ * **예측** 이용시간을 보기 때문이다. 양주 삼숭로(744명·100대·1,200원)는 약 5,357만원으로 기준선(5,500만) 아래.
+ *
+ * 이 숫자는 "1명이 30시간 쓴다"가 아니라 V62 상권수요가 실제 손님 수를 몇 배 작게 잡는다는 뜻이다
+ * (project_pingbot_validates_demand). 물리 상수가 아니라 **되짚기로 고른 값**이다.
  *
  * ⚠️ 운영 V62(신규후보지 정밀 평가)는 **끈다**(settings 기본 null). 이 도구가 `withQuickEvalSettings`로만 켠다.
- * ⚠️ 재는 자리: `_quickEvalDemandCeiling.test.ts` — observed가 이 값을 넘게 되면 테스트가 깨진다.
+ * ⚠️ 문경은 **학습에서는 안 뺐다**(채점에서만 뺐다). 학습 제외는 결재 숫자가 움직이는 별개 결정이다.
+ * ⚠️ 재는 자리: `_quickEvalDemandCeiling.test.ts`(observed) · `_quickEvalBias.test.ts` "수요 천장"(걸린 매장이 전부 가까워지는지).
  */
 export const QUICK_EVAL_DEMAND_CEILING = {
-  /** 자사수요 1명당 허용하는 월 PC 이용시간 */
-  hoursPerOwnDemandUser: 70,
+  /** 자사수요 1명당 허용하는 월 PC 이용시간 — 되짚기 스윕으로 고른 값(위 주석) */
+  hoursPerOwnDemandUser: 30,
   measuredAt: "2026-09-23",
-  sampleCount: 40,
-  /** 기존점 40곳 실측: 실제 PC 이용시간 ÷ 자사수요 (시간/명·월) */
-  observed: { max: 68.2, maxStore: "문경시청점", p90: 30.2, median: 15.6, min: 3.9 },
+  /** observed를 잰 기존점 수(문경 제외) */
+  sampleCount: 39,
+  /** 채점에서 뺀 매장과 이유 — 화면 재고표가 읽는다 */
+  excluded: { storeName: "문경시청점", reason: "군 단위 소도시라 반경 1km 수요가 실제 상권을 놓쳐 검증 불가(사용자 결정)" },
+  /** 기존점 39곳 실측: 실제 PC 이용시간(PC매출 ÷ 요금) ÷ 자사수요 (시간/명·월) */
+  observed: { max: 42.7, maxStore: "양주덕정점", p90: 29.2, median: 15.2, min: 3.9, aboveCeilingCount: 3 },
+  /** 되짚기(문경 제외 37곳, visibility-only 배선): 켰을 때 걸린 매장 수와 MAPE 변화 */
+  backtest: { scored: 37, capped: 2, mapeOff: 0.1905, mapeOn: 0.181, within20: 0.7568 },
   testFile: "src/lib/storeEval/_quickEvalDemandCeiling.test.ts",
 } as const;
 
@@ -202,10 +220,11 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     source: "기본값",
     basis:
       `예측 이용시간이 자사수요(상권수요 × 점유율) × ${QUICK_EVAL_DEMAND_CEILING.hoursPerOwnDemandUser}시간을 넘으면 그 비율로 매출을 깎는다. ` +
-      `기존점 ${QUICK_EVAL_DEMAND_CEILING.sampleCount}곳 실측은 1명당 ${QUICK_EVAL_DEMAND_CEILING.observed.min}~${QUICK_EVAL_DEMAND_CEILING.observed.max}시간` +
-      `(중앙 ${QUICK_EVAL_DEMAND_CEILING.observed.median}, 최대 ${QUICK_EVAL_DEMAND_CEILING.observed.maxStore})이라 기존점은 한 곳도 안 걸린다(${QUICK_EVAL_DEMAND_CEILING.measuredAt}). ` +
-      "시골·펜션촌처럼 수요가 수백 명 아래인 주소에서만 작동한다 — 그전엔 수요 10명에도 100대 × 대당 중앙값으로 3천만원이 나왔다. " +
-      "⚠️ 정밀 평가(신규후보지)에는 없다 — 이 도구만 켠다",
+      `높이는 되짚기로 골랐다(${QUICK_EVAL_DEMAND_CEILING.measuredAt}, ${QUICK_EVAL_DEMAND_CEILING.excluded.storeName} 제외 ${QUICK_EVAL_DEMAND_CEILING.backtest.scored}곳): ` +
+      `걸린 기존점 ${QUICK_EVAL_DEMAND_CEILING.backtest.capped}곳이 전부 실제 매출에 가까워지고 MAPE ${(QUICK_EVAL_DEMAND_CEILING.backtest.mapeOff * 100).toFixed(2)}→${(QUICK_EVAL_DEMAND_CEILING.backtest.mapeOn * 100).toFixed(2)}%. ` +
+      `기존점 실측은 1명당 ${QUICK_EVAL_DEMAND_CEILING.observed.min}~${QUICK_EVAL_DEMAND_CEILING.observed.max}시간(중앙 ${QUICK_EVAL_DEMAND_CEILING.observed.median}). ` +
+      `${QUICK_EVAL_DEMAND_CEILING.excluded.storeName}은 ${QUICK_EVAL_DEMAND_CEILING.excluded.reason}라 채점에서 뺐다(학습에는 있다). ` +
+      "그전엔 수요 10명에도 100대 × 대당 중앙값으로 3천만원이 나왔다. ⚠️ 정밀 평가(신규후보지)에는 없다 — 이 도구만 켠다",
     needsFieldCheck: false,
   },
   {
