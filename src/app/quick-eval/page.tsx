@@ -132,7 +132,7 @@ export default function QuickEvalPage() {
       // 후보지명 칸을 없앴다 — 주소가 곧 이름이다(사용자 지시 2026-09-22).
       name: plan.address.trim(),
       address: plan.address.trim(),
-      // 비우면 기본값(사용자 지시 2026-09-23 — PC 100대 · 기본요금 1,200원). 입력칸엔 옅은 글씨로 보인다.
+      // 비우면 기본값(사용자 지시 2026-09-23 — PC 100대 · 기본요금은 QUICK_EVAL_PLAN_DEFAULTS). 입력칸엔 옅은 글씨로 보인다.
       expectedPcCount: toNumberOrNull(plan.expectedPcCount) ?? QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount,
       hourlyRate: toNumberOrNull(plan.hourlyRate) ?? QUICK_EVAL_PLAN_DEFAULTS.hourlyRate,
       // 층수도 비우면 기본값(2026-09-23 사용자 지시 — 대수·요금과 같은 방식). 기본값이 있으니
