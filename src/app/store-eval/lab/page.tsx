@@ -527,13 +527,19 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
             <div className="font-semibold">{p.specialDemandMultipliers["대학가"] === 1
               ? "⛔ 2026-09-24 — 대학가·산업단지 배수를 다시 껐습니다(1km 밖 고리와 같이 되돌림)"
-              : "✅ 2026-09-23 저녁 — 대학가·산업단지를 다시 켜고 군부대를 내렸습니다"}</div>
+              : "✅ 2026-09-24 오후 — 옛 배선(θ3·존구성 0.238·고리 꺼짐)에서 다시 재서 켰습니다"}</div>
             <div className="mt-1">
               지금 값: 대학가 <b>×{p.specialDemandMultipliers["대학가"]}</b> · 산업단지 <b>×{p.specialDemandMultipliers["산업단지"]}</b> ·
-              군부대 <b>×{p.specialDemandMultipliers["군부대"]}</b>.
-              {p.specialDemandMultipliers["대학가"] === 1 && <> 09-23 값(대학가 1.3·산업단지 1.4·군부대 2.0)은 고리 λ800 배선에서
-                고른 것이라 고리를 끄면 근거가 같이 사라집니다(호구포역 상한 55%의 절반이 산업단지 1.4였습니다). 옛 배선에 배수만
-                켜면 자사 MAE 5.84→5.22%p로 보이지만 2SE(1.4) 안이고 바깥 표본 근거가 없어 같이 껐습니다. 아래는 09-23 기록입니다.</>}
+              군부대 <b>×{p.specialDemandMultipliers["군부대"]}</b> · 관광·유흥 <b>×{p.specialDemandMultipliers["관광·유흥"]}</b>.
+              {p.specialDemandMultipliers["대학가"] === 1
+                ? <> 09-23 값(대학가 1.3·산업단지 1.4·군부대 2.0)은 고리 λ800 배선에서
+                  고른 것이라 고리를 끄면 근거가 같이 사라집니다(호구포역 상한 55%의 절반이 산업단지 1.4였습니다). 옛 배선에 배수만
+                  켜면 자사 MAE 5.84→5.22%p로 보이지만 2SE(1.4) 안이고 바깥 표본 근거가 없어 같이 껐습니다. 아래는 09-23 기록입니다.</>
+                : <> 사용자 기준(2026-09-24): <b>그 유형 우리 매장들의 예측 가동률 평균이 실측 평균과 같아지는 값</b>. 대학가 5곳 −7.9→+0.2%p ·
+                  산업단지 2곳 −10.2→−1.0 · 군부대 2곳 +3.1→−1.1 · 관광유흥 2곳 −9.0→약 +0.4. 기타(4곳 −1.1)는 이미 0 근처라 1.0.
+                  ⚠️ 표본 2~5곳이라 값이 아니라 방향입니다. 대학가는 매장별로 갈립니다 — 전대후문 −8·청주대 −6 vs 부경대 +10·전대상대 +5.
+                  하나의 배수로 5곳을 ±3%p에 못 넣습니다(같은 전남대 배후지인데 후문 46.5% vs 상대 23.3%). 다음 갈래는 &ldquo;대학가&rdquo;
+                  꼬리표 대신 대학 규모×거리입니다. 아래는 09-23 기록입니다.</>}
               {" "}껐던 이유(축척을 독점 3곳에서 맞추던 순환)는 2026-09-21에
               축척을 원장 실측으로 고정하면서 사라졌습니다. 이번엔 <b>그 동네 경쟁점 핑봇(바깥 표본)</b>을 같이 봤습니다 —
               대학가 동네는 우리 매장 5곳(−8.9%p)도 경쟁점 5곳(−3.3%p)도 과소예측돼 있었습니다. 우리만 그랬다면 점유율
@@ -710,8 +716,10 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               <div className="mt-1">
                 ⚠️ 이 항이 잘하는 건 <b>순서</b>지 오차 크기가 아닙니다. 실측 점유율과의 상관이
                 0.223(상수배율) → <b>0.560</b>으로 오르지만, MAPE는 31.9% → 30.5%로 거의 안 줍니다.
-                실측 점유율에 수요식 오차가 섞여 있어서입니다. 그래서 <b>{p.effectiveRadiusM}m는 잠정값</b>
-                입니다 — 300·400·500m가 MAPE로 구별되지 않습니다.
+                실측 점유율에 수요식 오차가 섞여 있어서입니다.
+                {p.rivalDistanceDecay
+                  ? <> (계단 유효거리는 감쇠가 켜진 지금 <b>안 쓰입니다</b> — 2026-09-24 사용자 요청으로 파라미터 표에서도 뺐습니다.)</>
+                  : <> 그래서 <b>{p.effectiveRadiusM}m는 잠정값</b>입니다 — 300·400·500m가 MAPE로 구별되지 않습니다.</>}
               </div>
             </>
           ) : (
@@ -1187,7 +1195,11 @@ function ParamSummary({ p, counts }: {
       title: "2단계 · 점유율",
       rows: [
         { label: "점유율 방식", value: p.shareMode === "quality" ? "품질 반영" : "끔" },
-        { label: "유효거리", value: `${p.effectiveRadiusM}m` },
+        // 2026-09-24 사용자: "안 쓰는 값 … 헷갈리니까" — 감쇠가 켜져 있으면 유효거리(계단)는 안 읽히므로 표에서 뺀다.
+        // 값 자체는 감쇠를 끈 예비 경로(rivalDistanceWeight의 계단)가 쓰므로 코드에는 남긴다.
+        ...(p.rivalDistanceDecay
+          ? [{ label: "경쟁점 거리무게", value: `${p.rivalDistanceDecay.plateauM}m 안 1 · 밖 e^(−(d−${p.rivalDistanceDecay.plateauM})÷${p.rivalDistanceDecay.scaleM})` }]
+          : [{ label: "유효거리(계단)", value: `${p.effectiveRadiusM}m` }]),
         { label: "품질 지수 θ", value: num(p.qualityExponent) },
         { label: "PC방 안 가는 몫", value: `${p.outsideOptionIp.toLocaleString()} IP` },
       ],
