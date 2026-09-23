@@ -72,8 +72,14 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     ? residentRingsByCodeFromDocs(ringDocs)
     : residentRingsByCodeFromSgis(JSON.parse(readFileSync(SGIS_FILE, "utf8")) as SgisFile);
   const ringSource = ringDocs.length ? `스냅샷 storeEvalLabResidentRings ${ringDocs.length}건` : "SGIS 파일";
-  // ⭐ 배선된 경로 — 고리 인구를 입력에 실어 넣는다. λ=0이면 산식이 그 입력을 안 읽는다.
-  const base = buildLabRows({ stores, compsByCode, utilByStore, settings, residentRingsByCode });
+  // 항아리 판정(2026-09-23 밤 채택) — 화면과 같은 컬렉션. 안 넘기면 useRingEnclosure가 켜져도 안 깎여 "새 기본값" 줄이 낡는다.
+  const ringBlockedByCode = new Map<string, number>();
+  for (const j of (snap.labTradeAreaJudgments ?? []) as { code?: string; ringCutCount?: number | null; blockedCount?: number | null }[]) {
+    const c = j.ringCutCount ?? j.blockedCount;
+    if (j.code && typeof c === "number") ringBlockedByCode.set(String(j.code), c);
+  }
+  // ⭐ 배선된 경로 — 고리 인구·항아리 판정을 입력에 실어 넣는다. λ=0이면 산식이 그 입력을 안 읽는다.
+  const base = buildLabRows({ stores, compsByCode, utilByStore, settings, residentRingsByCode, ringBlockedByCode });
   const P = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(base, DEFAULT_TEXTBOOK_PARAMS));
   const storeByCode = new Map(stores.map((s) => [s.storeCode, s]));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

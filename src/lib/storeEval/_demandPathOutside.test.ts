@@ -91,7 +91,10 @@ describeIf("수요 경로 — 실측 수요 + 세 잣대", () => {
   // ⚠️ 2026-09-23부터 기본값이 1km 밖 고리(λ600)를 켠다. 고리 인구를 안 넘기면 조용히 −10%p 과소예측한다.
   //    이 파일의 "지금 그대로" 줄은 그래서 이제 **새 기본값(고리 포함)**이다. 옛 배선은 `_bundleCandidate` (0).
   const base = buildLabRows({ stores, compsByCode, utilByStore, settings,
-    residentRingsByCode: residentRingsByCodeFromDocs(snap.labResidentRings ?? []) });
+    residentRingsByCode: residentRingsByCodeFromDocs(snap.labResidentRings ?? []),
+    // 항아리 판정(2026-09-23 밤 채택) — 안 넘기면 useRingEnclosure가 켜져도 안 깎인다
+    ringBlockedByCode: new Map(((snap.labTradeAreaJudgments ?? []) as { code?: string; ringCutCount?: number | null }[])
+      .filter((j) => j.code && typeof j.ringCutCount === "number").map((j) => [String(j.code), j.ringCutCount as number])) });
   const P = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(base, DEFAULT_TEXTBOOK_PARAMS));
   const storeByCode = new Map(stores.map((s) => [s.storeCode, s]));
 

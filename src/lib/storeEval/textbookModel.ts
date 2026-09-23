@@ -178,12 +178,14 @@ export type TextbookParams = {
    */
   residentRingShare: "core" | "gravity";
   /**
-   * **막힌 상권 보정을 켤지** (2026-09-23 신설, 기본 꺼짐). 켜면 고리 인구에 `(1 − 막힌 방향 수 ÷ 4)`를 곱한다.
+   * **항아리(막힌) 상권 보정** (2026-09-23 신설·같은 날 밤 채택). 켜면 고리 인구에 `(1 − 깎는 방향 수 ÷ 4)`를 곱한다.
    *
-   * 사용자(2026-09-23): *"구미산동은 항아리상권으로 알고 있어서 외부 유입 기대하기 어렵고 내부 수요로 상권 내 PC방이
-   * 굴러가는 건데."* 하천·철도·고속도로·산으로 막힌 방향의 고리(1~2km) 주민은 안 온다. 그 방향 수는 지도 한 장을
-   * AI가 **예/아니오 사실**로 판정한다(scripts/tradeArea, 로드뷰 판정과 같은 원칙 — 점수 아님, 사람 표본 대조).
-   * 사실 개수 ÷ 4라 맞춘 계수가 없다. 입력은 `TextbookInput.ringBlockedDirections`(0~4, 없으면 null → 안 깎음).
+   * 사용자 정의: *"항아리라는 건 하천이나 철도로 끊겼다기보다는 상권이 그 주변에만 형성되어 있고 반경 이상에는 상권이
+   * 없다는 것."* → 문항은 **"그 방향 1~2km 고리에 사람 사는 동네(아파트·주택가·시가지)가 있나"**. 없는 방향(논밭·산단·
+   * 산·물)의 고리 주민은 없는 것이니 깎는다. 지도 한 장을 AI가 **예/아니오 사실**로 판정(scripts/tradeArea, 로드뷰 판정과
+   * 같은 원칙 — 점수 아님) → 사용자가 깎이는 8곳 목록을 대조해 *"맞음"*. 사실 개수 ÷ 4라 맞춘 계수가 없다.
+   * ⛔ 1차 문항("하천·철도·고속도로로 끊겼나")은 폐기 — 63%가 2방향 이상으로 후하고 구미산동을 못 잡았다.
+   * ⚠️ "2km 안 유일 상권 → 고리 0"은 규칙이 아니다(청주터미널·화명대로가 크게 과소). 입력은 `ringBlockedDirections`(0~4).
    */
   useRingEnclosure: boolean;
   ageWeights: AgeUsageWeights;
@@ -872,8 +874,10 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   //    1~2km 사람은 세면서 그 곁 PC방은 안 센 비대칭. gravity(가까운 쪽으로 간다, 기하)로 SD 6.7·최악 사라짐·
   //    짝 r 0.55→0.53 유지. 치르는 값: 자사 r 0.337→0.187(동네 간 순서, n=37에서 1SE 안팎). 타입 쪽 주석.
   residentRingShare: "gravity",
-  // 막힌 상권 보정 — 꺼짐. AI 판정(scripts/tradeArea)을 사람이 대조한 뒤 재고 표(`_bundleCandidate` (8))로 정한다.
-  useRingEnclosure: false,
+  // ✅ 2026-09-23 밤 채택 — 사용자가 8곳 목록을 보고 *"맞음 위에 매장 항아리"*. 2차 문항(그 방향 1~2km에 주거가 있나)으로
+  //    52곳 중 8곳만 깎인다(1방향 6·2방향 2). 켬: 자사 MAE 6.11→5.86 · r 0.300→0.342 · 편향 그대로(`_bundleCandidate` (8)).
+  //    판정은 storeEvalLabTradeAreaJudgments(ringCutCount). 1차 단절 문항은 폐기(63%가 2방향 이상, 구미산동 못 잡음).
+  useRingEnclosure: true,
   // 연령가중 자체는 남녀 이용률을 지역 성비로 섞어 그때그때 만든다(blendUsageByGender).
   // 여기 값은 성비를 모를 때(남녀 1:1)의 기본값이다.
   ageWeights: blendUsageByGender(0.5),
