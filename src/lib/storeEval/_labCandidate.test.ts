@@ -40,6 +40,7 @@ import type { CandidateInput, Competitor, LocationEvaluation } from "./types";
 const QSC_FILE = ".local-tools/qsc-scores.json";
 const describeIf = hasValidationSnapshot() ? describe : describe.skip;
 
+const mean = (a: number[]) => a.reduce((p, q) => p + q, 0) / a.length;
 const manwon = (v: number | null | undefined) =>
   v == null ? "      -" : `${Math.round(v / 10000).toLocaleString().padStart(6)}만`;
 const pct = (v: number | null | undefined, d = 1) =>
@@ -580,5 +581,28 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     }
     console.log(`  ⚠️ 여기 성적은 자사 잣대 하나다. 경쟁점 47곳 편향(옛 −11%p / 새 −2%p)·자사우위(옛 3.5배 / 새 1.65배, 실측 1.74)는 _bundleCandidate (0)에 있다.`);
     expect(paired.length).toBeGreaterThan(0);
+  });
+
+  it("(9) ⭐ 특수수요 배수가 40곳 전체에 어떻게 맞나 — 재고 표(_bundleCandidate (7), 경쟁점 있는 37곳) 밖 매장 포함", () => {
+    // 사용자(2026-09-24 퇴근 직전): *"특수수요 보정 어케 넣었냐? 탕정역 가동률 +20 뜨네"* — 탕정역은 500m 안 경쟁점이 없어
+    // _bundleCandidate 주인공(37곳)에 안 들어간다. 배수는 그 37곳 안의 유형별 매장으로 골랐는데, 화면 40곳엔 밖 매장도 있다.
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const types = [...new Set(own.map((r) => r.input.specialDemandType ?? "없음"))].filter((t) => (full.specialDemandMultipliers[t] ?? 1) !== 1);
+    console.log(`\n[특수수요 유형별 · 자사 ${own.length}곳 전체] 오차 = 예측 − 실측 %p. 경쟁 = 500m 안 조사 경쟁점 수(0이면 재고 표 밖)`);
+    for (const t of types) {
+      const m = full.specialDemandMultipliers[t] ?? 1;
+      const p1: TextbookParams = { ...full, specialDemandMultipliers: { ...full.specialDemandMultipliers, [t]: 1 } };
+      const g = own.filter((r) => (r.input.specialDemandType ?? "없음") === t);
+      console.log(`  ── ${t} ×${m} (${g.length}곳) ──`);
+      for (const r of g) {
+        const a = r.input.actualUtilization as number;
+        const e1 = (computeTextbook(r.input, p1).utilization ?? NaN) - a, eN = (computeTextbook(r.input, full).utilization ?? NaN) - a;
+        const nComp = (r.input.rivals ?? []).filter((v) => (v.distanceM ?? 9e9) <= 500).length;
+        console.log(`     ${(r.input.storeName ?? "").padEnd(12)} 실측 ${(a * 100).toFixed(1).padStart(5)}%  ×1.0 ${(e1 * 100).toFixed(1).padStart(6)}  ×${m} ${(eN * 100).toFixed(1).padStart(6)}   경쟁 ${nComp}${nComp === 0 ? "  ← 재고 표 밖" : ""}`);
+      }
+      const bias = (p: TextbookParams) => mean(g.map((r) => (computeTextbook(r.input, p).utilization ?? NaN) - (r.input.actualUtilization as number)));
+      console.log(`     평균 편향  ×1.0 ${(bias(p1) * 100).toFixed(1)}%p → ×${m} ${(bias(full) * 100).toFixed(1)}%p`);
+    }
+    expect(own.length).toBeGreaterThan(30);
   });
 });
