@@ -477,9 +477,73 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     for (const lambda of [800, 1000, 1500, 2000, 3000]) spreadLine(`gravity λ${lambda}`, run6({ mode: "gravity", lambda, theta: th, zoneW: zw }));
     console.log(`  ── 대조: core에서 같은 λ ──`);
     for (const lambda of [800, 1000]) spreadLine(`core    λ${lambda}`, run6({ mode: "core", lambda, theta: th, zoneW: zw }));
+    // ── (6b) 남은 최악 3곳 — 사용자 현장 사정(2026-09-23)과 대조 ──────────────────────────
+    //   송도: 경쟁점 500원 요금전쟁, 우리도 1500→1000원. 요금 경쟁력은 점유율 항에 없다(오픈 후 변화).
+    //   구미산동: 운영 부진(QSC 반영) + **항아리상권**(외부 유입 없음) → 고리를 세면 안 되는 곳.
+    //   전대후문: 대학 특수수요를 받는데 대학가 배수가 1.0(꺼짐). 상권 내 가동률 최고.
+    // 각자 "빠진 항"을 켜면 얼마나 움직이나만 본다. 매장별로 맞추는 게 아니다 — 기전을 항으로 만들 때 참고.
+    const focus = ["송도점", "구미산동점", "전대후문점"];
+    const predOf = (o: Subject, p2: TextbookParams) => computeTextbook(o.input, p2).utilization;
+    console.log(`\n  [남은 최악 3곳 — 현장 사정 대조] 실측 / 옛 배선 / 지금(gravity λ${P.residentRingDecayM}) / 고리 끔 / 대학가 x1.45`);
+    for (const name of focus) {
+      const o = subjects.find((s) => s.isOurs && s.hood === name);
+      if (!o) { console.log(`  ${name} — 표본에 없음`); continue; }
+      const old = predOf(o, { ...P, qualityExponent: 3, residentRingDecayM: 0, qualityWeights: { ...P.qualityWeights, zone: OLD_ZONE_W } });
+      const cur = predOf(o, P);
+      const noRing = predOf(o, { ...P, residentRingDecayM: 0 });
+      const univ = predOf(o, { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, "대학가": 1.45 } });
+      const f = (v: number | null) => (v == null ? "  -  " : `${(v * 100).toFixed(1).padStart(5)}%`);
+      console.log(`  ${name.padEnd(8)} 실측 ${f(o.act)} · 옛 ${f(old)} · 지금 ${f(cur)} · 고리끔 ${f(noRing)} · 대학가x1.45 ${f(univ)}`
+        + `  (특수수요 유형: ${o.input.specialDemandType ?? "없음"} · 고리 이용자 ${(() => { const b = computeTextbook(o.input, P); return b.residentRingUsers && b.residentDemandUsers ? `${(b.residentRingUsers / b.residentDemandUsers * 100).toFixed(0)}%` : "-"; })()} · 고리 점유율 ${(() => { const b = computeTextbook(o.input, P); return b.residentRingShare == null ? "-" : `${(b.residentRingShare * 100).toFixed(0)}%`; })()})`);
+    }
+    const univCount = subjects.filter((s) => s.isOurs && s.input.specialDemandType === "대학가").length;
+    console.log(`  대학가 유형 자사 매장 ${univCount}곳 (배수를 다시 재려면 바깥 표본으로 — 2026-09-20에 순환 오염으로 껐던 항이다)`);
+
     console.log(`\n  ⭐ 읽는 법 — gravity가 같은 수준(편향)에서 **예측 SD와 최악 매장을 줄이고 자사 r을 안 깎으면** 비대칭이 범인이었고 고친 것이다.`);
     console.log(`     gravity에서 수준을 맞추는 λ가 훨씬 커야 하면(예: 2000 이상) 고리가 "먼 사람을 많이 세되 대부분 남에게 준다"는 뜻 — 그것도 기전상 자연스럽다.`);
     console.log(`     ⚠️ 500m 밖 경쟁점 대수는 미조사 기본값이다. gravity는 그 대수를 더 쓴다.`);
     expect(subjects.length).toBeGreaterThan(40);
+  });
+
+  it("(7) ⭐⭐ 특수수요 유형별 — 자사와 경쟁점(바깥)이 같이 과소예측되나 (대학가 배수를 다시 잴 자격)", () => {
+    // 전대후문(대학가) −18%p. `specialDemandMultipliers.대학가`는 1.0(꺼짐) — 2026-09-20에 "축척을 독점매장에서
+    // 맞추는데 그 매장이 특수수요 유형이라 순환"이라는 이유로 껐다. **지금은 축척이 원장 8.20h로 고정**돼 그 이유가
+    // 사라졌다. 다시 재되, 자사 5곳만으로 고르면 매장 맞추기다 — 바깥 표본(그 동네 경쟁점 핑봇)이 같이
+    // 과소예측되면 **수요**가 작은 것이고(배수가 맞다), 자사만 그러면 점유율 문제다.
+    type G = { ours: Obs[]; riv: Obs[] };
+    const groups = new Map<string, G>();
+    const obs: Obs[] = [];
+    for (const s of subjects) { const u = computeTextbook(s.input, P).utilization; if (u != null && u > 0) obs.push({ ...s, pred: u }); }
+    for (const o of obs) {
+      const k = o.input.specialDemandType ?? "없음";
+      const g = groups.get(k) ?? { ours: [], riv: [] };
+      (o.isOurs ? g.ours : g.riv).push(o); groups.set(k, g);
+    }
+    console.log(`\n[특수수요 유형별 · 지금 배선] 함의 배수 = median(실측÷예측). 자사·경쟁점이 같은 방향이면 수요 배수, 자사만이면 점유율`);
+    console.log(`  유형        자사n  자사편향  자사 함의배수 | 경쟁n  경쟁편향  경쟁 함의배수 | 지금 배수`);
+    for (const [k, g] of [...groups.entries()].sort((a, b) => b[1].ours.length - a[1].ours.length)) {
+      const imp = (xs: Obs[]) => (xs.length ? Math.exp(med(xs.map((o) => Math.log(o.act / o.pred)))) : NaN);
+      const bias = (xs: Obs[]) => (xs.length ? mean(xs.map((o) => o.pred - o.act)) : NaN);
+      console.log(`  ${k.padEnd(10)}${String(g.ours.length).padStart(4)}${(bias(g.ours) * 100).toFixed(1).padStart(9)}%p${imp(g.ours).toFixed(2).padStart(10)}배 |`
+        + `${String(g.riv.length).padStart(5)}${(bias(g.riv) * 100).toFixed(1).padStart(9)}%p${imp(g.riv).toFixed(2).padStart(10)}배 |`
+        + `${String(P.specialDemandMultipliers[k] ?? 1).padStart(8)}`);
+    }
+    // 대학가 배수 재고 표 — 대학가 매장 5곳과 그 동네 경쟁점, 그리고 전체
+    console.log(`\n  [대학가 배수 재고 표] 배수를 바꾸면 대학가 자사·경쟁점 편향과 전체 성적이 어떻게 되나`);
+    console.log(`  배수   대학가자사편향  대학가경쟁편향 | 전체 자사MAE 자사r | 전체 경쟁편향 | 자사우위`);
+    for (const m of [1.0, 1.2, 1.45, 1.7, 2.0]) {
+      const p2: TextbookParams = { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, "대학가": m } };
+      const o2: Obs[] = [];
+      for (const s of subjects) { const u = computeTextbook(s.input, p2).utilization; if (u != null && u > 0) o2.push({ ...s, pred: u }); }
+      const s = score(o2);
+      const uo = o2.filter((o) => o.isOurs && o.input.specialDemandType === "대학가"), ur = o2.filter((o) => !o.isOurs && o.input.specialDemandType === "대학가");
+      const bias = (xs: Obs[]) => (xs.length ? mean(xs.map((o) => o.pred - o.act)) : NaN);
+      console.log(`  ${m.toFixed(2)}${(bias(uo) * 100).toFixed(1).padStart(12)}%p(${uo.length})${(bias(ur) * 100).toFixed(1).padStart(12)}%p(${ur.length}) |`
+        + `${(s.ourMae * 100).toFixed(2).padStart(9)}%p${s.ourR.toFixed(3).padStart(7)} |${(s.rivBias * 100).toFixed(1).padStart(9)}%p |${s.gapPred.toFixed(2).padStart(7)}배`
+        + (m === (P.specialDemandMultipliers["대학가"] ?? 1) ? "  ← 지금" : ""));
+    }
+    console.log(`\n  ⭐ 읽는 법 — 대학가 **경쟁점** 편향도 음수면 그 동네 수요가 작은 것이라 배수가 정당하다. 경쟁점 편향이 0인데 자사만 음수면 배수가 아니다.`);
+    console.log(`     n이 5곳(자사)·몇 곳(경쟁점)이라 값은 못 고른다 — 방향만 본다. 값은 사용자와 정한다.`);
+    expect(obs.length).toBeGreaterThan(40);
   });
 });
