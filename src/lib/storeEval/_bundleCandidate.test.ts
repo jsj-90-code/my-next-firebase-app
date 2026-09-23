@@ -236,9 +236,18 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     + `${s.gapPred.toFixed(2).padStart(8)}배${mark}`);
 
   it("(0) 검산 — λ=0이면 어제와 같아야 한다 · 고리가 수요를 얼마나 키우나", () => {
-    const now = score(run(NOW));
-    console.log(`\n[검산] 옛 배선(θ3·존 0.238·λ0): 자사 ${now.ours.length}곳 MAE ${(now.ourMae * 100).toFixed(2)}%p (2026-09-22 5.84%p) · 경쟁점 ${now.riv.length}곳 편향 ${(now.rivBias * 100).toFixed(1)}%p (−10.9%p)`);
+    // ⚠️ 2026-09-24 — 5.84%p는 **특수수요 배수를 다시 켜기 전**(09-23 12:01 커밋 539b17b 이전) 숫자다. 그때 배수는
+    //    군부대 2.25만 켜져 있고 나머지 1.0이었다(git show 539b17b^). NOW 칸은 P를 상속해 지금 배수(대학가 1.3·
+    //    산업단지 1.4·군부대 2.0)까지 물고 오므로 λ=0이어도 5.22%p로 어긋난다. 검산은 배수를 그 시점 값으로
+    //    되돌린 칸에서 한다. 배수만 지금 값인 옛 배선도 같이 찍어 차이를 남긴다.
+    const OLD_MULTIPLIERS: TextbookParams["specialDemandMultipliers"] = { ...Object.fromEntries(Object.keys(P.specialDemandMultipliers).map((k) => [k, 1])), "군부대": 2.25 };
+    const oldParams: TextbookParams = { ...paramsOf(NOW), specialDemandMultipliers: OLD_MULTIPLIERS, useRingEnclosure: false, residentRingShare: "core" };
+    const runWith = (p2: TextbookParams): Obs[] => { const out: Obs[] = []; for (const s of subjects) { const u = computeTextbook(s.input, p2).utilization; if (u != null && u > 0) out.push({ ...s, pred: u }); } return out; };
+    const now = score(runWith(oldParams));
+    const nowMul = score(run(NOW));
+    console.log(`\n[검산] 옛 배선(θ3·존 0.238·λ0·배수 군부대 2.25만): 자사 ${now.ours.length}곳 MAE ${(now.ourMae * 100).toFixed(2)}%p (2026-09-22 5.84%p) · 경쟁점 ${now.riv.length}곳 편향 ${(now.rivBias * 100).toFixed(1)}%p (−10.9%p)`);
     console.log(`  ${Math.abs(now.ourMae - 0.0584) < 0.002 ? "✅ 같다 — 배선이 λ=0에서 아무것도 안 바꿨다" : "⚠️ 다르다 — 배선을 다시 볼 것"}`);
+    console.log(`  (참고) 옛 배선 + 특수수요 배수만: 자사 MAE ${(nowMul.ourMae * 100).toFixed(2)}%p · 자사편향 ${(nowMul.ourBias * 100).toFixed(1)}%p · 경쟁편향 ${(nowMul.rivBias * 100).toFixed(1)}%p — 격자(2)~(5)의 "지금" 줄은 이 값이다`);
     // 새 기본값(P 그대로) — 채택 칸이 재현되는지
     const cur = score((() => { const out: Obs[] = []; for (const s of subjects) { const u = computeTextbook(s.input, P).utilization; if (u != null && u > 0) out.push({ ...s, pred: u }); } return out; })());
     console.log(`  새 기본값(θ${P.qualityExponent}·존 ${P.qualityWeights.zone}·λ${P.residentRingDecayM}): 자사 MAE ${(cur.ourMae * 100).toFixed(2)}%p · 자사편향 ${(cur.ourBias * 100).toFixed(1)}%p · 경쟁편향 ${(cur.rivBias * 100).toFixed(1)}%p · 자사우위 ${cur.gapPred.toFixed(2)}배`);
