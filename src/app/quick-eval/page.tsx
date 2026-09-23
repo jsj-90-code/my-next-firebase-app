@@ -84,7 +84,7 @@ type Plan = {
   /** "" = 안 고름 → QUICK_EVAL_PLAN_DEFAULTS.groundLevel */
   groundLevel: GroundLevel | "";
   /** "" = 안 고름 → QUICK_EVAL_PLAN_DEFAULTS.hasElevator */
-  hasElevator: "있음" | "없음" | "미정" | "";
+  hasElevator: "있음" | "없음" | "";
 };
 
 const INITIAL_PLAN: Plan = {
@@ -93,7 +93,8 @@ const INITIAL_PLAN: Plan = {
   hourlyRate: "",
   floor: "",
   groundLevel: "",
-  // 엘리베이터는 **"있음"이 기본**이다(사용자 지시 2026-09-23). "미정"은 고를 수는 있지만
+  // 엘리베이터는 **"있음"이 기본**이다(사용자 지시 2026-09-23). ⛔ "미정"은 선택지에서 뺐다(2026-09-23 밤
+  // 사용자: "있음/없음 두개만있으면될듯"). 아래 옛 설명: "미정"은 고를 수는 있지만
   // 처음부터 놓지 않는다 — 후보 건물은 대개 엘리베이터가 있어서 매번 바꿔 주는 게 일이었다.
   // ⚠️ 이 값은 V62 금액 계산에 안 들어가고 **AI 접근가시성 판정에만** 사실로 넘어간다
   //    (quickEvalDefaults의 재고표 "자사 층·지상지하·엘리베이터" 항목).
@@ -141,7 +142,7 @@ export default function QuickEvalPage() {
       groundLevel: plan.groundLevel || QUICK_EVAL_PLAN_DEFAULTS.groundLevel,
       hasElevator: (() => {
         const v = plan.hasElevator || QUICK_EVAL_PLAN_DEFAULTS.hasElevator;
-        return v === "미정" ? null : v === "있음";
+        return v === "있음";
       })(),
       // 먹거리는 자사 브랜드라 고정이다 — 입력칸이 없다(quickEvalDefaults.OWN_FOOD_BRAND).
       ownFoodBrand: OWN_FOOD_BRAND,
@@ -421,7 +422,6 @@ export default function QuickEvalPage() {
               onChange={(e) => setPlan((p) => ({ ...p, hasElevator: e.target.value as Plan["hasElevator"] }))}
             >
               <option value="">{QUICK_EVAL_PLAN_DEFAULTS.hasElevator} (기본값)</option>
-              <option value="미정">미정</option>
               <option value="있음">있음</option>
               <option value="없음">없음</option>
             </select>
@@ -458,7 +458,6 @@ export default function QuickEvalPage() {
             hourlyRate={planInput.hourlyRate}
             pcIsDefault={toNumberOrNull(plan.expectedPcCount) == null}
             rateIsDefault={toNumberOrNull(plan.hourlyRate) == null}
-            rivalCount={counted.length}
           />
 
           <section className="app-card relative overflow-hidden rounded-2xl p-4">
@@ -782,14 +781,12 @@ function KeyVerdict({
   hourlyRate,
   pcIsDefault,
   rateIsDefault,
-  rivalCount,
 }: {
   v62Final: number | null;
   pcCount: number | null;
   hourlyRate: number | null;
   pcIsDefault: boolean;
   rateIsDefault: boolean;
-  rivalCount: number;
 }) {
   // 판정은 두 가지뿐이다 — 5,500만원(QUICK_EVAL_ENTRY_THRESHOLD_WON) **초과면 가능, 아니면 불가**.
   // ⛔ 2026-09-23 저녁 사용자 지시: "5500만 넘으면 가능으로해. 구간별로 뭐 추가로 만들지말고" —
@@ -830,12 +827,8 @@ function KeyVerdict({
           </p>
         </div>
       </div>
-      {rivalCount > QUICK_EVAL_BACKTEST.rivalCountMax ? (
-        <p className="text-xs text-[var(--sl-warn)]">
-          ⚠️ 이 후보지 경쟁점 {rivalCount}곳은 오차를 재 본 범위(최대 {QUICK_EVAL_BACKTEST.rivalCountMax}곳)
-          밖입니다 — 예상매출이 얼마나 맞는지 아직 모릅니다.
-        </p>
-      ) : null}
+      {/* 2026-09-23 밤 — "경쟁점 10곳 넘으면 범위 밖" 경고를 뺐다(사용자 승인). 카카오 경쟁점으로 다시 재 보니
+          10곳+ 매장(최대 18곳)도 오차가 평균 수준이었다(QUICK_EVAL_BACKTEST 주석). */}
     </section>
   );
 }

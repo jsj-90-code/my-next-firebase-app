@@ -213,7 +213,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       `가시성은 결과를 크게 움직인다(1점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.low)} ~ ` +
       `5점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.high)}). ` +
       "⚠️ 엘리베이터는 **'있음'이 기본값**이다(2026-09-23 사용자 지시 — 후보 건물은 대개 있다). " +
-      "없는 건물이면 직접 '없음'으로 바꿔야 한다. '미정'을 고르면 AI가 '모름'으로 보수적으로 매긴다. " +
+      "없는 건물이면 직접 '없음'으로 바꿔야 한다(선택지는 있음/없음 둘뿐). " +
       `층수는 비우면 ${QUICK_EVAL_PLAN_DEFAULTS.floor}층(기본값)으로 넘어간다`,
     needsFieldCheck: false,
   },
@@ -287,7 +287,10 @@ export const ADDRESS_ONLY_ACCURACY = {
 // 저녁에 경쟁점을 100대·항목 2.5점으로 내리고 다시 쟀다(before100Pc가 그전 값).
 // 그전 화면 값(27.79% · 21% 높게)은 **다른 조합**(후보지도 비움)에서 잰 것이었는데 그대로
 // 떠 있었다 — 인계문 0절에서 "인용하지 마라"고 적어 둔 바로 그 숫자다.
-// ⚠️ 이 되짚기는 기존점의 **조사 경쟁점**(중앙 rivalCountMedian곳 · 최대 rivalCountMax곳)으로
+// ⭐ 2026-09-23 밤 — 경쟁점도 **카카오 500m 목록**(도구와 같은 조립)으로 바꿔 쟀다. 이제 성적은 실제 도구
+//    배선 그대로다(AI 입지 + 카카오 경쟁점). 경쟁점 10곳+ 매장 8곳도 MAPE 15.9% · 배율 0.933으로 평균 수준.
+//    ⚠️ 4곳(전대후문·전대상대·부천상동역·수원인계)은 카카오 2km 목록이 45건에서 잘려 500m도 덜 들어갔을 수 있다.
+// (아래 옛 주석) 이 되짚기는 기존점의 **조사 경쟁점**(중앙 4곳 · 최대 10곳)으로
 //    돈다. 카카오 500m가 10~20곳인 실제 후보지를 대표하지 못한다 — 화면에 같이 적는다.
 // ⭐⭐⭐ 2026-09-23 밤 — 화면 성적을 **AI 입지평가까지 실제로 돌린 값**으로 바꿨다. 그전 값(가시성 고정,
 // fixedVisibility)은 AI를 안 돌려서 도구의 실제 배선이 아니었다. 기존점 주소로 수집 라우트를 그대로
@@ -300,12 +303,14 @@ export const QUICK_EVAL_BACKTEST = {
   /** 되짚기 대상 전체(블랙라벨·실매출 있음) — sampleCount가 이보다 작으면 나머지는 미측정 */
   sampleTotal: 38,
   testFile: "src/lib/storeEval/_quickEvalBias.test.ts",
-  /** 지금 배선 + AI 입지평가(2a51ee0 기준) */
-  mape: 0.169,
-  within20: 0.7105,
+  /** 지금 배선 + AI 입지평가 + 카카오 500m 경쟁점 = 실제 도구와 같은 조건 */
+  mape: 0.1639,
+  within20: 0.7368,
   /** 예측 ÷ 실제매출의 중앙값. 1보다 크면 높게 나온다는 뜻 */
-  medianRatio: 0.958,
-  overCount: 14,
+  medianRatio: 0.97,
+  overCount: 16,
+  /** 같은 38곳 · 경쟁점만 사람 조사 목록으로(카카오 대신) */
+  surveyedRivals: { mape: 0.169, within20: 0.7105, medianRatio: 0.958, overCount: 14, leveledMape: 0.172 },
   /** 같은 38곳 · AI 기준(선점·유입제한)을 넣기 전 */
   beforeAiCriteria: { mape: 0.1937, within20: 0.6053, medianRatio: 0.888, overCount: 7, leveledMape: 0.1794 },
   /** 38곳 · AI 없이 가시성 고정값(3차까지 화면에 떠 있던 방식) */
@@ -313,8 +318,9 @@ export const QUICK_EVAL_BACKTEST = {
   /** 같은 날 낮 — 129대 + 품질 3점일 때 */
   before100Pc: { mape: 0.1697, within20: 0.7105, medianRatio: 1.05, overCount: 21, leveledMape: 0.1582 },
   /** 되짚기에 쓰인 기존점 조사 경쟁점 수 — 이 범위를 넘는 후보지는 잰 적이 없다 */
-  rivalCountMedian: 4,
-  rivalCountMax: 10,
+  /** 되짚기에 쓰인 기존점의 카카오 500m 경쟁점 수 */
+  rivalCountMedian: 5,
+  rivalCountMax: 18,
   /** 2026-09-22 화면에 떠 있던 값(후보지도 비우던 조합) — 지금 배선이 아니다 */
   before20260923: { mape: 0.2779, within20: 0.4211, medianRatio: 1.211, overCount: 30, leveledMape: 0.1704 },
   /** 4차 직전 — 품질만 채우고 대수는 90대 기본값이던 때 */
@@ -331,7 +337,7 @@ export const QUICK_EVAL_BACKTEST = {
    * (17.04 -> 16.94%), **경쟁점을 채우는 건 내렸다**(-> 15.81%) — 버렸던 정보를 되살린
    * 것이라 성질이 다르다. 정밀 평가는 10.10%이고 그 격차는 경쟁점 실측 자료가 있어야 메워진다.
    */
-  leveledMape: 0.172,
+  leveledMape: 0.1667,
   leveledMapeBefore: 0.1694,
   preciseLeveledMape: 0.101,
   /**

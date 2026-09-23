@@ -165,8 +165,8 @@ export function buildQuickEvalReviewContext(input: {
   // 2026-09-23 — 되짚기는 기존점의 조사 경쟁점으로 돌아서 경쟁점이 많은 후보지를 대표하지 못한다.
   //    AI가 위 오차를 경쟁점 15곳짜리 후보지에도 그대로 믿지 않게 범위를 같이 넘긴다.
   lines.push(
-    `⚠️ 이 되짚기는 경쟁점 중앙 ${QUICK_EVAL_BACKTEST.rivalCountMedian}곳·최대 ${QUICK_EVAL_BACKTEST.rivalCountMax}곳인`
-      + " 상권에서만 쟀다. 이 후보지 경쟁점이 그보다 많으면 위 오차는 적용되지 않는다(잰 적 없음).",
+    `경쟁점은 이 도구와 같은 카카오 500m 목록으로 넣었다(기존점 경쟁점 중앙 ${QUICK_EVAL_BACKTEST.rivalCountMedian}곳·최대 ${QUICK_EVAL_BACKTEST.rivalCountMax}곳).`
+      + " 경쟁점이 그보다 많은 후보지는 잰 적이 없다.",
   );
   lines.push(
     // ⚠️ 정밀 평가와 견줄 때 **같은 자**를 써야 한다 — 수준보정 오차끼리 견준다.
