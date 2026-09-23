@@ -32,8 +32,8 @@ export const OWN_FOOD_BRAND: FoodBrand = "쉐프앤클릭";
 // 2026-09-23 저녁 — 지상/지하·엘리베이터도 같은 방식(고르지 않으면 옅은 "(기본값)" 표시).
 export const QUICK_EVAL_PLAN_DEFAULTS = {
   expectedPcCount: 100,
-  // 2026-09-23 밤 1,200 -> 1,500원(사용자 지시)
-  hourlyRate: 1500,
+  // 2026-09-23 밤 1,200 -> 1,500원(사용자 지시) -> 다음 날 다시 1,200원(사용자 지시 "기본요금 1200원으로 기본값 변경")
+  hourlyRate: 1200,
   floor: 2,
   groundLevel: "지상",
   hasElevator: "있음",
