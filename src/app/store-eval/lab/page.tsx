@@ -1208,7 +1208,9 @@ function StoreTable({ score, qscByStore, p, windowFill }: {
         진짜 경쟁점이 대신 채웠습니다.
       </p>
       <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        {/* 숫자 칸은 한 줄로 고정한다 — 2026-09-23 사용자 요청("실제매출란이 2줄 먹어서 칸이 넓어졌는데
+            1줄로"). 마지막 칸(비고)만 줄바꿈을 둔다. 표는 overflow-x-auto라 옆으로 밀리면 스크롤이 생긴다. */}
+        <table className="w-full min-w-[720px] text-left text-sm [&_th]:whitespace-nowrap [&_td:not(:last-child)]:whitespace-nowrap">
           <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
             <tr>
               <th scope="col" className="px-3 py-2">매장</th>
