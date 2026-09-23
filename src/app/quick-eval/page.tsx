@@ -130,8 +130,10 @@ export default function QuickEvalPage() {
       // 비우면 기본값(사용자 지시 2026-09-23 — PC 100대 · 기본요금 1,200원). 입력칸엔 옅은 글씨로 보인다.
       expectedPcCount: toNumberOrNull(plan.expectedPcCount) ?? QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount,
       hourlyRate: toNumberOrNull(plan.hourlyRate) ?? QUICK_EVAL_PLAN_DEFAULTS.hourlyRate,
-      floor: toNumberOrNull(plan.floor),
-      groundLevel: plan.floor.trim() ? plan.groundLevel : null,
+      // 층수도 비우면 기본값(2026-09-23 사용자 지시 — 대수·요금과 같은 방식). 기본값이 있으니
+      // 지상/지하도 항상 넘긴다(예전엔 층을 비우면 지상/지하도 null로 뺐다).
+      floor: toNumberOrNull(plan.floor) ?? QUICK_EVAL_PLAN_DEFAULTS.floor,
+      groundLevel: plan.groundLevel,
       hasElevator: plan.hasElevator === "미정" ? null : plan.hasElevator === "있음",
       // 먹거리는 자사 브랜드라 고정이다 — 입력칸이 없다(quickEvalDefaults.OWN_FOOD_BRAND).
       ownFoodBrand: OWN_FOOD_BRAND,
@@ -389,12 +391,13 @@ export default function QuickEvalPage() {
               ))}
             </select>
           </label>
-          <label className="col-span-2 block text-sm sm:w-[72px]">
+          <label className="col-span-2 block text-sm sm:w-[96px]">
             <span className="text-[var(--sl-ink-soft)]">층</span>
             <input
               className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
               inputMode="numeric"
               value={plan.floor}
+              placeholder={`${QUICK_EVAL_PLAN_DEFAULTS.floor} (기본값)`}
               onChange={(e) => setPlan((p) => ({ ...p, floor: e.target.value }))}
               onKeyDown={(e) => {
                 if (e.key === "Enter") run();

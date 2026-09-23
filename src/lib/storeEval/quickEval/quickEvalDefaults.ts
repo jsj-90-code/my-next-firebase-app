@@ -27,7 +27,8 @@ export const OWN_FOOD_BRAND: FoodBrand = "쉐프앤클릭";
  * 100대로 적용되게해주고, 기본요금은 1200원으로"). 입력칸에 옅은 글씨로 "(기본값)"과 함께 보인다.
  * ⚠️ 화면·AI 평가문은 이 상수를 읽어 그린다 — 숫자를 다른 곳에 글자로 박지 마라.
  */
-export const QUICK_EVAL_PLAN_DEFAULTS = { expectedPcCount: 100, hourlyRate: 1200 } as const;
+// 2026-09-23 추가 — 층수도 같은 방식으로 비우면 2층(사용자 지시: "층수도 2층 기본값으로").
+export const QUICK_EVAL_PLAN_DEFAULTS = { expectedPcCount: 100, hourlyRate: 1200, floor: 2 } as const;
 
 /**
  * ⭐ 입점 가능여부 기준 — 월 예상매출(V62)이 이 값을 **넘으면** "입점 가능" (사용자 지시
@@ -204,7 +205,8 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       `가시성은 결과를 크게 움직인다(1점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.low)} ~ ` +
       `5점 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.visibilityEffect.high)}). ` +
       "⚠️ 엘리베이터는 **'있음'이 기본값**이다(2026-09-23 사용자 지시 — 후보 건물은 대개 있다). " +
-      "없는 건물이면 직접 '없음'으로 바꿔야 한다. '미정'을 고르면 AI가 '모름'으로 보수적으로 매긴다",
+      "없는 건물이면 직접 '없음'으로 바꿔야 한다. '미정'을 고르면 AI가 '모름'으로 보수적으로 매긴다. " +
+      `층수는 비우면 ${QUICK_EVAL_PLAN_DEFAULTS.floor}층(기본값)으로 넘어간다`,
     needsFieldCheck: false,
   },
   {
