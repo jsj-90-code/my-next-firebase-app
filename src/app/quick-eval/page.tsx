@@ -53,7 +53,6 @@ import {
   QUICK_EVAL_ENTRY_THRESHOLD_WON,
   QUICK_EVAL_PLAN_DEFAULTS,
   QUICK_EVAL_RADII,
-  QUICK_EVAL_USAGE_LIMIT,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
 import {
   applyQuickEvalQscFloor,
@@ -743,51 +742,18 @@ export default function QuickEvalPage() {
           이 숫자를 얼마나 믿나 · 무엇을 기본값으로 채웠나
         </summary>
 
-        {/* ⚠️ 2026-09-23 사용자 지시 — L0~L3 조사단계 사다리를 화면에서 **뺐다**.
-            ("L0 L1 L2 L3 이거 구분 사용자에게 알려줄필요있나? 현 산식에 대한 정보만
-            주면될것같은데" · "주소만넣으면평균오차가 어쩌구 (…) 필요없는멘트인듯")
-            그 표는 **검증 배선**(자사는 각 매장 실측)으로 잰 다른 조건이라 이 화면의 성적이
-            아니었고, 하필 L3(13.40%)가 실제 성적보다 좋아 보여 화면이 도구를 과대평가했다.
-            측정 자체는 `ADDRESS_ONLY_ACCURACY`에 그대로 남아 있다 — 화면에서만 뺐다
-            (L1>L2 역전이 "반만 채우지 마라"의 근거라 상수를 버리면 안 된다).
-            ⛔ 화면에 다시 붙이지 마라. 여기에는 **이 도구를 되짚어 잰 값**만 적는다. */}
-        <ul className="mt-3 space-y-1 text-xs text-[var(--sl-ink-soft)]">
-          <li>
-            {QUICK_EVAL_BACKTEST.measuredAt} 기준, 기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳을
-            후보지인 척(자기 자신은 학습에서 빼고) 이 화면과 같은 배선으로(AI 입지평가 포함) 돌려 실제 매출과 견줬습니다
-            {QUICK_EVAL_BACKTEST.sampleCount < QUICK_EVAL_BACKTEST.sampleTotal
-              ? ` — 전체 ${QUICK_EVAL_BACKTEST.sampleTotal}곳 중 ${QUICK_EVAL_BACKTEST.sampleTotal - QUICK_EVAL_BACKTEST.sampleCount}곳은 아직 못 쟀습니다`
-              : ""}
-            (<code className="break-all text-[11px]">{QUICK_EVAL_BACKTEST.testFile}</code>).
-          </li>
-          <li>
-            평균오차 <strong>{formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}</strong> · ±20% 안{" "}
-            <strong>{formatPercent(QUICK_EVAL_BACKTEST.within20, 1)}</strong> · 실제보다{" "}
-            <strong>
-              {Math.abs((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤{" "}
-              {QUICK_EVAL_BACKTEST.medianRatio >= 1 ? "높게" : "낮게"}
-            </strong>{" "}
-            나옵니다(실제보다 높게 나온 곳 {QUICK_EVAL_BACKTEST.overCount}/{QUICK_EVAL_BACKTEST.sampleCount}곳).
-          </li>
-          <li>
-            {/* 2026-09-23 — 되짚기가 실제 후보지를 대표하지 못한다는 걸 숨기지 않는다(인계문 1절). */}
-            ⚠️ 이 되짚기는 기존 가맹점이 사람이 조사한 경쟁점(중앙 {QUICK_EVAL_BACKTEST.rivalCountMedian}곳 · 최대{" "}
-            {QUICK_EVAL_BACKTEST.rivalCountMax}곳)으로 돌았습니다. 카카오 경쟁점이 그보다 많은 후보지에서의 오차는
-            아직 재지 못했습니다.
-          </li>
-          <li>
-            {/* ⛔ 2026-09-23 정정 — 여기 "금액 수준보다 순서가 이 도구의 쓸모"라고 적혀 있었다.
-                **틀렸다.** 사용자: *"이도구는 순서를 구분할려는게아니다. 후보지 나열해서 이거보다
-                저게높으니까 저걸로하자 이개념이 없어. 그냥 점포개인별 평가할뿐이야."*
-                => 개별 후보지를 그 금액 하나로 판단한다. 그러면 **절대 금액 정확도와 배율이
-                제일 중요한 지표**다. 순서 논거로 배율 문제를 덮지 마라. */}
-            체계적으로 실제보다 높게 나오는 정도(배율)를 뺀 뒤에도{" "}
-            {formatPercent(QUICK_EVAL_BACKTEST.leveledMape, 2)}의 오차가 남습니다(정밀 평가는{" "}
-            {formatPercent(QUICK_EVAL_BACKTEST.preciseLeveledMape, 2)}).
-          </li>
-          {/* 상수는 AI 프롬프트와 같이 쓰느라 마크다운 굵게(**)가 들어 있다 — 화면에선 떼고 그린다. */}
-          <li>⚠️ {QUICK_EVAL_USAGE_LIMIT.split("**").join("")}</li>
-        </ul>
+        {/* ⛔ 2026-09-23 밤 사용자 지시 — 성적 한 줄만 남긴다("쓸대없는 얘기빼셈"). 측정 방법 설명·경쟁점 범위
+            경고·수준보정 오차·결재 금지 문구를 화면에서 뺐다. 값과 근거는 quickEvalDefaults.QUICK_EVAL_BACKTEST
+            주석에, AI 평가문에는 그대로 넘어간다. 다시 붙이지 마라. */}
+        <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
+          평균오차 <strong>{formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}</strong> · ±20% 안{" "}
+          <strong>{formatPercent(QUICK_EVAL_BACKTEST.within20, 1)}</strong> · 실제보다{" "}
+          <strong>
+            {Math.abs((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤{" "}
+            {QUICK_EVAL_BACKTEST.medianRatio >= 1 ? "높게" : "낮게"}
+          </strong>{" "}
+          나옵니다(기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳 기준).
+        </p>
 
         <h3 className="mt-4 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">자동 / 기본값 경계</h3>
         <ul className="mt-2 space-y-2 text-sm">
