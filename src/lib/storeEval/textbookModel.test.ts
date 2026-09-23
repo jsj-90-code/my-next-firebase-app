@@ -27,7 +27,7 @@ function input(over: Partial<TextbookInput>): TextbookInput {
     ownQualityParts: null, rivals: null, location: null,
     pop500m: 5000, pop1km: 20000,
     residentAges: { age0s: 2000, age10s: 2000, age20s: 4000, age30s: 4000, age40s: 3000, age50s: 3000, age60plus: 2000 },
-    residentAgesByRadius: null,
+    residentAgesByRadius: null, ringBlockedDirections: null,
     residentMaleRatio: 0.5, floatingMaleRatioByRadius: {}, floatingByRadius: {}, floatingAgesByRadius: {},
     ...over,
   };

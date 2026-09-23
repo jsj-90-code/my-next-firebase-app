@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- 항아리상권 판정용 지도 한 장 — 매장 중심, 1km·2km 원을 그려 "고리" 구간을 눈에 보이게 한다.
+     쿼리: lat, lng, level(카카오 확대 단계), label. APPKEY는 shotMaps.mjs가 .env.local 값으로 치환한다.
+     준비되면 window.MAP_STATE = "ready" (타일 로드 완료 뒤 1초). -->
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; padding: 0; background: #fff; }
+  #map { width: 1000px; height: 1000px; }
+  #label { position: absolute; left: 8px; top: 8px; background: rgba(255,255,255,.92); padding: 4px 8px;
+           font: 14px/1.4 sans-serif; border: 1px solid #333; z-index: 10; }
+  #north { position: absolute; right: 12px; top: 8px; background: rgba(255,255,255,.92); padding: 2px 8px;
+           font: bold 14px sans-serif; border: 1px solid #333; z-index: 10; }
+</style>
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=APPKEY&autoload=false"></script>
+</head>
+<body>
+<div id="label"></div>
+<div id="north">▲ 북</div>
+<div id="map"></div>
+<script>
+window.MAP_STATE = "init";
+const q = new URLSearchParams(location.search);
+const lat = Number(q.get("lat")), lng = Number(q.get("lng"));
+const level = Number(q.get("level") || 7);
+document.getElementById("label").textContent = q.get("label") || "";
+kakao.maps.load(function () {
+  const center = new kakao.maps.LatLng(lat, lng);
+  const map = new kakao.maps.Map(document.getElementById("map"), { center, level, draggable: false, scrollwheel: false });
+  new kakao.maps.Marker({ position: center, map });
+  // 1km(안쪽, 진하게) · 2km(바깥, 흐리게). 고리 = 두 원 사이.
+  new kakao.maps.Circle({ center, radius: 1000, strokeWeight: 3, strokeColor: "#d00", strokeOpacity: 0.9, fillOpacity: 0, map });
+  new kakao.maps.Circle({ center, radius: 2000, strokeWeight: 3, strokeColor: "#00c", strokeOpacity: 0.9, strokeStyle: "dashed", fillOpacity: 0, map });
+  kakao.maps.event.addListener(map, "tilesloaded", function () {
+    setTimeout(function () { window.MAP_STATE = "ready"; }, 1000);
+  });
+  setTimeout(function () { if (window.MAP_STATE !== "ready") window.MAP_STATE = "ready"; }, 12000);
+});
+</script>
+</body>
+</html>

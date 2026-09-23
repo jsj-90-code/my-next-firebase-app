@@ -54,7 +54,7 @@ async function dumpCollection(name) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, settingsDoc, accuracyDoc] =
+const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, labTradeAreaJudgments, settingsDoc, accuracyDoc] =
   await Promise.all([
     dumpCollection("storeEvalCandidates"),
     dumpCollection("storeEvalResults"),
@@ -70,6 +70,8 @@ const [candidates, results, existingStores, competitors, locationEvaluations, sa
     // 1km 밖 고리 인구(실험실 전용, 2026-09-23). 원본 SGIS 파일은 gitignore 예외라 따라오지만,
     // 화면과 하네스가 **같은 자료**를 읽어야 성적이 갈라지지 않으므로 여기도 담는다.
     dumpCollection("storeEvalLabResidentRings"),
+    // 막힌 상권 AI 판정(2026-09-23). 하네스가 화면과 같은 자료를 읽게 여기도 담는다.
+    dumpCollection("storeEvalLabTradeAreaJudgments"),
     db.collection("storeEvalSettings").doc("current").get(),
     db.collection("storeEvalSystemStatus").doc("accuracy").get(),
   ]);
@@ -84,6 +86,7 @@ const snapshot = {
   sales,
   labQscScores,
   labResidentRings,
+  labTradeAreaJudgments,
   settings: settingsDoc.exists ? settingsDoc.data() : null,
   storedAccuracy: accuracyDoc.exists ? accuracyDoc.data() : null,
 };

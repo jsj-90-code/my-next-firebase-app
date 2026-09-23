@@ -92,6 +92,8 @@ const LAB_QSC = "storeEvalLabQscScores";
 // 1km 밖 고리 인구(SGIS 1.5km·2km·5km 누적 원, 연령 분해). 실험실 산식의 residentRingDecayM만 읽는다.
 // 채우는 건 scripts/writeLabResidentRingsToFirestore.mjs (2026-09-23).
 const LAB_RESIDENT_RINGS = "storeEvalLabResidentRings";
+// 막힌 상권 AI 판정(동·서·남·북 고리 구간 단절 예/아니오). scripts/tradeArea/judge.mjs → writeTradeAreaJudgmentsToFirestore.mjs (2026-09-23).
+const LAB_TRADE_AREA = "storeEvalLabTradeAreaJudgments";
 /**
  * **운영 V62가 읽는 QSC 컬렉션** (2026-09-19 신설).
  *
@@ -509,6 +511,20 @@ export async function listLabQscScores(): Promise<Map<string, number>> {
 export async function listLabResidentRings(): Promise<Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>>> {
   const snap = await getDocs(collection(requireDb(), LAB_RESIDENT_RINGS));
   return residentRingsByCodeFromDocs(snap.docs.map((d) => d.data() as LabResidentRingsDoc));
+}
+
+/**
+ * 코드(매장·후보지) -> 막힌 방향 수(0~4). `buildLabRows`/`buildLabCandidateRows`의 `ringBlockedByCode`.
+ * 판정이 없는 매장은 빠진다(null로 채우지 않는다 — 산식이 "판정 없음 = 안 깎음"으로 다룬다).
+ */
+export async function listLabTradeAreaJudgments(): Promise<Map<string, number>> {
+  const snap = await getDocs(collection(requireDb(), LAB_TRADE_AREA));
+  const out = new Map<string, number>();
+  snap.forEach((d) => {
+    const v = d.data() as { code?: string; blockedCount?: number | null };
+    if (v.code && typeof v.blockedCount === "number") out.set(String(v.code), v.blockedCount);
+  });
+  return out;
 }
 
 /**

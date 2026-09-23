@@ -177,6 +177,15 @@ export type TextbookParams = {
    * 구미산동 +21·전대후문 −18은 고리 문제가 아니라 그 매장 사정일 가능성 — 현장에 물을 것.
    */
   residentRingShare: "core" | "gravity";
+  /**
+   * **막힌 상권 보정을 켤지** (2026-09-23 신설, 기본 꺼짐). 켜면 고리 인구에 `(1 − 막힌 방향 수 ÷ 4)`를 곱한다.
+   *
+   * 사용자(2026-09-23): *"구미산동은 항아리상권으로 알고 있어서 외부 유입 기대하기 어렵고 내부 수요로 상권 내 PC방이
+   * 굴러가는 건데."* 하천·철도·고속도로·산으로 막힌 방향의 고리(1~2km) 주민은 안 온다. 그 방향 수는 지도 한 장을
+   * AI가 **예/아니오 사실**로 판정한다(scripts/tradeArea, 로드뷰 판정과 같은 원칙 — 점수 아님, 사람 표본 대조).
+   * 사실 개수 ÷ 4라 맞춘 계수가 없다. 입력은 `TextbookInput.ringBlockedDirections`(0~4, 없으면 null → 안 깎음).
+   */
+  useRingEnclosure: boolean;
   ageWeights: AgeUsageWeights;
   /** 이용자 1인당 월 PC방 이용시간. 총수요를 시간 단위로 바꾸는 계수. */
   hoursPerUserPerMonth: number;
@@ -863,6 +872,8 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   //    1~2km 사람은 세면서 그 곁 PC방은 안 센 비대칭. gravity(가까운 쪽으로 간다, 기하)로 SD 6.7·최악 사라짐·
   //    짝 r 0.55→0.53 유지. 치르는 값: 자사 r 0.337→0.187(동네 간 순서, n=37에서 1SE 안팎). 타입 쪽 주석.
   residentRingShare: "gravity",
+  // 막힌 상권 보정 — 꺼짐. AI 판정(scripts/tradeArea)을 사람이 대조한 뒤 재고 표(`_bundleCandidate` (8))로 정한다.
+  useRingEnclosure: false,
   // 연령가중 자체는 남녀 이용률을 지역 성비로 섞어 그때그때 만든다(blendUsageByGender).
   // 여기 값은 성비를 모를 때(남녀 1:1)의 기본값이다.
   ageWeights: blendUsageByGender(0.5),
@@ -1119,6 +1130,12 @@ export type TextbookInput = {
    */
   residentAgesByRadius: Partial<Record<ResidentRingRadius, ResidentAges | null>> | null;
   /**
+   * **막힌 방향 수**(0~4) — 동·서·남·북 중 고리(1~2km) 구간이 하천·철도·고속도로·산으로 끊긴 방향의 개수.
+   * AI 지도 판정(scripts/tradeArea/judge.mjs → storeEvalLabTradeAreaJudgments). null이면 판정 없음 → 안 깎는다.
+   * `useRingEnclosure`가 켜졌을 때만 쓴다. 2026-09-23 신설.
+   */
+  ringBlockedDirections: number | null;
+  /**
    * 주거인구의 남성비율(0~1). 연령별 이용률을 성비로 섞는 데 쓴다(blendUsageByGender).
    * 없으면 남녀 1:1로 본다.
    */
@@ -1264,7 +1281,10 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
           age40s: Math.max(0, outer.age40s - prev.age40s), age50s: Math.max(0, outer.age50s - prev.age50s),
           age60plus: Math.max(0, outer.age60plus - prev.age60plus),
         };
-        const bandUsers = residentRingWeight(band.midM, p.residentRingDecayM) * usersOf(ring);
+        // 막힌 상권 보정 — 막힌 방향의 고리 주민은 안 온다(타입 쪽 `useRingEnclosure`). 판정이 없으면 1배.
+        const openFrac = p.useRingEnclosure && input.ringBlockedDirections != null
+          ? Math.max(0, 1 - Math.min(4, Math.max(0, input.ringBlockedDirections)) / 4) : 1;
+        const bandUsers = residentRingWeight(band.midM, p.residentRingDecayM) * usersOf(ring) * openFrac;
         acc += bandUsers;
         ringBands.push({ users: bandUsers, midM: band.midM });
         prev = outer; any = true;
