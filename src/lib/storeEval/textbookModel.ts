@@ -1020,10 +1020,16 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   //      산업단지 1.0 → **1.40**  자사 2곳 −10.1→−0.9 · 경쟁점 1곳 −17.9→−13.2(한 곳이라 못 맞춤). 1차 측정 1.39와 일치
   //      군부대  2.25 → **2.00**  자사 2곳 +1.4→−2.6 · 경쟁점 2곳 +7.5→+4.9 (|합| 최소)
   //    ⚠️ 산업단지·군부대는 표본 2~3곳이라 **값이 아니라 방향**이다. 표본이 늘면 다시 잰다. 기타·관광유흥은 그대로 1.0.
-  // ⛔ **2026-09-24 되돌림 — 군부대 2.25만, 나머지 1.0.** 위 배수는 고리 λ800 배선에서 고른 값이라 고리를 끄면 근거가
-  //    같이 사라진다(호구포역 상한 55%의 절반은 산업단지 1.4였다). 옛 배선에 배수만 켜면 자사 MAE 5.84→5.22%p로 좋아
-  //    보이지만 2SE(1.4) 안이고 바깥 표본 근거가 없다(`_bundleCandidate` (0) 참고 줄). 다시 켤 땐 옛 배선에서 다시 잰다.
-  specialDemandMultipliers: { "군부대": 2.25, "대학가": 1.0, "산업단지": 1.0, "기타": 1.0, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
+  // ⛔ 2026-09-24 낮 — 고리 되돌림과 같이 군부대 2.25만 남기고 껐다(위 값은 고리 λ800 배선에서 고른 것이라 근거가 같이 사라짐).
+  // ✅ **2026-09-24 오후 — 옛 배선(θ3·존 0.238·λ0)에서 다시 재서 켰다.** 사용자: *"특수수요 배수값은 평균에 제일 유리한 값
+  //    넣어주면 될 것 같은데? 대학/군인/산업."* 기준: 그 유형 **자사 편향이 0에 가장 가까운 값**(`_bundleCandidate` (7b)).
+  //      대학가   1.30  자사 5곳 −7.9 → +0.2%p   (경쟁점 5곳 1:1 −11.7 → −8.1 — 다른 유형 경쟁점도 −10 안팎이라 θ 문제, 배수 자리 아님)
+  //      산업단지 1.40  자사 2곳 −10.2 → −1.0%p  (1차 측정 09-16 1.39와 일치)
+  //      군부대   2.00  자사 2곳 +3.1(2.25) → −1.1%p
+  //    셋을 같이: 자사 37곳 MAE 5.84 → **5.22%p** · 편향 −1.4 → −0.1. 관광·유흥은 지시에 없어 1.0(2곳 −9.0%p, 1.3이면 −2.0).
+  //    ⚠️ 표본 2~5곳이라 값이 아니라 방향이다. 대학가는 매장별로 갈린다(전대후문 −8·청주대 −6 vs 부경대 +10·전대상대 +5) —
+  //    하나의 배수로 5곳을 ±3%p에 못 넣는다. 다음 갈래: "대학가" 꼬리표 대신 대학 규모×거리.
+  specialDemandMultipliers: { "군부대": 2.0, "대학가": 1.3, "산업단지": 1.4, "기타": 1.0, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
   // ✅ **2026-09-21 채택 — 지수 눈금 보정을 켠다** (자세한 근거는 타입 쪽 주석).
   //    그날 저녁 b를 0.327 → **0.45**로 올렸다(변별력. 타입 쪽 주석의 표를 볼 것).
   //
@@ -1717,6 +1723,19 @@ export type TextbookScore = {
   utilizationMape: number | null;
   utilizationSampleCount: number;
   /**
+   * 가동률 **절대 오차(%p)** 성적 — 판정 기준은 이것이다(2026-09-21부터 가동률 우선).
+   * 값은 비율(0.03 = 3%p)이다. 화면에서 x100 해서 %p로 적는다.
+   *   utilizationMaePoints      평균 |예상 − 실측|
+   *   utilizationMaxAePoints    최악 매장
+   *   utilizationWithinTarget   |예상 − 실측| ≤ UTILIZATION_TARGET_MAE_POINTS 인 매장 수
+   *   utilizationBaselineMaePoints  '전부 평균' 바닥 — 실측 평균 하나로 전부 찍었을 때의 MAE.
+   *                                 산식이 이걸 못 이기면 아무것도 안 한 것과 같다.
+   */
+  utilizationMaePoints: number | null;
+  utilizationMaxAePoints: number | null;
+  utilizationWithinTarget: number;
+  utilizationBaselineMaePoints: number | null;
+  /**
    * **필요 점유율** 요약 — 이 매장이 실제로 먹은 몫. 수요식 2차 검증용이다.
    * 필요 점유율 = 실측가동률 ÷ (경쟁 없다고 볼 때의 예측 가동률)
    * 수요식이 맞다면 0~1 안에 들어야 한다. 1을 넘으면 그 동네 수요를 과소평가한 것이다.
@@ -1737,6 +1756,24 @@ export type TextbookScore = {
 };
 
 /** 38곳에 대고 점수를 낸다. 배율(hoursPerUserPerMonth)은 여기서 자동으로 맞춘다. */
+/**
+ * **가동률 목표 오차 — 평균 3%p** (2026-09-23 사용자 확정: "한 3프로 잡아야겠네").
+ *
+ * ── 왜 3인가 ──────────────────────────────────────────────
+ * '전부 평균'(실측 평균 가동률 하나로 전부 찍기) 바닥이 이미 MAE 4.24%p다(2026-09-23,
+ * 실측 26곳 · 실험실 40곳 4.26%p). 5%p를 목표로 두면 산식 없이도 26곳 중 20곳이 통과해서
+ * "산식이 뭘 했다"는 증명이 못 된다. 4%p는 바닥과 같은 선이다. 3%p라야 바닥을 1.2%p
+ * 이상 벌리고, 그건 40곳 2SE(0.70%p)로도 가려낼 수 있는 크기다.
+ *
+ * ── 매출로 얼마인가 ────────────────────────────────────────
+ * 1%p = PC x 720h x 0.01 x 총단가. 평균 매장(99대 · 총단가 2,600원)에서 월 약 195만원,
+ * 매출 비율로 약 3.2%(1%p ÷ 평균 가동률 31%). 그래서 3%p ≈ 매출 ±10%로 기존 MAPE 목표와
+ * 한 자리다. 매장 크기에 비례해서 76대는 130만원, 168대는 255만원이다.
+ *
+ * 화면·문서는 이 상수를 읽어 그린다. 숫자를 글자로 박지 않는다(CLAUDE.md).
+ */
+export const UTILIZATION_TARGET_MAE_POINTS = 0.03;
+
 export function scoreTextbook(
   rows: { input: TextbookInput; actualRevenue: number }[],
   p: TextbookParams,
@@ -1752,6 +1789,9 @@ export function scoreTextbook(
   const out: TextbookScore["rows"] = [];
   const errs: number[] = [];
   const utilErrs: number[] = [];
+  // 가동률 절대 오차(%p 판정용)와 실측값 — 실측값은 '전부 평균' 바닥을 재는 데 쓴다.
+  const utilPointErrs: number[] = [];
+  const utilActuals: number[] = [];
   const reqShares: number[] = [];
   for (const r of rows) {
     const b = computeTextbook(r.input, full);
@@ -1764,6 +1804,10 @@ export function scoreTextbook(
       ? Math.abs(b.utilization - au) / au
       : null;
     if (utilErr != null) utilErrs.push(utilErr);
+    if (b.utilization != null && au != null && au > 0) {
+      utilPointErrs.push(Math.abs(b.utilization - au));
+      utilActuals.push(au);
+    }
     // **필요 점유율** — 경쟁을 아예 없다고 본 예측 가동률로 실측을 나눈 값이다.
     // 이게 "이 매장이 실제로 먹은 몫"이고, 수요식 2차 검증의 자다(2026-09-16 사용자 설계).
     // 상한을 무한대로 두는 이유: 상한에 걸리면 분모가 잘려 필요 점유율이 부풀려진다.
@@ -1795,6 +1839,16 @@ export function scoreTextbook(
     scaledOnUtilization,
     utilizationMape: utilErrs.length ? utilErrs.reduce((a, b) => a + b, 0) / utilErrs.length : null,
     utilizationSampleCount: utilErrs.length,
+    utilizationMaePoints: utilPointErrs.length ? utilPointErrs.reduce((a, b) => a + b, 0) / utilPointErrs.length : null,
+    utilizationMaxAePoints: utilPointErrs.length ? Math.max(...utilPointErrs) : null,
+    utilizationWithinTarget: utilPointErrs.filter((v) => v <= UTILIZATION_TARGET_MAE_POINTS).length,
+    // '전부 평균' 바닥: 실측 평균 하나로 전부 찍었을 때의 평균 |실측 − 평균|.
+    utilizationBaselineMaePoints: utilActuals.length
+      ? (() => {
+          const mean = utilActuals.reduce((a, b) => a + b, 0) / utilActuals.length;
+          return utilActuals.reduce((a, b) => a + Math.abs(b - mean), 0) / utilActuals.length;
+        })()
+      : null,
     requiredShare: reqSorted.length ? {
       count: reqSorted.length,
       median: reqSorted[Math.floor(reqSorted.length / 2)],

@@ -41,7 +41,7 @@ import {
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
-  DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, computeQualityScore,
+  DEFAULT_TEXTBOOK_PARAMS, PC_USE_RATE_MALE, PC_USE_RATE_FEMALE, UTILIZATION_TARGET_MAE_POINTS, computeQualityScore,
   computeTextbook, fittedParams, scoreTextbook, rivalDistanceWeight,
   type FloatingRadius, type ResidentRadius,
   type TextbookInput, type TextbookParams, type TextbookScore,
@@ -339,9 +339,52 @@ function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Load
     { label: "±20% 적중", lab: pct(score.within20), now: pct(current?.within20), better: score.within20 != null && current?.within20 != null && score.within20 > current.within20 },
     { label: "최악 오차", lab: pct(score.maxAbsErr), now: "-" },
   ];
+  // 가동률 줄 — 판정 기준은 이쪽이다(2026-09-21 사용자: "가동률로 판단하고 맞춘 후에 매출로").
+  // 목표·바닥은 글자로 박지 않고 상수와 채점 결과에서 읽는다(CLAUDE.md).
+  const targetP = UTILIZATION_TARGET_MAE_POINTS * 100;
+  const pp = (v: number | null) => (v == null ? "-" : `${(v * 100).toFixed(2)}%p`);
+  const utilMae = score.utilizationMaePoints;
+  const utilBase = score.utilizationBaselineMaePoints;
+  const utilCells: { label: string; value: string; note: string; tone: "good" | "bad" | "plain" }[] = [
+    {
+      label: `가동률 평균오차 (목표 ${targetP}%p)`,
+      value: pp(utilMae),
+      note: utilMae == null ? "실측 없음" : utilMae <= UTILIZATION_TARGET_MAE_POINTS ? "목표 달성" : `목표까지 ${((utilMae - UTILIZATION_TARGET_MAE_POINTS) * 100).toFixed(2)}%p`,
+      tone: utilMae == null ? "plain" : utilMae <= UTILIZATION_TARGET_MAE_POINTS ? "good" : "bad",
+    },
+    {
+      label: `±${targetP}%p 안 매장`,
+      value: `${score.utilizationWithinTarget} / ${score.utilizationSampleCount}곳`,
+      note: "실측 가동률이 있는 매장만",
+      tone: "plain",
+    },
+    { label: "가동률 최악", value: pp(score.utilizationMaxAePoints), note: "|예상 − 실측| 가장 큰 매장", tone: "plain" },
+    {
+      label: "'전부 평균' 바닥",
+      value: pp(utilBase),
+      note: utilMae == null || utilBase == null ? "실측 평균 하나로 전부 찍었을 때" : utilMae < utilBase ? `바닥보다 ${((utilBase - utilMae) * 100).toFixed(2)}%p 나음` : `바닥에 ${((utilMae - utilBase) * 100).toFixed(2)}%p 짐`,
+      tone: utilMae == null || utilBase == null ? "plain" : utilMae < utilBase ? "good" : "bad",
+    },
+  ];
+  const toneClass = (t: "good" | "bad" | "plain") =>
+    t === "good" ? "text-emerald-600 dark:text-emerald-400" : t === "bad" ? "text-red-600 dark:text-red-400" : "text-[#171310] dark:text-[#f2ede2]";
   return (
     <div className="mt-6">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {utilCells.map((c) => (
+          <div key={c.label} className="app-card rounded-xl p-4">
+            <p className="text-xs text-[var(--sl-ink-soft)]">{c.label}</p>
+            <p className={`mt-1 text-2xl font-bold ${toneClass(c.tone)}`}>{c.value}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--sl-ink-soft)]">{c.note}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+        판정은 <b>가동률</b>로 먼저 합니다. 목표 평균오차 {targetP}%p는 &lsquo;전부 평균&rsquo; 바닥({pp(utilBase)})을
+        확실히 이기는 선이고, 매출로는 약 ±10%입니다(가동률 1%p ≈ 매출 3.2%, 2026-09-23 실측 26곳 평균 가동률 31% 기준).
+        5%p는 산식 없이 평균만 찍어도 대부분 통과하는 크기라 목표가 못 됩니다. 아래 매출 줄은 그 다음입니다.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
         {cells.map((c) => (
           <div key={c.label} className="app-card rounded-xl p-4">
             <p className="text-xs text-[var(--sl-ink-soft)]">{c.label}</p>
@@ -380,8 +423,9 @@ function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Load
         {p.hoursPerUserFixed ? <> ← <b>가맹점 원장 실측</b>(안 맞춥니다)</> : <> ← 독점 실측가동률에서 역산</>} ·
         상품몫 {Math.round(score.fittedProductUnitPrice).toLocaleString()}원/PC·시간
         {p.productUnitPriceFixed ? <> ← <b>직접 측정으로 못 박은 값</b>(안 맞춥니다)</> : <> ← 실측으로 매번 맞춥니다</>}.
-        {score.utilizationMape != null && (
-          <> 가동률 자체의 오차는 {pct(score.utilizationMape)}입니다(실측 있는 {score.utilizationSampleCount}곳)
+        {score.utilizationMaePoints != null && (
+          <> 가동률 자체의 오차는 평균 {(score.utilizationMaePoints * 100).toFixed(2)}%p(비율로 {pct(score.utilizationMape)},
+          실측 있는 {score.utilizationSampleCount}곳)이고 목표는 {UTILIZATION_TARGET_MAE_POINTS * 100}%p입니다
           — 매출 오차와 따로 봐야 어느 층이 틀렸는지 갈립니다.</>
         )}
       </p>
