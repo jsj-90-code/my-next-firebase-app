@@ -557,6 +557,19 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
         + `${(s.ourMae * 100).toFixed(2).padStart(9)}%p${s.ourR.toFixed(3).padStart(7)} |${(s.rivBias * 100).toFixed(1).padStart(9)}%p |${s.gapPred.toFixed(2).padStart(7)}배`
         + (m === (P.specialDemandMultipliers["대학가"] ?? 1) ? "  ← 지금" : ""));
     }
+    // 2026-09-24 사용자: *"기본적으로 대학쪽이 가동률이 낮게 나오는데 배수 좀 늘려도 되는 거 아닌가"* — 매장별로 어디가 얼마나.
+    console.log(`\n  [특수수요 매장별 — 배수 1.0 vs 1.3 vs 1.5] 오차 = 예측 − 실측 %p. 경쟁점은 1:1(그 매장 예측 vs 그 매장 핑봇)`);
+    for (const type of ["대학가", "산업단지", "관광·유흥"]) {
+      const at = (m: number) => { const p2: TextbookParams = { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, [type]: m } }; return new Map(subjects.map((s) => [s.input.storeCode, computeTextbook(s.input, p2).utilization])); };
+      const u10 = at(1.0), u13 = at(1.3), u15 = at(1.5);
+      const grp = subjects.filter((s) => s.input.specialDemandType === type).sort((a, b) => Number(b.isOurs) - Number(a.isOurs));
+      if (!grp.length) continue;
+      console.log(`  ── ${type} ──`);
+      for (const s of grp) {
+        const e = (m: Map<string, number | null>) => { const u = m.get(s.input.storeCode); return u == null ? "    -" : `${((u - s.act) * 100).toFixed(1).padStart(6)}`; };
+        console.log(`     ${s.isOurs ? "자사" : "경쟁"} ${(s.input.storeName ?? "").slice(0, 12).padEnd(12)} 실측 ${(s.act * 100).toFixed(1).padStart(5)}%  1.0 ${e(u10)}  1.3 ${e(u13)}  1.5 ${e(u15)}`);
+      }
+    }
     console.log(`\n  ⭐ 읽는 법 — 대학가 **경쟁점** 편향도 음수면 그 동네 수요가 작은 것이라 배수가 정당하다. 경쟁점 편향이 0인데 자사만 음수면 배수가 아니다.`);
     console.log(`     n이 5곳(자사)·몇 곳(경쟁점)이라 값은 못 고른다 — 방향만 본다. 값은 사용자와 정한다.`);
 
