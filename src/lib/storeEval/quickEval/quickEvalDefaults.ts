@@ -29,7 +29,14 @@ export const OWN_FOOD_BRAND: FoodBrand = "쉐프앤클릭";
  * ⚠️ 화면·AI 평가문은 이 상수를 읽어 그린다 — 숫자를 다른 곳에 글자로 박지 마라.
  */
 // 2026-09-23 추가 — 층수도 같은 방식으로 비우면 2층(사용자 지시: "층수도 2층 기본값으로").
-export const QUICK_EVAL_PLAN_DEFAULTS = { expectedPcCount: 100, hourlyRate: 1200, floor: 2 } as const;
+// 2026-09-23 저녁 — 지상/지하·엘리베이터도 같은 방식(고르지 않으면 옅은 "(기본값)" 표시).
+export const QUICK_EVAL_PLAN_DEFAULTS = {
+  expectedPcCount: 100,
+  hourlyRate: 1200,
+  floor: 2,
+  groundLevel: "지상",
+  hasElevator: "있음",
+} as const;
 
 /**
  * ⭐ 입점 가능여부 기준 — 월 예상매출(V62)이 이 값을 **넘으면** "입점 가능" (사용자 지시

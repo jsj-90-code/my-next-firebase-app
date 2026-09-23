@@ -74,13 +74,18 @@ type CollectResponse = QuickEvalCollected & {
 
 const GROUND_LEVELS: GroundLevel[] = ["지상", "지하"];
 
+/** 기본값을 쓰는 칸의 옅은 글씨 — 입력칸의 placeholder와 같은 모양으로 맞춘다(2026-09-23). */
+const DEFAULT_TEXT = "text-[var(--sl-ink-soft)] opacity-70";
+
 type Plan = {
   address: string;
   expectedPcCount: string;
   hourlyRate: string;
   floor: string;
-  groundLevel: GroundLevel;
-  hasElevator: "있음" | "없음" | "미정";
+  /** "" = 안 고름 → QUICK_EVAL_PLAN_DEFAULTS.groundLevel */
+  groundLevel: GroundLevel | "";
+  /** "" = 안 고름 → QUICK_EVAL_PLAN_DEFAULTS.hasElevator */
+  hasElevator: "있음" | "없음" | "미정" | "";
 };
 
 const INITIAL_PLAN: Plan = {
@@ -88,12 +93,13 @@ const INITIAL_PLAN: Plan = {
   expectedPcCount: "",
   hourlyRate: "",
   floor: "",
-  groundLevel: "지상",
+  groundLevel: "",
   // 엘리베이터는 **"있음"이 기본**이다(사용자 지시 2026-09-23). "미정"은 고를 수는 있지만
   // 처음부터 놓지 않는다 — 후보 건물은 대개 엘리베이터가 있어서 매번 바꿔 주는 게 일이었다.
   // ⚠️ 이 값은 V62 금액 계산에 안 들어가고 **AI 접근가시성 판정에만** 사실로 넘어간다
   //    (quickEvalDefaults의 재고표 "자사 층·지상지하·엘리베이터" 항목).
-  hasElevator: "있음",
+  // 2026-09-23 저녁 — 다른 칸처럼 "안 고름"으로 시작하고 옅은 "(기본값)"을 보여준다. 값은 그대로 "있음".
+  hasElevator: "",
 };
 
 function toNumberOrNull(raw: string): number | null {
@@ -133,8 +139,11 @@ export default function QuickEvalPage() {
       // 층수도 비우면 기본값(2026-09-23 사용자 지시 — 대수·요금과 같은 방식). 기본값이 있으니
       // 지상/지하도 항상 넘긴다(예전엔 층을 비우면 지상/지하도 null로 뺐다).
       floor: toNumberOrNull(plan.floor) ?? QUICK_EVAL_PLAN_DEFAULTS.floor,
-      groundLevel: plan.groundLevel,
-      hasElevator: plan.hasElevator === "미정" ? null : plan.hasElevator === "있음",
+      groundLevel: plan.groundLevel || QUICK_EVAL_PLAN_DEFAULTS.groundLevel,
+      hasElevator: (() => {
+        const v = plan.hasElevator || QUICK_EVAL_PLAN_DEFAULTS.hasElevator;
+        return v === "미정" ? null : v === "있음";
+      })(),
       // 먹거리는 자사 브랜드라 고정이다 — 입력칸이 없다(quickEvalDefaults.OWN_FOOD_BRAND).
       ownFoodBrand: OWN_FOOD_BRAND,
       // 예상 오픈월도 안 받는다 — 비우면 운영 V62가 "평가한 달의 다음 달"로 잡는다.
@@ -377,13 +386,14 @@ export default function QuickEvalPage() {
               }}
             />
           </label>
-          <label className="col-span-2 block text-sm sm:w-[92px]">
+          <label className="col-span-3 block text-sm sm:w-[124px]">
             <span className="text-[var(--sl-ink-soft)]">지상/지하</span>
             <select
-              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base sm:text-sm"
+              className={`app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm ${plan.groundLevel ? "" : DEFAULT_TEXT}`}
               value={plan.groundLevel}
-              onChange={(e) => setPlan((p) => ({ ...p, groundLevel: e.target.value as GroundLevel }))}
+              onChange={(e) => setPlan((p) => ({ ...p, groundLevel: e.target.value as GroundLevel | "" }))}
             >
+              <option value="">{QUICK_EVAL_PLAN_DEFAULTS.groundLevel} (기본값)</option>
               {GROUND_LEVELS.map((g) => (
                 <option key={g} value={g}>
                   {g}
@@ -391,7 +401,7 @@ export default function QuickEvalPage() {
               ))}
             </select>
           </label>
-          <label className="col-span-2 block text-sm sm:w-[96px]">
+          <label className="col-span-3 block text-sm sm:w-[96px]">
             <span className="text-[var(--sl-ink-soft)]">층</span>
             <input
               className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base tabular-nums sm:text-sm"
@@ -404,19 +414,20 @@ export default function QuickEvalPage() {
               }}
             />
           </label>
-          <label className="col-span-2 block text-sm sm:w-[96px]">
+          <label className="col-span-3 block text-sm sm:w-[124px]">
             <span className="text-[var(--sl-ink-soft)]">엘리베이터</span>
             <select
-              className="app-input mt-1 w-full placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70 rounded-lg px-3 py-2 text-base sm:text-sm"
+              className={`app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm ${plan.hasElevator ? "" : DEFAULT_TEXT}`}
               value={plan.hasElevator}
               onChange={(e) => setPlan((p) => ({ ...p, hasElevator: e.target.value as Plan["hasElevator"] }))}
             >
+              <option value="">{QUICK_EVAL_PLAN_DEFAULTS.hasElevator} (기본값)</option>
               <option value="미정">미정</option>
               <option value="있음">있음</option>
               <option value="없음">없음</option>
             </select>
           </label>
-          <button type="button" className="app-btn-primary col-span-6 rounded-xl px-5 py-2.5 text-sm sm:py-2" disabled={running} onClick={run}>
+          <button type="button" className="app-btn-primary col-span-3 rounded-xl px-5 py-2.5 text-sm sm:py-2" disabled={running} onClick={run}>
             {running ? "조회 중… (30초쯤)" : "조회"}
           </button>
         </div>
@@ -474,7 +485,9 @@ export default function QuickEvalPage() {
               <Stat label="상권등급 / 성격" value={`${result.marketGrade ?? "-"} / ${result.marketCharacter ?? "-"}`} />
               <Stat label="경쟁IP" value={fmtInt(result.competitorIp)} />
               <Stat label="IP당수요" value={result.ipPerDemand == null ? "-" : result.ipPerDemand.toFixed(1)} />
-              <Stat label="예상 가동률" value={formatPercent(result.expectedUtilization, 1)} />
+              {/* 2026-09-23 저녁 — expectedUtilization은 경쟁점 핑봇 실측으로 내는 값이라 주소만으로는 늘 비었다
+                  (사용자: "예상가동률 공백으로두지말고"). 예상매출을 거꾸로 푼 가동률을 먼저 쓴다 — 금액과 항상 맞는다. */}
+              <Stat label="예상 가동률" value={formatPercent(result.v62ImpliedUtilization ?? result.expectedUtilization, 1)} />
               <Stat label="경쟁력격차" value={result.competitivenessGap == null ? "-" : result.competitivenessGap.toFixed(3)} />
               <Stat label="보수판단(85%)" value={formatManwonRough(result.conservativeSales)} />
               <Stat label="상한참고(115%)" value={formatManwonRough(result.upperSales)} />

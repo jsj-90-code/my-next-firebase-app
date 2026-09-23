@@ -127,7 +127,8 @@ export function buildQuickEvalReviewContext(input: {
   lines.push(`자사 경쟁력점수: ${result.ownCompetitivenessScore?.toFixed(2) ?? "자료 없음"}`
     + ` · 경쟁점 평균: ${result.competitorAvgCompetitiveness?.toFixed(2) ?? "자료 없음"}`
     + ` · 경쟁력격차: ${result.competitivenessGap?.toFixed(3) ?? "자료 없음"}`);
-  lines.push(`예상 가동률: ${pct(result.expectedUtilization)}`
+  // 2026-09-23 — 화면과 같은 값(예상매출을 거꾸로 푼 가동률). expectedUtilization은 주소만으로는 늘 비었다.
+  lines.push(`예상 가동률: ${pct(result.v62ImpliedUtilization ?? result.expectedUtilization)}`
     + `${result.capacityCapped ? " (가동률 상한에 걸려 매출이 깎였다 = 수요가 대수보다 많다는 신호)" : ""}`);
   lines.push(`입력완성도: ${result.completionStatus ?? "자료 없음"} · 최종판정: ${result.finalJudgement ?? "자료 없음"}`);
   lines.push(`학습모형: ${result.v61ModelLabel} (학습표본 ${result.v61TrainingSampleCount}곳)`);
