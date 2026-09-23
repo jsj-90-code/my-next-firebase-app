@@ -32,8 +32,9 @@ import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility"
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
 import {
-  DEFAULT_TEXTBOOK_PARAMS, computeQualityScore, computeTextbook, fittedParams, scoreTextbook,
+  DEFAULT_TEXTBOOK_PARAMS, computeQualityScore, computeTextbook, fittedParams, scoreTextbook, type TextbookParams,
 } from "./textbookModel";
+import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import type { CandidateInput, Competitor, LocationEvaluation } from "./types";
 
 const QSC_FILE = ".local-tools/qsc-scores.json";
@@ -83,15 +84,32 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     if (avg != null) qscByStoreCode.set(code, avg);
   }
 
-  const existingRows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode });
+  // ⭐ 2026-09-24 — 고리 인구·항아리 판정을 **화면과 같은 자료**(스냅샷 컬렉션)로 싣는다. 안 넘기면
+  //    λ800이 켜져 있어도 조용히 1km만 세서 "지금" 숫자가 뜻을 잃는다(handoff-20260927 규칙 6).
+  const ringDocs = (snap.labResidentRings ?? []) as LabResidentRingsDoc[];
+  const residentRingsByCode = ringDocs.length ? residentRingsByCodeFromDocs(ringDocs) : undefined;
+  const ringBlockedByCode = new Map<string, number>();
+  for (const j of (snap.labTradeAreaJudgments ?? []) as { code?: string; ringCutCount?: number | null; blockedCount?: number | null }[]) {
+    const c = j.ringCutCount ?? j.blockedCount;
+    if (j.code && typeof c === "number") ringBlockedByCode.set(String(j.code), c);
+  }
+  const existingRows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode, residentRingsByCode, ringBlockedByCode });
   const P = { ...DEFAULT_TEXTBOOK_PARAMS };
   const score = scoreTextbook(existingRows, P);
   const full = fittedParams(P, score);
   const franchiseManagement = franchiseManagementFromRows(existingRows);
 
   const candRows = buildLabCandidateRows({
-    candidates, compsByCode, locByCode, settings, franchiseManagement,
+    candidates, compsByCode, locByCode, settings, franchiseManagement, residentRingsByCode, ringBlockedByCode,
   });
+
+  // 옛 배선(2026-09-23 오전, 묶음 채택 전) — θ3 · 존구성 0.238 · 고리 꺼짐 · 배수 군부대 2.25만.
+  // `_bundleCandidate` (0) 검산이 이 칸에서 자사 MAE 5.84%p를 재현한다. 후보지 옛/새 대조에 쓴다.
+  const OLD: TextbookParams = {
+    ...full, qualityExponent: 3, residentRingDecayM: 0, residentRingShare: "core", useRingEnclosure: false,
+    qualityWeights: { ...full.qualityWeights, zone: 0.238 },
+    specialDemandMultipliers: { ...Object.fromEntries(Object.keys(full.specialDemandMultipliers).map((k) => [k, 1])), "군부대": 2.25 },
+  };
 
   it("(1) 후보지 입력 준비도 — 낱개로 무엇이 비었나", () => {
     if (!candidates.length) { console.log("\n[후보지] 스냅샷에 후보지가 없다"); return; }
@@ -486,5 +504,81 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
         }
       }
     }
+  });
+
+  it("(8) ⭐ 옛 배선(1km만) vs 새 기본값(고리) — 후보지 13곳 나란히 · 자사는 라벨 뺀 성적", () => {
+    // ── 사용자(2026-09-24): *"상권 늘리니까 매출 낮은 매장이 확 뛰어올라서 맛탱이가 가버렸어.
+    //    차라리 1키로/300인가 400인가 그거 하고 튀는 매장들 버리는 건 어떤데, 검증이 불가한 곳"*
+    //    → 되돌리기 전에 (a) 후보지가 어디서 갈라지는지 (b) 기전 확인 매장을 빼고도 옛이 나은지를 본다.
+    // ⚠️ 축척(8.20h)은 고정이라 매장을 빼도 **후보지 예측은 안 바뀐다.** 빼기는 성적표에만 작용한다.
+    //    그래서 "빼기"가 아니라 "라벨"로 둔다 — 걸러낸 자료로 검증하면 항상 통과한다(memory).
+    if (!candRows.length) return;
+    const pctp = (v: number | null | undefined) => (v == null ? "    -" : `${(v * 100).toFixed(1).padStart(5)}`);
+    type V62Result = { candidateCode?: string; v62Final?: number | null; v62ImpliedUtilization?: number | null; expectedUtilization?: number | null };
+    const v62 = new Map<string, V62Result>(((snap.results ?? []) as V62Result[]).filter((r) => r?.candidateCode).map((r) => [r.candidateCode as string, r]));
+
+    console.log(`\n[후보지 13곳 — 옛 배선(θ3·존.238·1km만) vs 새 기본값(θ${full.qualityExponent}·존 ${full.qualityWeights.zone}·λ${full.residentRingDecayM} ${full.residentRingShare}·항아리 ${full.useRingEnclosure ? "켬" : "끔"})]`);
+    console.log(`  가동률(%) · 고리배율 = 주거 이용자(고리 포함) ÷ 1km만 · 컷 = 항아리로 막힌 방향 수 · V62는 저장된 운영 결과(참고)`);
+    console.log(`  코드   이름            PC  요금  특수      경쟁  주거1km  고리배율 컷 | 옛가동률  새가동률   차이 | 옛매출  새매출  V62매출`);
+    const rowsOut: { code: string; name: string; old: number | null; neu: number | null; ratio: number | null; comps: number; pop: number | null }[] = [];
+    for (const r of candRows) {
+      const bo = computeTextbook(r.input, OLD), bn = computeTextbook(r.input, full);
+      const b1 = computeTextbook(r.input, { ...full, residentRingDecayM: 0 });
+      const ratio = bn.residentDemandUsers && b1.residentDemandUsers ? bn.residentDemandUsers / b1.residentDemandUsers : null;
+      const c = r.candidate, v = v62.get(r.input.storeCode);
+      const d = bo.utilization != null && bn.utilization != null ? bn.utilization - bo.utilization : null;
+      rowsOut.push({ code: r.input.storeCode, name: r.input.storeName ?? "", old: bo.utilization, neu: bn.utilization, ratio, comps: r.input.competitorCount ?? 0, pop: c.pop1km ?? null });
+      console.log(`  ${r.input.storeCode.padEnd(5)} ${(r.input.storeName ?? "").trim().slice(0, 8).padEnd(8)}` +
+        ` ${String(r.input.pcCount ?? "-").padStart(4)} ${String(c.hourlyRate ?? "-").padStart(5)} ${(r.input.specialDemandType ?? "없음").slice(0, 4).padEnd(5)}` +
+        ` ${String(r.input.competitorCount ?? 0).padStart(4)} ${String(c.pop1km ?? "-").padStart(8)}` +
+        ` ${ratio == null ? "    -" : `×${ratio.toFixed(2)}`.padStart(6)} ${String(r.input.ringBlockedDirections ?? "-").padStart(2)} |` +
+        ` ${pctp(bo.utilization)}%   ${pctp(bn.utilization)}%  ${d == null ? "    -" : `${d >= 0 ? "+" : ""}${(d * 100).toFixed(1)}`.padStart(6)} |` +
+        ` ${manwon(bo.monthlyRevenue)} ${manwon(bn.monthlyRevenue)} ${manwon(v?.v62Final)}` +
+        `${bn.capped ? " (상한)" : ""}${bn.missing.length ? `  못 채움: ${bn.missing.join(",")}` : ""}`);
+    }
+    const paired = rowsOut.filter((x) => x.old != null && x.neu != null) as { old: number; neu: number; ratio: number | null; comps: number; pop: number | null; name: string }[];
+    if (paired.length) {
+      const diffs = paired.map((x) => x.neu - x.old);
+      const m = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+      const up = paired.filter((x) => x.neu - x.old > 0.03), down = paired.filter((x) => x.neu - x.old < -0.03);
+      console.log(`\n  짝 ${paired.length}곳 — 새가 평균 ${m >= 0 ? "+" : ""}${(m * 100).toFixed(1)}%p · 3%p 이상 오른 곳 ${up.length}(${up.map((x) => x.name.trim()).join("·")}) · 내린 곳 ${down.length}(${down.map((x) => x.name.trim()).join("·")})`);
+      // 어디서 갈라지나 — 밀집(주거 1km 큼·경쟁 많음)인가, 유일 상권(경쟁 1~2)인가
+      const dense = paired.filter((x) => (x.pop ?? 0) >= 70000), sparse = paired.filter((x) => x.comps <= 2);
+      const avg = (g: typeof paired) => (g.length ? g.reduce((a, x) => a + (x.neu - x.old), 0) / g.length : NaN);
+      console.log(`  밀집(주거 1km ≥ 7만) ${dense.length}곳 평균 ${(avg(dense) * 100).toFixed(1)}%p · 경쟁 2곳 이하 ${sparse.length}곳 평균 ${(avg(sparse) * 100).toFixed(1)}%p`);
+    }
+
+    // ── 자사 37곳 — 라벨 뺀 성적 (옛 vs 새) ───────────────────────────────────
+    // 라벨: 기전이 현장에서 확인된 곳. 송도(오픈 후 경쟁점 500원 요금전쟁 — 점유율에 요금 항이 없다) ·
+    //       구미산동(운영 부진 — QSC 반영분 밖) · 동탄북광장(운영관리, LabRow.excludedReason) · 전대후문(대학가
+    //       배수 — 자사·경쟁점 같이 과소). 문경시청은 이유를 모르므로 라벨 **안** 단다.
+    const LABELED = ["송도", "구미산동", "동탄북광장", "전대후문"];
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const errs = (p: TextbookParams, rows: typeof own) => rows.map((r) => ({ r, e: (computeTextbook(r.input, p).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+    const summary = (label: string, xs: { e: number }[]) => {
+      const abs = xs.map((x) => Math.abs(x.e));
+      const mae = abs.reduce((a, b) => a + b, 0) / abs.length, bias = xs.reduce((a, x) => a + x.e, 0) / xs.length;
+      const sd = Math.sqrt(xs.reduce((a, x) => a + (x.e - bias) ** 2, 0) / xs.length);
+      console.log(`  ${label.padEnd(24)} n=${String(xs.length).padStart(2)}  MAE ${(mae * 100).toFixed(2)}%p  편향 ${bias >= 0 ? "+" : ""}${(bias * 100).toFixed(1)}%p  오차SD ${(sd * 100).toFixed(1)}  ±5%p ${abs.filter((a) => a <= 0.05).length}  ±10%p ${abs.filter((a) => a <= 0.10).length}`);
+      return mae;
+    };
+    const isLabeled = (r: typeof own[number]) => LABELED.some((k) => (r.input.storeName ?? "").includes(k));
+    const kept = own.filter((r) => !isLabeled(r)), dropped = own.filter(isLabeled);
+    console.log(`\n[자사 — 라벨 뺀 성적] 라벨(기전 확인) ${dropped.length}곳: ${dropped.map((r) => r.input.storeName).join(" · ")}`);
+    const oAll = summary("옛 배선   · 전체", errs(OLD, own)), nAll = summary("새 기본값 · 전체", errs(full, own));
+    const oKept = summary("옛 배선   · 라벨 뺌", errs(OLD, kept)), nKept = summary("새 기본값 · 라벨 뺌", errs(full, kept));
+    // 라벨 뺀 표본에서 짝지은 차이의 2SE — 옛/새 차이가 잡음 안인지
+    const oe = errs(OLD, kept), ne = errs(full, kept);
+    const dd = oe.map((x, i) => Math.abs(ne[i].e) - Math.abs(x.e));
+    const dm = dd.reduce((a, b) => a + b, 0) / dd.length, dsd = Math.sqrt(dd.reduce((a, b) => a + (b - dm) ** 2, 0) / dd.length);
+    console.log(`  라벨 뺀 표본에서 새−옛 MAE 차 ${((nKept - oKept) * 100).toFixed(2)}%p (2SE ${(2 * dsd / Math.sqrt(dd.length) * 100).toFixed(2)}) · 전체 ${((nAll - oAll) * 100).toFixed(2)}%p`);
+    console.log(`  라벨 매장만 (옛→새 오차):`);
+    for (const r of dropped) {
+      const eo = (computeTextbook(r.input, OLD).utilization ?? NaN) - (r.input.actualUtilization as number);
+      const en = (computeTextbook(r.input, full).utilization ?? NaN) - (r.input.actualUtilization as number);
+      console.log(`     ${(r.input.storeName ?? "").padEnd(10)} 실측 ${((r.input.actualUtilization as number) * 100).toFixed(1)}%  옛 ${eo >= 0 ? "+" : ""}${(eo * 100).toFixed(1)} → 새 ${en >= 0 ? "+" : ""}${(en * 100).toFixed(1)}`);
+    }
+    console.log(`  ⚠️ 여기 성적은 자사 잣대 하나다. 경쟁점 47곳 편향(옛 −11%p / 새 −2%p)·자사우위(옛 3.5배 / 새 1.65배, 실측 1.74)는 _bundleCandidate (0)에 있다.`);
+    expect(paired.length).toBeGreaterThan(0);
   });
 });
