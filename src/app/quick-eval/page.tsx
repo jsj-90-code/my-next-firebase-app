@@ -50,6 +50,7 @@ import {
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
   QUICK_EVAL_BACKTEST,
+  QUICK_EVAL_ENTRY_REVIEW_BAND,
   QUICK_EVAL_ENTRY_THRESHOLD_WON,
   QUICK_EVAL_PLAN_DEFAULTS,
   QUICK_EVAL_RADII,
@@ -809,17 +810,28 @@ function KeyVerdict({
   rateIsDefault: boolean;
   rivalCount: number;
 }) {
-  const possible = v62Final == null ? null : v62Final > QUICK_EVAL_ENTRY_THRESHOLD_WON;
-  // 100만원 단위로 반올림하면 기준선과 같아 보이는 경우 — 그때만 반올림 전 금액을 같이 보여준다.
-  const nearLine =
-    v62Final != null && Math.round(v62Final / 1_000_000) * 1_000_000 === QUICK_EVAL_ENTRY_THRESHOLD_WON;
+  // 2026-09-23 저녁 — 기준선 ±QUICK_EVAL_ENTRY_REVIEW_BAND 안은 "검토 필요"(사용자 승인).
+  //    도구 오차(±17% 안팎) 안의 차이로 가능/불가를 자르지 않으려는 것이다.
+  const lo = QUICK_EVAL_ENTRY_THRESHOLD_WON * (1 - QUICK_EVAL_ENTRY_REVIEW_BAND);
+  const hi = QUICK_EVAL_ENTRY_THRESHOLD_WON * (1 + QUICK_EVAL_ENTRY_REVIEW_BAND);
+  const verdict: "가능" | "검토" | "불가" | null =
+    v62Final == null ? null : v62Final >= hi ? "가능" : v62Final > lo ? "검토" : "불가";
   const tone =
-    possible == null
+    verdict == null
       ? "border-[var(--sl-hairline)]"
-      : possible
+      : verdict === "가능"
         ? "border-[var(--sl-ok)] bg-[var(--sl-ok-soft)]"
-        : "border-[var(--sl-danger)] bg-[var(--sl-danger-soft)]";
-  const toneText = possible == null ? "" : possible ? "text-[var(--sl-ok)]" : "text-[var(--sl-danger)]";
+        : verdict === "검토"
+          ? "border-[var(--sl-warn)] bg-[var(--sl-warn-soft)]"
+          : "border-[var(--sl-danger)] bg-[var(--sl-danger-soft)]";
+  const toneText =
+    verdict == null
+      ? ""
+      : verdict === "가능"
+        ? "text-[var(--sl-ok)]"
+        : verdict === "검토"
+          ? "text-[var(--sl-warn)]"
+          : "text-[var(--sl-danger)]";
   return (
     <section aria-label="핵심 결과" className="space-y-2">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -836,12 +848,12 @@ function KeyVerdict({
         <div className={`app-card rounded-2xl border-2 p-5 ${tone}`}>
           <p className="text-sm font-semibold text-[var(--sl-ink-soft)]">입점 가능여부</p>
           <p className={`mt-1 text-4xl font-bold ${toneText}`}>
-            {possible == null ? "판정 불가" : possible ? "입점 가능" : "입점 불가"}
+            {verdict == null ? "판정 불가" : verdict === "가능" ? "입점 가능" : verdict === "검토" ? "검토 필요" : "입점 불가"}
           </p>
           <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-            기준: 예상 월매출 {formatManwon(QUICK_EVAL_ENTRY_THRESHOLD_WON)} 초과
-            {nearLine && v62Final != null ? ` · 기준선 근처(반올림 전 ${formatManwon(v62Final)})` : ""}
-            {possible == null ? " · 예상매출을 계산하지 못했습니다" : ""}
+            기준 {formatManwon(QUICK_EVAL_ENTRY_THRESHOLD_WON)} · {formatManwonRough(lo)}~{formatManwonRough(hi)}는 검토 필요
+            {verdict === "검토" ? " — 계획 대수·요금과 현장 입지를 확인하세요" : ""}
+            {verdict == null ? " · 예상매출을 계산하지 못했습니다" : ""}
           </p>
         </div>
       </div>

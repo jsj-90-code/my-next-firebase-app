@@ -144,7 +144,12 @@ export const QUICK_EVAL_OWN_HARDWARE = OWN_HARDWARE_PLANNED_STANDARD;
  * ⚠️ 3사분위(150대)를 넣으면 18.98%로 더 좋아진다. **안 쓴다** — 근거가 없는 지점이고,
  *    "좋아질 때까지 올리기"는 이 저장소가 지수 눈금 보정에서 이미 겪은 실패다.
  */
-export const RIVAL_PC_COUNT_WHEN_UNSURVEYED = 129;
+// ⛔⛔ 2026-09-23 저녁 — **100대로 내렸다**(사용자 결정). 위 근거(합계라 평균 129)는 통계로는
+//     맞지만, 카카오 경쟁점에는 소형·노후 매장이 섞여 있어 조사된 경쟁점(=평균 129대 표본)보다
+//     작다고 봤다. 계기는 광명 범안로 1059(현장에서 6천 이상 기대 · 도구 4,030만원)였다.
+//     되짚기(기존 38곳, 품질 2.5점과 같이): MAPE 16.97 -> 18.68% · 배율 1.050 -> 1.058.
+//     ⚠️ 되짚기는 경쟁점 10곳 이하 상권 기준이다 — 경쟁점 많은 후보지 영향은 아직 모른다.
+export const RIVAL_PC_COUNT_WHEN_UNSURVEYED = 100;
 
 /**
  * ⭐⭐⭐ 미조사 경쟁점에 넣는 **실측 대표값** (2026-09-22 밤 3차, `_quickEvalBias.test.ts`).
@@ -177,9 +182,11 @@ export const RIVAL_TYPICAL_WHEN_UNSURVEYED = {
   firstClassZone: 0,
   regularCoupleSeatCount: 0,
   teamRoomTotalSeats: 0,
-  foodScore: 3,
-  interiorScore: 3,
-  managementScore: 3,
+  // ⛔ 2026-09-23 저녁 — 3 -> **2.5**로 내렸다(사용자 결정, 대수 100대와 같이). 경쟁점 종합점수가
+  //    광명 범안로 기준 2.45 -> 2.29, 되짚기 중앙 2.70 -> 2.54가 된다(상세조사 실측 중앙 2.45 근처).
+  foodScore: 2.5,
+  interiorScore: 2.5,
+  managementScore: 2.5,
   vgaBase: "RTX 4060",
   vgaTop: "RTX 3060 Ti",
   vgaTop2: "RTX 4060",

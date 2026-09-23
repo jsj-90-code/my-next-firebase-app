@@ -12,6 +12,7 @@
 //    한다(`DEFAULT_UNSURVEYED_PC_COUNT` 등 실제 상수를 import해서 쓴다).
 
 import { DEFAULT_UNSURVEYED_PC_COUNT } from "../calc";
+import { RIVAL_PC_COUNT_WHEN_UNSURVEYED, RIVAL_TYPICAL_WHEN_UNSURVEYED } from "./buildQuickCandidate";
 import type { FoodBrand } from "../types";
 
 /**
@@ -35,6 +36,13 @@ export const QUICK_EVAL_PLAN_DEFAULTS = { expectedPcCount: 100, hourlyRate: 1200
  * 2026-09-23: "5500만원 넘으면 가능한 기준임"). 화면 최상단 핵심 카드가 이 값을 읽는다.
  */
 export const QUICK_EVAL_ENTRY_THRESHOLD_WON = 55_000_000;
+
+/**
+ * ⭐ 기준선 ± 이 비율 안은 "검토 필요"로 띄운다 (사용자 승인 2026-09-23 — 광명 범안로 건).
+ * 도구 오차가 ±17% 안팎이라 기준선을 조금 밑돈 값을 "불가"로 자르면 오차 안의 차이로 판정하게 된다.
+ * 예: 5,500만원 ±10% = 4,950만 ~ 6,050만원.
+ */
+export const QUICK_EVAL_ENTRY_REVIEW_BAND = 0.1;
 
 export const QUICK_EVAL_RADII = { competitor: 500, floating: 500, resident1km: 1000, resident500: 500 } as const;
 
@@ -124,10 +132,11 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     label: "경쟁점 PC 대수",
     source: "기본값",
     basis:
-      `전부 미조사로 두고 운영 V62의 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대를 쓴다. ` +
-      "⛔ 2026-09-23에 실측 평균 129대로 올렸다가 **되돌렸다** — 되짚기로는 좋아졌는데(19.34%) " +
-      "실제 후보지에서는 예상매출이 45% 떨어졌다. 되짚기가 조사된 경쟁점(중앙 4곳)으로 도는 탓에 " +
-      "카카오 경쟁점(10~20곳) 구간을 대표하지 못했다. 다시 올리려면 그 되짚기부터 고쳐라. " +
+      // 2026-09-23 저녁 정정 — 여기 "90대로 되돌렸다"고 적혀 있었는데 실제 도구는 129대를 쓰고 있었다.
+      //    이제 상수를 읽는다.
+      `전부 미조사라 1곳당 ${RIVAL_PC_COUNT_WHEN_UNSURVEYED}대로 넣는다(운영 V62 장치 기본값 ${DEFAULT_UNSURVEYED_PC_COUNT}대가 아니다). ` +
+      "실측 경쟁점 평균은 129대지만, 카카오 목록엔 소형·노후 매장이 섞여 있다고 보고 낮춰 잡았다(2026-09-23). " +
+      "⚠️ 오차는 경쟁점 10곳 이하 상권에서만 재 봤다. " +
       "면적→대수 회귀는 소형 구간이 외삽이라(R²=0.679, 표본 61~243대) 아직 못 쓴다",
     needsFieldCheck: true,
   },
@@ -135,11 +144,9 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     label: "경쟁점 품질(사양·먹거리·인테리어·존구성)",
     source: "기본값",
     basis:
-      "전부 빈칸으로 들어간다. ⛔ 2026-09-23에 실측 대표값으로 채웠다가 **되돌렸다** — " +
-      "되짚기로는 크게 좋아졌는데(±20% 47→74%) 실제 후보지 예상매출이 45% 떨어졌다. " +
-      "되짚기가 조사된 경쟁점(중앙 4곳)으로 도는 탓에 카카오 경쟁점(10~20곳) 구간을 대표하지 못했다. " +
-      "⚠️ 빈칸은 동급이 아니라 경쟁점을 **약하게** 매긴다(점수 2.448 대비 1.921)는 측정은 유효하다 — " +
-      "다시 채우려면 카카오 경쟁점 수를 반영한 되짚기부터 만들어라. " +
+      `실측 대표 사양(${RIVAL_TYPICAL_WHEN_UNSURVEYED.cpu} · ${RIVAL_TYPICAL_WHEN_UNSURVEYED.vgaBase})에 ` +
+      `먹거리·인테리어·관리 ${RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore}점으로 채운다(2026-09-23 저녁 3 -> 2.5). ` +
+      "⚠️ 빈칸으로 두면 동급이 아니라 경쟁점을 **약하게** 매긴다(점수 2.448 대비 1.921) — 그래서 비우지 않는다. " +
       "⚠️ 대수만 채우고 품질을 비우면 오히려 더 틀린다(측정: 12.57% vs 10.82%) — 조사가 들어오면 둘을 같이 채워라",
     needsFieldCheck: true,
   },
@@ -274,8 +281,9 @@ export const ADDRESS_ONLY_ACCURACY = {
  *    봤고, 곱셈 보정과 수학적으로 같다는 것까지 확인했다 — `leveledMape` 참고). 그러니 화면에
  *    "높게 나오는 경향"을 계속 알려야 한다. 안 그러면 그 숫자를 그대로 믿는다.
  */
-// ⭐⭐ 2026-09-23 갱신 — **지금 배선 그대로** 다시 쟀다(커밋 57f87a3 배선: 자사 표준 기획값 ·
-// 학습 경쟁점 비움 · 후보지 경쟁점 129대+실측 대표품질). 테스트: "지금 배선 그대로".
+// ⭐⭐ 2026-09-23 갱신 — **지금 배선 그대로** 다시 쟀다(자사 표준 기획값 · 학습 경쟁점 비움 ·
+// 후보지 경쟁점 RIVAL_PC_COUNT_WHEN_UNSURVEYED대 + 대표품질). 테스트: "지금 배선 그대로".
+// 저녁에 경쟁점을 100대·항목 2.5점으로 내리고 다시 쟀다(before100Pc가 그전 값).
 // 그전 화면 값(27.79% · 21% 높게)은 **다른 조합**(후보지도 비움)에서 잰 것이었는데 그대로
 // 떠 있었다 — 인계문 0절에서 "인용하지 마라"고 적어 둔 바로 그 숫자다.
 // ⚠️ 이 되짚기는 기존점의 **조사 경쟁점**(중앙 rivalCountMedian곳 · 최대 rivalCountMax곳)으로
@@ -284,12 +292,14 @@ export const QUICK_EVAL_BACKTEST = {
   measuredAt: "2026-09-23",
   sampleCount: 38,
   testFile: "src/lib/storeEval/_quickEvalBias.test.ts",
-  /** 지금 배선(학습 비움 · 후보지 129대+대표품질 · 표준 사양) */
-  mape: 0.1697,
-  within20: 0.7105,
+  /** 지금 배선(학습 비움 · 후보지 100대+품질 2.5점 · 표준 사양) — 2026-09-23 저녁 */
+  mape: 0.1868,
+  within20: 0.7632,
   /** 예측 ÷ 실제매출의 중앙값. 1보다 크면 높게 나온다는 뜻 */
-  medianRatio: 1.05,
-  overCount: 21,
+  medianRatio: 1.058,
+  overCount: 25,
+  /** 같은 날 낮 — 129대 + 품질 3점일 때 */
+  before100Pc: { mape: 0.1697, within20: 0.7105, medianRatio: 1.05, overCount: 21, leveledMape: 0.1582 },
   /** 되짚기에 쓰인 기존점 조사 경쟁점 수 — 이 범위를 넘는 후보지는 잰 적이 없다 */
   rivalCountMedian: 4,
   rivalCountMax: 10,
@@ -309,7 +319,7 @@ export const QUICK_EVAL_BACKTEST = {
    * (17.04 -> 16.94%), **경쟁점을 채우는 건 내렸다**(-> 15.81%) — 버렸던 정보를 되살린
    * 것이라 성질이 다르다. 정밀 평가는 10.10%이고 그 격차는 경쟁점 실측 자료가 있어야 메워진다.
    */
-  leveledMape: 0.1582,
+  leveledMape: 0.1648,
   leveledMapeBefore: 0.1694,
   preciseLeveledMape: 0.101,
   /**
@@ -319,7 +329,10 @@ export const QUICK_EVAL_BACKTEST = {
   competitiveness: {
     precise: { own: 3.7, rival: 2.448, rivalSd: 0.329, gap: 1.455 },
     blankRivals: { own: 3.735, rival: 1.921, rivalSd: 0.123, gap: 1.904 },
+    /** 2026-09-22 129대·품질 3점 배선 */
     now: { own: 3.735, rival: 2.7, rivalSd: 0.123, gap: 1.374 },
+    /** 2026-09-23 저녁 100대·품질 2.5점 배선(되짚기 중앙값) */
+    after100Pc: { rival: 2.537, gap: 1.507 },
   },
 } as const;
 
