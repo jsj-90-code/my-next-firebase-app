@@ -25,7 +25,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import {
-  LAB_UPSIDE_STORE_CODES, buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
+  LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES, buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
   qscInWindowAverage, residentRadiusByCodeFromDocs, utilizationByStore, type QscRecord,
 } from "./labInput";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
@@ -1024,8 +1024,48 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
       const b1 = computeTextbook({ ...r.input, residentRadiusM: null }, base), b20 = withR(r.input, 2000), b15 = withR(r.input, 1500);
       console.log(`     ${r.input.storeCode} ${(r.input.storeName ?? "").padEnd(8)} 1km ${pct(b1.utilization)} (${manwon(b1.monthlyRevenue)}) → 1.5km ${b15 ? pct(b15.utilization) : "-"} → 2km ${b20 ? pct(b20.utilization) : "-"} (${b20 ? manwon(b20.monthlyRevenue) : "-"}) · 1~2km 경쟁 ${rivalsBetween(r.input, 1000, 2000).length}곳${adopted(r.input)}`);
     }
-    console.log(`\n  ⭐ 읽는 법 — 6곳 평균이 2km에서 줄고 터지는 곳이 없으면 "모양 → 반경" 규칙이 산다. 양주덕정만 살고 남이 터지면 양주덕정 개별 사실(옥정신도시)로 두고 사실 필드가 맞다.`);
+    console.log(`\n  (17)로 이어짐 — 창원상남 합 배수 검토`);
+    console.log(`  ⭐ 읽는 법 — 6곳 평균이 2km에서 줄고 터지는 곳이 없으면 "모양 → 반경" 규칙이 산다. 양주덕정만 살고 남이 터지면 양주덕정 개별 사실(옥정신도시)로 두고 사실 필드가 맞다.`);
     console.log(`     1~2km 경쟁 대수가 큰 매장이 2km에서 터지면, 반경을 넓힐 때 그 경쟁점도 같이 세야 한다는 뜻(지금 rivalDistanceDecay가 1km 밖 경쟁을 거의 안 센다).`);
     expect(own.length).toBeGreaterThan(30);
+  });
+
+  it("(17) ⭐⭐ 창원상남 — 관광유흥 위에 산업단지를 얹은 '합 배수'는 얼마가 되나 (사용자 2026-09-24 밤)", () => {
+    // 사용자: 창원상남은 대학/번화가유흥/산업이 다 섞여 있는 것 같다 → 대학가는 유동 20대 비중(10%, 대학가 18%)이 부정. 산업단지 쪽을 재 본다.
+    // 산식은 유형을 하나만 받는다. 그래서 여기서는 (a) 산업단지/높음 단독 (b) 곱 1.4×1.4 (c) 합 1+0.4+0.4 을 배수 표를 바꿔 흉내 낸다.
+    // 대조군: 울산삼산(울산도 산단 도시·같은 모양 유흥가)·신중동(산단 없음). 잣대: 실무 예상(방향만)과 "수요전부"(점유율 병목인지).
+    if (!candRows.length) return;
+    const base: TextbookParams = { ...full };
+    const targets = ["N010", "N005", "N001"];
+    const prac = (code: string) => LAB_CANDIDATE_PRACTICAL_EXPECTATION.get(code) ?? null;
+    const variants: { label: string; p: (t: string) => TextbookParams; type?: string }[] = [
+      { label: "지금(관광유흥 1.4)", p: () => base },
+      { label: "산업단지/높음 단독(1.4)", p: () => base, type: "산업단지" },
+      { label: "곱 1.4×1.4=1.96", p: () => ({ ...base, specialDemandMultipliers: { ...base.specialDemandMultipliers, "관광유흥": 1.96 } }) },
+      { label: "합 1+0.4+0.4=1.8", p: () => ({ ...base, specialDemandMultipliers: { ...base.specialDemandMultipliers, "관광유흥": 1.8 } }) },
+      { label: "참고: 관광유흥 2.0", p: () => ({ ...base, specialDemandMultipliers: { ...base.specialDemandMultipliers, "관광유흥": 2.0 } }) },
+    ];
+    console.log(`\n[창원상남 합 배수 — 후보지 3곳] 가동률 (매출) · 수요전부 · 실무 범위`);
+    console.log(`  변형                     ${targets.map((t) => (candRows.find((r) => r.input.storeCode === t)?.input.storeName ?? t).trim().padEnd(18)).join("")}`);
+    for (const v of variants) {
+      const cells = targets.map((t) => {
+        const r = candRows.find((x) => x.input.storeCode === t); if (!r) return "-".padEnd(18);
+        const input: TextbookInput = v.type ? { ...r.input, specialDemandType: v.type, specialDemandIntensity: "높음" } : r.input;
+        const b = computeTextbook(input, v.p(t));
+        const all = b.totalDemandHours && input.pcCount ? b.totalDemandHours / (input.pcCount * 720) : NaN;
+        return `${pct(b.utilization)} (${manwon(b.monthlyRevenue)}) 전부${pct(all, 0)}`.padEnd(18);
+      });
+      console.log(`  ${v.label.padEnd(24)}${cells.join("")}`);
+    }
+    console.log(`  실무 예상               ${targets.map((t) => { const e = prac(t); return (e ? `${manwon(e.low)}~${manwon(e.high)}` : "없음").padEnd(18); }).join("")}`);
+    console.log(`\n  [산업단지 매장 함의 배수 — 지금 산식(배수 1.0으로 끈 채) 실측÷예측] 참고: 창원상남에 얹을 근거가 되려면 '높음' 매장이 이 값을 가리켜야 한다`);
+    const noInd: TextbookParams = { ...base, specialDemandMultipliers: { ...base.specialDemandMultipliers, "산업단지": 1 } };
+    for (const r of existingRows.filter((x) => x.input.specialDemandType === "산업단지" && x.input.actualUtilization)) {
+      const b = computeTextbook(r.input, noInd);
+      console.log(`     ${(r.input.storeName ?? "").padEnd(10)} ${r.input.specialDemandIntensity ?? "-"}  실측 ${pct(r.input.actualUtilization as number)} · 배수 없이 ${pct(b.utilization)} → 함의 ${((r.input.actualUtilization as number) / (b.utilization ?? NaN)).toFixed(2)}배 · 경쟁 ${(r.input.rivals ?? []).filter((v) => v.ip > 0 && v.distanceM <= 500).length}곳(500m)`);
+    }
+    console.log(`  ⭐ 읽는 법 — 배수를 얹어도 "수요전부"가 이미 100%를 넘는 매장은 점유율 층이 병목이라 가동률이 배수만큼 못 오른다. 곱·합이 실무 범위에 닿아도`);
+    console.log(`     그건 실무(방향만)에 맞춘 것이지 산업단지 손님이 있다는 근거가 아니다 — 근거는 유동 성비·연령(산업단지 높음 정왕 남성 66% vs 창원상남 56%)과 현장 확인이다.`);
+    expect(candRows.length).toBeGreaterThan(0);
   });
 });
