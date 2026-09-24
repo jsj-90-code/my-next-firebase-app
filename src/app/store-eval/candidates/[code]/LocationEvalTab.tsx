@@ -383,7 +383,7 @@ export function LocationEvalTab({
             value={form.specialDemandIntensity}
             onChange={(v) => set("specialDemandIntensity", v)}
             options={SPECIAL_DEMAND_INTENSITY_OPTIONS}
-            hint="'높음'은 그 수요원이 주된 손님층일 때만. 실험실 산식은 대학가·산업단지·군부대 배수를 '높음'에만 곱합니다 — 보통 이하는 배수 없음. 확실하지 않으면 '보통'."
+            hint="'높음'은 그 수요원이 주된 손님층일 때만. 실험실 산식은 대학가·산업단지·군부대·관광유흥 배수를 '높음'에만 곱합니다 — 보통 이하는 배수 없음. 확실하지 않으면 '보통'."
           />
         </div>
       </section>

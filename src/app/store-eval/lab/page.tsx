@@ -731,7 +731,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
             <div className="font-semibold">{p.specialDemandMultipliers["대학가"] === 1
               ? "⛔ 2026-09-24 밤 — 대학가·산업단지·관광유흥 배수를 다시 껐습니다(사용자 결정). 군부대만 남깁니다"
-              : `✅ 2026-09-24 밤 — 강도 "높음"에만 곱하는 문(${(p.specialDemandHighOnly ?? []).join("·") || "없음"}) 아래에서 대학가 ×${p.specialDemandMultipliers["대학가"]} · 산업단지 ×${p.specialDemandMultipliers["산업단지"]} · 군부대 ×${p.specialDemandMultipliers["군부대"]}. 관광유흥은 1.0`}</div>
+              : `✅ 2026-09-24 밤 — 강도 "높음"에만 곱하는 문 아래에서 대학가 ×${p.specialDemandMultipliers["대학가"]} · 산업단지 ×${p.specialDemandMultipliers["산업단지"]} · 군부대 ×${p.specialDemandMultipliers["군부대"]} · 관광유흥 ×${p.specialDemandMultipliers["관광·유흥"]}`}</div>
             <div className="mt-1">
               지금 값: 대학가 <b>×{p.specialDemandMultipliers["대학가"]}</b> · 산업단지 <b>×{p.specialDemandMultipliers["산업단지"]}</b> ·
               군부대 <b>×{p.specialDemandMultipliers["군부대"]}</b> · 관광·유흥 <b>×{p.specialDemandMultipliers["관광·유흥"]}</b>.
@@ -759,9 +759,10 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                   함의 배수가 시흥정왕 ×1.31 · 광주첨단 ×1.60(기하평균 1.45)인데 보통인 탕정역은 ×0.82라 강도 방향이 맞습니다. 낮에 1.2로 내린 이유였던
                   탕정역 +20.9는 탕정역이 보통이라 문에서 빠져 사라지고, 후보지 호구포역(낮음)도 안 탑니다. 군부대도 문에 넣었습니다 — 자사 2곳이 모두
                   높음이라 성적은 그대로이고, 앞으로 군부대/보통 후보지에 ×2가 검증 없이 통과하는 길을 막는 안전문입니다.
-                  관광유흥은 1.0 그대로입니다 — 자사 2곳(수원인계·야당)이 모두 높음이라 강도로 못 가르고, 후보지 5곳 중 4곳이 높음이라 문이 구리돌다리·
-                  신중동을 못 막습니다. 층 가르기에서 두 곳이 &ldquo;점유율 층, 경쟁점은 맞음&rdquo;이라 수요 배수 자리인지도 확인이 안 됐습니다.
-                  세 배수 다: 40곳 MAE 5.81 → 5.11%p · 후보지 13곳 무변동.
+                  <b>관광유흥도 밤 늦게 ×{p.specialDemandMultipliers["관광·유흥"]}(높음만)</b>로 켰습니다 — 우리 몫 상한(80%)을 넣은 뒤 다시 재니 자사
+                  이해되는 오차 4.07 → 3.61%p · 전체 5.30 → 4.84 · 수원인계·야당 −8 → 0 근처, 경쟁점은 그대로, 후보지 실무 잣대 0.34 → 0.23(창원상남·울산삼산이
+                  실무 예상 쪽으로). 치르는 값은 구리돌다리 4,083 → 5,716만 · 신중동 3,853 → 5,394만(바깥 잣대 없음). 낮에 껐던 이유(후보지 5곳이 한꺼번에 뜸)는
+                  상한이 없던 때 얘기였고, 실무 감각의 정확도를 사용자가 낮춰 봤습니다. 자사 근거 2곳이라 값이 아니라 방향입니다.
                   ⚠️ 대학가는 여전히 매장별로 갈립니다 — 전대후문 −7·청주대 −5·울산대 0·부경대 +10. 하나의 배수로 5곳을 ±3%p에 못 넣습니다.
                   다음 갈래는 &ldquo;대학가&rdquo; 꼬리표 대신 대학 규모×거리입니다. 아래는 09-23~24 오후 기록입니다.</>}
               {" "}껐던 이유(축척을 독점 3곳에서 맞추던 순환)는 2026-09-21에
