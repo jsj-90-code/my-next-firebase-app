@@ -749,4 +749,55 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     console.log(`     관광유흥 후보지가 대부분 "높음"이면 문은 구리돌다리·신중동을 못 막는다 — 그때 문제는 강도가 아니라 관광유흥이 수요 배수 자리인가다(층 가르기: 수원인계·야당은 점유율 층).`);
     expect(own.length).toBeGreaterThan(30);
   });
+
+  it("(12) ⭐⭐⭐ 소도시 수요 갈래 — 1km 밖 고리를 낮은 λ·성김 비례 λ로 켜면 소도시는 살고 후보지는 안 튀나", () => {
+    // 층 가르기(_layerSplit): 양주덕정·문경시청·진주혁신은 "수요↓ 확정"(전부 먹어도 실측 못 미침 · 동네 실측시간 > 산식 수요). 1km이 배후지보다 좁다.
+    // 전에 고리 λ800을 전 매장에 켰을 때는 후보지가 한결같이 +4.8%p 올라 되돌렸다(handoff-20260928). 두 가지를 재 본다:
+    //   (A) 낮은 λ(200~500) — 실측 수요 잣대(_bundleCandidate (1))가 λ0 1.14배 / λ500 0.67배라 그 사이에 "산식 = 실측 하한" 지점이 있다.
+    //   (B) 성김 비례 λ — 기전: 대안이 드물수록 멀리서 온다. λ_i = λ_ref × (1km 안 이용자 중앙 ÷ 그 매장 1km 안 이용자), 0~2000m로 자른다.
+    //       밀집 도심은 λ가 작아져 고리가 거의 안 들고, 소도시는 λ가 커져 시내 전체가 배후지가 된다. 계수는 λ_ref 하나.
+    // ⚠️ 사전 기준: 자사 성적만으로 채택 금지. 후보지 13곳 평균 이동·3%p↑ 개수·호구포역/오송/영월을 같이 본다. 소도시 3곳이 좋아지고 밀집이 안 나빠지고 후보지가 안 튀어야 한다.
+    if (!candRows.length) return;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const base: TextbookParams = { ...full, residentRingDecayM: 0 };
+    const coreUsers = (input: TextbookInput) => { const b = computeTextbook(input, base); return (b.residentDemandUsers ?? 0) + (b.floatingDemandUsers ?? 0); };
+    const utilIfAll = (input: TextbookInput) => { const b = computeTextbook(input, base); return b.totalDemandHours && input.pcCount ? b.totalDemandHours / (input.pcCount * 720) : NaN; };
+    const med = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
+    const medianCore = med(own.map((r) => coreUsers(r.input)));
+    const SMALL = new Set(["양주덕정점", "문경시청점", "진주혁신도시본점"]);
+    type Mode = { label: string; lambdaFor: (input: TextbookInput) => number };
+    const modes: Mode[] = [
+      { label: "λ0 (지금)", lambdaFor: () => 0 },
+      ...[200, 300, 400, 500, 800].map((l) => ({ label: `λ${l} 전 매장`, lambdaFor: () => l })),
+      ...[200, 300, 400, 600].map((l) => ({ label: `성김 비례 λ_ref ${l}`, lambdaFor: (input: TextbookInput) => Math.min(2000, l * medianCore / Math.max(1, coreUsers(input))) })),
+    ];
+    const run = (input: TextbookInput, m: Mode) => computeTextbook(input, { ...full, residentRingDecayM: m.lambdaFor(input), residentRingShare: "gravity", useRingEnclosure: true });
+    const cand0 = new Map(candRows.map((r) => [r.input.storeCode, computeTextbook(r.input, base).utilization ?? NaN]));
+    console.log(`\n[소도시 수요 갈래 — 고리 λ 방식별] 자사 ${own.length}곳 · 후보지 ${candRows.length}곳. 1km 안 이용자 중앙 ${Math.round(medianCore).toLocaleString()}명. gravity·항아리 켬`);
+    console.log(`  소도시 = 수요전부 가동률 < 45% (${own.filter((r) => utilIfAll(r.input) < 0.45).length}곳) · 밀집 = ≥ 90% (${own.filter((r) => utilIfAll(r.input) >= 0.9).length}곳). 오차 = 예측 − 실측 %p`);
+    console.log(`  방식                 자사MAE  편향 | 소도시편향 밀집편향 | 양주덕정 문경시청 진주혁신 | 후보지 평균Δ 3%p↑ | 호구포역 오송 영월 신중동`);
+    for (const m of modes) {
+      const errs = own.map((r) => ({ r, e: (run(r.input, m).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+      const grp = (f: (r: typeof own[number]) => boolean) => { const g = errs.filter((x) => f(x.r)); return g.length ? mean(g.map((x) => x.e)) : NaN; };
+      const one = (name: string) => { const x = errs.find((y) => y.r.input.storeName === name); return x ? (x.e * 100).toFixed(1).padStart(6) : "     -"; };
+      const cd = candRows.map((r) => (run(r.input, m).utilization ?? NaN) - (cand0.get(r.input.storeCode) ?? NaN)).filter(Number.isFinite);
+      const cu = (code: string) => { const r = candRows.find((x) => x.input.storeCode === code); return r ? ((run(r.input, m).utilization ?? NaN) * 100).toFixed(1).padStart(5) : "    -"; };
+      console.log(`  ${m.label.padEnd(20)}${(mean(errs.map((x) => Math.abs(x.e))) * 100).toFixed(2).padStart(6)}${(mean(errs.map((x) => x.e)) * 100).toFixed(1).padStart(6)} |`
+        + `${(grp((r) => utilIfAll(r.input) < 0.45) * 100).toFixed(1).padStart(9)}${(grp((r) => utilIfAll(r.input) >= 0.9) * 100).toFixed(1).padStart(9)} |`
+        + `${one("양주덕정점")}${one("문경시청점")}${one("진주혁신도시본점")} |`
+        + `${(mean(cd) * 100).toFixed(1).padStart(9)}${String(cd.filter((d) => d > 0.03).length).padStart(5)} |`
+        + `${cu("N003")}${cu("N016")}${cu("N014")}${cu("N001")}`);
+    }
+    // 성김 비례에서 매장별 λ가 어떻게 배정되나 — 소도시 3곳과 밀집 몇 곳
+    const show = [...own].sort((a, b) => coreUsers(a.input) - coreUsers(b.input));
+    console.log(`\n  [성김 비례 λ_ref 300 — 매장별 λ] 1km 안 이용자 적은 순. λ = 300 × ${Math.round(medianCore)} ÷ 이용자`);
+    for (const r of [...show.slice(0, 6), ...show.slice(-3)]) {
+      const cu2 = coreUsers(r.input), lam = Math.min(2000, 300 * medianCore / Math.max(1, cu2));
+      const u = run(r.input, modes.find((m) => m.label === "성김 비례 λ_ref 300")!).utilization ?? NaN;
+      console.log(`     ${(r.input.storeName ?? "").padEnd(10)} 1km 이용자 ${Math.round(cu2).toString().padStart(6)} → λ ${Math.round(lam).toString().padStart(5)}m  실측 ${((r.input.actualUtilization as number) * 100).toFixed(1).padStart(5)}%  λ0 ${((computeTextbook(r.input, base).utilization ?? NaN) * 100).toFixed(1).padStart(5)}%  → ${(u * 100).toFixed(1).padStart(5)}%${SMALL.has(r.input.storeName ?? "") ? "  ← 소도시 수요↓ 확정" : ""}`);
+    }
+    console.log(`\n  ⭐ 읽는 법 — 후보지 평균Δ가 +1%p 안이고 3%p↑가 0~1곳인데 소도시 3곳이 5%p 이상 좋아지는 방식이 있으면 갈래가 산다. 전 매장 λ는 전에 후보지에서 깨졌다(+4.8%p).`);
+    console.log(`     성김 비례는 계수가 λ_ref 하나지만 "이용자 중앙값"이 표본에서 나오므로 표본이 바뀌면 λ 배정이 흔들린다 — 채택하려면 중앙값을 상수로 못 박아야 한다.`);
+    expect(own.length).toBeGreaterThan(30);
+  });
 });
