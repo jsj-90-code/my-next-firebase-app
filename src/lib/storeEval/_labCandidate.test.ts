@@ -25,7 +25,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import {
-  buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
+  LAB_UPSIDE_STORE_CODES, buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
   qscInWindowAverage, utilizationByStore, type QscRecord,
 } from "./labInput";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
@@ -803,6 +803,63 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     }
     console.log(`\n  ⭐ 읽는 법 — 후보지 평균Δ가 +1%p 안이고 3%p↑가 0~1곳인데 소도시 3곳이 5%p 이상 좋아지는 방식이 있으면 갈래가 산다. 전 매장 λ는 전에 후보지에서 깨졌다(+4.8%p).`);
     console.log(`     성김 비례는 계수가 λ_ref 하나지만 "이용자 중앙값"이 표본에서 나오므로 표본이 바뀌면 λ 배정이 흔들린다 — 채택하려면 중앙값을 상수로 못 박아야 한다.`);
+    expect(own.length).toBeGreaterThan(30);
+  });
+
+  it("(13) ⭐⭐⭐ 고리 사람은 거리로 고른다 — 고리 λ × 고리 품질지수(θ / 1 / 0), 몫 상한 위에서", () => {
+    // 사용자(2026-09-24 밤, 양주덕정): 300m 안 경쟁점 빼면 2km 안에 경쟁이 없고, 1~2km 배후지 사람은 우리 상권밖에 선택지가 없어 온다(자전거).
+    // 1.6km까지는 오고 2km 밖은 힘들 듯. → 고리 기전 그대로. 전에 고리를 켰을 때 밀집이 같이 뜬 건 고리 사람에게도 θ3(우리 품질 3배)을 걸어서였을 수 있다.
+    // 여기서는 고리 사람의 점유율에서 품질 지수를 θ / 1 / 0으로 낮춰 가며 λ를 훑는다. 1km 안 점유율은 그대로(θ3).
+    // ⚠️ 사전 기준: (1) 10%p 넘는 5곳(양주덕정·문경·진주·전대후문·광주각화)이 줄고 (2) 밀집 편향이 +2 안이고 (3) 후보지 평균 이동 ±2%p·3%p↑ 2곳 이하
+    //    (4) 이해되는 오차(상향 이탈 7곳 과소 제외)가 지금보다 낮을 것. 넷 다 맞아야 채택 후보.
+    if (!candRows.length) return;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const isUp = (code: string) => LAB_UPSIDE_STORE_CODES.has(code);
+    const BIG = ["양주덕정점", "문경시청점", "진주혁신도시본점", "전대후문점", "광주각화점"];
+    const base: TextbookParams = { ...full, residentRingDecayM: 0 };
+    const utilIfAll = (input: TextbookInput) => { const b = computeTextbook(input, base); return b.totalDemandHours && input.pcCount ? b.totalDemandHours / (input.pcCount * 720) : NaN; };
+    const cand0 = new Map(candRows.map((r) => [r.input.storeCode, computeTextbook(r.input, base).utilization ?? NaN]));
+    const e0 = own.map((r) => ({ code: r.input.storeCode, name: r.input.storeName ?? "", e: (computeTextbook(r.input, base).utilization ?? NaN) - (r.input.actualUtilization as number) }));
+    const okOf = (xs: { code: string; e: number }[]) => mean(xs.map((x) => (isUp(x.code) && x.e < 0 ? 0 : Math.abs(x.e))));
+    const ok0 = okOf(e0);
+    console.log(`\n[고리 λ × 고리 품질지수 — 몫 상한 k${full.ownShareCapK} · 배수 넷 위에서] gravity·항아리 켬. 자사 ${own.length}곳 · 후보지 ${candRows.length}곳. 지금 이해MAE ${(ok0 * 100).toFixed(2)}`);
+    console.log(`  고리θ  λ    자사MAE 이해MAE  편향 | 밀집  소도시 | 양주덕정 문경 진주 전대후문 각화 | 10%p↑ | 후보지 Δ 3%p↑ | 호구포역 오송 영월 하안금당 | 판정`);
+    for (const rq of [null, 1, 0] as (number | null)[]) {
+      for (const lambda of [0, 300, 500, 600, 800]) {
+        if (lambda === 0 && rq !== null) continue;
+        const p2: TextbookParams = { ...full, residentRingDecayM: lambda, residentRingShare: "gravity", useRingEnclosure: true, ringQualityExponent: rq };
+        const errs = own.map((r) => ({ code: r.input.storeCode, name: r.input.storeName ?? "", e: (computeTextbook(r.input, p2).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+        const g = (f: (u: number) => boolean) => { const xs = errs.filter((x) => f(utilIfAll(own.find((r) => r.input.storeCode === x.code)!.input))); return xs.length ? mean(xs.map((x) => x.e)) : NaN; };
+        const one = (name: string) => { const x = errs.find((y) => y.name === name); return x ? (x.e * 100).toFixed(1).padStart(6) : "     -"; };
+        const cd = candRows.map((r) => (computeTextbook(r.input, p2).utilization ?? NaN) - (cand0.get(r.input.storeCode) ?? NaN)).filter(Number.isFinite);
+        const cu = (code: string) => { const r = candRows.find((x) => x.input.storeCode === code); return r ? ((computeTextbook(r.input, p2).utilization ?? NaN) * 100).toFixed(1).padStart(5) : "    -"; };
+        const big = errs.filter((x) => Math.abs(x.e) >= 0.1).length, dB = g((u) => u >= 0.9), sB = g((u) => u < 0.45), ok = okOf(errs), cm = mean(cd), up3 = cd.filter((d) => d > 0.03).length;
+        const bigNow = errs.filter((x) => BIG.includes(x.name)).map((x) => x.e), bigBase = e0.filter((x) => BIG.includes(x.name)).map((x) => x.e);
+        const verdict = lambda === 0 ? "기준" : [
+          mean(bigNow.map(Math.abs)) < mean(bigBase.map(Math.abs)) - 0.02 ? "" : "5곳 안 줄음",
+          dB <= 0.02 ? "" : "밀집 뜸",
+          Math.abs(cm) <= 0.02 && up3 <= 2 ? "" : "후보지 이동",
+          ok < ok0 - 0.001 ? "" : "이해MAE 안 줄음",
+        ].filter(Boolean).join(" · ") || "★ 기준 통과";
+        console.log(`  ${(rq == null ? "θ" : String(rq)).padStart(4)}${String(lambda).padStart(5)}${(mean(errs.map((x) => Math.abs(x.e))) * 100).toFixed(2).padStart(8)}${(ok * 100).toFixed(2).padStart(8)}${(mean(errs.map((x) => x.e)) * 100).toFixed(1).padStart(6)} |${(dB * 100).toFixed(1).padStart(5)}${(sB * 100).toFixed(1).padStart(7)} |${one("양주덕정점")}${one("문경시청점")}${one("진주혁신도시본점")}${one("전대후문점")}${one("광주각화점")} |${String(big).padStart(5)} |${(cm * 100).toFixed(1).padStart(8)}${String(up3).padStart(5)} |${cu("N003")}${cu("N016")}${cu("N014")}${cu("N004")} | ${verdict}`);
+      }
+    }
+    // ── 유일 상권에만 고리 — 사용자 기전의 핵심 조건("2km 안에 다른 상권이 없어 우리 상권밖에 선택지가 없다")을 AI 판정(otherCommercialWithin2km=false)으로 건다 ──
+    type J = { code?: string; name?: string; otherCommercialWithin2km?: boolean | null };
+    const solo = new Set(((snap.labTradeAreaJudgments ?? []) as J[]).filter((j) => j.otherCommercialWithin2km === false && j.code).map((j) => String(j.code)));
+    console.log(`\n  [유일 상권(2km 안 다른 상권 없음, AI 판정)에만 고리] 판정 ${solo.size}곳: ${[...own, ...candRows].filter((r) => solo.has(r.input.storeCode)).map((r) => (r.input.storeName ?? "").replace(/점$/, "")).join(" · ")}`);
+    console.log(`  고리θ  λ    자사MAE 이해MAE  편향 | 밀집  소도시 | 양주덕정 문경 진주 전대후문 각화 | 10%p↑ | 후보지 Δ 3%p↑ | 호구포역 오송 영월 하안금당`);
+    for (const rq of [0, 1] as number[]) for (const lambda of [500, 800, 1200]) {
+      const pFor = (code: string): TextbookParams => solo.has(code) ? { ...full, residentRingDecayM: lambda, residentRingShare: "gravity", useRingEnclosure: true, ringQualityExponent: rq } : full;
+      const errs = own.map((r) => ({ code: r.input.storeCode, name: r.input.storeName ?? "", e: (computeTextbook(r.input, pFor(r.input.storeCode)).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+      const g = (f: (u: number) => boolean) => { const xs = errs.filter((x) => f(utilIfAll(own.find((r) => r.input.storeCode === x.code)!.input))); return xs.length ? mean(xs.map((x) => x.e)) : NaN; };
+      const one = (name: string) => { const x = errs.find((y) => y.name === name); return x ? (x.e * 100).toFixed(1).padStart(6) : "     -"; };
+      const cd = candRows.map((r) => (computeTextbook(r.input, pFor(r.input.storeCode)).utilization ?? NaN) - (cand0.get(r.input.storeCode) ?? NaN)).filter(Number.isFinite);
+      const cu = (code: string) => { const r = candRows.find((x) => x.input.storeCode === code); return r ? ((computeTextbook(r.input, pFor(code)).utilization ?? NaN) * 100).toFixed(1).padStart(5) : "    -"; };
+      console.log(`  ${String(rq).padStart(4)}${String(lambda).padStart(5)}${(mean(errs.map((x) => Math.abs(x.e))) * 100).toFixed(2).padStart(8)}${(okOf(errs) * 100).toFixed(2).padStart(8)}${(mean(errs.map((x) => x.e)) * 100).toFixed(1).padStart(6)} |${(g((u) => u >= 0.9) * 100).toFixed(1).padStart(5)}${(g((u) => u < 0.45) * 100).toFixed(1).padStart(7)} |${one("양주덕정점")}${one("문경시청점")}${one("진주혁신도시본점")}${one("전대후문점")}${one("광주각화점")} |${String(errs.filter((x) => Math.abs(x.e) >= 0.1).length).padStart(5)} |${(mean(cd) * 100).toFixed(1).padStart(8)}${String(cd.filter((d) => d > 0.03).length).padStart(5)} |${cu("N003")}${cu("N016")}${cu("N014")}${cu("N004")}`);
+    }
+    console.log(`\n  ⭐ 읽는 법 — 고리θ 0·λ500~600에서 양주덕정이 −5 안으로 들어오고 밀집이 안 뜨면 사용자 기전("멀리선 거리로 고른다, 1.6km까지")이 맞는 것.`);
+    console.log(`     후보지가 뜨면 그 자리 2km 경쟁점 목록이 비었는지(누락)부터 본다 — 고리는 2km 경쟁점 대수(기본 90)에 기대므로 누락이면 고리 사람이 전부 우리에게 온다.`);
     expect(own.length).toBeGreaterThan(30);
   });
 });

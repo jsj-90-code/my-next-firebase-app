@@ -236,6 +236,14 @@ export type TextbookParams = {
    */
   ownShareCapK: number;
   /**
+   * **고리 사람의 품질 지수** (2026-09-24 밤 신설, 기본 없음 = θ와 같음). 1km 밖 고리 주민이 "우리와 그 근처 PC방 중 어디로 가나"를 정할 때
+   * 경쟁점 품질비에 붙는 지수. 사용자(양주덕정): *"1~2km 사이 배후지 인구는 PC방 가고 싶으면 우리 상권밖에 선택지가 없어서 온다. 1.6km까지는
+   * 오는 것 같고 2km 밖은 힘들 듯."* — 먼 사람은 품질보다 **거리**로 상권을 고른다. θ3을 고리에도 그대로 쓰면 밀집 도심의 고리 사람까지 우리 쪽으로
+   * 몰려(전에 고리를 켰을 때 밀집 +11%p) 되돌렸었다. 여기서 0이면 고리 사람은 대수·거리로만 나뉘고, 1이면 품질이 약하게만 작용한다.
+   * `_labCandidate` (13)에서 λ × 고리θ를 잰다. null/undefined면 옛 동작(θ 그대로).
+   */
+  ringQualityExponent?: number | null;
+  /**
    * **상권 흡인력** — 경쟁점이 많다는 건 그 자리가 좋다는 뜻이기도 하다.
    * 수요에 (1 + factor x ln(1 + 경쟁점수))를 곱한다. 0이면 끈 것이다.
    *
@@ -1490,7 +1498,8 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
         if (!(r.ip > 0)) continue;
         const g = ringRivalFraction(r.distanceM, b.midM);
         if (g <= 0) continue;
-        rw += r.ip * Math.pow(ratio2(r.parts), p.qualityExponent) * g;
+        // 고리 사람에겐 품질이 덜 작용한다(타입 쪽 `ringQualityExponent`). 없으면 θ 그대로.
+        rw += r.ip * Math.pow(ratio2(r.parts), p.ringQualityExponent ?? p.qualityExponent) * g;
       }
       const sb = pc / (pc + rw + p.outsideOptionIp + (p.ownShareCapK ?? 0) * pc);
       ringOwnHoursW += b.users * sb;
