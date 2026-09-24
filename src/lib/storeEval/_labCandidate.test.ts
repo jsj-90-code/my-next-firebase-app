@@ -1178,6 +1178,20 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     expect(rows.length).toBeGreaterThan(30);
   });
 
+  it("(21) 강릉교동(신) 군부대 가정 — 사용자 '강릉교동 군부대 아님?' (지금 자료: 없음/없음, GPT 재평가 2026-09-01)", () => {
+    if (!candRows.length) return;
+    const r = existingRows.find((x) => (x.input.storeName ?? "").includes("강릉교동"));
+    if (!r) { console.log("강릉교동 없음"); return; }
+    const a = r.input.actualUtilization as number;
+    console.log(`\n[강릉교동(신)] 실측 ${pct(a)} · 개점 2026-01-23 · 지금 유형 ${r.input.specialDemandType}/${r.input.specialDemandIntensity ?? "-"}`);
+    for (const [t, i] of [["없음", "없음"], ["군부대", "보통"], ["군부대", "높음"]] as const) {
+      const b = computeTextbook({ ...r.input, specialDemandType: t, specialDemandIntensity: i }, full);
+      console.log(`  ${t}/${i}   예측 ${pct(b.utilization)}  오차 ${((b.utilization ?? 0) - a) * 100 > 0 ? "+" : ""}${(((b.utilization ?? 0) - a) * 100).toFixed(1)}%p  (매출 ${manwon(b.monthlyRevenue)})`);
+    }
+    const b0 = computeTextbook({ ...r.input, specialDemandType: "없음", specialDemandIntensity: "없음" }, full);
+    console.log(`  함의 배수(실측 ÷ 배수 없는 예측) ${(a / (b0.utilization ?? NaN)).toFixed(2)}배 — 군부대 ×2.0(금촌역 2.0·문산 2.5)보다 작다. 정문 생활권(높음)이면 ×2가 과대, 보통이면 문에 막혀 0.`);
+  });
+
   it("(20) ⭐⭐ 반경 2km 매장은 경쟁도 2km로 — 수요만 넓히고 경쟁은 1km 감쇠(평지 200·감쇠 200)로 두는 비대칭을 잰다", () => {
     // 2026-09-25: 주거 상권 반경(사람 확인)이 2km인 4곳(양주덕정·문경·진주혁신·영월)은 수요를 2km 누적으로 세는데 경쟁점은 그대로 1km 감쇠다.
     // 같은 사실("이 동네는 2km가 한 상권")이면 그 안의 PC방도 그 상권의 경쟁이어야 앞뒤가 맞는다. 문경 1.4~1.5km 경쟁 4곳(322대)이 지금은 거의 0으로 세어진다.
