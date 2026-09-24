@@ -365,7 +365,7 @@ function LabPageInner() {
       {score && data && tab === "score" && (
         <>
           <ScoreBoard score={score} current={data.current} p={p} />
-          <StoreTable score={score} qscByStore={data.qscByStore} p={p} windowFill={data.windowFillByStore} />
+          <StoreTable score={score} qscByStore={data.qscByStore} p={p} windowFill={data.windowFillByStore} inputByCode={new Map(data.rows.map((r) => [r.input.storeCode, r.input]))} />
           <ExcludedTable rows={data.excludedRows} p={fittedParams(p, score)} />
         </>
       )}
@@ -1578,9 +1578,11 @@ function ParamSummary({ p, counts }: {
   );
 }
 
-function StoreTable({ score, qscByStore, p, windowFill }: {
+function StoreTable({ score, qscByStore, p, windowFill, inputByCode }: {
   score: TextbookScore; qscByStore: Loaded["qscByStore"]; p: TextbookParams;
   windowFill: Loaded["windowFillByStore"];
+  /** 매장코드 -> 산식에 들어간 입력. 비고에 특수수요 유형·강도·배수 적용 여부를 그린다(사용자 2026-09-25 "가맹점별 특수수요 어떻게 들어갔는지"). */
+  inputByCode?: Map<string, TextbookInput>;
 }) {
   /** QSC가 있는 매장이 하나라도 있을 때만 두 열을 그린다. 없으면 빈 칸만 늘어난다. */
   const hasQsc = [...qscByStore.values()].some((v) => v.qsc != null);
@@ -1698,6 +1700,19 @@ function StoreTable({ score, qscByStore, p, windowFill }: {
                           ⚠ 평가창 {w.filled}/{w.total}달{" "}
                         </b>
                       );
+                    })()}
+                    {/* 특수수요 배수 — 후보지 표와 같은 배지(사용자 2026-09-25). 유형이 있는데 강도 문에 막힌 곳은 "안 탐"으로. */}
+                    {(() => {
+                      const inp = inputByCode?.get(r.storeCode);
+                      const t = inp?.specialDemandType ?? "없음";
+                      const m = p.specialDemandMultipliers[t] ?? 1;
+                      if (!inp || t === "없음") return null;
+                      const inten = inp.specialDemandIntensity ?? "없음";
+                      if (m === 1) return <span className="mr-1 rounded bg-stone-200 px-1.5 py-0.5 text-[11px] text-stone-700 dark:bg-stone-700 dark:text-stone-200" title={`특수수요 유형 ${t}/${inten} — 이 유형은 배수가 없습니다(×1).`}>{t}/{inten} · 배수 없음</span>;
+                      const gated = (p.specialDemandHighOnly ?? []).includes(t) && inten !== "높음";
+                      return gated
+                        ? <span className="mr-1 rounded bg-stone-200 px-1.5 py-0.5 text-[11px] text-stone-700 dark:bg-stone-700 dark:text-stone-200" title={`유형 ${t}이지만 강도가 '${inten}'이라 배수 ×${m}를 안 곱했습니다(높음에만).`}>{t}/{inten} · 배수 안 탐</span>
+                        : <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-200" title={`특수수요 ${t}/${inten} — 수요에 ×${m}를 곱했습니다. 배수가 없으면 가동률이 ÷${m}입니다.`}>{t}/{inten} ×{m} 적용</span>;
                     })()}
                     {/* 주거 상권 반경(사람 확인, 2026-09-24 밤): 2km 안에 다른 PC방 상권이 없어 주거 원을 넓힌 매장. 자료 탭에 근거. */}
                     {r.residentRadiusM > 1000 && (
