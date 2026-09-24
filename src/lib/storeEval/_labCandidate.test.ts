@@ -605,4 +605,52 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     }
     expect(own.length).toBeGreaterThan(30);
   });
+
+  it("(10) ⭐⭐⭐ 특수수요 배수 재고 표 — 자사 40곳 성적과 후보지 13곳 가동률을 배수 조합별로 나란히", () => {
+    // 사용자(2026-09-24 집): *"신규후보지 호구포역점, 오송점 예상매출이 많이 높아져가지고, 산업단지에 해당하는 매장인것같은데
+    //    이거좀 배수없애던가 하는거 고려해야할듯."*
+    // 배수는 수요에 곱하고 점유율은 수요와 무관하므로 **그 유형 매장 가동률이 정확히 ×배수**가 된다(상한에 걸리지 않는 한).
+    // 자사에서 고른 배수가 후보지에서 어떻게 보이는지 조합별로 찍는다. 채택은 사용자 몫 — 추천은 아래 "읽는 법"에.
+    if (!candRows.length) return;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const NOW = full.specialDemandMultipliers;
+    const allOne = Object.fromEntries(Object.keys(NOW).map((k) => [k, 1]));
+    const configs: { label: string; m: Record<string, number> }[] = [
+      { label: "지금(군2.0·대1.3·산1.2·관1.4)", m: NOW },
+      { label: "산업단지 1.0", m: { ...NOW, "산업단지": 1.0 } },
+      { label: "대학가 1.0", m: { ...NOW, "대학가": 1.0 } },
+      { label: "관광유흥 1.0", m: { ...NOW, "관광·유흥": 1.0, "관광유흥": 1.0 } },
+      { label: "산업단지·대학가 1.0", m: { ...NOW, "산업단지": 1.0, "대학가": 1.0 } },
+      { label: "군부대만 2.0(나머지 1.0)", m: { ...allOne, "군부대": 2.0 } },
+      { label: "전부 1.0", m: allOne },
+    ];
+    const paramsOf = (m: Record<string, number>): TextbookParams => ({ ...full, specialDemandMultipliers: m });
+    const errs = (p: TextbookParams) => own.map((r) => ({ t: r.input.specialDemandType ?? "없음", e: (computeTextbook(r.input, p).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+    const typeBias = (xs: { t: string; e: number }[], t: string) => { const g = xs.filter((x) => x.t === t); return g.length ? mean(g.map((x) => x.e)) : NaN; };
+    console.log(`\n[특수수요 배수 재고 표 — 자사 ${own.length}곳] 오차 = 예측 − 실측 %p. 유형별 편향은 그 유형 매장 평균`);
+    console.log(`  조합                          MAE   편향  ±5%p ±10%p | 대학가(5) 산업단지(3) 관광유흥(2) 군부대(2) 없음(22)`);
+    for (const c of configs) {
+      const xs = errs(paramsOf(c.m));
+      const abs = xs.map((x) => Math.abs(x.e));
+      console.log(`  ${c.label.padEnd(26)}${(mean(abs) * 100).toFixed(2).padStart(6)}${(mean(xs.map((x) => x.e)) * 100).toFixed(1).padStart(6)}${String(abs.filter((a) => a <= 0.05).length).padStart(5)}${String(abs.filter((a) => a <= 0.10).length).padStart(6)} |`
+        + `${(typeBias(xs, "대학가") * 100).toFixed(1).padStart(9)}${(typeBias(xs, "산업단지") * 100).toFixed(1).padStart(11)}${(typeBias(xs, "관광·유흥") * 100).toFixed(1).padStart(11)}${(typeBias(xs, "군부대") * 100).toFixed(1).padStart(10)}${(typeBias(xs, "없음") * 100).toFixed(1).padStart(9)}`);
+    }
+    // 후보지 — 특수수요 유형이 있는 곳만 (없음은 배수와 무관)
+    type V62Result = { candidateCode?: string; v62Final?: number | null };
+    const v62 = new Map<string, V62Result>(((snap.results ?? []) as V62Result[]).filter((r) => r?.candidateCode).map((r) => [r.candidateCode as string, r]));
+    const affected = candRows.filter((r) => (r.input.specialDemandType ?? "없음") !== "없음");
+    console.log(`\n  [후보지 — 특수수요 유형 있는 ${affected.length}곳] 가동률 % (매출 만원). 배수 1.0 = 유형 무시. V62 = 운영 결과(참고)`);
+    console.log(`  코드   이름         특수     경쟁 |  배수 1.0        지금 배수         V62매출`);
+    for (const r of affected) {
+      const b1 = computeTextbook(r.input, paramsOf(allOne)), bn = computeTextbook(r.input, full);
+      const t = r.input.specialDemandType ?? "없음";
+      console.log(`  ${r.input.storeCode.padEnd(5)} ${(r.input.storeName ?? "").trim().slice(0, 7).padEnd(7)} ${t.slice(0, 4).padEnd(5)} ×${String(NOW[t] ?? 1).padEnd(4)} ${String(r.input.competitorCount ?? 0).padStart(3)} |`
+        + ` ${pct(b1.utilization)} (${manwon(b1.monthlyRevenue).trim()})  ${pct(bn.utilization)} (${manwon(bn.monthlyRevenue).trim()})${bn.capped ? " 상한" : ""}  ${manwon(v62.get(r.input.storeCode)?.v62Final).trim()}`);
+    }
+    console.log(`\n  ⭐ 읽는 법`);
+    console.log(`     · 배수는 그 유형 후보지 가동률을 그대로 ×배수 한다 — 자사에서 "평균 편향 0"으로 고른 값이 후보지에선 검증 없이 통과한다.`);
+    console.log(`     · 자사 근거의 세기: 군부대 2곳(−17.6→+0.1, 두 곳 같은 방향) > 대학가 5곳(−7.5→+0.7, 매장별 −16~+0) > 관광유흥 2곳(−8.1→+1.7) > 산업단지 3곳(25%p 갈림 · 1.0이어도 탕정역 +7.4).`);
+    console.log(`     · 산업단지는 층 가르기(_layerSplit)에서 광주첨단·탕정역이 핑봇 없어 수요/점유율을 못 갈랐고, 시흥정왕은 1.0이어도 −8.4다. 배수 자리인지 확인이 안 된 유형이다.`);
+    expect(affected.length).toBeGreaterThan(0);
+  });
 });
