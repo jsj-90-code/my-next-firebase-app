@@ -1209,6 +1209,15 @@ function ParamSummary({ p, counts }: {
         { label: "고리 수요의 점유율", value: p.residentRingShare === "gravity" ? "가까운 쪽으로(기하)" : "1km 안과 같게" },
         { label: "막힌 상권 보정", value: p.useRingEnclosure ? "켬 (막힌 방향 ÷ 4 깎음)" : "끔" },
         { label: "상권 흡인력", value: num(p.agglomerationFactor) },
+        { label: "밀집도 보정", value: num(p.densityCorrection) },
+        // 2026-09-24 밤 사용자: "지금 쓰는 계수들 웹에 잘 업데이트해주고" — 배수와 강도 문이 표에 없었다. 값에서 읽어 그린다.
+        {
+          label: "특수수요 배수",
+          value: Object.entries(p.specialDemandMultipliers).filter(([k, v]) => v !== 1 && k !== "관광유흥")
+            .map(([k, v]) => `${k} ×${num(v)}`).join(" · ") || "전부 1",
+        },
+        { label: "배수 문(강도 높음에만)", value: (p.specialDemandHighOnly ?? []).length ? (p.specialDemandHighOnly ?? []).join(" · ") : "없음" },
+        { label: "1인 월 이용시간(축척)", value: `${num(p.hoursPerUserPerMonth)}h ${p.hoursPerUserFixed ? "· 원장 고정" : "· 적합"}` },
       ],
     },
     {
@@ -1221,6 +1230,11 @@ function ParamSummary({ p, counts }: {
           ? [{ label: "경쟁점 거리무게", value: `${p.rivalDistanceDecay.plateauM}m 안 1 · 밖 e^(−(d−${p.rivalDistanceDecay.plateauM})÷${p.rivalDistanceDecay.scaleM})` }]
           : [{ label: "유효거리(계단)", value: `${p.effectiveRadiusM}m` }]),
         { label: "품질 지수 θ", value: num(p.qualityExponent) },
+        {
+          label: "품질 비중(사양·음식·존·인테리어·관리)",
+          value: [p.qualityWeights.spec, p.qualityWeights.food, p.qualityWeights.zone, p.qualityWeights.interior, p.qualityWeights.management].map((v) => num(v, 3)).join(" · "),
+        },
+        { label: "경쟁점 범위", value: `조사 ${RIVAL_2KM_OFFICIAL_RADIUS_M}m + 인허가·지도 ${RIVAL_2KM_OUTER_RADIUS_M}m` },
         { label: "PC방 안 가는 몫", value: `${p.outsideOptionIp.toLocaleString()} IP` },
       ],
     },
@@ -1242,6 +1256,13 @@ function ParamSummary({ p, counts }: {
       rows: [
         { label: "정가 탄력도", value: num(p.rateElasticity, 3) },
         { label: "기준 정가", value: `${p.referenceHourlyRate.toLocaleString()}원` },
+        { label: "상품몫", value: `${Math.round(p.productUnitPrice).toLocaleString()}원/PC·시간 ${p.productUnitPriceFixed ? "· 고정" : "· 적합"}` },
+        {
+          label: "눈금 보정",
+          value: !p.indexCalibration || p.indexCalibration.ratioExponent === 1
+            ? `끔(지수 1) · 입지 지수 ${num(p.indexCalibration?.locationExponent ?? 1)}`
+            : `지수 ${num(p.indexCalibration.ratioExponent)} · 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}%`,
+        },
         { label: "가동률 상한", value: `${(p.maxUtilization * 100).toFixed(0)}%` },
       ],
     },
