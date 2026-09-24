@@ -482,4 +482,73 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
     console.log(`     감쇠를 넓히면 500m 밖 미조사 경쟁점(기본대수)이 분모를 휩쓴다(2026-09-23 (4) 기각) — 여기선 300·400만 본다.`);
     expect(dense.length).toBeGreaterThan(3);
   });
+
+  it("(5) ⭐⭐⭐ 짝 실험 — 품질 차이를 약하게(θ↓) 보되 1km 밖 주민을 세서(고리) 자사 편향 0을 맞추면, 후보지 13곳은 어디로 가나", () => {
+    // (4) C절: 핑봇 47쌍이 말하는 θ는 0.8, 산식은 3. θ3은 "우리가 경쟁점보다 3배 좋다"는 배수로 일하고, 그 과잉이 1km 수요가 작은 것과 상쇄돼 있다.
+    // 둘을 같이 바로잡는다: θ를 함의값 근처에 두고, 1km 밖 주민(고리·gravity·항아리)을 세서 자사 편향이 0이 되는 λ를 찾는다.
+    // ⚠️ 사전 기준: (1) 자사 편향 |0.5|%p 안 (2) 자사 MAE가 지금(5.11)보다 나쁘지 않을 것 (3) 경쟁점 47곳 1:1 편향이 −11.3에서 0 쪽으로
+    //    (4) 후보지 13곳 — 평균 이동 ±2%p 안, 3%p 넘게 뜨는 곳은 이름을 적고 그 자리 경쟁점 수(500m·2km)를 함께 적어 "누락인지 진짜인지" 사람이 가리게 한다.
+    //    (5) 소도시 3곳(양주덕정·문경·진주)이 좋아지고 밀집 5곳이 좋아져야 한다 — 둘 다 아니면 짝이 아니라 그냥 다른 눈금이다.
+    const own = rows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const DENSE = new Set(["일산탄현점", "시흥배곧점", "부경대점", "평내호평점", "시흥은계점"]);
+    const SMALL = new Set(["양주덕정점", "문경시청점", "진주혁신도시본점"]);
+    const paramsOf = (theta: number, lambda: number): TextbookParams => ({ ...P, qualityExponent: theta, residentRingDecayM: lambda, residentRingShare: "gravity", useRingEnclosure: true });
+    const ownBias = (p2: TextbookParams) => mean(own.map((r) => (computeTextbook(r.input, p2).utilization ?? NaN) - (r.input.actualUtilization as number)).filter(Number.isFinite));
+    // λ 찾기 — 편향은 λ에 단조 증가하므로 0~3000에서 이분한다
+    const findLambda = (theta: number): number => {
+      let lo = 0, hi = 3000;
+      if (ownBias(paramsOf(theta, lo)) > 0) return 0;
+      if (ownBias(paramsOf(theta, hi)) < 0) return hi;
+      for (let i = 0; i < 24; i += 1) { const m = (lo + hi) / 2; if (ownBias(paramsOf(theta, m)) < 0) lo = m; else hi = m; }
+      return Math.round((lo + hi) / 2);
+    };
+    const cand0 = new Map(candRows.map((r) => [r.input.storeCode, computeTextbook(r.input, P).utilization ?? NaN]));
+    const rivalsOf = (input: TextbookInput) => {
+      const near = (input.rivals ?? []).filter((v) => v.ip > 0 && (v.distanceM ?? 9e9) <= 500).length;
+      const far = (input.rivals ?? []).filter((v) => v.ip > 0 && (v.distanceM ?? 9e9) > 500).length;
+      return `${near}+${far}`;
+    };
+    console.log(`\n[짝 실험 — θ마다 자사 편향 0이 되는 고리 λ] gravity·항아리 켬. 자사 ${own.length}곳 · 경쟁점 1:1 ${[...rivalInputsByCode.values()].flat().length}곳 · 후보지 ${candRows.length}곳`);
+    console.log(`  θ     λ*     자사MAE  편향 | 밀집5 소도시3 | 경쟁MAE 경쟁편향 | 후보지 평균Δ 3%p↑ 3%p↓ | 판정`);
+    type Row5 = { theta: number; lambda: number; p: TextbookParams; candMean: number; up: string[] };
+    const results: Row5[] = [];
+    for (const theta of [3, 2, 1.5, 1.25, 1, 0.8]) {
+      const lambda = theta === 3 ? 0 : findLambda(theta);
+      const p2 = paramsOf(theta, lambda);
+      const errs = own.map((r) => ({ name: r.input.storeName ?? "", e: (computeTextbook(r.input, p2).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+      const g = (set: Set<string>) => mean(errs.filter((x) => set.has(x.name)).map((x) => x.e));
+      const rivErr: number[] = [];
+      for (const [, list] of rivalInputsByCode) for (const x of list) { const u = computeTextbook(x.input, p2).utilization; if (u != null && u > 0) rivErr.push(u - x.act); }
+      const cd = candRows.map((r) => ({ r, d: (computeTextbook(r.input, p2).utilization ?? NaN) - (cand0.get(r.input.storeCode) ?? NaN) })).filter((x) => Number.isFinite(x.d));
+      const mae = mean(errs.map((x) => Math.abs(x.e))), bias = mean(errs.map((x) => x.e)), rivBias = mean(rivErr), candMean = mean(cd.map((x) => x.d));
+      const up = cd.filter((x) => x.d > 0.03).map((x) => (x.r.input.storeName ?? "").replace(/점$/, ""));
+      const verdict = theta === 3 ? "기준" : [
+        mae <= 0.0511 + 0.001 ? "" : `MAE ${(mae * 100).toFixed(2)}`,
+        rivBias > -0.113 + 0.01 ? "" : "경쟁 안 좋아짐",
+        Math.abs(candMean) <= 0.02 ? "" : "후보지 이동",
+        Math.abs(g(SMALL)) < 11.7 / 100 - 0.02 && Math.abs(g(DENSE)) < 10.7 / 100 - 0.02 ? "" : "소도시/밀집 안 좋아짐",
+      ].filter(Boolean).join(" · ") || "기준 통과";
+      results.push({ theta, lambda, p: p2, candMean, up });
+      console.log(`  ${theta.toFixed(2).padStart(4)}${String(lambda).padStart(6)}${(mae * 100).toFixed(2).padStart(9)}${(bias * 100).toFixed(1).padStart(6)} |${(g(DENSE) * 100).toFixed(1).padStart(6)}${(g(SMALL) * 100).toFixed(1).padStart(7)} |${(mean(rivErr.map(Math.abs)) * 100).toFixed(1).padStart(7)}${(rivBias * 100).toFixed(1).padStart(8)} |${(candMean * 100).toFixed(1).padStart(9)}${String(up.length).padStart(5)}${String(cd.filter((x) => x.d < -0.03).length).padStart(5)} | ${verdict}${up.length ? `  ↑${up.join("·")}` : ""}`);
+    }
+    // 후보지 13곳 — 지금 vs θ1·λ* vs θ1.5·λ* 나란히, 경쟁점 수(500m + 2km)와 함께
+    const pick = (theta: number) => results.find((x) => x.theta === theta)!;
+    const a = pick(1), b = pick(1.5);
+    console.log(`\n  [후보지 13곳 — 지금(θ3·λ0) vs θ1.5·λ${b.lambda} vs θ1·λ${a.lambda}] 가동률 %. 경쟁 = 500m 조사 + 2km 목록. 3%p 넘게 뜨면 ⚠️`);
+    console.log(`  코드   이름         특수     경쟁    지금   θ1.5    θ1  | 주거1km  유동400 | 비고`);
+    for (const r of [...candRows].sort((x, y) => y.input.storeCode.localeCompare(x.input.storeCode, undefined, { numeric: true }))) {
+      const u0 = cand0.get(r.input.storeCode) ?? NaN, ub = computeTextbook(r.input, b.p).utilization ?? NaN, ua = computeTextbook(r.input, a.p).utilization ?? NaN;
+      const bA = computeTextbook(r.input, a.p);
+      const flag = ua - u0 > 0.03 ? "⚠️ 뜸" : ua - u0 < -0.03 ? "↓" : "";
+      console.log(`  ${r.input.storeCode.padEnd(5)} ${nm(r.input.storeName ?? "", 6)} ${nm(r.input.specialDemandType ?? "없음", 4)} ${rivalsOf(r.input).padStart(6)} ${(u0 * 100).toFixed(1).padStart(6)} ${(ub * 100).toFixed(1).padStart(6)} ${(ua * 100).toFixed(1).padStart(6)} |${String(r.input.pop1km ?? "-").padStart(8)}${num(r.input.floatingByRadius[400], 9)} | ${flag}${bA.capped ? " 상한" : ""}${bA.residentRingUsers != null && bA.residentDemandUsers ? ` 고리몫 ${((bA.residentRingUsers / bA.residentDemandUsers) * 100).toFixed(0)}%` : ""}`);
+    }
+    // 자사 — θ1·λ*에서 매장별 오차가 어떻게 바뀌나 (큰 순)
+    console.log(`\n  [자사 40곳 — 지금 → θ1·λ${a.lambda} 오차 %p] 좋아진 곳 ↑ 나빠진 곳 ↓ (3%p 기준)`);
+    const moves = own.map((r) => { const act = r.input.actualUtilization as number; const e0 = (computeTextbook(r.input, P).utilization ?? NaN) - act, e1 = (computeTextbook(r.input, a.p).utilization ?? NaN) - act; return { name: r.input.storeName ?? "", e0, e1 }; })
+      .sort((x, y) => Math.abs(y.e0) - Math.abs(x.e0));
+    console.log(`     ${moves.map((m) => `${m.name.replace(/점$/, "")} ${(m.e0 * 100).toFixed(0)}→${(m.e1 * 100).toFixed(0)}${Math.abs(m.e1) < Math.abs(m.e0) - 0.03 ? "↑" : Math.abs(m.e1) > Math.abs(m.e0) + 0.03 ? "↓" : ""}`).join(" · ")}`);
+    console.log(`\n  ⭐ 읽는 법 — θ를 내릴수록 λ*가 커진다(우위를 줄인 만큼 손님을 더 세야 수준이 맞는다). 경쟁점 편향이 0 쪽으로 오고 자사 MAE가 안 나빠지면 짝이 맞는 것.`);
+    console.log(`     후보지에서 뜨는 곳은 "경쟁 1~2곳 → 몫이 어차피 높음 → 손님 ×2가 그대로 매출"이다. 그 자리 2km 경쟁점 수가 적으면(누락 의심) 자료를, 많으면 산식을 의심한다.`);
+    expect(results.length).toBe(6);
+  });
 });
