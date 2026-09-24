@@ -15,7 +15,8 @@ import { computeTextbook, computeQualityScore, DEFAULT_TEXTBOOK_PARAMS, type Qua
 // 그 묶음은 "유효거리 밖은 아예 안 센다" 같은 계단 성질을 확인하는 자리라 계단으로 고정한다.
 // 감쇠 동작은 이 파일 맨 아래 "거리 감쇠" 묶음이 따로 본다.
 const P: TextbookParams = {
-  ...DEFAULT_TEXTBOOK_PARAMS, shareMode: "quality", outsideOptionIp: 0, rivalDistanceDecay: null,
+  // ownShareCapK 0 — 여기 단위 시험은 점유율 산수(독점 1 · 반반 · 부호)를 보는 자리라 2026-09-24 밤에 들어간 몫 상한은 끈다(상한 시험은 따로).
+  ...DEFAULT_TEXTBOOK_PARAMS, shareMode: "quality", outsideOptionIp: 0, rivalDistanceDecay: null, ownShareCapK: 0,
 };
 
 /** 수요층은 이 테스트의 관심사가 아니다 — 인구를 고정해 점유율만 본다. */
@@ -60,6 +61,16 @@ describe("computeQualityScore — 있는 항목만 그 합으로 나눈다", () 
 describe("품질 모드 점유율", () => {
   it("경쟁점이 없으면 점유율은 1이다 (독점상권)", () => {
     expect(shareOf({ ownQualityParts: parts(3.5), rivals: [] })).toBe(1);
+  });
+
+  it("우리 몫 상한 — k를 걸면 경쟁이 없어도 1/(1+k)가 최대이고, 경쟁이 많을수록 상한의 효과는 작다 (2026-09-24)", () => {
+    const capped = { ...P, ownShareCapK: 0.25 };
+    const mono = computeTextbook(input({ ownQualityParts: parts(3.5), rivals: [] }), capped).share;
+    expect(mono).toBeCloseTo(1 / 1.25, 10);
+    // 경쟁 PC가 우리 4배(품질 같음)면 상한 없이 0.2, 상한 걸면 1/(1+4+0.25) = 0.19 — 5%만 깎인다(독점은 20% 깎임).
+    const busy = computeTextbook(input({ ownQualityParts: parts(3), rivals: [{ ip: 400, distanceM: 100, parts: parts(3) }] }), capped).share;
+    expect(busy).toBeCloseTo(1 / 5.25, 10);
+    expect(DEFAULT_TEXTBOOK_PARAMS.ownShareCapK).toBe(0.25);
   });
 
   it("품질이 같고 PC대수가 같으면 반씩 나눠 갖는다", () => {

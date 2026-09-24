@@ -107,7 +107,7 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
   // 옛 배선(2026-09-23 오전, 묶음 채택 전) — θ3 · 존구성 0.238 · 고리 꺼짐 · 배수 군부대 2.25만.
   // `_bundleCandidate` (0) 검산이 이 칸에서 자사 MAE 5.84%p를 재현한다. 후보지 옛/새 대조에 쓴다.
   const OLD: TextbookParams = {
-    ...full, qualityExponent: 3, residentRingDecayM: 0, residentRingShare: "core", useRingEnclosure: false,
+    ...full, qualityExponent: 3, residentRingDecayM: 0, residentRingShare: "core", useRingEnclosure: false, ownShareCapK: 0,
     qualityWeights: { ...full.qualityWeights, zone: 0.238 },
     specialDemandMultipliers: { ...Object.fromEntries(Object.keys(full.specialDemandMultipliers).map((k) => [k, 1])), "군부대": 2.25 },
   };

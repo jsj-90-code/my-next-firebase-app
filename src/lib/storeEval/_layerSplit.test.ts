@@ -26,7 +26,7 @@
 // 실행: npx vitest run src/lib/storeEval/_layerSplit.test.ts --disable-console-intercept
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
+import { LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES, buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
 import type { CandidateInput, LocationEvaluation } from "./types";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
@@ -550,5 +550,156 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
     console.log(`\n  ⭐ 읽는 법 — θ를 내릴수록 λ*가 커진다(우위를 줄인 만큼 손님을 더 세야 수준이 맞는다). 경쟁점 편향이 0 쪽으로 오고 자사 MAE가 안 나빠지면 짝이 맞는 것.`);
     console.log(`     후보지에서 뜨는 곳은 "경쟁 1~2곳 → 몫이 어차피 높음 → 손님 ×2가 그대로 매출"이다. 그 자리 2km 경쟁점 수가 적으면(누락 의심) 자료를, 많으면 산식을 의심한다.`);
     expect(results.length).toBe(6);
+  });
+
+  it("(6) ⭐⭐⭐ 상향 이탈 7곳(사용자 판단)을 잣대에 반영 — 세 성적(전체 / 뺌 / 이해되는 오차)으로 변형을 다시 잰다", () => {
+    // 사용자(2026-09-24 밤): 문경시청·양주덕정·시흥배곧·탕정역·전대후문·강릉교동·시흥정왕은 초기 점포평가보다 실제 매출이 잘 나온 매장 —
+    // "예상보다 실제매출이 더 나왔다고 해도 어느 정도 이해되는 오차". → 이 7곳의 **과소예측**은 이해되는 오차(0으로 침), **과대예측**은 그대로 오차.
+    // ⚠️ 사전 기준: 채택 후보는 "이해되는 오차" MAE가 지금보다 낮으면서 (a) 경쟁점 47곳 편향이 0 쪽으로 오고 (b) 후보지 13곳 평균 이동 ±2%p 안 (c) 상향 이탈 아닌 33곳 편향 |1|%p 안.
+    const own = rows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const isUp = (code: string) => LAB_UPSIDE_STORE_CODES.has(code);
+    const errsOf = (p2: TextbookParams) => own.map((r) => ({ code: r.input.storeCode, name: r.input.storeName ?? "", e: (computeTextbook(r.input, p2).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+    type E = ReturnType<typeof errsOf>;
+    const maeAll = (xs: E) => mean(xs.map((x) => Math.abs(x.e)));
+    const maeEx = (xs: E) => mean(xs.filter((x) => !isUp(x.code)).map((x) => Math.abs(x.e)));
+    const maeOk = (xs: E) => mean(xs.map((x) => (isUp(x.code) && x.e < 0 ? 0 : Math.abs(x.e))));
+    const biasEx = (xs: E) => mean(xs.filter((x) => !isUp(x.code)).map((x) => x.e));
+    const within = (xs: E, t: number) => xs.filter((x) => (isUp(x.code) && x.e < 0 ? 0 : Math.abs(x.e)) <= t).length;
+    const e0 = errsOf(P);
+    console.log(`\n[상향 이탈 7곳 — 지금 산식에서] 오차 = 예측 − 실측 %p. 음수(과소)면 이해되는 오차, 양수(과대)면 그대로 오차`);
+    for (const x of e0.filter((x) => isUp(x.code))) console.log(`     ${x.name.padEnd(10)} ${(x.e * 100).toFixed(1).padStart(6)}  ${x.e < 0 ? "과소 → 이해되는 오차(0)" : "과대 → 오차 그대로"}`);
+    console.log(`  지금 성적: 전체 MAE ${(maeAll(e0) * 100).toFixed(2)} · 상향 이탈 뺌(33곳) ${(maeEx(e0) * 100).toFixed(2)} · 이해되는 오차 ${(maeOk(e0) * 100).toFixed(2)}%p · ±5%p ${within(e0, 0.05)}/${e0.length} · ±3%p ${within(e0, 0.03)}`);
+    console.log(`  '전부 평균' 바닥(전체 실측 평균으로 예측): ${(mean(own.map((r) => Math.abs((r.input.actualUtilization as number) - mean(own.map((q) => q.input.actualUtilization as number))))) * 100).toFixed(2)}%p`);
+
+    // 변형 — 짝(θ↓·λ*)은 상향 이탈 뺀 33곳 편향 0으로 λ를 찾는다(7곳이 잣대를 끌지 않게)
+    const paramsOf = (theta: number, lambda: number, extra: Partial<TextbookParams> = {}): TextbookParams => ({ ...P, qualityExponent: theta, residentRingDecayM: lambda, residentRingShare: "gravity", useRingEnclosure: true, ...extra });
+    const findLambda = (theta: number, extra: Partial<TextbookParams> = {}): number => {
+      const b = (l: number) => biasEx(errsOf(paramsOf(theta, l, extra)));
+      let lo = 0, hi = 3000;
+      if (b(lo) > 0) return 0;
+      if (b(hi) < 0) return hi;
+      for (let i = 0; i < 24; i += 1) { const m = (lo + hi) / 2; if (b(m) < 0) lo = m; else hi = m; }
+      return Math.round((lo + hi) / 2);
+    };
+    const cand0 = new Map(candRows.map((r) => [r.input.storeCode, computeTextbook(r.input, P).utilization ?? NaN]));
+    type V = { label: string; p: TextbookParams };
+    const variants: V[] = [
+      { label: "지금 (θ3 · λ0)", p: P },
+      { label: "θ3 · 고리 λ* (33곳 편향 0)", p: paramsOf(3, findLambda(3)) },
+      { label: "θ2 · λ*", p: paramsOf(2, findLambda(2)) },
+      { label: "θ1.5 · λ*", p: paramsOf(1.5, findLambda(1.5)) },
+      { label: "θ1 · λ*", p: paramsOf(1, findLambda(1)) },
+      { label: "θ2 · λ* · 존구성 0.12", p: (() => { const ex = { qualityWeights: { ...P.qualityWeights, zone: 0.12 } }; return paramsOf(2, findLambda(2, ex), ex); })() },
+      { label: "θ2 · λ* · 존구성 0", p: (() => { const ex = { qualityWeights: { ...P.qualityWeights, zone: 0 } }; return paramsOf(2, findLambda(2, ex), ex); })() },
+      { label: "θ3 · λ0 · 관광유흥 1.4 높음만", p: { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, "관광·유흥": 1.4, "관광유흥": 1.4 }, specialDemandHighOnly: [...P.specialDemandHighOnly, "관광·유흥", "관광유흥"] } },
+    ];
+    console.log(`\n  [변형 재고 표 — 세 성적] λ* = 상향 이탈 뺀 33곳 편향이 0 되는 고리 λ(gravity·항아리)`);
+    console.log(`  변형                          λ  | 전체MAE  뺌MAE  이해MAE  ±5%p ±3%p | 33곳편향 | 경쟁편향 | 후보지 평균Δ 3%p↑ | 판정`);
+    const ok0 = maeOk(e0);
+    for (const v of variants) {
+      const xs = errsOf(v.p);
+      const rivErr: number[] = [];
+      for (const [, list] of rivalInputsByCode) for (const x of list) { const u = computeTextbook(x.input, v.p).utilization; if (u != null && u > 0) rivErr.push(u - x.act); }
+      const cd = candRows.map((r) => (computeTextbook(r.input, v.p).utilization ?? NaN) - (cand0.get(r.input.storeCode) ?? NaN)).filter(Number.isFinite);
+      const rivBias = mean(rivErr), candMean = mean(cd), bEx = biasEx(xs), ok = maeOk(xs);
+      const verdict = v === variants[0] ? "기준" : [
+        ok < ok0 - 0.001 ? "" : "이해MAE 안 줄음",
+        rivBias > -0.113 + 0.01 ? "" : "경쟁 안 좋아짐",
+        Math.abs(candMean) <= 0.02 ? "" : "후보지 이동",
+        Math.abs(bEx) <= 0.01 ? "" : "33곳 편향",
+      ].filter(Boolean).join(" · ") || "★ 기준 통과";
+      console.log(`  ${v.label.padEnd(28)}${String(v.p.residentRingDecayM).padStart(5)} |${(maeAll(xs) * 100).toFixed(2).padStart(7)}${(maeEx(xs) * 100).toFixed(2).padStart(7)}${(ok * 100).toFixed(2).padStart(8)}${String(within(xs, 0.05)).padStart(6)}${String(within(xs, 0.03)).padStart(5)} |${(bEx * 100).toFixed(1).padStart(8)} |${(rivBias * 100).toFixed(1).padStart(8)} |${(candMean * 100).toFixed(1).padStart(9)}${String(cd.filter((d) => d > 0.03).length).padStart(5)} | ${verdict}`);
+    }
+    console.log(`\n  ⭐ 읽는 법 — "이해되는 오차" MAE가 사용자 잣대다. 지금 산식에서 7곳 중 과소인 곳(문경·양주덕정·전대후문·강릉교동)은 이미 0으로 쳐서 지금 값이 내려간다.`);
+    console.log(`     변형이 이 잣대에서 지금보다 낮으면서 경쟁점·후보지·나머지 33곳을 안 건드려야 채택 후보다. 7곳을 빼고 잰 λ*라 7곳이 잣대를 끌지 않는다.`);
+    expect(e0.length).toBeGreaterThan(30);
+  });
+
+  it("(7) ⭐⭐⭐ 후보지 실무 예상(사용자) — 실험실·V62·실무를 나란히, 변형별로 실무 잣대까지", () => {
+    // 사용자(2026-09-24 밤): 오송 3천만 중반 · 마산산호 5천만대 · 창원상남 4천 중후반 · 울산삼산 6천 · 호구포역 6천 중후반(실무 감각).
+    // 후보지는 실매출이 없어 이게 유일한 바깥 잣대다. 실험실이 어느 쪽으로 얼마나 벗어나는지, 변형이 그 방향으로 움직이는지 본다.
+    // ⚠️ 5곳뿐이고 감각이라 값이 아니라 방향. 자사 잣대(이해되는 오차)·경쟁점 47곳과 같이 본다.
+    type V62Result = { candidateCode?: string; v62Final?: number | null };
+    const v62 = new Map<string, number | null>(((snap.results ?? []) as V62Result[]).filter((r) => r?.candidateCode).map((r) => [r.candidateCode as string, r.v62Final ?? null]));
+    const practical = [...LAB_CANDIDATE_PRACTICAL_EXPECTATION.entries()].map(([code, x]) => ({ code, mid: (x.low + x.high) / 2, ...x, row: candRows.find((r) => r.input.storeCode === code) }))
+      .filter((x): x is typeof x & { row: NonNullable<typeof x.row> } => !!x.row);
+    console.log(`\n[후보지 실무 예상 ${practical.length}곳 — 실험실 vs V62 vs 실무] 만원. 배율 = 실험실 ÷ 실무 중앙. 경쟁 = 500m 조사 + 2km`);
+    console.log(`  코드   이름       특수/강도   경쟁 | 실험실   V62    실무 범위      | 실험실÷실무  V62÷실무 | 가동률(실험실) 수요전부 점유율`);
+    for (const x of practical) {
+      const b = computeTextbook(x.row.input, P);
+      const near = (x.row.input.rivals ?? []).filter((v) => v.ip > 0 && (v.distanceM ?? 9e9) <= 500).length, far = (x.row.input.rivals ?? []).filter((v) => v.ip > 0 && (v.distanceM ?? 9e9) > 500).length;
+      const v = v62.get(x.code) ?? null;
+      const uAll = b.totalDemandHours && x.row.input.pcCount ? b.totalDemandHours / (x.row.input.pcCount * 720) : NaN;
+      console.log(`  ${x.code.padEnd(5)} ${nm(x.row.input.storeName ?? "", 5)} ${nm(`${x.row.input.specialDemandType ?? "없음"}/${x.row.input.specialDemandIntensity ?? "-"}`, 6)} ${`${near}+${far}`.padStart(5)} |${(Math.round((b.monthlyRevenue ?? 0) / 1e4)).toLocaleString().padStart(7)}${v == null ? "      -" : Math.round(v / 1e4).toLocaleString().padStart(7)}  ${(x.low / 1e4).toLocaleString()}~${(x.high / 1e4).toLocaleString()}만 |${(b.monthlyRevenue ?? 0) / x.mid > 0 ? ((b.monthlyRevenue ?? 0) / x.mid).toFixed(2).padStart(10) : "         -"}배${v == null ? "        -" : (v / x.mid).toFixed(2).padStart(9)}배 |${((b.utilization ?? 0) * 100).toFixed(1).padStart(9)}%${(uAll * 100).toFixed(0).padStart(8)}%${((b.share ?? 0) * 100).toFixed(0).padStart(6)}%`);
+    }
+    console.log(`  ⭐ 읽는 법 — 실험실÷실무가 1보다 크면 산식이 높다. 경쟁 1~2곳(오송·마산산호·호구포역)에서 높고 경쟁 9~12곳 유흥가(창원상남·울산삼산)에서 낮으면, 점유율 층이 "경쟁 없으면 다 먹고 경쟁 많으면 못 먹는" 폭이 실제보다 크다는 뜻 — θ 얘기와 같다.`);
+
+    // 변형별 — 실무 잣대(5곳 log 배율의 평균 절대값)와 자사 이해되는 오차·경쟁점 편향을 같이
+    const own = rows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const isUp = (code: string) => LAB_UPSIDE_STORE_CODES.has(code);
+    const okMae = (p2: TextbookParams) => mean(own.map((r) => { const e = (computeTextbook(r.input, p2).utilization ?? NaN) - (r.input.actualUtilization as number); return isUp(r.input.storeCode) && e < 0 ? 0 : Math.abs(e); }).filter(Number.isFinite));
+    const rivBiasOf = (p2: TextbookParams) => { const es: number[] = []; for (const [, list] of rivalInputsByCode) for (const x of list) { const u = computeTextbook(x.input, p2).utilization; if (u != null && u > 0) es.push(u - x.act); } return mean(es); };
+    const pracOf = (p2: TextbookParams) => { const ls = practical.map((x) => Math.log((computeTextbook(x.row.input, p2).monthlyRevenue ?? 1) / x.mid)); return { mae: mean(ls.map(Math.abs)), bias: mean(ls), each: practical.map((x, i) => `${(x.row.input.storeName ?? "").replace(/점$/, "")} ${Math.exp(ls[i]).toFixed(2)}`) }; };
+    const gp = (theta: number, lambda: number, extra: Partial<TextbookParams> = {}): TextbookParams => ({ ...P, qualityExponent: theta, residentRingDecayM: lambda, residentRingShare: "gravity", useRingEnclosure: true, ...extra });
+    const variants: { label: string; p: TextbookParams }[] = [
+      { label: "지금 (θ3 · λ0)", p: P },
+      { label: "관광유흥 1.4 (높음만)", p: { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, "관광·유흥": 1.4, "관광유흥": 1.4 }, specialDemandHighOnly: [...P.specialDemandHighOnly, "관광·유흥", "관광유흥"] } },
+      { label: "관광유흥 2.0 (높음만)", p: { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, "관광·유흥": 2.0, "관광유흥": 2.0 }, specialDemandHighOnly: [...P.specialDemandHighOnly, "관광·유흥", "관광유흥"] } },
+      { label: "안가는몫 50 IP", p: { ...P, outsideOptionIp: 50 } },
+      { label: "안가는몫 100 IP", p: { ...P, outsideOptionIp: 100 } },
+      { label: "θ2 · λ415", p: gp(2, 415) },
+      { label: "θ1.5 · λ670", p: gp(1.5, 670) },
+      { label: "θ1 · λ910", p: gp(1, 910) },
+      { label: "θ2 · λ415 · 안가는몫 50", p: gp(2, 415, { outsideOptionIp: 50 }) },
+      { label: "θ1.5 · λ670 · 안가는몫 50", p: gp(1.5, 670, { outsideOptionIp: 50 }) },
+    ];
+    // ── 몫 상한 — "경쟁이 없어도 동네 손님을 다 못 먹는다" ─────────────────────────────────────
+    // 독점 자사 4곳의 실제 먹은 몫(필요 점유율)이 탕정역 68 · 구미산동 72 · 남악 83 · 광주각화 83%다. 산식은 경쟁이 없으면 100%.
+    // 안가는몫을 **상수 IP**로 두면 수요 작은 소도시가 제일 깎인다(위). 대신 **자사 PC에 비례**하는 몫(k × 자사PC)을 분모에 두면
+    // 최대 점유율이 1/(1+k)로 잡히고(k 0.25 → 80%), 경쟁이 많은 곳(몫 20~40%)엔 거의 작용하지 않는다. 계수는 k 하나, 뜻은 "최대 몫".
+    // 산식엔 없으므로 매장마다 outsideOptionIp = k × PC 로 흉내 낸다(측정용). 경쟁점 1:1 주인공에도 같은 규칙.
+    const capped = (k: number, base: TextbookParams = P) => ({ k, base });
+    type CapVariant = { label: string; cap: { k: number; base: TextbookParams } };
+    const capVariants: CapVariant[] = [
+      { label: "몫 상한 k0.15 (최대 87%)", cap: capped(0.15) },
+      { label: "몫 상한 k0.25 (최대 80%)", cap: capped(0.25) },
+      { label: "몫 상한 k0.35 (최대 74%)", cap: capped(0.35) },
+      { label: "k0.25 + 관광유흥 1.4", cap: capped(0.25, variants[1].p) },
+      { label: "k0.25 + 관광유흥 2.0", cap: capped(0.25, variants[2].p) },
+      { label: "k0.35 + 관광유흥 2.0", cap: capped(0.35, variants[2].p) },
+    ];
+    // 2026-09-24 밤 — 상한이 산식에 들어갔다(ownShareCapK). 흉내 대신 파라미터로 건다. "지금"(P)은 채택값 0.25를 이미 문다.
+    const withCap = (_input: TextbookInput, c: { k: number; base: TextbookParams }): TextbookParams => ({ ...c.base, ownShareCapK: c.k });
+    const okMaeCap = (c: CapVariant["cap"]) => mean(own.map((r) => { const e = (computeTextbook(r.input, withCap(r.input, c)).utilization ?? NaN) - (r.input.actualUtilization as number); return isUp(r.input.storeCode) && e < 0 ? 0 : Math.abs(e); }).filter(Number.isFinite));
+    const rivBiasCap = (c: CapVariant["cap"]) => { const es: number[] = []; for (const [, list] of rivalInputsByCode) for (const x of list) { const u = computeTextbook(x.input, withCap(x.input, c)).utilization; if (u != null && u > 0) es.push(u - x.act); } return mean(es); };
+    const pracCap = (c: CapVariant["cap"]) => { const ls = practical.map((x) => Math.log((computeTextbook(x.row.input, withCap(x.row.input, c)).monthlyRevenue ?? 1) / x.mid)); return { mae: mean(ls.map(Math.abs)), bias: mean(ls), each: practical.map((x, i) => `${(x.row.input.storeName ?? "").replace(/점$/, "")} ${Math.exp(ls[i]).toFixed(2)}`) }; };
+    console.log(`\n  [변형별 — 실무 잣대 · 자사 이해되는 오차 · 경쟁점 편향] 실무 MAE = |ln(실험실÷실무)| 평균(0.2 ≈ 20%). 실무 편향 = 평균 ln(+면 산식이 높음)`);
+    console.log(`  변형                        실무MAE 실무편향 | 이해MAE | 경쟁편향 | 5곳 배율(실험실÷실무)`);
+    for (const v of variants) {
+      const pr = pracOf(v.p);
+      console.log(`  ${v.label.padEnd(26)}${pr.mae.toFixed(2).padStart(7)}${pr.bias.toFixed(2).padStart(8)} |${(okMae(v.p) * 100).toFixed(2).padStart(7)} |${(rivBiasOf(v.p) * 100).toFixed(1).padStart(8)} | ${pr.each.join(" · ")}`);
+    }
+    for (const v of capVariants) {
+      const pr = pracCap(v.cap);
+      console.log(`  ${v.label.padEnd(26)}${pr.mae.toFixed(2).padStart(7)}${pr.bias.toFixed(2).padStart(8)} |${(okMaeCap(v.cap) * 100).toFixed(2).padStart(7)} |${(rivBiasCap(v.cap) * 100).toFixed(1).padStart(8)} | ${pr.each.join(" · ")}`);
+    }
+    // 후보지 13곳 — 지금 vs k0.25+관1.4 vs k0.25+관2.0, 실무 범위와 함께 (채택 표)
+    const cA = capped(0.25, variants[1].p), cB = capped(0.25, variants[2].p);
+    console.log(`\n  [후보지 13곳 — 지금 / k0.25+관광유흥 1.4 / k0.25+관광유흥 2.0] 가동률 % (매출 만원) · 실무 범위`);
+    for (const r of [...candRows].sort((x, y) => y.input.storeCode.localeCompare(x.input.storeCode, undefined, { numeric: true }))) {
+      const b0 = computeTextbook(r.input, P), bA = computeTextbook(r.input, withCap(r.input, cA)), bB = computeTextbook(r.input, withCap(r.input, cB));
+      const x = LAB_CANDIDATE_PRACTICAL_EXPECTATION.get(r.input.storeCode);
+      const cell = (b: ReturnType<typeof computeTextbook>) => `${((b.utilization ?? 0) * 100).toFixed(1).padStart(5)}% (${Math.round((b.monthlyRevenue ?? 0) / 1e4).toLocaleString().padStart(5)}만)`;
+      console.log(`     ${r.input.storeCode} ${nm(r.input.storeName ?? "", 6)} ${nm(`${r.input.specialDemandType ?? "없음"}/${r.input.specialDemandIntensity ?? "-"}`, 6)} | ${cell(b0)} → ${cell(bA)} / ${cell(bB)}${x ? ` | 실무 ${(x.low / 1e4).toLocaleString()}~${(x.high / 1e4).toLocaleString()}만` : ""}`);
+    }
+    // 몫 상한이 자사 어디에 작용하나 — 독점·라벨 매장과 밀집 매장 몇 곳
+    const c25 = capped(0.25);
+    console.log(`\n  [몫 상한 k0.25 — 자사 매장별 오차 변화] 지금 → 상한. 독점형(경쟁 없음)이 내려가고 경쟁 많은 곳은 거의 그대로여야 한다`);
+    const mv = own.map((r) => { const a = r.input.actualUtilization as number; return { name: (r.input.storeName ?? "").replace(/점$/, ""), e0: (computeTextbook(r.input, P).utilization ?? NaN) - a, e1: (computeTextbook(r.input, withCap(r.input, c25)).utilization ?? NaN) - a }; })
+      .sort((x, y) => Math.abs(y.e0 - y.e1) - Math.abs(x.e0 - x.e1));
+    console.log(`     ${mv.slice(0, 14).map((m) => `${m.name} ${(m.e0 * 100).toFixed(0)}→${(m.e1 * 100).toFixed(0)}`).join(" · ")}`);
+    console.log(`     나머지 ${mv.length - 14}곳 변화 ${(mean(mv.slice(14).map((m) => Math.abs(m.e1 - m.e0))) * 100).toFixed(1)}%p 이하`);
+    console.log(`\n  ⭐ 읽는 법 — 실무 MAE를 내리면서 이해MAE·경쟁편향이 안 나빠지는 변형이 답. "안가는몫"은 경쟁 없는 자리의 몫을 깎는 항(오송·마산산호·호구포역), 관광유흥 배수는 유흥가 수요를 키우는 항(창원상남·울산삼산) — 둘은 다른 자리라 같이 갈 수 있다.`);
+    expect(practical.length).toBeGreaterThan(3);
   });
 });

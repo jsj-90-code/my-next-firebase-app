@@ -244,7 +244,8 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     //    산업단지 1.4·군부대 2.0)까지 물고 오므로 λ=0이어도 5.22%p로 어긋난다. 검산은 배수를 그 시점 값으로
     //    되돌린 칸에서 한다. 배수만 지금 값인 옛 배선도 같이 찍어 차이를 남긴다.
     const OLD_MULTIPLIERS: TextbookParams["specialDemandMultipliers"] = { ...Object.fromEntries(Object.keys(P.specialDemandMultipliers).map((k) => [k, 1])), "군부대": 2.25 };
-    const oldParams: TextbookParams = { ...paramsOf(NOW), specialDemandMultipliers: OLD_MULTIPLIERS, useRingEnclosure: false, residentRingShare: "core" };
+    // 2026-09-24 밤 — 우리 몫 상한(ownShareCapK 0.25)이 기본값에 들어갔다. 옛 배선 검산은 상한 없이(0) 잰다.
+    const oldParams: TextbookParams = { ...paramsOf(NOW), specialDemandMultipliers: OLD_MULTIPLIERS, useRingEnclosure: false, residentRingShare: "core", ownShareCapK: 0 };
     const runWith = (p2: TextbookParams): Obs[] => { const out: Obs[] = []; for (const s of subjects) { const u = computeTextbook(s.input, p2).utilization; if (u != null && u > 0) out.push({ ...s, pred: u }); } return out; };
     const now = score(runWith(oldParams));
     const nowMul = score(run(NOW));

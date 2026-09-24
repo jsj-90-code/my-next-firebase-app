@@ -224,6 +224,18 @@ export type TextbookParams = {
    */
   outsideOptionIp: number;
   /**
+   * **우리 몫 상한** (2026-09-24 밤 신설) — 분모에 `k × 자사PC`를 더한다. 경쟁이 하나도 없어도 점유율이 1/(1+k)를 못 넘는다(k 0.25 → 80%).
+   *
+   * 왜: 경쟁 없는 자리에서 산식은 동네 수요를 100% 먹는다고 봤다. 독점 자사 4곳의 실제 먹은 몫은 탕정역 68 · 구미산동 72 · 남악 83 · 광주각화 83%다.
+   * 후보지도 같은 자리에서 높았다(사용자 실무 감각: 호구포역 6천 중후반인데 산식 8,243만 · 오송 3천 중반인데 4,864만 · 마산산호 5천만대인데 7,442만).
+   * `outsideOptionIp`(상수 IP)는 수요 작은 소도시를 제일 깎아 기각됐고(`_labCandidate` (12)), 자사 규모에 비례하는 몫은 경쟁 많은 곳(몫 20~40%)엔
+   * 거의 안 걸리고 독점형에만 건다. 뜻은 "아무리 좋아도 동네 손님의 80%가 최대" — 집에서 하거나 원정 가는 몫이다.
+   * 재고 표 `_layerSplit` (7): k0.25 → 자사 이해되는 오차 4.23 → 4.07%p · 후보지 실무 잣대 0.42 → 0.34 · 경쟁점 편향 −11.3 → −11.7(같음).
+   * 자사에서 움직인 곳: 탕정역 +7 → 0 · 남악 +5 → −2 · 일산탄현 +13 → +8 · 시흥배곧 +12 → +7 / 나빠진 곳: 청주지웰 −1 → −7 · 광주각화 −6 → −10.
+   * ⚠️ k는 독점 4곳 + 후보지 실무 6곳에서 고른 값(0.15/0.25/0.35 중 0.25). 표본이 작아 값이 아니라 방향. 고리 gravity 점유율에도 같은 상한을 건다.
+   */
+  ownShareCapK: number;
+  /**
    * **상권 흡인력** — 경쟁점이 많다는 건 그 자리가 좋다는 뜻이기도 하다.
    * 수요에 (1 + factor x ln(1 + 경쟁점수))를 곱한다. 0이면 끈 것이다.
    *
@@ -932,6 +944,8 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   //    — 수요 추정 자체가 19% 틀린 건 아니라는 뜻이다. 다만 그 몫의 정체가 상수가 아니다.
   // 측정: `_shareDiscrimination.test.ts` [B5] · `_scaleMeasured.test.ts` [측정 1]
   outsideOptionIp: 0,
+  // ✅ 2026-09-24 밤 — 우리 몫 상한 80%(k 0.25). 근거는 타입 쪽 주석·`_layerSplit` (7). 사용자: "개선할 거 개선해도 괜찮을 듯" + 후보지 실무 감각 6곳.
+  ownShareCapK: 0.25,
   agglomerationFactor: 0,
   densityCorrection: 0,
   // ✅ **2026-09-21 밤 채택 — 1,493원으로 못 박는다**(아래 productUnitPriceFixed).
@@ -1435,14 +1449,15 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
       if (w <= 0) continue;
       rivalWeight += r.ip * Math.pow(ratio(r.parts), p.qualityExponent) * w;
     }
-    denom = ownWeight + rivalWeight + p.outsideOptionIp;
+    // 우리 몫 상한 — 자사 규모에 비례하는 "안 오는 몫"(타입 쪽 `ownShareCapK`). 경쟁이 없어도 1/(1+k)가 최대.
+    denom = ownWeight + rivalWeight + p.outsideOptionIp + (p.ownShareCapK ?? 0) * pc;
   } else {
     ownWeight = pc * Math.pow(gap, p.gapExponent);
     // 분모의 outsideOptionIp는 "PC방을 안 가는 몫"자리다. **지금 기본값은 0이다**
     // (2026-09-22에 뺐다 — 파라미터 주석). 0이면 반경 안에 경쟁점이 하나도 없는 매장은
     // 점유율이 100%가 되어 동네 수요를 통째로 먹는다. 그게 지금 독점 3곳이 19% 과대인
     // 이유이고, 그 몫의 정체는 상수가 아니라 **아직 안 세고 있는 반경 밖 경쟁점**이다.
-    denom = ownWeight + rivalIp + p.outsideOptionIp;
+    denom = ownWeight + rivalIp + p.outsideOptionIp + (p.ownShareCapK ?? 0) * pc;
   }
   // shareMode="off"면 점유율을 아예 1로 둔다 — 경쟁 항을 통째로 들어낸 상태다.
   // 그러면 화면의 "필요 점유율"(실측가동률 ÷ 이 예측)이 **이 매장이 실제로 먹은 몫**이 되고,
@@ -1471,7 +1486,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
         if (g <= 0) continue;
         rw += r.ip * Math.pow(ratio2(r.parts), p.qualityExponent) * g;
       }
-      const sb = pc / (pc + rw + p.outsideOptionIp);
+      const sb = pc / (pc + rw + p.outsideOptionIp + (p.ownShareCapK ?? 0) * pc);
       ringOwnHoursW += b.users * sb;
     }
     ringShare = ringOwnHoursW / ringUsers;

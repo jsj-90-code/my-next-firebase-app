@@ -56,6 +56,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 // 모델 입력 조립은 labInput.ts에 있다 — 측정 하네스와 **같은 코드**를 써야 한다.
 // 화면에만 항목을 붙이다 하네스가 입지를 통째로 빠뜨린 적이 있다(2026-09-16).
 import {
+  LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES,
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
   utilizationByStore, type LabRow, type LabCandidateRow,
 } from "@/lib/storeEval/labInput";
@@ -546,6 +547,22 @@ function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Load
       tone: "plain",
     },
     { label: "가동률 최악", value: pp(score.utilizationMaxAePoints), note: "|예상 − 실측| 가장 큰 매장", tone: "plain" },
+    // 2026-09-24 밤 사용자: 상향 이탈 7곳(초기 기대보다 실적이 잘 나온 매장)의 **과소예측**은 이해되는 오차. 과대는 그대로 센다(labInput LAB_UPSIDE_STORE_CODES).
+    ...(() => {
+      const xs = score.rows.filter((r) => r.utilization != null && r.actualUtilization != null && r.actualUtilization > 0)
+        .map((r) => ({ up: LAB_UPSIDE_STORE_CODES.has(r.storeCode), e: (r.utilization as number) - (r.actualUtilization as number) }));
+      if (!xs.length) return [];
+      const ok = xs.reduce((a, x) => a + (x.up && x.e < 0 ? 0 : Math.abs(x.e)), 0) / xs.length;
+      const ex = xs.filter((x) => !x.up);
+      const exMae = ex.length ? ex.reduce((a, x) => a + Math.abs(x.e), 0) / ex.length : null;
+      const under = xs.filter((x) => x.up && x.e < 0).length, over = xs.filter((x) => x.up && x.e >= 0).length;
+      return [{
+        label: "이해되는 오차 (상향 이탈 7곳 과소 제외)",
+        value: pp(ok),
+        note: `7곳 중 과소 ${under}곳은 0으로, 과대 ${over}곳은 그대로 · 7곳 뺀 ${ex.length}곳 ${pp(exMae)}`,
+        tone: ok <= UTILIZATION_TARGET_MAE_POINTS ? "good" as const : "plain" as const,
+      }];
+    })(),
     {
       label: "'전부 평균' 바닥",
       value: pp(utilBase),
@@ -1431,7 +1448,10 @@ function ParamSummary({ p, counts }: {
           plain: "품질 점수는 이 다섯 항목의 가중평균입니다(자사·경쟁점 같은 자). 경쟁점의 빈 항목은 우리와 같다고 봅니다.",
         },
         { label: "경쟁점 범위", value: `조사 ${RIVAL_2KM_OFFICIAL_RADIUS_M}m + 지도·인허가 ${RIVAL_2KM_OUTER_RADIUS_M}m`, plain: `${RIVAL_2KM_OFFICIAL_RADIUS_M}m 안은 사람이 조사한 경쟁점(대수·품질 있음)입니다. 그 밖 ${RIVAL_2KM_OUTER_RADIUS_M}m까지는 지도와 인허가로 찾은 곳인데 대수는 기본값, 품질은 우리와 같다고 보며, 거리무게 때문에 실제로는 거의 안 셉니다.` },
-        { label: "PC방 안 가는 몫", value: `${p.outsideOptionIp.toLocaleString()} IP`, plain: p.outsideOptionIp === 0 ? "안 씁니다(0). 그래서 경쟁점 없는 동네는 수요를 전부 먹는 것으로 나옵니다(탕정역이 +7%p인 이유)." : "동네 수요 중 어느 PC방도 안 가는 몫을 경쟁 PC처럼 분모에 넣습니다." },
+        { label: "우리 몫 상한", value: `최대 ${Math.round(100 / (1 + (p.ownShareCapK ?? 0)))}% (k ${num(p.ownShareCapK ?? 0)})`, plain: (p.ownShareCapK ?? 0) > 0
+          ? `경쟁점이 하나도 없어도 동네 손님의 ${Math.round(100 / (1 + p.ownShareCapK))}%까지만 옵니다(집에서 하거나 다른 동네로 가는 몫). 독점 매장 4곳이 실제로 먹은 몫이 68~83%라서 잡은 값입니다. 경쟁이 많은 곳(몫 20~40%)엔 거의 작용하지 않습니다.`
+          : "상한 없음 — 경쟁점 없는 동네는 수요를 전부 먹는 것으로 나옵니다." },
+        { label: "PC방 안 가는 몫(상수)", value: `${p.outsideOptionIp.toLocaleString()} IP`, plain: p.outsideOptionIp === 0 ? "안 씁니다(0). 상수로 두면 수요 작은 소도시가 제일 깎여서 대신 위 '우리 몫 상한'을 씁니다." : "동네 수요 중 어느 PC방도 안 가는 몫을 경쟁 PC처럼 분모에 넣습니다." },
       ],
     },
     {
@@ -1633,6 +1653,15 @@ function StoreTable({ score, qscByStore, p, windowFill }: {
                         </b>
                       );
                     })()}
+                    {/* 상향 이탈(사용자 2026-09-24): 초기 기대보다 실적이 잘 나온 매장. 과소예측이면 이해되는 오차. */}
+                    {LAB_UPSIDE_STORE_CODES.has(r.storeCode) && (
+                      <span
+                        className={`mr-1 rounded px-1.5 py-0.5 text-[11px] ${r.utilization != null && r.actualUtilization != null && r.utilization < r.actualUtilization ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300" : "bg-stone-200 text-stone-700 dark:bg-stone-700 dark:text-stone-200"}`}
+                        title={`${LAB_UPSIDE_STORE_CODES.get(r.storeCode)}. 산식이 낮게 잡으면 이해되는 오차, 높게 잡으면 오차 그대로.`}
+                      >
+                        실적 우위{r.utilization != null && r.actualUtilization != null && r.utilization < r.actualUtilization ? " · 과소=이해됨" : " · 과대=오차"}
+                      </span>
+                    )}
                     {r.capped && "가동률 상한 "}
                     {r.missing.length > 0 && `자료없음: ${r.missing.join(", ")}`}
                   </td>
@@ -1817,6 +1846,7 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
               <th scope="col" className="px-3 py-2">후보지</th>
               <th scope="col" className="px-3 py-2 text-right" title="후보지의 PC수는 expectedPcCount(예상PC대수)다.">PC</th>
               <th scope="col" className="px-3 py-2 text-right">예상매출</th>
+              <th scope="col" className="px-3 py-2 text-right" title="사용자 실무 감각(2026-09-24). 후보지엔 실매출이 없어 이것이 유일한 바깥 잣대다. 채점 목표가 아니라 방향.">실무 예상</th>
               <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
               <th scope="col" className="px-3 py-2 text-right" title="자사PC x 자사품질^θ ÷ (자사 + 유효거리 안 경쟁점들). 100%면 유효거리 안에 겨룰 상대가 없다는 뜻이다.">점유율</th>
               <th scope="col" className="px-3 py-2 text-right" title="1단계 수요 — 이 동네에서 한 달에 PC방을 쓰는 사람 수">수요(명)</th>
@@ -1834,6 +1864,15 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{row.input.pcCount ?? "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">{manwon(b.monthlyRevenue)}</td>
+                <td className="px-3 py-2 text-right text-xs tabular-nums text-[var(--sl-ink-soft)]">
+                  {(() => {
+                    const x = LAB_CANDIDATE_PRACTICAL_EXPECTATION.get(row.input.storeCode);
+                    if (!x) return "-";
+                    const mid = (x.low + x.high) / 2, ratio = b.monthlyRevenue != null && mid > 0 ? b.monthlyRevenue / mid : null;
+                    const tone = ratio == null ? "" : ratio > 1.25 ? "text-red-600 dark:text-red-400" : ratio < 0.8 ? "text-blue-700 dark:text-blue-300" : "text-emerald-700 dark:text-emerald-300";
+                    return <span title={x.note}>{manwon(x.low)}~{manwon(x.high)} <b className={tone}>{ratio == null ? "" : `(산식 ${ratio.toFixed(2)}배)`}</b></span>;
+                  })()}
+                </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {pct(b.utilization)}
                   {b.capped && <span className="ml-1 text-xs text-amber-700 dark:text-amber-400" title="가동률 상한에 걸려 매출이 깎였다">상한</span>}
