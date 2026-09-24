@@ -293,4 +293,61 @@ describeIf("단가층 — PC몫·상품몫을 매장별로 실측과 대조 (요
     console.log(`     β 0.546은 이 둘을 정가 하나로 뭉뚱그린 값이다. 요금표 상관이 정가 상관과 다르지 않으면 "요금표를 산식에 넣어도 정가와 같은 정보"라는 뜻이니 넣을 이유가 없다.`);
     expect(trows.length).toBeGreaterThan(20);
   });
+
+  // ── (5) 재고 표 — 단가층 입력을 정가에서 요금표 값으로 바꾸면 (2026-09-25 새벽, 사용자 답 뒤) ─────────
+  //
+  // 사용자 답(2026-09-25): 권종별 결제 건수 **없음**(큰권종비중 검증 불가) · pcSales에 상품권 판매 **들어가지만 거의 영향 없음** ·
+  // hourlyRate("요금표_시간당원" 칸)가 무엇을 적은 값인지는 사용자도 특정 못 함.
+  //
+  // 그래서 여기서는 **자료가 있는 것만으로** 단가층 입력 변형을 나란히 잰다. 가동률은 한 글자도 안 움직인다 — PC몫만 바뀐다.
+  //   지금   PC몫 = 1,343 × (정가 ÷ 1,343)^0.546                      ← 정가 + 계수 둘(β·기준점)
+  //   A      PC몫 = 요금표 10,000원권 단가 그대로                        ← 계수 0 (자료가 곧 값)
+  //   B      PC몫 = 요금표 권종 단가 평균 그대로                          ← 계수 0
+  //   C      PC몫 = 1,343 × (회원 기본요금(최소권 단가) ÷ 1,343)^0.546   ← hourlyRate를 키오스크 값으로 정정했을 때의 효과. 계수는 지금 것
+  //   D      PC몫 = 10,000원권 단가 × k, k = 실측÷1만권 중앙값(LOO)     ← 계수 하나. 수준만 맞추는 것 — A와 비교해 "수준 오차"와 "순서 오차"를 가른다
+  // 성적: PC몫 |오차| 평균 · 편향 · 최악 | 총단가(PC몫+1,493) |오차| 평균 | 실측 가동률에서의 매출 |오차| 평균(환산층만의 MAPE).
+  // 채택은 여기서 안 한다 — 재고 표 + 추천 후 사용자 결정. **A가 지금보다 좋으면 "요금표 값을 정가 대신 넣자"가 추천이 된다.**
+
+  it("(5) 재고 표 — 정가 vs 요금표 값을 PC몫 입력으로 (가동률 무변경)", () => {
+    const withTen = trows.filter((r) => r.r10k != null);
+    type Variant = { name: string; pc: (r: TRow, i: number) => number | null; coefs: string };
+    const kLoo = (i: number) => median(withTen.filter((_, k) => k !== i).map((r) => r.pcUnit / (r.r10k as number)));
+    const variants: Variant[] = [
+      { name: "지금 (정가^β)", pc: (r) => r.modelPc, coefs: "β 0.546 · 기준 1,343" },
+      { name: "A 1만원권 단가", pc: (r) => r.r10k, coefs: "0" },
+      { name: "B 권종 단가 평균", pc: (r) => r.rMean, coefs: "0" },
+      { name: "C 회원기본요금^β", pc: (r) => P.referenceHourlyRate * Math.pow(r.rMax / P.referenceHourlyRate, P.rateElasticity), coefs: "β 0.546 · 기준 1,343 (정가만 교체)" },
+      { name: "D 1만원권 × k(LOO)", pc: (r, i) => (r.r10k as number) * kLoo(i), coefs: "k 하나 (중앙값)" },
+    ];
+    console.log(`\n[재고 표 — PC몫 입력 변형, 요금표 있는 ${withTen.length}곳에서 같은 매장끼리] 오차 = 산식÷실측 − 1. 가동률은 무변경(이 층은 매출 환산만)`);
+    console.log(`  ${pad("변형", 20)} ${padL("PC몫|오차|", 9)} ${padL("편향", 6)} ${padL("최악", 6)} ${padL("±10%안", 6)} | ${padL("총단가|오차|", 10)} | ${padL("매출|오차|", 9)} ${padL("(실측가동률)", 10)} | 계수`);
+    const perStore = new Map<string, Record<string, number>>();
+    for (const v of variants) {
+      const pcErr: number[] = [], totErr: number[] = [], revErr: number[] = [];
+      withTen.forEach((r, i) => {
+        const pc = v.pc(r, i);
+        if (pc == null) return;
+        const e = pc / r.pcUnit - 1; pcErr.push(e);
+        const tot = (pc + P.productUnitPrice) / r.totalUnit - 1; totErr.push(tot);
+        revErr.push(tot); // 실측 가동률에서 매출 오차 = 총단가 오차 (PC시간이 같으니)
+        perStore.set(r.name, { ...(perStore.get(r.name) ?? {}), [v.name]: e });
+      });
+      const worst = pcErr.reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0);
+      console.log(`  ${pad(v.name, 20)} ${padL(pct(mean(pcErr.map(Math.abs))), 9)} ${padL(pct(mean(pcErr)), 6)} ${padL(pct(worst), 6)} ${padL(`${pcErr.filter((e) => Math.abs(e) <= 0.10).length}/${pcErr.length}`, 6)} | ${padL(pct(mean(totErr.map(Math.abs))), 10)} | ${padL(pct(mean(revErr.map(Math.abs))), 9)} ${padL("", 10)} | ${v.coefs}`);
+    }
+    console.log(`\n  [매장별 PC몫 오차 — 지금 vs A(1만원권) vs D(1만원권×k)] 실효÷정가 순. 지금보다 |오차| 작으면 ✓`);
+    let betterA = 0, betterD = 0;
+    for (const r of [...withTen].sort((a, b) => a.effOverList - b.effOverList)) {
+      const e = perStore.get(r.name)!; const now = e["지금 (정가^β)"], a = e["A 1만원권 단가"], d = e["D 1만원권 × k(LOO)"];
+      const okA = Math.abs(a) < Math.abs(now); if (okA) betterA++;
+      const okD = Math.abs(d) < Math.abs(now); if (okD) betterD++;
+      console.log(`    ${pad(r.name, 12)} 실효÷정가 ${padL((r.effOverList * 100).toFixed(0) + "%", 4)} · 실측 ${padL(won(r.pcUnit), 5)} | 지금 ${padL(won(r.modelPc), 5)} ${padL(pct(now), 7)} | A ${padL(won(r.r10k as number), 5)} ${padL(pct(a), 7)}${okA ? "✓" : " "} | D ${padL(pct(d), 7)}${okD ? "✓" : " "}  위치 ${r.where}`);
+    }
+    console.log(`  지금보다 좋아진 매장 — A ${betterA}/${withTen.length} · D ${betterD}/${withTen.length}`);
+    console.log(`  ⚠️ 총단가 |오차|가 A·B에서 지금보다 낮아 보이는 것은 **상쇄**다 — A의 PC몫 편향(−15.8%)이 상품몫 편향(+4.4%)과 반대여서 합이 덜 틀려 보인다. 층별로는 PC몫 |오차| 열을 봐야 한다(_utilizationVsRevenueView의 교훈과 같다).`);
+    console.log(`  ⭐ 읽는 법 — A·B는 계수가 0이다(요금표 값이 곧 PC몫). 지금(계수 둘)보다 |오차|가 작으면 "정가 대신 요금표 값을 넣자"가 추천이 된다. D는 수준만 맞춘 것이라 A와의 차이가 곧 '수준 오차'다 —`);
+    console.log(`     A의 편향이 크게 음수면 손님이 1만원권보다 비싼 권종을 산다는 뜻(요금표 위 매장이 절반이니 그럴 것). 그 편향까지 자료로 잡으려면 권종별 결제가 필요한데 **없다**(사용자 답) — 그러면 k 하나는 남는다.`);
+    console.log(`     C는 hourlyRate를 키오스크 회원 기본요금으로 고쳤을 때 지금 산식이 얼마나 달라지나 — 정정 자체의 값어치.`);
+    expect(withTen.length).toBeGreaterThan(20);
+  });
 });
