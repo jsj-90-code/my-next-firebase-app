@@ -527,7 +527,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
             <div className="font-semibold">{p.specialDemandMultipliers["대학가"] === 1
               ? "⛔ 2026-09-24 밤 — 대학가·산업단지·관광유흥 배수를 다시 껐습니다(사용자 결정). 군부대만 남깁니다"
-              : `✅ 2026-09-24 밤 — 대학가 ×${p.specialDemandMultipliers["대학가"]}만 다시 켰습니다. 단 강도 "높음"에만 곱합니다(문: ${(p.specialDemandHighOnly ?? []).join("·") || "없음"}). 산업단지·관광유흥은 1.0`}</div>
+              : `✅ 2026-09-24 밤 — 강도 "높음"에만 곱하는 문(${(p.specialDemandHighOnly ?? []).join("·") || "없음"}) 아래에서 대학가 ×${p.specialDemandMultipliers["대학가"]} · 산업단지 ×${p.specialDemandMultipliers["산업단지"]} · 군부대 ×${p.specialDemandMultipliers["군부대"]}. 관광유흥은 1.0`}</div>
             <div className="mt-1">
               지금 값: 대학가 <b>×{p.specialDemandMultipliers["대학가"]}</b> · 산업단지 <b>×{p.specialDemandMultipliers["산업단지"]}</b> ·
               군부대 <b>×{p.specialDemandMultipliers["군부대"]}</b> · 관광·유흥 <b>×{p.specialDemandMultipliers["관광·유흥"]}</b>.
@@ -551,8 +551,13 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                   40곳 MAE 5.81 → 5.56%p · 편향 −1.0 → 0.0 · 대학가 5곳 −7.5 → +0.7(`_labCandidate.test.ts` (10)).
                   전대상대는 입지평가 강도가 2026-09-02 &lsquo;실측 백테스트 보정&rsquo;으로 높음이 된 것이었어서(기존점 문서는 보통) 보통으로
                   되돌렸습니다 — 문 아래에서 배수를 안 타고 −0.9%p(켜면 +5.8).
-                  산업단지·관광유흥은 1.0 그대로입니다 — 산업단지 3곳은 25%p 갈리고(1.0이어도 탕정역 +7.4), 관광유흥 2곳(수원인계·야당)은
-                  층 가르기에서 &ldquo;점유율 층, 경쟁점은 맞음&rdquo;이라 수요 배수 자리가 아닐 수 있습니다.
+                  <b>산업단지도 같은 문 아래에서 ×{p.specialDemandMultipliers["산업단지"]}</b>(같은 날 더 늦게, `_labCandidate.test.ts` (11)) — 강도 높음 2곳의
+                  함의 배수가 시흥정왕 ×1.31 · 광주첨단 ×1.60(기하평균 1.45)인데 보통인 탕정역은 ×0.82라 강도 방향이 맞습니다. 낮에 1.2로 내린 이유였던
+                  탕정역 +20.9는 탕정역이 보통이라 문에서 빠져 사라지고, 후보지 호구포역(낮음)도 안 탑니다. 군부대도 문에 넣었습니다 — 자사 2곳이 모두
+                  높음이라 성적은 그대로이고, 앞으로 군부대/보통 후보지에 ×2가 검증 없이 통과하는 길을 막는 안전문입니다.
+                  관광유흥은 1.0 그대로입니다 — 자사 2곳(수원인계·야당)이 모두 높음이라 강도로 못 가르고, 후보지 5곳 중 4곳이 높음이라 문이 구리돌다리·
+                  신중동을 못 막습니다. 층 가르기에서 두 곳이 &ldquo;점유율 층, 경쟁점은 맞음&rdquo;이라 수요 배수 자리인지도 확인이 안 됐습니다.
+                  세 배수 다: 40곳 MAE 5.81 → 5.11%p · 후보지 13곳 무변동.
                   ⚠️ 대학가는 여전히 매장별로 갈립니다 — 전대후문 −7·청주대 −5·울산대 0·부경대 +10. 하나의 배수로 5곳을 ±3%p에 못 넣습니다.
                   다음 갈래는 &ldquo;대학가&rdquo; 꼬리표 대신 대학 규모×거리입니다. 아래는 09-23~24 오후 기록입니다.</>}
               {" "}껐던 이유(축척을 독점 3곳에서 맞추던 순환)는 2026-09-21에
