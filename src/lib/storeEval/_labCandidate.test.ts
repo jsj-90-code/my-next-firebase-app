@@ -675,4 +675,78 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     console.log(`     · 산업단지는 층 가르기(_layerSplit)에서 광주첨단·탕정역이 핑봇 없어 수요/점유율을 못 갈랐고, 시흥정왕은 1.0이어도 −8.4다. 배수 자리인지 확인이 안 된 유형이다.`);
     expect(affected.length).toBeGreaterThan(0);
   });
+
+  it("(11) ⭐⭐ 강도별 배수 — 산업단지·관광유흥·군부대도 강도(높음/보통/낮음)로 갈라 태울 수 있나", () => {
+    // 사용자(2026-09-24 밤): *"산업단지나 유흥가 군부대상권도 특수수요 강도에 따라서 배수 적용하는 거 검토해봐."*
+    // 판정 기준(자료 보기 전): 그 유형 안에서 **강도가 높은 매장의 함의 배수(실측÷배수 1.0 예측)가 낮은 매장보다 커야** 강도로 갈라 태울 근거가 있다.
+    // 강도가 같은 매장들끼리 함의 배수가 크게 갈리면 강도는 배수의 자리가 아니다. 표본 2~3곳이라 값이 아니라 방향.
+    if (!candRows.length) return;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const allOne = Object.fromEntries(Object.keys(full.specialDemandMultipliers).map((k) => [k, 1]));
+    const base: TextbookParams = { ...full, specialDemandMultipliers: allOne, specialDemandHighOnly: [] };
+    const intensityOf = new Map<string, string | null>();
+    for (const s of stores) intensityOf.set(s.storeCode, s.specialDemandIntensity ?? null);
+    const rank = (i: string | null | undefined) => ({ "높음": 3, "보통": 2, "낮음": 1, "없음": 0 } as Record<string, number>)[i ?? ""] ?? -1;
+    console.log(`\n[유형별 · 강도별 함의 배수 — 자사] 함의 배수 = 실측 ÷ 배수 1.0 예측. 강도 순으로 정렬. 강도가 높을수록 함의 배수가 커야 강도로 갈라 태울 수 있다`);
+    for (const type of ["군부대", "산업단지", "관광·유흥", "대학가", "기타"]) {
+      const g = own.filter((r) => (r.input.specialDemandType ?? "없음") === type)
+        .map((r) => { const a = r.input.actualUtilization as number, u = computeTextbook(r.input, base).utilization ?? NaN; return { r, a, u, imp: a / u, inten: intensityOf.get(r.input.storeCode) ?? null }; })
+        .sort((x, y) => rank(y.inten) - rank(x.inten));
+      if (!g.length) continue;
+      console.log(`  ── ${type} (${g.length}곳) · 지금 배수 ×${full.specialDemandMultipliers[type] ?? 1}${full.specialDemandHighOnly.includes(type) ? " (높음만)" : ""} ──`);
+      for (const x of g) console.log(`     ${(x.r.input.storeName ?? "").padEnd(9)} 강도 ${String(x.inten ?? "-").padEnd(3)} 실측 ${(x.a * 100).toFixed(1).padStart(5)}%  배수1.0 예측 ${(x.u * 100).toFixed(1).padStart(5)}%  오차 ${((x.u - x.a) * 100).toFixed(1).padStart(6)}  함의 배수 ×${x.imp.toFixed(2)}`);
+      const hi = g.filter((x) => x.inten === "높음"), mid = g.filter((x) => x.inten === "보통"), lo = g.filter((x) => x.inten === "낮음" || x.inten === "없음" || !x.inten);
+      const geo = (xs: typeof g) => (xs.length ? Math.exp(mean(xs.map((x) => Math.log(x.imp)))) : NaN);
+      console.log(`     강도별 함의 배수(기하평균): 높음 ×${geo(hi).toFixed(2)}(${hi.length}) · 보통 ×${geo(mid).toFixed(2)}(${mid.length}) · 낮음/없음 ×${geo(lo).toFixed(2)}(${lo.length})`
+        + `   → ${hi.length && mid.length ? (geo(hi) > geo(mid) ? "높음 > 보통 (강도 방향 맞음)" : "높음 ≤ 보통 (강도 방향 아님)") : "한 강도만 있어 못 가름"}`);
+    }
+
+    // 후보지 강도 분포 — 문이 어디를 막고 어디를 못 막나
+    console.log(`\n  [후보지 — 유형/강도] 문(높음만)을 달면 막히는 곳과 그대로 타는 곳`);
+    for (const r of candRows) {
+      const t = r.input.specialDemandType ?? "없음";
+      if (t === "없음") continue;
+      const inten = locByCode.get(r.input.storeCode)?.specialDemandIntensity ?? null;
+      console.log(`     ${r.input.storeCode} ${(r.input.storeName ?? "").trim().slice(0, 7).padEnd(7)} ${t.padEnd(5)} 강도 ${String(inten ?? "-").padEnd(3)} → 높음만 문: ${inten === "높음" ? "탄다" : "안 탄다"}`);
+    }
+
+    // 방식 재고 표 — 유형만 / 높음만 / 강도 계단(높음 m · 보통 1+(m−1)/2 · 낮음 1)
+    const ON: Record<string, number> = { "군부대": 2.0, "대학가": 1.3, "산업단지": 1.2, "관광·유흥": 1.4, "관광유흥": 1.4 };
+    const stepped = (input: TextbookInput, m: Record<string, number>, inten: string | null): TextbookInput => {
+      // 계단은 산식에 없으므로 입력 유형을 바꿔 흉내 낸다 — 보통은 배수 절반, 낮음은 없음
+      const t = input.specialDemandType ?? "없음";
+      if (!(t in m) || (m[t] ?? 1) === 1) return input;
+      if (inten === "높음") return { ...input, specialDemandIntensity: "높음" };
+      if (inten === "보통") return { ...input, specialDemandType: `${t}(보통)`, specialDemandIntensity: "높음" };
+      return { ...input, specialDemandType: "없음" };
+    };
+    const withMid = (m: Record<string, number>) => ({ ...m, ...Object.fromEntries(Object.entries(m).map(([k, v]) => [`${k}(보통)`, 1 + (v - 1) / 2])) });
+    type Scheme = { label: string; params: TextbookParams; map: (input: TextbookInput, inten: string | null) => TextbookInput };
+    const schemes: Scheme[] = [
+      { label: "지금(군2.0 · 대1.3 높음만)", params: full, map: (i) => i },
+      { label: "넷 다 유형만(군2.0·대1.3·산1.2·관1.4)", params: { ...full, specialDemandMultipliers: { ...allOne, ...ON }, specialDemandHighOnly: [] }, map: (i) => i },
+      { label: "넷 다 높음만", params: { ...full, specialDemandMultipliers: { ...allOne, ...ON }, specialDemandHighOnly: ["대학가", "산업단지", "관광·유흥", "관광유흥", "군부대"] }, map: (i) => i },
+      { label: "넷 다 강도 계단(높음 m · 보통 절반 · 낮음 1)", params: { ...full, specialDemandMultipliers: { ...allOne, ...withMid(ON) }, specialDemandHighOnly: Object.keys(withMid(ON)) }, map: (i, inten) => stepped(i, ON, inten) },
+      { label: "군·대만 높음만 + 산·관 강도 계단", params: { ...full, specialDemandMultipliers: { ...allOne, ...withMid(ON) }, specialDemandHighOnly: Object.keys(withMid(ON)) }, map: (i, inten) => ((i.specialDemandType === "산업단지" || i.specialDemandType === "관광·유흥") ? stepped(i, ON, inten) : i) },
+      { label: "추천: 군2.0·대1.3·산1.4 높음만 · 관 1.0", params: { ...full, specialDemandMultipliers: { ...allOne, "군부대": 2.0, "대학가": 1.3, "산업단지": 1.4 }, specialDemandHighOnly: ["대학가", "산업단지", "군부대"] }, map: (i) => i },
+      { label: "  같은 것, 산업단지 1.3", params: { ...full, specialDemandMultipliers: { ...allOne, "군부대": 2.0, "대학가": 1.3, "산업단지": 1.3 }, specialDemandHighOnly: ["대학가", "산업단지", "군부대"] }, map: (i) => i },
+      { label: "  같은 것, 산업단지 1.5", params: { ...full, specialDemandMultipliers: { ...allOne, "군부대": 2.0, "대학가": 1.3, "산업단지": 1.5 }, specialDemandHighOnly: ["대학가", "산업단지", "군부대"] }, map: (i) => i },
+    ];
+    console.log(`\n  [방식 재고 표] 자사 40곳 성적 · 유형별 편향 · 후보지 영향(배수 탄 곳)`);
+    console.log(`  방식                                    MAE   편향 ±5%p | 대학가 산업단지 관광유흥 군부대 | 후보지 배수 탄 곳`);
+    for (const s of schemes) {
+      const xs = own.map((r) => ({ t: r.input.specialDemandType ?? "없음", e: (computeTextbook(s.map(r.input, intensityOf.get(r.input.storeCode) ?? null), s.params).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+      const abs = xs.map((x) => Math.abs(x.e));
+      const tb = (t: string) => { const g = xs.filter((x) => x.t === t); return g.length ? (mean(g.map((x) => x.e)) * 100).toFixed(1) : "-"; };
+      const cand = candRows.map((r) => {
+        const inten = locByCode.get(r.input.storeCode)?.specialDemandIntensity ?? null;
+        const u0 = computeTextbook(r.input, base).utilization ?? 0, u1 = computeTextbook(s.map(r.input, inten), s.params).utilization ?? 0;
+        return u1 > u0 + 1e-6 ? `${(r.input.storeName ?? "").trim().replace(/점$/, "")} ${(u0 * 100).toFixed(1)}→${(u1 * 100).toFixed(1)}` : null;
+      }).filter(Boolean);
+      console.log(`  ${s.label.padEnd(40)}${(mean(abs) * 100).toFixed(2).padStart(5)}${(mean(xs.map((x) => x.e)) * 100).toFixed(1).padStart(6)}${String(abs.filter((a) => a <= 0.05).length).padStart(5)} |${tb("대학가").padStart(6)}${tb("산업단지").padStart(8)}${tb("관광·유흥").padStart(9)}${tb("군부대").padStart(7)} | ${cand.length ? cand.join(" · ") : "없음"}`);
+    }
+    console.log(`\n  ⭐ 읽는 법 — 강도로 갈라 태우려면 (1) 그 유형 안에서 높음의 함의 배수 > 보통의 함의 배수여야 하고 (2) 후보지에서 문이 실제로 무언가를 막아야 한다.`);
+    console.log(`     관광유흥 후보지가 대부분 "높음"이면 문은 구리돌다리·신중동을 못 막는다 — 그때 문제는 강도가 아니라 관광유흥이 수요 배수 자리인가다(층 가르기: 수원인계·야당은 점유율 층).`);
+    expect(own.length).toBeGreaterThan(30);
+  });
 });
