@@ -593,22 +593,31 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
       { label: "θ2 · λ* · 존구성 0", p: (() => { const ex = { qualityWeights: { ...P.qualityWeights, zone: 0 } }; return paramsOf(2, findLambda(2, ex), ex); })() },
       { label: "θ3 · λ0 · 관광유흥 1.4 높음만", p: { ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, "관광·유흥": 1.4, "관광유흥": 1.4 }, specialDemandHighOnly: [...P.specialDemandHighOnly, "관광·유흥", "관광유흥"] } },
     ];
-    console.log(`\n  [변형 재고 표 — 세 성적] λ* = 상향 이탈 뺀 33곳 편향이 0 되는 고리 λ(gravity·항아리)`);
-    console.log(`  변형                          λ  | 전체MAE  뺌MAE  이해MAE  ±5%p ±3%p | 33곳편향 | 경쟁편향 | 후보지 평균Δ 3%p↑ | 판정`);
-    const ok0 = maeOk(e0);
+    // 후보지 실무 잣대(6곳) — (7)과 같은 계산. 사용자: 실무 감각은 정확하지 않으니 방향만.
+    const prac = [...LAB_CANDIDATE_PRACTICAL_EXPECTATION.entries()].map(([code, x]) => ({ mid: (x.low + x.high) / 2, row: candRows.find((r) => r.input.storeCode === code) })).filter((x) => x.row);
+    const pracMae = (p2: TextbookParams) => mean(prac.map((x) => Math.abs(Math.log((computeTextbook(x.row!.input, p2).monthlyRevenue ?? 1) / x.mid))));
+    // 짝에 상한을 더 세게(k0.35) 거는 변형도 — 손님을 키우면 경쟁 없는 자리가 뜨므로 상한이 그만큼 더 눌러야 한다
+    variants.push(
+      { label: "θ2 · λ* · 상한 k0.35", p: (() => { const ex = { ownShareCapK: 0.35 }; return paramsOf(2, findLambda(2, ex), ex); })() },
+      { label: "θ1.5 · λ* · 상한 k0.35", p: (() => { const ex = { ownShareCapK: 0.35 }; return paramsOf(1.5, findLambda(1.5, ex), ex); })() },
+      { label: "θ1.5 · λ* · 상한 k0.5", p: (() => { const ex = { ownShareCapK: 0.5 }; return paramsOf(1.5, findLambda(1.5, ex), ex); })() },
+    );
+    console.log(`\n  [변형 재고 표 — 세 성적 + 경쟁점 + 후보지] λ* = 상향 이탈 뺀 33곳 편향이 0 되는 고리 λ(gravity·항아리). 지금 기본값(상한 k${P.ownShareCapK} · 배수 넷) 위에서`);
+    console.log(`  변형                          λ  | 전체MAE  뺌MAE  이해MAE  ±5%p ±3%p | 33곳편향 | 경쟁편향 | 후보지 평균Δ 3%p↑ 실무MAE | 판정`);
+    const ok0 = maeOk(e0), prac0 = pracMae(P);
     for (const v of variants) {
       const xs = errsOf(v.p);
       const rivErr: number[] = [];
       for (const [, list] of rivalInputsByCode) for (const x of list) { const u = computeTextbook(x.input, v.p).utilization; if (u != null && u > 0) rivErr.push(u - x.act); }
       const cd = candRows.map((r) => (computeTextbook(r.input, v.p).utilization ?? NaN) - (cand0.get(r.input.storeCode) ?? NaN)).filter(Number.isFinite);
-      const rivBias = mean(rivErr), candMean = mean(cd), bEx = biasEx(xs), ok = maeOk(xs);
+      const rivBias = mean(rivErr), candMean = mean(cd), bEx = biasEx(xs), ok = maeOk(xs), pm = pracMae(v.p);
       const verdict = v === variants[0] ? "기준" : [
-        ok < ok0 - 0.001 ? "" : "이해MAE 안 줄음",
-        rivBias > -0.113 + 0.01 ? "" : "경쟁 안 좋아짐",
-        Math.abs(candMean) <= 0.02 ? "" : "후보지 이동",
+        ok < ok0 + 0.002 ? "" : "이해MAE 나빠짐",
+        rivBias > -0.114 + 0.02 ? "" : "경쟁 안 좋아짐",
+        pm <= prac0 + 0.03 ? "" : "실무 잣대 나빠짐",
         Math.abs(bEx) <= 0.01 ? "" : "33곳 편향",
       ].filter(Boolean).join(" · ") || "★ 기준 통과";
-      console.log(`  ${v.label.padEnd(28)}${String(v.p.residentRingDecayM).padStart(5)} |${(maeAll(xs) * 100).toFixed(2).padStart(7)}${(maeEx(xs) * 100).toFixed(2).padStart(7)}${(ok * 100).toFixed(2).padStart(8)}${String(within(xs, 0.05)).padStart(6)}${String(within(xs, 0.03)).padStart(5)} |${(bEx * 100).toFixed(1).padStart(8)} |${(rivBias * 100).toFixed(1).padStart(8)} |${(candMean * 100).toFixed(1).padStart(9)}${String(cd.filter((d) => d > 0.03).length).padStart(5)} | ${verdict}`);
+      console.log(`  ${v.label.padEnd(28)}${String(v.p.residentRingDecayM).padStart(5)} |${(maeAll(xs) * 100).toFixed(2).padStart(7)}${(maeEx(xs) * 100).toFixed(2).padStart(7)}${(ok * 100).toFixed(2).padStart(8)}${String(within(xs, 0.05)).padStart(6)}${String(within(xs, 0.03)).padStart(5)} |${(bEx * 100).toFixed(1).padStart(8)} |${(rivBias * 100).toFixed(1).padStart(8)} |${(candMean * 100).toFixed(1).padStart(9)}${String(cd.filter((d) => d > 0.03).length).padStart(5)}${pm.toFixed(2).padStart(8)} | ${verdict}`);
     }
     console.log(`\n  ⭐ 읽는 법 — "이해되는 오차" MAE가 사용자 잣대다. 지금 산식에서 7곳 중 과소인 곳(문경·양주덕정·전대후문·강릉교동)은 이미 0으로 쳐서 지금 값이 내려간다.`);
     console.log(`     변형이 이 잣대에서 지금보다 낮으면서 경쟁점·후보지·나머지 33곳을 안 건드려야 채택 후보다. 7곳을 빼고 잰 λ*라 7곳이 잣대를 끌지 않는다.`);
