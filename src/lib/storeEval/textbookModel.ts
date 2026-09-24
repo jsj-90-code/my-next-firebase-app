@@ -467,6 +467,12 @@ export type TextbookParams = {
    */
   specialDemandHighOnly: string[];
   /**
+   * 배수를 **어느 항에** 곱하나 (2026-09-25 실험, 기본 없음 = 총수요). 기전대로라면 군부대·대학가·산업단지는 **주거 항**(주민등록 밖 사람이
+   * 주거 통계에서 빠진 것)에, 관광유흥은 **유동 항**(밤 손님이 유동 집계에서 빠진 것)에 곱해야 한다. 총수요에 곱하면 유동이 큰 번화가 대학가
+   * (부경대, 유동 14.7만 — 학생이 이미 유동에 있음)는 과대, 유동이 작은 대학가(전대후문·청주대)는 과소가 된다. `_labCandidate` (23).
+   */
+  specialDemandTerm?: Record<string, "resident" | "floating" | "total"> | null;
+  /**
    * **점유율 환산을 켤지 끌지** (2026-09-16 밤 신설).
    *
    * 사용자 설계: "일단 전체가맹점을 점유율환산하는 값을 전부제거해서 0부터 시작한다음에,
@@ -1448,7 +1454,12 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const sdType = input.specialDemandType ?? "없음";
   const sdGated = (p.specialDemandHighOnly ?? []).includes(sdType) && input.specialDemandIntensity !== "높음";
   const sdMul = sdGated ? 1 : (p.specialDemandMultipliers?.[sdType] ?? 1);
-  const totalUsers = baseUsers * agg * dens * sdMul;
+  // 배수를 곱하는 항(타입 쪽 `specialDemandTerm`). 없으면 총수요 — 2026-09-24까지의 동작 그대로.
+  const sdTerm = p.specialDemandTerm?.[sdType] ?? "total";
+  const baseUsersMul = sdTerm === "resident" ? (residentUsers ?? 0) * sdMul + (floatingUsers ?? 0)
+    : sdTerm === "floating" ? (residentUsers ?? 0) + (floatingUsers ?? 0) * sdMul
+    : baseUsers * sdMul;
+  const totalUsers = baseUsersMul * agg * dens;
   const totalHours = totalUsers * p.hoursPerUserPerMonth;
 
   // ── 3) 점유율 ───────────────────────────────────────────────────────────

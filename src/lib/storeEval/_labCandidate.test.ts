@@ -1231,6 +1231,59 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     expect(rows.length).toBeGreaterThan(30);
   });
 
+  it("(23) ⭐⭐⭐ 배수를 어느 항에 곱하나 — 군부대·대학가·산업단지는 주거 항, 관광유흥은 유동 항 (기전대로) vs 지금(총수요)", () => {
+    // 왜: 부경대(대학가/높음)는 유동 14.7만 번화가라 학생이 이미 유동에 세어져 ×1.3이 과대(+7.8, 함의 1.04). 전대후문·청주대·울산대는 유동이 작아 과소(함의 1.5~1.7).
+    //     총수요에 곱하면 유동 크기에 따라 배수의 뜻이 달라진다. 기전(주민등록 밖 사람 = 주거 항 누락)대로 항을 나누면 한 유형 안에서 함의 배수가 더 고르게 나와야 한다.
+    // 잣대(memory ⑱): 유형별로 상수 하나(기하평균)를 맞춘 뒤 남는 log 오차 SD — 총수요 vs 항별. 그리고 40곳·후보지 성적.
+    if (!candRows.length) return;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const TERM: Record<string, "resident" | "floating"> = { "군부대": "resident", "대학가": "resident", "산업단지": "resident", "관광유흥": "floating", "관광·유흥": "floating" };
+    const noMul: TextbookParams = { ...full, specialDemandMultipliers: Object.fromEntries(Object.keys(full.specialDemandMultipliers).map((k) => [k, 1])) };
+    // 유형/높음 매장별 함의 배수 — 총수요 기준(m_total)과 항별 기준(m_term). 가동률은 수요에 비례하므로 선형으로 푼다.
+    type Imp = { type: string; name: string; mTotal: number; mTerm: number; R: number; F: number };
+    const imps: Imp[] = [];
+    for (const r of own) {
+      const t = r.input.specialDemandType ?? "없음"; const term = TERM[t]; if (!term || r.input.specialDemandIntensity !== "높음") continue;
+      const b = computeTextbook(r.input, noMul); const a = r.input.actualUtilization as number;
+      const R = b.residentDemandUsers ?? 0, F = b.floatingDemandUsers ?? 0; if (!b.utilization || R + F <= 0) continue;
+      const mTotal = a / b.utilization; // 총수요 배수
+      const Tstar = (R + F) * mTotal;   // 필요한 기저 이용자
+      const mTerm = term === "resident" ? (Tstar - F) / R : (Tstar - R) / F;
+      imps.push({ type: t.replace("·", ""), name: (r.input.storeName ?? "").replace(/점$/, ""), mTotal, mTerm, R, F });
+    }
+    const sd = (xs: number[]) => { const m = mean(xs); return Math.sqrt(mean(xs.map((x) => (x - m) ** 2))); };
+    const gm = (xs: number[]) => Math.exp(mean(xs.map(Math.log)));
+    console.log(`\n[배수를 곱하는 항 — 유형/높음 매장별 함의 배수] R=주거 이용자 · F=유동 이용자 (배수 없이). m_term이 음수·0이면 그 항만으로는 못 설명`);
+    console.log(`  유형      매장         R      F   유동비중 | m_총수요  m_항별`);
+    const byType = new Map<string, Imp[]>();
+    for (const x of imps) { byType.set(x.type, [...(byType.get(x.type) ?? []), x]); console.log(`  ${x.type.padEnd(6)} ${x.name.padEnd(8)} ${Math.round(x.R).toString().padStart(6)} ${Math.round(x.F).toString().padStart(6)}  ${pct(x.F / (x.R + x.F), 0).padStart(5)} | ${x.mTotal.toFixed(2).padStart(7)} ${x.mTerm.toFixed(2).padStart(7)}`); }
+    const termMul: Record<string, number> = {};
+    console.log(`\n  유형별 — 상수 하나 맞춘 뒤 남는 log오차 SD (작을수록 그 형태가 자료와 맞음) · 기하평균 배수`);
+    for (const [t, xs] of byType) {
+      const okTerm = xs.filter((x) => x.mTerm > 0);
+      const sdTotal = sd(xs.map((x) => Math.log(x.mTotal))), sdTerm = okTerm.length ? sd(okTerm.map((x) => Math.log(x.mTerm))) : NaN;
+      const gTotal = gm(xs.map((x) => x.mTotal)), gTerm = okTerm.length ? gm(okTerm.map((x) => x.mTerm)) : NaN;
+      termMul[t] = gTerm;
+      console.log(`     ${t.padEnd(6)} n=${xs.length}  총수요: SD ${sdTotal.toFixed(3)} 기하평균 ${gTotal.toFixed(2)} | 항별(${TERM[t]}): SD ${sdTerm.toFixed(3)} 기하평균 ${gTerm.toFixed(2)}${okTerm.length < xs.length ? ` (양수 ${okTerm.length}곳만)` : ""}`);
+    }
+    // 40곳·후보지 성적 — 지금(총수요·채택 배수) vs 항별(기하평균 배수, 강도 문 그대로)
+    const pTerm: TextbookParams = { ...full, specialDemandTerm: { "군부대": "resident", "대학가": "resident", "산업단지": "resident", "관광유흥": "floating", "관광·유흥": "floating" },
+      specialDemandMultipliers: { ...full.specialDemandMultipliers, "군부대": termMul["군부대"] || full.specialDemandMultipliers["군부대"], "대학가": termMul["대학가"] || full.specialDemandMultipliers["대학가"], "산업단지": termMul["산업단지"] || full.specialDemandMultipliers["산업단지"], "관광유흥": termMul["관광유흥"] || full.specialDemandMultipliers["관광유흥"], "관광·유흥": termMul["관광유흥"] || full.specialDemandMultipliers["관광·유흥"] } };
+    const isUp = (code: string) => LAB_UPSIDE_STORE_CODES.has(code);
+    const errsOf = (pp: TextbookParams) => own.map((r) => ({ code: r.input.storeCode, name: (r.input.storeName ?? "").replace(/점$/, ""), type: r.input.specialDemandType ?? "없음", e: (computeTextbook(r.input, pp).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+    const e0 = errsOf(full), e1 = errsOf(pTerm);
+    const okOf = (xs: typeof e0) => mean(xs.map((x) => (isUp(x.code) && x.e < 0 ? 0 : Math.abs(x.e))));
+    console.log(`\n  [40곳 성적] 지금(총수요) MAE ${(mean(e0.map((x) => Math.abs(x.e))) * 100).toFixed(2)} 이해 ${(okOf(e0) * 100).toFixed(2)} → 항별(기하평균 배수 ${Object.entries(termMul).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(" · ")}) MAE ${(mean(e1.map((x) => Math.abs(x.e))) * 100).toFixed(2)} 이해 ${(okOf(e1) * 100).toFixed(2)}`);
+    console.log(`  유형 있는 매장 오차 지금 → 항별:`);
+    for (const x of e0.filter((y) => y.type !== "없음" && y.type !== "기타")) { const y = e1.find((z) => z.code === x.code)!; console.log(`     ${x.name.padEnd(8)} ${x.type.padEnd(5)} ${(x.e * 100).toFixed(1).padStart(6)} → ${(y.e * 100).toFixed(1).padStart(6)}`); }
+    const moved = e0.filter((x) => Math.abs(x.e - e1.find((z) => z.code === x.code)!.e) > 1e-9 && (x.type === "없음" || x.type === "기타")).length;
+    console.log(`  유형 없는 매장이 움직인 수: ${moved} (0이어야)`);
+    console.log(`  [후보지] 지금 → 항별 (관광유흥 높음 후보지는 유동 항에 ×${(termMul["관광유흥"] || 0).toFixed(2)})`);
+    for (const r of candRows) { const t = r.input.specialDemandType ?? "없음"; if (t === "없음" || t === "기타") continue; const a = computeTextbook(r.input, full), b = computeTextbook(r.input, pTerm); console.log(`     ${(r.input.storeName ?? "").trim().padEnd(8)} ${t}/${r.input.specialDemandIntensity ?? "-"}  ${pct(a.utilization)} (${manwon(a.monthlyRevenue)}) → ${pct(b.utilization)} (${manwon(b.monthlyRevenue)})`); }
+    console.log(`  ⭐ 읽는 법 — 항별 SD가 총수요 SD보다 작으면 기전이 자료와 맞는 것. 그때 관광유흥은 유동 항 배수라 유동이 큰 창원상남·울산삼산이 더 오르고, 대학가는 주거 항이라 부경대(유동 큼)는 덜 오른다.`);
+    expect(imps.length).toBeGreaterThan(5);
+  });
+
   it("(20) ⭐⭐ 반경 2km 매장은 경쟁도 2km로 — 수요만 넓히고 경쟁은 1km 감쇠(평지 200·감쇠 200)로 두는 비대칭을 잰다", () => {
     // 2026-09-25: 주거 상권 반경(사람 확인)이 2km인 4곳(양주덕정·문경·진주혁신·영월)은 수요를 2km 누적으로 세는데 경쟁점은 그대로 1km 감쇠다.
     // 같은 사실("이 동네는 2km가 한 상권")이면 그 안의 PC방도 그 상권의 경쟁이어야 앞뒤가 맞는다. 문경 1.4~1.5km 경쟁 4곳(322대)이 지금은 거의 0으로 세어진다.
