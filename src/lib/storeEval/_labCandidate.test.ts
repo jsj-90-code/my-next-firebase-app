@@ -1132,8 +1132,49 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
       return { name: (r.input.storeName ?? "").trim(), n: eq.length, ip: eq.reduce((s, v) => s + v.ip, 0), share: b.share, util: b.utilization, err: a != null && a > 0 && b.utilization != null ? b.utilization - a : null, cand: a == null || a === 0 };
     }).sort((a, b) => b.n - a.n || b.ip - a.ip);
     for (const x of nearEq.slice(0, 14)) console.log(`     ${(x.cand ? "[후보]" : "").padEnd(6)}${x.name.padEnd(10)} 맞수 ${String(x.n).padStart(2)}곳 ${String(x.ip).padStart(4)}대 · 점유율 ${pct(x.share).padStart(6)} · 가동률 ${pct(x.util).padStart(6)}${x.err != null ? ` · 오차 ${(x.err * 100).toFixed(1).padStart(6)}%p` : ""}`);
+    console.log(`\n  (19)로 이어짐 — 동네 수요가 동네 대수를 몇 %로 돌리나`);
     console.log(`\n  ⭐ 읽는 법 — 후보지의 "품질 모름" 경쟁점이 기존점보다 많고, 그걸 중앙 비로 바꿨을 때 가동률이 크게 오르면 그건 계수가 아니라 **조사 미완(자료)** 문제다.`);
     console.log(`     기존점은 조사가 끝나 있어 비가 낮게 나오고, 후보지는 조사 전이라 비 1로 세어지는 비대칭이면 후보지만 낮게 나온다.`);
     expect(candRows.length).toBeGreaterThan(0);
+  });
+
+  it("(19) ⭐⭐⭐ 산식 수요가 동네 대수를 몇 %로 돌리나 — '870대가 계속 영업한다 = 수요가 그만큼 있다' (사용자 2026-09-24 밤)", () => {
+    // 사용자: 창원상남은 이 규모 PC방들이 계속 운영되니까 이 대수가 있는 것. 그럼 산식 수요가 적게 잡힌 것 아니냐.
+    // 잣대(순환 없음 — 아무것도 맞추지 않는다): 동네 수요시간 ÷ (우리 + 500m 경쟁 대수) × 720 = "동네 평균 가동률 함의".
+    //   살아남은 PC방은 최소 어느 가동률은 돌아야 하므로, 이 값이 기존점 동네들보다 크게 낮으면 그 동네 수요는 적게 잡힌 것이다.
+    //   ⚠️ memory ㉑: "경쟁 대수로 수요를 다시 읽자"는 과녁이 순환이라 상관 검정이 죽었다. 여기서는 상관을 안 잰다 — 물리적 하한만 본다.
+    if (!candRows.length) return;
+    const p = full;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // pingbotUtilization은 퍼센트 단위(12.4 = 12.4%)라 0~1로 바꾼다.
+    const pingOf = (code: string) => { const cs = compsByCode.get(code) ?? []; const v = cs.map((c) => (c as any).pingbotUtilization as number | null | undefined).filter((x): x is number => x != null && x > 0).map((x) => (x > 1 ? x / 100 : x)); return v.length ? { n: v.length, avg: v.reduce((a, b) => a + b, 0) / v.length } : null; };
+    type R = { name: string; cand: boolean; pc: number; rivalPc: number; nRival: number; all: number; implied: number; ownActual: number | null; ownPred: number | null; ping: { n: number; avg: number } | null };
+    const rows: R[] = [];
+    for (const r of [...own.map((x) => ({ x, cand: false })), ...candRows.map((x) => ({ x, cand: true }))]) {
+      const b = computeTextbook(r.x.input, p);
+      const pc = r.x.input.pcCount ?? 0;
+      const rv = (r.x.input.rivals ?? []).filter((v) => v.ip > 0 && v.distanceM <= 500);
+      const rivalPc = rv.reduce((s, v) => s + v.ip, 0);
+      if (!b.totalDemandHours || !pc) continue;
+      rows.push({ name: (r.x.input.storeName ?? "").trim(), cand: r.cand, pc, rivalPc, nRival: rv.length, all: b.totalDemandHours / (pc * 720), implied: b.totalDemandHours / ((pc + rivalPc) * 720), ownActual: r.cand ? null : (r.x.input.actualUtilization as number), ownPred: b.utilization, ping: pingOf(r.x.input.storeCode) });
+    }
+    rows.sort((a, b) => a.implied - b.implied);
+    const medOwn = [...rows.filter((r) => !r.cand).map((r) => r.implied)].sort((a, b) => a - b);
+    console.log(`\n[동네 평균 가동률 함의 = 산식 수요시간 ÷ (우리+500m 경쟁 대수)] 기존점 중앙 ${pct(medOwn[Math.floor(medOwn.length / 2)])} · 최저 ${pct(medOwn[0])}. 낮은 순 20곳`);
+    console.log(`  매장           우리 경쟁대수(곳)  수요전부  동네함의 | 우리 실측  예측 | 핑봇 경쟁 평균(n)`);
+    for (const r of rows.slice(0, 20)) console.log(`  ${(r.cand ? "[후보]" : "").padEnd(6)}${r.name.padEnd(9)} ${String(r.pc).padStart(3)} ${String(r.rivalPc).padStart(5)}(${String(r.nRival).padStart(2)})  ${pct(r.all, 0).padStart(6)}  ${pct(r.implied).padStart(6)} | ${r.ownActual != null ? pct(r.ownActual).padStart(6) : "     -"} ${pct(r.ownPred).padStart(6)} | ${r.ping ? `${pct(r.ping.avg)}(${r.ping.n})` : "-"}`);
+    // 핑봇이 있는 동네 — 실측 경쟁 평균 가동률이 "동네 함의"보다 얼마나 높은가 = 수요가 얼마나 적게 잡혔나(경쟁 −11%p의 다른 얼굴)
+    const withPing = rows.filter((r) => r.ping && r.ownActual != null);
+    if (withPing.length) {
+      const ratio = withPing.map((r) => { const actualAvg = (r.ownActual! * r.pc + r.ping!.avg * r.rivalPc) / (r.pc + r.rivalPc); return actualAvg / r.implied; });
+      const s = [...ratio].sort((a, b) => a - b);
+      console.log(`\n  핑봇 있는 기존점 ${withPing.length}곳 — (우리 실측·경쟁 핑봇으로 만든 동네 실측 평균) ÷ (동네 함의): 중앙 ${s[Math.floor(s.length / 2)].toFixed(2)}배 · 최소 ${s[0].toFixed(2)} · 최대 ${s[s.length - 1].toFixed(2)}`);
+      console.log(`     (핑봇은 경쟁점 일부만이라 경쟁 평균이 조사된 곳 쪽으로 치우친다 — 방향 잣대)`);
+    }
+    const cw = rows.find((r) => r.name.includes("창원상남"));
+    if (cw) console.log(`\n  창원상남: 동네 함의 ${pct(cw.implied)} — 우리 ${cw.pc}대 + 경쟁 ${cw.rivalPc}대(${cw.nRival}곳)가 산식 수요를 나누면 평균 이 가동률. 기존점 최저 ${pct(medOwn[0])}보다 ${cw.implied < medOwn[0] ? "낮다 → 이 동네 수요는 적게 잡힌 것(살아남은 대수가 부정)" : "높거나 같다"}`);
+    console.log(`  ⭐ 읽는 법 — 동네 함의가 기존점 어느 동네보다도 낮으면 그 후보지 수요는 확정적으로 적게 잡힌 것이다. 얼마나 적은지는 "PC방이 살아남는 최저 가동률"을 알아야 하고, 그건 핑봇 분포(경쟁점 실측 가동률 하위)에서 읽는다.`);
+    expect(rows.length).toBeGreaterThan(30);
   });
 });
