@@ -615,37 +615,59 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
     const NOW = full.specialDemandMultipliers;
     const allOne = Object.fromEntries(Object.keys(NOW).map((k) => [k, 1]));
-    const configs: { label: string; m: Record<string, number> }[] = [
-      { label: "지금(군2.0·대1.3·산1.2·관1.4)", m: NOW },
-      { label: "산업단지 1.0", m: { ...NOW, "산업단지": 1.0 } },
-      { label: "대학가 1.0", m: { ...NOW, "대학가": 1.0 } },
-      { label: "관광유흥 1.0", m: { ...NOW, "관광·유흥": 1.0, "관광유흥": 1.0 } },
-      { label: "산업단지·대학가 1.0", m: { ...NOW, "산업단지": 1.0, "대학가": 1.0 } },
+    const ON = { ...allOne, "군부대": 2.0, "대학가": 1.3, "산업단지": 1.2, "관광·유흥": 1.4, "관광유흥": 1.4 };
+    const configs: { label: string; m: Record<string, number>; gate?: boolean }[] = [
+      { label: `지금(${Object.entries(NOW).filter(([, v]) => v !== 1).map(([k, v]) => `${k.slice(0, 2)}${v}`).join("·") || "전부 1.0"})`, m: NOW },
+      { label: "09-24 오후(군2.0·대1.3·산1.2·관1.4)", m: ON },
+      { label: "  산업단지 1.0", m: { ...ON, "산업단지": 1.0 } },
+      { label: "  대학가 1.0", m: { ...ON, "대학가": 1.0 } },
+      { label: "  관광유흥 1.0", m: { ...ON, "관광·유흥": 1.0, "관광유흥": 1.0 } },
       { label: "군부대만 2.0(나머지 1.0)", m: { ...allOne, "군부대": 2.0 } },
+      { label: "군부대 2.0 + 대학가 1.3", m: { ...allOne, "군부대": 2.0, "대학가": 1.3 } },
+      { label: "군부대 2.0 + 대학가 1.3 (강도 높음만)", m: { ...allOne, "군부대": 2.0, "대학가": 1.3 }, gate: true },
+      { label: "군부대 2.0 + 대학가 1.2 (강도 높음만)", m: { ...allOne, "군부대": 2.0, "대학가": 1.2 }, gate: true },
+      { label: "군부대 2.0 + 대학가 1.4 (강도 높음만)", m: { ...allOne, "군부대": 2.0, "대학가": 1.4 }, gate: true },
       { label: "전부 1.0", m: allOne },
     ];
     const paramsOf = (m: Record<string, number>): TextbookParams => ({ ...full, specialDemandMultipliers: m });
-    const errs = (p: TextbookParams) => own.map((r) => ({ t: r.input.specialDemandType ?? "없음", e: (computeTextbook(r.input, p).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+    // 강도 문 — 사용자(2026-09-24 밤): 오송(대학가/보통, 약대·행정타운)이 학부 대학가와 같은 분류로 들어왔다. "강도 높음만 배수"를 재 본다.
+    // 산식엔 강도 입력이 없으므로 여기서는 **강도가 높음이 아니면 유형을 '없음'으로 바꿔** 같은 효과를 낸다(측정용, 산식 변경 아님).
+    const intensityByCode = new Map<string, string | null>();
+    for (const s of stores) intensityByCode.set(s.storeCode, s.specialDemandIntensity ?? null);
+    for (const [code, loc] of locByCode) intensityByCode.set(code, loc.specialDemandIntensity ?? null);
+    const gateHigh = (input: TextbookInput): TextbookInput =>
+      (input.specialDemandType ?? "없음") === "없음" || input.specialDemandType === "군부대" || intensityByCode.get(input.storeCode) === "높음"
+        ? input : { ...input, specialDemandType: "없음" };
+    const errs = (p: TextbookParams, gate = false) => own.map((r) => ({ t: r.input.specialDemandType ?? "없음", e: (computeTextbook(gate ? gateHigh(r.input) : r.input, p).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
     const typeBias = (xs: { t: string; e: number }[], t: string) => { const g = xs.filter((x) => x.t === t); return g.length ? mean(g.map((x) => x.e)) : NaN; };
     console.log(`\n[특수수요 배수 재고 표 — 자사 ${own.length}곳] 오차 = 예측 − 실측 %p. 유형별 편향은 그 유형 매장 평균`);
     console.log(`  조합                          MAE   편향  ±5%p ±10%p | 대학가(5) 산업단지(3) 관광유흥(2) 군부대(2) 없음(22)`);
     for (const c of configs) {
-      const xs = errs(paramsOf(c.m));
+      const xs = errs(paramsOf(c.m), c.gate);
       const abs = xs.map((x) => Math.abs(x.e));
-      console.log(`  ${c.label.padEnd(26)}${(mean(abs) * 100).toFixed(2).padStart(6)}${(mean(xs.map((x) => x.e)) * 100).toFixed(1).padStart(6)}${String(abs.filter((a) => a <= 0.05).length).padStart(5)}${String(abs.filter((a) => a <= 0.10).length).padStart(6)} |`
+      console.log(`  ${c.label.padEnd(38)}${(mean(abs) * 100).toFixed(2).padStart(6)}${(mean(xs.map((x) => x.e)) * 100).toFixed(1).padStart(6)}${String(abs.filter((a) => a <= 0.05).length).padStart(5)}${String(abs.filter((a) => a <= 0.10).length).padStart(6)} |`
         + `${(typeBias(xs, "대학가") * 100).toFixed(1).padStart(9)}${(typeBias(xs, "산업단지") * 100).toFixed(1).padStart(11)}${(typeBias(xs, "관광·유흥") * 100).toFixed(1).padStart(11)}${(typeBias(xs, "군부대") * 100).toFixed(1).padStart(10)}${(typeBias(xs, "없음") * 100).toFixed(1).padStart(9)}`);
+    }
+    // 대학가 5곳 매장별 — 강도와 함께. 강도 문(높음만)이 전대상대(보통)를 어떻게 하나
+    console.log(`\n  [대학가 자사 5곳 — 강도 · 배수 1.0 / 1.3 전부 / 1.3 높음만 / 1.2 높음만] 오차 %p`);
+    const uni = own.filter((r) => r.input.specialDemandType === "대학가");
+    for (const r of uni) {
+      const a = r.input.actualUtilization as number;
+      const e = (m: number, gate: boolean) => (computeTextbook(gate ? gateHigh(r.input) : r.input, paramsOf({ ...allOne, "군부대": 2.0, "대학가": m })).utilization ?? NaN) - a;
+      console.log(`     ${(r.input.storeName ?? "").padEnd(8)} 강도 ${String(intensityByCode.get(r.input.storeCode) ?? "-").padEnd(3)} 실측 ${(a * 100).toFixed(1).padStart(5)}%  1.0 ${(e(1, false) * 100).toFixed(1).padStart(6)}  1.3 ${(e(1.3, false) * 100).toFixed(1).padStart(6)}  1.3높음만 ${(e(1.3, true) * 100).toFixed(1).padStart(6)}  1.2높음만 ${(e(1.2, true) * 100).toFixed(1).padStart(6)}`);
     }
     // 후보지 — 특수수요 유형이 있는 곳만 (없음은 배수와 무관)
     type V62Result = { candidateCode?: string; v62Final?: number | null };
     const v62 = new Map<string, V62Result>(((snap.results ?? []) as V62Result[]).filter((r) => r?.candidateCode).map((r) => [r.candidateCode as string, r]));
     const affected = candRows.filter((r) => (r.input.specialDemandType ?? "없음") !== "없음");
     console.log(`\n  [후보지 — 특수수요 유형 있는 ${affected.length}곳] 가동률 % (매출 만원). 배수 1.0 = 유형 무시. V62 = 운영 결과(참고)`);
-    console.log(`  코드   이름         특수     경쟁 |  배수 1.0        지금 배수         V62매출`);
+    console.log(`  코드   이름         특수  강도  경쟁 |  배수 1.0        09-24 오후 배수   대1.3 높음만     지금        V62매출`);
+    const gated13 = paramsOf({ ...allOne, "군부대": 2.0, "대학가": 1.3 });
     for (const r of affected) {
-      const b1 = computeTextbook(r.input, paramsOf(allOne)), bn = computeTextbook(r.input, full);
+      const b1 = computeTextbook(r.input, paramsOf(allOne)), bOn = computeTextbook(r.input, paramsOf(ON)), bG = computeTextbook(gateHigh(r.input), gated13), bn = computeTextbook(r.input, full);
       const t = r.input.specialDemandType ?? "없음";
-      console.log(`  ${r.input.storeCode.padEnd(5)} ${(r.input.storeName ?? "").trim().slice(0, 7).padEnd(7)} ${t.slice(0, 4).padEnd(5)} ×${String(NOW[t] ?? 1).padEnd(4)} ${String(r.input.competitorCount ?? 0).padStart(3)} |`
-        + ` ${pct(b1.utilization)} (${manwon(b1.monthlyRevenue).trim()})  ${pct(bn.utilization)} (${manwon(bn.monthlyRevenue).trim()})${bn.capped ? " 상한" : ""}  ${manwon(v62.get(r.input.storeCode)?.v62Final).trim()}`);
+      console.log(`  ${r.input.storeCode.padEnd(5)} ${(r.input.storeName ?? "").trim().slice(0, 7).padEnd(7)} ${t.slice(0, 4).padEnd(5)} ${String(intensityByCode.get(r.input.storeCode) ?? "-").padEnd(3)} ${String(r.input.competitorCount ?? 0).padStart(3)} |`
+        + ` ${pct(b1.utilization)} (${manwon(b1.monthlyRevenue).trim()})  ${pct(bOn.utilization)} (${manwon(bOn.monthlyRevenue).trim()})  ${pct(bG.utilization)} (${manwon(bG.monthlyRevenue).trim()})  ${pct(bn.utilization)}${bn.capped ? " 상한" : ""}  ${manwon(v62.get(r.input.storeCode)?.v62Final).trim()}`);
     }
     console.log(`\n  ⭐ 읽는 법`);
     console.log(`     · 배수는 그 유형 후보지 가동률을 그대로 ×배수 한다 — 자사에서 "평균 편향 0"으로 고른 값이 후보지에선 검증 없이 통과한다.`);
