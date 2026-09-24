@@ -28,7 +28,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   summarizeValidationRows,
   computeCompetitorInvestigationSummary,
@@ -287,12 +287,18 @@ export default function LabPage() {
 }
 
 function LabPageInner() {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const tab: LabTabKey = isLabTab(tabParam) ? tabParam : "score";
-  const goTab = (k: LabTabKey) => router.replace(k === "score" ? pathname : `${pathname}?tab=${k}`, { scroll: false });
+  // 탭은 **클라이언트 상태**로 바꾼다 (2026-09-25, 사용자 버그 신고: "오래 켜두다가 다른 탭 누르면 작동을 안 해서 홈으로 나갔다 다시 들어와야 한다").
+  // 원인: router.replace(?tab=…)는 서버에서 RSC 페이로드를 다시 받는 **내비게이션**이다. 그 사이에 새 배포가 나가면(오늘 밤만 대여섯 번)
+  // 옛 빌드의 클라이언트가 새 빌드 자산을 못 찾아 조용히 멈춘다 — 새로고침(하드 내비게이션)만 풀린다. 탭은 이미 받은 자료를 다시 그리는
+  // 일이라 서버에 갈 이유가 없다. 주소는 history.replaceState로만 맞춘다(링크·새로고침 유지, 서버 왕복 없음).
+  const [tab, setTab] = useState<LabTabKey>(isLabTab(tabParam) ? tabParam : "score");
+  const goTab = (k: LabTabKey) => {
+    setTab(k);
+    try { window.history.replaceState(window.history.state, "", k === "score" ? pathname : `${pathname}?tab=${k}`); } catch { /* 주소만 못 바꿀 뿐 탭은 바뀐다 */ }
+  };
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
