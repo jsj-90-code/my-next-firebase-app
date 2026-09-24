@@ -133,7 +133,8 @@ export default function StoreEvalDashboardPage() {
   // 계산은 없다. 이미 있는 result.v62Final로 정렬만 한다.
   const [sortByRevenue, setSortByRevenue] = useState(false);
   const sortedCandidates = useMemo(() => {
-    if (!sortByRevenue) return candidates;
+    // 2026-09-24 밤 사용자: "신규후보지 나열할 때 코드명으로, 숫자 높은 게 위로" — 기본 순서를 후보지코드 내림차순(N016 → N001)으로.
+    if (!sortByRevenue) return [...candidates].sort((a, b) => b.code.localeCompare(a.code, undefined, { numeric: true }));
     return [...candidates].sort((a, b) => {
       const av = resultByCode.get(a.code)?.v62Final ?? -Infinity;
       const bv = resultByCode.get(b.code)?.v62Final ?? -Infinity;

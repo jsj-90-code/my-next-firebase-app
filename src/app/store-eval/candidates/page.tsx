@@ -40,7 +40,8 @@ export default function CandidateListPage() {
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<CandidateStatusFilter>("전체");
-  const [sort, setSort] = useState<CandidateSort>("updated");
+  // 2026-09-24 밤 사용자: 기본 정렬을 코드 내림차순(높은 번호 위)으로. 최근 수정순은 고를 수 있게 남긴다.
+  const [sort, setSort] = useState<CandidateSort>("code");
   const [freshnessAttempt, setFreshnessAttempt] = useState(0);
   const [freshnessFailed, setFreshnessFailed] = useState(false);
   const loadSequence = useRef(0);
@@ -239,7 +240,7 @@ export default function CandidateListPage() {
         </label>
         <label className="text-xs font-medium text-[var(--sl-ink-soft)]">정렬
           <select value={sort} onChange={(event) => setSort(event.target.value as CandidateSort)} className="app-input mt-2 block px-3 py-2 text-sm">
-            <option value="updated">최근 수정순</option><option value="name">이름순</option><option value="code">코드순</option>
+            <option value="code">코드순(높은 번호 위)</option><option value="updated">최근 수정순</option><option value="name">이름순</option>
           </select>
         </label>
         <button type="button" onClick={refresh} disabled={loading || busyCode !== null} className="app-btn-outline px-3 py-2 text-sm disabled:opacity-50">{loading ? "불러오는 중…" : "새로고침"}</button>

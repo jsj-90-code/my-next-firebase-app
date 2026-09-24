@@ -1750,8 +1750,8 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
   actualUtilRange: { min: number; max: number } | null;
 }) {
   const computed = rows.map((r) => ({ row: r, b: computeTextbook(r.input, p) }))
-    // 2026-09-24 사용자 요청: 가동률 우선 작업 중이라 표를 예상 가동률 높은 순으로(매출 순이었다).
-    .sort((a, b) => (b.b.utilization ?? -1) - (a.b.utilization ?? -1));
+    // 2026-09-24 밤 사용자: "신규후보지 나열할 때 코드명으로, 숫자 높은 게 위로" — 운영 화면과 같은 순서(N016 → N001). 가동률 순이었다.
+    .sort((a, b) => b.row.input.storeCode.localeCompare(a.row.input.storeCode, undefined, { numeric: true }));
   if (!computed.length) {
     return (
       <section className="mt-10">

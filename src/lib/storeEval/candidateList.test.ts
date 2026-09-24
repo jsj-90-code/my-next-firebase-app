@@ -21,6 +21,7 @@ it("전각 코드와 영문 대소문자를 정규화한다", () => {
 it("최근 수정순과 자연스러운 코드순을 지원하고 원본을 변경하지 않는다", () => {
   const order = candidates.map((c) => c.code);
   expect(selectCandidates(candidates, "", "전체", "updated").map((c) => c.code)).toEqual(["N2", "N3", "N10"]);
-  expect(selectCandidates(candidates, "", "전체", "code").map((c) => c.code)).toEqual(["N2", "N3", "N10"]);
+  // 2026-09-24 밤 — 코드순은 내림차순(높은 번호 위). 숫자 비교라 N10이 N2 위다.
+  expect(selectCandidates(candidates, "", "전체", "code").map((c) => c.code)).toEqual(["N10", "N3", "N2"]);
   expect(candidates.map((c) => c.code)).toEqual(order);
 });

@@ -25,6 +25,7 @@ export function selectCandidates(
       const difference = (a.name ?? "").localeCompare(b.name ?? "", "ko");
       if (difference) return difference;
     }
-    return a.code.localeCompare(b.code, "ko", { numeric: true });
+    // 2026-09-24 밤 사용자: "신규후보지 나열할 때 코드명으로, 숫자 높은 게 위로" — 코드 내림차순(N016 → N001). 실험실 후보지 표와 같은 순서.
+    return b.code.localeCompare(a.code, "ko", { numeric: true });
   });
 }
