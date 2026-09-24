@@ -106,6 +106,9 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
   type RivalObs = { name: string; act: number; pred: number; distM: number; input: TextbookInput };
   // 입력은 한 번 조립하고, 예측은 파라미터마다 다시 낸다((4) 실험이 θ·감쇠를 바꿔 가며 경쟁점 편향을 재야 한다).
   const rivalInputsByCode = new Map<string, { name: string; act: number; distM: number; input: TextbookInput }[]>();
+  /** 핑봇 가동률이 이 값(%) 미만이면 1:1 대조에서 뺀다 — 사용자 판단(한 자리 가동률은 신뢰 불가). 문서 값은 안 지운다. */
+  const PINGBOT_MIN_RELIABLE_PCT = 10;
+  const lowPingSkipped: string[] = [];
   const rivalObsFor = (p2: TextbookParams): Map<string, RivalObs[]> => {
     const m = new Map<string, RivalObs[]>();
     for (const [code, list] of rivalInputsByCode) {
@@ -130,6 +133,8 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
     comps.forEach((me, k) => {
       const pv = ping(me.c);
       if (pv == null || !(pv > 0)) return;
+      // 사용자(2026-09-24 밤): "가동률 한 자리는 신뢰성 없다 — 한 자리 가동률로는 운영을 못 한다." 값은 문서에 그대로 두고 1:1 대조에서만 뺀다.
+      if (pv < PINGBOT_MIN_RELIABLE_PCT) { lowPingSkipped.push(`${(r.input.storeName ?? "").replace(/점$/, "")}/${me.c.name ?? ""} ${pv}%`); return; }
       const twoKm = rival2kmRecords(existingSiteKey(r.input.storeCode))
         .map((x) => ({ ip: DEFAULT_UNSURVEYED_PC_COUNT * operatingShareInWindow(x, months), distanceM: distM(me.lat, me.lng, x.lat, x.lng), parts: null as QualityParts | null, name: x.name }))
         .filter((x) => x.ip > 0);
@@ -619,6 +624,7 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
     flatVariants.push({ label: "평면 θ2 · ×1.7", p: flatOf(2, 1.7) }, { label: "평면 θ1 · ×1.7", p: flatOf(1, 1.7) });
     for (const theta of [2, 1.5]) { const ex = { ownShareCapK: 0.5 }; const k = findK(theta, ex); flatVariants.push({ label: `평면 θ${theta} · ×${k.toFixed(2)} · 상한 k0.5`, p: flatOf(theta, k, ex) }); }
     variants.push(...flatVariants);
+    console.log(`\n  핑봇 1:1 쌍 ${[...rivalInputsByCode.values()].reduce((s, l) => s + l.length, 0)}개 · 한 자리 가동률(<${PINGBOT_MIN_RELIABLE_PCT}%)이라 뺀 쌍 ${lowPingSkipped.length}개: ${lowPingSkipped.join(" · ") || "없음"}`);
     console.log(`\n  [변형 재고 표 — 세 성적 + 경쟁점 + 후보지] λ* = 상향 이탈 뺀 33곳 편향이 0 되는 고리 λ(gravity·항아리). 지금 기본값(상한 k${P.ownShareCapK} · 배수 넷) 위에서`);
     console.log(`  변형                          λ  | 전체MAE  뺌MAE  이해MAE  ±5%p ±3%p | 33곳편향 | 경쟁편향 | 후보지 평균Δ 3%p↑ 실무MAE | 판정`);
     const ok0 = maeOk(e0), prac0 = pracMae(P);
