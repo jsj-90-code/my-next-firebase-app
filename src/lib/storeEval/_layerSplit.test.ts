@@ -26,7 +26,8 @@
 // 실행: npx vitest run src/lib/storeEval/_layerSplit.test.ts --disable-console-intercept
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { buildLabRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
+import { buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
+import type { CandidateInput, LocationEvaluation } from "./types";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
@@ -88,14 +89,30 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
   }
   const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode, residentRingsByCode, ringBlockedByCode });
   const P: TextbookParams = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(rows, DEFAULT_TEXTBOOK_PARAMS));
+  // 후보지 13곳 — 점유율 항을 바꾸면 후보지도 움직이므로 (4) 실험의 세 번째 잣대로 같이 찍는다(_labCandidate와 같은 조립).
+  const candidates: CandidateInput[] = snap.candidates ?? [];
+  const locByCode = new Map<string, LocationEvaluation>(((snap.locationEvaluations ?? []) as LocationEvaluation[]).map((l) => [l.candidateCode, l]));
+  const candRows = buildLabCandidateRows({
+    candidates, compsByCode, locByCode, settings, franchiseManagement: franchiseManagementFromRows(rows), residentRingsByCode, ringBlockedByCode,
+  });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ping = (c: Competitor) => (c as any).pingbotUtilization as number | null | undefined;
   const pcOf = (c: Competitor) => c.totalPcCount ?? c.appliedPcCount ?? null;
 
   // ── 경쟁점 1:1 주인공 — _bundleCandidate와 같은 조립(거리는 경쟁점 기준으로 다시 잼, 2km 경쟁점 포함) ──
-  type RivalObs = { name: string; act: number; pred: number; distM: number };
-  const rivalObsByCode = new Map<string, RivalObs[]>();
+  type RivalObs = { name: string; act: number; pred: number; distM: number; input: TextbookInput };
+  // 입력은 한 번 조립하고, 예측은 파라미터마다 다시 낸다((4) 실험이 θ·감쇠를 바꿔 가며 경쟁점 편향을 재야 한다).
+  const rivalInputsByCode = new Map<string, { name: string; act: number; distM: number; input: TextbookInput }[]>();
+  const rivalObsFor = (p2: TextbookParams): Map<string, RivalObs[]> => {
+    const m = new Map<string, RivalObs[]>();
+    for (const [code, list] of rivalInputsByCode) {
+      const out: RivalObs[] = [];
+      for (const x of list) { const u = computeTextbook(x.input, p2).utilization; if (u != null && u > 0) out.push({ ...x, pred: u }); }
+      m.set(code, out);
+    }
+    return m;
+  };
   for (const r of rows) {
     const st = storeByCode.get(r.input.storeCode);
     if (!st?.lat || !st?.lng || !(r.input.pcCount ?? 0)) continue;
@@ -107,7 +124,7 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
       comps.push({ c, lat: c.lat, lng: c.lng, pc });
     }
     const months = evaluationMonths(st.openedAt);
-    const out: RivalObs[] = [];
+    const out: { name: string; act: number; distM: number; input: TextbookInput }[] = [];
     comps.forEach((me, k) => {
       const pv = ping(me.c);
       if (pv == null || !(pv > 0)) return;
@@ -130,11 +147,11 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
           direction: null, flowBlock: null, visibility: null,
         } : null,
       };
-      const u = computeTextbook(input, P).utilization;
-      if (u != null && u > 0) out.push({ name: me.c.name ?? "(이름없음)", act: pv / 100, pred: u, distM: distM(me.lat, me.lng, st.lat!, st.lng!) });
+      out.push({ name: me.c.name ?? "(이름없음)", act: pv / 100, distM: distM(me.lat, me.lng, st.lat!, st.lng!), input });
     });
-    rivalObsByCode.set(r.input.storeCode, out);
+    rivalInputsByCode.set(r.input.storeCode, out);
   }
+  const rivalObsByCode = rivalObsFor(P);
 
   // ── 동네 실측 하한 — _bundleCandidate `sites`와 같은 조립(핑봇 2곳 이상 · 핑봇 달의 우리 실측 월) ──
   const sales = (snap.sales ?? []) as Array<{ storeCode: string; yearMonth: string; utilizationRate?: number | null }>;
@@ -339,5 +356,130 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
     }
     console.log(`\n  ⭐ 읽는 법 — "수요 ×1.5" 같은 배수가 특수수요 배수 하나로 설명되면 유형 문제, 아니면 그 매장 배후지(반경·막힘) 문제. "경쟁 무게 ×0.5"면 경쟁점 품질·거리 자료를 다시 본다.`);
     expect(worst.length).toBe(8);
+  });
+
+  it("(4) ⭐⭐⭐ 밀집 점유율 갈래 — 경쟁 무게가 어디서 깎이나(대수·품질비^θ·거리) · θ/감쇠/품질비 상한 실험을 세 잣대로", () => {
+    // 사용자(2026-09-24 밤): "1번 밀집 점유율 갈래 진행해". 층 가르기에서 일산탄현(+13)·시흥배곧(+12)·부경대(+10)·평내호평(+9)·시흥은계(+9)는
+    // 경쟁점은 맞는데 우리 몫만 크다. 우리 몫 = 자사PC ÷ (자사PC + Σ 경쟁PC × 품질비^θ × 거리무게). 경쟁 항이 어느 곱에서 사라지는지 먼저 본다.
+    // ⚠️ 사전 기준(자료 보기 전): 채택 후보는 (1) 밀집 편향이 줄고 (2) 소도시·중간 편향이 3%p 넘게 안 나빠지고 (3) 경쟁점 47곳 1:1 편향이 0 쪽으로 오고
+    //    (4) 후보지 13곳 평균 이동이 ±1%p 안이어야 한다. 하나라도 어긋나면 "기각"으로 적는다. 채택은 사용자 몫.
+    const DENSE = ["일산탄현점", "시흥배곧점", "부경대점", "평내호평점", "시흥은계점"];
+    const qOf = (parts: QualityParts | null | undefined, p2: TextbookParams) => (parts ? computeQualityScore(parts, p2.qualityWeights) : null);
+    console.log(`\n[밀집 5곳 — 경쟁점별 무게 분해] 무게 = PC × 품질비^θ × 거리무게. 핑봇 = 그 경쟁점 실측 가동률, 1:1 = 그 경쟁점을 주인공으로 한 산식 예측`);
+    for (const name of DENSE) {
+      const s = splits.find((x) => x.name === name);
+      const r = rows.find((x) => x.input.storeName === name);
+      if (!s || !r) continue;
+      const oq = qOf(r.input.ownQualityParts, P);
+      const rv = rivalObsByCode.get(r.input.storeCode) ?? [];
+      const list = (r.input.rivals ?? []).filter((v) => v.ip > 0).map((v) => {
+        const w = rivalDistanceWeight(v.distanceM, P);
+        const q = oq && oq > 0 && v.parts ? (computeQualityScore(v.parts, P.qualityWeights) ?? oq) / oq : 1;
+        const ping = rv.find((x) => x.name === (v.name ?? ""));
+        return { v, w, q, weight: v.ip * Math.pow(q, P.qualityExponent) * w, ping };
+      }).sort((a, b) => (a.v.distanceM ?? 9e9) - (b.v.distanceM ?? 9e9));
+      const total = list.reduce((a, x) => a + x.weight, 0);
+      const needW = s.requiredShare < 1 ? s.pc * (1 / Math.min(1, s.requiredShare / (s.locMul || 1)) - 1) : NaN;
+      console.log(`  ── ${name} 실측 ${(s.act * 100).toFixed(1)}% · 예측 ${(s.pred * 100).toFixed(1)}% · 필요 점유율 ${(s.requiredShare * 100).toFixed(1)}% vs 산식 ${(s.share * 100).toFixed(1)}% · 자사 PC ${s.pc} · 자사 품질 ${oq?.toFixed(2) ?? "-"} · 경쟁 무게 합 ${total.toFixed(1)} (맞으려면 ${Number.isFinite(needW) ? needW.toFixed(1) : "-"})`);
+      console.log(`     ${"경쟁점".padEnd(14)} 거리   PC  거리무게  품질비  품질비^θ   무게 | 핑봇  1:1`);
+      for (const x of list.slice(0, 12)) {
+        console.log(`     ${nm(x.v.name ?? "(2km)", 7)}${num(x.v.distanceM, 6)}m${num(x.v.ip, 5)}${x.w.toFixed(2).padStart(9)}${x.v.parts ? x.q.toFixed(2).padStart(8) : "    없음"}${Math.pow(x.q, P.qualityExponent).toFixed(2).padStart(9)}${x.weight.toFixed(1).padStart(7)} |${x.ping ? `${(x.ping.act * 100).toFixed(0).padStart(4)}%${(x.ping.pred * 100).toFixed(0).padStart(5)}%` : "     -    -"}`);
+      }
+      if (list.length > 12) console.log(`     … 외 ${list.length - 12}곳(2km 목록, 무게 합 ${list.slice(12).reduce((a, x) => a + x.weight, 0).toFixed(1)})`);
+    }
+    // 품질 부품 채움률 — 밀집 동네 경쟁점 중 품질 자료가 있는 비율(없으면 비 1 = 우리와 같다고 봄)
+    const dense = splits.filter((s) => s.utilIfAll >= 0.9), small = splits.filter((s) => s.utilIfAll < 0.45), mid = splits.filter((s) => s.utilIfAll >= 0.45 && s.utilIfAll < 0.9);
+    const fill = (g: Split[]) => { let n = 0, f = 0; for (const s of g) for (const v of rows.find((x) => x.input.storeCode === s.code)?.input.rivals ?? []) if ((v.distanceM ?? 9e9) <= 500 && v.ip > 0) { n += 1; if (v.parts) f += 1; } return n ? `${f}/${n}` : "-"; };
+    console.log(`\n  500m 조사 경쟁점 품질 자료 채움: 밀집 ${fill(dense)} · 중간 ${fill(mid)} · 소도시 ${fill(small)}`);
+
+    // ── 실험 — 세 잣대 ──────────────────────────────────────────────────────
+    type Variant = { label: string; p: TextbookParams; capRatio?: [number, number] };
+    const cappedInput = (input: TextbookInput, p2: TextbookParams, cap: [number, number]): TextbookInput => {
+      // 품질비 상한: 산식엔 없으므로 경쟁점 parts를 "우리 품질 × 잘린 비"가 되도록 바꿔 흉내 낸다(측정용). 비는 지금 비중으로 계산.
+      const oq = qOf(input.ownQualityParts, p2);
+      if (!oq || !(oq > 0)) return input;
+      return { ...input, rivals: (input.rivals ?? []).map((v) => {
+        if (!v.parts) return v;
+        const q = (computeQualityScore(v.parts, p2.qualityWeights) ?? oq) / oq;
+        const qc = Math.min(cap[1], Math.max(cap[0], q));
+        if (qc === q) return v;
+        const k = qc / q; // 모든 부품을 같은 배로 늘리면 가중평균도 같은 배
+        const sc = (x: number | null) => (x == null ? null : x * k);
+        return { ...v, parts: { spec: sc(v.parts.spec), food: sc(v.parts.food), zone: sc(v.parts.zone), interior: sc(v.parts.interior), management: sc(v.parts.management) } };
+      }) };
+    };
+    const variants: Variant[] = [
+      { label: "지금 (θ3 · 감쇠 200/200)", p: P },
+      { label: "θ 2.5", p: { ...P, qualityExponent: 2.5 } },
+      { label: "θ 2", p: { ...P, qualityExponent: 2 } },
+      { label: "θ 1.5", p: { ...P, qualityExponent: 1.5 } },
+      { label: "감쇠 scale 300 (wf 1)", p: { ...P, rivalDistanceDecay: { plateauM: 200, scaleM: 300, weightFactor: 1 } } },
+      { label: "감쇠 scale 400 (wf 1)", p: { ...P, rivalDistanceDecay: { plateauM: 200, scaleM: 400, weightFactor: 1 } } },
+      { label: "평지 300 · scale 200", p: { ...P, rivalDistanceDecay: { plateauM: 300, scaleM: 200, weightFactor: 1 } } },
+      { label: "품질비 상한 0.7~1.4 (θ3)", p: P, capRatio: [0.7, 1.4] },
+      { label: "품질비 상한 0.8~1.25 (θ3)", p: P, capRatio: [0.8, 1.25] },
+      { label: "θ2 + 상한 0.7~1.4", p: { ...P, qualityExponent: 2 }, capRatio: [0.7, 1.4] },
+      { label: "θ2 + 감쇠 300", p: { ...P, qualityExponent: 2, rivalDistanceDecay: { plateauM: 200, scaleM: 300, weightFactor: 1 } } },
+    ];
+    const own = rows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const util0 = new Map(own.map((r) => [r.input.storeCode, splits.find((s) => s.code === r.input.storeCode)?.utilIfAll ?? NaN]));
+    const cand0 = new Map(candRows.map((r) => [r.input.storeCode, computeTextbook(r.input, P).utilization ?? NaN]));
+    const denseBias0 = dense.length ? mean(dense.map((s) => s.err)) : NaN;
+    console.log(`\n  [실험 — 세 잣대] 오차 = 예측 − 실측 %p. 밀집/중간/소도시 = 수요전부 가동률 ≥90 / 45~90 / <45. 경쟁 = 핑봇 경쟁점 1:1. 후보지 Δ = 지금 대비`);
+    console.log(`  변형                          자사MAE  편향 | 밀집  중간 소도시 | 경쟁MAE 경쟁편향 | 후보지 평균Δ 3%p↑ 3%p↓ | 일산탄현 시흥배곧 부경대 | 판정`);
+    let mid0 = NaN, small0 = NaN, riv0 = NaN;
+    for (const v of variants) {
+      const map = (input: TextbookInput) => (v.capRatio ? cappedInput(input, v.p, v.capRatio) : input);
+      const errs = own.map((r) => ({ code: r.input.storeCode, name: r.input.storeName ?? "", e: (computeTextbook(map(r.input), v.p).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+      const g = (f: (u: number) => boolean) => { const xs = errs.filter((x) => f(util0.get(x.code) ?? NaN)); return xs.length ? mean(xs.map((x) => x.e)) : NaN; };
+      const rivErr: number[] = [];
+      for (const [, list] of rivalInputsByCode) for (const x of list) { const u = computeTextbook(map(x.input), v.p).utilization; if (u != null && u > 0) rivErr.push(u - x.act); }
+      const cd = candRows.map((r) => (computeTextbook(map(r.input), v.p).utilization ?? NaN) - (cand0.get(r.input.storeCode) ?? NaN)).filter(Number.isFinite);
+      const one = (name: string) => { const x = errs.find((y) => y.name === name); return x ? (x.e * 100).toFixed(1).padStart(7) : "      -"; };
+      const dB = g((u) => u >= 0.9), mB = g((u) => u >= 0.45 && u < 0.9), sB = g((u) => u < 0.45);
+      const rivBias = mean(rivErr), candMean = mean(cd);
+      if (v === variants[0]) { mid0 = mB; small0 = sB; riv0 = rivBias; }
+      const verdict = v === variants[0] ? "기준" : [
+        Math.abs(dB) < Math.abs(denseBias0) - 0.005 ? "" : "밀집 안 줄음",
+        Math.abs(candMean) <= 0.01 ? "" : "후보지 이동",
+        rivBias > riv0 + 0.005 ? "" : "경쟁 안 좋아짐",
+        (sB < small0 - 0.03 || mB < mid0 - 0.03) ? "소도시/중간 나빠짐" : "",
+      ].filter(Boolean).join(" · ") || "기준 4개 통과";
+      console.log(`  ${v.label.padEnd(28)}${(mean(errs.map((x) => Math.abs(x.e))) * 100).toFixed(2).padStart(6)}${(mean(errs.map((x) => x.e)) * 100).toFixed(1).padStart(6)} |${(dB * 100).toFixed(1).padStart(5)}${(mB * 100).toFixed(1).padStart(6)}${(sB * 100).toFixed(1).padStart(6)} |${(mean(rivErr.map(Math.abs)) * 100).toFixed(1).padStart(7)}${(rivBias * 100).toFixed(1).padStart(8)} |${(candMean * 100).toFixed(1).padStart(9)}${String(cd.filter((d) => d > 0.03).length).padStart(5)}${String(cd.filter((d) => d < -0.03).length).padStart(5)} |${one("일산탄현점")}${one("시흥배곧점")}${one("부경대점")} | ${verdict}`);
+    }
+    // ── C. 품질비가 정말 점유율을 가르나 — 핑봇 짝으로 θ를 직접 잰다 ───────────────────────────
+    // 같은 동네 (우리, 경쟁점 A) 짝에서 ln(A 실측 ÷ 우리 실측) = θ_함의 × ln(A 품질비) + … 이어야 θ가 뜻이 있다.
+    // 산식은 θ=3 — 품질이 20% 나쁘면 손님을 반만 받는다는 뜻. 실측 짝에서 기울기(θ_함의)와 상관(r)을 본다.
+    const pairs: { hood: string; name: string; q: number; relAct: number; pcRatio: number }[] = [];
+    const allRatios: number[] = [];
+    for (const r of rows) {
+      const oq = qOf(r.input.ownQualityParts, P);
+      if (!oq || !(oq > 0)) continue;
+      const a = r.input.actualUtilization;
+      for (const v of r.input.rivals ?? []) {
+        if (!v.parts || !(v.ip > 0) || (v.distanceM ?? 9e9) > 500) continue;
+        const q = (computeQualityScore(v.parts, P.qualityWeights) ?? oq) / oq;
+        allRatios.push(q);
+        const ping = (rivalObsByCode.get(r.input.storeCode) ?? []).find((x) => x.name === (v.name ?? ""));
+        if (ping && a && a > 0) pairs.push({ hood: r.input.storeName ?? "", name: v.name ?? "", q, relAct: ping.act / a, pcRatio: v.ip / (r.input.pcCount ?? 1) });
+      }
+    }
+    const srt = [...allRatios].sort((x, y) => x - y);
+    const qtl = (f: number) => srt[Math.min(srt.length - 1, Math.floor(f * (srt.length - 1)))];
+    console.log(`\n  [C. 500m 조사 경쟁점 품질비 분포 · n=${srt.length}] 1 = 우리와 같음. 하위10% ${qtl(0.1).toFixed(2)} · 중앙 ${qtl(0.5).toFixed(2)} · 상위10% ${qtl(0.9).toFixed(2)} · 1 이상 ${srt.filter((x) => x >= 1).length}곳(${(srt.filter((x) => x >= 1).length / srt.length * 100).toFixed(0)}%)`);
+    console.log(`     θ3에서 중앙 품질비 ${qtl(0.5).toFixed(2)}의 경쟁점은 대수의 ${(Math.pow(qtl(0.5), 3) * 100).toFixed(0)}%로 센다 — 경쟁점이 거의 전부 우리보다 낮게 채점돼 있으면 θ는 "매장 간 변별"이 아니라 "자사우위 배수"로 일한다.`);
+    if (pairs.length >= 5) {
+      const x = pairs.map((p) => Math.log(p.q)), y = pairs.map((p) => Math.log(p.relAct));
+      const mx = mean(x), my = mean(y);
+      const slope = x.reduce((a, xi, i) => a + (xi - mx) * (y[i] - my), 0) / x.reduce((a, xi) => a + (xi - mx) ** 2, 0);
+      console.log(`  [C. 핑봇 짝 ${pairs.length}쌍 — 품질비가 경쟁점 상대 가동률을 설명하나] ln(경쟁 실측÷우리 실측) vs ln(품질비): 기울기(θ_함의) ${slope.toFixed(2)} · r ${corr(x, y).toFixed(3)} · 지금 θ 3`);
+      console.log(`     상대 가동률 중앙 ${Math.exp(med(y)).toFixed(2)}배(경쟁÷우리) · 품질비 중앙 ${Math.exp(med(x)).toFixed(2)} → 산식은 이 짝들에서 우리 몫을 ${(Math.pow(Math.exp(med(x)), -3)).toFixed(1)}배 유리하게 봄, 실측은 ${(1 / Math.exp(med(y))).toFixed(1)}배`);
+      for (const p of [...pairs].sort((a, b) => a.q - b.q)) console.log(`     ${nm(p.hood, 7)} ${nm(p.name, 7)} 품질비 ${p.q.toFixed(2)}  PC비 ${p.pcRatio.toFixed(2)}  경쟁÷우리 실측 ${p.relAct.toFixed(2)}  (θ3이 말하는 값 ${Math.pow(p.q, 3).toFixed(2)})`);
+      console.log(`     ⭐ θ_함의가 3보다 훨씬 작고 r이 약하면, 품질비^3은 동네별 경쟁 차이를 가르는 항이 아니라 전 매장에 같은 크기로 걸리는 자사우위 배수다 — 그 배수는 수요 축척과 상쇄돼 자사 편향엔 안 보이고 경쟁점 47곳 −11%p·자사우위 3.69배로만 보인다.`);
+    }
+    console.log(`\n  ⭐ 읽는 법 — 밀집 편향만 내리고 소도시·후보지·경쟁점을 안 건드리는 변형이 있으면 그것이 "밀집에서만 경쟁을 덜 깎는" 항목이다.`);
+    console.log(`     θ를 내리면 전 매장 몫이 같이 줄어 소도시가 더 과소된다(알려짐). 품질비 상한은 "우리가 훨씬 좋다"는 극단만 자른다 — 밀집 동네 경쟁점이 품질 자료가 있어 비가 0.6대인 곳에 작용한다.`);
+    console.log(`     감쇠를 넓히면 500m 밖 미조사 경쟁점(기본대수)이 분모를 휩쓴다(2026-09-23 (4) 기각) — 여기선 300·400만 본다.`);
+    expect(dense.length).toBeGreaterThan(3);
   });
 });
