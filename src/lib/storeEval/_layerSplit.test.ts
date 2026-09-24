@@ -26,7 +26,7 @@
 // 실행: npx vitest run src/lib/storeEval/_layerSplit.test.ts --disable-console-intercept
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES, buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, qscInWindowAverage, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
+import { LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES, buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, qscInWindowAverage, residentRadiusByCodeFromDocs, rivalQualityParts, utilizationByStore, type QscRecord } from "./labInput";
 import type { CandidateInput, LocationEvaluation } from "./types";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
@@ -87,13 +87,15 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
     const c = j.ringCutCount ?? j.blockedCount;
     if (j.code && typeof c === "number") ringBlockedByCode.set(String(j.code), c);
   }
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode, residentRingsByCode, ringBlockedByCode });
+  // 주거 상권 반경(사람 확인 사실, 2026-09-24 밤) — 화면과 같은 컬렉션. 안 넘기면 양주덕정·문경·진주·영월이 1km로 돌아 화면과 갈라진다.
+  const residentRadiusByCode = residentRadiusByCodeFromDocs(snap.labResidentRadius ?? []);
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, qscByStoreCode, residentRingsByCode, ringBlockedByCode, residentRadiusByCode });
   const P: TextbookParams = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(rows, DEFAULT_TEXTBOOK_PARAMS));
   // 후보지 13곳 — 점유율 항을 바꾸면 후보지도 움직이므로 (4) 실험의 세 번째 잣대로 같이 찍는다(_labCandidate와 같은 조립).
   const candidates: CandidateInput[] = snap.candidates ?? [];
   const locByCode = new Map<string, LocationEvaluation>(((snap.locationEvaluations ?? []) as LocationEvaluation[]).map((l) => [l.candidateCode, l]));
   const candRows = buildLabCandidateRows({
-    candidates, compsByCode, locByCode, settings, franchiseManagement: franchiseManagementFromRows(rows), residentRingsByCode, ringBlockedByCode,
+    candidates, compsByCode, locByCode, settings, franchiseManagement: franchiseManagementFromRows(rows), residentRingsByCode, ringBlockedByCode, residentRadiusByCode,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

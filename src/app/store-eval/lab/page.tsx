@@ -38,7 +38,7 @@ import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/l
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   getLabModelSettings, listLabCandidates, listLabCompetitors, listLabLocationEvaluations,
-  listLabExistingStores, listLabRoadviewJudgments, listLabQscScores, listLabResidentRings, listLabTradeAreaJudgments, listEvaluationSales,
+  listLabExistingStores, listLabRoadviewJudgments, listLabQscScores, listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listEvaluationSales,
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
@@ -115,7 +115,7 @@ type Loaded = {
    */
   dataStatus: {
     existingStores: number; candidates: number; competitors: number; locationEvaluations: number;
-    qsc: number; residentRings: number; tradeArea: number; roadview: number; salesRows: number;
+    qsc: number; residentRings: number; tradeArea: number; residentRadius: number; roadview: number; salesRows: number;
     settingsUpdatedAt: number | null;
   };
 };
@@ -130,7 +130,7 @@ async function loadLabData(): Promise<Loaded | null> {
   //    실험실에서 시설·사양을 고칠 때 운영 V62가 같이 움직인다 — 갈라놓은 뜻이 없어진다.
   //    복제본은 scripts/syncLabCollections.mjs로 **명시적으로** 채운다(자동 동기화 없음).
   //    월매출만 운영 것을 그대로 읽는다 — 실측 사실이라 두 벌로 둘 이유가 없다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode, candidates, residentRingsByCode, ringBlockedByCode] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode, candidates, residentRingsByCode, ringBlockedByCode, residentRadiusByCode] = await Promise.all([
     listLabExistingStores(),
     getLabModelSettings(),
     listLabCompetitors(),
@@ -146,6 +146,8 @@ async function loadLabData(): Promise<Loaded | null> {
     listLabResidentRings(),
     // 막힌 상권 AI 판정(2026-09-23). useRingEnclosure가 꺼져 있으면 산식이 안 읽는다 — 값만 실어 둔다.
     listLabTradeAreaJudgments(),
+    // 주거 상권 반경(사람 확인 사실, 2026-09-24 밤). 1500·2000인 매장만 주거 원이 넓어진다 — 고리가 아니다. 계수 무관하게 산식이 읽는다.
+    listLabResidentRadius(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -187,7 +189,7 @@ async function loadLabData(): Promise<Loaded | null> {
   }
 
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, qscByStoreCode });
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode });
   // 모델에서 빠진 매장(송도점·동탄북광장점 등) — 2026-09-18 사용자 요청으로 화면에만 띄운다.
   // ⚠️ `rows`와 절대 합치지 말 것. 합치면 축척과 계수가 가격전쟁·운영문제까지 배운다.
   // 2026-09-21 사용자 지시: *"검단사거리점은 아예 빼줘 표에서."*
@@ -199,7 +201,7 @@ async function loadLabData(): Promise<Loaded | null> {
     stores.filter((s) => (s.franchiseStatus ?? "").includes("폐점")).map((s) => s.storeCode),
   );
   const excludedRows = buildLabRows({
-    stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, qscByStoreCode, which: "excluded",
+    stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which: "excluded",
   }).filter((r) => !closedStoreCodes.has(r.input.storeCode));
 
   let current: Loaded["current"] = null;
@@ -248,7 +250,7 @@ async function loadLabData(): Promise<Loaded | null> {
   }));
   const franchiseManagement = franchiseManagementFromRows(rows);
   const candRows = buildLabCandidateRows({
-    candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, franchiseManagement,
+    candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, franchiseManagement,
   });
 
   return { rows, excludedRows, current, qsc, qscByStore, windowFillByStore,
@@ -256,7 +258,7 @@ async function loadLabData(): Promise<Loaded | null> {
     dataStatus: {
       existingStores: storedStores.length, candidates: candidates.length, competitors: allCompetitors.length,
       locationEvaluations: allLocationEvaluations.length, qsc: qscByStoreCode.size, residentRings: residentRingsByCode.size,
-      tradeArea: ringBlockedByCode.size, roadview: roadviewByKey.size, salesRows: sales.length,
+      tradeArea: ringBlockedByCode.size, residentRadius: residentRadiusByCode.size, roadview: roadviewByKey.size, salesRows: sales.length,
       settingsUpdatedAt: settingsDoc?.updatedAt ?? null,
     } };
 }
@@ -414,6 +416,7 @@ function DataStatus({ data, p }: { data: Loaded; p: TextbookParams }) {
     { label: "QSC 점검", value: `${d.qsc}곳`, note: data.qsc ? `표본 ${data.qsc.total}곳 중 ${data.qsc.measured}곳 실측 · 나머지는 가맹점 평균 ${data.franchiseManagement?.toFixed(2) ?? "-"}점` : "없음 — 관리 점수는 전부 평균" },
     { label: "1km 밖 고리 인구", value: `${d.residentRings}곳`, note: p.residentRingDecayM > 0 ? "산식이 읽는다" : "실려 있지만 산식이 안 읽는다(고리 끔)" },
     { label: "막힌 상권 판정", value: `${d.tradeArea}곳`, note: p.residentRingDecayM > 0 && p.useRingEnclosure ? "산식이 읽는다" : "고리를 끄면 안 읽는다" },
+    { label: "주거 상권 반경(사람 확인)", value: `${d.residentRadius}곳`, note: "2km 안에 다른 PC방 상권이 없다고 사람이 확인한 매장 — 주거 원을 그 반경 누적 인구로 넓힌다(고리 아님). 계수와 무관하게 산식이 읽는다. 아래 표" },
     { label: "로드뷰 판정", value: `${d.roadview}곳`, note: "동선 방해·가시성. 입지 계수가 0이라 지금은 안 읽는다" },
     { label: "월매출(운영 원본)", value: `${d.salesRows}행`, note: "실측 사실이라 운영 것을 그대로 읽는다 — 두 벌로 두지 않는다" },
     { label: "실험실 설정", value: fmtAt(d.settingsUpdatedAt), note: "하드웨어 비중 등. 운영 설정과 별개" },
@@ -431,6 +434,18 @@ function DataStatus({ data, p }: { data: Loaded; p: TextbookParams }) {
     if (gate.has(type) && inten !== "높음") return { m, applied: false, why: `강도 ${inten ?? "없음"} — 높음만 탄다` };
     return { m, applied: true, why: "" };
   };
+  // 주거 상권 반경을 넓힌 매장 — 산식에 실제로 들어간 값(input.residentRadiusM)과 적용 결과(computeTextbook의 residentRadiusM)를 같이 읽는다.
+  const sumAges = (a: { age0s: number; age10s: number; age20s: number; age30s: number; age40s: number; age50s: number; age60plus: number } | null | undefined) =>
+    a ? a.age0s + a.age10s + a.age20s + a.age30s + a.age40s + a.age50s + a.age60plus : null;
+  const widened = [
+    ...data.rows.map((r) => ({ kind: "기존점", input: r.input })),
+    ...data.excludedRows.map((r) => ({ kind: "기존점(빠짐)", input: r.input })),
+    ...data.candRows.map((r) => ({ kind: "후보지", input: r.input })),
+  ].filter((x) => (x.input.residentRadiusM ?? 1000) > 1000).map((x) => {
+    const want = x.input.residentRadiusM as number;
+    const b = computeTextbook(x.input, p);
+    return { kind: x.kind, name: x.input.storeName ?? x.input.storeCode, want, applied: b.residentRadiusM, pop1: sumAges(x.input.residentAges), popWide: sumAges(x.input.residentAgesByRadius?.[want as 1500 | 2000 | 5000]) };
+  });
   // 평가창이 덜 찬 매장 — 실측 가동률이 아직 움직이는 곳
   const partial = [...data.windowFillByStore.entries()]
     .map(([code, w]) => ({ code, ...w, name: data.rows.find((r) => r.input.storeCode === code)?.input.storeName ?? data.excludedRows.find((r) => r.input.storeCode === code)?.input.storeName ?? code }))
@@ -452,6 +467,36 @@ function DataStatus({ data, p }: { data: Loaded; p: TextbookParams }) {
                   <th scope="row" className="w-44 px-4 py-2 align-top text-xs font-medium text-[var(--sl-ink-soft)]">{c.label}</th>
                   <td className="w-32 px-2 py-2 align-top text-sm font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">{c.value}</td>
                   <td className="px-4 py-2 align-top text-xs text-[var(--sl-ink-soft)]">{c.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">주거 상권 반경 — 사람이 확인한 매장 ({widened.length}곳)</h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+          기준(사용자 2026-09-24): <b>2km 안에 다른 PC방 상권(묶음)이 자리잡혀 있나.</b> 없으면 주거 원을 2km 누적 인구로 넓히고, 있으면 1km 그대로입니다.
+          고리(별도 점유율·감쇠)가 아니라 <b>원만 넓히는 것</b>이라 넓힌 원의 사람도 1km 안 사람과 같은 점유율·배수로 셉니다. 경쟁점 모양으로는 못 가릅니다 —
+          같은 모양 6곳에 일괄로 걸면 구미산동·야당·송도·김포구래가 +13~+34%p 터집니다. 그래서 자동화하지 않고 사람이 근거와 함께 적습니다
+          (<code>scripts/writeLabResidentRadius.mjs</code>). 반경은 계수가 아니라 자료라 적중률로 고르지 않습니다.
+        </p>
+        <div className="app-card mt-2 overflow-x-auto rounded-xl">
+          <table className="w-full min-w-[520px] text-left text-sm">
+            <thead className="text-xs text-[var(--sl-ink-soft)]">
+              <tr><th scope="col" className="px-3 py-2">구분</th><th scope="col" className="px-3 py-2">매장</th><th scope="col" className="px-3 py-2 text-right">반경</th><th scope="col" className="px-3 py-2 text-right">1km 인구</th><th scope="col" className="px-3 py-2 text-right">넓힌 원 인구</th><th scope="col" className="px-3 py-2">적용</th></tr>
+            </thead>
+            <tbody>
+              {widened.length === 0 && <tr><td colSpan={6} className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">없음 — 전 매장 1km</td></tr>}
+              {widened.map((w) => (
+                <tr key={w.kind + w.name} className="border-t border-[#171310]/[0.06] dark:border-white/[0.06]">
+                  <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">{w.kind}</td>
+                  <td className="px-3 py-2 font-medium">{w.name}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{w.want / 1000}km</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">{w.pop1 == null ? "-" : Math.round(w.pop1).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{w.popWide == null ? "-" : Math.round(w.popWide).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-xs">{w.applied === w.want ? <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-semibold text-sky-900 dark:bg-sky-900/50 dark:text-sky-200">적용됨</span> : <span className="rounded bg-stone-200 px-1.5 py-0.5 text-[11px] text-stone-700 dark:bg-stone-700 dark:text-stone-200">누적 인구 자료 없음 — 1km로 계산</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -1654,6 +1699,12 @@ function StoreTable({ score, qscByStore, p, windowFill }: {
                         </b>
                       );
                     })()}
+                    {/* 주거 상권 반경(사람 확인, 2026-09-24 밤): 2km 안에 다른 PC방 상권이 없어 주거 원을 넓힌 매장. 자료 탭에 근거. */}
+                    {r.residentRadiusM > 1000 && (
+                      <span className="mr-1 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-semibold text-sky-900 dark:bg-sky-900/50 dark:text-sky-200" title="사람이 확인한 사실: 2km 안에 다른 PC방 상권이 없다. 주거 원을 이 반경의 누적 인구로 넓혔다(고리 아님). 자료 탭에 목록.">
+                        상권 {r.residentRadiusM / 1000}km
+                      </span>
+                    )}
                     {/* 상향 이탈(사용자 2026-09-24): 초기 기대보다 실적이 잘 나온 매장. 과소예측이면 이해되는 오차. */}
                     {LAB_UPSIDE_STORE_CODES.has(r.storeCode) && (
                       <span
@@ -1912,6 +1963,11 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
                       ? <span className="mr-1 rounded bg-stone-200 px-1.5 py-0.5 text-[11px] text-stone-700 dark:bg-stone-700 dark:text-stone-200" title={`유형 ${t}이지만 강도가 '${row.input.specialDemandIntensity ?? "없음"}'이라 배수 ×${m}를 안 곱했습니다(높음에만).`}>{t}/{row.input.specialDemandIntensity ?? "없음"} · 배수 안 탐</span>
                       : <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-200" title={`특수수요 ${t}/${row.input.specialDemandIntensity ?? "-"} — 수요에 ×${m}를 곱했습니다. 배수가 없으면 가동률·매출이 ÷${m}입니다.`}>{t} ×{m} 적용</span>;
                   })()}
+                  {b.residentRadiusM > 1000 && (
+                    <span className="mr-1 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-semibold text-sky-900 dark:bg-sky-900/50 dark:text-sky-200" title="사람이 확인한 사실: 2km 안에 다른 PC방 상권이 없다. 주거 원을 이 반경의 누적 인구로 넓혔다(고리 아님). 자료 탭에 목록.">
+                      상권 {b.residentRadiusM / 1000}km
+                    </span>
+                  )}
                   {b.missing.length > 0 && `자료없음: ${b.missing.join(", ")}`}
                 </td>
               </tr>

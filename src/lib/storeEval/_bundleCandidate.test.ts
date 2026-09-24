@@ -21,7 +21,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { buildLabRows, utilizationByStore, rivalQualityParts } from "./labInput";
+import { buildLabRows, utilizationByStore, rivalQualityParts, residentRadiusByCodeFromDocs } from "./labInput";
 import { residentRingsByCodeFromDocs, residentRingsByCodeFromSgis, type LabResidentRingsDoc, type SgisFile } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
@@ -81,7 +81,9 @@ describeIf("묶음 후보 — 존구성 뺌 × θ × 고리 λ", () => {
     if (j.code && typeof c === "number") ringBlockedByCode.set(String(j.code), c);
   }
   // ⭐ 배선된 경로 — 고리 인구·항아리 판정을 입력에 실어 넣는다. λ=0이면 산식이 그 입력을 안 읽는다.
-  const base = buildLabRows({ stores, compsByCode, utilByStore, settings, residentRingsByCode, ringBlockedByCode });
+  // 주거 상권 반경(사람 확인, 2026-09-24 밤)도 화면과 같이 싣는다 — 이건 계수와 무관하게 읽힌다. (0) "옛 배선" 검산값은 그래서 이날부터 옮겨진다.
+  const residentRadiusByCode = residentRadiusByCodeFromDocs(snap.labResidentRadius ?? []);
+  const base = buildLabRows({ stores, compsByCode, utilByStore, settings, residentRingsByCode, ringBlockedByCode, residentRadiusByCode });
   const P = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(base, DEFAULT_TEXTBOOK_PARAMS));
   const storeByCode = new Map(stores.map((s) => [s.storeCode, s]));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

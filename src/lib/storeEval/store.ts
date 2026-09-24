@@ -34,6 +34,7 @@ import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { mergeInputChanges } from "./inputChanges";
 import { qscInWindowAverage, type QscRecord } from "./labInput";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
+import { residentRadiusByCodeFromDocs, type LabResidentRadiusDoc } from "./labInput";
 import type { ResidentAges, ResidentRingRadius } from "./textbookModel";
 import type {
   AdminDongReference,
@@ -94,6 +95,7 @@ const LAB_QSC = "storeEvalLabQscScores";
 const LAB_RESIDENT_RINGS = "storeEvalLabResidentRings";
 // 막힌 상권 AI 판정(동·서·남·북 고리 구간 단절 예/아니오). scripts/tradeArea/judge.mjs → writeTradeAreaJudgmentsToFirestore.mjs (2026-09-23).
 const LAB_TRADE_AREA = "storeEvalLabTradeAreaJudgments";
+const LAB_RESIDENT_RADIUS = "storeEvalLabResidentRadius";
 /**
  * **운영 V62가 읽는 QSC 컬렉션** (2026-09-19 신설).
  *
@@ -517,6 +519,15 @@ export async function listLabResidentRings(): Promise<Map<string, Partial<Record
  * 코드(매장·후보지) -> 막힌 방향 수(0~4). `buildLabRows`/`buildLabCandidateRows`의 `ringBlockedByCode`.
  * 판정이 없는 매장은 빠진다(null로 채우지 않는다 — 산식이 "판정 없음 = 안 깎음"으로 다룬다).
  */
+/**
+ * 매장코드 -> 주거 상권 반경(m) (2026-09-24 밤). **사람이 확인한 사실**을 담은 실험실 전용 컬렉션 —
+ * 실험실 산식(`residentRadiusM`)만 읽고 운영 V62는 모른다. 근거(note) 없는 문서는 싣지 않는다(labInput.ts).
+ */
+export async function listLabResidentRadius(): Promise<Map<string, number>> {
+  const snap = await getDocs(collection(requireDb(), LAB_RESIDENT_RADIUS));
+  return residentRadiusByCodeFromDocs(snap.docs.map((d) => d.data() as LabResidentRadiusDoc));
+}
+
 export async function listLabTradeAreaJudgments(): Promise<Map<string, number>> {
   const snap = await getDocs(collection(requireDb(), LAB_TRADE_AREA));
   const out = new Map<string, number>();

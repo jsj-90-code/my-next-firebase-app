@@ -168,6 +168,12 @@ service cloud.firestore {
       allow read, write: if isCompanyAccount();
     }
 
+    // 주거 상권 반경 — 사람이 확인한 매장별 사실(2026-09-24 밤, 양주덕정·문경·영월 2km). 실험실 산식 residentRadiusM만 읽는다.
+    // 쓰기는 scripts/writeLabResidentRadius.mjs(firebase-admin). 운영 V62는 모른다.
+    match /storeEvalLabResidentRadius/{siteKey} {
+      allow read, write: if isCompanyAccount();
+    }
+
     // 같은 QSC 기록의 **운영 쪽 원본** (2026-09-19). 운영 V62가 관리 수준을 학습 피처로
     // 쓰면서 생겼다. 실험실 복제본과 내용이 같고 채우는 스크립트도 같다 — 갈라놓은 건
     // 컬렉션뿐이고, QSC 자체는 실험실이 고치는 값이 아니라 본사가 매긴 사실이다.

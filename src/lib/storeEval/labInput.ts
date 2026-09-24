@@ -396,6 +396,12 @@ export type BuildLabRowsArgs = {
   /** 매장코드 -> 막힌 방향 수(0~4). AI 지도 판정(storeEvalLabTradeAreaJudgments). `useRingEnclosure`가 켜졌을 때만 쓰인다. */
   ringBlockedByCode?: Map<string, number>;
   /**
+   * 매장코드 -> 주거 상권 반경(m). **사람이 확인한 사실**(storeEvalLabResidentRadius, 2026-09-24 밤). 1500·2000이면 산식이
+   * 그 반경의 누적 인구를 1km 자리에 넣는다(textbookModel `residentRadiusM`). 없으면 1km. 고리가 아니다.
+   * ⚠️ 하네스가 이 맵을 안 넘기면 화면과 숫자가 갈라진다 — 스냅샷의 `labResidentRadius`를 `residentRadiusByCodeFromDocs`로 넘길 것.
+   */
+  residentRadiusByCode?: Map<string, number>;
+  /**
    * 매장코드 -> QSC 평균. 주면 자사 **관리 점수를 이 값으로 갈아끼운다**
    * (qscToManagementScore). 안 주면 저장된 `ownManagementScore`(전부 4.00)를 그대로 쓴다.
    * QSC가 없는 매장에는 있는 곳들의 평균을 넣는다 — 두 자가 섞이지 않게.
@@ -482,7 +488,28 @@ export const LAB_ONLY_INCLUDED_STORE_CODES: ReadonlySet<string> = new Set([
   "20260515431",
 ]);
 
-export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
+/**
+ * Firestore `storeEvalLabResidentRadius` 문서 모양(scripts/writeLabResidentRadius.mjs가 쓴다).
+ * id = "existing:<매장코드>" | "candidate:<후보지코드>". `residentRadiusM`은 1500·2000만 뜻이 있고 `note`는 사람이 적은 근거다.
+ */
+export type LabResidentRadiusDoc = {
+  key?: string; kind?: string; code?: string | number; name?: string | null;
+  residentRadiusM?: number | null; note?: string | null; confirmedBy?: string | null; confirmedAt?: string | null;
+};
+
+/** 문서들 -> 코드별 반경 맵. 화면(store.ts)과 스냅샷 하네스가 **같은 함수**를 쓴다. 근거(note)가 없는 문서는 안 싣는다(1km로 남는다). */
+export function residentRadiusByCodeFromDocs(docs: LabResidentRadiusDoc[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const d of docs) {
+    const r = d.residentRadiusM;
+    if (!d.code || !(r === 1500 || r === 2000)) continue;
+    if (!d.note || !String(d.note).trim()) continue;
+    out.set(String(d.code), r);
+  }
+  return out;
+}
+
+export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
   // QSC를 쓸 때만 계산한다. 가맹점 평균은 **환산한 뒤**의 평균이다 — 점수를 먼저 평균 내고
   // 환산하면 다른 값이 나온다(환산이 1~5로 잘리는 구간이 있어서).
   const qscAvg = qscByStoreCode?.size
@@ -600,6 +627,8 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
         // 1km 밖 고리(2026-09-23) — 넘겨준 매장만. 없으면 null이라 고리 항이 빠진다.
         residentAgesByRadius: residentRingsByCode?.get(s.storeCode) ?? null,
         ringBlockedDirections: ringBlockedByCode?.get(s.storeCode) ?? null,
+        // 주거 상권 반경(사람 확인 사실, 2026-09-24 밤). 없으면 1km. 넘긴 매장만 — 지어내지 않는다.
+        residentRadiusM: residentRadiusByCode?.get(s.storeCode) ?? null,
         // 2026-09-15 — 100/200/300/400m 수집 경로를 열었다(소상공인365 반경 선택). 아직 안 모은
         // 매장은 null이라 그 반경을 고르면 "자료없음"으로 빠진다.
         floatingByRadius: {
@@ -694,6 +723,8 @@ export type BuildLabCandidateRowsArgs = {
   residentRingsByCode?: Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>>;
   /** 후보지코드 -> 막힌 방향 수(0~4). 기존점과 같은 뜻. */
   ringBlockedByCode?: Map<string, number>;
+  /** 후보지코드 -> 주거 상권 반경(m). 기존점과 같은 뜻(BuildLabRowsArgs 주석). 영월(N014)이 2000. */
+  residentRadiusByCode?: Map<string, number>;
   /**
    * 관리 점수로 쓸 **가맹점 평균**(1~5). 기존점 행에서 구한 값을 그대로 넘긴다
    * (franchiseManagementFromRows) — 여기서 다시 계산하면 자가 둘이 된다.
@@ -709,7 +740,7 @@ export type BuildLabCandidateRowsArgs = {
  * 중립으로 빼게 둔다. 단 **자사 시설 빈칸만은 예외**다(위 4번: 결측이 아니라 표준 구성).
  */
 export function buildLabCandidateRows({
-  candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, franchiseManagement,
+  candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, franchiseManagement,
 }: BuildLabCandidateRowsArgs): LabCandidateRow[] {
   const rows: LabCandidateRow[] = [];
   for (const c of candidates) {
@@ -795,6 +826,7 @@ export function buildLabCandidateRows({
         // 1km 밖 고리(2026-09-23) — 넘겨준 후보지만. 없으면 고리를 켜도 "1km 밖 고리 인구" 자료없음으로 1km만 센다.
         residentAgesByRadius: residentRingsByCode?.get(c.code) ?? null,
         ringBlockedDirections: ringBlockedByCode?.get(c.code) ?? null,
+        residentRadiusM: residentRadiusByCode?.get(c.code) ?? null,
         floatingByRadius: {
           100: c.floating100Avg ?? null, 200: c.floating200Avg ?? null,
           300: c.floating300Avg ?? null, 400: c.floating400Avg ?? null,

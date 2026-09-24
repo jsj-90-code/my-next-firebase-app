@@ -1229,6 +1229,19 @@ export type TextbookInput = {
    */
   residentAgesByRadius: Partial<Record<ResidentRingRadius, ResidentAges | null>> | null;
   /**
+   * **주거 상권 반경(m) — 사람이 확인한 매장별 사실.** 기본 1000(없음·null). 1500·2000이면 주거 원을 그 반경의
+   * **누적 인구**(`residentAgesByRadius`)로 바꿔 끼운다 — 고리(별도 점유율·감쇠)가 아니라 **원 자체를 넓히는 것**이라
+   * 넓힌 원의 사람도 1km 안 사람과 같은 점유율·같은 배수로 센다. 그 반경의 누적 자료가 없으면 1km로 두고 `missing`에 적는다.
+   *
+   * 사용자 기준(2026-09-24 밤): **"2km 안에 다른 PC방 상권(묶음)이 자리잡혀 있나"** — 없으면 2km(양주덕정·문경·영월),
+   * 있으면 1km(구미산동·호구포역·진주혁신·야당·송도·김포구래는 옆 상권에 PC방이 있어 못 준다). 경쟁점 모양으로는 못 가른다 —
+   * 같은 모양(300m 묶음 밖으로 1km까지 경쟁 없음) 6곳에 2km를 일괄로 걸면 4곳이 +13~+34%p 터진다(`_labCandidate` (16)).
+   * AI 지도 판정(otherCommercialWithin2km)은 구미산동·양주덕정을 둘 다 반대로 봐서 자동화하지 않는다.
+   * 출처: `storeEvalLabResidentRadius`(실험실 전용, scripts/writeLabResidentRadius.mjs). 운영 V62는 읽지 않는다.
+   * ⚠️ 이 값은 계수가 아니라 자료다 — 적중률로 고르지 않는다. 근거 한 줄(note)이 없는 매장은 1km로 둔다.
+   */
+  residentRadiusM?: number | null;
+  /**
    * **막힌 방향 수**(0~4) — 동·서·남·북 중 고리(1~2km) 구간이 하천·철도·고속도로·산으로 끊긴 방향의 개수.
    * AI 지도 판정(scripts/tradeArea/judge.mjs → storeEvalLabTradeAreaJudgments). null이면 판정 없음 → 안 깎는다.
    * `useRingEnclosure`가 켜졌을 때만 쓴다. 2026-09-23 신설.
@@ -1251,6 +1264,8 @@ export type TextbookBreakdown = {
   residentDemandUsers: number | null;
   /** 그중 1km 밖 고리 몫. 고리를 끈 상태나 자료가 없으면 null. 화면에 "얼마가 밖에서 왔나"를 그린다. */
   residentRingUsers: number | null;
+  /** 실제로 적용된 주거 상권 반경(m). 1000이 기본. 입력이 2000이어도 누적 자료가 없으면 1000이고 missing에 적힌다. */
+  residentRadiusM: 1000 | ResidentRingRadius;
   /** 고리 수요에 적용된 점유율(입지 곱하기 전). "gravity"일 때만 값이 있고 "core"면 null(1km 안과 같다). */
   residentRingShare: number | null;
   floatingDemandUsers: number | null;
@@ -1328,7 +1343,7 @@ export function rivalDistanceWeight(
 export function computeTextbook(input: TextbookInput, p: TextbookParams): TextbookBreakdown {
   const missing: string[] = [];
   const empty: TextbookBreakdown = {
-    residentDemandUsers: null, residentRingUsers: null, residentRingShare: null, floatingDemandUsers: null, totalDemandUsers: null,
+    residentDemandUsers: null, residentRingUsers: null, residentRadiusM: 1000, residentRingShare: null, floatingDemandUsers: null, totalDemandUsers: null,
     totalDemandHours: null, share: null, locationMultiplier: null, locationFactors: [], ownDemandHours: null, utilization: null,
     capped: false, unitPrice: null, pcUnitPrice: null, pcRevenue: null, productRevenue: null,
     monthlyRevenue: null, productRatio: null, missing,
@@ -1343,9 +1358,20 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
 
   // ── 1) 주거 수요 ────────────────────────────────────────────────────────
   let residentUsers: number | null = null;
+  // 주거 상권 반경(사람 확인 사실, 타입 쪽 `residentRadiusM`) — 1500·2000이면 그 반경의 누적 원을 1km 자리에 넣는다.
+  // 고리와 다르다: 점유율·배수를 따로 두지 않고 **원만 넓힌다.** 자료가 없으면 1km로 떨어지고 missing에 적는다.
+  const wantRadius = input.residentRadiusM ?? 1000;
+  let appliedRadius: 1000 | ResidentRingRadius = 1000;
+  const wideAges = wantRadius > 1000 && (wantRadius === 1500 || wantRadius === 2000 || wantRadius === 5000)
+    ? input.residentAgesByRadius?.[wantRadius] ?? null : null;
+  if (wantRadius > 1000 && !wideAges) missing.push(`${wantRadius}m 주거인구(상권 반경)`);
   if (p.residentRadius === 1000) {
-    if (p.useResidentAgeWeights && input.residentAges) {
-      residentUsers = weightedAges(input.residentAges, residentWeights);
+    const ages = wideAges ?? input.residentAges;
+    if (wideAges) appliedRadius = wantRadius as ResidentRingRadius;
+    if (p.useResidentAgeWeights && ages) {
+      residentUsers = weightedAges(ages, residentWeights);
+    } else if (wideAges) {
+      residentUsers = (wideAges.age0s + wideAges.age10s + wideAges.age20s + wideAges.age30s + wideAges.age40s + wideAges.age50s + wideAges.age60plus) * flatUsageRate(residentWeights);
     } else if (input.pop1km != null) {
       residentUsers = input.pop1km * flatUsageRate(residentWeights);
     } else missing.push("1km 주거인구");
@@ -1370,8 +1396,10 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     if (!cum || !core) {
       missing.push("1km 밖 고리 인구");
     } else {
-      let acc = 0, prev: ResidentAges = core, any = false;
+      // 상권 반경을 넓힌 매장은 고리를 **그 반경 밖**에서 시작한다 — 안쪽 띠는 이미 원에 들어 있다(이중계산 방지).
+      let acc = 0, prev: ResidentAges = appliedRadius === 1000 ? core : (cum[appliedRadius] ?? core), any = false;
       for (const band of RESIDENT_RING_BANDS) {
+        if (band.to <= appliedRadius) continue;
         const outer = cum[band.to];
         if (!outer) break; // 바깥 고리가 없으면 거기서 멈춘다(있는 고리까지만 센다)
         const ring: ResidentAges = {
@@ -1616,6 +1644,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   return {
     residentDemandUsers: residentUsers,
     residentRingUsers: ringUsers,
+    residentRadiusM: appliedRadius,
     residentRingShare: ringShare,
     floatingDemandUsers: floatingUsers,
     totalDemandUsers: totalUsers,
@@ -1822,6 +1851,8 @@ export type TextbookScore = {
     predicted: number | null; actual: number; absErrPct: number | null;
     utilization: number | null; actualUtilization: number | null; utilErrPct: number | null;
     share: number | null; capped: boolean;
+    /** 적용된 주거 상권 반경(m). 1000이 기본, 사람이 확인한 매장만 1500·2000. 화면 비고에 배지로 그린다. */
+    residentRadiusM: 1000 | ResidentRingRadius;
     unitPrice: number | null; pcUnitPrice: number | null; productRatio: number | null;
     /** 경쟁이 없다고 볼 때의 예측 가동률 — 필요 점유율의 분모다. */
     utilizationNoShare: number | null;
@@ -1896,7 +1927,7 @@ export function scoreTextbook(
       storeCode: r.input.storeCode, storeName: r.input.storeName,
       predicted: b.monthlyRevenue, actual: r.actualRevenue, absErrPct: err,
       utilization: b.utilization, actualUtilization: au ?? null, utilErrPct: utilErr,
-      share: b.share, capped: b.capped, unitPrice: b.unitPrice, pcUnitPrice: b.pcUnitPrice,
+      share: b.share, capped: b.capped, residentRadiusM: b.residentRadiusM, unitPrice: b.unitPrice, pcUnitPrice: b.pcUnitPrice,
       productRatio: b.productRatio, utilizationNoShare: bNo.utilization, requiredShare: req,
       missing: b.missing,
     });

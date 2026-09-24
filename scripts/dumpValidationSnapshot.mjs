@@ -54,7 +54,7 @@ async function dumpCollection(name) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, labTradeAreaJudgments, settingsDoc, accuracyDoc] =
+const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, labTradeAreaJudgments, labResidentRadius, settingsDoc, accuracyDoc] =
   await Promise.all([
     dumpCollection("storeEvalCandidates"),
     dumpCollection("storeEvalResults"),
@@ -72,6 +72,8 @@ const [candidates, results, existingStores, competitors, locationEvaluations, sa
     dumpCollection("storeEvalLabResidentRings"),
     // 막힌 상권 AI 판정(2026-09-23). 하네스가 화면과 같은 자료를 읽게 여기도 담는다.
     dumpCollection("storeEvalLabTradeAreaJudgments"),
+    // 주거 상권 반경(사람 확인 사실, 2026-09-24 밤). 하네스가 화면과 같은 자료를 읽게 여기도 담는다 — 빠지면 하네스는 조용히 1km로 돈다.
+    dumpCollection("storeEvalLabResidentRadius"),
     db.collection("storeEvalSettings").doc("current").get(),
     db.collection("storeEvalSystemStatus").doc("accuracy").get(),
   ]);
@@ -87,6 +89,7 @@ const snapshot = {
   labQscScores,
   labResidentRings,
   labTradeAreaJudgments,
+  labResidentRadius,
   settings: settingsDoc.exists ? settingsDoc.data() : null,
   storedAccuracy: accuracyDoc.exists ? accuracyDoc.data() : null,
 };
