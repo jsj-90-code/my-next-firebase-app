@@ -35,6 +35,7 @@
 // 실행:
 //   npx vitest run src/lib/storeEval/_unitPriceLayer.test.ts --disable-console-intercept
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 import { evaluationMonths } from "./evaluationSalesPeriod";
@@ -188,11 +189,108 @@ describeIf("단가층 — PC몫·상품몫을 매장별로 실측과 대조 (요
     expect(inc.length).toBeGreaterThan(30);
   });
 
-  it("(3) 요금표 받으면 채울 칸 — 매장별 실효÷정가 목록(정가 순)", () => {
-    const sorted = [...inc].sort((a, b) => a.rate - b.rate || b.effOverList - a.effOverList);
-    console.log(`\n[요금표 대조용 빈 칸] 매장 · 정가 · 실측 실효단가 · 실효÷정가 · [정액제 비중 ?] · [요금표 환산 실효단가 ?]`);
-    for (const r of sorted) console.log(`  ${pad(r.name, 12)} ${padL(won(r.rate), 6)}  ${padL(won(r.pcUnit), 6)}  ${padL((r.effOverList * 100).toFixed(0) + "%", 5)}   ?      ?`);
-    console.log(`  ⭐ 요금표가 오면 이 두 칸을 채우고 "요금표 환산 실효단가 ÷ 실측 실효단가"의 흩어짐이 지금 산식(PC오차 |평균| ${pct(mean(inc.map((r) => Math.abs(r.pcErr))))})보다 작은지 본다.`);
-    expect(sorted.length).toBe(inc.length);
+  // ── (3)(4) 정액 요금표 대조 (2026-09-25 새벽, 사용자가 키오스크 사진 37장 전달) ─────────────
+  //
+  // 요금표는 "충전 금액 → 이용시간"이다. 구간별 시간당 단가 = 금액 ÷ 시간. 큰 권종이 싸다.
+  // 매장의 실효단가는 손님이 어느 권종을 얼마나 사느냐(정액제 이용 비중)로 정해지는데 **그 비중은 자료에 없다.**
+  // 그래서 요금표만으로는 실효단가가 [가장 싼 권종 단가, 가장 비싼 권종 단가] 사이 어딘가라는 것까지만 말할 수 있다.
+  //
+  // 사전 설계:
+  //  a. 실측 PC실효단가가 그 구간 **안**이면 요금표가 설명 가능한 범위. **위**면 요금표 밖의 것(좌석 추가요금·상품권 매출 섞임 등),
+  //     **아래**면 요금표 밖의 할인(이벤트·쿠폰·학생요금)이 있다는 뜻. 셋을 센다.
+  //  b. 구간 안이면 "큰 권종 비중" s = (최고단가 − 실측) ÷ (최고단가 − 최저단가)를 **역산**해 찍는다 — 이건 계수가 아니라
+  //     자료 간 정합성 확인용 수치다. 원장(권종별 결제)이 오면 그 값과 대조해야 한다.
+  //  c. 매장 간 흩어짐을 요금표가 설명하나: 실측 PC단가와 (정가 · 10,000원권 단가 · 최저 권종 단가 · 권종 단가 평균)의 상관을 나란히 찍는다.
+  //     정가보다 요금표 대표단가의 상관이 높으면 "실효÷정가의 흩어짐은 요금표 설계 차이"이고, 비슷하면 요금표가 아니라 **이용 비중**이 다른 것이다.
+  //  d. 판정·채택 없음. 사실만.
+
+  type Tier = { won: number; minutes: number; bonusMinutes?: number };
+  type TariffStore = { code: string | null; name: string; listRate: number | null; tiers: Tier[]; student?: Tier[]; notes?: string; omitted?: string };
+  const tariffPath = "src/lib/storeEval/data/tariffTables.json";
+  type Surcharge = { name: string; paidGame: number | null; seatNote?: string };
+  const tariff: { stores: TariffStore[]; surcharges?: Record<string, Surcharge> } = JSON.parse(readFileSync(tariffPath, "utf8"));
+  const tariffByCode = new Map<string, TariffStore>();
+  for (const t of tariff.stores) if (t.code && t.tiers.length) tariffByCode.set(t.code, t);
+  // 유료게임 과금(원/시간) — 유료게임 이용 시간에만 정액권 위에 더 차감된다. 좌석과금은 사용자 지시로 분석에서 뺀다(기록만).
+  const paidGameOf = (code: string): number | null | undefined => tariff.surcharges?.[code]?.paidGame;
+  const tierRate = (t: Tier) => t.won / ((t.minutes + (t.bonusMinutes ?? 0)) / 60);
+
+  type TRow = Row & {
+    tiers: { won: number; rate: number }[];
+    rMin: number; rMax: number; rMean: number; r10k: number | null; rBig: number; // rBig = 가장 큰 권종 단가
+    where: "안" | "위" | "아래"; bigShare: number | null; // 역산 큰 권종 비중(구간 안일 때만)
+    paidGame: number | null | undefined; // 유료게임 과금 원/시간 (0=없음·null=모름·undefined=표에 없음)
+    gapAbove: number | null; // 위일 때 실측 − 최고 권종 단가(원/시간)
+  };
+  const trows: TRow[] = [];
+  for (const r of inc) {
+    const t = tariffByCode.get(r.code);
+    if (!t || !t.tiers.length) continue;
+    const tiers = [...t.tiers].sort((a, b) => a.won - b.won).map((x) => ({ won: x.won, rate: tierRate(x) }));
+    const rates = tiers.map((x) => x.rate);
+    const rMin = Math.min(...rates), rMax = Math.max(...rates), rMean = mean(rates);
+    const r10k = tiers.find((x) => x.won === 10000)?.rate ?? null;
+    const rBig = tiers[tiers.length - 1].rate;
+    const where: TRow["where"] = r.pcUnit > rMax * 1.005 ? "위" : r.pcUnit < rMin * 0.995 ? "아래" : "안";
+    const bigShare = where === "안" && rMax > rMin ? (rMax - r.pcUnit) / (rMax - rMin) : null;
+    trows.push({ ...r, tiers, rMin, rMax, rMean, r10k, rBig, where, bigShare, paidGame: paidGameOf(r.code), gapAbove: where === "위" ? r.pcUnit - rMax : null });
+  }
+
+  it("(3) 요금표 — 매장별 권종 단가와 실측 실효단가의 위치", () => {
+    console.log(`\n[정액 요금표 대조] 권종 단가 = 금액 ÷ 표시 시간(탕정역은 보너스 포함). 실측 = 평가창 ΣPC매출 ÷ ΣPC시간. n=${trows.length} (요금표 있는 모델 포함 매장)`);
+    console.log(`  ${pad("매장", 12)} ${padL("정가", 5)} | ${padL("최소권", 6)} ${padL("1만권", 6)} ${padL("최대권", 6)} ${padL("최저", 5)}~${pad("최고", 5)} | ${padL("실측PC", 6)} ${padL("실효÷정가", 8)} ${pad("위치", 3)} ${padL("큰권종비중", 8)} ${padL("유료게임", 6)} | 비고`);
+    for (const r of [...trows].sort((a, b) => a.rate - b.rate || a.effOverList - b.effOverList)) {
+      const small = r.tiers[0], big = r.tiers[r.tiers.length - 1];
+      const t = tariffByCode.get(r.code)!;
+      const note = [t.notes, t.omitted ? `(누락: ${t.omitted})` : null].filter(Boolean).join(" · ");
+      console.log(`  ${pad(r.name, 12)} ${padL(won(r.rate), 5)} | ${padL(`${won(small.won / 1000)}천→${won(small.rate)}`, 6)} ${padL(r.r10k != null ? won(r.r10k) : "-", 6)} ${padL(`${won(big.won / 10000)}만→${won(big.rate)}`, 6)} ${padL(won(r.rMin), 5)}~${pad(won(r.rMax), 5)} | ${padL(won(r.pcUnit), 6)} ${padL((r.effOverList * 100).toFixed(0) + "%", 8)} ${pad(r.where, 3)} ${padL(r.bigShare != null ? (r.bigShare * 100).toFixed(0) + "%" : "-", 8)} ${padL(r.paidGame == null ? "-" : won(r.paidGame), 6)} | ${note}`);
+    }
+    const cnt = (w: TRow["where"]) => trows.filter((r) => r.where === w).length;
+    console.log(`  위치 — 구간 안 ${cnt("안")}곳 · 요금표 위(최고 권종 단가보다 높다) ${cnt("위")}곳 · 요금표 아래(최저 권종보다 낮다) ${cnt("아래")}곳`);
+    // 위 매장 — 초과분을 유료게임 과금으로 덮을 수 있나. 유료게임은 이용 시간의 일부에만 붙으니 "전 시간 유료게임"이 상한이다.
+    const above = trows.filter((r) => r.where === "위").sort((a, b) => (b.gapAbove ?? 0) - (a.gapAbove ?? 0));
+    console.log(`\n  [요금표 위 ${above.length}곳 — 초과분(실측 − 최고 권종 단가) vs 유료게임 과금(원/시간)] 유료게임은 유료게임 시간에만 붙으니 과금액이 초과분의 **상한**이다. 초과분 > 과금이면 유료게임으로는 못 덮는다`);
+    console.log(`  ${pad("매장", 12)} ${padL("정가", 5)} ${padL("최고권종", 7)} ${padL("실측", 6)} ${padL("초과", 5)} ${padL("유료게임", 7)}  판정`);
+    for (const r of above) {
+      const pg = r.paidGame;
+      const verdict = pg == null ? (pg === null ? "유료게임 모름(칸 비어 있음)" : "표에 없음")
+        : pg === 0 ? "유료게임 없음 → 요금표·유료게임 밖(좌석과금·비회원·pcSales 정의)"
+        : (r.gapAbove ?? 0) <= pg ? `유료게임 전 시간이면 덮임(필요 비중 ${(((r.gapAbove ?? 0) / pg) * 100).toFixed(0)}%)` : `유료게임 100%여도 ${won((r.gapAbove ?? 0) - pg)}원 남음`;
+      console.log(`  ${pad(r.name, 12)} ${padL(won(r.rate), 5)} ${padL(won(r.rMax), 7)} ${padL(won(r.pcUnit), 6)} ${padL("+" + won(r.gapAbove ?? 0), 5)} ${padL(pg == null ? "-" : won(pg), 7)}  ${verdict}`);
+    }
+    const noPg = above.filter((r) => r.paidGame === 0).length, unkPg = above.filter((r) => r.paidGame == null).length;
+    console.log(`  → 위 ${above.length}곳 중 유료게임 없음 ${noPg}곳 · 모름 ${unkPg}곳. 유료게임 없음인데 위인 매장은 요금표와 유료게임 둘 다로 설명이 안 된다 — 좌석과금(분석 제외)·비회원 요금·pcSales 정의 중 하나다.`);
+    console.log(`  ⭐ 읽는 법 — "최고"는 보통 가장 작은 권종(≈정가)이고 "최저"는 가장 큰 권종이다. 실측이 구간 안이면 요금표로 설명되는 범위이고, 큰권종비중은 그 위치를 역산한 값(원장 권종별 결제로 검증할 것).`);
+    console.log(`     "위"는 요금표의 어떤 권종보다도 시간당 더 받았다는 뜻 — 좌석 추가요금(VIP·팀룸)이나 PC매출에 상품권(넥슨캐시 등) 매출이 섞였을 가능성. 매출DB pcSales의 정의를 확인해야 한다.`);
+    expect(trows.length).toBeGreaterThan(20);
+  });
+
+  it("(4) 요금표 — 매장 간 실효단가 흩어짐을 요금표가 설명하나 (상관 나란히)", () => {
+    const y = trows.map((r) => r.pcUnit);
+    const withTen = trows.filter((r) => r.r10k != null);
+    console.log(`\n[실측 PC실효단가와의 상관 — n=${trows.length}]`);
+    console.log(`  정가(hourlyRate)              r=${corr(trows.map((r) => r.rate), y).toFixed(3)}`);
+    console.log(`  산식 PC몫(정가^β)             r=${corr(trows.map((r) => r.modelPc), y).toFixed(3)}`);
+    console.log(`  요금표 최고 권종 단가(최소권)   r=${corr(trows.map((r) => r.rMax), y).toFixed(3)}`);
+    console.log(`  요금표 10,000원권 단가         r=${corr(withTen.map((r) => r.r10k as number), withTen.map((r) => r.pcUnit)).toFixed(3)}  (n=${withTen.length})`);
+    console.log(`  요금표 최저 권종 단가(최대권)   r=${corr(trows.map((r) => r.rMin), y).toFixed(3)}`);
+    console.log(`  요금표 권종 단가 평균           r=${corr(trows.map((r) => r.rMean), y).toFixed(3)}`);
+    // 정가 대비 요금표가 얼마나 깎이나 — 매장별 할인 설계의 차이
+    const disc10 = withTen.map((r) => (r.r10k as number) / r.rate), discBig = trows.map((r) => r.rMin / r.rate);
+    console.log(`\n[요금표 설계 — 정가 대비 권종 단가] 10,000원권÷정가 중앙 ${(median(disc10) * 100).toFixed(0)}% (범위 ${(Math.min(...disc10) * 100).toFixed(0)}~${(Math.max(...disc10) * 100).toFixed(0)}%) · 최대권÷정가 중앙 ${(median(discBig) * 100).toFixed(0)}% (범위 ${(Math.min(...discBig) * 100).toFixed(0)}~${(Math.max(...discBig) * 100).toFixed(0)}%)`);
+    console.log(`  실측 실효÷정가 중앙 ${(median(trows.map((r) => r.effOverList)) * 100).toFixed(0)}% — 이 값이 10,000원권÷정가(중앙 ${(median(disc10) * 100).toFixed(0)}%) 근처면 "손님 평균은 1만원권 근처를 산다"는 뜻`);
+    // 실효÷정가 흩어짐(매장별) vs 요금표 할인 설계(10,000원권÷정가)
+    console.log(`  실효÷정가 vs 10,000원권÷정가   r=${corr(withTen.map((r) => r.effOverList), disc10).toFixed(3)}   ← 높으면 실효÷정가의 흩어짐이 요금표 설계 차이, 낮으면 이용 비중 차이`);
+    console.log(`  실효÷정가 vs 최대권÷정가       r=${corr(trows.map((r) => r.effOverList), discBig).toFixed(3)}`);
+    // 정가 묶음 안에서 요금표가 갈라 주나 — 1,500원 매장
+    const g1500 = trows.filter((r) => r.rate === 1500).sort((a, b) => a.effOverList - b.effOverList);
+    if (g1500.length >= 4) {
+      console.log(`\n[정가 1,500원 ${g1500.length}곳 — 실효÷정가 순] 요금표가 같은 정가 안의 흩어짐을 가르나`);
+      for (const r of g1500) console.log(`    ${pad(r.name, 12)} 실효÷정가 ${(r.effOverList * 100).toFixed(0)}% · 실측 ${won(r.pcUnit)} | 1만권 ${r.r10k != null ? won(r.r10k) : "-"} · 최대권 ${won(r.rMin)} · 위치 ${r.where}${r.bigShare != null ? ` · 큰권종비중 ${(r.bigShare * 100).toFixed(0)}%` : ""}`);
+      console.log(`    1,500원 안에서 실효÷정가 vs 1만권 단가 r=${corr(g1500.filter((r) => r.r10k != null).map((r) => r.effOverList), g1500.filter((r) => r.r10k != null).map((r) => r.r10k as number)).toFixed(3)}`);
+    }
+    console.log(`  ⭐ 읽는 법 — 요금표는 '정가 → 실효단가'의 **틀**(할인 구간)을 주고, 손님이 그 틀 안 어디에 앉는지(권종 비중)는 원장이 준다. 둘 중 무엇이 매장 차이를 만드는지가 이 절의 질문이다.`);
+    console.log(`     β 0.546은 이 둘을 정가 하나로 뭉뚱그린 값이다. 요금표 상관이 정가 상관과 다르지 않으면 "요금표를 산식에 넣어도 정가와 같은 정보"라는 뜻이니 넣을 이유가 없다.`);
+    expect(trows.length).toBeGreaterThan(20);
   });
 });
