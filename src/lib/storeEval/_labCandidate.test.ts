@@ -1177,4 +1177,39 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     console.log(`  ⭐ 읽는 법 — 동네 함의가 기존점 어느 동네보다도 낮으면 그 후보지 수요는 확정적으로 적게 잡힌 것이다. 얼마나 적은지는 "PC방이 살아남는 최저 가동률"을 알아야 하고, 그건 핑봇 분포(경쟁점 실측 가동률 하위)에서 읽는다.`);
     expect(rows.length).toBeGreaterThan(30);
   });
+
+  it("(20) ⭐⭐ 반경 2km 매장은 경쟁도 2km로 — 수요만 넓히고 경쟁은 1km 감쇠(평지 200·감쇠 200)로 두는 비대칭을 잰다", () => {
+    // 2026-09-25: 주거 상권 반경(사람 확인)이 2km인 4곳(양주덕정·문경·진주혁신·영월)은 수요를 2km 누적으로 세는데 경쟁점은 그대로 1km 감쇠다.
+    // 같은 사실("이 동네는 2km가 한 상권")이면 그 안의 PC방도 그 상권의 경쟁이어야 앞뒤가 맞는다. 문경 1.4~1.5km 경쟁 4곳(322대)이 지금은 거의 0으로 세어진다.
+    // 변형: 반경이 넓어진 비율(2배)만큼 감쇠 평지·척도도 2배(400/400) / 더 세게 3배(600/600). 4곳만 바뀌고 나머지는 0 변화여야 한다.
+    if (!candRows.length) return;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const wide = [...own, ...candRows].filter((r) => (r.input.residentRadiusM ?? 1000) > 1000);
+    if (!wide.length) { console.log("반경 넓힌 매장 없음"); return; }
+    const decay0 = full.rivalDistanceDecay!;
+    const variants = [1, 2, 3].map((k) => ({ k, p: { ...full, rivalDistanceDecay: { ...decay0, plateauM: decay0.plateauM * k, scaleM: decay0.scaleM * k } } as TextbookParams }));
+    console.log(`\n[반경 2km 매장 — 경쟁 감쇠도 k배] 평지 ${decay0.plateauM}m·척도 ${decay0.scaleM}m × k. 오차 %p(자사) · 가동률(후보지)`);
+    console.log(`  매장            실측 |  k=1(지금)    k=2       k=3   | 1~2km 경쟁(대수)`);
+    for (const r of wide) {
+      const a = r.input.actualUtilization as number | null;
+      const cells = variants.map((v) => { const u = computeTextbook(r.input, v.p).utilization ?? NaN; return a ? `${((u - a) * 100).toFixed(1).padStart(6)}%p` : `${(u * 100).toFixed(1).padStart(6)}% `; });
+      const rv = (r.input.rivals ?? []).filter((x) => x.ip > 0 && x.distanceM > 1000 && x.distanceM <= 2000);
+      console.log(`  ${(r.input.storeName ?? "").trim().padEnd(12)} ${a ? pct(a).padStart(6) : "  후보 "} | ${cells.join("  ")} | ${rv.length}곳(${rv.reduce((s, x) => s + x.ip, 0).toFixed(0)}대)`);
+    }
+    // 문경 — 경쟁점별 무게가 어떻게 바뀌나
+    const mg = wide.find((r) => (r.input.storeName ?? "").includes("문경"));
+    if (mg) {
+      console.log(`\n  문경시청 경쟁점 무게(거리 → k=1 / k=2 / k=3):`);
+      for (const x of (mg.input.rivals ?? []).filter((v) => v.ip > 0).sort((p, q) => p.distanceM - q.distanceM))
+        console.log(`     ${String(x.name ?? "").slice(0, 10).padEnd(10)} ${String(Math.round(x.distanceM)).padStart(5)}m ${String(x.ip).padStart(4)}대 → ${variants.map((v) => rivalDistanceWeight(x.distanceM, v.p).toFixed(2)).join(" / ")}`);
+    }
+    // 나머지 매장은 0 변화인지
+    const others = own.filter((r) => (r.input.residentRadiusM ?? 1000) === 1000);
+    for (const v of variants.slice(1)) {
+      const maxD = Math.max(...others.map((r) => Math.abs((computeTextbook(r.input, v.p).utilization ?? 0) - (computeTextbook(r.input, full).utilization ?? 0))));
+      console.log(`  k=${v.k}를 전 매장에 걸면 나머지 ${others.length}곳 최대 변화 ${(maxD * 100).toFixed(1)}%p — 4곳에만 걸려면 매장별 파라미터가 필요(반경 필드에서 파생)`);
+    }
+    console.log(`  ⭐ 읽는 법 — 문경이 k=2에서 더 내려가면(경쟁이 세어져) 반경 2km는 문경을 못 살린다는 뜻이고, 양주덕정이 그대로면(1065m 37.5대뿐) 양주덕정 결론은 안 흔들린다.`);
+    expect(wide.length).toBeGreaterThan(0);
+  });
 });
