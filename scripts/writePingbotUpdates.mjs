@@ -16,6 +16,9 @@ const COLLECTION = "storeEvalCompetitors";
 const APPLY = process.argv.includes("--apply");
 const periodArg = process.argv.find((a) => a.startsWith("--period="));
 const PERIOD = periodArg ? periodArg.slice("--period=".length) : null;
+// --file=<json> : [{candidateCode,name,value,note?}] 목록을 파일에서 읽는다(핑봇 페이지를 긁어 만든 목록). 없으면 아래 UPDATES를 쓴다.
+const fileArg = process.argv.find((a) => a.startsWith("--file="));
+const FILE_UPDATES = fileArg ? JSON.parse(readFileSync(fileArg.slice("--file=".length), "utf8")) : null;
 if (!PERIOD || !/^\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2}$/.test(PERIOD)) {
   console.error("--period=YYYY-MM-DD~YYYY-MM-DD 가 필요하다(핑봇 조회 창). 예: --period=2026-09-15~2026-09-21");
   process.exit(1);
@@ -88,7 +91,7 @@ const snap = await db.collection(COLLECTION).get();
 const docs = snap.docs.map((d) => ({ id: d.id, ref: d.ref, ...d.data() }));
 
 let changed = 0;
-for (const u of UPDATES) {
+for (const u of (FILE_UPDATES ?? UPDATES)) {
   const hits = docs.filter((d) => d.candidateCode === u.candidateCode && norm(d.name) === norm(u.name));
   if (hits.length !== 1) { console.log(`✗ ${u.candidateCode} ${u.name} — 문서 ${hits.length}건 매칭(정확히 1이어야) ${hits.map((h) => h.id).join(", ")}`); continue; }
   const d = hits[0];
@@ -99,7 +102,8 @@ for (const u of UPDATES) {
   await d.ref.update({
     pingbotUtilization: u.value, pingbotPeriod: PERIOD,
     pingbotPrevUtilization: before, pingbotPrevPeriod: beforeP,
-    updatedAt: Date.now(), updatedBy: `핑봇 재조회 ${PERIOD} (scripts/writePingbotUpdates.mjs, 사용자 제공)`,
+    ...(u.note ? { pingbotNote: u.note } : {}),
+    updatedAt: Date.now(), updatedBy: `핑봇 재조회 ${PERIOD} (scripts/writePingbotUpdates.mjs${FILE_UPDATES ? ", 핑봇 페이지 긁기" : ", 사용자 제공"})`,
   });
   changed += 1;
 }
