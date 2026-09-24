@@ -96,11 +96,12 @@ for (const u of (FILE_UPDATES ?? UPDATES)) {
   if (hits.length !== 1) { console.log(`✗ ${u.candidateCode} ${u.name} — 문서 ${hits.length}건 매칭(정확히 1이어야) ${hits.map((h) => h.id).join(", ")}`); continue; }
   const d = hits[0];
   const before = d.pingbotUtilization ?? null, beforeP = d.pingbotPeriod ?? null;
-  const same = before === u.value && beforeP === PERIOD;
-  console.log(`${same ? "=" : "→"} ${u.name.padEnd(22)} ${String(before).padStart(5)}% [${beforeP ?? "없음"}]  →  ${u.value}% [${PERIOD}]   (${d.id})`);
+  // value가 null이면 "신뢰 불가라 뺀다"(사용자 2026-09-25) — 값을 비우고 note에 이유. 옛 값은 pingbotPrev*에 남는다.
+  const same = before === u.value && (u.value == null || beforeP === PERIOD);
+  console.log(`${same ? "=" : "→"} ${u.name.padEnd(22)} ${String(before).padStart(5)}% [${beforeP ?? "없음"}]  →  ${u.value == null ? "(비움)" : u.value + "%"} [${u.value == null ? "-" : PERIOD}]   (${d.id})${u.note ? "  " + u.note.slice(0, 60) : ""}`);
   if (same || !APPLY) continue;
   await d.ref.update({
-    pingbotUtilization: u.value, pingbotPeriod: PERIOD,
+    pingbotUtilization: u.value ?? null, pingbotPeriod: u.value == null ? null : PERIOD,
     pingbotPrevUtilization: before, pingbotPrevPeriod: beforeP,
     ...(u.note ? { pingbotNote: u.note } : {}),
     updatedAt: Date.now(), updatedBy: `핑봇 재조회 ${PERIOD} (scripts/writePingbotUpdates.mjs${FILE_UPDATES ? ", 핑봇 페이지 긁기" : ", 사용자 제공"})`,
