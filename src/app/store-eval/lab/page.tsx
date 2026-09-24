@@ -26,8 +26,9 @@
 //    반영한 예상매출·가동률들 보고 싶다." 계수는 DEFAULT_TEXTBOOK_PARAMS에 고정돼 있고
 //    화면은 읽기 전용으로 보여만 준다(ParamSummary). 계수를 바꾸는 건 코드 작업이다.
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   summarizeValidationRows,
   computeCompetitorInvestigationSummary,
@@ -107,6 +108,15 @@ type Loaded = {
   candRows: LabCandidateRow[];
   /** 후보지에 들어간 관리 점수(= 가맹점 평균). 화면에 적어야 "실측인가 평균인가"가 구분된다. */
   franchiseManagement: number | null;
+  /**
+   * 실험실 복제본 컬렉션별 건수 (2026-09-24 밤, "자료" 탭). 실험실은 운영과 따로 관리되는 storeEvalLab* 컬렉션만 읽으므로
+   * 무엇이 몇 건 들어와 있는지 화면에 적어야 "운영에서 고쳤는데 여기 안 바뀐다"를 사람이 바로 알아본다.
+   */
+  dataStatus: {
+    existingStores: number; candidates: number; competitors: number; locationEvaluations: number;
+    qsc: number; residentRings: number; tradeArea: number; roadview: number; salesRows: number;
+    settingsUpdatedAt: number | null;
+  };
 };
 
 const pct = (v: number | null | undefined, digits = 1) =>
@@ -241,10 +251,45 @@ async function loadLabData(): Promise<Loaded | null> {
   });
 
   return { rows, excludedRows, current, qsc, qscByStore, windowFillByStore,
-    specWeights: settings.specWeights, candRows, franchiseManagement };
+    specWeights: settings.specWeights, candRows, franchiseManagement,
+    dataStatus: {
+      existingStores: storedStores.length, candidates: candidates.length, competitors: allCompetitors.length,
+      locationEvaluations: allLocationEvaluations.length, qsc: qscByStoreCode.size, residentRings: residentRingsByCode.size,
+      tradeArea: ringBlockedByCode.size, roadview: roadviewByKey.size, salesRows: sales.length,
+      settingsUpdatedAt: settingsDoc?.updatedAt ?? null,
+    } };
 }
 
+// ── 탭 (2026-09-24 밤) ─────────────────────────────────────────────────────
+// 사용자: *"실험실 페이지에 탭을 넣어서 데이터 관리하자. 지금 페이지가 너무 길다."*
+// 주소 ?tab=… 로 고른다 — 링크로 특정 탭을 바로 열 수 있고 새로고침해도 유지된다.
+const LAB_TABS = [
+  { key: "score", label: "성적", hint: "자사 40곳 가동률·매출 오차" },
+  { key: "candidates", label: "후보지", hint: "신규후보지 13곳 예측" },
+  { key: "params", label: "계수", hint: "지금 쓰는 값과 뜻" },
+  { key: "method", label: "산식 설명", hint: "왜 이렇게 재는가 · 결정 기록" },
+  { key: "rivals", label: "경쟁점 인식", hint: "매장별로 어느 경쟁점을 몇 %로 세나" },
+  { key: "data", label: "자료", hint: "실험실 복제본 현황 · 특수수요 분류" },
+] as const;
+type LabTabKey = typeof LAB_TABS[number]["key"];
+const isLabTab = (v: string | null): v is LabTabKey => LAB_TABS.some((t) => t.key === v);
+
 export default function LabPage() {
+  // useSearchParams는 Suspense 안에서만 정적 렌더가 된다(Next 규칙).
+  return (
+    <Suspense fallback={<p className="mx-auto max-w-6xl px-4 py-8 text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>}>
+      <LabPageInner />
+    </Suspense>
+  );
+}
+
+function LabPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const tab: LabTabKey = isLabTab(tabParam) ? tabParam : "score";
+  const goTab = (k: LabTabKey) => router.replace(k === "score" ? pathname : `${pathname}?tab=${k}`, { scroll: false });
   const [data, setData] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -273,62 +318,204 @@ export default function LabPage() {
     [data, p],
   );
 
+  // 기존점 **실측** 가동률의 범위. 후보지 예측이 이 밖이면 외삽 경고를 띄운다.
+  // ⚠️ 예측이 아니라 실측이어야 한다 — 예측 범위로 재면 "산식이 벌린 만큼"이 기준이 돼서 경고가 영영 안 뜬다(자기 자신을 기준 삼는 순환).
+  const actualUtilRange = useMemo(() => {
+    const v = (data?.rows ?? []).map((r) => r.input.actualUtilization).filter((x): x is number => x != null && x > 0);
+    return v.length ? { min: Math.min(...v), max: Math.max(...v) } : null;
+  }, [data]);
+
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <div className="flex items-baseline justify-between gap-3">
+    <div className="mx-auto max-w-6xl px-4 py-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#171310] dark:text-[#f2ede2]">점포평가 실험실</h1>
           <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
-            교과서식 산식(수요 → 점유율 → 매출)을 최신 자료로 돌린 결과입니다.
-            <b className="text-[#171310] dark:text-[#f2ede2]"> 운영 산식과 저장값은 전혀 건드리지 않습니다.</b>
+            교과서식 산식(동네 수요 → 우리 몫 → 매출)을 실험실 전용 복제본 자료로 돌린 결과입니다.
+            <b className="text-[#171310] dark:text-[#f2ede2]"> 운영 산식(V62)과 저장값은 건드리지 않습니다.</b>
           </p>
         </div>
-        <Link href="/store-eval" className="app-btn-outline shrink-0 rounded-lg px-4 py-2 text-sm">← 점포평가</Link>
+        {score && (
+          <p className="text-xs text-[var(--sl-ink-soft)]">
+            자사 {score.utilizationSampleCount}곳 가동률 오차 <b className="text-[#171310] dark:text-[#f2ede2]">{score.utilizationMaePoints == null ? "-" : `${(score.utilizationMaePoints * 100).toFixed(2)}%p`}</b>
+            {" "}· 목표 {(UTILIZATION_TARGET_MAE_POINTS * 100).toFixed(0)}%p
+          </p>
+        )}
       </div>
 
-      <div className="app-notice mt-4 rounded-xl px-4 py-3 text-xs leading-relaxed">
-        지금 운영 산식은 기존 가맹점 실적에 회귀로 맞춥니다. 숫자는 좋지만 &ldquo;왜 이 금액인가&rdquo;를
-        설명할 때 <b>&ldquo;기존 가맹점 평균에서 조정했다&rdquo;</b>밖에 말할 수 없습니다.
-        여기 교과서식은 <b>&ldquo;이 동네 수요가 얼마고 그중 우리가 몇 %를 가져간다&rdquo;</b>로 설명됩니다.
-        대신 정확도가 떨어집니다 — 그 맞바꿈이 할 만한지 보시라고 만든 화면입니다.
-        <span className="mt-1 block">
-          이 화면이 읽는 자료는 <b>운영과 따로 관리되는 실험실 전용 복제본</b>입니다. 여기서 무엇을 고쳐도
-          운영 점포평가 숫자는 바뀌지 않습니다. 운영 쪽 최신 자료를 당겨오는 건 별도 작업입니다.
-        </span>
-      </div>
+      {/* 탭 — 주소 ?tab= 로 고른다. 페이지가 너무 길어서 나눴다(2026-09-24 밤 사용자). */}
+      <nav aria-label="실험실 탭" className="app-tabbar mt-4 flex flex-wrap gap-1 p-1 text-sm">
+        {LAB_TABS.map((t) => (
+          <button
+            key={t.key} type="button" onClick={() => goTab(t.key)} aria-current={tab === t.key ? "page" : undefined} title={t.hint}
+            className={`app-tab rounded-lg px-3 py-1.5 ${tab === t.key ? "app-tab-active" : ""}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">{LAB_TABS.find((t) => t.key === tab)?.hint}</p>
 
       {loading && <p className="mt-8 text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>}
       {error && <p className="mt-8 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
 
-      {score && data && (
+      {score && data && tab === "score" && (
         <>
           <ScoreBoard score={score} current={data.current} p={p} />
-          <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
-            scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
-          <ParamSummary p={p} counts={counts} />
           <StoreTable score={score} qscByStore={data.qscByStore} p={p} windowFill={data.windowFillByStore} />
           <ExcludedTable rows={data.excludedRows} p={fittedParams(p, score)} />
-          <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
-            franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount}
-            actualUtilRange={(() => {
-              // 기존점 **실측** 가동률의 범위. 후보지 예측이 이 밖이면 외삽 경고를 띄운다.
-              // ⚠️ 예측이 아니라 실측이어야 한다 — 예측 범위로 재면 "산식이 벌린 만큼"이
-              //    기준이 돼서 경고가 영영 안 뜬다(자기 자신을 기준 삼는 순환).
-              const v = data.rows
-                .map((r) => r.input.actualUtilization)
-                .filter((x): x is number => x != null && x > 0);
-              return v.length ? { min: Math.min(...v), max: Math.max(...v) } : null;
-            })()} />
-          <RivalRecognition
-            groups={[
-              ...data.rows.map((r) => ({ kind: "기존점" as const, input: r.input })),
-              ...data.candRows.map((r) => ({ kind: "후보지" as const, input: r.input })),
-            ]}
-            p={fittedParams(p, score)}
-          />
         </>
       )}
+      {score && data && tab === "candidates" && (
+        <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
+          franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount} actualUtilRange={actualUtilRange} />
+      )}
+      {score && data && tab === "params" && <ParamSummary p={p} counts={counts} />}
+      {score && data && tab === "method" && (
+        <>
+          <div className="app-notice mt-4 rounded-xl px-4 py-3 text-xs leading-relaxed">
+            운영 산식(V62)은 기존 가맹점 실적에 회귀로 맞춥니다. 숫자는 좋지만 &ldquo;왜 이 금액인가&rdquo;를 설명할 때
+            <b> &ldquo;기존 가맹점 평균에서 조정했다&rdquo;</b>밖에 말할 수 없습니다. 여기 교과서식은
+            <b> &ldquo;이 동네 수요가 얼마고 그중 우리가 몇 %를 가져간다&rdquo;</b>로 설명됩니다. 대신 정확도가 떨어집니다 —
+            그 맞바꿈이 할 만한지 보시라고 만든 화면입니다. 아래는 지금 산식과 그렇게 정한 이유·되돌린 기록입니다.
+          </div>
+          <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
+            scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
+        </>
+      )}
+      {score && data && tab === "rivals" && (
+        <RivalRecognition
+          groups={[
+            ...data.rows.map((r) => ({ kind: "기존점" as const, input: r.input })),
+            ...data.candRows.map((r) => ({ kind: "후보지" as const, input: r.input })),
+          ]}
+          p={fittedParams(p, score)}
+          defaultOpen
+        />
+      )}
+      {score && data && tab === "data" && <DataStatus data={data} p={p} />}
     </div>
+  );
+}
+
+// ── 자료 탭 (2026-09-24 밤) ─────────────────────────────────────────────────
+// 실험실이 읽는 복제본(storeEvalLab*)에 무엇이 몇 건 있고, 산식이 실제로 쓰는 분류(특수수요 유형·강도)가 매장별로 어떻게
+// 들어가 있는지 한 화면에 적는다. 오송이 "대학가/보통"으로 들어와 배수를 탔던 일이 이 표가 있었으면 바로 보였을 것이다.
+// ⚠️ 여기서 고치지는 않는다 — 운영 화면(입지평가 탭)에서 고치고 scripts/syncLabCollections.mjs로 옮긴다. Firestore 쓰기는 지시가 있을 때만.
+function DataStatus({ data, p }: { data: Loaded; p: TextbookParams }) {
+  const d = data.dataStatus;
+  const fmtAt = (ms: number | null) => (ms ? new Date(ms).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" }) : "-");
+  const counts: { label: string; value: string; note: string }[] = [
+    { label: "기존점", value: `${d.existingStores}곳`, note: `산식 표본 ${data.rows.length}곳 · 빠진 매장 ${data.excludedRows.length}곳(성적엔 안 들어감)` },
+    { label: "신규후보지", value: `${d.candidates}곳`, note: "실매출이 없어 예측만 한다" },
+    { label: "경쟁점(500m 조사)", value: `${d.competitors}건`, note: "기존점·후보지 것을 한 컬렉션에 담는다. 2km 목록은 코드 자료(rival2km)" },
+    { label: "입지평가", value: `${d.locationEvaluations}건`, note: "특수수요 유형·강도, 접근성, 중심도가 여기서 나온다" },
+    { label: "QSC 점검", value: `${d.qsc}곳`, note: data.qsc ? `표본 ${data.qsc.total}곳 중 ${data.qsc.measured}곳 실측 · 나머지는 가맹점 평균 ${data.franchiseManagement?.toFixed(2) ?? "-"}점` : "없음 — 관리 점수는 전부 평균" },
+    { label: "1km 밖 고리 인구", value: `${d.residentRings}곳`, note: p.residentRingDecayM > 0 ? "산식이 읽는다" : "실려 있지만 산식이 안 읽는다(고리 끔)" },
+    { label: "막힌 상권 판정", value: `${d.tradeArea}곳`, note: p.residentRingDecayM > 0 && p.useRingEnclosure ? "산식이 읽는다" : "고리를 끄면 안 읽는다" },
+    { label: "로드뷰 판정", value: `${d.roadview}곳`, note: "동선 방해·가시성. 입지 계수가 0이라 지금은 안 읽는다" },
+    { label: "월매출(운영 원본)", value: `${d.salesRows}행`, note: "실측 사실이라 운영 것을 그대로 읽는다 — 두 벌로 두지 않는다" },
+    { label: "실험실 설정", value: fmtAt(d.settingsUpdatedAt), note: "하드웨어 비중 등. 운영 설정과 별개" },
+  ];
+  // 특수수요 분류 — 산식에 실제로 들어간 값(rows/candRows의 input)에서 읽는다.
+  const gate = new Set(p.specialDemandHighOnly ?? []);
+  const classified = [
+    ...data.rows.map((r) => ({ kind: "기존점", name: r.input.storeName ?? r.input.storeCode, type: r.input.specialDemandType ?? "없음", inten: r.input.specialDemandIntensity ?? null })),
+    ...data.excludedRows.map((r) => ({ kind: "기존점(빠짐)", name: r.input.storeName ?? r.input.storeCode, type: r.input.specialDemandType ?? "없음", inten: r.input.specialDemandIntensity ?? null })),
+    ...data.candRows.map((r) => ({ kind: "후보지", name: r.input.storeName ?? r.input.storeCode, type: r.input.specialDemandType ?? "없음", inten: r.input.specialDemandIntensity ?? null })),
+  ].filter((x) => x.type !== "없음");
+  const mulOf = (type: string, inten: string | null) => {
+    const m = p.specialDemandMultipliers[type] ?? 1;
+    if (m === 1) return { m, applied: false, why: "배수 없는 유형" };
+    if (gate.has(type) && inten !== "높음") return { m, applied: false, why: `강도 ${inten ?? "없음"} — 높음만 탄다` };
+    return { m, applied: true, why: "" };
+  };
+  // 평가창이 덜 찬 매장 — 실측 가동률이 아직 움직이는 곳
+  const partial = [...data.windowFillByStore.entries()]
+    .map(([code, w]) => ({ code, ...w, name: data.rows.find((r) => r.input.storeCode === code)?.input.storeName ?? data.excludedRows.find((r) => r.input.storeCode === code)?.input.storeName ?? code }))
+    .filter((x) => x.filled < x.total && data.rows.some((r) => r.input.storeCode === x.code))
+    .sort((a, b) => a.filled - b.filled);
+  return (
+    <section className="mt-6 space-y-6">
+      <div>
+        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">실험실 복제본 — 무엇이 몇 건 들어와 있나</h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+          실험실은 운영 컬렉션이 아니라 <b>storeEvalLab*</b> 복제본만 읽습니다. 운영 화면에서 자료를 고쳐도 여기엔 저절로 안 옵니다 —
+          <code className="mx-1">node scripts/syncLabCollections.mjs --apply</code>로 옮겨야 합니다(운영 → 실험실 한 방향).
+        </p>
+        <div className="app-card mt-2 overflow-hidden rounded-xl">
+          <table className="w-full text-left">
+            <tbody>
+              {counts.map((c) => (
+                <tr key={c.label} className="border-b border-[#171310]/[0.06] last:border-0 dark:border-white/[0.06]">
+                  <th scope="row" className="w-44 px-4 py-2 align-top text-xs font-medium text-[var(--sl-ink-soft)]">{c.label}</th>
+                  <td className="w-32 px-2 py-2 align-top text-sm font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">{c.value}</td>
+                  <td className="px-4 py-2 align-top text-xs text-[var(--sl-ink-soft)]">{c.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">특수수요 분류 — 유형·강도와 배수가 탔는지 ({classified.length}곳)</h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+          배수는 유형이 아니라 <b>유형 + 강도 &ldquo;높음&rdquo;</b>으로 탑니다({[...gate].join("·") || "문 없음"}). 분류가 틀렸으면 운영 화면
+          &gt; 신규후보지 &gt; 입지평가 탭(후보지) 또는 기존 가맹점 관리(기존점)에서 고치고 동기화합니다. 오송점이 &ldquo;대학가/보통&rdquo;으로
+          들어와 배수를 탔던 게 2026-09-24에 잡힌 예입니다.
+        </p>
+        <div className="app-card mt-2 overflow-x-auto rounded-xl">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
+              <tr>
+                <th scope="col" className="px-3 py-2">구분</th>
+                <th scope="col" className="px-3 py-2">매장</th>
+                <th scope="col" className="px-3 py-2">유형</th>
+                <th scope="col" className="px-3 py-2">강도</th>
+                <th scope="col" className="px-3 py-2 text-right">배수</th>
+                <th scope="col" className="px-3 py-2">적용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {classified.sort((a, b) => a.type.localeCompare(b.type) || a.kind.localeCompare(b.kind)).map((x) => {
+                const r = mulOf(x.type, x.inten);
+                return (
+                  <tr key={`${x.kind}:${x.name}`} className="border-b border-[#171310]/[0.06] dark:border-white/[0.06]">
+                    <td className="px-3 py-1.5 text-xs text-[var(--sl-ink-soft)]">{x.kind}</td>
+                    <td className="px-3 py-1.5">{x.name}</td>
+                    <td className="px-3 py-1.5">{x.type}</td>
+                    <td className="px-3 py-1.5">{x.inten ?? <span className="text-[var(--sl-ink-soft)]">-</span>}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.m === 1 ? "-" : `×${r.m}`}</td>
+                    <td className="px-3 py-1.5 text-xs">
+                      {r.applied
+                        ? <span className="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-200">탄다</span>
+                        : <span className="text-[var(--sl-ink-soft)]">안 탄다 · {r.why}</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">평가창이 덜 찬 매장 ({partial.length}곳)</h2>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+          실측 가동률은 개점 다음 달부터 12개월 평균인데, 갓 연 매장은 몇 달치뿐이라 값이 아직 움직입니다. 개점 효과가 섞여 있을 수 있어
+          이 매장들의 오차는 한 단계 낮게 읽습니다(진주혁신도시 2개월).
+        </p>
+        <ul className="mt-2 flex flex-wrap gap-2 text-xs">
+          {partial.length === 0 && <li className="text-[var(--sl-ink-soft)]">전부 12개월 채움</li>}
+          {partial.map((x) => (
+            <li key={x.code} className="app-card rounded-lg px-3 py-1.5">
+              <b className="text-[#171310] dark:text-[#f2ede2]">{x.name}</b> <span className="tabular-nums text-[var(--sl-ink-soft)]">{x.filled}/{x.total}개월</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
@@ -1715,11 +1902,13 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
 //    밖이면 0). 지금은 **거리 감쇠**다 — 평지 안은 100%, 밖은 exp로 완만히 줄여서 센다.
 //    이 표가 계속 계단으로 그리고 있어서 화면이 "302m는 안 셈"이라고 거짓말하고 있었다.
 //    이제 **산식과 같은 무게 함수**를 써서 몇 %로 세는지를 그대로 보여준다.
-function RivalRecognition({ groups, p }: {
+function RivalRecognition({ groups, p, defaultOpen = false }: {
   groups: { kind: "기존점" | "후보지"; input: TextbookInput }[];
   p: TextbookParams;
+  /** 탭으로 따로 열 때는 접혀 있을 이유가 없다(2026-09-24 밤). */
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const rows = groups.map(({ kind, input }) => {
     const oq = input.ownQualityParts ? computeQualityScore(input.ownQualityParts, p.qualityWeights) : null;
     const rivals = (input.rivals ?? []).map((v) => {
