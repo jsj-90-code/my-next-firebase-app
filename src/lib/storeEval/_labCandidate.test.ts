@@ -1184,12 +1184,51 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     if (!r) { console.log("강릉교동 없음"); return; }
     const a = r.input.actualUtilization as number;
     console.log(`\n[강릉교동(신)] 실측 ${pct(a)} · 개점 2026-01-23 · 지금 유형 ${r.input.specialDemandType}/${r.input.specialDemandIntensity ?? "-"}`);
-    for (const [t, i] of [["없음", "없음"], ["군부대", "보통"], ["군부대", "높음"]] as const) {
+    for (const [t, i] of [["없음", "없음"], ["군부대", "보통"], ["군부대", "높음"], ["관광유흥", "높음"], ["대학가", "높음"]] as const) {
       const b = computeTextbook({ ...r.input, specialDemandType: t, specialDemandIntensity: i }, full);
       console.log(`  ${t}/${i}   예측 ${pct(b.utilization)}  오차 ${((b.utilization ?? 0) - a) * 100 > 0 ? "+" : ""}${(((b.utilization ?? 0) - a) * 100).toFixed(1)}%p  (매출 ${manwon(b.monthlyRevenue)})`);
     }
     const b0 = computeTextbook({ ...r.input, specialDemandType: "없음", specialDemandIntensity: "없음" }, full);
     console.log(`  함의 배수(실측 ÷ 배수 없는 예측) ${(a / (b0.utilization ?? NaN)).toFixed(2)}배 — 군부대 ×2.0(금촌역 2.0·문산 2.5)보다 작다. 정문 생활권(높음)이면 ×2가 과대, 보통이면 문에 막혀 0.`);
+  });
+
+  it("(22) ⭐⭐ 기존점 40곳 특수수요 재검토 표 — 지금 유형/강도 · 함의 배수 · 유동 20대·남성 비중 (사용자 2026-09-25 '전체적으로 검토')", () => {
+    // 함의 배수 = 실측 ÷ (배수 1.0으로 끈 예측). 1보다 크면 산식이 못 세는 손님이 있다는 뜻이지만 **그 자체는 유형의 근거가 아니다**(경쟁·점유율 층 문제일 수 있다).
+    // 유동 20대 비중(대학가 5곳 중앙 18%·유흥 10%)·남성 비중(산업단지 정왕 66%·전체 57%)이 유형과 맞아야 후보. 최종 판정은 지도(부대·캠퍼스·산단 거리)와 현장.
+    if (!candRows.length) return;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const noMul: TextbookParams = { ...full, specialDemandMultipliers: Object.fromEntries(Object.keys(full.specialDemandMultipliers).map((k) => [k, 1])) };
+    const storeByCode = new Map(stores.map((s) => [s.storeCode, s]));
+    type Row = { name: string; type: string; inten: string; applied: string; implied: number; err: number; s20: number | null; male: number | null; addr: string };
+    const rows: Row[] = own.map((r) => {
+      const a = r.input.actualUtilization as number;
+      const b = computeTextbook(r.input, full), b0 = computeTextbook(r.input, noMul);
+      const st = storeByCode.get(r.input.storeCode);
+      const t = r.input.specialDemandType ?? "없음", i = r.input.specialDemandIntensity ?? "없음";
+      const m = full.specialDemandMultipliers[t] ?? 1;
+      const applied = t === "없음" ? "-" : m === 1 ? "배수 없음" : (full.specialDemandHighOnly ?? []).includes(t) && i !== "높음" ? "안 탐" : `×${m}`;
+      const f = st?.floating500Avg ?? null;
+      return { name: (r.input.storeName ?? "").trim(), type: t, inten: i, applied, implied: a / (b0.utilization ?? NaN), err: (b.utilization ?? NaN) - a, s20: f ? (st?.floating500_20s ?? 0) / f : null, male: f ? (st?.floating500Male ?? 0) / f : null, addr: String(st?.address ?? "").split(",")[0].slice(0, 26) };
+    }).sort((x, y) => y.implied - x.implied);
+    console.log(`\n[기존점 ${rows.length}곳 — 특수수요 재검토] 함의 배수 큰 순. 20대·남성 = 500m 유동 비중`);
+    console.log(`  매장          유형/강도       적용   함의   오차 | 20대 남성 | 주소`);
+    for (const x of rows) console.log(`  ${x.name.padEnd(11)} ${(x.type + "/" + x.inten).padEnd(12)} ${x.applied.padEnd(6)} ${x.implied.toFixed(2).padStart(5)} ${(x.err * 100).toFixed(1).padStart(6)} | ${x.s20 == null ? "  - " : pct(x.s20, 0).padStart(4)} ${x.male == null ? "  - " : pct(x.male, 0).padStart(4)} | ${x.addr}`);
+    console.log(`  ⭐ 읽는 법 — 함의 1.2 이상 + 유형 없음인 매장이 후보. 거기서 20대 ≥15%면 대학가 의심, 남성 ≥60%면 산업단지·군부대 의심, 둘 다 평범하면 특수수요가 아니라 점유율·반경 문제.`);
+    // 지리로 가려낸 후보에 유형을 가정해 보면 — 강릉교동(터미널 200m·교동택지 번화가) · 부천상동역(상동 유흥가) · 증평(37사단 사령부 소재지)
+    console.log(`\n  [지리 후보 3곳 — 유형 가정별 오차 %p]`);
+    const trial: [string, [string, string][]][] = [
+      ["강릉교동", [["관광유흥", "높음"], ["대학가", "높음"], ["군부대", "보통"]]],
+      ["부천상동역", [["관광유흥", "높음"], ["관광유흥", "보통"]]],
+      ["증평", [["군부대", "보통"], ["군부대", "높음"]]],
+    ];
+    for (const [nm, cases] of trial) {
+      const r = own.find((x) => (x.input.storeName ?? "").includes(nm)); if (!r) continue;
+      const a = r.input.actualUtilization as number;
+      const base = (computeTextbook(r.input, full).utilization ?? NaN) - a;
+      const cells = cases.map(([t, i]) => { const u = computeTextbook({ ...r.input, specialDemandType: t, specialDemandIntensity: i }, full).utilization ?? NaN; return `${t}/${i} ${((u - a) * 100).toFixed(1)}`; });
+      console.log(`     ${nm.padEnd(6)} 지금 ${(base * 100).toFixed(1)} → ${cells.join(" · ")}`);
+    }
+    expect(rows.length).toBeGreaterThan(30);
   });
 
   it("(20) ⭐⭐ 반경 2km 매장은 경쟁도 2km로 — 수요만 넓히고 경쟁은 1km 감쇠(평지 200·감쇠 200)로 두는 비대칭을 잰다", () => {
