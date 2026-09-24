@@ -862,4 +862,69 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     console.log(`     후보지가 뜨면 그 자리 2km 경쟁점 목록이 비었는지(누락)부터 본다 — 고리는 2km 경쟁점 대수(기본 90)에 기대므로 누락이면 고리 사람이 전부 우리에게 온다.`);
     expect(own.length).toBeGreaterThan(30);
   });
+
+  it("(14) ⭐⭐⭐ 매장별 사실 필드 흉내 — '1~2km 배후지에 다른 PC방 상권 없음(사람 확인)'인 매장에만 고리", () => {
+    // 인계(handoff-20260929 다음 할 일 1): 유일 상권 AI 판정 9곳엔 양주덕정이 없고(사람 사실과 다름), 전 매장 고리는 밀집·후보지를 띄운다.
+    // 남은 길은 **사람이 확인한 매장별 사실**로만 고리를 켜는 것. 그 필드가 아직 없으므로 여기서는 손목록(지금 양주덕정 하나)으로 흉내 내어
+    // "필드를 만들면 무엇이 바뀌나"를 사용자 결정 전에 재 둔다. ⚠️ 채택이 아니라 재고 표다 — 필드 신설·Firestore 쓰기는 사용자 결정 뒤.
+    // 사전 기준: (1) 양주덕정 |오차|가 10%p 아래로 (2) 나머지 39곳·후보지 13곳은 소수점까지 0 변화(플래그 매장만 건드리는 구조 확인)
+    //           (3) 고리θ 0(거리로 고른다)이 θ3보다 양주덕정을 더 잘 설명해야 사용자 기전과 부합.
+    if (!candRows.length) return;
+    const FACT_SOLO_HINTERLAND = new Map<string, string>([["20231019404", "양주덕정점 — 사용자 2026-09-24: 300m 안 경쟁 빼면 2km 안 경쟁 없음, 1~2km 사람은 우리 상권밖에 없어 옴(1.6km까지)"]]);
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const isUp = (code: string) => LAB_UPSIDE_STORE_CODES.has(code);
+    const okOf = (xs: { code: string; e: number }[]) => mean(xs.map((x) => (isUp(x.code) && x.e < 0 ? 0 : Math.abs(x.e))));
+    const base: TextbookParams = { ...full, residentRingDecayM: 0 };
+    const errAt = (pFor: (code: string) => TextbookParams) => own.map((r) => ({ code: r.input.storeCode, name: r.input.storeName ?? "", u: computeTextbook(r.input, pFor(r.input.storeCode)).utilization ?? NaN, e: (computeTextbook(r.input, pFor(r.input.storeCode)).utilization ?? NaN) - (r.input.actualUtilization as number) })).filter((x) => Number.isFinite(x.e));
+    const e0 = errAt(() => base);
+    const cand0 = candRows.map((r) => computeTextbook(r.input, base).utilization ?? NaN);
+    const ok0 = okOf(e0);
+
+    // 플래그 매장의 고리 입력이 실제로 있는지 — 없으면 고리를 켜도 조용히 1km만 센다
+    for (const [code, why] of FACT_SOLO_HINTERLAND) {
+      const r = own.find((x) => x.input.storeCode === code);
+      if (!r) { console.log(`\n  ⚠️ ${code} 자사 표본에 없음 — ${why}`); continue; }
+      const i = r.input;
+      const bands = i.residentAgesByRadius ? Object.keys(i.residentAgesByRadius).filter((k) => (i.residentAgesByRadius as any)[k]).join("/") : "없음";
+      const riv = (i.rivals ?? []).filter((v) => v.ip > 0).map((v) => `${Math.round(v.distanceM)}m×${v.ip}`).sort((a, b) => parseInt(a) - parseInt(b));
+      const b0 = computeTextbook(i, base);
+      console.log(`\n[사실 필드 흉내 — 플래그 ${FACT_SOLO_HINTERLAND.size}곳] ${(i.storeName ?? "").replace(/점$/, "")} ${code} — ${why.split(" — ")[1]}`);
+      console.log(`  입력: PC ${i.pcCount} · 1km 인구 ${i.pop1km ?? "-"} · 고리 누적 반경 ${bands} · 막힌 방향 ${i.ringBlockedDirections ?? "판정없음"} · 경쟁점 ${riv.length}곳 [${riv.join(" · ")}]`);
+      console.log(`  지금(λ0): 예측 ${pct(b0.utilization)} · 실측 ${pct(i.actualUtilization as number)} · 수요전부 ${b0.totalDemandHours && i.pcCount ? pct(b0.totalDemandHours / (i.pcCount * 720)) : "-"} · 점유율 ${pct(b0.share)}`);
+    }
+
+    console.log(`\n  고리θ  λ    양주덕정 예측 실측  오차 | 고리몫 고리점유 | 자사MAE 이해MAE  편향 10%p↑ | 나머지39 최대Δ | 후보지 최대Δ | 판정`);
+    const rows: { rq: number | null | "core"; lambda: number; e: number; ok: number }[] = [];
+    // "core"는 고리 사람이 1km 안 사람과 같은 점유율(50.6%)로 온다는 뜻 — 사용자 말("우리 상권밖에 없다")의 다른 해석. gravity·θ0은 100m 안 경쟁 3곳(458대)이
+    // 고리 사람에게도 우리만큼 가깝게 잡혀 고리 점유율이 1km 안보다 낮게(30.7%) 나온다.
+    for (const rq of [0, 1, null, "core"] as (number | null | "core")[]) {
+      for (const lambda of [0, 300, 400, 500, 600, 800, 1000]) {
+        if (lambda === 0 && rq !== 0) continue;
+        const on: TextbookParams = rq === "core"
+          ? { ...full, residentRingDecayM: lambda, residentRingShare: "core", useRingEnclosure: true }
+          : { ...full, residentRingDecayM: lambda, residentRingShare: "gravity", useRingEnclosure: true, ringQualityExponent: rq };
+        const pFor = (code: string) => (FACT_SOLO_HINTERLAND.has(code) ? on : base);
+        const errs = errAt(pFor);
+        const flagged = errs.filter((x) => FACT_SOLO_HINTERLAND.has(x.code));
+        const restMax = Math.max(0, ...errs.filter((x) => !FACT_SOLO_HINTERLAND.has(x.code)).map((x) => Math.abs(x.e - (e0.find((y) => y.code === x.code)?.e ?? NaN))));
+        const candMax = Math.max(0, ...candRows.map((r, k) => Math.abs((computeTextbook(r.input, pFor(r.input.storeCode)).utilization ?? NaN) - cand0[k])));
+        const yj = own.find((r) => r.input.storeCode === "20231019404");
+        const bj = yj ? computeTextbook(yj.input, pFor(yj.input.storeCode)) : null;
+        const f = flagged[0];
+        const ok = okOf(errs);
+        const verdict = lambda === 0 ? "기준" : [
+          f && Math.abs(f.e) < 0.1 ? "" : "10%p 밖",
+          restMax < 1e-9 && candMax < 1e-9 ? "" : "⚠️ 남이 움직임",
+        ].filter(Boolean).join(" · ") || "★ 기준 통과";
+        if (f) rows.push({ rq, lambda, e: f.e, ok });
+        console.log(`  ${(rq == null ? "θ" : String(rq)).padStart(4)}${String(lambda).padStart(5)}   ${f ? pct(f.u).padStart(6) : "     -"} ${f ? pct(f.e + (own.find((r) => r.input.storeCode === f.code)!.input.actualUtilization as number)).padStart(5) : "    -"} ${f ? (f.e * 100).toFixed(1).padStart(6) : "     -"} | ${bj?.residentRingUsers != null && bj.residentDemandUsers ? pct(bj.residentRingUsers / bj.residentDemandUsers).padStart(5) : "    -"} ${bj?.residentRingShare != null ? pct(bj.residentRingShare).padStart(6) : "     -"} |${(mean(errs.map((x) => Math.abs(x.e))) * 100).toFixed(2).padStart(8)}${(ok * 100).toFixed(2).padStart(8)}${(mean(errs.map((x) => x.e)) * 100).toFixed(1).padStart(6)}${String(errs.filter((x) => Math.abs(x.e) >= 0.1).length).padStart(5)} |${(restMax * 100).toFixed(3).padStart(12)}%p |${(candMax * 100).toFixed(3).padStart(9)}%p | ${verdict}`);
+      }
+    }
+    const best = rows.filter((r) => r.lambda > 0).sort((a, b) => Math.abs(a.e) - Math.abs(b.e))[0];
+    if (best) console.log(`\n  양주덕정을 가장 가깝게 맞히는 조합: 고리θ ${best.rq == null ? "θ" : best.rq} · λ${best.lambda} (오차 ${(best.e * 100).toFixed(1)}%p · 이해MAE ${(ok0 * 100).toFixed(2)} → ${(best.ok * 100).toFixed(2)})`);
+    console.log(`  ⭐ 읽는 법 — 이 표는 플래그 매장 하나만 바뀌므로 "자사 성적이 좋아졌다"는 근거가 못 된다(n=1, 맞추려고 λ를 고르면 순환).`);
+    console.log(`     쓸모는 두 가지뿐: (a) 사용자 감각(λ500~600·1.6km)이 자료와 맞는 λ 근처에 오는가 — 맞으면 필드의 뜻이 산식과 통한다.`);
+    console.log(`     (b) 남 39곳·후보지 13곳이 소수점까지 0 — 필드가 참인 매장만 건드리는 구조 확인. 필드를 만들면 λ는 사용자 감각(500~600)으로 굳히고 표본이 늘 때 다시 잰다.`);
+    expect(own.length).toBeGreaterThan(30);
+  });
 });
