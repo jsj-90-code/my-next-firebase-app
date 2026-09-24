@@ -604,6 +604,21 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
       { label: "θ1.5 · λ* · 상한 k0.35", p: (() => { const ex = { ownShareCapK: 0.35 }; return paramsOf(1.5, findLambda(1.5, ex), ex); })() },
       { label: "θ1.5 · λ* · 상한 k0.5", p: (() => { const ex = { ownShareCapK: 0.5 }; return paramsOf(1.5, findLambda(1.5, ex), ex); })() },
     );
+    // ── 사용자(2026-09-24 밤 3차): "수요 ×1.7 + θ 내리기 짝, 상한 80% 위에서 해보면 되나?" ──
+    // 고리(λ)가 아니라 **평면 배율** — 축척 hoursPerUserPerMonth(8.20h 고정)에 k를 곱한다. 전 매장 수요가 똑같이 k배.
+    // k*는 λ*와 같은 뜻(33곳 편향 0). 경쟁 없는 자리는 몫이 이미 상한(80%)이라 k배가 그대로 예측에 실린다 — 그게 이 짝의 급소.
+    const flatOf = (theta: number, k: number, extra: Partial<TextbookParams> = {}): TextbookParams => ({ ...P, qualityExponent: theta, hoursPerUserPerMonth: P.hoursPerUserPerMonth * k, ...extra });
+    const findK = (theta: number, extra: Partial<TextbookParams> = {}): number => {
+      const b = (k: number) => biasEx(errsOf(flatOf(theta, k, extra)));
+      let lo = 0.8, hi = 3; if (b(lo) > 0) return lo; if (b(hi) < 0) return hi;
+      for (let i = 0; i < 24; i += 1) { const m = (lo + hi) / 2; if (b(m) < 0) lo = m; else hi = m; }
+      return (lo + hi) / 2;
+    };
+    const flatVariants: V[] = [];
+    for (const theta of [3, 2, 1.5, 1]) { const k = findK(theta); flatVariants.push({ label: `평면 θ${theta} · ×${k.toFixed(2)}(k*)`, p: flatOf(theta, k) }); }
+    flatVariants.push({ label: "평면 θ2 · ×1.7", p: flatOf(2, 1.7) }, { label: "평면 θ1 · ×1.7", p: flatOf(1, 1.7) });
+    for (const theta of [2, 1.5]) { const ex = { ownShareCapK: 0.5 }; const k = findK(theta, ex); flatVariants.push({ label: `평면 θ${theta} · ×${k.toFixed(2)} · 상한 k0.5`, p: flatOf(theta, k, ex) }); }
+    variants.push(...flatVariants);
     console.log(`\n  [변형 재고 표 — 세 성적 + 경쟁점 + 후보지] λ* = 상향 이탈 뺀 33곳 편향이 0 되는 고리 λ(gravity·항아리). 지금 기본값(상한 k${P.ownShareCapK} · 배수 넷) 위에서`);
     console.log(`  변형                          λ  | 전체MAE  뺌MAE  이해MAE  ±5%p ±3%p | 33곳편향 | 경쟁편향 | 후보지 평균Δ 3%p↑ 실무MAE | 판정`);
     const ok0 = maeOk(e0), prac0 = pracMae(P);
@@ -623,6 +638,18 @@ describeIf("층 가르기 — 수요 층 vs 점유율 층", () => {
     }
     console.log(`\n  ⭐ 읽는 법 — "이해되는 오차" MAE가 사용자 잣대다. 지금 산식에서 7곳 중 과소인 곳(문경·양주덕정·전대후문·강릉교동)은 이미 0으로 쳐서 지금 값이 내려간다.`);
     console.log(`     변형이 이 잣대에서 지금보다 낮으면서 경쟁점·후보지·나머지 33곳을 안 건드려야 채택 후보다. 7곳을 빼고 잰 λ*라 7곳이 잣대를 끌지 않는다.`);
+    // 평면 배율 짝 — 어디가 터지나: 경쟁 없는 자리(탕정역·구미산동·남악·송도) vs 밀집 동급(창원상남·울산삼산·장산)
+    const watch = ["탕정역점", "구미산동점", "남악점", "송도점", "장산점", "일산탄현점"];
+    const watchCand = ["N010", "N005", "N003", "N016"];
+    console.log(`\n  [평면 배율 짝 — 매장별] 오차 %p(자사) · 가동률(후보지)`);
+    console.log(`  변형                          ${watch.map((n) => n.replace(/점$/, "").padEnd(7)).join("")}| ${watchCand.map((c) => ((candRows.find((r) => r.input.storeCode === c)?.input.storeName ?? c).trim().replace(/점$/, "")).padEnd(7)).join("")}`);
+    for (const v of [variants[0], ...flatVariants]) {
+      const xs = errsOf(v.p);
+      const cells = watch.map((n) => { const x = xs.find((y) => y.name === n); return (x ? (x.e * 100).toFixed(1) : "-").padStart(6) + " "; });
+      const cc = watchCand.map((c) => { const r = candRows.find((x) => x.input.storeCode === c); return (r ? ((computeTextbook(r.input, v.p).utilization ?? NaN) * 100).toFixed(1) + "%" : "-").padStart(6) + " "; });
+      console.log(`  ${v.label.padEnd(30)}${cells.join("")}| ${cc.join("")}`);
+    }
+    console.log(`  ⭐ 읽는 법 — 평면 ×k는 경쟁 없는 자리(몫이 이미 상한)에 k배가 그대로 실린다. 그 자리가 +10 넘게 뜨면 짝은 못 쓴다 — 고리(λ)는 지리로 사람을 더하니 그보다 덜 뜨는데 그것도 (6) 위에서 기각이었다.`);
     expect(e0.length).toBeGreaterThan(30);
   });
 
