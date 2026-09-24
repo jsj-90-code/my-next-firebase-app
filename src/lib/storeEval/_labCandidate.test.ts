@@ -934,28 +934,43 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     // 구현은 입력 치환: residentAges(1km 연령분해) ← residentAgesByRadius[1500|2000|5000](누적). pop1km은 그대로 둔다(밀집도 보정 pop500/pop1km이 흔들리지 않게).
     // ⚠️ 감쇠가 없으니 λ보다 세다 — 1.5km 원은 1km 원보다 면적 2.25배, 2km는 4배. 넓힌 원 안에 새 경쟁점이 있으면(1065m 37.5대) 그건 이미 rivals에 있다.
     if (!candRows.length) return;
-    const TARGET = "20231019404";
+    // 사용자(2차 답): 확실한 건 양주덕정. 문경은 "줄 만하지만 결과를 알아서 넣은 것"(순환 자백 — 근거로 못 씀). 영월(후보지)은 넓혀도 됨.
+    //   구미산동·호구포역·진주혁신·야당·송도·김포구래는 옆 상권에 PC방이 자리잡혀 있어 못 줌. → 기준 = "2km 안에 다른 PC방 상권(묶음)이 있나"(사람 판정).
+    const TARGETS: [string, string][] = [["20231019404", "양주덕정(확실)"], ["20240530413", "문경시청(줄 만함, 단 결과를 알고 넣음)"]];
     const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
-    const yj = own.find((r) => r.input.storeCode === TARGET);
-    if (!yj) { console.log("양주덕정 표본 없음"); return; }
     const base: TextbookParams = { ...full, residentRingDecayM: 0 };
     const sum = (a: { age0s: number; age10s: number; age20s: number; age30s: number; age40s: number; age50s: number; age60plus: number } | null | undefined) =>
       a ? a.age0s + a.age10s + a.age20s + a.age30s + a.age40s + a.age50s + a.age60plus : NaN;
-    const cum = yj.input.residentAgesByRadius ?? {};
-    const actual = yj.input.actualUtilization as number;
-    console.log(`\n[상권 반경만 넓히기 — 양주덕정] 실측 ${pct(actual)} · 1km 인구(연령합) ${Math.round(sum(yj.input.residentAges)).toLocaleString()} · 누적 1.5km ${Math.round(sum((cum as any)[1500])).toLocaleString()} · 2km ${Math.round(sum((cum as any)[2000])).toLocaleString()} · 5km ${Math.round(sum((cum as any)[5000])).toLocaleString()}`);
-    console.log(`  반경    주거 이용자   총 이용자  수요전부  점유율  예측   오차  | 1km 대비 주거 배수`);
-    const b1 = computeTextbook(yj.input, base);
-    const rows: { label: string; b: ReturnType<typeof computeTextbook> }[] = [{ label: "1km(지금)", b: b1 }];
-    for (const rad of [1500, 2000, 5000] as const) {
-      const ages = (cum as any)[rad];
-      if (!ages) { console.log(`  ${rad}m 누적 자료 없음`); continue; }
-      rows.push({ label: `${rad / 1000}km`, b: computeTextbook({ ...yj.input, residentAges: ages }, base) });
+    let rows: { label: string; b: ReturnType<typeof computeTextbook> }[] = [];
+    for (const [code, tag] of TARGETS) {
+      const yj = own.find((r) => r.input.storeCode === code);
+      if (!yj) { console.log(`${tag} 표본 없음`); continue; }
+      const cum = yj.input.residentAgesByRadius ?? {};
+      const actual = yj.input.actualUtilization as number;
+      const rv = (yj.input.rivals ?? []).filter((v) => v.ip > 0).map((v) => `${Math.round(v.distanceM)}m×${v.ip}`).sort((a, b) => parseInt(a) - parseInt(b));
+      console.log(`\n[상권 반경만 넓히기 — ${tag}] 실측 ${pct(actual)} · 1km 인구(연령합) ${Math.round(sum(yj.input.residentAges)).toLocaleString()} · 누적 1.5km ${Math.round(sum((cum as any)[1500])).toLocaleString()} · 2km ${Math.round(sum((cum as any)[2000])).toLocaleString()} · 5km ${Math.round(sum((cum as any)[5000])).toLocaleString()} · 경쟁 [${rv.join(" · ")}]`);
+      console.log(`  반경    주거 이용자   총 이용자  수요전부  점유율  예측   오차  | 1km 대비 주거 배수`);
+      const b1 = computeTextbook(yj.input, base);
+      rows = [{ label: "1km(지금)", b: b1 }];
+      for (const rad of [1500, 2000, 5000] as const) {
+        const ages = (cum as any)[rad];
+        if (!ages) { console.log(`  ${rad}m 누적 자료 없음`); continue; }
+        rows.push({ label: `${rad / 1000}km`, b: computeTextbook({ ...yj.input, residentAges: ages }, base) });
+      }
+      for (const { label, b } of rows) {
+        const e = (b.utilization ?? NaN) - actual;
+        const all = b.totalDemandHours && yj.input.pcCount ? b.totalDemandHours / (yj.input.pcCount * 720) : NaN;
+        console.log(`  ${label.padEnd(9)}${Math.round(b.residentDemandUsers ?? NaN).toLocaleString().padStart(10)}${Math.round(b.totalDemandUsers ?? NaN).toLocaleString().padStart(11)}${pct(all).padStart(9)}${pct(b.share).padStart(8)}${pct(b.utilization).padStart(7)}${(e * 100).toFixed(1).padStart(7)}  |  ${((b.residentDemandUsers ?? NaN) / (b1.residentDemandUsers ?? NaN)).toFixed(2)}배`);
+      }
     }
-    for (const { label, b } of rows) {
-      const e = (b.utilization ?? NaN) - actual;
-      const all = b.totalDemandHours && yj.input.pcCount ? b.totalDemandHours / (yj.input.pcCount * 720) : NaN;
-      console.log(`  ${label.padEnd(9)}${Math.round(b.residentDemandUsers ?? NaN).toLocaleString().padStart(10)}${Math.round(b.totalDemandUsers ?? NaN).toLocaleString().padStart(11)}${pct(all).padStart(9)}${pct(b.share).padStart(8)}${pct(b.utilization).padStart(7)}${(e * 100).toFixed(1).padStart(7)}  |  ${((b.residentDemandUsers ?? NaN) / (b1.residentDemandUsers ?? NaN)).toFixed(2)}배`);
+    // 후보지 영월 — 사용자 "넓혀도 됨"
+    const yw = candRows.find((r) => r.input.storeCode === "N014");
+    if (yw) {
+      const cum = yw.input.residentAgesByRadius ?? {};
+      const b1 = computeTextbook(yw.input, base);
+      const line = [`1km ${pct(b1.utilization)} (${manwon(b1.monthlyRevenue)})`];
+      for (const rad of [1500, 2000] as const) { const a = (cum as any)[rad]; if (a) { const b = computeTextbook({ ...yw.input, residentAges: a }, base); line.push(`${rad / 1000}km ${pct(b.utilization)} (${manwon(b.monthlyRevenue)})`); } }
+      console.log(`\n[후보지 영월 — 사용자 "넓혀도 됨"] ${line.join(" → ")} · 1km 인구 ${Math.round(sum(yw.input.residentAges)).toLocaleString()} · 2km ${Math.round(sum((cum as any)[2000])).toLocaleString()}`);
     }
     // 같은 조건(1km 안 경쟁 없음)인 자사 매장이 또 있나 — 있으면 그 매장들에도 같은 규칙을 걸어 n을 늘릴 수 있다
     const noRival1km = own.filter((r) => !(r.input.rivals ?? []).some((v) => v.ip > 0 && v.distanceM <= 1000));
@@ -1001,7 +1016,7 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     console.log(`\n  후보지 중 같은 모양 ${candShape.length}곳 (1km 안 경쟁 없음 · 300m 묶음 허용)`);
     for (const r of candShape) {
       const b1 = computeTextbook(r.input, base), b20 = withR(r.input, 2000), b15 = withR(r.input, 1500);
-      console.log(`     ${r.input.storeCode} ${(r.input.storeName ?? "").padEnd(8)} 1km ${pct(b1.utilization)} (${manwon(b1.predictedMonthlyRevenueKrw)}) → 1.5km ${b15 ? pct(b15.utilization) : "-"} → 2km ${b20 ? pct(b20.utilization) : "-"} (${b20 ? manwon(b20.predictedMonthlyRevenueKrw) : "-"}) · 1~2km 경쟁 ${rivalsBetween(r.input, 1000, 2000).length}곳`);
+      console.log(`     ${r.input.storeCode} ${(r.input.storeName ?? "").padEnd(8)} 1km ${pct(b1.utilization)} (${manwon(b1.monthlyRevenue)}) → 1.5km ${b15 ? pct(b15.utilization) : "-"} → 2km ${b20 ? pct(b20.utilization) : "-"} (${b20 ? manwon(b20.monthlyRevenue) : "-"}) · 1~2km 경쟁 ${rivalsBetween(r.input, 1000, 2000).length}곳`);
     }
     console.log(`\n  ⭐ 읽는 법 — 6곳 평균이 2km에서 줄고 터지는 곳이 없으면 "모양 → 반경" 규칙이 산다. 양주덕정만 살고 남이 터지면 양주덕정 개별 사실(옥정신도시)로 두고 사실 필드가 맞다.`);
     console.log(`     1~2km 경쟁 대수가 큰 매장이 2km에서 터지면, 반경을 넓힐 때 그 경쟁점도 같이 세야 한다는 뜻(지금 rivalDistanceDecay가 1km 밖 경쟁을 거의 안 센다).`);
