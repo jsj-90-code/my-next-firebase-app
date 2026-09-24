@@ -892,4 +892,56 @@ describeIf("실험실 변수를 V62에 태워 본다", () => {
     console.log(`    남은 건 잣대가 아니라 **자료**다 — 미확인이라 2점 받은 경쟁점 73곳.`);
     expect(both.out.length).toBe(baseInputs.length);
   });
+
+  it("(9) ⭐⭐⭐ 배후수요 더미를 '높음만 1'로 — 증평(군부대/낮음)·탕정역(산업단지/보통)이 더미를 켜는 문제 (2026-09-25)", () => {
+    // 운영 V62의 군부대·산업단지 더미(isBackingDemandMarket)는 강도를 안 본다. 2026-09-25에 증평을 사실대로 군부대로 넣자 더미가 켜져
+    // 계수가 내려갔다(MAPE 8.83 → 9.53). 실험실은 이미 "높음에만 배수"(specialDemandHighOnly)를 채택했다 — V62도 같은 정의로.
+    // 구현은 값 교체(자유도 그대로): 군부대·산업단지인데 강도 ≠ 높음이면 유형을 '없음'으로 보내 더미 0. 후보지도 같은 규칙(호구포역 산업단지/낮음 → 0).
+    // 위약군: (a) 반대로 '높음이 아닌 것만 1'(뜻이 없는 규칙) (b) 높음 하나(금촌)를 빼 보기 — 계수가 표본 하나에 얼마나 흔들리나.
+    const isBacking = (t: string | null | undefined) => t === "군부대" || t === "산업단지";
+    const highOnly = baseInputs.map((i) => (isBacking(i.specialDemandType) && i.specialDemandIntensity !== "높음") ? { ...i, specialDemandType: "없음" } : i);
+    const lowOnly = baseInputs.map((i) => (isBacking(i.specialDemandType) && i.specialDemandIntensity === "높음") ? { ...i, specialDemandType: "없음" } : i);
+    const noJeung = baseInputs.map((i) => (i.storeName ?? "").includes("증평") ? { ...i, specialDemandType: "없음" } : i);
+    const noGeum = baseInputs.map((i) => (i.storeName ?? "").includes("금촌") ? { ...i, specialDemandType: "없음" } : i);
+    // 정의 갈래: '낮음'은 체크리스트상 "그 수요원이 이 매장 손님이 아니다"(docs/special-demand-guide.md) → 배후수요 상권 아님 → 더미 0. 보통은 그대로 1.
+    const lowOff = baseInputs.map((i) => (isBacking(i.specialDemandType) && i.specialDemandIntensity === "낮음") ? { ...i, specialDemandType: "없음" } : i);
+    const scoreOf = (inputs: ValidationStoreInput[]) => {
+      const { rows, fullModel } = runUsageCohortValidation(inputs, sales, settings) as never as { rows: { brand: string | null; includedInCoreAccuracy: boolean }[]; fullModel: { usage: { coefficients: number[] }; product: { coefficients: number[] } } | null };
+      const s = summarizeValidationRows(rows.filter((r) => r.brand === "블랙라벨" && r.includedInCoreAccuracy) as never,
+        { mape: settings.targetMAE, medianAe: settings.targetMedianAE, within10: settings.target10pctRatio, within20: settings.target20pctRatio, maxBias: settings.maxAvgBias });
+      return { s, model: fullModel };
+    };
+    const line = (label: string, x: ReturnType<typeof scoreOf>, dummies: number) =>
+      console.log(`  ${label.padEnd(34)}${pct(x.s.meanAbsoluteErrorPct).padStart(9)}${pct(x.s.medianAbsoluteErrorPct).padStart(9)}${pct(x.s.within10PctRatio, 0).padStart(8)}${pct(x.s.within20PctRatio, 0).padStart(8)}${String(dummies).padStart(6)}${String(floorsAt(x.model)).padStart(6)}`);
+    const cnt = (inputs: ValidationStoreInput[]) => inputs.filter((i) => isBacking(i.specialDemandType) && i.brand === "블랙라벨" && !i.isPostOpenIssue).length;
+    console.log(`\n══ (9) 배후수요 더미 — 강도 문 (리브원아웃 · 정식검증군) ══`);
+    console.log(`  ${"".padEnd(34)}${"MAPE".padStart(9)}${"중앙".padStart(9)}${"±10%".padStart(8)}${"±20%".padStart(8)}${"더미".padStart(6)}${"하한".padStart(6)}`);
+    const base = scoreOf(baseInputs), hi = scoreOf(highOnly), lo = scoreOf(lowOnly), nj = scoreOf(noJeung), ng = scoreOf(noGeum);
+    line("지금 (증평 군부대/낮음 포함, 강도 무관)", base, cnt(baseInputs));
+    line("어제 (증평 없음 = 09-24 저장값 8.83)", nj, cnt(noJeung));
+    line("★ 높음만 1 (증평·탕정역 → 0)", hi, cnt(highOnly));
+    line("★ 낮음만 0 (증평 → 0, 탕정역 보통 유지)", scoreOf(lowOff), cnt(lowOff));
+    line("위약 a: 높음 아닌 것만 1 (뜻 없음)", lo, cnt(lowOnly));
+    line("위약 b: 금촌 하나 뺌 (표본 민감도)", ng, cnt(noGeum));
+    // 후보지 방향 — 학습된 두 모형으로 기존점을 후보지처럼 예측해 차이를 본다((7)과 같은 흉내). 호구포역(산업단지/낮음)은 더미가 직접 0이 된다.
+    const inflow = (i: ValidationStoreInput) => 1 + (getV62Rate(i.inflowRestriction ?? null, settings) ?? 0);
+    if (base.model && hi.model) {
+      const diffs: { name: string; d: number; direct: boolean }[] = [];
+      for (const i of baseInputs) {
+        const pc = i.evaluationPcCount ?? i.pcCount; if (!pc || i.hourlyRate == null) continue;
+        const j = highOnly.find((x) => x.storeCode === i.storeCode)!;
+        const pA = predictUsageRevenue(base.model, empiricalFeaturesFor(toV61TrainingStore(i, settings)), pc, i.hourlyRate, settings, inflow(i), i.extraPcHours ?? 0);
+        const pB = predictUsageRevenue(hi.model, empiricalFeaturesFor(toV61TrainingStore(j, settings)), pc, i.hourlyRate, settings, inflow(i), i.extraPcHours ?? 0);
+        const a0 = pA?.monthlyRevenue ?? null, b0 = pB?.monthlyRevenue ?? null;
+        if (a0 == null || b0 == null || a0 <= 0) continue;
+        diffs.push({ name: i.storeName, d: (b0 - a0) / a0, direct: j.specialDemandType !== i.specialDemandType });
+      }
+      const others = diffs.filter((x) => !x.direct).map((x) => Math.abs(x.d)).sort((a, b) => a - b);
+      console.log(`\n  더미가 직접 꺼지는 매장: ${diffs.filter((x) => x.direct).map((x) => `${x.name} ${x.d >= 0 ? "+" : ""}${(x.d * 100).toFixed(1)}%`).join(" · ") || "없음"}`);
+      console.log(`  나머지(재학습 계수만) 평균 |변화| ${pct(others.reduce((a, b) => a + b, 0) / others.length)} · 최대 ${pct(others[others.length - 1])} — 후보지 12곳이 겪을 크기. 호구포역(산업단지/낮음)은 직접 꺼지는 쪽.`);
+    }
+    console.log(`\n  ⭐ 읽는 법 — '높음만'이 지금보다 좋고 위약 a보다 뚜렷이 좋아야 채택 후보. 하한 계수 수가 늘면(데이터를 버림) 숫자가 좋아도 기각.`);
+    console.log(`     이건 실험실이 이미 채택한 정의를 V62에 맞추는 것이라 새 근거가 필요 없다 — 다만 운영 변경이므로 화면 설명·문서 같은 커밋.`);
+    expect(baseInputs.length).toBeGreaterThan(20);
+  });
 });
