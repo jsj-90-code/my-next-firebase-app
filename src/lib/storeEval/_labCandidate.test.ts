@@ -927,4 +927,84 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     console.log(`     (b) 남 39곳·후보지 13곳이 소수점까지 0 — 필드가 참인 매장만 건드리는 구조 확인. 필드를 만들면 λ는 사용자 감각(500~600)으로 굳히고 표본이 늘 때 다시 잰다.`);
     expect(own.length).toBeGreaterThan(30);
   });
+
+  it("(15) ⭐⭐⭐ 고리 말고 상권 반경만 넓히기 — 1km 안 경쟁 없는 매장(양주덕정)의 주거 원을 1.5/2/5km 누적으로 바꿔 끼움", () => {
+    // 사용자(2026-09-24 밤 2차): "양주덕정 1km에 경쟁점 없음. 고리 하지 말고 상권 범위만 늘리는 건 어떤데?"
+    // = 고리(별도 점유율·감쇠)가 아니라 **주거 원 자체를 넓힌다**. 넓힌 원의 사람도 1km 안 사람과 같은 점유율(50.6%)·같은 배수로 센다.
+    // 구현은 입력 치환: residentAges(1km 연령분해) ← residentAgesByRadius[1500|2000|5000](누적). pop1km은 그대로 둔다(밀집도 보정 pop500/pop1km이 흔들리지 않게).
+    // ⚠️ 감쇠가 없으니 λ보다 세다 — 1.5km 원은 1km 원보다 면적 2.25배, 2km는 4배. 넓힌 원 안에 새 경쟁점이 있으면(1065m 37.5대) 그건 이미 rivals에 있다.
+    if (!candRows.length) return;
+    const TARGET = "20231019404";
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const yj = own.find((r) => r.input.storeCode === TARGET);
+    if (!yj) { console.log("양주덕정 표본 없음"); return; }
+    const base: TextbookParams = { ...full, residentRingDecayM: 0 };
+    const sum = (a: { age0s: number; age10s: number; age20s: number; age30s: number; age40s: number; age50s: number; age60plus: number } | null | undefined) =>
+      a ? a.age0s + a.age10s + a.age20s + a.age30s + a.age40s + a.age50s + a.age60plus : NaN;
+    const cum = yj.input.residentAgesByRadius ?? {};
+    const actual = yj.input.actualUtilization as number;
+    console.log(`\n[상권 반경만 넓히기 — 양주덕정] 실측 ${pct(actual)} · 1km 인구(연령합) ${Math.round(sum(yj.input.residentAges)).toLocaleString()} · 누적 1.5km ${Math.round(sum((cum as any)[1500])).toLocaleString()} · 2km ${Math.round(sum((cum as any)[2000])).toLocaleString()} · 5km ${Math.round(sum((cum as any)[5000])).toLocaleString()}`);
+    console.log(`  반경    주거 이용자   총 이용자  수요전부  점유율  예측   오차  | 1km 대비 주거 배수`);
+    const b1 = computeTextbook(yj.input, base);
+    const rows: { label: string; b: ReturnType<typeof computeTextbook> }[] = [{ label: "1km(지금)", b: b1 }];
+    for (const rad of [1500, 2000, 5000] as const) {
+      const ages = (cum as any)[rad];
+      if (!ages) { console.log(`  ${rad}m 누적 자료 없음`); continue; }
+      rows.push({ label: `${rad / 1000}km`, b: computeTextbook({ ...yj.input, residentAges: ages }, base) });
+    }
+    for (const { label, b } of rows) {
+      const e = (b.utilization ?? NaN) - actual;
+      const all = b.totalDemandHours && yj.input.pcCount ? b.totalDemandHours / (yj.input.pcCount * 720) : NaN;
+      console.log(`  ${label.padEnd(9)}${Math.round(b.residentDemandUsers ?? NaN).toLocaleString().padStart(10)}${Math.round(b.totalDemandUsers ?? NaN).toLocaleString().padStart(11)}${pct(all).padStart(9)}${pct(b.share).padStart(8)}${pct(b.utilization).padStart(7)}${(e * 100).toFixed(1).padStart(7)}  |  ${((b.residentDemandUsers ?? NaN) / (b1.residentDemandUsers ?? NaN)).toFixed(2)}배`);
+    }
+    // 같은 조건(1km 안 경쟁 없음)인 자사 매장이 또 있나 — 있으면 그 매장들에도 같은 규칙을 걸어 n을 늘릴 수 있다
+    const noRival1km = own.filter((r) => !(r.input.rivals ?? []).some((v) => v.ip > 0 && v.distanceM <= 1000));
+    const clusterOnly = own.filter((r) => { const rv = (r.input.rivals ?? []).filter((v) => v.ip > 0); return rv.length && rv.every((v) => v.distanceM <= 300 || v.distanceM > 1000); });
+    console.log(`\n  1km 안 경쟁점 0곳인 자사 매장 ${noRival1km.length}곳: ${noRival1km.map((r) => (r.input.storeName ?? "").replace(/점$/, "")).join(" · ") || "없음"}`);
+    console.log(`  300m 안 묶음 밖으로 1km까지 경쟁 없는 매장(양주덕정형) ${clusterOnly.length}곳: ${clusterOnly.map((r) => (r.input.storeName ?? "").replace(/점$/, "")).join(" · ") || "없음"}`);
+    console.log(`  ⭐ 읽는 법 — 반경을 넓힌 원의 사람이 전부 1km 안 사람처럼 온다는 뜻이라, 오차가 0 근처를 지나는 반경이 "사실상의 상권 반경"이다. 1.5km에서 지나면 사용자 감각(1.6km)과 맞는다.`);
+    console.log(`     그 반경을 규칙으로 쓰려면 "누가 그 반경인가"를 갈라야 한다 — 위 목록(1km 안 경쟁 없음)이 후보 기준. 그 매장들에도 같은 반경을 걸어 남이 어떻게 움직이는지 (16)에서 본다.`);
+    expect(rows.length).toBeGreaterThan(1);
+  });
+
+  it("(16) ⭐⭐⭐ 반경 넓히기를 같은 모양 매장 전부에 — 300m 묶음 밖으로 1km까지 경쟁 없는 자사 6곳 + 후보지", () => {
+    // (15)에서 양주덕정은 2km 원이면 −2.0. 그게 양주덕정만의 사실인지 "이 모양이면 반경이 넓다"는 규칙인지는 같은 모양 매장이 답한다.
+    // 규칙 후보: 300m 안 경쟁(묶음)을 빼면 1km 안 경쟁이 없다 → 주거 원을 R로. 사전 기준: 6곳 평균 |오차|가 1km보다 줄고, 개별로 +10 넘게 터지는 곳이 없을 것.
+    if (!candRows.length) return;
+    const base: TextbookParams = { ...full, residentRingDecayM: 0 };
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const shape = (r: { input: TextbookInput }) => { const rv = (r.input.rivals ?? []).filter((v) => v.ip > 0); return rv.length > 0 && rv.every((v) => v.distanceM <= 300 || v.distanceM > 1000); };
+    const shape2 = (r: { input: TextbookInput }) => { const rv = (r.input.rivals ?? []).filter((v) => v.ip > 0); return rv.every((v) => v.distanceM <= 300 || v.distanceM > 1000); }; // 경쟁 0곳도 포함
+    const withR = (input: TextbookInput, rad: 1500 | 2000) => { const a = input.residentAgesByRadius?.[rad]; return a ? computeTextbook({ ...input, residentAges: a }, base) : null; };
+    const rivalsBetween = (input: TextbookInput, lo: number, hi: number) => (input.rivals ?? []).filter((v) => v.ip > 0 && v.distanceM > lo && v.distanceM <= hi);
+    for (const [title, pick] of [["300m 묶음 있고 1km까지 없음", shape], ["묶음 있거나 경쟁 0곳(1km 안 없음)", shape2]] as const) {
+      const grp = own.filter(pick);
+      console.log(`\n[반경 넓히기 — ${title}] 자사 ${grp.length}곳. 오차 %p = 예측 − 실측`);
+      console.log(`  매장          실측   1km    1.5km   2km  | 1~2km 경쟁(대수)   2km 인구 배수 | 판정`);
+      const agg: Record<string, number[]> = { "1km": [], "1.5km": [], "2km": [] };
+      for (const r of grp) {
+        const a = r.input.actualUtilization as number;
+        const e1 = (computeTextbook(r.input, base).utilization ?? NaN) - a;
+        const b15 = withR(r.input, 1500), b20 = withR(r.input, 2000);
+        const e15 = b15 ? (b15.utilization ?? NaN) - a : NaN, e20 = b20 ? (b20.utilization ?? NaN) - a : NaN;
+        agg["1km"].push(e1); if (Number.isFinite(e15)) agg["1.5km"].push(e15); if (Number.isFinite(e20)) agg["2km"].push(e20);
+        const rv = rivalsBetween(r.input, 1000, 2000);
+        const sum = (x: any) => x ? x.age0s + x.age10s + x.age20s + x.age30s + x.age40s + x.age50s + x.age60plus : NaN;
+        const mult = sum(r.input.residentAgesByRadius?.[2000]) / sum(r.input.residentAges);
+        const verdict = !Number.isFinite(e20) ? "고리 자료 없음" : Math.abs(e20) < Math.abs(e1) - 0.02 ? "2km가 낫다" : Math.abs(e20) > Math.abs(e1) + 0.02 ? "2km가 나쁘다" : "비슷";
+        console.log(`  ${(r.input.storeName ?? "").replace(/점$/, "").padEnd(10)}${pct(a).padStart(7)}${(e1 * 100).toFixed(1).padStart(7)}${(e15 * 100).toFixed(1).padStart(8)}${(e20 * 100).toFixed(1).padStart(7)}  | ${String(rv.length).padStart(2)}곳(${rv.reduce((s, v) => s + v.ip, 0).toFixed(0).padStart(4)}대)      ${mult.toFixed(2).padStart(6)}배 | ${verdict}`);
+      }
+      for (const k of ["1km", "1.5km", "2km"]) console.log(`  평균 |오차| ${k.padEnd(6)} ${(mean(agg[k].map(Math.abs)) * 100).toFixed(2)}%p · 편향 ${(mean(agg[k]) * 100).toFixed(1)}%p (n=${agg[k].length})`);
+    }
+    // 후보지 — 같은 모양인 곳에 2km를 걸면 얼마나 뜨나
+    const candShape = candRows.filter(shape2);
+    console.log(`\n  후보지 중 같은 모양 ${candShape.length}곳 (1km 안 경쟁 없음 · 300m 묶음 허용)`);
+    for (const r of candShape) {
+      const b1 = computeTextbook(r.input, base), b20 = withR(r.input, 2000), b15 = withR(r.input, 1500);
+      console.log(`     ${r.input.storeCode} ${(r.input.storeName ?? "").padEnd(8)} 1km ${pct(b1.utilization)} (${manwon(b1.predictedMonthlyRevenueKrw)}) → 1.5km ${b15 ? pct(b15.utilization) : "-"} → 2km ${b20 ? pct(b20.utilization) : "-"} (${b20 ? manwon(b20.predictedMonthlyRevenueKrw) : "-"}) · 1~2km 경쟁 ${rivalsBetween(r.input, 1000, 2000).length}곳`);
+    }
+    console.log(`\n  ⭐ 읽는 법 — 6곳 평균이 2km에서 줄고 터지는 곳이 없으면 "모양 → 반경" 규칙이 산다. 양주덕정만 살고 남이 터지면 양주덕정 개별 사실(옥정신도시)로 두고 사실 필드가 맞다.`);
+    console.log(`     1~2km 경쟁 대수가 큰 매장이 2km에서 터지면, 반경을 넓힐 때 그 경쟁점도 같이 세야 한다는 뜻(지금 rivalDistanceDecay가 1km 밖 경쟁을 거의 안 센다).`);
+    expect(own.length).toBeGreaterThan(30);
+  });
 });
