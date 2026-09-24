@@ -765,13 +765,18 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     const med = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
     const medianCore = med(own.map((r) => coreUsers(r.input)));
     const SMALL = new Set(["양주덕정점", "문경시청점", "진주혁신도시본점"]);
-    type Mode = { label: string; lambdaFor: (input: TextbookInput) => number };
+    type Mode = { label: string; lambdaFor: (input: TextbookInput) => number; outside?: number };
     const modes: Mode[] = [
       { label: "λ0 (지금)", lambdaFor: () => 0 },
       ...[200, 300, 400, 500, 800].map((l) => ({ label: `λ${l} 전 매장`, lambdaFor: () => l })),
       ...[200, 300, 400, 600].map((l) => ({ label: `성김 비례 λ_ref ${l}`, lambdaFor: (input: TextbookInput) => Math.min(2000, l * medianCore / Math.max(1, coreUsers(input))) })),
+      // (C) 고리의 짝 — "PC방 안 가는 몫"(분모 상수). 경쟁점 1~2곳인 후보지에서 고리 수요가 점유율에 안 눌리고 통과한 게 되돌림의 이유였다.
+      //     분모에 상수를 두면 경쟁이 없어도 점유율이 1이 안 된다. 어제 묶음엔 이 항이 없었다.
+      ...[100, 200, 400].map((o) => ({ label: `λ800 + 안가는몫 ${o}`, lambdaFor: () => 800, outside: o })),
+      ...[100, 200].map((o) => ({ label: `λ400 + 안가는몫 ${o}`, lambdaFor: () => 400, outside: o })),
+      { label: "λ0 + 안가는몫 100", lambdaFor: () => 0, outside: 100 },
     ];
-    const run = (input: TextbookInput, m: Mode) => computeTextbook(input, { ...full, residentRingDecayM: m.lambdaFor(input), residentRingShare: "gravity", useRingEnclosure: true });
+    const run = (input: TextbookInput, m: Mode) => computeTextbook(input, { ...full, residentRingDecayM: m.lambdaFor(input), residentRingShare: "gravity", useRingEnclosure: true, outsideOptionIp: m.outside ?? full.outsideOptionIp });
     const cand0 = new Map(candRows.map((r) => [r.input.storeCode, computeTextbook(r.input, base).utilization ?? NaN]));
     console.log(`\n[소도시 수요 갈래 — 고리 λ 방식별] 자사 ${own.length}곳 · 후보지 ${candRows.length}곳. 1km 안 이용자 중앙 ${Math.round(medianCore).toLocaleString()}명. gravity·항아리 켬`);
     console.log(`  소도시 = 수요전부 가동률 < 45% (${own.filter((r) => utilIfAll(r.input) < 0.45).length}곳) · 밀집 = ≥ 90% (${own.filter((r) => utilIfAll(r.input) >= 0.9).length}곳). 오차 = 예측 − 실측 %p`);
