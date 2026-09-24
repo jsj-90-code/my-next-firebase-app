@@ -435,6 +435,17 @@ export type TextbookParams = {
    */
   specialDemandMultipliers: Record<string, number>;
   /**
+   * **강도 문** (2026-09-24 밤 신설, 사용자 결정) — 여기 적힌 유형은 `specialDemandIntensity`가 **"높음"일 때만** 배수를 곱한다.
+   * 보통·낮음·없음·자료없음은 1.0.
+   *
+   * 왜: 오송 후보지가 AI 초안에서 "대학가/보통"으로 들어왔다. 약대·보건의료 행정타운·연구단지라 학부 대학가(전남대·청주대·
+   * 부경대·울산대 — 재학생 수만 명, 원룸촌 배후지)와 같은 분류가 아닌데, 배수는 유형만 보고 ×1.3을 그대로 곱혔다(28.9 → 37.6%).
+   * 자사 대학가 5곳은 전부 "높음"이라 문을 달아도 성적이 안 바뀌고(40곳 MAE 5.56 = 5.56), 후보지에서 오송만 막힌다
+   * (`_labCandidate` (10)). 강도의 뜻은 `locationEvalAi.ts` 프롬프트와 입지평가 화면 도움말에 못 박았다.
+   * 군부대는 문에 안 넣는다 — 2곳(금촌역·문산) 모두 배수 없이 −16~−19%p라 강도와 무관하게 수요원이 확실하다.
+   */
+  specialDemandHighOnly: string[];
+  /**
    * **점유율 환산을 켤지 끌지** (2026-09-16 밤 신설).
    *
    * 사용자 설계: "일단 전체가맹점을 점유율환산하는 값을 전부제거해서 0부터 시작한다음에,
@@ -1042,7 +1053,14 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   //    유형별 근거도 약했다 — 산업단지 3곳은 25%p 갈림(1.0이어도 탕정역 +7.4) · 관광유흥 2곳(수원인계·야당)은 층 가르기(`_layerSplit`)에서
   //    "점유율 층, 경쟁점은 맞음"이라 수요 배수 자리가 아닐 수 있음 · 대학가 5곳은 4곳이 같은 방향이지만 매장별 −16~0으로 하나의 값이 없다.
   //    군부대 2곳(금촌역·문산)은 −17.6 → +0.1로 같은 방향·큰 폭이라 남긴다. 대학가는 배수 대신 "대학 규모×거리" 항목이 다음 갈래.
-  specialDemandMultipliers: { "군부대": 2.0, "대학가": 1.0, "산업단지": 1.0, "기타": 1.0, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
+  // ✅ **같은 날 밤 — 대학가 1.3을 다시 켰다. 단 강도 "높음"에만**(`specialDemandHighOnly`). 사용자: *"대학배수 다시 켤까?
+  //    오송점 같은 문제 다시 발생 안 하려면?"* → 오송은 유형이 틀린 것(약대·행정타운을 대학가/보통으로)이라 유형을 '기타'로
+  //    고치고, 산식에는 강도 문을 달아 보통 이하가 배수를 못 타게 했다. 자사 대학가 5곳은 전부 높음이라 성적 그대로
+  //    (40곳 MAE 5.81 → 5.56 · 편향 −1.0 → 0.0 · 대학가 5곳 −7.5 → +0.7). 산업단지·관광유흥은 그대로 1.0.
+  //    ⚠️ 전대상대의 입지평가 강도 "높음"은 2026-09-02 '실측 백테스트 보정'이 올린 값이었다(기존점 문서는 보통) — 수동보정이라
+  //    사용자 지시로 보통으로 되돌렸다. 문 아래에서 전대상대는 배수를 안 타고 −0.9%p(켜면 +5.8).
+  specialDemandMultipliers: { "군부대": 2.0, "대학가": 1.3, "산업단지": 1.0, "기타": 1.0, "관광·유흥": 1.0, "관광유흥": 1.0, "없음": 1.0 },
+  specialDemandHighOnly: ["대학가"],
   // ✅ **2026-09-21 채택 — 지수 눈금 보정을 켠다** (자세한 근거는 타입 쪽 주석).
   //    그날 저녁 b를 0.327 → **0.45**로 올렸다(변별력. 타입 쪽 주석의 표를 볼 것).
   //
@@ -1158,6 +1176,8 @@ export type TextbookInput = {
   } | null;
   /** 특수수요 유형 — "군부대"/"대학가"/"산업단지"/"관광·유흥"/"기타"/"없음". 수요 배수에 쓴다. */
   specialDemandType: string | null;
+  /** 특수수요 강도(없음/낮음/보통/높음). `specialDemandHighOnly`에 든 유형은 "높음"일 때만 배수를 탄다. 모르면 null = 안 탄다. */
+  specialDemandIntensity?: string | null;
   /** 상권 흡인력 계산용. 조사된 경쟁점 수(IP가 아니라 점포 수). */
   competitorCount: number | null;
   /** 주거 — 500m는 총수만, 1km는 연령 분해까지 있다. */
@@ -1358,7 +1378,10 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
     ? Math.pow(input.pop500m / input.pop1km, -p.densityCorrection)
     : 1;
   // 특수수요 배수 — 인구 통계에 안 잡히는 수요원(군부대·대학가·산업단지)을 수요에서 키운다.
-  const sdMul = p.specialDemandMultipliers?.[input.specialDemandType ?? "없음"] ?? 1;
+  // 강도 문 — 문에 든 유형은 강도가 "높음"일 때만 곱한다(타입 쪽 `specialDemandHighOnly` 주석, 오송 오분류).
+  const sdType = input.specialDemandType ?? "없음";
+  const sdGated = (p.specialDemandHighOnly ?? []).includes(sdType) && input.specialDemandIntensity !== "높음";
+  const sdMul = sdGated ? 1 : (p.specialDemandMultipliers?.[sdType] ?? 1);
   const totalUsers = baseUsers * agg * dens * sdMul;
   const totalHours = totalUsers * p.hoursPerUserPerMonth;
 

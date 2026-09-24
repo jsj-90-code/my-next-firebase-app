@@ -471,6 +471,8 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
         actualUtilization: utilByStore.get(s.storeCode) ?? null,
         // 특수수요는 이제 **수요 산식 안에서** 배수로 쓴다(2026-09-16). 입지 보정이 아니다.
         specialDemandType: s.specialDemandType ?? null,
+        // 강도 문(2026-09-24 밤) — 유형과 **같은 문서**(기존점 문서)에서 읽는다. 입지평가 문서와 갈리면 유형 쪽을 따른다.
+        specialDemandIntensity: s.specialDemandIntensity ?? null,
         competitivenessGap: s.competitivenessGap,
         competitorIp: computeCompetitorIp(cs, s.operatingPcStores500m ?? null),
         competitorCount: cs.filter((c) => c.investigationStatus !== "경쟁점없음").length,
@@ -698,6 +700,7 @@ export function buildLabCandidateRows({
         // 예측 대상이다 — 지어내지 않는다.
         actualUtilization: null,
         specialDemandType: loc?.specialDemandType ?? null,
+        specialDemandIntensity: loc?.specialDemandIntensity ?? null,
         // 품질 모드는 이 값을 안 쓴다(자사·경쟁점 항목별 점수로 직접 겨룬다).
         competitivenessGap: null,
         competitorIp: computeCompetitorIp(cs, c.operatingPcStores500m ?? null),

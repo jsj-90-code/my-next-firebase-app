@@ -376,14 +376,14 @@ export function LocationEvalTab({
             value={form.specialDemandType}
             onChange={(v) => set("specialDemandType", v)}
             options={SPECIAL_DEMAND_TYPE_OPTIONS}
-            hint="대학가/군부대/산업단지/관광유흥처럼 일반 상권과 다른 특수한 수요원이 있는지."
+            hint="인구통계에 안 잡히는 수요원. '대학가'는 학부 중심 종합대학(재학생 1만+) 정문·후문 도보 500m 안 + 학생 원룸촌 배후지일 때만. 약대·의대 단독 캠퍼스, 연구단지, 보건의료 행정타운은 '기타'."
           />
           <SelectField
             label="특수수요강도"
             value={form.specialDemandIntensity}
             onChange={(v) => set("specialDemandIntensity", v)}
             options={SPECIAL_DEMAND_INTENSITY_OPTIONS}
-            hint="위 특수수요가 매출에 실제로 얼마나 영향을 줄 정도인지."
+            hint="'높음'은 그 수요원이 주된 손님층일 때만. 실험실 산식은 대학가 배수(×1.3)를 '높음'에만 곱합니다 — 보통 이하는 배수 없음. 확실하지 않으면 '보통'."
           />
         </div>
       </section>

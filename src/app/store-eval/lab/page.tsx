@@ -527,7 +527,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
             <div className="font-semibold">{p.specialDemandMultipliers["대학가"] === 1
               ? "⛔ 2026-09-24 밤 — 대학가·산업단지·관광유흥 배수를 다시 껐습니다(사용자 결정). 군부대만 남깁니다"
-              : "✅ 2026-09-24 오후 — 옛 배선(θ3·존구성 0.238·고리 꺼짐)에서 다시 재서 켰습니다"}</div>
+              : `✅ 2026-09-24 밤 — 대학가 ×${p.specialDemandMultipliers["대학가"]}만 다시 켰습니다. 단 강도 "높음"에만 곱합니다(문: ${(p.specialDemandHighOnly ?? []).join("·") || "없음"}). 산업단지·관광유흥은 1.0`}</div>
             <div className="mt-1">
               지금 값: 대학가 <b>×{p.specialDemandMultipliers["대학가"]}</b> · 산업단지 <b>×{p.specialDemandMultipliers["산업단지"]}</b> ·
               군부대 <b>×{p.specialDemandMultipliers["군부대"]}</b> · 관광·유흥 <b>×{p.specialDemandMultipliers["관광·유흥"]}</b>.
@@ -541,15 +541,20 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                   &ldquo;점유율 층, 경쟁점은 맞음&rdquo;이라 수요 배수 자리가 아닐 수 있습니다. 대학가 5곳은 4곳이 같은 방향이지만 매장별
                   −16~0으로 하나의 값이 없습니다 — 배수 대신 &ldquo;대학 규모×거리&rdquo; 항목이 다음 갈래입니다. 군부대 2곳(금촌역·문산)은
                   −17.6 → +0.1로 같은 방향·큰 폭이라 남깁니다. 아래는 09-23~24 오후 기록입니다.</>
-                : <> 사용자 기준(2026-09-24): <b>그 유형 우리 매장들의 예측 가동률 평균이 실측 평균과 같아지는 값</b>. 자사 40곳 전체
-                  (`_labCandidate.test.ts` (9), 배수 1.0 → 지금 값 평균 편향): 대학가 5곳 −7.5→+0.7%p · 산업단지 3곳 −4.1→+1.8 ·
-                  관광유흥 2곳 −8.1→+1.7 · 군부대 2곳 −17.6→+0.1. 기타(4곳)는 이미 0 근처라 1.0.
-                  ⚠️ 산업단지는 처음 1.4로 잡았다가 퇴근 직전 <b>1.2로 내렸습니다</b> — 재고 표(`_bundleCandidate` (7))가 경쟁점 있는 37곳만 넣어
-                  <b>탕정역(독점·산업단지)을 못 봤고</b>, 1.4면 탕정역이 +20.9%p였습니다. 3곳이 시흥정왕 −2.9 · 탕정역 +15.7 · 광주첨단 −7.5로
-                  25%p 갈려 값이 아니라 방향입니다. 유형별 배수를 고를 땐 반드시 (9)로 40곳 전체를 봅니다.
-                  ⚠️ 표본 2~5곳이라 값이 아니라 방향입니다. 대학가는 매장별로 갈립니다 — 전대후문 −7·청주대 −5 vs 부경대 +10·전대상대 +6.
-                  하나의 배수로 5곳을 ±3%p에 못 넣습니다(같은 전남대 배후지인데 후문 46.5% vs 상대 23.3%). 다음 갈래는 &ldquo;대학가&rdquo;
-                  꼬리표 대신 대학 규모×거리입니다. 아래는 09-23 기록입니다.</>}
+                : <> 사용자 결정(2026-09-24 밤). 낮에 세 배수를 껐던 이유는 <b>호구포역(산업단지 ×1.2)·오송(대학가 ×1.3)·구리돌다리(관광유흥 ×1.4)
+                  예상매출이 배수 없을 때 더 맞아 보여서</b>였습니다. 그중 오송은 <b>유형이 틀린 것</b>이었습니다 — AI 초안이 약대·보건의료
+                  행정타운·연구단지를 &ldquo;대학가/보통&rdquo;으로 넣었고, 배수는 유형만 보고 ×1.3을 그대로 곱했습니다. 그래서 (1) 오송 유형을
+                  &lsquo;기타&rsquo;로 고치고 (2) 산식에 <b>강도 문</b>을 달았습니다: 대학가 배수는 강도 &ldquo;높음&rdquo;에만 곱하고 보통 이하는 1.0.
+                  (3) 강도의 뜻(학부 중심 종합대학 재학생 1만+ · 정문·후문 도보 500m · 학생 원룸촌 배후지)을 AI 초안 프롬프트와 입지평가
+                  화면 도움말에 못 박았습니다. (4) 아래 후보지 표 비고에 배수가 탄 곳을 표시합니다.
+                  자사 대학가 5곳(전대후문·전대상대·청주대·부경대·울산대)은 전부 &ldquo;높음&rdquo;이라 문을 달아도 성적이 같습니다 —
+                  40곳 MAE 5.81 → 5.56%p · 편향 −1.0 → 0.0 · 대학가 5곳 −7.5 → +0.7(`_labCandidate.test.ts` (10)).
+                  전대상대는 입지평가 강도가 2026-09-02 &lsquo;실측 백테스트 보정&rsquo;으로 높음이 된 것이었어서(기존점 문서는 보통) 보통으로
+                  되돌렸습니다 — 문 아래에서 배수를 안 타고 −0.9%p(켜면 +5.8).
+                  산업단지·관광유흥은 1.0 그대로입니다 — 산업단지 3곳은 25%p 갈리고(1.0이어도 탕정역 +7.4), 관광유흥 2곳(수원인계·야당)은
+                  층 가르기에서 &ldquo;점유율 층, 경쟁점은 맞음&rdquo;이라 수요 배수 자리가 아닐 수 있습니다.
+                  ⚠️ 대학가는 여전히 매장별로 갈립니다 — 전대후문 −7·청주대 −5·울산대 0·부경대 +10. 하나의 배수로 5곳을 ±3%p에 못 넣습니다.
+                  다음 갈래는 &ldquo;대학가&rdquo; 꼬리표 대신 대학 규모×거리입니다. 아래는 09-23~24 오후 기록입니다.</>}
               {" "}껐던 이유(축척을 독점 3곳에서 맞추던 순환)는 2026-09-21에
               축척을 원장 실측으로 고정하면서 사라졌습니다. 이번엔 <b>그 동네 경쟁점 핑봇(바깥 표본)</b>을 같이 봤습니다 —
               대학가 동네는 우리 매장 5곳(−8.9%p)도 경쟁점 5곳(−3.3%p)도 과소예측돼 있었습니다. 우리만 그랬다면 점유율
@@ -1628,6 +1633,17 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
                   {b.locationMultiplier == null ? "-" : b.locationMultiplier.toFixed(3)}
                 </td>
                 <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
+                  {/* 2026-09-24 밤 — 특수수요 배수가 탄 후보지는 여기 표시한다. 오송이 '대학가/보통'으로 조용히 +8.7%p 오른 뒤
+                      사용자 요청: 배수가 곱힌 곳을 읽는 사람이 바로 알게. 강도 문에 막힌 곳도 "안 탐"으로 적는다. */}
+                  {(() => {
+                    const t = row.input.specialDemandType ?? "없음";
+                    const m = p.specialDemandMultipliers[t] ?? 1;
+                    if (t === "없음" || m === 1) return null;
+                    const gated = (p.specialDemandHighOnly ?? []).includes(t) && row.input.specialDemandIntensity !== "높음";
+                    return gated
+                      ? <span className="mr-1 rounded bg-stone-200 px-1.5 py-0.5 text-[11px] text-stone-700 dark:bg-stone-700 dark:text-stone-200" title={`유형 ${t}이지만 강도가 '${row.input.specialDemandIntensity ?? "없음"}'이라 배수 ×${m}를 안 곱했습니다(높음에만).`}>{t}/{row.input.specialDemandIntensity ?? "없음"} · 배수 안 탐</span>
+                      : <span className="mr-1 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-900 dark:bg-amber-900/50 dark:text-amber-200" title={`특수수요 ${t}/${row.input.specialDemandIntensity ?? "-"} — 수요에 ×${m}를 곱했습니다. 배수가 없으면 가동률·매출이 ÷${m}입니다.`}>{t} ×{m} 적용</span>;
+                  })()}
                   {b.missing.length > 0 && `자료없음: ${b.missing.join(", ")}`}
                 </td>
               </tr>
