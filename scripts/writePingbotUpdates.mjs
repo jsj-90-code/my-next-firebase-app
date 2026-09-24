@@ -28,6 +28,9 @@ const UPDATES = [
   { candidateCode: "N005", name: "레드포스PC아레나 삼산점", value: 22.3 },
   { candidateCode: "N005", name: "탑스타PC 울산삼산점", value: 19.1 },
   { candidateCode: "N005", name: "피에스타스토리 PC CAFE", value: 17.9 },
+  // 일산탄현점(20251114427) — 사용자 2026-09-24 밤, 9/17~23. 옛 값(기간 없음): 닉 26.4 / ipcu 12.5
+  { candidateCode: "20251114427", name: "닉", value: 21.6 },
+  { candidateCode: "20251114427", name: "ipcu", value: 11.1 },
 ];
 
 function loadEnvLocal() {
