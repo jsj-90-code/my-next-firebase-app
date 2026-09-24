@@ -32,7 +32,7 @@ import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility"
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { mergeModelSettings } from "./settings";
 import {
-  DEFAULT_TEXTBOOK_PARAMS, computeQualityScore, computeTextbook, fittedParams, scoreTextbook, type TextbookParams,
+  DEFAULT_TEXTBOOK_PARAMS, computeQualityScore, computeTextbook, fittedParams, rivalDistanceWeight, scoreTextbook, type QualityParts, type TextbookParams,
 } from "./textbookModel";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import type { CandidateInput, Competitor, LocationEvaluation } from "./types";
@@ -1066,6 +1066,74 @@ describeIf("신규후보지 — 실험실 산식 경로", () => {
     }
     console.log(`  ⭐ 읽는 법 — 배수를 얹어도 "수요전부"가 이미 100%를 넘는 매장은 점유율 층이 병목이라 가동률이 배수만큼 못 오른다. 곱·합이 실무 범위에 닿아도`);
     console.log(`     그건 실무(방향만)에 맞춘 것이지 산업단지 손님이 있다는 근거가 아니다 — 근거는 유동 성비·연령(산업단지 높음 정왕 남성 66% vs 창원상남 56%)과 현장 확인이다.`);
+    expect(candRows.length).toBeGreaterThan(0);
+  });
+
+  it("(18) ⭐⭐⭐ 창원상남 점유율 12%의 해부 — 경쟁점 12곳이 각각 몇 대·어떤 품질·몇 %로 세어지나 (사용자: '2,700은 너무 낮다')", () => {
+    // 배수(수요)로는 안 풀린다는 게 (17). 그러면 점유율 층 — 경쟁점 하나하나가 어떻게 세어지는지 본다.
+    // 의심: (a) 대수 결측 4곳이 간략 기본 90대로 들어감 (b) 품질 자료가 없는 경쟁점은 비 1 = 우리와 같은 품질(θ3이면 무게 1.00)로 세어져
+    //       조사된 경쟁점(중앙 비 0.58 → 무게 0.19)보다 5배 무겁다 (c) 130m 안 8곳이 거리 무게 ~1.
+    if (!candRows.length) return;
+    const p = full;
+    const own = existingRows.filter((r) => r.input.actualUtilization != null && (r.input.actualUtilization as number) > 0);
+    const targets: { code: string; rows: typeof candRows }[] = [
+      { code: "N010", rows: candRows }, { code: "N005", rows: candRows }, { code: "N001", rows: candRows },
+    ];
+    // 기존점 대조군 — 500m 경쟁 7곳 이상인 유흥가(수원인계·야당·야탑) 중 있는 것
+    const denseOwn = own.filter((r) => (r.input.rivals ?? []).filter((v) => v.ip > 0 && v.distanceM <= 500).length >= 7).slice(0, 3);
+    const qs = (parts: QualityParts | null) => (parts ? computeQualityScore(parts, p.qualityWeights) : null);
+    const partsHave = (parts: QualityParts | null) => parts ? (["spec", "food", "zone", "interior", "management"] as const).filter((k) => parts[k] != null).map((k) => k[0]).join("") : "-";
+    // 조사된 경쟁점 전체의 품질비 분포 — "품질 모름 = 비 1"이 얼마나 후한지 보는 잣대
+    const allRatios: number[] = [];
+    for (const r of [...own, ...candRows]) {
+      const oq = qs(r.input.ownQualityParts);
+      for (const v of r.input.rivals ?? []) { const q = qs(v.parts); if (oq && q && v.distanceM <= 500) allRatios.push(q / oq); }
+    }
+    const sorted = [...allRatios].sort((a, b) => a - b);
+    const medRatio = sorted[Math.floor(sorted.length / 2)];
+    console.log(`\n[점유율 해부] 조사된 500m 경쟁점 품질비(경쟁÷우리) ${allRatios.length}건 · 중앙 ${medRatio.toFixed(2)} → θ${p.qualityExponent} 무게 ${Math.pow(medRatio, p.qualityExponent).toFixed(2)}. 품질 모름은 비 1 = 무게 1.00`);
+    const dissect = (label: string, input: TextbookInput, actual: number | null) => {
+      const oq = qs(input.ownQualityParts);
+      const pc = input.pcCount ?? 0;
+      let rw = 0, rwMed = 0, rwNoDefault = 0, unknownQ = 0, defaultIp = 0;
+      const lines: string[] = [];
+      for (const v of (input.rivals ?? []).filter((x) => x.ip > 0).sort((a, b) => a.distanceM - b.distanceM)) {
+        const q = qs(v.parts);
+        const ratio = oq && q ? q / oq : 1;
+        const dw = rivalDistanceWeight(v.distanceM, p);
+        if (dw <= 0) continue;
+        const w = v.ip * Math.pow(ratio, p.qualityExponent) * dw;
+        const isUnknown = !(oq && q);
+        const isDefault = v.ip === 90;
+        if (isUnknown) unknownQ++;
+        if (isDefault) defaultIp++;
+        rw += w;
+        rwMed += v.ip * Math.pow(isUnknown ? medRatio : ratio, p.qualityExponent) * dw;
+        rwNoDefault += (isDefault ? 0 : v.ip) * Math.pow(ratio, p.qualityExponent) * dw;
+        lines.push(`     ${String(v.name ?? "").slice(0, 12).padEnd(12)} ${String(Math.round(v.distanceM)).padStart(5)}m ${String(v.ip).padStart(4)}대${isDefault ? "(기본)" : "      "} 품질 ${q ? q.toFixed(2) : "  없음"}(${partsHave(v.parts).padEnd(5)}) 비 ${ratio.toFixed(2)} 무게 ${Math.pow(ratio, p.qualityExponent).toFixed(2)} 거리 ${dw.toFixed(2)} → ${w.toFixed(0).padStart(4)}대분`);
+      }
+      const denom = (r: number) => pc + r + p.outsideOptionIp + (p.ownShareCapK ?? 0) * pc;
+      const share = pc / denom(rw), shareMed = pc / denom(rwMed), shareNoDef = pc / denom(rwNoDefault);
+      const b = computeTextbook(input, p);
+      console.log(`\n  ${label} — PC ${pc} · 우리 품질 ${oq?.toFixed(2) ?? "-"}(${partsHave(input.ownQualityParts)}) · 경쟁 ${lines.length}곳(품질 모름 ${unknownQ} · 기본 90대 ${defaultIp}) · 경쟁 환산 ${rw.toFixed(0)}대분`);
+      console.log(lines.join("\n"));
+      console.log(`     점유율 ${pct(share)}(산식 ${pct(b.share)}) → 가동률 ${pct(b.utilization)}${actual != null ? ` 실측 ${pct(actual)}` : ""} (${manwon(b.monthlyRevenue)})`);
+      console.log(`     만약 품질 모름을 중앙 비 ${medRatio.toFixed(2)}로 보면 점유율 ${pct(shareMed)} → 가동률 ${pct((b.utilization ?? 0) * shareMed / share)} · 만약 기본 90대를 뺀다면 ${pct(shareNoDef)} → ${pct((b.utilization ?? 0) * shareNoDef / share)}`);
+    };
+    for (const t of targets) { const r = t.rows.find((x) => x.input.storeCode === t.code); if (r) dissect(`[후보] ${(r.input.storeName ?? "").trim()}`, r.input, null); }
+    for (const r of denseOwn) dissect(`[기존] ${(r.input.storeName ?? "").trim()}`, r.input, r.input.actualUtilization as number);
+    // 창원상남의 특징은 "320m 안에 품질비 0.75 이상인 경쟁점 8곳(870대)"이다. 기존점 중 이런 묶음이 있는 곳이 있나 — 있으면 산식이 거기서 맞았는지가 답이다.
+    console.log(`\n  [기존점 40곳 — 320m 안 품질비 ≥0.75 '맞수' 경쟁점 수와 대수 · 산식 점유율 · 가동률 오차] 창원상남 = 맞수 8곳 870대. 맞수가 많은 순`);
+    const nearEq = [...own, ...candRows.filter((r) => ["N010", "N005", "N001", "N015"].includes(r.input.storeCode))].map((r) => {
+      const oq = qs(r.input.ownQualityParts);
+      const eq = (r.input.rivals ?? []).filter((v) => { const q = qs(v.parts); return v.ip > 0 && v.distanceM <= 320 && oq && q && q / oq >= 0.75; });
+      const b = computeTextbook(r.input, p);
+      const a = r.input.actualUtilization as number | null;
+      return { name: (r.input.storeName ?? "").trim(), n: eq.length, ip: eq.reduce((s, v) => s + v.ip, 0), share: b.share, util: b.utilization, err: a != null && a > 0 && b.utilization != null ? b.utilization - a : null, cand: a == null || a === 0 };
+    }).sort((a, b) => b.n - a.n || b.ip - a.ip);
+    for (const x of nearEq.slice(0, 14)) console.log(`     ${(x.cand ? "[후보]" : "").padEnd(6)}${x.name.padEnd(10)} 맞수 ${String(x.n).padStart(2)}곳 ${String(x.ip).padStart(4)}대 · 점유율 ${pct(x.share).padStart(6)} · 가동률 ${pct(x.util).padStart(6)}${x.err != null ? ` · 오차 ${(x.err * 100).toFixed(1).padStart(6)}%p` : ""}`);
+    console.log(`\n  ⭐ 읽는 법 — 후보지의 "품질 모름" 경쟁점이 기존점보다 많고, 그걸 중앙 비로 바꿨을 때 가동률이 크게 오르면 그건 계수가 아니라 **조사 미완(자료)** 문제다.`);
+    console.log(`     기존점은 조사가 끝나 있어 비가 낮게 나오고, 후보지는 조사 전이라 비 1로 세어지는 비대칭이면 후보지만 낮게 나온다.`);
     expect(candRows.length).toBeGreaterThan(0);
   });
 });
