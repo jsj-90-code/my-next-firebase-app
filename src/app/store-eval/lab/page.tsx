@@ -1198,72 +1198,81 @@ function ParamSummary({ p, counts }: {
   counts: { f100: number; f200: number; f300: number; f400: number; f500: number; total: number };
 }) {
   const num = (v: number, d = 2) => v.toFixed(d).replace(/\.?0+$/, "");
-  const groups: { title: string; rows: { label: string; value: string; tag?: string }[] }[] = [
+  const pc0 = (v: number) => `${Math.round(v * 100)}%`;
+  // 거리무게 예시 — 산식과 같은 함수로 계산해 글로 풀어 쓴다(숫자를 글자로 박지 않는다).
+  const wAt = (d: number) => pc0(rivalDistanceWeight(d, p));
+  const ringOn = p.residentRingDecayM > 0;
+  const mulText = Object.entries(p.specialDemandMultipliers).filter(([k, v]) => v !== 1 && k !== "관광유흥")
+    .map(([k, v]) => `${k} ×${num(v)}`).join(" · ") || "전부 1";
+  const gateText = (p.specialDemandHighOnly ?? []).join("·");
+  // 2026-09-24 밤 사용자: "지금 쓰는 계수 가시성 안 좋으니까 개선. 200m 안 1 · 밖 e^(−(d−200)÷200) 이런 값 무슨 말인지 이해 못하겠음" —
+  // 값마다 **뜻**을 한 줄로 풀어 쓰고(plain), 좁은 4열 카드 대신 넓은 표로 그린다. 뜻에 들어가는 숫자도 p에서 계산한다.
+  const groups: { title: string; rows: { label: string; value: string; plain: string; tag?: string }[] }[] = [
     {
-      title: "1단계 · 수요",
+      title: "1단계 · 동네 수요를 센다",
       rows: [
-        { label: "유동인구 반경", value: `${p.floatingRadius}m` },
-        { label: "주거인구 반경", value: `${p.residentRadius}m` },
-        { label: "유동 계수", value: num(p.floatingFactor) },
-        { label: "1km 밖 고리 감쇠 λ", value: p.residentRingDecayM > 0 ? `${p.residentRingDecayM}m` : "끔" },
-        { label: "고리 수요의 점유율", value: p.residentRingShare === "gravity" ? "가까운 쪽으로(기하)" : "1km 안과 같게" },
-        { label: "막힌 상권 보정", value: p.useRingEnclosure ? "켬 (막힌 방향 ÷ 4 깎음)" : "끔" },
-        { label: "상권 흡인력", value: num(p.agglomerationFactor) },
-        { label: "밀집도 보정", value: num(p.densityCorrection) },
-        // 2026-09-24 밤 사용자: "지금 쓰는 계수들 웹에 잘 업데이트해주고" — 배수와 강도 문이 표에 없었다. 값에서 읽어 그린다.
-        {
-          label: "특수수요 배수",
-          value: Object.entries(p.specialDemandMultipliers).filter(([k, v]) => v !== 1 && k !== "관광유흥")
-            .map(([k, v]) => `${k} ×${num(v)}`).join(" · ") || "전부 1",
-        },
-        { label: "배수 문(강도 높음에만)", value: (p.specialDemandHighOnly ?? []).length ? (p.specialDemandHighOnly ?? []).join(" · ") : "없음" },
-        { label: "1인 월 이용시간(축척)", value: `${num(p.hoursPerUserPerMonth)}h ${p.hoursPerUserFixed ? "· 원장 고정" : "· 적합"}` },
+        { label: "주거인구 반경", value: `${p.residentRadius}m`, plain: `매장에서 ${p.residentRadius === 1000 ? "1km" : `${p.residentRadius}m`} 안에 사는 주민을 연령·성별 PC방 이용률로 환산해 셉니다. 소도시 매장은 이보다 멀리서도 오는데 아직 못 잡는 게 남은 숙제입니다(양주덕정·문경).` },
+        { label: "유동인구 반경", value: `${p.floatingRadius}m`, plain: `매장 ${p.floatingRadius}m 안을 지나다니는 유동인구를 셉니다. 넓히면 옆 상권 사람이 딸려 들어와서(수원망포 500m 역) 좁게 잡았습니다.` },
+        { label: "유동 계수", value: num(p.floatingFactor), plain: `유동인구 100명 중 ${Math.round(p.floatingFactor * 100)}명만 이 동네 손님으로 봅니다. 나머지는 지나가는 사람입니다.` },
+        { label: "1km 밖 고리", value: ringOn ? `켬 · λ ${p.residentRingDecayM}m` : "끔", plain: ringOn
+          ? `1km 밖 주민도 세되 멀수록 덜 셉니다 — 1.25km 고리 ${pc0(Math.exp(-250 / p.residentRingDecayM))} · 1.75km ${pc0(Math.exp(-750 / p.residentRingDecayM))} · 3.5km ${pc0(Math.exp(-2500 / p.residentRingDecayM))}. 고리 사람의 몫은 ${p.residentRingShare === "gravity" ? "우리와 그 근처 PC방 중 가까운 쪽으로 간다고 봅니다" : "1km 안과 같은 점유율로 봅니다"}${p.useRingEnclosure ? ", 막힌 방향(항아리 상권)은 그만큼 깎습니다" : ""}.`
+          : "1km 밖 주민은 안 셉니다. 2026-09-23에 켰다가 후보지 13곳이 한결같이 +4.8%p 올라 하루 만에 되돌렸습니다." },
+        { label: "특수수요 배수", value: mulText, plain: `인구통계에 안 잡히는 손님(군인·학생·공장 근로자) 몫입니다. 그 유형 동네는 주민 수요를 이 배수만큼 크게 봅니다. 관광유흥·기타는 배수 없음.` },
+        { label: "배수 문", value: gateText ? `강도 "높음"만 (${gateText})` : "없음", plain: gateText
+          ? `입지평가에서 특수수요 강도가 "높음"인 곳만 배수를 탑니다. 보통·낮음은 배수 없음 — 이름만 대학가인 곳(오송 약대·행정타운)이 ×1.3을 타는 걸 막습니다.`
+          : "강도와 무관하게 유형만 보고 배수를 곱합니다." },
+        { label: "1인 월 이용시간(축척)", value: `${num(p.hoursPerUserPerMonth)}시간`, plain: `PC방 이용자 1명이 한 달에 ${num(p.hoursPerUserPerMonth)}시간 쓴다고 봅니다. ${p.hoursPerUserFixed ? "가맹점 원장에서 직접 잰 값이라 고정입니다(맞추지 않습니다)." : "기존점에서 매번 적합합니다."}` },
+        { label: "상권 흡인력 · 밀집도 보정", value: `${num(p.agglomerationFactor)} · ${num(p.densityCorrection)}`, plain: p.agglomerationFactor === 0 && p.densityCorrection === 0 ? "둘 다 안 씁니다(0). 자리만 남겨 둔 항입니다." : "경쟁점이 많을수록 동네가 좋다고 보는 항과 500m 밀집을 깎는 항입니다." },
       ],
     },
     {
-      title: "2단계 · 점유율",
+      title: "2단계 · 그 수요 중 우리 몫(점유율)을 뗀다",
       rows: [
-        { label: "점유율 방식", value: p.shareMode === "quality" ? "품질 반영" : "끔" },
+        { label: "점유율 방식", value: p.shareMode === "quality" ? "품질 반영" : "끔", plain: p.shareMode === "quality"
+          ? "우리 몫 = 우리 PC ÷ (우리 PC + 경쟁 PC × 품질비의 θ제곱 × 거리무게). 경쟁점이 크고 좋고 가까울수록 우리 몫이 줄어듭니다."
+          : "경쟁을 안 보고 동네 수요를 전부 먹는다고 봅니다(진단용)." },
         // 2026-09-24 사용자: "안 쓰는 값 … 헷갈리니까" — 감쇠가 켜져 있으면 유효거리(계단)는 안 읽히므로 표에서 뺀다.
         // 값 자체는 감쇠를 끈 예비 경로(rivalDistanceWeight의 계단)가 쓰므로 코드에는 남긴다.
         ...(p.rivalDistanceDecay
-          ? [{ label: "경쟁점 거리무게", value: `${p.rivalDistanceDecay.plateauM}m 안 1 · 밖 e^(−(d−${p.rivalDistanceDecay.plateauM})÷${p.rivalDistanceDecay.scaleM})` }]
-          : [{ label: "유효거리(계단)", value: `${p.effectiveRadiusM}m` }]),
-        { label: "품질 지수 θ", value: num(p.qualityExponent) },
+          ? [{ label: "경쟁점 거리무게", value: `${p.rivalDistanceDecay.plateauM}m 안 100% · 멀수록 감쇠`,
+              plain: `매장에서 ${p.rivalDistanceDecay.plateauM}m 안 경쟁점은 대수를 100% 셉니다. 그보다 멀면 덜 세서 400m ${wAt(400)} · 600m ${wAt(600)} · 1km ${wAt(1000)} · 2km ${wAt(2000)}. 즉 1km 밖 경쟁점은 거의 안 셉니다.` }]
+          : [{ label: "유효거리(계단)", value: `${p.effectiveRadiusM}m`, plain: `${p.effectiveRadiusM}m 안 경쟁점만 100% 세고 밖은 안 셉니다.` }]),
+        { label: "품질 지수 θ", value: num(p.qualityExponent), plain: `경쟁점보다 우리 품질이 좋을수록 손님이 몰리는 정도입니다. θ ${num(p.qualityExponent)}이면 경쟁점 품질이 우리의 80%일 때 그 경쟁점 대수를 ${pc0(Math.pow(0.8, p.qualityExponent))}만 세고, 120%면 ${pc0(Math.pow(1.2, p.qualityExponent))}로 셉니다.` },
         {
-          label: "품질 비중(사양·음식·존·인테리어·관리)",
-          value: [p.qualityWeights.spec, p.qualityWeights.food, p.qualityWeights.zone, p.qualityWeights.interior, p.qualityWeights.management].map((v) => num(v, 3)).join(" · "),
+          label: "품질 비중",
+          value: `사양 ${num(p.qualityWeights.spec, 3)} · 음식 ${num(p.qualityWeights.food, 3)} · 존 ${num(p.qualityWeights.zone, 3)} · 인테리어 ${num(p.qualityWeights.interior, 3)} · 관리 ${num(p.qualityWeights.management, 3)}`,
+          plain: "품질 점수는 이 다섯 항목의 가중평균입니다(자사·경쟁점 같은 자). 경쟁점의 빈 항목은 우리와 같다고 봅니다.",
         },
-        { label: "경쟁점 범위", value: `조사 ${RIVAL_2KM_OFFICIAL_RADIUS_M}m + 인허가·지도 ${RIVAL_2KM_OUTER_RADIUS_M}m` },
-        { label: "PC방 안 가는 몫", value: `${p.outsideOptionIp.toLocaleString()} IP` },
+        { label: "경쟁점 범위", value: `조사 ${RIVAL_2KM_OFFICIAL_RADIUS_M}m + 지도·인허가 ${RIVAL_2KM_OUTER_RADIUS_M}m`, plain: `${RIVAL_2KM_OFFICIAL_RADIUS_M}m 안은 사람이 조사한 경쟁점(대수·품질 있음)입니다. 그 밖 ${RIVAL_2KM_OUTER_RADIUS_M}m까지는 지도와 인허가로 찾은 곳인데 대수는 기본값, 품질은 우리와 같다고 보며, 거리무게 때문에 실제로는 거의 안 셉니다.` },
+        { label: "PC방 안 가는 몫", value: `${p.outsideOptionIp.toLocaleString()} IP`, plain: p.outsideOptionIp === 0 ? "안 씁니다(0). 그래서 경쟁점 없는 동네는 수요를 전부 먹는 것으로 나옵니다(탕정역이 +7%p인 이유)." : "동네 수요 중 어느 PC방도 안 가는 몫을 경쟁 PC처럼 분모에 넣습니다." },
       ],
     },
     {
-      title: "입지 (점유율에 곱한다)",
+      title: "입지 · 우리 몫에 곱한다",
       rows: [
         {
-          label: p.centralityResidual ? "잔차화 중심도 ν" : "상권 중심도 ν",
+          label: p.centralityResidual ? "상권 중심도(잔차) ν" : "상권 중심도 ν",
           value: num(p.locationExponents.centrality), tag: "자료",
+          plain: `매장 앞이 동네 안에서 얼마나 붐비는 자리인가(300m 유동 ÷ 1km 유동). 기준 ${num(p.locationReferences.centrality)}보다 좋으면 우리 몫을 올리고 나쁘면 내립니다. ν ${num(p.locationExponents.centrality)}이면 중심도가 기준의 2배일 때 몫 ${Math.pow(2, p.locationExponents.centrality).toFixed(2)}배.${p.centralityResidual ? " 동네 크기(유동 400m)에 딸린 몫은 빼고 잔차만 씁니다 — 수요와 이중계산을 막기 위해." : ""}`,
         },
-        { label: "접근성(층수) κ", value: num(p.locationExponents.access), tag: "자료" },
-        { label: "유동 방향 ω", value: num(p.locationExponents.direction), tag: "보류" },
-        { label: "동선 방해", value: num(p.locationExponents.flowBlock), tag: "보류" },
-        { label: "가시성", value: num(p.locationExponents.visibility), tag: "보류" },
+        { label: "접근성(층수·엘리베이터) κ", value: num(p.locationExponents.access), tag: "자료", plain: `지상 1층·엘리베이터 유무로 올라오기 얼마나 번거로운가. 기준 ${num(p.locationReferences.access)} 대비 κ ${num(p.locationExponents.access)}으로 약하게 곱합니다(2배 차이가 몫 ${Math.pow(2, p.locationExponents.access).toFixed(2)}배).` },
+        { label: "유동 방향 · 동선 방해 · 가시성", value: `${num(p.locationExponents.direction)} · ${num(p.locationExponents.flowBlock)} · ${num(p.locationExponents.visibility)}`, tag: "보류", plain: "자료가 없어 셋 다 0(안 씀)입니다. 로드뷰·경쟁점 좌표가 채워지면 켭니다." },
       ],
     },
     {
-      title: "3단계 · 매출",
+      title: "3단계 · 가동률을 매출로 바꾼다",
       rows: [
-        { label: "정가 탄력도", value: num(p.rateElasticity, 3) },
-        { label: "기준 정가", value: `${p.referenceHourlyRate.toLocaleString()}원` },
-        { label: "상품몫", value: `${Math.round(p.productUnitPrice).toLocaleString()}원/PC·시간 ${p.productUnitPriceFixed ? "· 고정" : "· 적합"}` },
+        { label: "가동률 상한", value: `${(p.maxUtilization * 100).toFixed(0)}%`, plain: `PC 좌석이 한 달 평균 ${(p.maxUtilization * 100).toFixed(0)}%를 넘게 돌아갈 수는 없다고 봅니다(관측 최대). 수요가 넘쳐도 여기서 잘립니다 — 표에 "상한"이 뜨는 매장.` },
         {
           label: "눈금 보정",
-          value: !p.indexCalibration || p.indexCalibration.ratioExponent === 1
-            ? `끔(지수 1) · 입지 지수 ${num(p.indexCalibration?.locationExponent ?? 1)}`
-            : `지수 ${num(p.indexCalibration.ratioExponent)} · 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}%`,
+          value: !p.indexCalibration || p.indexCalibration.ratioExponent === 1 ? "끔" : `지수 ${num(p.indexCalibration.ratioExponent)} · 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}%`,
+          plain: !p.indexCalibration || p.indexCalibration.ratioExponent === 1
+            ? "예측 가동률을 평균 쪽으로 당기는 보정입니다. 지금은 안 씁니다(지수 1 = 그대로). 입지 지수만 이 자리에서 0.5로 읽힙니다."
+            : `예측 가동률을 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}% 쪽으로 당깁니다 — 닻보다 낮으면 올리고 높으면 내려서 매장 간 차이를 줄입니다.`,
         },
-        { label: "가동률 상한", value: `${(p.maxUtilization * 100).toFixed(0)}%` },
+        { label: "정가 탄력도", value: num(p.rateElasticity, 3), plain: `요금을 2배 받으면 PC 시간당 매출은 ${Math.pow(2, p.rateElasticity).toFixed(2)}배만 늘어난다고 봅니다. 요금이 높으면 그만큼 다 받지는 못합니다.` },
+        { label: "기준 정가", value: `${p.referenceHourlyRate.toLocaleString()}원`, plain: `표본 매장 시간당 요금의 중앙값입니다. 이 요금이면 PC몫이 정가 그대로이고, 위 탄력도는 여기서 벌어진 만큼에 걸립니다.` },
+        { label: "상품몫", value: `${Math.round(p.productUnitPrice).toLocaleString()}원 / PC·시간`, plain: `PC가 1시간 돌 때 라면·음료 같은 상품매출이 ${Math.round(p.productUnitPrice).toLocaleString()}원 붙습니다. 요금과 무관한 상수이고 ${p.productUnitPriceFixed ? "전 매장 상품매출 실측에서 잰 고정값입니다." : "기존점에서 매번 적합합니다."}` },
       ],
     },
   ];
@@ -1277,27 +1286,33 @@ function ParamSummary({ p, counts }: {
         </p>
       </div>
 
-      <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+        산식은 세 단계입니다 — <b>동네 수요를 세고</b>, <b>그중 우리 몫을 떼고</b>, <b>가동률을 매출로 바꿉니다</b>. 값 옆의 뜻은 지금 값에서 계산해 적은 것이라 계수를 바꾸면 같이 바뀝니다.
+      </p>
+      <div className="mt-3 space-y-4">
         {groups.map((g) => (
-          <div key={g.title} className="app-card rounded-xl p-4">
-            <h3 className="text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">{g.title}</h3>
-            <dl className="mt-2 space-y-1.5">
-              {g.rows.map((r) => (
-                <div key={r.label} className="flex items-baseline justify-between gap-2">
-                  <dt className="text-xs text-[var(--sl-ink-soft)]">
-                    {r.tag && (
-                      <span className={`mr-1 rounded px-1 py-0.5 text-[10px] ${
-                        r.tag === "자료"
-                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
-                          : "bg-[#171310]/[0.07] text-[var(--sl-ink-soft)] dark:bg-white/10"
-                      }`}>{r.tag}</span>
-                    )}
-                    {r.label}
-                  </dt>
-                  <dd className="shrink-0 text-xs font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">{r.value}</dd>
-                </div>
-              ))}
-            </dl>
+          <div key={g.title} className="app-card overflow-hidden rounded-xl">
+            <h3 className="border-b border-[#171310]/10 px-4 py-2 text-sm font-semibold text-[#171310] dark:border-white/10 dark:text-[#f2ede2]">{g.title}</h3>
+            <table className="w-full text-left">
+              <tbody>
+                {g.rows.map((r) => (
+                  <tr key={r.label} className="border-b border-[#171310]/[0.06] last:border-0 dark:border-white/[0.06]">
+                    <th scope="row" className="w-44 px-4 py-2.5 align-top text-xs font-medium text-[var(--sl-ink-soft)] sm:w-52">
+                      {r.tag && (
+                        <span className={`mr-1 rounded px-1 py-0.5 text-[10px] ${
+                          r.tag === "자료"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300"
+                            : "bg-[#171310]/[0.07] text-[var(--sl-ink-soft)] dark:bg-white/10"
+                        }`}>{r.tag}</span>
+                      )}
+                      {r.label}
+                    </th>
+                    <td className="w-40 px-2 py-2.5 align-top text-sm font-semibold tabular-nums text-[#171310] sm:w-64 dark:text-[#f2ede2]">{r.value}</td>
+                    <td className="px-4 py-2.5 align-top text-xs leading-relaxed text-[var(--sl-ink-soft)]">{r.plain}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ))}
       </div>
