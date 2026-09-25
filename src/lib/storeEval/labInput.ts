@@ -906,7 +906,7 @@ export function buildLabCandidateRows({
         // ⚠️ 후보지의 PC수는 expectedPcCount다. 이름만 다르고 뜻은 기존점 pcCount와 같다.
         pcCount: c.expectedPcCount,
         hourlyRate: c.hourlyRate,
-        // 유료게임 과금 — 후보지 문서에 아직 칸이 없어 null(0). 기존점은 전사 표(tariffTables)에서 온다. 자료가 생기면 여기서 넘긴다(2026-09-25 저녁).
+        // 유료게임 과금 — 후보지는 hourlyRate에 "기본요금 + 유료게임 과금"을 이미 합산해 넣는다(사용자 2026-09-25). 여기서 또 더하면 이중계산이라 null(0).
         paidGameSurcharge: null,
         // 예측 대상이다 — 지어내지 않는다.
         actualUtilization: null,

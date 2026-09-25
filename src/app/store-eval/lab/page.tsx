@@ -1362,7 +1362,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             ⭐ 2026-09-25 저녁 — <b>유료게임 과금</b>(라이선스 게임을 켜면 정액권 위에 시간당 더 차감, 전사 표 기준 100~300원)을 <b>정가에 더해</b> PC몫을 만듭니다.
             원장으로 확인했습니다: 발산역 시간당 101원·전표 88%(과금표 100) · 문산 264원·90%(300) —
             게임을 켜면 거의 전원이 내므로 기본요금에 얹힌 것과 같습니다. 계수가 아니라 자료입니다. 좌석 과금(특정 좌석만)은 자료가 구체화되지 않아 안 넣습니다.
-            후보지는 아직 이 칸이 없어 0으로 계산합니다 — 유료게임 과금을 받을 매장이면 그만큼 낮게 나옵니다.
+            후보지는 요금 칸에 <b>기본요금 + 유료게임 과금을 합산</b>해 넣으므로 여기서 따로 더하지 않습니다(기존점만 두 값을 따로 들고 더합니다).
           </div>
           <div className="mt-1">
             손님 1명이 쓰는 돈(객단가)이 아니라 <b>PC 1대가 1시간 채워졌을 때 들어오는 총액</b>입니다.
@@ -1947,7 +1947,7 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
               <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
               <th scope="col" className="px-3 py-2 text-right" title="자사PC x 자사품질^θ ÷ (자사 + 유효거리 안 경쟁점들). 100%면 유효거리 안에 겨룰 상대가 없다는 뜻이다.">점유율</th>
               <th scope="col" className="px-3 py-2 text-right" title="1단계 수요 — 이 동네에서 한 달에 PC방을 쓰는 사람 수">수요(명)</th>
-              <th scope="col" className="px-3 py-2 text-right" title="PC몫((정가 + 유료게임 과금) 기반) + 상품몫. 후보지는 유료게임 과금 칸이 아직 없어 0. 상품몫은 직전 18개월 개점 매장의 실측 중앙으로 정한 상수다(2026-09-25).">총단가</th>
+              <th scope="col" className="px-3 py-2 text-right" title="PC몫((정가 + 유료게임 과금) 기반) + 상품몫. 후보지는 요금 칸에 기본요금+유료게임 과금을 합산해 넣으므로 따로 안 더함. 상품몫은 직전 18개월 개점 매장의 실측 중앙으로 정한 상수다(2026-09-25).">총단가</th>
               <th scope="col" className="px-3 py-2 text-right" title="입지가 점유율에 곱한 배율. 1이면 입지가 아무 일도 안 한 것(자료없음 또는 계수 0).">입지배율</th>
               <th scope="col" className="px-3 py-2">비고</th>
             </tr>
