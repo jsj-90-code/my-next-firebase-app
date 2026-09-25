@@ -58,9 +58,8 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 import {
   LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES,
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
-  utilizationByStore, type LabRow, type LabCandidateRow,
+  utilizationByStore, utilizationWindowMonths, type LabRow, type LabCandidateRow,
 } from "@/lib/storeEval/labInput";
-import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
   LAB_PERF_ANCHOR_SCORE, LAB_PERF_LOG_STEP, LAB_PERF_LOG_STEP_UP,
@@ -92,8 +91,8 @@ type Loaded = {
   /**
    * 매장코드 -> 평가창이 **얼마나 찼나** (2026-09-21).
    *
-   * 실측 가동률은 평가창(개점 다음 달부터 12개월) 평균인데, 갓 연 매장은 몇 달치뿐이다.
-   * 그 값은 12개월 완주 평균과 **같은 자가 아니고**, 달이 갈수록 움직인다. 송도점이 그 경우다
+   * 실측 가동률은 개점 2~12개월차(첫 달 제외, 실매출과 같은 창 — labInput utilizationWindowMonths) 평균인데, 갓 연 매장은 몇 달치뿐이다.
+   * 그 값은 11달 완주 평균과 **같은 자가 아니고**, 달이 갈수록 움직인다. 송도점이 그 경우다
    * (2026-07 22% · 08 25%로 아직 오르는 중인데 2달 평균 23.5%를 실측으로 쓴다).
    * 사용자가 사정을 알고 넣으라고 했으므로, 숨기지 말고 **표에 티를 낸다.**
    */
@@ -241,9 +240,9 @@ async function loadLabData(): Promise<Loaded | null> {
   // ── 신규후보지 (2026-09-18) ────────────────────────────────────────────────
   // 조립은 labInput.ts 한 곳에 있다 — 하네스(_labCandidate.test.ts)가 **같은 함수**를 부른다.
   // 관리 점수는 기존점 행에 실제로 들어간 값의 평균을 그대로 넘긴다(여기서 다시 환산하지 않는다).
-  // 평가창이 얼마나 찼나 — 실측 가동률을 만든 달 수를 그대로 센다(위 타입 주석).
+  // 평가창이 얼마나 찼나 — 실측 가동률을 만든 달 수를 그대로 센다(위 타입 주석). 창은 가동률과 같은 함수(2~12개월차, 11달).
   const windowFillByStore = new Map(stores.map((s) => {
-    const w = evaluationMonths(s.openedAt);
+    const w = utilizationWindowMonths(s.openedAt);
     const filled = sales.filter((x) => x.storeCode === s.storeCode && w.includes(x.yearMonth)
       && (x.pcSales ?? 0) + (x.productSales ?? 0) > 0).length;
     return [s.storeCode, { filled, total: w.length }] as const;
@@ -555,11 +554,11 @@ function DataStatus({ data, p }: { data: Loaded; p: TextbookParams }) {
       <div>
         <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">평가창이 덜 찬 매장 ({partial.length}곳)</h2>
         <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
-          실측 가동률은 개점 다음 달부터 12개월 평균인데, 갓 연 매장은 몇 달치뿐이라 값이 아직 움직입니다. 개점 효과가 섞여 있을 수 있어
-          이 매장들의 오차는 한 단계 낮게 읽습니다(진주혁신도시 2개월).
+          실측 가동률은 개점 2~12개월차(첫 달은 오픈 효과로 제외, 실매출과 같은 창) 11달 평균인데, 갓 연 매장은 몇 달치뿐이라 값이 아직 움직입니다.
+          이 매장들의 오차는 한 단계 낮게 읽습니다.
         </p>
         <ul className="mt-2 flex flex-wrap gap-2 text-xs">
-          {partial.length === 0 && <li className="text-[var(--sl-ink-soft)]">전부 12개월 채움</li>}
+          {partial.length === 0 && <li className="text-[var(--sl-ink-soft)]">전부 11달 채움</li>}
           {partial.map((x) => (
             <li key={x.code} className="app-card rounded-lg px-3 py-1.5">
               <b className="text-[#171310] dark:text-[#f2ede2]">{x.name}</b> <span className="tabular-nums text-[var(--sl-ink-soft)]">{x.filled}/{x.total}개월</span>
@@ -1697,12 +1696,12 @@ function StoreTable({ score, qscByStore, p, windowFill, inputByCode }: {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{pct(r.share)}</td>
                   <td className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
-                    {/* 평가창이 덜 찬 매장은 실측 가동률이 12개월 완주 평균이 아니다 — 티를 낸다. */}
+                    {/* 평가창이 덜 찬 매장은 실측 가동률이 2~12개월차 완주 평균이 아니다 — 티를 낸다. */}
                     {(() => {
                       const w = windowFill.get(r.storeCode);
                       if (!w || w.total === 0 || w.filled >= w.total) return null;
                       return (
-                        <b className="text-[var(--sl-warn,#b4530a)]" title="실측 가동률이 12개월 완주 평균이 아닙니다. 달이 차면 값이 움직입니다.">
+                        <b className="text-[var(--sl-warn,#b4530a)]" title="실측 가동률이 개점 2~12개월차(11달) 완주 평균이 아닙니다. 달이 차면 값이 움직입니다.">
                           ⚠ 평가창 {w.filled}/{w.total}달{" "}
                         </b>
                       );

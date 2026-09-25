@@ -43,12 +43,25 @@ export type LabRow = {
 };
 
 /**
+ * 실측 가동률을 평균 내는 달 — **개점 2~12개월차**(평가창 12달 중 첫 달을 오픈 효과로 뺀 11달).
+ * 저장 실매출 `actualMonthlyRevenueAvg`와 **같은 창**이다(calc.ts computeStabilizedPerformance,
+ * CUMULATIVE_AVERAGE_FROM_MONTH=2). 2026-09-25 사용자 결정: *"오픈 한 달은 매출/가동률 제외하고,
+ * 오픈 한 달 다음 달부터 데이터만 평가하면 됨."* 그 전엔 가동률만 12달 전부를 써서 과녁에 첫 달의
+ * 낮은 가동률이 섞여 있었다(송도 14% vs 평균 20%) — 성적 MAE 3.83→4.13으로 산식 과소가 0.55%p 더
+ * 드러났다(docs/releases/2026-09-25-utilization-window.md). 화면의 "평가창 n/11달"도 이 함수를 쓴다.
+ */
+export function utilizationWindowMonths(openedAt: string | null): string[] {
+  return evaluationMonths(openedAt).slice(1);
+}
+
+/**
  * 매장별 **실측 월평균 가동률**(0~1). 수요 축척을 여기에 맞춘다(2026-09-16).
  *
  * 게토에서 받은 값과 대조했을 때 평균차 3.34% · r=1.000으로 사실상 같은 값이라,
  * 파이어스토어에 이미 있는 `utilizationRate` 필드를 쓴다(별도 수집 불필요).
  *
- * ⚠️ **평가창(개점 다음 달부터 12개월) 안에서만 평균 낸다.** 조립을 한 곳에 두는 이 파일의
+ * ⚠️ **개점 2~12개월차(`utilizationWindowMonths`) 안에서만 평균 낸다.** 2개월차 이후 자료가 하나도
+ *    없으면 저장 로직처럼 1개월차라도 쓴다. 조립을 한 곳에 두는 이 파일의
  *    취지대로 여기에 넣었다 — 이것만 화면과 하네스에 따로 베껴져 있어서 2026-09-17에 사고가
  *    났다. 화면은 `listEvaluationSales`가 그 12개월 문서만 읽어와 저절로 맞았지만, 하네스는
  *    스냅샷 덤프(컬렉션 통째)를 넘겨 **전 기간**을 평균 내고 있었다. 41곳 중 37곳이 섞였고,
@@ -61,16 +74,19 @@ export function utilizationByStore(
   sales: Array<{ storeCode: string; yearMonth: string; utilizationRate?: number | null }>,
   stores: Array<Pick<ExistingStore, "storeCode" | "openedAt">>,
 ): Map<string, number> {
-  const windowByCode = new Map(stores.map((s) => [s.storeCode, new Set(evaluationMonths(s.openedAt))]));
+  const windowByCode = new Map(stores.map((s) => [s.storeCode, new Set(utilizationWindowMonths(s.openedAt))]));
+  const firstByCode = new Map(stores.map((s) => [s.storeCode, evaluationMonths(s.openedAt)[0] ?? null]));
   const acc = new Map<string, number[]>();
+  const firstOnly = new Map<string, number>(); // 1개월차 값 — 2개월차 이후가 없을 때만 쓴다
   for (const s of sales) {
     const rate = s.utilizationRate;
     if (rate == null || !(rate > 0)) continue;
-    if (!windowByCode.get(s.storeCode)?.has(s.yearMonth)) continue;
-    acc.set(s.storeCode, [...(acc.get(s.storeCode) ?? []), rate]);
+    if (windowByCode.get(s.storeCode)?.has(s.yearMonth)) acc.set(s.storeCode, [...(acc.get(s.storeCode) ?? []), rate]);
+    else if (firstByCode.get(s.storeCode) === s.yearMonth) firstOnly.set(s.storeCode, rate);
   }
   const out = new Map<string, number>();
   for (const [code, vs] of acc) out.set(code, vs.reduce((a, b) => a + b, 0) / vs.length);
+  for (const [code, rate] of firstOnly) if (!out.has(code)) out.set(code, rate);
   return out;
 }
 

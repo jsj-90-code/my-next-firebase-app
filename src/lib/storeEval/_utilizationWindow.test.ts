@@ -61,9 +61,20 @@ describeIf("가동률 창 재고 표 — 1~12개월차 → 2~12개월차", () =>
   const compsByCode = new Map<string, Competitor[]>();
   for (const c of allCompetitors) compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
   const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings);
-  const util1 = utilizationByStore(snap.sales ?? [], snap.existingStores);
+  // ✅ 2026-09-25 채택 — labInput.utilizationByStore가 이제 2~12개월차다(사용자: "오픈 한 달은 매출/가동률 제외").
+  //    옛 창(1~12)은 여기서 직접 만들어 before/after 기록을 유지한다. util2는 본체 함수 값과 같아야 한다((0)에서 검산).
+  const util1 = (() => {
+    const out = new Map<string, number>();
+    for (const s of snap.existingStores as { storeCode: string; openedAt: string | null }[]) {
+      const w = new Set(evaluationMonths(s.openedAt));
+      const vs = (snap.sales as Sale[]).filter((x) => x.storeCode === s.storeCode && w.has(x.yearMonth) && x.utilizationRate != null && (x.utilizationRate as number) > 0).map((x) => x.utilizationRate as number);
+      if (vs.length) out.set(s.storeCode, mean(vs));
+    }
+    return out;
+  })();
   const util2full = utilizationFrom2(snap.sales ?? [], snap.existingStores);
-  const util2 = new Map([...util2full].map(([k, v]) => [k, v.u]));
+  const util2 = utilizationByStore(snap.sales ?? [], snap.existingStores);
+  for (const [k, v] of util2full) if (Math.abs((util2.get(k) ?? NaN) - v.u) > 1e-12) throw new Error(`본체 utilizationByStore와 하네스 2~12 창이 다르다: ${k}`);
 
   type QscSite = { storeCode?: string; id?: string; openedAt?: string; records?: QscRecord[] };
   const qscByStoreCode = new Map<string, number>();
