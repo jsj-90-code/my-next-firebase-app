@@ -20,6 +20,7 @@ import ExcelJS from "exceljs";
  */
 export const LEDGER_DIRS: string[] = [
   process.env.LEDGER_DIR ?? "",
+  "C:/Users/09960/Desktop/좌석가동률_7월", // 집 PC(2026-09-25 사용자가 복사해 둠)
   "C:/Users/ISENS/Desktop/좌석가동률_7월",
   "C:/Users/ISENS/Desktop/바탕화면/좌석가동률_7월",
   "C:/Users/ISENS/OneDrive/바탕 화면/좌석가동률_7월",
