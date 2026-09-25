@@ -49,3 +49,17 @@ Firestore 값(기본요금)은 안 바꾼다. 후보지는 입력 칸에 이미 
 - `src/lib/storeEval/existingStoreEvaluation.ts`(PAID_GAME_SURCHARGE · 합산) · `types.ts`(hourlyRateBase · paidGameSurcharge) · `labInput.ts`(이중계산 끔)
 - `src/app/store-eval/lab/page.tsx` · `candidates/[code]/BasicInfoTab.tsx`(문구)
 - `src/lib/storeEval/_timeSplitBacktest.test.ts`(신설) · `_labVsV62.test.ts` · `_paidGameSurcharge.test.ts`(기준을 hourlyRateBase로)
+
+## 밤 2차 — 송도·동탄북광장 V62 표본 포함 + 후보지 재계산 (사용자 결정)
+
+사용자: *"동탄북광장은 관리점수가 반영돼서 들어간 거고, 송도는 요금 1,000원으로 적용한 거니까 — 오픈 후 문제여도 그에 맞춰 데이터를 변경한 것."*
+→ 확인: **송도는 맞다**(요금 1,000원 = 가격전쟁이 입력에 있음). **동탄은 QSC 기록이 없어** 관리 점수가 가맹점 평균이었다(운영관리 문제가 입력에 없음).
+→ 사용자 지시 *"동탄 QSC에 가맹점 최하 점수 넣고 관리점수에 적용"* → 대체 기록 73.9점(구미산동 QSC 평균, 오픈 점검 제외 — 가맹점 최하)을 운영·실험실 QSC 컬렉션에 추가(form에 "대체값" 표시).
+
+- `scripts/includeSongdo20260925.mjs --apply` · `scripts/includeDongtan20260925.mjs --apply` — excludedFromModel false, 옛 사유는 excludedReasonPrev. 실험실 동기화·스냅샷.
+- 동탄 V62 자기 오차 **+31% → +16%**(관리 점수 반영 효과) · 송도 +20%.
+- 운영 V62: **40곳 MAPE 9.47%** · 중앙 8.55 · ±20% 37/40(38곳일 때 8.97 · 7.18 · 35/38). 두 매장 자체 오차가 들어간 값이라 숫자는 올라간다.
+- 실험실: 4.09 → **4.04** · 이해 3.41 → 3.36(동탄 관리 점수가 낮아진 효과).
+- 후보지 13곳 재계산·저장(`_recomputeCandidates.test.ts`, RECOMPUTE_APPLY=1 — 결과 탭 "다시 계산"과 같은 조립, 감사 기록 남김): 12곳 갱신, 대부분 −1~−3%(오송 −3.2 · 춘천퇴계·산본 −2.8 · 신중동 −2.7), 영월 +0.3.
+  원인: 송도·동탄이 학습에 들어가 V62 수준이 조금 내려감.
+- ⚠️ storedAccuracyParity 빨강 4건(저장 적중률 38→40곳 · 동탄 관리 점수 캐시) — **검증 탭을 한 번 열면 적중률이, 06:00 크론이 캐시를 고친다.** 후보지 결과 항목은 초록.

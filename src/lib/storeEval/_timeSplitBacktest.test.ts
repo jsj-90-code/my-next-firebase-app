@@ -116,7 +116,10 @@ describeIf("개점 시기 되짚기 — V62 vs 실험실, 그리고 V62 개선 �
   });
 
   it("(4) 동탄북광장·송도를 V62 표본에 넣으면 (사용자 2026-09-25 밤) — 원래 38곳 성적 · 두 매장 자체 오차 · 시간 되짚기", () => {
-    const INCLUDE = new Set(["20250124421", "20260515431"]); // 동탄북광장(운영관리 문제) · 송도(경쟁점 500원 가격전쟁)
+    // 사용자: "동탄은 관리점수가 반영됐고, 송도는 요금 1,000원으로 적용했다 — 문제를 데이터로 바꿨다." 확인 결과: 송도 요금 1,000은 맞다(원인이 입력에 있음).
+    // 동탄은 QSC 기록이 **없어** 관리 점수가 가맹점 평균으로 들어간다 — 운영관리 문제가 입력에 없다. 그래서 송도만 넣는 줄도 같이 본다.
+    const ONLY = (process.env.INCLUDE_ONLY ?? "").split(",").filter(Boolean);
+    const INCLUDE = new Set(ONLY.length ? ONLY : ["20250124421", "20260515431"]); // 동탄북광장(운영관리 문제) · 송도(경쟁점 500원 가격전쟁)
     const run = (include: boolean, subset?: Set<string>) => {
       const inputs = makeInputs(true).map((s) => (include && INCLUDE.has(s.storeCode) ? { ...s, isPostOpenIssue: false } : s));
       const { rows } = runUsageCohortValidation(inputs, sales, settings, new Date(), undefined, undefined, 1, undefined, subset);
