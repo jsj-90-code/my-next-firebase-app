@@ -959,7 +959,10 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   // 측정: `_shareDiscrimination.test.ts` [B5] · `_scaleMeasured.test.ts` [측정 1]
   outsideOptionIp: 0,
   // ✅ 2026-09-24 밤 — 우리 몫 상한 80%(k 0.25). 근거는 타입 쪽 주석·`_layerSplit` (7). 사용자: "개선할 거 개선해도 괜찮을 듯" + 후보지 실무 감각 6곳.
-  ownShareCapK: 0.25,
+  // ✅ 2026-09-25 낮 — **0.25 → 0.18(상한 85%)**. 가동률 창을 2~12개월차로 맞춘 뒤 정의대로 다시 잼: 독점 자사 3곳(탕정역 83 · 광주각화 85 · 남악 85%,
+  //    구미산동은 경쟁 IP가 생겨 빠짐) 실제 몫 중앙 85% → k = 1/0.85 − 1 = 0.18. 09-24의 68~83%는 몫 상한·강도 문 채택 전 산식 값이었다.
+  //    사용자 "정답으로 하자". 재고 표 `_windowRefit.test.ts` (2): MAE 4.13→3.90 · 편향 −1.94→−1.11 · 후보지 +0.7p. docs/releases/2026-09-25-window-refit.md
+  ownShareCapK: 0.18,
   agglomerationFactor: 0,
   densityCorrection: 0,
   // ✅ **2026-09-21 밤 채택 — 1,493원으로 못 박는다**(아래 productUnitPriceFixed).
@@ -973,7 +976,11 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   //
   // 1,493원 = 기존점 38곳의 **직접 측정** 평균(2026-09-21). 중앙 1,495원 · 범위 1,090~2,076원.
   // 다시 재는 자리: `_productShareFormula.test.ts` (1)번. ⚠️ 표본이 늘면 다시 잰다.
-  productUnitPrice: 1493,
+  // ✅ 2026-09-25 낮 — **1,493 → 1,471**. 가동률 창을 개점 2~12개월차(실매출과 같은 창)로 맞추면서 같은 창으로 다시 잰 값
+  //    (38곳 Σ상품매출÷Σ(PC×720×가동률), 중앙 1,476, `_windowRefit.test.ts` (1)②). 정의를 맞춘 재측정이지 계수 조정이 아니다.
+  //    상품몫이 매장별로 두 배 퍼지는 건 개점 세대 효과(2023 개점 1,287 → 2026 1,665)인데 기전(메뉴 구성?)을 못 밝혀 상수로 둔다
+  //    (docs/releases/2026-09-25-product-share-drivers.md — 메뉴판 가격은 3년 반 +3%뿐, 물가 아님).
+  productUnitPrice: 1471,
   productUnitPriceFixed: true,
   // 운영 산식 usageRevenue.ts effectiveHourlyRate와 같은 값 — 두 산식이 한 식을 쓴다.
   // 2026-09-16 저녁(3)부터 이 지수는 PC몫에만 걸린다(상품몫은 정가와 무관).

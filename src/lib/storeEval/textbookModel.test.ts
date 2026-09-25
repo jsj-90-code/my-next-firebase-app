@@ -70,7 +70,7 @@ describe("품질 모드 점유율", () => {
     // 경쟁 PC가 우리 4배(품질 같음)면 상한 없이 0.2, 상한 걸면 1/(1+4+0.25) = 0.19 — 5%만 깎인다(독점은 20% 깎임).
     const busy = computeTextbook(input({ ownQualityParts: parts(3), rivals: [{ ip: 400, distanceM: 100, parts: parts(3) }] }), capped).share;
     expect(busy).toBeCloseTo(1 / 5.25, 10);
-    expect(DEFAULT_TEXTBOOK_PARAMS.ownShareCapK).toBe(0.25);
+    expect(DEFAULT_TEXTBOOK_PARAMS.ownShareCapK).toBe(0.18); // 2026-09-25 재측정(독점 3곳 몫 85%)
   });
 
   it("품질이 같고 PC대수가 같으면 반씩 나눠 갖는다", () => {
