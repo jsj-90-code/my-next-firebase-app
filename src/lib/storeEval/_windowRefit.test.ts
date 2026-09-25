@@ -135,8 +135,12 @@ describeIf("가동률 창 2~12개월차 — 실측 유래 값 재측정 + 재고
 
   it("(2) 재고 표 — 재측정값을 하나씩·같이 넣으면 (가동률 잣대)", () => {
     const kNew = Math.round((1 / median(monopoly.map((m) => m.share)) - 1) * 100) / 100;
+    // 유형별로 하나씩만 바꾼 변형 + 자기 제외(LOO) 배수 — "지금 배수가 최적인가"(사용자 2026-09-25)
+    const oneType = (t: string, v: number): TextbookParams => ({ ...P, specialDemandMultipliers: { ...P.specialDemandMultipliers, [t]: v, ...(t === "관광유흥" ? { "관광·유흥": v } : {}) } });
     const variants: { label: string; p: TextbookParams; note: string }[] = [
-      { label: "지금(8.20 · k0.25 · 배수 현행)", p: P, note: "새 창 기준선" },
+      { label: `지금(${P.hoursPerUserPerMonth} · k${P.ownShareCapK} · 배수 현행)`, p: P, note: "기준선" },
+      ...[...impliedByType].filter(([t]) => t !== "기타" && t !== "없음").map(([t, v]) => { const m = Math.round(median(v) * 10) / 10; const now = P.specialDemandMultipliers[t] ?? P.specialDemandMultipliers[t.replace("유흥", "·유흥")] ?? 1; return { label: `  ${t} ${now} → ${m}만`, p: oneType(t, m), note: `${v.length}곳 함의 ${v.map((x) => x.toFixed(2)).join("·")}` }; }),
+      { label: "  기타 1.0 → 1.1만", p: oneType("기타", 1.1), note: `${(impliedByType.get("기타") ?? []).length}곳 함의 ${(impliedByType.get("기타") ?? []).map((x) => x.toFixed(2)).join("·")}` },
       { label: `① 축척 ${hoursNew.toFixed(2)}h`, p: { ...P, hoursPerUserPerMonth: hoursNew }, note: "원장 2곳뿐 — 참고" },
       { label: `③ 몫 상한 k${kNew.toFixed(2)}`, p: { ...P, ownShareCapK: kNew }, note: "독점 4곳 새 창 몫 중앙" },
       { label: "④ 배수 재측정(중앙, 0.1 단위)", p: { ...P, specialDemandMultipliers: mulNew }, note: Object.entries(mulNew).filter(([k]) => !k.includes("·")).map(([k, v]) => `${k} ${v}`).join(" ") },
@@ -149,8 +153,23 @@ describeIf("가동률 창 2~12개월차 — 실측 유래 값 재측정 + 재고
       const s = score(v.p);
       console.log(`  ${pad(v.label, 32)} ${(s.maeAll * 100).toFixed(2).padStart(6)} ${(s.maeOk * 100).toFixed(2).padStart(6)} ${`${s.w5}/${s.n}`.padStart(5)} ${pp(s.biasEx, 2).padStart(7)} ${String(s.over10).padStart(4)} ${(pp(s.candShift, 1) + "p").padStart(8)}  ${v.note}`);
     }
+    // 자기 제외(LOO) 배수 — 각 높음 매장에 "같은 유형의 다른 높음 매장 함의 중앙"을 배수로. 자기 함의로 자기를 맞히지 않는 공정한 잣대. 같은 유형이 자기뿐이면 지금 배수.
+    {
+      const errs = own.map((r) => {
+        const t = (r.input.specialDemandType ?? "").replace("·", "");
+        const hi = r.input.specialDemandIntensity === "높음" && t && t !== "없음";
+        let p = P;
+        if (hi) { const others = implied.filter((x) => x.type === t && x.name !== (r.input.storeName ?? "")).map((x) => x.implied); if (others.length >= 1) p = oneType(t, Math.round(median(others) * 10) / 10); }
+        return { code: r.input.storeCode, name: r.input.storeName ?? "", e: (computeTextbook(r.input, p).utilization ?? NaN) - (r.input.actualUtilization as number) };
+      }).filter((x) => Number.isFinite(x.e));
+      console.log(`  ${pad("  배수 LOO(다른 매장 함의 중앙)", 32)} ${(100 * mean(errs.map((x) => Math.abs(x.e)))).toFixed(2).padStart(6)} ${(100 * mean(errs.map(okErr))).toFixed(2).padStart(6)} ${`${errs.filter((x) => okErr(x) <= 0.05).length}/${errs.length}`.padStart(5)} ${pp(mean(errs.filter((x) => !isUp(x.code)).map((x) => x.e)), 2).padStart(7)} ${String(errs.filter((x) => Math.round(Math.abs(x.e) * 1000) >= 100).length).padStart(4)} ${"-".padStart(8)}  공정 잣대 — 지금 줄보다 나쁘면 재측정 배수는 그 매장 맞히기`);
+    }
+    // 강도 "보통"인 특수수요 매장 — 지금은 문에 막혀 배수 1. 함의가 1보다 크게 높으면 "보통에도 일부" 여지, 1 근처면 문이 맞다.
+    const mid = own.filter((r) => r.input.specialDemandIntensity === "보통" && r.input.specialDemandType && r.input.specialDemandType !== "없음")
+      .map((r) => ({ name: r.input.storeName ?? "", type: (r.input.specialDemandType as string).replace("·", ""), implied: (r.input.actualUtilization as number) / (computeTextbook(r.input, noMul).utilization ?? NaN) }));
+    console.log(`  강도 보통 매장 함의(배수 없는 예측 대비): ` + mid.map((x) => `${x.name} ${x.type} ${x.implied.toFixed(2)}`).join(" · ") + `  ← 1 근처면 "높음에만" 문이 맞다`);
     console.log(`  ⭐ 읽는 법 — 정의를 맞춘 재측정(③④)은 성적이 아니라 뜻으로 고른다. ①은 표본 2곳이라 성적이 좋아져도 채택 근거가 못 된다. ②(상품몫)는 가동률에 안 걸린다.`);
-    expect(variants.length).toBe(6);
+    expect(variants.length).toBeGreaterThan(6);
   });
 
   it("(3) 상품몫 상수별 기존점 매출 환산 — 전체와 개점 세대별 (규칙 1,721은 새 매장을 겨냥해 옛 세대엔 높게 나온다)", () => {
