@@ -370,20 +370,28 @@ export function LocationEvalTab({
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>특수수요</h3>
+        {/* 개점 전 판정 체크리스트 — docs/special-demand-guide.md §3과 AI 프롬프트(locationEvalAi.ts)와 같은 문장(2026-09-25). 분류는 자료이지 계수가 아니다: 적중률이 아니라 지리 사실로 정한다. */}
+        <ul className="mt-2 space-y-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
+          <li><b>군부대/높음</b> — 셋 다: 병사 많고 외출·외박 잦은 부대(사령부·특수부대·공군 비행단은 아님) · 정문에서 도보 1km 안 · 로드뷰에 군인 정액제·군인 할인·휴가 병사 상권 표식. 유동 성비로는 못 가름.</li>
+          <li><b>대학가/높음</b> — 학부 중심 종합대학(재학생 1만+) 정문·후문 도보권 + 원룸촌 + 학생이 주 고객. 약대·의대 단독 캠퍼스, 연구단지, 행정타운, 전문대는 아님. 방학에 안 뛰어 배수가 1.3에 그침.</li>
+          <li><b>산업단지/높음</b> — 산단 정문 생활권(도보권)에 근로자 기숙사·원룸. 산단이 2~3km 밖이고 퇴근 근로자가 번화가로 오면 <b>관광유흥</b>(그 근로자는 유동인구에 이미 있음).</li>
+          <li><b>관광유흥/높음</b> — 술집·노래방·유흥업소 밀집 번화가 한복판(관광지·터미널·역세권 유흥가 포함). 유동 20대 비중이 높다고 대학가로 보지 말 것.</li>
+          <li><b>기타</b> — 혁신도시 통근·역세권 상업처럼 수요원은 있으나 위 넷이 아닐 때(배수 없음). <b>모르면 보통.</b> 부대·캠퍼스·산단 이름과 거리를 상권구조메모에 적어 둘 것.</li>
+        </ul>
         <div className={`${gridClass} mt-4`}>
           <SelectField
             label="특수수요유형"
             value={form.specialDemandType}
             onChange={(v) => set("specialDemandType", v)}
             options={SPECIAL_DEMAND_TYPE_OPTIONS}
-            hint="인구통계에 안 잡히는 수요원. '대학가'는 학부 중심 종합대학(재학생 1만+) 정문·후문 도보 500m 안 + 학생 원룸촌 배후지일 때만. 약대·의대 단독 캠퍼스, 연구단지, 보건의료 행정타운은 '기타'."
+            hint="인구통계에 안 잡히는 수요원. 위 체크리스트의 유형 정의를 그대로 적용. 넷 다 아니면 '기타' 또는 '없음'."
           />
           <SelectField
             label="특수수요강도"
             value={form.specialDemandIntensity}
             onChange={(v) => set("specialDemandIntensity", v)}
             options={SPECIAL_DEMAND_INTENSITY_OPTIONS}
-            hint="'높음'은 그 수요원이 주된 손님층일 때만. 실험실 산식은 대학가·산업단지·군부대·관광유흥 배수를 '높음'에만 곱합니다 — 보통 이하는 배수 없음. 확실하지 않으면 '보통'."
+            hint="'높음'은 위 체크리스트 조건을 전부 충족하고 그 수요원이 주된 손님층일 때만. 실험실 산식은 배수를 '높음'에만 곱합니다(보통 이하는 배수 없음). 운영 V62는 군부대·산업단지를 강도 무관 더미로 씁니다. 확실하지 않으면 '보통'."
           />
         </div>
       </section>
