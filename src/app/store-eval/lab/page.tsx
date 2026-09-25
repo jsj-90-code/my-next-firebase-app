@@ -58,7 +58,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 import {
   LAB_UPSIDE_STORE_CODES,
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
-  utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
+  utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, productUnitPriceEraByStore, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
 } from "@/lib/storeEval/labInput";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
@@ -190,7 +190,9 @@ async function loadLabData(): Promise<Loaded | null> {
   }
 
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode });
+  // 채점용 상품몫 — 기존점은 자기 세대 수준(개점 전후 9개월 안에 연 다른 매장 중앙), 후보지는 최신 규칙값(2026-09-25). labInput 주석.
+  const productUnitPriceByStore = productUnitPriceEraByStore(sales, storedStores);
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, productUnitPriceByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode });
   // 모델에서 빠진 매장(송도점·동탄북광장점 등) — 2026-09-18 사용자 요청으로 화면에만 띄운다.
   // ⚠️ `rows`와 절대 합치지 말 것. 합치면 축척과 계수가 가격전쟁·운영문제까지 배운다.
   // 2026-09-21 사용자 지시: *"검단사거리점은 아예 빼줘 표에서."*
@@ -202,7 +204,7 @@ async function loadLabData(): Promise<Loaded | null> {
     stores.filter((s) => (s.franchiseStatus ?? "").includes("폐점")).map((s) => s.storeCode),
   );
   const excludedRows = buildLabRows({
-    stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which: "excluded",
+    stores, compsByCode, utilByStore, productUnitPriceByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which: "excluded",
   }).filter((r) => !closedStoreCodes.has(r.input.storeCode));
 
   let current: Loaded["current"] = null;
@@ -1397,6 +1399,8 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                 <b>{productRule.value == null ? "-" : Math.round(productRule.value).toLocaleString()}원</b>이고 코드 상수는 {Math.round(p.productUnitPrice).toLocaleString()}원입니다
                 {productRule.value != null && Math.abs(p.productUnitPrice / productRule.value - 1) > 0.03 ? <b className="text-[var(--sl-warn,#b4530a)]"> — 3% 넘게 벌어졌습니다. 상수를 옮길 때입니다.</b> : <> (3% 안이면 그대로 둡니다).</>}
                 {" "}세는 매장: {productRule.stores.map((s) => `${s.storeName.replace(/점$/, "")} ${Math.round(s.unit).toLocaleString()}`).join(" · ")}.
+                {" "}⭐ <b>기존점 채점은 매장마다 자기 세대 값</b>을 씁니다(개점 전후 9개월 안에 연 다른 매장의 실측 중앙, 자기 제외 — 사용자 &ldquo;시점별로 적용&rdquo;, 2026-09-25).
+                2023년에 연 매장을 2026년 값으로 재면 20% 높게 보이기 때문입니다. 후보지만 위 규칙값을 씁니다. 기존점 40곳 매출 오차 14.8 → 12.2%, 세대별 편향 2023 +19.6 → +2.2%.
               </>
             ) : (
               <>⚠️ 지금은 그 값을 <b>표본 평균으로 매번 다시 맞추고</b> 있습니다 — 표본이 바뀌면 값도 바뀝니다.</>

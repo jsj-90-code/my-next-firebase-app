@@ -123,6 +123,38 @@ export function productUnitPriceByRule(
 }
 
 /**
+ * 기존점 **채점용** 상품몫 — 매장별로 "그 매장이 연 시점의 세대 수준"(2026-09-25, 사용자 "시점별로 적용").
+ *
+ * 값 = 개점 전후 ±halfSpan개월(기본 9 → 18개월 폭, 후보지 규칙과 같은 폭) 안에 연 **다른** 매장(자기 제외, 모델 제외 매장 제외)의
+ * 실측 상품단가 중앙. 3곳 미만이면 ±3개월씩 넓힌다(최대 ±18). 그래도 없으면 null(→ computeTextbook이 최신 규칙값을 쓴다).
+ * 자기를 빼는 이유: 자기 실측으로 자기를 맞히면 채점이 아니다. 후보지에는 안 쓴다 — 후보지는 `productUnitPriceByRule`(직전 18개월).
+ */
+export function productUnitPriceEraByStore(
+  sales: Array<{ storeCode: string; yearMonth: string; pcSales?: number | null; productSales?: number | null; utilizationRate?: number | null }>,
+  stores: Array<{ storeCode: string; openedAt: string | null; pcCount?: number | null; evaluationPcCount?: number | null; excludedFromModel?: boolean | null }>,
+  halfSpanMonths = 9,
+): Map<string, number> {
+  const ymIdx = (ym: string) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7));
+  const measured = stores
+    .filter((s) => s.openedAt && /^\d{4}-\d{2}/.test(s.openedAt))
+    .map((s) => { const r = productUnitPriceOfStore(sales, s); return r ? { code: s.storeCode, idx: ymIdx((s.openedAt as string).slice(0, 7)), unit: r.unit, excluded: s.excludedFromModel === true } : null; })
+    .filter((x): x is NonNullable<typeof x> => x != null);
+  const out = new Map<string, number>();
+  for (const me of measured) {
+    let span = halfSpanMonths, peers: number[] = [];
+    while (span <= 18) {
+      peers = measured.filter((o) => o.code !== me.code && !o.excluded && Math.abs(o.idx - me.idx) <= span).map((o) => o.unit);
+      if (peers.length >= 3) break;
+      span += 3;
+    }
+    if (peers.length < 3) continue;
+    const vs = [...peers].sort((a, b) => a - b);
+    out.set(me.code, vs.length % 2 ? vs[vs.length >> 1] : (vs[vs.length / 2 - 1] + vs[vs.length / 2]) / 2);
+  }
+  return out;
+}
+
+/**
  * 매장별 **실측 월평균 가동률**(0~1). 수요 축척을 여기에 맞춘다(2026-09-16).
  *
  * 게토에서 받은 값과 대조했을 때 평균차 3.34% · r=1.000으로 사실상 같은 값이라,
@@ -465,6 +497,11 @@ export type BuildLabRowsArgs = {
   compsByCode: Map<string, Competitor[]>;
   /** 매장코드 -> 실측 월평균 가동률(0~1). 수요 축척을 여기 맞춘다. */
   utilByStore: Map<string, number>;
+  /**
+   * 매장코드 -> 채점용 상품몫(자기 세대 수준, `productUnitPriceEraByStore`). 안 넘기면 전 매장이 최신 규칙값(params.productUnitPrice)을 쓴다.
+   * 화면은 넘긴다(2026-09-25). 가동률만 재는 하네스는 안 넘겨도 성적이 같다(단가층은 가동률 밖).
+   */
+  productUnitPriceByStore?: Map<string, number>;
   settings: ModelSettings;
   /**
    * `existing:<매장코드>` -> 로드뷰 판정. 없으면 그 매장의 4·5번은 null로 남는다 —
@@ -593,7 +630,7 @@ export function residentRadiusByCodeFromDocs(docs: LabResidentRadiusDoc[]): Map<
   return out;
 }
 
-export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
+export function buildLabRows({ stores, compsByCode, utilByStore, productUnitPriceByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which = "included" }: BuildLabRowsArgs): LabRow[] {
   // QSC를 쓸 때만 계산한다. 가맹점 평균은 **환산한 뒤**의 평균이다 — 점수를 먼저 평균 내고
   // 환산하면 다른 값이 나온다(환산이 1~5로 잘리는 구간이 있어서).
   const qscAvg = qscByStoreCode?.size
@@ -619,6 +656,8 @@ export function buildLabRows({ stores, compsByCode, utilByStore, settings, roadv
         pcCount: s.evaluationPcCount ?? s.pcCount,
         hourlyRate: s.hourlyRate,
         actualUtilization: utilByStore.get(s.storeCode) ?? null,
+        // 채점용 상품몫 — 자기 세대 수준(2026-09-25). 없으면 computeTextbook이 최신 규칙값을 쓴다.
+        productUnitPriceOverride: productUnitPriceByStore?.get(s.storeCode) ?? null,
         // 특수수요는 이제 **수요 산식 안에서** 배수로 쓴다(2026-09-16). 입지 보정이 아니다.
         specialDemandType: s.specialDemandType ?? null,
         // 강도 문(2026-09-24 밤) — 유형과 **같은 문서**(기존점 문서)에서 읽는다. 입지평가 문서와 갈리면 유형 쪽을 따른다.

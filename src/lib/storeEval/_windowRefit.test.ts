@@ -21,7 +21,7 @@
 
 import { describe, expect, it } from "vitest";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
-import { LAB_UPSIDE_STORE_CODES, buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, qscInWindowAverage, residentRadiusByCodeFromDocs, utilizationByStore, utilizationWindowMonths, type QscRecord } from "./labInput";
+import { LAB_UPSIDE_STORE_CODES, buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, productUnitPriceOfStore, qscInWindowAverage, residentRadiusByCodeFromDocs, utilizationByStore, utilizationWindowMonths, type QscRecord } from "./labInput";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
@@ -168,6 +168,30 @@ describeIf("가동률 창 2~12개월차 — 실측 유래 값 재측정 + 재고
     };
     console.log(`\n[매출 환산 — 예측 가동률 × PC × 720 × (PC몫 + 상품몫) vs 실매출] 가동률 오차가 섞여 있다(단가층만 보려면 _unitPriceLayer)`);
     line("상품몫 1,493", 1493); line("상품몫 1,471", 1471); line("상품몫 1,721(규칙)", 1721);
+    // 사용자(2026-09-25): "개점 당시 12개월이니까 시점별로 적용하는 건 어떤데" — 기존점은 자기 세대 수준으로, 후보지는 최신 규칙값으로.
+    // 세대 수준 = 같은 개점 연도 매장의 실측 중앙, **자기 자신은 뺀다**(LOO — 자기 값으로 자기를 맞히지 않게). 그 해에 자기 말고 3곳 미만이면 앞뒤 해까지.
+    const unitOf = new Map<string, number>();
+    for (const s of snap.existingStores as { storeCode: string; openedAt: string | null; pcCount?: number | null; evaluationPcCount?: number | null; excludedFromModel?: boolean | null }[]) {
+      if (s.excludedFromModel) continue; const r = productUnitPriceOfStore((snap.sales ?? []) as Sale[], s); if (r) unitOf.set(s.storeCode, r.unit);
+    }
+    const cohortValue = (code: string): number => {
+      const yr = Number(yearOf.get(code));
+      for (const span of [0, 1, 2]) {
+        const peers = [...unitOf].filter(([c]) => c !== code && Math.abs(Number(yearOf.get(c)) - yr) <= span).map(([, v]) => v);
+        if (peers.length >= 3) return median(peers);
+      }
+      return 1721;
+    };
+    {
+      const errs = withRev.map((r) => ({ yr: yearOf.get(r.input.storeCode) ?? "?", c: cohortValue(r.input.storeCode), e: (computeTextbook(r.input, { ...P, productUnitPrice: cohortValue(r.input.storeCode) }).monthlyRevenue ?? NaN) / r.actualRevenue - 1 })).filter((x) => Number.isFinite(x.e));
+      const byY = new Map<string, number[]>(); for (const x of errs) byY.set(x.yr, [...(byY.get(x.yr) ?? []), x.e]);
+      const recent = errs.filter((x) => x.yr >= "2025").map((x) => x.e);
+      const cv = new Map<string, number[]>(); for (const x of errs) cv.set(x.yr, [...(cv.get(x.yr) ?? []), x.c]);
+      console.log(`  ${pad("세대별(자기 제외 중앙)", 14)} 전체 ${errs.length}곳 MAPE ${(100 * mean(errs.map((x) => Math.abs(x.e)))).toFixed(1)}% · 편향 ${pp(mean(errs.map((x) => x.e)))}% | 세대별 편향 ` +
+        [...byY].sort().map(([y, v]) => `${y} ${pp(mean(v))}%(${v.length})`).join(" · ") +
+        ` | 2025~26 ${recent.length}곳 MAPE ${(100 * mean(recent.map(Math.abs))).toFixed(1)}% · 편향 ${pp(mean(recent))}%`);
+      console.log(`     세대별 적용값 중앙: ` + [...cv].sort().map(([y, v]) => `${y} ${won(median(v))}`).join(" · ") + ` · 후보지는 최신 규칙값 1,721`);
+    }
     console.log(`  ⭐ 읽는 법 — 규칙 상수는 "새로 여는 매장"을 겨냥한 값이라 2023~24 세대 기존점은 높게 나오는 게 맞다. 기존점 전체 MAPE로 이 상수를 고르면 다시 전 세대 평균으로 돌아간다(되짚기 편향 −11%).`);
     expect(withRev.length).toBeGreaterThan(30);
   });

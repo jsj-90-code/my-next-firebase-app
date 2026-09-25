@@ -2,7 +2,7 @@
 // 스냅샷이 있으면 상수 vs 규칙값 3% 관문을 돌린다. 빨강이면 "상수를 옮길 때"라는 뜻이지 버그가 아니다 — labInput PRODUCT_UNIT_PRICE_RULE 주석.
 
 import { describe, expect, it } from "vitest";
-import { PRODUCT_UNIT_PRICE_RULE, productUnitPriceByRule, productUnitPriceOfStore } from "./labInput";
+import { PRODUCT_UNIT_PRICE_RULE, productUnitPriceByRule, productUnitPriceEraByStore, productUnitPriceOfStore } from "./labInput";
 import { DEFAULT_TEXTBOOK_PARAMS } from "./textbookModel";
 import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
 
@@ -54,6 +54,31 @@ describe("상품몫 규칙 — 산수", () => {
     const a = fakeStore("a", "2025-06-01", 1500, 6), b = fakeStore("b", "2025-07-01", 9000, 6);
     const r = productUnitPriceByRule([...a.sales, ...b.sales], [a.store, { ...b.store, excludedFromModel: true }], { ...PRODUCT_UNIT_PRICE_RULE, minStores: 1 });
     expect(r.value).toBe(1500);
+  });
+});
+
+describe("기존점 채점용 상품몫 — 자기 세대 수준(개점 전후 9개월, 자기 제외)", () => {
+  const stores = [
+    fakeStore("a", "2023-03-01", 1200, 12), fakeStore("b", "2023-05-01", 1250, 12), fakeStore("c", "2023-08-01", 1300, 12), fakeStore("d", "2023-10-01", 1350, 12),
+    fakeStore("e", "2025-06-01", 1700, 6), fakeStore("f", "2025-08-01", 1650, 6), fakeStore("g", "2025-09-01", 1800, 6), fakeStore("h", "2025-12-01", 1750, 6),
+  ];
+  const sales = stores.flatMap((s) => s.sales);
+  it("같은 세대(±9개월) 다른 매장의 중앙이고 자기 값은 안 들어간다", () => {
+    const era = productUnitPriceEraByStore(sales, stores.map((s) => s.store));
+    expect(era.get("a")).toBe(1300); // b·c·d = 1250·1300·1350
+    expect(era.get("g")).toBe(1700); // e·f·h = 1700·1650·1750 → 1700
+    expect(era.get("e")).toBe(1750); // f·g·h = 1650·1800·1750 → 1750  (2023 세대는 안 섞임)
+  });
+  it("±9개월 안에 3곳이 안 되면 ±3개월씩 넓히고, 끝까지 없으면 값을 안 준다(→ 최신 규칙값)", () => {
+    const lone = [fakeStore("x", "2024-06-01", 1500, 6), fakeStore("y", "2024-08-01", 1550, 6), fakeStore("z", "2025-06-01", 1700, 6), fakeStore("w", "2026-01-01", 1800, 6)];
+    const era = productUnitPriceEraByStore(lone.flatMap((s) => s.sales), lone.map((s) => s.store));
+    expect(era.get("z")).toBe(1550); // ±9: y,w? y=2024-08(10개월 전) 밖, w=2026-01(7개월 뒤) 안 → 1곳 → ±12: y 포함 2곳 → ±15: 2곳 → ±18: x 포함 3곳 → 1500·1550·1800 → 1550
+    expect(era.has("w")).toBe(false); // ±18 안에 z(7개월)·y(17개월) 2곳뿐
+  });
+  it("모델 제외 매장은 남의 세대 값을 만드는 데 안 쓰인다", () => {
+    const era = productUnitPriceEraByStore(sales, stores.map((s) => s.store.storeCode === "g" ? { ...s.store, excludedFromModel: true } : s.store));
+    expect(era.has("e")).toBe(false); // e의 또래는 f·h 2곳뿐(g 제외, 2023 세대는 ±18개월 밖) → 값 없음 → 최신 규칙값
+    expect(era.get("g")).toBe(1700); // 제외 매장 자신은 참고용으로 값을 받는다(e·f·h = 1700·1650·1750)
   });
 });
 
