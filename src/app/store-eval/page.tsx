@@ -291,7 +291,7 @@ export default function StoreEvalDashboardPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={formatWon(result?.v62Final)}>{formatManwonRough(result?.v62Final)}</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={formatWon(result?.v62Final)}>{formatManwonRough(result?.v62Final)}{result?.dualEstimate?.lab != null && <span className={`block text-xs ${result.dualEstimate.primary === "실험실" || (result.dualEstimate.ratio != null && (result.dualEstimate.ratio > 1.2 || result.dualEstimate.ratio < 1 / 1.2)) ? "text-amber-700 dark:text-amber-400" : "text-[var(--sl-ink-soft)]"}`} title={result.dualEstimate.reason}>실험실 {formatManwonRough(result.dualEstimate.lab)}{result.dualEstimate.primary === "실험실" ? " · 주 값" : ""}</span>}</td>
                       <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={formatWon(result?.conservativeSales)}>{formatManwonRough(result?.conservativeSales)}</td>
                       <td className="px-4 py-3">
                         <JudgementBadge result={result} />

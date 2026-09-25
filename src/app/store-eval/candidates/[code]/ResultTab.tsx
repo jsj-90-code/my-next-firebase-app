@@ -27,6 +27,9 @@ import {
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
+import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments } from "@/lib/storeEval/store";
+import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
+import { chooseEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange, type DualEstimate } from "@/lib/storeEval/dualEstimate";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
@@ -64,6 +67,28 @@ function judgementKind(j: FinalJudgement | null): "계산 상태" | "사업 판�
  * 검증을 다시 돌리면 Firestore 읽기가 800건쯤 더 들기 때문이다. 그래서 "언제 기준"인지도 함께
  * 보여준다(검증화면을 연 시점에 갱신된다).
  */
+/**
+ * 두 산식 나란히(2026-09-25, 사용자 "신규후보지 조회할 때 두 산식 값이 같이 떠서 참고할 수 있게").
+ * 위의 최종예상월매출은 그대로 V62 값이고, 여기는 실험실(구조식) 값과 규칙이 고른 주 값·이유·폭을 보여준다. 규칙: lib/storeEval/dualEstimate.ts 머리 주석.
+ */
+function DualEstimatePanel({ dual }: { dual: DualEstimate | null }) {
+  if (!dual) return <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">두 산식 비교는 [다시 계산] 뒤에 나타납니다.</p>;
+  const warn = dual.primary === "실험실" || (dual.ratio != null && (dual.ratio > 1.2 || dual.ratio < 1 / 1.2));
+  return (
+    <section className={`mt-4 rounded-xl px-4 py-3 text-sm ${warn ? "app-notice app-badge-warn" : "app-card-sm"}`} aria-label="두 산식 비교">
+      <h3 className="text-sm font-semibold">두 산식 비교 — 참고용</h3>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div><div className="text-xs text-[var(--sl-ink-soft)]">운영 V62(회귀)</div><div className="text-base font-semibold tabular-nums">{formatManwonRough(dual.v62)}</div></div>
+        <div><div className="text-xs text-[var(--sl-ink-soft)]">실험실(수요·점유율 구조식)</div><div className="text-base font-semibold tabular-nums">{formatManwonRough(dual.lab)}</div></div>
+        <div><div className="text-xs text-[var(--sl-ink-soft)]">규칙이 고른 주 값 · 폭</div><div className="text-base font-semibold tabular-nums">{dual.primary} {formatManwonRough(dual.primaryValue)}</div><div className="text-xs tabular-nums text-[var(--sl-ink-soft)]">{formatManwonRough(dual.low)} ~ {formatManwonRough(dual.high)}{dual.ratio != null ? ` · V62÷실험실 ${dual.ratio.toFixed(2)}배` : ""}</div></div>
+      </div>
+      <p className="mt-2 text-xs leading-5">{dual.reason}</p>
+      <p className="mt-1 text-xs leading-5">{dual.inputGaps == null ? null : dual.inputGaps.length ? <>⚠ 빈 입력(그 산식은 기본값·가정으로 계산): <b>{dual.inputGaps.join(" · ")}</b></> : "입력 호환성: 두 산식이 쓰는 입력이 모두 채워져 있습니다."}</p>
+      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">V62는 평균적으로 더 맞지만(기존점 9.5% · 신규 매장 되짚기 8.7%) 기존점에 없던 입력에서는 직선을 늘립니다. 실험실은 경쟁 밀집 동네에서 수요를 적게 봅니다. 그래서 평균 내지 않고 규칙으로 고릅니다 — 범위 밖이면 실험실, 경쟁 밀집이면 V62, 20% 넘게 갈리면 현장 확인.{dual.rangeSampleCount ? ` 범위 기준: 모델 포함 기존점 ${dual.rangeSampleCount}곳.` : ""}</p>
+    </section>
+  );
+}
+
 function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySummary | null; v62Final: number | null }) {
   if (!accuracy || accuracy.sampleCount === 0) {
     return (
@@ -771,6 +796,17 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       setPeerStores(existingStores);
 
       const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales, trainingQscScores });
+      // 2026-09-25 — 두 산식을 같이 낸다(dualEstimate.ts). 실험실 전용 사실(고리·막힌 방향·반경·로드뷰)은 실험실 컬렉션에서, 못 읽으면 없이 계산.
+      try {
+        const [rings, blocked, radius, roadview] = await Promise.all([listLabResidentRings(), listLabTradeAreaJudgments(), listLabResidentRadius(), listLabRoadviewJudgments()]).catch(() => [undefined, undefined, undefined, undefined] as const);
+        const prepared = prepareExistingStoresForEvaluation(existingStores, trainingCompetitors, trainingLocationEvaluations, settings);
+        const lab = labCandidateRevenue({ candidate, preparedStores: prepared, rawStores: existingStores, competitors: trainingCompetitors, locations: trainingLocationEvaluations, sales: trainingSales, settings, qscByStoreCode: trainingQscScores,
+          extras: { residentRingsByCode: rings ?? undefined, ringBlockedByCode: blocked ?? undefined, residentRadiusByCode: radius ?? undefined, roadviewByKey: roadview ?? undefined } });
+        const range = v62TrainingRange(prepared);
+        evaluated.dualEstimate = chooseEstimate(evaluated.v62Final, lab, range ? rangeFlagsFor(evaluated, range) : [], evaluated.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, trainingCompetitors));
+      } catch {
+        evaluated.dualEstimate = null; // 실험실 값이 안 나와도 V62 결과는 저장한다
+      }
       // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
       // 들어오더라도 새 결과가 항상 마지막에 저장되어 Firestore 최종값이 뒤집히지 않는다.
       const saveTask = saveQueue.current
@@ -1066,6 +1102,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         {/* 2026-09-10 — 이 화면은 예상매출을 숫자 하나로만 보여줘서, 이 모형이 실제로 얼마나
             맞는지 알 수 없었다. 검증화면이 남겨둔 요약 1건을 읽어 함께 보여준다(계산을 다시
             돌리지 않으므로 Firestore 읽기는 1건뿐이다). 요약이 아직 없으면 안내만 띄운다. */}
+        <DualEstimatePanel dual={result.dualEstimate ?? null} />
         <ModelAccuracyNote accuracy={accuracy} v62Final={result.v62Final} />
         <PeerPositionNote stores={peerStores} result={result} expectedPcCount={candidateForReport?.expectedPcCount ?? result.expectedPcCount} />
         <RevenueDriverBreakdown drivers={result.revenueBreakdown?.usageDrivers} />

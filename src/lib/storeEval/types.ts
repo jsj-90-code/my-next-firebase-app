@@ -660,6 +660,8 @@ export type EvaluationResult = {
   capacityCapped: boolean; // true면 가동률 상한에 걸려 v62Final이 깎였다는 뜻
   // 2026-09-23 신설 — 상권수요 천장(calc.ts applyDemandCeiling). settings.demandCeilingHoursPerUser가 null이면 항상 false.
   demandCapped: boolean; // true면 상권 인원이 이 대수를 채울 수 없어 v62Final이 깎였다는 뜻
+  /** 2026-09-25 — 두 산식(V62·실험실 구조식) 값과 규칙이 고른 주 값·이유(dualEstimate.ts). 옛 결과엔 없다. v62Final은 그대로 V62 값. */
+  dualEstimate?: import("./dualEstimate").DualEstimate | null;
   demandCeilingHours: number | null; // 천장이 허용한 월 PC 이용시간(자사수요 × 1인당 시간). 꺼져 있으면 null
   v62FinalBeforeDemandCap: number | null; // 천장 적용 전 값(가동률 상한은 이미 적용된 상태)
   competitorOverflowRevenueBonus: number; // 경쟁점이 자기 상한을 넘겨 못 받은 수요를 자사로 재배분한 매출(0이면 해당 없음)

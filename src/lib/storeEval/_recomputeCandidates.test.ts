@@ -15,6 +15,10 @@ import { qscInWindowAverage, type QscRecord } from "./labInput";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { evaluateCandidate } from "./evaluate";
 import { mergeModelSettings } from "./settings";
+import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
+import { chooseEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange } from "./dualEstimate";
+import { residentRadiusByCodeFromDocs } from "./labInput";
+import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation } from "./types";
 
 const describeIf = hasValidationSnapshot() ? describe : describe.skip;
@@ -47,12 +51,22 @@ describeIf("후보지 결과 재계산", () => {
     for (const d of (snap.labQscScores ?? []) as { storeCode?: string; openedAt?: string; records?: QscRecord[] }[]) { if (!d.storeCode) continue; const a = qscInWindowAverage(d.records ?? [], d.openedAt ?? null); if (a != null && a > 0) qsc.set(d.storeCode, a); }
     const locs = snap.locationEvaluations as LocationEvaluation[];
     const results = (snap.results ?? []) as EvaluationResult[];
+    // 두 산식(dualEstimate.ts) — 결과 탭과 같은 계산. 실험실 전용 사실은 스냅샷의 실험실 컬렉션에서.
+    const ringDocs = (snap.labResidentRings ?? []) as LabResidentRingsDoc[];
+    const blocked = new Map<string, number>();
+    for (const j of (snap.labTradeAreaJudgments ?? []) as { code?: string; ringCutCount?: number | null; blockedCount?: number | null }[]) { const c = j.ringCutCount ?? j.blockedCount; if (j.code && typeof c === "number") blocked.set(String(j.code), c); }
+    const extras = { residentRingsByCode: ringDocs.length ? residentRingsByCodeFromDocs(ringDocs) : undefined, ringBlockedByCode: blocked, residentRadiusByCode: residentRadiusByCodeFromDocs(snap.labResidentRadius ?? []) };
+    const prepared = prepareExistingStoresForEvaluation(existingStores, allCompetitors, locs, settings);
+    const range = v62TrainingRange(prepared);
+    const FORCE = process.env.RECOMPUTE_FORCE === "1";
     const out: { code: string; name: string; stored: number | null; now: number | null; diff: number | null; rateOff: boolean; result: EvaluationResult }[] = [];
     for (const candidate of (snap.candidates ?? []) as CandidateInput[]) {
       const result = evaluateCandidate({
         candidate, competitors: allCompetitors.filter((c) => c.candidateCode === candidate.code), locationEvaluation: locs.find((l) => l.candidateCode === candidate.code) ?? null,
         settings, existingStores, trainingLocationEvaluations: locs, trainingCompetitors: allCompetitors, trainingSales: sales, trainingQscScores: qsc,
       });
+      const lab = labCandidateRevenue({ candidate, preparedStores: prepared, rawStores: existingStores, competitors: allCompetitors, locations: locs, sales: snap.sales, settings, qscByStoreCode: qsc, extras });
+      result.dualEstimate = chooseEstimate(result.v62Final, lab, range ? rangeFlagsFor(result, range) : [], result.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locs.find((l) => l.candidateCode === candidate.code) ?? null, allCompetitors));
       const stored = results.find((r) => r.candidateCode === candidate.code) ?? null;
       const s = stored?.v62Final ?? null, n = result.v62Final ?? null;
       const rate = (r: EvaluationResult | null) => (r?.revenueBreakdown && r.revenueBreakdown.pcHours > 0 ? r.revenueBreakdown.pcRevenue / r.revenueBreakdown.pcHours : null);
@@ -61,8 +75,8 @@ describeIf("후보지 결과 재계산", () => {
     }
     const won = (v: number | null) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
     console.log(`\n[후보지 ${out.length}곳] 저장값 → 지금 계산 (V62 최종 월매출)`);
-    for (const r of out) console.log(`  ${r.code} ${r.name.padEnd(8)} ${won(r.stored).padStart(12)} → ${won(r.now).padStart(12)}  ${r.diff == null ? "(저장값 없음)" : `${r.diff >= 0 ? "+" : ""}${(r.diff * 100).toFixed(2)}%`}${r.rateOff ? " · 실효단가 다름" : ""}`);
-    const stale = out.filter((r) => r.stored == null || (r.diff != null && Math.abs(r.diff) > 0.005) || r.rateOff);
+    for (const r of out) console.log(`  ${r.code} ${r.name.padEnd(8)} ${won(r.stored).padStart(12)} → ${won(r.now).padStart(12)}  ${r.diff == null ? "(저장값 없음)" : `${r.diff >= 0 ? "+" : ""}${(r.diff * 100).toFixed(2)}%`}${r.rateOff ? " · 실효단가 다름" : ""} | 실험실 ${won(r.result.dualEstimate?.lab ?? null)} · 주 값 ${r.result.dualEstimate?.primary} ${won(r.result.dualEstimate?.primaryValue ?? null)} — ${r.result.dualEstimate?.reason.slice(0, 50)}`);
+    const stale = out.filter((r) => FORCE || r.stored == null || (r.diff != null && Math.abs(r.diff) > 0.005) || r.rateOff);
     console.log(`  재계산 필요 ${stale.length}곳: ${stale.map((r) => r.name).join(" · ") || "없음"}`);
     if (APPLY && stale.length) {
       const db = adminDb();
