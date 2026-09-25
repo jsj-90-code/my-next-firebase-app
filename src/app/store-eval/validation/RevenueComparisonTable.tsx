@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import type { ValidationStoreRow } from "@/lib/storeEval/calc";
 import { formatPercent, formatWon } from "@/lib/storeEval/format";
 
@@ -25,38 +25,40 @@ export function RevenueComparisonTable({ rows }: { rows: ValidationStoreRow[] })
       현재월은 제외합니다. 오차는 (예측−실제)÷실제이며 +는 과대, −는 과소 예측입니다.
     </p>
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[850px] text-right text-sm tabular-nums">
+      {/* 2026-09-25 사용자 요청 — 매장당 두 줄(PC/상품)을 한 줄로. PC·상품을 열 묶음으로 나란히 둔다. */}
+      <table className="w-full min-w-[980px] text-right text-sm tabular-nums">
         <caption className="sr-only">매장별 PC·상품 예측·실제 월평균과 상품 비중</caption>
         <thead className="app-card-sm text-xs text-[var(--sl-ink-soft)]">
-          <tr>{["매장", "구분", "예측액", "실제액", "오차율", "예측 상품 비중", "실제 상품 비중"].map(label => <th scope="col" key={label} className="whitespace-nowrap px-3 py-2">{label}</th>)}</tr>
+          <tr>
+            <th scope="col" rowSpan={2} className="whitespace-nowrap px-3 py-2 text-left">매장</th>
+            <th scope="colgroup" colSpan={3} className="whitespace-nowrap border-l border-[#171310]/10 px-3 pt-2 text-center dark:border-white/10">PC</th>
+            <th scope="colgroup" colSpan={3} className="whitespace-nowrap border-l border-[#171310]/10 px-3 pt-2 text-center dark:border-white/10">상품</th>
+            <th scope="colgroup" colSpan={2} className="whitespace-nowrap border-l border-[#171310]/10 px-3 pt-2 text-center dark:border-white/10">상품 비중</th>
+          </tr>
+          <tr>{["예측", "실제", "오차", "예측", "실제", "오차", "예측", "실제"].map((label, i) => <th scope="col" key={i} className={`whitespace-nowrap px-3 pb-2 ${i % 3 === 0 && i < 7 ? "border-l border-[#171310]/10 dark:border-white/10" : ""}`}>{label}</th>)}</tr>
         </thead>
         <tbody>
           {visible.map(row => {
             const predicted = row.revenueBreakdown;
             const actual = row.actualRevenueBreakdown;
             const actualTotal = actual ? actual.pcRevenueAvg + actual.productRevenueAvg : 0;
-            return <Fragment key={row.storeCode}>
-              <tr className="border-t border-[#171310]/10 dark:border-white/10">
-                <th scope="rowgroup" rowSpan={2} className="px-3 py-3 text-left font-medium">
-                  <Link href={`/store-eval/existing-stores/${row.storeCode}?tab=sales`} className="underline">{row.storeName}</Link>
-                  {!row.includedInCoreAccuracy && <span className="block text-xs font-normal text-[var(--sl-ink-soft)]">참고용 · {row.exclusionReason ?? "검증 제외"}</span>}
-                </th>
-                <th scope="row" className="px-3 py-2 font-normal">PC</th>
-                <td className="px-3 py-2">{formatWon(predicted?.pcRevenue)}</td>
-                <td className="px-3 py-2">{formatWon(actual?.pcRevenueAvg)}</td>
-                <td className="px-3 py-2">{errorPercent(predicted?.pcRevenue, actual?.pcRevenueAvg)}</td>
-                <td rowSpan={2} className="px-3 py-2 font-medium">{formatPercent(predicted && predicted.monthlyRevenue > 0 ? predicted.productRevenue / predicted.monthlyRevenue : null)}</td>
-                <td rowSpan={2} className="px-3 py-2">{formatPercent(actual && actualTotal > 0 ? actual.productRevenueAvg / actualTotal : null)}</td>
-              </tr>
-              <tr>
-                <th scope="row" className="px-3 py-2 font-normal">상품</th>
-                <td className="px-3 py-2 font-semibold">{formatWon(predicted?.productRevenue)}</td>
-                <td className="px-3 py-2">{formatWon(actual?.productRevenueAvg)}</td>
-                <td className="px-3 py-2">{errorPercent(predicted?.productRevenue, actual?.productRevenueAvg)}</td>
-              </tr>
-            </Fragment>;
+            const sep = "border-l border-[#171310]/10 dark:border-white/10";
+            return <tr key={row.storeCode} className="border-t border-[#171310]/10 dark:border-white/10">
+              <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-medium">
+                <Link href={`/store-eval/existing-stores/${row.storeCode}?tab=sales`} className="underline">{row.storeName}</Link>
+                {!row.includedInCoreAccuracy && <span className="ml-1.5 text-xs font-normal text-[var(--sl-ink-soft)]" title={row.exclusionReason ?? "검증 제외"}>참고용</span>}
+              </th>
+              <td className={`whitespace-nowrap px-3 py-2 ${sep}`}>{formatWon(predicted?.pcRevenue)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{formatWon(actual?.pcRevenueAvg)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{errorPercent(predicted?.pcRevenue, actual?.pcRevenueAvg)}</td>
+              <td className={`whitespace-nowrap px-3 py-2 font-semibold ${sep}`}>{formatWon(predicted?.productRevenue)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{formatWon(actual?.productRevenueAvg)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{errorPercent(predicted?.productRevenue, actual?.productRevenueAvg)}</td>
+              <td className={`whitespace-nowrap px-3 py-2 font-medium ${sep}`}>{formatPercent(predicted && predicted.monthlyRevenue > 0 ? predicted.productRevenue / predicted.monthlyRevenue : null)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{formatPercent(actual && actualTotal > 0 ? actual.productRevenueAvg / actualTotal : null)}</td>
+            </tr>;
           })}
-          {!visible.length && <tr><td colSpan={7} className="py-6 text-center">일치하는 매장이 없습니다.</td></tr>}
+          {!visible.length && <tr><td colSpan={9} className="py-6 text-center">일치하는 매장이 없습니다.</td></tr>}
         </tbody>
       </table>
     </div>

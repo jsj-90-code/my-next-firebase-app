@@ -267,7 +267,7 @@ function BreakdownCard({ title, rows, labels }: { title: string; rows: { key: st
 function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
-      <table className="w-full min-w-[1600px] text-sm">
+      <table className="w-full min-w-[1600px] text-sm [&_th]:whitespace-nowrap">
         <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
           <tr>
             <th scope="col" className="px-3 py-2">점포명</th>
@@ -290,7 +290,7 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
         <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
           {rows.map((r) => (
             <tr key={r.storeCode} className="text-[#171310] dark:text-[#f2ede2]">
-              <td className="px-3 py-2 font-medium">{r.storeName}</td>
+              <td className="whitespace-nowrap px-3 py-2 font-medium">{r.storeName}</td>
               <td className="px-3 py-2">{r.brand ?? "확인필요"}</td>
               <td className="px-3 py-2">{r.completedMonths}개월</td>
               <td className="px-3 py-2">{OPERATIONAL_STATUS_LABELS[r.operationalStatus]}</td>
