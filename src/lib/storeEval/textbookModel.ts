@@ -1184,6 +1184,13 @@ export type TextbookInput = {
   pcCount: number | null;
   hourlyRate: number | null;
   /**
+   * 유료게임 과금(원/시간) — 라이선스 게임을 켜면 정액권 위에 시간당 더 차감된다. **정가에 더해서** PC몫을 만든다(2026-09-25 저녁, 사용자).
+   * 원장 실측: 발산역 101원/h·전표 88%(과금표 100) · 문산 264·90%(300) → 게임 켜면 거의 전원이 내므로
+   * 기본요금에 얹힌 것과 같다(`_ledgerSurcharge.test.ts`). 값은 전사 유료게임차감 표(data/tariffTables.json surcharges)에서 온다 — 계수가 아니라 자료.
+   * 좌석 과금(특정 좌석만)은 자료가 구체화되지 않아 안 넣는다(사용자 지시). 후보지는 모르면 null(0) — 화면에 표시.
+   */
+  paidGameSurcharge?: number | null;
+  /**
    * 이 매장에만 쓸 상품몫(원/PC·시간). 없으면 `params.productUnitPrice`(최신 규칙값 — 새로 여는 매장 기준).
    *
    * 2026-09-25 사용자: *"개점 당시 12개월이니까 시점별로 적용하는 건 어떤데. 객단가랑 연결돼 있는 건데."*
@@ -1660,7 +1667,8 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   //
   // 2026-09-16 저녁(3) 이전에는 총단가 전체에 정가를 곱했다. 그러면 정가를 80% 올릴 때
   // 총단가가 38% 오르는데, 상품매출은 안 오르므로 과하다(덧셈 구조에서는 17%).
-  const rate = input.hourlyRate;
+  // 정가 + 유료게임 과금(자료, 타입 주석). 과금이 null이면 0 — 후보지는 대개 모른다.
+  const rate = input.hourlyRate == null ? null : input.hourlyRate + (input.paidGameSurcharge ?? 0);
   const ref = p.referenceHourlyRate;
   if (rate == null) missing.push("시간당 요금");
   // 요금을 모르면 기준정가(표본 중앙)인 매장으로 가정한다. 화면에 "자료없음"으로 표시된다.

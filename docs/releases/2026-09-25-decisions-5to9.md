@@ -61,3 +61,20 @@ storedAccuracyParity 3건 빨강은 06:00 크론이 저장값을 9.39 근처로 
 - `scripts/fixHourlyRate20260925.mjs` · `scripts/revertLabResidentRadius20260925.mjs` · `scripts/writeLabResidentRadius.mjs`(문경 줄 제거)
 - `src/lib/storeEval/calc.ts`(isBackingDemandMarket 강도 인자, 학습 입력 타입·빌더) · `evaluate.ts` · `calc.test.ts`
 - `docs/special-demand-guide.md` §4 갱신
+
+## 밤 — 유료게임 과금을 정가에 더했다 (사용자 "유료과금 추가 적용 — 게임 켜면 거의 전원, 좌석과금은 빼고")
+
+PC몫 = 1,343 × ((정가 + 유료게임 과금) ÷ 1,343)^0.546. 과금은 전사 유료게임차감 표(`data/tariffTables.json` surcharges) — 계수가 아니라 자료.
+`TextbookInput.paidGameSurcharge` · labInput `paidGameSurchargeByStoreFromTariff` · `buildLabRows` 인자 · 화면 산식 설명. 좌석 과금은 자료가 구체화 안 돼 제외(사용자). 후보지는 칸이 없어 0.
+
+원장 확인(`_ledgerSurcharge.test.ts`, "유료금액" 열): 발산역 101원/h·전표 88%(표 100) · 문산 264원/h·90%(표 300) → 게임 켜면 거의 전원이 낸다는 사용자 말과 같다.
+⚠️ 청주터미널은 원장 유료금액 269원/h·88%가 찍혀 있어 처음 300으로 정정했으나 **사용자 확인 "유료게임 과금 없음" → 0으로 되돌림**(원장 수치는 JSON paidGameNote에 미확인 기록).
+
+과금 있는 8곳(전대후문·전대상대·장산·진주혁신·발산역·야탑 +100 · 광주각화 +200 · 문산 +300):
+
+| | 과금 없이 | 과금 더해 |
+|---|---|---|
+| 8곳 PC몫 \|오차\| · 편향 | 6.4% · −3.8% | 6.3% · **+1.1%** |
+| 38곳 PC몫 \|오차\| · ±10% 안 | 9.4% · 22/38 | 9.4% · 23/38 |
+| 기존점 매출 MAPE · 편향 | 13.3% · −2.9% | **12.9% · −2.5%** |
+| 가동률 성적(전체 · 이해 · ±5%p) | 4.09 · 3.41 · 30/40 | 그대로 |

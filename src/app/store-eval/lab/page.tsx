@@ -58,7 +58,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 import {
   LAB_UPSIDE_STORE_CODES,
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
-  utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, productUnitPriceEraByStore, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
+  utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, productUnitPriceEraByStore, paidGameSurchargeByStoreFromTariff, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
 } from "@/lib/storeEval/labInput";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
@@ -192,7 +192,9 @@ async function loadLabData(): Promise<Loaded | null> {
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
   // 채점용 상품몫 — 기존점은 자기 세대 수준(개점 전후 9개월 안에 연 다른 매장 중앙), 후보지는 최신 규칙값(2026-09-25). labInput 주석.
   const productUnitPriceByStore = productUnitPriceEraByStore(sales, storedStores);
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, productUnitPriceByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode });
+  // 유료게임 과금 — 전사 표(tariffTables.json)에서, 정가에 더해 PC몫(2026-09-25 저녁). 좌석 과금은 제외(사용자).
+  const paidGameSurchargeByStore = paidGameSurchargeByStoreFromTariff();
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, productUnitPriceByStore, paidGameSurchargeByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode });
   // 모델에서 빠진 매장(송도점·동탄북광장점 등) — 2026-09-18 사용자 요청으로 화면에만 띄운다.
   // ⚠️ `rows`와 절대 합치지 말 것. 합치면 축척과 계수가 가격전쟁·운영문제까지 배운다.
   // 2026-09-21 사용자 지시: *"검단사거리점은 아예 빼줘 표에서."*
@@ -204,7 +206,7 @@ async function loadLabData(): Promise<Loaded | null> {
     stores.filter((s) => (s.franchiseStatus ?? "").includes("폐점")).map((s) => s.storeCode),
   );
   const excludedRows = buildLabRows({
-    stores, compsByCode, utilByStore, productUnitPriceByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which: "excluded",
+    stores, compsByCode, utilByStore, productUnitPriceByStore, paidGameSurchargeByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which: "excluded",
   }).filter((r) => !closedStoreCodes.has(r.input.storeCode));
 
   let current: Loaded["current"] = null;
@@ -1353,8 +1355,14 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             PC 1대·1시간당 매출 = <b>PC몫</b> + <b>상품몫</b>
           </div>
           <div className="mt-1 font-mono text-[11px]">
-            PC몫   = {p.referenceHourlyRate}원 × (정가 ÷ {p.referenceHourlyRate})<sup>{p.rateElasticity}</sup>
+            PC몫   = {p.referenceHourlyRate}원 × ((정가 + 유료게임 과금) ÷ {p.referenceHourlyRate})<sup>{p.rateElasticity}</sup>
             <br />상품몫 = {Math.round(productUnitPrice).toLocaleString()}원 (정가와 무관)
+          </div>
+          <div className="mt-1">
+            ⭐ 2026-09-25 저녁 — <b>유료게임 과금</b>(라이선스 게임을 켜면 정액권 위에 시간당 더 차감, 전사 표 기준 100~300원)을 <b>정가에 더해</b> PC몫을 만듭니다.
+            원장으로 확인했습니다: 발산역 시간당 101원·전표 88%(과금표 100) · 문산 264원·90%(300) —
+            게임을 켜면 거의 전원이 내므로 기본요금에 얹힌 것과 같습니다. 계수가 아니라 자료입니다. 좌석 과금(특정 좌석만)은 자료가 구체화되지 않아 안 넣습니다.
+            후보지는 아직 이 칸이 없어 0으로 계산합니다 — 유료게임 과금을 받을 매장이면 그만큼 낮게 나옵니다.
           </div>
           <div className="mt-1">
             손님 1명이 쓰는 돈(객단가)이 아니라 <b>PC 1대가 1시간 채워졌을 때 들어오는 총액</b>입니다.
@@ -1939,7 +1947,7 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
               <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
               <th scope="col" className="px-3 py-2 text-right" title="자사PC x 자사품질^θ ÷ (자사 + 유효거리 안 경쟁점들). 100%면 유효거리 안에 겨룰 상대가 없다는 뜻이다.">점유율</th>
               <th scope="col" className="px-3 py-2 text-right" title="1단계 수요 — 이 동네에서 한 달에 PC방을 쓰는 사람 수">수요(명)</th>
-              <th scope="col" className="px-3 py-2 text-right" title="PC몫(정가 기반) + 상품몫. 상품몫은 직전 18개월 개점 매장의 실측 중앙으로 정한 상수다(2026-09-25).">총단가</th>
+              <th scope="col" className="px-3 py-2 text-right" title="PC몫((정가 + 유료게임 과금) 기반) + 상품몫. 후보지는 유료게임 과금 칸이 아직 없어 0. 상품몫은 직전 18개월 개점 매장의 실측 중앙으로 정한 상수다(2026-09-25).">총단가</th>
               <th scope="col" className="px-3 py-2 text-right" title="입지가 점유율에 곱한 배율. 1이면 입지가 아무 일도 안 한 것(자료없음 또는 계수 0).">입지배율</th>
               <th scope="col" className="px-3 py-2">비고</th>
             </tr>
