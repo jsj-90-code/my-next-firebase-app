@@ -37,8 +37,8 @@ const CONFIRMED_AT = "2026-09-24";
 const FACTS = [
   { kind: "existing", code: "20231019404", name: "양주덕정점", residentRadiusM: 2000,
     note: "300m 안 경쟁 3곳 빼면 2km 안 다른 PC방 상권 없음. 1~2km 옥정신도시 배후지 사람은 우리 상권밖에 선택지가 없어 온다(1.6km까지). 확실." },
-  { kind: "existing", code: "20240530413", name: "문경시청점", residentRadiusM: 2000,
-    note: "시내 전체가 배후지. 사용자: '2km 줄 만함. 단 결과를 알고 넣은 것이라 애매' — 근거가 약한 쪽으로 기록해 둔다." },
+  // 문경시청점(20240530413) 2km — 2026-09-25 저녁 사용자 결정으로 **되돌림**(scripts/revertLabResidentRadius20260925.mjs). 1.4~1.5km에 경쟁 4곳이 있어
+  // "2km 안 다른 PC방 상권 없음" 규칙에 안 맞았고, 09-24에 '결과 알고 넣은 것'이라 자백한 예외였다. 이 목록에 다시 넣지 말 것.
   { kind: "existing", code: "20260626435", name: "진주혁신도시본점", residentRadiusM: 2000,
     note: "지도 확인: 혁신도시 2km 안 다른 PC방 상권 없음(사용자 2026-09-24 밤, 처음엔 '다른 상권 있음'이라 했다가 지도 보고 정정). 완료월 2개월이라 실측이 아직 움직인다." },
   { kind: "candidate", code: "N014", name: "영월점", residentRadiusM: 2000,

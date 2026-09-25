@@ -263,7 +263,7 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
           marketDemand / (c.expectedPcCount + competitorIp),
           ownCompetitivenessScore,
           competitivenessGap ?? 1,
-          isBackingDemandMarket(loc?.specialDemandType) ? 1 : 0,
+          isBackingDemandMarket(loc?.specialDemandType, loc?.specialDemandIntensity) ? 1 : 0,
           ...(useVisibility
             ? [settings.v61Training.accessScoreMode === "visibility-x-preemption" && loc?.preemptionScore != null
               ? loc.visibilityScore! * loc.preemptionScore : loc!.visibilityScore!]

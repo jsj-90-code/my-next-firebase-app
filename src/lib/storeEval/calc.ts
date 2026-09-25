@@ -2486,7 +2486,12 @@ const SPECIAL_DEMAND_INTENSITY_SCORE: Record<string, number> = { 없음: 0, 낮�
  * (settings.v61Training.minBackingDemandCoef 주석 참고). 군부대·산업단지 매장이 새로
  * 생기면 반드시 재검증할 것.
  */
-export function isBackingDemandMarket(specialDemandType: string | null | undefined): boolean {
+export function isBackingDemandMarket(specialDemandType: string | null | undefined, specialDemandIntensity?: string | null): boolean {
+  // ✅ 2026-09-25 — 강도 "낮음"은 더미 0 (사용자 결정, 인계 6번). '낮음'은 체크리스트상 "그 수요원이 이 매장 손님이 아니다"
+  //    (docs/special-demand-guide.md) → 배후수요 상권이 아니다. 증평(37사단 사령부·특수부대 = 군부대/낮음)이 더미를 켜서
+  //    학습 계수가 내려갔던 문제(V62 MAPE 8.83 → 9.53, 후보지 −0.5~−1.7%). 보통·높음은 그대로 1 — "높음만"은 탕정역(산업단지/보통)이
+  //    빠져 나빠져서 기각(`_v62LabFeatures` (9): 지금 10.70 · 높음만 10.68 · **낮음만 0 10.17**). 강도가 없으면(옛 문서) 유형만 본다.
+  if (specialDemandIntensity === "낮음") return false;
   return specialDemandType === "군부대" || specialDemandType === "산업단지";
 }
 
@@ -2561,6 +2566,7 @@ export function buildV61TrainingStores(
     // 2026-09-02 추가 — 없으면(백필 전) 1(중립, 격차 없음 취급)로 폴백.
     competitivenessGap: s.competitivenessGap ?? 1,
     specialDemandType: s.specialDemandType ?? null,
+    specialDemandIntensity: s.specialDemandIntensity ?? null,
     actualMonthlyRevenueAvg: s.actualMonthlyRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
     ...(useVisibility ? {
@@ -2590,6 +2596,8 @@ export type V61TrainingStore = {
   // 점수(0~3)가 아니라 원본 유형 문자열을 그대로 나르는 이유는 isBackingDemandMarket 주석 참고
   // (유형별로 편향의 방향이 달라서 스칼라로 뭉치면 상쇄된다).
   specialDemandType: string | null;
+  /** 2026-09-25 — 강도 '낮음'이면 배후수요 더미 0(isBackingDemandMarket). 없으면 유형만 본다. */
+  specialDemandIntensity?: string | null;
   actualMonthlyRevenueAvg: number;
   specialDemandScore: number; // 0~3, computeSpecialDemandScore
   /** 2026-09-11 실험 — 경쟁PC 가중 평균거리 ÷ 500m. 없으면 거리 피처가 붙지 않는다. */
@@ -2684,6 +2692,8 @@ export function empiricalFeaturesFor(input: {
   competitivenessGap?: number | null;
   specialDemandScore?: number;
   specialDemandType?: string | null;
+  /** 2026-09-25 — 강도 '낮음'이면 배후수요 더미 0. isBackingDemandMarket 주석. */
+  specialDemandIntensity?: string | null;
   /**
    * 2026-09-11 실험 입력 — 경쟁PC 가중 평균거리 ÷ 500m. **넣지 않으면 피처가 안 붙는다.**
    *
@@ -2700,7 +2710,7 @@ export function empiricalFeaturesFor(input: {
     input.competitivenessScore,
     input.competitivenessScore * Math.log(Math.max(0.1, input.competitivenessGap ?? 1)),
     // 2026-09-03 — 배후수요형 특수상권(군부대·산업단지) 더미. isBackingDemandMarket 주석 참고.
-    isBackingDemandMarket(input.specialDemandType) ? 1 : 0,
+    isBackingDemandMarket(input.specialDemandType, input.specialDemandIntensity) ? 1 : 0,
     // 2026-09-14 — 접근성은 **곱**으로 작동한다. 선점경쟁 점수는 단독으로는 신호가 없는데
     // (PC대수를 걷어낸 잔차와 r=0.079) 접근가시성과 곱하면 살아난다 — 참 이용시간 38곳 LOOCV에서
     // 가시성만 13.85% → log(가시성 × 선점경쟁) 13.06%. 좋은 자리를 먼저 잡았는지와 눈에 띄는지가
@@ -2739,7 +2749,7 @@ export function empiricalFeatureLabels(input: Parameters<typeof empiricalFeature
     // 이유로 마이너스 기여가 뜬다(실데이터에서 9곳 중 8곳이 -1.7%였다). 라벨이 계속
     // "배후수요 상권(군부대·산업단지)"이면 "우리 상권이 군부대라는 건가?"로 읽히므로 상태를
     // 그대로 드러낸다.
-    isBackingDemandMarket(input.specialDemandType) ? "배후수요 상권(군부대·산업단지)" : "배후수요 상권 해당 없음",
+    isBackingDemandMarket(input.specialDemandType, input.specialDemandIntensity) ? "배후수요 상권(군부대·산업단지, 강도 낮음 제외)" : "배후수요 상권 해당 없음",
     ...(isValidVisibilityScore(input.visibilityScore)
       ? [isValidVisibilityScore(input.preemptionScore) ? "접근성·선점경쟁" : "접근성·가시성"]
       : []),
@@ -3895,6 +3905,7 @@ export function toV61TrainingStore(
     competitivenessScore: s.competitivenessScore as number,
     competitivenessGap: s.competitivenessGap ?? 1,
     specialDemandType: s.specialDemandType ?? null,
+    specialDemandIntensity: s.specialDemandIntensity ?? null,
     actualMonthlyRevenueAvg: s.actualRevenueAvg as number,
     specialDemandScore: computeSpecialDemandScore(s.specialDemandType, s.specialDemandIntensity),
     ...(s.competitorDistanceRatio != null ? { competitorDistanceRatio: s.competitorDistanceRatio } : {}),

@@ -3029,7 +3029,10 @@ describe("QSC -> 관리 점수 환산", () => {
 describe("배후수요 라벨 — 해당 여부를 드러낸다", () => {
   const base = { hourlyRate: 1400, marketDemand: 4000, competitorIp: 300, pcCount: 100, competitivenessScore: 4.1 };
   it("배후수요형이면 그 이름을 쓴다", () => {
-    expect(empiricalFeatureLabels({ ...base, specialDemandType: "군부대" })[4]).toBe("배후수요 상권(군부대·산업단지)");
+    expect(empiricalFeatureLabels({ ...base, specialDemandType: "군부대" })[4]).toBe("배후수요 상권(군부대·산업단지, 강도 낮음 제외)");
+    // 2026-09-25 — 강도 '낮음'은 더미 0(증평 사령부). 보통·높음·강도 없음은 그대로 1.
+    expect(empiricalFeatureLabels({ ...base, specialDemandType: "군부대", specialDemandIntensity: "낮음" })[4]).toBe("배후수요 상권 해당 없음");
+    expect(empiricalFeatureLabels({ ...base, specialDemandType: "산업단지", specialDemandIntensity: "보통" })[4]).toBe("배후수요 상권(군부대·산업단지, 강도 낮음 제외)");
   });
   it("해당 없으면 '해당 없음'으로 적는다", () => {
     expect(empiricalFeatureLabels({ ...base, specialDemandType: null })[4]).toBe("배후수요 상권 해당 없음");
