@@ -152,4 +152,23 @@ describeIf("가동률 창 2~12개월차 — 실측 유래 값 재측정 + 재고
     console.log(`  ⭐ 읽는 법 — 정의를 맞춘 재측정(③④)은 성적이 아니라 뜻으로 고른다. ①은 표본 2곳이라 성적이 좋아져도 채택 근거가 못 된다. ②(상품몫)는 가동률에 안 걸린다.`);
     expect(variants.length).toBe(6);
   });
+
+  it("(3) 상품몫 상수별 기존점 매출 환산 — 전체와 개점 세대별 (규칙 1,721은 새 매장을 겨냥해 옛 세대엔 높게 나온다)", () => {
+    // 사용자(2026-09-25): "상품몫 올리면서 개선된 건 뭐임?" — 기존점 성적표 전체로는 좋아질 리 없다. 예측 대상(최근 세대)에서만 좋아진다. 그걸 숫자로.
+    const yearOf = new Map((snap.existingStores as { storeCode: string; openedAt: string | null }[]).map((s) => [s.storeCode, (s.openedAt ?? "").slice(0, 4)]));
+    const withRev = own.filter((r) => r.actualRevenue > 0);
+    const line = (label: string, c: number) => {
+      const p = { ...P, productUnitPrice: c };
+      const errs = withRev.map((r) => ({ yr: yearOf.get(r.input.storeCode) ?? "?", e: (computeTextbook(r.input, p).monthlyRevenue ?? NaN) / r.actualRevenue - 1 })).filter((x) => Number.isFinite(x.e));
+      const byY = new Map<string, number[]>(); for (const x of errs) byY.set(x.yr, [...(byY.get(x.yr) ?? []), x.e]);
+      const recent = errs.filter((x) => x.yr >= "2025").map((x) => x.e);
+      console.log(`  ${pad(label, 14)} 전체 ${errs.length}곳 MAPE ${(100 * mean(errs.map((x) => Math.abs(x.e)))).toFixed(1)}% · 편향 ${pp(mean(errs.map((x) => x.e)))}% | 세대별 편향 ` +
+        [...byY].sort().map(([y, v]) => `${y} ${pp(mean(v))}%(${v.length})`).join(" · ") +
+        ` | 2025~26 ${recent.length}곳 MAPE ${(100 * mean(recent.map(Math.abs))).toFixed(1)}% · 편향 ${pp(mean(recent))}%`);
+    };
+    console.log(`\n[매출 환산 — 예측 가동률 × PC × 720 × (PC몫 + 상품몫) vs 실매출] 가동률 오차가 섞여 있다(단가층만 보려면 _unitPriceLayer)`);
+    line("상품몫 1,493", 1493); line("상품몫 1,471", 1471); line("상품몫 1,721(규칙)", 1721);
+    console.log(`  ⭐ 읽는 법 — 규칙 상수는 "새로 여는 매장"을 겨냥한 값이라 2023~24 세대 기존점은 높게 나오는 게 맞다. 기존점 전체 MAPE로 이 상수를 고르면 다시 전 세대 평균으로 돌아간다(되짚기 편향 −11%).`);
+    expect(withRev.length).toBeGreaterThan(30);
+  });
 });

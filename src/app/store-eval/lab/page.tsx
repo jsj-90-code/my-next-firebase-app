@@ -56,7 +56,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 // 모델 입력 조립은 labInput.ts에 있다 — 측정 하네스와 **같은 코드**를 써야 한다.
 // 화면에만 항목을 붙이다 하네스가 입지를 통째로 빠뜨린 적이 있다(2026-09-16).
 import {
-  LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES,
+  LAB_UPSIDE_STORE_CODES,
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
   utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
 } from "@/lib/storeEval/labInput";
@@ -1931,11 +1931,11 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
               <th scope="col" className="px-3 py-2">후보지</th>
               <th scope="col" className="px-3 py-2 text-right" title="후보지의 PC수는 expectedPcCount(예상PC대수)다.">PC</th>
               <th scope="col" className="px-3 py-2 text-right">예상매출</th>
-              <th scope="col" className="px-3 py-2 text-right" title="사용자 실무 감각(2026-09-24). 후보지엔 실매출이 없어 이것이 유일한 바깥 잣대다. 채점 목표가 아니라 방향.">실무 예상</th>
+              {/* "실무 예상"(사용자 감각 6곳) 열은 2026-09-25 사용자 요청으로 화면에서 뺐다 — 감각값이 산식 옆에 서면 답처럼 읽힌다. 하네스 _layerSplit (7)의 바깥 잣대로만 남긴다. */}
               <th scope="col" className="px-3 py-2 text-right">예상가동률</th>
               <th scope="col" className="px-3 py-2 text-right" title="자사PC x 자사품질^θ ÷ (자사 + 유효거리 안 경쟁점들). 100%면 유효거리 안에 겨룰 상대가 없다는 뜻이다.">점유율</th>
               <th scope="col" className="px-3 py-2 text-right" title="1단계 수요 — 이 동네에서 한 달에 PC방을 쓰는 사람 수">수요(명)</th>
-              <th scope="col" className="px-3 py-2 text-right" title="PC몫(정가 기반) + 상품몫. 상품몫은 전 매장 실측에서 구한 상수다.">총단가</th>
+              <th scope="col" className="px-3 py-2 text-right" title="PC몫(정가 기반) + 상품몫. 상품몫은 직전 18개월 개점 매장의 실측 중앙으로 정한 상수다(2026-09-25).">총단가</th>
               <th scope="col" className="px-3 py-2 text-right" title="입지가 점유율에 곱한 배율. 1이면 입지가 아무 일도 안 한 것(자료없음 또는 계수 0).">입지배율</th>
               <th scope="col" className="px-3 py-2">비고</th>
             </tr>
@@ -1949,15 +1949,6 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{row.input.pcCount ?? "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">{manwon(b.monthlyRevenue)}</td>
-                <td className="px-3 py-2 text-right text-xs tabular-nums text-[var(--sl-ink-soft)]">
-                  {(() => {
-                    const x = LAB_CANDIDATE_PRACTICAL_EXPECTATION.get(row.input.storeCode);
-                    if (!x) return "-";
-                    const mid = (x.low + x.high) / 2, ratio = b.monthlyRevenue != null && mid > 0 ? b.monthlyRevenue / mid : null;
-                    const tone = ratio == null ? "" : ratio > 1.25 ? "text-red-600 dark:text-red-400" : ratio < 0.8 ? "text-blue-700 dark:text-blue-300" : "text-emerald-700 dark:text-emerald-300";
-                    return <span title={x.note}>{manwon(x.low)}~{manwon(x.high)} <b className={tone}>{ratio == null ? "" : `(산식 ${ratio.toFixed(2)}배)`}</b></span>;
-                  })()}
-                </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {pct(b.utilization)}
                   {b.capped && <span className="ml-1 text-xs text-amber-700 dark:text-amber-400" title="가동률 상한에 걸려 매출이 깎였다">상한</span>}
