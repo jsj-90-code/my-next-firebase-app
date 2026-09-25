@@ -115,6 +115,32 @@ describeIf("개점 시기 되짚기 — V62 vs 실험실, 그리고 V62 개선 �
     expect(opts.length).toBe(4);
   });
 
+  it("(4) 동탄북광장·송도를 V62 표본에 넣으면 (사용자 2026-09-25 밤) — 원래 38곳 성적 · 두 매장 자체 오차 · 시간 되짚기", () => {
+    const INCLUDE = new Set(["20250124421", "20260515431"]); // 동탄북광장(운영관리 문제) · 송도(경쟁점 500원 가격전쟁)
+    const run = (include: boolean, subset?: Set<string>) => {
+      const inputs = makeInputs(true).map((s) => (include && INCLUDE.has(s.storeCode) ? { ...s, isPostOpenIssue: false } : s));
+      const { rows } = runUsageCohortValidation(inputs, sales, settings, new Date(), undefined, undefined, 1, undefined, subset);
+      return new Map((rows as unknown as VRow[]).filter((r) => r.brand === "블랙라벨" && r.includedInCoreAccuracy && r.v62PredictedRevenueAvg != null && (r.actualRevenueAvg ?? 0) > 0)
+        .map((r) => [r.storeCode, { name: r.storeName, e: (r.v62PredictedRevenueAvg as number) / (r.actualRevenueAvg as number) - 1 }]));
+    };
+    const a = run(false), b = run(true);
+    const base = [...a.keys()];
+    console.log(`\n[동탄북광장·송도 포함 — V62+과금 기준]`);
+    console.log(`  지금(뺌)        원래 ${base.length}곳 ${summary(base.map((c) => a.get(c)!.e))}`);
+    console.log(`  넣음            원래 ${base.length}곳 ${summary(base.map((c) => b.get(c)!.e))}   ← 두 매장이 학습에 들어가 다른 매장이 어떻게 움직이나`);
+    console.log(`  넣음            전체 ${b.size}곳 ${summary([...b.values()].map((x) => x.e))}`);
+    for (const c of INCLUDE) { const x = b.get(c); console.log(`     ${x ? `${pad(x.name, 12)} 자기 오차 ${sgn(x.e)}%(자기 빼고 학습한 모형)` : `${c} 표본에 안 들어감(완료월·자료 부족?)`}`); }
+    const moved = base.map((c) => ({ n: a.get(c)!.name, d: Math.abs(b.get(c)!.e) - Math.abs(a.get(c)!.e) })).filter((x) => Math.abs(x.d) > 0.01).sort((p, q) => q.d - p.d);
+    console.log(`  |오차| 1%p 넘게 움직인 매장: ${moved.map((x) => `${x.n.replace(/점$/, "")} ${sgn(x.d)}`).join(" · ") || "없음"}`);
+    for (const cutoff of ["2024-12", "2024-06"]) {
+      const before = new Set([...openedOf].filter(([, op]) => op && op.slice(0, 7) <= cutoff).map(([c]) => c));
+      const ta = run(false, before), tb = run(true, before);
+      const la = [...ta.keys()].filter((c) => !before.has(c)), lb = [...tb.keys()].filter((c) => !before.has(c));
+      console.log(`  컷오프 ${cutoff} 이후   뺌 ${summary(la.map((c) => ta.get(c)!.e))}\n                      넣음 ${summary(lb.map((c) => tb.get(c)!.e))}   (넣음은 두 매장이 평가 대상에도 들어감 — 동탄 2025-01 개점은 컷오프 뒤)`);
+    }
+    expect(b.size).toBeGreaterThanOrEqual(a.size);
+  });
+
   for (const cutoff of ["2024-12", "2024-06"]) {
     it(`(2) 컷오프 ${cutoff} — 그 전에 연 매장으로 만들고 그 뒤에 연 매장을 맞힌다`, () => {
       const before = new Set([...openedOf].filter(([, o]) => o && o.slice(0, 7) <= cutoff).map(([c]) => c));
