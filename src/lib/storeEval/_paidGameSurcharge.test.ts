@@ -41,8 +41,9 @@ describeIf("유료게임 과금 — 정가에 더하면 전후", () => {
   const productUnitPriceByStore = productUnitPriceEraByStore(snap.sales ?? [], snap.existingStores);
   const paid = paidGameSurchargeByStoreFromTariff();
   const common = { stores, compsByCode, utilByStore, productUnitPriceByStore, settings, qscByStoreCode, residentRingsByCode, ringBlockedByCode, residentRadiusByCode };
-  const rows0 = buildLabRows({ ...common });
-  const rows1 = buildLabRows({ ...common, paidGameSurchargeByStore: paid });
+  // 2026-09-25 밤부터 prepare가 과금을 더해 온다 — "과금 없이"는 기본요금으로 되돌린 매장으로 만든다
+  const rows0 = buildLabRows({ ...common, stores: stores.map((s) => ({ ...s, hourlyRate: s.hourlyRateBase ?? s.hourlyRate })) });
+  const rows1 = buildLabRows({ ...common });
   const P: TextbookParams = fittedParams(DEFAULT_TEXTBOOK_PARAMS, scoreTextbook(rows0, DEFAULT_TEXTBOOK_PARAMS));
 
   it("(1) 단가층 — 실측 PC단가 vs 산식 PC몫, 과금 전후", () => {

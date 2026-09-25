@@ -770,7 +770,11 @@ export type ExistingStore = {
   // brandType=블랙라벨·excludedFromModel=false인 점포만 학습 대상이다. 계약 상태는 제외 조건이 아니다.
   brandType: BrandType | null; // 09_입지동선평가!P열(브랜드구분) — 블랙라벨만 학습에 사용
   validationUse: "사용" | "제외" | null; // 04_점포평가요약!검증사용여부 (참고용 - 최종 필터는 위 3조건으로 직접 판정)
-  hourlyRate: number | null; // 01_점포기본정보!자사_요금표_시간당
+  hourlyRate: number | null; // 01_점포기본정보!자사_요금표_시간당 — Firestore엔 회원 기본요금. prepareExistingStoresForEvaluation을 지나면 + 유료게임 과금(2026-09-25)
+  /** prepareExistingStoresForEvaluation이 유료게임 과금을 더했을 때만 — 더하기 전 기본요금. Firestore 필드 아님. */
+  hourlyRateBase?: number | null;
+  /** prepareExistingStoresForEvaluation이 더한 유료게임 과금(원/시간). Firestore 필드 아님. */
+  paidGameSurcharge?: number | null;
   ownDemand: number | null; // 04_점포평가요약!예측_자사수요 (점유율 적용 후 값 — 표시용, 2026-08-30부터 학습 특징치로는 안 씀)
   // 2026-08-30 추가 — ownDemand(marketDemand÷(자사+경쟁IP) 나눈 값)의 실제매출 상관계수가 거의
   // 0(-0.02)이라 릿지회귀가 계수를 0으로 눌러버려 점유율 산식이 예측에 전혀 기여를 못 했다

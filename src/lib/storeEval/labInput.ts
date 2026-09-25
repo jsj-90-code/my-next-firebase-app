@@ -21,7 +21,7 @@ import {
 import { computeLabZoneComposition } from "@/lib/storeEval/labZoneComposition";
 import { labComputeSpecScore } from "@/lib/storeEval/labSpecScore";
 import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
-import tariffTables from "@/lib/storeEval/data/tariffTables.json";
+import { PAID_GAME_SURCHARGE } from "@/lib/storeEval/existingStoreEvaluation";
 import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation";
 import {
   candidateRival2km, candidateSiteKey, existingSiteKey, rival2kmForWindow,
@@ -79,10 +79,7 @@ export const PRODUCT_UNIT_PRICE_RULE = { windowMonths: 18, minStores: 8, widenSt
  * 정가에 더해 PC몫을 만든다(TextbookInput.paidGameSurcharge 주석, 2026-09-25 저녁). 좌석 과금은 사용자 지시로 제외.
  */
 export function paidGameSurchargeByStoreFromTariff(): Map<string, number> {
-  const out = new Map<string, number>();
-  const sur = (tariffTables as { surcharges?: Record<string, { paidGame?: number | null }> }).surcharges ?? {};
-  for (const [code, v] of Object.entries(sur)) if (v.paidGame != null && v.paidGame > 0) out.set(code, v.paidGame);
-  return out;
+  return new Map(PAID_GAME_SURCHARGE);
 }
 
 export type ProductUnitPriceRuleResult = {
@@ -514,7 +511,7 @@ export type BuildLabRowsArgs = {
    * 화면은 넘긴다(2026-09-25). 가동률만 재는 하네스는 안 넘겨도 성적이 같다(단가층은 가동률 밖).
    */
   productUnitPriceByStore?: Map<string, number>;
-  /** 매장코드 -> 유료게임 과금(원/시간, `paidGameSurchargeByStoreFromTariff`). 안 넘기면 0(과금 없음으로 계산). 화면·하네스 둘 다 넘긴다(2026-09-25 저녁). */
+  /** ⚠️ 2026-09-25 밤부터 쓰지 않는다 — 유료게임 과금은 prepareExistingStoresForEvaluation이 hourlyRate에 더해 온다. 옛 호출 호환용으로만 남김(무시됨). */
   paidGameSurchargeByStore?: Map<string, number>;
   settings: ModelSettings;
   /**
@@ -669,8 +666,8 @@ export function buildLabRows({ stores, compsByCode, utilByStore, productUnitPric
         storeCode: s.storeCode, storeName: s.storeName,
         pcCount: s.evaluationPcCount ?? s.pcCount,
         hourlyRate: s.hourlyRate,
-        // 유료게임 과금 — 정가에 더해 PC몫(자료, 2026-09-25 저녁). 표에 없으면 null(0).
-        paidGameSurcharge: paidGameSurchargeByStore?.get(s.storeCode) ?? null,
+        // 유료게임 과금 — 2026-09-25 밤부터 prepareExistingStoresForEvaluation이 hourlyRate에 이미 더해 온다(V62와 같은 값). 여기서 또 더하면 이중계산.
+        paidGameSurcharge: null,
         actualUtilization: utilByStore.get(s.storeCode) ?? null,
         // 채점용 상품몫 — 자기 세대 수준(2026-09-25). 없으면 computeTextbook이 최신 규칙값을 쓴다.
         productUnitPriceOverride: productUnitPriceByStore?.get(s.storeCode) ?? null,

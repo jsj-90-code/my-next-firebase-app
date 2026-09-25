@@ -58,7 +58,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 import {
   LAB_UPSIDE_STORE_CODES,
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
-  utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, productUnitPriceEraByStore, paidGameSurchargeByStoreFromTariff, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
+  utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, productUnitPriceEraByStore, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
 } from "@/lib/storeEval/labInput";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
@@ -192,9 +192,7 @@ async function loadLabData(): Promise<Loaded | null> {
   // 모델 입력 조립은 labInput.ts 한 곳에만 있다 — 측정 하네스가 같은 함수를 부른다.
   // 채점용 상품몫 — 기존점은 자기 세대 수준(개점 전후 9개월 안에 연 다른 매장 중앙), 후보지는 최신 규칙값(2026-09-25). labInput 주석.
   const productUnitPriceByStore = productUnitPriceEraByStore(sales, storedStores);
-  // 유료게임 과금 — 전사 표(tariffTables.json)에서, 정가에 더해 PC몫(2026-09-25 저녁). 좌석 과금은 제외(사용자).
-  const paidGameSurchargeByStore = paidGameSurchargeByStoreFromTariff();
-  const rows = buildLabRows({ stores, compsByCode, utilByStore, productUnitPriceByStore, paidGameSurchargeByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode });
+  const rows = buildLabRows({ stores, compsByCode, utilByStore, productUnitPriceByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode });
   // 모델에서 빠진 매장(송도점·동탄북광장점 등) — 2026-09-18 사용자 요청으로 화면에만 띄운다.
   // ⚠️ `rows`와 절대 합치지 말 것. 합치면 축척과 계수가 가격전쟁·운영문제까지 배운다.
   // 2026-09-21 사용자 지시: *"검단사거리점은 아예 빼줘 표에서."*
@@ -206,7 +204,7 @@ async function loadLabData(): Promise<Loaded | null> {
     stores.filter((s) => (s.franchiseStatus ?? "").includes("폐점")).map((s) => s.storeCode),
   );
   const excludedRows = buildLabRows({
-    stores, compsByCode, utilByStore, productUnitPriceByStore, paidGameSurchargeByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which: "excluded",
+    stores, compsByCode, utilByStore, productUnitPriceByStore, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, qscByStoreCode, which: "excluded",
   }).filter((r) => !closedStoreCodes.has(r.input.storeCode));
 
   let current: Loaded["current"] = null;
@@ -1362,7 +1360,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
             ⭐ 2026-09-25 저녁 — <b>유료게임 과금</b>(라이선스 게임을 켜면 정액권 위에 시간당 더 차감, 전사 표 기준 100~300원)을 <b>정가에 더해</b> PC몫을 만듭니다.
             원장으로 확인했습니다: 발산역 시간당 101원·전표 88%(과금표 100) · 문산 264원·90%(300) —
             게임을 켜면 거의 전원이 내므로 기본요금에 얹힌 것과 같습니다. 계수가 아니라 자료입니다. 좌석 과금(특정 좌석만)은 자료가 구체화되지 않아 안 넣습니다.
-            후보지는 요금 칸에 <b>기본요금 + 유료게임 과금을 합산</b>해 넣으므로 여기서 따로 더하지 않습니다(기존점만 두 값을 따로 들고 더합니다).
+            후보지는 요금 칸에 <b>기본요금 + 유료게임 과금을 합산</b>해 넣고, 기존점도 준비 단계(prepareExistingStoresForEvaluation)에서 전사 표로 합산합니다 — 운영 V62도 같은 값을 씁니다(V62 MAPE 9.4 → 9.0%, 개점 시기 되짚기에서도 개선).
           </div>
           <div className="mt-1">
             손님 1명이 쓰는 돈(객단가)이 아니라 <b>PC 1대가 1시간 채워졌을 때 들어오는 총액</b>입니다.

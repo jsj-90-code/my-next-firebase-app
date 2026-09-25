@@ -1,5 +1,13 @@
 import { computeExistingStoreDemandEvaluation, resolveManagementScores } from "./calc";
 import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } from "./types";
+import tariffTables from "./data/tariffTables.json";
+
+/** 매장코드 → 유료게임 과금(원/시간). 전사 유료게임차감 표. 표에 없거나 0이면 과금 없음(사용자 2026-09-25). */
+export const PAID_GAME_SURCHARGE: ReadonlyMap<string, number> = new Map(
+  Object.entries((tariffTables as { surcharges?: Record<string, { paidGame?: number | null }> }).surcharges ?? {})
+    .filter(([, v]) => v.paidGame != null && v.paidGame > 0)
+    .map(([code, v]) => [code, v.paidGame as number]),
+);
 
 /** Conversion keeps related documents under the original candidate code (store.ts). */
 export function existingStoreSourceCode(store: Pick<ExistingStore, "originCandidateCode" | "storeCode">): string {
@@ -63,7 +71,15 @@ export function prepareExistingStoresForEvaluation(
   const locationByCode = new Map(locations.map(location => [location.candidateCode, location]));
   // 가맹점 평균을 내는 자리는 여기 하나다(resolveManagementScores 주석 참고).
   const management = resolveManagementScores(stores.map(s => s.storeCode), qscByStoreCode);
-  return stores.map(store => {
+  return stores.map(storeRaw => {
+    // ✅ 2026-09-25 밤 — 요금 = 회원 기본 시간당 요금 + 유료게임 과금(전사 표, data/tariffTables.json). 후보지는 입력 칸에 이미 합산해 넣으므로
+    //    기존점도 여기서 합쳐야 V62 학습·검증과 후보지 예측이 같은 자로 잰다(사용자 2026-09-25 "신규후보지는 기본요금+유료과금 합산해서 넣음").
+    //    시간 되짚기(_timeSplitBacktest): V62 전 표본 9.4→9.0 · 컷오프 2024-12 9.3→8.7 · 2024-06 10.4→9.7. 좌석 과금은 제외(자료 미구체).
+    //    Firestore 값(기본요금)은 안 바꾼다 — 매번 여기서 더한다. 원래 값은 hourlyRateBase에 남긴다.
+    const surcharge = PAID_GAME_SURCHARGE.get(storeRaw.storeCode) ?? 0;
+    const store = surcharge > 0 && storeRaw.hourlyRate != null
+      ? { ...storeRaw, hourlyRate: storeRaw.hourlyRate + surcharge, hourlyRateBase: storeRaw.hourlyRate, paidGameSurcharge: surcharge }
+      : storeRaw;
     const code = existingStoreSourceCode(store);
     const managementScore = management.scoreFor(store.storeCode);
     // 하류가 다시 계산할 때도 같은 값을 보게 매장 객체에 실어 보낸다.

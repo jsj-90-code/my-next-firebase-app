@@ -442,7 +442,7 @@ function BasicInfoTabForm({
           <SelectField label="지상/지하" value={form.groundLevel} onChange={(v) => set("groundLevel", v)} options={GROUND_LEVEL_OPTIONS} />
           <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
           <NumberField label="요금표_시간당원" value={form.hourlyRate} onChange={(v) => set("hourlyRate", v)} required
-            hint="회원 기본 시간당 요금 + 유료게임 과금(원/시간)을 합산해서 넣습니다. 좌석 과금은 넣지 않습니다. 기존점은 두 값을 따로 들고 산식에서 더합니다(2026-09-25)." />
+            hint="회원 기본 시간당 요금 + 유료게임 과금(원/시간)을 합산해서 넣습니다. 좌석 과금은 넣지 않습니다. 기존점도 전사 유료게임차감 표로 같은 합산을 해서 V62·실험실이 한 자로 잽니다(2026-09-25)." />
           <NumberField label="상권데이터기준연도" value={form.demographicsYear} onChange={(v) => set("demographicsYear", v)} step={1} />
           {/* 2026-09-13 — 이 값은 더 이상 기준매출 계산에 쓰이지 않는다. 평가 단계에선 실제
               오픈일이 확정된 적이 없는데 담당자마다 다른 달을 찍으면 같은 후보지의 기준매출이
