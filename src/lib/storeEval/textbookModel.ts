@@ -980,7 +980,11 @@ export const DEFAULT_TEXTBOOK_PARAMS: TextbookParams = {
   //    (38곳 Σ상품매출÷Σ(PC×720×가동률), 중앙 1,476, `_windowRefit.test.ts` (1)②). 정의를 맞춘 재측정이지 계수 조정이 아니다.
   //    상품몫이 매장별로 두 배 퍼지는 건 개점 세대 효과(2023 개점 1,287 → 2026 1,665)인데 기전(메뉴 구성?)을 못 밝혀 상수로 둔다
   //    (docs/releases/2026-09-25-product-share-drivers.md — 메뉴판 가격은 3년 반 +3%뿐, 물가 아님).
-  productUnitPrice: 1471,
+  // ✅ 2026-09-25 낮 2차 — **1,471 → 1,721. 값의 출처가 "전 매장 평균"에서 "직전 18개월 개점 매장의 중앙"(규칙)으로 바뀌었다.**
+  //    예측 대상이 새로 여는 매장이라 전 세대 평균은 계통적으로 낮다(되짚기 편향 −11.4%). 규칙과 근거는 labInput
+  //    `PRODUCT_UNIT_PRICE_RULE`·`productUnitPriceByRule`. 2026-08 자료 기준 13곳 중앙 1,721. 상수가 규칙값에서 3% 넘게 벗어나면
+  //    정규 시험(productUnitPriceRule.test.ts)이 빨강 — 그때 사람이 옮긴다. 사용자 "해볼까?" · 후보지 예상매출 약 +9%.
+  productUnitPrice: 1721,
   productUnitPriceFixed: true,
   // 운영 산식 usageRevenue.ts effectiveHourlyRate와 같은 값 — 두 산식이 한 식을 쓴다.
   // 2026-09-16 저녁(3)부터 이 지수는 PC몫에만 걸린다(상품몫은 정가와 무관).

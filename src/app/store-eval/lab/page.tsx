@@ -58,7 +58,7 @@ import type { Competitor, ModelSettings } from "@/lib/storeEval/types";
 import {
   LAB_CANDIDATE_PRACTICAL_EXPECTATION, LAB_UPSIDE_STORE_CODES,
   buildLabRows, buildLabCandidateRows, franchiseManagementFromRows,
-  utilizationByStore, utilizationWindowMonths, type LabRow, type LabCandidateRow,
+  utilizationByStore, utilizationWindowMonths, productUnitPriceByRule, type LabRow, type LabCandidateRow, type ProductUnitPriceRuleResult,
 } from "@/lib/storeEval/labInput";
 import { FIRST_CLASS_ZONE_SEATS, LAB_ZONE_WEIGHTS } from "@/lib/storeEval/labZoneComposition";
 import {
@@ -108,6 +108,8 @@ type Loaded = {
   candRows: LabCandidateRow[];
   /** 후보지에 들어간 관리 점수(= 가맹점 평균). 화면에 적어야 "실측인가 평균인가"가 구분된다. */
   franchiseManagement: number | null;
+  /** 상품몫 규칙값(직전 18개월 개점 매장 중앙, labInput productUnitPriceByRule) — 코드 상수와 나란히 보여 "옮길 때"를 사람이 안다(2026-09-25). */
+  productRule: ProductUnitPriceRuleResult;
   /**
    * 실험실 복제본 컬렉션별 건수 (2026-09-24 밤, "자료" 탭). 실험실은 운영과 따로 관리되는 storeEvalLab* 컬렉션만 읽으므로
    * 무엇이 몇 건 들어와 있는지 화면에 적어야 "운영에서 고쳤는데 여기 안 바뀐다"를 사람이 바로 알아본다.
@@ -254,6 +256,7 @@ async function loadLabData(): Promise<Loaded | null> {
 
   return { rows, excludedRows, current, qsc, qscByStore, windowFillByStore,
     specWeights: settings.specWeights, candRows, franchiseManagement,
+    productRule: productUnitPriceByRule(sales, storedStores),
     dataStatus: {
       existingStores: storedStores.length, candidates: candidates.length, competitors: allCompetitors.length,
       locationEvaluations: allLocationEvaluations.length, qsc: qscByStoreCode.size, residentRings: residentRingsByCode.size,
@@ -388,7 +391,7 @@ function LabPageInner() {
             그 맞바꿈이 할 만한지 보시라고 만든 화면입니다. 아래는 지금 산식과 그렇게 정한 이유·되돌린 기록입니다.
           </div>
           <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
-            scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} />
+            scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} productRule={data.productRule} />
         </>
       )}
       {score && data && tab === "rivals" && (
@@ -695,8 +698,10 @@ function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Load
  *    그린다 — 위 조절판을 움직이면 이 설명도 같이 바뀐다. 계산만 바꾸고 설명을 두면 화면이
  *    조용히 거짓말을 한다(CLAUDE.md 규칙, docs/backlog.md 2026-09-14 블록).
  */
-function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, specWeights }: {
+function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, specWeights, productRule }: {
   p: TextbookParams; fitted: number; productUnitPrice: number; scaledOnUtilization: boolean;
+  /** 상품몫 규칙값 — 코드 상수와 나란히 적는다(2026-09-25). */
+  productRule: Loaded["productRule"];
   /** QSC 적용 현황. 숫자를 글자로 박지 않고 여기서 읽어 그린다. */
   qsc: Loaded["qsc"];
   /** 하드웨어 내부비중. 사양 설명이 이 값을 읽어 그린다. */
@@ -1384,8 +1389,14 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                 지금은 매출DB의 <b>상품매출을 직접</b> 잰 값입니다. 평균은 같지만(둘 다 1,493원)
                 퍼짐이 다릅니다: 직접 SD 242원 vs 잔차 SD <b>328원</b>. 그 차이는 먹거리 차이가 아니라
                 <b> PC요금 모형이 틀린 만큼</b>이 상품몫으로 흘러든 것입니다.
-                {" "}2026-09-25에 가동률 창을 개점 2~12개월차(실매출과 같은 창)로 맞추면서 같은 창으로 다시 재 <b>1,471원</b>이 됐습니다(38곳, 중앙 1,476).
-                매장별로 1,065~2,076원까지 퍼지는 건 개점 세대 효과(2023년 개점 1,287 → 2026년 1,665원)인데, 메뉴판 가격은 3년 반 동안 3%만 올라 물가는 아니고 기전을 못 밝혀 상수로 둡니다.
+                {" "}⭐ 2026-09-25에 <b>값의 출처를 바꿨습니다 — 전 매장 평균이 아니라 &ldquo;직전 18개월 안에 연 매장의 실측 중앙&rdquo;</b>입니다.
+                실측 상품단가는 개점 세대를 따르고(2023년 개점 중앙 1,287 → 2024 1,421 → 2025 1,626 → 2026 1,665원) 같은 매장 안에서는 3년이 지나도 안 오르며,
+                메뉴판 가격은 그 사이 3%만 올라 물가가 아닙니다. 예측 대상은 새로 여는 매장이라 전 세대 평균은 계통적으로 낮습니다 —
+                되짚기(2024년 이후 개점 30곳, 개점 전 자료만)에서 전체 평균은 편향 −11.4%, 직전 1년 중앙은 −5.0%였습니다.
+                {" "}지금 자료({productRule.asOf ?? "-"}까지)로 규칙을 돌리면 직전 {productRule.windowMonths}개월 개점 {productRule.stores.length}곳 중앙{" "}
+                <b>{productRule.value == null ? "-" : Math.round(productRule.value).toLocaleString()}원</b>이고 코드 상수는 {Math.round(p.productUnitPrice).toLocaleString()}원입니다
+                {productRule.value != null && Math.abs(p.productUnitPrice / productRule.value - 1) > 0.03 ? <b className="text-[var(--sl-warn,#b4530a)]"> — 3% 넘게 벌어졌습니다. 상수를 옮길 때입니다.</b> : <> (3% 안이면 그대로 둡니다).</>}
+                {" "}세는 매장: {productRule.stores.map((s) => `${s.storeName.replace(/점$/, "")} ${Math.round(s.unit).toLocaleString()}`).join(" · ")}.
               </>
             ) : (
               <>⚠️ 지금은 그 값을 <b>표본 평균으로 매번 다시 맞추고</b> 있습니다 — 표본이 바뀌면 값도 바뀝니다.</>
@@ -1532,7 +1543,7 @@ function ParamSummary({ p, counts }: {
         },
         { label: "정가 탄력도", value: num(p.rateElasticity, 3), plain: `요금을 2배 받으면 PC 시간당 매출은 ${Math.pow(2, p.rateElasticity).toFixed(2)}배만 늘어난다고 봅니다. 요금이 높으면 그만큼 다 받지는 못합니다.` },
         { label: "기준 정가", value: `${p.referenceHourlyRate.toLocaleString()}원`, plain: `표본 매장 시간당 요금의 중앙값입니다. 이 요금이면 PC몫이 정가 그대로이고, 위 탄력도는 여기서 벌어진 만큼에 걸립니다.` },
-        { label: "상품몫", value: `${Math.round(p.productUnitPrice).toLocaleString()}원 / PC·시간`, plain: `PC가 1시간 돌 때 라면·음료 같은 상품매출이 ${Math.round(p.productUnitPrice).toLocaleString()}원 붙습니다. 요금과 무관한 상수이고 ${p.productUnitPriceFixed ? "전 매장 상품매출 실측에서 잰 고정값입니다." : "기존점에서 매번 적합합니다."}` },
+        { label: "상품몫", value: `${Math.round(p.productUnitPrice).toLocaleString()}원 / PC·시간`, plain: `PC가 1시간 돌 때 라면·음료 같은 상품매출이 ${Math.round(p.productUnitPrice).toLocaleString()}원 붙습니다. 요금과 무관한 상수이고 ${p.productUnitPriceFixed ? "직전 18개월 안에 연 매장의 상품매출 실측 중앙으로 정한 고정값입니다(새 매장일수록 시간당 먹거리를 더 팔아서 전 매장 평균은 낮게 봅니다)." : "기존점에서 매번 적합합니다."}` },
       ],
     },
   ];

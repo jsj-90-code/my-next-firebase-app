@@ -55,6 +55,74 @@ export function utilizationWindowMonths(openedAt: string | null): string[] {
 }
 
 /**
+ * 상품몫 상수를 정하는 **규칙**(2026-09-25 채택). 값은 `DEFAULT_TEXTBOOK_PARAMS.productUnitPrice`에 고정하고,
+ * 이 함수는 "지금 자료로 규칙을 돌리면 얼마인가"를 낸다. 정규 시험(productUnitPriceRule.test.ts)이 상수와 3% 넘게
+ * 벌어지면 빨간불 — 그때 사람이 상수를 옮긴다(축척 8.20h를 원장에서 재서 고정한 것과 같은 방식).
+ *
+ * ── 왜 "직전 18개월 개점 매장의 중앙"인가 ─────────────────────────────────
+ * 실측 상품단가(원/PC·시간)는 **개점 세대**를 따른다(2023 개점 중앙 1,287 → 2024 1,421 → 2025 1,626 → 2026 1,665).
+ * 같은 매장 안에서는 3년이 지나도 안 오르고(기울기 0), 같은 시점 단면에서도 세대 차가 남는다 — 물가가 아니다
+ * (메뉴판 가격은 2023.01→2026.09 +3.4%뿐). 예측 대상은 **새로 여는 매장**이므로 전 세대 평균(1,471)은 계통적으로 낮다.
+ * 되짚기(2024년 이후 개점 30곳, 개점 전 자료만): 전체 평균 |오차| 14.2%·편향 −11.4% vs 직전 1년 중앙 12.1%·−5.0%.
+ * 18개월인 이유: 12개월이면 자료 한 달짜리 매장이 끼고, 24개월이면 2024년 세대가 섞인다. 중앙값이라 한 곳(문산 2,076)에 안 끌린다.
+ * 사용자(2026-09-25): *"가장 정확하다라는 건 실제 상품매출을 토대로 유추할 수 있는 가장 근접한 값"* → *"해볼까?"*
+ * docs/releases/2026-09-25-product-share-rule.md
+ *
+ * ⚠️ 이건 표본 평균을 매번 맞추는 것과 다르다 — "어느 매장을 세는가"(직전 18개월 개점·중앙)가 규칙으로 고정돼 있고,
+ *    코드의 상수는 사람이 옮긴다. 세대 상승이 멈추면 규칙값도 멈춘다.
+ */
+export const PRODUCT_UNIT_PRICE_RULE = { windowMonths: 18, minStores: 8, widenStepMonths: 6, maxWindowMonths: 36 } as const;
+
+export type ProductUnitPriceRuleResult = {
+  value: number | null;
+  /** 기준 시점 = 매출DB의 마지막 달(시계가 아니라 자료로 정한다) */
+  asOf: string | null;
+  /** 실제로 쓴 창(개월). 표본이 minStores 미만이면 widenStep씩 넓힌 값 */
+  windowMonths: number;
+  stores: { storeCode: string; storeName: string; openedAt: string; unit: number; months: number }[];
+};
+
+/** 매장 한 곳의 실측 상품단가(원/PC·시간) = Σ상품매출 ÷ Σ(PC×720×가동률), 창은 가동률과 같은 2~12개월차(없으면 1개월차 폴백). */
+export function productUnitPriceOfStore(
+  sales: Array<{ storeCode: string; yearMonth: string; pcSales?: number | null; productSales?: number | null; utilizationRate?: number | null }>,
+  store: { storeCode: string; openedAt: string | null; pcCount?: number | null; evaluationPcCount?: number | null },
+): { unit: number; months: number } | null {
+  const pc = store.evaluationPcCount ?? store.pcCount ?? null;
+  if (!pc || !(pc > 0)) return null;
+  const sum = (months: string[]) => {
+    const w = new Set(months); let prod = 0, hours = 0, n = 0;
+    for (const m of sales) {
+      if (m.storeCode !== store.storeCode || !w.has(m.yearMonth)) continue;
+      const u = m.utilizationRate; if (u == null || !(u > 0) || !((m.pcSales ?? 0) > 0)) continue;
+      prod += m.productSales ?? 0; hours += pc * 720 * u; n++;
+    }
+    return hours > 0 ? { unit: prod / hours, months: n } : null;
+  };
+  return sum(utilizationWindowMonths(store.openedAt)) ?? sum(evaluationMonths(store.openedAt));
+}
+
+export function productUnitPriceByRule(
+  sales: Array<{ storeCode: string; yearMonth: string; pcSales?: number | null; productSales?: number | null; utilizationRate?: number | null }>,
+  stores: Array<{ storeCode: string; storeName?: string | null; openedAt: string | null; pcCount?: number | null; evaluationPcCount?: number | null; excludedFromModel?: boolean | null }>,
+  rule: { windowMonths: number; minStores: number; widenStepMonths: number; maxWindowMonths: number } = PRODUCT_UNIT_PRICE_RULE,
+): ProductUnitPriceRuleResult {
+  const ymIdx = (ym: string) => Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7));
+  const asOf = sales.reduce<string | null>((a, s) => (a == null || s.yearMonth > a ? s.yearMonth : a), null);
+  if (!asOf) return { value: null, asOf: null, windowMonths: rule.windowMonths, stores: [] };
+  const measured = stores
+    .filter((s) => s.excludedFromModel !== true && s.openedAt && /^\d{4}-\d{2}/.test(s.openedAt))
+    .map((s) => { const r = productUnitPriceOfStore(sales, s); return r ? { storeCode: s.storeCode, storeName: s.storeName ?? s.storeCode, openedAt: s.openedAt as string, unit: r.unit, months: r.months } : null; })
+    .filter((x): x is NonNullable<typeof x> => x != null);
+  let win = rule.windowMonths;
+  let picked = measured.filter((s) => ymIdx(s.openedAt.slice(0, 7)) >= ymIdx(asOf) - win);
+  while (picked.length < rule.minStores && win < rule.maxWindowMonths) { win += rule.widenStepMonths; picked = measured.filter((s) => ymIdx(s.openedAt.slice(0, 7)) >= ymIdx(asOf) - win); }
+  picked.sort((a, b) => a.openedAt.localeCompare(b.openedAt));
+  const vs = picked.map((s) => s.unit).sort((a, b) => a - b);
+  const value = vs.length ? (vs.length % 2 ? vs[vs.length >> 1] : (vs[vs.length / 2 - 1] + vs[vs.length / 2]) / 2) : null;
+  return { value, asOf, windowMonths: win, stores: picked };
+}
+
+/**
  * 매장별 **실측 월평균 가동률**(0~1). 수요 축척을 여기에 맞춘다(2026-09-16).
  *
  * 게토에서 받은 값과 대조했을 때 평균차 3.34% · r=1.000으로 사실상 같은 값이라,
