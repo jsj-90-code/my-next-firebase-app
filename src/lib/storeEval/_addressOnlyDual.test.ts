@@ -24,7 +24,6 @@ import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { chooseEstimate, labCandidateBreakdown, rangeFlagsFor, v62TrainingRange } from "./dualEstimate";
 import { buildQuickCandidate, blankCompetitorForTraining, type QuickEvalPlanInput } from "./quickEval/buildQuickCandidate";
 import { withQuickEvalSettings } from "./quickEval/quickEvalDefaults";
-import { applyQuickEvalQscFloor, prepareQuickEvalTrainingStores } from "./quickEval/quickEvalPeers";
 import type { KakaoPcBangPlace } from "./quickEval/kakaoPcBangs";
 import type { Competitor, ExistingStore, LocationEvaluation } from "./types";
 
@@ -90,8 +89,8 @@ describeIf("주소만 조건 되짚기 — V62(화면) · V62(운영) · 실험�
       const salesO = sales.filter((x: { storeCode: string }) => x.storeCode !== s.storeCode);
       const screen = evaluateCandidate({
         candidate, competitors: comps, locationEvaluation: locQ, settings: withQuickEvalSettings(settings),
-        existingStores: prepareQuickEvalTrainingStores(others), trainingLocationEvaluations: locations,
-        trainingCompetitors: competitors.map(blankCompetitorForTraining), trainingSales: salesO, trainingQscScores: applyQuickEvalQscFloor(qscScores),
+        existingStores: others, trainingLocationEvaluations: locations,
+        trainingCompetitors: competitors.map(blankCompetitorForTraining), trainingSales: salesO, trainingQscScores: qscScores,
       });
       const prod = evaluateCandidate({
         candidate, competitors: comps, locationEvaluation: locQ, settings,
@@ -133,9 +132,9 @@ describeIf("주소만 조건 되짚기 — V62(화면) · V62(운영) · 실험�
         const r = evaluateCandidate({
           candidate, competitors: comps, locationEvaluation: loc ? { ...loc, candidateCode: candidate.code } : null,
           settings: v.ceiling ? withQuickEvalSettings(settings) : settings,
-          existingStores: v.include ? prepareQuickEvalTrainingStores(others) : others, trainingLocationEvaluations: locations,
+          existingStores: v.include ? others : others, trainingLocationEvaluations: locations,
           trainingCompetitors: v.blank ? competitors.map(blankCompetitorForTraining) : competitors,
-          trainingSales: sales.filter((x: { storeCode: string }) => x.storeCode !== s.storeCode), trainingQscScores: v.floor ? applyQuickEvalQscFloor(qscScores) : qscScores,
+          trainingSales: sales.filter((x: { storeCode: string }) => x.storeCode !== s.storeCode), trainingQscScores: v.floor ? qscScores : qscScores,
         });
         if (r.v62Final) es.push(r.v62Final / (s.actualMonthlyRevenueAvg as number) - 1);
       }

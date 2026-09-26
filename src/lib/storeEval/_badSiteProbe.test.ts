@@ -31,7 +31,6 @@ import { judgePcBangName } from "./quickEval/pcBangNameFilter";
 import { floatingPatchFromSbiz, SBIZ_FLOATING_RADII, type SbizFloatingRadius } from "./floatingPopulationFromSbiz";
 import { buildQuickCandidate, buildQuickLocationEvaluation, blankCompetitorForTraining, type QuickEvalPlanInput } from "./quickEval/buildQuickCandidate";
 import { QUICK_EVAL_ENTRY_THRESHOLD_WON, QUICK_EVAL_PLAN_DEFAULTS, withQuickEvalSettings } from "./quickEval/quickEvalDefaults";
-import { prepareQuickEvalTrainingStores } from "./quickEval/quickEvalPeers";
 import { evaluateCandidate } from "./evaluate";
 import { mergeModelSettings } from "./settings";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
@@ -140,7 +139,7 @@ describeIf("안 되는 자리 시험 세트 — 주소만 입점 판정", () => 
       const loc = buildQuickLocationEvaluation(plan, c.locationDraft ?? null);
       const v = evaluateCandidate({
         candidate: cand, competitors: built.competitors, locationEvaluation: loc, settings: withQuickEvalSettings(settings),
-        existingStores: prepareQuickEvalTrainingStores(raw), trainingLocationEvaluations: locations,
+        existingStores: raw, trainingLocationEvaluations: locations,
         trainingCompetitors: competitors.map(blankCompetitorForTraining), trainingSales: sales, trainingQscScores: snap.qscScores ?? [],
       });
       let lab: number | null = null;

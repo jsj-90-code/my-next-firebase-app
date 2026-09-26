@@ -23,7 +23,7 @@ import { haversineM } from "./kakaoPcBangs";
 import { OWN_FOOD_BRAND, QUICK_EVAL_FIELD_NOTES } from "./quickEvalDefaults";
 import { appendSiteFactsToContext, describeSiteFacts } from "./quickEvalLocationContext";
 import { QUICK_EVAL_REVIEW_SYSTEM_PROMPT } from "./quickEvalReviewPrompt";
-import { applyQuickEvalQscFloor, buildQuickEvalPeers, prepareQuickEvalTrainingStores } from "./quickEvalPeers";
+import { buildQuickEvalPeers } from "./quickEvalPeers";
 import {
   fitQuickEvalOwnModel,
   predictQuickEvalOwnRevenue,
@@ -394,24 +394,7 @@ describe("가맹점 실적 비교표 (AI 자체 매출 판단의 근거)", () =>
     expect(peers.nearestRevenuePerPc.max).toBe(600_000);
   });
 
-  it("학습제외 매장 둘을 이 도구에서만 포함한다 — 원본은 안 건드린다", () => {
-    const excluded = { ...store({ storeCode: "20250124421", storeName: "동탄북광장점" }), excludedFromModel: true };
-    const prepared = prepareQuickEvalTrainingStores([excluded]);
-    expect(prepared[0].excludedFromModel).toBe(false);
-    expect(excluded.excludedFromModel).toBe(true); // 원본 객체는 그대로다
-  });
-
-  it("QSC 없는 매장에 가맹점 최저점을 채운다 — 상수로 박지 않는다", () => {
-    const qsc = new Map([["A", 95], ["B", 73.9], ["C", 88]]);
-    const out = applyQuickEvalQscFloor(qsc);
-    expect(out.get("20250124421")).toBe(73.9);
-    expect(out.get("A")).toBe(95); // 있는 값은 안 건드린다
-    expect(qsc.has("20250124421")).toBe(false); // 원본은 그대로다
-  });
-
-  it("QSC 기록이 아예 없으면 아무 값도 지어내지 않는다", () => {
-    expect(applyQuickEvalQscFloor(new Map()).size).toBe(0);
-  });
+  // (2026-09-27 — 학습 포함·QSC 최저 채움 시험 3건은 기능과 함께 지웠다.)
 
   it("비교할 매장이 없으면 빈 표를 준다 — 지어낸 근거를 만들지 않는다", () => {
     const peers = buildQuickEvalPeers([], 10000);

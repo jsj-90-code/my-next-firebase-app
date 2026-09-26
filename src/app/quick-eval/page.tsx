@@ -58,9 +58,7 @@ import {
   withQuickEvalSettings,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
 import {
-  applyQuickEvalQscFloor,
   buildQuickEvalPeers,
-  prepareQuickEvalTrainingStores,
   type QuickEvalPeerSummary,
 } from "@/lib/storeEval/quickEval/quickEvalPeers";
 // ⛔ 자동화 전용 산식(quickEvalOwnModel)은 **화면에서 뺐다**(사용자 2026-09-22). 적중률은 더
@@ -287,9 +285,8 @@ export default function QuickEvalPage() {
         competitors: built.competitors,
         locationEvaluation: quickLoc,
         settings,
-        // ⭐ 송도점·동탄북광장점을 **이 화면에서만** 학습에 넣는다(사용자 2026-09-22).
-        //    Firestore의 excludedFromModel은 안 건드린다 — 풀면 결재 숫자가 움직인다.
-        existingStores: prepareQuickEvalTrainingStores(existingStores),
+        // (2026-09-27 — "송도·동탄 이 화면에서만 학습 포함"은 지웠다. 09-25부터 운영 표본에 들어 있어 효과 0.)
+        existingStores,
         trainingLocationEvaluations,
         // ⭐⭐ 학습 경쟁점은 **실측 그대로** 쓴다 (2026-09-22 밤 3차에 방향을 바꿨다).
         //
@@ -314,7 +311,7 @@ export default function QuickEvalPage() {
         trainingSales,
         // 동탄북광장점은 QSC 기록이 없어 관리가 '가맹점 평균'으로 들어간다 — 관리 불량이
         // 전달되지 않는다. 사용자 지시로 **가맹점 최저점**을 이 화면에서만 채운다.
-        trainingQscScores: applyQuickEvalQscFloor(trainingQscScores),
+        trainingQscScores, // (2026-09-27 — "동탄 QSC 최저 채움"은 지웠다. 운영에 대체 QSC 73.9가 기록돼 효과 0.)
       });
       setResult(evaluated);
       setSettingsUsed(settings);
