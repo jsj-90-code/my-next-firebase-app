@@ -137,6 +137,7 @@ export async function POST(request: Request) {
     const existingPlaceIds = new Set(existingCompetitorsSnap.docs.map((d) => d.data().sourcePlaceId).filter(Boolean));
     const batch = adminDb.batch();
     // 2026-09-26 — 새 경쟁점마다 건축물대장으로 엘리베이터를 판정한다(경쟁점은 지도로 못 봐서 사람이 추측해 왔다, 사용자).
+    // 이 라우트는 vercel.json에서 서울 리전(icn1) 고정 — 공공 API가 해외 리전을 막을 수 있다(소상공인365 선례).
     // "있음"만 채우고 판정 못 하면 빈칸. 실패해도 수집은 계속한다(키 없음·503 등 → 빈칸 + 안내 한 줄). 3곳씩 나눠 부른다.
     const newPlaces = pcPlaces.filter((p) => !existingPlaceIds.has(p.id));
     const elevatorByPlace = new Map<string, { hasElevator: true | null; basis: string }>();
