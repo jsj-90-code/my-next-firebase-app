@@ -69,7 +69,7 @@ pop500m · pop1km · area1kmKm2 · male1kmRatio(0~1) · age1km 9구간 · demogr
 
 기본정보 탭에 **"소상공인365 유동인구 자동 채우기 (300·400·500m·1km)"** 버튼(SGIS 버튼 옆). 확정 좌표로 반경 4개를 **차례로** 받아
 floating300/400/500 × (평균·남·연령 6구간) + floating1000Avg(총량만) = 25칸을 **폼에만** 채운다 — 저장은 사람이. 약 20초.
-업로드 이력은 `sourceType: "sosangongin365"`, `fileName: "소상공인365 자동(…)"`. 직장인구·세대수·업소수는 여전히 붙여넣기.
+업로드 이력은 `sourceType: "sosangongin365"`, `fileName: "소상공인365 자동(…)"`. 직장인구·지하철 승하차는 여전히 붙여넣기 — 산식(V62·실험실) 입력이 아니고 AI 입지평가·보고서 문구에만 들어가서 자동화 안 함(09-26 확인).
 
 - 경로: 주소만 초기평가와 같은 `quickEval/sbizFloating.ts`. 새 라우트 `api/store-eval/collect-floating-population`(회사 계정, Firestore 안 씀,
   **icn1 고정** — vercel.json. 소상공인365가 미국 리전을 막는다). 필드 대응·경고는 `floatingPopulationFromSbiz.ts`(시험 3건).
