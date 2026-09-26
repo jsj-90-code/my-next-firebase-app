@@ -1,6 +1,6 @@
 // dualEstimate.inputGapsFor — 결과 탭 "빈 입력" 목록 (2026-09-26 경쟁점 PC대수 빈칸 추가).
 import { describe, expect, it } from "vitest";
-import { inputGapsFor } from "./dualEstimate";
+import { chooseEstimate, inputGapsFor, rangeFlagsFor } from "./dualEstimate";
 import type { CandidateInput, Competitor } from "./types";
 
 const candidate = { code: "N999" } as CandidateInput;
@@ -27,5 +27,29 @@ describe("inputGapsFor — 경쟁점 PC대수 빈칸", () => {
       comp({ candidateCode: "N001" }),
     ]);
     expect(pcGap(gaps)).toBeUndefined();
+  });
+});
+
+// 2026-09-26 밤 개정 규칙 — 크게 벗어나면 실험실, 조금 벗어나면 V62 + 경고, 밀집 판정은 거리 무관 대수.
+describe("chooseEstimate · rangeFlagsFor — 범위 밖 규칙(2026-09-26 개정)", () => {
+  const range = { demand: [1128, 17429] as [number, number], rate: [1000, 2000] as [number, number], pc: [80, 150] as [number, number], competitorIp: [0, 1050] as [number, number], demandPerSupply: [4.4, 36.6] as [number, number], sampleCount: 40 };
+  const res = (marketDemand: number, competitorIp: number, pc = 100) => ({ marketDemand, competitorIp, hourlyRate: 1500, expectedPcCount: pc });
+
+  it("크게 벗어남(끝값의 절반 아래) → 실험실 주 값 — 영월형", () => {
+    const flags = rangeFlagsFor(res(383, 85, 90), range);
+    expect(flags.some((f) => f.field === "상권수요" && f.far)).toBe(true);
+    const d = chooseEstimate(71_000_000, 38_000_000, flags, 85, 40);
+    expect(d.primary).toBe("실험실");
+    expect(d.reason).toContain("크게 벗어남");
+  });
+
+  it("조금 벗어남 → V62 주 값 + 범위 밖 경고 — 창원상남형(경쟁IP 1103 > 1050)", () => {
+    const flags = rangeFlagsFor(res(5000, 1103), range);
+    expect(flags.length).toBeGreaterThan(0);
+    expect(flags.every((f) => !f.far)).toBe(true);
+    const d = chooseEstimate(54_000_000, 29_000_000, flags, 1231, 40);
+    expect(d.primary).toBe("V62");
+    expect(d.reason).toContain("범위 밖 경고");
+    expect(d.reason).toContain("경쟁 밀집(경쟁 PC 1231대)"); // 밀집 판정은 넘겨받은 거리 무관 대수로
   });
 });

@@ -210,7 +210,7 @@ export function ReportCard({
         {/* 2026-09-13 — 내부 지표명(경쟁IP·IP당수요·경쟁력격차)과 원점수를 뺐다. 이 카드는 점포팀
             등 다른 팀이 보는 물건이라 "경쟁IP 320", "경쟁력격차 1.63" 같은 값은 읽히지 않는다.
             뜻이 그대로 드러나는 말과 이미 있던 5단계 라벨로 바꾼다(값 자체는 같은 계산). */}
-        <StatTile label="경쟁점 공급 규모" value={formatNumber(result.competitorIp)} hint="주변 경쟁점의 시설·규모를 합산한 값" />
+        <StatTile label="경쟁점 공급 규모" value={formatNumber(result.competitorIp)} hint="500m 안 경쟁점 PC 대수를 거리로 무게 줘 합한 값(가까울수록 크게 셈)" />
         <StatTile
           label="공급 대비 수요"
           value={formatScore(result.ipPerDemand)}

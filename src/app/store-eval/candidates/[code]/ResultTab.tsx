@@ -29,7 +29,7 @@ import {
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments } from "@/lib/storeEval/store";
 import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
-import { chooseEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange, type DualEstimate } from "@/lib/storeEval/dualEstimate";
+import { DUAL_ESTIMATE_RULE, chooseEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange, type DualEstimate } from "@/lib/storeEval/dualEstimate";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
@@ -84,7 +84,7 @@ function DualEstimatePanel({ dual }: { dual: DualEstimate | null }) {
       </div>
       <p className="mt-2 text-xs leading-5">{dual.reason}</p>
       <p className="mt-1 text-xs leading-5">{dual.inputGaps == null ? null : dual.inputGaps.length ? <>⚠ 빈 입력(그 산식은 기본값·가정으로 계산): <b>{dual.inputGaps.join(" · ")}</b></> : "입력 호환성: 두 산식이 쓰는 입력이 모두 채워져 있습니다."}</p>
-      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">V62는 평균적으로 더 맞지만(기존점 9.5% · 신규 매장 되짚기 8.7%) 기존점에 없던 입력에서는 직선을 늘립니다. 실험실은 경쟁 밀집 동네에서 수요를 적게 봅니다. 그래서 평균 내지 않고 규칙으로 고릅니다 — 범위 밖이면 실험실, 경쟁 밀집이면 V62, 20% 넘게 갈리면 현장 확인.{dual.rangeSampleCount ? ` 범위 기준: 모델 포함 기존점 ${dual.rangeSampleCount}곳.` : ""}</p>
+      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">V62가 평균적으로 더 맞고, 기존점 범위를 조금 벗어난 입력에서도 더 가까웠습니다(2026-09-26 되짚기: 범위 밖 기존점 7곳 V62 10.3% vs 실험실 27.7%). 다만 끝값의 {1 / DUAL_ESTIMATE_RULE.farFactor}배 아래나 {DUAL_ESTIMATE_RULE.farFactor}배 위처럼 크게 벗어나면 기존점에 예가 없어 실험실을 주 값으로 봅니다. 실험실은 경쟁 밀집 동네에서 수요를 적게 봅니다. 그래서 평균 내지 않고 규칙으로 고릅니다 — 크게 벗어나면 실험실, 조금 벗어나면 V62 + 경고, 경쟁 밀집(거리 무관 경쟁 PC {DUAL_ESTIMATE_RULE.denseCompetitorIp}대 이상)이면 V62, 20% 넘게 갈리면 현장 확인.{dual.rangeSampleCount ? ` 범위 기준: 모델 포함 기존점 ${dual.rangeSampleCount}곳.` : ""}</p>
     </section>
   );
 }
@@ -803,7 +803,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         const lab = labCandidateRevenue({ candidate, preparedStores: prepared, rawStores: existingStores, competitors: trainingCompetitors, locations: trainingLocationEvaluations, sales: trainingSales, settings, qscByStoreCode: trainingQscScores,
           extras: { residentRingsByCode: rings ?? undefined, ringBlockedByCode: blocked ?? undefined, residentRadiusByCode: radius ?? undefined, roadviewByKey: roadview ?? undefined } });
         const range = v62TrainingRange(prepared);
-        evaluated.dualEstimate = chooseEstimate(evaluated.v62Final, lab, range ? rangeFlagsFor(evaluated, range) : [], evaluated.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, trainingCompetitors));
+        evaluated.dualEstimate = chooseEstimate(evaluated.v62Final, lab, range ? rangeFlagsFor(evaluated, range) : [], evaluated.competitorIpRaw ?? evaluated.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, trainingCompetitors));
       } catch {
         evaluated.dualEstimate = null; // 실험실 값이 안 나와도 V62 결과는 저장한다
       }
@@ -1267,7 +1267,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             hint={describeMarketGradeThresholds(settingsUsed)}
           />
           <ResultCard label="상권성격" value={result.marketCharacter ?? "-"} />
-          <ResultCard label="경쟁IP" value={formatNumber(result.competitorIp)} />
+          <ResultCard label="경쟁IP(거리 가중)" value={formatNumber(result.competitorIp)} hint={result.competitorIpRaw != null ? `거리 무관 합 ${formatNumber(result.competitorIpRaw)}대 · 200m 밖은 멀수록 줄여 셈(2026-09-26)` : undefined} />
           <ResultCard label="IP당수요" value={formatScore(result.ipPerDemand)} hint="여유 >15 / 포화 <7 (08_계산기준)" />
           <ResultCard label="경쟁력격차" value={formatScore(result.competitivenessGap)} />
         </div>

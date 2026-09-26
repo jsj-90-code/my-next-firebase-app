@@ -678,7 +678,10 @@ export type EvaluationResult = {
   marketDemand: number | null;
   marketGrade: string | null;
   marketCharacter: string | null;
+  /** V62가 쓰는 경쟁IP. 2026-09-26부터 **거리 가중**(v61Training.competitorIpDistanceWeighted, calc.ts computeV62CompetitorIp). */
   competitorIp: number | null;
+  /** 거리와 무관하게 더한 경쟁점 PC 대수(종전 경쟁IP). "경쟁 밀집(800대↑)" 규칙과 화면 참고용. 옛 결과엔 없다. */
+  competitorIpRaw?: number | null;
   ipPerDemand: number | null;
   competitivenessGap: number | null;
   // 2026-08-25 추가 — 다우오피스 평가기록 보고서 초안(§경쟁 섹션)에서 "자사 vs 경쟁점 평균

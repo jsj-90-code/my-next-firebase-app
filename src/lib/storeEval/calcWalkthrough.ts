@@ -185,11 +185,14 @@ function buildShareStep(result: EvaluationResult): WalkStep {
   });
   rows.push({ label: "우리 계획 PC 대수", value: result.expectedPcCount, kind: "count" });
   rows.push({
-    label: "경쟁점 PC 대수 합계",
+    label: "경쟁점 PC 대수 합계(거리 가중)",
     value: result.competitorIp,
     kind: "count",
-    note: "조사한 경쟁점들의 PC 대수를 전부 더한 값",
+    note: "500m 안 조사 경쟁점의 PC 대수를 거리로 무게 줘 더한 값 — 200m까지는 거의 그대로(×0.96), 그 뒤로 멀수록 줄어 500m에서 약 0.2배(2026-09-26)",
   });
+  if (result.competitorIpRaw != null) {
+    rows.push({ label: "경쟁점 PC 대수(거리 무관 합)", value: result.competitorIpRaw, kind: "count", note: "경쟁 밀집(800대 이상) 판정에 쓰는 원래 대수" });
+  }
 
   const share =
     result.marketDemand != null && result.marketDemand > 0 && result.expectedOwnDemand != null

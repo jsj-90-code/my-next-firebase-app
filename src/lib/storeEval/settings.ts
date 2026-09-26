@@ -123,6 +123,10 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
       // 2026-09-14 — 기본은 종전 동작(접근가시성만). "visibility-x-preemption"으로 켜면
       // 선점경쟁 점수를 곱해서 쓴다. 켤지 말지는 사용자 확인 대기 중이다(types.ts 주석·docs 참고).
       accessScoreMode: "visibility-x-preemption" as const,
+      // 2026-09-26 밤 — 경쟁IP를 거리로 무게 줘서 센다(사용자 채택). 500m 안 조사 경쟁점 대수 × 실험실 거리 감쇠.
+      // 세 잣대(전 표본 · 컷오프 2024-12 · 2024-06) 모두 나빠지지 않음: MAPE 9.47→9.27% · 9.58→9.25% · 10.24→10.13%, ±20% 37/40 유지.
+      // 근거 docs/releases/2026-09-26-v62-lab-feed.md (C1). 끄면(false) 종전 경쟁IP(거리 무관 합)로 돌아간다.
+      competitorIpDistanceWeighted: true,
       // 2026-09-14 — 실효단가 지수. 사용자 제공 매장 로그(PC 거래 원본 6곳)로 저장된 가동률
       // 필드가 정확함을 확인한 뒤(오차 2.3%), 38곳 전부의 **참 이용시간**을 가동률에서 구해
       // 실효단가 = PC매출 ÷ 참이용시간 을 계산했다. log-log 회귀 결과 기울기 0.546(R² 0.346).

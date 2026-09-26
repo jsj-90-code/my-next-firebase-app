@@ -38,6 +38,7 @@ import {
   computeFacilityScore,
   combineHardwareTiers,
   computeCompetitorAppliedPcCount,
+  computeV62CompetitorIp,
   describeAppliedPcCountBasis,
   computeFloatingRawDemand,
   computeFreshnessFromYear,
@@ -1906,8 +1907,10 @@ describe("computeExistingStoreDemandEvaluation (2026-08-30 신설 — 핑봇 실
     const { marketDemand } = computeMarketDemand(baseStore(), settings);
     expect(result.marketDemand).toBe(marketDemand);
 
-    const competitorIp = computeCompetitorAppliedPcCount(competitor()) ?? 0;
+    // 2026-09-26 — V62 경쟁IP는 거리 가중(settings.v61Training.competitorIpDistanceWeighted 기본 켬). 같은 함수로 기대값을 낸다.
+    const competitorIp = computeV62CompetitorIp(competitors, baseStore().operatingPcStores500m ?? null, baseStore(), settings);
     expect(result.competitorIp).toBe(competitorIp);
+    expect(competitorIp).toBeCloseTo((computeCompetitorAppliedPcCount(competitor()) ?? 0) * 0.9593, 6);
 
     const expectedOwnDemand = computeExpectedOwnDemand(marketDemand, 100, result.competitivenessGap, result.competitorIp);
     expect(result.ownDemand).toBe(expectedOwnDemand);

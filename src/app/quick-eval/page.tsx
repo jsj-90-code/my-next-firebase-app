@@ -496,7 +496,7 @@ export default function QuickEvalPage() {
                 value={`${result.marketGrade ?? "-"} / ${result.marketCharacter ?? "-"}`}
                 note={settingsUsed ? describeMarketGradeThresholds(settingsUsed) : undefined}
               />
-              <Stat label="경쟁IP" value={fmtInt(result.competitorIp)} />
+              <Stat label="경쟁IP(거리 가중)" value={fmtInt(result.competitorIp)} />
               <Stat label="IP당수요" value={result.ipPerDemand == null ? "-" : result.ipPerDemand.toFixed(1)} />
               {/* 2026-09-23 저녁 — expectedUtilization은 경쟁점 핑봇 실측으로 내는 값이라 주소만으로는 늘 비었다
                   (사용자: "예상가동률 공백으로두지말고"). 예상매출을 거꾸로 푼 가동률을 먼저 쓴다 — 금액과 항상 맞는다. */}

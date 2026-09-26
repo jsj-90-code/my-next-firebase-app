@@ -222,7 +222,7 @@ export function recomputeCandidates(src: RecomputeSource, prepared: Prepared = p
         candidate, preparedStores, rawStores: src.existingStores, competitors, locations: src.locationEvaluations,
         sales: evaluationSales, settings, qscByStoreCode, extras: labExtras,
       });
-      after.dualEstimate = chooseEstimate(after.v62Final, lab, range ? rangeFlagsFor(after, range) : [], after.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, competitors));
+      after.dualEstimate = chooseEstimate(after.v62Final, lab, range ? rangeFlagsFor(after, range) : [], after.competitorIpRaw ?? after.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, competitors));
     } catch {
       after.dualEstimate = null; // 결과 탭과 같다 — 실험실 값이 안 나와도 V62 결과는 저장한다
     }

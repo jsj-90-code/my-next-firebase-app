@@ -9,10 +9,15 @@
 //   · 실험실은 **경쟁 밀집**(경쟁 PC 800대 이상)에서 수요를 ~1.7배 적게 본다 — 창원상남 2,937만 vs 실무 감각 4,500~4,800만(V62 5,439만).
 // - 두 값 평균은 되짚기에서 V62 단독보다 낫지 않았다 → 평균 내지 않고 **고른다.**
 //
-// ── 규칙 (고정) ─────────────────────────────────────────────────────────────
-// 1. 입력(상권수요·정가·PC수·경쟁IP·수요/공급)이 V62 학습 범위(모델 포함 기존점 최소~최대) 밖 → **실험실을 주 값**으로. "V62 외삽".
-// 2. 범위 안이고 두 값이 20% 넘게 갈림 →
-//    · 경쟁IP ≥ 800(밀집) → V62 주 값, "실험실 약점 구간(경쟁 밀집 수요 과소)".
+// ── 규칙 (2026-09-26 밤 개정, 사용자 확정 — 근거 docs/releases/2026-09-26-v62-lab-feed.md "범위 규칙 되짚기") ──────────
+// 1. 입력(상권수요·정가·PC수·경쟁IP·수요/공급)이 V62 학습 범위(모델 포함 기존점 최소~최대)를 **크게** 벗어남
+//    (끝값의 절반 아래 또는 두 배 위, farFactor) → **실험실을 주 값**으로 + 현장 확인. 지금 영월(상권수요 383 < 1,128의 절반)만 해당.
+//    ⚠️ 이 경우는 기존점에 예가 없어 자료로 못 가린다. 영월은 유일한 경쟁점 핑봇(85대·26.6%)으로 따지면 V62(가동률 34%)는
+//       동네 시장이 약 2배가 돼야 나오는 값이라 과대 쪽으로 봤다(사용자 확정).
+// 1'. **조금** 벗어남 → V62 주 값 그대로 + "범위 밖" 경고. 기존점 되짚기: 자기 빼고 잡은 범위 밖 7곳에서 V62가 더 가까웠다
+//    (|오차| 평균 V62 10.3% vs 실험실 27.7%). 옛 규칙("범위 밖이면 무조건 실험실")은 이 시험으로 기각.
+// 2. 두 값이 20% 넘게 갈림 →
+//    · 경쟁 PC ≥ 800대(밀집, **거리와 무관한 원래 대수** competitorIpRaw) → V62 주 값, "실험실 약점 구간(경쟁 밀집 수요 과소)".
 //    · 그 밖 → V62 주 값, V62가 크면 "V62 과대 가능 — 현장 확인", 작으면 "V62 과소 가능 — 현장 확인".
 // 3. 그 밖(20% 안) → V62 주 값, "두 산식 일치".
 // 폭(low~high)은 두 값의 작은 쪽~큰 쪽. 보고서에는 주 값과 폭을 같이 적는다.
@@ -23,7 +28,7 @@ import { DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook }
 import { computeCompetitorAppliedPcCount } from "./calc";
 import { buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, productUnitPriceEraByStore, utilizationByStore } from "./labInput";
 
-export const DUAL_ESTIMATE_RULE = { gapRatio: 1.2, denseCompetitorIp: 800 } as const;
+export const DUAL_ESTIMATE_RULE = { gapRatio: 1.2, denseCompetitorIp: 800, farFactor: 2 } as const;
 
 export type V62TrainingRange = { demand: [number, number]; rate: [number, number]; pc: [number, number]; competitorIp: [number, number]; demandPerSupply: [number, number]; sampleCount: number };
 
@@ -43,13 +48,16 @@ export function v62TrainingRange(stores: ExistingStore[]): V62TrainingRange | nu
   };
 }
 
-export type RangeFlag = { field: "상권수요" | "정가" | "PC수" | "경쟁IP" | "수요/공급"; value: number; min: number; max: number; side: "아래" | "위" };
+/** far = 끝값의 절반 아래 또는 두 배 위(DUAL_ESTIMATE_RULE.farFactor) — 기존점에 예가 없을 만큼 크게 벗어남. */
+export type RangeFlag = { field: "상권수요" | "정가" | "PC수" | "경쟁IP" | "수요/공급"; value: number; min: number; max: number; side: "아래" | "위"; far?: boolean };
 
 export function rangeFlagsFor(result: Pick<EvaluationResult, "marketDemand" | "competitorIp" | "hourlyRate" | "expectedPcCount">, range: V62TrainingRange): RangeFlag[] {
   const out: RangeFlag[] = [];
   const chk = (field: RangeFlag["field"], v: number | null | undefined, [min, max]: [number, number]) => {
     if (v == null || !Number.isFinite(v)) return;
-    if (v < min) out.push({ field, value: v, min, max, side: "아래" }); else if (v > max) out.push({ field, value: v, min, max, side: "위" });
+    const k = DUAL_ESTIMATE_RULE.farFactor;
+    if (v < min) out.push({ field, value: v, min, max, side: "아래", far: min > 0 && v < min / k });
+    else if (v > max) out.push({ field, value: v, min, max, side: "위", far: max > 0 && v > max * k });
   };
   const pc = result.expectedPcCount ?? null, comp = result.competitorIp ?? 0;
   chk("상권수요", result.marketDemand, range.demand);
@@ -115,15 +123,20 @@ export function chooseEstimate(v62: number | null, lab: number | null, flags: Ra
   const high = v62 != null && lab != null ? Math.max(v62, lab) : v62 ?? lab;
   let primary: DualEstimate["primary"] = "V62";
   let reason: string;
-  if (flags.length && lab != null) {
+  const fmt = (list: RangeFlag[]) => list.map((f) => `${f.field} ${Math.round(f.value * 100) / 100}이(가) 기존점 범위(${Math.round(f.min * 100) / 100}~${Math.round(f.max * 100) / 100}) ${f.side}`).join(", ");
+  const far = flags.filter((f) => f.far);
+  // 조금 벗어남 — 주 값은 V62 그대로, 경고만 앞에 붙인다(2026-09-26 되짚기: 범위 밖 7곳에서 V62 10.3% vs 실험실 27.7%).
+  const nearNote = flags.length && !far.length ? `범위 밖 경고 — ${fmt(flags)}. 기존점 되짚기에서 이 정도 벗어난 매장은 V62가 더 가까웠습니다. ` : "";
+  if (far.length && lab != null) {
     primary = "실험실";
-    reason = `V62 외삽 — ${flags.map((f) => `${f.field} ${Math.round(f.value * 100) / 100}이(가) 기존점 범위(${Math.round(f.min * 100) / 100}~${Math.round(f.max * 100) / 100}) ${f.side}`).join(", ")}. 회귀식이 본 적 없는 입력이라 실험실(구조식)을 주 값으로 봅니다.`;
+    reason = `V62 외삽(크게 벗어남) — ${fmt(far)}. 기존점에 이런 예가 없어 회귀식이 직선을 늘린 값일 수 있어 실험실(구조식)을 주 값으로 봅니다. 현장 확인을 권합니다.`;
   } else if (lab == null) {
     reason = "실험실 값을 낼 수 없어 V62만 봅니다.";
   } else if (ratio != null && (ratio > DUAL_ESTIMATE_RULE.gapRatio || ratio < 1 / DUAL_ESTIMATE_RULE.gapRatio)) {
     if ((competitorIp ?? 0) >= DUAL_ESTIMATE_RULE.denseCompetitorIp) reason = `두 산식이 ${ratio.toFixed(2)}배 갈림 — 경쟁 밀집(경쟁 PC ${Math.round(competitorIp ?? 0)}대)은 실험실이 수요를 적게 보는 구간이라 V62를 주 값으로 봅니다.`;
     else reason = `두 산식이 ${ratio.toFixed(2)}배 갈림 — ${ratio > 1 ? "V62 과대 가능" : "V62 과소 가능"}. 현장 확인을 권합니다.`;
   } else reason = "두 산식이 20% 안에서 일치합니다.";
+  if (primary === "V62" && nearNote) reason = nearNote + reason;
   return { v62, lab, primary, primaryValue: primary === "V62" ? v62 : lab, low, high, ratio, reason, rangeFlags: flags, rangeSampleCount, inputGaps, computedAt: Date.now() };
 }
 
