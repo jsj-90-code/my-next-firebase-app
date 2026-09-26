@@ -45,6 +45,7 @@ import type {
   CandidateInput,
   Competitor,
   DemandPoint,
+  ExtractedFieldRecord,
   FoodBrand,
   GroundLevel,
   LocationEvaluation,
@@ -126,6 +127,9 @@ function BasicInfoTabForm({
   // 상권자료 자동수집 1단계(2026-08-24) — 주소→좌표, 행정구역 참고자료, 경쟁점/수요거점 자동수집.
   const [collecting, setCollecting] = useState(false);
   const [collectMessage, setCollectMessage] = useState<string | null>(null);
+  // 2026-09-26 — SGIS 주거인구 API 자동 채우기(입력 자동화 2번). 붙여넣기 패널과 따로 상태를 둔다.
+  const [sgisBusy, setSgisBusy] = useState(false);
+  const [sgisNotice, setSgisNotice] = useState<{ ok: boolean; text: string; warnings: string[] } | null>(null);
   const [collectError, setCollectError] = useState<string | null>(null);
   const [nearbyWarnings, setNearbyWarnings] = useState<{ code: string; name: string }[]>([]);
   const [adminDongRef, setAdminDongRef] = useState<AdminDongReference | null>(null);
@@ -313,6 +317,43 @@ function BasicInfoTabForm({
       setCollectError(
         `추출값은 폼에 적용했지만 업로드 이력을 남기지 못했습니다: ${err instanceof Error ? err.message : err}`,
       );
+    }
+  }
+
+  // SGIS 반경 500m/1km 주거인구·연령을 API로 받아 **폼에만** 채운다(저장은 사람이 "저장"으로).
+  // 붙여넣기와 같은 handleApplyMarketDataUpload를 거쳐 업로드 이력도 같은 모양으로 남긴다.
+  async function handleFetchSgisResident() {
+    if (form.lat == null || form.lng == null || form.code === "new") return;
+    setSgisBusy(true);
+    setSgisNotice(null);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch("/api/store-eval/collect-resident-population", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ lat: form.lat, lng: form.lng }),
+      });
+      const data = await readJsonOrText<{ patch: Record<string, number>; records: ExtractedFieldRecord[]; warnings: string[]; baseYear: string }>(response);
+      if (!response.ok || data.error || !data.patch) throw new Error(data.error ?? "SGIS 주거인구를 받지 못했습니다.");
+      const filled = Object.keys(data.patch).length;
+      if (filled === 0) throw new Error("SGIS가 빈 결과를 돌려줬습니다. PDF 붙여넣기로 입력해주세요.");
+      await handleApplyMarketDataUpload(data.patch, {
+        id: `${form.code}_sgis_life_area_${Date.now()}`,
+        candidateCode: form.code,
+        sourceType: "sgis_life_area",
+        coordAtUpload: { lat: form.lat, lng: form.lng },
+        fileName: `SGIS API 자동(${data.baseYear}년 기준)`,
+        fileHash: null,
+        pastedTable: false,
+        extractedFields: data.records ?? [],
+        uploadedAt: Date.now(),
+        uploadedBy: actor,
+      });
+      setSgisNotice({ ok: true, text: `SGIS ${data.baseYear}년 기준 ${filled}개 값을 폼에 채웠습니다. 아래 입력칸에서 확인한 뒤 "저장"을 눌러야 반영됩니다.`, warnings: data.warnings ?? [] });
+    } catch (err) {
+      setSgisNotice({ ok: false, text: err instanceof Error ? err.message : String(err), warnings: [] });
+    } finally {
+      setSgisBusy(false);
     }
   }
 
@@ -516,11 +557,32 @@ function BasicInfoTabForm({
         <section className={sectionClass}>
           <h3 className={sectionTitleClass}>SGIS·소상공인365 업로드 자동추출 (반경 500m/1km 통계)</h3>
           <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
-            SGIS·소상공인365 모두 반경(500m/1km) 통계를 조회하는 공식 API가 없어(2026-08-24 확인) 직접 조회해야 합니다.
-            SGIS는 PDF 보고서만 제공해 표를 복사해 붙여넣는 방식만 됩니다(엑셀 없음). 라벨을 찾아 자동으로 채워두지만,
-            값이 다르면 자동확정하지 않고 표에서 직접 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요 — 그 뒤에도 이
-            탭의 &ldquo;저장&rdquo;을 눌러야 최종 반영됩니다.
+            <strong>SGIS 주거인구는 아래 버튼으로 자동으로 받습니다</strong>(2026-09-26 — SGIS 반경 통계 API. 기존점 52곳 손입력과
+            중앙 차이 0.0%로 대조된 경로). 버튼은 폼에만 채우고, 이 탭의 &ldquo;저장&rdquo;을 눌러야 반영됩니다. 버튼이 실패하면
+            아래 PDF 붙여넣기를 쓰세요. 소상공인365(유동인구)는 아직 리포트를 복사해 붙여넣는 방식입니다. 붙여넣기는 라벨을 찾아
+            자동으로 채워두지만 값이 다르면 자동확정하지 않으니, 표에서 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요.
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3 print:hidden">
+            <button
+              type="button"
+              disabled={sgisBusy || form.code === "new" || authLoading}
+              onClick={handleFetchSgisResident}
+              className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {sgisBusy ? "SGIS에서 받는 중..." : "SGIS 주거인구 자동 채우기 (500m·1km·연령)"}
+            </button>
+            <span className="text-xs text-[var(--sl-ink-soft)]">
+              확정 좌표({form.lat.toFixed(6)}, {form.lng.toFixed(6)}) 기준 — 좌표를 지도에서 옮겼다면 확정한 뒤 누르세요.
+            </span>
+          </div>
+          {sgisNotice && (
+            <div className={`app-notice mt-2 w-full justify-start px-3 py-2 text-sm ${sgisNotice.ok ? "app-badge-ok" : "app-badge-danger"}`}>
+              <div>{sgisNotice.text}</div>
+              {sgisNotice.warnings.map((w) => (
+                <div key={w} className="mt-1 text-xs">⚠ {w}</div>
+              ))}
+            </div>
+          )}
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <MarketDataUploadPanel
               title="SGIS 생활권역 통계 (인구·연령)"
