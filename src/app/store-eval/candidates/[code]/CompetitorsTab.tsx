@@ -358,7 +358,12 @@ function CompetitorForm({
         <NumberField label="거리(m)" value={form.distanceM} onChange={(v) => set("distanceM", v)} />
         <NumberField label="층수" value={form.floor} onChange={(v) => set("floor", v)} allowNegative />
         <SelectField label="지상/지하" value={form.groundLevel} onChange={(v) => set("groundLevel", v)} options={GROUND_LEVEL_OPTIONS} />
-        <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
+        <BooleanSelectField
+          label="엘리베이터"
+          value={form.hasElevator}
+          onChange={(v) => set("hasElevator", v)}
+          hint={form.elevatorBasis ? `수집 때 자동: ${form.elevatorBasis}` : undefined}
+        />
       </div>
 
       <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">시설/사양</h4>

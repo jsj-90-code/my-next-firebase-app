@@ -309,6 +309,8 @@ export type Competitor = {
   totalPcCount: number | null; // 전체대수 (실사값)
   appliedPcCount: number | null; // 적용대수 - 실사값 없으면 대체값(§3.2)을 조사 후 여기 채운다
   hasElevator: boolean | null;
+  // 2026-09-26 — 후보지 상권자료 수집 때 건축물대장으로 채운 근거 한 줄(buildingElevator.ts). 화면 참고용.
+  elevatorBasis?: string | null;
   // 2026-08-28 (2차) — CandidateInput.ownCpu 등과 동일 이유로 기본+특화 다단계로 늘렸다
   // (calc.ts combineHardwareTiers). monitor는 monitorBase로 이름을 바꿨다(다른 항목과 Base/Top
   // 네이밍 통일 — cronSync가 매번 문서를 전체 재구성하므로 마이그레이션 이슈 없음).

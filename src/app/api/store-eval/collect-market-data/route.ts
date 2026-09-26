@@ -6,6 +6,7 @@ import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { DEMAND_POINT_TARGETS, NEARBY_PC_RADIUS_M } from "@/lib/storeEval/demandPointTargets";
 import { findNearbyCandidates, haversineDistanceMeters } from "@/lib/storeEval/geo";
 import type { Competitor, DemandPoint, DemandPointCategory } from "@/lib/storeEval/types";
+import { lookupBuildingElevator } from "@/lib/storeEval/buildingElevator";
 
 // 신규후보지 "상권자료 수집" 1단계 — 주소 지오코딩 + 행정구역 참고자료 + 경쟁점/수요거점
 // 자동수집을 한 번에 처리한다(요청사항 2단계 화면 흐름 중 1~4단계, 7단계에 해당).
@@ -135,6 +136,23 @@ export async function POST(request: Request) {
     const existingCompetitorsSnap = await adminDb.collection("storeEvalCompetitors").where("candidateCode", "==", candidateCode).get();
     const existingPlaceIds = new Set(existingCompetitorsSnap.docs.map((d) => d.data().sourcePlaceId).filter(Boolean));
     const batch = adminDb.batch();
+    // 2026-09-26 — 새 경쟁점마다 건축물대장으로 엘리베이터를 판정한다(경쟁점은 지도로 못 봐서 사람이 추측해 왔다, 사용자).
+    // "있음"만 채우고 판정 못 하면 빈칸. 실패해도 수집은 계속한다(키 없음·503 등 → 빈칸 + 안내 한 줄). 3곳씩 나눠 부른다.
+    const newPlaces = pcPlaces.filter((p) => !existingPlaceIds.has(p.id));
+    const elevatorByPlace = new Map<string, { hasElevator: true | null; basis: string }>();
+    let elevatorFailed = 0;
+    for (let i = 0; i < newPlaces.length; i += 3) {
+      await Promise.all(
+        newPlaces.slice(i, i + 3).map(async (p) => {
+          try {
+            elevatorByPlace.set(p.id, await lookupBuildingElevator({ lat: p.lat, lng: p.lng }));
+          } catch {
+            elevatorFailed++;
+          }
+        }),
+      );
+    }
+    if (elevatorFailed > 0) collectionErrors.push(`경쟁점 ${elevatorFailed}곳은 건축물대장 조회에 실패해 엘리베이터를 빈칸으로 뒀습니다.`);
     for (const place of pcPlaces) {
       if (existingPlaceIds.has(place.id)) continue;
       const distanceM = place.distanceM ?? Math.round(haversineDistanceMeters(origin, { lat: place.lat, lng: place.lng }));
@@ -153,7 +171,8 @@ export async function POST(request: Request) {
         groundLevel: null,
         totalPcCount: null,
         appliedPcCount: null,
-        hasElevator: null,
+        hasElevator: elevatorByPlace.get(place.id)?.hasElevator ?? null,
+        elevatorBasis: elevatorByPlace.get(place.id)?.basis ?? null,
         cpu: null,
         cpuTop1: null,
         cpuTop2: null,
