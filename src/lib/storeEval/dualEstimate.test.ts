@@ -1,6 +1,6 @@
 // dualEstimate.inputGapsFor — 결과 탭 "빈 입력" 목록 (2026-09-26 경쟁점 PC대수 빈칸 추가).
 import { describe, expect, it } from "vitest";
-import { chooseEstimate, inputGapsFor, rangeFlagsFor } from "./dualEstimate";
+import { chooseEstimate, inputGapsFor, needsFieldCheck, rangeFlagsFor } from "./dualEstimate";
 import type { CandidateInput, Competitor } from "./types";
 
 const candidate = { code: "N999" } as CandidateInput;
@@ -51,5 +51,20 @@ describe("chooseEstimate · rangeFlagsFor — 범위 밖 규칙(2026-09-26 개�
     expect(d.primary).toBe("V62");
     expect(d.reason).toContain("범위 밖 경고");
     expect(d.reason).toContain("경쟁 밀집(경쟁 PC 1231대)"); // 밀집 판정은 넘겨받은 거리 무관 대수로
+  });
+});
+
+describe("검증 불가 구간 — 낮은 쪽이 주 값(특정 산식을 편들지 않는다) · 현장 확인 표시", () => {
+  const range = { demand: [1128, 17429] as [number, number], rate: [1000, 2000] as [number, number], pc: [80, 150] as [number, number], competitorIp: [0, 1050] as [number, number], demandPerSupply: [4.4, 36.6] as [number, number], sampleCount: 40 };
+  it("크게 벗어났는데 실험실이 더 크면 V62(낮은 쪽)가 주 값", () => {
+    const flags = rangeFlagsFor({ marketDemand: 400, competitorIp: 0, hourlyRate: 1500, expectedPcCount: 100 }, range);
+    const d = chooseEstimate(30_000_000, 45_000_000, flags, 0, 40);
+    expect(d.primary).toBe("V62");
+    expect(d.reason).toContain("검증 불가");
+    expect(needsFieldCheck(d)).toBe(true);
+  });
+  it("범위 안·20% 안이면 현장 확인 없음, 20% 넘게 갈리면 있음", () => {
+    expect(needsFieldCheck(chooseEstimate(50_000_000, 48_000_000, [], 300, 40))).toBe(false);
+    expect(needsFieldCheck(chooseEstimate(50_000_000, 38_000_000, [], 300, 40))).toBe(true);
   });
 });

@@ -11,9 +11,12 @@
 //
 // ── 규칙 (2026-09-26 밤 개정, 사용자 확정 — 근거 docs/releases/2026-09-26-v62-lab-feed.md "범위 규칙 되짚기") ──────────
 // 1. 입력(상권수요·정가·PC수·경쟁IP·수요/공급)이 V62 학습 범위(모델 포함 기존점 최소~최대)를 **크게** 벗어남
-//    (끝값의 절반 아래 또는 두 배 위, farFactor) → **실험실을 주 값**으로 + 현장 확인. 지금 영월(상권수요 383 < 1,128의 절반)만 해당.
-//    ⚠️ 이 경우는 기존점에 예가 없어 자료로 못 가린다. 영월은 유일한 경쟁점 핑봇(85대·26.6%)으로 따지면 V62(가동률 34%)는
-//       동네 시장이 약 2배가 돼야 나오는 값이라 과대 쪽으로 봤다(사용자 확정).
+//    (끝값의 절반 아래 또는 두 배 위, farFactor) → **두 값 중 낮은 쪽을 주 값**으로 + 폭 + 현장 확인.
+//    이 구간은 기존점에 예가 없어 **어느 산식도 검증할 수 없다** — 산식을 편들지 않고 "모른다"를 드러낸다.
+//    낮은 쪽인 이유: 들어갈지 말지 정하는 평가라 과대평가가 더 비싸다(사용자 2026-09-26 확정).
+//    ⚠️ 특정 매장 예외를 두지 않는다 — 사람이 지적하지 않은 매장에도 같은 규칙이 돌아야 한다(사용자 우려).
+//    검증 계획: 개점한 후보지는 3~6개월 뒤 같은 경쟁점 핑봇을 다시 재 "우리가 들어간 뒤 동네 이용량이 몇 배가 됐나"를 잰다.
+//    (09-26 밤에 영월을 두고 시장 크기·경쟁점 대비 가동률로 판정하려다 둘 다 "경쟁점 손님 이동 vs 신규 수요" 비율을 몰라 무너졌다.)
 // 1'. **조금** 벗어남 → V62 주 값 그대로 + "범위 밖" 경고. 기존점 되짚기: 자기 빼고 잡은 범위 밖 7곳에서 V62가 더 가까웠다
 //    (|오차| 평균 V62 10.3% vs 실험실 27.7%). 옛 규칙("범위 밖이면 무조건 실험실")은 이 시험으로 기각.
 // 2. 두 값이 20% 넘게 갈림 →
@@ -117,6 +120,13 @@ export function inputGapsFor(candidate: CandidateInput, loc: LocationEvaluation 
   return gaps;
 }
 
+/** 목록·결과 탭 "현장 확인" 표시 — 검증 불가 구간(크게 벗어남)이거나 두 값이 20% 넘게 갈릴 때. 사람이 결과 탭을 안 열어도 목록에서 보이게 한다. */
+export function needsFieldCheck(d: Pick<DualEstimate, "rangeFlags" | "ratio"> | null | undefined): boolean {
+  if (!d) return false;
+  if (d.rangeFlags?.some((f) => f.far)) return true;
+  return d.ratio != null && (d.ratio > DUAL_ESTIMATE_RULE.gapRatio || d.ratio < 1 / DUAL_ESTIMATE_RULE.gapRatio);
+}
+
 export function chooseEstimate(v62: number | null, lab: number | null, flags: RangeFlag[], competitorIp: number | null, rangeSampleCount: number | null, inputGaps: string[] = []): DualEstimate {
   const ratio = v62 != null && lab != null && lab > 0 ? v62 / lab : null;
   const low = v62 != null && lab != null ? Math.min(v62, lab) : v62 ?? lab;
@@ -127,9 +137,9 @@ export function chooseEstimate(v62: number | null, lab: number | null, flags: Ra
   const far = flags.filter((f) => f.far);
   // 조금 벗어남 — 주 값은 V62 그대로, 경고만 앞에 붙인다(2026-09-26 되짚기: 범위 밖 7곳에서 V62 10.3% vs 실험실 27.7%).
   const nearNote = flags.length && !far.length ? `범위 밖 경고 — ${fmt(flags)}. 기존점 되짚기에서 이 정도 벗어난 매장은 V62가 더 가까웠습니다. ` : "";
-  if (far.length && lab != null) {
-    primary = "실험실";
-    reason = `V62 외삽(크게 벗어남) — ${fmt(far)}. 기존점에 이런 예가 없어 회귀식이 직선을 늘린 값일 수 있어 실험실(구조식)을 주 값으로 봅니다. 현장 확인을 권합니다.`;
+  if (far.length && lab != null && v62 != null) {
+    primary = lab < v62 ? "실험실" : "V62";
+    reason = `검증 불가 구간(크게 벗어남) — ${fmt(far)}. 기존점에 이런 예가 없어 어느 산식이 맞는지 판정할 수 없습니다. 들어갈지 정하는 평가라 두 값 중 낮은 쪽(${primary})을 주 값으로 두고 폭을 같이 봅니다. 현장 확인이 필요합니다.`;
   } else if (lab == null) {
     reason = "실험실 값을 낼 수 없어 V62만 봅니다.";
   } else if (ratio != null && (ratio > DUAL_ESTIMATE_RULE.gapRatio || ratio < 1 / DUAL_ESTIMATE_RULE.gapRatio)) {

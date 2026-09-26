@@ -15,6 +15,7 @@ import {
   listEvaluationResults,
 } from "@/lib/storeEval/store";
 import { freshnessHint, resultFreshness, type Freshness } from "@/lib/storeEval/resultFreshness";
+import { needsFieldCheck } from "@/lib/storeEval/dualEstimate";
 import type { CandidateInput, EvaluationResult, FinalJudgement } from "@/lib/storeEval/types";
 
 // "13_신규후보지판정" 원본 문자열 그대로. completionStatus/finalJudgement 어느 쪽이든 이 값이면
@@ -291,7 +292,7 @@ export default function StoreEvalDashboardPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={formatWon(result?.v62Final)}>{formatManwonRough(result?.v62Final)}{result?.dualEstimate?.lab != null && <span className={`block text-xs ${result.dualEstimate.primary === "실험실" || (result.dualEstimate.ratio != null && (result.dualEstimate.ratio > 1.2 || result.dualEstimate.ratio < 1 / 1.2)) ? "text-amber-700 dark:text-amber-400" : "text-[var(--sl-ink-soft)]"}`} title={result.dualEstimate.reason}>실험실 {formatManwonRough(result.dualEstimate.lab)}{result.dualEstimate.primary === "실험실" ? " · 주 값" : ""}</span>}</td>
+                      <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={result?.dualEstimate?.reason ?? formatWon(result?.v62Final)}>{/* 2026-09-26 — 규칙이 고른 주 값을 크게, 다른 산식을 작게. 검증 불가·20% 갈림이면 "현장 확인"(needsFieldCheck) */}{formatManwonRough(result?.dualEstimate?.primaryValue ?? result?.v62Final)}{result?.dualEstimate?.lab != null && <span className={`block text-xs ${needsFieldCheck(result.dualEstimate) ? "text-amber-700 dark:text-amber-400" : "text-[var(--sl-ink-soft)]"}`}>{result.dualEstimate.primary === "실험실" ? `실험실 주 값 · V62 ${formatManwonRough(result.dualEstimate.v62)}` : `실험실 ${formatManwonRough(result.dualEstimate.lab)}`}{needsFieldCheck(result.dualEstimate) ? " · 현장 확인" : ""}</span>}</td>
                       <td className="px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={formatWon(result?.conservativeSales)}>{formatManwonRough(result?.conservativeSales)}</td>
                       <td className="px-4 py-3">
                         <JudgementBadge result={result} />
