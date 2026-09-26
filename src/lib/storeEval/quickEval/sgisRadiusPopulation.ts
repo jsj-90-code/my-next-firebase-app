@@ -87,12 +87,16 @@ async function fetchRadius(token: string, tm: { x: number; y: number }, radiusM:
   const pops = body.result?.pops?.[0] ?? null;
   const areaSizeM2 = num(body.result?.areaSize?.[0]?.area_size);
   const expected = Math.PI * radiusM * radiusM;
+  // 2026-09-26 — **성공 응답(errCd 0)인데 인구 칸이 비면 0명이다.** 사람이 안 사는 반경(포천 이동 장암리 500m,
+  // 면적은 정상으로 옴)에서 SGIS는 0 대신 빈 값을 준다. 그걸 null로 두면 "수집 실패"로 읽혀 상권수요가 안 나오고
+  // V62가 멈춰 주소만 화면이 "판정 불가"를 냈다. 실패(errCd≠0·HTTP 오류)는 위에서 이미 throw한다.
+  const zero = (v: unknown) => num(v) ?? 0;
   return {
     radiusM,
-    totalPopulation: num(pops?.tot_ppltn_cnt),
-    malePopulation: num(pops?.man_cnt),
-    femalePopulation: num(pops?.woman_cnt),
-    ageBands: AGE_KEYS.map((k) => num(pops?.[k])),
+    totalPopulation: zero(pops?.tot_ppltn_cnt),
+    malePopulation: zero(pops?.man_cnt),
+    femalePopulation: zero(pops?.woman_cnt),
+    ageBands: AGE_KEYS.map((k) => zero(pops?.[k])),
     areaSizeM2,
     areaOffRatio: areaSizeM2 != null && areaSizeM2 > 0 ? Math.abs(areaSizeM2 - expected) / expected : null,
   };

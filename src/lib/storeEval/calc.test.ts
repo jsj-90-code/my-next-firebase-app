@@ -301,6 +301,13 @@ describe("상권성격 판정 (08_계산기준: 8배 이상 번화가/4~8배 혼
   it("4배 미만 → 주거중심", () => {
     expect(computeMarketCharacter(399, 100, settings)).toBe("주거중심");
   });
+  // 2026-09-26 — 0명과 값 없음(null)을 가른다(포천 이동 장암리 500m 주민 0명 → 주소만 화면 '판정 불가'였음).
+  it("500m 주민 0명 + 유동 있음 → 번화가(수요는 전부 유동) · 둘 다 0 → 주거중심(수요 0) · 값 없음 → null", () => {
+    expect(computeMarketCharacter(18, 0, settings)).toBe("번화가");
+    expect(computeMarketCharacter(0, 0, settings)).toBe("주거중심");
+    expect(computeMarketCharacter(null, 0, settings)).toBeNull();
+    expect(computeMarketCharacter(18, null, settings)).toBeNull();
+  });
 });
 
 // 2026-08-27 (2차) — 상대평가(상위10/30/60% 백분위)에서 절대평가로 바꿨다(사용자 확정) — 매장이

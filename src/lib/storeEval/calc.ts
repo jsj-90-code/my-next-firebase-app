@@ -163,7 +163,13 @@ export function computeMarketCharacter(
   resident500Pop: number | null,
   settings: Pick<ModelSettings, "marketCharacterThreshold">,
 ): MarketCharacter | null {
-  if (!floating500Avg || !resident500Pop || resident500Pop <= 0) return null;
+  // 2026-09-26 — **값이 없음(null)과 0명을 가른다.** 사람이 안 사는 반경(포천 이동 장암리 500m 주민 0명)에서
+  // 예전엔 0으로 나누지 않으려고 null을 돌려 상권수요·V62가 통째로 멈췄다(주소만 화면 "판정 불가").
+  // 주민 0명이면 수요는 전부 유동에서 온다 → 유동 수요를 쓰는 "번화가" 쪽. 둘 다 0이면 수요 0(주거중심, 주거 수요 0).
+  // 기존점·후보지에는 주민 0명인 곳이 없어 운영 값은 안 바뀐다.
+  if (floating500Avg == null || resident500Pop == null || floating500Avg < 0 || resident500Pop < 0) return null;
+  if (resident500Pop === 0) return floating500Avg > 0 ? "번화가" : "주거중심";
+  if (!floating500Avg) return null;
   const ratio = floating500Avg / resident500Pop;
   if (ratio >= settings.marketCharacterThreshold.downtown) return "번화가";
   if (ratio >= settings.marketCharacterThreshold.mixed) return "혼합";
