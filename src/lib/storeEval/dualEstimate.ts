@@ -11,7 +11,10 @@
 //
 // ── 규칙 (2026-09-26 밤 개정, 사용자 확정 — 근거 docs/releases/2026-09-26-v62-lab-feed.md "범위 규칙 되짚기") ──────────
 // 1. 입력(상권수요·정가·PC수·경쟁IP·수요/공급)이 V62 학습 범위(모델 포함 기존점 최소~최대)를 **크게** 벗어남
-//    (끝값의 절반 아래 또는 두 배 위, farFactor) → **두 값 중 낮은 쪽을 주 값**으로 + 폭 + 현장 확인.
+//    = **되짚기로 확인된 만큼보다 더** 벗어남(최솟값의 verifiedLow배 아래 · 최댓값의 verifiedHigh배 위) → **두 값 중 낮은 쪽을 주 값**으로 + 폭 + 현장 확인.
+//    verifiedLow/High = 2026-09-26 되짚기(_rangeRuleBacktest)에서 범위 밖 기존점 7곳이 실제로 벗어났던 최대치(구미산동 상권수요 0.84배 · 송도 수요/공급 1.20배).
+//    그 너머는 V62도 실험실도 시험해 본 적 없는 입력이다. (처음엔 "절반·두 배"였는데 영월을 보고 정한 선이라 바꿨다 — 같은 밤, 사용자 "크게 벗어남 기준이 뭔데".)
+//    기존점이 늘면 되짚기를 다시 돌려 이 두 값을 갱신한다.
 //    이 구간은 기존점에 예가 없어 **어느 산식도 검증할 수 없다** — 산식을 편들지 않고 "모른다"를 드러낸다.
 //    낮은 쪽인 이유: 들어갈지 말지 정하는 평가라 과대평가가 더 비싸다(사용자 2026-09-26 확정).
 //    ⚠️ 특정 매장 예외를 두지 않는다 — 사람이 지적하지 않은 매장에도 같은 규칙이 돌아야 한다(사용자 우려).
@@ -31,7 +34,7 @@ import { DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook }
 import { computeCompetitorAppliedPcCount } from "./calc";
 import { buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, productUnitPriceEraByStore, utilizationByStore } from "./labInput";
 
-export const DUAL_ESTIMATE_RULE = { gapRatio: 1.2, denseCompetitorIp: 800, farFactor: 2 } as const;
+export const DUAL_ESTIMATE_RULE = { gapRatio: 1.2, denseCompetitorIp: 800, verifiedLow: 0.84, verifiedHigh: 1.2 } as const;
 
 export type V62TrainingRange = { demand: [number, number]; rate: [number, number]; pc: [number, number]; competitorIp: [number, number]; demandPerSupply: [number, number]; sampleCount: number };
 
@@ -51,16 +54,16 @@ export function v62TrainingRange(stores: ExistingStore[]): V62TrainingRange | nu
   };
 }
 
-/** far = 끝값의 절반 아래 또는 두 배 위(DUAL_ESTIMATE_RULE.farFactor) — 기존점에 예가 없을 만큼 크게 벗어남. */
+/** far = 되짚기로 확인된 만큼보다 더 벗어남(최솟값×verifiedLow 아래 · 최댓값×verifiedHigh 위) — 검증 불가 구간. */
 export type RangeFlag = { field: "상권수요" | "정가" | "PC수" | "경쟁IP" | "수요/공급"; value: number; min: number; max: number; side: "아래" | "위"; far?: boolean };
 
 export function rangeFlagsFor(result: Pick<EvaluationResult, "marketDemand" | "competitorIp" | "hourlyRate" | "expectedPcCount">, range: V62TrainingRange): RangeFlag[] {
   const out: RangeFlag[] = [];
   const chk = (field: RangeFlag["field"], v: number | null | undefined, [min, max]: [number, number]) => {
     if (v == null || !Number.isFinite(v)) return;
-    const k = DUAL_ESTIMATE_RULE.farFactor;
-    if (v < min) out.push({ field, value: v, min, max, side: "아래", far: min > 0 && v < min / k });
-    else if (v > max) out.push({ field, value: v, min, max, side: "위", far: max > 0 && v > max * k });
+    const { verifiedLow, verifiedHigh } = DUAL_ESTIMATE_RULE;
+    if (v < min) out.push({ field, value: v, min, max, side: "아래", far: min > 0 && v < min * verifiedLow });
+    else if (v > max) out.push({ field, value: v, min, max, side: "위", far: max > 0 && v > max * verifiedHigh });
   };
   const pc = result.expectedPcCount ?? null, comp = result.competitorIp ?? 0;
   chk("상권수요", result.marketDemand, range.demand);
@@ -139,7 +142,7 @@ export function chooseEstimate(v62: number | null, lab: number | null, flags: Ra
   const nearNote = flags.length && !far.length ? `범위 밖 경고 — ${fmt(flags)}. 기존점 되짚기에서 이 정도 벗어난 매장은 V62가 더 가까웠습니다. ` : "";
   if (far.length && lab != null && v62 != null) {
     primary = lab < v62 ? "실험실" : "V62";
-    reason = `검증 불가 구간(크게 벗어남) — ${fmt(far)}. 기존점에 이런 예가 없어 어느 산식이 맞는지 판정할 수 없습니다. 들어갈지 정하는 평가라 두 값 중 낮은 쪽(${primary})을 주 값으로 두고 폭을 같이 봅니다. 현장 확인이 필요합니다.`;
+    reason = `검증 불가 구간(되짚기로 확인된 범위 밖) — ${fmt(far)}. 기존점에 이런 예가 없어 어느 산식이 맞는지 판정할 수 없습니다. 들어갈지 정하는 평가라 두 값 중 낮은 쪽(${primary})을 주 값으로 두고 폭을 같이 봅니다. 현장 확인이 필요합니다.`;
   } else if (lab == null) {
     reason = "실험실 값을 낼 수 없어 V62만 봅니다.";
   } else if (ratio != null && (ratio > DUAL_ESTIMATE_RULE.gapRatio || ratio < 1 / DUAL_ESTIMATE_RULE.gapRatio)) {

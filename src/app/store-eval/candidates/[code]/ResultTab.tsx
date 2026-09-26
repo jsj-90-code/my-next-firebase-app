@@ -84,7 +84,7 @@ function DualEstimatePanel({ dual }: { dual: DualEstimate | null }) {
       </div>
       <p className="mt-2 text-xs leading-5">{dual.reason}</p>
       <p className="mt-1 text-xs leading-5">{dual.inputGaps == null ? null : dual.inputGaps.length ? <>⚠ 빈 입력(그 산식은 기본값·가정으로 계산): <b>{dual.inputGaps.join(" · ")}</b></> : "입력 호환성: 두 산식이 쓰는 입력이 모두 채워져 있습니다."}</p>
-      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">V62가 평균적으로 더 맞고, 기존점 범위를 조금 벗어난 입력에서도 더 가까웠습니다(2026-09-26 되짚기: 범위 밖 기존점 7곳 V62 10.3% vs 실험실 27.7%). 다만 끝값의 {1 / DUAL_ESTIMATE_RULE.farFactor}배 아래나 {DUAL_ESTIMATE_RULE.farFactor}배 위처럼 크게 벗어나면 기존점에 예가 없어 어느 산식도 검증할 수 없습니다 — 그때는 들어갈지 정하는 평가라 두 값 중 낮은 쪽을 주 값으로 두고 현장 확인을 띄웁니다. 실험실은 경쟁 밀집 동네에서 수요를 적게 봅니다. 그래서 평균 내지 않고 규칙으로 고릅니다 — 크게 벗어나면 낮은 쪽 + 현장 확인, 조금 벗어나면 V62 + 경고, 경쟁 밀집(거리 무관 경쟁 PC {DUAL_ESTIMATE_RULE.denseCompetitorIp}대 이상)이면 V62, 20% 넘게 갈리면 현장 확인.{dual.rangeSampleCount ? ` 범위 기준: 모델 포함 기존점 ${dual.rangeSampleCount}곳.` : ""}</p>
+      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">V62가 평균적으로 더 맞고, 기존점 범위를 조금 벗어난 입력에서도 더 가까웠습니다(2026-09-26 되짚기: 범위 밖 기존점 7곳 V62 10.3% vs 실험실 27.7%). 다만 되짚기로 확인된 범위(기존점 최솟값의 {DUAL_ESTIMATE_RULE.verifiedLow}배 ~ 최댓값의 {DUAL_ESTIMATE_RULE.verifiedHigh}배)보다 더 벗어나면 어느 산식도 시험해 본 적 없는 입력이라 검증할 수 없습니다 — 그때는 들어갈지 정하는 평가라 두 값 중 낮은 쪽을 주 값으로 두고 현장 확인을 띄웁니다. 실험실은 경쟁 밀집 동네에서 수요를 적게 봅니다. 그래서 평균 내지 않고 규칙으로 고릅니다 — 검증 범위 밖이면 낮은 쪽 + 현장 확인, 조금 벗어나면 V62 + 경고, 경쟁 밀집(거리 무관 경쟁 PC {DUAL_ESTIMATE_RULE.denseCompetitorIp}대 이상)이면 V62, 20% 넘게 갈리면 현장 확인.{dual.rangeSampleCount ? ` 범위 기준: 모델 포함 기존점 ${dual.rangeSampleCount}곳.` : ""}</p>
     </section>
   );
 }

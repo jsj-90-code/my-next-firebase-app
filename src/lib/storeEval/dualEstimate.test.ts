@@ -40,7 +40,7 @@ describe("chooseEstimate · rangeFlagsFor — 범위 밖 규칙(2026-09-26 개�
     expect(flags.some((f) => f.field === "상권수요" && f.far)).toBe(true);
     const d = chooseEstimate(71_000_000, 38_000_000, flags, 85, 40);
     expect(d.primary).toBe("실험실");
-    expect(d.reason).toContain("크게 벗어남");
+    expect(d.reason).toContain("검증 불가");
   });
 
   it("조금 벗어남 → V62 주 값 + 범위 밖 경고 — 창원상남형(경쟁IP 1103 > 1050)", () => {
@@ -66,5 +66,16 @@ describe("검증 불가 구간 — 낮은 쪽이 주 값(특정 산식을 편들
   it("범위 안·20% 안이면 현장 확인 없음, 20% 넘게 갈리면 있음", () => {
     expect(needsFieldCheck(chooseEstimate(50_000_000, 48_000_000, [], 300, 40))).toBe(false);
     expect(needsFieldCheck(chooseEstimate(50_000_000, 38_000_000, [], 300, 40))).toBe(true);
+  });
+});
+
+describe("검증 범위(되짚기로 확인된 0.84~1.20배) 경계", () => {
+  const range = { demand: [1128, 17429] as [number, number], rate: [1000, 2000] as [number, number], pc: [80, 150] as [number, number], competitorIp: [0, 1050] as [number, number], demandPerSupply: [4.4, 36.6] as [number, number], sampleCount: 40 };
+  it("수요/공급이 최댓값의 1.28배(오송형)면 검증 불가, 1.05배면 조금 벗어남", () => {
+    // 수요/공급 = 상권수요 ÷ (PC + 경쟁IP)
+    const far = rangeFlagsFor({ marketDemand: 36.6 * 1.28 * 100, competitorIp: 0, hourlyRate: 1500, expectedPcCount: 100 }, range).find((f) => f.field === "수요/공급");
+    const near = rangeFlagsFor({ marketDemand: 36.6 * 1.05 * 100, competitorIp: 0, hourlyRate: 1500, expectedPcCount: 100 }, range).find((f) => f.field === "수요/공급");
+    expect(far?.far).toBe(true);
+    expect(near?.far).toBe(false);
   });
 });

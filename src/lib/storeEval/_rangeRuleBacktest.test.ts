@@ -85,7 +85,7 @@ describeIf("범위 규칙 되짚기 — 범위 밖에서 V62 vs 실험실", () =
       const flags = rangeFlagsFor({ marketDemand: me.marketDemand, competitorIp: me.competitorIp, hourlyRate: me.hourlyRate, expectedPcCount: me.evaluationPcCount ?? me.pcCount }, range);
       const act = r.actualRevenueAvg as number;
       const lr = labRev.get(r.storeCode);
-      out.push({ name: r.storeName, flags: flags.map((f) => `${f.field} ${f.side}`).join(", "), eV: (r.v62PredictedRevenueAvg as number) / act - 1, eL: lr == null ? null : lr / act - 1 });
+      out.push({ name: r.storeName, flags: flags.map((f) => `${f.field} ${f.side} ${f.side === "아래" ? (f.value / f.min).toFixed(2) : (f.value / f.max).toFixed(2)}배`).join(", "), eV: (r.v62PredictedRevenueAvg as number) / act - 1, eL: lr == null ? null : lr / act - 1 });
     }
     return out;
   };
