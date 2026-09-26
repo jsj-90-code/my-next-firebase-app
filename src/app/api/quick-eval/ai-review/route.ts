@@ -27,6 +27,8 @@ type ReviewBody = {
   /** 가맹점 실적 비교표 — AI가 **자체 매출 판단**의 근거로 쓴다(2026-09-22 사용자 요청).
    *  화면이 이미 기존점을 불러왔으므로 거기서 만들어 보낸다(서버가 Firestore를 또 읽지 않는다). */
   peers?: QuickEvalPeerSummary | null;
+  /** 2026-09-27 — 판정에 쓴 최종 금액(quickEvalVerdict.quickEvalFinalEstimate) */
+  finalEstimate?: { value: number | null; source: "V62" | "실험실" | null; reason: string | null } | null;
 };
 
 export async function POST(request: Request) {
@@ -49,6 +51,7 @@ export async function POST(request: Request) {
     collectErrors: body.collectErrors ?? [],
     peers: body.peers ?? null,
     locationDraftRationale: body.locationDraftRationale ?? null,
+    finalEstimate: body.finalEstimate ?? null,
   });
 
   try {

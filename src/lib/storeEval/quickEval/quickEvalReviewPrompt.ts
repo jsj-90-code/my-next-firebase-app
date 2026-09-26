@@ -111,6 +111,8 @@ export function buildQuickEvalReviewContext(input: {
   /** 실적이 있는 우리 가맹점 비교표 — AI가 자체 매출 판단의 근거로 쓴다 */
   peers?: QuickEvalPeerSummary | null;
   floatingMonths?: { months: string[]; monthly: number[] } | null;
+  /** 2026-09-27 — 판정에 쓴 최종 금액(quickEvalVerdict). 실험실로 바뀌었으면 AI가 그 값·이유를 인용해야 한다. */
+  finalEstimate?: { value: number | null; source: "V62" | "실험실" | null; reason: string | null } | null;
 }): string {
   const { result, assembly, collectErrors } = input;
   const c = assembly.candidate;
@@ -128,7 +130,14 @@ export function buildQuickEvalReviewContext(input: {
     + ` · 엘리베이터 ${c.hasElevator == null ? "미정" : c.hasElevator ? "있음" : "없음"}`);
   lines.push("");
 
-  lines.push("[V62 산식 결과 — 이 값을 그대로 인용할 것]");
+  const fe = input.finalEstimate;
+  if (fe && fe.source === "실험실" && fe.value != null) {
+    lines.push("[최종 판정 금액 — 입점 판정은 이 값으로 했다. 예상 월매출로는 이 값을 인용할 것]");
+    lines.push(`최종 판정 금액: ${won(fe.value)} (인구 기반 추정) — ${fe.reason ?? ""}`);
+    lines.push("아래 V62 값은 참고용이다(대당 기본값이 섞여 이 자리에선 과하게 잡혔다).");
+    lines.push("");
+  }
+  lines.push(fe && fe.source === "실험실" ? "[V62 산식 결과 — 참고]" : "[V62 산식 결과 — 이 값을 그대로 인용할 것]");
   lines.push(`예상 월매출: ${won(result.v62Final)}`);
   lines.push(`보수판단(85%): ${won(result.conservativeSales)} · 상한참고(115%): ${won(result.upperSales)}`);
   lines.push(`상권수요: ${int(result.marketDemand)} · 상권등급 ${result.marketGrade ?? "자료 없음"}`

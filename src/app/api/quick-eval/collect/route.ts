@@ -26,7 +26,8 @@ import type { DemandPoint, GroundLevel } from "@/lib/storeEval/types";
 import { appendSiteFactsToContext } from "@/lib/storeEval/quickEval/quickEvalLocationContext";
 import { collectKakaoPcBangs } from "@/lib/storeEval/quickEval/kakaoPcBangs";
 import { collectSgisRadiusPopulation } from "@/lib/storeEval/quickEval/sgisRadiusPopulation";
-import { collectSbizFloating } from "@/lib/storeEval/quickEval/sbizFloating";
+import { collectSbizFloating, type SbizFloatingResult } from "@/lib/storeEval/quickEval/sbizFloating";
+import { SBIZ_FLOATING_RADII, type SbizFloatingRadius } from "@/lib/storeEval/floatingPopulationFromSbiz";
 import { QUICK_EVAL_RADII } from "@/lib/storeEval/quickEval/quickEvalDefaults";
 import { judgePcBangName } from "@/lib/storeEval/quickEval/pcBangNameFilter";
 import { QUICK_EVAL_CANDIDATE_CODE } from "@/lib/storeEval/quickEval/buildQuickCandidate";
@@ -93,7 +94,9 @@ export async function POST(request: Request) {
       .catch((err) => ({ ok: false as const, error: `주거인구(SGIS) 수집 실패: ${message(err)}` })),
     body.skipFloating
       ? Promise.resolve({ ok: false as const, error: "유동인구 수집을 건너뛰었습니다(사용자 선택)." })
-      : collectSbizFloating(origin, QUICK_EVAL_RADII.floating)
+      // 2026-09-27 — 500m 하나가 아니라 100~1000m 6반경을 **차례로** 받는다(실험실 수요가 400m·중심도가 300m·1km를 읽는다).
+      //    500m(V62)가 실패하면 예전처럼 실패로 올리고, 다른 반경 실패는 경고만 남긴다. 반경당 약 4초.
+      : collectFloatingRadii(origin)
           .then((v) => ({ ok: true as const, value: v }))
           .catch((err) => ({ ok: false as const, error: `유동인구(소상공인365) 수집 실패: ${message(err)}` })),
     collectKakaoPcBangs(origin, QUICK_EVAL_RADII.competitor)
@@ -110,7 +113,9 @@ export async function POST(request: Request) {
   if (!demandPointResult.ok) errors.push(demandPointResult.error);
 
   const sgis = sgisResult.ok ? sgisResult.value : null;
-  const floating = floatingResult.ok ? floatingResult.value : null;
+  const floating = floatingResult.ok ? floatingResult.value.r500 : null;
+  const floatingByRadius = floatingResult.ok ? floatingResult.value.byRadius : {};
+  if (floatingResult.ok) errors.push(...floatingResult.value.otherErrors);
   const pcBangs = pcBangResult.ok ? pcBangResult.value.places : [];
   const demandPoints = demandPointResult.ok ? demandPointResult.value : [];
 
@@ -175,6 +180,7 @@ export async function POST(request: Request) {
     },
     sgis,
     floating,
+    floatingByRadius,
     pcBangs,
     pcBangsPossiblyTruncated: pcBangResult.ok ? pcBangResult.value.possiblyTruncated : false,
     pcBangQueryCount: pcBangResult.ok ? pcBangResult.value.queryCount : 0,
@@ -182,6 +188,23 @@ export async function POST(request: Request) {
     locationDraft,
     errors,
   });
+}
+
+/** 유동인구 6반경 — 500m는 필수(V62), 나머지는 실험실 입력(실패해도 경고만). */
+async function collectFloatingRadii(origin: { lat: number; lng: number }) {
+  const byRadius: Partial<Record<SbizFloatingRadius, SbizFloatingResult>> = {};
+  const otherErrors: string[] = [];
+  let r500Error: unknown = null;
+  for (const r of SBIZ_FLOATING_RADII) {
+    try {
+      byRadius[r] = await collectSbizFloating(origin, r);
+    } catch (err) {
+      if (r === QUICK_EVAL_RADII.floating) r500Error = err;
+      else otherErrors.push(`유동인구 ${r >= 1000 ? "1km" : `${r}m`} 수집 실패(실험실 값이 낮게 나올 수 있음): ${message(err)}`);
+    }
+  }
+  if (!byRadius[500]) throw r500Error ?? new Error("유동인구 500m를 받지 못했습니다");
+  return { r500: byRadius[500], byRadius, otherErrors };
 }
 
 /** AI 입지평가에 줄 수요거점. 운영 1단계(`collect-market-data`)와 **같은 타깃 목록**을 쓴다. */

@@ -66,11 +66,19 @@ import {
 // ⛔ 자동화 전용 산식(quickEvalOwnModel)은 **화면에서 뺐다**(사용자 2026-09-22). 적중률은 더
 //    높았지만 상권을 못 봐서 후보지 줄 세우기를 못 한다. 산식과 측정 기록은 그 파일에 남아 있다.
 import type { EvaluationResult, GroundLevel, ModelSettings } from "@/lib/storeEval/types";
+// 2026-09-27 — 판정 값: V62 + 실험실(인구 기반) 중 규칙으로 고른다(quickEvalVerdict 머리 주석).
+import { labCandidateBreakdown, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
+import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
+import { floatingPatchFromSbiz, type SbizFloatingRadius } from "@/lib/storeEval/floatingPopulationFromSbiz";
+import type { SbizFloatingResult } from "@/lib/storeEval/quickEval/sbizFloating";
+import { quickEvalFinalEstimate, type QuickEvalFinal } from "@/lib/storeEval/quickEval/quickEvalVerdict";
 
 type CollectResponse = QuickEvalCollected & {
   collectedAt: number;
   pcBangQueryCount: number;
   locationDraft: { fields: Record<string, number | string | null>; rationale?: string } | null;
+  /** 2026-09-27 — 유동인구 100~1000m(실험실 입력). 500m는 floating에 따로 있다. */
+  floatingByRadius?: Partial<Record<SbizFloatingRadius, SbizFloatingResult>>;
   errors: string[];
 };
 
@@ -120,6 +128,7 @@ export default function QuickEvalPage() {
   const [collected, setCollected] = useState<CollectResponse | null>(null);
   const [assembly, setAssembly] = useState<QuickEvalAssembly | null>(null);
   const [result, setResult] = useState<EvaluationResult | null>(null);
+  const [finalEst, setFinalEst] = useState<QuickEvalFinal | null>(null);
   // 계산에 실제로 쓴 설정 — 상권등급 기준선 같은 "설명 숫자"를 여기서 읽어 그린다(글자로 박지 않는다).
   const [settingsUsed, setSettingsUsed] = useState<ModelSettings | null>(null);
   const [review, setReview] = useState<string | null>(null);
@@ -171,6 +180,7 @@ export default function QuickEvalPage() {
       collectErrors: string[];
       locationDraftRationale: string | null;
       peers: QuickEvalPeerSummary | null;
+      finalEstimate: QuickEvalFinal | null;
     }) => {
       setReviewing(true);
       setReviewError(null);
@@ -219,6 +229,7 @@ export default function QuickEvalPage() {
     setCollected(null);
     setAssembly(null);
     setResult(null);
+    setFinalEst(null);
     setReview(null);
     setReviewMeta(null);
     setReviewError(null);
@@ -270,10 +281,11 @@ export default function QuickEvalPage() {
       const settings: ModelSettings = withQuickEvalSettings(
         settingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null },
       );
+      const quickLoc = buildQuickLocationEvaluation(planInput, payload.locationDraft);
       const evaluated = evaluateCandidate({
         candidate: built.candidate,
         competitors: built.competitors,
-        locationEvaluation: buildQuickLocationEvaluation(planInput, payload.locationDraft),
+        locationEvaluation: quickLoc,
         settings,
         // ⭐ 송도점·동탄북광장점을 **이 화면에서만** 학습에 넣는다(사용자 2026-09-22).
         //    Firestore의 excludedFromModel은 안 건드린다 — 풀면 결재 숫자가 움직인다.
@@ -307,6 +319,27 @@ export default function QuickEvalPage() {
       setResult(evaluated);
       setSettingsUsed(settings);
 
+      // 3-2) 판정 값 — 실험실(인구로 쌓은 수요)을 같이 내고 규칙으로 고른다(quickEvalVerdict). 후보지 화면과 같은 조립.
+      //      실험실이 실패해도 V62로 판정한다(판정이 멈추면 안 된다).
+      let labRevenue: number | null = null;
+      let flags: ReturnType<typeof rangeFlagsFor> = [];
+      try {
+        const prepared = prepareExistingStoresForEvaluation(existingStores, trainingCompetitors, trainingLocationEvaluations, settings);
+        const range = v62TrainingRange(prepared);
+        flags = range ? rangeFlagsFor(evaluated, range) : [];
+        labRevenue = labCandidateBreakdown({
+          candidate: { ...built.candidate, ...floatingPatchFromSbiz(payload.floatingByRadius ?? {}).patch },
+          preparedStores: prepared, rawStores: existingStores,
+          competitors: [...trainingCompetitors, ...built.competitors],
+          locations: quickLoc ? [...trainingLocationEvaluations, quickLoc] : trainingLocationEvaluations,
+          sales: trainingSales, settings,
+        })?.monthlyRevenue ?? null;
+      } catch {
+        labRevenue = null;
+      }
+      const final = quickEvalFinalEstimate(evaluated.v62Final, labRevenue, flags);
+      setFinalEst(final);
+
       // 4) 가맹점 실적 비교표 — AI가 **자체 매출 판단**의 근거로 쓴다(사용자 요청 2026-09-22:
       //    "우리 가맹점 데이터 어떠한 부분을 봤을 때 예상 매출 어느정도 예상한다").
       //    화면이 이미 기존점을 불러왔으니 여기서 만든다 — 서버가 Firestore를 또 읽지 않는다.
@@ -321,6 +354,7 @@ export default function QuickEvalPage() {
         collectErrors: payload.errors ?? [],
         locationDraftRationale: payload.locationDraft?.rationale ?? null,
         peers: peerSummary,
+        finalEstimate: final,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "평가에 실패했습니다.");
@@ -340,8 +374,9 @@ export default function QuickEvalPage() {
       collectErrors: collected?.errors ?? [],
       locationDraftRationale: collected?.locationDraft?.rationale ?? null,
       peers,
+      finalEstimate: finalEst,
     });
-  }, [assembly, collected, peers, result, runReview]);
+  }, [assembly, collected, finalEst, peers, result, runReview]);
 
   const counted = assembly?.competitorRows.filter((r) => r.counted) ?? [];
   const excluded = assembly?.competitorRows.filter((r) => !r.counted) ?? [];
@@ -462,7 +497,8 @@ export default function QuickEvalPage() {
               ⚠️ 판정은 반올림 전 값으로 한다. 화면은 100만원 단위라 기준선 근처에선 표시값과 판정이
                  어긋나 보일 수 있어, 그때만 반올림 전 금액을 같이 적는다. */}
           <KeyVerdict
-            v62Final={result.v62Final}
+            v62Final={finalEst?.value ?? result.v62Final}
+            finalReason={finalEst?.source === "실험실" ? finalEst.reason : null}
             pcCount={planInput.expectedPcCount}
             hourlyRate={planInput.hourlyRate}
             pcIsDefault={toNumberOrNull(plan.expectedPcCount) == null}
@@ -518,7 +554,9 @@ export default function QuickEvalPage() {
                 없다는 뜻입니다. 천장 전 산식값은 {formatManwonRough(result.v62FinalBeforeDemandCap)}이었습니다.
               </p>
             ) : null}
-            <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">위 금액은 V62 산식값입니다.</p>
+            <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+              위 금액은 V62 산식값입니다.{finalEst?.source === "실험실" ? ` 입점 판정은 인구 기반 추정 ${formatManwonRough(finalEst.value)}으로 했습니다(위 핵심 카드 이유 참고).` : ""}
+            </p>
 
             {/* ⛔ 자동화 전용 산식(PC대수+시급 회귀)은 **화면에서 뺐다**(사용자 2026-09-22:
                 "작은값은 없어도될것같은데?"). 적중률은 그쪽이 높았지만(18.27% vs 27.79%)
@@ -800,12 +838,15 @@ export default function QuickEvalPage() {
 
 function KeyVerdict({
   v62Final,
+  finalReason,
   pcCount,
   hourlyRate,
   pcIsDefault,
   rateIsDefault,
 }: {
   v62Final: number | null;
+  /** 2026-09-27 — 판정 값을 실험실로 바꿨을 때의 이유(quickEvalVerdict). V62 그대로면 null */
+  finalReason: string | null;
   pcCount: number | null;
   hourlyRate: number | null;
   pcIsDefault: boolean;
@@ -846,8 +887,9 @@ function KeyVerdict({
           <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
             기준: 예상 월매출 {formatManwon(QUICK_EVAL_ENTRY_THRESHOLD_WON)} 초과
             {nearLine && v62Final != null ? ` · 기준선 근처(반올림 전 ${formatManwon(v62Final)})` : ""}
-            {possible == null ? " · 예상매출을 계산하지 못했습니다" : ""}
+            {possible == null ? " · 예상매출을 계산하지 못했습니다(자료 수집 실패)" : ""}
           </p>
+          {finalReason ? <p className="mt-1 text-xs text-[var(--sl-warn)]">{finalReason}</p> : null}
         </div>
       </div>
       {/* 2026-09-23 밤 — "경쟁점 10곳 넘으면 범위 밖" 경고를 뺐다(사용자 승인). 카카오 경쟁점으로 다시 재 보니
