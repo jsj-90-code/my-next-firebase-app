@@ -137,10 +137,24 @@ describeIf("기존점 AI 입지평가 되짚기", () => {
       "AI+사람위치·가시성·유입": ["locationScore", "visibilityScore", "inflowRestriction"],
       "AI+사람특수수요": ["specialDemandType", "specialDemandIntensity"],
       "AI+위치·가시성 +1점": [],
+      // 2026-09-27 — 학습도 제미나이 기준으로(사용자: "주소만은 제미나이 평가가 자동으로 들어가니 그걸로 판단").
+      "AI입력·AI학습(6칸)": [], "AI입력·AI학습(점수 3칸)": [],
     };
     type Mode = string;
     const modes: Mode[] = Object.keys(COMBOS);
     const res: Record<Mode, { act: number; v: number | null; name: string }[]> = Object.fromEntries(modes.map((m) => [m, []]));
+    // 기존점 입지평가를 제미나이 초안으로 바꾼 학습 자료(칸 목록만큼). 초안이 없는 매장은 원래 값.
+    const AI_TRAIN_FIELDS: Record<string, readonly (typeof FIELDS)[number][]> = {
+      "AI입력·AI학습(6칸)": FIELDS, "AI입력·AI학습(점수 3칸)": ["locationScore", "preemptionScore", "visibilityScore"],
+    };
+    const aiTrainLocations = (fields: readonly (typeof FIELDS)[number][]) => locations.map((l) => {
+      const st = core.find((x) => (x as unknown as { sourceCode?: string }).sourceCode === l.candidateCode || x.storeCode === l.candidateCode);
+      const f = st ? cache[st.storeCode]?.fields : null;
+      if (!f) return l;
+      const q = buildQuickLocationEvaluation(planFor(st!), { fields: f })!;
+      return { ...l, ...Object.fromEntries(fields.map((k) => [k, (q as unknown as Record<string, unknown>)[k]])) } as LocationEvaluation;
+    });
+    const trainByMode: Record<string, LocationEvaluation[]> = Object.fromEntries(Object.entries(AI_TRAIN_FIELDS).map(([m, fs2]) => [m, aiTrainLocations(fs2)]));
     for (const s of core) {
       const { candidate, competitors: comps } = buildFor(s);
       const others = raw.filter((x) => x.storeCode !== s.storeCode);
@@ -153,13 +167,14 @@ describeIf("기존점 AI 입지평가 되짚기", () => {
         let loc: LocationEvaluation | null;
         if (m === "사람") loc = hl ? ({ ...(hl as object), candidateCode: candidate.code } as LocationEvaluation) : null;
         else if (!ai) loc = null;
+        else if (AI_TRAIN_FIELDS[m]) loc = buildQuickLocationEvaluation(planFor(s), { fields: ai });
         else if (m === "AI+위치·가시성 +1점") {
           const bump = (v: number | string | null) => (typeof v === "number" ? Math.min(5, v + 1) : v);
           loc = buildQuickLocationEvaluation(planFor(s), { fields: { ...ai, locationScore: bump(ai.locationScore), visibilityScore: bump(ai.visibilityScore) } });
         } else loc = buildQuickLocationEvaluation(planFor(s), { fields: { ...ai, ...Object.fromEntries(COMBOS[m].map((f) => [f, hl?.[f] ?? ai[f]])) } });
         const screen = evaluateCandidate({
           candidate, competitors: comps, locationEvaluation: loc, settings: withQuickEvalSettings(settings),
-          existingStores: others, trainingLocationEvaluations: locations,
+          existingStores: others, trainingLocationEvaluations: trainByMode[m] ?? locations,
           trainingCompetitors: competitors.map(blankCompetitorForTraining), trainingSales: salesO, trainingQscScores: qscScores,
         });
         let lab: number | null = null;
