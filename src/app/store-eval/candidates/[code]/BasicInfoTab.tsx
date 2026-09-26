@@ -130,6 +130,9 @@ function BasicInfoTabForm({
   // 2026-09-26 — SGIS 주거인구 API 자동 채우기(입력 자동화 2번). 붙여넣기 패널과 따로 상태를 둔다.
   const [sgisBusy, setSgisBusy] = useState(false);
   const [sgisNotice, setSgisNotice] = useState<{ ok: boolean; text: string; warnings: string[] } | null>(null);
+  // 2026-09-26 — 소상공인365 유동인구 자동 채우기(입력 자동화 3번). 반경 4개를 차례로 받아 20초쯤 걸린다.
+  const [sbizBusy, setSbizBusy] = useState(false);
+  const [sbizNotice, setSbizNotice] = useState<{ ok: boolean; text: string; warnings: string[]; trend: string | null } | null>(null);
   const [collectError, setCollectError] = useState<string | null>(null);
   const [nearbyWarnings, setNearbyWarnings] = useState<{ code: string; name: string }[]>([]);
   const [adminDongRef, setAdminDongRef] = useState<AdminDongReference | null>(null);
@@ -357,6 +360,52 @@ function BasicInfoTabForm({
     }
   }
 
+  // 소상공인365 반경 300·400·500m·1km 유동인구를 받아 **폼에만** 채운다(저장은 사람이 "저장"으로).
+  // 한 반경이 실패해도 받은 반경은 채우고, 실패한 칸은 기존 값을 그대로 둔다.
+  async function handleFetchSbizFloating() {
+    if (form.lat == null || form.lng == null || form.code === "new") return;
+    setSbizBusy(true);
+    setSbizNotice(null);
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch("/api/store-eval/collect-floating-population", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ lat: form.lat, lng: form.lng }),
+      });
+      const data = await readJsonOrText<{
+        patch: Record<string, number>;
+        records: ExtractedFieldRecord[];
+        warnings: string[];
+        trend500: { months: string[]; monthly: number[]; admiNm: string } | null;
+      }>(response);
+      if (!response.ok || data.error || !data.patch) throw new Error(data.error ?? "소상공인365 유동인구를 받지 못했습니다.");
+      const filled = Object.keys(data.patch).length;
+      if (filled === 0) throw new Error("소상공인365가 빈 결과를 돌려줬습니다. 리포트 붙여넣기로 입력해주세요.");
+      await handleApplyMarketDataUpload(data.patch, {
+        id: `${form.code}_sosangongin365_${Date.now()}`,
+        candidateCode: form.code,
+        sourceType: "sosangongin365",
+        coordAtUpload: { lat: form.lat, lng: form.lng },
+        fileName: "소상공인365 자동(반경 300·400·500m·1km, 최근 12개월 평균)",
+        fileHash: null,
+        pastedTable: false,
+        extractedFields: data.records ?? [],
+        uploadedAt: Date.now(),
+        uploadedBy: actor,
+      });
+      const t = data.trend500;
+      const trend = t && t.monthly.length
+        ? `500m 최근 12개월(${t.admiNm}): ` + t.monthly.slice(-12).map((v, i) => `${t.months.slice(-12)[i] ?? ""} ${v.toLocaleString()}`).join(" · ")
+        : null;
+      setSbizNotice({ ok: true, text: `소상공인365에서 ${filled}개 값을 폼에 채웠습니다. 아래 유동인구 입력칸에서 확인한 뒤 "저장"을 눌러야 반영됩니다.`, warnings: data.warnings ?? [], trend });
+    } catch (err) {
+      setSbizNotice({ ok: false, text: err instanceof Error ? err.message : String(err), warnings: [], trend: null });
+    } finally {
+      setSbizBusy(false);
+    }
+  }
+
   const mapPoints: MapPoint[] = useMemo(
     () => [
       ...demandPoints.map((p) => ({ id: p.id, name: p.name, lat: p.lat, lng: p.lng, category: p.category })),
@@ -557,10 +606,11 @@ function BasicInfoTabForm({
         <section className={sectionClass}>
           <h3 className={sectionTitleClass}>SGIS·소상공인365 업로드 자동추출 (반경 500m/1km 통계)</h3>
           <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
-            <strong>SGIS 주거인구는 아래 버튼으로 자동으로 받습니다</strong>(2026-09-26 — SGIS 반경 통계 API. 기존점 52곳 손입력과
-            중앙 차이 0.0%로 대조된 경로). 버튼은 폼에만 채우고, 이 탭의 &ldquo;저장&rdquo;을 눌러야 반영됩니다. 버튼이 실패하면
-            아래 PDF 붙여넣기를 쓰세요. 소상공인365(유동인구)는 아직 리포트를 복사해 붙여넣는 방식입니다. 붙여넣기는 라벨을 찾아
-            자동으로 채워두지만 값이 다르면 자동확정하지 않으니, 표에서 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요.
+            <strong>SGIS 주거인구와 소상공인365 유동인구는 아래 버튼으로 자동으로 받습니다</strong>(2026-09-26). SGIS는 반경 통계 API(기존점
+            52곳 손입력과 중앙 차이 0.0%로 대조된 경로), 소상공인365는 기존점 유동인구를 넣은 것과 같은 경로·같은 규칙(최근 12개월 평균,
+            연령·성별은 최근월 구성비를 평균 크기로 환산)입니다. 버튼은 폼에만 채우고, 이 탭의 &ldquo;저장&rdquo;을 눌러야 반영됩니다.
+            버튼이 실패하면 아래 붙여넣기를 쓰세요(직장인구·세대수·업소수는 아직 붙여넣기로만 받습니다). 붙여넣기는 라벨을 찾아 자동으로
+            채워두지만 값이 다르면 자동확정하지 않으니, 표에서 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3 print:hidden">
             <button
@@ -570,6 +620,14 @@ function BasicInfoTabForm({
               className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
             >
               {sgisBusy ? "SGIS에서 받는 중..." : "SGIS 주거인구 자동 채우기 (500m·1km·연령)"}
+            </button>
+            <button
+              type="button"
+              disabled={sbizBusy || form.code === "new" || authLoading}
+              onClick={handleFetchSbizFloating}
+              className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {sbizBusy ? "소상공인365에서 받는 중(약 20초)..." : "소상공인365 유동인구 자동 채우기 (300·400·500m·1km)"}
             </button>
             <span className="text-xs text-[var(--sl-ink-soft)]">
               확정 좌표({form.lat.toFixed(6)}, {form.lng.toFixed(6)}) 기준 — 좌표를 지도에서 옮겼다면 확정한 뒤 누르세요.
@@ -581,6 +639,15 @@ function BasicInfoTabForm({
               {sgisNotice.warnings.map((w) => (
                 <div key={w} className="mt-1 text-xs">⚠ {w}</div>
               ))}
+            </div>
+          )}
+          {sbizNotice && (
+            <div className={`app-notice mt-2 w-full justify-start px-3 py-2 text-sm ${sbizNotice.ok ? "app-badge-ok" : "app-badge-danger"}`}>
+              <div>{sbizNotice.text}</div>
+              {sbizNotice.warnings.map((w) => (
+                <div key={w} className="mt-1 text-xs">⚠ {w}</div>
+              ))}
+              {sbizNotice.trend && <div className="mt-1 text-xs opacity-80">{sbizNotice.trend}</div>}
             </div>
           )}
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">

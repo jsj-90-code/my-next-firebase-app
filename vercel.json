@@ -8,7 +8,14 @@
   ],
   "functions": {
     "src/app/api/quick-eval/collect/route.ts": {
-      "regions": ["icn1"]
+      "regions": [
+        "icn1"
+      ]
+    },
+    "src/app/api/store-eval/collect-floating-population/route.ts": {
+      "regions": [
+        "icn1"
+      ]
     }
   }
 }
