@@ -13,6 +13,7 @@ import { formatManwonRough } from "../format";
 import type { EvaluationResult } from "../types";
 import {
   QUICK_EVAL_BACKTEST,
+  QUICK_EVAL_VERDICT_BACKTEST,
   QUICK_EVAL_FIELD_NOTES,
   QUICK_EVAL_USAGE_LIMIT,
 } from "./quickEvalDefaults";
@@ -159,7 +160,19 @@ export function buildQuickEvalReviewContext(input: {
   //    넘기고 있었다. **틀렸다.** 그건 검증 배선으로 자사 실측을 쓴 사다리고, 하필 도구의
   //    실제 성적보다 좋아 보인다 — AI가 그 숫자를 근거로 더 자신 있게 쓰게 된다.
   //    도구를 되짚어 잰 `QUICK_EVAL_BACKTEST`를 넘긴다.
-  lines.push("[이 추정의 오차 — 이 도구를 되짚어 잰 값]");
+  // 2026-09-27 — 도구의 목적은 입점 가능/불가 판정이다(사용자). 지금 배선으로 잰 판정 정답률을 먼저 넘긴다.
+  //    아래 금액 오차(QUICK_EVAL_BACKTEST)는 09-23 측정이라 그 뒤 V62 변경·판정 규칙 전 값임을 같이 밝힌다.
+  const vb = QUICK_EVAL_VERDICT_BACKTEST;
+  lines.push("[입점 판정 정답률 — 지금 배선으로 되짚은 값]");
+  lines.push(
+    `${vb.measuredAt} 기준 기존 가맹점 ${vb.sampleCount}곳 중 ${vb.correct}곳 판정 맞음`
+      + ` (실제로 안 된 자리 ${vb.truthRejectCount}곳 중 ${vb.falseAccept}곳을 가능으로, 된 자리 ${vb.falseReject}곳을 불가로 틀림).`
+      + ` 안 되는 자리 시험 ${vb.badSiteCount}곳은 ${vb.badSiteRejected}곳 불가. 금액 평균오차 ${pct(vb.mape, 1)}.`
+      + ` 입지평가를 ${vb.locationScoreSource}로 넣은 값이라 AI 입지평가를 쓰는 실제 도구는 이보다 나쁠 수 있다.`
+      + " **가능 판정이 틀리는 쪽(안 된 자리를 가능으로)이 더 잦으니, 가능 판정이 기준선 근처면 그 점을 적어라.**",
+  );
+  lines.push("");
+  lines.push(`[이 추정의 금액 오차 — ${QUICK_EVAL_BACKTEST.measuredAt} 측정, 그 뒤 산식 변경 전 값]`);
   lines.push(
     `${QUICK_EVAL_BACKTEST.measuredAt} 기준 기존 가맹점 ${QUICK_EVAL_BACKTEST.sampleCount}곳을`
       + " **후보지인 척**(조사 자료를 지우고, 자기 자신은 학습에서 뺀 채) 이 도구와 같은 배선으로"

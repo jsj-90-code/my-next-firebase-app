@@ -50,7 +50,7 @@ import {
 import {
   OWN_FOOD_BRAND,
   QUICK_EVAL_FIELD_NOTES,
-  QUICK_EVAL_BACKTEST,
+  QUICK_EVAL_VERDICT_BACKTEST,
   QUICK_EVAL_DEMAND_CEILING,
   QUICK_EVAL_ENTRY_THRESHOLD_WON,
   QUICK_EVAL_PLAN_DEFAULTS,
@@ -802,14 +802,16 @@ export default function QuickEvalPage() {
         {/* ⛔ 2026-09-23 밤 사용자 지시 — 성적 한 줄만 남긴다("쓸대없는 얘기빼셈"). 측정 방법 설명·경쟁점 범위
             경고·수준보정 오차·결재 금지 문구를 화면에서 뺐다. 값과 근거는 quickEvalDefaults.QUICK_EVAL_BACKTEST
             주석에, AI 평가문에는 그대로 넘어간다. 다시 붙이지 마라. */}
+        {/* 2026-09-27 — 성적 한 줄을 금액 오차에서 입점 판정 정답률로 바꿨다(사용자: "결론만 중요").
+            값과 측정 조건은 quickEvalDefaults.QUICK_EVAL_VERDICT_BACKTEST 주석. */}
         <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
-          평균오차 <strong>{formatPercent(QUICK_EVAL_BACKTEST.mape, 2)}</strong> · ±20% 안{" "}
-          <strong>{formatPercent(QUICK_EVAL_BACKTEST.within20, 1)}</strong> · 실제보다{" "}
-          <strong>
-            {Math.abs((QUICK_EVAL_BACKTEST.medianRatio - 1) * 100).toFixed(0)}%쯤{" "}
-            {QUICK_EVAL_BACKTEST.medianRatio >= 1 ? "높게" : "낮게"}
-          </strong>{" "}
-          나옵니다(기존 가맹점 {QUICK_EVAL_BACKTEST.sampleCount}곳 기준).
+          기존 가맹점 {QUICK_EVAL_VERDICT_BACKTEST.sampleCount}곳 중 입점 판정{" "}
+          <strong>{QUICK_EVAL_VERDICT_BACKTEST.correct}곳 맞음</strong>(안 된 자리를 가능으로{" "}
+          {QUICK_EVAL_VERDICT_BACKTEST.falseAccept}곳 · 된 자리를 불가로 {QUICK_EVAL_VERDICT_BACKTEST.falseReject}곳) ·
+          안 되는 자리 {QUICK_EVAL_VERDICT_BACKTEST.badSiteCount}곳은{" "}
+          <strong>{QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected === QUICK_EVAL_VERDICT_BACKTEST.badSiteCount ? "전부" : `${QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected}곳`} 불가</strong> ·
+          금액 평균오차 {formatPercent(QUICK_EVAL_VERDICT_BACKTEST.mape, 1)}
+          ({QUICK_EVAL_VERDICT_BACKTEST.measuredAt}, 입지평가는 사람 점수로 잰 값이라 실제보다 조금 좋게 나온 값).
         </p>
 
         <h3 className="mt-4 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">자동 / 기본값 경계</h3>

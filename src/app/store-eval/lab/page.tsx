@@ -1300,8 +1300,9 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                 (상수는 전 매장을 똑같이 누르는데, 경쟁점은 매장마다 다르게 깎습니다).
               </div>
               <div className="mt-1 text-[var(--sl-ink-soft)]">
-                치른 값은 적지 않습니다: 가동률 평균오차 4.18 → <b>6.52%p</b> · ±5%p 24 → 18곳 ·
-                매출 MAPE 16.2 → <b>24.6%</b>. 실험실 산식은 <b>운영에 안 들어갑니다</b>
+                그때(2026-09-22) 치른 값은 적지 않았습니다: 가동률 평균오차 4.18 → <b>6.52%p</b> · ±5%p 24 → 18곳 ·
+                매출 MAPE 16.2 → <b>24.6%</b>. 그 뒤 반경·특수수요·가동률 창 정정으로 지금 성적은 위 표의 값입니다.
+                실험실 산식은 <b>운영에 안 들어갑니다</b>
                 (결재 숫자는 V62) — 그래서 성적을 주고 정직한 형태를 샀습니다.
                 되살리려면 <code>indexCalibration</code>의 지수를 1에서 내리면 됩니다.
               </div>

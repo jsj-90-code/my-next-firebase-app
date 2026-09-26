@@ -418,6 +418,36 @@ export const QUICK_EVAL_BACKTEST = {
   },
 } as const;
 
+/**
+ * ⭐ **입점 판정 정답률** — 2026-09-27 새벽 사용자 지시로 화면 성적 한 줄을 이걸로 바꿨다
+ * ("주소만 딱 쳤을 때 입점 가능/불가가 딱 결정돼야. 결론만 중요").
+ *
+ * `QUICK_EVAL_BACKTEST`(09-23)는 그 뒤 V62 변경(요금 합산 · 경쟁IP 거리 가중 등)과 판정 규칙
+ * (`quickEvalVerdict`) 전에 잰 값이라 지금 도구의 성적이 아니다. 그걸 잰 AI 되짚기 하네스는 이
+ * 저장소에 없어서(커밋된 적 없음) 같은 조건으로 다시 잴 수 없었다. 그래서 지금 배선으로 다시 잰 값을 쓴다:
+ *   - `_addressOnlyDual.test.ts` — 기존점 40곳 LOO, 카카오 500m 경쟁점, 판정 = V62(실험실 < V62/2면 실험실)
+ *   - `_badSiteProbe.test.ts` — 안 되는 자리 17곳(폐점·펜션촌·면 소재지·시흥 신현역)
+ * ⚠️ 입지평가는 **사람 점수**로 넣었다(되짚기에서 AI를 못 돌림) — 실제 화면(AI 초안)은 이보다 나쁠 수 있다.
+ * 정답 = 실매출 5,500만 초과면 '가능'(26곳), 아니면 '불가'(14곳).
+ */
+export const QUICK_EVAL_VERDICT_BACKTEST = {
+  measuredAt: "2026-09-27",
+  sampleCount: 40,
+  correct: 30,
+  /** 실제로 된 자리를 불가로 */
+  falseReject: 3,
+  /** 실제로 안 된 자리를 가능으로 — 정답 '불가' 14곳 중 */
+  falseAccept: 7,
+  truthRejectCount: 14,
+  badSiteCount: 17,
+  badSiteRejected: 17,
+  /** 같은 되짚기의 금액 오차(참고) */
+  mape: 0.136,
+  within20Count: 30,
+  bias: 0.001,
+  locationScoreSource: "사람 입지평가(상한)",
+} as const;
+
 
 /** 초기 모드 숫자를 결재에 쓰지 못하게 화면에 박는 문구(인계문 6-2). */
 export const QUICK_EVAL_USAGE_LIMIT =
