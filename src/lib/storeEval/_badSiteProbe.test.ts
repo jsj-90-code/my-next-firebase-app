@@ -40,7 +40,7 @@ import { prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { chooseEstimate, labCandidateBreakdown, rangeFlagsFor, v62TrainingRange } from "./dualEstimate";
 import type { Competitor, DemandPoint, ExistingStore, LocationEvaluation } from "./types";
 
-const SITES: { label: string; address: string; kind: "폐점" | "펜션촌" | "시골" | "관광" }[] = [
+const SITES: { label: string; address: string; kind: "폐점" | "펜션촌" | "시골" | "관광" | "사용자기억"; at?: { lat: number; lng: number } }[] = [
   { label: "양주 삼숭로(폐점)", address: "경기도 양주시 삼숭로38번길 5", kind: "폐점" },
   { label: "양평 서종 문호리", address: "경기 양평군 서종면 문호리", kind: "펜션촌" },
   { label: "가평 북면 목동리", address: "경기 가평군 북면 목동리", kind: "펜션촌" },
@@ -57,6 +57,8 @@ const SITES: { label: string; address: string; kind: "폐점" | "펜션촌" | "�
   { label: "포천 이동 장암리", address: "경기 포천시 이동면 장암리", kind: "시골" },
   { label: "홍천 서면 팔봉리", address: "강원 홍천군 서면 팔봉리", kind: "펜션촌" },
   { label: "고성 토성 봉포리", address: "강원 고성군 토성면 봉포리", kind: "펜션촌" },
+  // 사용자 기억(09-27): "시흥 신현역 근처였나 3천~5천 떴다" — 주소 검색이 안 돼 카카오 장소(신현역 서해선) 좌표로 넣는다.
+  { label: "시흥 신현역", address: "경기 시흥시 신현역(서해선)", kind: "사용자기억", at: { lat: 37.40956486776796, lng: 126.787838368873 } },
 ];
 const CACHE = ".local-tools/bad-site-probe.json";
 type Collected = {
@@ -71,7 +73,7 @@ type Collected = {
 
 async function collect(site: (typeof SITES)[number]): Promise<Collected> {
   const out: Collected = { ...site, notes: [] };
-  const g = await geocodeAddress(site.address);
+  const g = site.at ? { ...site.at, roadAddress: null, jibunAddress: null, buildingName: null } : await geocodeAddress(site.address);
   if (!g) return { ...out, error: "지오코딩 실패" };
   out.geocode = { lat: g.lat, lng: g.lng, roadAddress: g.roadAddress ?? null, jibunAddress: g.jibunAddress ?? null, buildingName: g.buildingName ?? null };
   const origin = { lat: g.lat, lng: g.lng };
@@ -125,13 +127,13 @@ describeIf("안 되는 자리 시험 세트 — 주소만 입점 판정", () => 
     const T = QUICK_EVAL_ENTRY_THRESHOLD_WON;
     const man = (v: number | null | undefined) => (v == null ? "-" : `${Math.round(v / 10000).toLocaleString("ko-KR")}만`);
     const yes = (v: number | null | undefined) => (v == null ? "?" : v > T ? "가능" : "불가");
-    console.log(`\n[안 되는 자리 ${SITES.length}곳] 기준 ${man(T)} 초과면 가능 · 100대·${QUICK_EVAL_PLAN_DEFAULTS.hourlyRate}원·2층`);
+    console.log(`\n[안 되는 자리 ${SITES.length}곳] 기준 ${man(T)} 초과면 가능 · ${process.env.PLAN_PC ?? QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount}대·${process.env.PLAN_RATE ?? QUICK_EVAL_PLAN_DEFAULTS.hourlyRate}원·2층`);
     console.log("  자리                  종류   상권수요 주거1km 유동400 PC방 | V62(화면)      실험실          규칙 주 값");
     let v62Yes = 0, ruleYes = 0, n = 0;
     for (const s of SITES) {
       const c = cache[s.label];
       if (!c || c.error || !c.geocode) { console.log(`  ${s.label} — ${c?.error ?? "수집 없음"}`); continue; }
-      const plan: QuickEvalPlanInput = { name: s.label, address: s.address, expectedPcCount: QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount, hourlyRate: QUICK_EVAL_PLAN_DEFAULTS.hourlyRate, floor: QUICK_EVAL_PLAN_DEFAULTS.floor, groundLevel: QUICK_EVAL_PLAN_DEFAULTS.groundLevel, hasElevator: true, ownFoodBrand: null, plannedOpenMonth: null };
+      const plan: QuickEvalPlanInput = { name: s.label, address: s.address, expectedPcCount: Number(process.env.PLAN_PC ?? QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount), hourlyRate: Number(process.env.PLAN_RATE ?? QUICK_EVAL_PLAN_DEFAULTS.hourlyRate), floor: QUICK_EVAL_PLAN_DEFAULTS.floor, groundLevel: QUICK_EVAL_PLAN_DEFAULTS.groundLevel, hasElevator: true, ownFoodBrand: null, plannedOpenMonth: null };
       const built = buildQuickCandidate(plan, { geocode: c.geocode, sgis: c.sgis ?? null, floating: c.floating?.[500] ?? null, pcBangs: c.pcBangs ?? [], pcBangsPossiblyTruncated: false });
       // 자동수집 확장 뒤 상태 — 유동 100~1000m를 실험실 입력으로(기본정보 탭 버튼과 같은 필드 대응)
       const cand = { ...built.candidate, ...floatingPatchFromSbiz(c.floating ?? {}).patch };

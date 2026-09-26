@@ -144,6 +144,36 @@ describeIf("주소만 조건 되짚기 — V62(화면) · V62(운영) · 실험�
     expect(core.length).toBeGreaterThan(30);
   });
 
+  it("가능/불가 정답률 — 기존점(실매출 > 기준이면 가능이 정답) · 판정 방식별", () => {
+    const T = 55_000_000;
+    const rows = runAll(true);
+    type P = { label: string; pick: (r: (typeof rows)[number]) => number | null };
+    const ps: P[] = [
+      { label: "V62(화면)만", pick: (r) => r.vScreen },
+      { label: "실험실만", pick: (r) => r.lab },
+      { label: "규칙(검증불가→낮은 쪽)", pick: (r) => r.pickS },
+      { label: "갈리면(>1.2배) 낮은 쪽", pick: (r) => (r.vScreen != null && r.lab != null && Math.max(r.vScreen, r.lab) / Math.min(r.vScreen, r.lab) > 1.2 ? Math.min(r.vScreen, r.lab) : r.vScreen) },
+      { label: "갈리면(>2배) 낮은 쪽", pick: (r) => (r.vScreen != null && r.lab != null && Math.max(r.vScreen, r.lab) / Math.min(r.vScreen, r.lab) > 2 ? Math.min(r.vScreen, r.lab) : r.vScreen) },
+      { label: "실험실이 V62의 1/1.5 아래면 실험실", pick: (r) => (r.vScreen != null && r.lab != null && r.lab < r.vScreen / 1.5 ? r.lab : r.vScreen) },
+      { label: "실험실이 V62의 1/2 아래면 실험실", pick: (r) => (r.vScreen != null && r.lab != null && r.lab < r.vScreen / 2 ? r.lab : r.vScreen) },
+      { label: "실험실이 V62의 1/2.5 아래면 실험실", pick: (r) => (r.vScreen != null && r.lab != null && r.lab < r.vScreen / 2.5 ? r.lab : r.vScreen) },
+      { label: "실험실이 V62의 1/3 아래면 실험실", pick: (r) => (r.vScreen != null && r.lab != null && r.lab < r.vScreen / 3 ? r.lab : r.vScreen) },
+    ];
+    for (const k of [1.5, 2, 2.5, 3]) console.log(`  (1/${k} 기준에 걸리는 기존점: ${rows.filter((r) => r.vScreen != null && r.lab != null && r.lab < r.vScreen / k).map((r) => `${r.name.replace(/점$/, "")}(실측 ${Math.round(r.act / 1e4)}만·V62 ${Math.round(r.vScreen! / 1e4)}·실험실 ${Math.round(r.lab! / 1e4)})`).join(", ") || "없음"})`);
+    const _unused = [
+    ];
+    void _unused;
+    const truthYes = rows.filter((r) => r.act > T).length;
+    console.log(`
+[가능/불가 정답률 · 기존점 ${rows.length}곳] 정답 '가능' ${truthYes}곳 · '불가' ${rows.length - truthYes}곳 (실매출 기준 5,500만)`);
+    for (const pp of ps) {
+      let tp = 0, fn = 0, fp = 0, tn = 0;
+      for (const r of rows) { const v = pp.pick(r); const y = v != null && v > T; const t = r.act > T; if (t && y) tp++; else if (t) fn++; else if (y) fp++; else tn++; }
+      console.log(`  ${pad(pp.label, 26)} 맞음 ${tp + tn}/${rows.length} · 되는 자리를 불가로 ${fn} · 안 되는 자리를 가능으로 ${fp}`);
+    }
+    expect(rows.length).toBeGreaterThan(30);
+  });
+
   for (const withLoc of [false, true]) {
     it(`기존점 되짚기 — 입지평가 ${withLoc ? "있음(사람 값 = AI 상한)" : "없음"}`, () => {
       const rows = runAll(withLoc);
