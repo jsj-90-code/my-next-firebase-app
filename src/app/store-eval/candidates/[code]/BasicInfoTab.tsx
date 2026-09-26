@@ -23,8 +23,6 @@ import {
   scoreFromVgaSpec,
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
-import { MarketDataUploadPanel } from "@/components/storeEval/MarketDataUploadPanel";
-import { SGIS_FIELD_SPECS, SOSANGONGIN365_TABLE_VARIANTS } from "@/lib/storeEval/marketDataExtract";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   generateNextCandidateCode,
@@ -127,7 +125,7 @@ function BasicInfoTabForm({
   // 상권자료 자동수집 1단계(2026-08-24) — 주소→좌표, 행정구역 참고자료, 경쟁점/수요거점 자동수집.
   const [collecting, setCollecting] = useState(false);
   const [collectMessage, setCollectMessage] = useState<string | null>(null);
-  // 2026-09-26 — SGIS 주거인구 API 자동 채우기(입력 자동화 2번). 붙여넣기 패널과 따로 상태를 둔다.
+  // 2026-09-26 — SGIS 주거인구 API 자동 채우기(입력 자동화 2번). 버튼마다 따로 상태를 둔다.
   const [sgisBusy, setSgisBusy] = useState(false);
   const [sgisNotice, setSgisNotice] = useState<{ ok: boolean; text: string; warnings: string[] } | null>(null);
   // 2026-09-26 — 소상공인365 유동인구 자동 채우기(입력 자동화 3번). 반경 4개를 차례로 받아 20초쯤 걸린다.
@@ -324,7 +322,7 @@ function BasicInfoTabForm({
   }
 
   // SGIS 반경 500m/1km 주거인구·연령을 API로 받아 **폼에만** 채운다(저장은 사람이 "저장"으로).
-  // 붙여넣기와 같은 handleApplyMarketDataUpload를 거쳐 업로드 이력도 같은 모양으로 남긴다.
+  // handleApplyMarketDataUpload를 거쳐 업로드 이력(storeEvalMarketDataUploads)을 남긴다(예전 붙여넣기와 같은 모양).
   async function handleFetchSgisResident() {
     if (form.lat == null || form.lng == null || form.code === "new") return;
     setSgisBusy(true);
@@ -339,7 +337,7 @@ function BasicInfoTabForm({
       const data = await readJsonOrText<{ patch: Record<string, number>; records: ExtractedFieldRecord[]; warnings: string[]; baseYear: string }>(response);
       if (!response.ok || data.error || !data.patch) throw new Error(data.error ?? "SGIS 주거인구를 받지 못했습니다.");
       const filled = Object.keys(data.patch).length;
-      if (filled === 0) throw new Error("SGIS가 빈 결과를 돌려줬습니다. PDF 붙여넣기로 입력해주세요.");
+      if (filled === 0) throw new Error("SGIS가 빈 결과를 돌려줬습니다. 아래 입력칸에 직접 입력해주세요.");
       await handleApplyMarketDataUpload(data.patch, {
         id: `${form.code}_sgis_life_area_${Date.now()}`,
         candidateCode: form.code,
@@ -381,7 +379,7 @@ function BasicInfoTabForm({
       }>(response);
       if (!response.ok || data.error || !data.patch) throw new Error(data.error ?? "소상공인365 유동인구를 받지 못했습니다.");
       const filled = Object.keys(data.patch).length;
-      if (filled === 0) throw new Error("소상공인365가 빈 결과를 돌려줬습니다. 리포트 붙여넣기로 입력해주세요.");
+      if (filled === 0) throw new Error("소상공인365가 빈 결과를 돌려줬습니다. 아래 입력칸에 직접 입력해주세요.");
       await handleApplyMarketDataUpload(data.patch, {
         id: `${form.code}_sosangongin365_${Date.now()}`,
         candidateCode: form.code,
@@ -604,13 +602,13 @@ function BasicInfoTabForm({
 
       {form.lat != null && form.lng != null && (
         <section className={sectionClass}>
-          <h3 className={sectionTitleClass}>SGIS·소상공인365 업로드 자동추출 (반경 500m/1km 통계)</h3>
+          <h3 className={sectionTitleClass}>SGIS·소상공인365 자동 채우기 (주거인구 · 유동인구)</h3>
           <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
             <strong>SGIS 주거인구와 소상공인365 유동인구는 아래 버튼으로 자동으로 받습니다</strong>(2026-09-26). SGIS는 반경 통계 API(기존점
             52곳 손입력과 중앙 차이 0.0%로 대조된 경로), 소상공인365는 기존점 유동인구를 넣은 것과 같은 경로·같은 규칙(최근 12개월 평균,
             연령·성별은 최근월 구성비를 평균 크기로 환산)입니다. 버튼은 폼에만 채우고, 이 탭의 &ldquo;저장&rdquo;을 눌러야 반영됩니다.
-            버튼이 실패하면 아래 붙여넣기를 쓰세요(직장인구·지하철 승하차는 산식에 안 쓰는 참고자료라 붙여넣기로만 받습니다 — AI 입지평가·보고서 문구에만 들어감). 붙여넣기는 라벨을 찾아 자동으로
-            채워두지만 값이 다르면 자동확정하지 않으니, 표에서 확인·수정한 뒤 &ldquo;폼에 적용&rdquo;을 눌러주세요.
+            버튼이 실패하면 아래 입력칸에 직접 입력하세요. 직장인구·지하철 승하차는 산식에 안 쓰는 참고자료(AI 입지평가·보고서 문구에만
+            들어감)라 아래 &ldquo;소상공인365 참고자료&rdquo; 칸에 직접 입력합니다.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3 print:hidden">
             <button
@@ -650,40 +648,9 @@ function BasicInfoTabForm({
               {sbizNotice.trend && <div className="mt-1 text-xs opacity-80">{sbizNotice.trend}</div>}
             </div>
           )}
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <MarketDataUploadPanel
-              title="SGIS 생활권역 통계 (인구·연령)"
-              openUrl="https://sgis.kostat.go.kr/view/catchmentArea/main"
-              openLabel="SGIS 생활권역 열기"
-              instructions={`좌표(${form.lat.toFixed(6)}, ${form.lng.toFixed(6)}) 부근을 검색해 지점 선택 → 세부설정에서 반경 0.5km·1km 선택 → 통계정보 보기 → 보고서(PDF) 열기. PDF의 "인구(나이)"/"인구(성별)"/"면적" 표를 반경 섹션(예: "반경 기준 0.5km")까지 포함해 그대로 복사해 붙여넣으세요.`}
-              specs={SGIS_FIELD_SPECS}
-              sourceType="sgis_life_area"
-              candidateCode={form.code}
-              coord={{ lat: form.lat, lng: form.lng }}
-              actorEmail={actor}
-              onApply={handleApplyMarketDataUpload}
-              defaultMode="paste"
-              pasteParser="sectioned"
-              showFileUpload={false}
-            />
-            <MarketDataUploadPanel
-              title="소상공인365 상권분석 (유동인구·직장인구·세대수·업소수)"
-              openUrl="https://bigdata.sbiz.or.kr/"
-              openLabel="소상공인365 열기"
-              instructions='빅데이터 상권분석 → 상세분석 → 업종 "PC방", 반경은 아래에서 고른 값과 같게 설정 후 분석하기 → 리포트 페이지 전체를 Ctrl+A로 선택해 그대로 복사해 붙여넣으세요(표를 따로 고를 필요 없습니다). 한 리포트에 반경 하나만 나오므로, 반경을 바꿔가며 반복하면 됩니다. ⚠️ 실험실 산식이 실제로 읽는 건 400m(수요) · 300m와 1km(상권 중심도)입니다 — 500m만 받으면 후보지 예측이 말없이 낮게 나옵니다.'
-              tableVariants={SOSANGONGIN365_TABLE_VARIANTS}
-              sourceType="sosangongin365"
-              candidateCode={form.code}
-              coord={{ lat: form.lat, lng: form.lng }}
-              actorEmail={actor}
-              onApply={handleApplyMarketDataUpload}
-              defaultMode="paste"
-              showFileUpload={false}
-            />
-          </div>
           {marketDataUploads.length > 0 && (
             <div className="mt-4 text-xs text-[var(--sl-ink-soft)]">
-              <strong>업로드 이력</strong>
+              <strong>자동 채우기·업로드 이력</strong>
               <ul className="mt-1 list-inside list-disc">
                 {marketDataUploads.slice(0, 5).map((u) => (
                   <li key={u.id}>

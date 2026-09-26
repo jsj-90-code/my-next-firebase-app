@@ -29,6 +29,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ baseYear: result.baseYear, patch, records, warnings });
   } catch (error) {
     const message = error instanceof Error ? error.message : "SGIS 수집에 실패했습니다.";
-    return NextResponse.json({ error: `SGIS 주거인구를 받지 못했습니다(${message}). PDF 붙여넣기로 입력해주세요.` }, { status: 502 });
+    return NextResponse.json({ error: `SGIS 주거인구를 받지 못했습니다(${message}). 입력칸에 직접 입력해주세요.` }, { status: 502 });
   }
 }

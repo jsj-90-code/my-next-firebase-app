@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   }
   if (Object.keys(byRadius).length === 0) {
     const first = Object.values(errors)[0] ?? "알 수 없는 오류";
-    return NextResponse.json({ error: `소상공인365 유동인구를 받지 못했습니다(${first}). 리포트 붙여넣기로 입력해주세요.` }, { status: 502 });
+    return NextResponse.json({ error: `소상공인365 유동인구를 받지 못했습니다(${first}). 입력칸에 직접 입력해주세요.` }, { status: 502 });
   }
 
   const { patch, records, warnings } = floatingPatchFromSbiz(byRadius, errors);
