@@ -139,6 +139,8 @@ describeIf("기존점 AI 입지평가 되짚기", () => {
       "AI+위치·가시성 +1점": [],
       // 2026-09-27 — 학습도 제미나이 기준으로(사용자: "주소만은 제미나이 평가가 자동으로 들어가니 그걸로 판단").
       "AI입력·AI학습(6칸)": [], "AI입력·AI학습(점수 3칸)": [],
+      // 2026-09-27 — 오송(AI "산업단지" → 배후수요 더미 켜짐)에서 나온 일반 규칙 후보. AI 특수수요를 안 쓰면?
+      "AI 특수수요 끔(없음)": [], "AI 산업단지·군부대→기타(더미만 끔)": [],
     };
     type Mode = string;
     const modes: Mode[] = Object.keys(COMBOS);
@@ -168,6 +170,8 @@ describeIf("기존점 AI 입지평가 되짚기", () => {
         if (m === "사람") loc = hl ? ({ ...(hl as object), candidateCode: candidate.code } as LocationEvaluation) : null;
         else if (!ai) loc = null;
         else if (AI_TRAIN_FIELDS[m]) loc = buildQuickLocationEvaluation(planFor(s), { fields: ai });
+        else if (m === "AI 특수수요 끔(없음)") loc = buildQuickLocationEvaluation(planFor(s), { fields: { ...ai, specialDemandType: "없음", specialDemandIntensity: "없음" } });
+        else if (m === "AI 산업단지·군부대→기타(더미만 끔)") loc = buildQuickLocationEvaluation(planFor(s), { fields: { ...ai, specialDemandType: ai.specialDemandType === "산업단지" || ai.specialDemandType === "군부대" ? "기타" : ai.specialDemandType } });
         else if (m === "AI+위치·가시성 +1점") {
           const bump = (v: number | string | null) => (typeof v === "number" ? Math.min(5, v + 1) : v);
           loc = buildQuickLocationEvaluation(planFor(s), { fields: { ...ai, locationScore: bump(ai.locationScore), visibilityScore: bump(ai.visibilityScore) } });
