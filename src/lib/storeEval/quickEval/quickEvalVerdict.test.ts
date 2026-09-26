@@ -21,4 +21,9 @@ describe("quickEvalFinalEstimate", () => {
     expect(quickEvalFinalEstimate(null, 5_000_000).source).toBe("실험실");
     expect(quickEvalFinalEstimate(null, null).value).toBeNull();
   });
+  it("고립 상권(2km 안 PC방 0곳)이면 실험실 — 신현역형은 실험실이 V62의 절반을 넘어도 실험실(3,075만 vs 6,075만)", () => {
+    expect(quickEvalFinalEstimate(60_750_000, 30_750_000, [], { isolated: true })).toMatchObject({ value: 30_750_000, source: "실험실" });
+    expect(quickEvalFinalEstimate(60_750_000, 30_750_000).source).toBe("V62");
+    expect(quickEvalFinalEstimate(60_000_000, null, [], { isolated: true }).source).toBe("V62");
+  });
 });

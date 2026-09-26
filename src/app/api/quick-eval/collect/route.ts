@@ -32,6 +32,8 @@ import { QUICK_EVAL_RADII } from "@/lib/storeEval/quickEval/quickEvalDefaults";
 import { judgePcBangName } from "@/lib/storeEval/quickEval/pcBangNameFilter";
 import { QUICK_EVAL_CANDIDATE_CODE } from "@/lib/storeEval/quickEval/buildQuickCandidate";
 import { tmSelfTestFailures } from "@/lib/storeEval/quickEval/tm";
+import { QUICK_EVAL_ISOLATION } from "@/lib/storeEval/quickEval/quickEvalVerdict";
+import type { ResidentAges } from "@/lib/storeEval/textbookModel";
 
 // 소상공인365 스크래핑이 지점당 4초쯤 걸리고 AI 초안이 웹검색까지 한다 — 기본 타임아웃으로는
 // 모자란다. Fluid Compute에서 긴 함수가 허용되므로 넉넉히 준다.
@@ -132,6 +134,26 @@ export async function POST(request: Request) {
     errors.push("경쟁점 목록이 카카오 조회 상한에 걸려 일부 빠졌을 수 있습니다(격자분할 한계 도달).");
   }
 
+  // 5-2) 고립 상권 판정(2026-09-27, quickEvalVerdict.QUICK_EVAL_ISOLATION) — 2km 안에 PC방이 0곳이면 실험실 주거 반경을 2km로.
+  //      있나 없나만 보면 되므로 격자로 쪼개지 않고 한 번만 부른다. 결과가 잘렸으면(45건 초과) 당연히 고립이 아니다.
+  let isolation: { pcBangs2km: number; truncated: boolean; residentAges2km: ResidentAges | null } | null = null;
+  try {
+    const probe = await collectKakaoPcBangs(origin, QUICK_EVAL_ISOLATION.probeRadiusM, { splitDepthLimit: 0 });
+    const counted = probe.places.filter((p) => judgePcBangName(p).counted).length;
+    let residentAges2km: ResidentAges | null = null;
+    if (counted === 0 && !probe.possiblyTruncated) {
+      const b = (await collectSgisRadiusPopulation(origin, [QUICK_EVAL_ISOLATION.residentRadiusM])).byRadius[QUICK_EVAL_ISOLATION.residentRadiusM]?.ageBands ?? [];
+      if (b.length >= 9 && b[1] != null) {
+        residentAges2km = { age0s: b[0] ?? 0, age10s: b[1] ?? 0, age20s: b[2] ?? 0, age30s: b[3] ?? 0, age40s: b[4] ?? 0, age50s: b[5] ?? 0, age60plus: (b[6] ?? 0) + (b[7] ?? 0) + (b[8] ?? 0) };
+      } else {
+        errors.push("고립 상권이지만 2km 주거인구(SGIS)를 받지 못해 1km로 계산합니다.");
+      }
+    }
+    isolation = { pcBangs2km: counted, truncated: probe.possiblyTruncated, residentAges2km };
+  } catch (err) {
+    errors.push(`고립 상권 판정(카카오 2km) 실패: ${message(err)} (일반 규칙으로 판정합니다)`);
+  }
+
   // 6) 입지평가 AI 초안 — 앞 단계 자료를 컨텍스트로 준다. 실패해도 나머지는 살린다.
   let locationDraft = null;
   if (!body.skipAi) {
@@ -184,6 +206,7 @@ export async function POST(request: Request) {
     pcBangs,
     pcBangsPossiblyTruncated: pcBangResult.ok ? pcBangResult.value.possiblyTruncated : false,
     pcBangQueryCount: pcBangResult.ok ? pcBangResult.value.queryCount : 0,
+    isolation,
     demandPoints,
     locationDraft,
     errors,
@@ -197,7 +220,8 @@ async function collectFloatingRadii(origin: { lat: number; lng: number }) {
   let r500Error: unknown = null;
   for (const r of SBIZ_FLOATING_RADII) {
     try {
-      byRadius[r] = await collectSbizFloating(origin, r);
+      // 2026-09-27 — 시간 초과가 가끔 난다(후보지 13곳 중 2곳 400m). 빠지면 실험실 유동 수요가 0이 되므로 한 번 더 부른다.
+      byRadius[r] = await collectSbizFloating(origin, r).catch(() => collectSbizFloating(origin, r));
     } catch (err) {
       if (r === QUICK_EVAL_RADII.floating) r500Error = err;
       else otherErrors.push(`유동인구 ${r >= 1000 ? "1km" : `${r}m`} 수집 실패(실험실 값이 낮게 나올 수 있음): ${message(err)}`);

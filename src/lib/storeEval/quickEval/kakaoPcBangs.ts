@@ -112,7 +112,10 @@ async function queryOnce(
 export async function collectKakaoPcBangs(
   origin: { lat: number; lng: number },
   radiusM: number,
+  // 2026-09-27 — 고립 판정(2km 안에 PC방이 있나)은 격자로 쪼갤 필요가 없다. 0이면 한 번만 부른다(첫 쪽들 최대 45건).
+  opts: { splitDepthLimit?: number } = {},
 ): Promise<KakaoPcBangResult> {
+  const splitLimit = opts.splitDepthLimit ?? SPLIT_DEPTH_LIMIT;
   const apiKey = process.env.KAKAO_REST_API_KEY;
   if (!apiKey) throw new Error("KAKAO_REST_API_KEY가 설정되지 않았습니다.");
 
@@ -145,7 +148,7 @@ export async function collectKakaoPcBangs(
       }
     }
     if (!truncated) return;
-    if (depth >= SPLIT_DEPTH_LIMIT) {
+    if (depth >= splitLimit) {
       possiblyTruncated = true;
       return;
     }

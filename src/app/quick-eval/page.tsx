@@ -69,7 +69,8 @@ import { labCandidateBreakdown, rangeFlagsFor, v62TrainingRange } from "@/lib/st
 import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import { floatingPatchFromSbiz, type SbizFloatingRadius } from "@/lib/storeEval/floatingPopulationFromSbiz";
 import type { SbizFloatingResult } from "@/lib/storeEval/quickEval/sbizFloating";
-import { quickEvalFinalEstimate, type QuickEvalFinal } from "@/lib/storeEval/quickEval/quickEvalVerdict";
+import { QUICK_EVAL_ISOLATION, quickEvalFinalEstimate, type QuickEvalFinal } from "@/lib/storeEval/quickEval/quickEvalVerdict";
+import type { ResidentAges } from "@/lib/storeEval/textbookModel";
 
 type CollectResponse = QuickEvalCollected & {
   collectedAt: number;
@@ -77,6 +78,8 @@ type CollectResponse = QuickEvalCollected & {
   locationDraft: { fields: Record<string, number | string | null>; rationale?: string } | null;
   /** 2026-09-27 — 유동인구 100~1000m(실험실 입력). 500m는 floating에 따로 있다. */
   floatingByRadius?: Partial<Record<SbizFloatingRadius, SbizFloatingResult>>;
+  /** 2026-09-27 — 고립 상권 판정(카카오 2km 안 PC방 수 · 0곳이면 SGIS 2km 연령 인구). quickEvalVerdict.QUICK_EVAL_ISOLATION */
+  isolation?: { pcBangs2km: number; truncated: boolean; residentAges2km: ResidentAges | null } | null;
   errors: string[];
 };
 
@@ -320,6 +323,8 @@ export default function QuickEvalPage() {
       //      실험실이 실패해도 V62로 판정한다(판정이 멈추면 안 된다).
       let labRevenue: number | null = null;
       let flags: ReturnType<typeof rangeFlagsFor> = [];
+      // 고립 상권(2km 안 PC방 0곳 + 2km 인구 받음)이면 실험실 주거 반경을 2km로 넓히고, 판정 값도 실험실로 둔다(QUICK_EVAL_ISOLATION).
+      const isolatedAges = payload.isolation?.pcBangs2km === 0 ? payload.isolation.residentAges2km : null;
       try {
         const prepared = prepareExistingStoresForEvaluation(existingStores, trainingCompetitors, trainingLocationEvaluations, settings);
         const range = v62TrainingRange(prepared);
@@ -330,11 +335,17 @@ export default function QuickEvalPage() {
           competitors: [...trainingCompetitors, ...built.competitors],
           locations: quickLoc ? [...trainingLocationEvaluations, quickLoc] : trainingLocationEvaluations,
           sales: trainingSales, settings,
+          extras: isolatedAges
+            ? {
+                residentRadiusByCode: new Map([[built.candidate.code, QUICK_EVAL_ISOLATION.residentRadiusM]]),
+                residentRingsByCode: new Map([[built.candidate.code, { [QUICK_EVAL_ISOLATION.residentRadiusM]: isolatedAges }]]),
+              }
+            : undefined,
         })?.monthlyRevenue ?? null;
       } catch {
         labRevenue = null;
       }
-      const final = quickEvalFinalEstimate(evaluated.v62Final, labRevenue, flags);
+      const final = quickEvalFinalEstimate(evaluated.v62Final, labRevenue, flags, { isolated: isolatedAges != null });
       setFinalEst(final);
 
       // 4) 가맹점 실적 비교표 — AI가 **자체 매출 판단**의 근거로 쓴다(사용자 요청 2026-09-22:

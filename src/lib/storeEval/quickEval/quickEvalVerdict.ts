@@ -22,6 +22,30 @@ export const QUICK_EVAL_LAB_GUARD = {
   testFile: "src/lib/storeEval/_addressOnlyDual.test.ts",
 } as const;
 
+/**
+ * ⭐ 고립 상권 규칙 (2026-09-27, 사용자 "2km 내에 없으면 이 기준을 실험실 산식 기준 주소만 초기평가에만 적용").
+ *
+ * **카카오 PC방이 2km 안에 한 곳도 없으면**(이름 거르기 뒤) — 정밀 평가에서 사람이 확인하는 "2km 안 다른 PC방 상권 없음"의
+ * 가장 엄격한 형태를 자동으로 판정한다:
+ *   1. 실험실 주거 반경을 1km → 2km로 넓힌다(SGIS 2km 연령 인구). 소도시 매장은 1km 밖 주민도 쓴다.
+ *   2. **판정 값은 실험실(2km)** 로 둔다. 기존점 40곳 중 이 조건에 드는 곳이 0곳이라(전부 1km 안에 PC방 2곳 이상)
+ *      V62가 한 번도 검증된 적 없는 구간이다 — 인구로 쌓은 값을 쓴다.
+ * 왜 2번이 필요한가: 1번만 하면 시흥 신현역(120대·1,500원)이 실험실 3,075만 > V62 6,075만÷2가 되어 가드가 풀리고
+ *   "가능"으로 뒤집혔다. 2번을 붙이면 신현역 3,075만 불가 · 영월 1,672만 → 3,027만 · 펜션촌·시골 12곳 전부 불가 유지.
+ * 기각한 더 느슨한 규칙: "1~2km 고리에 k곳 이하" — 시흥능곡 같은 도시 매장이 부풀어 기존점 매출 오차 13.4 → 14.4~17.3%.
+ * ⚠️ 카카오에 안 잡히는 PC방이 있으면 고립으로 잘못 볼 수 있다(영월: 조사 경쟁점 I&G PC가 카카오 2km에 없음).
+ * 근거: `_isolatedRadius.test.ts` · `_yeongwolLab.test.ts` · docs/releases/2026-09-27-candidate-quick-eval.md
+ */
+export const QUICK_EVAL_ISOLATION = {
+  /** 이 반경 안에 PC방(이름 거르기 뒤)이 0곳이면 고립 */
+  probeRadiusM: 2000,
+  /** 고립일 때 실험실 주거 반경 */
+  residentRadiusM: 2000 as const,
+  measuredAt: "2026-09-27",
+  existingAffected: 0,
+  testFile: "src/lib/storeEval/_isolatedRadius.test.ts",
+} as const;
+
 export type QuickEvalFinal = {
   value: number | null;
   source: "V62" | "실험실" | null;
@@ -29,7 +53,15 @@ export type QuickEvalFinal = {
   reason: string | null;
 };
 
-export function quickEvalFinalEstimate(v62: number | null, lab: number | null, flags: RangeFlag[] = []): QuickEvalFinal {
+export function quickEvalFinalEstimate(
+  v62: number | null, lab: number | null, flags: RangeFlag[] = [], opts: { isolated?: boolean } = {},
+): QuickEvalFinal {
+  if (opts.isolated && lab != null) {
+    return {
+      value: lab, source: "실험실",
+      reason: `반경 ${QUICK_EVAL_ISOLATION.probeRadiusM / 1000}km 안에 다른 PC방이 없는 고립 상권이라 주변 ${QUICK_EVAL_ISOLATION.residentRadiusM / 1000}km 주민으로 쌓은 수요(실험실)로 판정했습니다. 기존 가맹점에 없던 조건이라 현장 확인이 필요합니다.`,
+    };
+  }
   if (v62 == null) {
     return lab == null
       ? { value: null, source: null, reason: null }
