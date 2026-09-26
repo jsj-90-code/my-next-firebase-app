@@ -143,10 +143,11 @@ export async function POST(request: Request) {
         candidateCode,
         name: place.name,
         surveyLevel: null,
-        investigationStatus: "조사완료", // 자동수집만으론 사양·가동률을 모르므로 "미조사"에 준하지만,
-        // 05_경쟁점정보 워크플로 상 이 값은 "실사 진행 여부"라 자동수집 직후엔 화면에서 "확인 필요"로
-        // 안내하고 실제 필드값은 전부 null로 남긴다(지어내지 않음) — investigationStatus는 사용자가
-        // 실사 후 직접 바꾸는 게 맞아 여기서는 조사완료로 두지 않고 명시적으로 표시한다.
+        // 조사 상태 값에는 "미조사"가 없다(조사완료·경쟁점없음·노후저경쟁력미조사·오픈예정). 그래서 "조사완료"로 두고
+        // 사양·대수·가동률은 전부 null로 남긴다(지어내지 않음). 이 상태의 경쟁점을 V62는 **0대**로 센다(값 누락) —
+        // 사람이 대수를 넣거나 조사수준 "간략"(90대)을 골라야 한다. 결과 탭 "빈 입력"에 "경쟁점 PC대수 빈칸 N곳"으로
+        // 뜬다(dualEstimate.inputGapsFor, 2026-09-26). (예전 주석은 "조사완료로 두지 않는다"고 적혀 있어 코드와 반대였다.)
+        investigationStatus: "조사완료",
         distanceM,
         floor: null,
         groundLevel: null,

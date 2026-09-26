@@ -20,6 +20,7 @@
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation, ModelSettings } from "./types";
 import type { ResidentAges, ResidentRingRadius } from "./textbookModel";
 import { DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook } from "./textbookModel";
+import { computeCompetitorAppliedPcCount } from "./calc";
 import { buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, productUnitPriceEraByStore, utilizationByStore } from "./labInput";
 
 export const DUAL_ESTIMATE_RULE = { gapRatio: 1.2, denseCompetitorIp: 800 } as const;
@@ -100,6 +101,11 @@ export function inputGapsFor(candidate: CandidateInput, loc: LocationEvaluation 
   if (cs.some((x) => x.lat == null || x.lng == null)) gaps.push("경쟁점 좌표(실험실 거리 감쇠)");
   const unsurveyed = cs.filter((x) => x.investigationStatus !== "조사완료").length;
   if (unsurveyed) gaps.push(`경쟁점 미조사 ${unsurveyed}곳(둘 다 — PC 없으면 90대로 간주)`);
+  // 2026-09-26 — "상권자료 수집"이 막 가져온 경쟁점은 조사완료 + 조사수준·PC대수 빈칸이다. V62는 이런 경쟁점을
+  // **0대**로 센다(computeCompetitorAppliedPcCount → null → "값 누락", 경쟁IP에서 빠짐) — PC대수를 채우거나
+  // 조사수준 "간략"(90대)을 고르기 전에 결과를 보면 예상매출이 부풀어 있는데 여기 안 떠서 알 길이 없었다.
+  const noPc = cs.filter((x) => x.investigationStatus === "조사완료" && computeCompetitorAppliedPcCount(x) == null).length;
+  if (noPc) gaps.push(`경쟁점 PC대수 빈칸 ${noPc}곳(V62는 0대로 셈 — 대수를 넣거나 조사수준 "간략"(90대)을 고를 것)`);
   return gaps;
 }
 
