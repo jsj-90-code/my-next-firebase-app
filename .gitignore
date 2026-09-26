@@ -558,3 +558,5 @@ src/**/_*.test.ts
 # 2026-09-22 밤 — 퍼짐 과장이 어느 층에서 나오는지 가른다. 입지배율이 일을 안 한다는
 # 진단이 여기 있다. 층을 손보기 전에 여기를 먼저 돌린다.
 !src/lib/storeEval/_spreadLayers.test.ts
+# 2026-09-26 — 건축물대장(공공자료) 수집분. 매출 없음. scripts/collectBuildingRegistry.mjs 산출물
+!/.local-tools/building-registry.json
