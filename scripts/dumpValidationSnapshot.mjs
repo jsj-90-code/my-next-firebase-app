@@ -54,7 +54,7 @@ async function dumpCollection(name) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, labTradeAreaJudgments, labResidentRadius, settingsDoc, accuracyDoc] =
+const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, labTradeAreaJudgments, labResidentRadius, qscScores, labRoadviewJudgments, settingsDoc, accuracyDoc] =
   await Promise.all([
     dumpCollection("storeEvalCandidates"),
     dumpCollection("storeEvalResults"),
@@ -74,6 +74,10 @@ const [candidates, results, existingStores, competitors, locationEvaluations, sa
     dumpCollection("storeEvalLabTradeAreaJudgments"),
     // 주거 상권 반경(사람 확인 사실, 2026-09-24 밤). 하네스가 화면과 같은 자료를 읽게 여기도 담는다 — 빠지면 하네스는 조용히 1km로 돈다.
     dumpCollection("storeEvalLabResidentRadius"),
+    // 2026-09-26 — 매일 크론 재계산(dailyRecompute.ts)이 읽는 것과 **같은 두 컬렉션**. 운영 QSC는 화면
+    // listQscScores가 읽는 쪽이고(내용은 실험실 QSC와 같은 원자료), 로드뷰 판정은 결과 탭 실험실 값이 읽는다.
+    dumpCollection("storeEvalQscScores"),
+    dumpCollection("storeEvalLabRoadviewJudgments"),
     db.collection("storeEvalSettings").doc("current").get(),
     db.collection("storeEvalSystemStatus").doc("accuracy").get(),
   ]);
@@ -90,6 +94,8 @@ const snapshot = {
   labResidentRings,
   labTradeAreaJudgments,
   labResidentRadius,
+  qscScores,
+  labRoadviewJudgments,
   settings: settingsDoc.exists ? settingsDoc.data() : null,
   storedAccuracy: accuracyDoc.exists ? accuracyDoc.data() : null,
 };

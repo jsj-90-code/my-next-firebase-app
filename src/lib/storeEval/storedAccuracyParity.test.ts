@@ -1,6 +1,7 @@
 // 검증화면이 Firestore(storeEvalSystemStatus/accuracy)에 저장해둔 적중률이, **지금 운영
 // 데이터와 지금 코드로 그대로 재현되는지** 확인한다. 후보지 화면이 그 저장값을 그대로 보여주기
-// 때문에, 설정이 바뀐 뒤 검증화면을 아무도 안 열면 옛 숫자가 계속 사실처럼 표시된다.
+// 때문에, 설정이 바뀐 뒤 검증화면을 아무도 안 열면 옛 숫자가 계속 사실처럼 표시됐다(2026-09-26부터는
+// 매일 06:00 크론이 dailyRecompute로 다시 저장한다 — 산식을 바꾼 날 밤 빨강은 크론 전이라 정상).
 //
 // 화면 코드(validation/page.tsx loadValidationData + computed)를 그대로 따라 한다 —
 // 새 산식을 만들지 않는다. 데이터만 admin SDK로 미리 떠둔 스냅샷에서 읽는다:
@@ -8,14 +9,12 @@
 // 스냅샷은 운영 자료라 git에 올라가지 않는다 — 없으면 이 블록 전체를 건너뛴다.
 // 그래서 평소 `npm test`에서는 아무 일도 안 하고, 확인이 필요할 때 스냅샷을 떠서 돌린다.
 import { describe, expect, it } from "vitest";
-import { hasValidationSnapshot, loadValidationSnapshot } from "./validationSnapshot";
+import { hasValidationSnapshot, loadValidationSnapshot, recomputeSourceFromSnapshot } from "./validationSnapshot";
+import { computeAccuracySummary, recomputeCandidates } from "./dailyRecompute";
 import {
   CORE_VALIDATION_MIN_MONTHS,
-  computeCompetitorInvestigationSummary,
   computeStabilizedPerformance,
   resolveManagementScores,
-  summarizeValidationRows,
-  type ValidationStoreInput,
 } from "./calc";
 import { migrateCompetitorInvestigationStatus } from "./competitorCompatibility";
 import { qscInWindowAverage, type QscRecord } from "./labInput";
@@ -23,11 +22,9 @@ import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import {
   existingStoreEvaluationPatch,
   existingStoreSourceCode,
-  prepareExistingStoresForEvaluation,
 } from "./existingStoreEvaluation";
 import { evaluateCandidate } from "./evaluate";
 import { mergeModelSettings } from "./settings";
-import { computeOverflowPcHours, runUsageCohortValidation } from "./usageRevenue";
 import type {
   CandidateInput,
   Competitor,
@@ -82,76 +79,13 @@ function qscScoresFrom(snap: { labQscScores?: Snapshot["labQscScores"] }): Map<s
 describeIfSnapshot("저장된 적중률이 현재 데이터·코드로 재현되는가", () => {
   const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
   const settings = mergeModelSettings(snap.settings);
-  const allCompetitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
 
-  // 화면은 12개월 평가구간 매출만 읽는다(listEvaluationSales). 전체를 넣으면 실제 평균이
-  // 달라지므로 같은 필터를 여기서도 건다.
-  const wantedSalesIds = new Set(evaluationSalesIds(snap.existingStores));
-  const sales = snap.sales.filter((s) => wantedSalesIds.has(`${s.storeCode}_${s.yearMonth}`));
-
-  // ⚠️ **검증 화면(validation/page.tsx)과 나란히 놓고 diff할 것.** 한 인자라도 빠지면 운영과
-  //    다른 모형을 재게 된다(2026-09-20에 _liveCheck가 preemptionScore를 빠뜨려 하루치 측정을
-  //    버렸다). 2026-09-20부터 QSC는 **여기로** 들어간다 — 관리 점수가 되어 경쟁력점수로 흐른다.
-  const qscByStoreCode = qscScoresFrom(snap);
-  const stores = prepareExistingStoresForEvaluation(snap.existingStores, allCompetitors, snap.locationEvaluations, settings, qscByStoreCode);
-
-  const competitorsByLookup = new Map<string, Competitor[]>();
-  for (const c of allCompetitors) {
-    competitorsByLookup.set(c.candidateCode, [...(competitorsByLookup.get(c.candidateCode) ?? []), c]);
-  }
-  const locByLookup = new Map(snap.locationEvaluations.map((l) => [l.candidateCode, l]));
-
-  const inputs: ValidationStoreInput[] = stores.map((s) => {
-    const lookupCode = existingStoreSourceCode(s);
-    const loc = locByLookup.get(lookupCode) ?? null;
-    const competitors = competitorsByLookup.get(lookupCode) ?? [];
-    return {
-      storeCode: s.storeCode,
-      storeName: s.storeName,
-      brand: s.brandType ?? loc?.brandType ?? null,
-      openedAt: s.openedAt,
-      completedMonths: s.completedMonths ?? 0,
-      franchiseStatus: s.franchiseStatus,
-      isPostOpenIssue: s.excludedFromModel,
-      postOpenIssueReason: s.excludedReason,
-      pcCount: s.pcCount,
-      evaluationPcCount: s.evaluationPcCount,
-      hourlyRate: s.hourlyRate,
-      ownDemand: s.ownDemand,
-      marketDemand: s.marketDemand,
-      competitorIp: s.competitorIp,
-      extraPcHours: computeOverflowPcHours(
-        s.marketDemand,
-        { pcCount: s.evaluationPcCount ?? s.pcCount, competitivenessScore: s.competitivenessScore },
-        competitors,
-        settings,
-      ),
-      competitivenessScore: s.competitivenessScore,
-      competitivenessGap: s.competitivenessGap,
-      actualRevenueAvg: s.actualMonthlyRevenueAvg,
-      specialDemandType: s.specialDemandType,
-      specialDemandIntensity: s.specialDemandIntensity,
-      inflowRestriction: loc?.inflowRestriction ?? null,
-      visibilityScore: loc?.visibilityScore ?? null,
-      preemptionScore: loc?.preemptionScore ?? null,
-      hasLocationEvaluation: loc != null,
-      floor: s.floor,
-      groundLevel: s.groundLevel,
-      hasElevator: s.hasElevator,
-      competitorSummary: computeCompetitorInvestigationSummary(competitors),
-      sheetV61Predicted: s.v61Predicted,
-    };
-  });
-
-  const { rows } = runUsageCohortValidation(inputs, sales, settings);
-  const coreRows = rows.filter((r) => r.brand === "블랙라벨" && r.includedInCoreAccuracy);
-  const summary = summarizeValidationRows(coreRows, {
-    mape: settings.targetMAE,
-    medianAe: settings.targetMedianAE,
-    within10: settings.target10pctRatio,
-    within20: settings.target20pctRatio,
-    maxBias: settings.maxAvgBias,
-  });
+  // 2026-09-26 — 계산은 **매일 크론이 저장하는 것과 같은 함수**(dailyRecompute.computeAccuracySummary)로 한다.
+  //    그 함수는 검증 화면(validation/page.tsx computed)을 따라 한 것이다 — 화면 조립을 바꾸면 거기도 같이.
+  //    이 시험이 초록이면 "화면이 저장한 값 = 크론이 저장할 값 = 지금 코드"가 셋 다 같다는 뜻이다.
+  const summary = computeAccuracySummary(recomputeSourceFromSnapshot(snap)) ?? {
+    sampleCount: 0, meanAbsoluteErrorPct: null, medianAbsoluteErrorPct: null, within10PctRatio: null, within15PctRatio: null, within20PctRatio: null,
+  };
 
   const stored = snap.storedAccuracy;
 
@@ -296,7 +230,7 @@ describeIfSnapshot("기존점의 경쟁력·수요 캐시가 지금 설정으로
 });
 
 // 대시보드와 후보지 목록은 **저장된 평가 결과**(storeEvalResults)를 그대로 보여준다.
-// 결과는 후보지 결과 탭을 열 때만 다시 계산해 저장되므로, 설정이나 경쟁점이 바뀐 뒤 그 탭을
+// 결과는 후보지 결과 탭을 열 때(2026-09-26부터는 매일 06:00 크론도) 다시 계산해 저장되므로, 설정이나 경쟁점이 바뀐 뒤 그 탭을
 // 안 열면 대시보드에는 옛 예상매출이 계속 사실처럼 떠 있는다. 얼마나 벌어져 있는지 본다.
 describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재현되는가", () => {
   const snap = loadValidationSnapshot<Snapshot>() as Snapshot;
@@ -338,6 +272,15 @@ describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재
       storedRate, nowRate, calculatedAt: stored?.calculatedAt ?? null };
   });
 
+  // 2026-09-26 — 매일 크론(dailyRecompute.recomputeCandidates)이 "다시 써야 한다"고 볼 후보지가 없어야 한다.
+  // 위 두 항목(V62 총액·실효단가)에 더해 **두 산식 표시(실험실 값·주 값)**까지 본다. 빨강이면 크론이
+  // 다음 06:00에 그 후보지를 고쳐 쓴다 — 산식을 바꾼 날 밤엔 빨간 게 맞다.
+  it("매일 크론이 다시 쓸 후보지가 없다(두 산식 표시 포함)", () => {
+    const pending = recomputeCandidates(recomputeSourceFromSnapshot(snap)).filter((r) => r.reasons.length > 0);
+    if (pending.length) console.log(`크론이 다시 쓸 후보지 ${pending.length}곳:\n` + pending.map((r) => `  ${r.code} ${r.name} — ${r.reasons.join("·")}`).join("\n"));
+    expect(pending.map((r) => r.code)).toEqual([]);
+  });
+
   it("차이를 표로 남긴다", () => {
     const won = (v: number | null) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
     console.log(
@@ -353,7 +296,7 @@ describeIfSnapshot("저장된 후보지 평가 결과가 지금 데이터로 재
     const stale = rows.filter((r) => r.diffPct != null && Math.abs(r.diffPct) > 0.005);
     if (stale.length) {
       console.log(
-        `대시보드가 뒤처진 후보지 ${stale.length}곳 — 결과 탭을 한 번 열면 갱신된다:\n` +
+        `대시보드가 뒤처진 후보지 ${stale.length}곳 — 다음 06:00 크론(또는 결과 탭 열기)이 갱신한다:\n` +
           stale.map((r) => `  ${r.code} ${r.name} 저장=${r.stored} 지금=${r.now} (${((r.diffPct as number) * 100).toFixed(2)}%)`).join("\n"),
       );
     }

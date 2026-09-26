@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { runFullProfileMigration, runRevenueSync } from "@/lib/storeEval/cronSync";
+import { runDailyRecompute } from "@/lib/storeEval/dailyRecomputeRun";
 import { adminDb } from "@/lib/firebase-admin";
 
 export const maxDuration = 300; // Vercel Fluid Compute 기본 상한. 배치쓰기 덕분에 보통 훨씬 빨리 끝난다.
@@ -43,8 +44,18 @@ export async function GET(request: Request) {
     // 나머지 프로필(01/05/09/03)도 같은 실행에서 채운다.
     const revenue = await runRevenueSync();
     const profile = await runFullProfileMigration();
-    await logRunResult({ ok: true, lastRunAt: Date.now(), revenue, profile });
-    return NextResponse.json({ ok: true, revenue, profile });
+    // 2026-09-26 — 동기화가 끝난 **새 자료로** 적중률 요약과 후보지 결과를 다시 계산해 저장한다
+    // (예전엔 검증 화면·결과 탭을 열 때만 저장됐다 — dailyRecompute.ts). 여기서 실패해도 매출·프로필
+    // 동기화는 이미 끝났으므로 전체를 실패로 적지 않고 recompute 칸에만 사유를 남긴다.
+    let recompute: unknown;
+    try {
+      recompute = await runDailyRecompute();
+    } catch (error) {
+      console.error("store-eval cron-sync 재계산 실패:", error);
+      recompute = { ok: false, error: error instanceof Error ? error.message : "재계산에 실패했습니다." };
+    }
+    await logRunResult({ ok: true, lastRunAt: Date.now(), revenue, profile, recompute });
+    return NextResponse.json({ ok: true, revenue, profile, recompute });
   } catch (error) {
     const message = error instanceof Error ? error.message : "동기화에 실패했습니다.";
     console.error("store-eval cron-sync 실패:", error);

@@ -93,7 +93,7 @@ function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySumm
   if (!accuracy || accuracy.sampleCount === 0) {
     return (
       <p className="mt-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
-        이 모형의 실측 정확도는 아직 기록되지 않았습니다 — 검증 화면을 한 번 열면 여기에 표시됩니다.
+        이 모형의 실측 정확도는 아직 기록되지 않았습니다 — 매일 06:00 자동 계산 뒤(또는 검증 화면을 한 번 열면) 여기에 표시됩니다.
       </p>
     );
   }

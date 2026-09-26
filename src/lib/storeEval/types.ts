@@ -963,7 +963,8 @@ export type ExistingStore = {
  *
  * 왜 이렇게 저장하나: 후보지 화면에서 검증을 다시 돌리면 Firestore 읽기가 800건쯤 더 든다.
  * 검증화면은 어차피 그 계산을 하므로, 열릴 때 요약 1건만 남겨두고 후보지 화면은 그걸 1건
- * 읽는다. 갱신은 누가 검증화면을 열 때 자동으로 된다(그래서 `updatedAt`을 같이 보여준다).
+ * 읽는다. 갱신은 누가 검증화면을 열 때, 그리고 2026-09-26부터 매일 06:00 크론(dailyRecompute.ts)이
+ * 한다(그래서 `updatedAt`을 같이 보여준다 — 크론이 쓰면 `updatedBy`가 "매일 06:00 크론").
  */
 export type ModelAccuracySummary = {
   updatedAt: number;

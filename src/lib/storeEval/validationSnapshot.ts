@@ -60,3 +60,26 @@ export function loadValidationSnapshot<T = ValidationSnapshot>(): T {
   if (!hasValidationSnapshot()) return EMPTY as unknown as T;
   return JSON.parse(readFileSync(VALIDATION_SNAPSHOT_PATH, "utf8")) as T;
 }
+
+/**
+ * 스냅샷 -> 매일 크론 재계산(dailyRecompute.ts)의 입력 모양 (2026-09-26).
+ * 크론은 Firestore에서 같은 컬렉션을 읽는다(dailyRecomputeRun.ts loadRecomputeSource) — 시험·하네스가
+ * 이걸로 조립하면 **크론과 같은 입력**으로 잰다. 옛 스냅샷(운영 QSC 없음)은 실험실 QSC(같은 원자료)로 대신한다.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function recomputeSourceFromSnapshot(snap: any): import("./dailyRecompute").RecomputeSource {
+  return {
+    settingsDoc: snap.settings ?? null,
+    candidates: snap.candidates ?? [],
+    results: snap.results ?? [],
+    existingStores: snap.existingStores ?? [],
+    competitors: snap.competitors ?? [],
+    locationEvaluations: snap.locationEvaluations ?? [],
+    sales: snap.sales ?? [],
+    qscDocs: snap.qscScores ?? snap.labQscScores ?? [],
+    labResidentRings: snap.labResidentRings ?? [],
+    labTradeAreaJudgments: snap.labTradeAreaJudgments ?? [],
+    labResidentRadius: snap.labResidentRadius ?? [],
+    labRoadviewJudgments: snap.labRoadviewJudgments ?? [],
+  };
+}
