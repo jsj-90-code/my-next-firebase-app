@@ -28,6 +28,7 @@ import type {
   FinalJudgement,
   SurveyLevel,
 } from "./types";
+import { DEFAULT_TEXTBOOK_PARAMS, rivalDistanceWeight } from "./textbookModel";
 
 // ---------------------------------------------------------------------------
 // 3.1 상권분석
@@ -290,6 +291,42 @@ export function computeCompetitorIp(competitors: Competitor[], operatingPcStores
     return Math.max(0, operatingPcStores500m - 1) * 100;
   }
   return 0;
+}
+
+/**
+ * V62가 쓰는 경쟁IP (2026-09-26). 설정 `v61Training.competitorIpDistanceWeighted`가 꺼져 있으면 computeCompetitorIp 그대로다.
+ * 켜면 500m 안 조사 경쟁점마다 대수 × 거리 감쇠를 더한다 — 감쇠는 실험실과 **같은 함수·같은 값**(rivalDistanceWeight,
+ * DEFAULT_TEXTBOOK_PARAMS). 거리는 좌표가 있으면 좌표로, 없으면 경쟁점 문서의 distanceM(없으면 무게 1).
+ * 대수가 하나도 없을 때의 대체(실영업 업소수)는 그대로 둔다. 재고 표: docs/releases/2026-09-26-v62-lab-feed.md (C1).
+ */
+export function computeV62CompetitorIp(
+  competitors: Competitor[],
+  operatingPcStores500m: number | null,
+  origin: { lat?: number | null; lng?: number | null } | null,
+  settings: { v61Training?: { competitorIpDistanceWeighted?: boolean } },
+): number {
+  if (!settings.v61Training?.competitorIpDistanceWeighted) return computeCompetitorIp(competitors, operatingPcStores500m);
+  const distOf = (c: Competitor): number | null => {
+    if (origin?.lat != null && origin?.lng != null && c.lat != null && c.lng != null) {
+      const R = 6371000, rad = (d: number) => (d * Math.PI) / 180;
+      const dLat = rad(c.lat - origin.lat), dLng = rad(c.lng - origin.lng);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(origin.lat)) * Math.cos(rad(c.lat)) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+    return c.distanceM == null ? null : Number(c.distanceM);
+  };
+  let any = false;
+  let sum = 0;
+  for (const c of competitors) {
+    if (c.investigationStatus === "경쟁점없음") continue;
+    const pc = computeCompetitorAppliedPcCount(c);
+    if (pc == null) continue;
+    any = true;
+    const d = distOf(c);
+    if (d != null && d > 500) continue;
+    sum += pc * rivalDistanceWeight(d, DEFAULT_TEXTBOOK_PARAMS);
+  }
+  return any ? sum : computeCompetitorIp(competitors, operatingPcStores500m);
 }
 
 /** IP당수요 = 상권수요 ÷ (자사IP + 경쟁IP). 여유 >15 / 포화 <7 (08_계산기준). */
@@ -3270,7 +3307,7 @@ export function computeExistingStoreDemandEvaluation(
     | "ownFoodBrand"
     | "ownSeatZoneScore"
   > &
-    MarketDemandInput,
+    MarketDemandInput & { lat?: number | null; lng?: number | null },
   competitors: Competitor[],
   loc: Pick<LocationEvaluation, "locationScore" | "preemptionScore" | "visibilityScore"> | null,
   settings: Pick<
@@ -3282,7 +3319,7 @@ export function computeExistingStoreDemandEvaluation(
     | "marketCharacterThreshold"
     | "marketDemandEffectiveRate"
     | "locationCompositeWeights"
-  >,
+  > & { v61Training?: { competitorIpDistanceWeighted?: boolean } },
 ): ExistingStoreDemandEvaluationResult {
   const base: ExistingStoreDemandEvaluationResult = {
     storeCode: store.storeCode,
@@ -3360,7 +3397,7 @@ export function computeExistingStoreDemandEvaluation(
   const competitivenessGap = computeCompetitivenessGap(ownCompetitivenessScore, competitorAvgCompetitiveness);
 
   const { marketCharacter, marketDemand } = computeMarketDemand(store, settings);
-  const competitorIp = computeCompetitorIp(competitors, store.operatingPcStores500m);
+  const competitorIp = computeV62CompetitorIp(competitors, store.operatingPcStores500m, store, settings);
   const ownPcCount = store.evaluationPcCount ?? store.pcCount;
   const ownDemand = computeExpectedOwnDemand(marketDemand, ownPcCount, competitivenessGap, competitorIp);
 

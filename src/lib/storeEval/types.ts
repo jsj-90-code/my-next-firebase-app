@@ -484,6 +484,12 @@ export type ModelSettings = {
      * 근거·수치: docs/demand-structure-search-2026-09-14.md
      */
     accessScoreMode?: "visibility" | "visibility-x-preemption";
+    /**
+     * V62 경쟁IP를 **거리로 무게 줘서** 셀지 (2026-09-26 신설, 기본 꺼짐 — 채택 대기).
+     * 켜면 500m 안 조사 경쟁점 대수에 실험실 거리 감쇠(200m까지 1, 그 뒤 e^(−(d−200)/200)×0.959)를 곱해 더한다.
+     * 근거·재고 표: docs/releases/2026-09-26-v62-lab-feed.md (C1). calc.ts computeV62CompetitorIp.
+     */
+    competitorIpDistanceWeighted?: boolean;
     ridgeLambda: number; // 10 — 38곳 LOOCV + 부분표본 재검증으로 선정
     ridgeWeight: number; // 0.80 — 릿지회귀 예측 가중치
     baselineWeight: number; // 0.20 — 대당월매출 중앙값 가중치

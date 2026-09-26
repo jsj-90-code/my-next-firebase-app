@@ -21,7 +21,7 @@ import {
   computeCompetitivenessGap,
   computeCompetitorAppliedPcCount,
   computeCompetitorAvgCompetitiveness,
-  computeCompetitorIp,
+  computeV62CompetitorIp,
   computeCompetitivenessScore,
   computeCompetitorOccupiedSeats,
   computeCompetitorScores,
@@ -108,7 +108,8 @@ export function evaluateCandidate(ctx: EvaluateContext): EvaluationResult {
 
   const { marketCharacter, marketDemand } = computeMarketDemand(c, settings);
   const marketGrade = computeMarketGrade(marketDemand, settings);
-  const competitorIp = computeCompetitorIp(competitors, c.operatingPcStores500m);
+  // 2026-09-26 — 설정이 켜지면 거리 가중 경쟁IP(calc.ts computeV62CompetitorIp). 꺼져 있으면 종전과 같다.
+  const competitorIp = computeV62CompetitorIp(competitors, c.operatingPcStores500m, c, settings);
   const ipPerDemand = computeIpPerDemand(marketDemand, c.expectedPcCount, competitorIp);
 
   // 자사 시설 입력값이 비어 있으면 회사 표준 존 구성으로 간주한다(07_신규후보지 헤더 메모
