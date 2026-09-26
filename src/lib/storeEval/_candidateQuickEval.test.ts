@@ -153,4 +153,52 @@ describeIf("현재 신규후보지 — 주소만 초기평가 판정", () => {
     writeFileSync(".local-tools/candidate-quick-eval-result.json", JSON.stringify(out, null, 1));
     expect(out.length).toBeGreaterThan(5);
   });
+
+  // 2026-09-27 — 오송이 갈린 원인 분해. AI 초안 입지평가의 칸을 하나씩 사람 확정값으로 바꿔 V62(주소만)가 얼마나 움직이나.
+  //   AI 초안은 13곳 전부 외부유입제한 "없음"(사람은 5곳 "보통") · 선점을 대체로 1점 높게 매겼다.
+  it("3) 입지평가 칸별 분해 — AI 초안 → 사람 확정값", () => {
+    const sites = loadSites();
+    const cache: Record<string, Collected> = JSON.parse(readFileSync(CACHE, "utf8"));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const snap = loadValidationSnapshot<any>();
+    const settings = mergeModelSettings(snap.settings);
+    const raw: ExistingStore[] = snap.existingStores;
+    const competitors: Competitor[] = snap.competitors.map(migrateCompetitorInvestigationStatus);
+    const locations: LocationEvaluation[] = snap.locationEvaluations;
+    const wanted = new Set(evaluationSalesIds(raw));
+    const sales = snap.sales.filter((s: { storeCode: string; yearMonth: string }) => wanted.has(`${s.storeCode}_${s.yearMonth}`));
+    const T = QUICK_EVAL_ENTRY_THRESHOLD_WON;
+    const FIELDS = ["locationScore", "preemptionScore", "visibilityScore", "specialDemandType", "specialDemandIntensity", "inflowRestriction"] as const;
+    const pct = (a: number | null, b: number | null) => (a && b ? `${((b / a - 1) * 100).toFixed(1).padStart(6)}%` : "     -");
+    console.log("\n[입지평가 칸별 분해] AI 초안 V62 대비, 그 칸만 사람 값으로 바꿨을 때 변화 · 마지막 = 전부 사람 값");
+    console.log(`  코드 후보지      AI초안V62 | ${FIELDS.map((f) => f.replace("Score", "").replace("specialDemand", "sd").slice(0, 9).padStart(9)).join(" ")} |  전부사람  판정`);
+    const sum: Record<string, number[]> = {};
+    for (const s of sites) {
+      const c = cache[s.code];
+      const human = locations.find((l) => l.candidateCode === s.code);
+      if (!c?.geocode || !c.locationDraft || !human) continue;
+      const plan: QuickEvalPlanInput = { name: s.label, address: s.address, expectedPcCount: s.pc, hourlyRate: s.rate, floor: s.floor, groundLevel: s.groundLevel, hasElevator: s.hasElevator, ownFoodBrand: null, plannedOpenMonth: null };
+      const built = buildQuickCandidate(plan, { geocode: c.geocode, sgis: c.sgis ?? null, floating: c.floating?.[500] ?? null, pcBangs: c.pcBangs ?? [], pcBangsPossiblyTruncated: false });
+      const cand = { ...built.candidate, ...floatingPatchFromSbiz(c.floating ?? {}).patch };
+      const run = (fields: Record<string, number | string | null>) => evaluateCandidate({
+        candidate: cand, competitors: built.competitors, locationEvaluation: buildQuickLocationEvaluation(plan, { fields }), settings: withQuickEvalSettings(settings),
+        existingStores: raw, trainingLocationEvaluations: locations,
+        trainingCompetitors: competitors.map(blankCompetitorForTraining), trainingSales: sales, trainingQscScores: snap.qscScores ?? [],
+      }).v62Final;
+      const ai = c.locationDraft.fields;
+      const base = run(ai);
+      const h = human as unknown as Record<string, number | string | null>;
+      const cells = FIELDS.map((f) => {
+        const v = run({ ...ai, [f]: h[f] ?? null });
+        if (base && v) (sum[f] ??= []).push(v / base - 1);
+        return pct(base, v);
+      });
+      const allHuman = run({ ...ai, ...Object.fromEntries(FIELDS.map((f) => [f, h[f] ?? null])) });
+      if (base && allHuman) (sum.all ??= []).push(allHuman / base - 1);
+      console.log(`  ${s.code} ${s.label.padEnd(10)} ${String(Math.round((base ?? 0) / 1e4)).padStart(7)}만 | ${cells.map((x) => x.padStart(9)).join(" ")} | ${pct(base, allHuman)} ${base && base > T ? "가능" : "불가"}→${allHuman && allHuman > T ? "가능" : "불가"}`);
+    }
+    const mean = (a: number[] = []) => (a.length ? `${((a.reduce((x, y) => x + y, 0) / a.length) * 100).toFixed(1)}%` : "-");
+    console.log(`  평균 변화: ${FIELDS.map((f) => `${f} ${mean(sum[f])}`).join(" · ")} · 전부 ${mean(sum.all)}`);
+    expect(Object.keys(sum).length).toBeGreaterThan(0);
+  });
 });
