@@ -168,8 +168,8 @@ export function buildQuickEvalReviewContext(input: {
     `${vb.measuredAt} 기준 기존 가맹점 ${vb.sampleCount}곳 중 ${vb.correct}곳 판정 맞음`
       + ` (실제로 안 된 자리 ${vb.truthRejectCount}곳 중 ${vb.falseAccept}곳을 가능으로, 된 자리 ${vb.falseReject}곳을 불가로 틀림).`
       + ` 안 되는 자리 시험 ${vb.badSiteCount}곳은 ${vb.badSiteRejected}곳 불가. 금액 평균오차 ${pct(vb.mape, 1)}.`
-      + ` 입지평가를 ${vb.locationScoreSource}로 넣은 값이라 AI 입지평가를 쓰는 실제 도구는 이보다 나쁠 수 있다.`
-      + " **가능 판정이 틀리는 쪽(안 된 자리를 가능으로)이 더 잦으니, 가능 판정이 기준선 근처면 그 점을 적어라.**",
+      + ` 입지평가는 ${vb.locationScoreSource}. 금액은 평균 ${pct(Math.abs(vb.bias), 1)} 낮게 나오는 편이다.`
+      + " **틀리는 방향은 양쪽 다 있으니, 판정 값이 기준선 근처면 그 점을 적어라.**",
   );
   lines.push("");
   lines.push(`[이 추정의 금액 오차 — ${QUICK_EVAL_BACKTEST.measuredAt} 측정, 그 뒤 산식 변경 전 값]`);

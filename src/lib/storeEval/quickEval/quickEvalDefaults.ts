@@ -427,25 +427,31 @@ export const QUICK_EVAL_BACKTEST = {
  * 저장소에 없어서(커밋된 적 없음) 같은 조건으로 다시 잴 수 없었다. 그래서 지금 배선으로 다시 잰 값을 쓴다:
  *   - `_addressOnlyDual.test.ts` — 기존점 40곳 LOO, 카카오 500m 경쟁점, 판정 = V62(실험실 < V62/2면 실험실)
  *   - `_badSiteProbe.test.ts` — 안 되는 자리 17곳(폐점·펜션촌·면 소재지·시흥 신현역)
- * ⚠️ 입지평가는 **사람 점수**로 넣었다(되짚기에서 AI를 못 돌림) — 실제 화면(AI 초안)은 이보다 나쁠 수 있다.
  * 정답 = 실매출 5,500만 초과면 '가능'(26곳), 아니면 '불가'(14곳).
+ *
+ * ⭐ 같은 날 새벽 2차 — **AI 입지평가 초안까지 실제로 돌린 값**으로 바꿨다(`_aiLocationBacktest.test.ts`, 기존점 40곳에 AI 초안을
+ * 새로 받아 도구와 같은 조건으로 채점). 처음 값(사람 입지평가: 30/40 · 13.6% · 편향 +0.1%)은 `humanLocation`에 남긴다.
+ * AI는 상권위치·가시성을 사람보다 평균 0.78점 낮게, 외부유입제한은 40곳 전부 "없음"으로 매긴다. 그래도 판정은 29 vs 30으로
+ * 거의 같다 — 칸을 사람 값에 맞추면 오히려 나빠졌다(유입만 26/40 · 위치·가시성·유입 26/40). 그래서 AI 지시문은 안 고쳤다.
  */
 export const QUICK_EVAL_VERDICT_BACKTEST = {
   measuredAt: "2026-09-27",
   sampleCount: 40,
-  correct: 30,
+  correct: 29,
   /** 실제로 된 자리를 불가로 */
-  falseReject: 3,
+  falseReject: 6,
   /** 실제로 안 된 자리를 가능으로 — 정답 '불가' 14곳 중 */
-  falseAccept: 7,
+  falseAccept: 5,
   truthRejectCount: 14,
   badSiteCount: 17,
   badSiteRejected: 17,
   /** 같은 되짚기의 금액 오차(참고) */
-  mape: 0.136,
-  within20Count: 30,
-  bias: 0.001,
-  locationScoreSource: "사람 입지평가(상한)",
+  mape: 0.165,
+  within20Count: 28,
+  bias: -0.055,
+  locationScoreSource: "AI 입지평가 초안(실제 도구와 같음)",
+  /** 입지평가를 사람 값으로 넣었을 때(처음 측정) */
+  humanLocation: { correct: 30, falseReject: 3, falseAccept: 7, mape: 0.136, within20Count: 30, bias: 0.001 },
 } as const;
 
 

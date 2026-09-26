@@ -822,7 +822,7 @@ export default function QuickEvalPage() {
           안 되는 자리 {QUICK_EVAL_VERDICT_BACKTEST.badSiteCount}곳은{" "}
           <strong>{QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected === QUICK_EVAL_VERDICT_BACKTEST.badSiteCount ? "전부" : `${QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected}곳`} 불가</strong> ·
           금액 평균오차 {formatPercent(QUICK_EVAL_VERDICT_BACKTEST.mape, 1)}
-          ({QUICK_EVAL_VERDICT_BACKTEST.measuredAt}, 입지평가는 사람 점수로 잰 값이라 실제보다 조금 좋게 나온 값).
+          ({QUICK_EVAL_VERDICT_BACKTEST.measuredAt}, AI 입지평가까지 이 화면과 같은 조건으로 잰 값).
         </p>
 
         <h3 className="mt-4 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">자동 / 기본값 경계</h3>
