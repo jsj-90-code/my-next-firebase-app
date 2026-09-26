@@ -128,7 +128,7 @@ function BasicInfoTabForm({
   // 2026-09-26 — SGIS 주거인구 API 자동 채우기(입력 자동화 2번). 버튼마다 따로 상태를 둔다.
   const [sgisBusy, setSgisBusy] = useState(false);
   const [sgisNotice, setSgisNotice] = useState<{ ok: boolean; text: string; warnings: string[] } | null>(null);
-  // 2026-09-26 — 소상공인365 유동인구 자동 채우기(입력 자동화 3번). 반경 4개를 차례로 받아 20초쯤 걸린다.
+  // 2026-09-26 — 소상공인365 유동인구 자동 채우기(입력 자동화 3번). 반경 6개를 차례로 받아 30초쯤 걸린다.
   const [sbizBusy, setSbizBusy] = useState(false);
   const [sbizNotice, setSbizNotice] = useState<{ ok: boolean; text: string; warnings: string[]; trend: string | null } | null>(null);
   const [collectError, setCollectError] = useState<string | null>(null);
@@ -358,7 +358,7 @@ function BasicInfoTabForm({
     }
   }
 
-  // 소상공인365 반경 300·400·500m·1km 유동인구를 받아 **폼에만** 채운다(저장은 사람이 "저장"으로).
+  // 소상공인365 반경 100·200·300·400·500m·1km 유동인구를 받아 **폼에만** 채운다(저장은 사람이 "저장"으로).
   // 한 반경이 실패해도 받은 반경은 채우고, 실패한 칸은 기존 값을 그대로 둔다.
   async function handleFetchSbizFloating() {
     if (form.lat == null || form.lng == null || form.code === "new") return;
@@ -385,7 +385,7 @@ function BasicInfoTabForm({
         candidateCode: form.code,
         sourceType: "sosangongin365",
         coordAtUpload: { lat: form.lat, lng: form.lng },
-        fileName: "소상공인365 자동(반경 300·400·500m·1km, 최근 12개월 평균)",
+        fileName: "소상공인365 자동(반경 100·200·300·400·500m·1km, 최근 12개월 평균)",
         fileHash: null,
         pastedTable: false,
         extractedFields: data.records ?? [],
@@ -625,7 +625,7 @@ function BasicInfoTabForm({
               onClick={handleFetchSbizFloating}
               className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
             >
-              {sbizBusy ? "소상공인365에서 받는 중(약 20초)..." : "소상공인365 유동인구 자동 채우기 (300·400·500m·1km)"}
+              {sbizBusy ? "소상공인365에서 받는 중(약 30초)..." : "소상공인365 유동인구 자동 채우기 (100·200·300·400·500m·1km)"}
             </button>
             <span className="text-xs text-[var(--sl-ink-soft)]">
               확정 좌표({form.lat.toFixed(6)}, {form.lng.toFixed(6)}) 기준 — 좌표를 지도에서 옮겼다면 확정한 뒤 누르세요.

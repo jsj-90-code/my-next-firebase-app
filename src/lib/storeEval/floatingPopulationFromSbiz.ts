@@ -4,7 +4,8 @@
 // 경로는 주소만 초기평가(quickEval/sbizFloating.ts)와 같고, 12개월 평균·성별연령 환산 규칙은
 // scripts/writeFloatingPopulationToFirestore.mjs(운영 자료를 넣은 규칙)와 같다. 그래서 같은 필드에 같은 자로 잰 값이 들어간다.
 //
-// 반경: 500m(V62가 읽는 유일한 유동 반경) · 400m(실험실 수요) · 300m·1km(실험실 상권 중심도).
+// 반경: 500m(V62가 읽는 유일한 유동 반경) · 400m(실험실 수요) · 300m·1km(실험실 상권 중심도)
+// · 100m·200m(실험실 화면의 반경 고르기 + 결과 탭 빈 입력 점검이 읽는다 — 기존 후보지 13곳엔 다 있다).
 // 1km는 **총량만** 넣는다 — 중심도가 비율만 쓰고, 운영 스크립트도 1km 연령·성별 필드를 만들지 않는다.
 //
 // ⚠️ 저장하지 않는다. 폼에 채우기만 하고 사람이 "저장"으로 확정한다(붙여넣기 경로와 같은 흐름).
@@ -12,7 +13,7 @@
 import type { SbizFloatingResult } from "./quickEval/sbizFloating";
 import type { ExtractedFieldRecord } from "./types";
 
-export const SBIZ_FLOATING_RADII = [300, 400, 500, 1000] as const;
+export const SBIZ_FLOATING_RADII = [100, 200, 300, 400, 500, 1000] as const;
 export type SbizFloatingRadius = (typeof SBIZ_FLOATING_RADII)[number];
 
 /** 환산 배율(12개월 평균 ÷ 최근월)이 이 범위를 벗어나면 최근월이 튄 달이라 연령·성별 환산을 사람이 봐야 한다.

@@ -4,10 +4,10 @@ import { collectSbizFloating, type SbizFloatingResult } from "@/lib/storeEval/qu
 import { tmSelfTestFailures } from "@/lib/storeEval/quickEval/tm";
 import { floatingPatchFromSbiz, SBIZ_FLOATING_RADII, type SbizFloatingRadius } from "@/lib/storeEval/floatingPopulationFromSbiz";
 
-// 후보지 기본정보 — 소상공인365 반경 유동인구(300·400·500m·1km)를 받아 **폼 값으로 돌려준다** (2026-09-26, 입력 자동화 3번).
+// 후보지 기본정보 — 소상공인365 반경 유동인구(100·200·300·400·500m·1km)를 받아 **폼 값으로 돌려준다** (2026-09-26, 입력 자동화 3번).
 // Firestore에 쓰지 않는다. 화면이 폼에 채우고 사람이 "저장"으로 확정한다(리포트 복사·붙여넣기 경로를 대신함).
 // ⚠️ 서울 리전(icn1) 고정 — vercel.json. 소상공인365가 미국 리전을 막는다(2026-09-22 quick-eval에서 확인).
-// ⚠️ 반경은 **차례로** 부른다. 남의 공개 사이트라 한꺼번에 때리지 않는다(sbizFloating.ts DELAY_MS). 4반경 약 20초.
+// ⚠️ 반경은 **차례로** 부른다. 남의 공개 사이트라 한꺼번에 때리지 않는다(sbizFloating.ts DELAY_MS). 4반경 약 30초.
 export const maxDuration = 120;
 
 export async function POST(request: Request) {

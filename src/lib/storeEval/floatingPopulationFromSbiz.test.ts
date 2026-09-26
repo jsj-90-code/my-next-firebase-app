@@ -9,12 +9,14 @@ const res = (radiusM: number, avg: number, scale = 1): SbizFloatingResult => ({
 });
 
 describe("floatingPatchFromSbiz", () => {
-  it("필드 대응 — 300/400/500m는 평균·남·연령 6구간, 1km는 총량만", () => {
-    const { patch, warnings } = floatingPatchFromSbiz({ 300: res(300, 1000), 400: res(400, 1500), 500: res(500, 2000), 1000: res(1000, 6000) });
+  it("필드 대응 — 100~500m는 평균·남·연령 6구간, 1km는 총량만", () => {
+    const { patch, warnings } = floatingPatchFromSbiz({ 100: res(100, 200), 200: res(200, 600), 300: res(300, 1000), 400: res(400, 1500), 500: res(500, 2000), 1000: res(1000, 6000) });
     expect(patch.floating500Avg).toBe(2000);
     expect(patch.floating500Male).toBe(1000);
     expect(patch.floating400_20s).toBe(20);
     expect(patch.floating300_60plus).toBe(60);
+    expect(patch.floating100Avg).toBe(200);
+    expect(patch.floating200_40s).toBe(40);
     expect(patch.floating1000Avg).toBe(6000);
     expect("floating1000Male" in patch).toBe(false);
     expect(warnings).toEqual([]);
