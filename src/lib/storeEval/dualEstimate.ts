@@ -151,10 +151,17 @@ export type LabExtras = {
  * 후보지 한 곳의 실험실(구조식) 월매출 — 실험실 화면과 같은 조립(buildLabRows로 가맹점 관리 평균·축척을 잡고 buildLabCandidateRows로 후보지).
  * 기존점·경쟁점·입지평가는 **운영 자료**(결과 탭이 읽은 것), 고리·막힌 방향·반경 같은 실험실 전용 사실은 실험실 컬렉션에서 받는다.
  */
-export function labCandidateRevenue(args: {
+export function labCandidateRevenue(args: LabCandidateArgs): number | null {
+  return labCandidateBreakdown(args)?.monthlyRevenue ?? null;
+}
+
+type LabCandidateArgs = {
   candidate: CandidateInput; preparedStores: ExistingStore[]; rawStores: ExistingStore[]; competitors: Competitor[]; locations: LocationEvaluation[];
   sales: ExistingStoreMonthlySales[]; settings: ModelSettings; qscByStoreCode?: Map<string, number>; extras?: LabExtras;
-}): number | null {
+};
+
+/** labCandidateRevenue와 같은 조립으로 매출·가동률을 같이 낸다(2026-09-26 — 범위 밖 검토 근거가 가동률을 쓴다). */
+export function labCandidateBreakdown(args: LabCandidateArgs): { monthlyRevenue: number | null; utilization: number | null } | null {
   const { candidate, preparedStores, rawStores, competitors, locations, sales, settings, qscByStoreCode, extras } = args;
   const compsByCode = new Map<string, Competitor[]>();
   for (const c of competitors) compsByCode.set(c.candidateCode, [...(compsByCode.get(c.candidateCode) ?? []), c]);
@@ -172,5 +179,7 @@ export function labCandidateRevenue(args: {
     roadviewByKey: extras?.roadviewByKey as any, residentRingsByCode: extras?.residentRingsByCode, ringBlockedByCode: extras?.ringBlockedByCode, residentRadiusByCode: extras?.residentRadiusByCode,
     franchiseManagement: franchiseManagementFromRows(rows),
   });
-  return cand ? computeTextbook(cand.input, P).monthlyRevenue ?? null : null;
+  if (!cand) return null;
+  const b = computeTextbook(cand.input, P);
+  return { monthlyRevenue: b.monthlyRevenue ?? null, utilization: b.utilization ?? null };
 }
