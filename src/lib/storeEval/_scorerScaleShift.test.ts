@@ -7,7 +7,10 @@ import { hasValidationSnapshot, loadValidationSnapshot, recomputeSourceFromSnaps
 import { recomputeCandidates } from "./dailyRecompute";
 
 const describeIf = hasValidationSnapshot() ? describe : describe.skip;
-const SHIFT = { locationScore: 0.78, preemptionScore: 0.69, visibilityScore: 0.24 };
+// SCORER_SHIFT="위치,선점,가시성"으로 덮어쓸 수 있다(2026-09-27 오전 사용자 블라인드 채점: 위치 10/10곳 정확히 GPT−1 → "1,0,0").
+const SHIFT = process.env.SCORER_SHIFT
+  ? Object.fromEntries(["locationScore", "preemptionScore", "visibilityScore"].map((k, i) => [k, Number(process.env.SCORER_SHIFT!.split(",")[i] ?? 0)]))
+  : { locationScore: 0.78, preemptionScore: 0.69, visibilityScore: 0.24 };
 
 describeIf("채점자 기준 차이 — 후보지 입지평가를 학습 기준으로 옮기면", () => {
   it("V62 변화", () => {
