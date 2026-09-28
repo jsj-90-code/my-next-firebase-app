@@ -738,10 +738,12 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
       </div>
       <p className="text-xs text-[var(--sl-ink-soft)]">매장명을 누르면 상세 정보를 확인할 수 있습니다. 검색·필터는 위 전체 적중률에 영향을 주지 않습니다.</p>
     <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
-      <table className="w-full min-w-[640px] text-sm">
+      <table className="w-full min-w-[720px] text-sm">
         <caption className="sr-only">매장별 실제매출과 예측매출 비교</caption>
         <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
-          <tr>
+          {/* 2026-09-28 — 헤더가 좁은 화면에서 "모델 / 예측매출"처럼 두 줄로 꺾여 읽기 나빴다(사용자: "한줄로해서
+              가시성좀 올려봐라"). 헤더·금액 칸은 줄바꿈을 막고, 표 최소 폭을 조금 넓혔다. */}
+          <tr className="whitespace-nowrap">
             <th scope="col" className="px-3 py-2">매장명</th>
             <th scope="col" className="px-3 py-2">운영기간</th>
             <th scope="col" className="px-3 py-2">실제매출(월평균)</th>
@@ -762,9 +764,9 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
               <td className="px-3 py-2">
                 <TenureBadge cohort={r.cohort} completedMonths={r.completedMonths} />
               </td>
-              <td className="px-3 py-2">{formatWon(r.actualRevenueAvg)}</td>
-              <td className="px-3 py-2">{formatWon(r.v62PredictedRevenueAvg)}</td>
-              <td className="px-3 py-2">{formatPercent(r.absoluteErrorPct)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{formatWon(r.actualRevenueAvg)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{formatWon(r.v62PredictedRevenueAvg)}</td>
+              <td className="whitespace-nowrap px-3 py-2">{formatPercent(r.absoluteErrorPct)}</td>
               <td className="px-3 py-2">
                 <AccuracyBadge absoluteErrorPct={r.absoluteErrorPct} />
                 {/* 2026-08-25 추가 — 실제매출은 있는데 예측이 안 나온 매장(검단사거리점 등)이
