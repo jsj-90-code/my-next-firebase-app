@@ -29,7 +29,7 @@ import {
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments } from "@/lib/storeEval/store";
 import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
-import { DUAL_ESTIMATE_RULE, chooseEstimate, needsFieldCheck, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange, type DualEstimate } from "@/lib/storeEval/dualEstimate";
+import { chooseEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
@@ -67,28 +67,8 @@ function judgementKind(j: FinalJudgement | null): "계산 상태" | "사업 판�
  * 검증을 다시 돌리면 Firestore 읽기가 800건쯤 더 들기 때문이다. 그래서 "언제 기준"인지도 함께
  * 보여준다(검증화면을 연 시점에 갱신된다).
  */
-/**
- * 두 산식 나란히(2026-09-25, 사용자 "신규후보지 조회할 때 두 산식 값이 같이 떠서 참고할 수 있게").
- * 위의 최종예상월매출은 그대로 V62 값이고, 여기는 실험실(구조식) 값과 규칙이 고른 주 값·이유·폭을 보여준다. 규칙: lib/storeEval/dualEstimate.ts 머리 주석.
- */
-function DualEstimatePanel({ dual }: { dual: DualEstimate | null }) {
-  if (!dual) return <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">두 산식 비교는 [다시 계산] 뒤에 나타납니다.</p>;
-  const warn = needsFieldCheck(dual);
-  return (
-    <section className={`mt-4 rounded-xl px-4 py-3 text-sm ${warn ? "app-notice app-badge-warn" : "app-card-sm"}`} aria-label="두 산식 비교">
-      <h3 className="text-sm font-semibold">두 산식 비교 — 참고용</h3>
-      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <div><div className="text-xs text-[var(--sl-ink-soft)]">운영 V62(회귀)</div><div className="text-base font-semibold tabular-nums">{formatManwonRough(dual.v62)}</div></div>
-        <div><div className="text-xs text-[var(--sl-ink-soft)]">실험실(수요·점유율 구조식)</div><div className="text-base font-semibold tabular-nums">{formatManwonRough(dual.lab)}</div></div>
-        <div><div className="text-xs text-[var(--sl-ink-soft)]">규칙이 고른 주 값 · 폭</div><div className="text-base font-semibold tabular-nums">{dual.primary} {formatManwonRough(dual.primaryValue)}</div><div className="text-xs tabular-nums text-[var(--sl-ink-soft)]">{formatManwonRough(dual.low)} ~ {formatManwonRough(dual.high)}{dual.ratio != null ? ` · V62÷실험실 ${dual.ratio.toFixed(2)}배` : ""}</div></div>
-      </div>
-      <p className="mt-2 text-xs leading-5">{dual.reason}</p>
-      <p className="mt-1 text-xs leading-5">{dual.inputGaps == null ? null : dual.inputGaps.length ? <>⚠ 빈 입력(그 산식은 기본값·가정으로 계산): <b>{dual.inputGaps.join(" · ")}</b></> : "입력 호환성: 두 산식이 쓰는 입력이 모두 채워져 있습니다."}</p>
-      <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">V62가 평균적으로 더 맞고, 기존점 범위를 조금 벗어난 입력에서도 더 가까웠습니다(2026-09-26 되짚기: 범위 밖 기존점 7곳 V62 10.3% vs 실험실 27.7%). 다만 되짚기로 확인된 범위(기존점 최솟값의 {DUAL_ESTIMATE_RULE.verifiedLow}배 ~ 최댓값의 {DUAL_ESTIMATE_RULE.verifiedHigh}배)보다 더 벗어나면 어느 산식도 시험해 본 적 없는 입력이라 검증할 수 없습니다 — 그때는 들어갈지 정하는 평가라 두 값 중 낮은 쪽을 주 값으로 두고 현장 확인을 띄웁니다. 실험실은 경쟁 밀집 동네에서 수요를 적게 봅니다. 그래서 평균 내지 않고 규칙으로 고릅니다 — 검증 범위 밖이면 낮은 쪽 + 현장 확인, 조금 벗어나면 V62 + 경고, 경쟁 밀집(거리 무관 경쟁 PC {DUAL_ESTIMATE_RULE.denseCompetitorIp}대 이상)이면 V62, 20% 넘게 갈리면 현장 확인.{dual.rangeSampleCount ? ` 범위 기준: 모델 포함 기존점 ${dual.rangeSampleCount}곳.` : ""}</p>
-    </section>
-  );
-}
-
+// 2026-09-28 웹 정리 — "두 산식 비교 — 참고용" 패널(DualEstimatePanel)은 뺐다(사용자: "딱히 가시성도 안 좋고 뭘 보여주고 싶은 건지 모르겠네").
+//    두 산식 값·규칙은 그대로 저장되고(dualEstimate), 판정 이유는 핵심 카드에 남아 있다. 되살리려면 git 이력(feccb7c).
 function ModelAccuracyNote({ accuracy, v62Final }: { accuracy: ModelAccuracySummary | null; v62Final: number | null }) {
   if (!accuracy || accuracy.sampleCount === 0) {
     return (
@@ -1102,7 +1082,6 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         {/* 2026-09-10 — 이 화면은 예상매출을 숫자 하나로만 보여줘서, 이 모형이 실제로 얼마나
             맞는지 알 수 없었다. 검증화면이 남겨둔 요약 1건을 읽어 함께 보여준다(계산을 다시
             돌리지 않으므로 Firestore 읽기는 1건뿐이다). 요약이 아직 없으면 안내만 띄운다. */}
-        <DualEstimatePanel dual={result.dualEstimate ?? null} />
         <ModelAccuracyNote accuracy={accuracy} v62Final={result.v62Final} />
         <PeerPositionNote stores={peerStores} result={result} expectedPcCount={candidateForReport?.expectedPcCount ?? result.expectedPcCount} />
         <RevenueDriverBreakdown drivers={result.revenueBreakdown?.usageDrivers} />

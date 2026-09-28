@@ -18,11 +18,7 @@ import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import {
-  buildParityComparisonRows,
-  computeExistingStoreMeasuredForecast,
-  computeValidationRow,
   describeNotVerifiableReason,
-  summarizeValidation,
   summarizeValidationRows,
   computeCompetitorInvestigationSummary,
   CORE_VALIDATION_MIN_MONTHS,
@@ -30,13 +26,10 @@ import {
   type DataCompletenessGrade,
   type ErrorCauseCode,
   type OperationalStatus,
-  type ParityComparisonRow,
   type TenureCohort,
-  type ValidationInputRow,
   type ValidationStoreInput,
   type ValidationStoreRow,
   type ValidationSummary2,
-  type ValidationSummaryResult,
 } from "@/lib/storeEval/calc";
 import { formatNumber, formatPercent, formatWon } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
@@ -90,14 +83,6 @@ const COMPETITOR_STATUS_LABELS: Record<CompetitorInvestigationSummaryStatus, str
   light: "외관·간이조사만 존재",
   uninvestigated: "미조사",
   confirmed_no_competitor: "확인된 독점상권(경쟁점 없음)",
-};
-
-const DIFF_STAGE_LABELS: Record<ParityComparisonRow["diffStage"], string> = {
-  V61예측차이: "V61 예측 단계",
-  외부유입보정률차이: "외부유입 보정률 단계",
-  반올림차이: "반올림 단계(미미함)",
-  일치: "일치",
-  비교불가: "비교 불가(짝 없음)",
 };
 
 type LoadState =
@@ -323,87 +308,6 @@ function CohortTable({ rows }: { rows: ValidationStoreRow[] }) {
 }
 
 /** sheetParity(computeValidationRow/summarizeValidation, 기존 golden-data 검증됨) 요약 카드. */
-function SheetParitySummaryBlock({ title, summary, benchmark }: { title: string; summary: ValidationSummaryResult; benchmark?: ReferenceBenchmark }) {
-  return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h3>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <SummaryCard title="표본 수" value={`${formatNumber(summary.sampleCount)}곳`} />
-        <SummaryCard title="평균절대오차" value={formatPercent(summary.meanAbsoluteError)} />
-        <SummaryCard title="중앙값절대오차" value={formatPercent(summary.medianAbsoluteError)} />
-        <SummaryCard title="±10% 이내" value={formatPercent(summary.within10PctRatio)} />
-        <SummaryCard title="±20% 이내" value={formatPercent(summary.within20PctRatio)} />
-        <SummaryCard title="평균편향" value={formatPercent(summary.meanBias)} />
-      </div>
-      {benchmark && (
-        <p className="app-card-sm rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
-          기존 Google Sheet 참고 결과({benchmark.sampleCount}개 점포): 평균오차 {formatPercent(benchmark.meanAbsoluteErrorPct)} · 중앙값{" "}
-          {formatPercent(benchmark.medianAbsoluteErrorPct)} · ±10% 이내 {formatPercent(benchmark.within10PctRatio)} · ±20% 이내{" "}
-          {formatPercent(benchmark.within20PctRatio)}
-        </p>
-      )}
-    </section>
-  );
-}
-
-function ParityComparisonTable({ rows }: { rows: ParityComparisonRow[] }) {
-  return (
-    <div className="overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
-      <table className="w-full min-w-[1700px] text-sm">
-        <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
-          <tr>
-            <th scope="col" className="px-3 py-2">점포명</th>
-            <th scope="col" className="px-3 py-2">실제매출</th>
-            <th scope="col" className="px-3 py-2">시트 V61</th>
-            <th scope="col" className="px-3 py-2">웹 V61</th>
-            <th scope="col" className="px-3 py-2">시트 보정률</th>
-            <th scope="col" className="px-3 py-2">웹 보정률</th>
-            <th scope="col" className="px-3 py-2">시트 V62</th>
-            <th scope="col" className="px-3 py-2">웹 V62</th>
-            <th scope="col" className="px-3 py-2">예측금액 차이</th>
-            <th scope="col" className="px-3 py-2">시트 절대오차율</th>
-            <th scope="col" className="px-3 py-2">웹 절대오차율</th>
-            <th scope="col" className="px-3 py-2">차이 발생 단계</th>
-            <th scope="col" className="px-3 py-2">비고</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
-          {rows.map((r) => (
-            <tr key={r.storeCode} className="text-[#171310] dark:text-[#f2ede2]">
-              <td className="px-3 py-2 font-medium">{r.storeName}</td>
-              <td className="px-3 py-2">{formatWon(r.actualRevenueAvg)}</td>
-              <td className="px-3 py-2">{formatWon(r.sheetV61Predicted)}</td>
-              <td className="px-3 py-2">{formatWon(r.webV61Predicted)}</td>
-              <td className="px-3 py-2">{formatPercent(r.sheetInflowRate)}</td>
-              <td className="px-3 py-2">{formatPercent(r.webInflowRate)}</td>
-              <td className="px-3 py-2">{formatWon(r.sheetV62Predicted)}</td>
-              <td className="px-3 py-2">{formatWon(r.webV62Predicted)}</td>
-              <td className="px-3 py-2">{formatWon(r.predictionDiff)}</td>
-              <td className="px-3 py-2">{formatPercent(r.sheetAbsoluteErrorPct)}</td>
-              <td className="px-3 py-2">{formatPercent(r.webAbsoluteErrorPct)}</td>
-              <td className="px-3 py-2 text-xs">{DIFF_STAGE_LABELS[r.diffStage]}</td>
-              <td className="px-3 py-2 text-xs">
-                {r.isLoocvHighVariance && (
-                  <span className="app-badge app-badge-warn">과거 산식과 차이 큼</span>
-                )}
-              </td>
-            </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={13} className="px-3 py-6 text-center text-[var(--sl-ink-soft)]">
-                비교할 매장이 없습니다(시트 V61 캐시값이 있는 블랙라벨 매장만 대상).
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// 처음 이 화면을 보는 사람을 위한 상태 배지 — overallStatus(calc.ts summarizeValidationRows)를
-// 색상·평문 설명으로 번역해서 보여준다. 판정 로직은 그대로, 표시만 눈에 띄게 바꾼 것.
 const OVERALL_STATUS_STYLE: Record<ValidationSummary2["overallStatus"], { badge: string; plain: string }> = {
   "정식 사용 가능": {
     badge: "border-[var(--sl-ok)]/35 bg-[var(--sl-ok-soft)] text-[#171310] dark:text-[#f2ede2]",
@@ -419,7 +323,6 @@ const OVERALL_STATUS_STYLE: Record<ValidationSummary2["overallStatus"], { badge:
   },
 };
 
-/** 화면 맨 위에서 "지금 이 모델을 믿고 써도 되는지"를 한눈에 보여주는 배지. */
 function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
   if (summary.sampleCount === 0) return (
     <section className="app-card rounded-2xl p-5" role="status">
@@ -435,14 +338,27 @@ function HeadlineStatusBanner({ summary }: { summary: ValidationSummary2 }) {
           <p className="text-xs font-semibold uppercase tracking-wide opacity-70">현재 모델 상태 (정식검증 기준)</p>
           <p className="mt-1 text-2xl font-bold">{summary.overallStatus}</p>
         </div>
-        <div className="flex gap-6">
+        {/* 2026-09-28 웹 정리 — 이 카드 하나로 "지금 성적"이 다 보이게 표본·±20%·중앙값을 더했다. 값은 아래 요약과 같은 summary다. */}
+        <div className="flex flex-wrap gap-6">
           <div>
-            <p className="text-xs opacity-70">±10% 이내 적중률</p>
-            <p className="text-xl font-semibold">{formatPercent(summary.within10PctRatio)}</p>
+            <p className="text-xs opacity-70">검증 매장</p>
+            <p className="text-xl font-semibold tabular-nums">{summary.sampleCount}곳</p>
           </div>
           <div>
             <p className="text-xs opacity-70">평균 오차율(MAPE)</p>
-            <p className="text-xl font-semibold">{formatPercent(summary.meanAbsoluteErrorPct)}</p>
+            <p className="text-xl font-semibold tabular-nums">{formatPercent(summary.meanAbsoluteErrorPct)}</p>
+          </div>
+          <div>
+            <p className="text-xs opacity-70">중앙값 오차</p>
+            <p className="text-xl font-semibold tabular-nums">{formatPercent(summary.medianAbsoluteErrorPct)}</p>
+          </div>
+          <div>
+            <p className="text-xs opacity-70">±10% 안</p>
+            <p className="text-xl font-semibold tabular-nums">{formatPercent(summary.within10PctRatio)}</p>
+          </div>
+          <div>
+            <p className="text-xs opacity-70">±20% 안</p>
+            <p className="text-xl font-semibold tabular-nums">{formatPercent(summary.within20PctRatio)}</p>
           </div>
         </div>
       </div>
@@ -527,82 +443,6 @@ function ErrorBucketChart({ summary }: { summary: ValidationSummary2 }) {
  * 숫자를 산문에 박았다(설정값이 아니라 그날 측정치라 읽어올 데가 없다). CLAUDE.md 규칙대로
  * 날짜를 같이 적어 낡으면 티가 나게 한다 — 2026-09-19 리브원아웃 n=38 측정값이다.
  */
-function FormulaChangeNotice20260920() {
-  return (
-    <details className="app-card rounded-xl p-4 text-sm leading-6">
-      <summary className="cursor-pointer font-semibold text-[#171310] dark:text-[#f2ede2]">
-        2026-09-19에 산식을 네 군데 고쳤습니다 — 적중률이 왜 이렇게 움직였나
-      </summary>
-      <div className="mt-3 space-y-3 text-[#5c5346] dark:text-[#c9bfae]">
-        <p>
-          <b>무엇을 봐야 하나:</b> 이날 바꾼 것은 <b>정확도를 올리려는 변경이 아니라 틀린 값을
-          고치는 변경</b>입니다. 그래서 일부 지표는 내려갑니다. 내려간 것이 산식이 나빠졌다는
-          뜻이 아닙니다.
-        </p>
-        <p className="font-mono text-xs">
-          2026-09-20 측정(리브원아웃 38곳) — 고치기 전 → 후<br />
-          MAPE 9.22% → <b>8.83%</b> · 중앙값 8.44% → <b>7.67%</b> ·
-          {" "}±10% 63%(24곳) → <b>61%(23곳)</b> · ±20% 95%(36곳) → <b>92%(35곳)</b>
-        </p>
-        <p className="text-xs">
-          평균 오차와 중앙값은 좋아졌고, <b>±10%·±20% 적중은 각각 한 곳씩 잃었습니다.</b>
-          틀린 값을 고친 대가입니다.
-        </p>
-        <p>
-          <b>1. 사양 점수 — 세대 숫자를 성능으로 읽고 있었습니다.</b> RTX 3060 Ti가 RTX 4060보다
-          낮게 깔리고(실제로는 3060 Ti가 빠릅니다 · 23건), i3와 i5가 같은 점수였습니다(자사 9곳).
-          이제 실측 성능지수표를 먼저 봅니다.
-        </p>
-        <p>
-          <b>2. 존구성 — 존 &ldquo;이름&rdquo;을 세고 있었습니다.</b> VIP존·프렌즈존·퍼스트클래스존은
-          우리 브랜드 용어라 경쟁점 조사 228건이 전부 0건이었습니다. 조사자가 경쟁점의 같은
-          실체(파티션 1인석 등)를 보고도 그 칸에 안 넣기 때문입니다. 즉{" "}
-          <b>경쟁점이 아무리 좋아도 자사를 못 따라잡는 자리</b>였습니다. 이제 양쪽 다 조사되는
-          물리 사실만 셉니다 — 룸 종류(1인룸·2인룸·팀룸)와 실재하는 특화좌석 수입니다. 자사와
-          경쟁점의 다양성 차이가 중앙값 2.50점에서 1.00점으로 줄었습니다.
-        </p>
-        <p>
-          <b>3. 모니터 — 매장을 못 가르고 있었습니다.</b> 계단식 구간표라 196칸 중 118칸(60%)이
-          동점 덩어리 세 개에 뭉쳐 있었습니다(고유값 21개). 140Hz와 144Hz가 1점 갈리고, 4K·OLED는
-          Hz를 무시하고 무조건 5점이었습니다. 더 큰 건 <b>파싱 오류</b>입니다 — 줄바꿈으로 나열한
-          모델이 한 덩어리로 뭉개져 Hz를 먼저 평균내는 바람에 엉뚱한 점수가 나왔습니다. 이제
-          240Hz = 4.0점을 기준으로 연속으로 매기고 등급 가산을 붙입니다(고유값 61개).
-        </p>
-        <p>
-          <b>4. 매장 관리 수준(본사 QSC 점검)을 관리 점수 칸에 넣었습니다.</b> 지금까지 자사 관리
-          점수는 38곳 전부 4.00점 상수였습니다 — 칸은 있는데 아무것도 재고 있지 않았습니다. 그래서
-          관리가 낮은 매장을 과대예측하고 있었습니다(구미산동점 QSC 최저, 오차 +17.9% → +9.4%).
-          이제 <b>QSC 70점을 1점, 100점을 5점</b>으로 환산해 그 칸을 채웁니다.
-        </p>
-        <p className="rounded-lg bg-[var(--sl-info-soft)] p-3">
-          ⚠️ <b>바닥을 70점으로 잡은 이유는 적중률이 아닙니다.</b> 자사는 본사 QSC로, 경쟁점은
-          점포개발자의 상·중·하 평가(평균 2.67점)로 재기 때문에 <b>서로 다른 자</b>입니다. 자사만
-          자를 바꾸면 자사/경쟁 비교가 통째로 한쪽으로 기웁니다. 바닥 70이면 자사 평균이
-          <b> 3.94점</b>으로 지금(4.00점)과 거의 같아, <b>자사와 경쟁점의 비교는 그대로 두고 자사
-          매장끼리의 변별만</b> 얻습니다. 그게 원래 목적입니다.
-        </p>
-        <p className="rounded-lg bg-[var(--sl-info-soft)] p-3">
-          ⚠️ <b>QSC는 신규 후보지의 예측력을 올리지 않습니다.</b> QSC는 개점한 뒤에 매기는 점수라
-          후보지에는 있을 수가 없습니다. 후보지에는 <b>가맹점 평균</b>이 들어갑니다 — 기존점 중
-          점검 기록이 없는 곳에 주는 값과 같은 값입니다. 위 개선은 <b>기존점을 사후에 설명하는
-          힘</b>이 좋아진 것입니다.
-          <br />
-          <br />
-          다만 <b>&ldquo;후보지는 한 톨도 안 바뀐다&rdquo;는 아닙니다.</b> 기존점의 관리 점수가
-          움직이면 학습 계수가 다시 잡히기 때문입니다.
-        </p>
-        <p className="rounded-lg bg-[var(--sl-warn-soft)] p-3">
-          ⚠️ <b>모니터 등급 가산 일곱 개는 사람이 정한 값입니다.</b> GPU 성능지수는 공개 벤치마크라는
-          외부 기준이 있어서 &ldquo;RTX 3060 Ti가 RTX 4060보다 빠르다&rdquo;를 참·거짓으로 확인할 수
-          있었지만, <b>모니터에는 그런 기준이 없습니다.</b> 원가·프리미엄 등급을 대리지표로 삼아
-          순서를 정한 것이라, <b>&ldquo;맞는 값을 찾았다&rdquo;가 아니라 &ldquo;지금 손에 있는 최선의
-          추정치&rdquo;</b>로 읽어야 합니다. 나중에 외부 기준이 생기면 여기를 먼저 다시 봐야 합니다.
-        </p>
-      </div>
-    </details>
-  );
-}
-
 function GlossarySection({ target10 }: { target10: number }) {
   return (
     <details className="app-card rounded-2xl p-5 text-sm leading-6">
@@ -920,24 +760,6 @@ function SummaryBlock({ title, summary, benchmark }: { title: string; summary: V
  * 목표치라 이 지표에 그대로 들이대면 "이미 검증된 목표가 있다"는 오해를 준다. 숫자만 그대로
  * 보여주고 통과/미달 판단은 화면이 아니라 사용자가 한다.
  */
-function MeasuredForecastSummaryBlock({ summary }: { summary: ValidationSummary2 }) {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <SummaryCard title="표본 수" value={`${formatNumber(summary.sampleCount)}곳`} />
-      <SummaryCard title="평균절대오차(MAPE)" value={formatPercent(summary.meanAbsoluteErrorPct)} />
-      <SummaryCard title="중앙값절대오차" value={formatPercent(summary.medianAbsoluteErrorPct)} />
-      <SummaryCard title="±5% 이내" value={formatPercent(summary.within5PctRatio)} />
-      <SummaryCard title="±10% 이내" value={formatPercent(summary.within10PctRatio)} />
-      <SummaryCard title="±20% 이내" value={formatPercent(summary.within20PctRatio)} />
-      <SummaryCard title="평균편향" value={formatPercent(summary.meanBiasPct)} />
-      <SummaryCard
-        title="과대예측/과소예측"
-        value={`${summary.overPredictedCount}곳 / ${summary.underPredictedCount}곳`}
-      />
-    </div>
-  );
-}
-
 export default function ValidationPage() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -994,39 +816,6 @@ export default function ValidationPage() {
 
     const coreRows = blackLabelRows.filter((r) => r.includedInCoreAccuracy);
 
-    // 2026-08-21 — "실측기반 예상월매출"(AA경로) 백테스트. 정식검증(coreRows)과 같은 매장
-    // 모집단에, 이 경로만의 조건(자사 시설값 완비 + 경쟁점 실측 존재)을 추가로 요구한다.
-    // computeExistingStoreMeasuredForecast(calc.ts)가 표본 포함 여부와 사유를 그대로 반환한다 —
-    // 화면에서 다시 판단하지 않는다(무음 누락 금지, excludedNonBlackLabelCount와 같은 패턴).
-    const measuredForecastResults = coreRows.map((r) => {
-      const store = existingStoresByCode.get(r.storeCode);
-      const competitors = competitorsByCode.get(r.storeCode) ?? [];
-      const loc = locationEvaluationsByCode.get(r.storeCode) ?? null;
-      const forecast = store ? computeExistingStoreMeasuredForecast(store, competitors, loc, settings) : null;
-      return { row: r, forecast };
-    });
-    const measuredForecastExcluded = measuredForecastResults.filter((m) => !m.forecast || m.forecast.excludedReason != null);
-    const measuredForecastIncluded = measuredForecastResults
-      .filter((m): m is { row: ValidationStoreRow; forecast: NonNullable<(typeof measuredForecastResults)[number]["forecast"]> } =>
-        m.forecast != null && m.forecast.excludedReason == null,
-      )
-      .map((m) => ({
-        storeName: m.row.storeName,
-        actualRevenueAvg: m.row.actualRevenueAvg,
-        forecastRevenue: m.forecast.measuredForecastMonthlyRevenue,
-        coverageRatio: m.forecast.competitorCoverageRatio,
-        isLowCoverageReliability: m.forecast.isLowCoverageReliability,
-        errorAmount:
-          m.forecast.measuredForecastMonthlyRevenue != null && m.row.actualRevenueAvg != null
-            ? m.forecast.measuredForecastMonthlyRevenue - m.row.actualRevenueAvg
-            : null,
-        absoluteErrorPct:
-          m.forecast.measuredForecastMonthlyRevenue != null && m.row.actualRevenueAvg != null && m.row.actualRevenueAvg > 0
-            ? Math.abs(m.forecast.measuredForecastMonthlyRevenue - m.row.actualRevenueAvg) / m.row.actualRevenueAvg
-            : null,
-      }))
-      .filter((m) => m.absoluteErrorPct != null);
-    const measuredForecastSummary = summarizeValidationRows(measuredForecastIncluded, targets);
     // 요청사항 1 — 조기검증 포함조건: 완료개월 3~11개월(코호트 A/B/C) + 실제/예측 존재 + 블랙라벨
     // + 학습제외 아님(사후 운영이슈 아님). 계약 상태는 제외 조건이 아니다.
     const earlyNormalRows = blackLabelRows.filter(
@@ -1045,29 +834,6 @@ export default function ValidationPage() {
     const combinedSummary = summarizeValidationRows(combinedRows, targets);
     const referenceSummary = summarizeValidationRows(referenceRows, targets);
 
-    // sheetParity — 시트에 저장된 V61 캐시값 + 외부유입 보정만 적용해 "시트가 원래 보여주던
-    // 결과"를 재현한다(computeValidationRow/summarizeValidation은 이미 golden-data로 검증됨).
-    // loocvValidation(위 coreRows 등)과 절대 같은 표에 섞지 않는다.
-    const toSheetInputRow = (r: ValidationStoreRow): ValidationInputRow | null => {
-      if (r.sheetV61Predicted == null || r.actualRevenueAvg == null) return null;
-      return {
-        storeCode: r.storeCode,
-        storeName: r.storeName,
-        actualSales: r.actualRevenueAvg,
-        v61Predicted: r.sheetV61Predicted,
-        inflowRestriction: r.inflowRestriction ?? "미평가",
-        brandType: r.brand ?? "확인필요",
-      };
-    };
-    const sheetCoreComputed = coreRows.map(toSheetInputRow).filter((r): r is ValidationInputRow => r != null).map((r) => computeValidationRow(r, settings));
-    const sheetEarlyComputed = earlyNormalRows.map(toSheetInputRow).filter((r): r is ValidationInputRow => r != null).map((r) => computeValidationRow(r, settings));
-    const sheetCombinedComputed = [...sheetCoreComputed, ...sheetEarlyComputed];
-    const sheetCoreSummary = summarizeValidation(sheetCoreComputed, settings);
-    const sheetEarlySummary = summarizeValidation(sheetEarlyComputed, settings);
-    const sheetCombinedSummary = summarizeValidation(sheetCombinedComputed, settings);
-
-    // 매장별 비교표(sheetParity vs loocvValidation) — 정식검증+조기검증 대상만.
-    const parityRows = buildParityComparisonRows(combinedRows, combinedRows, settings);
 
     const byCohort = new Map<TenureCohort, ValidationStoreRow[]>();
     for (const r of blackLabelRows) {
@@ -1102,16 +868,9 @@ export default function ValidationPage() {
       earlySummary,
       combinedSummary,
       referenceSummary,
-      sheetCoreSummary,
-      sheetEarlySummary,
-      sheetCombinedSummary,
-      parityRows,
       byCohort,
       fullTenureRows,
       fullTenureExcluded,
-      measuredForecastIncluded,
-      measuredForecastExcluded,
-      measuredForecastSummary,
       missingLocationEvalRows,
       completenessCounts,
       competitorStatusCounts,
@@ -1188,17 +947,10 @@ export default function ValidationPage() {
     completenessCounts,
     competitorStatusCounts,
     excludedNonBlackLabelCount,
-    sheetCoreSummary,
-    sheetEarlySummary,
-    sheetCombinedSummary,
-    parityRows,
     fullTenureRows,
     fullTenureExcluded,
     missingLocationEvalRows,
     combinedRows,
-    measuredForecastIncluded,
-    measuredForecastExcluded,
-    measuredForecastSummary,
     settings,
     usedDefaultSettings,
   } = computed;
@@ -1207,7 +959,7 @@ export default function ValidationPage() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">6. 기존 가맹점 검증</h1>
+        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">기존 가맹점 검증</h1>
         <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
           신규 매장 매출을 예측하는 모델이 얼마나 정확한지, 이미 운영 중인 블랙라벨 매장의 실제 매출과 비교해 확인하는 화면입니다.
         </p>
@@ -1226,6 +978,7 @@ export default function ValidationPage() {
       )}
 
       <HeadlineStatusBanner summary={combinedSummary} />
+      <RemeasureReminder stores={[...state.existingStoresByCode.values()]} competitorsByCode={state.competitorsByCode} />
 
       {/* 요청사항 — "처음 보는 사람도 이해할 수 있게": 결론만 평문으로 먼저 보여주고, 표도
           전문 컬럼(브랜드/운영상태/데이터완성도/우선추정원인 등) 없이 매장명·실제매출·예측매출·
@@ -1265,7 +1018,6 @@ export default function ValidationPage() {
           아래 적중률은 각 점포를 학습에서 제외한 재검증 결과이며, 새 점포의 적중률을 보장하지 않습니다.
         </p>
       )}
-      <FormulaChangeNotice20260920 />
       <GlossarySection target10={settings.target10pctRatio} />
       <PriceScenarioPanel baselines={state.rows.map(row=>({id:row.storeCode,label:row.storeName,revenue:row.v62PredictedRevenueAvg,hourlyRate:row.hourlyRate,pcRevenue:row.revenueBreakdown?.pcRevenue,productRevenue:row.revenueBreakdown?.productRevenue}))} productRatio={state.settings.measuredForecastProductRatio} />
 
@@ -1274,16 +1026,6 @@ export default function ValidationPage() {
           🔍 자세히 보기 (전문가·분석용 상세 데이터)
         </summary>
         <div className="mt-6 space-y-10">
-      {/* 요청사항 6 — 공식 성능/이관 검증용 구분 결론 */}
-      <section className="rounded-xl border border-[var(--sl-info)]/30 bg-[var(--sl-info-soft)] p-4 text-sm leading-6 text-[#171310] dark:text-[#f2ede2]">
-        <h3 className="font-semibold">웹 V62와 시트 V62 차이 원인 확인 결과</h3>
-        <p className="mt-1">
-          아래 <b>“V62 운영 결과”</b>는 시트에 저장된 V61 캐시값 그대로 재현한 결과, <b>“리브원아웃 교차검증”</b>은 매 매장을 학습에서
-          뺀 뒤 PC·먹거리 분리 모형으로 예측한 결과입니다. 사용한 산식과 학습대상이 모두 달라 단순한 반올림 차이로 볼 수 없습니다.
-          현재 후보지는 전체 적격 표본으로 학습한 분리 모형을 사용하고, 검증에서는 해당 점포를 학습에서 제외합니다.
-          현재 모형의 정확도는 리브원아웃 교차검증으로 확인하며, 과거 시트 결과는 이관 참고자료입니다.
-        </p>
-      </section>
 
       {/* 최상단 요약 (요청사항 8/10 형식) */}
       <section className="app-card-sm rounded-2xl p-5">
@@ -1336,105 +1078,12 @@ export default function ValidationPage() {
           각 매장을 학습에서 제외하고 예측한 결과입니다. 신규 후보지의 성능을 가늠하는 참고치로 사용하세요.
         </p>
       </div>
-      <RemeasureReminder stores={[...state.existingStoresByCode.values()]} competitorsByCode={state.competitorsByCode} />
-      <SummaryBlock title="1. 학습대상점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
-      <SummaryBlock
-        title="2. 조기검증 적중률 (2026-09-02부터 정식검증에 통합 — 표본 0곳)"
-        summary={computed.earlySummary}
-        benchmark={REFERENCE_BENCHMARK.조기검증}
-      />
-      <SummaryBlock title="3. 정식검증+조기검증 통합 적중률" summary={combinedSummary} benchmark={REFERENCE_BENCHMARK.통합} />
+      <SummaryBlock title="정식검증 적중률 (리브원아웃 — 각 매장을 학습에서 빼고 예측)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
       <SummaryBlock title="공식 검증에서 제외된 참고용 점포의 적중률" summary={computed.referenceSummary} />
 
-      <section className="space-y-4 app-card rounded-2xl p-5">
-        <div>
-          <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
-            시트 재현 적중률 — V62 운영 결과 (이관 검증용, 공식 성능 아님)
-          </h2>
-          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-            과거 시트에 저장된 예측값에 외부유입 보정을 적용한 이관 참고자료입니다. 현재 신규후보지는 PC 이용시간·먹거리 분리 모형으로 계산합니다.
-          </p>
-        </div>
-        <SheetParitySummaryBlock title="정식검증(시트 재현)" summary={sheetCoreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
-        <SheetParitySummaryBlock title="조기검증(시트 재현)" summary={sheetEarlySummary} benchmark={REFERENCE_BENCHMARK.조기검증} />
-        <SheetParitySummaryBlock title="통합(시트 재현)" summary={sheetCombinedSummary} benchmark={REFERENCE_BENCHMARK.통합} />
-      </section>
 
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 비교표 — V62 운영 결과 vs 리브원아웃 교차검증</h2>
-          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-            정식검증+조기검증 대상 매장만. “차이 발생 단계”는 V61 예측 → 외부유입 보정률 → 반올림 순으로 처음 어긋난 지점을 표시합니다.
-          </p>
-        </div>
-        <ParityComparisonTable rows={parityRows} />
-      </section>
 
-      <section className="app-card rounded-xl p-4 text-sm leading-6">
-        <h3 className="font-semibold">요금 반영 모형과 과거 시트의 차이</h3>
-        <p className="mt-2">현재 웹은 PC 이용시간과 먹거리 매출을 따로 학습하고, PC 이용시간에 입력 요금을 곱해 매출을 계산합니다.
-          검증 대상 점포는 두 모형의 학습에서 모두 제외합니다. 과거 시트는 다른 총매출 산식의 저장값이므로 차이가 생길 수 있습니다.</p>
-        <p>학습 이용시간은 과거 PC매출을 현재 등록 요금으로 나눈 추정값입니다. 당시 실효요금과의 차이는 후속 조정 과제입니다.</p>
-        <p>외부유입 보정은 두 항목에 적용하고 좌석 가동률 상한은 PC 이용시간에 적용합니다. 금액은 PC·먹거리별 원 단위 반올림 후 합산합니다.</p>
-      </section>
 
-      <section className="space-y-3 app-card rounded-2xl p-5">
-        <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
-          5. 실측기반 예상월매출 검증 (경쟁점 실가동좌석 기반 — 화면에서 뺀 경로의 근거)
-        </h2>
-        <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
-          V61/V62(인구·이용률 기반)과 완전히 별개인 두 번째 경로입니다. <b>2026-09-14에 판단이 끝났습니다</b> — 오차가 46%로
-          커서(V62는 {formatPercent(coreSummary.meanAbsoluteErrorPct)}) 후보지 결과 화면에서 금액 카드를 뺐고, 좌석·가동률 실측만 남겼습니다. 2026-09-13에 평가기록 재료에서
-          같은 경로를 뺀 것과 같은 이유입니다. 이 표는 그 판단의 근거이고, 자료가 쌓여 쓸 만해지는지 계속 보려고 남겨둡니다.
-          V61/V62 같은 통과/미달 목표는 적용하지 않고 수치만 그대로 보여줍니다.
-          근거: <code>docs/releases/2026-09-14-measured-forecast-accuracy.md</code>
-        </p>
-        <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-          정식검증({coreSummary.sampleCount}곳) 중 자사 시설값이 완비되고 경쟁점 실측(핑봇)이 있는{" "}
-          {measuredForecastIncluded.length}곳만 표본에 포함했습니다.
-          {measuredForecastExcluded.length > 0 &&
-            ` 제외 ${measuredForecastExcluded.length}곳: ${measuredForecastExcluded
-              .map((m) => `${m.row.storeName}(${m.forecast?.excludedReason ?? "산출 불가"})`)
-              .join(", ")}`}
-        </p>
-        <div className="mt-4">
-          <MeasuredForecastSummaryBlock summary={measuredForecastSummary} />
-        </div>
-        {measuredForecastIncluded.length > 0 && (
-          <div className="mt-4 overflow-x-auto rounded-xl border border-[#171310]/[0.08] dark:border-white/[0.08]">
-            <table className="w-full min-w-[600px] text-sm">
-              <thead className="app-card-sm text-left text-xs font-medium text-[var(--sl-ink-soft)]">
-                <tr>
-                  <th scope="col" className="px-3 py-2">점포명</th>
-                  <th scope="col" className="px-3 py-2">실측기반 예상월매출</th>
-                  <th scope="col" className="px-3 py-2">실제매출평균</th>
-                  <th scope="col" className="px-3 py-2">절대오차율</th>
-                  <th scope="col" className="px-3 py-2">경쟁점 핑봇 커버율</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
-                {measuredForecastIncluded.map((m) => (
-                  <tr key={m.storeName}>
-                    <td className="px-3 py-2 font-medium">{m.storeName}</td>
-                    <td className="px-3 py-2">{formatWon(m.forecastRevenue)}</td>
-                    <td className="px-3 py-2">{formatWon(m.actualRevenueAvg)}</td>
-                    <td className="px-3 py-2">{formatPercent(m.absoluteErrorPct)}</td>
-                    <td className={`px-3 py-2 ${m.isLowCoverageReliability ? "text-[var(--sl-warn)]" : ""}`}>
-                      {formatPercent(m.coverageRatio)}
-                      {m.isLowCoverageReliability && " (낮음)"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
-              경쟁점 핑봇 커버율 = 조사된 경쟁점 중 핑봇 기간평균 가동률이 있는 비율. 70% 미만이면
-              “낮음”으로 표시합니다(원본 점포평가.gs의 최소커버율 0.70 기준 — 원본도 이 값으로 표본을
-              거르지 않고 참고 신뢰도로만 씁니다).
-            </p>
-          </div>
-        )}
-      </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <BreakdownCard title="데이터 완성도별 매장 수 (정식+조기)" rows={completenessCounts} labels={DATA_COMPLETENESS_LABELS} />

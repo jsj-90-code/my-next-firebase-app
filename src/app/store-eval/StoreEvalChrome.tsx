@@ -7,15 +7,13 @@ import { AutoAuthGate } from "@/components/seatLayout/AutoAuthGate";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV_ITEMS = [
-  { href: "/store-eval", label: "대시보드" },
-  { href: "/store-eval/how-it-works", label: "매출 계산법" },
+  // 2026-09-28 웹 정리(사용자 승인): 대시보드는 신규후보지에 합쳤고(/store-eval → /store-eval/candidates로 넘김),
+  // 경쟁점 좌표(남은 3건뿐)·AI 채점 검증(1회성 진단, 하네스가 대신함)은 삭제, 백업은 운영설정 안 링크로 옮겼다.
   { href: "/store-eval/candidates", label: "신규후보지" },
   { href: "/store-eval/existing-stores", label: "기존 가맹점 관리" },
   { href: "/store-eval/validation", label: "기존 가맹점 검증" },
-  { href: "/store-eval/competitor-coords", label: "경쟁점 좌표" },
-  { href: "/store-eval/ai-validation", label: "AI 채점 검증" },
+  { href: "/store-eval/how-it-works", label: "매출 계산법" },
   { href: "/store-eval/settings", label: "운영설정" },
-  { href: "/store-eval/backup", label: "백업" },
   // 실험실은 별도 화면(자기 헤더·탭)이다 — 여기서는 들어가는 문만 둔다.
   { href: "/store-eval/lab", label: "실험실 →" },
 ];

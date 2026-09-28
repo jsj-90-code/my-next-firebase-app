@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 // 7. 운영설정 화면 - 12_운영판정 계수를 관리자만 편집할 수 있게 보여준다.
 // 계산 로직은 이미 calc.ts 등에 있고, 이 화면은 ModelSettings 문서를 읽고/쓰는 것과
 // 변경 이력을 보여주는 것만 담당한다. 진짜 권한 강제는 firestore.rules에서 하고,
@@ -150,18 +152,34 @@ function Section({
   description,
   children,
   warning,
+  collapsed = false,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
   warning?: string | null;
+  /** 2026-09-28 웹 정리 — 자주 안 바꾸는 섹션은 접어 둔다(펼치면 그대로 편집된다). 검증 통과기준만 열어 둔다. */
+  collapsed?: boolean;
 }) {
-  return (
-    <section className="app-card rounded-2xl p-5">
-      <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h2>
+  const body = (
+    <>
       {description && <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">{description}</p>}
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">{children}</div>
       {warning && <p className="app-notice app-badge-warn mt-3 w-full justify-start py-2 text-xs">⚠ {warning}</p>}
+    </>
+  );
+  if (collapsed) {
+    return (
+      <details className="app-card rounded-2xl p-5">
+        <summary className="cursor-pointer text-base font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</summary>
+        {body}
+      </details>
+    );
+  }
+  return (
+    <section className="app-card rounded-2xl p-5">
+      <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">{title}</h2>
+      {body}
     </section>
   );
 }
@@ -310,9 +328,11 @@ export default function StoreEvalSettingsPage() {
   return (
     <div className="flex flex-col gap-6 pb-16">
       <div>
-        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">7. 운영설정</h1>
+        <h1 className="text-xl font-semibold text-[#171310] dark:text-[#f2ede2]">운영설정</h1>
         <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
           V61/V62 계산에 쓰이는 계수와 판정 기준을 관리합니다. 값을 바꾸면 이후의 모든 계산에 즉시 반영됩니다.
+          자주 바꾸지 않는 섹션은 접어 두었습니다. 데이터 백업·복원은{" "}
+          <Link href="/store-eval/backup" className="underline underline-offset-4">백업 화면</Link>에서 합니다.
         </p>
       </div>
 
@@ -336,7 +356,7 @@ export default function StoreEvalSettingsPage() {
         </p>
       )}
 
-      <Section title="외부유입 보정률 / 상하한 계수" description="09_입지동선평가의 외부유입제한 값에 따라 V62 보정률이 정해집니다.">
+      <Section title="외부유입 보정률 / 상하한 계수" collapsed description="09_입지동선평가의 외부유입제한 값에 따라 V62 보정률이 정해집니다.">
         <NumberInput
           label="보정률 - 없음"
           value={form.inflowAdjustment.없음}
@@ -402,7 +422,7 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       <Section
-        title="V61 폴백 회귀계수"
+        title="V61 폴백 회귀계수" collapsed
         description="13_신규후보지판정 G열 폴백식에서만 쓰이는 근사 계수입니다. 07 시트에 Apps Script가 채운 예측_월매출 값이 있으면 이 계수는 쓰이지 않습니다."
       >
         <NumberInput
@@ -431,7 +451,7 @@ export default function StoreEvalSettingsPage() {
         />
       </Section>
 
-      <Section title="상권성격 임계값 / 상권수요 유효율 / 상권등급 백분위">
+      <Section title="상권성격 임계값 / 상권수요 유효율 / 상권등급 백분위" collapsed>
         <NumberInput
           label="상권성격 임계값 - 번화가(8배)"
           value={form.marketCharacterThreshold.downtown}
@@ -485,7 +505,7 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       <Section
-        title="경쟁력 가중치 / 하드웨어 가중치"
+        title="경쟁력 가중치 / 하드웨어 가중치" collapsed
         description="자사_경쟁력점수(BM) = 하드웨어×spec + 인테리어·좌석·관리×interior + 먹거리×food + 입지×location (2026-08-28 전면개편 — 좌석·존구성은 더 이상 독립 배점이 아니라 인테리어 항목의 세부 비중으로 흡수됨)"
         warning={sumWarning(competitivenessWeightSum, "경쟁력") ?? sumWarning(specWeightSum, "하드웨어(GPU/모니터/RAM/CPU)")}
       >
@@ -542,7 +562,7 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       <Section
-        title="시설(인테리어·좌석·관리) 세부 가중치"
+        title="시설(인테리어·좌석·관리) 세부 가중치" collapsed
         description="시설종합점수 = 존구성×zoneComposition + 인테리어×interior + 관리×management (2026-08-31 산식 개편 — 시트 수식 그대로 이식, 최신성/청결/편의성은 더 이상 반영 안 함)"
         warning={sumWarning(facilityWeightSum, "시설(존구성/인테리어/관리)")}
       >
@@ -567,7 +587,7 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       <Section
-        title="먹거리 브랜드별 점수"
+        title="먹거리 브랜드별 점수" collapsed
         description="브랜드명만 확인되면 이 기본값을 쓴다(직접입력값이 있으면 그게 우선). 브랜드만으로 4점 이상 주지 않는 게 원칙 - 2026-08-30 경쟁력 평가 기준 최종본 §11."
       >
         <NumberInput
@@ -615,7 +635,7 @@ export default function StoreEvalSettingsPage() {
       </Section>
 
       <Section
-        title="입지동선종합점수 가중치"
+        title="입지동선종합점수 가중치" collapsed
         description="09_입지동선평가!H열 = 상권위치·동선×marketPositionFlow + 선점경쟁×preemption + 접근가시성×visibility (2026-09-01 재설계 — 상권내위치/주요동선/상권흡인력 통합)"
         warning={sumWarning(locationWeightSum, "입지동선종합점수")}
       >
@@ -639,7 +659,7 @@ export default function StoreEvalSettingsPage() {
         />
       </Section>
 
-      <Section title="브랜드 필터 / 포화 기준 / 모델버전">
+      <Section title="브랜드 필터 / 포화 기준 / 모델버전" collapsed>
         <TextInput label="브랜드 필터" value={form.brandFilter} onChange={(v) => updateTop("brandFilter", v)} readOnly={readOnly} />
         <NumberInput
           label="포화 기준 (IP당수요)"

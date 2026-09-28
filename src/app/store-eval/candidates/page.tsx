@@ -17,8 +17,8 @@ import {
   listCandidates,
   listEvaluationResults,
 } from "@/lib/storeEval/store";
-import type { CandidateInput, ReviewStatus } from "@/lib/storeEval/types";
-import { formatDateTime } from "@/lib/storeEval/format";
+import type { CandidateInput, EvaluationResult, FinalJudgement, ReviewStatus } from "@/lib/storeEval/types";
+import { formatDateTime, formatWon } from "@/lib/storeEval/format";
 import { freshnessHint, resultFreshness, type Freshness } from "@/lib/storeEval/resultFreshness";
 import { CANDIDATE_STATUSES, selectCandidates, type CandidateSort, type CandidateStatusFilter } from "@/lib/storeEval/candidateList";
 
@@ -33,6 +33,11 @@ export default function CandidateListPage() {
   const router = useRouter();
   const { user } = useAuth();
   const [candidates, setCandidates] = useState<CandidateInput[]>([]);
+  // 2026-09-28 웹 정리 — 대시보드에 있던 "최종예상월매출·최종운영판정·엑셀 내보내기"를 이 표로 옮겼다(대시보드는 여기로 넘어온다).
+  // 결과는 아래 신선도 조회가 이미 읽는 listEvaluationResults를 그대로 쓴다 — 추가 읽기 없음.
+  const [results, setResults] = useState<EvaluationResult[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -85,6 +90,7 @@ export default function CandidateListPage() {
     Promise.all([listEvaluationResults(), listAllCompetitors(), listAllLocationEvaluations(), getModelSettings()])
       .then(([results, competitors, locations, settings]) => {
         if (cancelled) return;
+        setResults(results);
         const competitorAtsByCode = new Map<string, (number | null | undefined)[]>();
         for (const c of competitors) {
           competitorAtsByCode.set(c.candidateCode, [...(competitorAtsByCode.get(c.candidateCode) ?? []), c.updatedAt]);
@@ -136,6 +142,20 @@ export default function CandidateListPage() {
   function handleCreate() {
     setCreating(true);
     router.push("/store-eval/candidates/new");
+  }
+  const resultByCode = useMemo(() => new Map(results.map((r) => [r.candidateCode, r])), [results]);
+  async function handleExport() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      // ExcelJS는 내보내기를 눌렀을 때만 읽는다(목록 진입 때 안 싣는다).
+      const { exportCandidatesToExcel } = await import("@/lib/storeEval/exportExcel");
+      await exportCandidatesToExcel(candidates, results);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "엑셀로 내보내지 못했습니다.");
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function handleDuplicate(code: string) {
@@ -192,15 +212,26 @@ export default function CandidateListPage() {
             신규 후보지를 등록하고, 경쟁점·입지동선평가를 거쳐 최종판정을 확인합니다.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleCreate}
-          disabled={creating}
-          className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
-        >
-          {creating ? "입력 화면 여는 중..." : "+ 신규 후보지 등록"}
-        </button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void handleExport()}
+            disabled={exporting || candidates.length === 0}
+            className="app-btn-outline rounded-lg px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {exporting ? "내보내는 중..." : "엑셀로 내보내기"}
+          </button>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating}
+            className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
+          >
+            {creating ? "입력 화면 여는 중..." : "+ 신규 후보지 등록"}
+          </button>
+        </div>
       </div>
+      {exportError && <p role="alert" className="app-notice app-badge-danger w-full px-3 py-2 text-sm">{exportError}</p>}
 
       {error && (
         <div role="alert" className="app-notice app-badge-danger w-full px-3 py-2 text-sm">
@@ -261,7 +292,11 @@ export default function CandidateListPage() {
           <p className="mt-3 break-words text-sm text-[var(--sl-ink-soft)]">{c.address || "주소 미입력"}</p>
           {c.isDraft && <span className="app-badge app-badge-neutral mt-3">임시저장</span>}
           {freshnessByCode.get(c.code)?.state === "재계산필요" && <p className="app-notice app-badge-warn mt-3 px-3 py-2 text-xs">{freshnessHint(freshnessByCode.get(c.code)!) || "재계산 필요"}</p>}
-          <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">최종 수정 {formatDateTime(c.updatedAt)}</p>
+          <p className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-mono tabular-nums">{formatWon(resultByCode.get(c.code)?.v62Final)}</span>
+            <JudgementBadge result={resultByCode.get(c.code)} />
+          </p>
+          <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">최종 수정 {formatDateTime(c.updatedAt)}</p>
           <CandidateActions candidate={c} busy={busyCode !== null || error !== null} onDuplicate={handleDuplicate} onDelete={handleDelete} />
         </li>)}
       </ul>}
@@ -279,6 +314,8 @@ export default function CandidateListPage() {
               <th scope="col" className="px-4 py-3">이름</th>
               <th scope="col" className="px-4 py-3">주소</th>
               <th scope="col" className="px-4 py-3">검토상태</th>
+              <th scope="col" className="whitespace-nowrap px-4 py-3">최종예상월매출</th>
+              <th scope="col" className="whitespace-nowrap px-4 py-3" title="입력이 덜 끝났으면 그 상태를, 끝났으면 진단 결과를 보여줍니다">최종운영판정</th>
               <th scope="col" className="px-4 py-3">최종수정일</th>
               <th scope="col" className="px-4 py-3 text-right">작업</th>
             </tr>
@@ -314,6 +351,10 @@ export default function CandidateListPage() {
                       {c.reviewStatus}
                     </span>
                   </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={resultByCode.get(c.code)?.dualEstimate?.reason ?? undefined}>
+                    {formatWon(resultByCode.get(c.code)?.v62Final)}
+                  </td>
+                  <td className="px-4 py-3"><JudgementBadge result={resultByCode.get(c.code)} /></td>
                   <td className="px-4 py-3 font-mono text-[var(--sl-ink-soft)]">{formatDateTime(c.updatedAt)}</td>
                   <td className="px-4 py-3">
                     <CandidateActions candidate={c} busy={busyCode !== null || error !== null} onDuplicate={handleDuplicate} onDelete={handleDelete} />
@@ -325,6 +366,19 @@ export default function CandidateListPage() {
       </div>}
     </div>
   );
+}
+
+// 대시보드(2026-09-28 합침)에서 옮겨 온 판정 배지. 라벨은 저장된 최종운영판정 그대로, 없으면 "평가 대기".
+function judgementBadgeClass(judgement: FinalJudgement | null | undefined): string {
+  if (judgement === "평가 완료") return "app-badge-ok";
+  if (judgement === "포화 주의" || judgement === "입지 재검토") return "app-badge-warn";
+  if (judgement === "V62 계산 확인 필요") return "app-badge-danger";
+  return "app-badge-neutral";
+}
+
+function JudgementBadge({ result }: { result: EvaluationResult | undefined }) {
+  const label = result?.finalJudgement ?? (result ? "-" : "평가 대기");
+  return <span className={`app-badge ${judgementBadgeClass(result?.finalJudgement)}`}>{label}</span>;
 }
 
 function CandidateActions({ candidate, busy, onDuplicate, onDelete }: {
