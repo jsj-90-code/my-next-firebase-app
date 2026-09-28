@@ -27,6 +27,10 @@ import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   generateNextCandidateCode,
   getCandidate,
+  getCandidateRival2kmDoc,
+  getLabResidentRadiusDoc,
+  saveLabResidentRadius,
+  saveLabResidentRings,
   getLocationEvaluation,
   getModelSettings,
   listCompetitors,
@@ -127,6 +131,13 @@ function BasicInfoTabForm({
   const [collectError, setCollectError] = useState<string | null>(null);
   const [nearbyWarnings, setNearbyWarnings] = useState<{ code: string; name: string }[]>([]);
   const [demandPoints, setDemandPoints] = useState<DemandPoint[]>([]);
+  // 2026-09-28 — 주거 상권 반경(실험실 전용 사실)을 화면에서 확정한다. 2km 안 PC방 수(등록 때 자동 수집한 문서)를 같이 보여
+  //   "0곳이면 2km 검토" 경고를 띄운다. 사용자: "이거 자동화 안 돼 있나? … 입력할 때 체크해서 하는 방안도".
+  const [labRadiusDoc, setLabRadiusDoc] = useState<{ residentRadiusM: number | null; note: string | null; confirmedBy: string | null; confirmedAt: string | null } | null>(null);
+  const [rival2kmCount, setRival2kmCount] = useState<number | null>(null);
+  const [radiusForm, setRadiusForm] = useState<{ radiusM: 1000 | 2000; note: string }>({ radiusM: 1000, note: "" });
+  const [radiusBusy, setRadiusBusy] = useState(false);
+  const [radiusNotice, setRadiusNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [autoCompetitors, setAutoCompetitors] = useState<Competitor[]>([]);
   // 2단계(2026-08-24) — SGIS/소상공인365 반자동 업로드 이력.
   const [marketDataUploads, setMarketDataUploads] = useState<MarketDataUpload[]>([]);
@@ -138,12 +149,18 @@ function BasicInfoTabForm({
   const loadMarketData = useCallback(async (code: string, isCancelled: () => boolean = () => false) => {
     const sequence = ++marketLoadSequence.current;
     // 2026-09-28: SGIS 행정동 참고자료(getAdminDongReference)는 더 이상 안 읽는다 — 산식 무관 참고자료를 화면에서 뺐다.
-    const [points, comps, uploads] = await Promise.all([
+    const [points, comps, uploads, radiusDoc, rival2km] = await Promise.all([
       listDemandPoints(code),
       listCompetitors(code),
       listMarketDataUploads(code),
+      getLabResidentRadiusDoc(code).catch(() => null),
+      getCandidateRival2kmDoc(code).catch(() => null),
     ]);
     if (isCancelled() || sequence !== marketLoadSequence.current) return;
+    setLabRadiusDoc(radiusDoc ? { residentRadiusM: radiusDoc.residentRadiusM ?? null, note: radiusDoc.note ?? null, confirmedBy: radiusDoc.confirmedBy ?? null, confirmedAt: radiusDoc.confirmedAt ?? null } : null);
+    setRadiusForm({ radiusM: radiusDoc?.residentRadiusM === 2000 ? 2000 : 1000, note: radiusDoc?.note ?? "" });
+    // 500m 밖~2km(문서엔 500m 안도 들어 있으나 500m 안은 경쟁점 조사표가 센다). 문서 없음 = 상권자료 수집 전 = null.
+    setRival2kmCount(rival2km ? rival2km.rivals.filter((r) => r.distanceM > 500).length + comps.filter((c) => c.investigationStatus !== "경쟁점없음").length : null);
     setDemandPoints(points);
     setAutoCompetitors(comps.filter((c) => c.source === "kakao"));
     setMarketDataUploads(uploads);
@@ -312,6 +329,43 @@ function BasicInfoTabForm({
 
   // SGIS 반경 500m/1km 주거인구·연령을 API로 받아 **폼에만** 채운다(저장은 사람이 "저장"으로).
   // handleApplyMarketDataUpload를 거쳐 업로드 이력(storeEvalMarketDataUploads)을 남긴다(예전 붙여넣기와 같은 모양).
+  // 주거 상권 반경 저장 — 2km면 SGIS 1.5·2km 누적 연령 인구를 받아 고리 문서에 넣고 반경 문서를 쓴다. 둘 다 실험실 전용 컬렉션.
+  async function handleSaveLabRadius() {
+    if (form.code === "new") return;
+    if (radiusForm.radiusM === 2000 && !radiusForm.note.trim()) {
+      setRadiusNotice({ ok: false, text: "2km로 넓히려면 근거를 한 줄 적어주세요(예: 2km 안 다른 PC방 상권 없음, 최근접 2.9km). 근거 없는 반경은 산식이 안 읽습니다." });
+      return;
+    }
+    if (radiusForm.radiusM === 2000 && (form.lat == null || form.lng == null)) {
+      setRadiusNotice({ ok: false, text: "좌표가 없습니다. 상권자료 수집으로 좌표를 먼저 확정해주세요." });
+      return;
+    }
+    setRadiusBusy(true);
+    setRadiusNotice(null);
+    try {
+      if (radiusForm.radiusM === 2000) {
+        const token = await user?.getIdToken();
+        const response = await fetch("/api/store-eval/collect-resident-rings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ lat: form.lat, lng: form.lng }),
+        });
+        const data = await readJsonOrText<{ baseYear: number | string | null; rings: Record<string, { age0s: number; age10s: number; age20s: number; age30s: number; age40s: number; age50s: number; age60plus: number } | null>; totals: Record<string, number | null> }>(response);
+        if (!response.ok || data.error || !data.rings) throw new Error(data.error ?? "SGIS 1.5·2km 주거인구를 받지 못했습니다.");
+        await saveLabResidentRings({ candidateCode: form.code, name: form.name || null, baseYear: data.baseYear ?? null, rings: data.rings, totals: data.totals ?? {} });
+      }
+      await saveLabResidentRadius({ candidateCode: form.code, name: form.name || null, residentRadiusM: radiusForm.radiusM, note: radiusForm.note.trim(), actor });
+      await loadMarketData(form.code);
+      setRadiusNotice({ ok: true, text: radiusForm.radiusM === 2000
+        ? "주거 상권 반경 2km로 저장했습니다(SGIS 2km 누적 인구 포함). 최종결과 탭을 다시 열면 실험실 값에 반영됩니다."
+        : "주거 상권 반경 1km(기본)로 기록했습니다." });
+    } catch (err) {
+      setRadiusNotice({ ok: false, text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setRadiusBusy(false);
+    }
+  }
+
   async function handleFetchSgisResident() {
     if (form.lat == null || form.lng == null || form.code === "new") return;
     setSgisBusy(true);
@@ -635,6 +689,60 @@ function BasicInfoTabForm({
                 ))}
               </ul>
             </div>
+          )}
+        </section>
+      )}
+
+      {/* 2026-09-28 — 주거 상권 반경(실험실 산식 전용). 규칙(사용자 2026-09-24): "2km 안에 다른 PC방 상권이 자리잡혀 있나 — 없으면 주거 원을
+          2km 누적 인구로 넓힌다, 있으면 1km." 전에는 scripts/writeLabResidentRadius.mjs 목록에 사람이 적어야 했고 잊으면 조용히 1km였다(천안풍세).
+          자동 판정은 안 한다(09-24: 경쟁점 모양으로 자동 가르면 구미산동·양주덕정을 둘 다 반대로 봤다) — 2km 안 PC방이 0곳이면 경고만 띄우고
+          사람이 근거와 함께 고른다. 운영 V62는 이 값을 모른다. */}
+      {form.code !== "new" && (
+        <section className={sectionClass}>
+          <h3 className={sectionTitleClass}>주거 상권 반경 (실험실 산식 전용)</h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
+            기본은 1km입니다. <strong>2km 안에 다른 PC방 상권이 없으면</strong> 주거 원을 2km 누적 인구로 넓힙니다(고리가 아니라 원 자체를 넓히는 것).
+            V62 예상매출은 안 바뀌고 실험실 값만 바뀝니다. 2km를 고르면 SGIS 1.5·2km 인구를 자동으로 받아 저장합니다.
+          </p>
+          {rival2kmCount === 0 && (
+            <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-sm">
+              2km 안 PC방이 <strong>0곳</strong>입니다(상권자료 수집 기준). 규칙대로면 2km 적용 대상입니다 — 아래에서 2km를 고르고 근거를 적어 저장하세요.
+              {labRadiusDoc?.residentRadiusM === 2000 && " (이미 2km로 확정됨)"}
+            </p>
+          )}
+          {rival2kmCount == null && (
+            <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">2km 경쟁점 자료가 아직 없습니다 — 위 &ldquo;상권자료 수집&rdquo;을 먼저 누르면 2km 안 PC방 수가 여기 뜹니다.</p>
+          )}
+          {rival2kmCount != null && rival2kmCount > 0 && (
+            <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">2km 안 PC방 {rival2kmCount}곳(500m 조사표 + 500m 밖 자동 수집). 다른 PC방 상권이 자리잡혀 있으면 1km 그대로 둡니다.</p>
+          )}
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="text-xs font-medium text-[var(--sl-ink-soft)]">
+              반경
+              <select value={radiusForm.radiusM} onChange={(e) => setRadiusForm((p) => ({ ...p, radiusM: Number(e.target.value) === 2000 ? 2000 : 1000 }))}
+                className="app-input mt-1 block rounded-lg px-3 py-2 text-sm">
+                <option value={1000}>1km (기본)</option>
+                <option value={2000}>2km — 2km 안 다른 PC방 상권 없음</option>
+              </select>
+            </label>
+            <label className="min-w-0 flex-1 basis-72 text-xs font-medium text-[var(--sl-ink-soft)]">
+              근거(2km면 필수)
+              <input type="text" value={radiusForm.note} onChange={(e) => setRadiusForm((p) => ({ ...p, note: e.target.value }))}
+                placeholder="예: 카카오 2km 안 PC방 0곳(최근접 2.9km), 산단 옆 고립 상권"
+                className="app-input mt-1 block w-full rounded-lg px-3 py-2 text-sm" />
+            </label>
+            <button type="button" disabled={radiusBusy || authLoading} onClick={handleSaveLabRadius} className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">
+              {radiusBusy ? "저장 중(SGIS 조회)..." : "반경 저장"}
+            </button>
+          </div>
+          {labRadiusDoc && (
+            <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+              현재 확정: <strong>{labRadiusDoc.residentRadiusM === 2000 || labRadiusDoc.residentRadiusM === 1500 ? `${labRadiusDoc.residentRadiusM / 1000}km` : "1km"}</strong>
+              {labRadiusDoc.note ? ` — ${labRadiusDoc.note}` : ""}{labRadiusDoc.confirmedBy ? ` (${labRadiusDoc.confirmedBy}${labRadiusDoc.confirmedAt ? `, ${labRadiusDoc.confirmedAt}` : ""})` : ""}
+            </p>
+          )}
+          {radiusNotice && (
+            <div className={`app-notice mt-2 w-full justify-start px-3 py-2 text-sm ${radiusNotice.ok ? "app-badge-ok" : "app-badge-danger"}`}>{radiusNotice.text}</div>
           )}
         </section>
       )}

@@ -22,7 +22,7 @@ import { evaluateCandidate } from "./evaluate";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { qscInWindowAverage, residentRadiusByCodeFromDocs, type LabResidentRadiusDoc, type QscRecord } from "./labInput";
-import { candidateRival2kmFromDoc, type CandidateRival2kmDoc, type Rival2kmApplied } from "./rival2km";
+import { candidateRival2kmCount, candidateRival2kmFromDoc, type CandidateRival2kmDoc, type Rival2kmApplied } from "./rival2km";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import { resultFreshness } from "./resultFreshness";
 import { mergeModelSettings } from "./settings";
@@ -230,7 +230,8 @@ export function recomputeCandidates(src: RecomputeSource, prepared: Prepared = p
         candidate, preparedStores, rawStores: src.existingStores, competitors, locations: src.locationEvaluations,
         sales: evaluationSales, settings, qscByStoreCode, extras: labExtras,
       });
-      after.dualEstimate = chooseEstimate(after.v62Final, lab, range ? rangeFlagsFor(after, range) : [], after.competitorIpRaw ?? after.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, competitors));
+      const gapExtra = { rival2kmCount: candidateRival2kmCount(candidate.code, labExtras.rival2kmByCode), residentRadiusM: labExtras.residentRadiusByCode?.get(candidate.code) ?? null };
+      after.dualEstimate = chooseEstimate(after.v62Final, lab, range ? rangeFlagsFor(after, range) : [], after.competitorIpRaw ?? after.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, competitors, gapExtra));
     } catch {
       after.dualEstimate = null; // 결과 탭과 같다 — 실험실 값이 안 나와도 V62 결과는 저장한다
     }

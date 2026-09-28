@@ -30,6 +30,7 @@ import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments, listCandidateRival2km } from "@/lib/storeEval/store";
 import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import { chooseEstimate, explainDualEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
+import { candidateRival2kmCount } from "@/lib/storeEval/rival2km";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
@@ -700,7 +701,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         const lab = labCandidateRevenue({ candidate, preparedStores: prepared, rawStores: existingStores, competitors: trainingCompetitors, locations: trainingLocationEvaluations, sales: trainingSales, settings, qscByStoreCode: trainingQscScores,
           extras: { residentRingsByCode: rings ?? undefined, ringBlockedByCode: blocked ?? undefined, residentRadiusByCode: radius ?? undefined, roadviewByKey: roadview ?? undefined, rival2kmByCode: rival2km ?? undefined } });
         const range = v62TrainingRange(prepared);
-        evaluated.dualEstimate = chooseEstimate(evaluated.v62Final, lab, range ? rangeFlagsFor(evaluated, range) : [], evaluated.competitorIpRaw ?? evaluated.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, trainingCompetitors));
+        // 2026-09-28 — 2km 안 PC방 0곳인데 주거 상권 반경을 안 정했으면 "빈 입력"에 뜬다(inputGapsFor extra).
+        const gapExtra = { rival2kmCount: candidateRival2kmCount(candidate.code, rival2km ?? undefined), residentRadiusM: radius?.get(candidate.code) ?? null };
+        evaluated.dualEstimate = chooseEstimate(evaluated.v62Final, lab, range ? rangeFlagsFor(evaluated, range) : [], evaluated.competitorIpRaw ?? evaluated.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, trainingCompetitors, gapExtra));
       } catch {
         evaluated.dualEstimate = null; // 실험실 값이 안 나와도 V62 결과는 저장한다
       }

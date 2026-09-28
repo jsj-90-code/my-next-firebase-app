@@ -157,3 +157,11 @@ export function candidateRival2kmWithFallback(candidateCode: string, byCode?: Ma
   if (hasRival2km(key)) return candidateRival2km(key);
   return byCode?.get(candidateCode) ?? [];
 }
+
+/** 500m 밖~2km 경쟁점 수 — 자료가 아예 없으면 null("못 셌다"), 있으면 0 이상. "2km 안 PC방 0곳" 판정(주거 상권 반경 검토)에 쓴다. */
+export function candidateRival2kmCount(candidateCode: string, byCode?: Map<string, Rival2kmApplied[]>): number | null {
+  const key = candidateSiteKey(candidateCode);
+  if (hasRival2km(key)) return candidateRival2km(key).length;
+  const v = byCode?.get(candidateCode);
+  return v ? v.length : null;
+}

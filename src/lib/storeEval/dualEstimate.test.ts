@@ -106,3 +106,16 @@ describe("explainDualEstimate — 어느 산식을 쓸지 사람 말로(2026-09-
     expect(ex.lines.at(-1)).toContain("경쟁점 PC대수 빈칸 1곳");
   });
 });
+
+describe("inputGapsFor — 주거 상권 반경 미확인 신호(2026-09-28)", () => {
+  const cand = { code: "N018", expectedPcCount: 90, hourlyRate: 1200, pop1km: 6398, pop500m: 6053, floor: 3, groundLevel: "지상", hasElevator: true } as unknown as CandidateInput;
+  it("2km 안 PC방 0곳 + 조사 경쟁점 0곳 + 반경 미확정 → 뜬다", () => {
+    const gaps = inputGapsFor(cand, null, [], { rival2kmCount: 0, residentRadiusM: null });
+    expect(gaps.some((g) => g.startsWith("주거 상권 반경 미확인"))).toBe(true);
+  });
+  it("2km로 확정했으면 안 뜬다 · 2km 자료가 없어도(null) 안 뜬다 · 경쟁점이 있으면 안 뜬다", () => {
+    expect(inputGapsFor(cand, null, [], { rival2kmCount: 0, residentRadiusM: 2000 }).some((g) => g.startsWith("주거 상권 반경"))).toBe(false);
+    expect(inputGapsFor(cand, null, [], { rival2kmCount: null, residentRadiusM: null }).some((g) => g.startsWith("주거 상권 반경"))).toBe(false);
+    expect(inputGapsFor(cand, null, [], { rival2kmCount: 3, residentRadiusM: null }).some((g) => g.startsWith("주거 상권 반경"))).toBe(false);
+  });
+});

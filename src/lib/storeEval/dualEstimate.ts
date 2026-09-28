@@ -98,7 +98,11 @@ export type DualEstimate = {
  * 전수 점검 하네스: _inputCompatibility.test.ts (13곳은 전부 채워져 있음, 경쟁점 PC 빈칸은 두 산식이 같은 90대 규칙으로 채움).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function inputGapsFor(candidate: CandidateInput, loc: LocationEvaluation | null, competitors: Competitor[]): string[] {
+export function inputGapsFor(
+  candidate: CandidateInput, loc: LocationEvaluation | null, competitors: Competitor[],
+  /** 2026-09-28 — 주거 상권 반경 검토 신호. rival2kmCount는 500m 밖~2km 경쟁점 수(null이면 자료 없음), residentRadiusM은 확정된 반경(없으면 null). */
+  extra: { rival2kmCount?: number | null; residentRadiusM?: number | null } = {},
+): string[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c = candidate as any; const gaps: string[] = [];
   const miss = (k: string) => c[k] == null || c[k] === "";
@@ -121,6 +125,11 @@ export function inputGapsFor(candidate: CandidateInput, loc: LocationEvaluation 
   // 조사수준 "간략"(90대)을 고르기 전에 결과를 보면 예상매출이 부풀어 있는데 여기 안 떠서 알 길이 없었다.
   const noPc = cs.filter((x) => x.investigationStatus === "조사완료" && computeCompetitorAppliedPcCount(x) == null).length;
   if (noPc) gaps.push(`경쟁점 PC대수 빈칸 ${noPc}곳(V62는 0대로 셈 — 대수를 넣거나 조사수준 "간략"(90대)을 고를 것)`);
+  // 2026-09-28 사용자: "내가 기억 못 했으면 넘어가는 거니까" — 2km 안 PC방이 하나도 없는데 주거 상권 반경을 정하지 않았으면 여기 띄운다.
+  // 규칙(09-24) "2km 안 다른 PC방 상권 없음 → 2km"에 딱 맞는 자리인데 잊으면 조용히 1km로 계산되기 때문(천안풍세).
+  if (extra.rival2kmCount === 0 && cs.length === 0 && !(extra.residentRadiusM === 1500 || extra.residentRadiusM === 2000)) {
+    gaps.push("주거 상권 반경 미확인(2km 안 PC방 0곳 — 기본정보 탭 '주거 상권 반경'에서 2km 적용 검토, 실험실)");
+  }
   return gaps;
 }
 

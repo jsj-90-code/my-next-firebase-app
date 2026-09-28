@@ -545,6 +545,33 @@ export async function listLabResidentRadius(): Promise<Map<string, number>> {
   return residentRadiusByCodeFromDocs(snap.docs.map((d) => d.data() as LabResidentRadiusDoc));
 }
 
+// ── 주거 상권 반경 — 기본정보 탭에서 사람이 확정 (2026-09-28) ─────────────────────────────
+// 전에는 scripts/writeLabResidentRadius.mjs 목록에 사람이 적어야 했다(잊으면 조용히 1km). 이제 화면이 같은 모양의 문서를 쓴다.
+// 실험실 전용 컬렉션이라 운영 V62는 모른다. 반경 1000은 "1km 그대로"라는 기록이고 산식은 1500·2000만 읽는다(residentRadiusByCodeFromDocs).
+export async function getLabResidentRadiusDoc(candidateCode: string): Promise<LabResidentRadiusDoc | null> {
+  const snap = await getDoc(doc(requireDb(), LAB_RESIDENT_RADIUS, `candidate:${candidateCode}`));
+  return snap.exists() ? (snap.data() as LabResidentRadiusDoc) : null;
+}
+
+export async function saveLabResidentRadius(input: { candidateCode: string; name: string | null; residentRadiusM: 1000 | 1500 | 2000; note: string; actor: string | null }): Promise<void> {
+  const key = `candidate:${input.candidateCode}`;
+  const payload: LabResidentRadiusDoc & { updatedAt: number } = {
+    key, kind: "candidate", code: input.candidateCode, name: input.name, residentRadiusM: input.residentRadiusM, note: input.note,
+    confirmedBy: input.actor ? `${input.actor} — 기본정보 탭` : "기본정보 탭", confirmedAt: new Date().toISOString().slice(0, 10), updatedAt: Date.now(),
+  };
+  await setDoc(doc(requireDb(), LAB_RESIDENT_RADIUS, key), sanitize(payload));
+}
+
+/** 1.5km·2km 누적 원 연령 인구(실험실 전용) — 스크립트 writeLabResidentRingsToFirestore와 같은 문서 모양. */
+export async function saveLabResidentRings(input: { candidateCode: string; name: string | null; baseYear: number | string | null; rings: Record<string, ResidentAges | null>; totals: Record<string, number | null> }): Promise<void> {
+  const key = `candidate:${input.candidateCode}`;
+  const payload: LabResidentRingsDoc & { baseYear: number | string | null; collectedAt: number; totals: Record<string, number | null>; updatedAt: number } = {
+    key, kind: "candidate", code: input.candidateCode, name: input.name, baseYear: input.baseYear, collectedAt: Date.now(),
+    rings: input.rings, totals: input.totals, updatedAt: Date.now(),
+  };
+  await setDoc(doc(requireDb(), LAB_RESIDENT_RINGS, key), sanitize(payload));
+}
+
 export async function listLabTradeAreaJudgments(): Promise<Map<string, number>> {
   const snap = await getDocs(collection(requireDb(), LAB_TRADE_AREA));
   const out = new Map<string, number>();
