@@ -140,6 +140,12 @@ export type QuickEvalFieldNote = {
   source: DefaultSource;
   /** 어디서 오나 / 무엇으로 메우나 — 한 줄로 */
   basis: string;
+  /**
+   * 2026-09-28 — **점포개발자에게 보이는 짧은 문구.** 화면은 이것만 그린다(사용자: "나 말고 이거 사용하는
+   * 사용자한테 필요한 것만"). `basis`는 운영자·AI 평가문·기록용이라 날짜·측정 근거가 그대로 남는다.
+   * 숫자는 basis와 같은 상수에서 읽는다 — 글자로 박지 않는다.
+   */
+  userNote: string;
   /** 현장 조사 체크리스트에 올릴 항목인가 */
   needsFieldCheck: boolean;
 };
@@ -155,12 +161,14 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     label: "좌표(위·경도)",
     source: "자동수집",
     basis: "카카오 주소검색. 못 찾으면 좌표를 지어내지 않고 여기서 멈춘다",
+    userNote: "카카오 주소검색으로 좌표를 잡습니다. 주소를 못 찾으면 조회가 멈춥니다.",
     needsFieldCheck: false,
   },
   {
     label: "주거인구 500m·1km (연령 9구간·남녀)",
     source: "자동수집",
     basis: `SGIS 생활권역 반경조회 ${SGIS_BASE_YEAR}년 기준. 운영 52곳을 대조해 중앙 차이 0.0%였던 그 경로다`,
+    userNote: `통계청 SGIS ${SGIS_BASE_YEAR}년 기준, 반경 500m·1km 주거인구입니다.`,
     needsFieldCheck: false,
   },
   {
@@ -170,6 +178,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "소상공인365 상권분석 리포트. 최근 12개월 평균이고 성별·연령은 최근월을 그 평균 축척으로 환산한다. " +
       "운영 54곳과 대조해 중앙 비율 1.000(최악 0.98)로 같은 값임을 확인했다(2026-09-22). " +
       "⚠️ 남의 사이트 스크래핑이라 깨질 수 있다 — 실패하면 지어내지 않고 '수집 실패'로 남긴다",
+    userNote: "소상공인365 최근 12개월 평균 유동인구입니다. 수집이 실패하면 '수집 실패'로 표시됩니다.",
     needsFieldCheck: false,
   },
   {
@@ -178,6 +187,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     basis:
       "카카오 장소검색(PC방) 반경 500m. 격자로 쪼개 부르므로 40건 상한에 안 걸린다. " +
       "오락실·성인업태는 상호 규칙으로 뺀다(제외 이유를 목록에 같이 보여준다)",
+    userNote: "카카오 지도에서 반경 500m 안 PC방을 찾습니다(오락실·성인업소 제외). 지도가 폐업·신규 개점을 늦게 반영하니 현장에서 확인하세요.",
     needsFieldCheck: true,
   },
   {
@@ -190,6 +200,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "실측 경쟁점 평균은 129대지만, 카카오 목록엔 소형·노후 매장이 섞여 있다고 보고 낮춰 잡았다(2026-09-23). " +
       "⚠️ 오차는 경쟁점 10곳 이하 상권에서만 재 봤다. " +
       "면적→대수 회귀는 소형 구간이 외삽이라(R²=0.679, 표본 61~243대) 아직 못 쓴다",
+    userNote: `조사 전이라 모든 경쟁점을 ${RIVAL_PC_COUNT_WHEN_UNSURVEYED}대로 놓고 계산합니다. 실제 대수는 현장에서 확인하세요.`,
     needsFieldCheck: true,
   },
   {
@@ -200,6 +211,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       `먹거리·인테리어·관리 ${RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore}점으로 채운다(2026-09-23 저녁 3 -> 2.5). ` +
       "⚠️ 빈칸으로 두면 동급이 아니라 경쟁점을 **약하게** 매긴다(점수 2.448 대비 1.921) — 그래서 비우지 않는다. " +
       "⚠️ 대수만 채우고 품질을 비우면 오히려 더 틀린다(측정: 12.57% vs 10.82%) — 조사가 들어오면 둘을 같이 채워라",
+    userNote: `경쟁점 사양·먹거리·인테리어를 평균 수준(${RIVAL_TYPICAL_WHEN_UNSURVEYED.foodScore}점)으로 놓습니다. 유난히 좋거나 낡은 경쟁점은 정밀 평가에서 반영됩니다.`,
     needsFieldCheck: true,
   },
   {
@@ -213,6 +225,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "선택지없어서 그냥 측정안하는걸로하자\"* · *\"모델을 바꾸긴어려워서 지금 무료쓰는중\"*) — " +
       "주소만으로 입지평가를 얻는 길이 이 AI뿐이라 오차를 알아도 **바꿀 선택지가 없다.** " +
       "다시 제안하지 마라",
+    userNote: "AI가 웹검색으로 상권위치·선점경쟁·접근가시성·특수수요·외부유입제한을 매깁니다. 입력한 층·엘리베이터가 여기에 반영됩니다. 현장 감각과 다르면 정밀 평가에서 사람이 고칩니다.",
     needsFieldCheck: true,
   },
   {
@@ -225,6 +238,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       `기존점 실측은 1명당 ${QUICK_EVAL_DEMAND_CEILING.observed.min}~${QUICK_EVAL_DEMAND_CEILING.observed.max}시간(중앙 ${QUICK_EVAL_DEMAND_CEILING.observed.median}). ` +
       `${QUICK_EVAL_DEMAND_CEILING.excluded.storeName}은 ${QUICK_EVAL_DEMAND_CEILING.excluded.reason}라 채점에서 뺐다(학습에는 있다). ` +
       "그전엔 수요 10명에도 100대 × 대당 중앙값으로 3천만원이 나왔다. ⚠️ 정밀 평가(신규후보지)에는 없다 — 이 도구만 켠다",
+    userNote: `동네 인구에 비해 매출이 과하게 나오지 않도록 상한(손님 1명당 월 ${QUICK_EVAL_DEMAND_CEILING.hoursPerOwnDemandUser}시간)을 둡니다. 시골·펜션촌 주소에서 작동합니다.`,
     needsFieldCheck: false,
   },
   {
@@ -233,6 +247,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     basis:
       `${OWN_FOOD_BRAND} 고정. 자사 브랜드라 후보지마다 다를 일이 없다(사용자 확인 2026-09-22) — ` +
       "입력칸을 없애고 여기서 정한다. 다른 브랜드를 쓸 일이 생기면 정밀 평가에서 고른다",
+    userNote: `${OWN_FOOD_BRAND}로 고정입니다.`,
     needsFieldCheck: false,
   },
   {
@@ -242,18 +257,21 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "회사 **표준 기획값**(블랙라벨 현재 표준 구매 사양)을 쓴다. ⛔ 2026-09-23에 기존점 최빈 사양으로 " +
       "낮췄다가 **되돌렸다** — 표본 밖 외삽이라는 근거는 맞지만, 되짚기가 실제 후보지를 대표하지 " +
       "못해 예상매출이 과하게 깎였다. 사양 문자열은 화면·AI 평가문에 안 나오고 경쟁력점수 계산에만 쓰인다",
+    userNote: "회사 표준 구매 사양으로 계산합니다.",
     needsFieldCheck: false,
   },
   {
     label: "자사 시설 구성(존·좌석)",
     source: "기본값",
     basis: "회사 표준 존 구성(applyStandardOwnFacilityDefaults). 운영 후보지도 비우면 같은 값이 들어간다",
+    userNote: "회사 표준 존·좌석 구성으로 계산합니다.",
     needsFieldCheck: false,
   },
   {
     label: "자사 관리 점수",
     source: "기본값",
     basis: "가맹점 평균(resolveManagementScores). 후보지는 개점 전이라 QSC 점검 기록이 있을 수 없다",
+    userNote: "가맹점 평균 관리 점수를 씁니다. 개점 전이라 점검 기록이 없습니다.",
     needsFieldCheck: false,
   },
   {
@@ -265,6 +283,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       `기본요금 1,000→1,800원에서 ${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.low)}~` +
       `${pct(QUICK_EVAL_INPUT_SENSITIVITY.hourlyRateEffect.high)}. 비우면 기본값 ` +
       `${QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount}대·${QUICK_EVAL_PLAN_DEFAULTS.hourlyRate.toLocaleString("ko-KR")}원이 들어간다`,
+    userNote: `비우면 ${QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount}대·${QUICK_EVAL_PLAN_DEFAULTS.hourlyRate.toLocaleString("ko-KR")}원으로 계산합니다. 결과를 가장 크게 움직이는 입력이니 계획값을 넣으세요.`,
     needsFieldCheck: false,
   },
   {
@@ -278,6 +297,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
       "⚠️ 엘리베이터는 **'있음'이 기본값**이다(2026-09-23 사용자 지시 — 후보 건물은 대개 있다). " +
       "없는 건물이면 직접 '없음'으로 바꿔야 한다(선택지는 있음/없음 둘뿐). " +
       `층수는 비우면 ${QUICK_EVAL_PLAN_DEFAULTS.floor}층(기본값)으로 넘어간다`,
+    userNote: `비우면 ${QUICK_EVAL_PLAN_DEFAULTS.floor}층·엘리베이터 ${QUICK_EVAL_PLAN_DEFAULTS.hasElevator}으로 봅니다. 금액 계산에 직접 들어가진 않고 AI 접근가시성 판정에 쓰입니다. 엘리베이터 없는 건물이면 꼭 '없음'으로 바꾸세요.`,
     needsFieldCheck: false,
   },
   {
@@ -286,6 +306,7 @@ export const QUICK_EVAL_FIELD_NOTES: QuickEvalFieldNote[] = [
     basis:
       "입력칸을 없앴다(사용자 확인 2026-09-22). 비우면 운영 V62가 '평가한 달의 다음 달'로 잡는다" +
       "(resolveBaselineOpenMonth) — 기준매출 계산에만 쓰이고 초기 선별에서는 그 차이가 작다",
+    userNote: "평가한 달의 다음 달로 잡습니다. 초기 선별에서는 차이가 거의 없습니다.",
     needsFieldCheck: false,
   },
 ];
@@ -450,6 +471,8 @@ export const QUICK_EVAL_VERDICT_BACKTEST = {
   within20Count: 28,
   bias: -0.055,
   locationScoreSource: "AI 입지평가 초안(실제 도구와 같음)",
+  /** 가능으로 잘못 낸 5곳이 전부 기준선 +4% 안이었다(2026-09-27) → 화면 "읽는 법"이 이 폭을 읽는다 */
+  nearLineBand: 0.05,
   /** 입지평가를 사람 값으로 넣었을 때(처음 측정) */
   humanLocation: { correct: 30, falseReject: 3, falseAccept: 7, mape: 0.136, within20Count: 30, bias: 0.001 },
 } as const;

@@ -807,7 +807,7 @@ export default function QuickEvalPage() {
       {/* ── 이 숫자를 얼마나 믿나 + 기본값 재고표: 접어 둔다(지우지는 않는다) ── */}
       <details className="app-card rounded-2xl p-4">
         <summary className="cursor-pointer text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
-          이 숫자를 얼마나 믿나 · 무엇을 기본값으로 채웠나
+          이 결과, 어디까지 믿을까 · 무엇을 기본값으로 채웠나
         </summary>
 
         {/* ⛔ 2026-09-23 밤 사용자 지시 — 성적 한 줄만 남긴다("쓸대없는 얘기빼셈"). 측정 방법 설명·경쟁점 범위
@@ -815,17 +815,29 @@ export default function QuickEvalPage() {
             주석에, AI 평가문에는 그대로 넘어간다. 다시 붙이지 마라. */}
         {/* 2026-09-27 — 성적 한 줄을 금액 오차에서 입점 판정 정답률로 바꿨다(사용자: "결론만 중요").
             값과 측정 조건은 quickEvalDefaults.QUICK_EVAL_VERDICT_BACKTEST 주석. */}
+        {/* 2026-09-28 — 이 탭의 독자를 **점포개발자**로 바꿨다(사용자: "나 말고 이거 사용하는 사용자한테 필요한 것만").
+            성적은 쉬운 말 한 줄, "읽는 법" 세 줄, 재고표는 note.userNote(짧은 문구)만 그린다. 날짜·측정 근거가 든
+            note.basis는 운영자·AI 평가문용으로 상수에 그대로 남아 있다 — 화면에 다시 붙이지 마라. */}
         <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">
-          기존 가맹점 {QUICK_EVAL_VERDICT_BACKTEST.sampleCount}곳 중 입점 판정{" "}
-          <strong>{QUICK_EVAL_VERDICT_BACKTEST.correct}곳 맞음</strong>(안 된 자리를 가능으로{" "}
-          {QUICK_EVAL_VERDICT_BACKTEST.falseAccept}곳 · 된 자리를 불가로 {QUICK_EVAL_VERDICT_BACKTEST.falseReject}곳) ·
-          안 되는 자리 {QUICK_EVAL_VERDICT_BACKTEST.badSiteCount}곳은{" "}
-          <strong>{QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected === QUICK_EVAL_VERDICT_BACKTEST.badSiteCount ? "전부" : `${QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected}곳`} 불가</strong> ·
-          금액 평균오차 {formatPercent(QUICK_EVAL_VERDICT_BACKTEST.mape, 1)}
-          ({QUICK_EVAL_VERDICT_BACKTEST.measuredAt}, AI 입지평가까지 이 화면과 같은 조건으로 잰 값).
+          기존 가맹점 {QUICK_EVAL_VERDICT_BACKTEST.sampleCount}곳으로 검증했을 때 입점 가능/불가 판정이{" "}
+          <strong>{QUICK_EVAL_VERDICT_BACKTEST.correct}곳 맞았고</strong>, 안 되는 자리{" "}
+          {QUICK_EVAL_VERDICT_BACKTEST.badSiteCount}곳은{" "}
+          <strong>{QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected === QUICK_EVAL_VERDICT_BACKTEST.badSiteCount ? "전부" : `${QUICK_EVAL_VERDICT_BACKTEST.badSiteRejected}곳`} 불가</strong>로
+          나왔습니다. 금액은 평균 {formatPercent(QUICK_EVAL_VERDICT_BACKTEST.mape, 0)} 정도 틀립니다
+          ({QUICK_EVAL_VERDICT_BACKTEST.measuredAt} 기준).
         </p>
 
-        <h3 className="mt-4 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">자동 / 기본값 경계</h3>
+        <h3 className="mt-4 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">읽는 법</h3>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[var(--sl-ink-soft)]">
+          <li>가능/불가 결론을 보는 화면입니다. 금액은 참고값입니다.</li>
+          <li>
+            예상매출이 기준선 {formatManwonRough(QUICK_EVAL_ENTRY_THRESHOLD_WON)} 가까이(±
+            {Math.round(QUICK_EVAL_VERDICT_BACKTEST.nearLineBand * 100)}%)면 결론을 믿지 말고, 현장을 본 뒤 정밀 평가로 넘기세요.
+          </li>
+          <li>불가로 나온 자리는 대체로 맞습니다. 가능으로 나온 자리는 정밀 평가(경쟁점 조사)를 거쳐 확정합니다.</li>
+        </ul>
+
+        <h3 className="mt-4 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">무엇을 자동으로 채우고, 무엇을 기본값으로 놓았나</h3>
         <ul className="mt-2 space-y-2 text-sm">
           {QUICK_EVAL_FIELD_NOTES.map((note) => (
             <li key={note.label} className="app-card-sm rounded-xl p-3">
@@ -834,7 +846,7 @@ export default function QuickEvalPage() {
                 <span className={`app-badge ${sourceBadgeClass(note.source)}`}>{note.source}</span>
                 {note.needsFieldCheck ? <span className="app-badge app-badge-warn">★ 현장 확인</span> : null}
               </div>
-              <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">{note.basis}</p>
+              <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">{note.userNote}</p>
             </li>
           ))}
         </ul>
