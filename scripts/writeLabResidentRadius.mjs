@@ -43,6 +43,11 @@ const FACTS = [
     note: "지도 확인: 혁신도시 2km 안 다른 PC방 상권 없음(사용자 2026-09-24 밤, 처음엔 '다른 상권 있음'이라 했다가 지도 보고 정정). 완료월 2개월이라 실측이 아직 움직인다." },
   { kind: "candidate", code: "N014", name: "영월점", residentRadiusM: 2000,
     note: "소도시. 2km 안 다른 PC방 상권 없음(사용자 확인). 1~2km 경쟁 0곳." },
+  // 2026-09-28 — 사용자 "천안풍세는 2키로로 잡아야 하는 거 아님? 상권반경". 카카오 2km 안 PC방 0곳(가장 가까운 곳 2.9km 아이닉스·호락),
+  // 풍세일반산업단지 안 상가 + 한양수자인 에코시티 한 단지. 규칙("2km 안 다른 PC방 상권 없음")에 그대로 맞는다.
+  { kind: "candidate", code: "N018", name: "천안풍세점", residentRadiusM: 2000,
+    note: "산단 옆 고립 상권. 카카오 2km 안 PC방 0곳(최근접 2.9km). 사용자 지시 2026-09-28.",
+    confirmedBy: "사용자(점포개발) 2026-09-28 — 2km 경쟁점 자동 수집 0곳 확인", confirmedAt: "2026-09-28" },
 ];
 
 function loadEnvLocal() {
@@ -84,7 +89,8 @@ for (const f of FACTS) {
   if (known !== f.name) console.log(`⚠️ ${f.code} 이름이 다르다: 복제본 '${known}' vs 목록 '${f.name}' — 코드 기준으로 진행`);
   if (!(f.residentRadiusM === 1500 || f.residentRadiusM === 2000)) { console.log(`✗ ${f.name} 반경 ${f.residentRadiusM}은 허용값(1500·2000)이 아니다. 건너뜀`); continue; }
   if (!f.note?.trim()) { console.log(`✗ ${f.name} 근거(note)가 비었다 — 근거 없는 반경은 싣지 않는다. 건너뜀`); continue; }
-  plan.push({ id: `${f.kind}:${f.code}`, doc: { key: `${f.kind}:${f.code}`, kind: f.kind, code: f.code, name: known, residentRadiusM: f.residentRadiusM, note: f.note, confirmedBy: CONFIRMED_BY, confirmedAt: CONFIRMED_AT } });
+  // 항목마다 확인자·날짜를 따로 적을 수 있다(2026-09-28부터). 없으면 09-24 일괄 확인값.
+  plan.push({ id: `${f.kind}:${f.code}`, doc: { key: `${f.kind}:${f.code}`, kind: f.kind, code: f.code, name: known, residentRadiusM: f.residentRadiusM, note: f.note, confirmedBy: f.confirmedBy ?? CONFIRMED_BY, confirmedAt: f.confirmedAt ?? CONFIRMED_AT } });
 }
 
 const current = await loadCollectionMap(db, COLLECTION);
