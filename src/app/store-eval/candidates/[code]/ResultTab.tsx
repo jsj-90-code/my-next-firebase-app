@@ -29,7 +29,7 @@ import {
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments, listCandidateRival2km } from "@/lib/storeEval/store";
 import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
-import { chooseEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
+import { chooseEstimate, explainDualEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, FinalJudgement, LocationEvaluation, ModelAccuracySummary, ModelSettings, V61TrainedModelExplain } from "@/lib/storeEval/types";
 import type { DaouReportDraft } from "@/lib/storeEval/daouReportAi";
@@ -227,90 +227,8 @@ function ReviewSignalList({ signals }: { signals: ReviewSignal[] }) {
     </section>
   );
 }
-
-/**
- * 기존 가맹점 분포에서의 위치 (2026-09-13 신설)
- *
- * 예상매출을 숫자 하나로만 보여주면 "5,800만원"이 좋은 건지 나쁜 건지 알 수가 없다. 기존
- * 가맹점의 **실제** 매출은 이미 이 화면까지 로드돼 있는데(모형 학습용) 화면에서는 버리고 있었다.
- * 새로 읽는 것 없이 분포에서의 자리만 보여준다.
- *
- * 비교군은 **모형이 학습에 쓰는 기준과 같게** 맞춘다 — 블랙라벨·산식학습 제외 아님·실제매출 있음.
- * 기준이 다르면 "38곳 검증"이라고 적힌 정확도 수치와 모수가 어긋나 혼란만 준다.
- */
-/**
- * 기존점 분포에서 이 후보지가 어디쯤인지 — 점 분포(strip plot). 2026-09-14 신설.
- *
- * 왜 그림인가: 예전에는 "38곳 중 25번째 수준입니다(중앙값 6,400만원)"처럼 **문장 네 줄**로
- * 말했다. 순위·중앙값·내 값의 관계는 위치로 보여주면 0.5초에 읽히는데 문장으로는 머릿속에서
- * 다시 그려야 한다. 값은 `computePeerPosition`이 순위·중앙값과 **같은 배열**에서 내주므로
- * 그림과 문장이 어긋날 수 없다.
- *
- * 형태 선택(dataviz): "내 값이 남들 사이 어디인가"는 막대가 아니라 점 분포다. 막대는 크기
- * 비교용이고 여기 필요한 건 위치다. 축 눈금 대신 양끝·중앙값만 직접 라벨한다.
- */
-function PeerDistributionStrip({
-  values,
-  own,
-  median,
-  format,
-  ownLabel,
-}: {
-  values: number[];
-  own: number;
-  median: number;
-  format: (v: number | null | undefined) => string;
-  ownLabel: string;
-}) {
-  if (values.length === 0) return null;
-  const lo = Math.min(values[0], own);
-  const hi = Math.max(values[values.length - 1], own);
-  const span = hi - lo;
-  // 전부 같은 값이면 위치 계산이 0으로 나뉜다 — 그때는 그리지 않는다.
-  if (!(span > 0)) return null;
-  const at = (v: number) => ((v - lo) / span) * 100;
-
-  return (
-    <div className="mt-2">
-      <div className="relative h-9">
-        {/* 기준선 */}
-        <div aria-hidden className="absolute inset-x-0 top-4 h-px bg-[#171310]/15 dark:bg-white/15" />
-        {/* 기존점 각각 — 겹치면 진해져서 밀집 구간이 저절로 드러난다 */}
-        {values.map((v, i) => (
-          <span
-            key={`${v}-${i}`}
-            aria-hidden
-            className="absolute top-2 h-4 w-0.5 rounded-full bg-[#171310]/30 dark:bg-white/35"
-            style={{ left: `${at(v)}%` }}
-            title={format(v)}
-          />
-        ))}
-        {/* 중앙값 */}
-        <span
-          aria-hidden
-          className="absolute top-1 h-6 w-px bg-[#171310]/55 dark:bg-white/55"
-          style={{ left: `${at(median)}%` }}
-          title={`중앙값 ${format(median)}`}
-        />
-        {/* 이 후보지 — 유일하게 색을 쓴다 */}
-        <span
-          className="absolute top-1.5 z-10 h-5 w-[3px] rounded-full bg-[var(--sl-gold)] ring-2 ring-[var(--sl-surface,#fff)] dark:ring-[#1a1a19]"
-          style={{ left: `${at(own)}%` }}
-          title={`${ownLabel} ${format(own)}`}
-        />
-      </div>
-      <div className="flex justify-between text-[10px] leading-4 text-[var(--sl-ink-soft)]">
-        <span>{format(lo)}</span>
-        <span>중앙값 {format(median)}</span>
-        <span>{format(hi)}</span>
-      </div>
-      <p className="mt-0.5 text-[10px] leading-4 text-[var(--sl-ink-soft)]">
-        <span className="mr-1 inline-block h-2 w-[3px] translate-y-[1px] rounded-full bg-[var(--sl-gold)]" aria-hidden />
-        {ownLabel} · 얇은 선 하나가 기존점 한 곳입니다
-      </p>
-    </div>
-  );
-}
+// 2026-09-28 사용자: "그래프만 지우는 거 어때, 필요 없는 듯" — 기존점 40곳 분포 위에 후보지 위치를 찍던 띠 그래프(PeerDistributionStrip)를 뺐다.
+//    순위·중앙값·대당 비교 문장은 그대로 남긴다(PeerPositionNote). 그림이 필요하면 git 이력(c5c32d9 이전).
 
 function PeerPositionNote({ stores, result, expectedPcCount }: { stores: ExistingStore[]; result: EvaluationResult; expectedPcCount: number | null }) {
   const forecast = result.v62Final;
@@ -318,7 +236,7 @@ function PeerPositionNote({ stores, result, expectedPcCount }: { stores: Existin
   // 경계 조건(동률·짝수 중앙값·규모 허용폭)이 맞는지 확인할 수가 없었다.
   const position = computePeerPosition(stores, forecast, expectedPcCount);
   if (position == null || forecast == null) return null;
-  const { peerCount, rank, median, perPc, values } = position;
+  const { peerCount, rank, median, perPc } = position;
 
   return (
     <div className="app-card-sm mt-2 rounded-xl px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
@@ -326,7 +244,6 @@ function PeerPositionNote({ stores, result, expectedPcCount }: { stores: Existin
       {peerCount}곳의 매출과 나란히 놓으면 이 예측값은{" "}
       <b className="text-[#171310] dark:text-[#f2ede2]">{peerCount}곳 중 {rank}번째</b> 수준입니다
       (기존점 중앙값 {formatManwonRough(median)}).
-      <PeerDistributionStrip values={values} own={forecast} median={median} format={formatManwonRough} ownLabel="이 후보지 예측" />
       {/* 2026-09-13 — "비슷한 규모 N곳 평균"을 대당 비교로 바꿨다. 기존점 대수가 76~168대로
           좁게 몰려 있어 규모별로 묶어봐야 어떻게 잘라도 전체 평균과 ±1.3% 안이었다(정보가
           없으면서 "규모를 맞춰 비교했다"는 인상만 줬다). 대당은 37.8만~87.9만으로 2.33배 폭이라
@@ -340,7 +257,6 @@ function PeerPositionNote({ stores, result, expectedPcCount }: { stores: Existin
             {perPc.own > perPc.median ? "높습니다" : perPc.own < perPc.median ? "낮습니다" : "같습니다"}
           </b>{" "}
           ({perPc.count}곳 중 {perPc.rank}번째). 대수가 달라서 생기는 차이를 뺀 비교입니다.
-          <PeerDistributionStrip values={perPc.values} own={perPc.own} median={perPc.median} format={formatManwonPerPc} ownLabel="이 후보지 대당" />
         </>
       )}
       <br />
@@ -1086,10 +1002,21 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             <ResultCard
               label="실험실(교과서식) 예상매출 — 참고"
               value={`약 ${formatManwonRough(result.dualEstimate.lab)}`}
-              hint={`${result.dualEstimate.ratio != null ? `V62 ÷ 실험실 ${result.dualEstimate.ratio.toFixed(2)}배 · ` : ""}${result.dualEstimate.reason}${result.dualEstimate.inputGaps?.length ? ` · 빈 입력: ${result.dualEstimate.inputGaps.join(", ")}` : ""}`}
+              hint={result.dualEstimate.ratio != null ? `V62 ÷ 실험실 ${result.dualEstimate.ratio.toFixed(2)}배` : undefined}
             />
           )}
         </div>
+        {/* 2026-09-28 사용자: "두 산식 중 적합한 예상매출이 뭔지 웹에서 알려줬으면 — 영월점은 V62 평가가 어려워서(표본 없음) 실험실을 추천한다는 식으로".
+            저장된 dualEstimate를 사람 말로 푼다(explainDualEstimate). 규칙은 chooseEstimate 그대로, 여기는 설명만. */}
+        {result.dualEstimate && (() => {
+          const ex = explainDualEstimate(result.dualEstimate);
+          return (
+            <div className="app-notice mt-3 rounded-xl px-4 py-3 text-sm leading-6">
+              <p className="font-semibold text-[#171310] dark:text-[#f2ede2]">어느 산식을 쓸까 — {ex.headline}</p>
+              {ex.lines.map((l, i) => <p key={i} className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">{l}</p>)}
+            </div>
+          );
+        })()}
         {/* 2026-09-10 — 이 화면은 예상매출을 숫자 하나로만 보여줘서, 이 모형이 실제로 얼마나
             맞는지 알 수 없었다. 검증화면이 남겨둔 요약 1건을 읽어 함께 보여준다(계산을 다시
             돌리지 않으므로 Firestore 읽기는 1건뿐이다). 요약이 아직 없으면 안내만 띄운다. */}

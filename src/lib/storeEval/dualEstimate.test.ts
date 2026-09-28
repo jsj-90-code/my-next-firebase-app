@@ -1,6 +1,6 @@
 // dualEstimate.inputGapsFor — 결과 탭 "빈 입력" 목록 (2026-09-26 경쟁점 PC대수 빈칸 추가).
 import { describe, expect, it } from "vitest";
-import { chooseEstimate, inputGapsFor, needsFieldCheck, rangeFlagsFor } from "./dualEstimate";
+import { chooseEstimate, explainDualEstimate, inputGapsFor, needsFieldCheck, rangeFlagsFor } from "./dualEstimate";
 import type { CandidateInput, Competitor } from "./types";
 
 const candidate = { code: "N999" } as CandidateInput;
@@ -77,5 +77,32 @@ describe("검증 범위(되짚기로 확인된 0.84~1.20배) 경계", () => {
     const near = rangeFlagsFor({ marketDemand: 36.6 * 1.05 * 100, competitorIp: 0, hourlyRate: 1500, expectedPcCount: 100 }, range).find((f) => f.field === "수요/공급");
     expect(far?.far).toBe(true);
     expect(near?.far).toBe(false);
+  });
+});
+
+describe("explainDualEstimate — 어느 산식을 쓸지 사람 말로(2026-09-28)", () => {
+  const range = { demand: [1128, 17429] as [number, number], rate: [1000, 2000] as [number, number], pc: [80, 150] as [number, number], competitorIp: [0, 1050] as [number, number], demandPerSupply: [4.4, 36.6] as [number, number], sampleCount: 40 };
+  it("영월형(크게 벗어남) — 실험실을 추천하고 'V62로 평가하기 어려운 자리'라고 말한다", () => {
+    const flags = rangeFlagsFor({ marketDemand: 383, competitorIp: 85, hourlyRate: 1500, expectedPcCount: 90 }, range);
+    const ex = explainDualEstimate(chooseEstimate(71_000_000, 38_000_000, flags, 85, 40));
+    expect(ex.headline).toContain("추천: 실험실 3,800만원");
+    expect(ex.headline).toContain("V62로 평가하기 어려운 자리");
+    expect(ex.lines.join(" ")).toContain("상권수요 383");
+    expect(ex.lines.join(" ")).toContain("낮은 쪽(실험실)");
+  });
+  it("일치형 — V62를 추천하고 두 값이 같은 답을 냈다고 말한다", () => {
+    const ex = explainDualEstimate(chooseEstimate(66_900_000, 64_400_000, [], 246, 40));
+    expect(ex.headline).toContain("추천: V62 6,690만원");
+    expect(ex.headline).toContain("20% 안에서 일치");
+  });
+  it("갈림형(밀집 아님) — V62 추천 + 과소/과대 방향과 현장 확인", () => {
+    const ex = explainDualEstimate(chooseEstimate(53_000_000, 68_000_000, [], 96, 40));
+    expect(ex.headline).toContain("추천: V62");
+    expect(ex.lines.join(" ")).toContain("과소일 수 있습니다");
+    expect(ex.lines.join(" ")).toContain("현장 확인");
+  });
+  it("빈 입력이 있으면 그 목록을 덧붙인다", () => {
+    const ex = explainDualEstimate(chooseEstimate(50_000_000, 52_000_000, [], 100, 40, ["경쟁점 PC대수 빈칸 1곳"]));
+    expect(ex.lines.at(-1)).toContain("경쟁점 PC대수 빈칸 1곳");
   });
 });

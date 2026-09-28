@@ -154,6 +154,40 @@ export function chooseEstimate(v62: number | null, lab: number | null, flags: Ra
   return { v62, lab, primary, primaryValue: primary === "V62" ? v62 : lab, low, high, ratio, reason, rangeFlags: flags, rangeSampleCount, inputGaps, computedAt: Date.now() };
 }
 
+/**
+ * 저장된 dualEstimate를 사람 말로 푼다 — "어느 산식의 예상매출을 쓸지, 왜"(2026-09-28 사용자: "영월점의 경우 V62 평가가 어려워서
+ * (표본 매장 없음) 실험실 산식을 추천한다는 그런 내용이 웹에 있으면 좋을 듯"). 저장 필드만 읽어 계산하므로 옛 결과에도 그대로 붙는다.
+ * 규칙 자체는 chooseEstimate에 있고 여기선 바꾸지 않는다 — 설명만.
+ */
+export function explainDualEstimate(d: DualEstimate): { headline: string; lines: string[] } {
+  const man = (v: number | null) => (v == null ? "-" : `${Math.round(v / 10_000).toLocaleString("ko-KR")}만원`);
+  const far = d.rangeFlags.filter((f) => f.far);
+  const near = d.rangeFlags.filter((f) => !f.far);
+  const fieldText = (f: RangeFlag) => `${f.field} ${Math.round(f.value * 100) / 100}(기존점 ${Math.round(f.min * 100) / 100}~${Math.round(f.max * 100) / 100}) ${f.side}`;
+  const lines: string[] = [];
+  let headline: string;
+  if (d.lab == null) {
+    headline = `추천: V62 ${man(d.v62)} — 실험실 값을 낼 수 없어 V62만 봅니다.`;
+  } else if (far.length) {
+    headline = `추천: ${d.primary} ${man(d.primaryValue)} — V62로 평가하기 어려운 자리입니다(비슷한 기존 가맹점이 없음).`;
+    lines.push(`V62는 기존 가맹점 ${d.rangeSampleCount ?? "-"}곳의 실적에 회귀로 맞춘 산식이라, 학습 범위를 크게 벗어나면 근거 없는 외삽이 됩니다: ${far.map(fieldText).join(" · ")}.`);
+    lines.push(`실험실은 동네 수요에서 우리 몫을 떼어 계산하므로 표본이 없어도 값이 나옵니다. 다만 이 구간은 어느 쪽도 검증된 적이 없어, 들어갈지 정하는 평가답게 두 값 중 낮은 쪽(${d.primary})을 주 값으로 둡니다.`);
+    if (d.v62 != null) lines.push(`두 값의 폭: ${man(d.low)} ~ ${man(d.high)}. 현장 확인이 필요합니다.`);
+  } else if (d.ratio != null && (d.ratio > DUAL_ESTIMATE_RULE.gapRatio || d.ratio < 1 / DUAL_ESTIMATE_RULE.gapRatio)) {
+    const dense = d.reason.includes("경쟁 밀집");
+    headline = `추천: V62 ${man(d.v62)} — 두 산식이 ${d.ratio.toFixed(2)}배 갈리지만 V62를 씁니다.`;
+    if (dense) lines.push("경쟁 PC가 많은 동네(경쟁 밀집)에서는 실험실이 동네 수요를 실제보다 작게 봅니다 — 기존점에서 확인된 약점이라 V62를 따릅니다.");
+    else lines.push(`${d.ratio > 1 ? "V62가 실험실보다 높습니다 — V62가 과대일 수 있습니다." : "V62가 실험실보다 낮습니다 — V62가 과소일 수 있습니다."} 기존점 되짚기에서는 V62가 더 가까웠지만 이만큼 갈리는 자리는 현장 확인을 권합니다.`);
+    if (near.length) lines.push(`참고로 입력 일부가 기존점 범위를 조금 벗어납니다: ${near.map(fieldText).join(" · ")}.`);
+  } else {
+    headline = `추천: V62 ${man(d.v62)} — 두 산식이 20% 안에서 일치합니다(실험실 ${man(d.lab)}).`;
+    lines.push("서로 다른 방식(기존점 회귀 vs 동네 수요 구조식)이 같은 답을 내면 값을 믿을 근거가 하나 더 생긴 것입니다. 결재 숫자는 V62입니다.");
+    if (near.length) lines.push(`다만 입력 일부가 기존점 범위를 조금 벗어납니다: ${near.map(fieldText).join(" · ")}. 되짚기에서 이 정도는 V62가 더 가까웠습니다.`);
+  }
+  if (d.inputGaps?.length) lines.push(`빈 입력이 있어 두 값 모두 기본값·가정이 섞였습니다: ${d.inputGaps.join(", ")}. 채우면 값이 움직입니다.`);
+  return { headline, lines };
+}
+
 export type LabExtras = {
   residentRingsByCode?: Map<string, Partial<Record<ResidentRingRadius, ResidentAges | null>>>;
   ringBlockedByCode?: Map<string, number>;
