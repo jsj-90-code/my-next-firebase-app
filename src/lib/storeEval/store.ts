@@ -37,7 +37,6 @@ import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResi
 import { residentRadiusByCodeFromDocs, type LabResidentRadiusDoc } from "./labInput";
 import type { ResidentAges, ResidentRingRadius } from "./textbookModel";
 import type {
-  AdminDongReference,
   CandidateInput,
   Competitor,
   DemandPoint,
@@ -54,7 +53,6 @@ import type {
 
 const CANDIDATES = "storeEvalCandidates";
 const COMPETITORS = "storeEvalCompetitors";
-const ADMIN_DONG_REFERENCES = "storeEvalAdminDongReferences";
 const DEMAND_POINTS = "storeEvalDemandPoints";
 const MARKET_DATA_UPLOADS = "storeEvalMarketDataUploads";
 const LOCATION_EVALS = "storeEvalLocationEvaluations";
@@ -325,10 +323,8 @@ export async function deleteCompetitor(id: string, actor: string | null): Promis
 // 상권자료 자동수집 1단계 — 행정구역 참고자료 / 수요거점 (읽기 전용, 쓰기는
 // /api/store-eval/collect-market-data가 firebase-admin으로 처리한다)
 // ---------------------------------------------------------------------------
-export async function getAdminDongReference(candidateCode: string): Promise<AdminDongReference | null> {
-  const snap = await getDoc(doc(requireDb(), ADMIN_DONG_REFERENCES, candidateCode));
-  return snap.exists() ? (snap.data() as AdminDongReference) : null;
-}
+// (getAdminDongReference는 2026-09-28에 뺐다 — SGIS 행정동 참고자료 수집·표시를 그만뒀다. 컬렉션 storeEvalAdminDongReferences의
+//  기존 문서는 남아 있고 rules도 그대로다.)
 
 export async function listDemandPoints(candidateCode: string): Promise<DemandPoint[]> {
   const snap = await getDocs(query(collection(requireDb(), DEMAND_POINTS), where("candidateCode", "==", candidateCode)));

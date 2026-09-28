@@ -166,8 +166,8 @@ export default function StoreEvalBackupPage() {
           운영설정 · 설정 변경이력 · 평가 결과 · <strong>좌석배치도(도면·존·발주설정)</strong> ·
           후보지코드 카운터 · <strong>상권자료 업로드 이력</strong>.
           <br />
-          <strong>담기지 않는 것</strong> — 수요거점, 행정구역 참고자료, 감사 로그, 관리자 목록.
-          수요거점·행정구역 참고자료는 <strong>[상권자료 수집]으로 다시 받을 수 있고</strong>,
+          <strong>담기지 않는 것</strong> — 수요거점, 감사 로그, 관리자 목록.
+          수요거점은 <strong>[상권자료 수집]으로 다시 받을 수 있고</strong>,
           감사 로그는 사후에 바뀌면 안 되는 기록이라 일부러 복원하지 않습니다.
           관리자 목록은 Firebase 콘솔에서 관리합니다.
         </p>

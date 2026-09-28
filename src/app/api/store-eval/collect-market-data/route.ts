@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { geocodeAddress, searchByCategory, searchByKeyword, type KakaoPlace } from "@/lib/kakao";
-import { fetchAdminDongPopulation, geocodeToAdminDong } from "@/lib/sgis";
 import { adminDb } from "@/lib/firebase-admin";
 import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { DEMAND_POINT_TARGETS, NEARBY_PC_RADIUS_M } from "@/lib/storeEval/demandPointTargets";
@@ -101,32 +100,10 @@ export async function POST(request: Request) {
     DUPLICATE_RADIUS_M,
   ).map((c) => ({ code: c.code, name: c.name ?? "" }));
 
-  // 3) 행정구역 참고자료 (SGIS) — 실패해도 나머지(경쟁점/수요거점 자동수집)는 계속 진행한다.
-  let adminDongStatus: "자동수집 완료" | "수집 실패" = "수집 실패";
-  let adminDongError: string | null = null;
-  try {
-    const lookup = await geocodeToAdminDong(address);
-    if (lookup) {
-      const pop = await fetchAdminDongPopulation(lookup.admCd);
-      await adminDb.collection("storeEvalAdminDongReferences").doc(candidateCode).set({
-        candidateCode,
-        admCd: lookup.admCd,
-        admName: lookup.admName,
-        totalPopulation: pop.totalPopulation,
-        malePopulation: pop.malePopulation,
-        femalePopulation: pop.femalePopulation,
-        year: pop.year,
-        fetchedAt: now,
-      });
-      adminDongStatus = "자동수집 완료";
-    } else {
-      adminDongError = "SGIS 지오코딩에서 행정구역을 찾지 못했습니다.";
-    }
-  } catch (err) {
-    adminDongError = err instanceof Error ? err.message : String(err);
-  }
+  // (3단계였던 SGIS 행정동 인구통계 수집은 2026-09-28에 뺐다 — 산식 무관 참고자료였고, SGIS가 아직 없는 연도를 물어
+  //  "검색결과가 존재하지 않습니다(errCd -100)"가 매번 떴다. 이미 저장된 storeEvalAdminDongReferences 문서는 그대로 둔다.)
 
-  // 4) 경쟁점(PC방) + 수요거점 자동수집 (카카오)
+  // 3) 경쟁점(PC방) + 수요거점 자동수집 (카카오)
   const origin = { lat: geocode.lat, lng: geocode.lng };
   let competitorsAdded = 0;
   let demandPointsAdded = 0;
@@ -260,8 +237,6 @@ export async function POST(request: Request) {
     geocode,
     geocodeStatus: "자동수집 완료",
     nearbyDuplicateWarnings: nearby,
-    adminDongReferenceStatus: adminDongStatus,
-    adminDongReferenceError: adminDongError,
     competitorsAdded,
     demandPointsAdded,
     collectionErrors,

@@ -26,7 +26,6 @@ import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   generateNextCandidateCode,
-  getAdminDongReference,
   getCandidate,
   getLocationEvaluation,
   getModelSettings,
@@ -39,7 +38,6 @@ import {
   saveMarketDataUpload,
 } from "@/lib/storeEval/store";
 import type {
-  AdminDongReference,
   CandidateInput,
   Competitor,
   DemandPoint,
@@ -128,7 +126,6 @@ function BasicInfoTabForm({
   const [sbizNotice, setSbizNotice] = useState<{ ok: boolean; text: string; warnings: string[]; trend: string | null } | null>(null);
   const [collectError, setCollectError] = useState<string | null>(null);
   const [nearbyWarnings, setNearbyWarnings] = useState<{ code: string; name: string }[]>([]);
-  const [adminDongRef, setAdminDongRef] = useState<AdminDongReference | null>(null);
   const [demandPoints, setDemandPoints] = useState<DemandPoint[]>([]);
   const [autoCompetitors, setAutoCompetitors] = useState<Competitor[]>([]);
   // 2단계(2026-08-24) — SGIS/소상공인365 반자동 업로드 이력.
@@ -140,14 +137,13 @@ function BasicInfoTabForm({
 
   const loadMarketData = useCallback(async (code: string, isCancelled: () => boolean = () => false) => {
     const sequence = ++marketLoadSequence.current;
-    const [adminDong, points, comps, uploads] = await Promise.all([
-      getAdminDongReference(code),
+    // 2026-09-28: SGIS 행정동 참고자료(getAdminDongReference)는 더 이상 안 읽는다 — 산식 무관 참고자료를 화면에서 뺐다.
+    const [points, comps, uploads] = await Promise.all([
       listDemandPoints(code),
       listCompetitors(code),
       listMarketDataUploads(code),
     ]);
     if (isCancelled() || sequence !== marketLoadSequence.current) return;
-    setAdminDongRef(adminDong);
     setDemandPoints(points);
     setAutoCompetitors(comps.filter((c) => c.source === "kakao"));
     setMarketDataUploads(uploads);
@@ -245,8 +241,6 @@ function BasicInfoTabForm({
         nearbyDuplicateWarnings: { code: string; name: string }[];
         competitorsAdded: number;
         demandPointsAdded: number;
-        adminDongReferenceStatus: string;
-        adminDongReferenceError: string;
       }>(response);
       if (!response.ok) throw new Error(data.error ?? "상권자료 수집에 실패했습니다.");
       if (data.error) {
@@ -262,8 +256,6 @@ function BasicInfoTabForm({
       await loadMarketData(form.code);
       setNearbyWarnings(data.nearbyDuplicateWarnings ?? []);
       const parts = [`좌표 확인 완료`, `경쟁점(PC방) ${data.competitorsAdded ?? 0}건`, `수요거점 ${data.demandPointsAdded ?? 0}건 자동수집`];
-      if (data.adminDongReferenceStatus === "자동수집 완료") parts.push("행정구역 참고자료 수집 완료");
-      else if (data.adminDongReferenceError) parts.push(`행정구역 참고자료 실패: ${data.adminDongReferenceError}`);
       setCollectMessage(parts.join(" · "));
     } catch (err) {
       setCollectError(err instanceof Error ? err.message : "상권자료 수집 중 오류가 발생했습니다.");
@@ -572,13 +564,6 @@ function BasicInfoTabForm({
           <div className="mt-3">
             <CandidateMap lat={form.lat} lng={form.lng} points={mapPoints} onConfirmPosition={handleConfirmMapPosition} />
           </div>
-          {adminDongRef && (
-            <div className="app-card-sm mt-4 rounded-lg px-3 py-2 text-xs text-[#5c5346] dark:text-[#c9bfae]">
-              <strong>행정구역 참고자료</strong>({adminDongRef.admName}, {adminDongRef.year ?? "-"}년 기준) — 총인구{" "}
-              {adminDongRef.totalPopulation?.toLocaleString() ?? "-"}명. 이 값은 행정동 단위이며, 아래 &ldquo;반경
-              500m/1km&rdquo; 계산 입력값과는 다른 자료이므로 그대로 옮겨 쓰지 않습니다.
-            </div>
-          )}
           {(demandPoints.length > 0 || autoCompetitors.length > 0) && (
             <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
               자동수집: 경쟁점(PC방) {autoCompetitors.length}건 · 수요거점 {demandPoints.length}건 — 경쟁점 탭에서 상세 확인/실사 상태 갱신이
@@ -595,8 +580,7 @@ function BasicInfoTabForm({
             <strong>SGIS 주거인구와 소상공인365 유동인구는 아래 버튼으로 자동으로 받습니다</strong>(2026-09-26). SGIS는 반경 통계 API(기존점
             52곳 손입력과 중앙 차이 0.0%로 대조된 경로), 소상공인365는 기존점 유동인구를 넣은 것과 같은 경로·같은 규칙(최근 12개월 평균,
             연령·성별은 최근월 구성비를 평균 크기로 환산)입니다. 버튼은 폼에만 채우고, 이 탭의 &ldquo;저장&rdquo;을 눌러야 반영됩니다.
-            버튼이 실패하면 아래 입력칸에 직접 입력하세요. 직장인구·지하철 승하차는 산식에 안 쓰는 참고자료(AI 입지평가·보고서 문구에만
-            들어감)라 아래 &ldquo;소상공인365 참고자료&rdquo; 칸에 직접 입력합니다.
+            버튼이 실패하면 아래 입력칸에 직접 입력하세요.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3 print:hidden">
             <button
@@ -787,54 +771,9 @@ function BasicInfoTabForm({
         </div>
       </section>
 
-      {/* 2026-08-24 (5차) — 소상공인365 참고자료(직장인구/시설정보) 카드를 하나로 합침(사용자
-          요청: "반경 하나에 전체 복붙 한 번이면 되는데 따로 있을 필요 없음").
-          calc.ts 어떤 함수도 이 값들을 읽지 않는다(기존 V62 산식·계수 불변 원칙) — 그래서 카드
-          자체는 합쳐도 되지만, 핵심 계산에 쓰이는 위 "유동인구(반경 500m)"/"경쟁 카운트" 섹션과
-          헷갈리지 않도록 이 통합 카드 전체에 "참고자료" 배지를 유지한다.
-          2026-08-27 — 유동인구(1km)·세대수·학생수 필드는 삭제했다(수요 계산에 못 쓰거나 이미
-          쓰는 값과 중복이라 사용자 확인). */}
-      <section className={sectionClass}>
-        <h3 className={sectionTitleClass}>소상공인365 참고자료 (직장인구 · 시설정보)</h3>
-        <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">소상공인365 원본 전용 — 예상매출 계산에는 쓰이지 않습니다.</p>
-
-        <p className="mt-4 text-xs font-medium text-[var(--sl-ink-soft)]">PC방업소수 (1km)</p>
-        <div className={`${gridClass} mt-2`}>
-          <NumberField
-            label="실영업 PC방업소수(1km)"
-            value={form.operatingPcStores1km}
-            onChange={(v) => set("operatingPcStores1km", v)}
-            hint="네이버 로드뷰 등으로 직접 확인해서 입력(자동추출 안 함)"
-            manualOnly
-          />
-        </div>
-
-        <p className="mt-6 text-xs font-medium text-[var(--sl-ink-soft)]">직장인구 (500m / 1km)</p>
-        <div className={`${gridClass} mt-2`}>
-          <NumberField label="직장인구 전체(500m)" value={form.employ500Total} onChange={(v) => set("employ500Total", v)} />
-          <NumberField label="직장인구 남(500m)" value={form.employ500Male} onChange={(v) => set("employ500Male", v)} />
-          <NumberField label="직장인구 여(500m)" value={form.employ500Female} onChange={(v) => set("employ500Female", v)} />
-          <NumberField label="직장인구 전체(1km)" value={form.employ1kmTotal} onChange={(v) => set("employ1kmTotal", v)} />
-          <NumberField label="직장인구 남(1km)" value={form.employ1kmMale} onChange={(v) => set("employ1kmMale", v)} />
-          <NumberField label="직장인구 여(1km)" value={form.employ1kmFemale} onChange={(v) => set("employ1kmFemale", v)} />
-        </div>
-
-        <p className="mt-6 text-xs font-medium text-[var(--sl-ink-soft)]">시설정보 (500m / 1km)</p>
-        <div className={`${gridClass} mt-2`}>
-          <NumberField
-            label="지하철 승하차(500m)"
-            value={form.facility500SubwayRiders}
-            onChange={(v) => set("facility500SubwayRiders", v)}
-            hint="소상공인365 '지하철 이용 현황' 자동추출(반경 내 역이 여러 개면 합산) — 역 없는 지역은 공란"
-          />
-          <NumberField
-            label="지하철 승하차(1km)"
-            value={form.facility1kmSubwayRiders}
-            onChange={(v) => set("facility1kmSubwayRiders", v)}
-            hint="소상공인365 '지하철 이용 현황' 자동추출(반경 내 역이 여러 개면 합산) — 역 없는 지역은 공란"
-          />
-        </div>
-      </section>
+      {/* 2026-09-28 사용자 결정("지금 산식에 필요 없는 거면 다 같이 빼지"): 여기 있던 "소상공인365 참고자료" 카드(실영업 PC방업소수 1km ·
+          직장인구 6칸 · 지하철 승하차 2칸)를 뺐다. 산식(V62·실험실·주소만)에 한 군데도 안 들어가고 기존점 40곳엔 이 필드가 없어 검증도 못 한다.
+          저장 필드(operatingPcStores1km·employ*·facility*SubwayRiders)와 이미 들어간 값은 원본 시트 규격이라 그대로 둔다. AI 입지평가 문맥에서도 뺐다. */}
 
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>자사 시설/사양</h3>

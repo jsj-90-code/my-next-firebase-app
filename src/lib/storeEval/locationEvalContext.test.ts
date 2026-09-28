@@ -183,8 +183,9 @@ describe("buildLocationEvalContext", () => {
     });
     expect(text).toContain("수집된 경쟁점 없음");
     expect(text).toContain("수집된 수요거점 없음");
-    expect(text).toContain("행정동 인구통계 없음");
-    expect(text).toContain("소상공인365/SGIS 참고자료 없음");
+    // 2026-09-28: 행정동 인구통계·직장인구·지하철 줄은 문맥에서 뺐다(산식 무관 참고자료).
+    expect(text).not.toContain("행정동 인구통계");
+    expect(text).toContain("상권 참고자료 없음");
   });
 
   it("경쟁점은 500m/1km 카운트와 거리순 목록을 만든다", () => {
@@ -221,7 +222,7 @@ describe("buildLocationEvalContext", () => {
     expect(text).toContain("학교 (1건): 학교(400m)");
   });
 
-  it("행정동 인구통계와 소상공인365 참고자료를 있는 값만 요약한다", () => {
+  it("상권 참고자료는 산식 입력값 둘만 적고, 행정동 인구통계·직장인구는 넘겨도 안 적는다(2026-09-28)", () => {
     const ref: AdminDongReference = {
       candidateCode: "N999",
       admCd: "1168010100",
@@ -233,15 +234,15 @@ describe("buildLocationEvalContext", () => {
       fetchedAt: 0,
     };
     const text = buildLocationEvalContext({
-      candidate: baseCandidate({ floating500Avg: 5000, operatingPcStores500m: 3 }),
+      candidate: baseCandidate({ floating500Avg: 5000, operatingPcStores500m: 3, employ500Total: 4994 }),
       competitors: [],
       demandPoints: [],
-      adminDongReference: ref,
+      adminDongReference: ref, // 호환용으로 받기만 하고 안 읽는다
     });
-    expect(text).toContain("역삼동(2024년 기준) 총인구 12,345명");
+    expect(text).not.toContain("역삼동");
     expect(text).toContain("유동인구 500m 일평균 5,000명");
     expect(text).toContain("실영업 PC방업소수 500m 3개");
-    // 채워지지 않은 필드는 지어내지 않고 아예 줄 자체를 안 만든다.
-    expect(text).not.toContain("직장인구 500m");
+    // 직장인구는 값이 있어도 문맥에 안 들어간다 — 후보지에만 있는 참고자료라 뺐다.
+    expect(text).not.toContain("직장인구");
   });
 });

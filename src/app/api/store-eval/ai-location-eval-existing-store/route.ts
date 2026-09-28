@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { geocodeAddress, searchByCategory, searchByKeyword } from "@/lib/kakao";
-import { fetchAdminDongPopulation, geocodeToAdminDong } from "@/lib/sgis";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
 import { buildLocationEvalContext, type LocationEvalContextCandidate } from "@/lib/storeEval/locationEvalContext";
 import { DEMAND_POINT_TARGETS, NEARBY_PC_RADIUS_M } from "@/lib/storeEval/demandPointTargets";
 import { haversineDistanceMeters } from "@/lib/storeEval/geo";
-import type { AdminDongReference, Competitor, DemandPoint, ExistingStore } from "@/lib/storeEval/types";
+import type { Competitor, DemandPoint, ExistingStore } from "@/lib/storeEval/types";
 
 // 2026-08-27 — 기존 가맹점용 입지동선평가 AI 초안. 신규 후보지는 /api/store-eval/ai-location-eval을
 // 쓰는데, 그 라우트는 storeEvalCandidates 문서가 반드시 있어야 동작한다(순수 레거시 매장은 이 문서가
@@ -42,19 +41,18 @@ export async function POST(request: Request) {
   if (!address) return NextResponse.json({ error: "주소가 없습니다. 먼저 매장 정보에 주소를 입력해주세요." }, { status: 400 });
 
   const lookupCode = store.originCandidateCode ?? storeCode;
-  const [storedCompetitorsSnap, storedDemandPointsSnap, storedAdminDongSnap] = await Promise.all([
+  // 2026-09-28: SGIS 행정동 인구통계는 더 이상 안 읽고 안 받는다 — 산식 무관 참고자료를 AI 문맥에서 뺐다.
+  const [storedCompetitorsSnap, storedDemandPointsSnap] = await Promise.all([
     adminDb.collection("storeEvalCompetitors").where("candidateCode", "==", lookupCode).get(),
     adminDb.collection("storeEvalDemandPoints").where("candidateCode", "==", lookupCode).get(),
-    adminDb.collection("storeEvalAdminDongReferences").doc(lookupCode).get(),
   ]);
 
   let competitors: Competitor[] = storedCompetitorsSnap.docs.map((d) => d.data() as Competitor);
   const demandPoints: DemandPoint[] = storedDemandPointsSnap.docs.map((d) => d.data() as DemandPoint);
-  let adminDongReference: AdminDongReference | null = storedAdminDongSnap.exists ? (storedAdminDongSnap.data() as AdminDongReference) : null;
   const warnings: string[] = [];
 
-  // 저장된 데이터가 하나도 없으면(순수 레거시 매장) ai-validation-run과 같은 방식으로 즉석 조회한다.
-  if (competitors.length === 0 && demandPoints.length === 0 && !adminDongReference) {
+  // 저장된 데이터가 하나도 없으면(순수 레거시 매장) 즉석 조회한다.
+  if (competitors.length === 0 && demandPoints.length === 0) {
     const geocode = await geocodeAddress(address).catch(() => null);
     if (!geocode) {
       return NextResponse.json({ error: "주소 지오코딩에 실패했습니다." }, { status: 502 });
@@ -152,25 +150,6 @@ export async function POST(request: Request) {
     } catch {
       warnings.push("수요거점 즉석 조회에 실패했습니다 — 텍스트 컨텍스트 없이 진행합니다.");
     }
-
-    try {
-      const lookup = await geocodeToAdminDong(address);
-      if (lookup) {
-        const pop = await fetchAdminDongPopulation(lookup.admCd);
-        adminDongReference = {
-          candidateCode: storeCode,
-          admCd: lookup.admCd,
-          admName: lookup.admName,
-          totalPopulation: pop.totalPopulation,
-          malePopulation: pop.malePopulation,
-          femalePopulation: pop.femalePopulation,
-          year: pop.year,
-          fetchedAt: Date.now(),
-        };
-      }
-    } catch {
-      warnings.push("행정동 인구통계 조회에 실패했습니다.");
-    }
   }
 
   const contextCandidate: LocationEvalContextCandidate = {
@@ -178,14 +157,10 @@ export async function POST(request: Request) {
     address,
     roadAddress: address,
     floating500Avg: store.floating500Avg,
-    employ500Total: null,
-    employ1kmTotal: null,
     operatingPcStores500m: store.operatingPcStores500m,
-    operatingPcStores1km: null,
-    facility500SubwayRiders: null,
   };
 
-  const contextText = buildLocationEvalContext({ candidate: contextCandidate, competitors, demandPoints, adminDongReference });
+  const contextText = buildLocationEvalContext({ candidate: contextCandidate, competitors, demandPoints });
 
   try {
     const draft = await runLocationEvalDraft({ contextText, mapImageBase64: null });

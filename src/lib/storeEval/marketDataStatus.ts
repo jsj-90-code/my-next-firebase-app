@@ -9,15 +9,14 @@ export type MarketDataStatus =
   | "수집 실패"
   | "검증 완료";
 
+// 2026-09-28: "adminDongReference"(SGIS 행정동 참고자료) 묶음은 뺐다 — 수집·표시를 그만뒀다(산식 무관).
 export type MarketDataGroupKey =
   | "geocode" // 주소/좌표
-  | "adminDongReference" // 행정구역 참고자료(SGIS 행정동)
   | "demandPoints" // 경쟁점 외 수요거점(카카오 자동수집)
   | "competitors"; // PC방 경쟁점(카카오 자동수집분 포함)
 
 export const MARKET_DATA_GROUP_LABELS: Record<MarketDataGroupKey, string> = {
   geocode: "주소/좌표",
-  adminDongReference: "행정구역 참고자료",
   demandPoints: "주변 수요거점",
   competitors: "주변 경쟁점(PC방)",
 };

@@ -4,7 +4,7 @@ import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { fetchKakaoMapImage } from "@/lib/server/kakaoMapImage";
 import { buildLocationEvalContext } from "@/lib/storeEval/locationEvalContext";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
-import type { AdminDongReference, CandidateInput, Competitor, DemandPoint } from "@/lib/storeEval/types";
+import type { CandidateInput, Competitor, DemandPoint } from "@/lib/storeEval/types";
 
 // 3단계 — 입지동선평가 AI 초안(기존 Claude+web_search 5점수 라우트를 Gemini로 교체, 2026-08-25).
 // 실제 필드 스키마·프롬프트·Gemini 2단계 호출은 locationEvalAi.ts에 있다 — 4단계(기존 매장
@@ -46,16 +46,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "주소가 필요합니다. 기본정보 탭에서 먼저 입력해주세요." }, { status: 400 });
   }
 
-  const [competitorsSnap, demandPointsSnap, adminDongSnap] = await Promise.all([
+  // 2026-09-28: SGIS 행정동 인구통계(storeEvalAdminDongReferences)는 더 이상 안 읽는다 — 산식 무관 참고자료를 문맥에서 뺐다.
+  const [competitorsSnap, demandPointsSnap] = await Promise.all([
     adminDb.collection("storeEvalCompetitors").where("candidateCode", "==", candidateCode).get(),
     adminDb.collection("storeEvalDemandPoints").where("candidateCode", "==", candidateCode).get(),
-    adminDb.collection("storeEvalAdminDongReferences").doc(candidateCode).get(),
   ]);
   const competitors = competitorsSnap.docs.map((d) => d.data() as Competitor);
   const demandPoints = demandPointsSnap.docs.map((d) => d.data() as DemandPoint);
-  const adminDongReference = adminDongSnap.exists ? (adminDongSnap.data() as AdminDongReference) : null;
 
-  const contextText = buildLocationEvalContext({ candidate, competitors, demandPoints, adminDongReference });
+  const contextText = buildLocationEvalContext({ candidate, competitors, demandPoints });
 
   // 지도 이미지는 클라이언트가 카카오 StaticMap에서 뽑아낸 이미지 URL만 보내고, 여기서 서버가
   // 직접 fetch한다 — 브라우저 canvas/fetch는 카카오 CDN이 CORS 헤더를 안 주면 픽셀을 못 읽지만

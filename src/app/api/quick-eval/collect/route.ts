@@ -166,17 +166,12 @@ export async function POST(request: Request) {
         address,
         roadAddress: geocode.roadAddress,
         floating500Avg: floating?.avg ?? null,
-        employ500Total: null,
-        employ1kmTotal: null,
         operatingPcStores500m: countedCompetitors.length,
-        operatingPcStores1km: null,
-        facility500SubwayRiders: null,
       },
       // buildLocationEvalContext는 이름·거리만 읽는다(파일 주석 참고) — 가짜 경쟁점 레코드를
       // 만들지 않고 필요한 두 필드만 넘긴다.
       competitors: countedCompetitors as never,
       demandPoints,
-      adminDongReference: null,
     });
     // 층·엘리베이터를 사실로 덧붙인다 — 이게 없으면 AI가 층수를 모른 채 가시성을 매긴다.
     const contextText = appendSiteFactsToContext(baseContext, {

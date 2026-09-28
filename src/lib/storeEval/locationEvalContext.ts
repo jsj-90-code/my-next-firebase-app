@@ -1,8 +1,12 @@
 // 입지동선평가 AI 초안(3단계, ai-location-eval 라우트)에 줄 "지도 컨텍스트" 텍스트 요약을 만든다.
 // 순수 함수 — Firestore/네트워크 호출은 하지 않는다(호출부가 이미 조회해온 데이터를 그대로 넘겨받는다).
 // 여기서 만드는 텍스트는 AI 프롬프트 전용 참고자료일 뿐이다 — calc.ts는 이 파일을 참조하지 않고,
-// 어떤 계산에도 쓰이지 않는다(types.ts에 이미 명시된 "calc.ts는 AdminDongReference/DemandPoint를
-// 안 읽는다" 원칙과 동일선상).
+// 어떤 계산에도 쓰이지 않는다(types.ts에 이미 명시된 "calc.ts는 DemandPoint를 안 읽는다" 원칙과 동일선상).
+//
+// 2026-09-28 사용자 결정("지금 산식에 필요 없는 거면 다 같이 빼지"): 산식에 안 들어가고 후보지에만 있던 참고자료 —
+// 직장인구(500m/1km)·지하철 승하차·실영업 PC방업소수(1km)·SGIS 행정동 인구통계 — 를 이 문맥에서도 뺐다.
+// 후보지마다 있다 없다 하는 값이라 AI 판단이 그 유무에 따라 흔들리는 게 더 나빴다. 기존점 40곳엔 이 필드가 없어
+// 앞으로도 산식으로 검증할 수 없다. 저장 필드·Firestore 문서는 그대로 두고 화면·문맥에서만 뺐다.
 
 import type { AdminDongReference, CandidateInput, Competitor, DemandPoint } from "./types";
 
@@ -15,11 +19,7 @@ export type LocationEvalContextCandidate = Pick<
   | "address"
   | "roadAddress"
   | "floating500Avg"
-  | "employ500Total"
-  | "employ1kmTotal"
   | "operatingPcStores500m"
-  | "operatingPcStores1km"
-  | "facility500SubwayRiders"
 >;
 
 const TOP_N = 8;
@@ -56,46 +56,31 @@ function demandPointSummary(points: DemandPoint[]): string {
   return lines.join("\n");
 }
 
-function adminDongSummary(ref: AdminDongReference | null): string {
-  if (!ref) return "행정동 인구통계 없음(SGIS 미수집)";
-  return (
-    `${ref.admName}(${ref.year ?? "연도 미상"}년 기준) 총인구 ${fmt(ref.totalPopulation, "명")}` +
-    ` (남 ${fmt(ref.malePopulation, "명")}, 여 ${fmt(ref.femalePopulation, "명")})`
-  );
-}
-
-// 소상공인365/SGIS 반자동 업로드-추출로 채워지는 참고자료(계산에는 쓰이지 않음, CandidateInput
-// 타입 주석 참고) — 값이 있는 항목만 골라 보여준다.
+// 산식이 실제로 읽는 두 값(유동인구 500m·실영업 PC방업소수 500m)만 적는다 — 값이 있는 항목만.
 function marketDataSummary(candidate: LocationEvalContextCandidate): string {
   const lines: string[] = [];
   if (candidate.floating500Avg != null) lines.push(`유동인구 500m 일평균 ${fmt(candidate.floating500Avg, "명")}`);
-  if (candidate.employ500Total != null) lines.push(`직장인구 500m ${fmt(candidate.employ500Total, "명")}`);
-  if (candidate.employ1kmTotal != null) lines.push(`직장인구 1km ${fmt(candidate.employ1kmTotal, "명")}`);
   if (candidate.operatingPcStores500m != null) lines.push(`실영업 PC방업소수 500m ${fmt(candidate.operatingPcStores500m, "개")}`);
-  if (candidate.operatingPcStores1km != null) lines.push(`실영업 PC방업소수 1km ${fmt(candidate.operatingPcStores1km, "개")}`);
-  if (candidate.facility500SubwayRiders != null) lines.push(`지하철 승하차 500m ${fmt(candidate.facility500SubwayRiders, "명")}`);
-  return lines.length ? lines.join("\n") : "소상공인365/SGIS 참고자료 없음(아직 미수집)";
+  return lines.length ? lines.join("\n") : "상권 참고자료 없음(아직 미수집)";
 }
 
 export function buildLocationEvalContext(input: {
   candidate: LocationEvalContextCandidate;
   competitors: Competitor[];
   demandPoints: DemandPoint[];
-  adminDongReference: AdminDongReference | null;
+  /** @deprecated 2026-09-28부터 안 읽는다(옛 호출부·하네스 호환용으로만 남김). */
+  adminDongReference?: AdminDongReference | null;
 }): string {
-  const { candidate, competitors, demandPoints, adminDongReference } = input;
+  const { candidate, competitors, demandPoints } = input;
   return [
     `후보지명: ${candidate.name}`,
     `주소: ${candidate.roadAddress ?? candidate.address}`,
-    "",
-    "[행정동 인구통계 (SGIS)]",
-    adminDongSummary(adminDongReference),
     "",
     "[경쟁점/수요거점 (카카오 자동수집, 실측 좌표 기준)]",
     competitorSummary(competitors),
     demandPointSummary(demandPoints),
     "",
-    "[상권 참고자료 (소상공인365/SGIS 반자동 추출)]",
+    "[상권 참고자료 (산식 입력값)]",
     marketDataSummary(candidate),
   ].join("\n");
 }
