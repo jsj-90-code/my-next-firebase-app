@@ -49,7 +49,6 @@ import type {
   LocationEvaluation,
   MarketDataUpload,
   ModelSettings,
-  ReviewStatus,
 } from "@/lib/storeEval/types";
 import {
   BooleanSelectField,
@@ -80,12 +79,8 @@ const FOOD_BRAND_OPTIONS: { value: FoodBrand; label: string }[] = [
   { value: "브랜드없음", label: "브랜드없음 (직접입력)" },
 ];
 
-const REVIEW_STATUS_OPTIONS: { value: ReviewStatus; label: string }[] = [
-  { value: "진행", label: "진행" },
-  { value: "보류", label: "보류" },
-  { value: "종료", label: "종료" },
-  { value: "완료", label: "완료" },
-];
+// 2026-09-28 사용자 결정: 검토상태(진행·보류·완료·종료) 입력 칸을 뺐다 — "등록했으면 심사 완료, 완료가 곧 종료". 저장 필드는
+// 원본 시트 규격이라 남겨 두고 "진행"으로 저장된다. 후보지의 진짜 상태 변화(기존 가맹점 전환)는 결과 탭의 전환 버튼과 목록의 배지가 맡는다.
 
 const GROUND_LEVEL_OPTIONS: { value: GroundLevel; label: string }[] = [
   { value: "지상", label: "지상" },
@@ -518,13 +513,6 @@ function BasicInfoTabForm({
           <TextField label="후보지명" value={form.name} onChange={(v) => set("name", v)} required />
           <TextField label="주소" value={form.address} onChange={(v) => set("address", v)} required />
           <DateField label="검토일" value={form.reviewDate} onChange={(v) => set("reviewDate", v)} />
-          <SelectField
-            label="검토상태"
-            value={form.reviewStatus}
-            onChange={(v) => set("reviewStatus", v ?? "진행")}
-            options={REVIEW_STATUS_OPTIONS}
-            required
-          />
           <NumberField label="예상PC대수" value={form.expectedPcCount} onChange={(v) => set("expectedPcCount", v)} required />
           <NumberField label="점포층수" value={form.floor} onChange={(v) => set("floor", v)} allowNegative />
           <SelectField label="지상/지하" value={form.groundLevel} onChange={(v) => set("groundLevel", v)} options={GROUND_LEVEL_OPTIONS} />

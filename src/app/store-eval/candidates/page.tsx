@@ -16,18 +16,26 @@ import {
   listAllLocationEvaluations,
   listCandidates,
   listEvaluationResults,
+  listExistingStores,
 } from "@/lib/storeEval/store";
-import type { CandidateInput, EvaluationResult, FinalJudgement, ReviewStatus } from "@/lib/storeEval/types";
+import type { CandidateInput, EvaluationResult, FinalJudgement } from "@/lib/storeEval/types";
 import { formatDate, formatDateTime, formatWon } from "@/lib/storeEval/format";
 import { freshnessHint, resultFreshness, type Freshness } from "@/lib/storeEval/resultFreshness";
 import { CANDIDATE_STATUSES, selectCandidates, type CandidateSort, type CandidateStatusFilter } from "@/lib/storeEval/candidateList";
 
-const REVIEW_STATUS_STYLE: Record<ReviewStatus, string> = {
-  진행: "app-badge app-badge-info",
-  보류: "app-badge app-badge-warn",
-  종료: "app-badge app-badge-neutral",
-  완료: "app-badge app-badge-ok",
-};
+// 2026-09-28 사용자 결정: 검토상태(진행·보류·완료·종료) 배지·필터·입력 칸을 화면에서 뺐다 — "등록했으면 심사 완료, 완료가 곧 종료".
+// 후보지의 진짜 상태는 "기존 가맹점으로 전환됐나" 하나라 그것만 표시한다(기존점 문서 originCandidateCode로 되짚음).
+type ConvertedStore = { storeCode: string; storeName: string };
+
+function ConvertedBadge({ store }: { store: ConvertedStore | undefined }) {
+  if (!store) return null;
+  return (
+    <Link href={`/store-eval/existing-stores/${store.storeCode}`} className="app-badge app-badge-ok hover:underline"
+      title={`계약이 이어져 기존 가맹점 ${store.storeName}(${store.storeCode})으로 전환된 후보지입니다. 누르면 기존점 화면으로 갑니다.`}>
+      기존점 전환 · {store.storeCode}
+    </Link>
+  );
+}
 
 export default function CandidateListPage() {
   const router = useRouter();
@@ -36,6 +44,8 @@ export default function CandidateListPage() {
   // 2026-09-28 웹 정리 — 대시보드에 있던 "최종예상월매출·최종운영판정·엑셀 내보내기"를 이 표로 옮겼다(대시보드는 여기로 넘어온다).
   // 결과는 아래 신선도 조회가 이미 읽는 listEvaluationResults를 그대로 쓴다 — 추가 읽기 없음.
   const [results, setResults] = useState<EvaluationResult[]>([]);
+  // 후보지코드 → 전환된 기존 가맹점. 기존점 목록을 한 번 읽어 originCandidateCode가 있는 것만 모은다.
+  const [convertedByCode, setConvertedByCode] = useState<Map<string, ConvertedStore>>(new Map());
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,10 +97,13 @@ export default function CandidateListPage() {
   // 읽기 비용은 일정하다.
   useEffect(() => {
     let cancelled = false;
-    Promise.all([listEvaluationResults(), listAllCompetitors(), listAllLocationEvaluations(), getModelSettings()])
-      .then(([results, competitors, locations, settings]) => {
+    Promise.all([listEvaluationResults(), listAllCompetitors(), listAllLocationEvaluations(), getModelSettings(), listExistingStores()])
+      .then(([results, competitors, locations, settings, existingStores]) => {
         if (cancelled) return;
         setResults(results);
+        setConvertedByCode(new Map(
+          existingStores.filter((s) => s.originCandidateCode).map((s) => [s.originCandidateCode as string, { storeCode: s.storeCode, storeName: s.storeName }]),
+        ));
         const competitorAtsByCode = new Map<string, (number | null | undefined)[]>();
         for (const c of competitors) {
           competitorAtsByCode.set(c.candidateCode, [...(competitorAtsByCode.get(c.candidateCode) ?? []), c.updatedAt]);
@@ -150,7 +163,7 @@ export default function CandidateListPage() {
     try {
       // ExcelJS는 내보내기를 눌렀을 때만 읽는다(목록 진입 때 안 싣는다).
       const { exportCandidatesToExcel } = await import("@/lib/storeEval/exportExcel");
-      await exportCandidatesToExcel(candidates, results);
+      await exportCandidatesToExcel(candidates, results, new Map([...convertedByCode].map(([code, s]) => [code, s.storeCode])));
     } catch (err) {
       setExportError(err instanceof Error ? err.message : "엑셀로 내보내지 못했습니다.");
     } finally {
@@ -199,7 +212,8 @@ export default function CandidateListPage() {
     }
   }
 
-  const filteredCandidates = useMemo(() => selectCandidates(candidates, search, status, sort), [candidates, search, status, sort]);
+  const convertedCodes = useMemo(() => new Set(convertedByCode.keys()), [convertedByCode]);
+  const filteredCandidates = useMemo(() => selectCandidates(candidates, search, status, sort, convertedCodes), [candidates, search, status, sort, convertedCodes]);
   const hasFilters = search.trim() !== "" || status !== "전체";
   function resetFilters() { setSearch(""); setStatus("전체"); }
 
@@ -248,14 +262,21 @@ export default function CandidateListPage() {
       {/* 2026-08-25 추가 — 후보지가 늘어나면서 코드/이름/주소로 바로 찾을 방법이 없었다. 서버
           쪽 검색 없이(목록이 크지 않음) 클라이언트에서 이미 불러온 목록을 그대로 필터링한다. */}
       <section aria-label="후보지 검색과 필터" className="app-card rounded-2xl p-4 sm:p-5">
-        <div className="mb-5 grid grid-cols-5 gap-2" aria-label="검토 상태별 보기">
-          {CANDIDATE_STATUSES.map((item) => (
-            <button key={item} type="button" aria-pressed={status === item} onClick={() => setStatus(item)}
-              className={`rounded-xl border px-2 py-3 text-left transition sm:px-3 ${status === item ? "border-[var(--sl-gold)] bg-[var(--sl-gold)]/10" : "border-[#171310]/[0.08] hover:bg-[#171310]/[0.03] dark:border-white/[0.08] dark:hover:bg-white/[0.03]"}`}>
-              <span className="block text-xs text-[var(--sl-ink-soft)]">{item}</span>
-              <span className="mt-1 block text-xl font-semibold tabular-nums">{loading || (error && candidates.length === 0) ? "—" : (item === "전체" ? candidates.length : candidates.filter((c) => c.reviewStatus === item).length)}</span>
-            </button>
-          ))}
+        {/* 2026-09-28: 검토상태 타일 5개(전체·진행·보류·완료·종료) → 전환 여부 3개. 전환은 후보지 결과 탭의 "기존 가맹점으로 전환" 버튼이 한다. */}
+        <div className="mb-5 grid grid-cols-3 gap-2" aria-label="전환 여부별 보기">
+          {CANDIDATE_STATUSES.map((item) => {
+            const n = item === "전체" ? candidates.length
+              : item === "전환됨" ? candidates.filter((c) => convertedCodes.has(c.code)).length
+                : candidates.filter((c) => !convertedCodes.has(c.code)).length;
+            return (
+              <button key={item} type="button" aria-pressed={status === item} onClick={() => setStatus(item)}
+                title={item === "전환됨" ? "계약이 이어져 기존 가맹점으로 전환된 후보지" : item === "미전환" ? "등록(심사 완료)만 된 후보지" : undefined}
+                className={`rounded-xl border px-2 py-3 text-left transition sm:px-3 ${status === item ? "border-[var(--sl-gold)] bg-[var(--sl-gold)]/10" : "border-[#171310]/[0.08] hover:bg-[#171310]/[0.03] dark:border-white/[0.08] dark:hover:bg-white/[0.03]"}`}>
+                <span className="block text-xs text-[var(--sl-ink-soft)]">{item}</span>
+                <span className="mt-1 block text-xl font-semibold tabular-nums">{loading || (error && candidates.length === 0) ? "—" : n}</span>
+              </button>
+            );
+          })}
         </div>
         <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-0 flex-1 basis-60 text-xs font-medium text-[var(--sl-ink-soft)]">
@@ -287,7 +308,7 @@ export default function CandidateListPage() {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0"><p className="font-mono text-xs text-[var(--sl-ink-soft)]">{c.code}</p>
               <Link href={`/store-eval/candidates/${c.code}`} className="mt-1 block break-words text-base font-semibold hover:underline">{c.name || "(이름 없음)"}</Link>
-            </div><span className={`${REVIEW_STATUS_STYLE[c.reviewStatus]} shrink-0`}>{c.reviewStatus}</span>
+            </div><span className="shrink-0"><ConvertedBadge store={convertedByCode.get(c.code)} /></span>
           </div>
           <p className="mt-3 break-words text-sm text-[var(--sl-ink-soft)]">{c.address || "주소 미입력"}</p>
           {c.isDraft && <span className="app-badge app-badge-neutral mt-3">임시저장</span>}
@@ -315,7 +336,7 @@ export default function CandidateListPage() {
               <th scope="col" className="px-3 py-2">코드</th>
               <th scope="col" className="px-3 py-2">이름</th>
               <th scope="col" className="px-3 py-2">주소</th>
-              <th scope="col" className="px-3 py-2">검토상태</th>
+              <th scope="col" className="px-3 py-2" title="계약이 이어져 기존 가맹점으로 전환된 후보지만 표시됩니다">전환</th>
               <th scope="col" className="px-3 py-2">최종예상월매출</th>
               <th scope="col" className="px-3 py-2" title="입력이 덜 끝났으면 그 상태를, 끝났으면 진단 결과를 보여줍니다">최종운영판정</th>
               <th scope="col" className="px-3 py-2">최종수정일</th>
@@ -349,9 +370,7 @@ export default function CandidateListPage() {
                   </td>
                   <td title={c.address || undefined} className="max-w-[220px] truncate px-3 py-2 text-[#5c5346] dark:text-[#c9bfae]">{c.address || "-"}</td>
                   <td className="px-3 py-2">
-                    <span className={REVIEW_STATUS_STYLE[c.reviewStatus]}>
-                      {c.reviewStatus}
-                    </span>
+                    {convertedByCode.has(c.code) ? <ConvertedBadge store={convertedByCode.get(c.code)} /> : <span className="text-xs text-[var(--sl-ink-soft)]">-</span>}
                   </td>
                   <td className="px-3 py-2 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={resultByCode.get(c.code)?.dualEstimate?.reason ?? undefined}>
                     {formatWon(resultByCode.get(c.code)?.v62Final)}

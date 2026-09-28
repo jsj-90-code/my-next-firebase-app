@@ -4,14 +4,17 @@ import type { CandidateInput } from "./types";
 
 const candidates = [
   { code: "N10", name: "강남점", address: "서울 강남구", reviewStatus: "진행", updatedAt: 100 },
-  { code: "N2", name: "수원점", address: "경기 수원시", reviewStatus: "완료", updatedAt: 300 },
-  { code: "N3", name: "강남역점", address: "서울 서초구", reviewStatus: "보류", updatedAt: 200 },
+  { code: "N2", name: "수원점", address: "경기 수원시", reviewStatus: "진행", updatedAt: 300 },
+  { code: "N3", name: "강남역점", address: "서울 서초구", reviewStatus: "진행", updatedAt: 200 },
 ] as CandidateInput[];
 
-it("검색어를 이름·주소에 걸쳐 모두 찾고 상태 조건도 함께 적용한다", () => {
+it("검색어를 이름·주소에 걸쳐 모두 찾고 전환 여부 조건도 함께 적용한다", () => {
+  const converted = new Set(["N3"]);
   expect(selectCandidates(candidates, " 서울  강남 ", "전체", "updated").map((c) => c.code)).toEqual(["N3", "N10"]);
-  expect(selectCandidates(candidates, "서울 강남", "진행", "updated").map((c) => c.code)).toEqual(["N10"]);
-  expect(selectCandidates(candidates, "서울", "완료", "updated")).toEqual([]);
+  expect(selectCandidates(candidates, "서울 강남", "미전환", "updated", converted).map((c) => c.code)).toEqual(["N10"]);
+  expect(selectCandidates(candidates, "서울", "전환됨", "updated", converted).map((c) => c.code)).toEqual(["N3"]);
+  // 전환 목록을 안 넘기면 아무도 전환 안 된 것으로 본다(검토상태 필드는 더 이상 안 읽는다).
+  expect(selectCandidates(candidates, "서울", "전환됨", "updated")).toEqual([]);
 });
 
 it("전각 코드와 영문 대소문자를 정규화한다", () => {

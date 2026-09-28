@@ -8,6 +8,8 @@ import type { CandidateInput, EvaluationResult } from "./types";
 export async function exportCandidatesToExcel(
   candidates: CandidateInput[],
   results: EvaluationResult[],
+  /** 후보지코드 → 전환된 기존 가맹점코드(2026-09-28, 검토상태 열 대신). 없으면 빈 칸. */
+  convertedStoreCodeByCandidate: ReadonlyMap<string, string> = new Map(),
 ): Promise<void> {
   const resultByCode = new Map(results.map((result) => [result.candidateCode, result]));
 
@@ -21,7 +23,7 @@ export async function exportCandidatesToExcel(
     { header: "후보지코드", key: "code", width: 10 },
     { header: "이름", key: "name", width: 20 },
     { header: "주소", key: "address", width: 32 },
-    { header: "검토상태", key: "reviewStatus", width: 10 },
+    { header: "기존점 전환(가맹점코드)", key: "convertedStoreCode", width: 20 },
     { header: "예상PC대수", key: "expectedPcCount", width: 12 },
     { header: "시간당요금", key: "hourlyRate", width: 12 },
     { header: "V61(참고)", key: "v61Baseline", width: 14 },
@@ -47,7 +49,7 @@ export async function exportCandidatesToExcel(
       code: candidate.code,
       name: candidate.name,
       address: candidate.address,
-      reviewStatus: candidate.reviewStatus,
+      convertedStoreCode: convertedStoreCodeByCandidate.get(candidate.code) ?? "",
       expectedPcCount: candidate.expectedPcCount,
       hourlyRate: candidate.hourlyRate,
       v61Baseline: result?.v61Baseline ?? null,
