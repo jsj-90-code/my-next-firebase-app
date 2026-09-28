@@ -789,6 +789,58 @@ function SimpleResultTable({ rows }: { rows: ValidationStoreRow[] }) {
   );
 }
 
+/** 개점 뒤 이만큼 지나면 재측정 시기로 본다(장기 과제 문서: 3~6개월). */
+const REMEASURE_AFTER_MONTHS = 3;
+const REMEASURE_UNTIL_MONTHS = 6;
+
+/**
+ * 2026-09-28 — 장기 과제 알림(사용자 "이것도 해도 뭐 상관없을 듯"): 후보지에서 전환된 기존점(originCandidateCode)이
+ * 개점 3개월을 넘겼는데 경쟁점 핑봇 **재측정**(pingbotRemeasurePeriod)이 없으면 여기 띄운다. 개점 전 기준값이 없는
+ * 매장은 잴 수 없으니 그것도 같이 적는다. 자료는 이 화면이 이미 읽은 기존점·경쟁점뿐이라 새 조회가 없다.
+ * 재측정 값은 scripts/writePingbotUpdates.mjs --remeasure 로 쓴다(docs/long-term-pingbot-remeasure.md).
+ */
+function RemeasureReminder({ stores, competitorsByCode }: { stores: ExistingStore[]; competitorsByCode: Map<string, Competitor[]> }) {
+  const now = new Date();
+  const monthsSince = (ymd: string | null) => {
+    if (!ymd) return null;
+    const d = new Date(ymd);
+    if (Number.isNaN(d.getTime())) return null;
+    return (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth()) + (now.getDate() >= d.getDate() ? 0 : -1);
+  };
+  const rows = stores
+    .filter((s) => s.originCandidateCode)
+    .map((s) => {
+      const months = monthsSince(s.openedAt);
+      const comps = competitorsByCode.get(s.storeCode) ?? [];
+      const baseline = comps.filter((c) => c.pingbotUtilization != null).length;
+      const remeasured = comps.filter((c) => c.pingbotRemeasurePeriod).length;
+      return { s, months, baseline, remeasured, total: comps.length };
+    })
+    .filter((r) => r.months != null && r.months >= REMEASURE_AFTER_MONTHS && r.remeasured === 0)
+    .sort((a, b) => (a.months ?? 0) - (b.months ?? 0));
+  if (rows.length === 0) return null;
+  return (
+    <section className="app-card rounded-xl border border-[var(--sl-gold)]/40 p-4">
+      <h3 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">⏰ 개점 후 경쟁점 핑봇 재측정 시기 ({rows.length}곳)</h3>
+      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+        후보지에서 전환된 매장이 개점 {REMEASURE_AFTER_MONTHS}~{REMEASURE_UNTIL_MONTHS}개월이면 개점 전과 같은 경쟁점을 핑봇으로 다시 잽니다
+        (새 수요 vs 경쟁점 손님 이동을 처음 재는 자료). 잰 뒤 <code>writePingbotUpdates.mjs --remeasure</code>로 쓰면 이 줄이 사라집니다.
+      </p>
+      <ul className="mt-2 space-y-1 text-sm">
+        {rows.map(({ s, months, baseline, total }) => (
+          <li key={s.storeCode} className="flex flex-wrap items-center gap-2">
+            <Link href={`/store-eval/existing-stores/${encodeURIComponent(s.storeCode)}`} className="font-medium text-[var(--sl-gold-ink)] underline underline-offset-4">{s.storeName}</Link>
+            <span className="text-xs text-[var(--sl-ink-soft)]">개점 {s.openedAt ?? "-"} · {months}개월 경과{months != null && months > REMEASURE_UNTIL_MONTHS ? " (권장 시기 지남)" : ""}</span>
+            <span className={`app-badge ${baseline > 0 ? "app-badge-ok" : "app-badge-warn"}`}>
+              {baseline > 0 ? `개점 전 기준값 ${baseline}/${total}곳` : `개점 전 기준값 없음 — 재측정 불가`}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function SummaryBlock({ title, summary, benchmark }: { title: string; summary: ValidationSummary2; benchmark?: ReferenceBenchmark }) {
   if (summary.sampleCount === 0) return (
     <section className="app-card rounded-xl p-4">
@@ -1284,6 +1336,7 @@ export default function ValidationPage() {
           각 매장을 학습에서 제외하고 예측한 결과입니다. 신규 후보지의 성능을 가늠하는 참고치로 사용하세요.
         </p>
       </div>
+      <RemeasureReminder stores={[...state.existingStoresByCode.values()]} competitorsByCode={state.competitorsByCode} />
       <SummaryBlock title="1. 학습대상점 적중률 (정식검증, 리브-원-아웃)" summary={coreSummary} benchmark={REFERENCE_BENCHMARK.정식검증} />
       <SummaryBlock
         title="2. 조기검증 적중률 (2026-09-02부터 정식검증에 통합 — 표본 0곳)"

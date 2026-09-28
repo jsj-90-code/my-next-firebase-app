@@ -14,6 +14,8 @@ import { getFirestore } from "firebase-admin/firestore";
 
 const COLLECTION = "storeEvalCompetitors";
 const APPLY = process.argv.includes("--apply");
+// --remeasure : 개점 후 재측정 값으로 쓴다(기준값은 그대로). 예: --remeasure --period=2027-03-01~2027-03-07 --file=...
+const REMEASURE = process.argv.includes("--remeasure");
 const periodArg = process.argv.find((a) => a.startsWith("--period="));
 const PERIOD = periodArg ? periodArg.slice("--period=".length) : null;
 // --file=<json> : [{candidateCode,name,value,note?}] 목록을 파일에서 읽는다(핑봇 페이지를 긁어 만든 목록). 없으면 아래 UPDATES를 쓴다.
@@ -100,7 +102,13 @@ for (const u of (FILE_UPDATES ?? UPDATES)) {
   const same = before === u.value && (u.value == null || beforeP === PERIOD);
   console.log(`${same ? "=" : "→"} ${u.name.padEnd(22)} ${String(before).padStart(5)}% [${beforeP ?? "없음"}]  →  ${u.value == null ? "(비움)" : u.value + "%"} [${u.value == null ? "-" : PERIOD}]   (${d.id})${u.note ? "  " + u.note.slice(0, 60) : ""}`);
   if (same || !APPLY) continue;
-  await d.ref.update({
+  // 2026-09-28 — --remeasure: 개점 뒤 재측정 값은 기준값(pingbotUtilization)을 **덮지 않고** 별도 칸에 쓴다
+  //    (장기 과제 docs/long-term-pingbot-remeasure.md · 검증 탭 RemeasureReminder가 이 칸을 본다).
+  await d.ref.update(REMEASURE ? {
+    pingbotRemeasureUtilization: u.value ?? null, pingbotRemeasurePeriod: u.value == null ? null : PERIOD,
+    ...(u.note ? { pingbotRemeasureNote: u.note } : {}),
+    updatedAt: Date.now(), updatedBy: `핑봇 개점 후 재측정 ${PERIOD} (scripts/writePingbotUpdates.mjs --remeasure)`,
+  } : {
     pingbotUtilization: u.value ?? null, pingbotPeriod: u.value == null ? null : PERIOD,
     pingbotPrevUtilization: before, pingbotPrevPeriod: beforeP,
     ...(u.note ? { pingbotNote: u.note } : {}),

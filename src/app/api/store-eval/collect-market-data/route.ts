@@ -7,6 +7,7 @@ import { DEMAND_POINT_TARGETS, NEARBY_PC_RADIUS_M } from "@/lib/storeEval/demand
 import { findNearbyCandidates, haversineDistanceMeters } from "@/lib/storeEval/geo";
 import type { Competitor, DemandPoint, DemandPointCategory } from "@/lib/storeEval/types";
 import { lookupBuildingElevator } from "@/lib/storeEval/buildingElevator";
+import { lookupPcBangPermit } from "@/lib/storeEval/pcBangPermit";
 
 // 신규후보지 "상권자료 수집" 1단계 — 주소 지오코딩 + 행정구역 참고자료 + 경쟁점/수요거점
 // 자동수집을 한 번에 처리한다(요청사항 2단계 화면 흐름 중 1~4단계, 7단계에 해당).
@@ -174,6 +175,8 @@ export async function POST(request: Request) {
         appliedPcCount: null,
         hasElevator: elevatorByPlace.get(place.id)?.hasElevator ?? null,
         elevatorBasis: elevatorByPlace.get(place.id)?.basis ?? null,
+        // 2026-09-28 — 인허가 자료로 만든 조사표 초기값. 번들 색인이라 네트워크 없이 바로 찾는다. 조사 칸엔 안 넣는다.
+        permitHint: lookupPcBangPermit({ name: place.name, lat: place.lat, lng: place.lng }),
         cpu: null,
         cpuTop1: null,
         cpuTop2: null,

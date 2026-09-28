@@ -368,7 +368,25 @@ function CompetitorForm({
 
       <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">시설/사양</h4>
       <div className={`${gridClass} mt-3`}>
-        <NumberField label="전체대수" value={form.totalPcCount} onChange={(v) => set("totalPcCount", v)} />
+        {/* 2026-09-28 — 인허가 초기값(permitHint). 수집 때 새로 만든 경쟁점에만 있고, 여기서 버튼을 눌러야 조사 칸에 들어간다.
+            실측과 r 0.80·오차 12.8%(100대 고정은 25%)라 "확인할 출발점"이지 조사값이 아니다(pcBangPermit.ts). */}
+        <div>
+          <NumberField
+            label="전체대수"
+            value={form.totalPcCount}
+            onChange={(v) => set("totalPcCount", v)}
+            hint={form.permitHint ? form.permitHint.basis : undefined}
+          />
+          {form.permitHint?.suggestedPcCount != null && form.totalPcCount !== form.permitHint.suggestedPcCount && (
+            <button
+              type="button"
+              className="app-btn-outline mt-1 rounded-md px-2 py-1 text-xs"
+              onClick={() => set("totalPcCount", form.permitHint!.suggestedPcCount)}
+            >
+              인허가 값 넣기 ({form.permitHint.suggestedPcCount}대)
+            </button>
+          )}
+        </div>
         <NumberField label="적용대수" value={form.appliedPcCount} onChange={(v) => set("appliedPcCount", v)} hint="실사값 없으면 대체값을 조사 후 입력" />
         <div className="col-span-full sm:col-span-1">
           <p className="text-xs font-medium text-[var(--sl-ink-soft)]">적용대수 출처</p>

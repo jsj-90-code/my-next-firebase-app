@@ -10,6 +10,27 @@ export type GroundLevel = "지상" | "지하";
 // (computeCompetitorInvestigationSummary는 "상세"만 따로 센다). 기존 "외관만" 29곳은 "간략"으로
 // 일괄 전환했고, 예측값은 전혀 바뀌지 않았다.
 export type SurveyLevel = "상세" | "간략";
+
+/**
+ * 2026-09-28 — 경쟁점 **조사표 초기값**(인허가 총게임기수·면적 → 대수 제안). 만드는 곳은 pcBangPermit.ts,
+ * 붙는 곳은 후보지 상권자료 수집(collect-market-data)이 새로 만드는 경쟁점 문서의 `permitHint`.
+ */
+export type PcBangPermitHint = {
+  source: "인허가";
+  /** 색인 자료 시각(ISO). 낡았으면 티가 나게 문구에 같이 찍는다. */
+  collectedAt: string | null;
+  /** 인허가 상호 */
+  name: string;
+  distanceM: number;
+  matchedBy: "name" | "distance";
+  gameCount: number | null;
+  areaM2: number | null;
+  opened: string | null;
+  /** 조사표에 제안할 대수. 게임기수(≥20) → 면적÷2.67 → null 순. */
+  suggestedPcCount: number | null;
+  /** 사람이 읽는 근거 한 줄 — 예: "인허가 총게임기수 120대 (놀러와PC, 8m, 2026-09 자료)" */
+  basis: string;
+};
 // 원본 시트에는 없는 워크플로 상태값. 05_경쟁점정보에 "경쟁점 없음"과 "노후·저경쟁력 미조사"를
 // 구분하는 필드가 없어(docs/data-issues.md #3), 사용자 승인 하에 웹에서만 신규로 추가한다.
 //
@@ -311,6 +332,14 @@ export type Competitor = {
   hasElevator: boolean | null;
   // 2026-09-26 — 후보지 상권자료 수집 때 건축물대장으로 채운 근거 한 줄(buildingElevator.ts). 화면 참고용.
   elevatorBasis?: string | null;
+  // 2026-09-28 — 후보지 상권자료 수집 때 인허가 자료(총게임기수·면적)로 만든 **조사표 초기값**(pcBangPermit.ts).
+  //    totalPcCount·appliedPcCount에는 안 넣는다 — 조사표에서 사람이 "인허가 값 넣기"를 눌러야 들어간다.
+  //    새로 만들어지는 경쟁점에만 붙고 기존 문서는 안 바뀐다(사용자 확인).
+  permitHint?: PcBangPermitHint | null;
+  // 2026-09-28 — 장기 과제(개점 후 3~6개월 핑봇 재측정, docs/long-term-pingbot-remeasure.md). 기준값(pingbotUtilization·
+  //    pingbotPeriod)은 개점 전 값이고, 재측정 값은 여기 따로 둔다(scripts/writePingbotUpdates.mjs --remeasure).
+  pingbotRemeasureUtilization?: number | null;
+  pingbotRemeasurePeriod?: string | null;
   // 2026-08-28 (2차) — CandidateInput.ownCpu 등과 동일 이유로 기본+특화 다단계로 늘렸다
   // (calc.ts combineHardwareTiers). monitor는 monitorBase로 이름을 바꿨다(다른 항목과 Base/Top
   // 네이밍 통일 — cronSync가 매번 문서를 전체 재구성하므로 마이그레이션 이슈 없음).
