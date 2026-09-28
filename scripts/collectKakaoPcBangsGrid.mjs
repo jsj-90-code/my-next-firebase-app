@@ -30,6 +30,7 @@
 // 실행:
 //   node scripts/collectKakaoPcBangsGrid.mjs            # 전체(이어받기 됨)
 //   node scripts/collectKakaoPcBangsGrid.mjs --limit 3  # 3곳만 시험
+//   node scripts/collectKakaoPcBangsGrid.mjs --sites new-sites.json  # 새 후보지만 보탬(2026-09-28) → 이어서 buildRival2kmSnapshot
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
 function loadEnvLocal() {
@@ -58,8 +59,15 @@ if (!KEY) {
   process.exit(1);
 }
 
-/** 매장 좌표는 기존 수집물에서 가져온다 — **같은 좌표를 써야** 옛 결과와 비교가 된다. */
-const SITES = ".local-tools/kakao-neighborhood.json";
+const args = process.argv.slice(2);
+const argValue = (n) => { const i = args.indexOf(n); return i === -1 ? null : args[i + 1]; };
+/**
+ * 매장 좌표는 기존 수집물에서 가져온다 — **같은 좌표를 써야** 옛 결과와 비교가 된다.
+ * 2026-09-28: 새 후보지 한 곳만 보탤 때는 `--sites <json>`으로 다른 목록을 준다(같은 모양: {sites:{key:{code,name,lat,lng}}}).
+ * 이미 산출물(OUT)에 있는 지점은 건너뛰므로, 목록에 새 지점만 담으면 그 지점만 카카오에 묻고 나머지는 그대로 남는다.
+ * kakao-neighborhood.json은 옛 하네스의 근거라 손대지 않는다.
+ */
+const SITES = argValue("--sites") ?? ".local-tools/kakao-neighborhood.json";
 const OUT = ".local-tools/kakao-pcbangs-grid.json";
 const RADIUS_M = 2000;
 /** 카카오 한 질의의 상한. 15건 × 3쪽. */
@@ -68,8 +76,6 @@ const PAGE_CAP = 45;
 const MAX_DEPTH = 4;
 const DELAY_MS = Number(process.env.KAKAO_DELAY_MS ?? 120);
 
-const args = process.argv.slice(2);
-const argValue = (n) => { const i = args.indexOf(n); return i === -1 ? null : args[i + 1]; };
 const LIMIT = argValue("--limit") ? Number(argValue("--limit")) : Infinity;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
