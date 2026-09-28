@@ -270,9 +270,10 @@ async function loadLabData(): Promise<Loaded | null> {
 // ── 탭 (2026-09-24 밤) ─────────────────────────────────────────────────────
 // 사용자: *"실험실 페이지에 탭을 넣어서 데이터 관리하자. 지금 페이지가 너무 길다."*
 // 주소 ?tab=… 로 고른다 — 링크로 특정 탭을 바로 열 수 있고 새로고침해도 유지된다.
+// 힌트에 매장 수를 글자로 박지 않는다(CLAUDE.md) — 수는 아래 탭 줄에서 자료를 세어 붙인다.
 const LAB_TABS = [
-  { key: "score", label: "성적", hint: "자사 40곳 가동률·매출 오차" },
-  { key: "candidates", label: "후보지", hint: "신규후보지 13곳 예측" },
+  { key: "score", label: "성적", hint: "자사 가동률·매출 오차" },
+  { key: "candidates", label: "후보지", hint: "신규후보지 예측" },
   { key: "params", label: "계수", hint: "지금 쓰는 값과 뜻" },
   { key: "method", label: "산식 설명", hint: "왜 이렇게 재는가 · 결정 기록" },
   { key: "rivals", label: "경쟁점 인식", hint: "매장별로 어느 경쟁점을 몇 %로 세나" },
@@ -280,6 +281,10 @@ const LAB_TABS = [
 ] as const;
 type LabTabKey = typeof LAB_TABS[number]["key"];
 const isLabTab = (v: string | null): v is LabTabKey => LAB_TABS.some((t) => t.key === v);
+
+// 계수는 코드에 고정돼 있다(2026-09-16 사용자 방향: 조절판 없음). 컴포넌트 밖 상수로 두어야 탭을 누를 때마다
+// 새 객체가 만들어져 40곳을 다시 채점하는 일이 없다(2026-09-28 정리).
+const LAB_PARAMS: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS };
 
 export default function LabPage() {
   // useSearchParams는 Suspense 안에서만 정적 렌더가 된다(Next 규칙).
@@ -309,7 +314,7 @@ function LabPageInner() {
   // 조절판을 없앴다(2026-09-16 사용자 방향: "슬라이드바 직접 조절하는 건 없애고 최신 데이터
   // 기준으로 반영한 예상매출·가동률을 보고 싶다"). 계수는 코드에 고정하고, 바꿔야 하면
   // textbookModel.ts의 DEFAULT_TEXTBOOK_PARAMS에서 바꾼다 — 화면에 떠넘기지 않는다.
-  const p: TextbookParams = { ...DEFAULT_TEXTBOOK_PARAMS };
+  const p = LAB_PARAMS;
 
   useEffect(() => {
     let alive = true;
@@ -328,7 +333,7 @@ function LabPageInner() {
 
   const score: TextbookScore | null = useMemo(
     () => (data?.rows.length ? scoreTextbook(data.rows, p) : null),
-    [data, p],
+    [data, p], // p는 모듈 상수라 실제로는 data가 바뀔 때만 다시 채점한다
   );
 
   // 기존점 **실측** 가동률의 범위. 후보지 예측이 이 밖이면 외삽 경고를 띄운다.
@@ -367,7 +372,11 @@ function LabPageInner() {
           </button>
         ))}
       </nav>
-      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">{LAB_TABS.find((t) => t.key === tab)?.hint}</p>
+      <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+        {LAB_TABS.find((t) => t.key === tab)?.hint}
+        {data && tab === "score" && <> — 자사 {data.rows.length}곳</>}
+        {data && tab === "candidates" && <> — {data.candRows.length}곳</>}
+      </p>
 
       {loading && <p className="mt-8 text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>}
       {error && <p className="mt-8 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
@@ -383,7 +392,7 @@ function LabPageInner() {
         <CandidateTable rows={data.candRows} p={fittedParams(p, score)}
           franchiseManagement={data.franchiseManagement} existingCount={score.sampleCount} actualUtilRange={actualUtilRange} />
       )}
-      {score && data && tab === "params" && <ParamSummary p={p} counts={counts} />}
+      {score && data && tab === "params" && <ParamSummary p={p} />}
       {score && data && tab === "method" && (
         <>
           <div className="app-notice mt-4 rounded-xl px-4 py-3 text-xs leading-relaxed">
@@ -392,7 +401,7 @@ function LabPageInner() {
             <b> &ldquo;이 동네 수요가 얼마고 그중 우리가 몇 %를 가져간다&rdquo;</b>로 설명됩니다. 대신 정확도가 떨어집니다 —
             그 맞바꿈이 할 만한지 보시라고 만든 화면입니다. 아래는 지금 산식과 그렇게 정한 이유·되돌린 기록입니다.
           </div>
-          <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice}
+          <HowItWorks p={p} fitted={score.fittedHoursPerUser} productUnitPrice={score.fittedProductUnitPrice} actualUtilMax={actualUtilRange?.max ?? null}
             scaledOnUtilization={score.scaledOnUtilization} qsc={data.qsc} specWeights={data.specWeights} productRule={data.productRule} />
         </>
       )}
@@ -403,10 +412,9 @@ function LabPageInner() {
             ...data.candRows.map((r) => ({ kind: "후보지" as const, input: r.input })),
           ]}
           p={fittedParams(p, score)}
-          defaultOpen
         />
       )}
-      {score && data && tab === "data" && <DataStatus data={data} p={p} />}
+      {score && data && tab === "data" && <DataStatus data={data} p={p} floatingCounts={counts} />}
     </div>
   );
 }
@@ -415,7 +423,12 @@ function LabPageInner() {
 // 실험실이 읽는 복제본(storeEvalLab*)에 무엇이 몇 건 있고, 산식이 실제로 쓰는 분류(특수수요 유형·강도)가 매장별로 어떻게
 // 들어가 있는지 한 화면에 적는다. 오송이 "대학가/보통"으로 들어와 배수를 탔던 일이 이 표가 있었으면 바로 보였을 것이다.
 // ⚠️ 여기서 고치지는 않는다 — 운영 화면(입지평가 탭)에서 고치고 scripts/syncLabCollections.mjs로 옮긴다. Firestore 쓰기는 지시가 있을 때만.
-function DataStatus({ data, p }: { data: Loaded; p: TextbookParams }) {
+function DataStatus({ data, p, floatingCounts }: {
+  data: Loaded; p: TextbookParams;
+  /** 유동인구 반경별로 자료가 있는 매장 수 — 계수 탭에서 옮겨 왔다(2026-09-28). */
+  floatingCounts: { f100: number; f200: number; f300: number; f400: number; f500: number; total: number };
+}) {
+  const fc = floatingCounts;
   const d = data.dataStatus;
   const fmtAt = (ms: number | null) => (ms ? new Date(ms).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" }) : "-");
   const counts: { label: string; value: string; note: string }[] = [
@@ -430,6 +443,7 @@ function DataStatus({ data, p }: { data: Loaded; p: TextbookParams }) {
     { label: "로드뷰 판정", value: `${d.roadview}곳`, note: "동선 방해·가시성. 입지 계수가 0이라 지금은 안 읽는다" },
     { label: "월매출(운영 원본)", value: `${d.salesRows}행`, note: "실측 사실이라 운영 것을 그대로 읽는다 — 두 벌로 두지 않는다" },
     { label: "실험실 설정", value: fmtAt(d.settingsUpdatedAt), note: "하드웨어 비중 등. 운영 설정과 별개" },
+    { label: "유동인구(반경별)", value: `${p.floatingRadius}m ${fc[`f${p.floatingRadius}` as "f400"] ?? "-"}곳`, note: `산식이 읽는 반경은 ${p.floatingRadius}m. 수집 현황 — 100m ${fc.f100} · 200m ${fc.f200} · 300m ${fc.f300} · 400m ${fc.f400} · 500m ${fc.f500}곳 (표본 ${fc.total}곳). 후보지는 등록 화면에 500m 칸뿐이라 스크립트로 채운다` },
   ];
   // 특수수요 분류 — 산식에 실제로 들어간 값(rows/candRows의 input)에서 읽는다.
   const gate = new Set(p.specialDemandHighOnly ?? []);
@@ -676,17 +690,12 @@ function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Load
           </div>
         </div>
       )}
+      {/* 2026-09-28 정리: 가동률 오차·목표는 위 카드와 머리글이 이미 보여준다. 여기는 축척 두 값만 한 줄로. */}
       <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-        표본 {score.sampleCount}곳 · 목표 MAPE 10%(마지노선 20%) ·
-        1인당 월이용시간 {score.fittedHoursPerUser.toFixed(2)}시간
-        {p.hoursPerUserFixed ? <> ← <b>가맹점 원장 실측</b>(안 맞춥니다)</> : <> ← 독점 실측가동률에서 역산</>} ·
+        표본 {score.sampleCount}곳 · 축척 — 1인 월 {score.fittedHoursPerUser.toFixed(2)}시간
+        ({p.hoursPerUserFixed ? "원장 실측, 고정" : "독점 실측가동률에서 역산"}) ·
         상품몫 {Math.round(score.fittedProductUnitPrice).toLocaleString()}원/PC·시간
-        {p.productUnitPriceFixed ? <> ← <b>직접 측정으로 못 박은 값</b>(안 맞춥니다)</> : <> ← 실측으로 매번 맞춥니다</>}.
-        {score.utilizationMaePoints != null && (
-          <> 가동률 자체의 오차는 평균 {(score.utilizationMaePoints * 100).toFixed(2)}%p(비율로 {pct(score.utilizationMape)},
-          실측 있는 {score.utilizationSampleCount}곳)이고 목표는 {UTILIZATION_TARGET_MAE_POINTS * 100}%p입니다
-          — 매출 오차와 따로 봐야 어느 층이 틀렸는지 갈립니다.</>
-        )}
+        ({p.productUnitPriceFixed ? "직접 측정, 고정" : "실측으로 매번 맞춤"}). 뜻은 &ldquo;계수&rdquo;·&ldquo;산식 설명&rdquo; 탭에.
       </p>
     </div>
   );
@@ -700,8 +709,10 @@ function ScoreBoard({ score, current, p }: { score: TextbookScore; current: Load
  *    그린다 — 위 조절판을 움직이면 이 설명도 같이 바뀐다. 계산만 바꾸고 설명을 두면 화면이
  *    조용히 거짓말을 한다(CLAUDE.md 규칙, docs/backlog.md 2026-09-14 블록).
  */
-function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, specWeights, productRule }: {
+function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, specWeights, productRule, actualUtilMax }: {
   p: TextbookParams; fitted: number; productUnitPrice: number; scaledOnUtilization: boolean;
+  /** 지금 표본의 실측 월평균 가동률 최대 — 상한 설명에 글자로 박지 않고 여기서 읽는다(2026-09-28). */
+  actualUtilMax: number | null;
   /** 상품몫 규칙값 — 코드 상수와 나란히 적는다(2026-09-25). */
   productRule: Loaded["productRule"];
   /** QSC 적용 현황. 숫자를 글자로 박지 않고 여기서 읽어 그린다. */
@@ -719,15 +730,21 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
   const male = PC_USE_RATE_MALE;
   const female = PC_USE_RATE_FEMALE;
   const pct = (v: number) => Math.round(v * 1000);
+  // 2026-09-28 정리: 탭이 된 뒤로 접기 껍데기(details)는 무의미해서 뺐고, 대신 단계 목차를 위에 둔다.
+  const toc: [string, string][] = [
+    ["how-1", "1. 인구 → PC방 이용자"], ["how-2", "2. 수요"], ["how-3", "3. 점유율·가동률"], ["how-4", "4. 매출"], ["how-5", "축척 둘"], ["how-6", "판정 기준"],
+  ];
   return (
-    <details className="app-card mt-4 rounded-xl px-4 py-3 text-xs leading-relaxed" open>
-      <summary className="cursor-pointer text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
-        계산기준 — 지금 수요를 어떻게 재고 있나
-      </summary>
+    <section className="app-card mt-4 rounded-xl px-4 py-3 text-xs leading-relaxed">
+      <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">계산기준 — 지금 수요를 어떻게 재고 있나</h2>
+      <p className="mt-1 text-[var(--sl-ink-soft)]">
+        단계마다 <b>지금 식</b>을 먼저 적고, 그렇게 정한 이유와 되돌린 기록이 뒤따릅니다. 옛 결정 기록은 접어 두었습니다(누르면 펼쳐짐).
+        {" "}바로 가기: {toc.map(([id, label], i) => <span key={id}>{i > 0 && " · "}<a href={`#${id}`} className="underline">{label}</a></span>)}
+      </p>
 
       <ol className="mt-3 space-y-3 text-[var(--sl-ink-soft)]">
         <li>
-          <b className="text-[#171310] dark:text-[#f2ede2]">1. 인구를 &ldquo;PC방 이용자&rdquo;로 환산한다</b>
+          <b id="how-1" className="text-[#171310] dark:text-[#f2ede2]">1. 인구를 &ldquo;PC방 이용자&rdquo;로 환산한다</b>
           <div className="mt-1">
             연령대마다 PC방 이용률이 다르고, 남녀는 약 3배 차이 납니다. 그래서 인구를 그대로 쓰지 않고
             이용률을 곱해 환산합니다.
@@ -754,7 +771,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
         </li>
 
         <li>
-          <b className="text-[#171310] dark:text-[#f2ede2]">2. 주거를 기본으로, 유동을 보태 수요를 만든다</b>
+          <b id="how-2" className="text-[#171310] dark:text-[#f2ede2]">2. 주거를 기본으로, 유동을 보태 수요를 만든다</b>
           <div className="mt-1 font-mono text-[11px]">
             수요 = 환산(주거 {p.residentRadius === 1000 ? "1km" : `${p.residentRadius}m`})
             {p.residentRingDecayM > 0 ? ` + Σ 고리 × e^(−(r−1000)/${p.residentRingDecayM})` : ""}
@@ -829,7 +846,11 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               ⚠️ 산업단지(우리 2곳·경쟁점 1곳)·군부대(2곳·2곳)는 표본이 작아 <b>값이 아니라 방향</b>입니다.
             </div>
           </div>
-          <div className="mt-1 rounded border border-[var(--sl-line)] p-2">
+          {/* 2026-09-28 정리: 09-20 낮·밤에 배수를 껐던 기록 두 상자는 접어 둔다 — 그 뒤 09-24에 강도 문 아래에서 다시 켰으니
+              지금 상태는 위 상자가 말한다. 기록은 docs/releases/2026-09-20-special-demand-second-pass.md에도 있다. */}
+          <details className="mt-1 rounded border border-[var(--sl-line)] p-2">
+            <summary className="cursor-pointer font-semibold">이전 결정 기록 — 2026-09-20 낮·밤에 산업단지·기타·대학가 배수를 껐던 이유(2차·3차) · 누르면 펼쳐짐</summary>
+          <div className="mt-2 rounded border border-[var(--sl-line)] p-2">
             <div className="font-semibold">산업단지·기타는 2026-09-20 낮에, 대학가는 그날 밤에 껐습니다 (기록)</div>
             <div className="mt-1">
               1차 값(2026-09-16)은 <b>산업단지 ×1.39 · 기타 ×1.25</b>였는데, <b>순환에 오염돼</b>
@@ -906,6 +927,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               덧셈을 해 보니 <b>부호가 반대</b>로 나와 대학가에서는 안 통했습니다.)
             </div>
           </div>
+          </details>
           <div className="mt-1">
             유동 계수 <b>{p.floatingFactor}</b>는 <b>측정값이 아니라 보정상수</b>입니다. 한 숫자가 셋을
             떠맡습니다 — 단위 변환(주거는 &ldquo;명&rdquo;, 유동은 &ldquo;하루 통행량&rdquo;), 중복 제거(거주자 통행이
@@ -915,7 +937,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
         </li>
 
         <li>
-          <b className="text-[#171310] dark:text-[#f2ede2]">3. 수요를 경쟁과 나눠 가동률을 낸다</b>
+          <b id="how-3" className="text-[#171310] dark:text-[#f2ede2]">3. 수요를 경쟁과 나눠 가동률을 낸다</b>
           {p.shareMode === "off" ? (
             <>
               <div className="mt-1 font-mono text-[11px]">
@@ -983,15 +1005,15 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                   ⚠️ 후보지는 평가창이 없어(개점 전) <b>지금 영업 중인 곳만</b> 셉니다.
                 </div>
               </div>
+              {/* 2026-09-28 정리: "핑봇 47곳 자사우위 3.50배 vs 실측 1.74배" 문장을 뺐다 — 사용자 09-24 결정 "핑봇은 1:1 대조만,
+                  자사우위 배수는 판정 잣대 금지". 경쟁점 하나하나의 대조는 경쟁점 인식 탭에서 본다. */}
               <div className="mt-1">
                 품질 지수 <b>{p.qualityExponent}</b>{p.qualityExponent === 3
-                  ? <>는 자사 40곳 안에서 고른 값입니다. 2026-09-23에 1.75로 내렸다가(존구성 0.06·고리 λ800과 묶음) <b>2026-09-24에
-                    3으로 되돌렸습니다</b> — 묶음이 후보지를 한결같이 올렸기 때문입니다(위 1km 밖 고리 설명). 알려진 약점은 그대로입니다:
-                    경쟁점 핑봇 47곳을 바깥 표본으로 세우면 자사우위를 3.50배로 예측하고 실측은 1.74배(1년차 자사 vs 성숙 경쟁점)입니다.
-                    θ 혼자 내리면 자사·경쟁점이 같이 −10%p 과소예측되므로 수요를 같이 키워야 하는데, 그 수요 확대가 후보지에서 틀렸습니다.</>
-                  : <>는 2026-09-23에 3에서 내린 값입니다. 3은 자사 40곳
-                    안에서 고른 값이었는데, 경쟁점 핑봇 47곳을 바깥 표본으로 세우자 자사우위를 3.50배로 예측했고
-                    실측은 1.74배(1년차 자사 vs 성숙 경쟁점)였습니다. <b>존구성 비중 {p.qualityWeights.zone}·1km 밖 고리
+                  ? <>는 자사 표본 안에서 고른 값입니다. 2026-09-23에 1.75로 내렸다가(존구성 0.06·고리 λ800과 묶음) <b>2026-09-24에
+                    3으로 되돌렸습니다</b> — 묶음이 후보지를 한결같이 올렸기 때문입니다(위 1km 밖 고리 설명).
+                    θ 혼자 내리면 자사·경쟁점이 같이 −10%p 과소예측되므로 수요를 같이 키워야 하는데, 그 수요 확대가 후보지에서 틀렸습니다.
+                    내려도 나빠지는 것은 가동률 기준으로 재확인했습니다(2026-09-21).</>
+                  : <>는 2026-09-23에 3에서 내린 값입니다. <b>존구성 비중 {p.qualityWeights.zone}·1km 밖 고리
                     λ{p.residentRingDecayM}m와 한 묶음</b>입니다 — θ 혼자 내리면 자사·경쟁점이 같이 −10%p 과소예측됩니다.</>}
                 (옛 근거: 매출 변화폭 역산 2.74~4.92·중앙 3.25 — 감각은 매출액, 측정은 가동률로 경로가 달랐습니다.)
               </div>
@@ -1107,12 +1129,10 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
                 그래서 자료가 아니라 <b>뜻으로 정한 값</b>입니다 — 표본이 늘면 다시 잽니다.
               </div>
               <div className="mt-1">
-                지금 <b>{qsc.total}곳 중 {qsc.measured}곳</b>이 실제 점검 점수로 계산되고,
-                나머지 {qsc.total - qsc.measured}곳은 <b>가맹점 평균</b>이 들어갑니다.
+                지금 <b>{qsc.total}곳 중 {qsc.measured}곳</b>이 실제 점검 점수로 계산되고 나머지는 <b>가맹점 평균</b>입니다
                 {qsc.avg != null && qsc.min != null && qsc.max != null && (
-                  <> 관리 점수는 <b>{qsc.min.toFixed(2)} ~ {qsc.max.toFixed(2)}</b>,
-                    평균 <b>{qsc.avg.toFixed(2)}</b>입니다(종전에는 전 매장 4.00 고정이었습니다).</>
-                )}
+                  <>(관리 점수 {qsc.min.toFixed(2)}~{qsc.max.toFixed(2)}, 평균 {qsc.avg.toFixed(2)})</>
+                )}. 매장별 값은 성적 탭 표의 QSC·관리 열, 건수는 자료 탭에 있습니다.
               </div>
               <div className="mt-1 text-[var(--sl-ink-soft)]">
                 ⚠️ <b>후보지에는 가맹점 평균이 들어갑니다</b> — 안 연 매장은 점검을 받을 수 없기 때문입니다.
@@ -1157,17 +1177,16 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               &quot;왜 우리가 이기는가&quot;의 답이 이름표여서는 안 되기 때문입니다.
               2026-09-17 측정: MAPE 22.02% → 22.60%. 운영 산식(V62)의 존구성은 그대로입니다.
             </div>
+            {/* 2026-09-28 정리: "실측 자사우위 1.74배 vs 3.50배" 근거는 핑봇을 동네 평균으로 삼은 배수라 뺐다(사용자 09-24 "핑봇은 1:1 대조만"). */}
             <div className="mt-1 text-[var(--sl-ink-soft)]">
               {p.qualityWeights.zone === 0.238
                 ? <>⛔ <b>존구성 비중 {p.qualityWeights.zone} — 2026-09-23에 0.06으로 줄였다가 2026-09-24에 되돌렸습니다.</b>
-                  {" "}θ 3·고리 꺼짐과 한 묶음입니다(1km 밖 고리 설명). 알려진 약점은 남습니다: 자사 존구성 평균 3.19 vs 경쟁점
-                  1.39로 2.3배인데 실측 자사우위는 1.74배라, 이 비중이면 우리 몫이 3.50배로 부풀어 보입니다. 09-23 격자에서 비중을
-                  남길수록 순서(자사 r·짝 r)는 좋아졌고, 사전 기준 1위는 0.06이었습니다.</>
+                  {" "}θ 3·고리 꺼짐과 한 묶음입니다(1km 밖 고리 설명). 남은 물음: 자사 존구성 평균이 경쟁점의 2.3배(3.19 vs 1.39, 2026-09-23)인데
+                  그만큼 손님이 몰리는지는 바깥 자료로 확인된 적이 없습니다. 09-23 격자에서 비중을 남길수록 순서(자사 r·짝 r)는 좋아졌습니다.</>
                 : <>✅ <b>2026-09-23 — 경쟁력점수 안 존구성 비중을 0.238 → {p.qualityWeights.zone}로 줄였습니다(항목은 남깁니다).</b>
-                  {" "}자사 존구성 평균 3.19 vs 경쟁점 1.39로 2.3배인데 실측 자사우위는 1.74배라, 옛 비중이면 우리 몫이
-                  3.50배로 부풀었습니다. 비중 0~0.238을 돌리자 남길수록 순서(자사 r·짝 r)는 좋아지고 세게 두면 우위를
-                  부풀려, 사전 기준 1위가 {p.qualityWeights.zone}이었습니다. θ {p.qualityExponent}·1km 밖 고리와 한 묶음입니다.
-                  &quot;빼는 게 정답&quot;은 아닙니다 — 팀룸 유입 기전은 살아 있습니다.</>}
+                  {" "}자사 존구성 평균이 경쟁점의 2.3배(3.19 vs 1.39)라 옛 비중이면 우리 몫이 크게 부풀었습니다. 비중 0~0.238을 돌리자
+                  남길수록 순서(자사 r·짝 r)는 좋아지고 세게 두면 우위를 부풀려, 사전 기준 1위가 {p.qualityWeights.zone}이었습니다.
+                  θ {p.qualityExponent}·1km 밖 고리와 한 묶음입니다. &quot;빼는 게 정답&quot;은 아닙니다 — 팀룸 유입 기전은 살아 있습니다.</>}
             </div>
           </div>
           <div className="mt-3 rounded border border-[var(--sl-line)] p-2">
@@ -1279,7 +1298,8 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           </div>
           {/* 2026-09-21 — 눈금 보정을 채택하고도 화면이 이 단계를 아예 말하지 않고 있었다.
               숫자는 전부 p에서 읽는다(글자로 박지 않는다). */}
-          {!p.indexCalibration && (
+          {/* 2026-09-28 정정: 지수 1이면 "끔"이다. 전에는 객체가 있다는 이유로 아래 "켜짐" 상자를 그리고 이 상자는 영영 안 떴다. */}
+          {(!p.indexCalibration || p.indexCalibration.ratioExponent === 1) && (
             <div className="mt-2 rounded border border-[var(--sl-line)] p-2">
               <div className="font-semibold">⛔ 여기 있던 &ldquo;눈금 보정&rdquo;은 껐습니다 (2026-09-21 밤)</div>
               <div className="mt-1">
@@ -1308,7 +1328,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
               </div>
             </div>
           )}
-          {p.indexCalibration && (
+          {p.indexCalibration && p.indexCalibration.ratioExponent !== 1 && (
             <div className="mt-2 rounded border border-[var(--sl-line)] p-2">
               <div className="font-semibold">그 다음 — 눈금을 실측에 맞춰 다시 새깁니다</div>
               <div className="mt-1 font-mono text-[11px]">
@@ -1341,12 +1361,12 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
           )}
           <div className="mt-1">
             가동률 상한은 <b>{Math.round(p.maxUtilization * 100)}%</b>입니다
-            (실측 월평균 최대가 46.5%, 월 최대의 최대가 52.0%).
+            (지금 표본의 실측 월평균 최대 {actualUtilMax == null ? "-" : `${(actualUtilMax * 100).toFixed(1)}%`} · 한 달 최대의 최대는 52.0%였습니다, 2026-09-16 측정).
           </div>
         </li>
 
         <li>
-          <b className="text-[#171310] dark:text-[#f2ede2]">4. 가동률을 매출로 바꾼다</b>
+          <b id="how-4" className="text-[#171310] dark:text-[#f2ede2]">4. 가동률을 매출로 바꾼다</b>
           <div className="mt-1 font-mono text-[11px]">
             매출 = 자사PC × 720시간 × 가동률 × <b>PC 1대·1시간당 매출</b>
           </div>
@@ -1416,7 +1436,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
         </li>
 
         <li>
-          <b className="text-[#171310] dark:text-[#f2ede2]">축척은 둘이고, 각각 실측값에서 옵니다</b>
+          <b id="how-5" className="text-[#171310] dark:text-[#f2ede2]">축척은 둘이고, 각각 실측값에서 옵니다</b>
           <div className="mt-1">
             층마다 실측값이 따로 있으니(가동률은 매출DB, 매출도 매출DB) 축척도 따로 둡니다.
             하나로 겸하게 하면 매출 환산이 틀린 만큼이 <b>가동률로 되밀려 들어갑니다</b> —
@@ -1449,13 +1469,14 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
         </li>
       </ol>
 
-      <div className="mt-3 rounded-lg bg-[#171310]/5 px-3 py-2 dark:bg-white/5">
-        <b className="text-[#171310] dark:text-[#f2ede2]">판정 기준</b> — 독점매장(경쟁 0곳)은 점유율이
-        1이라 <b>수요식만 발가벗겨집니다.</b> 거기서 안 맞으면 수요가 틀린 것이고 경쟁력·입지로 덮을 수도
-        없습니다. 다만 독점이 3곳뿐이라(탕정역·광주각화·남악) 오차 1.1%와 1.3%의 차이는 잡음입니다 —
-        <b> 5% 이내인지만 통과/탈락으로 보고</b>, 통과한 것들 중에서 전체로 가릅니다.
+      {/* 2026-09-28 정정: "독점 3곳 5% 이내 통과/탈락"은 09-16 시절 기준이었다. 지금 기준(09-21 사용자)은 가동률 평균오차. */}
+      <div id="how-6" className="mt-3 rounded-lg bg-[#171310]/5 px-3 py-2 dark:bg-white/5">
+        <b className="text-[#171310] dark:text-[#f2ede2]">판정 기준</b> — <b>가동률 평균오차 {(UTILIZATION_TARGET_MAE_POINTS * 100).toFixed(0)}%p</b>로
+        먼저 판정하고(성적 탭 첫 카드 · 2026-09-21 사용자 &ldquo;가동률로 판단하고 맞춘 후에 매출로&rdquo;), 매출 오차는 그 다음입니다.
+        &lsquo;전부 평균&rsquo; 바닥을 확실히 이겨야 하고, 편차는 근거가 있어야 합니다(최악 매장·±{(UTILIZATION_TARGET_MAE_POINTS * 100).toFixed(0)}%p 안 매장 수를 같이 봅니다).
+        독점매장(경쟁 0곳)은 점유율이 1이라 <b>수요식만 발가벗겨지는 자리</b>입니다 — 거기서 어긋나면 수요가 틀린 것이고 경쟁력·입지로 덮을 수 없습니다.
       </div>
-    </details>
+    </section>
   );
 }
 
@@ -1472,10 +1493,7 @@ function HowItWorks({ p, fitted, productUnitPrice, scaledOnUtilization, qsc, spe
  *   [감각] 실무 감각으로 박았다 — 자료가 아직 말을 못 한다
  *   [보류] 계수 0으로 자리만 둔다
  */
-function ParamSummary({ p, counts }: {
-  p: TextbookParams;
-  counts: { f100: number; f200: number; f300: number; f400: number; f500: number; total: number };
-}) {
+function ParamSummary({ p }: { p: TextbookParams }) {
   const num = (v: number, d = 2) => v.toFixed(d).replace(/\.?0+$/, "");
   const pc0 = (v: number) => `${Math.round(v * 100)}%`;
   // 거리무게 예시 — 산식과 같은 함수로 계산해 글로 풀어 쓴다(숫자를 글자로 박지 않는다).
@@ -1486,6 +1504,13 @@ function ParamSummary({ p, counts }: {
   const gateText = (p.specialDemandHighOnly ?? []).join("·");
   // 2026-09-24 밤 사용자: "지금 쓰는 계수 가시성 안 좋으니까 개선. 200m 안 1 · 밖 e^(−(d−200)÷200) 이런 값 무슨 말인지 이해 못하겠음" —
   // 값마다 **뜻**을 한 줄로 풀어 쓰고(plain), 좁은 4열 카드 대신 넓은 표로 그린다. 뜻에 들어가는 숫자도 p에서 계산한다.
+  // 표에서 뺀 0 항목 — 무엇이 꺼져 있는지는 한 줄로 남긴다(뜻: 자리는 있지만 안 쓴다).
+  const off: string[] = [
+    ...(p.agglomerationFactor === 0 && p.densityCorrection === 0 ? ["상권 흡인력·밀집도 보정"] : []),
+    ...(p.outsideOptionIp === 0 ? ["PC방 안 가는 몫(상수) — 대신 '우리 몫 상한'"] : []),
+    ...(p.locationExponents.direction === 0 && p.locationExponents.flowBlock === 0 && p.locationExponents.visibility === 0 ? ["유동 방향·동선 방해·가시성 [보류, 로드뷰 자료 대기]"] : []),
+    ...(!p.indexCalibration || p.indexCalibration.ratioExponent === 1 ? ["눈금 보정(예측을 평균 쪽으로 당기기, 2026-09-21 끔)"] : []),
+  ];
   const groups: { title: string; rows: { label: string; value: string; plain: string; tag?: string }[] }[] = [
     {
       title: "1단계 · 동네 수요를 센다",
@@ -1496,12 +1521,19 @@ function ParamSummary({ p, counts }: {
         { label: "1km 밖 고리", value: ringOn ? `켬 · λ ${p.residentRingDecayM}m` : "끔", plain: ringOn
           ? `1km 밖 주민도 세되 멀수록 덜 셉니다 — 1.25km 고리 ${pc0(Math.exp(-250 / p.residentRingDecayM))} · 1.75km ${pc0(Math.exp(-750 / p.residentRingDecayM))} · 3.5km ${pc0(Math.exp(-2500 / p.residentRingDecayM))}. 고리 사람의 몫은 ${p.residentRingShare === "gravity" ? "우리와 그 근처 PC방 중 가까운 쪽으로 간다고 봅니다" : "1km 안과 같은 점유율로 봅니다"}${p.useRingEnclosure ? ", 막힌 방향(항아리 상권)은 그만큼 깎습니다" : ""}.`
           : "1km 밖 주민은 안 셉니다. 2026-09-23에 켰다가 후보지 13곳이 한결같이 +4.8%p 올라 하루 만에 되돌렸습니다." },
-        { label: "특수수요 배수", value: mulText, plain: `인구통계에 안 잡히는 손님(군인·학생·공장 근로자) 몫입니다. 그 유형 동네는 주민 수요를 이 배수만큼 크게 봅니다. 관광유흥·기타는 배수 없음.` },
+        // 2026-09-28 정정: "관광유흥·기타는 배수 없음"이 글자로 박혀 있었는데 관광·유흥 ×1.4가 켜져 있었다 — 배수 없는 유형도 p에서 읽어 적는다.
+        { label: "특수수요 배수", value: mulText, plain: `인구통계에 안 잡히는 손님(군인·학생·공장 근로자·유흥가 손님) 몫입니다. 그 유형 동네는 주민 수요를 이 배수만큼 크게 봅니다.${(() => {
+          const none = Object.entries(p.specialDemandMultipliers).filter(([k, v]) => v === 1 && k !== "없음" && k !== "관광유흥").map(([k]) => k);
+          return none.length ? ` 배수 없는 유형: ${none.join("·")}.` : "";
+        })()}` },
         { label: "배수 문", value: gateText ? `강도 "높음"만 (${gateText})` : "없음", plain: gateText
           ? `입지평가에서 특수수요 강도가 "높음"인 곳만 배수를 탑니다. 보통·낮음은 배수 없음 — 이름만 대학가인 곳(오송 약대·행정타운)이 ×1.3을 타는 걸 막습니다.`
           : "강도와 무관하게 유형만 보고 배수를 곱합니다." },
         { label: "1인 월 이용시간(축척)", value: `${num(p.hoursPerUserPerMonth)}시간`, plain: `PC방 이용자 1명이 한 달에 ${num(p.hoursPerUserPerMonth)}시간 쓴다고 봅니다. ${p.hoursPerUserFixed ? "가맹점 원장에서 직접 잰 값이라 고정입니다(맞추지 않습니다)." : "기존점에서 매번 적합합니다."}` },
-        { label: "상권 흡인력 · 밀집도 보정", value: `${num(p.agglomerationFactor)} · ${num(p.densityCorrection)}`, plain: p.agglomerationFactor === 0 && p.densityCorrection === 0 ? "둘 다 안 씁니다(0). 자리만 남겨 둔 항입니다." : "경쟁점이 많을수록 동네가 좋다고 보는 항과 500m 밀집을 깎는 항입니다." },
+        // 2026-09-28 정리: 값이 0인 항목은 표에서 빼고 아래 "꺼진 항목" 한 줄로(09-24 유효거리를 뺀 것과 같은 이유 — "안 쓰는 값 헷갈린다").
+        ...(p.agglomerationFactor === 0 && p.densityCorrection === 0 ? [] : [
+          { label: "상권 흡인력 · 밀집도 보정", value: `${num(p.agglomerationFactor)} · ${num(p.densityCorrection)}`, plain: "경쟁점이 많을수록 동네가 좋다고 보는 항과 500m 밀집을 깎는 항입니다." },
+        ]),
       ],
     },
     {
@@ -1526,7 +1558,9 @@ function ParamSummary({ p, counts }: {
         { label: "우리 몫 상한", value: `최대 ${Math.round(100 / (1 + (p.ownShareCapK ?? 0)))}% (k ${num(p.ownShareCapK ?? 0)})`, plain: (p.ownShareCapK ?? 0) > 0
           ? `경쟁점이 하나도 없어도 동네 손님의 ${Math.round(100 / (1 + p.ownShareCapK))}%까지만 옵니다(집에서 하거나 다른 동네로 가는 몫). 독점 매장 3곳(탕정역·광주각화·남악)이 실제로 먹은 몫 중앙 85%를 가동률 창 2~12개월차로 다시 잰 값입니다(2026-09-25). 경쟁이 많은 곳(몫 20~40%)엔 거의 작용하지 않습니다.`
           : "상한 없음 — 경쟁점 없는 동네는 수요를 전부 먹는 것으로 나옵니다." },
-        { label: "PC방 안 가는 몫(상수)", value: `${p.outsideOptionIp.toLocaleString()} IP`, plain: p.outsideOptionIp === 0 ? "안 씁니다(0). 상수로 두면 수요 작은 소도시가 제일 깎여서 대신 위 '우리 몫 상한'을 씁니다." : "동네 수요 중 어느 PC방도 안 가는 몫을 경쟁 PC처럼 분모에 넣습니다." },
+        ...(p.outsideOptionIp === 0 ? [] : [
+          { label: "PC방 안 가는 몫(상수)", value: `${p.outsideOptionIp.toLocaleString()} IP`, plain: "동네 수요 중 어느 PC방도 안 가는 몫을 경쟁 PC처럼 분모에 넣습니다." },
+        ]),
       ],
     },
     {
@@ -1538,20 +1572,20 @@ function ParamSummary({ p, counts }: {
           plain: `매장 앞이 동네 안에서 얼마나 붐비는 자리인가(300m 유동 ÷ 1km 유동). 기준 ${num(p.locationReferences.centrality)}보다 좋으면 우리 몫을 올리고 나쁘면 내립니다. ν ${num(p.locationExponents.centrality)}이면 중심도가 기준의 2배일 때 몫 ${Math.pow(2, p.locationExponents.centrality).toFixed(2)}배.${p.centralityResidual ? " 동네 크기(유동 400m)에 딸린 몫은 빼고 잔차만 씁니다 — 수요와 이중계산을 막기 위해." : ""}`,
         },
         { label: "접근성(층수·엘리베이터) κ", value: num(p.locationExponents.access), tag: "자료", plain: `지상 1층·엘리베이터 유무로 올라오기 얼마나 번거로운가. 기준 ${num(p.locationReferences.access)} 대비 κ ${num(p.locationExponents.access)}으로 약하게 곱합니다(2배 차이가 몫 ${Math.pow(2, p.locationExponents.access).toFixed(2)}배).` },
-        { label: "유동 방향 · 동선 방해 · 가시성", value: `${num(p.locationExponents.direction)} · ${num(p.locationExponents.flowBlock)} · ${num(p.locationExponents.visibility)}`, tag: "보류", plain: "자료가 없어 셋 다 0(안 씀)입니다. 로드뷰·경쟁점 좌표가 채워지면 켭니다." },
+        ...(p.locationExponents.direction === 0 && p.locationExponents.flowBlock === 0 && p.locationExponents.visibility === 0 ? [] : [
+          { label: "유동 방향 · 동선 방해 · 가시성", value: `${num(p.locationExponents.direction)} · ${num(p.locationExponents.flowBlock)} · ${num(p.locationExponents.visibility)}`, tag: "자료", plain: "로드뷰 판정(동선 방해·가시성)과 유동 방향을 우리 몫에 곱합니다." },
+        ]),
       ],
     },
     {
       title: "3단계 · 가동률을 매출로 바꾼다",
       rows: [
         { label: "가동률 상한", value: `${(p.maxUtilization * 100).toFixed(0)}%`, plain: `PC 좌석이 한 달 평균 ${(p.maxUtilization * 100).toFixed(0)}%를 넘게 돌아갈 수는 없다고 봅니다(관측 최대). 수요가 넘쳐도 여기서 잘립니다 — 표에 "상한"이 뜨는 매장.` },
-        {
+        ...(!p.indexCalibration || p.indexCalibration.ratioExponent === 1 ? [] : [{
           label: "눈금 보정",
-          value: !p.indexCalibration || p.indexCalibration.ratioExponent === 1 ? "끔" : `지수 ${num(p.indexCalibration.ratioExponent)} · 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}%`,
-          plain: !p.indexCalibration || p.indexCalibration.ratioExponent === 1
-            ? "예측 가동률을 평균 쪽으로 당기는 보정입니다. 지금은 안 씁니다(지수 1 = 그대로). 입지 지수만 이 자리에서 0.5로 읽힙니다."
-            : `예측 가동률을 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}% 쪽으로 당깁니다 — 닻보다 낮으면 올리고 높으면 내려서 매장 간 차이를 줄입니다.`,
-        },
+          value: `지수 ${num(p.indexCalibration.ratioExponent)} · 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}%`,
+          plain: `예측 가동률을 닻 ${(p.indexCalibration.referenceUtilization * 100).toFixed(1)}% 쪽으로 당깁니다 — 닻보다 낮으면 올리고 높으면 내려서 매장 간 차이를 줄입니다.`,
+        }]),
         { label: "정가 탄력도", value: num(p.rateElasticity, 3), plain: `요금을 2배 받으면 PC 시간당 매출은 ${Math.pow(2, p.rateElasticity).toFixed(2)}배만 늘어난다고 봅니다. 요금이 높으면 그만큼 다 받지는 못합니다.` },
         { label: "기준 정가", value: `${p.referenceHourlyRate.toLocaleString()}원`, plain: `표본 매장 시간당 요금의 중앙값입니다. 이 요금이면 PC몫이 정가 그대로이고, 위 탄력도는 여기서 벌어진 만큼에 걸립니다.` },
         { label: "상품몫", value: `${Math.round(p.productUnitPrice).toLocaleString()}원 / PC·시간`, plain: `PC가 1시간 돌 때 라면·음료 같은 상품매출이 ${Math.round(p.productUnitPrice).toLocaleString()}원 붙습니다. 요금과 무관한 상수이고 ${p.productUnitPriceFixed ? "직전 18개월 안에 연 매장의 상품매출 실측 중앙으로 정한 고정값입니다(새 매장일수록 시간당 먹거리를 더 팔아서 전 매장 평균은 낮게 봅니다)." : "기존점에서 매번 적합합니다."}` },
@@ -1599,10 +1633,12 @@ function ParamSummary({ p, counts }: {
         ))}
       </div>
 
-      <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
-        기초자료 수집 현황 — 유동인구 100m {counts.f100}곳 · 200m {counts.f200}곳 · 300m {counts.f300}곳 ·
-        400m {counts.f400}곳 · 500m {counts.f500}곳 (표본 {counts.total}곳)
-      </p>
+      {/* 2026-09-28 정리: 유동인구 반경별 수집 현황은 자료 탭으로 옮겼다. 값이 0인 항목은 아래 한 줄로만 적는다. */}
+      {off.length > 0 && (
+        <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">
+          꺼진 항목(값 0 · 자리만 둠, 표에서 뺌): {off.join(" · ")}
+        </p>
+      )}
     </section>
   );
 }
@@ -1626,29 +1662,12 @@ function StoreTable({ score, qscByStore, p, windowFill, inputByCode }: {
         경쟁점 유무와 무관합니다.
         <b> 실제 먹은 몫</b>은 실측가동률 ÷ 수요 전부라면입니다.
       </p>
-      <p className="mt-1 rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-        2026-09-16에 이 두 열이 말이 안 되게 나오던 문제를 고쳤습니다. 화면이 &ldquo;PC방 안 가는 몫&rdquo;을
-        모델 기본값(0) 대신 <b>500으로 덮어쓰고</b> 있었습니다. 그러면 경쟁점이 0곳인 독점 매장도
-        점유율이 17%로 계산되는데, <b>그때 수요 축척은 &ldquo;독점이면 점유율 1&rdquo;을 전제로 독점 매장에
-        맞췄습니다.</b> 전제가 깨지니 수요가 6배 부풀려졌고, 점유율이 그만큼 작아져 매출만 얼추 맞는
-        상태였습니다. 그걸 0으로 되돌리자 전체 MAPE가 41.8% → 23.4%로 내려갔습니다.
-        <br />
-        ⚠️ <b>2026-09-21에 하루 동안 20대로 올렸다가, 2026-09-22에 다시 {p.outsideOptionIp}대로 뺐습니다.</b>
-        축척을 원장 실측으로 못 박고 나니 경쟁점 없는 매장 3곳에서 수요식이 <b>19% 과대</b>인 게
-        드러났고(점유율이 1이라 그 초과분이 &ldquo;안 가는 몫&rdquo;처럼 보였습니다), 매장별로
-        20.9 · 19.8 · 19.3대가 나와 20대를 썼습니다. 뺀 이유는 <b>점 3개에 맞춘 값</b>이었고,
-        그 3곳이 사실 독점이 아니기 때문입니다 — 500m 안에 없을 뿐 2km 안에는 영업 중인 경쟁점이
-        있습니다(남악 6곳 · 탕정역 3곳 · 광주각화 27건 미판정). 필요한 몫도 매장마다 달라서
-        남악 10.4대 vs 광주각화 <b>51.9대</b>입니다 — 상수가 아니라 <b>반경 밖 경쟁점</b>입니다.
-        <br />
-        ✅ <b>그 반경 밖 경쟁점을 2026-09-22 밤에 실제로 넣었습니다</b>(아래 &ldquo;2km 경쟁점&rdquo; 설명).
-        그래서 이 칸은 <b>{p.outsideOptionIp}대로 두는 게 맞습니다</b> — 상수로 메우던 자리를
-        진짜 경쟁점이 대신 채웠습니다.
-      </p>
+      {/* 2026-09-28 정리: 여기 있던 "PC방 안 가는 몫" 500→0→20→0 이력 상자는 뺐다 — 표를 한 화면 아래로 밀었고,
+          같은 이야기가 산식 설명 탭(눈금 보정·2km 경쟁점)과 docs/releases 2026-09-21·09-22에 있다. */}
       <div className="mt-2 overflow-x-auto">
-        {/* 숫자 칸은 한 줄로 고정한다 — 2026-09-23 사용자 요청("실제매출란이 2줄 먹어서 칸이 넓어졌는데
-            1줄로"). 마지막 칸(비고)만 줄바꿈을 둔다. 표는 overflow-x-auto라 옆으로 밀리면 스크롤이 생긴다. */}
-        <table className="w-full min-w-[720px] text-left text-sm [&_th]:whitespace-nowrap [&_td:not(:last-child)]:whitespace-nowrap">
+        {/* 모든 칸을 한 줄로 고정한다 — 2026-09-23 사용자 요청("실제매출란이 2줄 먹어서 칸이 넓어졌는데 1줄로"),
+            2026-09-28 비고 칸도 한 줄(배지 서너 개가 두세 줄 먹던 것). 표는 overflow-x-auto라 옆으로 밀리면 스크롤이 생긴다. */}
+        <table className="w-full min-w-[720px] text-left text-sm [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
           <thead className="border-b border-[#171310]/10 text-xs text-[var(--sl-ink-soft)] dark:border-white/10">
             <tr>
               <th scope="col" className="px-3 py-2">매장</th>
@@ -1759,7 +1778,8 @@ function StoreTable({ score, qscByStore, p, windowFill, inputByCode }: {
                       </span>
                     )}
                     {r.capped && "가동률 상한 "}
-                    {r.missing.length > 0 && `자료없음: ${r.missing.join(", ")}`}
+                    {/* 자료없음 목록은 길어질 수 있어 항목 수만 적고 목록은 마우스 올리면(한 줄 유지). */}
+                    {r.missing.length > 0 && <span title={`자료없음: ${r.missing.join(", ")}`}>자료없음 {r.missing.length}건</span>}
                   </td>
                 </tr>
               );
@@ -1862,10 +1882,9 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
    * 유의하게 못 이기기 때문이다. 계수를 늘리는 대신 **읽는 사람이 알게** 하는 쪽을 택했다.
    *
    * ⚠️ **그날 저녁에 결정이 바뀌었다** — 지수 눈금 보정을 채택했고(b=0.327), 같은 날 밤
-   *    변별력 때문에 b를 0.45로 올렸다(`textbookModel`의 `indexCalibration` 주석).
-   *    그래서 위 "2.42배 넓게 퍼진다"는 **보정 전** 이야기다. 지금은 보정이 폭을 줄여
-   *    범위 밖 후보지가 0곳이라 이 경고가 안 뜬다. 경고는 그대로 남겨 둔다 —
-   *    표본이나 계수가 바뀌어 다시 범위 밖으로 나가면 그때 알려 줘야 한다.
+   *    변별력 때문에 b를 0.45로 올렸다가, **09-21 밤에 다시 껐다**(지수 1, `textbookModel`의 `indexCalibration` 주석).
+   *    그래서 지금은 벌린 폭이 그대로 보이고 이 경고가 실제로 뜬다(2026-09-28: 창원상남·영월이 실측 최저 아래).
+   *    경고는 그대로 둔다 — 표본이나 계수가 바뀌어 범위 안으로 들어오면 저절로 사라진다.
    *
    * ⚠️ 이건 "산식이 틀렸다"는 표시가 아니다. 표본 38곳은 **우리가 골라서 연** 자리들이라
    *    가동률이 좁게 모여 있다(열위 표본은 영원히 안 나온다). 그러니 범위 밖은
@@ -1924,10 +1943,12 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
           {" "}<b>한 번도 관측한 적 없는 구간</b>이라 숫자를 그대로 믿으면 안 됩니다.
           <br />
           이유: &ldquo;동네 수요 ÷ 총공급&rdquo;은 <b>우리가 만든 지수</b>라 매장 간 차이를 실제보다 크게
-          벌립니다. 그래서 예측을 가운데로 당기는 보정을 먹이는데
-          {p.indexCalibration ? <> (지금 지수 <b>{p.indexCalibration.ratioExponent}</b>,
-          닻 {pct(p.indexCalibration.referenceUtilization)})</> : <> (지금은 <b>꺼져 있습니다</b>)</>},
-          그러고도 범위를 벗어났다면 당기기 전 값이 아주 멀었다는 뜻입니다.
+          벌립니다.
+          {/* 2026-09-28 정정: 지수 1은 "끔"인데 객체가 있다는 이유로 켜진 것처럼 적고 있었다. */}
+          {p.indexCalibration && p.indexCalibration.ratioExponent !== 1
+            ? <> 그래서 예측을 가운데로 당기는 보정을 먹이는데(지금 지수 <b>{p.indexCalibration.ratioExponent}</b>,
+              닻 {pct(p.indexCalibration.referenceUtilization)}), 그러고도 범위를 벗어났다면 당기기 전 값이 아주 멀었다는 뜻입니다.</>
+            : <> 예측을 가운데로 당기는 보정은 <b>지금 꺼져 있습니다</b>(기전이 안 보여서 2026-09-21에 끔) — 그래서 벌린 폭이 그대로 보입니다.</>}
           {" "}<b>그래서 범위 밖 숫자는 &ldquo;그만큼 나쁘다&rdquo;가 아니라 &ldquo;산식이 그만큼 벌린다&rdquo;일 수 있습니다.</b>
           <br />
           ⚠️ 다만 이건 산식이 틀렸다는 뜻이 아닙니다 — 기존점 {existingCount}곳은 <b>우리가 골라서 연 자리들</b>이라
@@ -2033,13 +2054,11 @@ function CandidateTable({ rows, p, franchiseManagement, existingCount, actualUti
 //    밖이면 0). 지금은 **거리 감쇠**다 — 평지 안은 100%, 밖은 exp로 완만히 줄여서 센다.
 //    이 표가 계속 계단으로 그리고 있어서 화면이 "302m는 안 셈"이라고 거짓말하고 있었다.
 //    이제 **산식과 같은 무게 함수**를 써서 몇 %로 세는지를 그대로 보여준다.
-function RivalRecognition({ groups, p, defaultOpen = false }: {
+// 2026-09-28 정리: 탭이 된 뒤로 접을 이유가 없어 "펼치기/접기" 버튼과 defaultOpen을 뺐다. 항상 펼쳐 그린다.
+function RivalRecognition({ groups, p }: {
   groups: { kind: "기존점" | "후보지"; input: TextbookInput }[];
   p: TextbookParams;
-  /** 탭으로 따로 열 때는 접혀 있을 이유가 없다(2026-09-24 밤). */
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   const rows = groups.map(({ kind, input }) => {
     const oq = input.ownQualityParts ? computeQualityScore(input.ownQualityParts, p.qualityWeights) : null;
     const rivals = (input.rivals ?? []).map((v) => {
@@ -2060,13 +2079,7 @@ function RivalRecognition({ groups, p, defaultOpen = false }: {
   const droppedTotal = rows.reduce((a, r) => a + (r.rivals.length - r.counted.length), 0);
   return (
     <section className="mt-10">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 경쟁점 인식</h2>
-        <button type="button" onClick={() => setOpen((v) => !v)}
-          className="app-btn-outline shrink-0 rounded-lg px-3 py-1.5 text-xs">
-          {open ? "접기" : `펼치기 (${rows.length}곳)`}
-        </button>
-      </div>
+      <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장별 경쟁점 인식 ({rows.length}곳 — 매장을 누르면 펼쳐집니다)</h2>
       <p className="mt-1 text-xs leading-relaxed text-[var(--sl-ink-soft)]">
         산식이 <b>어느 매장을 경쟁점으로 세고 있는지</b> 그대로 보여줍니다. 지금 방식은
         {p.rivalDistanceDecay ? (
@@ -2091,8 +2104,7 @@ function RivalRecognition({ groups, p, defaultOpen = false }: {
         <b> 그래서 PC가 많아도 경쟁력이 낮으면 거의 안 세어집니다.</b>
         점유율 = 자사PC ÷ (자사PC + 무게합)이고, 여기에 입지 배율을 곱한 뒤 100%로 자릅니다.
       </p>
-      {open && (
-        <div className="mt-3 space-y-2">
+      <div className="mt-3 space-y-2">
           {rows.map(({ kind, input, oq, rivals, counted, rivalWeight }) => (
             <details key={`${kind}:${input.storeCode}`} className="app-card rounded-xl px-4 py-3">
               <summary className="cursor-pointer text-sm">
@@ -2157,8 +2169,7 @@ function RivalRecognition({ groups, p, defaultOpen = false }: {
               )}
             </details>
           ))}
-        </div>
-      )}
+      </div>
     </section>
   );
 }
