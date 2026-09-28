@@ -241,6 +241,7 @@ function BasicInfoTabForm({
         nearbyDuplicateWarnings: { code: string; name: string }[];
         competitorsAdded: number;
         demandPointsAdded: number;
+        rival2kmCount?: number | null;
       }>(response);
       if (!response.ok) throw new Error(data.error ?? "상권자료 수집에 실패했습니다.");
       if (data.error) {
@@ -256,6 +257,7 @@ function BasicInfoTabForm({
       await loadMarketData(form.code);
       setNearbyWarnings(data.nearbyDuplicateWarnings ?? []);
       const parts = [`좌표 확인 완료`, `경쟁점(PC방) ${data.competitorsAdded ?? 0}건`, `수요거점 ${data.demandPointsAdded ?? 0}건 자동수집`];
+      if (data.rival2kmCount != null) parts.push(`2km PC방 ${data.rival2kmCount}곳(실험실 산식용)`);
       setCollectMessage(parts.join(" · "));
     } catch (err) {
       setCollectError(err instanceof Error ? err.message : "상권자료 수집 중 오류가 발생했습니다.");

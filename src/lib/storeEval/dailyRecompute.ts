@@ -22,6 +22,7 @@ import { evaluateCandidate } from "./evaluate";
 import { evaluationSalesIds } from "./evaluationSalesPeriod";
 import { existingStoreSourceCode, prepareExistingStoresForEvaluation } from "./existingStoreEvaluation";
 import { qscInWindowAverage, residentRadiusByCodeFromDocs, type LabResidentRadiusDoc, type QscRecord } from "./labInput";
+import { candidateRival2kmFromDoc, type CandidateRival2kmDoc, type Rival2kmApplied } from "./rival2km";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import { resultFreshness } from "./resultFreshness";
 import { mergeModelSettings } from "./settings";
@@ -57,6 +58,8 @@ export type RecomputeSource = {
   labTradeAreaJudgments?: TradeAreaDoc[];
   labResidentRadius?: LabResidentRadiusDoc[];
   labRoadviewJudgments?: RoadviewDoc[];
+  /** 후보지별 2km 경쟁점 문서(storeEvalCandidateRival2km, 2026-09-28). 화면 listCandidateRival2km와 같은 변환. */
+  candidateRival2km?: CandidateRival2kmDoc[];
 };
 
 /** 원자료 -> 화면이 쓰는 모양. store.ts의 list* 함수들과 같은 변환이다. */
@@ -85,11 +88,16 @@ export function prepareRecomputeInputs(src: RecomputeSource) {
     if (!v.key) continue;
     roadviewByKey.set(v.key, { flowBlock: v.flowBlock ?? null, visibility: v.visibility ?? null });
   }
+  const rival2kmByCode = new Map<string, Rival2kmApplied[]>();
+  for (const v of src.candidateRival2km ?? []) {
+    if (v.candidateCode && Array.isArray(v.rivals)) rival2kmByCode.set(v.candidateCode, candidateRival2kmFromDoc(v));
+  }
   const labExtras: LabExtras = {
     residentRingsByCode: residentRingsByCodeFromDocs(src.labResidentRings ?? []),
     ringBlockedByCode,
     residentRadiusByCode: residentRadiusByCodeFromDocs(src.labResidentRadius ?? []),
     roadviewByKey,
+    rival2kmByCode,
   };
 
   return { settings, usedDefaultSettings: src.settingsDoc == null, competitors, evaluationSales, qscByStoreCode, labExtras };

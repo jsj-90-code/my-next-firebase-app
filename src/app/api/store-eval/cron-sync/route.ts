@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { runFullProfileMigration, runRevenueSync } from "@/lib/storeEval/cronSync";
 import { runDailyRecompute } from "@/lib/storeEval/dailyRecomputeRun";
+import { runLabSync } from "@/lib/storeEval/labSync";
 import { adminDb } from "@/lib/firebase-admin";
 
 export const maxDuration = 300; // Vercel Fluid Compute 기본 상한. 배치쓰기 덕분에 보통 훨씬 빨리 끝난다.
@@ -54,8 +55,16 @@ export async function GET(request: Request) {
       console.error("store-eval cron-sync 재계산 실패:", error);
       recompute = { ok: false, error: error instanceof Error ? error.message : "재계산에 실패했습니다." };
     }
-    await logRunResult({ ok: true, lastRunAt: Date.now(), revenue, profile, recompute });
-    return NextResponse.json({ ok: true, revenue, profile, recompute });
+    // 2026-09-28 — 재계산이 끝난 운영 자료를 실험실 복제본에도 복사한다(labSync.ts). 실패해도 위 단계는 이미 끝났으므로 칸에만 남긴다.
+    let labSync: unknown;
+    try {
+      labSync = adminDb ? await runLabSync(adminDb) : { ok: false, error: "firebase-admin 없음" };
+    } catch (error) {
+      console.error("store-eval cron-sync 실험실 동기화 실패:", error);
+      labSync = { ok: false, error: error instanceof Error ? error.message : "실험실 동기화에 실패했습니다." };
+    }
+    await logRunResult({ ok: true, lastRunAt: Date.now(), revenue, profile, recompute, labSync });
+    return NextResponse.json({ ok: true, revenue, profile, recompute, labSync });
   } catch (error) {
     const message = error instanceof Error ? error.message : "동기화에 실패했습니다.";
     console.error("store-eval cron-sync 실패:", error);

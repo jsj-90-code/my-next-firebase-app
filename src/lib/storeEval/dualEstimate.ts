@@ -30,6 +30,7 @@
 
 import type { CandidateInput, Competitor, EvaluationResult, ExistingStore, ExistingStoreMonthlySales, LocationEvaluation, ModelSettings } from "./types";
 import type { ResidentAges, ResidentRingRadius } from "./textbookModel";
+import type { Rival2kmApplied } from "./rival2km";
 import { DEFAULT_TEXTBOOK_PARAMS, computeTextbook, fittedParams, scoreTextbook } from "./textbookModel";
 import { computeCompetitorAppliedPcCount } from "./calc";
 import { buildLabCandidateRows, buildLabRows, franchiseManagementFromRows, productUnitPriceEraByStore, utilizationByStore } from "./labInput";
@@ -158,6 +159,8 @@ export type LabExtras = {
   ringBlockedByCode?: Map<string, number>;
   residentRadiusByCode?: Map<string, number>;
   roadviewByKey?: Map<string, { flowBlock: number | null; visibility: number | null }>;
+  /** 후보지코드 -> 2km 경쟁점(등록 때 자동 수집한 Firestore 문서, 2026-09-28). JSON에 없는 후보지만 쓴다. */
+  rival2kmByCode?: Map<string, Rival2kmApplied[]>;
 };
 
 /**
@@ -191,6 +194,7 @@ export function labCandidateBreakdown(args: LabCandidateArgs): { monthlyRevenue:
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     roadviewByKey: extras?.roadviewByKey as any, residentRingsByCode: extras?.residentRingsByCode, ringBlockedByCode: extras?.ringBlockedByCode, residentRadiusByCode: extras?.residentRadiusByCode,
     franchiseManagement: franchiseManagementFromRows(rows),
+    rival2kmByCode: extras?.rival2kmByCode,
   });
   if (!cand) return null;
   const b = computeTextbook(cand.input, P);

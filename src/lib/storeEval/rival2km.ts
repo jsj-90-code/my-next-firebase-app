@@ -122,3 +122,38 @@ export function candidateRival2km(siteKey: string): Rival2kmApplied[] {
     .filter((r) => !r.close)
     .map((r) => ({ name: r.name, distanceM: r.distanceM, share: 1 }));
 }
+
+// ── 새 후보지의 2km 경쟁점 — Firestore 문서 (2026-09-28) ─────────────────────
+//
+// 이 파일의 JSON은 스크립트로 만들어 커밋하는 코드 자료라, 새 후보지를 등록하면 사람이 스크립트를 돌리기 전까지
+// 2km 경쟁점이 통째로 빠진 채 계산됐다(김포라베니체점: 7,985만 → 자료 넣자 6,849만). 사용자 2026-09-28
+// "등록할 때 실험실 산식이 같이 안 뜨는 게 불편" → 상권자료 수집 라우트가 카카오 2km 목록을 이 문서에 저장하고,
+// JSON에 없는 후보지만 이 문서로 대신한다. **JSON에 있는 지점(기존점 40곳·옛 후보지)은 그대로 JSON**이라
+// 자사 성적은 한 자리도 안 움직인다. 후보지는 평가창이 없어 인허가 시점이 필요 없고 "지금 영업 중"(카카오 실체)만 세면 된다.
+export const CANDIDATE_RIVAL_2KM_COLLECTION = "storeEvalCandidateRival2km";
+
+export type CandidateRival2kmDoc = {
+  candidateCode: string;
+  collectedAt: number;
+  radiusM: number;
+  /** 카카오 목록이 끝까지 잘렸으면 true — 화면이 "완전하지 않을 수 있다"고 말할 수 있어야 한다. */
+  possiblyTruncated: boolean;
+  rivals: { name: string; lat: number; lng: number; distanceM: number; sourcePlaceId: string }[];
+};
+
+/** 문서 → 산식 형태. 500m 안은 사람이 조사한 경쟁점 DB가 이미 세므로 뺀다(JSON과 같은 규칙, officialRadiusM). */
+export function candidateRival2kmFromDoc(doc: CandidateRival2kmDoc): Rival2kmApplied[] {
+  return doc.rivals
+    .filter((r) => r.distanceM > RIVAL_2KM_OFFICIAL_RADIUS_M && r.distanceM <= RIVAL_2KM_OUTER_RADIUS_M)
+    .map((r) => ({ name: r.name, distanceM: r.distanceM, share: 1 }));
+}
+
+/**
+ * 후보지 한 곳의 2km 경쟁점 — JSON(코드 자료)이 있으면 그것, 없으면 Firestore 문서(등록 때 자동 수집).
+ * 둘 다 없으면 빈 배열이고 그건 "0곳"이 아니라 "못 셌다"다(화면이 구분해 적는다).
+ */
+export function candidateRival2kmWithFallback(candidateCode: string, byCode?: Map<string, Rival2kmApplied[]>): Rival2kmApplied[] {
+  const key = candidateSiteKey(candidateCode);
+  if (hasRival2km(key)) return candidateRival2km(key);
+  return byCode?.get(candidateCode) ?? [];
+}

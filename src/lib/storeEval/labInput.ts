@@ -24,7 +24,7 @@ import { evaluationMonths } from "@/lib/storeEval/evaluationSalesPeriod";
 import { PAID_GAME_SURCHARGE } from "@/lib/storeEval/existingStoreEvaluation";
 import { existingStoreSourceCode } from "@/lib/storeEval/existingStoreEvaluation";
 import {
-  candidateRival2km, candidateSiteKey, existingSiteKey, rival2kmForWindow,
+  candidateRival2kmWithFallback, existingSiteKey, rival2kmForWindow, type Rival2kmApplied,
 } from "@/lib/storeEval/rival2km";
 import type { QualityParts, ResidentAges, ResidentRingRadius, TextbookInput } from "@/lib/storeEval/textbookModel";
 import type {
@@ -867,6 +867,11 @@ export type BuildLabCandidateRowsArgs = {
    * 없으면 표준값 4가 그대로 남는다.
    */
   franchiseManagement?: number | null;
+  /**
+   * 후보지코드 -> 2km 경쟁점(Firestore 문서, 등록 때 자동 수집 — 2026-09-28). 코드 자료(rival2km.json)에 있는 후보지는
+   * 이 맵을 안 보고 JSON을 쓴다(candidateRival2kmWithFallback). 없으면 JSON만 — 옛 호출부·하네스는 그대로 돈다.
+   */
+  rival2kmByCode?: Map<string, Rival2kmApplied[]>;
 };
 
 /**
@@ -876,7 +881,7 @@ export type BuildLabCandidateRowsArgs = {
  * 중립으로 빼게 둔다. 단 **자사 시설 빈칸만은 예외**다(위 4번: 결측이 아니라 표준 구성).
  */
 export function buildLabCandidateRows({
-  candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, franchiseManagement,
+  candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, franchiseManagement, rival2kmByCode,
 }: BuildLabCandidateRowsArgs): LabCandidateRow[] {
   const rows: LabCandidateRow[] = [];
   for (const c of candidates) {
@@ -930,8 +935,9 @@ export function buildLabCandidateRows({
           // 2km 경쟁점 — 기존점과 **같은 규칙**이다(위 주석).
           // ⚠️ 다만 후보지는 **평가창이 없다**(아직 개점 전). 시점 판정을 못 하므로
           //    "지금 영업 중"만 센다 — 개점 시점의 경쟁 환경이 그것이라 이게 맞다.
+          //    JSON에 없는 새 후보지는 등록 때 자동 수집한 Firestore 문서로(2026-09-28, rival2km.ts 머리).
           .concat(
-            candidateRival2km(candidateSiteKey(c.code)).map((r) => ({
+            candidateRival2kmWithFallback(c.code, rival2kmByCode).map((r) => ({
               ip: DEFAULT_UNSURVEYED_PC_COUNT * r.share,
               distanceM: r.distanceM,
               parts: null as QualityParts | null,

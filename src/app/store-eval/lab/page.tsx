@@ -39,6 +39,7 @@ import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   getLabModelSettings, listLabCandidates, listLabCompetitors, listLabLocationEvaluations,
   listLabExistingStores, listLabRoadviewJudgments, listLabQscScores, listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listEvaluationSales,
+  listCandidateRival2km,
 } from "@/lib/storeEval/store";
 import { computeOverflowPcHours, runUsageCohortValidation } from "@/lib/storeEval/usageRevenue";
 import {
@@ -118,6 +119,8 @@ type Loaded = {
     existingStores: number; candidates: number; competitors: number; locationEvaluations: number;
     qsc: number; residentRings: number; tradeArea: number; residentRadius: number; roadview: number; salesRows: number;
     settingsUpdatedAt: number | null;
+    /** 후보지별 2km 경쟁점 문서 수(등록 때 자동 수집, 2026-09-28). 코드 자료에 없는 후보지만 이걸 쓴다. */
+    candidateRival2km: number;
   };
 };
 
@@ -131,7 +134,7 @@ async function loadLabData(): Promise<Loaded | null> {
   //    실험실에서 시설·사양을 고칠 때 운영 V62가 같이 움직인다 — 갈라놓은 뜻이 없어진다.
   //    복제본은 scripts/syncLabCollections.mjs로 **명시적으로** 채운다(자동 동기화 없음).
   //    월매출만 운영 것을 그대로 읽는다 — 실측 사실이라 두 벌로 둘 이유가 없다.
-  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode, candidates, residentRingsByCode, ringBlockedByCode, residentRadiusByCode] = await Promise.all([
+  const [storedStores, settingsDoc, allCompetitors, allLocationEvaluations, roadviewByKey, qscByStoreCode, candidates, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, rival2kmByCode] = await Promise.all([
     listLabExistingStores(),
     getLabModelSettings(),
     listLabCompetitors(),
@@ -149,6 +152,8 @@ async function loadLabData(): Promise<Loaded | null> {
     listLabTradeAreaJudgments(),
     // 주거 상권 반경(사람 확인 사실, 2026-09-24 밤). 1500·2000인 매장만 주거 원이 넓어진다 — 고리가 아니다. 계수 무관하게 산식이 읽는다.
     listLabResidentRadius(),
+    // 후보지별 2km 경쟁점 문서(등록 때 자동 수집, 2026-09-28). 코드 자료(rival2km.json)에 없는 새 후보지만 이걸 쓴다. 운영 문서를 그대로 읽는다(실체 자료, 두 벌 안 둠).
+    listCandidateRival2km(),
   ]);
   if (storedStores.length === 0) return null;
   const sales = await listEvaluationSales(storedStores);
@@ -253,7 +258,7 @@ async function loadLabData(): Promise<Loaded | null> {
   }));
   const franchiseManagement = franchiseManagementFromRows(rows);
   const candRows = buildLabCandidateRows({
-    candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, franchiseManagement,
+    candidates, compsByCode, locByCode, settings, roadviewByKey, residentRingsByCode, ringBlockedByCode, residentRadiusByCode, franchiseManagement, rival2kmByCode,
   });
 
   return { rows, excludedRows, current, qsc, qscByStore, windowFillByStore,
@@ -264,6 +269,7 @@ async function loadLabData(): Promise<Loaded | null> {
       locationEvaluations: allLocationEvaluations.length, qsc: qscByStoreCode.size, residentRings: residentRingsByCode.size,
       tradeArea: ringBlockedByCode.size, residentRadius: residentRadiusByCode.size, roadview: roadviewByKey.size, salesRows: sales.length,
       settingsUpdatedAt: settingsDoc?.updatedAt ?? null,
+      candidateRival2km: rival2kmByCode.size,
     } };
 }
 
@@ -434,7 +440,8 @@ function DataStatus({ data, p, floatingCounts }: {
   const counts: { label: string; value: string; note: string }[] = [
     { label: "기존점", value: `${d.existingStores}곳`, note: `산식 표본 ${data.rows.length}곳 · 빠진 매장 ${data.excludedRows.length}곳(성적엔 안 들어감)` },
     { label: "신규후보지", value: `${d.candidates}곳`, note: "실매출이 없어 예측만 한다" },
-    { label: "경쟁점(500m 조사)", value: `${d.competitors}건`, note: "기존점·후보지 것을 한 컬렉션에 담는다. 2km 목록은 코드 자료(rival2km)" },
+    { label: "경쟁점(500m 조사)", value: `${d.competitors}건`, note: "기존점·후보지 것을 한 컬렉션에 담는다" },
+    { label: "2km 경쟁점", value: `코드 자료 ${RIVAL_2KM_BUILT_AT.slice(0, 10)} · 후보지 문서 ${d.candidateRival2km}건`, note: `500m 밖~${RIVAL_2KM_OUTER_RADIUS_M}m는 코드 자료(rival2km.json, 기존점·옛 후보지)가 우선이고, 거기 없는 새 후보지는 등록 때 상권자료 수집이 저장한 문서를 읽는다(2026-09-28). 둘 다 없으면 0곳이 아니라 "못 셌다"다` },
     { label: "입지평가", value: `${d.locationEvaluations}건`, note: "특수수요 유형·강도, 접근성, 중심도가 여기서 나온다" },
     { label: "QSC 점검", value: `${d.qsc}곳`, note: data.qsc ? `표본 ${data.qsc.total}곳 중 ${data.qsc.measured}곳 실측 · 나머지는 가맹점 평균 ${data.franchiseManagement?.toFixed(2) ?? "-"}점` : "없음 — 관리 점수는 전부 평균" },
     { label: "1km 밖 고리 인구", value: `${d.residentRings}곳`, note: p.residentRingDecayM > 0 ? "산식이 읽는다" : "실려 있지만 산식이 안 읽는다(고리 끔)" },

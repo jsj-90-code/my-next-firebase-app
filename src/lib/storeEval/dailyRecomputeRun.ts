@@ -26,7 +26,7 @@ async function all(db: Firestore, name: string) {
 
 export async function loadRecomputeSource(db: Firestore): Promise<RecomputeSource> {
   const [candidates, results, existingStores, competitors, locationEvaluations, sales, qscDocs,
-    labResidentRings, labTradeAreaJudgments, labResidentRadius, labRoadviewJudgments, settingsSnap] = await Promise.all([
+    labResidentRings, labTradeAreaJudgments, labResidentRadius, labRoadviewJudgments, settingsSnap, candidateRival2km] = await Promise.all([
     all(db, "storeEvalCandidates"),
     all(db, "storeEvalResults"),
     all(db, "storeEvalExistingStores"),
@@ -39,6 +39,7 @@ export async function loadRecomputeSource(db: Firestore): Promise<RecomputeSourc
     all(db, "storeEvalLabResidentRadius"),
     all(db, "storeEvalLabRoadviewJudgments"),
     db.collection("storeEvalSettings").doc("current").get(),
+    all(db, "storeEvalCandidateRival2km"),
   ]);
   /* eslint-disable @typescript-eslint/no-explicit-any */
   return {
@@ -54,6 +55,7 @@ export async function loadRecomputeSource(db: Firestore): Promise<RecomputeSourc
     labTradeAreaJudgments: labTradeAreaJudgments as any,
     labResidentRadius: labResidentRadius as any,
     labRoadviewJudgments: labRoadviewJudgments as any,
+    candidateRival2km: candidateRival2km as any,
   };
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }

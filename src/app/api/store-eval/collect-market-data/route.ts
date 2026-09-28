@@ -7,6 +7,9 @@ import { findNearbyCandidates, haversineDistanceMeters } from "@/lib/storeEval/g
 import type { Competitor, DemandPoint, DemandPointCategory } from "@/lib/storeEval/types";
 import { lookupBuildingElevator } from "@/lib/storeEval/buildingElevator";
 import { lookupPcBangPermit } from "@/lib/storeEval/pcBangPermit";
+import { collectKakaoPcBangs } from "@/lib/storeEval/quickEval/kakaoPcBangs";
+import { judgePcBangName } from "@/lib/storeEval/quickEval/pcBangNameFilter";
+import { CANDIDATE_RIVAL_2KM_COLLECTION, RIVAL_2KM_OUTER_RADIUS_M, type CandidateRival2kmDoc } from "@/lib/storeEval/rival2km";
 
 // 신규후보지 "상권자료 수집" 1단계 — 주소 지오코딩 + 행정구역 참고자료 + 경쟁점/수요거점
 // 자동수집을 한 번에 처리한다(요청사항 2단계 화면 흐름 중 1~4단계, 7단계에 해당).
@@ -211,6 +214,24 @@ export async function POST(request: Request) {
     collectionErrors.push(`경쟁점(PC방) 수집 실패: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // 3-1) 2km 경쟁점(실험실 산식용, 2026-09-28) — 카카오 격자로 잘림 없이 받아 후보지별 문서 하나에 저장한다.
+  //      500m 안은 위 경쟁점 DB가 세고, 실험실은 500m 밖~2km만 이 문서에서 읽는다(rival2km.ts 머리). 오락실·성인PC는 상호로 거른다.
+  //      전에는 사람이 스크립트로 코드 자료(rival2km.json)를 다시 만들기 전까지 새 후보지의 2km가 통째로 빠졌다.
+  let rival2kmCount: number | null = null;
+  try {
+    const grid = await collectKakaoPcBangs(origin, RIVAL_2KM_OUTER_RADIUS_M);
+    const rivals = grid.places
+      .filter((p) => judgePcBangName(p).counted)
+      .map((p) => ({ name: p.name, lat: p.lat, lng: p.lng, distanceM: p.distanceM, sourcePlaceId: p.id }))
+      .sort((a, b) => a.distanceM - b.distanceM);
+    const docData: CandidateRival2kmDoc = { candidateCode, collectedAt: now, radiusM: RIVAL_2KM_OUTER_RADIUS_M, possiblyTruncated: grid.possiblyTruncated, rivals };
+    await adminDb.collection(CANDIDATE_RIVAL_2KM_COLLECTION).doc(candidateCode).set(docData);
+    rival2kmCount = rivals.length;
+    if (grid.possiblyTruncated) collectionErrors.push("2km 경쟁점 목록이 카카오 상한에 걸려 완전하지 않을 수 있습니다.");
+  } catch (err) {
+    collectionErrors.push(`2km 경쟁점 수집 실패: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   try {
     const existingPointsSnap = await adminDb.collection("storeEvalDemandPoints").where("candidateCode", "==", candidateCode).get();
     const existingPlaceIds = new Set(existingPointsSnap.docs.map((d) => d.data().sourcePlaceId).filter(Boolean));
@@ -239,6 +260,7 @@ export async function POST(request: Request) {
     nearbyDuplicateWarnings: nearby,
     competitorsAdded,
     demandPointsAdded,
+    rival2kmCount,
     collectionErrors,
     demandPointCategoriesSkipped: ["군부대", "산업단지", "관광유흥", "먹자상권"],
   });

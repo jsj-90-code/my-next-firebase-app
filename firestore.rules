@@ -65,6 +65,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 후보지별 2km 경쟁점(2026-09-28) — 상권자료 수집 라우트가 카카오 목록을 firebase-admin으로 쓴다. 클라이언트는 읽기만.
+    match /storeEvalCandidateRival2km/{candidateId} {
+      allow read: if isCompanyAccount();
+      allow write: if false;
+    }
+
     match /storeEvalDemandPoints/{pointId} {
       allow read: if isCompanyAccount();
       allow create, delete: if false;

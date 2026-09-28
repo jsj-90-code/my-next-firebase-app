@@ -27,7 +27,7 @@ import {
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
-import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments } from "@/lib/storeEval/store";
+import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments, listCandidateRival2km } from "@/lib/storeEval/store";
 import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import { chooseEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
@@ -778,10 +778,11 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       const evaluated = evaluateCandidate({ candidate, competitors, locationEvaluation, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales, trainingQscScores });
       // 2026-09-25 — 두 산식을 같이 낸다(dualEstimate.ts). 실험실 전용 사실(고리·막힌 방향·반경·로드뷰)은 실험실 컬렉션에서, 못 읽으면 없이 계산.
       try {
-        const [rings, blocked, radius, roadview] = await Promise.all([listLabResidentRings(), listLabTradeAreaJudgments(), listLabResidentRadius(), listLabRoadviewJudgments()]).catch(() => [undefined, undefined, undefined, undefined] as const);
+        // 2026-09-28 — 2km 경쟁점 문서(등록 때 자동 수집)도 같이 읽는다. 코드 자료에 있는 후보지는 JSON이 우선(rival2km.ts).
+        const [rings, blocked, radius, roadview, rival2km] = await Promise.all([listLabResidentRings(), listLabTradeAreaJudgments(), listLabResidentRadius(), listLabRoadviewJudgments(), listCandidateRival2km()]).catch(() => [undefined, undefined, undefined, undefined, undefined] as const);
         const prepared = prepareExistingStoresForEvaluation(existingStores, trainingCompetitors, trainingLocationEvaluations, settings);
         const lab = labCandidateRevenue({ candidate, preparedStores: prepared, rawStores: existingStores, competitors: trainingCompetitors, locations: trainingLocationEvaluations, sales: trainingSales, settings, qscByStoreCode: trainingQscScores,
-          extras: { residentRingsByCode: rings ?? undefined, ringBlockedByCode: blocked ?? undefined, residentRadiusByCode: radius ?? undefined, roadviewByKey: roadview ?? undefined } });
+          extras: { residentRingsByCode: rings ?? undefined, ringBlockedByCode: blocked ?? undefined, residentRadiusByCode: radius ?? undefined, roadviewByKey: roadview ?? undefined, rival2kmByCode: rival2km ?? undefined } });
         const range = v62TrainingRange(prepared);
         evaluated.dualEstimate = chooseEstimate(evaluated.v62Final, lab, range ? rangeFlagsFor(evaluated, range) : [], evaluated.competitorIpRaw ?? evaluated.competitorIp ?? null, range?.sampleCount ?? null, inputGapsFor(candidate, locationEvaluation, trainingCompetitors));
       } catch {
@@ -1078,6 +1079,16 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             value={formatPercent(result.v62ImpliedUtilization)}
             hint="이 예상매출이 나오려면 좌석이 이만큼 차 있어야 한다는 뜻입니다"
           />
+          {/* 2026-09-28 사용자: "신규후보지 결과에 V62랑 실험실 산식 같이 뜨는 걸로" — 오전에 뺀 비교 패널 대신 카드 한 장.
+              값은 저장된 dualEstimate(재계산 때 같이 계산)를 그대로 읽는다. 실험실은 "동네 수요 → 우리 몫 → 매출" 구조식이라
+              V62(기존점 회귀)와 갈리면 어느 쪽이 무엇을 못 보는지 이유 문장이 말한다. 결재 숫자는 여전히 V62. */}
+          {result.dualEstimate?.lab != null && (
+            <ResultCard
+              label="실험실(교과서식) 예상매출 — 참고"
+              value={`약 ${formatManwonRough(result.dualEstimate.lab)}`}
+              hint={`${result.dualEstimate.ratio != null ? `V62 ÷ 실험실 ${result.dualEstimate.ratio.toFixed(2)}배 · ` : ""}${result.dualEstimate.reason}${result.dualEstimate.inputGaps?.length ? ` · 빈 입력: ${result.dualEstimate.inputGaps.join(", ")}` : ""}`}
+            />
+          )}
         </div>
         {/* 2026-09-10 — 이 화면은 예상매출을 숫자 하나로만 보여줘서, 이 모형이 실제로 얼마나
             맞는지 알 수 없었다. 검증화면이 남겨둔 요약 1건을 읽어 함께 보여준다(계산을 다시

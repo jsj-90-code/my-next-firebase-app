@@ -35,6 +35,7 @@ import { mergeInputChanges } from "./inputChanges";
 import { qscInWindowAverage, type QscRecord } from "./labInput";
 import { residentRingsByCodeFromDocs, type LabResidentRingsDoc } from "./labResidentRings";
 import { residentRadiusByCodeFromDocs, type LabResidentRadiusDoc } from "./labInput";
+import { CANDIDATE_RIVAL_2KM_COLLECTION, candidateRival2kmFromDoc, type CandidateRival2kmDoc, type Rival2kmApplied } from "./rival2km";
 import type { ResidentAges, ResidentRingRadius } from "./textbookModel";
 import type {
   CandidateInput,
@@ -329,6 +330,26 @@ export async function deleteCompetitor(id: string, actor: string | null): Promis
 export async function listDemandPoints(candidateCode: string): Promise<DemandPoint[]> {
   const snap = await getDocs(query(collection(requireDb(), DEMAND_POINTS), where("candidateCode", "==", candidateCode)));
   return snap.docs.map((d) => d.data() as DemandPoint);
+}
+
+/**
+ * 후보지별 2km 경쟁점(등록 때 상권자료 수집 라우트가 카카오로 받아 저장, 2026-09-28) — 후보지코드 -> 산식 형태.
+ * 코드 자료(rival2km.json)에 있는 후보지는 산식이 JSON을 우선하므로 이 맵은 새 후보지에만 작용한다(rival2km.ts 머리).
+ */
+export async function listCandidateRival2km(): Promise<Map<string, Rival2kmApplied[]>> {
+  const snap = await getDocs(collection(requireDb(), CANDIDATE_RIVAL_2KM_COLLECTION));
+  const out = new Map<string, Rival2kmApplied[]>();
+  snap.forEach((d) => {
+    const v = d.data() as CandidateRival2kmDoc;
+    if (v.candidateCode && Array.isArray(v.rivals)) out.set(v.candidateCode, candidateRival2kmFromDoc(v));
+  });
+  return out;
+}
+
+/** 후보지 한 곳의 2km 문서 원본(화면 표시용 — 수집 시각·잘림 여부). */
+export async function getCandidateRival2kmDoc(candidateCode: string): Promise<CandidateRival2kmDoc | null> {
+  const snap = await getDoc(doc(requireDb(), CANDIDATE_RIVAL_2KM_COLLECTION, candidateCode));
+  return snap.exists() ? (snap.data() as CandidateRival2kmDoc) : null;
 }
 
 /** 수요거점을 화면에서 확인했다는 표시만 남긴다(내용 자체는 자동수집 그대로 - 사람이 값을 고치지 않음). */
