@@ -46,7 +46,10 @@ function loadSites(): Site[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const snap = loadValidationSnapshot<any>();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return snap.candidates.filter((c: any) => c.lat && c.lng).map((c: any): Site => ({
+  // 2026-09-28: ONLY=N017 처럼 코드를 주면 그 후보지만(수집은 유료 AI를 부르므로 새 후보지 하나만 볼 때 전체를 다시 안 돌린다).
+  const only = (process.env.ONLY ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return snap.candidates.filter((c: any) => c.lat && c.lng && (!only.length || only.includes(c.code))).map((c: any): Site => ({
     code: c.code, label: String(c.name).trim(), address: c.roadAddress ?? c.address, at: { lat: c.lat, lng: c.lng },
     pc: c.expectedPcCount ?? QUICK_EVAL_PLAN_DEFAULTS.expectedPcCount, rate: c.hourlyRate ?? QUICK_EVAL_PLAN_DEFAULTS.hourlyRate,
     floor: c.floor ?? QUICK_EVAL_PLAN_DEFAULTS.floor, groundLevel: c.groundLevel ?? QUICK_EVAL_PLAN_DEFAULTS.groundLevel, hasElevator: c.hasElevator ?? true,
@@ -151,7 +154,7 @@ describeIf("현재 신규후보지 — 주소만 초기평가 판정", () => {
       out.push({ code: s.code, name: s.label, pc: s.pc, rate: s.rate, floor: s.floor, groundLevel: s.groundLevel, rivals: built.competitors.length, quickV62: v.v62Final, lab, final: fin.value, source: fin.source, reason: fin.reason, precise, precisePrimary, far, flagCount: flags.length, demandCapped: v.demandCapped, marketDemand: v.marketDemand, aiFields: c.locationDraft?.fields ?? null, aiRationale: c.locationDraft?.rationale ?? null });
     }
     writeFileSync(".local-tools/candidate-quick-eval-result.json", JSON.stringify(out, null, 1));
-    expect(out.length).toBeGreaterThan(5);
+    expect(out.length).toBeGreaterThanOrEqual(Math.min(6, sites.length)); // ONLY=코드로 좁히면 그 수만큼
   });
 
   // 2026-09-27 — 오송이 갈린 원인 분해. AI 초안 입지평가의 칸을 하나씩 사람 확정값으로 바꿔 V62(주소만)가 얼마나 움직이나.
