@@ -18,7 +18,7 @@ import {
   listEvaluationResults,
 } from "@/lib/storeEval/store";
 import type { CandidateInput, EvaluationResult, FinalJudgement, ReviewStatus } from "@/lib/storeEval/types";
-import { formatDateTime, formatWon } from "@/lib/storeEval/format";
+import { formatDate, formatDateTime, formatWon } from "@/lib/storeEval/format";
 import { freshnessHint, resultFreshness, type Freshness } from "@/lib/storeEval/resultFreshness";
 import { CANDIDATE_STATUSES, selectCandidates, type CandidateSort, type CandidateStatusFilter } from "@/lib/storeEval/candidateList";
 
@@ -306,25 +306,27 @@ export default function CandidateListPage() {
         {!loading && candidates.length > 0 && hasFilters && <button type="button" onClick={resetFilters} className="app-btn-outline mx-auto mt-4 block px-3 py-2 text-sm">검색·필터 초기화</button>}
       </div>}
       {!loading && filteredCandidates.length > 0 && <div className="app-card hidden overflow-x-auto rounded-2xl md:block">
-        <table className="w-full min-w-[720px] text-left text-sm">
+        {/* 2026-09-28 사용자: "매장별로 1칸만 차지하게 … 표 넓어지면 보기힘듬" — 모든 칸을 한 줄로 고정하고(주소는 잘라 말줄임),
+            여백을 줄이고 수정일은 날짜만 적어 폭이 커지지 않게 한다. 이름 옆 배지는 이름과 같은 줄에 붙는다. */}
+        <table className="w-full min-w-[720px] text-left text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
           <caption className="sr-only">신규 후보지 목록과 검토 상태</caption>
           <thead className="border-b border-[#171310]/[0.08] bg-[#171310]/[0.02] text-xs uppercase tracking-wide text-[var(--sl-ink-soft)] dark:border-white/[0.08] dark:bg-white/[0.02]">
             <tr>
-              <th scope="col" className="px-4 py-3">코드</th>
-              <th scope="col" className="px-4 py-3">이름</th>
-              <th scope="col" className="px-4 py-3">주소</th>
-              <th scope="col" className="px-4 py-3">검토상태</th>
-              <th scope="col" className="whitespace-nowrap px-4 py-3">최종예상월매출</th>
-              <th scope="col" className="whitespace-nowrap px-4 py-3" title="입력이 덜 끝났으면 그 상태를, 끝났으면 진단 결과를 보여줍니다">최종운영판정</th>
-              <th scope="col" className="px-4 py-3">최종수정일</th>
-              <th scope="col" className="px-4 py-3 text-right">작업</th>
+              <th scope="col" className="px-3 py-2">코드</th>
+              <th scope="col" className="px-3 py-2">이름</th>
+              <th scope="col" className="px-3 py-2">주소</th>
+              <th scope="col" className="px-3 py-2">검토상태</th>
+              <th scope="col" className="px-3 py-2">최종예상월매출</th>
+              <th scope="col" className="px-3 py-2" title="입력이 덜 끝났으면 그 상태를, 끝났으면 진단 결과를 보여줍니다">최종운영판정</th>
+              <th scope="col" className="px-3 py-2">최종수정일</th>
+              <th scope="col" className="px-3 py-2 text-right">작업</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#171310]/[0.06] dark:divide-white/[0.06]">
             {filteredCandidates.map((c) => (
                 <tr key={c.code} className="app-row">
-                  <td className="px-4 py-3 font-mono text-xs tabular-nums text-[var(--sl-ink-soft)]">{c.code}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 font-mono text-xs tabular-nums text-[var(--sl-ink-soft)]">{c.code}</td>
+                  <td className="px-3 py-2">
                     <Link
                       href={`/store-eval/candidates/${c.code}`}
                       className="font-medium text-[#171310] hover:underline dark:text-[#f2ede2]"
@@ -345,18 +347,19 @@ export default function CandidateListPage() {
                       </span>
                     )}
                   </td>
-                  <td title={c.address || undefined} className="max-w-[240px] truncate px-4 py-3 text-[#5c5346] dark:text-[#c9bfae]">{c.address || "-"}</td>
-                  <td className="px-4 py-3">
+                  <td title={c.address || undefined} className="max-w-[220px] truncate px-3 py-2 text-[#5c5346] dark:text-[#c9bfae]">{c.address || "-"}</td>
+                  <td className="px-3 py-2">
                     <span className={REVIEW_STATUS_STYLE[c.reviewStatus]}>
                       {c.reviewStatus}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={resultByCode.get(c.code)?.dualEstimate?.reason ?? undefined}>
+                  <td className="px-3 py-2 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={resultByCode.get(c.code)?.dualEstimate?.reason ?? undefined}>
                     {formatWon(resultByCode.get(c.code)?.v62Final)}
                   </td>
-                  <td className="px-4 py-3"><JudgementBadge result={resultByCode.get(c.code)} /></td>
-                  <td className="px-4 py-3 font-mono text-[var(--sl-ink-soft)]">{formatDateTime(c.updatedAt)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2"><JudgementBadge result={resultByCode.get(c.code)} /></td>
+                  {/* 날짜만 — 시각까지 적으면 칸이 접혀 두 줄이 됐다. 시각은 title(마우스 올리면)로. */}
+                  <td className="px-3 py-2 font-mono text-[var(--sl-ink-soft)]" title={formatDateTime(c.updatedAt)}>{formatDate(c.updatedAt)}</td>
+                  <td className="px-3 py-2">
                     <CandidateActions candidate={c} busy={busyCode !== null || error !== null} onDuplicate={handleDuplicate} onDelete={handleDelete} />
                   </td>
                 </tr>
