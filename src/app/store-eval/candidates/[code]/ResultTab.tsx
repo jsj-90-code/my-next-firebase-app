@@ -1186,7 +1186,32 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             value={result.marketGrade ?? "-"}
             hint={describeMarketGradeThresholds(settingsUsed)}
           />
-          <ResultCard label="상권성격" value={result.marketCharacter ?? "-"} />
+          {/* 2026-09-28 사용자: "번화가라고 하면 지역에서 가장 활성화된 상권인데, 주거가 많으면 번화가로 안 잡힐 수 있잖아" —
+              이 값은 상권 성격이 아니라 V62가 어느 원수요(유동/주거)를 쓰는지 고르는 **스위치**(유동÷주거 비율)다. 발산역(유동 21.9만)이
+              "주거중심"으로 나오던 이유. 산식은 그대로 두고 표기만 뜻대로 바꾸고, 번화가 여부는 옆 카드의 유동 절대량으로 읽게 한다. */}
+          {(() => {
+            const f = candidateForReport?.floating500Avg ?? null, p = candidateForReport?.pop500m ?? null;
+            const ratio = f != null && p != null && p > 0 ? f / p : null;
+            const th = settingsUsed?.marketCharacterThreshold;
+            const label = result.marketCharacter === "번화가" ? "유동 기준(번화가형)" : result.marketCharacter === "혼합" ? "유동 기준(혼합형)" : result.marketCharacter === "주거중심" ? "주거 기준(주거형)" : "-";
+            const peers = peerStores.map((s) => s.floating500Avg).filter((v): v is number => v != null && v > 0).sort((a, b) => a - b);
+            const med = peers.length ? peers[Math.floor(peers.length / 2)] : null;
+            const rank = f != null && peers.length ? peers.filter((v) => v <= f).length : null;
+            return (
+              <>
+                <ResultCard
+                  label="수요 기준 (산식 스위치, 옛 '상권성격')"
+                  value={label}
+                  hint={`유동 500m ÷ 주거 500m ${ratio == null ? "-" : `${ratio.toFixed(1)}배`}${th ? ` · ${th.mixed}배 이상 유동, ${th.downtown}배 이상 번화가형` : ""} — 동네가 번화가인지는 옆 유동량으로`}
+                />
+                <ResultCard
+                  label="유동 500m (하루, 절대량)"
+                  value={f == null ? "-" : `${formatNumber(f)}명`}
+                  hint={peers.length ? `기존점 ${peers.length}곳 중 ${rank}번째 · 최소 ${formatNumber(peers[0])} · 중앙 ${formatNumber(med)} · 최대 ${formatNumber(peers[peers.length - 1])}` : "기존점 자료 없음"}
+                />
+              </>
+            );
+          })()}
           <ResultCard label="경쟁IP(거리 가중)" value={formatNumber(result.competitorIp)} hint={result.competitorIpRaw != null ? `거리 무관 합 ${formatNumber(result.competitorIpRaw)}대 · 200m 밖은 멀수록 줄여 셈(2026-09-26)` : undefined} />
           <ResultCard label="IP당수요" value={formatScore(result.ipPerDemand)} hint="여유 >15 / 포화 <7 (08_계산기준)" />
           <ResultCard label="경쟁력격차" value={formatScore(result.competitivenessGap)} />
