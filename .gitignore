@@ -560,3 +560,6 @@ src/**/_*.test.ts
 !src/lib/storeEval/_spreadLayers.test.ts
 # 2026-09-26 — 건축물대장(공공자료) 수집분. 매출 없음. scripts/collectBuildingRegistry.mjs 산출물
 !/.local-tools/building-registry.json
+
+# Offline decision audit; observations remain in ignored .local-tools files.
+!src/lib/storeEval/_decisionAudit20260929.test.ts
