@@ -115,6 +115,7 @@ export function LocationEvalAiReviewPanel({
       <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
         신뢰도 {Math.round(CONFIDENCE_AUTO_APPLY_THRESHOLD * 100)}% 미만인 항목은 기본적으로 체크가 해제돼
         있습니다 — 값을 직접 확인·수정한 뒤 체크해주세요. 값은 체크 여부와 상관없이 바로 고칠 수 있습니다.
+        노란 줄은 적용하면 현재 저장값이 바뀌는 항목입니다.
       </p>
 
       {draft.warnings.length > 0 && (
@@ -141,12 +142,22 @@ export function LocationEvalAiReviewPanel({
               const row = rows[idx];
               const confidence = draft.confidence[meta.key] ?? 0;
               const lowConfidence = confidence < CONFIDENCE_AUTO_APPLY_THRESHOLD;
+              // 2026-09-29 사용자: "현재값이랑 다른 항목 색칠해줘" — 적용하면 저장값이 바뀌는 줄을 한눈에 보이게 한다.
+              //   비교는 지금 칸에 든 값(사람이 고친 값 포함) 기준. 빈 제안(없음)은 적용되지 않으므로 칠하지 않는다.
+              const current = currentValues[meta.key];
+              const changes = row.editedValue.trim() !== "" && row.editedValue !== (current == null ? "" : String(current));
               return (
-                <tr key={meta.key} className="border-t border-[#171310]/[0.06] dark:border-white/[0.06]">
+                <tr
+                  key={meta.key}
+                  className={`border-t border-[#171310]/[0.06] dark:border-white/[0.06] ${changes ? "bg-[var(--sl-warn-soft)]" : ""}`}
+                >
                   <td className="px-2 py-1 text-center align-top">
                     <input type="checkbox" checked={row.checked} onChange={(e) => updateRow(idx, { checked: e.target.checked })} />
                   </td>
-                  <td className="px-2 py-1 align-top text-[#5c5346] dark:text-[#c9bfae]">{meta.label}</td>
+                  <td className="px-2 py-1 align-top text-[#5c5346] dark:text-[#c9bfae]">
+                    {meta.label}
+                    {changes ? <span className="ml-1 text-[10px] font-semibold text-[var(--sl-warn)]">현재값과 다름</span> : null}
+                  </td>
                   <td className="px-2 py-1 align-top text-[var(--sl-ink-soft)]">{displayValue(currentValues[meta.key])}</td>
                   <td className="px-2 py-1 align-top">
                     {meta.options ? (
