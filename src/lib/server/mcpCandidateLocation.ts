@@ -11,6 +11,7 @@ import "server-only";
 // → buildLocationEvalContext. 채점 기준도 같은 문장(locationEvalAi.ts). 다른 건 채점하는 AI뿐(제미나이 → 사용자 AI).
 import { adminDb } from "@/lib/firebase-admin";
 import { buildLocationEvalContext } from "@/lib/storeEval/locationEvalContext";
+import { appendSiteFactsToContext } from "@/lib/storeEval/quickEval/quickEvalLocationContext";
 import type { CandidateInput, Competitor, DemandPoint } from "@/lib/storeEval/types";
 import type { McpUser } from "./mcpOAuth";
 
@@ -52,11 +53,16 @@ export async function loadCandidateLocationContext(code: string): Promise<{ cand
     db().collection("storeEvalDemandPoints").where("candidateCode", "==", code).get(),
     db().collection("storeEvalLocationEvaluations").doc(code).get(),
   ]);
-  const contextText = buildLocationEvalContext({
-    candidate,
-    competitors: competitorsSnap.docs.map((d) => d.data() as Competitor),
-    demandPoints: demandPointsSnap.docs.map((d) => d.data() as DemandPoint),
-  });
+  // 층·지상/지하·엘리베이터는 buildLocationEvalContext에 없다 → 주소만 평가처럼 사실로 덧붙인다.
+  // 2026-09-29 첫 실사용(N016 오송점, 지하 1층·엘베 있음)에서 AI가 층을 몰라 접근가시성을 비웠다.
+  const contextText = appendSiteFactsToContext(
+    buildLocationEvalContext({
+      candidate,
+      competitors: competitorsSnap.docs.map((d) => d.data() as Competitor),
+      demandPoints: demandPointsSnap.docs.map((d) => d.data() as DemandPoint),
+    }),
+    { floor: candidate.floor ?? null, groundLevel: candidate.groundLevel ?? null, hasElevator: candidate.hasElevator ?? null },
+  );
   return { candidate, contextText, hasSaved: savedSnap.exists };
 }
 
