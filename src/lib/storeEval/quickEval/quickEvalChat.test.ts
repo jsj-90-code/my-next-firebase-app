@@ -16,6 +16,9 @@ describe("채팅 결과 요약 말투", () => {
     expect(userPart).not.toMatch(/V62|실험실/);
     expect(userPart).toContain("예상 월매출: 2,532만원");
     expect(userPart).toContain("입점 불가");
+    // 정밀평가는 사용자 본인만 쓴다 — 다른 직원에게 정밀평가로 내라고 하지 않는다(2026-09-29)
+    expect(userPart).not.toMatch(/정밀|신규후보지/);
+    expect(userPart).toContain("현장에서 확인");
   });
 });
 

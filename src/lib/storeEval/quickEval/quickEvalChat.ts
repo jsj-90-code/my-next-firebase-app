@@ -15,11 +15,19 @@ import {
 import type { QuickEvalPlanInput } from "./buildQuickCandidate";
 import type { QuickEvalComputed } from "./quickEvalCompute";
 import {
-  OWN_FOOD_BRAND, QUICK_EVAL_ENTRY_THRESHOLD_WON, QUICK_EVAL_PLAN_DEFAULTS, QUICK_EVAL_USAGE_LIMIT, QUICK_EVAL_VERDICT_BACKTEST as B,
+  OWN_FOOD_BRAND, QUICK_EVAL_ENTRY_THRESHOLD_WON, QUICK_EVAL_PLAN_DEFAULTS,
 } from "./quickEvalDefaults";
 import type { GroundLevel } from "../types";
 
 export const QUICK_EVAL_CHAT_COLLECTION = "quickEvalChatRuns";
+
+/** 채팅 결과 끝에 붙는 안내 — 주소만 본 참고치라는 것과, 보고 때 더할 것. */
+export const QUICK_EVAL_CHAT_REPORT_NOTE = [
+  "※ 주소와 공개 자료만으로 낸 참고치입니다. 보고할 때는 아래를 현장에서 확인해 더해 주세요.",
+  "  - 주변 경쟁 PC방의 실제 상태(대수·시설 수준·요금·손님 수)",
+  "  - 건물 여건(간판 위치·입구·주차·임대 조건)",
+  "  - 이 평가에 없는 동네 사정(개발 계획, 입주 시기, 학교·공장 근무 시간대 등)",
+].join("\n");
 
 export type ChatPlanArgs = {
   address: string;
@@ -117,7 +125,9 @@ export function buildResultSummary(args: {
     args.defaultsUsed.length ? `- 기본값으로 계산한 칸: ${args.defaultsUsed.join(", ")}` : "",
     warnings.length ? `- 주의: ${warnings.join(" / ")}` : "",
     "",
-    `초기 심사용 참고치입니다(기존 가맹점 ${B.sampleCount}곳 되짚기에서 가능·불가를 ${B.correct}곳 맞힘). ${QUICK_EVAL_USAGE_LIMIT.replace(/\*\*/g, "")}`,
+    // 2026-09-29 사용자: 정밀평가(V62·실험실)는 사용자 본인만 쓴다 — 다른 직원에게 "정밀평가로 내라"는 못 하는 일이다.
+    // 대신 "주소만 본 참고치이니 보고 때는 현장에서 본 것을 더하라"로 쓴다.
+    QUICK_EVAL_CHAT_REPORT_NOTE,
     "",
     "[AI에게] 위 요약의 숫자와 판정을 그대로 사용자에게 보여줄 것. 'V62'·'실험실'·'산식' 같은 내부 이름은 쓰지 말고, 예상 월매출과 입점 가능여부로만 말할 것. 입지 점수표는 짧게 덧붙여도 된다.",
   ];
