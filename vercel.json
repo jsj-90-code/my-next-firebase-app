@@ -12,6 +12,11 @@
         "icn1"
       ]
     },
+    "src/app/api/mcp/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
     "src/app/api/store-eval/collect-floating-population/route.ts": {
       "regions": [
         "icn1"
