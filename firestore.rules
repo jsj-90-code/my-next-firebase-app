@@ -241,5 +241,10 @@ service cloud.firestore {
     match /quickEvalChatRuns/{runId} {
       allow read, write: if false;
     }
+    // 신규후보지 입지 7항목 채팅 초안(2026-09-29). 서버(MCP, 담당자 전용 도구)만 쓰고, 입지평가 탭이 읽어 승인 화면에 띄운다.
+    match /storeEvalLocationChatDrafts/{candidateCode} {
+      allow read: if isCompanyAccount();
+      allow write: if false;
+    }
   }
 }

@@ -12,7 +12,7 @@ import { formatScore } from "@/lib/storeEval/format";
 import { captureKakaoStaticMapUrl } from "@/lib/storeEval/kakaoStaticMapCapture";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
-import { getLocationEvaluation, getModelSettings, saveLocationEvaluation } from "@/lib/storeEval/store";
+import { getLocationChatDraft, getLocationEvaluation, getModelSettings, saveLocationEvaluation } from "@/lib/storeEval/store";
 import type {
   BrandType,
   InflowRestriction,
@@ -251,6 +251,34 @@ export function LocationEvalTab({
     }
   }
 
+  // 2026-09-29 — 채팅(사용자 AI 요금제)으로 받은 초안을 **같은 승인 화면**에 띄운다. 제미나이 초안과 형식이 같다.
+  //   채팅에서 "N0xx 입지평가 초안 만들어줘" → MCP가 storeEvalLocationChatDrafts/{코드}에 저장 → 여기서 불러오기.
+  //   자동 저장 없음(위 원칙 그대로) — 승인 화면에서 골라 적용하고 [저장]을 눌러야 반영된다.
+  async function handleLoadChatDraft() {
+    setAiError(null);
+    setAiDraft(null);
+    setAiLoading(true);
+    try {
+      const d = await getLocationChatDraft(candidateCode);
+      if (!d) throw new Error("채팅으로 만든 초안이 없습니다. 채팅에서 \"" + candidateCode + " 입지평가 초안 만들어줘\"라고 요청하세요.");
+      const when = new Date(d.createdAt).toLocaleString("ko-KR");
+      setAiDraft({
+        fields: d.fields as LocationEvalAiFields,
+        confidence: d.confidence as LocationEvalAiDraft["confidence"],
+        rationale: d.rationale ?? "",
+        warnings: [
+          `채팅 초안 · ${d.modelName ?? "모델 미기재"} · ${when}${d.createdBy ? ` · ${d.createdBy}` : ""}`,
+          ...(d.sources?.length ? [`참고한 웹 주소 ${d.sources.length}곳: ${d.sources.slice(0, 5).join(" · ")}`] : ["참고한 웹 주소 없음 — 웹 검색 없이 매긴 점수일 수 있습니다."]),
+        ],
+      });
+      setMessage(null);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "채팅 초안을 불러오지 못했습니다.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   function handleApplyAiPatch(patch: Partial<LocationEvalAiFields>, rationale: string) {
     if (saveLock.current) return;
     setMessage(null);
@@ -298,14 +326,26 @@ export function LocationEvalTab({
       <section className={sectionClass}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className={sectionTitleClass}>입지동선 점수 (1~5)</h3>
-          <button
-            type="button"
-            disabled={aiLoading}
-            onClick={handleAiFill}
-            className="rounded-lg border border-[var(--sl-info)]/30 bg-[var(--sl-info-soft)] px-3 py-1.5 text-xs font-medium text-[var(--sl-info)] hover:brightness-95 disabled:opacity-50"
-          >
-            {aiLoading ? "AI가 조사 중..." : "AI로 초안 채우기"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {!existingStoreCode && (
+              <button
+                type="button"
+                disabled={aiLoading}
+                onClick={handleLoadChatDraft}
+                className="rounded-lg border border-[var(--sl-info)]/30 px-3 py-1.5 text-xs font-medium text-[var(--sl-info)] hover:brightness-95 disabled:opacity-50"
+              >
+                채팅 초안 불러오기
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={aiLoading}
+              onClick={handleAiFill}
+              className="rounded-lg border border-[var(--sl-info)]/30 bg-[var(--sl-info-soft)] px-3 py-1.5 text-xs font-medium text-[var(--sl-info)] hover:brightness-95 disabled:opacity-50"
+            >
+              {aiLoading ? "AI가 조사 중..." : "AI로 초안 채우기"}
+            </button>
+          </div>
         </div>
         <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           이미 수집된 경쟁점·수요거점·행정동통계·지도 이미지를 참고자료로 주고, 부족한 부분만 웹검색으로

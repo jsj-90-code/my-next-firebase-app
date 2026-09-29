@@ -111,11 +111,22 @@ export function chatPlanInput(a: ChatPlanArgs): { plan: QuickEvalPlanInput; defa
   };
 }
 
-/** get_site_data가 AI에게 돌려주는 안내문 — 사실 자료 + 채점 기준 + 다음 할 일. */
-export function buildScoringBrief(args: { runId: string; contextText: string; collectErrors: string[] }): string {
+/**
+ * 자료 받기 도구가 AI에게 돌려주는 안내문 — 사실 자료 + 채점 기준 + 다음 할 일.
+ * `candidate`를 주면 신규후보지 정밀평가 초안용(다음 도구·키 이름이 다르다). 채점 기준은 둘이 같다.
+ */
+export function buildScoringBrief(args: {
+  runId: string;
+  contextText: string;
+  collectErrors: string[];
+  candidate?: { code: string; hasSaved: boolean };
+}): string {
   const fieldLines = Object.entries(LOCATION_EVAL_FIELD_DESCRIPTIONS).map(([k, v]) => `- ${k}: ${v}`);
+  const next = args.candidate
+    ? `2. 조사가 끝나면 submit_candidate_location_draft를 부르세요. candidateCode(${args.candidate.code}), 7개 항목, 항목별 신뢰도(confidence 0~1), 근거(rationale), 참고한 웹 주소(sources), 지금 쓰고 있는 모델 이름(modelName)을 넣습니다. 결과는 웹 입지평가 탭에 초안으로 들어가고 사람이 검토해 저장합니다.${args.candidate.hasSaved ? " (이미 저장된 입지평가가 있다 — 초안은 그것을 덮지 않는다)" : ""}`
+    : "2. 조사가 끝나면 submit_location_scores를 부르세요. runId, 7개 항목, 근거(rationale), 참고한 웹 주소(sources), 지금 쓰고 있는 모델 이름(modelName)을 함께 넣습니다.";
   return [
-    `평가 번호(runId): ${args.runId}`,
+    args.candidate ? `후보지 코드(candidateCode): ${args.candidate.code}` : `평가 번호(runId): ${args.runId}`,
     "",
     "[이미 수집된 사실 자료]",
     args.contextText,
@@ -130,7 +141,7 @@ export function buildScoringBrief(args: { runId: string; contextText: string; co
     "",
     "[다음 할 일]",
     "1. 위 자료만으로 부족한 부분(상권 성격, 실제 동선, 간판 노출, 특수수요)을 웹 검색으로 이 주소를 직접 조사하세요. 지도·로드뷰·지역 기사·부동산 정보가 도움이 됩니다.",
-    "2. 조사가 끝나면 submit_location_scores를 부르세요. runId, 7개 항목, 근거(rationale), 참고한 웹 주소(sources), 지금 쓰고 있는 모델 이름(modelName)을 함께 넣습니다.",
+    next,
     "3. 근거를 못 찾은 항목은 null로 두세요. 지어내면 예상매출이 틀립니다.",
   ].filter((l) => l !== "").join("\n");
 }

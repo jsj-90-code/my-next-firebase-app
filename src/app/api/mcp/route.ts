@@ -13,6 +13,9 @@ import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { z } from "zod";
 import { adminDb } from "@/lib/firebase-admin";
 import { verifyAccessToken, type McpUser } from "@/lib/server/mcpOAuth";
+import {
+  findCandidates, isMcpOwner, loadCandidateLocationContext, saveCandidateLocationDraft,
+} from "@/lib/server/mcpCandidateLocation";
 import { loadQuickEvalTraining } from "@/lib/server/quickEvalTraining";
 import {
   INFLOW_LEVELS, LOCATION_EVAL_FIELD_DESCRIPTIONS, SPECIAL_DEMAND_INTENSITIES, SPECIAL_DEMAND_TYPES,
@@ -156,13 +159,108 @@ const handler = createMcpHandler(
         return text(summary.text);
       },
     );
+
+    // ── 신규후보지 정밀평가 입지 초안 (2026-09-29) — **사용자 본인만**(isMcpOwner). 다른 계정은 권한 없음으로 막는다.
+    //    경쟁점 상세는 웹에서 입력하고, 채팅은 입지 7항목만. 결과는 웹 입지평가 탭 [채팅 초안 불러오기]로 검토 후 저장.
+    const ownerOnly = "이 도구는 점포평가 담당자 전용입니다. 주소만 초기평가는 get_site_data를 쓰세요.";
+    const scoreFields = {
+      locationScore: score("locationScore"),
+      preemptionScore: score("preemptionScore"),
+      visibilityScore: score("visibilityScore"),
+      specialDemandType: z.enum(SPECIAL_DEMAND_TYPES as [string, ...string[]]).nullable().describe(D.specialDemandType),
+      specialDemandIntensity: z.enum(SPECIAL_DEMAND_INTENSITIES as [string, ...string[]]).nullable().describe(D.specialDemandIntensity),
+      inflowRestriction: z.enum(INFLOW_LEVELS as [string, ...string[]]).nullable().describe(D.inflowRestriction),
+      marketStructureMemo: z.string().max(1000).nullable().describe(D.marketStructureMemo),
+    };
+    const conf = z.number().min(0).max(1);
+
+    server.registerTool(
+      "find_candidate",
+      {
+        title: "신규후보지 찾기(담당자 전용)",
+        description: "등록된 신규후보지를 이름·주소·코드 일부로 찾는다. 정밀평가 입지 초안을 만들기 전에 후보지 코드(N0xx)를 확인할 때 쓴다. 담당자 전용.",
+        inputSchema: z.object({ query: z.string().describe("후보지 이름·주소·코드 일부(예: 풍세, N018)") }),
+      },
+      async ({ query }, ctx) => {
+        const user = userOf(ctx.http?.authInfo);
+        if (!isMcpOwner(user)) return text(ownerOnly, true);
+        const list = await findCandidates(query);
+        if (!list.length) return text(`'${query}'와 맞는 후보지가 없습니다.`);
+        return text(list.map((c) => `${c.code} · ${c.name} · ${c.address}`).join("\n"));
+      },
+    );
+
+    server.registerTool(
+      "get_candidate_location_data",
+      {
+        title: "정밀평가 입지 자료 받기(담당자 전용)",
+        description:
+          "신규후보지 코드로, 웹에 등록된 경쟁점·수요거점과 입지 7항목 채점 기준을 돌려준다. 받은 뒤 웹 검색으로 조사하고 " +
+          "submit_candidate_location_draft로 초안을 낸다. 담당자 전용.",
+        inputSchema: z.object({ candidateCode: z.string().min(2).describe("후보지 코드(예: N018)") }),
+      },
+      async ({ candidateCode }, ctx) => {
+        const user = userOf(ctx.http?.authInfo);
+        if (!isMcpOwner(user)) return text(ownerOnly, true);
+        try {
+          const { candidate, contextText, hasSaved } = await loadCandidateLocationContext(candidateCode.trim().toUpperCase());
+          return text(
+            `후보지: ${candidate.code} · ${candidate.name} · ${candidate.roadAddress ?? candidate.address}\n\n` +
+              buildScoringBrief({ runId: "", contextText, collectErrors: [], candidate: { code: candidate.code, hasSaved } }),
+          );
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
+
+    server.registerTool(
+      "submit_candidate_location_draft",
+      {
+        title: "정밀평가 입지 초안 내기(담당자 전용)",
+        description:
+          "웹 검색으로 조사해 매긴 입지 7항목을 신규후보지의 **초안**으로 저장한다. 저장된 입지평가를 덮지 않고, 담당자가 웹 입지평가 탭의 " +
+          "[채팅 초안 불러오기]에서 검토·수정해 저장한다. 담당자 전용.",
+        inputSchema: z.object({
+          candidateCode: z.string().min(2),
+          ...scoreFields,
+          confidence: z.object({
+            locationScore: conf, preemptionScore: conf, visibilityScore: conf, specialDemandType: conf,
+            specialDemandIntensity: conf, inflowRestriction: conf, marketStructureMemo: conf,
+          }).describe("항목별 자기 확신도 0~1. 0.8 미만 항목은 웹 승인 화면에서 기본 체크 해제된다"),
+          rationale: z.string().min(1).max(4000).describe("점수 전체의 근거(한국어)"),
+          sources: z.array(z.string()).max(30).describe("조사에 참고한 웹 주소들"),
+          modelName: z.string().max(100).describe("지금 채점한 AI 모델 이름"),
+        }),
+      },
+      async (args, ctx) => {
+        const user = userOf(ctx.http?.authInfo);
+        if (!isMcpOwner(user) || !user) return text(ownerOnly, true);
+        const code = args.candidateCode.trim().toUpperCase();
+        try {
+          await loadCandidateLocationContext(code); // 후보지가 있는지 확인(없는 코드에 초안을 만들지 않는다)
+          const { candidateCode: _c, confidence, rationale, sources, modelName, ...fields } = args;
+          await saveCandidateLocationDraft({
+            code, fields, confidence, rationale, sources: sources.filter((s) => s.trim()), modelName: modelName || null, user,
+          });
+          return text(
+            `${code} 입지평가 초안을 저장했습니다. 웹 신규후보지 > ${code} > 입지평가 탭에서 [채팅 초안 불러오기]를 누르면 ` +
+              "승인 화면에 뜹니다. 확인·수정 후 적용하고 [저장]을 눌러야 반영됩니다(자동 저장 아님). 사용자에게 이 안내와 점수표를 보여줄 것.",
+          );
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
   },
   {
-    serverInfo: { name: "isens-location-eval", version: "1.0.0" },
+    serverInfo: { name: "isens-location-eval", version: "1.1.0" },
     instructions:
       "아이센스 PC방 후보지 입지평가. 사용자가 주소를 주고 입지평가·예상매출을 물으면: " +
       "(1) get_site_data로 자료와 채점 기준을 받고 (2) 웹 검색으로 그 주소를 직접 조사한 뒤 " +
-      "(3) submit_location_scores로 7개 항목을 내서 받은 결과 요약을 사용자에게 보여준다. 점수를 지어내지 말 것.",
+      "(3) submit_location_scores로 7개 항목을 내서 받은 결과 요약을 사용자에게 보여준다. 점수를 지어내지 말 것. " +
+      "사용자가 등록된 신규후보지(코드 N0xx 또는 후보지 이름)의 입지평가 초안·정밀평가 입지를 요청하면: find_candidate로 코드 확인 → " +
+      "get_candidate_location_data → 웹 검색 조사 → submit_candidate_location_draft (담당자 전용 도구).",
   },
 );
 

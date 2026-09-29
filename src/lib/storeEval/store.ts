@@ -383,6 +383,26 @@ export async function getLocationEvaluation(candidateCode: string): Promise<Loca
   return snap.exists() ? (snap.data() as LocationEvaluation) : null;
 }
 
+/**
+ * 채팅(사용자 AI)으로 받은 입지 7항목 **초안** — 2026-09-29. 서버(MCP submit_candidate_location_draft)만 쓰고
+ * 화면은 읽기만 한다(firestore.rules). 입지평가 탭 [채팅 초안 불러오기]가 승인 화면에 띄우고, 저장은 사람이 한다.
+ */
+export type LocationChatDraft = {
+  candidateCode: string;
+  fields: Record<string, number | string | null>;
+  confidence: Record<string, number>;
+  rationale: string;
+  sources: string[];
+  modelName: string | null;
+  createdBy: string | null;
+  createdAt: number;
+};
+
+export async function getLocationChatDraft(candidateCode: string): Promise<LocationChatDraft | null> {
+  const snap = await getDoc(doc(requireDb(), "storeEvalLocationChatDrafts", candidateCode));
+  return snap.exists() ? (snap.data() as LocationChatDraft) : null;
+}
+
 export async function saveLocationEvaluation(evaluation: LocationEvaluation, actor: string | null, baseline?: LocationEvaluation | null): Promise<LocationEvaluation> {
   return saveAuditedInput<LocationEvaluation>(LOCATION_EVALS, evaluation.candidateCode, "locationEvaluation", actor, (before) => {
     if (baseline && !before) throw new Error("입지평가가 삭제되었습니다. 새로고침 후 다시 확인해주세요.");
