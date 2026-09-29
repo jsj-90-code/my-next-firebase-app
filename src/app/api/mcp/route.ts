@@ -10,6 +10,7 @@
 // ⚠️ Firebase 무료 요금제 — 학습 자료 읽기(약 1,300건)는 10분 메모리 캐시(quickEvalTraining.ts).
 import { randomBytes } from "node:crypto";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { adminDb } from "@/lib/firebase-admin";
 import { verifyAccessToken, type McpUser } from "@/lib/server/mcpOAuth";
@@ -37,8 +38,11 @@ const userOf = (authInfo: { extra?: Record<string, unknown> } | undefined): McpU
 
 const text = (t: string, isError = false) => ({ content: [{ type: "text" as const, text: t }], ...(isError ? { isError: true } : {}) });
 
-const handler = createMcpHandler(
-  (server) => {
+// 2026-09-29 사용자: 주소만 초기평가는 다른 직원과 공유, 정밀평가(V62·실험실)는 본인만 — **커넥터 하나로**.
+// 로그인한 사람을 보고 서버를 둘 중 하나로 고른다(아래 authed): 본인이면 도구 5개, 다른 직원이면 주소만 평가 2개만 **목록에 보인다**.
+// 정밀평가 도구 안의 isMcpOwner 확인은 그대로 둔다(목록 숨김이 뚫려도 서버에서 한 번 더 막는 이중 잠금).
+function registerTools(server: McpServer, owner: boolean) {
+  {
     server.registerTool(
       "get_site_data",
       {
@@ -160,6 +164,7 @@ const handler = createMcpHandler(
       },
     );
 
+    if (!owner) return;
     // ── 신규후보지 정밀평가 입지 초안 (2026-09-29) — **사용자 본인만**(isMcpOwner). 다른 계정은 권한 없음으로 막는다.
     //    경쟁점 상세는 웹에서 입력하고, 채팅은 입지 7항목만. 결과는 웹 입지평가 탭 [채팅 초안 불러오기]로 검토 후 저장.
     const ownerOnly = "이 도구는 점포평가 담당자 전용입니다. 주소만 초기평가는 get_site_data를 쓰세요.";
@@ -252,20 +257,28 @@ const handler = createMcpHandler(
         }
       },
     );
-  },
-  {
-    serverInfo: { name: "isens-location-eval", version: "1.1.0" },
-    instructions:
-      "아이센스 PC방 후보지 입지평가. 사용자가 주소를 주고 입지평가·예상매출을 물으면: " +
-      "(1) get_site_data로 자료와 채점 기준을 받고 (2) 웹 검색으로 그 주소를 직접 조사한 뒤 " +
-      "(3) submit_location_scores로 7개 항목을 내서 받은 결과 요약을 사용자에게 보여준다. 점수를 지어내지 말 것. " +
-      "사용자가 등록된 신규후보지(코드 N0xx 또는 후보지 이름)의 입지평가 초안·정밀평가 입지를 요청하면: find_candidate로 코드 확인 → " +
-      "get_candidate_location_data → 웹 검색 조사 → submit_candidate_location_draft (담당자 전용 도구).",
-  },
-);
+  }
+}
+
+const PUBLIC_INSTRUCTIONS =
+  "아이센스 PC방 후보지 입지평가. 사용자가 주소를 주고 입지평가·예상매출을 물으면: " +
+  "(1) get_site_data로 자료와 채점 기준을 받고 (2) 웹 검색으로 그 주소를 직접 조사한 뒤 " +
+  "(3) submit_location_scores로 7개 항목을 내서 받은 결과 요약을 사용자에게 보여준다. 점수를 지어내지 말 것.";
+
+const publicHandler = createMcpHandler((server) => registerTools(server, false), {
+  serverInfo: { name: "isens-location-eval", version: "1.2.0" },
+  instructions: PUBLIC_INSTRUCTIONS,
+});
+const ownerHandler = createMcpHandler((server) => registerTools(server, true), {
+  serverInfo: { name: "isens-location-eval", version: "1.2.0" },
+  instructions:
+    PUBLIC_INSTRUCTIONS +
+    " 사용자가 등록된 신규후보지(코드 N0xx 또는 후보지 이름)의 입지평가 초안·정밀평가 입지를 요청하면: find_candidate로 코드 확인 → " +
+    "get_candidate_location_data → 웹 검색 조사 → submit_candidate_location_draft.",
+});
 
 const authed = withMcpAuth(
-  handler,
+  (req) => (isMcpOwner(userOf(req.auth)) ? ownerHandler : publicHandler)(req),
   async (_req, bearer) => {
     if (!bearer) return undefined;
     const v = await verifyAccessToken(bearer);
