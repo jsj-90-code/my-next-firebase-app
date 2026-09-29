@@ -103,18 +103,23 @@ export function buildResultSummary(args: {
     ...args.collectErrors,
     ...computed.built.missing,
   ];
+  // 2026-09-29 사용자: "주소만 초기평가하는데 실험실이 어쩌니 V62가 어쩌니 이런 소리" — 다른 직원도 쓰는 도구라
+  // 웹 화면(quick-eval KeyVerdict)과 같은 두 칸(예상 월매출·입점 가능여부)만 보이고, 내부 산식 이름은 쓰지 않는다.
+  // 판정 이유 문장(quickEvalVerdict, 웹과 공용)에 붙은 "(실험실)" 같은 괄호 이름도 여기서 뗀다.
+  const plainReason = computed.final.reason?.replace(/\s*\((실험실|V62)\)/g, "").replace(/V62가/g, "기본 추정이") ?? null;
+  const plan = computed.built.candidate;
   const lines = [
-    `■ ${args.address} 입지평가 결과`,
-    `- 입점 판정: ${verdict} (기준 월 예상매출 ${won(T)} 초과면 가능)`,
-    `- 월 예상매출: ${won(finalRevenue)}${computed.final.source && computed.final.source !== "V62" ? ` (${computed.final.source} 기준)` : ""}`,
-    computed.final.source !== "V62" && computed.final.reason ? `  · ${computed.final.reason}` : "",
-    `- V62 산식 값: ${won(computed.evaluated.v62Final)}`,
-    `- 반경 500m 경쟁 PC방: ${counted}곳 · 상권등급 ${computed.evaluated.marketGrade ?? "-"}`,
+    `■ ${args.address} 주소만 초기평가`,
+    `- 예상 월매출: ${won(finalRevenue)} (PC ${plan.expectedPcCount ?? "-"}대 · 기본요금 ${plan.hourlyRate?.toLocaleString("ko-KR") ?? "-"}원 기준)`,
+    `- 입점 가능여부: ${verdict === "판정 불가" ? "판정 불가" : `입점 ${verdict}`} (기준: 예상 월매출 ${won(T)} 초과)`,
+    plainReason ? `  · ${plainReason}` : "",
+    `- 반경 500m 경쟁 PC방: ${counted}곳`,
     args.defaultsUsed.length ? `- 기본값으로 계산한 칸: ${args.defaultsUsed.join(", ")}` : "",
     warnings.length ? `- 주의: ${warnings.join(" / ")}` : "",
-    `- 채점 모델: ${args.modelName ?? "미기재"}`,
     "",
-    `초기 심사용 참고치입니다(기존 가맹점 ${B.sampleCount}곳 되짚기에서 가능·불가를 ${B.correct}곳 맞힘, ${B.measuredAt} 제미나이 채점 기준 — 채팅 모델 성적은 아직 없음). ${QUICK_EVAL_USAGE_LIMIT.replace(/\*\*/g, "")}`,
+    `초기 심사용 참고치입니다(기존 가맹점 ${B.sampleCount}곳 되짚기에서 가능·불가를 ${B.correct}곳 맞힘). ${QUICK_EVAL_USAGE_LIMIT.replace(/\*\*/g, "")}`,
+    "",
+    "[AI에게] 위 요약의 숫자와 판정을 그대로 사용자에게 보여줄 것. 'V62'·'실험실'·'산식' 같은 내부 이름은 쓰지 말고, 예상 월매출과 입점 가능여부로만 말할 것. 입지 점수표는 짧게 덧붙여도 된다.",
   ];
   return { text: lines.filter((l) => l !== "").join("\n"), verdict, finalRevenue };
 }

@@ -89,8 +89,8 @@ const handler = createMcpHandler(
       {
         title: "입지 점수 내고 예상매출 받기",
         description:
-          "get_site_data로 받은 runId와, 웹 검색으로 조사해 매긴 입지 7개 항목을 넣으면 아이센스 산식(V62)으로 " +
-          "월 예상매출과 입점 가능·불가를 계산해 돌려준다. 결과 요약은 사용자에게 그대로 보여줄 것.",
+          "get_site_data로 받은 runId와, 웹 검색으로 조사해 매긴 입지 7개 항목을 넣으면 주소만 초기평가 방식으로 " +
+          "예상 월매출과 입점 가능여부를 계산해 돌려준다. 결과 요약은 사용자에게 그대로 보여주고, 내부 산식 이름은 쓰지 말 것.",
         inputSchema: z.object({
           runId: z.string().min(4),
           locationScore: score("locationScore"),
