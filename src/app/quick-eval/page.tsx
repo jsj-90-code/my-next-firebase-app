@@ -30,9 +30,8 @@ import { QuickEvalReview } from "./QuickEvalReview";
 import { useAuth } from "@/contexts/AuthContext";
 import { readJsonOrText } from "@/lib/readJsonOrText";
 import { formatManwon, formatManwonRough, formatPercent } from "@/lib/storeEval/format";
-import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
-import { defaultModelSettings } from "@/lib/storeEval/settings";
+import { computeQuickEval } from "@/lib/storeEval/quickEval/quickEvalCompute";
 import {
   getModelSettings,
   listAllCompetitors,
@@ -42,9 +41,6 @@ import {
   listQscScores,
 } from "@/lib/storeEval/store";
 import {
-  buildQuickCandidate,
-  buildQuickLocationEvaluation,
-  blankCompetitorForTraining,
   type QuickEvalAssembly,
   type QuickEvalCollected,
   type QuickEvalPlanInput,
@@ -57,21 +53,15 @@ import {
   QUICK_EVAL_ENTRY_THRESHOLD_WON,
   QUICK_EVAL_PLAN_DEFAULTS,
   QUICK_EVAL_RADII,
-  withQuickEvalSettings,
 } from "@/lib/storeEval/quickEval/quickEvalDefaults";
-import {
-  buildQuickEvalPeers,
-  type QuickEvalPeerSummary,
-} from "@/lib/storeEval/quickEval/quickEvalPeers";
+import { type QuickEvalPeerSummary } from "@/lib/storeEval/quickEval/quickEvalPeers";
 // ⛔ 자동화 전용 산식(quickEvalOwnModel)은 **화면에서 뺐다**(사용자 2026-09-22). 적중률은 더
 //    높았지만 상권을 못 봐서 후보지 줄 세우기를 못 한다. 산식과 측정 기록은 그 파일에 남아 있다.
 import type { EvaluationResult, GroundLevel, ModelSettings } from "@/lib/storeEval/types";
-// 2026-09-27 — 판정 값: V62 + 실험실(인구 기반) 중 규칙으로 고른다(quickEvalVerdict 머리 주석).
-import { labCandidateBreakdown, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
-import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
-import { floatingPatchFromSbiz, type SbizFloatingRadius } from "@/lib/storeEval/floatingPopulationFromSbiz";
+// 2026-09-27 — 판정 값: V62 + 실험실(인구 기반) 중 규칙으로 고른다(quickEvalVerdict 머리 주석). 계산은 quickEvalCompute.
+import type { SbizFloatingRadius } from "@/lib/storeEval/floatingPopulationFromSbiz";
 import type { SbizFloatingResult } from "@/lib/storeEval/quickEval/sbizFloating";
-import { QUICK_EVAL_ISOLATION, quickEvalFinalEstimate, type QuickEvalFinal } from "@/lib/storeEval/quickEval/quickEvalVerdict";
+import type { QuickEvalFinal } from "@/lib/storeEval/quickEval/quickEvalVerdict";
 import type { ResidentAges } from "@/lib/storeEval/textbookModel";
 
 type CollectResponse = QuickEvalCollected & {
@@ -259,17 +249,7 @@ export default function QuickEvalPage() {
       const payload = data as CollectResponse;
       setCollected(payload);
 
-      // 2) V62 입력으로 조립
-      const built = buildQuickCandidate(planInput, {
-        geocode: payload.geocode,
-        sgis: payload.sgis,
-        floating: payload.floating,
-        pcBangs: payload.pcBangs ?? [],
-        pcBangsPossiblyTruncated: payload.pcBangsPossiblyTruncated ?? false,
-      });
-      setAssembly(built);
-
-      // 3) 운영 V62 호출 — 기존 [최종결과] 탭과 **같은 배선**이다(ResultTab.run 참고).
+      // 2~4) 학습 자료를 읽고 계산한다. 계산은 채팅 입지평가(MCP)와 **같은 함수**다(quickEvalCompute.ts, 2026-09-29).
       const [existingStores, settingsDoc, trainingLocationEvaluations, trainingCompetitors, trainingQscScores] =
         await Promise.all([
           listExistingStores(),
@@ -279,81 +259,16 @@ export default function QuickEvalPage() {
           listQscScores(),
         ]);
       const trainingSales = await listEvaluationSales(existingStores);
-      // ⭐ 2026-09-23 — 이 화면만 **상권수요 천장**을 켠다(quickEvalDefaults.QUICK_EVAL_DEMAND_CEILING 주석).
-      //    운영 설정 문서는 그대로다 — 정밀 평가는 안 바뀐다.
-      const settings: ModelSettings = withQuickEvalSettings(
-        settingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null },
-      );
-      const quickLoc = buildQuickLocationEvaluation(planInput, payload.locationDraft);
-      const evaluated = evaluateCandidate({
-        candidate: built.candidate,
-        competitors: built.competitors,
-        locationEvaluation: quickLoc,
-        settings,
-        // (2026-09-27 — "송도·동탄 이 화면에서만 학습 포함"은 지웠다. 09-25부터 운영 표본에 들어 있어 효과 0.)
-        existingStores,
-        trainingLocationEvaluations,
-        // ⭐⭐ 학습 경쟁점은 **실측 그대로** 쓴다 (2026-09-22 밤 3차에 방향을 바꿨다).
-        //
-        // 그날 낮에는 여기서 `blankCompetitorForTraining`으로 학습 쪽도 비웠다. 후보지가
-        // 기본값인데 학습만 실측이면 비대칭이라는 이유였고, 그 방향도 맞긴 했다(1.461 -> 1.211).
-        // 그런데 비대칭을 없애는 길은 둘이고, **정보를 버리는 쪽을 골랐던 게 반쪽**이었다.
-        // 후보지 쪽을 실측 대표값으로 **채우는** 쪽이 모든 지표에서 이긴다
-        // (`_quickEvalBias.test.ts`, 기존점 38곳 되짚기):
-        //
-        //   학습 비움 + 후보지 비움(그날 낮)   MAPE 23.14% · ±20% 47.37% · 배율 1.140
-        //   학습 실측 + 후보지 대표값(지금)    MAPE 20.23% · ±20% 71.05% · 배율 1.105
-        //
-        // 당연한 결과다 — 기존점 경쟁점은 사람이 **실제로 조사한 값**이다. 그걸 버리면 매장끼리
-        // 구별하는 정보가 같이 사라진다. 후보지 쪽은 `RIVAL_TYPICAL_WHEN_UNSURVEYED`로 채운다.
-        // ⛔⛔ 2026-09-23 **되돌렸다** — 다시 `blankCompetitorForTraining`을 쓴다.
-        //     위 비교표(−10%)는 **되짚기 기준**인데, 실제 후보지에서는 오늘 변경 셋이
-        //     합쳐서 −45%를 냈다(사용자 확인, 여러 곳). 되짚기가 조사된 경쟁점(중앙 4곳)으로
-        //     도는 탓에 카카오 경쟁점(10~20곳) 구간을 대표하지 못한 것이다.
-        //     그래서 오늘 산식 변경 셋을 전부 원복했다(사용자 결정: "A로 가자").
-        //     ⚠️ 되살리려면 **카카오 경쟁점 수를 반영한 되짚기부터** 만들어라.
-        trainingCompetitors: trainingCompetitors.map(blankCompetitorForTraining),
-        trainingSales,
-        // 동탄북광장점은 QSC 기록이 없어 관리가 '가맹점 평균'으로 들어간다 — 관리 불량이
-        // 전달되지 않는다. 사용자 지시로 **가맹점 최저점**을 이 화면에서만 채운다.
-        trainingQscScores, // (2026-09-27 — "동탄 QSC 최저 채움"은 지웠다. 운영에 대체 QSC 73.9가 기록돼 효과 0.)
+      const { built, evaluated, settings, final, peers: peerSummary } = computeQuickEval({
+        planInput,
+        payload,
+        locationDraft: payload.locationDraft,
+        training: { existingStores, settingsDoc, trainingLocationEvaluations, trainingCompetitors, trainingQscScores, trainingSales },
       });
+      setAssembly(built);
       setResult(evaluated);
       setSettingsUsed(settings);
-
-      // 3-2) 판정 값 — 실험실(인구로 쌓은 수요)을 같이 내고 규칙으로 고른다(quickEvalVerdict). 후보지 화면과 같은 조립.
-      //      실험실이 실패해도 V62로 판정한다(판정이 멈추면 안 된다).
-      let labRevenue: number | null = null;
-      let flags: ReturnType<typeof rangeFlagsFor> = [];
-      // 고립 상권(2km 안 PC방 0곳 + 2km 인구 받음)이면 실험실 주거 반경을 2km로 넓히고, 판정 값도 실험실로 둔다(QUICK_EVAL_ISOLATION).
-      const isolatedAges = payload.isolation?.pcBangs2km === 0 ? payload.isolation.residentAges2km : null;
-      try {
-        const prepared = prepareExistingStoresForEvaluation(existingStores, trainingCompetitors, trainingLocationEvaluations, settings);
-        const range = v62TrainingRange(prepared);
-        flags = range ? rangeFlagsFor(evaluated, range) : [];
-        labRevenue = labCandidateBreakdown({
-          candidate: { ...built.candidate, ...floatingPatchFromSbiz(payload.floatingByRadius ?? {}).patch },
-          preparedStores: prepared, rawStores: existingStores,
-          competitors: [...trainingCompetitors, ...built.competitors],
-          locations: quickLoc ? [...trainingLocationEvaluations, quickLoc] : trainingLocationEvaluations,
-          sales: trainingSales, settings,
-          extras: isolatedAges
-            ? {
-                residentRadiusByCode: new Map([[built.candidate.code, QUICK_EVAL_ISOLATION.residentRadiusM]]),
-                residentRingsByCode: new Map([[built.candidate.code, { [QUICK_EVAL_ISOLATION.residentRadiusM]: isolatedAges }]]),
-              }
-            : undefined,
-        })?.monthlyRevenue ?? null;
-      } catch {
-        labRevenue = null;
-      }
-      const final = quickEvalFinalEstimate(evaluated.v62Final, labRevenue, flags, { isolated: isolatedAges != null });
       setFinalEst(final);
-
-      // 4) 가맹점 실적 비교표 — AI가 **자체 매출 판단**의 근거로 쓴다(사용자 요청 2026-09-22:
-      //    "우리 가맹점 데이터 어떠한 부분을 봤을 때 예상 매출 어느정도 예상한다").
-      //    화면이 이미 기존점을 불러왔으니 여기서 만든다 — 서버가 Firestore를 또 읽지 않는다.
-      const peerSummary = buildQuickEvalPeers(existingStores, evaluated.marketDemand);
       setPeers(peerSummary);
 
       // 5) AI 평가문을 **바로** 띄운다. 조회 한 번으로 평가까지 나오게 하라는 지시였다.

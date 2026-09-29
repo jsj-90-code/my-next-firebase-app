@@ -225,5 +225,21 @@ service cloud.firestore {
       allow read, create: if isCompanyAccount();
       allow update, delete: if false;
     }
+
+    // 채팅 입지평가(MCP, 2026-09-29) — 전부 **서버(admin SDK)만** 읽고 쓴다. 브라우저에서는 회사 계정이라도 막는다.
+    // 토큰·인가 코드는 해시만 저장하지만, 목록이 새면 누가 언제 연결했는지가 보이므로 읽기도 막는다.
+    match /mcpOAuthClients/{clientId} {
+      allow read, write: if false;
+    }
+    match /mcpOAuthCodes/{codeHash} {
+      allow read, write: if false;
+    }
+    match /mcpOAuthTokens/{tokenHash} {
+      allow read, write: if false;
+    }
+    // 채팅 입지평가 기록(누가·언제·어느 모델로·몇 점·예상매출). 조회 화면은 없다 — 모델 비교 때 서버 스크립트로 꺼낸다.
+    match /quickEvalChatRuns/{runId} {
+      allow read, write: if false;
+    }
   }
 }

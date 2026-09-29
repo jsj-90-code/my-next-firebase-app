@@ -13,9 +13,10 @@ import type { InflowRestriction, SpecialDemandIntensity, SpecialDemandType } fro
 // Gemini API는 googleSearch 그라운딩 도구와 responseSchema 강제 구조화 출력을 같은 호출에 섞기
 // 어렵다고 알려져 있어(2026-08-25 확인), "조사 → 구조화 추출" 2단계로 분리한다.
 
-const SPECIAL_DEMAND_TYPES: SpecialDemandType[] = ["없음", "대학가", "군부대", "산업단지", "관광유흥", "기타"];
-const SPECIAL_DEMAND_INTENSITIES: SpecialDemandIntensity[] = ["없음", "낮음", "보통", "높음"];
-const INFLOW_LEVELS: InflowRestriction[] = ["없음", "보통", "강함"];
+// 2026-09-29 — 채팅 입지평가(MCP)가 같은 기준을 사용자 AI에게 그대로 내려준다. 기준은 이 파일 한 곳에만 둔다.
+export const SPECIAL_DEMAND_TYPES: SpecialDemandType[] = ["없음", "대학가", "군부대", "산업단지", "관광유흥", "기타"];
+export const SPECIAL_DEMAND_INTENSITIES: SpecialDemandIntensity[] = ["없음", "낮음", "보통", "높음"];
+export const INFLOW_LEVELS: InflowRestriction[] = ["없음", "보통", "강함"];
 
 // 2026-09-01 재설계 — flowScore/attractionScore를 AI 채점 대상에서 제외했다(47개 매장 실측
 // 상관분석 결과 locationScore와 87%/72% 동점 — 사실상 같은 질문을 3번 물었던 것으로 확인,
@@ -97,6 +98,11 @@ const FIELD_SCHEMAS: Record<LocationEvalFieldKey, ReturnType<typeof scoreProp> |
   marketStructureMemo: textProp("상권구조에 대한 자유서술 메모(1~2문장)"),
 };
 
+/** 항목별 채점 기준 문장 — 제미나이 스키마와 채팅 입지평가(MCP) 도구 설명이 같이 읽는다. */
+export const LOCATION_EVAL_FIELD_DESCRIPTIONS: Record<LocationEvalFieldKey, string> = Object.fromEntries(
+  LOCATION_EVAL_FIELD_KEYS.map((k) => [k, FIELD_SCHEMAS[k].description]),
+) as Record<LocationEvalFieldKey, string>;
+
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -116,7 +122,7 @@ const RESPONSE_SCHEMA = {
   required: ["fields", "confidence", "rationale"],
 };
 
-const SYSTEM_PROMPT =
+export const LOCATION_EVAL_SYSTEM_PROMPT =
   "당신은 PC방 프랜차이즈 신규 후보지의 입지를 평가하는 전문가입니다. 아래에 이미 수집된 사실 자료" +
   "(경쟁점·수요거점 거리, 행정동 인구통계, 소상공인365 참고자료, 지도 이미지)가 주어집니다. 이것만으로" +
   "부족한 부분(상권 성격, 실제 동선, 특수수요 등)은 웹 검색으로 그 주소를 직접 조사해서 보완하세요.\n\n" +
@@ -198,7 +204,7 @@ export async function runLocationEvalDraft(input: {
     model,
     contents: [{ role: "user", parts: researchParts }],
     config: {
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: LOCATION_EVAL_SYSTEM_PROMPT,
       tools: [{ googleSearch: {} }],
     },
   });
@@ -221,7 +227,7 @@ export async function runLocationEvalDraft(input: {
       },
     ],
     config: {
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: LOCATION_EVAL_SYSTEM_PROMPT,
       responseMimeType: "application/json",
       responseSchema: RESPONSE_SCHEMA,
     },

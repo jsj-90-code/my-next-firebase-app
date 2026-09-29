@@ -1,0 +1,241 @@
+// 주소 하나로 상권자료를 자동수집한다 — AI 호출은 **빼고**. (2026-09-29 collect 라우트에서 떼어 냄)
+//
+// 쓰는 곳 둘:
+//   - /api/quick-eval/collect  : 이 결과 + 제미나이 입지평가 초안(유료 키)
+//   - /api/mcp (채팅 입지평가)   : 이 결과를 사용자 AI(ChatGPT·Claude)에게 넘기고, 입지 점수는 그 AI가 매긴다
+// 수집 단계·실패 처리·순서는 옮기면서 **바꾸지 않았다**(route.ts 2026-09-28 판 그대로).
+//
+//   1. 주소 -> 좌표 (카카오)                        실패하면 여기서 멈춘다(좌표를 지어내지 않는다)
+//   2. 주거인구 500m·1km (SGIS 반경조회)             실패해도 계속 — 무엇이 빠졌는지 알려준다
+//   3. 유동인구 100~1000m (소상공인365)              실패해도 계속(스크래핑이라 깨질 수 있다)
+//   4. 경쟁점 PC방 500m (카카오 · 격자분할)           실패하면 경쟁점 0곳이 아니라 "수집 실패"다
+//   5. 수요거점 (카카오) — AI 입지평가 컨텍스트용
+//   5-2. 고립 상권 판정(2km 안 PC방 0곳이면 2km 주거인구)
+//   => AI에게 줄 컨텍스트 글(층·엘리베이터 사실 포함)
+import { geocodeAddress, searchByCategory, searchByKeyword } from "@/lib/kakao";
+import { DEMAND_POINT_TARGETS } from "../demandPointTargets";
+import { haversineDistanceMeters } from "../geo";
+import { buildLocationEvalContext } from "../locationEvalContext";
+import type { DemandPoint, GroundLevel } from "../types";
+import { appendSiteFactsToContext } from "./quickEvalLocationContext";
+import { collectKakaoPcBangs, type KakaoPcBangPlace } from "./kakaoPcBangs";
+import { collectSgisRadiusPopulation } from "./sgisRadiusPopulation";
+import { collectSbizFloating, type SbizFloatingResult } from "./sbizFloating";
+import { SBIZ_FLOATING_RADII, type SbizFloatingRadius } from "../floatingPopulationFromSbiz";
+import { QUICK_EVAL_RADII } from "./quickEvalDefaults";
+import { judgePcBangName } from "./pcBangNameFilter";
+import { QUICK_EVAL_CANDIDATE_CODE, type QuickEvalCollected } from "./buildQuickCandidate";
+import { tmSelfTestFailures } from "./tm";
+import { QUICK_EVAL_ISOLATION } from "./quickEvalVerdict";
+import type { ResidentAges } from "../textbookModel";
+
+export type QuickEvalSiteInput = {
+  address: string;
+  name?: string | null;
+  skipFloating?: boolean;
+  floor?: number | null;
+  groundLevel?: GroundLevel | null;
+  hasElevator?: boolean | null;
+};
+
+export type QuickEvalSiteData = QuickEvalCollected & {
+  collectedAt: number;
+  pcBangQueryCount: number;
+  floatingByRadius: Partial<Record<SbizFloatingRadius, SbizFloatingResult>>;
+  isolation: { pcBangs2km: number; truncated: boolean; residentAges2km: ResidentAges | null } | null;
+  demandPoints: DemandPoint[];
+  /** AI 입지평가에 줄 사실 자료 글(운영 공용 컨텍스트 + 물건 정보) */
+  contextText: string;
+  errors: string[];
+};
+
+export type QuickEvalSiteResult =
+  | { ok: true; data: QuickEvalSiteData }
+  | { ok: false; error: string; status: number };
+
+const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+export async function collectQuickEvalSite(input: QuickEvalSiteInput): Promise<QuickEvalSiteResult> {
+  const address = input.address.trim();
+  if (!address) return { ok: false, error: "주소가 필요합니다.", status: 400 };
+
+  // 좌표변환 검산 — 틀리면 SGIS/소상공인365가 **에러 없이 빈 결과**를 준다. 수집 전에 막는다.
+  const tmFailures = tmSelfTestFailures();
+  if (tmFailures.length) return { ok: false, error: `좌표변환 검산 실패: ${tmFailures.join(" · ")}`, status: 500 };
+
+  const errors: string[] = [];
+
+  // 1) 주소 -> 좌표
+  let geocode;
+  try {
+    geocode = await geocodeAddress(address);
+  } catch (err) {
+    return { ok: false, error: `주소 지오코딩 실패: ${message(err)}`, status: 502 };
+  }
+  if (!geocode) {
+    return { ok: false, error: "주소와 일치하는 좌표를 찾지 못했습니다. 도로명주소로 다시 입력해보세요.", status: 200 };
+  }
+  const origin = { lat: geocode.lat, lng: geocode.lng };
+
+  // 2~5) 자료원마다 따로 실패할 수 있다 — 하나가 죽어도 나머지는 받는다.
+  const [sgisResult, floatingResult, pcBangResult, demandPointResult] = await Promise.all([
+    collectSgisRadiusPopulation(origin, [QUICK_EVAL_RADII.resident500, QUICK_EVAL_RADII.resident1km])
+      .then((v) => ({ ok: true as const, value: v }))
+      .catch((err) => ({ ok: false as const, error: `주거인구(SGIS) 수집 실패: ${message(err)}` })),
+    input.skipFloating
+      ? Promise.resolve({ ok: false as const, error: "유동인구 수집을 건너뛰었습니다(사용자 선택)." })
+      // 2026-09-27 — 500m 하나가 아니라 100~1000m 6반경을 **차례로** 받는다(실험실 수요가 400m·중심도가 300m·1km를 읽는다).
+      //    500m(V62)가 실패하면 예전처럼 실패로 올리고, 다른 반경 실패는 경고만 남긴다. 반경당 약 4초.
+      : collectFloatingRadii(origin)
+          .then((v) => ({ ok: true as const, value: v }))
+          .catch((err) => ({ ok: false as const, error: `유동인구(소상공인365) 수집 실패: ${message(err)}` })),
+    collectKakaoPcBangs(origin, QUICK_EVAL_RADII.competitor)
+      .then((v) => ({ ok: true as const, value: v }))
+      .catch((err) => ({ ok: false as const, error: `경쟁점(카카오) 수집 실패: ${message(err)}` })),
+    collectDemandPoints(origin)
+      .then((v) => ({ ok: true as const, value: v }))
+      .catch((err) => ({ ok: false as const, error: `수요거점(카카오) 수집 실패: ${message(err)}` })),
+  ]);
+
+  if (!sgisResult.ok) errors.push(sgisResult.error);
+  if (!floatingResult.ok) errors.push(floatingResult.error);
+  if (!pcBangResult.ok) errors.push(pcBangResult.error);
+  if (!demandPointResult.ok) errors.push(demandPointResult.error);
+
+  const sgis = sgisResult.ok ? sgisResult.value : null;
+  const floating = floatingResult.ok ? floatingResult.value.r500 : null;
+  const floatingByRadius = floatingResult.ok ? floatingResult.value.byRadius : {};
+  if (floatingResult.ok) errors.push(...floatingResult.value.otherErrors);
+  const pcBangs: KakaoPcBangPlace[] = pcBangResult.ok ? pcBangResult.value.places : [];
+  const demandPoints = demandPointResult.ok ? demandPointResult.value : [];
+
+  // SGIS가 원을 잘랐으면 그 값은 "그 반경"이 아니다 — 조용히 넘기지 않는다.
+  for (const [radius, stats] of Object.entries(sgis?.byRadius ?? {})) {
+    if (stats.areaOffRatio != null && stats.areaOffRatio > 0.1) {
+      errors.push(
+        `주거인구 ${radius}m의 조회면적이 원 면적과 ${(stats.areaOffRatio * 100).toFixed(0)}% 어긋납니다` +
+          " — SGIS가 영역을 자른 것이라 그 반경의 값으로 보기 어렵습니다.",
+      );
+    }
+  }
+  if (pcBangResult.ok && pcBangResult.value.possiblyTruncated) {
+    errors.push("경쟁점 목록이 카카오 조회 상한에 걸려 일부 빠졌을 수 있습니다(격자분할 한계 도달).");
+  }
+
+  // 5-2) 고립 상권 판정(2026-09-27, quickEvalVerdict.QUICK_EVAL_ISOLATION) — 2km 안에 PC방이 0곳이면 실험실 주거 반경을 2km로.
+  //      있나 없나만 보면 되므로 격자로 쪼개지 않고 한 번만 부른다. 결과가 잘렸으면(45건 초과) 당연히 고립이 아니다.
+  let isolation: QuickEvalSiteData["isolation"] = null;
+  try {
+    const probe = await collectKakaoPcBangs(origin, QUICK_EVAL_ISOLATION.probeRadiusM, { splitDepthLimit: 0 });
+    const counted = probe.places.filter((p) => judgePcBangName(p).counted).length;
+    let residentAges2km: ResidentAges | null = null;
+    if (counted === 0 && !probe.possiblyTruncated) {
+      const b = (await collectSgisRadiusPopulation(origin, [QUICK_EVAL_ISOLATION.residentRadiusM])).byRadius[QUICK_EVAL_ISOLATION.residentRadiusM]?.ageBands ?? [];
+      if (b.length >= 9 && b[1] != null) {
+        residentAges2km = { age0s: b[0] ?? 0, age10s: b[1] ?? 0, age20s: b[2] ?? 0, age30s: b[3] ?? 0, age40s: b[4] ?? 0, age50s: b[5] ?? 0, age60plus: (b[6] ?? 0) + (b[7] ?? 0) + (b[8] ?? 0) };
+      } else {
+        errors.push("고립 상권이지만 2km 주거인구(SGIS)를 받지 못해 1km로 계산합니다.");
+      }
+    }
+    isolation = { pcBangs2km: counted, truncated: probe.possiblyTruncated, residentAges2km };
+  } catch (err) {
+    errors.push(`고립 상권 판정(카카오 2km) 실패: ${message(err)} (일반 규칙으로 판정합니다)`);
+  }
+
+  // 6) AI 입지평가에 줄 컨텍스트 글 — 앞 단계 자료 + 물건 정보.
+  const countedCompetitors = pcBangs
+    .filter((p) => judgePcBangName(p).counted)
+    .map((p) => ({ name: p.name, distanceM: p.distanceM }));
+  const baseContext = buildLocationEvalContext({
+    candidate: {
+      name: input.name?.trim() || address,
+      address,
+      roadAddress: geocode.roadAddress,
+      floating500Avg: floating?.avg ?? null,
+      operatingPcStores500m: countedCompetitors.length,
+    },
+    // buildLocationEvalContext는 이름·거리만 읽는다(파일 주석 참고) — 가짜 경쟁점 레코드를
+    // 만들지 않고 필요한 두 필드만 넘긴다.
+    competitors: countedCompetitors as never,
+    demandPoints,
+  });
+  // 층·엘리베이터를 사실로 덧붙인다 — 이게 없으면 AI가 층수를 모른 채 가시성을 매긴다.
+  const contextText = appendSiteFactsToContext(baseContext, {
+    floor: input.floor ?? null,
+    groundLevel: input.groundLevel ?? null,
+    hasElevator: input.hasElevator ?? null,
+  });
+
+  return {
+    ok: true,
+    data: {
+      collectedAt: Date.now(),
+      geocode: {
+        lat: geocode.lat,
+        lng: geocode.lng,
+        roadAddress: geocode.roadAddress,
+        jibunAddress: geocode.jibunAddress,
+        buildingName: geocode.buildingName,
+      },
+      sgis,
+      floating,
+      floatingByRadius,
+      pcBangs,
+      pcBangsPossiblyTruncated: pcBangResult.ok ? pcBangResult.value.possiblyTruncated : false,
+      pcBangQueryCount: pcBangResult.ok ? pcBangResult.value.queryCount : 0,
+      isolation,
+      demandPoints,
+      contextText,
+      errors,
+    },
+  };
+}
+
+/** 유동인구 6반경 — 500m는 필수(V62), 나머지는 실험실 입력(실패해도 경고만). */
+async function collectFloatingRadii(origin: { lat: number; lng: number }) {
+  const byRadius: Partial<Record<SbizFloatingRadius, SbizFloatingResult>> = {};
+  const otherErrors: string[] = [];
+  let r500Error: unknown = null;
+  for (const r of SBIZ_FLOATING_RADII) {
+    try {
+      // 2026-09-27 — 시간 초과가 가끔 난다(후보지 13곳 중 2곳 400m). 빠지면 실험실 유동 수요가 0이 되므로 한 번 더 부른다.
+      byRadius[r] = await collectSbizFloating(origin, r).catch(() => collectSbizFloating(origin, r));
+    } catch (err) {
+      if (r === QUICK_EVAL_RADII.floating) r500Error = err;
+      else otherErrors.push(`유동인구 ${r >= 1000 ? "1km" : `${r}m`} 수집 실패(실험실 값이 낮게 나올 수 있음): ${message(err)}`);
+    }
+  }
+  if (!byRadius[500]) throw r500Error ?? new Error("유동인구 500m를 받지 못했습니다");
+  return { r500: byRadius[500], byRadius, otherErrors };
+}
+
+/** AI 입지평가에 줄 수요거점. 운영 1단계(`collect-market-data`)와 **같은 타깃 목록**을 쓴다. */
+async function collectDemandPoints(origin: { lat: number; lng: number }): Promise<DemandPoint[]> {
+  const now = Date.now();
+  const out: DemandPoint[] = [];
+  const seen = new Set<string>();
+  for (const target of DEMAND_POINT_TARGETS) {
+    const places =
+      target.kind === "category"
+        ? await searchByCategory(origin.lat, origin.lng, target.code, target.radiusM)
+        : await searchByKeyword(origin.lat, origin.lng, target.keyword, target.radiusM);
+    for (const place of places) {
+      if (seen.has(place.id)) continue;
+      seen.add(place.id);
+      out.push({
+        id: `${QUICK_EVAL_CANDIDATE_CODE}_kakao_${place.id}`,
+        candidateCode: QUICK_EVAL_CANDIDATE_CODE,
+        name: place.name,
+        category: target.category,
+        lat: place.lat,
+        lng: place.lng,
+        distanceM: place.distanceM ?? Math.round(haversineDistanceMeters(origin, { lat: place.lat, lng: place.lng })),
+        source: "kakao",
+        sourcePlaceId: place.id,
+        fetchedAt: now,
+        confirmed: false,
+      });
+    }
+  }
+  return out;
+}
