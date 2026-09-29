@@ -5,20 +5,26 @@ import { LOCATION_EVAL_FIELD_KEYS } from "../locationEvalAi";
 
 describe("채팅 결과 요약 말투", () => {
   it("내부 산식 이름(V62·실험실)을 사용자 문장에 내지 않는다", () => {
+    // 모르는 칸은 전부 null로 읽히는 가짜 결과(평가문 자료 함수가 여러 칸을 읽는다)
+    const nulls = <T extends object>(o: T) => new Proxy(o, { get: (t, k) => (k in t ? (t as Record<string | symbol, unknown>)[k] : null) });
     const computed = {
       final: { value: 25_320_000, source: "실험실", reason: "고립 상권이라 주민으로 쌓은 수요(실험실)로 판정했습니다. V62가 값을 내지 못해" },
-      evaluated: { v62Final: 30_360_000 },
-      built: { competitorRows: [], missing: [], candidate: { expectedPcCount: 90, hourlyRate: 1500 } },
+      evaluated: nulls({ v62Final: 30_360_000, marketDemand: 344, marketGrade: "B" }),
+      built: { competitorRows: [], missing: [], candidate: nulls({ expectedPcCount: 90, hourlyRate: 1500, roadAddress: "충남 천안시 풍세산단로 277" }) },
+      peers: null,
     } as unknown as Parameters<typeof buildResultSummary>[0]["computed"];
     const { text, verdict } = buildResultSummary({ address: "주소", computed, defaultsUsed: [], collectErrors: [], sourcesCount: 2, modelName: "m" });
     expect(verdict).toBe("불가");
-    const userPart = text.split("[AI에게]")[0];
-    expect(userPart).not.toMatch(/V62|실험실/);
-    expect(userPart).toContain("예상 월매출: 2,532만원");
-    expect(userPart).toContain("입점 불가");
+    const screen = text.split("\n[화면 요약]\n")[1].split("\n[평가문 지침]\n")[0];
+    const note = text.split("\n[보고 안내]\n")[1];
+    expect(screen).not.toMatch(/V62|실험실/);
+    expect(screen).toContain("예상 월매출: 2,500만원"); // 웹 화면과 같은 100만원 단위
+    expect(screen).toContain("입점 불가");
+    expect(screen).toContain("±20%로 보면");
     // 정밀평가는 사용자 본인만 쓴다 — 다른 직원에게 정밀평가로 내라고 하지 않는다(2026-09-29)
-    expect(userPart).not.toMatch(/정밀|신규후보지/);
-    expect(userPart).toContain("현장에서 확인");
+    expect(note).not.toMatch(/정밀|신규후보지/);
+    expect(note).toContain("현장에서 확인");
+    expect(text).toContain("## AI가 판단한 예상매출"); // 웹 평가문과 같은 지침
   });
 });
 

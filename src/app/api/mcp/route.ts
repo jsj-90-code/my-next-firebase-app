@@ -133,7 +133,7 @@ const handler = createMcpHandler(
         const sources = args.sources.filter((s) => s.trim());
         const summary = buildResultSummary({
           address: run.address, computed, defaultsUsed: run.defaultsUsed ?? [], collectErrors: run.collectErrors ?? [],
-          sourcesCount: sources.length, modelName: args.modelName || null,
+          sourcesCount: sources.length, modelName: args.modelName || null, rationale: args.rationale,
         });
         await ref.update({
           status: "scored",

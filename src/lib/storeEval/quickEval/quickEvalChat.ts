@@ -18,6 +18,8 @@ import {
   OWN_FOOD_BRAND, QUICK_EVAL_ENTRY_THRESHOLD_WON, QUICK_EVAL_PLAN_DEFAULTS,
 } from "./quickEvalDefaults";
 import type { GroundLevel } from "../types";
+import { formatManwon, formatManwonRough } from "../format";
+import { buildQuickEvalReviewContext, QUICK_EVAL_REVIEW_SYSTEM_PROMPT } from "./quickEvalReviewPrompt";
 
 export const QUICK_EVAL_CHAT_COLLECTION = "quickEvalChatRuns";
 
@@ -90,9 +92,17 @@ export function buildScoringBrief(args: { runId: string; contextText: string; co
   ].filter((l) => l !== "").join("\n");
 }
 
-const won = (v: number | null | undefined) => (v == null ? "계산 불가" : `${Math.round(v / 10_000).toLocaleString("ko-KR")}만원`);
 
-/** submit_location_scores가 채팅에 돌려주는 요약. 사용자에게 그대로 보여주라고 적는다. */
+/**
+ * submit_location_scores가 채팅에 돌려주는 글.
+ *
+ * 2026-09-29 사용자: 웹 주소만 초기평가 화면 구성이 더 좋다 → **웹 화면 순서를 그대로 따른다.**
+ *   1. [화면 요약] 웹 KeyVerdict·결과 카드와 같은 숫자(금액 표기도 웹과 같은 100만원 단위 formatManwonRough)
+ *   2. [평가문] 웹 "AI 상권평가"와 **같은 지시문·같은 자료**(QUICK_EVAL_REVIEW_SYSTEM_PROMPT · buildQuickEvalReviewContext)로
+ *      사용자 AI가 직접 쓴다 — 웹은 제미나이 무료 키, 채팅은 사용자 요금제. 가맹점 실적 비교표도 같이 준다.
+ *   3. [보고 안내] 정밀평가는 사용자 본인만 쓰므로 "정밀평가로 내라" 대신 "현장에서 본 것을 더하라".
+ * 판정 이유 문장(quickEvalVerdict, 웹과 공용)의 "(실험실)"·"V62가"는 다른 직원에게 안 보이게 뗀다.
+ */
 export function buildResultSummary(args: {
   address: string;
   computed: QuickEvalComputed;
@@ -100,36 +110,62 @@ export function buildResultSummary(args: {
   collectErrors: string[];
   sourcesCount: number;
   modelName: string | null;
+  rationale?: string | null;
 }): { text: string; verdict: "가능" | "불가" | "판정 불가"; finalRevenue: number | null } {
   const { computed } = args;
+  const r = computed.evaluated;
   const finalRevenue = computed.final.value;
   const T = QUICK_EVAL_ENTRY_THRESHOLD_WON;
   const verdict = finalRevenue == null ? "판정 불가" : finalRevenue > T ? "가능" : "불가";
-  const counted = computed.built.competitorRows.filter((r) => r.counted).length;
+  const counted = computed.built.competitorRows.filter((row) => row.counted);
   const warnings = [
-    ...(args.sourcesCount === 0 ? ["참고한 웹 주소가 없습니다 — 웹 검색 없이 매긴 점수일 수 있습니다."] : []),
+    ...(args.sourcesCount === 0 ? ["참고한 웹 주소가 없습니다 — 웹 검색 없이 매긴 입지 점수일 수 있습니다."] : []),
     ...args.collectErrors,
-    ...computed.built.missing,
   ];
-  // 2026-09-29 사용자: "주소만 초기평가하는데 실험실이 어쩌니 V62가 어쩌니 이런 소리" — 다른 직원도 쓰는 도구라
-  // 웹 화면(quick-eval KeyVerdict)과 같은 두 칸(예상 월매출·입점 가능여부)만 보이고, 내부 산식 이름은 쓰지 않는다.
-  // 판정 이유 문장(quickEvalVerdict, 웹과 공용)에 붙은 "(실험실)" 같은 괄호 이름도 여기서 뗀다.
   const plainReason = computed.final.reason?.replace(/\s*\((실험실|V62)\)/g, "").replace(/V62가/g, "기본 추정이") ?? null;
   const plan = computed.built.candidate;
-  const lines = [
-    `■ ${args.address} 주소만 초기평가`,
-    `- 예상 월매출: ${won(finalRevenue)} (PC ${plan.expectedPcCount ?? "-"}대 · 기본요금 ${plan.hourlyRate?.toLocaleString("ko-KR") ?? "-"}원 기준)`,
-    `- 입점 가능여부: ${verdict === "판정 불가" ? "판정 불가" : `입점 ${verdict}`} (기준: 예상 월매출 ${won(T)} 초과)`,
+  const isDefault = (label: string) => (args.defaultsUsed.some((d) => d.startsWith(label)) ? "(기본값)" : "");
+  const fmt = (v: number | null | undefined) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
+
+  const summary = [
+    `■ ${plan.roadAddress ?? args.address} — 주소만 초기평가`,
+    `예상 월매출: ${formatManwonRough(finalRevenue)}  (PC ${plan.expectedPcCount ?? "-"}대${isDefault("PC대수")} · 기본요금 ${plan.hourlyRate?.toLocaleString("ko-KR") ?? "-"}원${isDefault("시간당 요금")} 기준)`,
+    `입점 가능여부: ${verdict === "판정 불가" ? "판정 불가" : `입점 ${verdict}`}  (기준: 예상 월매출 ${formatManwon(T)} 초과)`,
     plainReason ? `  · ${plainReason}` : "",
-    `- 반경 500m 경쟁 PC방: ${counted}곳`,
-    args.defaultsUsed.length ? `- 기본값으로 계산한 칸: ${args.defaultsUsed.join(", ")}` : "",
-    warnings.length ? `- 주의: ${warnings.join(" / ")}` : "",
+    finalRevenue != null ? `±20%로 보면 ${formatManwonRough(finalRevenue * 0.8)} ~ ${formatManwonRough(finalRevenue * 1.2)}` : "",
+    `상권수요 ${fmt(r.marketDemand)} · 상권등급/성격 ${r.marketGrade ?? "-"} / ${r.marketCharacter ?? "-"} · 경쟁IP ${fmt(r.competitorIp)} · IP당수요 ${r.ipPerDemand == null ? "-" : r.ipPerDemand.toFixed(1)}`,
+    `경쟁점 ${counted.length}곳 · 반경 500m${counted.length ? `: ${counted.map((row) => `${row.place.name}(${Math.round(row.place.distanceM)}m)`).join(", ")}` : ""}`,
+    warnings.length ? `주의: ${warnings.join(" / ")}` : "",
+  ].filter((l) => l !== "").join("\n");
+
+  const reviewContext = buildQuickEvalReviewContext({
+    result: r,
+    assembly: computed.built,
+    collectErrors: args.collectErrors,
+    peers: computed.peers,
+    locationDraftRationale: args.rationale ?? null,
+    finalEstimate: computed.final,
+  });
+
+  const text = [
+    "[AI에게 — 답을 이 순서로 쓸 것]",
+    "1. 아래 [화면 요약]을 숫자 그대로 맨 먼저 보여준다(웹 화면의 핵심 카드와 같은 내용).",
+    "2. 이어서 [평가문 지침]대로 평가문을 쓴다. 근거는 [평가문 자료]뿐이다. 금액 셈은 자료의 가맹점 실적표로만.",
+    "   'V62'·'실험실'이라는 이름은 쓰지 말고, 산식 금액은 '산식 예상 매출액'이라고 부른다. '정밀 평가로 내라'는 말은 쓰지 않는다.",
+    "3. 입지 점수표(7항목·근거)를 짧게 붙인다.",
+    "4. 맨 끝에 [보고 안내]를 그대로 붙인다.",
     "",
-    // 2026-09-29 사용자: 정밀평가(V62·실험실)는 사용자 본인만 쓴다 — 다른 직원에게 "정밀평가로 내라"는 못 하는 일이다.
-    // 대신 "주소만 본 참고치이니 보고 때는 현장에서 본 것을 더하라"로 쓴다.
+    "[화면 요약]",
+    summary,
+    "",
+    "[평가문 지침]",
+    QUICK_EVAL_REVIEW_SYSTEM_PROMPT,
+    "",
+    "[평가문 자료]",
+    reviewContext,
+    "",
+    "[보고 안내]",
     QUICK_EVAL_CHAT_REPORT_NOTE,
-    "",
-    "[AI에게] 위 요약의 숫자와 판정을 그대로 사용자에게 보여줄 것. 'V62'·'실험실'·'산식' 같은 내부 이름은 쓰지 말고, 예상 월매출과 입점 가능여부로만 말할 것. 입지 점수표는 짧게 덧붙여도 된다.",
-  ];
-  return { text: lines.filter((l) => l !== "").join("\n"), verdict, finalRevenue };
+  ].join("\n");
+  return { text, verdict, finalRevenue };
 }
