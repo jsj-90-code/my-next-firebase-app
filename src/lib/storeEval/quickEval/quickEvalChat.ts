@@ -19,9 +19,52 @@ import {
 } from "./quickEvalDefaults";
 import type { GroundLevel } from "../types";
 import { formatManwon, formatManwonRough } from "../format";
-import { buildQuickEvalReviewContext, QUICK_EVAL_REVIEW_SYSTEM_PROMPT } from "./quickEvalReviewPrompt";
+import { buildQuickEvalReviewContext } from "./quickEvalReviewPrompt";
 
 export const QUICK_EVAL_CHAT_COLLECTION = "quickEvalChatRuns";
+
+/**
+ * AI 조정 의견을 낼 문턱 — 산식보다 이만큼 이상 높게/낮게 볼 근거가 있을 때만 "특이점"이다. (사용자 2026-09-29 확정)
+ * 근거: AI 입지 점수는 조회마다 한 칸쯤 흔들리고 그것만으로 금액이 4% 안팎 움직인다(김포 한강2로23번길 60: 5,800 vs 6,030).
+ * 그보다 작은 차이는 흔들림이지 특이점이 아니다.
+ */
+export const QUICK_EVAL_CHAT_ADJUST_THRESHOLD = 0.1;
+
+/**
+ * 채팅 평가문 지침 (2026-09-29 사용자 확정 구도). 웹 평가문(QUICK_EVAL_REVIEW_SYSTEM_PROMPT)에서 갈라졌다:
+ *   - 예상 월매출은 **하나만**(화면 요약의 값). AI가 금액을 따로 내면 두 금액이 떠서 헷갈린다(사용자 지적).
+ *   - AI 몫은 "조정 의견" — 특이점이 있을 때만 방향·크기·이유. '산식값과의 차이' 섹션은 조정 의견이 대신한다.
+ * 웹 평가문의 기본 규칙(근거는 주어진 자료뿐·하루 대당·쉬운 말·동그라미 숫자 금지)은 그대로 옮겼다.
+ */
+export const QUICK_EVAL_CHAT_REVIEW_GUIDE = [
+  "당신은 PC방 프랜차이즈 점포개발 담당자를 돕는 상권 분석가입니다. 주소만으로 낸 초기평가 결과를 설명합니다.",
+  "",
+  "반드시 지킬 것:",
+  "1. 예상 월매출은 [화면 요약]의 금액 하나만 씁니다. 당신이 새 금액을 따로 제시하지 마세요. 범위(±%·보수·상한·○○만~○○만)도 쓰지 마세요.",
+  "2. 근거는 [평가문 자료]와 당신이 웹 검색으로 확인한 사실뿐입니다. 기억 속 숫자·업계 평균을 끌어오지 마세요.",
+  "3. 'V62'·'실험실'이라는 이름을 쓰지 마세요. 필요하면 '산식 예상 매출액'이라고 부르세요. '정밀 평가로 내라'는 말도 쓰지 마세요.",
+  "4. 가맹점 실적표의 대당은 하루 대당입니다(PC 1대가 하루 버는 돈). 셈할 때는 하루대당 × 30 × PC대수.",
+  "5. 경쟁점 PC 대수·품질은 조사값이 아니라 기본값입니다. '기본값이라 변동될 수 있다'는 문구는 쓰지 말고, 확인할 것은 '현장에서 확인할 것'에만 적으세요.",
+  "6. 한국어로, 초보자도 이해하게 씁니다. 동그라미 숫자(①②③)는 쓰지 말고 1. 2. 3.으로 씁니다.",
+  "",
+  "형식(마크다운, 제목은 ##). 이 순서를 지키세요:",
+  "## 한 줄 결론",
+  "## 이 상권은 어떤 상권인가",
+  "   상권 성격(주거 밀집 생활상권·역세권·대학가·산업단지 배후 등)과 그렇게 본 근거 수치(주거인구·유동인구·주변 시설 거리). 자세히 쓰세요.",
+  "## 장점",
+  "## 단점·특이점",
+  "   좋은 말만 쓰지 마세요. 웹 검색으로 찾은 상권 사정(침체·공실·개발 등)도 여기 적습니다.",
+  "## AI 조정 의견",
+  `   아래 '특이점' 중 하나가 있고, 그 때문에 산식 예상 매출액보다 ${Math.round(QUICK_EVAL_CHAT_ADJUST_THRESHOLD * 100)}% 이상 높게 또는 낮게 봐야 할 때만 씁니다.`,
+  "   특이점:",
+  "   1. 산식에 안 들어가는 사실을 웹 검색으로 확인했을 때 — 상권 침체·공실 증가 기사, 대형 개발·입주 예정, 경쟁점 개업·폐업 소식, 주변 요금 경쟁, 역·도로 개통 같은 동선 변화",
+  `   2. [평가문 자료]의 비슷한 가맹점 하루 대당으로 셈한 값이 산식 예상 매출액과 ${Math.round(QUICK_EVAL_CHAT_ADJUST_THRESHOLD * 100)}% 넘게 벌어질 때`,
+  "   3. 자료에 구멍이 있을 때 — 유동인구 수집 실패, 경쟁점 목록 잘림, 기존 가맹점에 없던 고립 상권",
+  "   쓸 때는 금액을 새로 내지 말고 '방향 · 크기 · 이유' 한두 줄로: 예) 산식보다 10~15% 낮게 볼 여지 — 라베니체 1층 공실률 40% 보도(경기신문).",
+  "   특이점이 없으면 이 한 줄만: 산식값과 다르게 볼 뚜렷한 이유 없음.",
+  "## 현장에서 확인할 것",
+  "   체크리스트. 담당자가 그대로 들고 나갑니다.",
+].join("\n");
 
 /** 채팅 결과 끝에 붙는 안내 — 주소만 본 참고치라는 것과, 보고 때 더할 것. */
 export const QUICK_EVAL_CHAT_REPORT_NOTE = [
@@ -127,16 +170,29 @@ export function buildResultSummary(args: {
   const isDefault = (label: string) => (args.defaultsUsed.some((d) => d.startsWith(label)) ? "(기본값)" : "");
   const fmt = (v: number | null | undefined) => (v == null ? "-" : Math.round(v).toLocaleString("ko-KR"));
 
+  // 시작 문장 — 사용자 2026-09-29 "시작 멘트는 기존 것이 좋았다": 결론부터(가능/불가 · 금액 · 기준선과의 차이).
+  // 금액은 웹 화면과 같은 100만원 단위(formatManwonRough)로 셈해서, 화면과 채팅 숫자가 어긋나 보이지 않게 한다.
+  const place = plan.roadAddress ?? args.address;
+  const roughMan = finalRevenue == null ? null : Math.round(finalRevenue / 1_000_000) * 100;
+  const gapMan = roughMan == null ? null : roughMan - T / 10_000;
+  const opening =
+    finalRevenue == null
+      ? `${place} 자리는 예상 월매출을 계산하지 못해 판정할 수 없었습니다(자료 수집 실패).`
+      : `${place} 자리는 입점 ${verdict}으로 나왔습니다. 예상 월매출은 약 ${formatManwonRough(finalRevenue)}으로, 기준선 ${formatManwon(T)}보다 ` +
+        (gapMan === 0 ? "거의 같습니다." : `${Math.abs(gapMan!).toLocaleString("ko-KR")}만원가량 ${gapMan! > 0 ? "높습니다" : "낮습니다"}.`);
+
   const summary = [
-    `■ ${plan.roadAddress ?? args.address} — 주소만 초기평가`,
-    `예상 월매출: ${formatManwonRough(finalRevenue)}  (PC ${plan.expectedPcCount ?? "-"}대${isDefault("PC대수")} · 기본요금 ${plan.hourlyRate?.toLocaleString("ko-KR") ?? "-"}원${isDefault("시간당 요금")} 기준)`,
-    `입점 가능여부: ${verdict === "판정 불가" ? "판정 불가" : `입점 ${verdict}`}  (기준: 예상 월매출 ${formatManwon(T)} 초과)`,
-    plainReason ? `  · ${plainReason}` : "",
-    finalRevenue != null ? `±20%로 보면 ${formatManwonRough(finalRevenue * 0.8)} ~ ${formatManwonRough(finalRevenue * 1.2)}` : "",
-    `상권수요 ${fmt(r.marketDemand)} · 상권등급/성격 ${r.marketGrade ?? "-"} / ${r.marketCharacter ?? "-"} · 경쟁IP ${fmt(r.competitorIp)} · IP당수요 ${r.ipPerDemand == null ? "-" : r.ipPerDemand.toFixed(1)}`,
-    `경쟁점 ${counted.length}곳 · 반경 500m${counted.length ? `: ${counted.map((row) => `${row.place.name}(${Math.round(row.place.distanceM)}m)`).join(", ")}` : ""}`,
-    warnings.length ? `주의: ${warnings.join(" / ")}` : "",
-  ].filter((l) => l !== "").join("\n");
+    opening,
+    "",
+    "평가 결과 (주소만 넣은 초기평가)",
+    `- 조건: PC ${plan.expectedPcCount ?? "-"}대${isDefault("PC대수")} · 기본요금 ${plan.hourlyRate?.toLocaleString("ko-KR") ?? "-"}원${isDefault("시간당 요금")} · ${plan.groundLevel ?? "지상"} ${plan.floor ?? "-"}층${isDefault("층")} · 엘리베이터 ${plan.hasElevator ? "있음" : "없음"}${isDefault("엘리베이터")}`,
+    // 2026-09-29 사용자: "매출 범위 노출 안 하는 쪽 — 그냥 매출만 딱". ±20%·보수·상한은 채팅에 안 낸다.
+    `- 예상 월매출 ${formatManwonRough(finalRevenue)} (입점 기준: ${formatManwon(T)} 초과면 가능)`,
+    plainReason ? `- 판정 참고: ${plainReason}` : "",
+    `- 상권수요 ${fmt(r.marketDemand)} · 상권등급/성격 ${r.marketGrade ?? "-"} / ${r.marketCharacter ?? "-"} · 경쟁IP ${fmt(r.competitorIp)} · IP당수요 ${r.ipPerDemand == null ? "-" : r.ipPerDemand.toFixed(1)}`,
+    `- 반경 500m 경쟁 PC방 ${counted.length}곳${counted.length ? `: ${counted.map((row) => `${row.place.name}(${Math.round(row.place.distanceM)}m)`).join(", ")}` : ""}`,
+    warnings.length ? `- 주의: ${warnings.join(" / ")}` : "",
+  ].filter((l, i, a) => l !== "" || (i > 0 && a[i - 1] !== "")).join("\n");
 
   const reviewContext = buildQuickEvalReviewContext({
     result: r,
@@ -149,9 +205,8 @@ export function buildResultSummary(args: {
 
   const text = [
     "[AI에게 — 답을 이 순서로 쓸 것]",
-    "1. 아래 [화면 요약]을 숫자 그대로 맨 먼저 보여준다(웹 화면의 핵심 카드와 같은 내용).",
-    "2. 이어서 [평가문 지침]대로 평가문을 쓴다. 근거는 [평가문 자료]뿐이다. 금액 셈은 자료의 가맹점 실적표로만.",
-    "   'V62'·'실험실'이라는 이름은 쓰지 말고, 산식 금액은 '산식 예상 매출액'이라고 부른다. '정밀 평가로 내라'는 말은 쓰지 않는다.",
+    "1. 아래 [화면 요약]을 숫자와 문장 그대로 맨 먼저 보여준다(시작 문장 + 평가 결과).",
+    "2. 이어서 [평가문 지침]대로 평가문을 쓴다. 근거는 [평가문 자료]와 당신이 웹 검색으로 확인한 사실뿐이다.",
     "3. 입지 점수표(7항목·근거)를 짧게 붙인다.",
     "4. 맨 끝에 [보고 안내]를 그대로 붙인다.",
     "",
@@ -159,7 +214,7 @@ export function buildResultSummary(args: {
     summary,
     "",
     "[평가문 지침]",
-    QUICK_EVAL_REVIEW_SYSTEM_PROMPT,
+    QUICK_EVAL_CHAT_REVIEW_GUIDE,
     "",
     "[평가문 자료]",
     reviewContext,

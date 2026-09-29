@@ -18,13 +18,16 @@ describe("채팅 결과 요약 말투", () => {
     const screen = text.split("\n[화면 요약]\n")[1].split("\n[평가문 지침]\n")[0];
     const note = text.split("\n[보고 안내]\n")[1];
     expect(screen).not.toMatch(/V62|실험실/);
-    expect(screen).toContain("예상 월매출: 2,500만원"); // 웹 화면과 같은 100만원 단위
-    expect(screen).toContain("입점 불가");
-    expect(screen).toContain("±20%로 보면");
+    // 시작 문장은 결론부터, 금액은 웹 화면과 같은 100만원 단위(사용자 2026-09-29)
+    expect(screen).toContain("자리는 입점 불가으로 나왔습니다. 예상 월매출은 약 2,500만원으로, 기준선 5,500만원보다 3,000만원가량 낮습니다.");
+    expect(screen).not.toMatch(/±|보수|상한|~/); // 매출은 하나만(사용자 2026-09-29 "그냥 매출만 딱")
+    // AI가 금액을 따로 내지 않는다(두 금액 금지) · 산식값과의 차이 섹션 없음 · 조정 의견은 특이점 있을 때만
+    expect(text).toContain("## AI 조정 의견");
+    expect(text).not.toContain("## AI가 판단한 예상매출");
+    expect(text).not.toContain("## 산식값과의 차이");
     // 정밀평가는 사용자 본인만 쓴다 — 다른 직원에게 정밀평가로 내라고 하지 않는다(2026-09-29)
     expect(note).not.toMatch(/정밀|신규후보지/);
     expect(note).toContain("현장에서 확인");
-    expect(text).toContain("## AI가 판단한 예상매출"); // 웹 평가문과 같은 지침
   });
 });
 
