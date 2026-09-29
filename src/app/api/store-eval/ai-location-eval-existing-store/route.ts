@@ -3,6 +3,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { geocodeAddress, searchByCategory, searchByKeyword } from "@/lib/kakao";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
+import { appendSiteFactsToContext } from "@/lib/storeEval/quickEval/quickEvalLocationContext";
 import { buildLocationEvalContext, type LocationEvalContextCandidate } from "@/lib/storeEval/locationEvalContext";
 import { DEMAND_POINT_TARGETS, NEARBY_PC_RADIUS_M } from "@/lib/storeEval/demandPointTargets";
 import { haversineDistanceMeters } from "@/lib/storeEval/geo";
@@ -160,7 +161,11 @@ export async function POST(request: Request) {
     operatingPcStores500m: store.operatingPcStores500m,
   };
 
-  const contextText = buildLocationEvalContext({ candidate: contextCandidate, competitors, demandPoints });
+  // 2026-09-29 — 층·지상/지하·엘리베이터를 사실로 덧붙인다(신규후보지 경로와 같은 이유 · 기존점 AI 되짚기와 같은 조건).
+  const contextText = appendSiteFactsToContext(
+    buildLocationEvalContext({ candidate: contextCandidate, competitors, demandPoints }),
+    { floor: store.floor ?? null, groundLevel: store.groundLevel ?? null, hasElevator: store.hasElevator ?? null },
+  );
 
   try {
     const draft = await runLocationEvalDraft({ contextText, mapImageBase64: null });

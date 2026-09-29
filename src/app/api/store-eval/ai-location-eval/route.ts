@@ -4,6 +4,7 @@ import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { fetchKakaoMapImage } from "@/lib/server/kakaoMapImage";
 import { buildLocationEvalContext } from "@/lib/storeEval/locationEvalContext";
 import { runLocationEvalDraft } from "@/lib/storeEval/locationEvalAi";
+import { appendSiteFactsToContext } from "@/lib/storeEval/quickEval/quickEvalLocationContext";
 import type { CandidateInput, Competitor, DemandPoint } from "@/lib/storeEval/types";
 
 // 3단계 — 입지동선평가 AI 초안(기존 Claude+web_search 5점수 라우트를 Gemini로 교체, 2026-08-25).
@@ -54,7 +55,14 @@ export async function POST(request: Request) {
   const competitors = competitorsSnap.docs.map((d) => d.data() as Competitor);
   const demandPoints = demandPointsSnap.docs.map((d) => d.data() as DemandPoint);
 
-  const contextText = buildLocationEvalContext({ candidate, competitors, demandPoints });
+  // 2026-09-29 — 층·지상/지하·엘리베이터를 사실로 덧붙인다(사용자 "웹 제미나이 초안에도 층 정보 넣어줘").
+  // buildLocationEvalContext에는 층이 없어서 AI가 층을 모른 채 접근가시성을 매기고 있었다(N016 오송점 지하 1층에서 드러남).
+  // 주소만 평가·채팅 초안·기존점 AI 되짚기(_aiLocationBacktest)는 이미 같은 방식으로 붙이고 있었다.
+  const contextText = appendSiteFactsToContext(buildLocationEvalContext({ candidate, competitors, demandPoints }), {
+    floor: candidate.floor ?? null,
+    groundLevel: candidate.groundLevel ?? null,
+    hasElevator: candidate.hasElevator ?? null,
+  });
 
   // 지도 이미지는 클라이언트가 카카오 StaticMap에서 뽑아낸 이미지 URL만 보내고, 여기서 서버가
   // 직접 fetch한다 — 브라우저 canvas/fetch는 카카오 CDN이 CORS 헤더를 안 주면 픽셀을 못 읽지만

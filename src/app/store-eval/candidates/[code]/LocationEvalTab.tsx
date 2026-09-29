@@ -348,9 +348,10 @@ export function LocationEvalTab({
           </div>
         </div>
         <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-          이미 수집된 경쟁점·수요거점·행정동통계·지도 이미지를 참고자료로 주고, 부족한 부분만 웹검색으로
-          보완해서 5개 점수뿐 아니라 특수수요/외부유입제한/수요이탈위험/상권구조메모까지 초안을 제안합니다.
-          자동저장되지 않으니 아래 승인화면에서 검토·수정 후 적용하고, 최종적으로 &ldquo;저장&rdquo;을 눌러주세요.
+          이미 등록된 경쟁점·수요거점·층/엘리베이터·지도 이미지를 참고자료로 주고, 부족한 부분만 웹검색으로
+          보완해서 3개 점수와 특수수요/외부유입제한/상권구조메모 초안을 제안합니다. &ldquo;채팅 초안 불러오기&rdquo;는
+          채팅(Claude 등)에서 같은 기준으로 만든 초안을 가져옵니다. 어느 쪽이든 자동저장되지 않으니 아래
+          승인화면에서 검토·수정 후 적용하고, 최종적으로 &ldquo;저장&rdquo;을 눌러주세요.
         </p>
         {aiError && (
           <p className="app-notice app-badge-danger mt-2 w-full justify-start px-3 py-2 text-xs">{aiError}</p>
