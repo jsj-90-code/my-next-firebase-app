@@ -1,0 +1,45 @@
+# 채팅 입지평가 (2026-09-29) — claude.ai·ChatGPT 채팅에서 주소만 초기평가
+
+## 왜
+품의에서 유료 API 대신 "각자 쓰는 AI 요금제로 돌리는 방식"이 제안됐고, 사용자가 그쪽으로 정했다(2026-09-29).
+휴대폰에서도 쓰므로 **채팅 앱(claude.ai·ChatGPT 웹/앱)** 만 대상이다. Codex·Claude Code 같은 터미널 도구는 대상 아님.
+
+## 흐름
+1. 담당자가 채팅에 "○○시 ○○로 123, 100대, 1,200원, 2층 엘베 있음, 입지평가 해줘"
+2. AI가 `get_site_data` 호출 → 웹 앱이 주거·유동인구·경쟁 PC방·수요거점을 자동수집(AI 호출 없음, 30~60초)하고 채점 기준을 돌려줌
+3. AI가 **자기 요금제의 웹 검색**으로 주소를 조사해 입지 7항목을 매김
+4. AI가 `submit_location_scores` 호출 → 주소만평가와 **같은 계산**(`quickEvalCompute.ts`)으로 예상매출·가능/불가 → 채팅에 요약
+5. 기록: Firestore `quickEvalChatRuns/{runId}` — 누가·언제·주소·입력·점수·근거·참고 웹 주소·**모델 이름**·결과
+
+회사 API 비용 0. 권장 모델: GPT는 GPT-6 Astra, Claude는 Opus. 다른 모델도 받는다(모델 이름을 같이 기록해 나중에 성적 비교).
+
+## 연결 방법 (처음 한 번, PC 웹에서)
+연결 주소: **`https://my-next-firebase-app-one.vercel.app/api/mcp`**
+
+- **Claude(claude.ai)**: 설정 → 커넥터(Connectors) → 사용자 지정 커넥터 추가 → 이름 "아이센스 입지평가", 주소 위 URL →
+  [연결] → 아이센스 화면에서 회사 구글 계정 로그인 → [허용]. 휴대폰 앱에서도 같은 계정이면 쓸 수 있다.
+- **ChatGPT**: 설정 → 앱/커넥터 → (요금제에 따라 "개발자 모드" 켜기) → 새로 만들기 → 주소 위 URL, 인증 OAuth →
+  아이센스 화면에서 로그인 → [허용].
+- ⚠️ 메뉴 이름·위치는 요금제·앱 버전마다 다르다. 2026-09-29 기준 실제 연결은 아직 안 해 봤다 — 첫 연결 때 화면을 보고 이 절을 고칠 것.
+- 허용 화면에 "돌아갈 곳"이 claude.ai / chatgpt.com 이 아니면 누르지 말 것.
+
+## 구조 (코드)
+| 파일 | 역할 |
+|---|---|
+| `src/app/api/mcp/route.ts` | MCP 서버(mcp-handler 2). 도구 2개 + 기록 저장 |
+| `src/lib/server/mcpOAuth.ts` | OAuth 2.1+PKCE 인가 서버. 동적 등록·CIMD 둘 다. 토큰 해시만 저장(24h 접근·60일 갱신) |
+| `src/app/.well-known/oauth-*` | 인가 서버·보호 자원 메타데이터 |
+| `src/app/api/oauth/{register,token,authorize}` · `src/app/oauth/authorize/page.tsx` | 등록·토큰·허용 화면 |
+| `src/lib/storeEval/quickEval/quickEvalCollectSite.ts` | 자동수집(원래 collect 라우트 안) — 화면·채팅 공용 |
+| `src/lib/storeEval/quickEval/quickEvalCompute.ts` | 계산(원래 quick-eval/page.tsx 안) — 화면·채팅 공용 |
+| `src/lib/storeEval/quickEval/quickEvalChat.ts` | 채점 안내문·결과 요약문. 채점 기준은 `locationEvalAi.ts`와 같은 문장 |
+| `src/lib/server/quickEvalTraining.ts` | 서버용 학습자료 읽기, 10분 메모리 캐시(Firebase 무료 요금제) |
+
+Firestore 새 컬렉션 4개(`mcpOAuthClients`·`mcpOAuthCodes`·`mcpOAuthTokens`·`quickEvalChatRuns`)는 규칙으로 브라우저 접근을 전부 막았다(서버만).
+
+## 남은 것
+- 첫 실제 연결(Claude·ChatGPT 각각)로 로그인 흐름 확인 — 사람이 해야 한다
+- 휴대폰에서 구글 로그인 팝업이 막히면 리다이렉트 로그인으로 바꿀 것
+- 모델 성적 비교: `quickEvalChatRuns`가 쌓이고 개점이 나오면 모델별로 가른다
+- 다음 작업(예약): 신규후보지 정밀평가의 AI 입지 초안도 이 연결로(Astra·Fable 등 상위 모델)
+- 웹 앱의 "AI 초안 받기" 버튼은 여전히 제미나이 유료 키. 키를 끊으면 멈춘다 — 끊을 때 버튼 정리
