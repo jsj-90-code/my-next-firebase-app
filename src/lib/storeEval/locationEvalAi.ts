@@ -1,6 +1,9 @@
 import { Type } from "@google/genai";
 import { getLocationEvalGeminiClient, getLocationEvalGeminiModel } from "@/lib/gemini";
 import type { InflowRestriction, SpecialDemandIntensity, SpecialDemandType } from "./types";
+import {
+  LOCATION_SCORE_RUBRIC, PREEMPTION_SCORE_RUBRIC, rubricText, VISIBILITY_RUBRIC_ADJUST, VISIBILITY_SCORE_RUBRIC,
+} from "./locationScoreRubric";
 
 // 입지동선평가 AI 초안의 핵심 로직(스키마·프롬프트·2단계 Gemini 호출·응답 검증). 원래
 // ai-location-eval/route.ts 안에 있던 것을 그대로 옮겼다 — 신규후보지 라우트와 4단계
@@ -55,19 +58,22 @@ function confidenceProp(description: string) {
 }
 
 const FIELD_SCHEMAS: Record<LocationEvalFieldKey, ReturnType<typeof scoreProp> | ReturnType<typeof enumProp> | ReturnType<typeof textProp>> = {
+  // 2026-09-29 — 점수 3개에 1~5점 기준표를 붙였다(locationScoreRubric.ts, 사용자 확정). 표가 우선이고, 뒤 설명은 표에 없는 경우의 판단 방향.
   locationScore: scoreProp(
-    "상권위치·동선점수 — 이 지점이 상권(동네) 전체에서 핵심부/중심가에 가깝고(변두리=1~2점, 중심가=4~5점), " +
-      "동시에 사람이 실제로 걸어다니는 동선(역 출구, 버스정류장 앞, 대로변) 위에 있는가를 종합 판단. " +
+    `상권위치·동선점수 — 기준표: ${rubricText(LOCATION_SCORE_RUBRIC)}. ` +
+      "이 지점이 상권(동네) 안에서 중심에 가깝고 사람이 실제로 걷는 동선(역 출구, 버스정류장 앞, 대로변) 위에 있는가. " +
       "유동인구·상권 규모 같은 인구 수치는 이미 다른 정량 지표로 따로 계산되니 여기서 다시 고려하지 말 것 " +
       "— 순수하게 '위치·동선'만 볼 것.",
   ),
   preemptionScore: scoreProp(
-    "선점경쟁점수 — 경쟁 PC방의 '개수'가 아니라, 그중 특정 경쟁점이 이 후보지보다 명백히 더 좋은 자리" +
-      "(역 출구 바로 앞, 코너 자리, 상권 초입 등)를 이미 차지하고 있는지만 판단. 경쟁점이 여러 곳이어도 " +
-      "다들 애매한 자리면 감점하지 말고, 경쟁점이 1곳뿐이어도 그곳이 명백히 더 좋은 자리면 감점할 것" +
-      "(불리할수록 낮은 점수). 경쟁점 수 자체는 다른 곳에서 이미 따로 집계된다.",
+    `선점경쟁점수 — 기준표: ${rubricText(PREEMPTION_SCORE_RUBRIC)}. ` +
+      "핵심은 경쟁점이 이 후보지보다 명백히 더 좋은 자리(역 출구 바로 앞, 코너, 상권 초입)를 먼저 잡았는가다. " +
+      "경쟁점이 여러 곳이어도 다들 애매한 자리면 3점 아래로 내리지 말고, 1곳뿐이어도 명백히 더 좋은 자리면 2점 이하.",
   ),
-  visibilityScore: scoreProp("접근가시성점수 — 간판/입구가 잘 보이고 들어가기 쉬운가(층수/계단·엘리베이터 포함)"),
+  visibilityScore: scoreProp(
+    `접근가시성점수 — 기준표: ${rubricText(VISIBILITY_SCORE_RUBRIC, VISIBILITY_RUBRIC_ADJUST)}. ` +
+      "층·지상/지하·엘리베이터는 [후보지 물건 정보]의 값을 그대로 쓸 것.",
+  ),
   specialDemandType: enumProp(
     SPECIAL_DEMAND_TYPES,
     "특수수요유형 — 인구통계에 안 잡히는 이용자를 데려오는 수요원. '대학가'는 학부 중심 종합대학(재학생 1만 명 이상)의 " +
@@ -124,10 +130,11 @@ const RESPONSE_SCHEMA = {
 
 export const LOCATION_EVAL_SYSTEM_PROMPT =
   "당신은 PC방 프랜차이즈 신규 후보지의 입지를 평가하는 전문가입니다. 아래에 이미 수집된 사실 자료" +
-  "(경쟁점·수요거점 거리, 행정동 인구통계, 소상공인365 참고자료, 지도 이미지)가 주어집니다. 이것만으로" +
+  "(경쟁점·수요거점 거리, 층·지상/지하·엘리베이터, 지도 이미지)가 주어집니다. 이것만으로" +
   "부족한 부분(상권 성격, 실제 동선, 특수수요 등)은 웹 검색으로 그 주소를 직접 조사해서 보완하세요.\n\n" +
   "판단할 항목:\n" +
-  "- 상권위치·동선점수/선점경쟁점수/접근가시성점수(1~5점, 공식 채점기준표 없음 — 각 항목 설명 참고)\n" +
+  // 2026-09-29 — "공식 채점기준표 없음"을 지웠다. 세 점수에 1~5점 기준표가 생겼다(locationScoreRubric.ts, 사용자 확정).
+  "- 상권위치·동선점수/선점경쟁점수/접근가시성점수(1~5점 — 각 항목 설명의 **기준표를 그대로 적용**. 표 두 칸 사이면 근거가 더 가까운 쪽)\n" +
   "- 특수수요유형·강도(대학가/군부대/산업단지/관광유흥 등 특수 수요원이 있는가 — 각 항목 설명의 기준을 그대로 적용. " +
   "체크리스트: 대학가/높음 = 학부 중심 종합대학(재학생 1만+) 정문·후문 도보권 + 원룸촌(약대·연구단지·행정타운은 아님) · " +
   "군부대/높음 = 병사 많은 부대(사령부·특수부대·비행단 아님) + 정문 도보 1km + 군인 상권 표식 · " +
@@ -138,9 +145,8 @@ export const LOCATION_EVAL_SYSTEM_PROMPT =
   "중요 — 2026-09-01 실측 검토로 확인된 문제이니 반드시 지킬 것:\n" +
   "1. '상권위치·동선점수'는 유동인구 수치가 아니라 순수 위치/동선 판단입니다. 인구·상권 규모는 이미 " +
   "다른 정량 데이터로 따로 계산되므로 이 점수에서 다시 반영하면 안 됩니다.\n" +
-  "2. '선점경쟁점수'는 경쟁점 개수와 절대 혼동하지 마세요. 경쟁점이 8곳이어도 다들 애매한 자리면 " +
-  "감점하지 말고(예: 3~4점), 경쟁점이 1곳뿐이어도 그곳이 역 출구 바로 앞 같은 명백한 요지면 감점하세요" +
-  "(예: 1~2점). 경쟁점 수는 다른 지표로 이미 따로 계산되니 여기서 다시 세지 마세요.\n\n" +
+  "2. '선점경쟁점수'는 기준표대로 200m 안 경쟁점 유무에서 출발하되, 핵심은 자리 우열입니다. 경쟁점이 8곳이어도 " +
+  "다들 애매한 자리면 3점 아래로 내리지 말고, 1곳뿐이어도 그곳이 역 출구 바로 앞 같은 명백한 요지면 2점 이하로 주세요.\n\n" +
   "확실하지 않은 부분은 추측해서 극단적인 값을 주지 말고 중간값(점수는 3점, 유형/강도는 '없음' 또는 " +
   "'보통') 쪽으로 보수적으로 판단하세요. 근거를 전혀 못 찾은 항목은 null로 남기고 절대 지어내지 마세요.";
 

@@ -454,22 +454,27 @@ export const QUICK_EVAL_BACKTEST = {
  * 새로 받아 도구와 같은 조건으로 채점). 처음 값(사람 입지평가: 30/40 · 13.6% · 편향 +0.1%)은 `humanLocation`에 남긴다.
  * AI는 상권위치·가시성을 사람보다 평균 0.78점 낮게, 외부유입제한은 40곳 전부 "없음"으로 매긴다. 그래도 판정은 29 vs 30으로
  * 거의 같다 — 칸을 사람 값에 맞추면 오히려 나빠졌다(유입만 26/40 · 위치·가시성·유입 26/40). 그래서 AI 지시문은 안 고쳤다.
+ *
+ * ⭐ 2026-09-29 — 입지 점수 3개에 **1~5점 기준표**를 넣었다(locationScoreRubric.ts, 사용자 "기준을 같게"). 같은 하네스로 AI 초안을
+ * 새로 받아(COLLECT=1, 유료 키 40곳) 다시 쟀다: 27/40 · 17.2% · −3.0%(09-28 초안, 기준표 전) → **30/40 · 15.6% · −3.5%**.
+ * 가시성 AI−사람 차 −0.78 → −0.33. 위치는 여전히 −0.85(기존점 5점 26곳 — 좋은 자리만 연 매장). 선점만 사람 값이면 33/40.
+ * 아래 값은 09-29 측정. badSite*는 09-27 `_badSiteProbe` 값 그대로(다시 안 쟀다).
  */
 export const QUICK_EVAL_VERDICT_BACKTEST = {
-  measuredAt: "2026-09-27",
+  measuredAt: "2026-09-29",
   sampleCount: 40,
-  correct: 29,
+  correct: 30,
   /** 실제로 된 자리를 불가로 */
-  falseReject: 6,
+  falseReject: 4,
   /** 실제로 안 된 자리를 가능으로 — 정답 '불가' 14곳 중 */
-  falseAccept: 5,
+  falseAccept: 6,
   truthRejectCount: 14,
   badSiteCount: 17,
   badSiteRejected: 17,
   /** 같은 되짚기의 금액 오차(참고) */
-  mape: 0.165,
+  mape: 0.156,
   within20Count: 28,
-  bias: -0.055,
+  bias: -0.035,
   locationScoreSource: "AI 입지평가 초안(실제 도구와 같음)",
   /** 가능으로 잘못 낸 5곳이 전부 기준선 +4% 안이었다(2026-09-27) → 화면 "읽는 법"이 이 폭을 읽는다 */
   nearLineBand: 0.05,

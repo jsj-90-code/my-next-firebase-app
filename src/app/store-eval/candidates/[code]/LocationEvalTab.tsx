@@ -8,6 +8,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useUnsavedInputGuard } from "@/components/storeEval/useUnsavedInputGuard";
 import { LocationEvalAiReviewPanel, type LocationEvalAiDraft, type LocationEvalAiFields } from "@/components/storeEval/LocationEvalAiReviewPanel";
 import { computeLocationCompositeScore } from "@/lib/storeEval/calc";
+import {
+  LOCATION_SCORE_RUBRIC, PREEMPTION_SCORE_RUBRIC, rubricText, VISIBILITY_RUBRIC_ADJUST, VISIBILITY_SCORE_RUBRIC,
+} from "@/lib/storeEval/locationScoreRubric";
 import { formatScore } from "@/lib/storeEval/format";
 import { captureKakaoStaticMapUrl } from "@/lib/storeEval/kakaoStaticMapCapture";
 import { readJsonOrText } from "@/lib/readJsonOrText";
@@ -307,9 +310,11 @@ export function LocationEvalTab({
       {unsavedDialog}
       {dirty && <p role="status" className="text-sm text-[var(--sl-warn)]">저장하지 않은 변경이 있습니다.</p>}
       <div className="app-card-sm rounded-lg px-3 py-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
-        <strong>공식 기준표 없음</strong> — 아래 판단 필드(점수·특수수요·외부유입제한·수요이탈위험 등)의
-        기준은 원본 스프레드시트 어디에도 문서화되어 있지 않습니다(docs/data-issues.md #2). 아래 참고자료는 원본
-        시트에 실제로 기재됐던 사례 2건일 뿐 &ldquo;공식 기준&rdquo;이 아니므로 참고용으로만 사용하세요.
+        {/* 2026-09-29 — 세 점수에 기준표가 생겼다(locationScoreRubric.ts, 사용자 확정). 원본 시트에는 여전히 기준이 없고,
+            이 표는 기존 가맹점 저장 점수에서 역산한 것이다. AI 초안(제미나이·채팅)도 같은 표로 채점한다. */}
+        <strong>점수 기준표</strong> — 상권위치·동선 / 선점경쟁 / 접근가시성은 각 칸 아래 1~5점 기준표로 매깁니다(2026-09-29 확정,
+        기존 가맹점 저장 점수에서 역산 · AI 초안도 같은 표). 특수수요·외부유입제한은 원본 스프레드시트에 기준이 없어
+        (docs/data-issues.md #2) 설명 문장으로 판단합니다. 아래 참고자료는 원본 시트에 실제로 기재됐던 사례 2건입니다.
       </div>
 
       <details className="app-card rounded-2xl p-4 text-sm">
@@ -381,19 +386,19 @@ export function LocationEvalTab({
             label="상권위치·동선점수"
             value={form.locationScore}
             onChange={(v) => set("locationScore", v as LocationEvaluation["locationScore"])}
-            hint="상권(동네) 전체에서 중심가에 가깝고(변두리1~2점·중심가4~5점), 동시에 사람이 실제로 걷는 동선(역 출구·대로변) 위에 있을수록 높은 점수. 인구수는 이미 따로 계산되니 고려하지 말 것."
+            hint={`${rubricText(LOCATION_SCORE_RUBRIC)}. 인구수는 이미 따로 계산되니 고려하지 말 것.`}
           />
           <ScoreSelectField
             label="선점경쟁점수"
             value={form.preemptionScore}
             onChange={(v) => set("preemptionScore", v as LocationEvaluation["preemptionScore"])}
-            hint="경쟁점 '개수'가 아니라, 특정 경쟁점이 이 후보지보다 명백히 더 좋은 자리(역출구 코너 등)를 차지했을 때만 낮은 점수. 경쟁점이 많아도 다 애매한 자리면 감점하지 말 것."
+            hint={`${rubricText(PREEMPTION_SCORE_RUBRIC)}. 핵심은 자리 우열 — 경쟁점이 많아도 다 애매한 자리면 3점 아래로 내리지 말 것.`}
           />
           <ScoreSelectField
             label="접근가시성점수"
             value={form.visibilityScore}
             onChange={(v) => set("visibilityScore", v as LocationEvaluation["visibilityScore"])}
-            hint="도로에서 간판/입구가 잘 보이고 들어가기 쉬울수록 높은 점수(층수, 계단·엘리베이터 여부 포함)."
+            hint={rubricText(VISIBILITY_SCORE_RUBRIC, VISIBILITY_RUBRIC_ADJUST)}
           />
         </div>
 
