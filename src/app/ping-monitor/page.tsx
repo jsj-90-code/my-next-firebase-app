@@ -29,6 +29,10 @@ const TONE: Record<string, string> = {
   neutral: "app-badge-neutral",
 };
 const UNLINKED = "__unlinked__";
+// 후보지 코드는 N0xx, 기존점은 숫자 가맹점코드다(후보지 → 기존점 전환 시 코드도 바뀐다).
+const isCandidateCode = (code: string) => /^Nd+$/.test(code);
+type View = "existing" | "candidate" | "all";
+const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체" };
 
 type Group = { key: string; name: string; stores: PingStore[] };
 
@@ -115,7 +119,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
         </span>
         <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
           <span>
-            7일 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, today))}</b>
+            경쟁점 합산 7일 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, today))}</b>
           </span>
           <span>30일 {formatPct(groupUtilization(group.stores, from30, today))}</span>
         </span>
@@ -135,7 +139,8 @@ export default function PingMonitorPage() {
   const [stores, setStores] = useState<PingStore[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [view, setView] = useState<"group" | "all">("group");
+  // 2026-10-06 사용자 요청: 기존가맹점 / 신규후보지 / 경쟁점 전체 세 칸으로 나눈다.
+  const [view, setView] = useState<View>("existing");
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -159,6 +164,15 @@ export default function PingMonitorPage() {
     }
     return [...map.values()].sort((a, b) => (a.key === UNLINKED ? 1 : b.key === UNLINKED ? -1 : a.name.localeCompare(b.name, "ko")));
   }, [stores]);
+  // 우리 매장에 연결되지 않은 경쟁점은 "경쟁점 전체"에서만 보인다.
+  const groupsByView: Record<Exclude<View, "all">, Group[]> = useMemo(
+    () => ({
+      existing: groups.filter((g) => g.key !== UNLINKED && !isCandidateCode(g.key)),
+      candidate: groups.filter((g) => g.key !== UNLINKED && isCandidateCode(g.key)),
+    }),
+    [groups],
+  );
+  const shownGroups = view === "all" ? [] : groupsByView[view];
 
   const intervalText = SAMPLE_INTERVAL_MINUTES % 60 === 0 ? `${SAMPLE_INTERVAL_MINUTES / 60}시간` : `${SAMPLE_INTERVAL_MINUTES}분`;
 
@@ -180,7 +194,7 @@ export default function PingMonitorPage() {
             {intervalText}마다 등록된 IP대역의 PC에 연결을 시도해, 대답한 PC 수 ÷ 대수를 기록합니다. 기록은 기한 없이 쌓이고, 상세 화면에서 기간을 골라 볼 수 있습니다.
             {` `}
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
-            매장별 가동률은 경쟁점들의 켜진 PC 합 ÷ 대수 합입니다.
+            매장 옆 &ldquo;경쟁점 합산&rdquo; 가동률은 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합입니다(우리 매장 가동률이 아닙니다).
           </p>
         </div>
         <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" onClick={() => setShowForm((v) => !v)}>
@@ -210,24 +224,37 @@ export default function PingMonitorPage() {
       {stores != null && stores.length > 0 && (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            {(["group", "all"] as const).map((v) => (
+            {(["existing", "candidate", "all"] as const).map((v) => (
               <button key={v} type="button" className={`rounded-full px-3 py-1 text-xs ${view === v ? "app-btn-primary" : "app-btn-outline"}`} onClick={() => setView(v)}>
-                {v === "group" ? `매장별 (${groups.length})` : `경쟁점 전체 (${stores.length})`}
+                {VIEW_LABEL[v]} ({v === "all" ? `${stores.length}곳` : `${groupsByView[v].length}개 매장`})
               </button>
             ))}
-            {view === "group" && (
+            {view !== "all" && shownGroups.length > 0 && (
               <button
                 type="button"
                 className="ml-auto text-xs text-[var(--sl-ink-soft)] hover:underline"
-                onClick={() => setOpenKeys(openKeys.size === groups.length ? new Set() : new Set(groups.map((g) => g.key)))}
+                onClick={() => {
+                  const allOpen = shownGroups.every((g) => openKeys.has(g.key));
+                  setOpenKeys((prev) => {
+                    const next = new Set(prev);
+                    for (const g of shownGroups) {
+                      if (allOpen) next.delete(g.key);
+                      else next.add(g.key);
+                    }
+                    return next;
+                  });
+                }}
               >
-                {openKeys.size === groups.length ? "모두 접기" : "모두 펼치기"}
+                {shownGroups.every((g) => openKeys.has(g.key)) ? "모두 접기" : "모두 펼치기"}
               </button>
             )}
           </div>
-          {view === "group" ? (
+          {view !== "all" && shownGroups.length === 0 && (
+            <p className="app-card-sm rounded-xl p-4 text-sm text-[var(--sl-ink-soft)]">{VIEW_LABEL[view]}에 연결된 경쟁점이 아직 없습니다.</p>
+          )}
+          {view !== "all" ? (
             <ul className="flex flex-col gap-2">
-              {groups.map((g) => (
+              {shownGroups.map((g) => (
                 <GroupRow key={g.key} group={g} open={openKeys.has(g.key)} onToggle={() => toggle(g.key)} />
               ))}
             </ul>
