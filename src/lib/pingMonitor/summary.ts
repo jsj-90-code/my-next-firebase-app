@@ -103,7 +103,13 @@ export function groupUtilization(stores: PingStore[], from: string | null, to: s
 
 export type StoreStatus ={ label: string; tone: "ok" | "warn" | "danger" | "neutral" };
 
+/** IP를 아직 모르는 경쟁점 — 점포평가 경쟁점을 빈칸으로 넣어 둔 것(2026-10-06 사용자 "빈곳은 빈곳으로 냅두고"). */
+export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean {
+  return store.ipCount === 0 || store.ipRanges.trim() === "";
+}
+
 export function storeStatus(store: PingStore): StoreStatus {
+  if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
   const all = rangeUtilization(store.days, null, null);
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };

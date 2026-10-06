@@ -15,6 +15,7 @@ import {
   denominator,
   formatPct,
   groupUtilization,
+  hasNoIp,
   kstDaysAgo,
   rangeUtilization,
   storeStatus,
@@ -72,10 +73,12 @@ function CompetitorTable({ stores }: { stores: PingStore[] }) {
                   <Link href={`/ping-monitor/${s.id}`} className="font-medium text-[#171310] hover:underline dark:text-[#f2ede2]">
                     {s.name}
                   </Link>
-                  <div className="text-xs text-[var(--sl-ink-soft)]">{[s.address, s.memo].filter(Boolean).join(" · ") || s.ipRanges}</div>
+                  <div className="text-xs text-[var(--sl-ink-soft)]">
+                    {hasNoIp(s) ? <span className="text-amber-700 dark:text-amber-400">IP를 모릅니다 — 눌러서 IP대역을 넣으면 측정이 시작됩니다</span> : [s.address, s.memo].filter(Boolean).join(" · ") || s.ipRanges}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{denominator(s)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{hasNoIp(s) ? (s.pcCount ?? "-") : denominator(s)}</td>
                 <td className="px-3 py-2 text-right text-xs tabular-nums">
                   {s.lastSample ? (
                     <>
@@ -110,13 +113,14 @@ function CompetitorTable({ stores }: { stores: PingStore[] }) {
 function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
   const { today, from7, from30 } = useRanges();
   const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
+  const noIp = group.stores.filter(hasNoIp).length;
   return (
     <li className="app-card overflow-hidden rounded-2xl">
       <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
         <span className="text-[var(--sl-ink-soft)]">{open ? "▾" : "▸"}</span>
         <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{group.name}</span>
         <span className="text-xs text-[var(--sl-ink-soft)]">
-          경쟁점 {group.stores.length}곳{blocked > 0 ? ` · 측정 불가 의심 ${blocked}` : ""}
+          경쟁점 {group.stores.length}곳{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}{blocked > 0 ? ` · 측정 불가 의심 ${blocked}` : ""}
         </span>
         <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
           {group.own && (
