@@ -30,6 +30,8 @@ export type PingStore = {
   /** 점포평가 경쟁점 문서(storeEvalCompetitors) id — 등록 칸에서 골라 상호·대수·거리를 채울 때 잇는다. */
   competitorId: string | null;
   distanceM: number | null;
+  /** 우리 매장 자체(경쟁점이 아님) — 2026-10-06 우리 매장 가동률도 같은 방식으로 재려고 추가. 스크립트만 쓴다. */
+  isOwnStore: boolean;
   createdAt: Date | null;
   createdBy: string | null;
   lastSample: {

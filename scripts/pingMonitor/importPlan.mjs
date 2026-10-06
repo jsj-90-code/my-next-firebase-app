@@ -48,6 +48,7 @@ for (const r of todo) {
     ownName: r.ownName,
     competitorId: r.competitorId ?? null,
     distanceM: r.distanceM ?? null,
+    ...(r.isOwnStore ? { isOwnStore: true } : {}), // 우리 매장 자체(2026-10-06)
     createdAt: FieldValue.serverTimestamp(),
     createdBy: "import:" + FILE.split("/").at(-1),
     updatedAt: FieldValue.serverTimestamp(),

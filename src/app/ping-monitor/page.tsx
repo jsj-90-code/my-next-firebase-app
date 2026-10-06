@@ -34,7 +34,8 @@ const isCandidateCode = (code: string) => /^Nd+$/.test(code);
 type View = "existing" | "candidate" | "all";
 const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체" };
 
-type Group = { key: string; name: string; stores: PingStore[] };
+// own = 우리 매장 자체를 잰 등록(있으면). stores = 경쟁점만.
+type Group = { key: string; name: string; own: PingStore | null; stores: PingStore[] };
 
 function useRanges() {
   return useMemo(() => {
@@ -118,6 +119,12 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
           경쟁점 {group.stores.length}곳{blocked > 0 ? ` · 측정 불가 의심 ${blocked}` : ""}
         </span>
         <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
+          {group.own && (
+            <span>
+              우리 매장 7일{" "}
+              <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, today).util)}</b>
+            </span>
+          )}
           <span>
             경쟁점 합산 7일 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, today))}</b>
           </span>
@@ -158,8 +165,9 @@ export default function PingMonitorPage() {
     const map = new Map<string, Group>();
     for (const s of stores ?? []) {
       const key = s.ownCode ?? UNLINKED;
-      const g = map.get(key) ?? { key, name: s.ownCode ? (s.ownName ?? s.ownCode) : "우리 매장 연결 안 됨", stores: [] };
-      g.stores.push(s);
+      const g = map.get(key) ?? { key, name: s.ownCode ? (s.ownName ?? s.ownCode) : "우리 매장 연결 안 됨", own: null, stores: [] };
+      if (s.isOwnStore) g.own = s;
+      else g.stores.push(s);
       map.set(key, g);
     }
     return [...map.values()].sort((a, b) => (a.key === UNLINKED ? 1 : b.key === UNLINKED ? -1 : a.name.localeCompare(b.name, "ko")));
@@ -173,6 +181,7 @@ export default function PingMonitorPage() {
     [groups],
   );
   const shownGroups = view === "all" ? [] : groupsByView[view];
+  const competitorsOnly = useMemo(() => (stores ?? []).filter((s) => !s.isOwnStore), [stores]);
 
   const intervalText = SAMPLE_INTERVAL_MINUTES % 60 === 0 ? `${SAMPLE_INTERVAL_MINUTES / 60}시간` : `${SAMPLE_INTERVAL_MINUTES}분`;
 
@@ -194,7 +203,7 @@ export default function PingMonitorPage() {
             {intervalText}마다 등록된 IP대역의 PC에 연결을 시도해, 대답한 PC 수 ÷ 대수를 기록합니다. 기록은 기한 없이 쌓이고, 상세 화면에서 기간을 골라 볼 수 있습니다.
             {` `}
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
-            매장 옆 &ldquo;경쟁점 합산&rdquo; 가동률은 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합입니다(우리 매장 가동률이 아닙니다).
+            매장 옆 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 가동률, &ldquo;경쟁점 합산&rdquo;은 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합입니다.
           </p>
         </div>
         <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" onClick={() => setShowForm((v) => !v)}>
@@ -226,7 +235,7 @@ export default function PingMonitorPage() {
           <div className="flex flex-wrap items-center gap-2">
             {(["existing", "candidate", "all"] as const).map((v) => (
               <button key={v} type="button" className={`rounded-full px-3 py-1 text-xs ${view === v ? "app-btn-primary" : "app-btn-outline"}`} onClick={() => setView(v)}>
-                {VIEW_LABEL[v]} ({v === "all" ? `${stores.length}곳` : `${groupsByView[v].length}개 매장`})
+                {VIEW_LABEL[v]} ({v === "all" ? `${competitorsOnly.length}곳` : `${groupsByView[v].length}개 매장`})
               </button>
             ))}
             {view !== "all" && shownGroups.length > 0 && (
@@ -260,7 +269,7 @@ export default function PingMonitorPage() {
             </ul>
           ) : (
             <div className="app-card rounded-2xl">
-              <CompetitorTable stores={stores} />
+              <CompetitorTable stores={competitorsOnly} />
             </div>
           )}
         </>

@@ -54,6 +54,7 @@ function toStore(id: string, d: DocumentData): PingStore {
     ownName: typeof d.ownName === "string" && d.ownName ? d.ownName : null,
     competitorId: typeof d.competitorId === "string" && d.competitorId ? d.competitorId : null,
     distanceM: typeof d.distanceM === "number" ? d.distanceM : null,
+    isOwnStore: d.isOwnStore === true,
     createdAt: toDate(d.createdAt),
     createdBy: d.createdBy ?? null,
     lastSample: ls
