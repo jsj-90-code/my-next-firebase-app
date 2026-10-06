@@ -169,6 +169,13 @@ export default function PingStoreDetailPage() {
             {store.lastSample.aliveIps.length > 0 ? ` (${shortIps(store.lastSample.aliveIps)})` : ""}
           </p>
         )}
+        {store.ipCheck && (
+          <p className="app-notice app-badge-warn mt-2 px-3 py-2 text-xs leading-5">
+            <b>IP 확인 필요</b> — {store.ipCheck}
+            <br />
+            맞는 IP대역을 찾으면 아래 &ldquo;정보 수정&rdquo;에서 고쳐 저장하세요. IP대역을 바꾸면 이 표시는 사라집니다.
+          </p>
+        )}
       </div>
 
       <section className="app-card flex flex-col gap-4 rounded-2xl p-4">
@@ -279,7 +286,9 @@ export default function PingStoreDetailPage() {
               showActive
               submitLabel="저장"
               onSubmit={async (input) => {
-                await updatePingStore(store.id, input, user?.email ?? null);
+                await updatePingStore(store.id, input, user?.email ?? null, {
+                  clearIpCheck: input.ipRanges.replace(/\s/g, "") !== store.ipRanges.replace(/\s/g, ""),
+                });
                 setSaved(true);
                 setEditing(false);
                 setVersion((v) => v + 1);

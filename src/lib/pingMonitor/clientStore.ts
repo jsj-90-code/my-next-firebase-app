@@ -55,6 +55,7 @@ function toStore(id: string, d: DocumentData): PingStore {
     competitorId: typeof d.competitorId === "string" && d.competitorId ? d.competitorId : null,
     distanceM: typeof d.distanceM === "number" ? d.distanceM : null,
     isOwnStore: d.isOwnStore === true,
+    ipCheck: typeof d.ipCheck === "string" && d.ipCheck ? d.ipCheck : null,
     createdAt: toDate(d.createdAt),
     createdBy: d.createdBy ?? null,
     lastSample: ls
@@ -97,8 +98,14 @@ export async function createPingStore(input: PingStoreInput, email: string | nul
   return ref.id;
 }
 
-export async function updatePingStore(id: string, input: PingStoreInput, email: string | null): Promise<void> {
-  await updateDoc(doc(requireDb(), PING_STORES, id), { ...input, updatedAt: serverTimestamp(), updatedBy: email });
+/** IP대역을 바꿔 저장하면 "IP 확인 필요" 표시를 지운다(clearIpCheck). */
+export async function updatePingStore(id: string, input: PingStoreInput, email: string | null, opts: { clearIpCheck?: boolean } = {}): Promise<void> {
+  await updateDoc(doc(requireDb(), PING_STORES, id), {
+    ...input,
+    ...(opts.clearIpCheck ? { ipCheck: null } : {}),
+    updatedAt: serverTimestamp(),
+    updatedBy: email,
+  });
 }
 
 /** from~to(포함) 날짜의 시간별 기록. 문서 id가 `{매장id}_{날짜}`라 id 범위로 한 번에 읽는다(색인 불필요). */

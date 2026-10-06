@@ -32,6 +32,8 @@ export type PingStore = {
   distanceM: number | null;
   /** 우리 매장 자체(경쟁점이 아님) — 2026-10-06 우리 매장 가동률도 같은 방식으로 재려고 추가. 스크립트만 쓴다. */
   isOwnStore: boolean;
+  /** "IP 확인 필요" 사유(2026-10-06 점검). IP를 고쳐 저장하면 지워진다. 등록 범위 안에서 잰 결과만 근거로 쓴다. */
+  ipCheck: string | null;
   createdAt: Date | null;
   createdBy: string | null;
   lastSample: {

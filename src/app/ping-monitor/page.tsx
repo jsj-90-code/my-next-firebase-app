@@ -32,8 +32,8 @@ const TONE: Record<string, string> = {
 const UNLINKED = "__unlinked__";
 // 후보지 코드는 N0xx, 기존점은 숫자 가맹점코드다(후보지 → 기존점 전환 시 코드도 바뀐다).
 const isCandidateCode = (code: string) => /^N\d+$/.test(code);
-type View = "existing" | "candidate" | "all";
-const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체" };
+type View = "existing" | "candidate" | "all" | "check";
+const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체", check: "IP 확인 필요" };
 
 // own = 우리 매장 자체를 잰 등록(있으면). stores = 경쟁점만.
 type Group = { key: string; name: string; own: PingStore | null; stores: PingStore[] };
@@ -45,7 +45,7 @@ function useRanges() {
   }, []);
 }
 
-function CompetitorTable({ stores }: { stores: PingStore[] }) {
+function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; showOwn?: boolean }) {
   const { today, from7, from30 } = useRanges();
   return (
     <div className="overflow-x-auto">
@@ -70,9 +70,15 @@ function CompetitorTable({ stores }: { stores: PingStore[] }) {
             return (
               <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
                 <td className="px-3 py-2">
+                  {showOwn && <div className="text-xs text-[var(--sl-ink-soft)]">{s.ownName ?? "우리 매장 연결 안 됨"}{s.isOwnStore ? " (우리 매장 자체)" : ""}</div>}
                   <Link href={`/ping-monitor/${s.id}`} className="font-medium text-[#171310] hover:underline dark:text-[#f2ede2]">
                     {s.name}
                   </Link>
+                  {s.ipCheck && (
+                    <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                      ⚠ IP 확인 필요 — {s.ipCheck} <span className="font-mono">({s.ipRanges})</span>
+                    </div>
+                  )}
                   <div className="text-xs text-[var(--sl-ink-soft)]">
                     {hasNoIp(s) ? <span className="text-amber-700 dark:text-amber-400">IP를 모릅니다 — 눌러서 IP대역을 넣으면 측정이 시작됩니다</span> : [s.address, s.memo].filter(Boolean).join(" · ") || s.ipRanges}
                   </div>
@@ -114,13 +120,14 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
   const { today, from7, from30 } = useRanges();
   const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
   const noIp = group.stores.filter(hasNoIp).length;
+  const ipCheck = group.stores.filter((s) => s.ipCheck).length + (group.own?.ipCheck ? 1 : 0);
   return (
     <li className="app-card overflow-hidden rounded-2xl">
       <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
         <span className="text-[var(--sl-ink-soft)]">{open ? "▾" : "▸"}</span>
         <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{group.name}</span>
         <span className="text-xs text-[var(--sl-ink-soft)]">
-          경쟁점 {group.stores.length}곳{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}{blocked > 0 ? ` · 측정 불가 의심 ${blocked}` : ""}
+          경쟁점 {group.stores.length}곳{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}{ipCheck > 0 ? ` · IP 확인 필요 ${ipCheck}` : ""}{blocked > 0 ? ` · 측정 불가 의심 ${blocked}` : ""}
         </span>
         <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
           {group.own && (
@@ -177,15 +184,20 @@ export default function PingMonitorPage() {
     return [...map.values()].sort((a, b) => (a.key === UNLINKED ? 1 : b.key === UNLINKED ? -1 : a.name.localeCompare(b.name, "ko")));
   }, [stores]);
   // 우리 매장에 연결되지 않은 경쟁점은 "경쟁점 전체"에서만 보인다.
-  const groupsByView: Record<Exclude<View, "all">, Group[]> = useMemo(
+  const groupsByView: Record<"existing" | "candidate", Group[]> = useMemo(
     () => ({
       existing: groups.filter((g) => g.key !== UNLINKED && !isCandidateCode(g.key)),
       candidate: groups.filter((g) => g.key !== UNLINKED && isCandidateCode(g.key)),
     }),
     [groups],
   );
-  const shownGroups = view === "all" ? [] : groupsByView[view];
+  const shownGroups = view === "all" || view === "check" ? [] : groupsByView[view];
   const competitorsOnly = useMemo(() => (stores ?? []).filter((s) => !s.isOwnStore), [stores]);
+  // 2026-10-06 사용자 "웹에 표기해주면 내가 따로 서치해볼게" — 등록 IP가 의심스러운 곳(우리 매장 자체 포함)만 모아 본다.
+  const ipCheckStores = useMemo(
+    () => (stores ?? []).filter((s) => s.ipCheck).sort((a, b) => String(a.ownName).localeCompare(String(b.ownName), "ko")),
+    [stores],
+  );
 
   const intervalText = SAMPLE_INTERVAL_MINUTES % 60 === 0 ? `${SAMPLE_INTERVAL_MINUTES / 60}시간` : `${SAMPLE_INTERVAL_MINUTES}분`;
 
@@ -237,12 +249,12 @@ export default function PingMonitorPage() {
       {stores != null && stores.length > 0 && (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            {(["existing", "candidate", "all"] as const).map((v) => (
+            {(["existing", "candidate", "all", "check"] as const).map((v) => (
               <button key={v} type="button" className={`rounded-full px-3 py-1 text-xs ${view === v ? "app-btn-primary" : "app-btn-outline"}`} onClick={() => setView(v)}>
-                {VIEW_LABEL[v]} ({v === "all" ? `${competitorsOnly.length}곳` : `${groupsByView[v].length}개 매장`})
+                {VIEW_LABEL[v]} ({v === "all" ? `${competitorsOnly.length}곳` : v === "check" ? `${ipCheckStores.length}곳` : `${groupsByView[v].length}개 매장`})
               </button>
             ))}
-            {view !== "all" && shownGroups.length > 0 && (
+            {view !== "all" && view !== "check" && shownGroups.length > 0 && (
               <button
                 type="button"
                 className="ml-auto text-xs text-[var(--sl-ink-soft)] hover:underline"
@@ -262,10 +274,22 @@ export default function PingMonitorPage() {
               </button>
             )}
           </div>
-          {view !== "all" && shownGroups.length === 0 && (
+          {view !== "all" && view !== "check" && shownGroups.length === 0 && (
             <p className="app-card-sm rounded-xl p-4 text-sm text-[var(--sl-ink-soft)]">{VIEW_LABEL[view]}에 연결된 경쟁점이 아직 없습니다.</p>
           )}
-          {view !== "all" ? (
+          {view === "check" ? (
+            <div className="app-card rounded-2xl">
+              <p className="border-b border-[var(--sl-hairline)] px-3 py-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
+                등록된 IP대역이 맞는지 확인이 필요한 곳입니다. 근거는 등록 범위 안에서 잰 결과뿐입니다(범위 밖 주소로는 보내지 않습니다).
+                맞는 대역을 찾으면 경쟁점을 눌러 IP대역을 고쳐 저장하세요 — 표시가 사라집니다.
+              </p>
+              {ipCheckStores.length === 0 ? (
+                <p className="p-4 text-sm text-[var(--sl-ink-soft)]">확인이 필요한 곳이 없습니다.</p>
+              ) : (
+                <CompetitorTable stores={ipCheckStores} showOwn />
+              )}
+            </div>
+          ) : view !== "all" ? (
             <ul className="flex flex-col gap-2">
               {shownGroups.map((g) => (
                 <GroupRow key={g.key} group={g} open={openKeys.has(g.key)} onToggle={() => toggle(g.key)} />
