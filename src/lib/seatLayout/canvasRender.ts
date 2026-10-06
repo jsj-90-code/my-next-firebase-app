@@ -301,6 +301,40 @@ function layoutSizeRow(
   return { lines: packListLines(c, parts, maxWidthAt(font), SIZE_MAX_LINES), font };
 }
 
+// 2026-10-06 — PC 사양 값(마우스·파워·키보드 제품명)이 칸보다 길면 줄을 바꾼다. 마우스처럼
+// " & "로 이어진 조합은 그 자리에서 먼저 자르고("A &" / "B"), 아니면 띄어쓰기에서 자른다.
+// 한 줄에 들어가면 그대로 한 줄. 그래도 넘치는 줄은 그리는 쪽에서 fitValueFontSize로 줄인다.
+function wrapTextToWidth(
+  c: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  maxLines = 3,
+): string[] {
+  c.font = `${fontSize}px sans-serif`;
+  if (!text || c.measureText(text).width <= maxWidth) return [text];
+  const fits = (lines: string[]) => lines.every((l) => c.measureText(l).width <= maxWidth);
+  const pack = (tokens: string[]) => {
+    const lines: string[] = [];
+    for (const token of tokens) {
+      const last = lines.length - 1;
+      const joined = last >= 0 ? `${lines[last]} ${token}` : token;
+      if (last >= 0 && (c.measureText(joined).width <= maxWidth || lines.length >= maxLines)) {
+        lines[last] = joined;
+      } else {
+        lines.push(token);
+      }
+    }
+    return lines;
+  };
+  if (text.includes(" & ")) {
+    const byAmp = pack(text.split(" & ").map((part, i, arr) => (i < arr.length - 1 ? `${part} &` : part)));
+    if (fits(byAmp)) return byAmp;
+  }
+  // " & " 조각 하나가 그래도 길면(예: "로지텍 G PRO X SUPERLIGHT 2 화이트 무선 &") 띄어쓰기에서 자른다.
+  return pack(text.split(" "));
+}
+
 // 책상 발주 도면: 표(베젤/합계)는 renderOrderSummaryImage로 분리되었으므로,
 // 그만큼 비는 공간을 도면 카드 높이를 늘려서 채운다.
 export function renderDeskFloorplanImage(
@@ -496,7 +530,28 @@ export function renderPcFloorplanImage(
   const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad" && f.id !== "case");
   const defHeaderH = 34;
   const defLineH = 25;
-  const defBoxH = defHeaderH + Math.ceil(DEFAULT_BOX_FIELDS.length / 2) * defLineH + 10;
+  const DEF_FONT = 16;
+  // 패널 폭은 존 카드 열 수에 따라 900 이상으로만 늘어나므로, 줄 바꿈은 최소 폭(900) 기준으로 잡는다.
+  const defColW = 900 / 2;
+  // 마우스는 " & "로 이어붙인 조합이라 부품 하나씩 정규화한 뒤 다시 이어붙여야 하고, 나머지는
+  // 통짜 문자열을 그대로 정규화한다 — 저장된 값이 옛 문구여도 항상 최신 이름으로 보여준다.
+  // 2026-10-06 — 긴 값(마우스)은 글자를 줄이는 대신 줄을 바꾸고, 그 행만 높인다.
+  const defEntries = DEFAULT_BOX_FIELDS.map((f) => {
+    const rawDefault = pcDefaults[f.id] || f.def;
+    const value =
+      f.id === "mouse" ? splitMouseValue(rawDefault).join(" & ") : normalizeFieldValue(f.id, rawDefault);
+    c.font = `bold ${DEF_FONT}px sans-serif`;
+    const labelW = c.measureText(f.label).width;
+    const segs = wrapTextToWidth(c, value, defColW - (12 + labelW + 10) - 8, DEF_FONT, 2);
+    return { label: f.label, labelW, segs };
+  });
+  const DEF_EXTRA_LINE_H = 20;
+  const defRowH: number[] = [];
+  for (let i = 0; i < defEntries.length; i += 2) {
+    const k = Math.max(defEntries[i].segs.length, defEntries[i + 1]?.segs.length ?? 1);
+    defRowH.push(defLineH + (k - 1) * DEF_EXTRA_LINE_H);
+  }
+  const defBoxH = defHeaderH + defRowH.reduce((s, h) => s + h, 0) + 10;
   const panelTop = panelAreaY + defBoxH + 16;
   const gap = 14;
 
@@ -514,14 +569,42 @@ export function renderPcFloorplanImage(
   const baseCardW = 955;
   const gapBetween = 30;
 
-  function rowHeightsFor(cols: number): number[] {
+  // 2026-10-06 — 긴 값(마우스·파워 제품명)이 카드 밖으로 삐져나가고, 그 한 줄 때문에 모든 카드
+  // 글자가 최소(60%)로 쪼그라들었다(아래 공간은 텅 비어 있는데도). 이제 긴 값은 칸 폭에서 줄을
+  // 바꾸고 그 항목만 줄 수만큼 높인다 — 글자 크기는 세로 공간으로 정해지고, 긴 줄 하나가 끌어내리지 않는다.
+  type WrappedLine = { label: string; segs: string[] };
+  // scale 배율일 때의 실제 글자 크기로 줄을 바꾼다(그리는 쪽과 같은 반올림·같은 여백).
+  function wrapItemsFor(colW: number, scale: number): WrappedLine[][] {
+    const font = Math.max(10, Math.round(BASE_BODY_FONT * scale));
+    return overrideZones.map((item) =>
+      item.lines.map((ln) => {
+        c.font = `bold ${font}px sans-serif`;
+        const labelW = c.measureText(ln.label).width;
+        return { label: ln.label, segs: wrapTextToWidth(c, ln.value, colW - 24 - labelW, font, 5) };
+      }),
+    );
+  }
+  function allSegsFit(wrapped: WrappedLine[][], colW: number, scale: number): boolean {
+    const font = Math.max(10, Math.round(BASE_BODY_FONT * scale));
+    return wrapped.every((lines) =>
+      lines.every((ln) => {
+        c.font = `bold ${font}px sans-serif`;
+        const maxW = colW - 24 - c.measureText(ln.label).width;
+        c.font = `${font}px sans-serif`;
+        return ln.segs.every((seg) => c.measureText(seg).width <= maxW);
+      }),
+    );
+  }
+  const unitCount = (lines: WrappedLine[]) => lines.reduce((s, l) => s + l.segs.length, 0);
+
+  function rowHeightsFor(cols: number, wrapped: WrappedLine[][]): number[] {
     const rows = Math.max(1, Math.ceil(overrideZones.length / cols));
     const heights: number[] = [];
     for (let r = 0; r < rows; r++) {
       let maxLinesInRow = 1;
       for (let col = 0; col < cols; col++) {
-        const item = overrideZones[r * cols + col];
-        if (item) maxLinesInRow = Math.max(maxLinesInRow, item.lines.length);
+        const item = wrapped[r * cols + col];
+        if (item) maxLinesInRow = Math.max(maxLinesInRow, unitCount(item));
       }
       heights.push(BASE_HEADER_H + maxLinesInRow * BASE_LINE_H + 10);
     }
@@ -546,42 +629,46 @@ export function renderPcFloorplanImage(
 
   // 세로로 넘치면 폰트를 계속 줄이는 대신, 먼저 컬럼 수를 늘려(도면 폭을 좀 덜어와서) 컬럼당
   // 카드 수를 줄여본다 — 컬럼 수별로 나오는 최종 배율(scale)이 가장 큰(=가장 읽기 좋은) 쪽을 고른다.
-  let best: { cols: number; panelAreaW: number; colW: number; scale: number } | null = null;
+  let best: { cols: number; panelAreaW: number; colW: number; scale: number; wrapped: WrappedLine[][] } | null =
+    null;
 
   for (let cols = 3; cols <= 6; cols++) {
     const panelAreaW = panelAreaWForCols(cols);
     const colW = (panelAreaW - (cols - 1) * gap) / cols;
     if (colW < MIN_COL_W && cols > 3) break;
 
-    const rowHeights = rowHeightsFor(cols);
-    const totalNeededH = rowHeights.reduce((s, h) => s + h, 0);
+    // 2026-10-06 — 글자 크기를 큰 것부터(배율 1.0 = 본문 20px, 책상발주도면과 비슷한 크기) 내려가며,
+    // 그 크기로 줄을 바꿨을 때 칸 폭과 세로 공간에 다 들어가는 첫 크기를 고른다. 예전엔 긴 값
+    // 한 줄이 배율을 끌어내려 모든 카드가 최소(0.6)로 쪼그라들었다. 상한도 1.8 → 1.0으로 낮췄다
+    // (존이 적을 때 36px까지 커지던 것 — 사용자: "책상발주도면 폰트 정도가 좋다").
     const availH = panelBottomLimitForCols(cols) - panelTop;
-    const heightScale = availH / totalNeededH;
-
-    c.font = `bold ${BASE_BODY_FONT}px sans-serif`;
-    let widthScale = Infinity;
-    overrideZones.forEach((item) => {
-      item.lines.forEach((ln) => {
-        c.font = `bold ${BASE_BODY_FONT}px sans-serif`;
-        const labelW = c.measureText(ln.label).width;
-        c.font = `${BASE_BODY_FONT}px sans-serif`;
-        const valueW = c.measureText(ln.value).width;
-        const needed = 18 + labelW + 10 + valueW + 6;
-        if (needed > 0) widthScale = Math.min(widthScale, colW / needed);
-      });
-    });
-    if (widthScale === Infinity) widthScale = 1;
-
-    const scale = Math.max(0.6, Math.min(1.8, Math.min(heightScale, widthScale)));
+    let scale = 0.6;
+    let wrapped = wrapItemsFor(colW, scale);
+    for (let s = 1.0; s >= 0.6 - 1e-9; s -= 0.05) {
+      const w = wrapItemsFor(colW, s);
+      const totalNeededH = rowHeightsFor(cols, w).reduce((sum, h) => sum + h, 0) * s;
+      if (totalNeededH <= availH && allSegsFit(w, colW, s)) {
+        scale = s;
+        wrapped = w;
+        break;
+      }
+    }
     if (!best || scale > best.scale + 0.02) {
-      best = { cols, panelAreaW, colW, scale };
+      best = { cols, panelAreaW, colW, scale, wrapped };
     }
     if (cols === 6 || colW < MIN_COL_W) break;
   }
 
   // overrideZones가 비어 있으면(전 존이 기본사양) 위 루프에서 best가 안 잡힐 수 있으니 안전망.
-  const chosen = best ?? { cols: 3, panelAreaW: basePanelAreaW, colW: (basePanelAreaW - 2 * gap) / 3, scale: 1 };
-  const { cols, panelAreaW, colW, scale } = chosen;
+  const fallbackColW = (basePanelAreaW - 2 * gap) / 3;
+  const chosen = best ?? {
+    cols: 3,
+    panelAreaW: basePanelAreaW,
+    colW: fallbackColW,
+    scale: 1,
+    wrapped: wrapItemsFor(fallbackColW, 1),
+  };
+  const { cols, panelAreaW, colW, scale, wrapped } = chosen;
   const cardX = panelAreaX + panelAreaW + gapBetween;
   const cardW = baseCardX + baseCardW - cardX;
 
@@ -602,31 +689,26 @@ export function renderPcFloorplanImage(
   c.strokeStyle = "#2A2520";
   c.lineWidth = 1.5;
   c.strokeRect(panelAreaX, panelAreaY, panelAreaW, defBoxH);
-  c.font = "16px sans-serif";
   c.fillStyle = "#2A2520";
   const colW2 = panelAreaW / 2;
-  DEFAULT_BOX_FIELDS.forEach((f, i) => {
+  let defRowTop = panelAreaY + defHeaderH + 8;
+  defEntries.forEach((e, i) => {
     const col = i % 2;
     const row = Math.floor(i / 2);
+    if (i > 0 && col === 0) defRowTop += defRowH[row - 1];
     const lx = panelAreaX + 12 + col * colW2;
-    const ly = panelAreaY + defHeaderH + 8 + row * defLineH;
-    c.font = "bold 16px sans-serif";
-    c.fillText(f.label, lx, ly + 16);
-    const labelW = c.measureText(f.label).width;
-    const rawDefault = pcDefaults[f.id] || f.def;
-    // 마우스는 " & "로 이어붙인 조합이라 부품 하나씩 정규화한 뒤 다시 이어붙여야 하고, 나머지는
-    // 통짜 문자열을 그대로 정규화한다 — 저장된 값이 옛 문구여도 항상 최신 이름으로 보여준다.
-    const displayDefault =
-      f.id === "mouse" ? splitMouseValue(rawDefault).join(" & ") : normalizeFieldValue(f.id, rawDefault);
-    // 마우스처럼 정식 제품명이 길어지면 칸 폭을 넘어 다음 칸에 잘려 보이던 문제가 있어,
-    // 칸에 맞을 때까지 글자 크기를 줄인다.
-    const valueMaxW = colW2 - (12 + labelW + 10) - 8;
-    const valueFont = fitValueFontSize(c, displayDefault, valueMaxW, 16, 10);
-    c.font = `${valueFont}px sans-serif`;
-    c.fillText(displayDefault, lx + labelW + 10, ly + 16);
+    c.font = `bold ${DEF_FONT}px sans-serif`;
+    c.fillText(e.label, lx, defRowTop + 16);
+    // 줄을 바꿔도 남는 긴 단어만 안전망으로 줄인다(예전엔 이걸로 마우스가 10px까지 작아졌다).
+    const valueMaxW = colW2 - (12 + e.labelW + 10) - 8;
+    e.segs.forEach((seg, si) => {
+      const valueFont = fitValueFontSize(c, seg, valueMaxW, DEF_FONT, 12);
+      c.font = `${valueFont}px sans-serif`;
+      c.fillText(seg, lx + e.labelW + 10, defRowTop + 16 + si * DEF_EXTRA_LINE_H);
+    });
   });
 
-  const rowH = rowHeightsFor(cols).map((h) => h * scale);
+  const rowH = rowHeightsFor(cols, wrapped).map((h) => h * scale);
   const rowY: number[] = [];
   {
     let acc = panelTop;
@@ -666,24 +748,34 @@ export function renderPcFloorplanImage(
 
     // 줄 높이는 카드 자기 줄 수로 나누지 않고 패널 전체와 같은 고정값을 쓴다 — 그래서 같은 행
     // 안에서 줄이 적은 카드는 나머지 칸을 억지로 채우지 않고 그냥 아래쪽에 공백으로 남는다.
-    item.lines.forEach((ln, li) => {
-      const ly = py + headerH + li * lineH;
+    // 여러 줄로 나뉜 항목은 그 줄 수만큼 칸을 높이고, 항목 이름은 칸 세로 가운데에 둔다.
+    const lines = wrapped[idx];
+    let ly = py + headerH;
+    lines.forEach((ln, li) => {
+      const k = ln.segs.length;
+      const itemH = lineH * k;
       c.font = `bold ${bodyFont}px sans-serif`;
       const labelW = c.measureText(ln.label).width;
       c.fillStyle = labelBg;
-      c.fillRect(px + 4, ly + 4, labelW + 10, lineH - 8);
+      c.fillRect(px + 4, ly + 4, labelW + 10, itemH - 8);
       c.fillStyle = "#2A2520";
-      c.fillText(ln.label, px + 9, ly + lineH * 0.68);
-      c.font = `${bodyFont}px sans-serif`;
-      c.fillText(ln.value, px + 18 + labelW, ly + lineH * 0.68);
-      if (li < item.lines.length - 1) {
+      c.fillText(ln.label, px + 9, ly + itemH / 2 + lineH * 0.18);
+      const valueMaxW = pw - 24 - labelW;
+      ln.segs.forEach((seg, si) => {
+        // 안전망 — 끊을 자리가 없는 긴 단어만 여기서 줄어든다.
+        const valueFont = fitValueFontSize(c, seg, valueMaxW, bodyFont);
+        c.font = `${valueFont}px sans-serif`;
+        c.fillText(seg, px + 18 + labelW, ly + lineH * si + lineH * 0.68);
+      });
+      if (li < lines.length - 1) {
         c.strokeStyle = "#E5DFD3";
         c.lineWidth = 1;
         c.beginPath();
-        c.moveTo(px + 4, ly + lineH);
-        c.lineTo(px + pw - 4, ly + lineH);
+        c.moveTo(px + 4, ly + itemH);
+        c.lineTo(px + pw - 4, ly + itemH);
         c.stroke();
       }
+      ly += itemH;
     });
   });
 
