@@ -27,7 +27,7 @@ export type PingStore = {
   /** 우리 매장(기존점 가맹점코드 또는 후보지 코드 N0xx). 매장별로 묶어 볼 때 쓴다. */
   ownCode: string | null;
   ownName: string | null;
-  /** 점포평가 경쟁점 문서(storeEvalCompetitors) id — 옛 핑봇 값과 나란히 보려고 잇는다. */
+  /** 점포평가 경쟁점 문서(storeEvalCompetitors) id — 등록 칸에서 골라 상호·대수·거리를 채울 때 잇는다. */
   competitorId: string | null;
   distanceM: number | null;
   createdAt: Date | null;

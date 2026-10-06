@@ -137,11 +137,9 @@ export type CompetitorOption = {
   address: string;
   distanceM: number | null;
   pcCount: number | null;
-  pingbotUtilization: number | null;
-  pingbotPeriod: string | null;
 };
 
-/** 그 매장에 점포평가로 등록된 경쟁점(옛 핑봇 값 포함). */
+/** 그 매장에 점포평가로 등록된 경쟁점 — 등록 칸에서 골라 상호·대수·거리를 채운다. */
 export async function listCompetitorOptions(ownCode: string): Promise<CompetitorOption[]> {
   const rows = await listCompetitors(ownCode);
   return rows
@@ -151,8 +149,6 @@ export async function listCompetitorOptions(ownCode: string): Promise<Competitor
       address: c.address ?? "",
       distanceM: c.distanceM,
       pcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
-      pingbotUtilization: c.pingbotUtilization ?? null,
-      pingbotPeriod: c.pingbotPeriod ?? null,
     }))
     .sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9));
 }

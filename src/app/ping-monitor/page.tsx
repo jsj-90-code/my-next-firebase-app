@@ -2,13 +2,13 @@
 
 // 경쟁점 가동률 목록 + 등록 — 2026-10-06 신설.
 // 기본은 "매장별": 우리 매장(기존점·후보지)을 누르면 펼쳐지며 그 매장 경쟁점들의 가동률이 뜬다(사용자 요청 2026-10-06).
-// 펼칠 때 점포평가 경쟁점 문서를 읽어 옛 핑봇 값을 나란히 보여준다(1~2주 대조용).
+// 옛 핑봇 값 칸은 2026-10-06 사용자 요청으로 뺐다("옛 핑봇 가동률은 몰라도 될 듯").
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { createPingStore, listCompetitorOptions, listPingStores, type CompetitorOption } from "@/lib/pingMonitor/clientStore";
+import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
 import {
   BLOCKED_SUSPECT_SAMPLES,
   SAMPLE_INTERVAL_MINUTES,
@@ -39,9 +39,8 @@ function useRanges() {
   }, []);
 }
 
-function CompetitorTable({ stores, pingbot }: { stores: PingStore[]; pingbot?: Map<string, CompetitorOption> | null }) {
+function CompetitorTable({ stores }: { stores: PingStore[] }) {
   const { today, from7, from30 } = useRanges();
-  const showPingbot = pingbot !== undefined;
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[760px] text-sm">
@@ -55,7 +54,6 @@ function CompetitorTable({ stores, pingbot }: { stores: PingStore[]; pingbot?: M
             <th className="px-3 py-2 text-right font-medium">최근 7일</th>
             <th className="px-3 py-2 text-right font-medium">최근 30일</th>
             <th className="px-3 py-2 text-right font-medium">전체</th>
-            {showPingbot && <th className="px-3 py-2 text-right font-medium">옛 핑봇</th>}
             <th className="px-3 py-2 font-medium">상태</th>
           </tr>
         </thead>
@@ -63,7 +61,6 @@ function CompetitorTable({ stores, pingbot }: { stores: PingStore[]; pingbot?: M
           {stores.map((s) => {
             const status = storeStatus(s);
             const all = rangeUtilization(s.days, null, null);
-            const old = s.competitorId ? pingbot?.get(s.competitorId) : undefined;
             return (
               <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
                 <td className="px-3 py-2">
@@ -93,17 +90,6 @@ function CompetitorTable({ stores, pingbot }: { stores: PingStore[]; pingbot?: M
                   {formatPct(all.util)}
                   <div className="text-xs text-[var(--sl-ink-soft)]">{all.samples}회</div>
                 </td>
-                {showPingbot && (
-                  <td className="px-3 py-2 text-right text-xs tabular-nums">
-                    {pingbot == null ? "…" : old?.pingbotUtilization != null ? (
-                      <>
-                        {old.pingbotUtilization}%<div className="text-[var(--sl-ink-soft)]">{old.pingbotPeriod ?? ""}</div>
-                      </>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                )}
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>
@@ -118,20 +104,6 @@ function CompetitorTable({ stores, pingbot }: { stores: PingStore[]; pingbot?: M
 
 function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
   const { today, from7, from30 } = useRanges();
-  const [pingbot, setPingbot] = useState<Map<string, CompetitorOption> | null>(null);
-  const linked = group.key !== UNLINKED;
-
-  useEffect(() => {
-    if (!open || !linked || pingbot) return;
-    let cancelled = false;
-    listCompetitorOptions(group.key)
-      .then((rows) => !cancelled && setPingbot(new Map(rows.map((r) => [r.id, r]))))
-      .catch(() => !cancelled && setPingbot(new Map()));
-    return () => {
-      cancelled = true;
-    };
-  }, [open, linked, pingbot, group.key]);
-
   const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
   return (
     <li className="app-card overflow-hidden rounded-2xl">
@@ -150,7 +122,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
       </button>
       {open && (
         <div className="border-t border-[var(--sl-hairline)]">
-          <CompetitorTable stores={[...group.stores].sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))} pingbot={linked ? pingbot : undefined} />
+          <CompetitorTable stores={[...group.stores].sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))} />
         </div>
       )}
     </li>
