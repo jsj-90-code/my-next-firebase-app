@@ -27,6 +27,8 @@ import {
   getModelAccuracySummary,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
+import { findVerdictFlips, type VerdictFlip } from "@/lib/storeEval/verdictSensitivity";
+import { QUICK_EVAL_ENTRY_THRESHOLD_WON } from "@/lib/storeEval/quickEval/quickEvalDefaults";
 import { listLabResidentRings, listLabTradeAreaJudgments, listLabResidentRadius, listLabRoadviewJudgments, listCandidateRival2km } from "@/lib/storeEval/store";
 import { prepareExistingStoresForEvaluation } from "@/lib/storeEval/existingStoreEvaluation";
 import { chooseEstimate, explainDualEstimate, inputGapsFor, labCandidateRevenue, rangeFlagsFor, v62TrainingRange } from "@/lib/storeEval/dualEstimate";
@@ -622,6 +624,7 @@ function V61TrainedModelExplainSection({ explain, v61Baseline }: { explain: V61T
 export function ResultTab({ candidateCode }: { candidateCode: string }) {
   const { user } = useAuth();
   const [result, setResult] = useState<EvaluationResult | null>(null);
+  const [verdictFlips, setVerdictFlips] = useState<VerdictFlip[]>([]);
   const [settingsUsed, setSettingsUsed] = useState<ModelSettings | null>(null);
   // 운영설정 문서(storeEvalSettings/current)가 아예 없으면 기본 계수로 계산된다. 숫자는
   // 똑같이 그럴듯하게 나오므로, 표시하지 않으면 사용자가 알 방법이 없다.
@@ -805,6 +808,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       } catch {
         evaluated.dualEstimate = null; // 실험실 값이 안 나와도 V62 결과는 저장한다
       }
+      // 2026-10-06 — 판정 흔들림(verdictSensitivity.ts). 주 값이 V62일 때만 잰다 — 실험실 값엔 입지 점수가 안 들어간다.
+      // 저장하는 결과(evaluated)에는 넣지 않는다. 화면의 "결재 전 확인할 것"에만 쓴다.
+      const flips = (evaluated.dualEstimate?.primary ?? "V62") === "V62"
+        ? findVerdictFlips(locationEvaluation, evaluated.v62Final, QUICK_EVAL_ENTRY_THRESHOLD_WON, (changed) =>
+            evaluateCandidate({ candidate, competitors, locationEvaluation: changed, settings, existingStores, trainingLocationEvaluations, trainingCompetitors, trainingSales, trainingQscScores }).v62Final)
+        : [];
       // 저장은 실행 순서대로 직렬화한다. 이전 실행이 이미 저장을 시작한 뒤 새 실행이
       // 들어오더라도 새 결과가 항상 마지막에 저장되어 Firestore 최종값이 뒤집히지 않는다.
       const saveTask = saveQueue.current
@@ -819,6 +828,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       if (!saved) return;
       if (sequence !== runSequence.current) return;
       setResult(evaluated);
+      setVerdictFlips(flips);
       setSettingsUsed(settings);
       setCandidateForReport(candidate);
       setCompetitorsForReport(competitors);
@@ -975,6 +985,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         competitors: competitorsForReport,
         locationEvaluation: locationForReport,
         usedDefaultSettings,
+        verdictFlips,
       })
     : [];
 

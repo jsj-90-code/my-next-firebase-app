@@ -12,6 +12,8 @@
 // 일만 AI에게 준다(daouReportAi).
 
 import type { CandidateInput, Competitor, EvaluationResult, LocationEvaluation } from "./types";
+import { describeVerdictFlips, type VerdictFlip } from "./verdictSensitivity";
+import { QUICK_EVAL_ENTRY_THRESHOLD_WON } from "./quickEval/quickEvalDefaults";
 
 /**
  * 우리 예상 가동률이 경쟁점 실측보다 이 배수 이상 높으면 짚는다. 경쟁점이 약하면 우리가 더
@@ -56,6 +58,8 @@ export type ReviewSignalInput = {
   locationEvaluation: LocationEvaluation | null;
   /** 운영설정 문서가 없어 기본 계수로 계산했는지 */
   usedDefaultSettings: boolean;
+  /** 2026-10-06 — 입지 점수 1점에 5,500만원 판정이 뒤집히는 항목(verdictSensitivity.ts). 결과 탭이 다시 계산해 넘긴다. */
+  verdictFlips?: VerdictFlip[];
 };
 
 export function collectReviewSignals({
@@ -64,8 +68,16 @@ export function collectReviewSignals({
   competitors,
   locationEvaluation,
   usedDefaultSettings,
+  verdictFlips = [],
 }: ReviewSignalInput): ReviewSignal[] {
   const signals: ReviewSignal[] = [];
+
+  // ---- 판정을 쥐고 있는 입지 점수 (2026-10-06) ----
+  // 1점에 기준선이 뒤집히면 그 항목의 현장 근거가 곧 결론이다. 가능/불가 구간을 새로 만들지 않고 확인할 항목만 짚는다.
+  const flipText = describeVerdictFlips(verdictFlips, QUICK_EVAL_ENTRY_THRESHOLD_WON);
+  if (flipText) {
+    signals.push({ level: "확인", title: `입지 점수 1점에 입점 판정(${Math.round(QUICK_EVAL_ENTRY_THRESHOLD_WON / 1e4).toLocaleString("ko-KR")}만원 기준)이 갈립니다`, detail: flipText, forReport: false });
+  }
   const investigated = competitors.filter((c) => c.investigationStatus !== "경쟁점없음");
 
   // ---- 계산 전제가 흔들리는 경우 (가장 먼저 봐야 한다) ----

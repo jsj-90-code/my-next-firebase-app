@@ -5,6 +5,7 @@
 //
 // ⚠️ 채점 기준 문장은 여기서 새로 쓰지 않는다 — 제미나이 초안과 같은 문장(locationEvalAi.ts)을 그대로 읽는다.
 // ⚠️ 숫자(기준선 5,500만·기본 대수 등)는 quickEvalDefaults에서 읽는다(CLAUDE.md 규칙).
+import { describeVerdictFlips } from "../verdictSensitivity";
 import {
   INFLOW_LEVELS,
   LOCATION_EVAL_FIELD_DESCRIPTIONS,
@@ -200,6 +201,8 @@ export function buildResultSummary(args: {
     // 2026-09-29 사용자: "매출 범위 노출 안 하는 쪽 — 그냥 매출만 딱". ±20%·보수·상한은 채팅에 안 낸다.
     `- 예상 월매출 ${formatManwonRough(finalRevenue)} (입점 기준: ${formatManwon(T)} 초과면 가능)`,
     plainReason ? `- 판정 참고: ${plainReason}` : "",
+    // 2026-10-06 — 입지 점수 1점에 가능/불가가 바뀌는 자리면 어느 항목을 현장에서 볼지 알린다(verdictSensitivity.ts).
+    computed.flips?.length ? `- 현장 확인: ${describeVerdictFlips(computed.flips, T)}` : "",
     `- 상권수요 ${fmt(r.marketDemand)} · 상권등급/성격 ${r.marketGrade ?? "-"} / ${r.marketCharacter ?? "-"} · 경쟁IP ${fmt(r.competitorIp)} · IP당수요 ${r.ipPerDemand == null ? "-" : r.ipPerDemand.toFixed(1)}`,
     `- 반경 500m 경쟁 PC방 ${counted.length}곳${counted.length ? `: ${counted.map((row) => `${row.place.name}(${Math.round(row.place.distanceM)}m)`).join(", ")}` : ""}`,
     warnings.length ? `- 주의: ${warnings.join(" / ")}` : "",

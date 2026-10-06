@@ -23,6 +23,8 @@ import {
 import { withQuickEvalSettings } from "./quickEvalDefaults";
 import { buildQuickEvalPeers, type QuickEvalPeerSummary } from "./quickEvalPeers";
 import { QUICK_EVAL_ISOLATION, quickEvalFinalEstimate, type QuickEvalFinal } from "./quickEvalVerdict";
+import { QUICK_EVAL_ENTRY_THRESHOLD_WON } from "./quickEvalDefaults";
+import { findVerdictFlips, type VerdictFlip } from "../verdictSensitivity";
 
 /** 자동수집 결과 중 계산이 읽는 부분(collect 라우트 응답·서버 수집 함수 결과 공통). */
 export type QuickEvalComputePayload = QuickEvalCollected & {
@@ -47,6 +49,8 @@ export type QuickEvalComputed = {
   quickLoc: LocationEvaluation | null;
   final: QuickEvalFinal;
   peers: QuickEvalPeerSummary;
+  /** 2026-10-06 — 입지 점수 1점에 가능/불가가 뒤집히는 항목(verdictSensitivity.ts). 판정 값이 V62일 때만 잰다. */
+  flips: VerdictFlip[];
 };
 
 export function computeQuickEval(args: {
@@ -72,10 +76,9 @@ export function computeQuickEval(args: {
     settingsDoc ?? { ...defaultModelSettings(), updatedAt: Date.now(), updatedBy: null },
   );
   const quickLoc = buildQuickLocationEvaluation(planInput, locationDraft);
-  const evaluated = evaluateCandidate({
+  const evalArgs = {
     candidate: built.candidate,
     competitors: built.competitors,
-    locationEvaluation: quickLoc,
     settings,
     existingStores,
     trainingLocationEvaluations,
@@ -83,7 +86,8 @@ export function computeQuickEval(args: {
     trainingCompetitors: trainingCompetitors.map(blankCompetitorForTraining),
     trainingSales,
     trainingQscScores,
-  });
+  };
+  const evaluated = evaluateCandidate({ ...evalArgs, locationEvaluation: quickLoc });
 
   // 3) 판정 값 — 실험실(인구로 쌓은 수요)을 같이 내고 규칙으로 고른다(quickEvalVerdict). 실험실이 실패해도 V62로 판정.
   let labRevenue: number | null = null;
@@ -114,5 +118,10 @@ export function computeQuickEval(args: {
   // 4) 가맹점 실적 비교표
   const peers = buildQuickEvalPeers(existingStores, evaluated.marketDemand);
 
-  return { built, evaluated, settings, quickLoc, final, peers };
+  // 5) 판정 흔들림 — 실험실로 판정한 자리는 입지 점수가 판정 값에 안 들어가므로 재지 않는다.
+  const flips = final.source === "V62"
+    ? findVerdictFlips(quickLoc, final.value, QUICK_EVAL_ENTRY_THRESHOLD_WON, (changed) => evaluateCandidate({ ...evalArgs, locationEvaluation: changed }).v62Final)
+    : [];
+
+  return { built, evaluated, settings, quickLoc, final, peers, flips };
 }

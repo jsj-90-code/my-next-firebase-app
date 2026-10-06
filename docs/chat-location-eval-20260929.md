@@ -10,6 +10,8 @@
 3. AI가 **자기 요금제의 웹 검색**으로 주소를 조사해 입지 7항목을 매김
 4. AI가 `submit_location_scores` 호출 → 주소만평가와 **같은 계산**(`quickEvalCompute.ts`)으로 예상매출·가능/불가 → 채팅에 요약
 5. 기록: Firestore `quickEvalChatRuns/{runId}` — 누가·언제·주소·입력·점수·근거·참고 웹 주소·**모델 이름**·결과
+   - 2026-10-06부터 웹 점포평가 메뉴 **"채팅 평가 기록"**(`/store-eval/chat-runs`)에서 최근 100건을 본다. 담당자만 볼 수 있다.
+   - 결과에는 "입지 점수 1점에 판정이 바뀌면 현장 확인" 줄이 붙는다(`verdictSensitivity.ts`, 웹 주소만 화면·정밀 결과 탭도 같은 함수를 쓴다).
 
 회사 API 비용 0. 권장 모델: GPT는 GPT-6 Astra, Claude는 Opus. 다른 모델도 받는다(모델 이름을 같이 기록해 나중에 성적 비교).
 

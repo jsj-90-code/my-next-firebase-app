@@ -32,6 +32,7 @@ import { readJsonOrText } from "@/lib/readJsonOrText";
 import { formatManwon, formatManwonRough, formatPercent } from "@/lib/storeEval/format";
 import { describeMarketGradeThresholds } from "@/lib/storeEval/calc";
 import { computeQuickEval } from "@/lib/storeEval/quickEval/quickEvalCompute";
+import { describeVerdictFlips, type VerdictFlip } from "@/lib/storeEval/verdictSensitivity";
 import {
   getModelSettings,
   listAllCompetitors,
@@ -122,6 +123,7 @@ export default function QuickEvalPage() {
   const [assembly, setAssembly] = useState<QuickEvalAssembly | null>(null);
   const [result, setResult] = useState<EvaluationResult | null>(null);
   const [finalEst, setFinalEst] = useState<QuickEvalFinal | null>(null);
+  const [verdictFlips, setVerdictFlips] = useState<VerdictFlip[]>([]);
   // 계산에 실제로 쓴 설정 — 상권등급 기준선 같은 "설명 숫자"를 여기서 읽어 그린다(글자로 박지 않는다).
   const [settingsUsed, setSettingsUsed] = useState<ModelSettings | null>(null);
   const [review, setReview] = useState<string | null>(null);
@@ -223,6 +225,7 @@ export default function QuickEvalPage() {
     setAssembly(null);
     setResult(null);
     setFinalEst(null);
+    setVerdictFlips([]);
     setReview(null);
     setReviewMeta(null);
     setReviewError(null);
@@ -259,7 +262,7 @@ export default function QuickEvalPage() {
           listQscScores(),
         ]);
       const trainingSales = await listEvaluationSales(existingStores);
-      const { built, evaluated, settings, final, peers: peerSummary } = computeQuickEval({
+      const { built, evaluated, settings, final, peers: peerSummary, flips } = computeQuickEval({
         planInput,
         payload,
         locationDraft: payload.locationDraft,
@@ -269,6 +272,7 @@ export default function QuickEvalPage() {
       setResult(evaluated);
       setSettingsUsed(settings);
       setFinalEst(final);
+      setVerdictFlips(flips);
       setPeers(peerSummary);
 
       // 5) AI 평가문을 **바로** 띄운다. 조회 한 번으로 평가까지 나오게 하라는 지시였다.
@@ -424,6 +428,7 @@ export default function QuickEvalPage() {
           <KeyVerdict
             v62Final={finalEst?.value ?? result.v62Final}
             finalReason={finalEst?.source === "실험실" ? finalEst.reason : null}
+            flips={verdictFlips}
             pcCount={planInput.expectedPcCount}
             hourlyRate={planInput.hourlyRate}
             pcIsDefault={toNumberOrNull(plan.expectedPcCount) == null}
@@ -778,6 +783,7 @@ export default function QuickEvalPage() {
 function KeyVerdict({
   v62Final,
   finalReason,
+  flips,
   pcCount,
   hourlyRate,
   pcIsDefault,
@@ -786,6 +792,8 @@ function KeyVerdict({
   v62Final: number | null;
   /** 2026-09-27 — 판정 값을 실험실로 바꿨을 때의 이유(quickEvalVerdict). V62 그대로면 null */
   finalReason: string | null;
+  /** 2026-10-06 — 입지 점수 1점에 판정이 뒤집히는 항목(verdictSensitivity.ts). 구간을 새로 만들지 않고 확인할 항목만 알린다. */
+  flips: VerdictFlip[];
   pcCount: number | null;
   hourlyRate: number | null;
   pcIsDefault: boolean;
@@ -829,6 +837,9 @@ function KeyVerdict({
             {possible == null ? " · 예상매출을 계산하지 못했습니다(자료 수집 실패)" : ""}
           </p>
           {finalReason ? <p className="mt-1 text-xs text-[var(--sl-warn)]">{finalReason}</p> : null}
+          {flips.length > 0 ? (
+            <p className="mt-1 text-xs text-[var(--sl-warn)]">★ 현장 확인 — {describeVerdictFlips(flips, QUICK_EVAL_ENTRY_THRESHOLD_WON)}</p>
+          ) : null}
         </div>
       </div>
       {/* 2026-09-23 밤 — "경쟁점 10곳 넘으면 범위 밖" 경고를 뺐다(사용자 승인). 카카오 경쟁점으로 다시 재 보니

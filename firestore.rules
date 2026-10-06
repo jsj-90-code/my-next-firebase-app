@@ -237,7 +237,7 @@ service cloud.firestore {
     match /mcpOAuthTokens/{tokenHash} {
       allow read, write: if false;
     }
-    // 채팅 입지평가 기록(누가·언제·어느 모델로·몇 점·예상매출). 조회 화면은 없다 — 모델 비교 때 서버 스크립트로 꺼낸다.
+    // 채팅 입지평가 기록(누가·언제·어느 모델로·몇 점·예상매출). 브라우저 직접 읽기는 막는다 — 조회는 점포평가 "채팅 평가 기록" 화면이 서버(/api/store-eval/chat-runs, 담당자만)를 거쳐 한다(2026-10-06).
     match /quickEvalChatRuns/{runId} {
       allow read, write: if false;
     }
