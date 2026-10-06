@@ -1914,13 +1914,14 @@ export function SeatLayoutWorkspace() {
     setStatusMsg("이미지 만드는 중...");
     const outputs = renderAllOutputs(EXPORT_SCALE);
     if (outputs) {
+      const sizeLabel = `${Math.round(COMPOSITE_W * EXPORT_SCALE)}x${Math.round(COMPOSITE_H * EXPORT_SCALE)}`;
       outputs.forEach((item) => {
         const link = document.createElement("a");
-        link.download = `${project.name || "floorplan"}_${item.label}_FHD.png`;
+        link.download = `${project.name || "floorplan"}_${item.label}_${sizeLabel}.png`;
         link.href = item.dataUrl;
         link.click();
       });
-      setStatusMsg(`FHD 이미지 ${outputs.length}장을 다운로드했습니다.`, "success");
+      setStatusMsg(`${sizeLabel} 이미지 ${outputs.length}장을 다운로드했습니다.`, "success");
     }
     setBusy(false);
   }

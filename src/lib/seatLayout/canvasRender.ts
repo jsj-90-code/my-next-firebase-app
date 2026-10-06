@@ -246,6 +246,61 @@ function fitValueFontSize(
   return Math.max(minSize, Math.floor((maxWidth / baseWidth) * baseSize));
 }
 
+// 책상사이즈 칸의 여러 줄 배치. 여러 줄일 때 사이즈 줄은 촘촘하게(글자 높이의 1.15배) 붙이고,
+// 나머지 5칸은 예전 비율(글자 = 칸 높이의 0.72)을 지킨다.
+const SIZE_LINE_GAP = 1.15;
+const SIZE_MAX_LINES = 4;
+
+// ", "로 이어진 목록(예: "850mm x10, 910mm x6")을 maxWidth에 맞게 앞에서부터 채워 줄을 나눈다.
+// maxLines에 닿으면 남은 항목은 마지막 줄에 붙인다(넘치는 줄은 fitValueFontSize가 줄여서 맞춘다).
+function packListLines(c: CanvasRenderingContext2D, parts: string[], maxWidth: number, maxLines: number): string[] {
+  const lines: string[] = [];
+  for (const part of parts) {
+    const last = lines.length - 1;
+    const joined = last >= 0 ? `${lines[last]}, ${part}` : part;
+    if (last >= 0 && (c.measureText(joined).width <= maxWidth || lines.length >= maxLines)) {
+      lines[last] = joined;
+    } else {
+      lines.push(part);
+    }
+  }
+  return lines;
+}
+
+// 2026-10-06 — 책상사이즈가 2종류 이상이면 한 줄에 다 넣느라 글자가 아주 작아졌다(사용자 지적).
+// 원래 글자의 85% 이상으로 한 줄에 들어가면 그대로 한 줄(줄을 나누면 다른 칸도 조금 작아지므로).
+// 아니면 2줄, 3줄 순으로 해보는데, **그 줄 수일 때의 글자 크기로** 몇 개씩 들어가는지 판단한다
+// — 원래 크기로 판단하면 2줄이면 될 것도 3줄로 나뉘어 카드 전체가 쓸데없이 작아진다.
+function layoutSizeRow(
+  c: CanvasRenderingContext2D,
+  text: string,
+  label: string,
+  cardW: number,
+  baseFont: number,
+  bodyH: number,
+): { lines: string[]; font: number } {
+  const parts = text.split(", ");
+  const maxWidthAt = (font: number) => {
+    c.font = `bold ${font}px sans-serif`;
+    const labelW = c.measureText(label).width;
+    c.font = `${font}px sans-serif`;
+    return cardW - 22 - labelW;
+  };
+  const maxW = maxWidthAt(baseFont);
+  if (parts.length < 2 || c.measureText(text).width * 0.85 <= maxW) return { lines: [text], font: baseFont };
+
+  // k줄 기준 글자 크기에서 실제로 몇 줄이 나오는지 보고 k줄 이하면 채택한다. 글자가 작아진 덕에
+  // k보다 적은 줄로 들어가도 그 크기는 그대로 둔다 — 더 큰 크기는 앞 단계에서 이미 안 들어갔다.
+  let font = baseFont;
+  for (let k = 2; k <= SIZE_MAX_LINES; k++) {
+    font = Math.max(10, Math.min(baseFont, Math.floor((bodyH - 8) / (5 / 0.72 + SIZE_LINE_GAP * k))));
+    const lines = packListLines(c, parts, maxWidthAt(font), Infinity);
+    if (lines.length <= k) return { lines, font };
+  }
+  // 상한 줄 수로도 안 들어가면 상한까지만 나누고, 넘치는 줄은 fitValueFontSize가 줄인다.
+  return { lines: packListLines(c, parts, maxWidthAt(font), SIZE_MAX_LINES), font };
+}
+
 // 책상 발주 도면: 표(베젤/합계)는 renderOrderSummaryImage로 분리되었으므로,
 // 그만큼 비는 공간을 도면 카드 높이를 늘려서 채운다.
 export function renderDeskFloorplanImage(
@@ -310,29 +365,44 @@ export function renderDeskFloorplanImage(
     c.font = `bold ${deskHeaderFont}px sans-serif`;
     c.fillText(deskHeaderText, px + 8, py + layout.headerH * 0.68);
 
-    const values = [g.desk, g.sizeText, g.cooler, g.partition, g.monitorArm, g.chair];
-    const lineH = (ph - layout.headerH) / specLabels.length;
+    // 책상사이즈가 한 줄에 안 들어가면 줄을 나누고 그 칸만 높인다(layoutSizeRow 참고).
+    // 한 줄일 땐 예전과 똑같이 6칸을 균등하게 나눈다.
+    const bodyH = ph - layout.headerH;
+    const { lines: sizeLines, font: bodyFont } = layoutSizeRow(c, g.sizeText, specLabels[1], pw, layout.bodyFont, bodyH);
+    const values: string[][] = [[g.desk], sizeLines, [g.cooler], [g.partition], [g.monitorArm], [g.chair]];
+    const k = sizeLines.length;
+    const sizeRowH = k > 1 ? k * SIZE_LINE_GAP * bodyFont + 8 : bodyH / specLabels.length;
+    const otherRowH = k > 1 ? (bodyH - sizeRowH) / (specLabels.length - 1) : bodyH / specLabels.length;
 
+    let ly = py + layout.headerH;
     specLabels.forEach((label, li) => {
-      const ly = py + layout.headerH + li * lineH;
-      c.font = `bold ${layout.bodyFont}px sans-serif`;
+      const lines = values[li];
+      const rowH = li === 1 ? sizeRowH : otherRowH;
+      const labelBaseline = lines.length > 1 ? ly + rowH / 2 + bodyFont * 0.35 : ly + rowH * 0.68;
+      c.font = `bold ${bodyFont}px sans-serif`;
       const labelW = c.measureText(label).width;
       c.fillStyle = labelBg;
-      c.fillRect(px + 4, ly + 4, labelW + 10, lineH - 8);
+      c.fillRect(px + 4, ly + 4, labelW + 10, rowH - 8);
       c.fillStyle = "#2A2520";
-      c.fillText(label, px + 9, ly + lineH * 0.68);
+      c.fillText(label, px + 9, labelBaseline);
       const valueMaxW = pw - 22 - labelW;
-      const valueFont = fitValueFontSize(c, values[li], valueMaxW, layout.bodyFont);
-      c.font = `${valueFont}px sans-serif`;
-      c.fillText(values[li], px + 18 + labelW, ly + lineH * 0.68);
+      const lineGap = SIZE_LINE_GAP * bodyFont;
+      const blockTop = ly + (rowH - lineGap * lines.length) / 2;
+      lines.forEach((text, i) => {
+        const valueFont = fitValueFontSize(c, text, valueMaxW, bodyFont);
+        c.font = `${valueFont}px sans-serif`;
+        const baseline = lines.length > 1 ? blockTop + lineGap * i + bodyFont * 0.92 : labelBaseline;
+        c.fillText(text, px + 18 + labelW, baseline);
+      });
       if (li < specLabels.length - 1) {
         c.strokeStyle = "#E5DFD3";
         c.lineWidth = 1;
         c.beginPath();
-        c.moveTo(px + 4, ly + lineH);
-        c.lineTo(px + pw - 4, ly + lineH);
+        c.moveTo(px + 4, ly + rowH);
+        c.lineTo(px + pw - 4, ly + rowH);
         c.stroke();
       }
+      ly += rowH;
     });
   });
 

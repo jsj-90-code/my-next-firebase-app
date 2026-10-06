@@ -212,7 +212,11 @@ export const COMPOSITE_H = 1080;
 // 파일명도 `_FHD`라서 실제 9600x5400과 어긋나 있었다. 이제 이름과 실제가 일치한다.
 // **다시 올리기 전에 확인할 것**: 요구가 다운로드 파일에 대한 것인지, 프레젠테이션에 대한
 // 것인지부터 가른다. 프레젠테이션이면 여기가 아니라 SLIDES_EXPORT_SCALE을 본다.
-export const EXPORT_SCALE = 1;
+//
+// 2026-10-06 — **다시 5배로 올렸다. 이번엔 다운로드 파일에 대한 요구다**(사용자: "이미지
+// 다운로드했을 때 해상도 좀 올려줘, 확대했을 때 픽셀이 보이네. 가능한 높여주셈").
+// 5배는 예전에 실제로 돌려본 값이다(장당 PNG 약 11.5MB). 파일명은 실제 픽셀 크기로 붙인다.
+export const EXPORT_SCALE = 5;
 
 // 구글 프레젠테이션에 등록할 때만 쓰는 배율. Slides API의 createImage는 25메가픽셀을 넘는
 // 이미지를 무조건 거부한다("The provided image is too large" 에러) — EXPORT_SCALE(5배,
