@@ -1,6 +1,7 @@
 import { HomeAuthStatus } from "@/components/HomeAuthStatus";
 import { HomeToolStatus } from "@/components/HomeToolStatus";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SAMPLE_INTERVAL_MINUTES } from "@/lib/pingMonitor/summary";
 
 const TOOLS = [
   {
@@ -34,6 +35,13 @@ const TOOLS = [
     description:
       "상권 수요를 구하고 경쟁력으로 점유율을 환산해 매출로 잇는 새 산식을 직접 돌려봅니다. 운영 산식과 성적을 나란히 비교합니다.",
     icon: <path d="M9 3h6 M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3 M7 15h10" />,
+  },
+  {
+    // 2026-10-06 신설 — 유지보수가 끊긴 옛 핑봇(ping.isens.camp)을 대신하는 경쟁점 가동률 측정기.
+    href: "/ping-monitor",
+    label: "경쟁점 가동률",
+    description: `경쟁점 상호·주소·IP대역만 넣으면 ${SAMPLE_INTERVAL_MINUTES / 60}시간마다 켜진 PC를 세어 가동률을 기한 없이 쌓습니다. 기간·시간대별로 봅니다.`,
+    icon: <path d="M3 12h4l3-8 4 16 3-8h4" />,
   },
 ] as const;
 

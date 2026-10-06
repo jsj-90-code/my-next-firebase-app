@@ -12,6 +12,16 @@
         "icn1"
       ]
     },
+    "src/app/api/ping-monitor/cron/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "src/app/api/ping-monitor/probe/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
     "src/app/api/mcp/route.ts": {
       "regions": [
         "icn1"

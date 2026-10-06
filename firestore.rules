@@ -246,5 +246,23 @@ service cloud.firestore {
       allow read: if isCompanyAccount();
       allow write: if false;
     }
+
+    // 경쟁점 가동률 측정기(2026-10-06, /ping-monitor). 화면은 등록 정보 칸만 쓴다 —
+    // 측정 기록(days·lastSample)은 1시간 알람 서버(admin SDK)만 쓴다. 지우기는 막는다(기록을 기한 없이 남기는 게 목적).
+    function pingStoreKeysOnly(keys) {
+      return keys.hasOnly(['name', 'address', 'ipRanges', 'ipCount', 'pcCount', 'memo', 'active',
+                           'createdAt', 'createdBy', 'updatedAt', 'updatedBy']);
+    }
+    match /pingMonitorStores/{storeId} {
+      allow read: if isCompanyAccount();
+      allow create: if isCompanyAccount() && pingStoreKeysOnly(request.resource.data.keys());
+      allow update: if isCompanyAccount()
+        && pingStoreKeysOnly(request.resource.data.diff(resource.data).affectedKeys());
+      allow delete: if false;
+    }
+    match /pingMonitorDaily/{dailyId} {
+      allow read: if isCompanyAccount();
+      allow write: if false;
+    }
   }
 }

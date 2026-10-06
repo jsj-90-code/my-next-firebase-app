@@ -1,0 +1,291 @@
+"use client";
+
+// 경쟁점 가동률 상세 — 기간 선택 · 날짜별 · 시간대별(전체/평일/주말) · 날짜별 표 · 수정. 2026-10-06 신설.
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { getPingStore, listPingDaily, updatePingStore } from "@/lib/pingMonitor/clientStore";
+import {
+  denominator,
+  formatPct,
+  kstDaysAgo,
+  rangeUtilization,
+  shortIps,
+  storeStatus,
+  type PingDaily,
+  type PingStore,
+} from "@/lib/pingMonitor/summary";
+import { BarChart, type Bar } from "../BarChart";
+import { StoreForm } from "../StoreForm";
+
+/** 시간대별 그래프는 날짜 문서를 하나씩 읽는다 — 무료 요금제 읽기 한도 때문에 최근 이만큼만 본다. */
+const HOURLY_MAX_DAYS = 92;
+const PRESETS = [
+  { key: "today", label: "오늘", days: 1 },
+  { key: "7", label: "7일", days: 7 },
+  { key: "30", label: "30일", days: 30 },
+  { key: "90", label: "90일", days: 90 },
+  { key: "all", label: "전체", days: null },
+] as const;
+const TONE: Record<string, string> = { ok: "app-badge-ok", warn: "app-badge-warn", danger: "app-badge-danger", neutral: "app-badge-neutral" };
+const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+
+function dateRange(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+function dayOfWeek(date: string): number {
+  return new Date(`${date}T00:00:00Z`).getUTCDay();
+}
+
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export default function PingStoreDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const [store, setStore] = useState<PingStore | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [preset, setPreset] = useState<string>("7");
+  const [from, setFrom] = useState(kstDaysAgo(6));
+  const [to, setTo] = useState(kstDaysAgo(0));
+  const [dailyLoaded, setDailyLoaded] = useState<{ key: string; rows: PingDaily[] } | null>(null);
+  const [dayFilter, setDayFilter] = useState<"all" | "weekday" | "weekend">("all");
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    getPingStore(id)
+      .then((row) => !cancelled && setStore(row))
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : "불러오지 못했습니다."));
+    return () => {
+      cancelled = true;
+    };
+  }, [user, id, version]);
+
+  const firstDate = useMemo(() => {
+    const dates = Object.keys(store?.days ?? {}).sort();
+    return dates[0] ?? kstDaysAgo(0);
+  }, [store]);
+
+  function applyPreset(key: string) {
+    setPreset(key);
+    const p = PRESETS.find((x) => x.key === key);
+    const today = kstDaysAgo(0);
+    setTo(today);
+    setFrom(p?.days ? kstDaysAgo(p.days - 1) : firstDate);
+  }
+
+  const hourlyFrom = from < shiftDate(to, -(HOURLY_MAX_DAYS - 1)) ? shiftDate(to, -(HOURLY_MAX_DAYS - 1)) : from;
+
+  const storeId = store?.id ?? null;
+  const dailyKey = storeId ? `${storeId}|${hourlyFrom}|${to}|${version}` : null;
+  useEffect(() => {
+    if (!user || !storeId || !dailyKey || hourlyFrom > to) return;
+    let cancelled = false;
+    listPingDaily(storeId, hourlyFrom, to)
+      .then((rows) => !cancelled && setDailyLoaded({ key: dailyKey, rows }))
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : "시간대별 기록을 불러오지 못했습니다."));
+    return () => {
+      cancelled = true;
+    };
+  }, [user, storeId, dailyKey, hourlyFrom, to]);
+  const daily = dailyLoaded && dailyLoaded.key === dailyKey ? dailyLoaded.rows : null;
+
+  if (error) return <p role="alert" className="app-notice app-badge-danger px-3 py-2 text-sm">{error}</p>;
+  if (store === undefined) return <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>;
+  if (store === null)
+    return (
+      <p className="text-sm">
+        없는 경쟁점입니다. <Link href="/ping-monitor" className="underline">목록으로</Link>
+      </p>
+    );
+
+  const status = storeStatus(store);
+  const range = rangeUtilization(store.days, from, to);
+  const dates = from <= to ? dateRange(from, to) : [];
+  const dayBars: Bar[] = dates.map((d) => {
+    const v = store.days[d];
+    return {
+      key: d,
+      label: d.slice(5),
+      value: v && v.t > 0 ? v.a / v.t : null,
+      detail: v ? `${WEEKDAY[dayOfWeek(d)]}요일 · ${v.n}회 측정 · 평균 ${(v.a / v.n).toFixed(1)}대 켜짐` : "기록 없음",
+    };
+  });
+
+  const hourTotals = Array.from({ length: 24 }, () => ({ a: 0, t: 0, n: 0 }));
+  for (const row of daily ?? []) {
+    const dow = dayOfWeek(row.date);
+    const weekend = dow === 0 || dow === 6;
+    if (dayFilter === "weekday" && weekend) continue;
+    if (dayFilter === "weekend" && !weekend) continue;
+    for (const [h, v] of Object.entries(row.hours)) {
+      const slot = hourTotals[Number(h)];
+      if (!slot) continue;
+      slot.a += v.a;
+      slot.t += v.t;
+      slot.n += 1;
+    }
+  }
+  const hourBars: Bar[] = hourTotals.map((v, h) => ({
+    key: String(h),
+    label: String(h),
+    value: v.t > 0 ? v.a / v.t : null,
+    detail: v.n > 0 ? `${h}시 · ${v.n}일 평균 ${(v.a / v.n).toFixed(1)}대 켜짐` : "기록 없음",
+  }));
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div>
+        <Link href="/ping-monitor" className="text-xs text-[var(--sl-ink-soft)] hover:underline">← 목록</Link>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h1 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">{store.name}</h1>
+          <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
+        </div>
+        <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
+          {[store.address, store.memo].filter(Boolean).join(" · ")}
+          {store.address || store.memo ? <br /> : null}
+          IP대역 <span className="font-mono">{store.ipRanges}</span> · IP {store.ipCount}개 · 대수 {denominator(store)}대
+          {store.pcCount ? "" : "(IP 개수)"}
+        </p>
+        {store.lastSample && (
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+            최근 측정 {store.lastSample.date} {store.lastSample.hour}시 — {store.lastSample.alive}/{store.lastSample.total}대 켜짐
+            {store.lastSample.aliveIps.length > 0 ? ` (${shortIps(store.lastSample.aliveIps)})` : ""}
+          </p>
+        )}
+      </div>
+
+      <section className="app-card flex flex-col gap-4 rounded-2xl p-4">
+        <div className="flex flex-wrap items-end gap-2">
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              className={`rounded-full px-3 py-1 text-xs ${preset === p.key ? "app-btn-primary" : "app-btn-outline"}`}
+              onClick={() => applyPreset(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+          <label className="ml-auto flex items-center gap-1 text-xs">
+            <input type="date" className="app-input rounded-lg px-2 py-1" value={from} max={to} onChange={(e) => { setFrom(e.target.value); setPreset(""); }} />
+            ~
+            <input type="date" className="app-input rounded-lg px-2 py-1" value={to} min={from} onChange={(e) => { setTo(e.target.value); setPreset(""); }} />
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+          <div>
+            <div className="text-xs text-[var(--sl-ink-soft)]">기간 가동률</div>
+            <div className="text-3xl font-bold tabular-nums text-[#171310] dark:text-[#f2ede2]">{formatPct(range.util)}</div>
+          </div>
+          <div className="text-xs text-[var(--sl-ink-soft)]">
+            {from} ~ {to} · 기록 있는 날 {range.days}일 · 측정 {range.samples}회
+            {range.samples > 0 && range.samples < 24 * 7 && <span className="ml-1">(7일치가 안 돼 시간대 치우침이 있을 수 있음)</span>}
+          </div>
+        </div>
+
+        {dates.length > 1 && (
+          <div>
+            <h2 className="mb-1 text-sm font-semibold">날짜별</h2>
+            <BarChart bars={dayBars} ariaLabel="날짜별 가동률" tickEvery={Math.max(1, Math.ceil(dates.length / 10))} />
+          </div>
+        )}
+
+        <div>
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold">시간대별</h2>
+            {(["all", "weekday", "weekend"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={`rounded-full px-2.5 py-0.5 text-xs ${dayFilter === k ? "app-btn-primary" : "app-btn-outline"}`}
+                onClick={() => setDayFilter(k)}
+              >
+                {k === "all" ? "전체" : k === "weekday" ? "평일" : "주말"}
+              </button>
+            ))}
+            {hourlyFrom !== from && (
+              <span className="text-xs text-[var(--sl-ink-soft)]">최근 {HOURLY_MAX_DAYS}일({hourlyFrom}~)만 반영</span>
+            )}
+          </div>
+          {daily == null ? (
+            <p className="text-xs text-[var(--sl-ink-soft)]">불러오는 중...</p>
+          ) : (
+            <BarChart bars={hourBars} ariaLabel="시간대별 가동률" tickEvery={3} />
+          )}
+        </div>
+      </section>
+
+      {dates.length > 0 && (
+        <details className="app-card rounded-2xl p-4">
+          <summary className="cursor-pointer text-sm font-semibold">날짜별 표</summary>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-sm tabular-nums">
+              <thead>
+                <tr className="text-left text-xs text-[var(--sl-ink-soft)]">
+                  <th className="py-1 pr-3 font-medium">날짜</th>
+                  <th className="py-1 pr-3 text-right font-medium">측정</th>
+                  <th className="py-1 pr-3 text-right font-medium">평균 켜짐</th>
+                  <th className="py-1 text-right font-medium">가동률</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...dates].reverse().map((d) => {
+                  const v = store.days[d];
+                  return (
+                    <tr key={d} className="border-t border-[var(--sl-hairline)]">
+                      <td className="py-1 pr-3">{d} ({WEEKDAY[dayOfWeek(d)]})</td>
+                      <td className="py-1 pr-3 text-right">{v ? `${v.n}회` : "-"}</td>
+                      <td className="py-1 pr-3 text-right">{v ? `${(v.a / v.n).toFixed(1)}대` : "-"}</td>
+                      <td className="py-1 text-right">{formatPct(v && v.t > 0 ? v.a / v.t : null)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+
+      <section className="app-card rounded-2xl p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">정보 수정 · 지금 확인</h2>
+          <button type="button" className="app-btn-outline rounded-lg px-3 py-1 text-xs" onClick={() => { setEditing((v) => !v); setSaved(false); }}>
+            {editing ? "닫기" : "열기"}
+          </button>
+        </div>
+        {saved && <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">저장했습니다.</p>}
+        {editing && (
+          <div className="mt-3">
+            <StoreForm
+              initial={store}
+              showActive
+              submitLabel="저장"
+              onSubmit={async (input) => {
+                await updatePingStore(store.id, input, user?.email ?? null);
+                setSaved(true);
+                setEditing(false);
+                setVersion((v) => v + 1);
+              }}
+            />
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
