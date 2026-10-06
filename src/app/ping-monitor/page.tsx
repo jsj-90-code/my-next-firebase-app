@@ -1,17 +1,20 @@
 "use client";
 
 // 경쟁점 가동률 목록 + 등록 — 2026-10-06 신설.
+// 기본은 "매장별": 우리 매장(기존점·후보지)을 누르면 펼쳐지며 그 매장 경쟁점들의 가동률이 뜬다(사용자 요청 2026-10-06).
+// 펼칠 때 점포평가 경쟁점 문서를 읽어 옛 핑봇 값을 나란히 보여준다(1~2주 대조용).
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
+import { createPingStore, listCompetitorOptions, listPingStores, type CompetitorOption } from "@/lib/pingMonitor/clientStore";
 import {
   BLOCKED_SUSPECT_SAMPLES,
   SAMPLE_INTERVAL_MINUTES,
   denominator,
   formatPct,
+  groupUtilization,
   kstDaysAgo,
   rangeUtilization,
   storeStatus,
@@ -25,6 +28,134 @@ const TONE: Record<string, string> = {
   danger: "app-badge-danger",
   neutral: "app-badge-neutral",
 };
+const UNLINKED = "__unlinked__";
+
+type Group = { key: string; name: string; stores: PingStore[] };
+
+function useRanges() {
+  return useMemo(() => {
+    const today = kstDaysAgo(0);
+    return { today, from7: kstDaysAgo(6), from30: kstDaysAgo(29) };
+  }, []);
+}
+
+function CompetitorTable({ stores, pingbot }: { stores: PingStore[]; pingbot?: Map<string, CompetitorOption> | null }) {
+  const { today, from7, from30 } = useRanges();
+  const showPingbot = pingbot !== undefined;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead>
+          <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
+            <th className="px-3 py-2 font-medium">경쟁점</th>
+            <th className="px-3 py-2 text-right font-medium">거리</th>
+            <th className="px-3 py-2 text-right font-medium">대수</th>
+            <th className="px-3 py-2 text-right font-medium">최근 측정</th>
+            <th className="px-3 py-2 text-right font-medium">오늘</th>
+            <th className="px-3 py-2 text-right font-medium">최근 7일</th>
+            <th className="px-3 py-2 text-right font-medium">최근 30일</th>
+            <th className="px-3 py-2 text-right font-medium">전체</th>
+            {showPingbot && <th className="px-3 py-2 text-right font-medium">옛 핑봇</th>}
+            <th className="px-3 py-2 font-medium">상태</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stores.map((s) => {
+            const status = storeStatus(s);
+            const all = rangeUtilization(s.days, null, null);
+            const old = s.competitorId ? pingbot?.get(s.competitorId) : undefined;
+            return (
+              <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+                <td className="px-3 py-2">
+                  <Link href={`/ping-monitor/${s.id}`} className="font-medium text-[#171310] hover:underline dark:text-[#f2ede2]">
+                    {s.name}
+                  </Link>
+                  <div className="text-xs text-[var(--sl-ink-soft)]">{[s.address, s.memo].filter(Boolean).join(" · ") || s.ipRanges}</div>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{denominator(s)}</td>
+                <td className="px-3 py-2 text-right text-xs tabular-nums">
+                  {s.lastSample ? (
+                    <>
+                      {s.lastSample.alive}/{s.lastSample.total}
+                      <div className="text-[var(--sl-ink-soft)]">
+                        {s.lastSample.date.slice(5)} {s.lastSample.hour}시
+                      </div>
+                    </>
+                  ) : (
+                    "-"
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatPct(rangeUtilization(s.days, today, today).util)}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatPct(rangeUtilization(s.days, from7, today).util)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatPct(rangeUtilization(s.days, from30, today).util)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {formatPct(all.util)}
+                  <div className="text-xs text-[var(--sl-ink-soft)]">{all.samples}회</div>
+                </td>
+                {showPingbot && (
+                  <td className="px-3 py-2 text-right text-xs tabular-nums">
+                    {pingbot == null ? "…" : old?.pingbotUtilization != null ? (
+                      <>
+                        {old.pingbotUtilization}%<div className="text-[var(--sl-ink-soft)]">{old.pingbotPeriod ?? ""}</div>
+                      </>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                )}
+                <td className="px-3 py-2">
+                  <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
+  const { today, from7, from30 } = useRanges();
+  const [pingbot, setPingbot] = useState<Map<string, CompetitorOption> | null>(null);
+  const linked = group.key !== UNLINKED;
+
+  useEffect(() => {
+    if (!open || !linked || pingbot) return;
+    let cancelled = false;
+    listCompetitorOptions(group.key)
+      .then((rows) => !cancelled && setPingbot(new Map(rows.map((r) => [r.id, r]))))
+      .catch(() => !cancelled && setPingbot(new Map()));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, linked, pingbot, group.key]);
+
+  const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
+  return (
+    <li className="app-card overflow-hidden rounded-2xl">
+      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+        <span className="text-[var(--sl-ink-soft)]">{open ? "▾" : "▸"}</span>
+        <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{group.name}</span>
+        <span className="text-xs text-[var(--sl-ink-soft)]">
+          경쟁점 {group.stores.length}곳{blocked > 0 ? ` · 측정 불가 의심 ${blocked}` : ""}
+        </span>
+        <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
+          <span>
+            7일 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, today))}</b>
+          </span>
+          <span>30일 {formatPct(groupUtilization(group.stores, from30, today))}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-[var(--sl-hairline)]">
+          <CompetitorTable stores={[...group.stores].sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))} pingbot={linked ? pingbot : undefined} />
+        </div>
+      )}
+    </li>
+  );
+}
 
 export default function PingMonitorPage() {
   const { user } = useAuth();
@@ -32,6 +163,8 @@ export default function PingMonitorPage() {
   const [stores, setStores] = useState<PingStore[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [view, setView] = useState<"group" | "all">("group");
+  const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user) return;
@@ -44,10 +177,27 @@ export default function PingMonitorPage() {
     };
   }, [user]);
 
-  const today = kstDaysAgo(0);
-  const from7 = kstDaysAgo(6);
-  const from30 = kstDaysAgo(29);
+  const groups = useMemo<Group[]>(() => {
+    const map = new Map<string, Group>();
+    for (const s of stores ?? []) {
+      const key = s.ownCode ?? UNLINKED;
+      const g = map.get(key) ?? { key, name: s.ownCode ? (s.ownName ?? s.ownCode) : "우리 매장 연결 안 됨", stores: [] };
+      g.stores.push(s);
+      map.set(key, g);
+    }
+    return [...map.values()].sort((a, b) => (a.key === UNLINKED ? 1 : b.key === UNLINKED ? -1 : a.name.localeCompare(b.name, "ko")));
+  }, [stores]);
+
   const intervalText = SAMPLE_INTERVAL_MINUTES % 60 === 0 ? `${SAMPLE_INTERVAL_MINUTES / 60}시간` : `${SAMPLE_INTERVAL_MINUTES}분`;
+
+  function toggle(key: string) {
+    setOpenKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -58,6 +208,7 @@ export default function PingMonitorPage() {
             {intervalText}마다 등록된 IP대역의 PC에 연결을 시도해, 대답한 PC 수 ÷ 대수를 기록합니다. 기록은 기한 없이 쌓이고, 상세 화면에서 기간을 골라 볼 수 있습니다.
             {` `}
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
+            매장별 가동률은 경쟁점들의 켜진 PC 합 ÷ 대수 합입니다.
           </p>
         </div>
         <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" onClick={() => setShowForm((v) => !v)}>
@@ -85,63 +236,35 @@ export default function PingMonitorPage() {
       )}
 
       {stores != null && stores.length > 0 && (
-        <div className="app-card overflow-x-auto rounded-2xl">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
-                <th className="px-3 py-2 font-medium">상호</th>
-                <th className="px-3 py-2 text-right font-medium">대수</th>
-                <th className="px-3 py-2 text-right font-medium">최근 측정</th>
-                <th className="px-3 py-2 text-right font-medium">오늘</th>
-                <th className="px-3 py-2 text-right font-medium">최근 7일</th>
-                <th className="px-3 py-2 text-right font-medium">최근 30일</th>
-                <th className="px-3 py-2 text-right font-medium">전체</th>
-                <th className="px-3 py-2 font-medium">상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stores.map((s) => {
-                const status = storeStatus(s);
-                const all = rangeUtilization(s.days, null, null);
-                return (
-                  <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
-                    <td className="px-3 py-2">
-                      <Link href={`/ping-monitor/${s.id}`} className="font-medium text-[#171310] hover:underline dark:text-[#f2ede2]">
-                        {s.name}
-                      </Link>
-                      <div className="text-xs text-[var(--sl-ink-soft)]">
-                        {[s.address, s.memo].filter(Boolean).join(" · ") || s.ipRanges}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{denominator(s)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-xs">
-                      {s.lastSample ? (
-                        <>
-                          {s.lastSample.alive}/{s.lastSample.total}
-                          <div className="text-[var(--sl-ink-soft)]">
-                            {s.lastSample.date.slice(5)} {s.lastSample.hour}시
-                          </div>
-                        </>
-                      ) : (
-                        "-"
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatPct(rangeUtilization(s.days, today, today).util)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold">{formatPct(rangeUtilization(s.days, from7, today).util)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatPct(rangeUtilization(s.days, from30, today).util)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatPct(all.util)}
-                      <div className="text-xs text-[var(--sl-ink-soft)]">{all.samples}회</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            {(["group", "all"] as const).map((v) => (
+              <button key={v} type="button" className={`rounded-full px-3 py-1 text-xs ${view === v ? "app-btn-primary" : "app-btn-outline"}`} onClick={() => setView(v)}>
+                {v === "group" ? `매장별 (${groups.length})` : `경쟁점 전체 (${stores.length})`}
+              </button>
+            ))}
+            {view === "group" && (
+              <button
+                type="button"
+                className="ml-auto text-xs text-[var(--sl-ink-soft)] hover:underline"
+                onClick={() => setOpenKeys(openKeys.size === groups.length ? new Set() : new Set(groups.map((g) => g.key)))}
+              >
+                {openKeys.size === groups.length ? "모두 접기" : "모두 펼치기"}
+              </button>
+            )}
+          </div>
+          {view === "group" ? (
+            <ul className="flex flex-col gap-2">
+              {groups.map((g) => (
+                <GroupRow key={g.key} group={g} open={openKeys.has(g.key)} onToggle={() => toggle(g.key)} />
+              ))}
+            </ul>
+          ) : (
+            <div className="app-card rounded-2xl">
+              <CompetitorTable stores={stores} />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

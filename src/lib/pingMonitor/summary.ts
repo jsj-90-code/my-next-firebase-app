@@ -24,6 +24,12 @@ export type PingStore = {
   pcCount: number | null;
   memo: string;
   active: boolean;
+  /** 우리 매장(기존점 가맹점코드 또는 후보지 코드 N0xx). 매장별로 묶어 볼 때 쓴다. */
+  ownCode: string | null;
+  ownName: string | null;
+  /** 점포평가 경쟁점 문서(storeEvalCompetitors) id — 옛 핑봇 값과 나란히 보려고 잇는다. */
+  competitorId: string | null;
+  distanceM: number | null;
   createdAt: Date | null;
   createdBy: string | null;
   lastSample: {
@@ -78,7 +84,22 @@ export function rangeUtilization(days: Record<string, DayTotals>, from: string |
   return { util: t > 0 ? a / t : null, samples: n, days: d };
 }
 
-export type StoreStatus = { label: string; tone: "ok" | "warn" | "danger" | "neutral" };
+/** 여러 경쟁점을 합친 가동률(대수 가중) — 우리 매장 하나에 붙은 경쟁점 묶음의 "동네 경쟁점 가동률". */
+export function groupUtilization(stores: PingStore[], from: string | null, to: string | null): number | null {
+  let a = 0;
+  let t = 0;
+  for (const s of stores) {
+    for (const [date, v] of Object.entries(s.days)) {
+      if (from && date < from) continue;
+      if (to && date > to) continue;
+      a += v.a;
+      t += v.t;
+    }
+  }
+  return t > 0 ? a / t : null;
+}
+
+export type StoreStatus ={ label: string; tone: "ok" | "warn" | "danger" | "neutral" };
 
 export function storeStatus(store: PingStore): StoreStatus {
   if (!store.active) return { label: "중지", tone: "neutral" };

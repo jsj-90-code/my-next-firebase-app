@@ -251,6 +251,7 @@ service cloud.firestore {
     // 측정 기록(days·lastSample)은 1시간 알람 서버(admin SDK)만 쓴다. 지우기는 막는다(기록을 기한 없이 남기는 게 목적).
     function pingStoreKeysOnly(keys) {
       return keys.hasOnly(['name', 'address', 'ipRanges', 'ipCount', 'pcCount', 'memo', 'active',
+                           'ownCode', 'ownName', 'competitorId', 'distanceM',
                            'createdAt', 'createdBy', 'updatedAt', 'updatedBy']);
     }
     match /pingMonitorStores/{storeId} {

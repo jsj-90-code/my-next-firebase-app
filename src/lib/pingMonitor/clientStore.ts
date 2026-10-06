@@ -18,6 +18,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { listCandidates, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
 import { PING_DAILY, PING_STORES, type DayTotals, type PingDaily, type PingStore } from "./summary";
 
 export type PingStoreInput = {
@@ -28,6 +29,10 @@ export type PingStoreInput = {
   pcCount: number | null;
   memo: string;
   active: boolean;
+  ownCode: string | null;
+  ownName: string | null;
+  competitorId: string | null;
+  distanceM: number | null;
 };
 
 function toDate(v: unknown): Date | null {
@@ -45,6 +50,10 @@ function toStore(id: string, d: DocumentData): PingStore {
     pcCount: typeof d.pcCount === "number" ? d.pcCount : null,
     memo: String(d.memo ?? ""),
     active: d.active !== false,
+    ownCode: typeof d.ownCode === "string" && d.ownCode ? d.ownCode : null,
+    ownName: typeof d.ownName === "string" && d.ownName ? d.ownName : null,
+    competitorId: typeof d.competitorId === "string" && d.competitorId ? d.competitorId : null,
+    distanceM: typeof d.distanceM === "number" ? d.distanceM : null,
     createdAt: toDate(d.createdAt),
     createdBy: d.createdBy ?? null,
     lastSample: ls
@@ -103,4 +112,47 @@ export async function listPingDaily(storeId: string, from: string, to: string): 
     const data = d.data();
     return { storeId: String(data.storeId ?? storeId), date: String(data.date ?? ""), hours: data.hours ?? {} };
   });
+}
+
+export type OwnStoreOption = { code: string; name: string; kind: "기존점" | "후보지" };
+
+/** 우리 매장 고르기 목록 — 기존점(가맹점코드) + 진행 중인 후보지. 기존점으로 전환된 후보지는 기존점 쪽만 남긴다. */
+export async function listOwnStoreOptions(): Promise<OwnStoreOption[]> {
+  const [existing, candidates] = await Promise.all([listExistingStores(), listCandidates()]);
+  const existingNames = new Set(existing.map((s) => s.storeName.replace(/\s/g, "")));
+  return [
+    ...existing
+      .map((s) => ({ code: s.storeCode, name: s.storeName, kind: "기존점" as const }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+    ...candidates
+      .filter((c) => c.reviewStatus !== "종료" && !existingNames.has(c.name.replace(/\s/g, "")))
+      .map((c) => ({ code: c.code, name: c.name, kind: "후보지" as const }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko")),
+  ];
+}
+
+export type CompetitorOption = {
+  id: string;
+  name: string;
+  address: string;
+  distanceM: number | null;
+  pcCount: number | null;
+  pingbotUtilization: number | null;
+  pingbotPeriod: string | null;
+};
+
+/** 그 매장에 점포평가로 등록된 경쟁점(옛 핑봇 값 포함). */
+export async function listCompetitorOptions(ownCode: string): Promise<CompetitorOption[]> {
+  const rows = await listCompetitors(ownCode);
+  return rows
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      address: c.address ?? "",
+      distanceM: c.distanceM,
+      pcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
+      pingbotUtilization: c.pingbotUtilization ?? null,
+      pingbotPeriod: c.pingbotPeriod ?? null,
+    }))
+    .sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9));
 }

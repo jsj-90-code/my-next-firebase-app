@@ -156,6 +156,8 @@ export default function PingStoreDetailPage() {
           <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
         </div>
         <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
+          {store.ownName ? `우리 매장 ${store.ownName}${store.distanceM != null ? ` · ${store.distanceM}m` : ""}` : "우리 매장 연결 안 됨"}
+          <br />
           {[store.address, store.memo].filter(Boolean).join(" · ")}
           {store.address || store.memo ? <br /> : null}
           IP대역 <span className="font-mono">{store.ipRanges}</span> · IP {store.ipCount}개 · 대수 {denominator(store)}대

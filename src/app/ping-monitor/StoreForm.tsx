@@ -2,10 +2,16 @@
 
 // 경쟁점 등록·수정 칸 + "지금 확인"(기록 안 남기는 즉석 측정). 목록 화면(등록)과 상세 화면(수정)이 같이 쓴다.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseIpRanges } from "@/lib/pingMonitor/ipRange";
-import type { PingStoreInput } from "@/lib/pingMonitor/clientStore";
+import {
+  listCompetitorOptions,
+  listOwnStoreOptions,
+  type CompetitorOption,
+  type OwnStoreOption,
+  type PingStoreInput,
+} from "@/lib/pingMonitor/clientStore";
 import { formatPct, shortIps } from "@/lib/pingMonitor/summary";
 
 const FIELD = "app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70";
@@ -31,15 +37,54 @@ export function StoreForm({
   const [pcCount, setPcCount] = useState(initial?.pcCount != null ? String(initial.pcCount) : "");
   const [memo, setMemo] = useState(initial?.memo ?? "");
   const [active, setActive] = useState(initial?.active ?? true);
+  const [ownCode, setOwnCode] = useState(initial?.ownCode ?? "");
+  const [competitorId, setCompetitorId] = useState(initial?.competitorId ?? "");
+  const [distance, setDistance] = useState(initial?.distanceM != null ? String(initial.distanceM) : "");
+  const [ownOptions, setOwnOptions] = useState<OwnStoreOption[] | null>(null);
+  const [competitorOptions, setCompetitorOptions] = useState<{ code: string; rows: CompetitorOption[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    listOwnStoreOptions()
+      .then((rows) => !cancelled && setOwnOptions(rows))
+      .catch(() => !cancelled && setOwnOptions([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!ownCode) return;
+    let cancelled = false;
+    listCompetitorOptions(ownCode)
+      .then((rows) => !cancelled && setCompetitorOptions({ code: ownCode, rows }))
+      .catch(() => !cancelled && setCompetitorOptions({ code: ownCode, rows: [] }));
+    return () => {
+      cancelled = true;
+    };
+  }, [ownCode]);
+  const competitors = competitorOptions?.code === ownCode ? competitorOptions.rows : null;
+
+  function pickCompetitor(id: string) {
+    setCompetitorId(id);
+    const c = competitors?.find((x) => x.id === id);
+    if (!c) return;
+    setName(c.name);
+    if (c.address) setAddress(c.address);
+    if (c.pcCount) setPcCount(String(c.pcCount));
+    if (c.distanceM != null) setDistance(String(c.distanceM));
+  }
+
   const parsed = useMemo(() => parseIpRanges(ipRanges), [ipRanges]);
   const pcNum = pcCount.trim() === "" ? null : Number(pcCount);
   const pcInvalid = pcNum != null && !(Number.isInteger(pcNum) && pcNum > 0);
-  const canSubmit = name.trim() !== "" && parsed.ips.length > 0 && parsed.errors.length === 0 && !pcInvalid && !busy;
+  const distNum = distance.trim() === "" ? null : Number(distance);
+  const distInvalid = distNum != null && !(Number.isFinite(distNum) && distNum >= 0);
+  const canSubmit = name.trim() !== "" && parsed.ips.length > 0 && parsed.errors.length === 0 && !pcInvalid && !distInvalid && !busy;
 
   async function runProbe() {
     if (!user) return;
@@ -75,6 +120,10 @@ export function StoreForm({
         pcCount: pcNum,
         memo: memo.trim(),
         active,
+        ownCode: ownCode || null,
+        ownName: ownOptions?.find((o) => o.code === ownCode)?.name ?? initial?.ownName ?? null,
+        competitorId: ownCode && competitorId ? competitorId : null,
+        distanceM: distNum,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장에 실패했습니다.");
@@ -87,6 +136,48 @@ export function StoreForm({
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className={LABEL}>우리 매장 (매장별로 묶어 보기용)</span>
+          <select
+            className={FIELD}
+            value={ownCode}
+            onChange={(e) => {
+              setOwnCode(e.target.value);
+              setCompetitorId("");
+            }}
+          >
+            <option value="">{ownOptions == null ? "불러오는 중..." : "연결 안 함"}</option>
+            {(["기존점", "후보지"] as const).map((kind) => (
+              <optgroup key={kind} label={kind}>
+                {(ownOptions ?? [])
+                  .filter((o) => o.kind === kind)
+                  .map((o) => (
+                    <option key={o.code} value={o.code}>
+                      {o.name}
+                    </option>
+                  ))}
+              </optgroup>
+            ))}
+            {ownCode && ownOptions && !ownOptions.some((o) => o.code === ownCode) && (
+              <option value={ownCode}>{initial?.ownName ?? ownCode}</option>
+            )}
+          </select>
+        </label>
+        <label className="block">
+          <span className={LABEL}>점포평가에 등록된 경쟁점에서 고르기 (상호·대수·거리 자동 입력)</span>
+          <select className={FIELD} value={competitorId} disabled={!ownCode} onChange={(e) => pickCompetitor(e.target.value)}>
+            <option value="">{!ownCode ? "우리 매장을 먼저 고르세요" : competitors == null ? "불러오는 중..." : competitors.length === 0 ? "등록된 경쟁점 없음 — 직접 입력" : "직접 입력"}</option>
+            {(competitors ?? []).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.distanceM != null ? ` · ${c.distanceM}m` : ""}
+                {c.pcCount ? ` · ${c.pcCount}대` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>상호 *</span>
@@ -123,6 +214,13 @@ export function StoreForm({
           {pcInvalid && <span className="mt-1 block text-xs text-red-600 dark:text-red-400">1 이상의 정수를 넣어 주세요.</span>}
         </label>
         <label className="block">
+          <span className={LABEL}>우리 매장과 거리(m)</span>
+          <input className={`${FIELD} tabular-nums`} inputMode="numeric" value={distance} onChange={(e) => setDistance(e.target.value)} placeholder="예: 43" />
+          {distInvalid && <span className="mt-1 block text-xs text-red-600 dark:text-red-400">0 이상의 숫자를 넣어 주세요.</span>}
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
           <span className={LABEL}>메모</span>
           <input className={FIELD} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 울산삼산 후보지 43m" />
         </label>
