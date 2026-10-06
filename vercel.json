@@ -4,10 +4,6 @@
     {
       "path": "/api/store-eval/cron-sync",
       "schedule": "0 21 * * *"
-    },
-    {
-      "path": "/api/ping-monitor/cron",
-      "schedule": "5 * * * *"
     }
   ],
   "functions": {

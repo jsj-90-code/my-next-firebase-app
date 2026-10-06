@@ -1,0 +1,29 @@
+# 경쟁점 가동률 측정기 1시간 알람(2026-10-06). Vercel 무료 요금제는 예약 실행이 하루 1번이라 여기서 매시 깨운다.
+# 실제 측정·저장은 Vercel 서울 서버(/api/ping-monitor/cron)가 한다. 이 파일은 부르기만 한다.
+# 비밀값 없음: GitHub가 서명한 OIDC 토큰(대상 isens-ping-monitor)을 붙이고, 서버가 저장소·main·이벤트를 확인한다(githubOidc.ts).
+# ⚠️ 공개 저장소라 실행 기록이 누구에게나 보인다 — 경쟁점 이름·값은 찍지 않고 매장 수만 찍는다.
+# ⚠️ GitHub 예약 실행은 몇~십몇 분 늦게 도는 일이 흔하다. 기록은 도착한 시각의 한국 시(時)로 묶이고 같은 시에 두 번 와도 한 번만 센다.
+name: ping-monitor
+
+on:
+  schedule:
+    - cron: "5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 측정 요청
+        run: |
+          token=$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=isens-ping-monitor" | jq -r '.value')
+          code=$(curl -sS -o body.json -w "%{http_code}" --max-time 290 \
+            -H "Authorization: Bearer ${token}" "https://my-next-firebase-app-one.vercel.app/api/ping-monitor/cron")
+          echo "HTTP ${code} · 측정 매장 $(jq '.stores | length' body.json 2>/dev/null || echo '?')곳 $(jq -r '.error // empty' body.json 2>/dev/null)"
+          test "$code" = "200"

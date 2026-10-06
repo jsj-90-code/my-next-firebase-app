@@ -14,9 +14,9 @@ const toNum = (ip) => ip.split(".").reduce((n, p) => n * 256 + Number(p), 0);
 function normalizeIp(raw, pc) {
   let t = String(raw).replace(/\n.*/s, "").replace(/대/g, "").trim();
   let m = t.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.)(\d{1,3})\s*\((\d{1,3})\)$/); // 1.2.3.217(87) — 시작+대수
-  if (m) return { range: `${m[1]}${Number(m[2])}~${Number(m[2]) + Number(m[3]) - 1}` };
+  if (m) return Number(m[2]) + Number(m[3]) - 1 <= 255 ? { range: `${m[1]}${Number(m[2])}~${Number(m[2]) + Number(m[3]) - 1}` } : { error: `뜻이 애매함(${t})` };
   m = t.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.)(\d{1,3})\s*[~\-]\s*$/); // 끝이 비었다 → 대수로 채운다
-  if (m) return pc ? { range: `${m[1]}${Number(m[2])}~${Number(m[2]) + pc - 1}`, note: "끝 IP를 대수로 채움" } : { error: "끝 IP 없음" };
+  if (m) return pc && Number(m[2]) + pc - 1 <= 255 ? { range: `${m[1]}${Number(m[2])}~${Number(m[2]) + pc - 1}`, note: "끝 IP를 대수로 채움" } : { error: "끝 IP 없음" };
   m = t.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
   if (m) return { error: "IP 하나뿐(공유기 하나로 묶인 매장 — 이 방식으론 못 잼)" };
   m = t.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.)(\d{1,3})\s*[~\-]\s*(?:\d{1,3}\.\d{1,3}\.\d{1,3}\.)?(\d{1,3})$/);
