@@ -29,6 +29,14 @@ import type { DeskZone, PcSpecValues, PcZone, SeatNumberRangeEntry } from "./typ
 
 type TableCol = { title: string; width: number };
 
+// 표 칸 안 줄바꿈("\n") 한 줄이 늘 때마다 행이 이만큼(기준 크기) 높아진다 — 본문 15px의 1.2배.
+const TABLE_EXTRA_LINE_H = 18;
+const cellLineCount = (row: (string | number)[]) => Math.max(1, ...row.map((v) => String(v).split("\n").length));
+/** 기준 크기(fontScale 1)에서 행 높이 — 여러 줄 칸이 있으면 그만큼 높다. */
+export function tableRowBaseH(row: (string | number)[], baseRowH: number): number {
+  return baseRowH + (cellLineCount(row) - 1) * TABLE_EXTRA_LINE_H;
+}
+
 export function drawTable(
   c: CanvasRenderingContext2D,
   x: number,
@@ -40,7 +48,10 @@ export function drawTable(
   rowsData: (string | number)[][],
   fontScale = 1,
 ): number {
-  const totalH = headerH + Math.max(1, rowsData.length) * rowH;
+  // 2026-10-06 — 칸 안에 "\n"이 있으면 여러 줄로 그리고 그 행만 높인다(발주요약의 긴 제품명).
+  const lineGap = TABLE_EXTRA_LINE_H * fontScale;
+  const rowHeights = (rowsData.length ? rowsData : [["-"]]).map((r) => rowH + (cellLineCount(r) - 1) * lineGap);
+  const totalH = headerH + rowHeights.reduce((sum, h) => sum + h, 0);
 
   c.fillStyle = "#8D7B68";
   c.fillRect(x, y, w, headerH);
@@ -77,8 +88,9 @@ export function drawTable(
   const rows = rowsData.length ? rowsData : [["-", "-", "-"]];
   c.font = `${Math.round(15 * fontScale)}px sans-serif`;
   c.fillStyle = "#2A2520";
+  let ry = y + headerH;
   rows.forEach((rowVals, ri) => {
-    const ry = y + headerH + ri * rowH;
+    if (ri > 0) ry += rowHeights[ri - 1];
     if (ri > 0) {
       c.strokeStyle = "#EDE7DA";
       c.beginPath();
@@ -88,7 +100,9 @@ export function drawTable(
     }
     let cx2 = x;
     rowVals.forEach((val, ci) => {
-      c.fillText(String(val), cx2 + 6, ry + rowH * 0.66);
+      String(val)
+        .split("\n")
+        .forEach((line, li) => c.fillText(line, cx2 + 6, ry + rowH * 0.66 + li * lineGap));
       cx2 += cols[ci].width;
     });
   });
@@ -110,8 +124,10 @@ function measureColWidths(
     let max = c.measureText(title).width;
     c.font = "15px sans-serif";
     rowsData.forEach((row) => {
-      const w = c.measureText(String(row[ci] ?? "")).width;
-      if (w > max) max = w;
+      for (const line of String(row[ci] ?? "").split("\n")) {
+        const w = c.measureText(line).width;
+        if (w > max) max = w;
+      }
     });
     return Math.max(minWidth, Math.round(max + padding));
   });
@@ -829,7 +845,7 @@ export function renderOrderSummaryImage(
 
   // 2026-10-06 — 표 7개를 세로 한 줄로만 쌓아서, 존이 많으면 글자가 최대 55%(약 8px)까지 줄었다
   // — 화면 오른쪽 절반은 비어 있는데도. 이제 표를 2~3단으로 나눠 빈 가로 공간을 쓰고, 글자는
-  // 책상발주도면 수준(본문 약 19px, 배율 1.3)부터 시작해 다 들어가는 가장 큰 크기를 고른다
+  // 큰 크기(본문 24px, 배율 1.6 — 아래 plan 참고)부터 시작해 다 들어가는 가장 큰 크기를 고른다
   // (사용자: "발주요약 글자가 너무 작다, 책상도면 폰트 정도로").
   type SummaryTable = { titles: string[]; rows: (string | number)[][] };
   type SummarySection = { title: string; note?: string; tables: SummaryTable[] };
@@ -862,28 +878,52 @@ export function renderOrderSummaryImage(
 
   // 주변기기 표는 좌/우 2단으로 나눌지 한 표로 둘지 둘 다 해보고 글자가 더 커지는 쪽을 쓴다
   // (단으로 배치하면 한 표로 길게 두는 게 나을 때가 있다).
-  const buildSections = (splitPeripherals: boolean): SummarySection[] => [
+  // 긴 칸(PC 구성의 부품명, 주변기기의 제품명)을 두 줄로 나눈 버전 — 표 폭이 줄어 옆 단에 자리가
+  // 생긴다. "PC 구성" 표 하나가 가로를 다 먹어 글자가 17px에서 더 못 커지던 것(2026-10-06).
+  const wrapCells = (rows: (string | number)[][], colIdx: number[], maxW: number) =>
+    rows.map((row) =>
+      row.map((v, ci) => (colIdx.includes(ci) ? wrapTextToWidth(c, String(v), maxW, 15, 2).join("\n") : v)),
+    );
+  // PC 구성은 조합이 1~3가지인 매장이 대부분이라, 가로·세로를 뒤집은 모양(행: 부품, 열: 구성)도
+  // 후보로 둔다 — 7칸짜리 넓은 표 대신 좁고 긴 표가 되어 단 배치가 쉬워진다.
+  const PC_SET_TITLES = ["CPU", "RAM", "VGA", "M/B", "POWER", "CPU쿨러", "수량"];
+  const pcSetTransposed: SummaryTable = {
+    titles: ["항목", ...pcSetTableRows.map((_, i) => `구성${i + 1}`)],
+    rows: PC_SET_TITLES.map((label, fi) => [label, ...pcSetTableRows.map((r) => r[fi])]),
+  };
+  const buildSections = (splitPeripherals: boolean, wrapLong: boolean, transposePc: boolean): SummarySection[] => {
+    const pcSetTable: SummaryTable = transposePc
+      ? {
+          titles: pcSetTransposed.titles,
+          rows: wrapLong
+            ? wrapCells(pcSetTransposed.rows, pcSetTransposed.titles.map((_, i) => i).slice(1), 200)
+            : pcSetTransposed.rows,
+        }
+      : { titles: PC_SET_TITLES, rows: wrapLong ? wrapCells(pcSetTableRows, [0, 1, 2, 3, 4, 5], 170) : pcSetTableRows };
+    const pcOrder = wrapLong ? wrapCells(pcOrderTableRows, [1], 200) : pcOrderTableRows;
+    return [
     { title: "[ 베젤 사이즈 ]", tables: [{ titles: typeQtyNote, rows: leftRows }, { titles: typeQtyNote, rows: rightRows }] },
     { title: "[ 책상 발주 합계 ]", tables: [{ titles: ["책상종류", "책상사이즈", "칸막이", "수량", "존종류"], rows: summaryRows }] },
     {
       title: "[ PC 구성 (카운터PC+여분PC 포함) ]",
-      tables: [{ titles: ["CPU", "RAM", "VGA", "M/B", "POWER", "CPU쿨러", "수량"], rows: pcSetTableRows }],
+      tables: [pcSetTable],
     },
     {
       title: "[ 주변기기 ]",
       note: computePeripheralsExclusionNote(),
       tables: splitPeripherals
         ? [
-            { titles: pcOrderTitles, rows: pcOrderTableRows.slice(0, pcOrderHalf) },
-            { titles: pcOrderTitles, rows: pcOrderTableRows.slice(pcOrderHalf) },
+            { titles: pcOrderTitles, rows: pcOrder.slice(0, pcOrderHalf) },
+            { titles: pcOrderTitles, rows: pcOrder.slice(pcOrderHalf) },
           ]
-        : [{ titles: pcOrderTitles, rows: pcOrderTableRows }],
+        : [{ titles: pcOrderTitles, rows: pcOrder }],
     },
     { title: "[ 장패드 수량 ]", tables: [{ titles: typeQtyNote, rows: jangpadTableRows }] },
     { title: "[ 헤드셋걸이 개수 ]", tables: [{ titles: typeQtyNote, rows: headsetTableRows }] },
     // 좌석번호표 이미지에서 자동인식(또는 직접입력)한 존별 번호 범위. 없으면 표 자체를 생략한다.
     ...(hasSeatNumbers ? [{ title: "[ 좌석 번호 ]", tables: [{ titles: ["존명", "좌석번호", "좌석수"], rows: seatNumberRows }] }] : []),
-  ];
+    ];
+  };
 
   const BASE_TITLE_H = 34;
   const BASE_HEADER_H = 32;
@@ -908,7 +948,8 @@ export function renderOrderSummaryImage(
     }
     return w;
   };
-  const tableBaseH = (t: SummaryTable) => BASE_HEADER_H + Math.max(1, t.rows.length) * BASE_ROW_H;
+  const tableBaseH = (t: SummaryTable) =>
+    BASE_HEADER_H + (t.rows.length ? t.rows.reduce((sum, r) => sum + tableRowBaseH(r, BASE_ROW_H), 0) : BASE_ROW_H);
   const sectionSize = (sec: SummarySection, s: number) => {
     const tablesW = sec.tables.reduce((sum, t) => sum + colWidthsOf(t).reduce((a2, b2) => a2 + b2, 0) * s, 0) +
       TABLE_GAP * s * (sec.tables.length - 1);
@@ -923,32 +964,61 @@ export function renderOrderSummaryImage(
       h: BASE_TITLE_H * s + Math.max(...sec.tables.map(tableBaseH)) * s,
     };
   };
-  // 섹션을 순서대로 위에서 아래로 채우다가 넘치면 다음 단으로. 다 들어가면 단 배치를 돌려준다.
+  // 섹션을 최대 MAX_COLUMNS단에 나눠 담는 모든 경우를 훑어 다 들어가는 배치를 찾는다(단 안에서는
+  // 원래 순서 유지). 순서대로만 채우면 아주 넓은 표(PC 구성) 옆에 좁은 표가 남아 가로 폭을
+  // 낭비했다 — 넓은 표끼리·좁은 표끼리 묶여야 글자가 커진다. 섹션이 7개라 4단이어도 수천 가지뿐이다.
+  const MAX_COLUMNS = 4;
   const layoutAt = (sections: SummarySection[], s: number) => {
-    const columns: { sections: SummarySection[]; w: number }[] = [];
-    let curH = Infinity;
-    for (const sec of sections) {
-      const size = sectionSize(sec, s);
-      if (size.h > availH) return null;
-      const addH = (columns.length && curH > 0 ? BASE_SECTION_GAP * s : 0) + size.h;
-      if (!columns.length || curH + addH > availH) {
-        columns.push({ sections: [sec], w: size.w });
-        curH = size.h;
-      } else {
-        const col = columns[columns.length - 1];
-        col.sections.push(sec);
-        col.w = Math.max(col.w, size.w);
-        curH += addH;
+    const sizes = sections.map((sec) => sectionSize(sec, s));
+    if (sizes.some((sz) => sz.h > availH)) return null;
+    const assign: number[] = [];
+    const colH: number[] = [];
+    const colW: number[] = [];
+    const totalW = () => colW.reduce((sum, w) => sum + w, 0) + COLUMN_GAP * (colW.length - 1);
+    const dfs = (i: number): boolean => {
+      if (i === sections.length) return true;
+      // 새 단은 다음 번호로만 연다 — 단 순서만 다른 같은 배치를 두 번 보지 않는다.
+      const maxCol = Math.min(colH.length, MAX_COLUMNS - 1);
+      for (let k = 0; k <= maxCol; k++) {
+        const isNew = k === colH.length;
+        const prevH = isNew ? 0 : colH[k];
+        const prevW = isNew ? 0 : colW[k];
+        const newH = prevH + (isNew ? 0 : BASE_SECTION_GAP * s) + sizes[i].h;
+        if (newH > availH) continue;
+        if (isNew) {
+          colH.push(newH);
+          colW.push(sizes[i].w);
+        } else {
+          colH[k] = newH;
+          colW[k] = Math.max(prevW, sizes[i].w);
+        }
+        assign[i] = k;
+        if (totalW() <= availW && dfs(i + 1)) return true;
+        if (isNew) {
+          colH.pop();
+          colW.pop();
+        } else {
+          colH[k] = prevH;
+          colW[k] = prevW;
+        }
       }
-    }
-    const totalW = columns.reduce((sum, col) => sum + col.w, 0) + COLUMN_GAP * (columns.length - 1);
-    return totalW <= availW ? columns : null;
+      return false;
+    };
+    if (!dfs(0)) return null;
+    return colW.map((w, k) => ({ w, sections: sections.filter((_, i) => assign[i] === k) }));
   };
 
+  // 상한 배율 1.6 = 본문 24px. 2026-10-06 1.3(19.5px)에서 올렸다(사용자: "발주요약 폰트 더 키웠으면").
+  const variants: SummarySection[][] = [];
+  for (const transposePc of pcSetTableRows.length <= 3 ? [false, true] : [false]) {
+    for (const wrapLong of [false, true]) {
+      for (const split of [true, false]) variants.push(buildSections(split, wrapLong, transposePc));
+    }
+  }
   let plan: { s: number; columns: { sections: SummarySection[]; w: number }[] } | null = null;
-  for (let s = 1.3; s >= 0.5 - 1e-9 && !plan; s -= 0.05) {
-    for (const split of [true, false]) {
-      const columns = layoutAt(buildSections(split), s);
+  for (let s = 1.6; s >= 0.5 - 1e-9 && !plan; s -= 0.05) {
+    for (const sections of variants) {
+      const columns = layoutAt(sections, s);
       if (columns) {
         plan = { s, columns };
         break;
@@ -957,7 +1027,7 @@ export function renderOrderSummaryImage(
   }
   // 그래도 안 들어가면(극단적으로 큰 매장) 최소 배율로 그냥 그린다 — 예전처럼 아래가 잘릴 수 있다.
   const s = plan?.s ?? 0.5;
-  const columns = plan?.columns ?? [{ sections: buildSections(true), w: availW }];
+  const columns = plan?.columns ?? [{ sections: buildSections(true, true, false), w: availW }];
 
   c.fillStyle = "#2A2520";
   c.font = "bold 34px sans-serif";
