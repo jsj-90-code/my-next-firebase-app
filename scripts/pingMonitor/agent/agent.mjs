@@ -2,6 +2,7 @@
 // 1) 우리 웹에서 잴 IP 목록을 받고  2) 핑(fping)과 TCP(80·3389 두드리기)를 동시에 재서  3) 둘 중 하나라도 대답한 IP를 보낸다.
 // 요청은 이 서버 안에서 만든 열쇠(agent.key)로 서명한다 — 웹은 공개 열쇠로 확인만 한다(src/lib/pingMonitor/agentAuth.ts).
 // 왜 핑과 TCP 둘 다: 2026-10-06 106곳 실측에서 핑에만 대답 23곳·TCP에만 15곳(docs/ping-monitor.md).
+// ⚠️ 등록된 IP대역 안의 주소에만 보낸다 — 범위 밖(공유기·다른 기기·다른 사업장일 수 있음)으론 절대 보내지 않는다(사용자 2026-10-06).
 // 설치·갱신: scripts/pingMonitor/agent/README.md
 import { createHash, createPrivateKey, sign } from "node:crypto";
 import { spawn } from "node:child_process";
