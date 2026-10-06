@@ -1,0 +1,10 @@
+[Unit]
+Description=경쟁점 가동률 측정 매시 5분
+
+[Timer]
+OnCalendar=*-*-* *:05:00
+Persistent=false
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

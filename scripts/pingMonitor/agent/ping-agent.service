@@ -1,0 +1,11 @@
+[Unit]
+Description=경쟁점 가동률 측정 (핑 + TCP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=opc
+WorkingDirectory=/home/opc/ping-agent
+ExecStart=/usr/bin/node /home/opc/ping-agent/agent.mjs
+TimeoutStartSec=600

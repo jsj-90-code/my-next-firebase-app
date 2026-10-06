@@ -11,22 +11,30 @@ import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 //   pingMonitorDaily/{매장id}_{날짜}.hours.{시} = { a: 켜진 수, t: 대수 }  ← 상세 화면 시간대별
 //   pingMonitorStores/{매장id}.days.{날짜}     += { a, t, n: 1 }         ← 목록 화면(매장당 읽기 1번)
 // 같은 시(한국 시각)에 두 번 불려도 한 번만 센다 — 알람이 늦거나 겹쳐도 기록이 부풀지 않게.
+//
+// 재는 쪽은 둘이다(2026-10-06):
+//   - "agent": Oracle 무료 서버(도쿄)가 핑 + TCP를 둘 다 재서 보낸다(/api/ping-monitor/agent/*). 기본.
+//   - "tcp": Vercel이 TCP만 잰다(runPingRound). 핑에만 대답하는 매장(106곳 중 23곳)을 못 봐서 예비용.
+
+export type PingTarget = { id: string; name: string; ips: string[]; total: number };
 
 export type RoundResult = {
   ok: true;
   at: string;
   date: string;
   hour: string;
+  method: string;
   stores: { id: string; name: string; alive: number; total: number; skipped?: string }[];
 };
 
-export async function runPingRound(now = new Date()): Promise<RoundResult> {
+function requireDb() {
   if (!adminDb) throw new Error("Firebase 관리자 설정이 없습니다.");
-  const db = adminDb;
-  const { date, hour } = kstParts(now);
+  return adminDb;
+}
 
-  const snap = await db.collection(PING_STORES).where("active", "==", true).get();
-  const stores = snap.docs.map((d) => {
+export async function loadTargets(): Promise<PingTarget[]> {
+  const snap = await requireDb().collection(PING_STORES).where("active", "==", true).get();
+  return snap.docs.map((d) => {
     const data = d.data();
     const ips = parseIpRanges(String(data.ipRanges ?? "")).ips;
     return {
@@ -36,12 +44,15 @@ export async function runPingRound(now = new Date()): Promise<RoundResult> {
       total: denominator({ pcCount: data.pcCount ?? null, ipCount: ips.length }),
     };
   });
+}
 
-  // 모든 매장의 IP를 한 번에 확인한다(매장마다 기다리면 2초×매장 수가 된다).
-  const alive = await probeIps(stores.flatMap((s) => s.ips));
+/** 켜진 IP 집합을 받아 매장별로 저장한다. */
+export async function recordRound(targets: PingTarget[], alive: Set<string>, method: string, now = new Date()): Promise<RoundResult> {
+  const db = requireDb();
+  const { date, hour } = kstParts(now);
 
   const results = await Promise.all(
-    stores.map(async (s) => {
+    targets.map(async (s) => {
       const aliveIps = s.ips.filter((ip) => alive.has(ip));
       if (s.ips.length === 0) return { id: s.id, name: s.name, alive: 0, total: 0, skipped: "IP 없음" };
       const dailyRef = db.collection(PING_DAILY).doc(`${s.id}_${date}`);
@@ -49,12 +60,12 @@ export async function runPingRound(now = new Date()): Promise<RoundResult> {
       const written = await db.runTransaction(async (tx) => {
         const daily = await tx.get(dailyRef);
         if (daily.exists && daily.get(`hours.${hour}`) != null) return false;
-        tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: aliveIps.length, t: s.total } } }, { merge: true });
+        tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: aliveIps.length, t: s.total, m: method } } }, { merge: true });
         tx.set(
           storeRef,
           {
             days: { [date]: { a: FieldValue.increment(aliveIps.length), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
-            lastSample: { at: now, date, hour, alive: aliveIps.length, total: s.total, aliveIps },
+            lastSample: { at: now, date, hour, alive: aliveIps.length, total: s.total, aliveIps, method },
           },
           { merge: true },
         );
@@ -70,5 +81,13 @@ export async function runPingRound(now = new Date()): Promise<RoundResult> {
     }),
   );
 
-  return { ok: true, at: now.toISOString(), date, hour, stores: results };
+  return { ok: true, at: now.toISOString(), date, hour, method, stores: results };
+}
+
+/** Vercel에서 TCP만으로 재는 예비 경로. */
+export async function runPingRound(now = new Date()): Promise<RoundResult> {
+  const targets = await loadTargets();
+  // 모든 매장의 IP를 한 번에 확인한다(매장마다 기다리면 2초×매장 수가 된다).
+  const alive = await probeIps(targets.flatMap((s) => s.ips));
+  return recordRound(targets, alive, "tcp", now);
 }
