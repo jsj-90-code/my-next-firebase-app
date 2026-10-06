@@ -1,5 +1,5 @@
 // 경쟁점 가동률 측정 서버 에이전트(2026-10-06) — Oracle 무료 서버(도쿄, opc@168.110.12.33:~/ping-agent)에서 매시 5분에 돈다.
-// 1) 우리 웹에서 잴 IP 목록을 받고  2) 핑(fping)과 TCP(80·3389 두드리기)를 동시에 재서  3) 둘 중 하나라도 대답한 IP를 보낸다.
+// 1) 우리 웹에서 잴 IP 목록을 받고  2) 핑(시스템 ping)과 TCP(80·3389 두드리기)를 동시에 재서  3) 둘 중 하나라도 대답한 IP를 보낸다.
 // 요청은 이 서버 안에서 만든 열쇠(agent.key)로 서명한다 — 웹은 공개 열쇠로 확인만 한다(src/lib/pingMonitor/agentAuth.ts).
 // 왜 핑과 TCP 둘 다: 2026-10-06 106곳 실측에서 핑에만 대답 23곳·TCP에만 15곳(docs/ping-monitor.md).
 // ⚠️ 등록된 IP대역 안의 주소에만 보낸다 — 범위 밖(공유기·다른 기기·다른 사업장일 수 있음)으론 절대 보내지 않는다(사용자 2026-10-06).
@@ -20,16 +20,27 @@ function signedHeaders(method, path, body) {
   return { "x-ping-agent-ts": ts, "x-ping-agent-sig": sig };
 }
 
-/** fping으로 대답한 IP 목록. 대답 없는 IP가 있으면 fping은 1로 끝나는데 정상이다. */
-function pingAll(ips) {
-  return new Promise((resolve, reject) => {
-    const p = spawn("fping", ["-a", "-q", "-r", "1", "-t", "1500", "-i", "2"], { stdio: ["pipe", "pipe", "ignore"] });
-    let out = "";
-    p.stdout.on("data", (d) => (out += d));
-    p.on("error", reject);
-    p.on("close", () => resolve(new Set(out.split("\n").map((s) => s.trim()).filter(Boolean))));
-    p.stdin.end(ips.join("\n"));
+// fping은 못 깐다 — 무료 서버(메모리 1GB)에서 dnf가 EPEL 목록을 읽다 메모리 부족으로 두 번 죽었다(2026-10-06).
+// 그래서 원래 있는 ping을 여러 개 동시에 돌린다. 두 번 보내 하나라도 오면 켜짐.
+function pingOne(ip) {
+  return new Promise((resolve) => {
+    const p = spawn("ping", ["-n", "-q", "-c", "2", "-i", "0.2", "-W", "1", ip], { stdio: "ignore" });
+    p.on("close", (code) => resolve(code === 0));
+    p.on("error", () => resolve(false));
   });
+}
+
+async function pingAll(ips) {
+  const alive = new Set();
+  let next = 0;
+  async function worker() {
+    while (next < ips.length) {
+      const ip = ips[next++];
+      if (await pingOne(ip)) alive.add(ip);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(40, ips.length) }, worker));
+  return alive;
 }
 
 function knock(ip, port) {
@@ -58,7 +69,7 @@ async function tcpAll(ips) {
       if (r.some(Boolean)) alive.add(ip);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(300, ips.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(120, ips.length) }, worker));
   return alive;
 }
 

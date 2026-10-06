@@ -11,9 +11,11 @@
 ```
 scp -i ~/.ssh/oci_ping_monitor scripts/pingMonitor/agent/agent.mjs scripts/pingMonitor/agent/ping-agent.service scripts/pingMonitor/agent/ping-agent.timer opc@168.110.12.33:~/ping-agent/
 ssh -i ~/.ssh/oci_ping_monitor opc@168.110.12.33
-  sudo dnf install -y oracle-epel-release-el9 && sudo dnf install -y fping nodejs   # 처음 한 번
+  # 처음 한 번: Node 공식 파일을 ~/node에 푼다(dnf는 메모리 부족으로 죽어 안 씀 — fping 없이 시스템 ping)
+  curl -fsSL -o node.tar.xz https://nodejs.org/dist/v22.20.0/node-v22.20.0-linux-x64.tar.xz && mkdir -p ~/node && tar -xJf node.tar.xz -C ~/node --strip-components=1
+  # 보조 메모리: /.swapfile(498M) + /swapfile2(2G, fstab 등록)
   sudo cp ~/ping-agent/ping-agent.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now ping-agent.timer
-  node ~/ping-agent/agent.mjs --dry      # 보내지 않고 재기만
+  ~/node/bin/node ~/ping-agent/agent.mjs --dry      # 보내지 않고 재기만
   journalctl -u ping-agent -n 20         # 매시 기록
 ```
 

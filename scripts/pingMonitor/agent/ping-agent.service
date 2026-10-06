@@ -7,5 +7,5 @@ Wants=network-online.target
 Type=oneshot
 User=opc
 WorkingDirectory=/home/opc/ping-agent
-ExecStart=/usr/bin/node /home/opc/ping-agent/agent.mjs
+ExecStart=/home/opc/node/bin/node /home/opc/ping-agent/agent.mjs
 TimeoutStartSec=600
