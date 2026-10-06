@@ -906,11 +906,11 @@ export function renderOrderSummaryImage(
     tables: [{ titles: ["책상종류", "책상사이즈", "칸막이", "수량", "존종류"], rows: summaryRows }],
   };
 
-  const BASE_TITLE_H = 34;
+  const BASE_TITLE_H = 30;
   const BASE_NOTE_H = 22; // 단 폭에 안 들어가는 안내문을 제목 아래 줄로 내릴 때
-  const BASE_HEADER_H = 32;
-  const BASE_ROW_H = 26;
-  const BASE_SECTION_GAP = 26;
+  const BASE_HEADER_H = 28;
+  const BASE_ROW_H = 23;
+  const BASE_SECTION_GAP = 18;
   const TABLE_GAP = 24; // 한 섹션 안에서 나란히 놓는 표 사이
   const COLUMN_GAP = 48; // 단 사이
   const MAX_STRETCH = 1.3; // 남는 가로 공간을 채울 때 단을 최대 몇 배까지 넓힐지
@@ -973,7 +973,7 @@ export function renderOrderSummaryImage(
     return { s, right, leftW, rightW };
   };
   let plan: Plan | null = null;
-  for (let s = 1.6; s >= 0.5 - 1e-9 && !plan; s -= 0.05) {
+  for (let s = 1.6; s >= 0.5 - 1e-9 && !plan; s -= 0.02) {
     for (const right of rightVariants) {
       plan = planAt(s, right);
       if (plan) break;
@@ -996,7 +996,7 @@ export function renderOrderSummaryImage(
     const startY = y;
     c.fillStyle = "#2A2520";
     c.font = `bold ${titleFontPx(s)}px sans-serif`;
-    c.fillText(sec.title, x, y + 24 * s);
+    c.fillText(sec.title, x, y + 22 * s);
     if (sec.note) {
       // 항상 밝은 배경에 인쇄되는 산출물이라 테마 토큰을 못 쓴다. 값은 --sl-ink-soft의
       // 밝은 모드 값과 맞춰둔다(옛 #8a8072는 흰 배경 대비 3.8:1로 본문 기준에 못 미쳤다).
@@ -1009,7 +1009,7 @@ export function renderOrderSummaryImage(
         c.fillText(sec.note, x, y + (BASE_TITLE_H + 16) * s);
         y += BASE_NOTE_H * s;
       } else {
-        c.fillText(sec.note, x + titleW + 12 * s, y + 24 * s);
+        c.fillText(sec.note, x + titleW + 12 * s, y + 22 * s);
       }
     }
     y += BASE_TITLE_H * s;
