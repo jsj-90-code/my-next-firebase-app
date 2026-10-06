@@ -6,25 +6,37 @@
 //
 // Firebase Storage는 쓰지 않는다 (유료 요금제 필요). 도면 이미지는 압축한 데이터 URL 그대로
 // 프로젝트 문서 안에 저장한다 — client 쪽에서 Firestore 문서 크기 제한(1MiB)에 맞게 압축한다.
+//
+// 그래서 프로젝트 문서는 건당 수백 KB다. 목록(작업 화면·홈 상태 카드)은 이름과 수정 시각만
+// 필요하므로 목차 문서(seatLayoutSettings/projectIndex) 하나만 읽는다. 클라이언트 SDK는 필드만
+// 골라 읽을 수 없어서, 예전엔 목록을 열 때마다 모든 도면을 통째로 내려받았다(2026-10-06 수정).
+// 목차는 saveProject/deleteProject가 프로젝트 문서와 같은 배치(한 번에 성공/실패)로 고친다.
 
 import {
   collection,
-  deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
-  orderBy,
-  query,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { ProjectSummary, SeatLayoutProject } from "./types";
 
 const PROJECTS_COLLECTION = "seatLayoutProjects";
+// 기존 seatLayoutSettings 보안규칙을 그대로 쓰려고 그 컬렉션 안에 둔다(설정 문서는 "config").
+const INDEX_DOC_PATH = ["seatLayoutSettings", "projectIndex"] as const;
+
+type IndexEntry = { name: string; updatedAt: number | null };
 
 function requireDb() {
   if (!db) throw new Error("Firebase가 설정되지 않았습니다.");
   return db;
+}
+
+function indexRef() {
+  return doc(requireDb(), ...INDEX_DOC_PATH);
 }
 
 // Firestore는 undefined 값을 저장할 수 없으므로 깊은 복사로 제거한다.
@@ -32,18 +44,30 @@ function sanitize<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function toSortedSummaries(entries: Record<string, IndexEntry>): ProjectSummary[] {
+  return Object.entries(entries)
+    .map(([id, e]) => ({ id, name: e.name ?? "(이름없음)", updatedAt: e.updatedAt ?? null }))
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+}
+
 export async function listProjects(): Promise<ProjectSummary[]> {
-  const snapshot = await getDocs(
-    query(collection(requireDb(), PROJECTS_COLLECTION), orderBy("updatedAt", "desc")),
-  );
-  return snapshot.docs.map((d) => {
+  const snap = await getDoc(indexRef());
+  if (snap.exists()) {
+    return toSortedSummaries((snap.data().projects ?? {}) as Record<string, IndexEntry>);
+  }
+
+  // 목차가 아직 없다(목차 도입 전 프로젝트들) — 이번 한 번만 통째로 읽어 목차를 만든다.
+  const all = await getDocs(collection(requireDb(), PROJECTS_COLLECTION));
+  const projects: Record<string, IndexEntry> = {};
+  for (const d of all.docs) {
     const data = d.data();
-    return {
-      id: d.id,
+    projects[d.id] = {
       name: (data.name as string) ?? "(이름없음)",
       updatedAt: (data.updatedAt as number) ?? null,
     };
-  });
+  }
+  await setDoc(indexRef(), { projects }, { merge: true });
+  return toSortedSummaries(projects);
 }
 
 /**
@@ -76,10 +100,17 @@ export async function saveProject(
     updatedBy: uid,
   };
 
-  await setDoc(doc(requireDb(), PROJECTS_COLLECTION, id), sanitize(toSave));
+  const entry: IndexEntry = { name: toSave.name, updatedAt: now };
+  const batch = writeBatch(requireDb());
+  batch.set(doc(requireDb(), PROJECTS_COLLECTION, id), sanitize(toSave));
+  batch.set(indexRef(), { projects: { [id]: entry } }, { merge: true });
+  await batch.commit();
   return toSave;
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  await deleteDoc(doc(requireDb(), PROJECTS_COLLECTION, id));
+  const batch = writeBatch(requireDb());
+  batch.delete(doc(requireDb(), PROJECTS_COLLECTION, id));
+  batch.set(indexRef(), { projects: { [id]: deleteField() } }, { merge: true });
+  await batch.commit();
 }
