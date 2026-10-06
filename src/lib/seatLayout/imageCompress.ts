@@ -32,3 +32,25 @@ export async function compressImageDataUrl(
 
   return { dataUrl: canvas.toDataURL("image/jpeg", quality), width, height };
 }
+
+// 2026-10-06 — 도면은 1600px·화질 0.6으로만 저장돼서, 저장한 프로젝트를 다시 열어 고해상도
+// (9600x5400)로 내려받으면 도면 선만 뭉개졌다. 남는 용량(maxBytes) 안에서 가장 좋은 단계를 고른다.
+// 1600px·0.6이 예전 기본값이라, 어떤 도면이든 최소한 예전 화질은 나온다.
+const FLOOR_PLAN_LADDER: { maxDimension: number; quality: number }[] = [
+  { maxDimension: 3200, quality: 0.8 },
+  { maxDimension: 2400, quality: 0.75 },
+  { maxDimension: MAX_DIMENSION, quality: JPEG_QUALITY },
+];
+
+export async function compressFloorPlanToBudget(
+  sourceDataUrl: string,
+  maxBytes: number,
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  let last: { dataUrl: string; width: number; height: number } | null = null;
+  for (const { maxDimension, quality } of FLOOR_PLAN_LADDER) {
+    last = await compressImageDataUrl(sourceDataUrl, maxDimension, quality);
+    // data URL은 ASCII라 글자 수 = 바이트 수다.
+    if (last.dataUrl.length <= maxBytes) return last;
+  }
+  return last!;
+}
