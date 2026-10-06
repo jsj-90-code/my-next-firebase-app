@@ -32,6 +32,7 @@ import { getLocationEvaluation, getModelSettings, listManagementScores, upsertEx
 import type { ExistingStore, FoodBrand, GroundLevel, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 import {
   ComputedField,
+  DateField,
   FoodScoringGuide,
   HardwareScoringGuide,
   InteriorScoringGuide,
@@ -195,6 +196,21 @@ function ExistingStoreProfileEditor({
 
   return (
     <div className="flex flex-col gap-6">
+      {/* 2026-10-06 — 후보지에서 전환된 매장은 openedAt이 null로 시작하는데(store.ts 전환 함수),
+          입력칸이 신규 등록 폼에만 있어서 채울 길이 없었다(평택소사벌). 비어 있으면 평가 매출 창과
+          검증 탭 재측정 알림이 안 뜬다. */}
+      <section className={sectionClass}>
+        <h3 className={sectionTitleClass}>개점</h3>
+        <div className={`${gridClass} mt-4`}>
+          <DateField
+            label="오픈일"
+            value={form.openedAt}
+            onChange={(v) => set("openedAt", v)}
+            hint="평가 매출 기간·재측정 알림의 기준. 시트 오픈일이 있으면 매일 동기화가 그 값으로 덮어쓴다"
+          />
+        </div>
+      </section>
+
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>수요</h3>
         <div className={`${gridClass} mt-4`}>
