@@ -30,7 +30,7 @@ const TONE: Record<string, string> = {
 };
 const UNLINKED = "__unlinked__";
 // 후보지 코드는 N0xx, 기존점은 숫자 가맹점코드다(후보지 → 기존점 전환 시 코드도 바뀐다).
-const isCandidateCode = (code: string) => /^Nd+$/.test(code);
+const isCandidateCode = (code: string) => /^N\d+$/.test(code);
 type View = "existing" | "candidate" | "all";
 const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체" };
 
