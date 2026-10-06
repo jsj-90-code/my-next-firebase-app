@@ -65,6 +65,14 @@ export function kstDaysAgo(n: number, now = new Date()): string {
   return kstParts(new Date(now.getTime() - n * 86400 * 1000)).date;
 }
 
+/**
+ * 기간은 날짜(한국 시각 0~24시) 단위다(2026-10-07 사용자). "최근 n일"은 오늘을 빼고 어제까지 다 찬 n일 —
+ * 진행 중인 오늘을 섞으면 아직 안 온 낮·저녁 시간이 빠져 값이 치우친다. 오늘은 따로 "진행 중"으로 보인다.
+ */
+export function lastFullDays(n: number, now = new Date()): { from: string; to: string } {
+  return { from: kstDaysAgo(n, now), to: kstDaysAgo(1, now) };
+}
+
 export function denominator(store: Pick<PingStore, "pcCount" | "ipCount">): number {
   return store.pcCount && store.pcCount > 0 ? store.pcCount : store.ipCount;
 }
@@ -126,6 +134,12 @@ export function shortIps(ips: string[]): string {
   if (ips.length === 0) return "";
   const prefixes = new Set(ips.map((ip) => ip.slice(0, ip.lastIndexOf("."))));
   return prefixes.size === 1 ? `${ips.map((ip) => ip.split(".").at(-1)).join(", ")}번` : ips.join(", ");
+}
+
+/** 기간이 덜 찼으면(측정 횟수 < 일수×24) "15시간치"처럼 붙일 꼬리말. 다 찼으면 빈 문자열. */
+export function partialNote(samples: number, days: number): string {
+  if (samples === 0) return "";
+  return samples < days * (24 * 60) / SAMPLE_INTERVAL_MINUTES ? `${samples}시간치` : "";
 }
 
 export function formatPct(v: number | null, digits = 1): string {

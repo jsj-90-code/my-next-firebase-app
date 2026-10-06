@@ -17,6 +17,8 @@ import {
   groupUtilization,
   hasNoIp,
   kstDaysAgo,
+  lastFullDays,
+  partialNote,
   rangeUtilization,
   storeStatus,
   type PingStore,
@@ -38,25 +40,44 @@ const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidat
 // own = 우리 매장 자체를 잰 등록(있으면). stores = 경쟁점만.
 type Group = { key: string; name: string; own: PingStore | null; stores: PingStore[] };
 
+// 기간은 날짜(0~24시) 단위 — 오늘은 진행 중, 어제·7일·30일은 어제까지 다 찬 날만(2026-10-07 사용자).
 function useRanges() {
   return useMemo(() => {
-    const today = kstDaysAgo(0);
-    return { today, from7: kstDaysAgo(6), from30: kstDaysAgo(29) };
+    const d7 = lastFullDays(7);
+    return { today: kstDaysAgo(0), yesterday: d7.to, from7: d7.from, from30: lastFullDays(30).from };
   }, []);
 }
 
+// 가동률 + 덜 찬 기간이면 "15시간치" 꼬리말.
+function UtilCell({ days, from, to, nDays, bold = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean }) {
+  const r = rangeUtilization(days, from, to);
+  const note = partialNote(r.samples, nDays);
+  return (
+    <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
+      {formatPct(r.util)}
+      {note && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{note}</div>}
+    </td>
+  );
+}
+
+/** 묶음 안에서 가장 오래 잰 경쟁점의 측정 횟수 — 합산값이 몇 시간치인지 보이려고. */
+function groupSamples(stores: PingStore[], from: string, to: string): number {
+  return Math.max(0, ...stores.map((s) => rangeUtilization(s.days, from, to).samples));
+}
+
 function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; showOwn?: boolean }) {
-  const { today, from7, from30 } = useRanges();
+  const { today, yesterday, from7, from30 } = useRanges();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] text-sm">
+      <table className="w-full min-w-[840px] text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
             <th className="px-3 py-2 font-medium">경쟁점</th>
             <th className="px-3 py-2 text-right font-medium">거리</th>
             <th className="px-3 py-2 text-right font-medium">대수</th>
             <th className="px-3 py-2 text-right font-medium">최근 측정</th>
-            <th className="px-3 py-2 text-right font-medium">오늘</th>
+            <th className="px-3 py-2 text-right font-medium">오늘(진행 중)</th>
+            <th className="px-3 py-2 text-right font-medium">어제</th>
             <th className="px-3 py-2 text-right font-medium">최근 7일</th>
             <th className="px-3 py-2 text-right font-medium">최근 30일</th>
             <th className="px-3 py-2 text-right font-medium">전체</th>
@@ -97,9 +118,10 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
                     "-"
                   )}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums">{formatPct(rangeUtilization(s.days, today, today).util)}</td>
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatPct(rangeUtilization(s.days, from7, today).util)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{formatPct(rangeUtilization(s.days, from30, today).util)}</td>
+                <UtilCell days={s.days} from={today} to={today} nDays={1} />
+                <UtilCell days={s.days} from={yesterday} to={yesterday} nDays={1} />
+                <UtilCell days={s.days} from={from7} to={yesterday} nDays={7} bold />
+                <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
                 <td className="px-3 py-2 text-right tabular-nums">
                   {formatPct(all.util)}
                   <div className="text-xs text-[var(--sl-ink-soft)]">{all.samples}회</div>
@@ -117,7 +139,8 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
 }
 
 function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
-  const { today, from7, from30 } = useRanges();
+  const { yesterday, from7, from30 } = useRanges();
+  const note7 = partialNote(groupSamples(group.stores, from7, yesterday), 7);
   const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
   const noIp = group.stores.filter(hasNoIp).length;
   const ipCheck = group.stores.filter((s) => s.ipCheck).length + (group.own?.ipCheck ? 1 : 0);
@@ -133,13 +156,14 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
           {group.own && (
             <span>
               우리 매장 7일{" "}
-              <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, today).util)}</b>
+              <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, yesterday).util)}</b>
             </span>
           )}
           <span>
-            경쟁점 합산 7일 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, today))}</b>
+            경쟁점 합산 7일 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, yesterday))}</b>
+            {note7 && ` (${note7})`}
           </span>
-          <span>30일 {formatPct(groupUtilization(group.stores, from30, today))}</span>
+          <span>30일 {formatPct(groupUtilization(group.stores, from30, yesterday))}</span>
         </span>
       </button>
       {open && (
@@ -219,6 +243,8 @@ export default function PingMonitorPage() {
             {intervalText}마다 등록된 IP대역의 PC에 연결을 시도해, 대답한 PC 수 ÷ 대수를 기록합니다. 기록은 기한 없이 쌓이고, 상세 화면에서 기간을 골라 볼 수 있습니다.
             {` `}
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
+            기간은 한국 시각 0~24시 날짜 단위입니다 — &ldquo;오늘&rdquo;은 진행 중인 값이고, 어제·최근 7일·30일은 오늘을 빼고 어제까지 다 찬 날만 합칩니다.
+            덜 찬 기간은 &ldquo;15시간치&rdquo;처럼 실제 잰 시간을 같이 적습니다.
             매장 옆 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 가동률, &ldquo;경쟁점 합산&rdquo;은 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합입니다.
           </p>
         </div>

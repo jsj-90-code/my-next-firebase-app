@@ -11,6 +11,8 @@ import {
   denominator,
   formatPct,
   kstDaysAgo,
+  lastFullDays,
+  partialNote,
   rangeUtilization,
   shortIps,
   storeStatus,
@@ -22,11 +24,13 @@ import { StoreForm } from "../StoreForm";
 
 /** 시간대별 그래프는 날짜 문서를 하나씩 읽는다 — 무료 요금제 읽기 한도 때문에 최근 이만큼만 본다. */
 const HOURLY_MAX_DAYS = 92;
+// 기간은 날짜(0~24시) 단위 — 오늘은 진행 중, n일은 오늘을 빼고 어제까지 다 찬 n일(2026-10-07 사용자). 전체만 오늘까지.
 const PRESETS = [
-  { key: "today", label: "오늘", days: 1 },
-  { key: "7", label: "7일", days: 7 },
-  { key: "30", label: "30일", days: 30 },
-  { key: "90", label: "90일", days: 90 },
+  { key: "today", label: "오늘(진행 중)", days: 0 },
+  { key: "1", label: "어제", days: 1 },
+  { key: "7", label: "최근 7일", days: 7 },
+  { key: "30", label: "최근 30일", days: 30 },
+  { key: "90", label: "최근 90일", days: 90 },
   { key: "all", label: "전체", days: null },
 ] as const;
 const TONE: Record<string, string> = { ok: "app-badge-ok", warn: "app-badge-warn", danger: "app-badge-danger", neutral: "app-badge-neutral" };
@@ -56,8 +60,8 @@ export default function PingStoreDetailPage() {
   const [store, setStore] = useState<PingStore | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [preset, setPreset] = useState<string>("7");
-  const [from, setFrom] = useState(kstDaysAgo(6));
-  const [to, setTo] = useState(kstDaysAgo(0));
+  const [from, setFrom] = useState(lastFullDays(7).from);
+  const [to, setTo] = useState(lastFullDays(7).to);
   const [dailyLoaded, setDailyLoaded] = useState<{ key: string; rows: PingDaily[] } | null>(null);
   const [dayFilter, setDayFilter] = useState<"all" | "weekday" | "weekend">("all");
   const [editing, setEditing] = useState(false);
@@ -84,8 +88,17 @@ export default function PingStoreDetailPage() {
     setPreset(key);
     const p = PRESETS.find((x) => x.key === key);
     const today = kstDaysAgo(0);
-    setTo(today);
-    setFrom(p?.days ? kstDaysAgo(p.days - 1) : firstDate);
+    if (!p || p.days == null) {
+      setFrom(firstDate);
+      setTo(today);
+    } else if (p.days === 0) {
+      setFrom(today);
+      setTo(today);
+    } else {
+      const r = lastFullDays(p.days);
+      setFrom(r.from);
+      setTo(r.to);
+    }
   }
 
   const hourlyFrom = from < shiftDate(to, -(HOURLY_MAX_DAYS - 1)) ? shiftDate(to, -(HOURLY_MAX_DAYS - 1)) : from;
@@ -204,7 +217,9 @@ export default function PingStoreDetailPage() {
           </div>
           <div className="text-xs text-[var(--sl-ink-soft)]">
             {from} ~ {to} · 기록 있는 날 {range.days}일 · 측정 {range.samples}회
-            {range.samples > 0 && range.samples < 24 * 7 && <span className="ml-1">(7일치가 안 돼 시간대 치우침이 있을 수 있음)</span>}
+            {partialNote(range.samples, dates.length) && (
+              <span className="ml-1">({dates.length}일 중 {partialNote(range.samples, dates.length)}라 시간대 치우침이 있을 수 있음)</span>
+            )}
           </div>
         </div>
 
