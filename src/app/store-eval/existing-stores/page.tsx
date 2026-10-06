@@ -387,6 +387,26 @@ function StoreDetailPanel({ store, actor, onChanged }: { store: ExistingStore; a
                 />
               </>
             )}
+            {/* 2026-10-06 — 점포팀 승인 내역(다우 활동기록)도 같은 방식으로 채점한다. 금액이 없으면 등급만 보인다. */}
+            {store.predictedAtConversion.storeTeamGrade && (
+              <StatBox label="예측 당시 점포팀 등급" value={store.predictedAtConversion.storeTeamGrade} />
+            )}
+            {store.predictedAtConversion.storeTeamRevenue != null && (
+              <>
+                <StatBox label="예측 당시 점포팀 예상매출" value={formatWon(store.predictedAtConversion.storeTeamRevenue)} />
+                <StatBox
+                  label="오차율 (실제-점포팀)/점포팀"
+                  value={
+                    store.actualMonthlyRevenueAvg != null && store.predictedAtConversion.storeTeamRevenue !== 0
+                      ? formatPercent(
+                          (store.actualMonthlyRevenueAvg - store.predictedAtConversion.storeTeamRevenue) /
+                            store.predictedAtConversion.storeTeamRevenue,
+                        )
+                      : "실제매출 입력 전"
+                  }
+                />
+              </>
+            )}
           </div>
           {store.predictedAtConversion.judgedRevenue != null && store.actualMonthlyRevenueAvg != null && (() => {
             const actual = store.actualMonthlyRevenueAvg;

@@ -278,6 +278,17 @@ export type CandidateInput = {
   judgedAt: number | null; // 판단을 적은 시각. 예측 시점이 언제였는지가 사후 비교에서 중요하다
   judgedBy: string | null; // 적은 사람 (이메일)
 
+  // 2026-10-06 신설 — 점포팀 승인 내역(다우 Works 글 하단 활동기록의 신희권 팀장 "점포 관리 평가 - 등급"
+  // 댓글). 글 위쪽 "6개월 예상 매출" 칸은 점포개발자가 쓴 것이라 이게 아니다(사용자 확인).
+  // 담당자 판단 매출과 같은 원칙 — 산식에 절대 안 들어가고(judgedRevenueIsolation.test.ts), 전환 때
+  // predictedAtConversion에 동결해 개점 후 "산식 vs 점포팀"을 채점한다. 과거 기존점 38곳에선 등급이
+  // 실매출 순위와 무관했다(ρ 0.03, V62 LOO 0.86) — 금액은 2026-09 이후 댓글부터 적히기 시작했다.
+  // 옛 문서엔 없으므로 선택 필드다.
+  storeTeamGrade?: string | null; // 예: "MA+", "AA" (댓글 첫 줄 그대로)
+  storeTeamRevenue?: number | null; // 댓글에 금액이 있을 때만(원). "6천 내외"면 60000000
+  storeTeamNote?: string | null; // 댓글 요지(선투자 가능/불가 포함)
+  storeTeamApprovedAt?: string | null; // 댓글 작성일 YYYY-MM-DD
+
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
@@ -981,6 +992,10 @@ export type ExistingStore = {
     // 위 예측값들과 똑같은 이유로 "그때 본 값"을 여기 따로 남긴다. 판단을 안 적었으면 null.
     judgedRevenue: number | null;
     judgedReason: string | null;
+    // 2026-10-06 — 점포팀 승인 내역도 같은 이유로 동결한다(CandidateInput.storeTeam* 참고). 옛 스냅샷엔 없다.
+    storeTeamGrade?: string | null;
+    storeTeamRevenue?: number | null;
+    storeTeamNote?: string | null;
     calculatedAt: number; // 후보지평가 당시 evaluateCandidate 계산 시각
     linkedAt: number; // 이 스냅샷을 기존 가맹점에 연결한 시각(전환 또는 수동연결 시점)
   } | null;

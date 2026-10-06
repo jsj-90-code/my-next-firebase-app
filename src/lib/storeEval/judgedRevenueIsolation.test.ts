@@ -24,7 +24,8 @@ describe("담당자 판단 매출 격리", () => {
       const hits = source
         .split(/\r?\n/)
         .map((line, index) => ({ line, lineNumber: index + 1 }))
-        .filter(({ line }) => /\bjudged(Revenue|Reason|At|By)\b/.test(line));
+        // 2026-10-06 — 점포팀 승인 내역(storeTeam*)도 같은 이유로 막는다.
+        .filter(({ line }) => /\b(judged(Revenue|Reason|At|By)|storeTeam(Grade|Revenue|Note|ApprovedAt))\b/.test(line));
       expect(
         hits,
         `${file}에서 담당자 판단 매출 필드를 참조하고 있습니다. 이 값이 예측에 반영되면 ` +
@@ -40,5 +41,7 @@ describe("담당자 판단 매출 격리", () => {
     const source = readFileSync(new URL("store.ts", import.meta.url), "utf8");
     expect(source).toContain("judgedRevenue: c.judgedRevenue ?? null");
     expect(source).toContain("judgedRevenue: candidate?.judgedRevenue ?? null");
+    expect(source).toContain("storeTeamRevenue: c.storeTeamRevenue ?? null");
+    expect(source).toContain("storeTeamRevenue: candidate?.storeTeamRevenue ?? null");
   });
 });

@@ -242,7 +242,7 @@ export async function saveCandidate(candidate: CandidateInput, actor: string | n
 /** Coordinates and judgement are separate editors; never replace unrelated candidate fields. */
 export async function updateCandidateFields(
   code: string,
-  patch: Partial<Pick<CandidateInput, "lat" | "lng" | "geocodedAt" | "judgedRevenue" | "judgedReason" | "judgedAt" | "judgedBy">>,
+  patch: Partial<Pick<CandidateInput, "lat" | "lng" | "geocodedAt" | "judgedRevenue" | "judgedReason" | "judgedAt" | "judgedBy" | "storeTeamGrade" | "storeTeamRevenue" | "storeTeamNote" | "storeTeamApprovedAt">>,
   actor: string | null,
 ): Promise<CandidateInput> {
   return saveAuditedInput<CandidateInput>(CANDIDATES, code, "candidate", actor, (before) => {
@@ -273,6 +273,7 @@ export async function duplicateCandidate(sourceCode: string, actor: string | nul
   const copy: CandidateInput = { ...source, code: newCode, name: `${source.name} (복사본)`, isDraft: true,
     // 판단은 해당 후보지를 검토한 사람의 기록이므로 새 후보지에 승계하지 않는다.
     judgedRevenue: null, judgedReason: null, judgedAt: null, judgedBy: null,
+    storeTeamGrade: null, storeTeamRevenue: null, storeTeamNote: null, storeTeamApprovedAt: null,
     createdAt: Date.now(), updatedAt: Date.now(), updatedBy: actor };
   await saveCandidate(copy, actor);
   return copy;
@@ -782,6 +783,9 @@ export async function convertCandidateToExistingStore(input: {
           // 원칙이다("그때 본 값"의 유일한 기록). 안 적었으면 null로 남는다.
           judgedRevenue: c.judgedRevenue ?? null,
           judgedReason: c.judgedReason ?? null,
+          storeTeamGrade: c.storeTeamGrade ?? null,
+          storeTeamRevenue: c.storeTeamRevenue ?? null,
+          storeTeamNote: c.storeTeamNote ?? null,
           calculatedAt: evaluationResult.calculatedAt,
           linkedAt: now,
         }
@@ -913,6 +917,9 @@ export async function linkExistingStoreToCandidate(
           hourlyRate: result.hourlyRate,
           judgedRevenue: candidate?.judgedRevenue ?? null,
           judgedReason: candidate?.judgedReason ?? null,
+          storeTeamGrade: candidate?.storeTeamGrade ?? null,
+          storeTeamRevenue: candidate?.storeTeamRevenue ?? null,
+          storeTeamNote: candidate?.storeTeamNote ?? null,
           calculatedAt: result.calculatedAt,
           linkedAt: now,
         }

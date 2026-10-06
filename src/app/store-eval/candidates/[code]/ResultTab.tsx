@@ -39,7 +39,7 @@ import { storeEvaluationGrade } from "@/lib/storeEval/reportContext";
 import { computePeerPosition } from "@/lib/storeEval/peerPosition";
 import { summarizeDrivers } from "@/lib/storeEval/revenueDrivers";
 import { collectReviewSignals, compareOwnVsRivalUtilization, RIVAL_UTILIZATION_WARN_RATIO, type ReviewSignal } from "@/lib/storeEval/reviewSignals";
-import { sectionClass, sectionTitleClass, NumberField, TextAreaField } from "./formFields";
+import { sectionClass, sectionTitleClass, DateField, NumberField, TextAreaField, TextField } from "./formFields";
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 
@@ -410,6 +410,104 @@ function JudgedRevenuePanel({
         {!dirty && saved.at == null && saved.revenue == null && (
           <span className="text-xs text-[var(--sl-ink-soft)]">아직 적힌 판단이 없습니다</span>
         )}
+      </div>
+      {error && <p role="alert" className="app-notice app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{error}</p>}
+    </fieldset>
+  );
+}
+
+/**
+ * 2026-10-06 — 점포팀 승인 내역(다우 Works 활동기록의 신희권 팀장 "점포 관리 평가" 댓글)을 나란히 기록한다.
+ * 담당자 판단 매출과 같은 원칙: 산식에 안 들어가고, 전환 때 predictedAtConversion에 동결돼 개점 후 채점된다.
+ */
+function StoreTeamPanel({
+  candidateCode,
+  initial,
+  v62Final,
+  actor,
+  onSaved,
+}: {
+  candidateCode: string;
+  initial: CandidateInput;
+  v62Final: number | null;
+  actor: string | null;
+  onSaved: (saved: CandidateInput) => void;
+}) {
+  const pick = (c: CandidateInput) => ({
+    grade: c.storeTeamGrade ?? "",
+    revenue: c.storeTeamRevenue ?? null,
+    note: c.storeTeamNote ?? "",
+    at: c.storeTeamApprovedAt ?? null,
+  });
+  const [form, setForm] = useState(pick(initial));
+  const [saved, setSaved] = useState(pick(initial));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const dirty = form.grade.trim() !== saved.grade.trim() || form.revenue !== saved.revenue || form.note.trim() !== saved.note.trim() || form.at !== saved.at;
+  const unsavedDialog = useUnsavedInputGuard(dirty, saving);
+  const gapRatio = form.revenue != null && v62Final ? (form.revenue - v62Final) / v62Final : null;
+
+  async function handleSave() {
+    if (form.revenue != null && (!Number.isFinite(form.revenue) || form.revenue < 0)) {
+      setError("점포팀 예상 월매출은 0 이상의 숫자로 입력해주세요.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const next = await updateCandidateFields(candidateCode, {
+        storeTeamGrade: form.grade.trim() || null,
+        storeTeamRevenue: form.revenue,
+        storeTeamNote: form.note.trim() || null,
+        storeTeamApprovedAt: form.at,
+      }, actor);
+      setSaved(pick(next));
+      setForm(pick(next));
+      onSaved(next);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "점포팀 승인 내역을 저장하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <fieldset disabled={saving} aria-busy={saving} className={`min-w-0 ${sectionClass}`}>
+      {unsavedDialog}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className={sectionTitleClass}>점포팀 승인 내역 (다우 활동기록)</h3>
+        <span className="app-badge app-badge-neutral text-xs">산식에 반영되지 않음</span>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+        다우 Works 글 아래 활동기록의 <b className="text-[#171310] dark:text-[#f2ede2]">&ldquo;점포 관리 평가&rdquo; 승인 댓글</b>을 옮겨
+        둡니다(글 위쪽 &ldquo;6개월 예상 매출&rdquo;은 점포개발자 숫자라 아닙니다). 전환할 때 함께 저장돼, 개점 후 산식과 나란히 채점됩니다.
+      </p>
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <TextField label="등급" value={form.grade} onChange={(v) => setForm((f) => ({ ...f, grade: v }))} placeholder="예: MA+" />
+        <DateField label="승인 댓글 날짜" value={form.at} onChange={(v) => setForm((f) => ({ ...f, at: v }))} />
+        <NumberField
+          label="점포팀 예상 월매출"
+          value={form.revenue}
+          onChange={(v) => setForm((f) => ({ ...f, revenue: v }))}
+          step={100000}
+          hint={form.revenue != null ? `${formatWon(form.revenue)} — 댓글에 금액이 있을 때만` : "댓글에 금액이 있을 때만 (원 단위)"}
+        />
+        <TextAreaField label="소견 요지" value={form.note} onChange={(v) => setForm((f) => ({ ...f, note: v }))} rows={3} />
+      </div>
+      {gapRatio != null && (
+        <p className="mt-3 text-sm leading-6">
+          예상매출 {formatWon(v62Final)} 대비{" "}
+          <b className={gapRatio >= 0 ? "text-[var(--sl-ok)]" : "text-[var(--sl-warn)]"}>
+            {gapRatio >= 0 ? "+" : ""}
+            {formatPercent(gapRatio)}
+          </b>
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button type="button" onClick={() => void handleSave()} disabled={saving || !dirty} className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">
+          {saving ? "저장 중..." : "승인 내역 저장"}
+        </button>
+        {dirty && !saving && <span className="text-xs text-[var(--sl-warn)]">저장하지 않은 변경이 있습니다</span>}
       </div>
       {error && <p role="alert" className="app-notice app-badge-danger mt-3 w-full justify-start px-3 py-2 text-xs">{error}</p>}
     </fieldset>
@@ -1088,6 +1186,16 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       {candidateForReport && (
         <JudgedRevenuePanel
           key={candidateForReport.code}
+          candidateCode={candidateCode}
+          initial={candidateForReport}
+          v62Final={result.v62Final}
+          actor={user?.email ?? null}
+          onSaved={(savedCandidate) => setCandidateForReport(savedCandidate)}
+        />
+      )}
+      {candidateForReport && (
+        <StoreTeamPanel
+          key={`team-${candidateForReport.code}`}
           candidateCode={candidateCode}
           initial={candidateForReport}
           v62Final={result.v62Final}
