@@ -6,7 +6,7 @@
 export const PING_STORES = "pingMonitorStores";
 export const PING_DAILY = "pingMonitorDaily";
 
-/** 측정 간격(분). GitHub Actions 알람(.github/workflows/ping-monitor.yml)과 맞춘다. */
+/** 측정 간격(분). vercel.json의 /api/ping-monitor/cron 예약(매시 5분)과 맞춘다. */
 export const SAMPLE_INTERVAL_MINUTES = 60;
 
 /** 이만큼 재는 동안 한 대도 대답이 없으면 "측정 불가 의심"(PC가 대답을 막아 둔 매장). */

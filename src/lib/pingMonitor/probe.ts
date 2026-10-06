@@ -12,10 +12,11 @@ import { connect } from "node:net";
 
 const PORTS = [80, 3389];
 // Windows는 거절을 받고도 몇 번 다시 시도해 거절이 ~2.1초 뒤에 온다(2026-10-06 실측, 2초로 두니 0대로 나옴).
-// 서버(Linux)는 바로 받지만 여유를 둔다. 꺼진 PC는 이만큼 기다린 뒤 꺼짐으로 친다.
-const TIMEOUT_MS = 4000;
+// 서버(Linux)는 거절을 바로 받는다. 꺼진 PC는 이만큼 기다린 뒤 꺼짐으로 친다 — 경쟁점 100여 곳·IP 1만 3천 개를
+// 함수 한도(300초) 안에 재려면 서버에선 짧게 둔다.
+const TIMEOUT_MS = process.platform === "win32" ? 4000 : 2000;
 /** 동시에 확인하는 IP 수(포트가 둘이라 소켓은 두 배). 함수의 파일 핸들 한도(약 1024) 아래로 둔다. */
-const CONCURRENCY = 300;
+const CONCURRENCY = 400;
 
 function knock(ip: string, port: number): Promise<boolean> {
   return new Promise((resolve) => {

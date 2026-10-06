@@ -10,14 +10,14 @@
 - 2026-10-06 실측: `118.128.168.1~110`에서 핑과 TCP 결과가 110개 전부 일치(11:10 5대, 11:50 6대).
 - `115.89.100.1~140`(옛 핑봇도 못 재던 곳)은 핑·TCP 모두 0/140, 공유기(254)만 대답 → **PC가 바깥 확인을 막아 둔 매장**.
   이런 곳은 72번 넘게 재도 0이면 화면에 "측정 불가 의심"으로 따로 뜬다(가동률 0%로 섞지 않으려고). 기준값은 `summary.ts`의 `BLOCKED_SUSPECT_SAMPLES`.
-- Windows에서 시험할 땐 거절이 ~2.1초 늦게 온다(재시도) — 대기 시간을 4초로 둔 이유.
+- Windows에서 시험할 땐 거절이 ~2.1초 늦게 온다(재시도) — 대기 시간이 Windows 4초·서버 2초인 이유.
 
 ## 흐름
 
 | 부분 | 위치 |
 |---|---|
-| 1시간 알람 | `.github/workflows/ping-monitor.yml` (매시 5분, GitHub 예약 실행은 몇~십몇 분 늦을 수 있음) |
-| 측정·저장 | `/api/ping-monitor/cron` (Vercel 서울 icn1 고정, `PING_MONITOR_SECRET` 필요) → `src/lib/pingMonitor/runRound.ts` |
+| 1시간 알람 | Vercel 예약 실행(`vercel.json` crons, 매시 5분). Vercel이 `CRON_SECRET`을 자동으로 붙인다 — 넣을 비밀값 없음 |
+| 측정·저장 | `/api/ping-monitor/cron` (Vercel 서울 icn1 고정) → `src/lib/pingMonitor/runRound.ts` |
 | 지금 확인(기록 안 함) | `/api/ping-monitor/probe` (회사 계정) |
 | 화면 | `/ping-monitor` 목록·등록, `/ping-monitor/[id]` 기간·날짜별·시간대별(평일/주말) |
 
@@ -42,11 +42,10 @@
 - 같은 한국 시(時)에 두 번 불려도 한 번만 센다(트랜잭션).
 - 화면은 등록 칸만 쓸 수 있고 측정 기록은 서버만 쓴다. 지우기는 막았다(`firestore.rules`). 측정을 멈추려면 상세 화면에서 "1시간마다 측정"을 끈다.
 
-## 설정값 (한 번만)
+## 알람 경위
 
-- Vercel 환경변수 `PING_MONITOR_SECRET`
-- GitHub 저장소 비밀값 `PING_MONITOR_SECRET`(같은 값) · `PING_MONITOR_URL`(`https://<운영 주소>/api/ping-monitor/cron`)
-- ⚠️ 저장소가 공개라 Actions 실행 기록이 누구에게나 보인다 — 워크플로는 매장 수만 찍고 이름·값은 찍지 않는다.
+처음엔 GitHub Actions 매시 알람 + 비밀값(`PING_MONITOR_SECRET`)이었는데, 사용자가 비밀값을 직접 넣어야 해서 같은 날 Vercel 예약 실행으로 바꿨다
+(워크플로 삭제). Vercel 무료 요금제는 예약 실행이 하루 1번이라, 배포가 거절되면 이 줄을 다시 볼 것.
 
 ## 옛 핑봇 값과 이어 쓰기
 
