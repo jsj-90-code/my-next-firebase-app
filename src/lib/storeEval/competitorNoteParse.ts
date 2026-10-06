@@ -14,7 +14,10 @@ export type ParsedCompetitorNote = {
   ram: string | null;
   monitor: string | null;
   coupleZone: number | null;
-  room1: number | null; // 1인석 -> 1인룸 수 (근사 매핑, 사람이 검토)
+  // 2026-10-06 — "1인석"(칸막이 개방형)을 1인룸(벽으로 막힌 독립 공간)으로 넣고 있었다. 사용자가 매번 손으로
+  // 옮겨 고쳤다. 폼에 1인석 칸(singleSeatCount)이 2026-08-30부터 따로 있으니 그쪽으로 보낸다.
+  singleSeatCount: number | null; // "1인석" 줄
+  room1: number | null; // "1인룸" 줄이 있을 때만(없으면 null — 1인석을 룸으로 지어내지 않는다)
   room2: number | null; // 2인석 -> 2인룸 수 (근사 매핑, 사람이 검토)
   teamRoom: number | null;
   ratePer1000Won: number | null;
@@ -108,7 +111,8 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
   const monitor = matchLine(block, /모니터\s*[:：]\s*(.+)/);
 
   const coupleZone = sumGaeCounts(matchLine(block, /커플석\s*[:：]?\s*(.+)/));
-  const room1 = parseCountLike(matchLine(block, /1인석\s*[:：]?\s*(.+)/));
+  const singleSeatCount = parseCountLike(matchLine(block, /1인석\s*[:：]?\s*(.+)/));
+  const room1 = parseCountLike(matchLine(block, /1인\s*룸\s*[:：]?\s*(.+)/));
   const room2 = parseCountLike(matchLine(block, /2인석\s*[:：]?\s*(.+)/));
   const teamRoom = sumGaeCounts(matchLine(block, /팀룸\s*[:：]?\s*(.+)/));
 
@@ -148,6 +152,7 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
     ram,
     monitor,
     coupleZone,
+    singleSeatCount,
     room1,
     room2,
     teamRoom,

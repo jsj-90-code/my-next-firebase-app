@@ -156,7 +156,10 @@ function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: 
     ram: note.ram,
     monitorBase: note.monitor,
     coupleZone: note.coupleZone,
-    room1: note.room1,
+    // 2026-10-06 — "1인석" 줄은 1인석 칸으로(예전엔 1인룸으로 들어가 사용자가 매번 옮겨 고쳤다). 원문에 줄이 없으면
+    // 이미 손으로 넣어 둔 값을 지우지 않는다.
+    singleSeatCount: note.singleSeatCount ?? base.singleSeatCount,
+    room1: note.room1 ?? base.room1,
     room2: note.room2,
     teamRoom: note.teamRoom,
     ratePer1000Won: note.ratePer1000Won,
@@ -219,7 +222,15 @@ function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): s
   // 2026-09-11 — 두 요금 칸을 따로 입력하던 흔적. 실제 자료에서 87건 중 86건이 공식과
   // 1원 이내로 맞고 어긋난 한 건은 자릿수 오타였다(옥스: 45분인데 46원). 이미 저장된 값은
   // 폼을 열어야만 보이므로 목록에서 짚어준다. 정액제·할인으로 실제 다를 수 있어 막지는 않는다.
-  if (c.ratePer1000Won != null && c.ratePer1000Won > 0) {
+  // 2026-10-06 — 두 칸이 서로 뒤바뀐 경우(크라우드PC 김포장기점: 분 1200·요금 50)는 위 공식 검사로 못 잡는다
+  // (60000/1200 = 50이라 서로 맞아떨어진다). 그래서 값 자체의 범위도 본다. 실제 자료 237곳은 분 30~120, 요금 500~2000.
+  if (c.ratePer1000Won != null && c.ratePer1000Won > RATE_MINUTES_MAX) {
+    warnings.push(`1000원당분이 ${c.ratePer1000Won.toLocaleString("ko-KR")}분 → 시간당 요금(원)을 분 칸에 넣은 것 같습니다. 두 칸이 뒤바뀌지 않았는지 확인해주세요`);
+  }
+  if (c.hourlyRateConverted != null && c.hourlyRateConverted < HOURLY_RATE_MIN) {
+    warnings.push(`시간당환산요금이 ${c.hourlyRateConverted.toLocaleString("ko-KR")}원 → 분을 요금 칸에 넣은 것 같습니다. 두 칸이 뒤바뀌지 않았는지 확인해주세요`);
+  }
+  if (c.ratePer1000Won != null && c.ratePer1000Won > 0 && c.ratePer1000Won <= RATE_MINUTES_MAX) {
     const expected = Math.round(60000 / c.ratePer1000Won);
     if (c.hourlyRateConverted == null) {
       warnings.push(`시간당환산요금 비어 있음 → 1000원당 ${c.ratePer1000Won}분 기준 ${expected.toLocaleString("ko-KR")}원`);
@@ -246,6 +257,9 @@ function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): s
 
 /** 커플존 좌석이 PC대수 대비 이 비율을 넘으면 확인을 요청한다. */
 const COUPLE_SEAT_SHARE_WARN = 0.3;
+// 2026-10-06 — 요금 두 칸 뒤바뀜 경고 경계. 실제 경쟁점 237곳: 1000원당분 30~120분, 시간당환산 500~2,000원(같은 날 측정).
+const RATE_MINUTES_MAX = 200;
+const HOURLY_RATE_MIN = 300;
 
 function CompetitorForm({
   initial,

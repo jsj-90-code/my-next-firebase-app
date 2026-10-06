@@ -157,7 +157,8 @@ describe("parseCompetitorNotes", () => {
     expect(e.ram).toBe("16G");
     expect(e.monitor).toBe("평면32인치 240Hz");
     expect(e.coupleZone).toBe(0);
-    expect(e.room1).toBe(0);
+    expect(e.singleSeatCount).toBe(0);
+    expect(e.room1).toBeNull(); // "1인룸" 줄이 없으면 지어내지 않는다(2026-10-06)
     expect(e.teamRoom).toBe(5); // 4인1개+5인4개
     expect(e.visitedAt).toBe("2026-03-23 11:30");
     expect(e.visitorCount).toBe(9);
@@ -174,7 +175,7 @@ describe("parseCompetitorNotes", () => {
     const [, e] = parseCompetitorNotes(REAL_PASTE);
     expect(e.totalPcCount).toBe(101);
     expect(e.coupleZone).toBe(10);
-    expect(e.room1).toBe(11); // "11석 , 3인석1개"에서 첫 숫자
+    expect(e.singleSeatCount).toBe(11); // "11석 , 3인석1개"에서 첫 숫자 — 1인석 칸으로(2026-10-06)
     expect(e.teamRoom).toBe(3);
     expect(e.visitedAt).toBe("2026-03-23 12:40"); // 오후 12시40분 = 낮 12:40 (정오, +12 안 함)
     expect(e.visitorCount).toBe(8);
@@ -287,7 +288,7 @@ describe("parseCompetitorNotes — 2번째 원문 형식(■ 매장명 마커, �
     expect(e.cpu).toBe("i5 14세대");
     expect(e.vgaBase).toBe("3070");
     expect(e.coupleZone).toBe(36); // 괄호 breakdown 없음 -> 단순 숫자 그대로
-    expect(e.room1).toBe(1);
+    expect(e.singleSeatCount).toBe(1);
     expect(e.teamRoom).toBe(0); // 없음
     expect(e.visitedAt).toBeNull(); // 날짜 정보 자체가 없어 지어내지 않음
     expect(e.visitorCount).toBe(56);
@@ -303,7 +304,7 @@ describe("parseCompetitorNotes — 2번째 원문 형식(■ 매장명 마커, �
     const e = entries[1];
     expect(e.totalPcCount).toBe(230);
     expect(e.coupleZone).toBe(24);
-    expect(e.room1).toBe(2);
+    expect(e.singleSeatCount).toBe(2);
     expect(e.teamRoom).toBe(10); // 1+8+1, 40이 아님
     expect(e.visitorCount).toBe(92);
     expect(e.foodBasis).toBe("중상");
@@ -323,5 +324,13 @@ describe("parseCompetitorNotes — 2번째 원문 형식(■ 매장명 마커, �
   it("전체 대수가 0이면(폐업/공실 등) null이 아니라 0을 그대로 남긴다 — falsy-zero 버그 재발 방지(2026-08-27)", () => {
     const entries = parseCompetitorNotes(`- 매장명 : 테스트매장\n\n- 전체 대수 : 0대`);
     expect(entries[0].totalPcCount).toBe(0);
+  });
+});
+
+describe("1인석과 1인룸 구분 (2026-10-06)", () => {
+  it("1인석은 1인석 칸, 1인룸은 1인룸 칸으로 따로 들어간다", () => {
+    const [e] = parseCompetitorNotes("■ 매장명: 테스트PC\n1) 커플석: 없음\n2) 1인석: 12\n3) 1인룸: 3개\n4) 팀룸: 없음");
+    expect(e.singleSeatCount).toBe(12);
+    expect(e.room1).toBe(3);
   });
 });
