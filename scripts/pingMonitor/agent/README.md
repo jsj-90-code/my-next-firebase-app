@@ -16,7 +16,11 @@ ssh -i ~/.ssh/oci_ping_monitor opc@168.110.12.33
   sudo cp -r ~/node /usr/local/lib/nodejs && sudo ln -sf /usr/local/lib/nodejs/bin/node /usr/local/bin/node && sudo restorecon -R /usr/local/lib/nodejs /usr/local/bin/node
   # 보조 메모리: /.swapfile(498M) + /swapfile2(2G, fstab 등록)
   # 매시 5분: **사용자 cron**(crontab -l). systemd 서비스(ping-agent.service/.timer)는 SELinux가 Node의 JIT 메모리를 막아 죽어서 안 쓴다(2026-10-06).
-  #   5 * * * * cd /home/opc/ping-agent && /usr/local/bin/node agent.mjs >> /home/opc/ping-agent/cron.log 2>&1
+  #   5 * * * * cd /home/opc/ping-agent && flock -n /tmp/ping-agent.lock timeout 3000 /usr/local/bin/node --max-old-space-size=256 agent.mjs >> /home/opc/ping-agent/cron.log 2>&1
+  #   2026-10-07: 08시 회차에 서버가 통째로 멈춤(ssh 응답 없음 → 콘솔 재부팅, 일반 재부팅이 Stopping에서 15분 걸림).
+  #   실제 메모리는 498MB이고, 05시 회차가 3,148초(52분)나 걸린 적이 있다 → 회차가 겹치면 node 두 개 + 스왑으로 멈춘다고 보고
+  #   flock(겹치면 건너뜀)·timeout 50분·힙 256MB를 걸었다. 다음엔 원인을 보려고 journald를 디스크에 남기게 함(/var/log/journal).
+  #   멈추면: 콘솔 → 인스턴스 → Actions → Reboot → **"Force reboot" 체크**(안 하면 정상 종료를 15분 기다린다).
   node ~/ping-agent/agent.mjs --dry      # 보내지 않고 재기만(한 번에 약 10분)
   tail ~/ping-agent/cron.log             # 매시 기록
 ```
