@@ -1872,9 +1872,11 @@ export function SeatLayoutWorkspace() {
   // 존이 많아 표가 커지는 매장도 있어 한 배율/화질로 항상 충분하다고 보장할 수 없으므로,
   // PNG(무손실) → JPEG 화질 → 배율 순으로 낮춰가며 셋 다 이 한도 안에 들어올 때까지 다시 렌더링한다.
   const SLIDES_MAX_DATA_URL_CHARS = 3_500_000;
-  const SLIDES_RENDER_ATTEMPTS: { scale: number; quality: number }[] = [
-    { scale: SLIDES_EXPORT_SCALE, quality: 0.92 },
-    { scale: SLIDES_EXPORT_SCALE, quality: 0.75 },
+  // 3.4배에서 장마다 PNG → JPEG 0.98 → 0.95 → 0.92 → 0.75 순으로 한도 안에 드는 가장 좋은 것을 고른다.
+  // 2026-10-06 — 0.98·0.95를 앞에 추가(사용자 승인 "중간안"). 글자 주변 얼룩이 사실상 안 보인다.
+  const SLIDES_JPEG_QUALITIES = [0.98, 0.95, 0.92, 0.75];
+  // 3.4배로 어떤 화질로도 안 들어갈 때만 배율을 낮춘다(셋 다 같은 배율·화질로).
+  const SLIDES_FALLBACK_ATTEMPTS: { scale: number; quality: number }[] = [
     { scale: 2.5, quality: 0.85 },
     { scale: 2, quality: 0.8 },
   ];
@@ -1891,31 +1893,46 @@ export function SeatLayoutWorkspace() {
     outputs: ExportItem[];
     scale: number;
     withinLimit: boolean;
-    pngCount: number;
+    // 장마다 실제로 쓴 화질 — "무손실" 또는 JPEG 화질 숫자. 상태 메시지에 그대로 보여준다.
+    qualities: string[];
   } | null {
     // 2026-10-06 — 구글 25메가픽셀 한도 때문에 배율(3.4)은 더 못 올린다. 대신 화질을 올린다:
-    // JPEG는 글자·선 가장자리에 얼룩이 생겨 확대하면 깨져 보이므로, 한도 안에 들어오는 장은
-    // **무손실 PNG로** 보낸다(장마다 따로 판단 — 표 이미지는 대개 PNG로 들어가고, 도면 사진이
-    // 깔린 장만 JPEG로 내려간다).
+    // JPEG는 글자·선 가장자리에 얼룩이 생겨 확대하면 깨져 보이므로, 장마다 따로 한도 안에 드는
+    // 가장 좋은 형식을 고른다(표 이미지는 대개 PNG, 도면 사진이 깔린 장은 높은 화질의 JPEG).
     const fits = (o: ExportItem) => o.dataUrl.length <= SLIDES_MAX_DATA_URL_CHARS;
     const png = renderAllOutputs(SLIDES_EXPORT_SCALE, "image/png");
     if (!png) return null;
-    const countPng = (outputs: ExportItem[]) => outputs.filter((o, i) => o === png[i]).length;
-    if (png.every(fits)) return { outputs: png, scale: SLIDES_EXPORT_SCALE, withinLimit: true, pngCount: png.length };
+    const chosen: (ExportItem | null)[] = png.map((o) => (fits(o) ? o : null));
+    const qualities: string[] = png.map((o) => (fits(o) ? "무손실" : ""));
+    for (const quality of SLIDES_JPEG_QUALITIES) {
+      if (chosen.every(Boolean)) break;
+      const jpeg = renderAllOutputs(SLIDES_EXPORT_SCALE, "image/jpeg", quality);
+      if (!jpeg) return null;
+      jpeg.forEach((o, i) => {
+        if (!chosen[i] && fits(o)) {
+          chosen[i] = o;
+          qualities[i] = String(quality);
+        }
+      });
+    }
+    if (chosen.every(Boolean)) {
+      return { outputs: chosen as ExportItem[], scale: SLIDES_EXPORT_SCALE, withinLimit: true, qualities };
+    }
 
-    let last: { outputs: ExportItem[]; scale: number } | null = null;
-    for (const { scale, quality } of SLIDES_RENDER_ATTEMPTS) {
-      let outputs = renderAllOutputs(scale, "image/jpeg", quality);
+    let last: { outputs: ExportItem[]; scale: number; quality: number } | null = null;
+    for (const { scale, quality } of SLIDES_FALLBACK_ATTEMPTS) {
+      const outputs = renderAllOutputs(scale, "image/jpeg", quality);
       if (!outputs) return null;
-      if (scale === SLIDES_EXPORT_SCALE) outputs = outputs.map((o, i) => (fits(png[i]) ? png[i] : o));
-      last = { outputs, scale };
+      last = { outputs, scale, quality };
       if (outputs.every(fits)) {
-        return { outputs, scale, withinLimit: true, pngCount: countPng(outputs) };
+        return { outputs, scale, withinLimit: true, qualities: outputs.map(() => String(quality)) };
       }
     }
     // 제일 낮춘 시도까지도 한도를 넘으면(존이 극단적으로 많은 매장), 마지막 결과라도 그대로
     // 시도해본다 — 서버가 413으로 거부하면 그 에러 메시지가 그대로 사용자에게 표시된다.
-    return last ? { ...last, withinLimit: false, pngCount: countPng(last.outputs) } : null;
+    return last
+      ? { outputs: last.outputs, scale: last.scale, withinLimit: false, qualities: last.outputs.map(() => String(last.quality)) }
+      : null;
   }
 
   // readJsonOrText는 @/lib/readJsonOrText로 옮겼다(2026-09-11) — store-eval 쪽 호출부에도
@@ -1968,7 +1985,7 @@ export function SeatLayoutWorkspace() {
     }
     const rendered = renderAllOutputsForSlides();
     if (rendered) {
-      const { outputs, scale, withinLimit, pngCount } = rendered;
+      const { outputs, scale, withinLimit, qualities } = rendered;
       const px = `${Math.round(COMPOSITE_W * scale)}×${Math.round(COMPOSITE_H * scale)}`;
       try {
         setStatusMsg(`공유 프레젠테이션에 등록 중... (${px}, 몇 초 걸릴 수 있습니다)`);
@@ -1992,7 +2009,7 @@ export function SeatLayoutWorkspace() {
         // 배율이 낮아졌으면 그 사실을 숨기지 않는다 — 기대한 해상도로 올라갔는지 사용자가 알아야 한다.
         setStatusMsg(
           `등록 완료! (프레젠테이션에 ${outputs.length}장 반영됨 · ${px}` +
-            ` · 무손실 ${pngCount}장/압축 ${outputs.length - pngCount}장` +
+            ` · 화질 ${outputs.map((o, i) => `${o.label} ${qualities[i]}`).join(", ")}` +
             (scale < SLIDES_EXPORT_SCALE
               ? ` — 용량 한도 때문에 ${SLIDES_EXPORT_SCALE}배에서 ${scale}배로 낮췄습니다`
               : "") +

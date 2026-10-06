@@ -827,209 +827,170 @@ export function renderOrderSummaryImage(
         .filter((row): row is [string, string, string] => Boolean(row))
     : [];
 
-  const baseMainTitleH = 40;
-  const baseTitleH = 30;
-  const baseHeaderH = 32;
-  const baseRowH = 26;
-  const baseSectionGap = 30;
-  const baseTitleFontPx = 26;
+  // 2026-10-06 — 표 7개를 세로 한 줄로만 쌓아서, 존이 많으면 글자가 최대 55%(약 8px)까지 줄었다
+  // — 화면 오른쪽 절반은 비어 있는데도. 이제 표를 2~3단으로 나눠 빈 가로 공간을 쓰고, 글자는
+  // 책상발주도면 수준(본문 약 19px, 배율 1.3)부터 시작해 다 들어가는 가장 큰 크기를 고른다
+  // (사용자: "발주요약 글자가 너무 작다, 책상도면 폰트 정도로").
+  type SummaryTable = { titles: string[]; rows: (string | number)[][] };
+  type SummarySection = { title: string; note?: string; tables: SummaryTable[] };
 
-  const topOffset = 20;
-  const bottomMargin = 20;
-
-  // 존이 많으면(특히 좌석 번호 표까지 더해지면) 다섯 표를 다 그렸을 때 FHD 캔버스 높이(1080)를
-  // 넘어서 아래쪽이 잘리는 문제가 있었다 — 그려보기 전에 필요한 전체 높이를 먼저 계산해서,
-  // 넘칠 때만 표/여백/글자 크기를 비례해서 줄인다(computeCompactLayout과 같은 발상).
-  const tableH = (rows: number, headerH: number, rowH: number) => headerH + Math.max(1, rows) * rowH;
-  const sectionsCount = hasSeatNumbers ? 7 : 6;
-  const bezelH0 = Math.max(
-    tableH(bezelData.leftRows.length, baseHeaderH, baseRowH),
-    tableH(bezelData.rightRows.length, baseHeaderH, baseRowH),
-  );
-  const summaryH0 = tableH(summaryData.length, baseHeaderH, baseRowH);
-  const pcSetH0 = tableH(pcSetRows.length, baseHeaderH, baseRowH);
-  const pcOrderHalf0 = Math.ceil(pcOrderRows.length / 2);
-  const pcOrderH0 = Math.max(
-    tableH(pcOrderHalf0, baseHeaderH, baseRowH),
-    tableH(pcOrderRows.length - pcOrderHalf0, baseHeaderH, baseRowH),
-  );
-  const jangpadH0 = tableH(jangpadRows.length, baseHeaderH, baseRowH);
-  const headsetH0 = tableH(2, baseHeaderH, baseRowH);
-  const seatNumberH0 = hasSeatNumbers ? tableH(seatNumberRows.length, baseHeaderH, baseRowH) : 0;
-  const tablesTotalH0 = bezelH0 + summaryH0 + pcSetH0 + pcOrderH0 + jangpadH0 + headsetH0 + seatNumberH0;
-  const contentNeeded0 = tablesTotalH0 + baseTitleH * sectionsCount + baseSectionGap * (sectionsCount - 1);
-
-  const headerAreaH = topOffset + 26 + (baseMainTitleH - 6);
-  const available = COMPOSITE_H - headerAreaH - bottomMargin;
-  const shrink = contentNeeded0 > available ? Math.max(0.55, available / contentNeeded0) : 1;
-
-  const titleH = baseTitleH * shrink;
-  const headerH = baseHeaderH * shrink;
-  const rowH = baseRowH * shrink;
-  const sectionGap = baseSectionGap * shrink;
-  const titleFont = `bold ${Math.max(14, Math.round(baseTitleFontPx * shrink))}px sans-serif`;
-
-  let y = topOffset + 26;
-
-  c.fillStyle = "#2A2520";
-  c.font = "bold 34px sans-serif";
-  c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, y);
-  y += baseMainTitleH - 6;
-
-  function drawSectionTitle(text: string, note?: string) {
-    c.fillStyle = "#2A2520";
-    c.font = titleFont;
-    c.fillText(text, marginX, y + 22 * shrink);
-    if (note) {
-      const titleW = c.measureText(text).width;
-      // 항상 밝은 배경에 인쇄되는 산출물이라 테마 토큰을 못 쓴다. 값은 --sl-ink-soft의
-      // 밝은 모드 값과 맞춰둔다(옛 #8a8072는 흰 배경 대비 3.8:1로 본문 기준에 못 미쳤다).
-      c.fillStyle = "#6b6459";
-      c.font = `${Math.max(11, Math.round(15 * shrink))}px sans-serif`;
-      c.fillText(note, marginX + titleW + 12 * shrink, y + 22 * shrink);
-    }
-    y += titleH;
-  }
-
-  // [ 베젤 사이즈 ]
-  drawSectionTitle("[ 베젤 사이즈 ]");
-  const gapMid = 24;
   const leftRows = bezelData.leftRows.map((r) => [`좌베젤 ${r.value}mm`, `${r.qty} EA`, "-"]);
   const rightRows = bezelData.rightRows.map((r) => [
     `우베젤 ${r.value}mm`,
     `${r.qty} EA`,
     r.ambiguous ? `${r.deskSize} 책상용` : "-",
   ]);
-  const bezelTitles = ["TYPE", "수량", "비고"];
-  const bezelColW = measureColWidths(c, bezelTitles, [...leftRows, ...rightRows]);
-  const bezelCols: TableCol[] = bezelTitles.map((title, i) => ({ title, width: bezelColW[i] }));
-  const bezelW = bezelColW.reduce((s, w) => s + w, 0);
-  const bezelH = Math.max(
-    drawTable(c, marginX, y, bezelW, headerH, rowH, bezelCols, leftRows, shrink),
-    drawTable(c, marginX + bezelW + gapMid, y, bezelW, headerH, rowH, bezelCols, rightRows, shrink),
-  );
-  y += bezelH + sectionGap;
-
-  // [ 책상 발주 합계 ]
-  drawSectionTitle("[ 책상 발주 합계 ]");
   const summaryRows = summaryData.map((s) => [s.desk, s.deskSize, s.partition, `${s.qty} EA`, s.types]);
-  const summaryTitles = ["책상종류", "책상사이즈", "칸막이", "수량", "존종류"];
-  const summaryColW = measureColWidths(c, summaryTitles, summaryRows);
-  const summaryCols: TableCol[] = summaryTitles.map((title, i) => ({ title, width: summaryColW[i] }));
-  y +=
-    drawTable(c, marginX, y, summaryColW.reduce((s, w) => s + w, 0), headerH, rowH, summaryCols, summaryRows, shrink) +
-    sectionGap;
-
   // [ PC 구성 ] — CPU/RAM/VGA/M·B/POWER/CPU쿨러는 한 존 안에서 같이 업그레이드되면 한 세트로
   // 묶어서 발주해야 하므로(부품별로 따로 시키면 어느 존 조합인지 알 수 없다), 조합별로 수량을
   // 묶어서 보여준다. 좌석 배정분 외에 카운터 PC(1대)/대체 PC(1대)도 전역 기본 사양으로 더해서
   // computePcTotal(좌석 합계+2)과 총수량이 맞도록 한다. 나머지 부품은 현장에서 개별 설치하는
   // 주변기기라 아래 [ 주변기기 ]에 그대로 항목별로 나열한다.
-  drawSectionTitle("[ PC 구성 (카운터PC+여분PC 포함) ]");
-  const pcSetTableRows = pcSetRows.map((r) => [
-    r.cpu,
-    r.ram,
-    r.gpu,
-    r.mb,
-    r.power,
-    r.cpuCooler,
-    `${r.qty} EA`,
-  ]);
-  const pcSetTitles = ["CPU", "RAM", "VGA", "M/B", "POWER", "CPU쿨러", "수량"];
-  const pcSetColW = measureColWidths(c, pcSetTitles, pcSetTableRows);
-  const pcSetCols: TableCol[] = pcSetTitles.map((title, i) => ({ title, width: pcSetColW[i] }));
-  y +=
-    drawTable(
-      c,
-      marginX,
-      y,
-      pcSetColW.reduce((s, w) => s + w, 0),
-      headerH,
-      rowH,
-      pcSetCols,
-      pcSetTableRows,
-      shrink,
-    ) + sectionGap;
-
+  const pcSetTableRows = pcSetRows.map((r) => [r.cpu, r.ram, r.gpu, r.mb, r.power, r.cpuCooler, `${r.qty} EA`]);
   // [ 주변기기 ] — 의자(책상 존 기준) + 모니터암/키보드/마우스/헤드셋/스피커/모니터/CASE 등
-  // (PC 존 기준, 카운터 PC 1대분 포함) 사양별 실제 주문 수량. 표가 길어질 수 있어 베젤 사이즈
-  // 표처럼 좌/우 2단으로 나눠 그린다.
-  drawSectionTitle("[ 주변기기 ]", computePeripheralsExclusionNote());
+  // (PC 존 기준, 카운터 PC 1대분 포함) 사양별 실제 주문 수량.
   const pcOrderTableRows = pcOrderRows.map((r) => [r.field, r.value, `${r.qty} EA`, r.note ?? "-"]);
-  const pcOrderTitles = ["항목", "제품", "수량", "비고"];
   const pcOrderHalf = Math.ceil(pcOrderTableRows.length / 2);
-  const pcOrderLeftRows = pcOrderTableRows.slice(0, pcOrderHalf);
-  const pcOrderRightRows = pcOrderTableRows.slice(pcOrderHalf);
-  const pcOrderColW = measureColWidths(c, pcOrderTitles, pcOrderTableRows);
-  const pcOrderCols: TableCol[] = pcOrderTitles.map((title, i) => ({ title, width: pcOrderColW[i] }));
-  const pcOrderW = pcOrderColW.reduce((s, w) => s + w, 0);
-  y +=
-    Math.max(
-      drawTable(c, marginX, y, pcOrderW, headerH, rowH, pcOrderCols, pcOrderLeftRows, shrink),
-      drawTable(c, marginX + pcOrderW + gapMid, y, pcOrderW, headerH, rowH, pcOrderCols, pcOrderRightRows, shrink),
-    ) + sectionGap;
-
-  // [ 장패드 수량 ]
-  drawSectionTitle("[ 장패드 수량 ]");
   const jangpadTableRows = jangpadRows.map((r) => [r.name, `${r.total} EA`, `기준 ${r.qty} + 여분 2`]);
-  const jangpadTitles = ["TYPE", "수량", "비고"];
-  const jangpadColW = measureColWidths(c, jangpadTitles, jangpadTableRows);
-  const jangpadCols: TableCol[] = jangpadTitles.map((title, i) => ({ title, width: jangpadColW[i] }));
-  y +=
-    drawTable(
-      c,
-      marginX,
-      y,
-      jangpadColW.reduce((s, w) => s + w, 0),
-      headerH,
-      rowH,
-      jangpadCols,
-      jangpadTableRows,
-      shrink,
-    ) + sectionGap;
-
-  // [ 헤드셋걸이 개수 ] — 가방 선반 브라켓이 있는 좌석은 아이락스, 없는 좌석은 아이센스 헤드셋걸이.
-  drawSectionTitle("[ 헤드셋걸이 개수 ]");
+  // 가방 선반 브라켓이 있는 좌석은 아이락스, 없는 좌석은 아이센스 헤드셋걸이.
   const headsetTableRows = [
     ["아이락스 헤드셋걸이", `${headsetTotals.irock} EA`, "가방 선반 있는 좌석"],
     ["아이센스 헤드셋걸이", `${headsetTotals.isense} EA`, "가방 선반 없는 좌석"],
   ];
-  const headsetTitles = ["TYPE", "수량", "비고"];
-  const headsetColW = measureColWidths(c, headsetTitles, headsetTableRows);
-  const headsetCols: TableCol[] = headsetTitles.map((title, i) => ({ title, width: headsetColW[i] }));
-  y +=
-    drawTable(
-      c,
-      marginX,
-      y,
-      headsetColW.reduce((s, w) => s + w, 0),
-      headerH,
-      rowH,
-      headsetCols,
-      headsetTableRows,
-      shrink,
-    ) + sectionGap;
+  const typeQtyNote = ["TYPE", "수량", "비고"];
+  const pcOrderTitles = ["항목", "제품", "수량", "비고"];
 
-  // [ 좌석 번호 ] — 좌석번호표 이미지에서 자동인식(또는 직접입력)한 존별 번호 범위. 없으면(아직
-  // 좌석번호표를 안 올렸으면) 표 자체를 생략한다.
-  if (hasSeatNumbers) {
-    drawSectionTitle("[ 좌석 번호 ]");
-    const seatNumberTitles = ["존명", "좌석번호", "좌석수"];
-    const seatNumberColW = measureColWidths(c, seatNumberTitles, seatNumberRows);
-    const seatNumberCols: TableCol[] = seatNumberTitles.map((title, i) => ({
-      title,
-      width: seatNumberColW[i],
-    }));
-    drawTable(
-      c,
-      marginX,
-      y,
-      seatNumberColW.reduce((s, w) => s + w, 0),
-      headerH,
-      rowH,
-      seatNumberCols,
-      seatNumberRows,
-      shrink,
-    );
+  // 주변기기 표는 좌/우 2단으로 나눌지 한 표로 둘지 둘 다 해보고 글자가 더 커지는 쪽을 쓴다
+  // (단으로 배치하면 한 표로 길게 두는 게 나을 때가 있다).
+  const buildSections = (splitPeripherals: boolean): SummarySection[] => [
+    { title: "[ 베젤 사이즈 ]", tables: [{ titles: typeQtyNote, rows: leftRows }, { titles: typeQtyNote, rows: rightRows }] },
+    { title: "[ 책상 발주 합계 ]", tables: [{ titles: ["책상종류", "책상사이즈", "칸막이", "수량", "존종류"], rows: summaryRows }] },
+    {
+      title: "[ PC 구성 (카운터PC+여분PC 포함) ]",
+      tables: [{ titles: ["CPU", "RAM", "VGA", "M/B", "POWER", "CPU쿨러", "수량"], rows: pcSetTableRows }],
+    },
+    {
+      title: "[ 주변기기 ]",
+      note: computePeripheralsExclusionNote(),
+      tables: splitPeripherals
+        ? [
+            { titles: pcOrderTitles, rows: pcOrderTableRows.slice(0, pcOrderHalf) },
+            { titles: pcOrderTitles, rows: pcOrderTableRows.slice(pcOrderHalf) },
+          ]
+        : [{ titles: pcOrderTitles, rows: pcOrderTableRows }],
+    },
+    { title: "[ 장패드 수량 ]", tables: [{ titles: typeQtyNote, rows: jangpadTableRows }] },
+    { title: "[ 헤드셋걸이 개수 ]", tables: [{ titles: typeQtyNote, rows: headsetTableRows }] },
+    // 좌석번호표 이미지에서 자동인식(또는 직접입력)한 존별 번호 범위. 없으면 표 자체를 생략한다.
+    ...(hasSeatNumbers ? [{ title: "[ 좌석 번호 ]", tables: [{ titles: ["존명", "좌석번호", "좌석수"], rows: seatNumberRows }] }] : []),
+  ];
+
+  const BASE_TITLE_H = 34;
+  const BASE_HEADER_H = 32;
+  const BASE_ROW_H = 26;
+  const BASE_SECTION_GAP = 26;
+  const TABLE_GAP = 24; // 한 섹션 안에서 나란히 놓는 표 사이
+  const COLUMN_GAP = 48; // 단 사이
+  const titleFontPx = (s: number) => Math.min(28, Math.round(24 * s));
+
+  const mainTitleY = 46;
+  const contentTop = mainTitleY + 24;
+  const availH = COMPOSITE_H - contentTop - 20;
+  const availW = COMPOSITE_W - marginX * 2;
+
+  // 칸 너비는 기준 크기(본문 15px)로 재서 배율만큼 늘린다 — 글자 폭은 크기에 비례한다.
+  const baseColWidths = new Map<SummaryTable, number[]>();
+  const colWidthsOf = (t: SummaryTable) => {
+    let w = baseColWidths.get(t);
+    if (!w) {
+      w = measureColWidths(c, t.titles, t.rows);
+      baseColWidths.set(t, w);
+    }
+    return w;
+  };
+  const tableBaseH = (t: SummaryTable) => BASE_HEADER_H + Math.max(1, t.rows.length) * BASE_ROW_H;
+  const sectionSize = (sec: SummarySection, s: number) => {
+    const tablesW = sec.tables.reduce((sum, t) => sum + colWidthsOf(t).reduce((a2, b2) => a2 + b2, 0) * s, 0) +
+      TABLE_GAP * s * (sec.tables.length - 1);
+    c.font = `bold ${titleFontPx(s)}px sans-serif`;
+    let titleW = c.measureText(sec.title).width;
+    if (sec.note) {
+      c.font = `${Math.round(15 * s)}px sans-serif`;
+      titleW += 12 * s + c.measureText(sec.note).width;
+    }
+    return {
+      w: Math.max(tablesW, titleW),
+      h: BASE_TITLE_H * s + Math.max(...sec.tables.map(tableBaseH)) * s,
+    };
+  };
+  // 섹션을 순서대로 위에서 아래로 채우다가 넘치면 다음 단으로. 다 들어가면 단 배치를 돌려준다.
+  const layoutAt = (sections: SummarySection[], s: number) => {
+    const columns: { sections: SummarySection[]; w: number }[] = [];
+    let curH = Infinity;
+    for (const sec of sections) {
+      const size = sectionSize(sec, s);
+      if (size.h > availH) return null;
+      const addH = (columns.length && curH > 0 ? BASE_SECTION_GAP * s : 0) + size.h;
+      if (!columns.length || curH + addH > availH) {
+        columns.push({ sections: [sec], w: size.w });
+        curH = size.h;
+      } else {
+        const col = columns[columns.length - 1];
+        col.sections.push(sec);
+        col.w = Math.max(col.w, size.w);
+        curH += addH;
+      }
+    }
+    const totalW = columns.reduce((sum, col) => sum + col.w, 0) + COLUMN_GAP * (columns.length - 1);
+    return totalW <= availW ? columns : null;
+  };
+
+  let plan: { s: number; columns: { sections: SummarySection[]; w: number }[] } | null = null;
+  for (let s = 1.3; s >= 0.5 - 1e-9 && !plan; s -= 0.05) {
+    for (const split of [true, false]) {
+      const columns = layoutAt(buildSections(split), s);
+      if (columns) {
+        plan = { s, columns };
+        break;
+      }
+    }
+  }
+  // 그래도 안 들어가면(극단적으로 큰 매장) 최소 배율로 그냥 그린다 — 예전처럼 아래가 잘릴 수 있다.
+  const s = plan?.s ?? 0.5;
+  const columns = plan?.columns ?? [{ sections: buildSections(true), w: availW }];
+
+  c.fillStyle = "#2A2520";
+  c.font = "bold 34px sans-serif";
+  c.fillText(`${projectName || "매장명"} - 발주 요약`, marginX, mainTitleY);
+
+  let x = marginX;
+  for (const col of columns) {
+    let y = contentTop;
+    col.sections.forEach((sec, si) => {
+      if (si > 0) y += BASE_SECTION_GAP * s;
+      c.fillStyle = "#2A2520";
+      c.font = `bold ${titleFontPx(s)}px sans-serif`;
+      c.fillText(sec.title, x, y + 24 * s);
+      if (sec.note) {
+        const titleW = c.measureText(sec.title).width;
+        // 항상 밝은 배경에 인쇄되는 산출물이라 테마 토큰을 못 쓴다. 값은 --sl-ink-soft의
+        // 밝은 모드 값과 맞춰둔다(옛 #8a8072는 흰 배경 대비 3.8:1로 본문 기준에 못 미쳤다).
+        c.fillStyle = "#6b6459";
+        c.font = `${Math.round(15 * s)}px sans-serif`;
+        c.fillText(sec.note, x + titleW + 12 * s, y + 24 * s);
+      }
+      y += BASE_TITLE_H * s;
+      let tx = x;
+      let maxH = 0;
+      sec.tables.forEach((t) => {
+        const widths = colWidthsOf(t).map((w) => w * s);
+        const tableW = widths.reduce((a2, b2) => a2 + b2, 0);
+        const cols: TableCol[] = t.titles.map((title, i) => ({ title, width: widths[i] }));
+        maxH = Math.max(maxH, drawTable(c, tx, y, tableW, BASE_HEADER_H * s, BASE_ROW_H * s, cols, t.rows, s));
+        tx += tableW + TABLE_GAP * s;
+      });
+      y += maxH;
+    });
+    x += col.w + COLUMN_GAP;
   }
 }
