@@ -9,14 +9,16 @@
 ## 설치 / 갱신
 
 ```
-scp -i ~/.ssh/oci_ping_monitor scripts/pingMonitor/agent/agent.mjs scripts/pingMonitor/agent/ping-agent.service scripts/pingMonitor/agent/ping-agent.timer opc@168.110.12.33:~/ping-agent/
+scp -i ~/.ssh/oci_ping_monitor scripts/pingMonitor/agent/agent.mjs opc@168.110.12.33:~/ping-agent/
 ssh -i ~/.ssh/oci_ping_monitor opc@168.110.12.33
-  # 처음 한 번: Node 공식 파일을 ~/node에 푼다(dnf는 메모리 부족으로 죽어 안 씀 — fping 없이 시스템 ping)
+  # 처음 한 번: Node 공식 파일을 /usr/local/lib/nodejs에(dnf는 메모리 부족으로 두 번 죽어 안 씀 — fping 없이 시스템 ping)
   curl -fsSL -o node.tar.xz https://nodejs.org/dist/v22.20.0/node-v22.20.0-linux-x64.tar.xz && mkdir -p ~/node && tar -xJf node.tar.xz -C ~/node --strip-components=1
+  sudo cp -r ~/node /usr/local/lib/nodejs && sudo ln -sf /usr/local/lib/nodejs/bin/node /usr/local/bin/node && sudo restorecon -R /usr/local/lib/nodejs /usr/local/bin/node
   # 보조 메모리: /.swapfile(498M) + /swapfile2(2G, fstab 등록)
-  sudo cp ~/ping-agent/ping-agent.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now ping-agent.timer
-  ~/node/bin/node ~/ping-agent/agent.mjs --dry      # 보내지 않고 재기만
-  journalctl -u ping-agent -n 20         # 매시 기록
+  # 매시 5분: **사용자 cron**(crontab -l). systemd 서비스(ping-agent.service/.timer)는 SELinux가 Node의 JIT 메모리를 막아 죽어서 안 쓴다(2026-10-06).
+  #   5 * * * * cd /home/opc/ping-agent && /usr/local/bin/node agent.mjs >> /home/opc/ping-agent/cron.log 2>&1
+  node ~/ping-agent/agent.mjs --dry      # 보내지 않고 재기만(한 번에 약 10분)
+  tail ~/ping-agent/cron.log             # 매시 기록
 ```
 
 GitHub Actions(`.github/workflows/ping-monitor.yml`, Vercel TCP만)는 매시 35분에 예비로 돈다 — 같은 시(時)는 먼저 쓴 쪽만 남으니 서버가 살아 있으면 건너뛴다.
