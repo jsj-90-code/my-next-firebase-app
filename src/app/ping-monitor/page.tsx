@@ -19,9 +19,7 @@ import {
   fullDaysNote,
   groupUtilization,
   hasNoIp,
-  kstDaysAgo,
   lastFullDays,
-  partialNote,
   rangeUtilization,
   recent24h,
   storeStatus,
@@ -49,14 +47,14 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
 function useRanges() {
   return useMemo(() => {
     const d7 = lastFullDays(7);
-    return { today: kstDaysAgo(0), yesterday: d7.to, from7: d7.from, from30: lastFullDays(30).from };
+    return { yesterday: d7.to, from7: d7.from, from30: lastFullDays(30).from };
   }, []);
 }
 
-// 가동률 + 꼬리말. 오늘(진행 중)은 덜 찬 그대로 "15시간치", n일 칸은 다 찬 날 일일평균에 모자라면 "3일치".
-function UtilCell({ days, from, to, nDays, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean; inProgress?: boolean }) {
-  const r = rangeUtilization(days, from, to, { includePartial: inProgress });
-  const note = inProgress ? partialNote(r.samples, 1) : fullDaysNote(r.days, nDays);
+// 가동률 + 꼬리말 — 다 찬 날 일일평균에 모자라면 "3일치". (진행 중인 오늘은 목록에서 뺐다 — 보는 시각 따라 치우쳐서, 2026-10-07 사용자. 상세 화면엔 있음)
+function UtilCell({ days, from, to, nDays, bold = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean }) {
+  const r = rangeUtilization(days, from, to);
+  const note = fullDaysNote(r.days, nDays);
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
@@ -84,7 +82,7 @@ function Recent24Cell({ store }: { store: PingStore }) {
 // 목록은 한눈에 볼 칸만(2026-10-07 사용자 "덕지덕지 부산스럽다") — 어제·전체·최근 측정·메모는 상세 화면에.
 // showOwn: "IP 확인 필요" 탭 — 우리 매장 이름과 확인 사유·IP대역을 같이 보인다.
 function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; showOwn?: boolean }) {
-  const { today, yesterday, from7, from30 } = useRanges();
+  const { yesterday, from7, from30 } = useRanges();
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] text-sm">
@@ -93,7 +91,6 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
             <th className="px-3 py-2 font-medium">경쟁점</th>
             <th className="px-3 py-2 text-right font-medium">거리</th>
             <th className="px-3 py-2 text-right font-medium">대수</th>
-            <th className="px-3 py-2 text-right font-medium">오늘(진행 중)<div className="font-normal">{dateRangeLabel(today, today)}</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 24시간<div className="font-normal">&nbsp;</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 7일<div className="font-normal">{dateRangeLabel(from7, yesterday)}</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 30일<div className="font-normal">{dateRangeLabel(from30, yesterday)}</div></th>
@@ -118,7 +115,6 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{hasNoIp(s) ? (s.pcCount ?? "-") : denominator(s)}</td>
-                <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
                 <Recent24Cell store={s} />
                 <UtilCell days={s.days} from={from7} to={yesterday} nDays={7} bold />
                 <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
@@ -243,7 +239,7 @@ export default function PingMonitorPage() {
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
             최근 7일·30일은 <b>일일평균</b>입니다 — 하루(한국 시각 0~24시) 가동률을 날마다 구해 평균하고,
             {` ${FULL_DAY_MIN_SAMPLES}`}시간 넘게 못 잰 날(등록한 날 오후부터 잰 날 등)은 낮·밤이 치우치므로 뺍니다. 다 찬 날이 모자라면 &ldquo;3일치&rdquo;처럼 적습니다.
-            &ldquo;오늘&rdquo;은 진행 중인 값(&ldquo;15시간치&rdquo;)이고, &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다 — 시간대가
+            &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다(진행 중인 &ldquo;오늘&rdquo;은 보는 시각에 따라 치우쳐 상세 화면에만 둡니다) — 시간대가
             {` ${FULL_DAY_MIN_SAMPLES}`}칸 이상 차면 값이 나와서, 신규 후보지는 등록 다음 날 같은 시각이면 하루치 값을 쓸 수 있습니다.
             매장 줄의 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 최근 7일, &ldquo;경쟁점&rdquo;은 날마다 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합을 구해 평균한 최근 7일입니다.
             어제·전체 같은 다른 기간은 매장 상세 화면에서 고릅니다.
