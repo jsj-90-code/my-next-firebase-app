@@ -58,7 +58,9 @@ for (const d of docs) {
   const ping = { hasIp: !!d.get("ipRanges"), utilPct: t > 0 ? Math.round((a / t) * 1000) / 10 : null, maxAlive, pcCount: d.get("pcCount") ?? null };
   if (!own) { rows.push({ id: d.id, ownName, name, kakao: "우리 매장 좌표 없음", ping }); continue; }
   const n = norm(name), seen = new Map();
-  for (const q of [name, `${name} PC방`]) for (const p of await search(q, own)) seen.set(p.id, p);
+  // 2026-10-07 — "스토리피시랩"을 카카오 "스토리PC랩"으로 못 찾아 폐업으로 잘못 짚었다(사용자 지도 확인). 피시·피씨는 PC로 바꿔서도 찾는다.
+  const qs = [...new Set([name, `${name} PC방`, String(name).replace(/피시|피씨/g, "PC")])];
+  for (const q of qs) for (const p of await search(q, own)) seen.set(p.id, p);
   const cands = [...seen.values()]
     .filter((p) => /PC방|게임방|피씨방/.test(p.category_name))
     .map((p) => ({ place: p.place_name, addr: p.road_address_name || p.address_name, sim: Math.round(dice(norm(p.place_name), n) * 100) / 100, m: meters(own, { lat: Number(p.y), lng: Number(p.x) }) }))
