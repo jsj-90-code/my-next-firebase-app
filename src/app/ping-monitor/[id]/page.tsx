@@ -15,6 +15,7 @@ import {
   isFullDay,
   kstDaysAgo,
   lastFullDays,
+  thisWeek,
   partialNote,
   rangeUtilization,
   recent24h,
@@ -32,7 +33,7 @@ const HOURLY_MAX_DAYS = 92;
 const PRESETS = [
   { key: "today", label: "오늘(진행 중)", days: 0 },
   { key: "1", label: "어제", days: 1 },
-  { key: "7", label: "최근 7일", days: 7 },
+  { key: "7", label: "이번 주(월~일)", days: 7 },
   { key: "30", label: "최근 30일", days: 30 },
   { key: "90", label: "최근 90일", days: 90 },
   { key: "all", label: "전체", days: null },
@@ -64,8 +65,8 @@ export default function PingStoreDetailPage() {
   const [store, setStore] = useState<PingStore | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [preset, setPreset] = useState<string>("7");
-  const [from, setFrom] = useState(lastFullDays(7).from);
-  const [to, setTo] = useState(lastFullDays(7).to);
+  const [from, setFrom] = useState(thisWeek().from);
+  const [to, setTo] = useState(thisWeek().to);
   const [dailyLoaded, setDailyLoaded] = useState<{ key: string; rows: PingDaily[] } | null>(null);
   const [dayFilter, setDayFilter] = useState<"all" | "weekday" | "weekend">("all");
   const [editing, setEditing] = useState(false);
@@ -99,7 +100,8 @@ export default function PingStoreDetailPage() {
       setFrom(today);
       setTo(today);
     } else {
-      const r = lastFullDays(p.days);
+      // "7"은 이번 주 월~일(2026-10-07 사용자), 나머지는 어제까지 다 찬 n일.
+      const r = p.key === "7" ? thisWeek() : lastFullDays(p.days);
       setFrom(r.from);
       setTo(r.to);
     }
@@ -213,7 +215,11 @@ export default function PingStoreDetailPage() {
               {p.label}
               {p.days != null && (
                 <span className="ml-1 opacity-70">
-                  {p.days === 0 ? dateRangeLabel(kstDaysAgo(0), kstDaysAgo(0)) : dateRangeLabel(lastFullDays(p.days).from, lastFullDays(p.days).to)}
+                  {p.days === 0
+                    ? dateRangeLabel(kstDaysAgo(0), kstDaysAgo(0))
+                    : p.key === "7"
+                      ? dateRangeLabel(thisWeek().from, thisWeek().to)
+                      : dateRangeLabel(lastFullDays(p.days).from, lastFullDays(p.days).to)}
                 </span>
               )}
             </button>

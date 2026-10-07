@@ -150,6 +150,20 @@ export function dateRangeLabel(from: string, to: string): string {
   return from === to ? md(from) : `${md(from)}~${md(to)}`;
 }
 
+/** 주 시작 요일(0=일, 1=월). 월~일 — 금·토·일 주말이 한 주에 같이 묶인다(2026-10-07 사용자 "최근 7일은 월~일로"). */
+export const WEEK_START_DAY = 1;
+
+/**
+ * 이번 주(오늘이 속한 월~일). 값은 그 안의 다 찬 날만 일일평균한다 — 오늘·앞으로 올 날은 isFullDay에서 저절로 빠진다.
+ * 그래서 월요일엔 "-", 화요일엔 1일치…로 늘어난다.
+ */
+export function thisWeek(now = new Date()): { from: string; to: string } {
+  const today = kstDaysAgo(0, now);
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const back = (dow - WEEK_START_DAY + 7) % 7;
+  return { from: kstDaysAgo(back, now), to: kstDaysAgo(back - 6, now) };
+}
+
 export function denominator(store: Pick<PingStore, "pcCount" | "ipCount">): number {
   return store.pcCount && store.pcCount > 0 ? store.pcCount : store.ipCount;
 }

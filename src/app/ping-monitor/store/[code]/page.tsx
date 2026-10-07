@@ -1,7 +1,7 @@
 "use client";
 
 // 매장별 비교 — 우리 매장(개점 매장만)과 그 경쟁점들의 가동률을 나란히 본다(2026-10-07 사용자 "가맹점명 누르면 비교 상세").
-// 표: 오늘 · 최근 24시간 · 최근 7일 · 최근 30일. 그래프: 우리 매장 · 경쟁점 합산 · 고른 경쟁점 1곳(표에서 줄을 누름).
+// 표: 오늘 · 최근 24시간 · 이번 주(월~일) · 최근 30일. 그래프: 우리 매장 · 경쟁점 합산 · 고른 경쟁점 1곳(표에서 줄을 누름).
 // 그래프 선은 3개까지만 — 경쟁점이 10곳 넘는 매장도 있어 전부 그리면 읽을 수 없다. 나머지는 표가 맡는다.
 
 import Link from "next/link";
@@ -24,6 +24,7 @@ import {
   hasNoIp,
   kstDaysAgo,
   lastFullDays,
+  thisWeek,
   partialNote,
   rangeUtilization,
   recent24h,
@@ -36,7 +37,7 @@ import { LineChart, type LineSeries } from "../../LineChart";
 /** 시간대별은 날짜 문서를 매장마다 하나씩 읽는다 — 최근 이만큼만. */
 const HOURLY_MAX_DAYS = 92;
 const PERIODS = [
-  { key: "7", label: "최근 7일" },
+  { key: "7", label: "이번 주(월~일)" },
   { key: "30", label: "최근 30일" },
   { key: "custom", label: "직접 고르기" },
 ] as const;
@@ -104,7 +105,7 @@ export default function PingOwnComparePage() {
   }, [user, ownCode]);
 
   const today = kstDaysAgo(0);
-  const r7 = lastFullDays(7);
+  const r7 = thisWeek();
   const r30 = lastFullDays(30);
   const range =
     period === "custom"
@@ -282,7 +283,7 @@ export default function PingOwnComparePage() {
                 최근 24시간<div className="font-normal">&nbsp;</div>
               </th>
               <th className="px-3 py-2 text-right font-medium">
-                최근 7일
+                이번 주(월~일)
                 <div className="font-normal">
                   {dateRangeLabel(r7.from, r7.to)}
                 </div>
