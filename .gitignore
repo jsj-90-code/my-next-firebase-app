@@ -570,3 +570,7 @@ src/**/_*.test.ts
 !/.local-tools/store-grid-500m.json
 !/.local-tools/resident-grid-500m.json
 !/.local-tools/huff-share.json
+# 2026-10-07 — 허프 몫·쏠림 비를 실험실 수요 배수로 넣어 보는 재고 표. docs/huff-hinterland-20261007.md 5절
+!src/lib/storeEval/_huffDemand.test.ts
+!/.local-tools/hub-points.json
+!/.local-tools/sbiz-floating-time.json

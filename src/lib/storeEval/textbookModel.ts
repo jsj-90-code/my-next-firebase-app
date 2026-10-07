@@ -1276,6 +1276,12 @@ export type TextbookInput = {
    */
   residentRadiusM?: number | null;
   /**
+   * **시험용 매장별 수요 배수**(2026-10-07 신설) — 배후지 나눠 갖기(허프)·상권 쏠림(옆 상권 대비 실측 유동) 시험에서
+   * 하네스가 넣는다. 비어 있으면 1이라 운영·실험실 화면 결과는 안 바뀐다. 아직 어느 자료도 이 칸을 채우지 않는다
+   * (채택 전). 상세 `docs/huff-hinterland-20261007.md`.
+   */
+  demandMultiplier?: number | null;
+  /**
    * **막힌 방향 수**(0~4) — 동·서·남·북 중 고리(1~2km) 구간이 하천·철도·고속도로·산으로 끊긴 방향의 개수.
    * AI 지도 판정(scripts/tradeArea/judge.mjs → storeEvalLabTradeAreaJudgments). null이면 판정 없음 → 안 깎는다.
    * `useRingEnclosure`가 켜졌을 때만 쓴다. 2026-09-23 신설.
@@ -1487,7 +1493,7 @@ export function computeTextbook(input: TextbookInput, p: TextbookParams): Textbo
   const baseUsersMul = sdTerm === "resident" ? (residentUsers ?? 0) * sdMul + (floatingUsers ?? 0)
     : sdTerm === "floating" ? (residentUsers ?? 0) + (floatingUsers ?? 0) * sdMul
     : baseUsers * sdMul;
-  const totalUsers = baseUsersMul * agg * dens;
+  const totalUsers = baseUsersMul * agg * dens * (input.demandMultiplier ?? 1);
   const totalHours = totalUsers * p.hoursPerUserPerMonth;
 
   // ── 3) 점유율 ───────────────────────────────────────────────────────────

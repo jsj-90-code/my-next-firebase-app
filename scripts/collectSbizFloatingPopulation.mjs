@@ -15,6 +15,7 @@
 //   node scripts/collectSbizFloatingPopulation.mjs --selftest   # 좌표변환만 검산(네트워크 안 씀)
 //   node scripts/collectSbizFloatingPopulation.mjs --limit 3     # 3곳만 시험
 //   node scripts/collectSbizFloatingPopulation.mjs               # 전체
+//   node scripts/collectSbizFloatingPopulation.mjs --points .local-tools/hub-points.json --radii 300   # 옆 상권 봉우리(2026-10-07)
 //
 // 산출물: .local-tools/sbiz-floating-population.json
 //   ⚠️ **git에 넣는다.** .gitignore가 이 파일만 예외로 풀어 뒀다(2026-09-17 커밋 d91c271
@@ -51,6 +52,8 @@ const RADII = argValue("--radii")
 /** 경쟁점도 대상에 넣는다(2026-09-18 사용자: "상권365에서 100미터로 경쟁점 뽑아보면 될 거 아냐"). */
 const WITH_COMPETITORS = args.includes("--competitors");
 const ONLY_COMPETITORS = args.includes("--only-competitors");
+/** 2026-10-07 — 임의 지점 목록(옆 상권 봉우리 등). scripts/buildHubPoints.mjs 산출물. 이게 있으면 이것만 받는다. */
+const POINTS_FILE = argValue("--points");
 if (!RADII.length) { console.error("--radii 값이 이상하다. 쓸 수 있는 값: " + DEFAULT_RADII.join(",")); process.exit(1); }
 
 /* ---------------------------------------------------------------- 좌표변환
@@ -231,6 +234,10 @@ function parseFlowPopulation(html) {
 const GEOCODED = ".local-tools/geocoded-sites.json";
 
 function loadTargets() {
+  if (POINTS_FILE) {
+    const pts = JSON.parse(readFileSync(POINTS_FILE, "utf8")).points ?? [];
+    return { targets: pts.map((p) => ({ kind: p.kind, code: p.code, name: p.name, lat: p.lat, lng: p.lng, coordSource: "지점목록" })), missing: 0 };
+  }
   if (!existsSync(SNAPSHOT)) {
     console.error(`${SNAPSHOT}이 없다. 먼저 node scripts/dumpValidationSnapshot.mjs 를 돌린다.`);
     process.exit(1);
