@@ -19,6 +19,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { listCandidates, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
+import type { Competitor } from "@/lib/storeEval/types";
 import { PING_DAILY, PING_STORES, type DayTotals, type PingDaily, type PingStore } from "./summary";
 
 export type PingStoreInput = {
@@ -184,4 +185,47 @@ export async function listPingStoresByCompetitorIds(ids: string[]): Promise<Map<
     }
   }
   return out;
+}
+
+/** 측정기에 빈칸으로 올릴 수 있는 경쟁점인지 — "경쟁점 없음(독점상권 확인)" 표시용 문서는 실제 매장이 아니다. */
+export function isRegistrableCompetitor(c: Competitor): boolean {
+  return c.investigationStatus !== "경쟁점없음" && !/^경쟁점 없음/.test(c.name) && c.name.trim() !== "";
+}
+
+/**
+ * 후보지 경쟁점을 측정기에 "IP 미등록" 빈칸으로 올린다(2026-10-07 사용자 "신규후보지 등록할 때 가동률 웹에 경쟁점 추가").
+ * 모양은 기존점 일괄 등록(scripts/pingMonitor/addNoIpCompetitors.mjs)과 같다 — IP는 사람이 측정기 화면에서 넣는다.
+ * 올리기 직전에 competitorId로 다시 찾아 이미 이어진 경쟁점은 건너뛴다(다른 화면·다른 사람이 먼저 올렸을 수 있음).
+ * 반환: 새로 올린 경쟁점 id 목록.
+ */
+export async function registerCompetitorsToPing(
+  competitors: Competitor[],
+  own: { code: string; name: string | null },
+  email: string | null,
+): Promise<string[]> {
+  const targets = competitors.filter(isRegistrableCompetitor);
+  if (targets.length === 0) return [];
+  const linked = await listPingStoresByCompetitorIds(targets.map((c) => c.id));
+  const created: string[] = [];
+  for (const c of targets) {
+    if (linked.has(c.id)) continue;
+    await createPingStore(
+      {
+        name: c.name.trim(),
+        address: c.address ?? "",
+        ipRanges: "",
+        ipCount: 0,
+        pcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
+        memo: "점포평가 경쟁점 · IP 미등록",
+        active: true,
+        ownCode: own.code,
+        ownName: own.name,
+        competitorId: c.id,
+        distanceM: c.distanceM ?? null,
+      },
+      email,
+    );
+    created.push(c.id);
+  }
+  return created;
 }
