@@ -1,5 +1,5 @@
 {
- "computedAt": "2026-10-07T04:40:34.986Z",
+ "computedAt": "2026-10-07T04:49:22.328Z",
  "dest": "grid",
  "alpha": 1,
  "beta": 2,
@@ -24,6 +24,24 @@
    ]
   },
   {
+   "code": "N004",
+   "name": "하안금당사거리",
+   "kind": "candidate",
+   "ourName": "(우리 1000m 창)",
+   "fine": true,
+   "ourStores500m": 1031.31598,
+   "zonesNearby": 134,
+   "hinterlandPop": 223954,
+   "capturedPop": 18860,
+   "shareAll": 0.08421520106458202,
+   "share1km": 0.19699396719520584,
+   "topLeak": [
+    "시흥1동주민센터 일대 14%",
+    "가산디지털단지역3번 출구 일대 10%",
+    "격자 947-1941 9%"
+   ]
+  },
+  {
    "code": "20241108419",
    "name": "광주각화점",
    "kind": "existing",
@@ -39,42 +57,6 @@
     "광주북구청우체국 일대 15%",
     "문화동시외터미널 일대 13%",
     "광주문흥동우체국 일대 9%"
-   ]
-  },
-  {
-   "code": "N020",
-   "name": "암사역점",
-   "kind": "candidate",
-   "ourName": "(우리 1000m 창)",
-   "fine": true,
-   "ourStores500m": 1504.4545920000003,
-   "zonesNearby": 125,
-   "hinterlandPop": 261176,
-   "capturedPop": 23742,
-   "shareAll": 0.09090538199028891,
-   "share1km": 0.19970714861264754,
-   "topLeak": [
-    "천호역3번 출구 일대 20%",
-    "명일역4번 출구 일대 16%",
-    "길동역3번 출구 일대 15%"
-   ]
-  },
-  {
-   "code": "N004",
-   "name": "하안금당사거리",
-   "kind": "candidate",
-   "ourName": "(우리 1000m 창)",
-   "fine": true,
-   "ourStores500m": 1031.31598,
-   "zonesNearby": 134,
-   "hinterlandPop": 198006,
-   "capturedPop": 18738,
-   "shareAll": 0.09463493489514668,
-   "share1km": 0.22969532865515674,
-   "topLeak": [
-    "시흥1동주민센터 일대 10%",
-    "가산디지털단지역3번 출구 일대 9%",
-    "격자 947-1941 9%"
    ]
   },
   {
@@ -96,21 +78,21 @@
    ]
   },
   {
-   "code": "N019",
-   "name": "일도이동점",
+   "code": "N020",
+   "name": "암사역점",
    "kind": "candidate",
    "ourName": "(우리 1000m 창)",
    "fine": true,
-   "ourStores500m": 1100.38472,
+   "ourStores500m": 1504.4545920000003,
    "zonesNearby": 125,
-   "hinterlandPop": 92983,
-   "capturedPop": 9968,
-   "shareAll": 0.10720153332880485,
-   "share1km": 0.19011604010334557,
+   "hinterlandPop": 255363,
+   "capturedPop": 28184,
+   "shareAll": 0.11037010756608144,
+   "share1km": 0.29007277763757916,
    "topLeak": [
-    "제주삼성우체국 일대 18%",
-    "일도1동주민센터 일대 17%",
-    "남광초등학교 일대 13%"
+    "천호역3번 출구 일대 18%",
+    "길동역3번 출구 일대 16%",
+    "명일역4번 출구 일대 15%"
    ]
   },
   {
@@ -258,6 +240,24 @@
    ]
   },
   {
+   "code": "N019",
+   "name": "일도이동점",
+   "kind": "candidate",
+   "ourName": "(우리 1000m 창)",
+   "fine": true,
+   "ourStores500m": 1100.38472,
+   "zonesNearby": 125,
+   "hinterlandPop": 97835,
+   "capturedPop": 13977,
+   "shareAll": 0.14285992722879598,
+   "share1km": 0.30732594352749804,
+   "topLeak": [
+    "제주삼성우체국 일대 19%",
+    "일도1동주민센터 일대 16%",
+    "남광초등학교 일대 11%"
+   ]
+  },
+  {
    "code": "20230707397",
    "name": "안산선부점",
    "kind": "existing",
@@ -273,6 +273,24 @@
     "안산 다문화특구 일대 19%",
     "격자 940-1927 8%",
     "격자 938-1926 7%"
+   ]
+  },
+  {
+   "code": "N011",
+   "name": "마산산호점",
+   "kind": "candidate",
+   "ourName": "(우리 1000m 창)",
+   "fine": true,
+   "ourStores500m": 1048.962,
+   "zonesNearby": 100,
+   "hinterlandPop": 115678,
+   "capturedPop": 17056,
+   "shareAll": 0.14744234973311962,
+   "share1km": 0.34924245295429135,
+   "topLeak": [
+    "남성119안전센터 일대 15%",
+    "경남전자고등학교 일대 14%",
+    "격자 1098-1693 10%"
    ]
   },
   {
@@ -348,24 +366,6 @@
    ]
   },
   {
-   "code": "N011",
-   "name": "마산산호점",
-   "kind": "candidate",
-   "ourName": "(우리 1000m 창)",
-   "fine": true,
-   "ourStores500m": 1048.962,
-   "zonesNearby": 100,
-   "hinterlandPop": 109484,
-   "capturedPop": 18110,
-   "shareAll": 0.16541672214224362,
-   "share1km": 0.3972801629020934,
-   "topLeak": [
-    "경남전자고등학교 일대 16%",
-    "남성119안전센터 일대 15%",
-    "격자 1098-1693 10%"
-   ]
-  },
-  {
    "code": "N005",
    "name": "울산삼산점",
    "kind": "candidate",
@@ -373,14 +373,14 @@
    "fine": true,
    "ourStores500m": 2752.656188,
    "zonesNearby": 135,
-   "hinterlandPop": 125475,
-   "capturedPop": 21673,
-   "shareAll": 0.17272573058860563,
-   "share1km": 0.36539518791616915,
+   "hinterlandPop": 143885,
+   "capturedPop": 23728,
+   "shareAll": 0.16490983666769363,
+   "share1km": 0.38391876970531424,
    "topLeak": [
-    "대현중학교 일대 10%",
+    "대현중학교 일대 9%",
     "격자 1166-1727 7%",
-    "울산고속터미널 일대 7%"
+    "수암동 행정복지센터 일대 7%"
    ]
   },
   {
@@ -402,6 +402,42 @@
    ]
   },
   {
+   "code": "N002",
+   "name": "춘천퇴계점",
+   "kind": "candidate",
+   "ourName": "(우리 1000m 창)",
+   "fine": true,
+   "ourStores500m": 775.3709920000001,
+   "zonesNearby": 129,
+   "hinterlandPop": 89200,
+   "capturedPop": 16508,
+   "shareAll": 0.185063080992338,
+   "share1km": 0.34701178749323586,
+   "topLeak": [
+    "격자 1021-1984 16%",
+    "남부초등학교 일대 14%",
+    "격자 1022-1984 9%"
+   ]
+  },
+  {
+   "code": "N009",
+   "name": "평택소사벌점",
+   "kind": "candidate",
+   "ourName": "(우리 1000m 창)",
+   "fine": true,
+   "ourStores500m": 1414.389312,
+   "zonesNearby": 131,
+   "hinterlandPop": 129521,
+   "capturedPop": 24070,
+   "shareAll": 0.18583851317665978,
+   "share1km": 0.35426783880586243,
+   "topLeak": [
+    "평택역1번 출구 일대 10%",
+    "평택비전2동우체국 일대 10%",
+    "격자 967-1888 7%"
+   ]
+  },
+  {
    "code": "20231023405",
    "name": "시흥은계점",
    "kind": "existing",
@@ -420,24 +456,6 @@
    ]
   },
   {
-   "code": "N002",
-   "name": "춘천퇴계점",
-   "kind": "candidate",
-   "ourName": "(우리 1000m 창)",
-   "fine": true,
-   "ourStores500m": 775.3709920000001,
-   "zonesNearby": 129,
-   "hinterlandPop": 85535,
-   "capturedPop": 16398,
-   "shareAll": 0.19170752463682827,
-   "share1km": 0.34701178749323586,
-   "topLeak": [
-    "격자 1021-1984 16%",
-    "남부초등학교 일대 14%",
-    "격자 1022-1984 9%"
-   ]
-  },
-  {
    "code": "20251107426",
    "name": "야당점",
    "kind": "existing",
@@ -453,6 +471,24 @@
     "격자 935-1970 9%",
     "야당역1번 출구 일대 7%",
     "격자 935-1967 6%"
+   ]
+  },
+  {
+   "code": "N017",
+   "name": "김포라베니체점",
+   "kind": "candidate",
+   "ourName": "(우리 1000m 창)",
+   "fine": true,
+   "ourStores500m": 1237.316544,
+   "zonesNearby": 131,
+   "hinterlandPop": 124954,
+   "capturedPop": 24386,
+   "shareAll": 0.19516223824427115,
+   "share1km": 0.36420214231133563,
+   "topLeak": [
+    "장기역5번 출구 일대 24%",
+    "격자 928-1962 17%",
+    "격자 926-1961 10%"
    ]
   },
   {
@@ -492,39 +528,21 @@
    ]
   },
   {
-   "code": "N009",
-   "name": "평택소사벌점",
+   "code": "N013",
+   "name": "김포풍무점",
    "kind": "candidate",
    "ourName": "(우리 1000m 창)",
    "fine": true,
-   "ourStores500m": 1414.389312,
-   "zonesNearby": 131,
-   "hinterlandPop": 119720,
-   "capturedPop": 24382,
-   "shareAll": 0.2036603884603498,
-   "share1km": 0.41493716410097564,
+   "ourStores500m": 906.89808,
+   "zonesNearby": 129,
+   "hinterlandPop": 116255,
+   "capturedPop": 23610,
+   "shareAll": 0.20308952250362744,
+   "share1km": 0.35611502893378105,
    "topLeak": [
-    "평택비전2동우체국 일대 11%",
-    "격자 967-1888 8%",
-    "평택역1번 출구 일대 7%"
-   ]
-  },
-  {
-   "code": "N017",
-   "name": "김포라베니체점",
-   "kind": "candidate",
-   "ourName": "(우리 1000m 창)",
-   "fine": true,
-   "ourStores500m": 1237.316544,
-   "zonesNearby": 131,
-   "hinterlandPop": 109621,
-   "capturedPop": 22732,
-   "shareAll": 0.20737202599631424,
-   "share1km": 0.46663799780295384,
-   "topLeak": [
-    "장기역5번 출구 일대 28%",
-    "격자 928-1962 13%",
-    "격자 926-1961 10%"
+    "격자 931-1955 12%",
+    "사우역2번 출구 일대 11%",
+    "격자 930-1955 9%"
    ]
   },
   {
@@ -543,24 +561,6 @@
     "미추홀공원 정류장 일대 15%",
     "격자 926-1932 11%",
     "더샵하버뷰14단지 정류장 일대 8%"
-   ]
-  },
-  {
-   "code": "N015",
-   "name": "구리돌다리점",
-   "kind": "candidate",
-   "ourName": "(우리 1000m 창)",
-   "fine": true,
-   "ourStores500m": 2791.2738920000006,
-   "zonesNearby": 126,
-   "hinterlandPop": 177832,
-   "capturedPop": 38604,
-   "shareAll": 0.21708336242017331,
-   "share1km": 0.33375788146518254,
-   "topLeak": [
-    "구리(교문리)시외터미널 일대 17%",
-    "구리역1번 출구 일대 11%",
-    "격자 969-1957 8%"
    ]
   },
   {
@@ -589,32 +589,32 @@
    "fine": true,
    "ourStores500m": 371.09135999999995,
    "zonesNearby": 86,
-   "hinterlandPop": 22890,
-   "capturedPop": 5153,
-   "shareAll": 0.22511472864326812,
-   "share1km": 0.3391114828009529,
+   "hinterlandPop": 26490,
+   "capturedPop": 6120,
+   "shareAll": 0.23103218587181282,
+   "share1km": 0.4594861835637563,
    "topLeak": [
     "격자 984-1847 44%",
-    "격자 985-1847 11%",
-    "오송단지시외터미널 일대 5%"
+    "격자 985-1847 8%",
+    "오송단지시외터미널 일대 6%"
    ]
   },
   {
-   "code": "N012",
-   "name": "산본점",
+   "code": "N015",
+   "name": "구리돌다리점",
    "kind": "candidate",
    "ourName": "(우리 1000m 창)",
    "fine": true,
-   "ourStores500m": 2286.4118399999998,
-   "zonesNearby": 109,
-   "hinterlandPop": 211395,
-   "capturedPop": 49258,
-   "shareAll": 0.23301408933664405,
-   "share1km": 0.36125838219978923,
+   "ourStores500m": 2791.2738920000006,
+   "zonesNearby": 126,
+   "hinterlandPop": 175213,
+   "capturedPop": 40741,
+   "shareAll": 0.23252416978146806,
+   "share1km": 0.3866997396016072,
    "topLeak": [
-    "산본시장 일대 12%",
-    "금정역4번 출구 일대 10%",
-    "군포역1번 출구 일대 8%"
+    "구리(교문리)시외터미널 일대 18%",
+    "구리역1번 출구 일대 11%",
+    "격자 969-1957 8%"
    ]
   },
   {
@@ -633,24 +633,6 @@
     "삼호초등학교 일대 20%",
     "무거지구대 일대 18%",
     "격자 1161-1730 10%"
-   ]
-  },
-  {
-   "code": "N013",
-   "name": "김포풍무점",
-   "kind": "candidate",
-   "ourName": "(우리 1000m 창)",
-   "fine": true,
-   "ourStores500m": 906.89808,
-   "zonesNearby": 129,
-   "hinterlandPop": 109425,
-   "capturedPop": 25590,
-   "shareAll": 0.23385802667803263,
-   "share1km": 0.4607991313156578,
-   "topLeak": [
-    "사우역2번 출구 일대 15%",
-    "격자 931-1955 13%",
-    "격자 930-1955 9%"
    ]
   },
   {
@@ -715,14 +697,32 @@
    "fine": true,
    "ourStores500m": 3287.570448,
    "zonesNearby": 116,
-   "hinterlandPop": 128690,
-   "capturedPop": 32158,
-   "shareAll": 0.24988714450752653,
+   "hinterlandPop": 131346,
+   "capturedPop": 32821,
+   "shareAll": 0.24988465745234378,
    "share1km": 0.42167807638346044,
    "topLeak": [
     "상남분수광장 일대 10%",
-    "정우상가시외터미널 일대 9%",
+    "정우상가시외터미널 일대 10%",
     "창원중앙동우편취급국 일대 8%"
+   ]
+  },
+  {
+   "code": "N012",
+   "name": "산본점",
+   "kind": "candidate",
+   "ourName": "(우리 1000m 창)",
+   "fine": true,
+   "ourStores500m": 2286.4118399999998,
+   "zonesNearby": 109,
+   "hinterlandPop": 198132,
+   "capturedPop": 50973,
+   "shareAll": 0.2572671130135956,
+   "share1km": 0.4484319165447042,
+   "topLeak": [
+    "산본시장 일대 12%",
+    "금정역4번 출구 일대 9%",
+    "군포역1번 출구 일대 9%"
    ]
   },
   {
@@ -1021,14 +1021,14 @@
    "fine": true,
    "ourStores500m": 851.5466240000001,
    "zonesNearby": 49,
-   "hinterlandPop": 16397,
-   "capturedPop": 9032,
-   "shareAll": 0.5508055137968502,
-   "share1km": 0.630696552473106,
+   "hinterlandPop": 16614,
+   "capturedPop": 9762,
+   "shareAll": 0.5875696299712001,
+   "share1km": 0.699880375855462,
    "topLeak": [
-    "영월초등학교 일대 13%",
-    "격자 1085-1909 13%",
-    "격자 1087-1910 8%"
+    "격자 1085-1909 14%",
+    "영월초등학교 일대 10%",
+    "격자 1087-1910 7%"
    ]
   },
   {
@@ -1039,14 +1039,14 @@
    "fine": true,
    "ourStores500m": 122.25216,
    "zonesNearby": 73,
-   "hinterlandPop": 8084,
-   "capturedPop": 4762,
-   "shareAll": 0.589112711310412,
-   "share1km": 0.6657762017083072,
+   "hinterlandPop": 7947,
+   "capturedPop": 5113,
+   "shareAll": 0.6433569123258496,
+   "share1km": 0.7585985396467749,
    "topLeak": [
-    "격자 966-1858 12%",
-    "격자 966-1859 8%",
-    "격자 965-1858 6%"
+    "격자 966-1858 9%",
+    "격자 965-1858 6%",
+    "격자 966-1859 5%"
    ]
   }
  ]
