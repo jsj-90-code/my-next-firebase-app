@@ -69,6 +69,12 @@ function toStore(id: string, d: DocumentData): PingStore {
         }
       : null,
     days: (d.days ?? {}) as Record<string, DayTotals>,
+    recent: Object.fromEntries(
+      Object.entries((d.recent ?? {}) as Record<string, { a?: number; t?: number; at?: unknown }>).map(([h, v]) => [
+        h,
+        { a: Number(v.a ?? 0), t: Number(v.t ?? 0), at: toDate(v.at) },
+      ]),
+    ),
   };
 }
 

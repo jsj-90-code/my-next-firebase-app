@@ -11,18 +11,21 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
 import {
   BLOCKED_SUSPECT_SAMPLES,
+  FULL_DAY_MIN_SAMPLES,
   SAMPLE_INTERVAL_MINUTES,
+  dateRangeLabel,
   denominator,
   formatPct,
+  fullDaysNote,
   groupUtilization,
   hasNoIp,
   kstDaysAgo,
   lastFullDays,
   partialNote,
   rangeUtilization,
+  recent24h,
   storeStatus,
   type PingStore,
-  dateRangeLabel,
 } from "@/lib/pingMonitor/summary";
 import { StoreForm } from "./StoreForm";
 
@@ -49,10 +52,10 @@ function useRanges() {
   }, []);
 }
 
-// 가동률 + 덜 찬 기간이면 "15시간치" 꼬리말.
-function UtilCell({ days, from, to, nDays, bold = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean }) {
-  const r = rangeUtilization(days, from, to);
-  const note = partialNote(r.samples, nDays);
+// 가동률 + 꼬리말. 오늘(진행 중)은 덜 찬 그대로 "15시간치", n일 칸은 다 찬 날 일일평균에 모자라면 "3일치".
+function UtilCell({ days, from, to, nDays, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean; inProgress?: boolean }) {
+  const r = rangeUtilization(days, from, to, { includePartial: inProgress });
+  const note = inProgress ? partialNote(r.samples, 1) : fullDaysNote(r.days, nDays);
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
@@ -61,16 +64,27 @@ function UtilCell({ days, from, to, nDays, bold = false }: { days: PingStore["da
   );
 }
 
-/** 묶음 안에서 가장 오래 잰 경쟁점의 측정 횟수 — 합산값이 몇 시간치인지 보이려고. */
-function groupSamples(stores: PingStore[], from: string, to: string): number {
-  return Math.max(0, ...stores.map((s) => rangeUtilization(s.days, from, to).samples));
+/** 묶음 안에서 다 찬 날이 가장 많은 경쟁점의 일수 — 합산값이 며칠치인지 보이려고. */
+function groupFullDays(stores: PingStore[], from: string, to: string): number {
+  return Math.max(0, ...stores.map((s) => rangeUtilization(s.days, from, to).days));
+}
+
+// 최근 24시간 — 시간대가 FULL_DAY_MIN_SAMPLES칸 이상 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
+function Recent24Cell({ store }: { store: PingStore }) {
+  const r = recent24h(store.recent);
+  return (
+    <td className="px-3 py-2 text-right tabular-nums">
+      {formatPct(r.util)}
+      {r.util == null && r.hours > 0 && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{r.hours}/24시간</div>}
+    </td>
+  );
 }
 
 function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; showOwn?: boolean }) {
   const { today, yesterday, from7, from30 } = useRanges();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[840px] text-sm">
+      <table className="w-full min-w-[920px] text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
             <th className="px-3 py-2 font-medium">경쟁점</th>
@@ -78,6 +92,7 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
             <th className="px-3 py-2 text-right font-medium">대수</th>
             <th className="px-3 py-2 text-right font-medium">최근 측정</th>
             <th className="px-3 py-2 text-right font-medium">오늘(진행 중)<div className="font-normal">{dateRangeLabel(today, today)}</div></th>
+            <th className="px-3 py-2 text-right font-medium">최근 24시간<div className="font-normal">지금부터 거꾸로</div></th>
             <th className="px-3 py-2 text-right font-medium">어제<div className="font-normal">{dateRangeLabel(yesterday, yesterday)}</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 7일<div className="font-normal">{dateRangeLabel(from7, yesterday)}</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 30일<div className="font-normal">{dateRangeLabel(from30, yesterday)}</div></th>
@@ -89,6 +104,7 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
           {stores.map((s) => {
             const status = storeStatus(s);
             const all = rangeUtilization(s.days, null, null);
+            const allSkipped = all.skipped > 0 ? ` · 덜 찬 ${all.skipped}일 뺌` : "";
             return (
               <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
                 <td className="px-3 py-2">
@@ -119,13 +135,14 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
                     "-"
                   )}
                 </td>
-                <UtilCell days={s.days} from={today} to={today} nDays={1} />
+                <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
+                <Recent24Cell store={s} />
                 <UtilCell days={s.days} from={yesterday} to={yesterday} nDays={1} />
                 <UtilCell days={s.days} from={from7} to={yesterday} nDays={7} bold />
                 <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
                 <td className="px-3 py-2 text-right tabular-nums">
                   {formatPct(all.util)}
-                  <div className="text-xs text-[var(--sl-ink-soft)]">{all.samples}회</div>
+                  <div className="text-xs text-[var(--sl-ink-soft)]">{all.days > 0 ? `${all.days}일` : "다 찬 날 없음"}{allSkipped}</div>
                 </td>
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
@@ -141,7 +158,7 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
 
 function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
   const { yesterday, from7, from30 } = useRanges();
-  const note7 = partialNote(groupSamples(group.stores, from7, yesterday), 7);
+  const note7 = fullDaysNote(groupFullDays(group.stores, from7, yesterday), 7);
   const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
   const noIp = group.stores.filter(hasNoIp).length;
   const ipCheck = group.stores.filter((s) => s.ipCheck).length + (group.own?.ipCheck ? 1 : 0);
@@ -245,9 +262,11 @@ export default function PingMonitorPage() {
             {intervalText}마다 등록된 IP대역의 PC에 연결을 시도해, 대답한 PC 수 ÷ 대수를 기록합니다. 기록은 기한 없이 쌓이고, 상세 화면에서 기간을 골라 볼 수 있습니다.
             {` `}
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
-            기간은 한국 시각 0~24시 날짜 단위입니다 — &ldquo;오늘&rdquo;은 진행 중인 값이고, 어제·최근 7일·30일은 오늘을 빼고 어제까지 다 찬 날만 합칩니다.
-            덜 찬 기간은 &ldquo;15시간치&rdquo;처럼 실제 잰 시간을 같이 적습니다.
-            매장 옆 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 가동률, &ldquo;경쟁점 합산&rdquo;은 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합입니다.
+            어제·최근 7일·30일·전체는 <b>일일평균</b>입니다 — 하루(한국 시각 0~24시) 가동률을 날마다 구해 평균하고,
+            {` ${FULL_DAY_MIN_SAMPLES}`}시간 넘게 못 잰 날(등록한 날 오후부터 잰 날 등)은 낮·밤이 치우치므로 뺍니다. 다 찬 날이 모자라면 &ldquo;3일치&rdquo;처럼 적습니다.
+            &ldquo;오늘&rdquo;은 진행 중인 값(&ldquo;15시간치&rdquo;)이고, &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다 — 시간대가
+            {` ${FULL_DAY_MIN_SAMPLES}`}칸 이상 차면 값이 나와서, 신규 후보지는 등록 다음 날 같은 시각이면 하루치 값을 쓸 수 있습니다.
+            매장 옆 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 가동률, &ldquo;경쟁점 합산&rdquo;은 날마다 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합을 구해 평균한 값입니다.
           </p>
         </div>
         <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" onClick={() => setShowForm((v) => !v)}>

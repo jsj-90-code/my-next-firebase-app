@@ -8,13 +8,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getPingStore, listPingDaily, updatePingStore } from "@/lib/pingMonitor/clientStore";
 import {
+  FULL_DAY_MIN_SAMPLES,
   dateRangeLabel,
   denominator,
   formatPct,
+  isFullDay,
   kstDaysAgo,
   lastFullDays,
   partialNote,
   rangeUtilization,
+  recent24h,
   shortIps,
   storeStatus,
   type PingDaily,
@@ -128,7 +131,11 @@ export default function PingStoreDetailPage() {
     );
 
   const status = storeStatus(store);
-  const range = rangeUtilization(store.days, from, to);
+  const today = kstDaysAgo(0);
+  // 오늘 하루만 고르면 진행 중인 값을 그대로, 그 밖엔 다 찬 날의 일일평균(2026-10-07 사용자).
+  const inProgress = from === today && to === today;
+  const range = rangeUtilization(store.days, from, to, { includePartial: inProgress });
+  const r24 = recent24h(store.recent);
   const dates = from <= to ? dateRange(from, to) : [];
   const dayBars: Bar[] = dates.map((d) => {
     const v = store.days[d];
@@ -136,7 +143,9 @@ export default function PingStoreDetailPage() {
       key: d,
       label: d.slice(5),
       value: v && v.t > 0 ? v.a / v.t : null,
-      detail: v ? `${WEEKDAY[dayOfWeek(d)]}요일 · ${v.n}회 측정 · 평균 ${(v.a / v.n).toFixed(1)}대 켜짐` : "기록 없음",
+      detail: v
+        ? `${WEEKDAY[dayOfWeek(d)]}요일 · ${v.n}회 측정 · 평균 ${(v.a / v.n).toFixed(1)}대 켜짐${isFullDay(d, v, today) ? "" : " · 덜 참(평균에서 뺌)"}`
+        : "기록 없음",
     };
   });
 
@@ -222,10 +231,23 @@ export default function PingStoreDetailPage() {
             <div className="text-3xl font-bold tabular-nums text-[#171310] dark:text-[#f2ede2]">{formatPct(range.util)}</div>
           </div>
           <div className="text-xs text-[var(--sl-ink-soft)]">
-            {from} ~ {to} · 기록 있는 날 {range.days}일 · 측정 {range.samples}회
-            {partialNote(range.samples, dates.length) && (
-              <span className="ml-1">({dates.length}일 중 {partialNote(range.samples, dates.length)}라 시간대 치우침이 있을 수 있음)</span>
+            {inProgress ? (
+              <>
+                {from} 진행 중 · 측정 {range.samples}회{partialNote(range.samples, 1) && ` (${partialNote(range.samples, 1)}라 시간대 치우침이 있을 수 있음)`}
+              </>
+            ) : (
+              <>
+                {from} ~ {to} · 다 찬 날 {range.days}일의 일일평균
+                {range.skipped > 0 && ` · ${FULL_DAY_MIN_SAMPLES}시간 못 잰 날·오늘 ${range.skipped}일은 뺌`}
+              </>
             )}
+          </div>
+          <div>
+            <div className="text-xs text-[var(--sl-ink-soft)]">최근 24시간</div>
+            <div className="text-xl font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">{formatPct(r24.util)}</div>
+            <div className="text-xs text-[var(--sl-ink-soft)]">
+              {r24.util != null ? `시간대 ${r24.hours}/24칸` : `시간대 ${r24.hours}/24칸 — ${FULL_DAY_MIN_SAMPLES}칸부터 값이 나옴`}
+            </div>
           </div>
         </div>
 
@@ -279,7 +301,10 @@ export default function PingStoreDetailPage() {
                   const v = store.days[d];
                   return (
                     <tr key={d} className="border-t border-[var(--sl-hairline)]">
-                      <td className="py-1 pr-3">{d} ({WEEKDAY[dayOfWeek(d)]})</td>
+                      <td className="py-1 pr-3">
+                        {d} ({WEEKDAY[dayOfWeek(d)]})
+                        {v && !isFullDay(d, v, today) && <span className="ml-1 text-xs text-[var(--sl-ink-soft)]">덜 참 — 평균에서 뺌</span>}
+                      </td>
                       <td className="py-1 pr-3 text-right">{v ? `${v.n}회` : "-"}</td>
                       <td className="py-1 pr-3 text-right">{v ? `${(v.a / v.n).toFixed(1)}대` : "-"}</td>
                       <td className="py-1 text-right">{formatPct(v && v.t > 0 ? v.a / v.t : null)}</td>

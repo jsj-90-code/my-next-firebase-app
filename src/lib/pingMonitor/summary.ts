@@ -1,6 +1,7 @@
 // 경쟁점 가동률 측정기 — 저장 모양과 가동률 계산(화면·서버 공용, 2026-10-06 신설).
 //
-// 가동률 = 기간 안 (켜진 PC 수 합) ÷ (대수 합). 매 시간 한 번 잰 값을 그대로 더한다 —
+// 가동률 = 다 찬 날들의 "하루 가동률"(그날 켜진 PC 수 합 ÷ 대수 합) 평균 — 일일평균(2026-10-07 사용자).
+// 덜 찬 날(등록한 날 오후부터 잰 날 등)은 빼고, 진행 중인 오늘은 "오늘" 칸에만 따로 보인다.
 // 대수를 나중에 고쳐도 지난 기록의 분모는 그때 값(t)으로 남아 과거 가동률이 흔들리지 않는다.
 
 export const PING_STORES = "pingMonitorStores";
@@ -13,6 +14,35 @@ export const SAMPLE_INTERVAL_MINUTES = 60;
 export const BLOCKED_SUSPECT_SAMPLES = 72;
 
 export type DayTotals = { a: number; t: number; n: number };
+
+/**
+ * 하루로 치는 최소 측정 횟수(1시간 간격이라 = 시간 수). 이보다 적게 잰 날은 가동률 평균에서 뺀다 —
+ * 등록한 날 오후 5시부터 잰 7시간은 낮 시간이 빠져 치우친다(2026-10-07 사용자 "그 데이터는 날려야", "일일평균으로").
+ * 서버 장애로 몇 시간 빠진 날(10-07 08시 회차 누락 등)은 살리려고 24가 아니라 18로 둔다.
+ */
+export const FULL_DAY_MIN_SAMPLES = 18;
+
+/**
+ * 최근 24시간 가동률 — 시간대 칸마다 마지막 측정(24시간 안)을 합친다(켜진 합 ÷ 대수 합).
+ * 0시~24시 날짜를 기다리지 않아도 24개 시간대가 고르게 들어가 꽉 찬 하루와 같은 기준이 된다 —
+ * 신규 후보지는 오후에 등록해도 다음 날 같은 시각이면 값이 나온다(사용자 2026-10-07 "하루치로 하려면 2일을 기다려야 하니").
+ * 시간대가 FULL_DAY_MIN_SAMPLES개보다 적게 차 있으면 util=null(낮이 빠진 7시간치 같은 값을 내지 않는다).
+ */
+export function recent24h(recent: Record<string, RecentSlot>, now = new Date()): { util: number | null; hours: number } {
+  let a = 0, t = 0, hours = 0;
+  for (const v of Object.values(recent)) {
+    if (!v.at || now.getTime() - v.at.getTime() > 24 * 3600 * 1000 || !(v.t > 0)) continue;
+    a += v.a;
+    t += v.t;
+    hours += 1;
+  }
+  return { util: hours >= FULL_DAY_MIN_SAMPLES ? a / t : null, hours };
+}
+
+/** 하루를 다 찬 날로 칠지 — 오늘(진행 중)은 측정이 18번을 넘어도 아직 아니다. */
+export function isFullDay(date: string, v: DayTotals, today: string): boolean {
+  return date < today && v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0;
+}
 
 export type PingStore = {
   id: string;
@@ -45,7 +75,11 @@ export type PingStore = {
     aliveIps: string[];
   } | null;
   days: Record<string, DayTotals>;
+  /** 시간대(0~23시)별 가장 최근 측정 1개씩 — "최근 24시간" 계산용(2026-10-07). 서버가 매 회차 그 시 칸을 덮어쓴다. */
+  recent: Record<string, RecentSlot>;
 };
+
+export type RecentSlot = { a: number; t: number; at: Date | null };
 
 export type PingDaily = {
   storeId: string;
@@ -83,38 +117,61 @@ export function denominator(store: Pick<PingStore, "pcCount" | "ipCount">): numb
   return store.pcCount && store.pcCount > 0 ? store.pcCount : store.ipCount;
 }
 
-export type RangeUtil = { util: number | null; samples: number; days: number };
+/** days = 평균에 넣은 다 찬 날 수, skipped = 기록은 있으나 덜 차서 뺀 날 수, samples = 넣은 날들의 측정 횟수. */
+export type RangeUtil = { util: number | null; samples: number; days: number; skipped: number };
 
-/** from~to(포함) 날짜의 가동률. 기록이 없으면 util=null. */
-export function rangeUtilization(days: Record<string, DayTotals>, from: string | null, to: string | null): RangeUtil {
-  let a = 0;
-  let t = 0;
-  let n = 0;
-  let d = 0;
+/**
+ * from~to(포함) 날짜의 가동률 — 다 찬 날마다 하루 가동률을 구해 평균(일일평균). 다 찬 날이 없으면 util=null.
+ * includePartial: "오늘(진행 중)" 칸처럼 덜 찬 날도 그대로 합칠 때(켜진 합 ÷ 대수 합).
+ */
+export function rangeUtilization(
+  days: Record<string, DayTotals>,
+  from: string | null,
+  to: string | null,
+  { includePartial = false, today = kstDaysAgo(0) }: { includePartial?: boolean; today?: string } = {},
+): RangeUtil {
+  let a = 0, t = 0, n = 0, d = 0, skipped = 0, sumDaily = 0;
   for (const [date, v] of Object.entries(days)) {
     if (from && date < from) continue;
     if (to && date > to) continue;
-    a += v.a;
-    t += v.t;
-    n += v.n;
-    d += 1;
+    if (includePartial) {
+      a += v.a;
+      t += v.t;
+      n += v.n;
+      d += 1;
+    } else if (isFullDay(date, v, today)) {
+      sumDaily += v.a / v.t;
+      n += v.n;
+      d += 1;
+    } else {
+      skipped += 1;
+    }
   }
-  return { util: t > 0 ? a / t : null, samples: n, days: d };
+  const util = includePartial ? (t > 0 ? a / t : null) : d > 0 ? sumDaily / d : null;
+  return { util, samples: n, days: d, skipped };
 }
 
-/** 여러 경쟁점을 합친 가동률(대수 가중) — 우리 매장 하나에 붙은 경쟁점 묶음의 "동네 경쟁점 가동률". */
-export function groupUtilization(stores: PingStore[], from: string | null, to: string | null): number | null {
-  let a = 0;
-  let t = 0;
+/**
+ * 여러 경쟁점을 합친 가동률 — 우리 매장 하나에 붙은 경쟁점 묶음의 "동네 경쟁점 가동률".
+ * 날마다 그날 다 찬 경쟁점들의 켜진 합 ÷ 대수 합(대수 가중)을 구해 날짜끼리 평균한다(일일평균).
+ */
+export function groupUtilization(stores: PingStore[], from: string | null, to: string | null, today = kstDaysAgo(0)): number | null {
+  const byDate = new Map<string, { a: number; t: number }>();
   for (const s of stores) {
     for (const [date, v] of Object.entries(s.days)) {
       if (from && date < from) continue;
       if (to && date > to) continue;
-      a += v.a;
-      t += v.t;
+      if (!isFullDay(date, v, today)) continue;
+      const cur = byDate.get(date) ?? { a: 0, t: 0 };
+      cur.a += v.a;
+      cur.t += v.t;
+      byDate.set(date, cur);
     }
   }
-  return t > 0 ? a / t : null;
+  if (byDate.size === 0) return null;
+  let sum = 0;
+  for (const v of byDate.values()) sum += v.a / v.t;
+  return sum / byDate.size;
 }
 
 export type StoreStatus ={ label: string; tone: "ok" | "warn" | "danger" | "neutral" };
@@ -127,7 +184,7 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 export function storeStatus(store: PingStore): StoreStatus {
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
-  const all = rangeUtilization(store.days, null, null);
+  const all = rangeUtilization(store.days, null, null, { includePartial: true });
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
   const aliveEver = Object.values(store.days).some((v) => v.a > 0);
   if (aliveEver) return { label: "측정 중", tone: "ok" };
@@ -142,10 +199,15 @@ export function shortIps(ips: string[]): string {
   return prefixes.size === 1 ? `${ips.map((ip) => ip.split(".").at(-1)).join(", ")}번` : ips.join(", ");
 }
 
-/** 기간이 덜 찼으면(측정 횟수 < 일수×24) "15시간치"처럼 붙일 꼬리말. 다 찼으면 빈 문자열. */
+/** 오늘(진행 중)처럼 덜 찬 하루에 "15시간치"처럼 붙일 꼬리말. 다 찼으면 빈 문자열. */
 export function partialNote(samples: number, days: number): string {
   if (samples === 0) return "";
   return samples < days * (24 * 60) / SAMPLE_INTERVAL_MINUTES ? `${samples}시간치` : "";
+}
+
+/** n일 칸에 다 찬 날이 모자라면 "3일치"처럼 붙일 꼬리말(다 찬 날이 없으면 값이 "-"라 빈 문자열). */
+export function fullDaysNote(fullDays: number, days: number): string {
+  return fullDays > 0 && fullDays < days ? `${fullDays}일치` : "";
 }
 
 export function formatPct(v: number | null, digits = 1): string {

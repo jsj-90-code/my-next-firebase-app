@@ -10,6 +10,7 @@ import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 // 저장은 두 곳:
 //   pingMonitorDaily/{매장id}_{날짜}.hours.{시} = { a: 켜진 수, t: 대수 }  ← 상세 화면 시간대별
 //   pingMonitorStores/{매장id}.days.{날짜}     += { a, t, n: 1 }         ← 목록 화면(매장당 읽기 1번)
+//   pingMonitorStores/{매장id}.recent.{시}      = { a, t, at }            ← "최근 24시간"(시간대별 마지막 값, 2026-10-07)
 // 같은 시(한국 시각)에 두 번 불려도 한 번만 센다 — 알람이 늦거나 겹쳐도 기록이 부풀지 않게.
 //
 // 재는 쪽은 둘이다(2026-10-06):
@@ -66,6 +67,7 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
           {
             days: { [date]: { a: FieldValue.increment(aliveIps.length), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
             lastSample: { at: now, date, hour, alive: aliveIps.length, total: s.total, aliveIps, method },
+            recent: { [hour]: { a: aliveIps.length, t: s.total, at: now } },
           },
           { merge: true },
         );
