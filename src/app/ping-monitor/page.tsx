@@ -282,16 +282,41 @@ export default function PingMonitorPage() {
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             {intervalText}마다 켜진 PC 수 ÷ 대수를 잽니다. 매장을 누르면 날짜별·시간대별로 볼 수 있습니다.
           </p>
-          <details className="mt-1 max-w-2xl text-xs leading-5 text-[var(--sl-ink-soft)]">
+          {/* 2026-10-07 사용자 "읽기도 싫을 지경" — 한 문단에 몰려 있던 설명을 칸별 표로 나눴다. 내용은 그대로. */}
+          <details className="mt-1 max-w-2xl text-xs text-[var(--sl-ink-soft)]">
             <summary className="cursor-pointer hover:underline">계산 기준 보기</summary>
-            {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
-            이번 주(월~일)·최근 30일은 <b>일일평균</b>입니다 — 하루(한국 시각 0~24시) 가동률을 날마다 구해 평균하고,
-            {` ${FULL_DAY_MIN_SAMPLES}`}시간 넘게 못 잰 날(등록한 날 오후부터 잰 날 등)은 낮·밤이 치우치므로 뺍니다. 다 찬 날이 모자라면 &ldquo;3일치&rdquo;처럼 적습니다.
-            &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다(진행 중인 &ldquo;오늘&rdquo;은 보는 시각에 따라 치우쳐 상세 화면에만 둡니다) — 24개 시간대가
-            꽉 차야 값이 나와서, 신규 후보지는 등록 다음 날 같은 시각이면 하루치 값을 쓸 수 있습니다.
-            매장 줄의 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 이번 주 값입니다(경쟁점 합산은 쓸 데가 없어 뺐습니다, 2026-10-07).
-            이번 주는 지나간 꽉 찬 날만 넣어서 월요일엔 비어 있고 날이 갈수록 &ldquo;2일치&rdquo;처럼 늘어납니다.
-            어제·전체 같은 다른 기간은 매장 상세 화면에서 고릅니다.
+            <div className="app-card-sm mt-2 flex flex-col gap-3 rounded-xl p-3 leading-5">
+              <section>
+                <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">가동률</h3>
+                <p>{intervalText}마다 <b>켜진 PC 수 ÷ 대수</b>를 잽니다.</p>
+              </section>
+              <section>
+                <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">칸별 뜻</h3>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                  <dt className="font-medium text-[var(--sl-ink)]">이번 주 · 최근 30일</dt>
+                  <dd>
+                    <b>일일평균</b> — 하루(0~24시) 가동률을 날마다 구해 평균합니다.
+                    이번 주는 지나간 날만 넣어서 월요일엔 비어 있습니다.
+                  </dd>
+                  <dt className="font-medium text-[var(--sl-ink)]">최근 24시간</dt>
+                  <dd>지금부터 거꾸로 24시간. 신규 후보지는 등록 다음 날 같은 시각부터 값이 나옵니다.</dd>
+                  <dt className="font-medium text-[var(--sl-ink)]">우리 매장</dt>
+                  <dd>우리 매장 PC를 같은 방식으로 잰 이번 주 값.</dd>
+                </dl>
+              </section>
+              <section>
+                <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">표시가 붙는 경우</h3>
+                <ul className="flex flex-col gap-1">
+                  <li>
+                    <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. {FULL_DAY_MIN_SAMPLES}시간 넘게 못 잰 날(등록한 날 등)은 낮·밤이 치우쳐 뺍니다.
+                  </li>
+                  <li>
+                    <b>&ldquo;측정 불가 의심&rdquo;</b> — {BLOCKED_SUSPECT_SAMPLES}번 넘게 재도 한 대도 대답하지 않을 때(PC가 바깥 확인을 막아 둔 매장).
+                  </li>
+                </ul>
+              </section>
+              <p className="border-t border-[var(--sl-hairline)] pt-2">어제·전체 같은 다른 기간은 매장을 눌러 상세 화면에서 고릅니다.</p>
+            </div>
           </details>
         </div>
         <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" onClick={() => setShowForm((v) => !v)}>
