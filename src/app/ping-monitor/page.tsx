@@ -45,6 +45,44 @@ const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidat
 // own = 우리 매장 자체를 잰 등록(있으면). stores = 경쟁점만.
 type Group = { key: string; name: string; own: PingStore | null; stores: PingStore[] };
 
+/**
+ * 우리 가맹점 줄 — 펼친 표 맨 위(2026-10-07 사용자 "기존가맹점도 목록에 같이"). 핑으로 잰 우리 매장 값을 경쟁점과 같은 칸에.
+ * 우리 매장 IP가 없는 곳(2026-10-07 기준 42곳 중 24곳)은 줄만 두고 "IP 없음".
+ */
+function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
+  const { today, yesterday, from7, to7, from30 } = useRanges();
+  const status = ping ? storeStatus(ping) : null;
+  return (
+    <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
+      <td className="px-3 py-2">
+        {ping ? (
+          <Link href={`/ping-monitor/${ping.id}`} className="font-semibold text-[#171310] hover:underline dark:text-[#f2ede2]">
+            {name}
+          </Link>
+        ) : (
+          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{name}</span>
+        )}
+        <span className="ml-1.5 text-xs text-[var(--sl-ink-soft)]">우리 매장</span>
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">-</td>
+      <td className="px-3 py-2 text-right tabular-nums">{ping ? denominator(ping) : "-"}</td>
+      {ping ? (
+        <>
+          <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress />
+          <Recent24Cell store={ping} />
+          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold />
+          <UtilCell days={ping.days} from={from30} to={yesterday} nDays={30} />
+        </>
+      ) : (
+        <td colSpan={4} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
+          우리 매장 IP 없음 — 측정 안 함
+        </td>
+      )}
+      <td className="px-3 py-2">{status && <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>}</td>
+    </tr>
+  );
+}
+
 // 기간은 날짜(0~24시) 단위 — 오늘은 진행 중, 어제·7일·30일은 어제까지 다 찬 날만(2026-10-07 사용자).
 function useRanges() {
   return useMemo(() => {
@@ -80,14 +118,14 @@ function Recent24Cell({ store }: { store: PingStore }) {
 
 // 목록은 한눈에 볼 칸만(2026-10-07 사용자 "덕지덕지 부산스럽다") — 어제·전체·최근 측정·메모는 상세 화면에.
 // showOwn: "IP 확인 필요" 탭 — 우리 매장 이름과 확인 사유·IP대역을 같이 보인다.
-function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; showOwn?: boolean }) {
+function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
   const { today, yesterday, from7, to7, from30 } = useRanges();
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[800px] text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
-            <th className="px-3 py-2 font-medium">경쟁점</th>
+            <th className="px-3 py-2 font-medium">점포명</th>
             <th className="px-3 py-2 text-right font-medium">거리</th>
             <th className="px-3 py-2 text-right font-medium">대수</th>
             <th className="px-3 py-2 text-right font-medium">오늘(진행 중)<div className="font-normal">{dateRangeLabel(today, today)}</div></th>
@@ -98,6 +136,7 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
           </tr>
         </thead>
         <tbody>
+          {ownRow}
           {stores.map((s) => {
             const status = storeStatus(s);
             return (
@@ -167,7 +206,10 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
       </div>
       {open && (
         <div className="border-t border-[var(--sl-hairline)]">
-          <CompetitorTable stores={[...group.stores].sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))} />
+          <CompetitorTable
+            stores={[...group.stores].sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))}
+            ownRow={isCandidateCode(group.key) || group.key === UNLINKED ? undefined : <OwnRow name={group.name} ping={group.own} />}
+          />
         </div>
       )}
     </li>
