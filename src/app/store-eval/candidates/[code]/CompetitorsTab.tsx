@@ -26,7 +26,8 @@ import { formatScore } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getCandidate, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
 import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
-import { isRegistrableCompetitor, listPingStoresByCompetitorIds, registerCompetitorsToPing } from "@/lib/pingMonitor/clientStore";
+import { isRegistrableCompetitor, listPingStoresByCompetitorIds, registerCompetitorsToPing, updatePingStore } from "@/lib/pingMonitor/clientStore";
+import { StoreForm } from "@/app/ping-monitor/StoreForm";
 import { competitorMeasurement, formatPct, FULL_DAY_MIN_SAMPLES, type CompetitorMeasurement } from "@/lib/pingMonitor/summary";
 import {
   BooleanSelectField,
@@ -269,6 +270,7 @@ function PingMeasurePanel({
   onApply,
   applyLabel,
   onRegister,
+  onPingChanged,
 }: {
   measurement: CompetitorMeasurement | undefined;
   current: { utilization: number | null; period: string | null };
@@ -276,7 +278,11 @@ function PingMeasurePanel({
   applyLabel: string;
   /** 측정기에 없는 경쟁점을 빈칸으로 올리는 버튼(카드에서만). */
   onRegister?: (() => void) | null;
+  /** 측정기 칸(IP 등)을 여기서 고친 뒤 다시 읽게 한다. 없으면 IP 넣기 칸을 안 보인다. */
+  onPingChanged?: (() => void) | null;
 }) {
+  const { user } = useAuth();
+  const [ipOpen, setIpOpen] = useState(false);
   if (!measurement) return <p className="text-[11px] text-[var(--sl-ink-soft)]">측정기 확인 중...</p>;
   const m = measurement;
   const tone =
@@ -322,8 +328,35 @@ function PingMeasurePanel({
           </button>
         )}
       </div>
-      {m.state === "noIp" && (
-        <p className="mt-1 text-[var(--sl-ink-soft)]">측정기에 빈칸으로 올라가 있습니다. 측정기 화면에서 IP를 넣으면 다음 회차부터 잽니다.</p>
+      {m.state === "noIp" && !ipOpen && (
+        <p className="mt-1 text-[var(--sl-ink-soft)]">측정기에 빈칸으로 올라가 있습니다. IP를 넣으면 다음 정시부터 잽니다.</p>
+      )}
+      {/* 2026-10-07 사용자 "등록할 때 IP 넣는 칸이 없다" — 측정기 화면의 등록 칸(StoreForm, "지금 확인" 포함)을 그대로 연다. */}
+      {m.store && onPingChanged && (
+        <div className="mt-1 print:hidden">
+          <button type="button" onClick={() => setIpOpen((v) => !v)} className="app-btn-outline rounded-md px-2 py-1 text-[11px]">
+            {ipOpen ? "IP 칸 닫기" : m.state === "noIp" ? "IP 넣기" : "측정기 칸 고치기(IP·대수)"}
+          </button>
+          {ipOpen && (
+            <div className="mt-2 rounded-lg border border-[var(--sl-line,#e5ded2)] p-3">
+              <p className="mb-2 text-[var(--sl-ink-soft)]">
+                IP 대역을 넣고 &ldquo;지금 확인&rdquo;으로 켜진 PC가 잡히는지 본 뒤 저장하세요. 등록한 대역 안에서만 잽니다.
+              </p>
+              <StoreForm
+                initial={m.store}
+                submitLabel="측정기에 저장"
+                onSubmit={async (input) => {
+                  const store = m.store!;
+                  await updatePingStore(store.id, input, user?.email ?? null, {
+                    clearIpCheck: input.ipRanges.replace(/\s/g, "") !== store.ipRanges.replace(/\s/g, ""),
+                  });
+                  setIpOpen(false);
+                  onPingChanged();
+                }}
+              />
+            </div>
+          )}
+        </div>
       )}
       {m.state === "short" && (
         <p className="mt-1 text-[var(--sl-ink-soft)]">
@@ -345,6 +378,7 @@ function CompetitorForm({
   onSaved,
   actor,
   measurement,
+  onPingChanged,
 }: {
   initial: Competitor;
   baseline: Competitor | null;
@@ -353,6 +387,7 @@ function CompetitorForm({
   actor: string | null;
   /** 이 경쟁점의 측정기 최근 7일 요약. 새 경쟁점(저장 전)은 측정기에 이어질 id가 없어 null. */
   measurement: CompetitorMeasurement | null | undefined;
+  onPingChanged?: () => void;
 }) {
   const [form, setForm] = useState<Competitor>(initial);
   const [saving, setSaving] = useState(false);
@@ -554,6 +589,7 @@ function CompetitorForm({
             measurement={measurement}
             current={{ utilization: form.pingbotUtilization, period: form.pingbotPeriod }}
             applyLabel="핑봇 칸에 넣기"
+            onPingChanged={onPingChanged}
             onApply={() => {
               if (measurement?.pingbotUtilization == null) return;
               set("pingbotUtilization", measurement.pingbotUtilization);
@@ -1113,6 +1149,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
           initial={editingCompetitor}
           baseline={editingId === "new" ? null : competitors.find((c) => c.id === editingId) ?? null}
           actor={user?.email ?? null}
+          onPingChanged={() => setPingVersion((v) => v + 1)}
           measurement={!pingMeasureEnabled || editingId === "new" || editingId == null ? null : measureError ? null : measurementOf(editingId)}
           onCancel={() => {
             setEditingId(null);
@@ -1196,6 +1233,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                     applyLabel="핑봇 칸에 넣기"
                     onApply={editingId === null ? () => handleApplyMeasurement(c) : null}
                     onRegister={editingId === null && !pingRegistering && isRegistrableCompetitor(c) ? () => void registerToPing([c]) : null}
+                    onPingChanged={editingId === null ? () => setPingVersion((v) => v + 1) : null}
                   />
                 </div>
               )}
