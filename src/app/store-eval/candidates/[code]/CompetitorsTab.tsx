@@ -877,7 +877,10 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
     if (!pingMeasureEnabled || list.length === 0) return;
     setPingRegistering(true);
     try {
-      const created = await registerCompetitorsToPing(list, { code: candidateCode, name: candidateName }, user?.email ?? null);
+      // 측정기 "후보지" 보기는 경쟁점 문서의 ownCode·ownName으로 후보지 묶음을 만든다 — 이름이 비면 묶음 제목이 코드로만 나오므로
+      // 화면을 연 직후(이름을 아직 못 읽었을 때) 저장해도 여기서 한 번 더 읽어 채운다.
+      const ownName = candidateName ?? (await getCandidate(candidateCode))?.name ?? null;
+      const created = await registerCompetitorsToPing(list, { code: candidateCode, name: ownName }, user?.email ?? null);
       if (created.length > 0) {
         setPingNotice({ tone: "ok", text: `경쟁점 가동률 측정기에 ${created.length}곳을 IP 미등록으로 올렸습니다. 측정기 화면에서 IP를 넣으면 재기 시작합니다.` });
       } else if (!quietIfNone) {
