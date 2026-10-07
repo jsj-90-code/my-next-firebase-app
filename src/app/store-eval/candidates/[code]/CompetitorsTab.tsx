@@ -869,6 +869,8 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
   const [pasteText, setPasteText] = useState("");
   const [pasteOpen, setPasteOpen] = useState(false);
   const [parsedNotes, setParsedNotes] = useState<ParsedCompetitorNote[]>([]);
+  // 2026-10-07 — 0곳이면 아무 표시가 없어 "분석이 반응 없다"로 보였다. 눌렀는데 못 읽었음을 알린다.
+  const [parseTried, setParseTried] = useState(false);
   const [prefill, setPrefill] = useState<Competitor | null>(null);
   // 2026-08-27 수정 — 매장명이 완전히 같지 않은 경우가 많다는 사용자 확인(예: "레드포스아레나" vs
   // "레드포스pc아레나 삼산점")으로 자동 이름매칭을 없애고, 병합 대상을 사람이 직접 고르게 한다.
@@ -879,6 +881,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
   function handleParsePaste() {
     const notes = parseCompetitorNotes(pasteText);
     setParsedNotes(notes);
+    setParseTried(true);
     const defaults: Record<number, string> = {};
     notes.forEach((note, i) => {
       defaults[i] = findMatchingCompetitor(note.name)?.id ?? "new";
@@ -1107,6 +1110,13 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
             </button>
             {parsedNotes.length > 0 && <span className="text-xs text-[var(--sl-ink-soft)]">{parsedNotes.length}곳 인식됨</span>}
           </div>
+          {parseTried && parsedNotes.length === 0 && (
+            <p className="app-notice app-badge-warn mt-3 w-full justify-start px-3 py-2 text-xs">
+              {pasteText.trim() === ""
+                ? "붙여넣은 내용이 없습니다."
+                : "매장을 하나도 인식하지 못했습니다. 매장마다 “매장명 : 이름” 줄이 있어야 그 줄을 기준으로 나눠 읽습니다(앞에 -, ■, 1. 같은 기호는 있어도 됩니다)."}
+            </p>
+          )}
           {parsedNotes.length > 0 && (
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {parsedNotes.map((note, i) => (

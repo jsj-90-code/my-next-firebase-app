@@ -385,3 +385,13 @@ describe("parseCompetitorNotes — IP·수준 점수(2026-10-07)", () => {
     expect(parseFoodLine("맘스키친")).toEqual({ foodBrand: "기타브랜드", foodScore: null });
   });
 });
+
+describe("매장명 줄 앞 기호·번호(2026-10-07)", () => {
+  it("1. / ▶ / 띄어쓴 '매장 명'도 매장 시작으로 읽는다", () => {
+    const notes = parseCompetitorNotes(`1. 매장명 : 가게A\n전체 대수 : 80대\n\n▶ 매장 명: 가게B\n전체 대수 : 60대`);
+    expect(notes.map((n) => [n.name, n.totalPcCount])).toEqual([
+      ["가게A", 80],
+      ["가게B", 60],
+    ]);
+  });
+});

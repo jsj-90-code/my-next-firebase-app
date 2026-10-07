@@ -147,7 +147,7 @@ function parseRatePer1000Won(text: string | null): number | null {
 }
 
 function parseOneBlock(block: string): ParsedCompetitorNote | null {
-  const name = matchLine(block, /매장명\s*[:：]\s*(.+)/);
+  const name = matchLine(block, /매장\s*명\s*[:：]\s*(.+)/);
   if (!name) return null;
 
   const totalPcCountText = matchLine(block, /전체\s*대수\s*[:：]\s*(.+)/);
@@ -222,9 +222,11 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
 /**
  * 붙여넣은 텍스트 전체에서 "- 매장명 : X"(구형식) 또는 "■ 매장명: X"(신형식, 2026-08-27) 줄마다
  * 새 경쟁점 블록으로 나눠 각각 파싱한다.
+ * 2026-10-07 — "1. 매장명", "▶ 매장명", "매장 명"처럼 앞 기호·번호·띄어쓰기가 다르면 0곳으로 끝나고
+ * 화면엔 아무 반응이 없었다(사용자 "분석 눌렀는데 반응이 없다"). 줄 앞 기호·번호를 넓게 받는다.
  */
 export function parseCompetitorNotes(text: string): ParsedCompetitorNote[] {
-  const markerRe = /^[ \t]*(?:■\s*|-\s*)?매장명\s*[:：]/gm;
+  const markerRe = /^[ \t]*(?:[■□▶▷►●○•·◆◇★☆※*\-]+\s*|\d+\s*[.)]\s*)?매장\s*명\s*[:：]/gm;
   const starts: number[] = [];
   let m: RegExpExecArray | null;
   while ((m = markerRe.exec(text)) !== null) {
