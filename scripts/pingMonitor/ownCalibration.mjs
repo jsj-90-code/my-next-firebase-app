@@ -22,7 +22,8 @@ if (!/^\d{4}-\d{2}$/.test(pingMonth ?? "")) throw new Error("달을 주세요: n
 const FULL_DAY_MIN_SAMPLES = 24; // src/lib/pingMonitor/summary.ts와 같게(2026-10-08 22→24)
 const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
-const own = (await db.collection("pingMonitorStores").where("isOwnStore", "==", true).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+// 측정 중지 문서는 뺀다 — IP를 고칠 때 옛 문서를 멈추고 새로 만든다(2026-10-08 안산선부: 옛 211.x는 다른 사업장).
+const own = (await db.collection("pingMonitorStores").where("isOwnStore", "==", true).get()).docs.map((d) => ({ id: d.id, ...d.data() })).filter((s) => s.active !== false);
 const sales = new Map(
   (await db.collection("storeEvalExistingStoreSales").where("yearMonth", "==", salesMonth).get()).docs.map((d) => [d.get("storeCode"), d.get("utilizationRate")]),
 );
