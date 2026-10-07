@@ -44,32 +44,6 @@ export function recent24h(recent: Record<string, RecentSlot>, now = new Date()):
   return { util: hours >= RECENT_MIN_HOURS ? a / t : null, hours };
 }
 
-/** 여러 경쟁점의 최근 24시간 합산(대수 가중) — 24칸이 다 찬 경쟁점만 넣는다. 매장별 비교 화면(2026-10-07). */
-export function groupRecent24h(stores: Pick<PingStore, "recent">[], now = new Date()): number | null {
-  let a = 0, t = 0;
-  for (const s of stores) {
-    if (recent24h(s.recent, now).util == null) continue;
-    for (const v of Object.values(s.recent)) {
-      if (!v.at || now.getTime() - v.at.getTime() > 24 * 3600 * 1000 || !(v.t > 0)) continue;
-      a += v.a;
-      t += v.t;
-    }
-  }
-  return t > 0 ? a / t : null;
-}
-
-/** 여러 경쟁점의 진행 중인 오늘 합산(켜진 합 ÷ 대수 합) — 매장별 비교 화면의 "오늘". */
-export function groupToday(stores: Pick<PingStore, "days">[], today = kstDaysAgo(0)): number | null {
-  let a = 0, t = 0;
-  for (const s of stores) {
-    const v = s.days[today];
-    if (!v) continue;
-    a += v.a;
-    t += v.t;
-  }
-  return t > 0 ? a / t : null;
-}
-
 /** 하루 가동률 — 다 찬 날만, 아니면 null(날짜별 그래프용). */
 export function fullDayRate(days: Record<string, DayTotals>, date: string, today = kstDaysAgo(0)): number | null {
   const v = days[date];

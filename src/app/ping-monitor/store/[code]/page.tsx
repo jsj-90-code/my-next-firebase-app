@@ -1,9 +1,10 @@
 "use client";
 
 // 매장별 비교 — 우리 매장(개점 매장만)과 그 경쟁점들의 가동률을 나란히 본다(2026-10-07 사용자 "가맹점명 누르면 비교 상세").
-// 표: 오늘 · 최근 24시간 · 이번 주(월~일) · 최근 30일. 그래프: 우리 매장 · 경쟁점 합산(회색 점선) · 체크한 경쟁점마다 선 하나(사용자 2026-10-07).
-// 경쟁점 선은 동시에 RIVAL_COLORS.length(7)곳까지 — 색이 8개를 넘으면 구별이 안 된다(dataviz 팔레트 검사 통과한 8색 중 1번은 우리 매장).
-// 색은 체크할 때 빈 색을 받아 체크를 풀 때까지 유지한다 — 다른 매장을 끄고 켜도 남은 선 색이 바뀌지 않게.
+// 표: 오늘 · 최근 24시간 · 이번 주(월~일) · 최근 30일. 그래프: 우리 매장 + 측정 중인 경쟁점 전부, 매장마다 선 하나(사용자 2026-10-07).
+// 경쟁점 합산은 뺐다(사용자 "합산은 딱히 쓸 데이터가 없다"). 체크를 풀면 그 선만 숨긴다.
+// 색은 거리순 번호로 정해 숨겨도 남은 선 색이 안 바뀐다. 8색 팔레트(1번 우리 매장)라 경쟁점 8번째부터는 같은 색을 점선으로 다시 쓴다
+// (2026-10-07 기준 8곳 넘는 매장은 김포구래 10곳뿐).
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -19,9 +20,6 @@ import {
   formatPct,
   fullDayRate,
   fullDaysNote,
-  groupRecent24h,
-  groupToday,
-  groupUtilization,
   hasNoIp,
   kstDaysAgo,
   lastFullDays,
@@ -85,8 +83,8 @@ export default function PingOwnComparePage() {
   const [period, setPeriod] = useState<PeriodKey>("7");
   const [customFrom, setCustomFrom] = useState(lastFullDays(30).from);
   const [customTo, setCustomTo] = useState(lastFullDays(30).to);
-  /** 경쟁점 id → 색 번호(RIVAL_COLORS). null이면 아직 안 고름 → 가까운 순 7곳. */
-  const [picked, setPicked] = useState<Record<string, number> | null>(null);
+  /** 그래프에서 숨긴 경쟁점 id. */
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [hourlyLoaded, setHourlyLoaded] = useState<{
     key: string;
     byId: Record<string, PingDaily[]>;
@@ -132,22 +130,19 @@ export default function PingOwnComparePage() {
     () => rivals.filter((s) => !hasNoIp(s) && s.active),
     [rivals],
   );
-  const colorOf = useMemo<Record<string, number>>(
-    () => picked ?? Object.fromEntries(measured.slice(0, RIVAL_COLORS.length).map((s, i) => [s.id, i])),
-    [picked, measured],
-  );
-  const togglePick = (id: string) => {
-    const cur = { ...colorOf };
-    if (id in cur) delete cur[id];
-    else {
-      const used = new Set(Object.values(cur));
-      const free = RIVAL_COLORS.findIndex((_, i) => !used.has(i));
-      if (free < 0) return; // 7곳 꽉 참 — 하나를 풀어야 한다
-      cur[id] = free;
-    }
-    setPicked(cur);
+  /** 거리순 번호 → 색·선 모양. 7곳까지 서로 다른 색 실선, 8번째부터 같은 색 점선. */
+  const lineOf = (s: PingStore) => {
+    const i = measured.findIndex((m) => m.id === s.id);
+    return { color: RIVAL_COLORS[i % RIVAL_COLORS.length], dashed: i >= RIVAL_COLORS.length };
   };
-  const pickedStores = measured.filter((s) => s.id in colorOf);
+  const toggleHidden = (id: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const shownStores = measured.filter((s) => !hidden.has(s.id));
 
   // 시간대별: 기간 시작 ~ 오늘(진행 중 포함). 우리 매장 + 측정 중인 경쟁점 전부.
   const hFrom =
@@ -201,19 +196,13 @@ export default function PingOwnComparePage() {
   const isCandidate = /^N\d+$/.test(ownCode);
   const dates = range.from <= range.to ? dateRange(range.from, range.to) : [];
 
-  // 선 순서: 우리 매장 → 경쟁점 합산 → 체크한 경쟁점(거리순).
-  const buildSeries = (
-    ownValues: () => (number | null)[],
-    rivalsValues: () => (number | null)[],
-    storeValues: (s: PingStore) => (number | null)[],
-  ): LineSeries[] => [
+  // 선 순서: 우리 매장 → 경쟁점(거리순).
+  const buildSeries = (ownValues: () => (number | null)[], storeValues: (s: PingStore) => (number | null)[]): LineSeries[] => [
     ...(own ? [{ key: "own", label: "우리 매장", color: "var(--pm-c1)", values: ownValues() }] : []),
-    { key: "rivals", label: `경쟁점 합산(${measured.length}곳)`, color: "var(--sl-ink-soft)", dashed: true, values: rivalsValues() },
-    ...pickedStores.map((s) => ({ key: s.id, label: s.name, color: RIVAL_COLORS[colorOf[s.id]], values: storeValues(s) })),
+    ...shownStores.map((s) => ({ key: s.id, label: s.name, ...lineOf(s), values: storeValues(s) })),
   ];
   const daySeries = buildSeries(
     () => (own ? dates.map((d) => fullDayRate(own.days, d, today)) : []),
-    () => dates.map((d) => groupUtilization(measured, d, d, today)),
     (s) => dates.map((d) => fullDayRate(s.days, d, today)),
   );
   const anyDayValue = daySeries.some((s) => s.values.some((v) => v != null));
@@ -221,7 +210,6 @@ export default function PingOwnComparePage() {
   const hourSeries = hourly
     ? buildSeries(
         () => (own ? hourProfile([hourly[own.id] ?? []]) : []),
-        () => hourProfile(measured.map((s) => hourly[s.id] ?? [])),
         (s) => hourProfile([hourly[s.id] ?? []]),
       )
     : null;
@@ -319,46 +307,34 @@ export default function PingOwnComparePage() {
                 {rowFor(own)}
               </tr>
             )}
-            <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
-              <td className="px-3 py-2 font-semibold">
-                <span
-                  className="mr-1.5 inline-block w-3 border-t-2 border-dashed align-middle"
-                  style={{ borderColor: "var(--sl-ink-soft)" }}
-                />
-                경쟁점 합산
-              </td>
-              <td className={cell}>-</td>
-              <td className={cell}>
-                {measured.reduce((n, s) => n + denominator(s), 0)}
-              </td>
-              {util(groupToday(measured, today))}
-              {util(groupRecent24h(measured))}
-              {util(groupUtilization(measured, r7.from, r7.to, today))}
-              {util(groupUtilization(measured, r30.from, r30.to, today))}
-            </tr>
             {rivals.map((s) => {
               const noIp = hasNoIp(s);
-              const isPicked = s.id in colorOf;
-              const full = !isPicked && Object.keys(colorOf).length >= RIVAL_COLORS.length;
+              const isShown = !noIp && !hidden.has(s.id);
+              const line = noIp ? null : lineOf(s);
               return (
                 <tr
                   key={s.id}
                   className={`border-b border-[var(--sl-hairline)] last:border-0 ${noIp ? "" : "cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"}`}
-                  onClick={() => !noIp && togglePick(s.id)}
-                  aria-selected={isPicked}
-                  title={full ? `그래프는 경쟁점 ${RIVAL_COLORS.length}곳까지 — 다른 곳을 먼저 끄세요` : undefined}
+                  onClick={() => !noIp && toggleHidden(s.id)}
+                  aria-selected={isShown}
                 >
                   <td className="px-3 py-2">
                     {!noIp && (
                       <input
                         type="checkbox"
                         className="mr-1.5 align-middle"
-                        checked={isPicked}
-                        disabled={full}
-                        onChange={() => togglePick(s.id)}
+                        checked={isShown}
+                        onChange={() => toggleHidden(s.id)}
                         onClick={(e) => e.stopPropagation()}
                         aria-label={`${s.name} 그래프에 그리기`}
-                        style={{ accentColor: isPicked ? RIVAL_COLORS[colorOf[s.id]] : undefined }}
+                        style={{ accentColor: line?.color }}
+                      />
+                    )}
+                    {line && (
+                      <span
+                        className={`mr-1.5 inline-block w-4 border-t-2 align-middle ${line.dashed ? "border-dashed" : ""}`}
+                        style={{ borderColor: line.color, opacity: isShown ? 1 : 0.3 }}
+                        aria-hidden
                       />
                     )}
                     <Link
@@ -402,7 +378,7 @@ export default function PingOwnComparePage() {
           </tbody>
         </table>
         <p className="border-t border-[var(--sl-hairline)] px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
-          체크한 경쟁점마다 아래 그래프에 선이 하나씩 그려집니다(동시에 7곳까지, 처음엔 가까운 순).
+          측정 중인 경쟁점은 모두 아래 그래프에 선으로 그려집니다. 체크를 풀면 그 선만 숨깁니다.
           이름을 누르면 그 매장 상세 화면으로 갑니다.
         </p>
       </section>
