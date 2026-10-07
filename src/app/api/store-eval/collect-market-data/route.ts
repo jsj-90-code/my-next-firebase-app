@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
   const candidateSnap = await adminDb.collection("storeEvalCandidates").doc(candidateCode).get();
   if (!candidateSnap.exists) return NextResponse.json({ error: "후보지를 찾을 수 없습니다. 먼저 저장해주세요." }, { status: 404 });
-  const candidate = candidateSnap.data() as { address?: string };
+  const candidate = candidateSnap.data() as { address?: string; hasElevator?: boolean | null };
   const address = candidate.address?.trim();
   if (!address) return NextResponse.json({ error: "주소가 비어 있습니다." }, { status: 400 });
 
@@ -79,6 +79,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "주소와 일치하는 좌표를 찾지 못했습니다. 주소를 확인해주세요.", geocodeStatus: "수집 실패" }, { status: 200 });
   }
 
+  // 1-1) 후보지 건물 엘리베이터(2026-10-07 사용자 "가끔 안 적어주는 사람이 있어서") — 경쟁점과 같은 건축물대장 판정.
+  //      칸이 비어 있을 때만 "있음"을 채운다(사람이 적은 값은 덮지 않는다). 근거 한 줄은 늘 남겨 칸 밑에 보인다.
+  const elevatorPatch: { hasElevator?: true; elevatorBasis?: string } = {};
+  let candidateElevatorFailed = false;
+  try {
+    const e = await lookupBuildingElevator({ lat: geocode.lat, lng: geocode.lng });
+    elevatorPatch.elevatorBasis = e.basis;
+    if (e.hasElevator === true && candidate.hasElevator == null) elevatorPatch.hasElevator = true;
+  } catch {
+    candidateElevatorFailed = true;
+  }
+
   await adminDb.collection("storeEvalCandidates").doc(candidateCode).set(
     {
       lat: geocode.lat,
@@ -88,6 +100,7 @@ export async function POST(request: Request) {
       buildingName: geocode.buildingName,
       geocodedAt: now,
       updatedAt: now,
+      ...elevatorPatch,
     },
     { merge: true },
   );
@@ -111,6 +124,7 @@ export async function POST(request: Request) {
   let competitorsAdded = 0;
   let demandPointsAdded = 0;
   const collectionErrors: string[] = [];
+  if (candidateElevatorFailed) collectionErrors.push("후보지 건물의 건축물대장 조회에 실패해 엘리베이터는 그대로 뒀습니다.");
 
   try {
     const pcPlaces = await searchByKeyword(origin.lat, origin.lng, "PC방", NEARBY_PC_RADIUS_M);

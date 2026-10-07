@@ -85,6 +85,8 @@ export type CandidateInput = {
   floor: number | null;
   groundLevel: GroundLevel | null;
   hasElevator: boolean | null;
+  /** 건축물대장 판정 근거(2026-10-07, 상권자료 수집 때) — 엘리베이터 칸이 비어 있었을 때만 "있음"을 채운다. */
+  elevatorBasis?: string | null;
   hourlyRate: number | null; // 요금표_시간당원
   demographicsYear: number | null; // 상권데이터기준연도
   plannedOpenMonth: number | null; // 예상오픈월 (1~12) — AA 기준매출(오픈월부터 10개월 평균) 계산 입력

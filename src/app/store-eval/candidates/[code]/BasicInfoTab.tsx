@@ -259,6 +259,7 @@ function BasicInfoTabForm({
         competitorsAdded: number;
         demandPointsAdded: number;
         rival2kmCount?: number | null;
+        collectionErrors?: string[];
       }>(response);
       if (!response.ok) throw new Error(data.error ?? "상권자료 수집에 실패했습니다.");
       if (data.error) {
@@ -275,7 +276,9 @@ function BasicInfoTabForm({
       setNearbyWarnings(data.nearbyDuplicateWarnings ?? []);
       const parts = [`좌표 확인 완료`, `경쟁점(PC방) ${data.competitorsAdded ?? 0}건`, `수요거점 ${data.demandPointsAdded ?? 0}건 자동수집`];
       if (data.rival2kmCount != null) parts.push(`2km PC방 ${data.rival2kmCount}곳(실험실 산식용)`);
-      setCollectMessage(parts.join(" · "));
+      // 2026-10-07 — 라우트가 돌려주던 부분 실패 안내(건축물대장 조회 실패 등)를 화면이 버리고 있었다.
+      const warnings = data.collectionErrors ?? [];
+      setCollectMessage(parts.join(" · ") + (warnings.length > 0 ? ` (주의: ${warnings.join(" ")})` : ""));
     } catch (err) {
       setCollectError(err instanceof Error ? err.message : "상권자료 수집 중 오류가 발생했습니다.");
     } finally {
@@ -564,7 +567,12 @@ function BasicInfoTabForm({
           <NumberField label="예상PC대수" value={form.expectedPcCount} onChange={(v) => set("expectedPcCount", v)} required />
           <NumberField label="점포층수" value={form.floor} onChange={(v) => set("floor", v)} allowNegative />
           <SelectField label="지상/지하" value={form.groundLevel} onChange={(v) => set("groundLevel", v)} options={GROUND_LEVEL_OPTIONS} />
-          <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
+          <BooleanSelectField
+            label="엘리베이터"
+            value={form.hasElevator}
+            onChange={(v) => set("hasElevator", v)}
+            hint={form.elevatorBasis ? `상권자료 수집 때 자동: ${form.elevatorBasis}` : "상권자료 수집을 누르면 건축물대장으로 확인해 빈칸이면 채웁니다"}
+          />
           <NumberField label="요금표_시간당원" value={form.hourlyRate} onChange={(v) => set("hourlyRate", v)} required
             hint="회원 기본 시간당 요금 + 유료게임 과금(원/시간)을 합산해서 넣습니다. 좌석 과금은 넣지 않습니다. 기존점도 전사 유료게임차감 표로 같은 합산을 해서 V62·실험실이 한 자로 잽니다(2026-09-25)." />
           <NumberField label="상권데이터기준연도" value={form.demographicsYear} onChange={(v) => set("demographicsYear", v)} step={1} />
