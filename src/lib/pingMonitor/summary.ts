@@ -212,10 +212,13 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   if (candidates.length === 0) return { ...base, state: "none", label: "측정기 미등록(측정 안 함)", store: null };
   const ranked = candidates
     .map((s) => ({ s, r: rangeUtilization(s.days, from, to, { today }) }))
-    .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(y.s.active) - Number(x.s.active) || y.r.days - x.r.days);
+    .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(y.s.active) - Number(x.s.active) || Number(Boolean(x.s.ipCheck)) - Number(Boolean(y.s.ipCheck)) || y.r.days - x.r.days);
   const { s, r } = ranked[0];
   if (hasNoIp(s)) return { ...base, state: "noIp", label: "IP 미등록", store: s };
   if (!s.active) return { ...base, state: "stopped", label: "측정 중지", store: s };
+  // 응답이 한 번이라도 있었다고 해서 IP 확인 경고가 해소된 것은 아니다.
+  // 레드포스처럼 하루 0~1대만 응답한 값이 정상 가동률로 점포평가에 들어가지 않게 한다.
+  if (s.ipCheck) return { ...base, state: "blocked", label: "측정값 확인 필요(IP·응답)", store: s };
   const status = storeStatus(s);
   if (status.tone === "danger" || status.label.startsWith("대답 없음")) return { ...base, state: "blocked", label: status.label, store: s };
   const used = Object.entries(s.days)
@@ -250,6 +253,7 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 export function storeStatus(store: PingStore): StoreStatus {
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
+  if (store.ipCheck) return { label: "측정값 확인 필요", tone: "warn" };
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
   const aliveEver = Object.values(store.days).some((v) => v.a > 0);

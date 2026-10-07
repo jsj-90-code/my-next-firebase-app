@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { competitorMeasurement, thisWeek, type PingStore } from "./summary";
+import { competitorMeasurement, storeStatus, thisWeek, type PingStore } from "./summary";
 
 // 2026-10-07 기준: 한국 시각 10-07 낮 → 최근 7일 = 09-30~10-06.
 const NOW = new Date("2026-10-07T03:00:00Z");
@@ -14,6 +14,20 @@ function store(over: Partial<PingStore>): PingStore {
 const full = (a: number) => ({ a, t: 240, n: 24 });
 
 describe("competitorMeasurement", () => {
+  it("간헐적 1대 응답이 있어도 IP 확인 중이면 평가에 값을 넘기지 않는다", () => {
+    const s = store({ ipCheck: "등록 범위 응답 확인 필요", days: { "2026-10-06": full(1) } });
+    expect(storeStatus(s).tone).toBe("warn");
+    const m = competitorMeasurement([s], NOW);
+    expect(m.state).toBe("blocked");
+    expect(m.util).toBeNull();
+    expect(m.pingbotUtilization).toBeNull();
+    expect(m.pingbotPeriod).toBeNull();
+  });
+  it("중복 중 확인 경고 없는 측정을 우선한다", () => {
+    const flagged = store({ id: "flagged", ipCheck: "확인 필요", days: { "2026-10-05": full(1), "2026-10-06": full(1) } });
+    const verified = store({ id: "verified", days: { "2026-10-06": full(36) } });
+    expect(competitorMeasurement([flagged, verified], NOW).store?.id).toBe("verified");
+  });
   it("측정기 문서가 없으면 미등록", () => {
     expect(competitorMeasurement([], NOW).state).toBe("none");
   });

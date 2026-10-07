@@ -12,7 +12,7 @@ import {
   type OwnStoreOption,
   type PingStoreInput,
 } from "@/lib/pingMonitor/clientStore";
-import { formatPct, shortIps } from "@/lib/pingMonitor/summary";
+import { shortIps } from "@/lib/pingMonitor/summary";
 
 const FIELD = "app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70";
 const LABEL = "text-xs font-medium text-[var(--sl-ink-soft)]";
@@ -132,7 +132,6 @@ export function StoreForm({
     }
   }
 
-  const probeDenominator = pcNum ?? probe?.total ?? 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -244,17 +243,19 @@ export function StoreForm({
       {probe && (
         <div className="app-card-sm rounded-xl p-3 text-sm">
           <p>
-            지금 켜진 PC <b className="tabular-nums">{probe.aliveIps.length}</b> / {probeDenominator}대 ·{" "}
-            <b className="tabular-nums">{formatPct(probeDenominator > 0 ? probe.aliveIps.length / probeDenominator : null)}</b>
+            TCP 응답 IP <b className="tabular-nums">{probe.aliveIps.length}</b> / {probe.total}개
             <span className="ml-2 text-xs text-[var(--sl-ink-soft)]">({new Date(probe.at).toLocaleTimeString("ko-KR")} · 기록 안 함)</span>
           </p>
           {probe.aliveIps.length === 0 ? (
             <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-              대답한 PC가 없습니다. 손님이 없는 시간이거나, PC가 바깥 확인을 막아 둔 매장일 수 있습니다. 저녁 시간에 다시 확인해 보세요.
+              TCP 응답이 없습니다. 가동률 0%라는 뜻은 아닙니다. IP가 맞아도 방화벽·공유기에서 응답을 막을 수 있습니다.
             </p>
           ) : (
             <p className="mt-1 break-all font-mono text-xs text-[var(--sl-ink-soft)]">{shortIps(probe.aliveIps)}</p>
           )}
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+            지금 확인은 TCP만 검사합니다. 정기 측정은 핑(ICMP)과 TCP를 함께 사용하므로 결과가 다를 수 있습니다. 응답 수만으로 실제 이용 좌석 수를 확정할 수 없습니다.
+          </p>
         </div>
       )}
       {error && <p role="alert" className="app-notice app-badge-danger px-3 py-2 text-sm">{error}</p>}
