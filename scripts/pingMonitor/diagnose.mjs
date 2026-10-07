@@ -22,9 +22,8 @@ if (!getApps().length)
 const db = getFirestore();
 const kakao = new Map(JSON.parse(readFileSync(".local-tools/ping-closed-check.json", "utf8")).map((r) => [r.id, r]));
 
-const stores = (await db.collection("pingMonitorStores").get()).docs.filter(
-  (d) => !d.get("isOwnStore") && d.get("ownCode") && !/^N\d/.test(String(d.get("ownCode"))),
-);
+// 후보지(N0xx) 경쟁점도 판정한다(2026-10-08, B1 "완성된 상권" 표용) — 확인표 CSV엔 기존점만, 판정 JSON(ping-diagnose.json)엔 전부.
+const stores = (await db.collection("pingMonitorStores").get()).docs.filter((d) => !d.get("isOwnStore") && d.get("ownCode"));
 const NIGHT = ["04", "05", "06", "07"], EVENING = ["19", "20", "21", "22"];
 const rows = [];
 for (const d of stores) {
@@ -72,6 +71,7 @@ for (const d of stores) {
   const area = String(s.address || "").split(" ").slice(0, 2).join(" ") || String(s.ownName ?? "").replace(/점.*$/, "");
   const q = encodeURIComponent(`${s.name} ${area}`);
   rows.push({
+    id: d.id, candidate: /^N\d/.test(String(s.ownCode)), competitorId: s.competitorId ?? null,
     level, group, rangeMismatch: !!rangeMismatch, ipCount, own: s.ownName, name: s.name, problem, todo, pc, maxA: s.ipRanges ? maxA : "", util: util == null ? "" : (util * 100).toFixed(1),
     hours: n, ip: s.ipRanges ?? "", kakaoNear: k?.best ? `${k.best.place} (${k.best.m}m)` : "",
     naver: `https://map.naver.com/p/search/${q}`, kakaoUrl: `https://map.kakao.com/?q=${q}`,
@@ -83,14 +83,16 @@ rows.sort((a, b) => ORDER[a.level] - ORDER[b.level] || String(a.own).localeCompa
 const esc = (v) => { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
 const link = (url, label) => `"=HYPERLINK(""${url}"",""${label}"")"`;
 const head = ["묶음", "판정", "우리 매장", "경쟁점", "무엇이 문제", "할 일", "대수", "최대 대답", "평균 가동률(%)", "잰 시간", "등록 IP", "카카오 근접", "네이버지도", "카카오맵", "확인 결과", "메모"];
-const lines = [head.join(","), ...rows.map((r) => [r.group, r.level, r.own, r.name, r.problem, r.todo, r.pc, r.maxA, r.util, r.hours, r.ip, r.kakaoNear].map(esc).concat(link(r.naver, "네이버"), link(r.kakaoUrl, "카카오"), "", "").join(","))];
+const csvRows = rows.filter((r) => !r.candidate);
+const lines = [head.join(","), ...csvRows.map((r) => [r.group, r.level, r.own, r.name, r.problem, r.todo, r.pc, r.maxA, r.util, r.hours, r.ip, r.kakaoNear].map(esc).concat(link(r.naver, "네이버"), link(r.kakaoUrl, "카카오"), "", "").join(","))];
+writeFileSync(".local-tools/ping-diagnose.json", JSON.stringify(rows.map((r) => ({ id: r.id, candidate: r.candidate, competitorId: r.competitorId, own: r.own, name: r.name, level: r.level, group: r.group, problem: r.problem }))));
 const file = ".local-tools/경쟁점_2차확인표.csv";
 writeFileSync(file, "﻿" + lines.join("\r\n"));
 try { copyFileSync(file, join(process.env.USERPROFILE ?? "", "Desktop", "경쟁점_2차확인표.csv")); } catch {}
-const cnt = {}; for (const r of rows) cnt[r.level] = (cnt[r.level] ?? 0) + 1;
+const cnt = {}; for (const r of csvRows) cnt[r.level] = (cnt[r.level] ?? 0) + 1;
 console.log(cnt);
 for (const g of ["폐점 예상", "폐점 예상(약함 · IP 없음)", "가동률 이상", "대수·IP범위 불일치"]) {
-  const xs = rows.filter((r) => r.group === g || (g === "대수·IP범위 불일치" && r.rangeMismatch && r.group !== g));
+  const xs = csvRows.filter((r) => r.group === g || (g === "대수·IP범위 불일치" && r.rangeMismatch && r.group !== g));
   console.log(`
 ■ ${g} ${xs.length}곳`);
   for (const r of xs) console.log(`  ${r.own} | ${r.name} | 대수 ${r.pc ?? "?"} · IP ${r.ipCount ?? "-"}개 · 최대 대답 ${r.maxA} · 평균 ${r.util}% — ${r.problem}`);
