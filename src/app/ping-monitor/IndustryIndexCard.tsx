@@ -105,72 +105,70 @@ function IndexLine({ points }: { points: IndexPoint[] }) {
   );
 }
 
+// 한 줄 요약 — 변화율 ±0.5% 안이면 "비슷", 그 밖이면 붐빔/한산(2026-10-07 사용자 "가독성" 지적으로 숫자 대신 문장을 맨 위에).
+function headline(p: IndexPoint): string {
+  const when = `${md(p.date)}(${dow(p.date)})`;
+  if (p.change == null) return `${when}을 기준 100으로 잡았습니다. 다음 날부터 전날과 비교한 값이 나옵니다.`;
+  const pct = Math.abs(p.change * 100).toFixed(1);
+  if (Math.abs(p.change) < 0.005) return `${when} 업계는 전날과 비슷했습니다`;
+  return `${when} 업계는 전날보다 ${pct}% ${p.change > 0 ? "붐볐습니다" : "한산했습니다"}`;
+}
+
 export function IndustryIndexCard({ stores }: { stores: PingStore[] }) {
   const r = useMemo(() => industryIndex(stores), [stores]);
   const withIndex = r.points.filter((p) => p.index != null);
   const base = withIndex[0] ?? null;
   const latest = withIndex.at(-1) ?? null;
   const weekAgo = latest ? r.points.find((p) => p.date === shiftDate(latest.date, -7) && p.index != null) : undefined;
-  const avgTo = kstDaysAgo(1);
-  const avgFrom = kstDaysAgo(AVG_DAYS);
-  const avg = dayTypeAverages(r.points, avgFrom, avgTo);
+  const avg = dayTypeAverages(r.points, kstDaysAgo(AVG_DAYS), kstDaysAgo(1));
   const ex = r.excluded;
   const exText = [
-    ex.own && `우리 매장 ${ex.own}`,
-    ex.ipCheck && `IP 확인 필요 ${ex.ipCheck}`,
-    ex.noIp && `IP 미등록 ${ex.noIp}`,
-    ex.neverAlive && `한 번도 대답 없음(측정 불가 의심 포함) ${ex.neverAlive}`,
-  ].filter(Boolean).join(" · ");
+    ex.own && `우리 매장 ${ex.own}곳`,
+    ex.ipCheck && `IP 확인 필요 ${ex.ipCheck}곳`,
+    ex.noIp && `IP 미등록 ${ex.noIp}곳`,
+    ex.neverAlive && `한 번도 대답 없는 곳 ${ex.neverAlive}곳`,
+  ].filter(Boolean).join(", ");
 
   return (
     <section className="app-card rounded-2xl p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">PC방 업계 가동률 지수</h2>
-        <span className="text-xs text-[var(--sl-ink-soft)]">
-          {base ? `${md(base.date)}(${dow(base.date)}) = 100` : "기준일 대기"}
-        </span>
+        <span className="text-xs text-[var(--sl-ink-soft)]">경쟁점 {latest?.matched ?? r.eligible}곳 기준{base ? ` · ${md(base.date)} = 100` : ""}</span>
       </div>
 
       {!latest ? (
-        <p className="mt-2 text-sm text-[var(--sl-ink-soft)]">
-          아직 하루를 다 잰 날이 없습니다. {FULL_DAY_MIN_SAMPLES}시간 이상 잰 첫날이 기준일(=100)이 되고, 그다음 날부터 전날 대비 변화가 나옵니다.
-          지금 지수에 넣을 수 있는 경쟁점은 {r.eligible}곳입니다.
-        </p>
+        <p className="mt-2 text-sm text-[#171310] dark:text-[#f2ede2]">아직 하루를 꽉 채워 잰 날이 없습니다. 하루가 다 차면 그날이 기준(100)이 되고, 그다음 날부터 값이 나옵니다.</p>
       ) : (
-        <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-start">
-          <div className="flex flex-wrap gap-x-6 gap-y-3 lg:w-[420px] lg:shrink-0">
-            <Stat
-              label={`최근 지수 · ${md(latest.date)}(${dow(latest.date)}) ${latest.weekend ? "주말" : "평일"}`}
-              value={fmtIndex(latest.index)}
-              sub={`이 매장들 가동률 ${formatPct(latest.level)}`}
-            />
-            <Stat label="전날 대비" value={fmtChange(latest.change)} sub={latest.comparedWith && latest.change != null ? `${md(latest.comparedWith)}와 비교 · ${latest.matched}곳` : "첫날"} />
-            <Stat
-              label="전주 같은 요일 대비"
-              value={weekAgo ? fmtChange(latest.index! / weekAgo.index! - 1) : "-"}
-              sub={weekAgo ? `${md(weekAgo.date)}(${dow(weekAgo.date)}) ${fmtIndex(weekAgo.index)}` : "7일 전 값 없음"}
-            />
-            <Stat label={`최근 ${AVG_DAYS}일 평일 평균`} value={fmtIndex(avg.weekday)} sub={`${avg.weekdayDays}일`} />
-            <Stat label={`최근 ${AVG_DAYS}일 주말 평균`} value={fmtIndex(avg.weekend)} sub={`${avg.weekendDays}일`} />
+        <>
+          <p className="mt-2 text-base font-semibold text-[#171310] dark:text-[#f2ede2]">{headline(latest)}</p>
+          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-start">
+            <div className="flex flex-wrap gap-x-8 gap-y-3 lg:w-[360px] lg:shrink-0">
+              <Stat label="지수 (기준 100)" value={fmtIndex(latest.index)} sub={`가동률 ${formatPct(latest.level)}`} />
+              <Stat label="지난주 같은 요일보다" value={weekAgo ? fmtChange(latest.index! / weekAgo.index! - 1) : "-"} sub={weekAgo ? undefined : "아직 1주가 안 됨"} />
+              <Stat
+                label={`평일 · 주말 평균(${AVG_DAYS}일)`}
+                value={`${fmtIndex(avg.weekday)} · ${fmtIndex(avg.weekend)}`}
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <IndexLine points={r.points} />
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <IndexLine points={r.points} />
-          </div>
-        </div>
+        </>
       )}
 
-      <p className="mt-3 text-xs leading-5 text-[var(--sl-ink-soft)]">
-        우리 매장 매출이 빠진 날 이 지수도 같이 빠졌으면 업계 전체 흐름, 지수는 그대로인데 우리만 빠졌으면 우리 매장 사정입니다.
-        만드는 법: 그날과 비교하는 날(보통 전날)을 <b>둘 다</b> 하루({FULL_DAY_MIN_SAMPLES}시간 이상)로 잰 경쟁점끼리만 가동률 변화율을 구해(대수 가중) 기준일부터 곱해 잇습니다 —
-        새로 등록된 매장은 이틀째부터 들어가므로 들어온 날 지수가 튀지 않습니다. 비교할 매장이 {INDEX_MIN_MATCHED}곳보다 적은 날은 건너뜁니다.
-        {base && latest && ` ${md(base.date)} ${base.matched}곳으로 시작해 ${md(latest.date)}에는 ${latest.matched}곳을 비교했습니다.`}
-        {` 지수에 넣을 수 있는 경쟁점 ${r.eligible}곳`}
-        {exText && `(뺀 곳: ${exText})`}. 주말은 토·일이고 공휴일은 평일로 칩니다.
-      </p>
+      <p className="mt-3 text-xs text-[var(--sl-ink-soft)]">우리 매장만 빠졌는지 볼 때 씁니다 — 지수도 같이 빠졌으면 업계 전체 흐름, 지수는 그대로면 우리 매장 사정.</p>
 
-      {r.points.length > 0 && (
-        <details className="mt-2 text-xs">
-          <summary className="cursor-pointer text-[var(--sl-ink-soft)]">표로 보기</summary>
+      <details className="mt-2 text-xs">
+        <summary className="cursor-pointer text-[var(--sl-ink-soft)]">어떻게 계산하나요 · 표로 보기</summary>
+        <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 leading-5 text-[var(--sl-ink-soft)]">
+          <li>어제와 오늘 <b>둘 다</b> 하루({FULL_DAY_MIN_SAMPLES}시간 이상)를 잰 경쟁점끼리만 가동률이 몇 % 변했는지 구해, 기준일 100에서부터 이어 붙입니다.</li>
+          <li>그래서 새로 등록된 매장은 다음 날부터 들어가고, 들어온 날 지수가 튀지 않습니다. 큰 매장일수록 더 반영됩니다(PC 대수 가중).</li>
+          <li>뺀 곳: {exText || "없음"}. 비교할 매장이 {INDEX_MIN_MATCHED}곳보다 적은 날은 건너뜁니다.</li>
+          <li>주말은 토·일(그래프의 속 빈 점), 공휴일은 평일로 칩니다.</li>
+          {base && latest && <li>{md(base.date)} {base.matched}곳으로 시작, {md(latest.date)}에는 {latest.matched}곳을 비교했습니다.</li>}
+        </ul>
+        {r.points.length > 0 && (
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[480px] tabular-nums">
               <thead>
@@ -195,8 +193,8 @@ export function IndustryIndexCard({ stores }: { stores: PingStore[] }) {
               </tbody>
             </table>
           </div>
-        </details>
-      )}
+        )}
+      </details>
     </section>
   );
 }
