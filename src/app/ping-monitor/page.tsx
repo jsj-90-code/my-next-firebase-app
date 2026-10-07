@@ -19,7 +19,9 @@ import {
   fullDaysNote,
   groupUtilization,
   hasNoIp,
+  kstDaysAgo,
   lastFullDays,
+  partialNote,
   rangeUtilization,
   recent24h,
   storeStatus,
@@ -47,14 +49,15 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
 function useRanges() {
   return useMemo(() => {
     const d7 = lastFullDays(7);
-    return { yesterday: d7.to, from7: d7.from, from30: lastFullDays(30).from };
+    return { today: kstDaysAgo(0), yesterday: d7.to, from7: d7.from, from30: lastFullDays(30).from };
   }, []);
 }
 
-// 가동률 + 꼬리말 — 다 찬 날 일일평균에 모자라면 "3일치". (진행 중인 오늘은 목록에서 뺐다 — 보는 시각 따라 치우쳐서, 2026-10-07 사용자. 상세 화면엔 있음)
-function UtilCell({ days, from, to, nDays, bold = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean }) {
-  const r = rangeUtilization(days, from, to);
-  const note = fullDaysNote(r.days, nDays);
+// 가동률 + 꼬리말. 오늘(진행 중)은 덜 찬 그대로 "15시간치", n일 칸은 다 찬 날 일일평균에 모자라면 "3일치".
+// 칸 구성 오늘·최근 24시간·7일·30일(2026-10-07 사용자 — 신규후보지는 첫날 "오늘"밖에 값이 없다).
+function UtilCell({ days, from, to, nDays, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean; inProgress?: boolean }) {
+  const r = rangeUtilization(days, from, to, { includePartial: inProgress });
+  const note = inProgress ? partialNote(r.samples, 1) : fullDaysNote(r.days, nDays);
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
@@ -82,15 +85,16 @@ function Recent24Cell({ store }: { store: PingStore }) {
 // 목록은 한눈에 볼 칸만(2026-10-07 사용자 "덕지덕지 부산스럽다") — 어제·전체·최근 측정·메모는 상세 화면에.
 // showOwn: "IP 확인 필요" 탭 — 우리 매장 이름과 확인 사유·IP대역을 같이 보인다.
 function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; showOwn?: boolean }) {
-  const { yesterday, from7, from30 } = useRanges();
+  const { today, yesterday, from7, from30 } = useRanges();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] text-sm">
+      <table className="w-full min-w-[800px] text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
             <th className="px-3 py-2 font-medium">경쟁점</th>
             <th className="px-3 py-2 text-right font-medium">거리</th>
             <th className="px-3 py-2 text-right font-medium">대수</th>
+            <th className="px-3 py-2 text-right font-medium">오늘(진행 중)<div className="font-normal">{dateRangeLabel(today, today)}</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 24시간<div className="font-normal">&nbsp;</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 7일<div className="font-normal">{dateRangeLabel(from7, yesterday)}</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 30일<div className="font-normal">{dateRangeLabel(from30, yesterday)}</div></th>
@@ -115,6 +119,7 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{hasNoIp(s) ? (s.pcCount ?? "-") : denominator(s)}</td>
+                <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
                 <Recent24Cell store={s} />
                 <UtilCell days={s.days} from={from7} to={yesterday} nDays={7} bold />
                 <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
@@ -138,9 +143,19 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
   const ipCheck = group.stores.filter((s) => s.ipCheck).length + (group.own?.ipCheck ? 1 : 0);
   return (
     <li className="app-card overflow-hidden rounded-2xl">
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
-        <span className="text-[var(--sl-ink-soft)]">{open ? "▾" : "▸"}</span>
-        <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{group.name}</span>
+      {/* 이름은 매장별 비교 화면으로, 나머지(화살표·숫자)는 펼치기 — 단추 안에 링크를 넣을 수 없어 나눴다(2026-10-07). */}
+      <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
+        <button type="button" onClick={onToggle} aria-expanded={open} aria-label={`${group.name} 경쟁점 ${open ? "접기" : "펼치기"}`} className="text-[var(--sl-ink-soft)]">
+          {open ? "▾" : "▸"}
+        </button>
+        {group.key === UNLINKED ? (
+          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{group.name}</span>
+        ) : (
+          <Link href={`/ping-monitor/store/${encodeURIComponent(group.key)}`} className="font-semibold text-[#171310] underline-offset-2 hover:underline dark:text-[#f2ede2]">
+            {group.name} <span className="text-xs font-normal text-[var(--sl-ink-soft)]">비교 →</span>
+          </Link>
+        )}
+        <button type="button" onClick={onToggle} className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-left">
         <span className="text-xs text-[var(--sl-ink-soft)]">
           경쟁점 {group.stores.length}곳{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}{ipCheck > 0 ? ` · IP 확인 필요 ${ipCheck}` : ""}{blocked > 0 ? ` · 측정 불가 의심 ${blocked}` : ""}
         </span>
@@ -157,7 +172,8 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
           </span>
           <span>최근 7일 {dateRangeLabel(from7, yesterday)}</span>
         </span>
-      </button>
+        </button>
+      </div>
       {open && (
         <div className="border-t border-[var(--sl-hairline)]">
           <CompetitorTable stores={[...group.stores].sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))} />

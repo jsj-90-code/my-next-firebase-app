@@ -89,6 +89,12 @@ export async function listPingStores(): Promise<PingStore[]> {
   return snap.docs.map((d) => toStore(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }
 
+/** 우리 매장 하나(기존점 가맹점코드·후보지 N0xx)에 붙은 등록 전부 — 매장별 비교 화면(2026-10-07). */
+export async function listPingStoresByOwn(ownCode: string): Promise<PingStore[]> {
+  const snap = await getDocs(query(collection(requireDb(), PING_STORES), where("ownCode", "==", ownCode)));
+  return snap.docs.map((d) => toStore(d.id, d.data()));
+}
+
 export async function getPingStore(id: string): Promise<PingStore | null> {
   const snap = await getDoc(doc(requireDb(), PING_STORES, id));
   return snap.exists() ? toStore(snap.id, snap.data()) : null;

@@ -60,6 +60,11 @@ body {
   --sl-step-c-ink: #1e796e;
   --sl-hairline: rgba(23, 19, 16, 0.09);
   --sl-grid-line: rgba(23, 19, 16, 0.028);
+  /* 경쟁점 가동률 비교 그래프 계열색(2026-10-07) — 우리 매장·경쟁점 합산·고른 경쟁점. dataviz 기준 팔레트 1~3번,
+     validate_palette.js 통과(라이트: 3번 초록이 3:1 미만이라 범례·표를 같이 둔다). */
+  --pm-own: #2a78d6;
+  --pm-rivals: #eb6834;
+  --pm-pick: #1baf7a;
   /* min-h-screen처럼 min-height를 vh로 직접 주는 곳과 값이 부딪히지 않도록 100%가 아니라
      100vh로 맞춘다 - 100%는 부모 체인에 명시적 height가 없으면 무시돼서(로그인 게이트처럼
      콘텐츠가 짧은 화면에서) 배경이 카드 높이만큼만 칠해지고 나머지는 흰/검은 배경이 비쳐 보였다. */
@@ -80,6 +85,9 @@ body {
   --sl-step-c-ink: #249285;
   --sl-hairline: rgba(255, 255, 255, 0.09);
   --sl-grid-line: rgba(255, 255, 255, 0.028);
+  --pm-own: #3987e5;
+  --pm-rivals: #d95926;
+  --pm-pick: #199e70;
   background: #14120d;
 }
 
