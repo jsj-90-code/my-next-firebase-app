@@ -176,29 +176,6 @@ export function rangeUtilization(
   return { util, samples: n, days: d, skipped };
 }
 
-/**
- * 여러 경쟁점을 합친 가동률 — 우리 매장 하나에 붙은 경쟁점 묶음의 "동네 경쟁점 가동률".
- * 날마다 그날 다 찬 경쟁점들의 켜진 합 ÷ 대수 합(대수 가중)을 구해 날짜끼리 평균한다(일일평균).
- */
-export function groupUtilization(stores: PingStore[], from: string | null, to: string | null, today = kstDaysAgo(0)): number | null {
-  const byDate = new Map<string, { a: number; t: number }>();
-  for (const s of stores) {
-    for (const [date, v] of Object.entries(s.days)) {
-      if (from && date < from) continue;
-      if (to && date > to) continue;
-      if (!isFullDay(date, v, today)) continue;
-      const cur = byDate.get(date) ?? { a: 0, t: 0 };
-      cur.a += v.a;
-      cur.t += v.t;
-      byDate.set(date, cur);
-    }
-  }
-  if (byDate.size === 0) return null;
-  let sum = 0;
-  for (const v of byDate.values()) sum += v.a / v.t;
-  return sum / byDate.size;
-}
-
 /** 점포평가 경쟁점 하나에 대한 측정기 "최근 7일" 요약 — 후보지 경쟁점 탭에서 핑봇 칸에 넣을 값(2026-10-07 신설). */
 export type CompetitorMeasurement = {
   /** none = 측정기에 등록 안 됨, noIp = IP 미등록, stopped = 측정 중지, blocked = 대답 없음(측정 불가 의심·확인 중),

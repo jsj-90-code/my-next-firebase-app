@@ -17,7 +17,6 @@ import {
   denominator,
   formatPct,
   fullDaysNote,
-  groupUtilization,
   hasNoIp,
   kstDaysAgo,
   lastFullDays,
@@ -66,11 +65,6 @@ function UtilCell({ days, from, to, nDays, bold = false, inProgress = false }: {
       {note && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{note}</div>}
     </td>
   );
-}
-
-/** 묶음 안에서 다 찬 날이 가장 많은 경쟁점의 일수 — 합산값이 며칠치인지 보이려고. */
-function groupFullDays(stores: PingStore[], from: string, to: string): number {
-  return Math.max(0, ...stores.map((s) => rangeUtilization(s.days, from, to).days));
 }
 
 // 최근 24시간 — 시간대 24칸이 다 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
@@ -139,7 +133,6 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
 
 function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
   const { from7, to7 } = useRanges();
-  const note7 = fullDaysNote(groupFullDays(group.stores, from7, to7), 7);
   const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
   const noIp = group.stores.filter(hasNoIp).length;
   const ipCheck = group.stores.filter((s) => s.ipCheck).length + (group.own?.ipCheck ? 1 : 0);
@@ -168,10 +161,6 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
               <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, to7).util)}</b>
             </span>
           )}
-          <span>
-            경쟁점 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, to7))}</b>
-            {note7 && ` (${note7})`}
-          </span>
           <span>이번 주 {dateRangeLabel(from7, to7)}</span>
         </span>
         </button>
@@ -259,7 +248,7 @@ export default function PingMonitorPage() {
             {` ${FULL_DAY_MIN_SAMPLES}`}시간 넘게 못 잰 날(등록한 날 오후부터 잰 날 등)은 낮·밤이 치우치므로 뺍니다. 다 찬 날이 모자라면 &ldquo;3일치&rdquo;처럼 적습니다.
             &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다(진행 중인 &ldquo;오늘&rdquo;은 보는 시각에 따라 치우쳐 상세 화면에만 둡니다) — 24개 시간대가
             꽉 차야 값이 나와서, 신규 후보지는 등록 다음 날 같은 시각이면 하루치 값을 쓸 수 있습니다.
-            매장 줄의 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 이번 주, &ldquo;경쟁점&rdquo;은 날마다 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합을 구해 평균한 이번 주 값입니다.
+            매장 줄의 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 이번 주 값입니다(경쟁점 합산은 쓸 데가 없어 뺐습니다, 2026-10-07).
             이번 주는 지나간 꽉 찬 날만 넣어서 월요일엔 비어 있고 날이 갈수록 &ldquo;2일치&rdquo;처럼 늘어납니다.
             어제·전체 같은 다른 기간은 매장 상세 화면에서 고릅니다.
           </details>
