@@ -47,7 +47,7 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
 
 /**
  * 우리 가맹점 줄 — 펼친 표 맨 위(2026-10-07 사용자 "기존가맹점도 목록에 같이"). 핑으로 잰 우리 매장 값을 경쟁점과 같은 칸에.
- * 우리 매장 IP가 없는 곳(2026-10-07 기준 42곳 중 24곳)은 줄만 두고 "IP 없음".
+ * 우리 매장 IP가 없는 곳(2026-10-07 단톡 보강 뒤 41곳 중 양주덕정 1곳)은 줄만 두고 "IP 없음".
  */
 function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
   const { today, yesterday, from7, to7, from30 } = useRanges();
