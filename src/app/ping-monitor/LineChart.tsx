@@ -1,7 +1,7 @@
 "use client";
 
 // 가동률 선 그래프(계열 여러 개) — 매장별 비교 화면의 날짜별·시간대별(2026-10-07).
-// 계열은 최대 3개(우리 매장·경쟁점 합산·고른 경쟁점)라 범례 + 끝점 이름으로 색 말고도 구별된다.
+// 계열은 우리 매장 + 경쟁점 합산(점선) + 체크한 경쟁점 최대 7곳 — 범례·올렸을 때 값·표로 색 말고도 구별된다.
 // 선 2px, 점 8px, 눈금은 옅게. 올리면 세로선과 위 줄에 그 지점의 값이 뜬다. 값이 없는 지점은 선을 끊는다.
 
 import { useState } from "react";
@@ -12,6 +12,8 @@ export type LineSeries = {
   label: string;
   color: string;
   values: (number | null)[];
+  /** 합계처럼 다른 선들의 바탕이 되는 계열 — 점선으로 그려 색 말고 모양으로도 구별된다. */
+  dashed?: boolean;
 };
 
 const W = 640;
@@ -42,7 +44,9 @@ export function LineChart({
   const x = (i: number) =>
     n <= 1 ? W / 2 : PAD_L + (i * (W - PAD_L - PAD_R)) / (n - 1);
   const y = (v: number) => PAD_T + (1 - v / top) * (H - PAD_T - PAD_B);
-  const showDots = n <= 31;
+  // 점은 계열이 적고 날짜가 짧을 때만 늘 찍는다 — 선이 9개면 점이 화면을 덮는다. 앞뒤가 빈 외톨이 값은 선이 없으니 늘 찍는다.
+  const showDots = n <= 31 && series.length <= 3;
+  const isolated = (vals: (number | null)[], i: number) => vals[i] != null && vals[i - 1] == null && vals[i + 1] == null;
 
   const paths = series.map((s) => {
     let d = "";
@@ -64,8 +68,8 @@ export function LineChart({
         {series.map((s) => (
           <span key={s.key} className="inline-flex items-center gap-1.5">
             <span
-              className="inline-block h-0.5 w-4 rounded"
-              style={{ background: s.color }}
+              className={`inline-block w-4 border-t-2 ${s.dashed ? "border-dashed" : ""}`}
+              style={{ borderColor: s.color }}
             />
             {s.label}
           </span>
@@ -145,6 +149,7 @@ export function LineChart({
               fill="none"
               stroke={s.color}
               strokeWidth={2}
+              strokeDasharray={s.dashed ? "5 4" : undefined}
               strokeLinejoin="round"
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
@@ -167,7 +172,7 @@ export function LineChart({
         <div className="pointer-events-none absolute inset-0">
           {series.map((s) =>
             s.values.map((v, i) =>
-              v != null && (showDots || hover === i) ? (
+              v != null && (showDots || hover === i || isolated(s.values, i)) ? (
                 <span
                   key={`${s.key}-${i}`}
                   className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-[var(--sl-surface,#fff)] dark:ring-[#14120d]"

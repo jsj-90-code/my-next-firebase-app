@@ -249,7 +249,8 @@ export const COMPETITOR_MEASURE_DAYS = 7;
 
 /**
  * 같은 경쟁점에 측정기 문서가 여럿이면(중복 등록) IP가 있고 측정 중이며 다 찬 날이 많은 쪽을 고른다.
- * 가동률은 측정기 화면 "최근 7일" 칸과 같은 lastFullDays + rangeUtilization이다 — 새 계산을 만들지 않는다.
+ * 가동률은 어제까지 다 찬 7일(lastFullDays) + rangeUtilization(일일평균)이다. 측정기 화면의 "이번 주(월~일)" 칸과는 기간이 다르다 —
+ * 평가에 넣는 숫자라 요일 7개가 다 들어가야 해서 일부러 그대로 둔다(2026-10-07 측정기 화면만 월~일로 바꿈).
  */
 export function competitorMeasurement(stores: PingStore[], now = new Date()): CompetitorMeasurement {
   const windowDays = COMPETITOR_MEASURE_DAYS;
