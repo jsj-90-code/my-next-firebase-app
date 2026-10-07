@@ -1230,7 +1230,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             때문이다(사용자 확인, ReportCard.tsx 커밋 12c8896/이후 배지 제거 참고). 여기 ResultTab도
             같은 이유로 경고성 문구 대신 담백한 방법론 설명으로 통일한다. */}
         <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
-          여기 숫자는 경쟁점에 실제로 몇 자리가 돌아가는지(핑봇 실측)를 우리 매장 좌석점유로 환산한 <strong>별도 자료</strong>입니다.
+          여기 숫자는 경쟁점에 실제로 몇 자리가 돌아가는지(경쟁점 탭의 핑봇_가동률 칸 — 옛 핑봇 값이나, 경쟁점 탭에서
+          &ldquo;핑봇 칸에 넣기&rdquo;로 옮긴 경쟁점 가동률 측정기 최근 7일 값)를 우리 매장 좌석점유로 환산한 <strong>별도 자료</strong>입니다.
           위 &ldquo;최종예상월매출&rdquo;과는 계산 경로가 다릅니다. <strong>이 경로로 매출 금액까지 환산한 값은 2026-09-14에
           기존점 28곳으로 재봤더니 오차가 46%여서 화면에서 뺐습니다</strong>
           (정식 경로는 {accuracy?.meanAbsoluteErrorPct != null ? formatPercent(accuracy.meanAbsoluteErrorPct) : "검증화면 참고"}). 좌석·가동률은 실측 자료라 남겨두었으니

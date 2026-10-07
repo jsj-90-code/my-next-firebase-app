@@ -175,6 +175,69 @@ export function groupUtilization(stores: PingStore[], from: string | null, to: s
   return sum / byDate.size;
 }
 
+/** 점포평가 경쟁점 하나에 대한 측정기 "최근 7일" 요약 — 후보지 경쟁점 탭에서 핑봇 칸에 넣을 값(2026-10-07 신설). */
+export type CompetitorMeasurement = {
+  /** none = 측정기에 등록 안 됨, noIp = IP 미등록, stopped = 측정 중지, blocked = 대답 없음(측정 불가 의심·확인 중),
+   *  waiting = 아직 다 찬 날 없음, short = 7일 미달, ok = 7일 다 참. */
+  state: "none" | "noIp" | "stopped" | "blocked" | "waiting" | "short" | "ok";
+  label: string;
+  store: PingStore | null;
+  util: number | null;
+  /** 평균에 넣은 다 찬 날 수 / 창 길이(7). */
+  fullDays: number;
+  windowDays: number;
+  /** 실제로 평균에 들어간 첫날~끝날(다 찬 날 기준). 없으면 null. */
+  from: string | null;
+  to: string | null;
+  /** 핑봇_가동률 칸에 넣을 값(퍼센트, 소수 첫째 자리) — util이 없으면 null. */
+  pingbotUtilization: number | null;
+  /** 핑봇_조회기간 칸에 넣을 문구. */
+  pingbotPeriod: string | null;
+};
+
+export const COMPETITOR_MEASURE_DAYS = 7;
+
+/**
+ * 같은 경쟁점에 측정기 문서가 여럿이면(중복 등록) IP가 있고 측정 중이며 다 찬 날이 많은 쪽을 고른다.
+ * 가동률은 측정기 화면 "최근 7일" 칸과 같은 lastFullDays + rangeUtilization이다 — 새 계산을 만들지 않는다.
+ */
+export function competitorMeasurement(stores: PingStore[], now = new Date()): CompetitorMeasurement {
+  const windowDays = COMPETITOR_MEASURE_DAYS;
+  const { from, to } = lastFullDays(windowDays, now);
+  const today = kstDaysAgo(0, now);
+  const base = { util: null, fullDays: 0, windowDays, from: null, to: null, pingbotUtilization: null, pingbotPeriod: null };
+  const candidates = stores.filter((s) => !s.isOwnStore);
+  if (candidates.length === 0) return { ...base, state: "none", label: "측정기 미등록(측정 안 함)", store: null };
+  const ranked = candidates
+    .map((s) => ({ s, r: rangeUtilization(s.days, from, to, { today }) }))
+    .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(y.s.active) - Number(x.s.active) || y.r.days - x.r.days);
+  const { s, r } = ranked[0];
+  if (hasNoIp(s)) return { ...base, state: "noIp", label: "IP 미등록", store: s };
+  if (!s.active) return { ...base, state: "stopped", label: "측정 중지", store: s };
+  const status = storeStatus(s);
+  if (status.tone === "danger" || status.label.startsWith("대답 없음")) return { ...base, state: "blocked", label: status.label, store: s };
+  const used = Object.entries(s.days)
+    .filter(([date, v]) => date >= from && date <= to && isFullDay(date, v, today))
+    .map(([date]) => date)
+    .sort();
+  if (r.util == null || used.length === 0) return { ...base, state: "waiting", label: "다 찬 날 없음(첫 하루 대기)", store: s };
+  const first = used[0];
+  const last = used[used.length - 1];
+  const short = r.days < windowDays;
+  return {
+    state: short ? "short" : "ok",
+    label: short ? `7일 미달(${r.days}일치)` : "측정 중",
+    store: s,
+    util: r.util,
+    fullDays: r.days,
+    windowDays,
+    from: first,
+    to: last,
+    pingbotUtilization: Math.round(r.util * 1000) / 10,
+    pingbotPeriod: `측정기 ${first}~${last} 일일평균 ${r.days}일`,
+  };
+}
+
 export type StoreStatus ={ label: string; tone: "ok" | "warn" | "danger" | "neutral" };
 
 /** IP를 아직 모르는 경쟁점 — 점포평가 경쟁점을 빈칸으로 넣어 둔 것(2026-10-06 사용자 "빈곳은 빈곳으로 냅두고"). */

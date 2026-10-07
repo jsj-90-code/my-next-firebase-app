@@ -27,6 +27,7 @@ import {
   storeStatus,
   type PingStore,
 } from "@/lib/pingMonitor/summary";
+import { IndustryIndexCard } from "./IndustryIndexCard";
 import { StoreForm } from "./StoreForm";
 
 const TONE: Record<string, string> = {
@@ -80,31 +81,28 @@ function Recent24Cell({ store }: { store: PingStore }) {
   );
 }
 
+// 목록은 한눈에 볼 칸만(2026-10-07 사용자 "덕지덕지 부산스럽다") — 어제·전체·최근 측정·메모는 상세 화면에.
+// showOwn: "IP 확인 필요" 탭 — 우리 매장 이름과 확인 사유·IP대역을 같이 보인다.
 function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; showOwn?: boolean }) {
   const { today, yesterday, from7, from30 } = useRanges();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[920px] text-sm">
+      <table className="w-full min-w-[720px] text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
             <th className="px-3 py-2 font-medium">경쟁점</th>
             <th className="px-3 py-2 text-right font-medium">거리</th>
             <th className="px-3 py-2 text-right font-medium">대수</th>
-            <th className="px-3 py-2 text-right font-medium">최근 측정</th>
             <th className="px-3 py-2 text-right font-medium">오늘(진행 중)<div className="font-normal">{dateRangeLabel(today, today)}</div></th>
-            <th className="px-3 py-2 text-right font-medium">최근 24시간<div className="font-normal">지금부터 거꾸로</div></th>
-            <th className="px-3 py-2 text-right font-medium">어제<div className="font-normal">{dateRangeLabel(yesterday, yesterday)}</div></th>
+            <th className="px-3 py-2 text-right font-medium">최근 24시간<div className="font-normal">&nbsp;</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 7일<div className="font-normal">{dateRangeLabel(from7, yesterday)}</div></th>
             <th className="px-3 py-2 text-right font-medium">최근 30일<div className="font-normal">{dateRangeLabel(from30, yesterday)}</div></th>
-            <th className="px-3 py-2 text-right font-medium">전체</th>
             <th className="px-3 py-2 font-medium">상태</th>
           </tr>
         </thead>
         <tbody>
           {stores.map((s) => {
             const status = storeStatus(s);
-            const all = rangeUtilization(s.days, null, null);
-            const allSkipped = all.skipped > 0 ? ` · 덜 찬 ${all.skipped}일 뺌` : "";
             return (
               <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
                 <td className="px-3 py-2">
@@ -114,36 +112,16 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
                   </Link>
                   {s.ipCheck && (
                     <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
-                      ⚠ IP 확인 필요 — {s.ipCheck} <span className="font-mono">({s.ipRanges})</span>
+                      ⚠ IP 확인 필요{showOwn && <> — {s.ipCheck} <span className="font-mono">({s.ipRanges})</span></>}
                     </div>
                   )}
-                  <div className="text-xs text-[var(--sl-ink-soft)]">
-                    {hasNoIp(s) ? <span className="text-amber-700 dark:text-amber-400">IP를 모릅니다 — 눌러서 IP대역을 넣으면 측정이 시작됩니다</span> : [s.address, s.memo].filter(Boolean).join(" · ") || s.ipRanges}
-                  </div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{hasNoIp(s) ? (s.pcCount ?? "-") : denominator(s)}</td>
-                <td className="px-3 py-2 text-right text-xs tabular-nums">
-                  {s.lastSample ? (
-                    <>
-                      {s.lastSample.alive}/{s.lastSample.total}
-                      <div className="text-[var(--sl-ink-soft)]">
-                        {s.lastSample.date.slice(5)} {s.lastSample.hour}시
-                      </div>
-                    </>
-                  ) : (
-                    "-"
-                  )}
-                </td>
                 <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
                 <Recent24Cell store={s} />
-                <UtilCell days={s.days} from={yesterday} to={yesterday} nDays={1} />
                 <UtilCell days={s.days} from={from7} to={yesterday} nDays={7} bold />
                 <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {formatPct(all.util)}
-                  <div className="text-xs text-[var(--sl-ink-soft)]">{all.days > 0 ? `${all.days}일` : "다 찬 날 없음"}{allSkipped}</div>
-                </td>
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>
@@ -157,7 +135,7 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
 }
 
 function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
-  const { yesterday, from7, from30 } = useRanges();
+  const { yesterday, from7 } = useRanges();
   const note7 = fullDaysNote(groupFullDays(group.stores, from7, yesterday), 7);
   const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
   const noIp = group.stores.filter(hasNoIp).length;
@@ -173,16 +151,15 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
         <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
           {group.own && (
             <span>
-              우리 매장 7일{" "}
+              우리 매장{" "}
               <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, yesterday).util)}</b>
             </span>
           )}
           <span>
-            경쟁점 합산 7일 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, yesterday))}</b>
+            경쟁점 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(groupUtilization(group.stores, from7, yesterday))}</b>
             {note7 && ` (${note7})`}
           </span>
-          <span>30일 {formatPct(groupUtilization(group.stores, from30, yesterday))}</span>
-          <span>({dateRangeLabel(from7, yesterday)} · 30일 {dateRangeLabel(from30, yesterday)})</span>
+          <span>최근 7일 {dateRangeLabel(from7, yesterday)}</span>
         </span>
       </button>
       {open && (
@@ -258,16 +235,19 @@ export default function PingMonitorPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">경쟁점 가동률</h1>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--sl-ink-soft)]">
-            {intervalText}마다 등록된 IP대역의 PC에 연결을 시도해, 대답한 PC 수 ÷ 대수를 기록합니다. 기록은 기한 없이 쌓이고, 상세 화면에서 기간을 골라 볼 수 있습니다.
-            {` `}
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+            {intervalText}마다 켜진 PC 수 ÷ 대수를 잽니다. 매장을 누르면 날짜별·시간대별로 볼 수 있습니다.
+          </p>
+          <details className="mt-1 max-w-2xl text-xs leading-5 text-[var(--sl-ink-soft)]">
+            <summary className="cursor-pointer hover:underline">계산 기준 보기</summary>
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
-            어제·최근 7일·30일·전체는 <b>일일평균</b>입니다 — 하루(한국 시각 0~24시) 가동률을 날마다 구해 평균하고,
+            최근 7일·30일은 <b>일일평균</b>입니다 — 하루(한국 시각 0~24시) 가동률을 날마다 구해 평균하고,
             {` ${FULL_DAY_MIN_SAMPLES}`}시간 넘게 못 잰 날(등록한 날 오후부터 잰 날 등)은 낮·밤이 치우치므로 뺍니다. 다 찬 날이 모자라면 &ldquo;3일치&rdquo;처럼 적습니다.
             &ldquo;오늘&rdquo;은 진행 중인 값(&ldquo;15시간치&rdquo;)이고, &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다 — 시간대가
             {` ${FULL_DAY_MIN_SAMPLES}`}칸 이상 차면 값이 나와서, 신규 후보지는 등록 다음 날 같은 시각이면 하루치 값을 쓸 수 있습니다.
-            매장 옆 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 가동률, &ldquo;경쟁점 합산&rdquo;은 날마다 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합을 구해 평균한 값입니다.
-          </p>
+            매장 줄의 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 최근 7일, &ldquo;경쟁점&rdquo;은 날마다 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합을 구해 평균한 최근 7일입니다.
+            어제·전체 같은 다른 기간은 매장 상세 화면에서 고릅니다.
+          </details>
         </div>
         <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" onClick={() => setShowForm((v) => !v)}>
           {showForm ? "닫기" : "+ 경쟁점 등록"}
@@ -295,6 +275,8 @@ export default function PingMonitorPage() {
 
       {stores != null && stores.length > 0 && (
         <>
+          {/* 업계 지수 — 매장별 목록 위(2026-10-07). 이미 읽은 days로 계산, 추가 읽기 없음. */}
+          <IndustryIndexCard stores={stores} />
           <div className="flex flex-wrap items-center gap-2">
             {(["existing", "candidate", "all", "check"] as const).map((v) => (
               <button key={v} type="button" className={`rounded-full px-3 py-1 text-xs ${view === v ? "app-btn-primary" : "app-btn-outline"}`} onClick={() => setView(v)}>

@@ -166,3 +166,22 @@ export async function listCompetitorOptions(ownCode: string): Promise<Competitor
     }))
     .sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9));
 }
+
+/**
+ * 점포평가 경쟁점 id들에 이어진 측정기 문서만 읽는다(후보지 경쟁점 탭, 2026-10-07).
+ * 전체 목록을 읽지 않으려고 competitorId in [...]으로 10개씩 나눠 묻는다. 결과는 경쟁점 id별로 묶는다.
+ */
+export async function listPingStoresByCompetitorIds(ids: string[]): Promise<Map<string, PingStore[]>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const out = new Map<string, PingStore[]>();
+  for (let i = 0; i < unique.length; i += 10) {
+    const chunk = unique.slice(i, i + 10);
+    const snap = await getDocs(query(collection(requireDb(), PING_STORES), where("competitorId", "in", chunk)));
+    for (const d of snap.docs) {
+      const s = toStore(d.id, d.data());
+      if (!s.competitorId) continue;
+      out.set(s.competitorId, [...(out.get(s.competitorId) ?? []), s]);
+    }
+  }
+  return out;
+}

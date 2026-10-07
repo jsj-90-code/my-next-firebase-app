@@ -26,6 +26,8 @@ import { formatScore } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
 import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
+import { listPingStoresByCompetitorIds } from "@/lib/pingMonitor/clientStore";
+import { competitorMeasurement, formatPct, FULL_DAY_MIN_SAMPLES, type CompetitorMeasurement } from "@/lib/pingMonitor/summary";
 import {
   BooleanSelectField,
   CompetitorInteriorFallbackGuide,
@@ -257,6 +259,70 @@ function detectCompetitorDataWarnings(c: Competitor, settings: ModelSettings): s
 
 /** 커플존 좌석이 PC대수 대비 이 비율을 넘으면 확인을 요청한다. */
 const COUPLE_SEAT_SHARE_WARN = 0.3;
+/**
+ * 경쟁점 가동률 측정기의 최근 7일 값 — 카드와 수정 폼에 같이 쓴다(2026-10-07 사용자: 암사역에서 손으로 옮기던 걸 화면에서).
+ * 버튼을 눌러야 핑봇 칸에 들어간다. 자동으로 덮어쓰지 않는다 — 옛 핑봇 값이 더 나은 경우가 있다(암사 해피 15.2).
+ */
+function PingMeasurePanel({
+  measurement,
+  current,
+  onApply,
+  applyLabel,
+}: {
+  measurement: CompetitorMeasurement | undefined;
+  current: { utilization: number | null; period: string | null };
+  onApply: (() => void) | null;
+  applyLabel: string;
+}) {
+  if (!measurement) return <p className="text-[11px] text-[var(--sl-ink-soft)]">측정기 확인 중...</p>;
+  const m = measurement;
+  const tone =
+    m.state === "ok" ? "app-badge-ok" : m.state === "short" || m.state === "waiting" ? "app-badge-warn" : m.state === "none" ? "app-badge-neutral" : "app-badge-danger";
+  const same = m.pingbotUtilization != null && current.utilization === m.pingbotUtilization && current.period === m.pingbotPeriod;
+  return (
+    <div className="app-card-sm rounded-lg px-3 py-2 text-[11px] leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[var(--sl-ink-soft)]">측정기 최근 {m.windowDays}일</span>
+        <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(m.util)}</b>
+        {m.from && m.to && (
+          <span>
+            {m.fullDays}/{m.windowDays}일 · {m.from}~{m.to}
+          </span>
+        )}
+        <span className={`app-badge ${tone}`}>{m.label}</span>
+        {m.store?.ipCheck && <span className="app-badge app-badge-warn">IP 확인 필요</span>}
+        {m.store && (
+          <a href={`/ping-monitor/${m.store.id}`} target="_blank" rel="noreferrer" className="underline">
+            측정기에서 보기
+          </a>
+        )}
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[var(--sl-ink-soft)]">지금 핑봇 칸</span>
+        <span>
+          {current.utilization != null ? `${current.utilization}%` : "-"}
+          {current.period ? ` (${current.period})` : ""}
+        </span>
+        {onApply && m.pingbotUtilization != null && (
+          <button
+            type="button"
+            disabled={same}
+            onClick={onApply}
+            className="app-btn-outline rounded-md px-2 py-1 text-[11px] disabled:opacity-50 print:hidden"
+          >
+            {same ? "이미 같은 값" : `${applyLabel} (${m.pingbotUtilization}%)`}
+          </button>
+        )}
+      </div>
+      {m.state === "short" && (
+        <p className="mt-1 text-[var(--sl-ink-soft)]">
+          {FULL_DAY_MIN_SAMPLES}시간 이상 잰 날만 하루로 칩니다. 7일이 다 차지 않아 {m.fullDays}일치 평균입니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // 2026-10-06 — 요금 두 칸 뒤바뀜 경고 경계. 실제 경쟁점 237곳: 1000원당분 30~120분, 시간당환산 500~2,000원(같은 날 측정).
 const RATE_MINUTES_MAX = 200;
 const HOURLY_RATE_MIN = 300;
@@ -267,12 +333,15 @@ function CompetitorForm({
   onCancel,
   onSaved,
   actor,
+  measurement,
 }: {
   initial: Competitor;
   baseline: Competitor | null;
   onCancel: () => void;
   onSaved: (c: Competitor) => void;
   actor: string | null;
+  /** 이 경쟁점의 측정기 최근 7일 요약. 새 경쟁점(저장 전)은 측정기에 이어질 id가 없어 null. */
+  measurement: CompetitorMeasurement | null | undefined;
 }) {
   const [form, setForm] = useState<Competitor>(initial);
   const [saving, setSaving] = useState(false);
@@ -463,11 +532,26 @@ function CompetitorForm({
           value={form.pingbotUtilization}
           onChange={(v) => set("pingbotUtilization", v)}
           step={0.1}
-          hint="퍼센트로 입력 (예: 30 = 30%). 0~1 소수로 넣어도 같게 인식합니다"
+          hint="퍼센트로 입력 (예: 30 = 30%). 0~1 소수로 넣어도 같게 인식합니다. 경쟁점 가동률 측정기 값은 아래 버튼으로 넣을 수 있습니다"
         />
         <TextField label="핑봇_조회기간" value={form.pingbotPeriod ?? ""} onChange={(v) => set("pingbotPeriod", v || null)} />
         <NumberField label="리뉴얼연도" value={form.renovationYear} onChange={(v) => set("renovationYear", v)} step={1} />
       </div>
+      {measurement !== null && (
+        <div className="mt-3">
+          <PingMeasurePanel
+            measurement={measurement}
+            current={{ utilization: form.pingbotUtilization, period: form.pingbotPeriod }}
+            applyLabel="핑봇 칸에 넣기"
+            onApply={() => {
+              if (measurement?.pingbotUtilization == null) return;
+              set("pingbotUtilization", measurement.pingbotUtilization);
+              set("pingbotPeriod", measurement.pingbotPeriod);
+            }}
+          />
+          <p className="mt-1 text-[11px] text-[var(--sl-ink-soft)]">버튼은 칸만 채웁니다. 아래 &ldquo;저장&rdquo;을 눌러야 반영됩니다.</p>
+        </div>
+      )}
 
       <h4 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--sl-ink-soft)]">
         경쟁력 점수 및 평가근거
@@ -735,6 +819,40 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
     };
   }, [candidateCode, requestKey]);
 
+  // 경쟁점 가동률 측정기(2026-10-07) — 이 후보지 경쟁점에 이어진 측정기 문서만 읽는다.
+  // 못 읽으면 카드마다 "확인 중"으로 남기지 않고 실패를 한 줄로 알린다.
+  const [measurements, setMeasurements] = useState<{ key: string; byId: Map<string, CompetitorMeasurement> } | null>(null);
+  const [measureError, setMeasureError] = useState<string | null>(null);
+  // 기존점(가맹점) 화면은 이번 범위 밖이다 — 그쪽 핑봇 칸은 시트 동기화(cronSync)가 덮어쓴다.
+  const pingMeasureEnabled = subjectLabel === "후보지";
+  const competitorIdsKey = pingMeasureEnabled ? competitors.map((c) => c.id).join(",") : "";
+  useEffect(() => {
+    if (!competitorIdsKey) return;
+    let cancelled = false;
+    const ids = competitorIdsKey.split(",");
+    listPingStoresByCompetitorIds(ids)
+      .then((byCompetitor) => {
+        if (cancelled) return;
+        const now = new Date();
+        setMeasurements({ key: competitorIdsKey, byId: new Map(ids.map((id) => [id, competitorMeasurement(byCompetitor.get(id) ?? [], now)])) });
+        setMeasureError(null);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setMeasureError(err instanceof Error ? err.message : "측정기 값을 불러오지 못했습니다.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [competitorIdsKey]);
+  const measurementOf = (id: string) => (measurements?.key === competitorIdsKey ? measurements.byId.get(id) : undefined);
+
+  function handleApplyMeasurement(c: Competitor) {
+    const m = measurementOf(c.id);
+    if (m?.pingbotUtilization == null) return;
+    setPrefill({ ...c, pingbotUtilization: m.pingbotUtilization, pingbotPeriod: m.pingbotPeriod });
+    setEditingId(c.id);
+  }
+
   async function handleDelete(id: string) {
     if (!confirm("이 경쟁점을 삭제하시겠습니까?")) return;
     setBusyId(id);
@@ -855,6 +973,12 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
         <p className="app-notice app-badge-danger w-full justify-start px-3 py-2 text-sm">{error}</p>
       )}
 
+      {measureError && (
+        <p className="app-notice app-badge-warn w-full justify-start px-3 py-2 text-sm">
+          경쟁점 가동률 측정기 값을 불러오지 못했습니다({measureError}). 핑봇 칸은 직접 입력할 수 있습니다.
+        </p>
+      )}
+
       {/* 2026-08-25 추가 — "실제 조사 경쟁점 수"를 조사수준별로 쪼개서 바로 보여준다. 이미
           existing-store 검증화면에서만 쓰던 computeCompetitorInvestigationSummary(calc.ts)를
           여기서도 재사용할 뿐 새 산식은 없다. "몇 곳 중 몇 곳을 얼마나 자세히 봤는지"를 입력
@@ -916,6 +1040,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
           initial={editingCompetitor}
           baseline={editingId === "new" ? null : competitors.find((c) => c.id === editingId) ?? null}
           actor={user?.email ?? null}
+          measurement={!pingMeasureEnabled || editingId === "new" || editingId == null ? null : measureError ? null : measurementOf(editingId)}
           onCancel={() => {
             setEditingId(null);
             setPrefill(null);
@@ -989,6 +1114,16 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                   <dd className="inline">{formatScore(computeCompetitorScores(c, settings).total)}</dd>
                 </div>
               </dl>
+              {pingMeasureEnabled && !measureError && (
+                <div className="mt-3">
+                  <PingMeasurePanel
+                    measurement={measurementOf(c.id)}
+                    current={{ utilization: c.pingbotUtilization, period: c.pingbotPeriod }}
+                    applyLabel="핑봇 칸에 넣기"
+                    onApply={editingId === null ? () => handleApplyMeasurement(c) : null}
+                  />
+                </div>
+              )}
               {/* 모바일에서 26px은 눌러 빗나가기 쉬웠다 — 높이를 키우고 두 버튼 간격도 벌린다(2026-09-13 확인). */}
               <div className="mt-3 flex justify-end gap-3 print:hidden">
                 <button
