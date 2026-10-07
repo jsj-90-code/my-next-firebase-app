@@ -20,7 +20,8 @@ import {
 import { db } from "@/lib/firebase";
 import { listCandidates, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
 import type { Competitor } from "@/lib/storeEval/types";
-import { PING_DAILY, PING_STORES, type DayTotals, type PingDaily, type PingStore } from "./summary";
+import { parseIpRanges } from "./ipRange";
+import { hasNoIp, PING_DAILY, PING_STORES, type DayTotals, type PingDaily, type PingStore } from "./summary";
 
 export type PingStoreInput = {
   name: string;
@@ -100,9 +101,10 @@ export async function getPingStore(id: string): Promise<PingStore | null> {
   return snap.exists() ? toStore(snap.id, snap.data()) : null;
 }
 
-export async function createPingStore(input: PingStoreInput, email: string | null): Promise<string> {
+export async function createPingStore(input: PingStoreInput, email: string | null, extra: { ipCheck?: string | null } = {}): Promise<string> {
   const ref = await addDoc(collection(requireDb(), PING_STORES), {
     ...input,
+    ...(extra.ipCheck ? { ipCheck: extra.ipCheck } : {}),
     createdAt: serverTimestamp(),
     createdBy: email,
     updatedAt: serverTimestamp(),
@@ -198,31 +200,60 @@ export function isRegistrableCompetitor(c: Competitor): boolean {
   return c.investigationStatus !== "경쟁점없음" && !/^경쟁점 없음/.test(c.name) && c.name.trim() !== "";
 }
 
+/** 붙여넣기에서 읽은 IP로 넣은 칸 — 측정기 화면 "IP 확인 필요"에 떠서 사람이 "지금 확인"을 하게 한다. */
+export const PASTED_IP_CHECK = "붙여넣기 IP — 지금 확인 전(후보지 경쟁점 탭)";
+
+export type PingRegisterResult = { created: string[]; ipFilled: string[]; ipConflict: string[]; ipInvalid: string[] };
+
 /**
- * 후보지 경쟁점을 측정기에 "IP 미등록" 빈칸으로 올린다(2026-10-07 사용자 "신규후보지 등록할 때 가동률 웹에 경쟁점 추가").
- * 모양은 기존점 일괄 등록(scripts/pingMonitor/addNoIpCompetitors.mjs)과 같다 — IP는 사람이 측정기 화면에서 넣는다.
- * 올리기 직전에 competitorId로 다시 찾아 이미 이어진 경쟁점은 건너뛴다(다른 화면·다른 사람이 먼저 올렸을 수 있음).
- * 반환: 새로 올린 경쟁점 id 목록.
+ * 후보지 경쟁점을 측정기에 올린다(2026-10-07 사용자 "신규후보지 등록할 때 가동률 웹에 경쟁점 추가").
+ * 모양은 기존점 일괄 등록(scripts/pingMonitor/addNoIpCompetitors.mjs)과 같다. IP가 없으면 "IP 미등록" 빈칸.
+ * ipById: 경쟁점 설명 붙여넣기에서 읽은 IP 대역(사용자 "IP 대역 있으니 자동완성"). 새로 올리면 그 IP로, 이미 빈칸으로
+ * 올라가 있으면 IP만 채우고, 이미 다른 IP가 있으면 덮어쓰지 않고 ipConflict로 알린다. 넣은 IP는 PASTED_IP_CHECK 표시.
+ * 올리기 직전에 competitorId로 다시 찾아 중복을 막는다(다른 화면·다른 사람이 먼저 올렸을 수 있음).
  */
 export async function registerCompetitorsToPing(
   competitors: Competitor[],
   own: { code: string; name: string | null },
   email: string | null,
-): Promise<string[]> {
+  ipById: Record<string, string> = {},
+): Promise<PingRegisterResult> {
+  const result: PingRegisterResult = { created: [], ipFilled: [], ipConflict: [], ipInvalid: [] };
   const targets = competitors.filter(isRegistrableCompetitor);
-  if (targets.length === 0) return [];
+  if (targets.length === 0) return result;
   const linked = await listPingStoresByCompetitorIds(targets.map((c) => c.id));
-  const created: string[] = [];
   for (const c of targets) {
-    if (linked.has(c.id)) continue;
+    const ipText = ipById[c.id]?.trim() ?? "";
+    const parsed = ipText ? parseIpRanges(ipText) : null;
+    const ip = parsed && parsed.errors.length === 0 && parsed.ips.length > 0 ? { ipRanges: ipText, ipCount: parsed.ips.length } : null;
+    if (ipText && !ip) result.ipInvalid.push(c.name);
+    const existing = (linked.get(c.id) ?? []).filter((p) => !p.isOwnStore);
+    if (existing.length > 0) {
+      if (!ip) continue;
+      const blank = existing.find((p) => hasNoIp(p));
+      if (existing.some((p) => !hasNoIp(p))) {
+        if (!existing.some((p) => p.ipRanges.replace(/\s/g, "") === ip.ipRanges)) result.ipConflict.push(c.name);
+        continue;
+      }
+      if (blank) {
+        await updateDoc(doc(requireDb(), PING_STORES, blank.id), {
+          ...ip,
+          ipCheck: PASTED_IP_CHECK,
+          updatedAt: serverTimestamp(),
+          updatedBy: email,
+        });
+        result.ipFilled.push(c.name);
+      }
+      continue;
+    }
     await createPingStore(
       {
         name: c.name.trim(),
         address: c.address ?? "",
-        ipRanges: "",
-        ipCount: 0,
+        ipRanges: ip?.ipRanges ?? "",
+        ipCount: ip?.ipCount ?? 0,
         pcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
-        memo: "점포평가 경쟁점 · IP 미등록",
+        memo: ip ? "점포평가 경쟁점 · 경쟁점 설명 붙여넣기 IP" : "점포평가 경쟁점 · IP 미등록",
         active: true,
         ownCode: own.code,
         ownName: own.name,
@@ -230,8 +261,9 @@ export async function registerCompetitorsToPing(
         distanceM: c.distanceM ?? null,
       },
       email,
+      { ipCheck: ip ? PASTED_IP_CHECK : null },
     );
-    created.push(c.id);
+    result.created.push(c.id);
   }
-  return created;
+  return result;
 }

@@ -171,6 +171,11 @@ function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: 
     visitorCount: note.visitorCount,
     foodBasis: note.foodBasis,
     interiorBasis: note.interiorBasis,
+    // 2026-10-07 사용자 "먹거리·인테리어·관리 평가가 자동완성이 안 된다" — 원문에 수준 글자가 있을 때만 채우고,
+    // 없으면 이미 넣어 둔 값을 지우지 않는다. 먹거리는 브랜드나 직접점수 중 하나만 채워진다(competitorNoteParse.parseFoodLine).
+    interiorScore: note.interiorScore ?? base.interiorScore,
+    managementScore: note.managementScore ?? base.managementScore,
+    ...(note.foodBrand != null || note.foodScore != null ? { foodBrand: note.foodBrand, foodScore: note.foodScore } : {}),
   };
 }
 
@@ -824,13 +829,13 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
   // 입력해둔 경쟁점을 다시 붙여넣으면 그 값이 사라지는 문제가 있었다(사용자가 실사용 중 발견).
   function handleFillFromParsed(note: ParsedCompetitorNote, targetId: string) {
     const matched = targetId === "new" ? null : competitors.find((c) => c.id === targetId) ?? null;
-    if (matched) {
-      setPrefill(applyParsedNote(matched, note, { overwriteName: false }));
-      setEditingId(matched.id);
-    } else {
-      setPrefill(applyParsedNote(blankCompetitor(candidateCode), note, { overwriteName: true }));
-      setEditingId("new");
-    }
+    const target = matched
+      ? applyParsedNote(matched, note, { overwriteName: false })
+      : applyParsedNote(blankCompetitor(candidateCode), note, { overwriteName: true });
+    setPrefill(target);
+    setEditingId(matched ? matched.id : "new");
+    const ip = note.ipRanges;
+    if (ip && pingMeasureEnabled) setPendingIp((prev) => ({ ...prev, [target.id]: ip }));
   }
 
   // 2026-09-11 — .catch()가 없었다. 조회가 실패하면 settings가 defaultModelSettings()인 채로
@@ -909,6 +914,9 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
   const [pingNotice, setPingNotice] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
   const unregistered = competitors.filter((c) => isRegistrableCompetitor(c) && measurementOf(c.id)?.state === "none");
 
+  // 붙여넣기에서 읽은 IP 대역(경쟁점 id별) — 경쟁점을 저장할 때 측정기로 넘긴다. 경쟁점 칸이 아니라 측정기 칸이라 폼엔 없다.
+  const [pendingIp, setPendingIp] = useState<Record<string, string>>({});
+
   async function registerToPing(list: Competitor[], { quietIfNone = false } = {}) {
     if (!pingMeasureEnabled || list.length === 0) return;
     setPingRegistering(true);
@@ -916,9 +924,25 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
       // 측정기 "후보지" 보기는 경쟁점 문서의 ownCode·ownName으로 후보지 묶음을 만든다 — 이름이 비면 묶음 제목이 코드로만 나오므로
       // 화면을 연 직후(이름을 아직 못 읽었을 때) 저장해도 여기서 한 번 더 읽어 채운다.
       const ownName = candidateName ?? (await getCandidate(candidateCode))?.name ?? null;
-      const created = await registerCompetitorsToPing(list, { code: candidateCode, name: ownName }, user?.email ?? null);
-      if (created.length > 0) {
-        setPingNotice({ tone: "ok", text: `경쟁점 가동률 측정기에 ${created.length}곳을 IP 미등록으로 올렸습니다. 측정기 화면에서 IP를 넣으면 재기 시작합니다.` });
+      const ipById = Object.fromEntries(list.filter((c) => pendingIp[c.id]).map((c) => [c.id, pendingIp[c.id]]));
+      const r = await registerCompetitorsToPing(list, { code: candidateCode, name: ownName }, user?.email ?? null, ipById);
+      if (Object.keys(ipById).length > 0) {
+        setPendingIp((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !(id in ipById))));
+      }
+      const done = [
+        r.created.length > 0 ? `측정기에 ${r.created.length}곳을 올렸습니다` : null,
+        r.ipFilled.length > 0 ? `${r.ipFilled.join(", ")}에 붙여넣기 IP를 넣었습니다` : null,
+      ].filter(Boolean);
+      const warns = [
+        r.ipConflict.length > 0 ? `${r.ipConflict.join(", ")}은 측정기에 다른 IP가 이미 있어 바꾸지 않았습니다(카드의 "측정기 칸 고치기"에서 확인)` : null,
+        r.ipInvalid.length > 0 ? `${r.ipInvalid.join(", ")}의 IP 대역을 읽지 못했습니다` : null,
+      ].filter(Boolean);
+      const pastedOk = Object.keys(ipById).length > r.ipConflict.length + r.ipInvalid.length;
+      if (done.length > 0 || warns.length > 0) {
+        const tail = pastedOk
+          ? ' 붙여넣기로 넣은 IP는 측정기 화면 "IP 확인 필요"에 뜹니다 — "지금 확인"으로 켜진 PC가 잡히는지 봐 주세요.'
+          : ' IP가 없는 곳은 카드의 "IP 넣기"로 넣으면 재기 시작합니다.';
+        setPingNotice({ tone: warns.length > 0 ? "danger" : "ok", text: `${[...done, ...warns].join(" · ")}.${tail}` });
       } else if (!quietIfNone) {
         setPingNotice({ tone: "ok", text: "이미 측정기에 올라가 있습니다." });
       }
@@ -999,7 +1023,10 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             점포개발자가 남긴 &ldquo;경쟁점 설명&rdquo; 텍스트를 통째로 붙여넣으면 매장명·사양·존구성·방문기록·종합평가를
             자동으로 나눠 인식합니다(AI 아닌 텍스트 매칭). 자동으로 저장되지 않으니, 매장을 하나씩 골라 폼에 채운 뒤
-            직접 검토하고 저장해주세요. 적용대수·거리·경쟁력 점수는 판단이 필요해 자동으로 채우지 않습니다.
+            직접 검토하고 저장해주세요. 인테리어 수준·매장 관리 상태는 아래 기준표대로(하 2.0 · 중하 2.5 · 중 3.0 · 중상 3.5 ·
+            상 4.5) 점수로 채우고, 먹거리는 수준 글자가 있으면 그 점수, &ldquo;파악안됨&rdquo;이면 중(3.0), 브랜드가 적혀 있으면 그
+            브랜드를 고릅니다. 매장명 밑 IP 대역은 저장할 때 경쟁점 가동률 측정기로 넘어갑니다(측정기 화면 &ldquo;IP 확인 필요&rdquo;에서
+            &ldquo;지금 확인&rdquo;으로 확인). 적용대수·거리는 판단이 필요해 자동으로 채우지 않습니다.
           </p>
           <TextAreaField label="붙여넣기" value={pasteText} onChange={setPasteText} rows={8} />
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1017,6 +1044,11 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                     전체 {note.totalPcCount ?? "-"}대 · {note.cpu ?? "-"} · {note.vgaBase ?? "-"}
                   </p>
                   <p className="mt-0.5 text-[var(--sl-ink-soft)]">방문 {note.visitedAt ?? "-"} · {note.visitorCount ?? "-"}명</p>
+                  <p className="mt-0.5 text-[var(--sl-ink-soft)]">
+                    인테리어 {note.interiorScore ?? "-"} · 관리 {note.managementScore ?? "-"} · 먹거리{" "}
+                    {note.foodBrand ?? (note.foodScore != null ? `${note.foodScore}점` : "-")}
+                    {pingMeasureEnabled && note.ipRanges ? ` · IP ${note.ipRanges}` : ""}
+                  </p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <select
                       value={mergeTargets[i] ?? "new"}

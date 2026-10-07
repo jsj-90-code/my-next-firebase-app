@@ -6,6 +6,8 @@
 // 블록을 나눈 뒤 블록별로 라벨을 찾는다. 값 판단이 애매한 항목(적용대수, 존구성 세부 등)은
 // 지어내지 않고 비워둔다 - 사람이 미리보기에서 검토 후 저장한다.
 
+import type { FoodBrand } from "./types";
+
 export type ParsedCompetitorNote = {
   name: string;
   totalPcCount: number | null;
@@ -26,8 +28,55 @@ export type ParsedCompetitorNote = {
   visitorCount: number | null;
   foodBasis: string | null; // 먹거리 브랜드
   interiorBasis: string | null; // 인테리어 수준 + 관리상태 + 종합평가
+  // 2026-10-07 사용자 "웹에는 자동완성이 안 된다" — 수준 글자를 화면 기준표(InteriorScoringGuide)대로 점수로.
+  interiorScore: number | null; // "인테리어 수준 : 중하" -> 2.5
+  managementScore: number | null; // "매장 관리 상태 : 중" -> 3.0
+  // 먹거리(사용자 2026-10-07): 수준 글자가 있으면 그 점수, "파악안됨"이면 중(3), 브랜드가 적혀 있으면 그 브랜드(목록 밖이면 기타브랜드, 프리셋 3=중).
+  foodBrand: FoodBrand | null;
+  foodScore: number | null;
+  /** 경쟁점 가동률 측정기용 IP 대역(예 "210.221.225.1~106") — 원문에 있을 때만. */
+  ipRanges: string | null;
   raw: string; // 원문 블록 (검토용)
 };
+
+/** 수준 글자 -> 1~5점. 화면 기준표(formFields.tsx InteriorScoringGuide)와 같은 값: 하 2.0 · 중하 2.5 · 중 3.0 · 중상 3.5 · 상 4.5. */
+export const LEVEL_WORD_SCORES: { word: string; score: number }[] = [
+  { word: "중상", score: 3.5 },
+  { word: "중하", score: 2.5 },
+  { word: "상", score: 4.5 },
+  { word: "중", score: 3.0 },
+  { word: "하", score: 2.0 },
+];
+
+/** "중하" "중 정도" "상급" -> 점수. 긴 낱말(중상·중하)부터 본다. 수준 글자가 없으면 null. */
+export function levelWordScore(text: string | null): number | null {
+  if (text == null) return null;
+  const t = text.replace(/\s/g, "");
+  for (const { word, score } of LEVEL_WORD_SCORES) {
+    if (t === word || t.startsWith(word)) return score;
+  }
+  return null;
+}
+
+const FOOD_BRANDS: Exclude<FoodBrand, "기타브랜드" | "브랜드없음">[] = ["쉐프앤클릭", "한끼의품격", "XOXO", "PC토랑", "비바쿡", "농심"];
+const FOOD_UNKNOWN_SCORE = 3.0;
+
+/** 먹거리 줄 -> 브랜드/직접점수. 수준 글자 우선(사용자 "중하/하/중상 적혀 있으면 2.5/2/3.5"). */
+export function parseFoodLine(text: string | null): { foodBrand: FoodBrand | null; foodScore: number | null } {
+  if (text == null || text.trim() === "") return { foodBrand: null, foodScore: null };
+  const level = levelWordScore(text);
+  if (level != null) return { foodBrand: null, foodScore: level };
+  const compact = text.replace(/\s/g, "").toLowerCase();
+  if (/파악안|모름|미확인|확인안|알수없/.test(compact)) return { foodBrand: null, foodScore: FOOD_UNKNOWN_SCORE };
+  const known = FOOD_BRANDS.find((b) => compact.includes(b.toLowerCase()));
+  return { foodBrand: known ?? "기타브랜드", foodScore: null };
+}
+
+/** 블록 안 첫 IP 대역 줄("210.221.225.1~106", "1.2.3.4 - 1.2.3.9"). */
+function findIpRanges(block: string): string | null {
+  const m = block.match(/\b\d{1,3}(?:\.\d{1,3}){3}(?:\s*[~-]\s*\d{1,3}(?:\.\d{1,3}){0,3})?/);
+  return m ? m[0].replace(/\s+/g, "") : null;
+}
 
 function matchLine(block: string, label: RegExp): string | null {
   const m = block.match(label);
@@ -162,6 +211,10 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
     visitorCount,
     foodBasis,
     interiorBasis,
+    interiorScore: levelWordScore(interiorLevel),
+    managementScore: levelWordScore(manageLevel),
+    ...parseFoodLine(foodBasis),
+    ipRanges: findIpRanges(block),
     raw: block.trim(),
   };
 }

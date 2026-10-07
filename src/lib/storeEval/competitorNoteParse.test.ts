@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCompetitorNotes } from "./competitorNoteParse";
+import { parseCompetitorNotes, parseFoodLine } from "./competitorNoteParse";
 
 // 2026-08-27: 사용자가 실제로 붙여넣는 "경쟁점 설명" 원문 그대로 픽스처로 씀(점포개발자 4곳 조사분).
 const REAL_PASTE = `경쟁점 설명
@@ -332,5 +332,56 @@ describe("1인석과 1인룸 구분 (2026-10-06)", () => {
     const [e] = parseCompetitorNotes("■ 매장명: 테스트PC\n1) 커플석: 없음\n2) 1인석: 12\n3) 1인룸: 3개\n4) 팀룸: 없음");
     expect(e.singleSeatCount).toBe(12);
     expect(e.room1).toBe(3);
+  });
+});
+
+// 2026-10-07 — 암사역(N020) 실제 붙여넣기 원문(사용자 제공): IP 대역·인테리어/관리/먹거리 점수 자동완성.
+describe("parseCompetitorNotes — IP·수준 점수(2026-10-07)", () => {
+  const AMSA = `경쟁점 설명
+암사동501-3 , 지하1층 
+- 매장명 : 콤마pc 암사역점
+210.221.225.1~106
+
+- 전체 대수 : 106대
+- 매장 현황
+1. 방문 일시 고객수 : 26년 9월29일 오후4시35분 41명 이용중 
+2. 인테리어 수준 : 중
+3. 매장 관리 상태 (청결, 친절 등) : 중
+4. 먹거리 브랜드 : 파악안됨 
+5. 1,000원 시간 : 1000원은40분 
+
+종합 평가 
+먹거리 종류 많은편이며 수준은 중 정도 
+
+서울시 강동구 암사동504-26 , 지하1층 
+- 매장명 : 해피pc
+123.140.107.1~133
+
+- 전체 대수 : 133대
+- 매장 현황
+2. 인테리어 수준 : 중하
+3. 매장 관리 상태 (청결, 친절 등) : 중
+4. 먹거리 브랜드 : 비바쿡 
+`;
+  const [comma, happy] = parseCompetitorNotes(AMSA);
+
+  it("매장명 다음 줄의 IP 대역을 읽는다", () => {
+    expect(comma.ipRanges).toBe("210.221.225.1~106");
+    expect(happy.ipRanges).toBe("123.140.107.1~133");
+  });
+  it("인테리어·관리 수준 글자를 기준표 점수로", () => {
+    expect(comma.interiorScore).toBe(3);
+    expect(comma.managementScore).toBe(3);
+    expect(happy.interiorScore).toBe(2.5);
+  });
+  it("먹거리 — 파악안됨은 중(3), 브랜드는 그 브랜드", () => {
+    expect(comma).toMatchObject({ foodBrand: null, foodScore: 3 });
+    expect(happy).toMatchObject({ foodBrand: "비바쿡", foodScore: null });
+  });
+  it("먹거리 수준 글자·목록 밖 브랜드", () => {
+    expect(parseFoodLine("중하")).toEqual({ foodBrand: null, foodScore: 2.5 });
+    expect(parseFoodLine("하")).toEqual({ foodBrand: null, foodScore: 2 });
+    expect(parseFoodLine("중상")).toEqual({ foodBrand: null, foodScore: 3.5 });
+    expect(parseFoodLine("맘스키친")).toEqual({ foodBrand: "기타브랜드", foodScore: null });
   });
 });
