@@ -376,6 +376,9 @@ export type Competitor = {
   measuredSeatRate: number | null;
   pingbotUtilization: number | null; // 핑봇_가동률
   pingbotPeriod: string | null;
+  // 2026-10-07 사용자 — 경쟁점 가동률 측정기용 IP 대역("210.221.225.1~106"). 경쟁점 설명 붙여넣기로 채우고 "지금 확인"으로 본 뒤
+  // 저장하면 측정기 칸(pingMonitorStores)으로 넘어간다. 산식엔 안 쓴다. 옛 문서엔 없어서 선택 필드.
+  ipRanges?: string | null;
   renovationYear: number | null;
   // 하드웨어/입지 점수는 CandidateInput과 같은 이유로 자동 계산(계산결과는 저장하지 않고
   // calc.ts의 computeSpecScore/computeLocationScoreFromFacts로 매번 파생한다). 먹거리/인테리어

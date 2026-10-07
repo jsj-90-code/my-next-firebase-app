@@ -200,16 +200,17 @@ export function isRegistrableCompetitor(c: Competitor): boolean {
   return c.investigationStatus !== "경쟁점없음" && !/^경쟁점 없음/.test(c.name) && c.name.trim() !== "";
 }
 
-/** 붙여넣기에서 읽은 IP로 넣은 칸 — 측정기 화면 "IP 확인 필요"에 떠서 사람이 "지금 확인"을 하게 한다. */
-export const PASTED_IP_CHECK = "붙여넣기 IP — 지금 확인 전(후보지 경쟁점 탭)";
+/** 경쟁점 정보의 IP를 "지금 확인" 없이(또는 대답 없이) 넘긴 칸 — 측정기 화면 "IP 확인 필요"에 떠서 사람이 확인하게 한다. */
+export const PASTED_IP_CHECK = "경쟁점 정보 IP — 지금 확인 전(후보지 경쟁점 탭)";
 
 export type PingRegisterResult = { created: string[]; ipFilled: string[]; ipConflict: string[]; ipInvalid: string[] };
 
 /**
  * 후보지 경쟁점을 측정기에 올린다(2026-10-07 사용자 "신규후보지 등록할 때 가동률 웹에 경쟁점 추가").
  * 모양은 기존점 일괄 등록(scripts/pingMonitor/addNoIpCompetitors.mjs)과 같다. IP가 없으면 "IP 미등록" 빈칸.
- * ipById: 경쟁점 설명 붙여넣기에서 읽은 IP 대역(사용자 "IP 대역 있으니 자동완성"). 새로 올리면 그 IP로, 이미 빈칸으로
- * 올라가 있으면 IP만 채우고, 이미 다른 IP가 있으면 덮어쓰지 않고 ipConflict로 알린다. 넣은 IP는 PASTED_IP_CHECK 표시.
+ * ipById: 경쟁점 정보의 IP 대역(Competitor.ipRanges — 붙여넣기·직접 입력). 새로 올리면 그 IP로, 이미 빈칸으로
+ * 올라가 있으면 IP만 채우고, 이미 다른 IP가 있으면 덮어쓰지 않고 ipConflict로 알린다.
+ * verifiedIds: 경쟁점 폼에서 "지금 확인"으로 한 대라도 대답한 경쟁점 — 이 칸은 바로 재고, 나머지는 PASTED_IP_CHECK 표시.
  * 올리기 직전에 competitorId로 다시 찾아 중복을 막는다(다른 화면·다른 사람이 먼저 올렸을 수 있음).
  */
 export async function registerCompetitorsToPing(
@@ -217,6 +218,7 @@ export async function registerCompetitorsToPing(
   own: { code: string; name: string | null },
   email: string | null,
   ipById: Record<string, string> = {},
+  verifiedIds: Set<string> = new Set(),
 ): Promise<PingRegisterResult> {
   const result: PingRegisterResult = { created: [], ipFilled: [], ipConflict: [], ipInvalid: [] };
   const targets = competitors.filter(isRegistrableCompetitor);
@@ -238,7 +240,7 @@ export async function registerCompetitorsToPing(
       if (blank) {
         await updateDoc(doc(requireDb(), PING_STORES, blank.id), {
           ...ip,
-          ipCheck: PASTED_IP_CHECK,
+          ipCheck: verifiedIds.has(c.id) ? null : PASTED_IP_CHECK,
           updatedAt: serverTimestamp(),
           updatedBy: email,
         });
@@ -253,7 +255,7 @@ export async function registerCompetitorsToPing(
         ipRanges: ip?.ipRanges ?? "",
         ipCount: ip?.ipCount ?? 0,
         pcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
-        memo: ip ? "점포평가 경쟁점 · 경쟁점 설명 붙여넣기 IP" : "점포평가 경쟁점 · IP 미등록",
+        memo: ip ? "점포평가 경쟁점 · 경쟁점 정보의 IP" : "점포평가 경쟁점 · IP 미등록",
         active: true,
         ownCode: own.code,
         ownName: own.name,
@@ -261,7 +263,7 @@ export async function registerCompetitorsToPing(
         distanceM: c.distanceM ?? null,
       },
       email,
-      { ipCheck: ip ? PASTED_IP_CHECK : null },
+      { ipCheck: ip && !verifiedIds.has(c.id) ? PASTED_IP_CHECK : null },
     );
     result.created.push(c.id);
   }

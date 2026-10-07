@@ -28,6 +28,7 @@ import { deleteCompetitor, getCandidate, getModelSettings, listCompetitors, save
 import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
 import { isRegistrableCompetitor, listPingStoresByCompetitorIds, registerCompetitorsToPing, updatePingStore } from "@/lib/pingMonitor/clientStore";
 import { StoreForm } from "@/app/ping-monitor/StoreForm";
+import { parseIpRanges } from "@/lib/pingMonitor/ipRange";
 import { competitorMeasurement, formatPct, FULL_DAY_MIN_SAMPLES, type CompetitorMeasurement } from "@/lib/pingMonitor/summary";
 import {
   BooleanSelectField,
@@ -171,6 +172,7 @@ function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: 
     visitorCount: note.visitorCount,
     foodBasis: note.foodBasis,
     interiorBasis: note.interiorBasis,
+    ipRanges: note.ipRanges ?? base.ipRanges ?? null,
     // 2026-10-07 사용자 "먹거리·인테리어·관리 평가가 자동완성이 안 된다" — 원문에 수준 글자가 있을 때만 채우고,
     // 없으면 이미 넣어 둔 값을 지우지 않는다. 먹거리는 브랜드나 직접점수 중 하나만 채워진다(competitorNoteParse.parseFoodLine).
     interiorScore: note.interiorScore ?? base.interiorScore,
@@ -276,6 +278,7 @@ function PingMeasurePanel({
   applyLabel,
   onRegister,
   onPingChanged,
+  competitorIp,
 }: {
   measurement: CompetitorMeasurement | undefined;
   current: { utilization: number | null; period: string | null };
@@ -285,6 +288,8 @@ function PingMeasurePanel({
   onRegister?: (() => void) | null;
   /** 측정기 칸(IP 등)을 여기서 고친 뒤 다시 읽게 한다. 없으면 IP 넣기 칸을 안 보인다. */
   onPingChanged?: (() => void) | null;
+  /** 경쟁점 정보의 IP 대역 — 측정기 칸이 비어 있으면 "IP 넣기"를 이 값으로 채워 연다. */
+  competitorIp?: string | null;
 }) {
   const { user } = useAuth();
   const [ipOpen, setIpOpen] = useState(false);
@@ -348,7 +353,7 @@ function PingMeasurePanel({
                 IP 대역을 넣고 &ldquo;지금 확인&rdquo;으로 켜진 PC가 잡히는지 본 뒤 저장하세요. 등록한 대역 안에서만 잽니다.
               </p>
               <StoreForm
-                initial={m.store}
+                initial={{ ...m.store, ipRanges: m.store.ipRanges || competitorIp || "" }}
                 submitLabel="측정기에 저장"
                 onSubmit={async (input) => {
                   const store = m.store!;
@@ -384,15 +389,19 @@ function CompetitorForm({
   actor,
   measurement,
   onPingChanged,
+  pingEnabled,
 }: {
   initial: Competitor;
   baseline: Competitor | null;
   onCancel: () => void;
-  onSaved: (c: Competitor) => void;
+  /** ipVerified — 저장한 IP 대역을 "지금 확인"으로 재서 한 대라도 대답했는지(측정기 "IP 확인 필요" 표시를 뺄지). */
+  onSaved: (c: Competitor, meta: { ipVerified: boolean }) => void;
   actor: string | null;
   /** 이 경쟁점의 측정기 최근 7일 요약. 새 경쟁점(저장 전)은 측정기에 이어질 id가 없어 null. */
   measurement: CompetitorMeasurement | null | undefined;
   onPingChanged?: () => void;
+  /** 후보지 화면에서만 IP 대역 칸을 보인다(기존점 경쟁점은 이번 범위 밖). */
+  pingEnabled: boolean;
 }) {
   const [form, setForm] = useState<Competitor>(initial);
   const [saving, setSaving] = useState(false);
@@ -449,6 +458,36 @@ function CompetitorForm({
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  // IP 대역 "지금 확인"(2026-10-07 사용자 "등록 전에 IP 잘 들어갔는지 한번 체크") — 측정기 등록 칸(StoreForm)과 같은
+  // /api/ping-monitor/probe를 부른다. 기록은 남지 않는다. 확인한 대역 문자열을 같이 들고 있어, 칸을 고치면 확인이 풀린다.
+  const { user } = useAuth();
+  const [ipProbe, setIpProbe] = useState<{ ipRanges: string; total: number; aliveIps: string[] } | null>(null);
+  const [ipProbing, setIpProbing] = useState(false);
+  const [ipProbeError, setIpProbeError] = useState<string | null>(null);
+  const ipText = (form.ipRanges ?? "").replace(/\s/g, "");
+  const ipParsed = useMemo(() => (ipText ? parseIpRanges(ipText) : null), [ipText]);
+  const ipProbeCurrent = ipProbe?.ipRanges === ipText ? ipProbe : null;
+  async function runIpProbe() {
+    if (!user || !ipText) return;
+    setIpProbing(true);
+    setIpProbeError(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/ping-monitor/probe", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ipRanges: ipText }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "확인에 실패했습니다.");
+      setIpProbe({ ipRanges: ipText, total: body.total, aliveIps: body.aliveIps ?? [] });
+    } catch (err) {
+      setIpProbeError(err instanceof Error ? err.message : "확인에 실패했습니다.");
+    } finally {
+      setIpProbing(false);
+    }
+  }
+
   async function handleSubmit() {
     if (saveLock.current) return;
     const validationErrors = validateCompetitorInput(form);
@@ -459,7 +498,8 @@ function CompetitorForm({
     try {
       const toSave: Competitor = { ...form, updatedAt: Date.now() };
       const saved = await saveCompetitor(toSave, actor, baseline);
-      onSaved(saved);
+      const ip = (saved.ipRanges ?? "").replace(/\s/g, "");
+      onSaved(saved, { ipVerified: ip !== "" && ipProbe?.ipRanges === ip && ipProbe.aliveIps.length > 0 });
     } catch (err) {
       setErrors([err instanceof Error ? err.message : "저장 중 오류가 발생했습니다."]);
     } finally {
@@ -586,6 +626,38 @@ function CompetitorForm({
           hint="퍼센트로 입력 (예: 30 = 30%). 0~1 소수로 넣어도 같게 인식합니다. 경쟁점 가동률 측정기 값은 아래 버튼으로 넣을 수 있습니다"
         />
         <TextField label="핑봇_조회기간" value={form.pingbotPeriod ?? ""} onChange={(v) => set("pingbotPeriod", v || null)} />
+        {pingEnabled && (
+        <div className="flex flex-col gap-1">
+          <TextField
+            label="IP 대역 (가동률 측정기용)"
+            value={form.ipRanges ?? ""}
+            onChange={(v) => set("ipRanges", v.trim() || null)}
+            placeholder="예: 210.221.225.1~106"
+          />
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--sl-ink-soft)]">
+            <button
+              type="button"
+              disabled={!ipText || ipProbing || (ipParsed?.errors.length ?? 0) > 0}
+              onClick={() => void runIpProbe()}
+              className="app-btn-outline rounded-md px-2 py-1 text-[11px] disabled:opacity-50 print:hidden"
+            >
+              {ipProbing ? "확인 중..." : "지금 확인"}
+            </button>
+            {ipParsed && ipParsed.errors.length > 0 && <span className="text-[var(--sl-danger)]">{ipParsed.errors[0]}</span>}
+            {ipParsed && ipParsed.errors.length === 0 && !ipProbeCurrent && <span>IP {ipParsed.ips.length}개 · 저장 전에 확인해 보세요</span>}
+            {ipProbeCurrent && (
+              <span className={ipProbeCurrent.aliveIps.length > 0 ? "text-[var(--sl-ok)]" : "text-[var(--sl-danger)]"}>
+                지금 켜진 PC {ipProbeCurrent.aliveIps.length} / IP {ipProbeCurrent.total}개
+                {ipProbeCurrent.aliveIps.length === 0 ? " — 대답 없음(대역이 틀렸거나 PC가 대답을 막음)" : " — 대답 있음"}
+              </span>
+            )}
+            {ipProbeError && <span className="text-[var(--sl-danger)]">{ipProbeError}</span>}
+          </div>
+          <p className="text-[11px] text-[var(--sl-ink-soft)]">
+            저장하면 측정기로 넘어갑니다. 확인에서 대답이 있었으면 바로 재고, 아니면 측정기 &ldquo;IP 확인 필요&rdquo;에 뜹니다.
+          </p>
+        </div>
+        )}
         <NumberField label="리뉴얼연도" value={form.renovationYear} onChange={(v) => set("renovationYear", v)} step={1} />
       </div>
       {measurement !== null && (
@@ -595,6 +667,7 @@ function CompetitorForm({
             current={{ utilization: form.pingbotUtilization, period: form.pingbotPeriod }}
             applyLabel="핑봇 칸에 넣기"
             onPingChanged={onPingChanged}
+            competitorIp={form.ipRanges}
             onApply={() => {
               if (measurement?.pingbotUtilization == null) return;
               set("pingbotUtilization", measurement.pingbotUtilization);
@@ -834,8 +907,6 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
       : applyParsedNote(blankCompetitor(candidateCode), note, { overwriteName: true });
     setPrefill(target);
     setEditingId(matched ? matched.id : "new");
-    const ip = note.ipRanges;
-    if (ip && pingMeasureEnabled) setPendingIp((prev) => ({ ...prev, [target.id]: ip }));
   }
 
   // 2026-09-11 — .catch()가 없었다. 조회가 실패하면 settings가 defaultModelSettings()인 채로
@@ -914,34 +985,35 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
   const [pingNotice, setPingNotice] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
   const unregistered = competitors.filter((c) => isRegistrableCompetitor(c) && measurementOf(c.id)?.state === "none");
 
-  // 붙여넣기에서 읽은 IP 대역(경쟁점 id별) — 경쟁점을 저장할 때 측정기로 넘긴다. 경쟁점 칸이 아니라 측정기 칸이라 폼엔 없다.
-  const [pendingIp, setPendingIp] = useState<Record<string, string>>({});
-
-  async function registerToPing(list: Competitor[], { quietIfNone = false } = {}) {
+  async function registerToPing(
+    list: Competitor[],
+    { quietIfNone = false, verifiedIds = new Set<string>() }: { quietIfNone?: boolean; verifiedIds?: Set<string> } = {},
+  ) {
     if (!pingMeasureEnabled || list.length === 0) return;
     setPingRegistering(true);
     try {
       // 측정기 "후보지" 보기는 경쟁점 문서의 ownCode·ownName으로 후보지 묶음을 만든다 — 이름이 비면 묶음 제목이 코드로만 나오므로
       // 화면을 연 직후(이름을 아직 못 읽었을 때) 저장해도 여기서 한 번 더 읽어 채운다.
       const ownName = candidateName ?? (await getCandidate(candidateCode))?.name ?? null;
-      const ipById = Object.fromEntries(list.filter((c) => pendingIp[c.id]).map((c) => [c.id, pendingIp[c.id]]));
-      const r = await registerCompetitorsToPing(list, { code: candidateCode, name: ownName }, user?.email ?? null, ipById);
-      if (Object.keys(ipById).length > 0) {
-        setPendingIp((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !(id in ipById))));
-      }
+      // 경쟁점 정보의 IP 대역(붙여넣기·직접 입력)을 측정기 칸으로 넘긴다.
+      const ipById = Object.fromEntries(list.filter((c) => c.ipRanges?.trim()).map((c) => [c.id, c.ipRanges!.trim()]));
+      const r = await registerCompetitorsToPing(list, { code: candidateCode, name: ownName }, user?.email ?? null, ipById, verifiedIds);
       const done = [
         r.created.length > 0 ? `측정기에 ${r.created.length}곳을 올렸습니다` : null,
-        r.ipFilled.length > 0 ? `${r.ipFilled.join(", ")}에 붙여넣기 IP를 넣었습니다` : null,
+        r.ipFilled.length > 0 ? `${r.ipFilled.join(", ")}의 측정기 칸에 IP를 넣었습니다` : null,
       ].filter(Boolean);
       const warns = [
         r.ipConflict.length > 0 ? `${r.ipConflict.join(", ")}은 측정기에 다른 IP가 이미 있어 바꾸지 않았습니다(카드의 "측정기 칸 고치기"에서 확인)` : null,
         r.ipInvalid.length > 0 ? `${r.ipInvalid.join(", ")}의 IP 대역을 읽지 못했습니다` : null,
       ].filter(Boolean);
-      const pastedOk = Object.keys(ipById).length > r.ipConflict.length + r.ipInvalid.length;
+      const unverified = Object.keys(ipById).filter((id) => !verifiedIds.has(id)).length;
       if (done.length > 0 || warns.length > 0) {
-        const tail = pastedOk
-          ? ' 붙여넣기로 넣은 IP는 측정기 화면 "IP 확인 필요"에 뜹니다 — "지금 확인"으로 켜진 PC가 잡히는지 봐 주세요.'
-          : ' IP가 없는 곳은 카드의 "IP 넣기"로 넣으면 재기 시작합니다.';
+        const tail =
+          Object.keys(ipById).length === 0
+            ? ' IP가 없는 곳은 경쟁점 정보의 "IP 대역" 칸이나 카드의 "IP 넣기"로 넣으면 재기 시작합니다.'
+            : unverified > 0
+              ? ' "지금 확인"을 안 했거나 대답이 없던 IP는 측정기 화면 "IP 확인 필요"에 뜹니다.'
+              : "";
         setPingNotice({ tone: warns.length > 0 ? "danger" : "ok", text: `${[...done, ...warns].join(" · ")}.${tail}` });
       } else if (!quietIfNone) {
         setPingNotice({ tone: "ok", text: "이미 측정기에 올라가 있습니다." });
@@ -1025,8 +1097,8 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
             자동으로 나눠 인식합니다(AI 아닌 텍스트 매칭). 자동으로 저장되지 않으니, 매장을 하나씩 골라 폼에 채운 뒤
             직접 검토하고 저장해주세요. 인테리어 수준·매장 관리 상태는 아래 기준표대로(하 2.0 · 중하 2.5 · 중 3.0 · 중상 3.5 ·
             상 4.0) 점수로 채우고, 먹거리는 수준 글자가 있으면 그 점수, &ldquo;파악안됨&rdquo;이면 중(3.0), 브랜드가 적혀 있으면 그
-            브랜드를 고릅니다. 매장명 밑 IP 대역은 저장할 때 경쟁점 가동률 측정기로 넘어갑니다(측정기 화면 &ldquo;IP 확인 필요&rdquo;에서
-            &ldquo;지금 확인&rdquo;으로 확인). 적용대수·거리는 판단이 필요해 자동으로 채우지 않습니다.
+            브랜드를 고릅니다. 매장명 밑 IP 대역은 폼의 &ldquo;IP 대역(가동률 측정기용)&rdquo; 칸에 들어갑니다 — &ldquo;지금 확인&rdquo;으로
+            켜진 PC가 대답하는지 본 뒤 저장하면 측정기로 넘어갑니다. 적용대수·거리는 판단이 필요해 자동으로 채우지 않습니다.
           </p>
           <TextAreaField label="붙여넣기" value={pasteText} onChange={setPasteText} rows={8} />
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1182,13 +1254,14 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
           baseline={editingId === "new" ? null : competitors.find((c) => c.id === editingId) ?? null}
           actor={user?.email ?? null}
           onPingChanged={() => setPingVersion((v) => v + 1)}
+          pingEnabled={pingMeasureEnabled}
           measurement={!pingMeasureEnabled || editingId === "new" || editingId == null ? null : measureError ? null : measurementOf(editingId)}
           onCancel={() => {
             setEditingId(null);
             setPrefill(null);
           }}
-          onSaved={(saved) => {
-            void registerToPing([saved], { quietIfNone: true });
+          onSaved={(saved, { ipVerified }) => {
+            void registerToPing([saved], { quietIfNone: true, verifiedIds: ipVerified ? new Set([saved.id]) : new Set() });
             setEditingId(null);
             setPrefill(null);
             setMutationError(null);
@@ -1266,6 +1339,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                     onApply={editingId === null ? () => handleApplyMeasurement(c) : null}
                     onRegister={editingId === null && !pingRegistering && isRegistrableCompetitor(c) ? () => void registerToPing([c]) : null}
                     onPingChanged={editingId === null ? () => setPingVersion((v) => v + 1) : null}
+                    competitorIp={c.ipRanges}
                   />
                 </div>
               )}
