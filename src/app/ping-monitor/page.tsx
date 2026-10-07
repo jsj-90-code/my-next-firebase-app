@@ -27,7 +27,6 @@ import {
   storeStatus,
   type PingStore,
 } from "@/lib/pingMonitor/summary";
-import { IndustryIndexCard } from "./IndustryIndexCard";
 import { StoreForm } from "./StoreForm";
 
 const TONE: Record<string, string> = {
@@ -321,8 +320,6 @@ export default function PingMonitorPage() {
 
       {stores != null && stores.length > 0 && (
         <>
-          {/* 업계 지수 — 매장별 목록 위(2026-10-07). 이미 읽은 days로 계산, 추가 읽기 없음. */}
-          <IndustryIndexCard stores={stores} />
           <div className="flex flex-wrap items-center gap-2">
             {(["existing", "candidate", "all", "check"] as const).map((v) => (
               <button key={v} type="button" className={`rounded-full px-3 py-1 text-xs ${view === v ? "app-btn-primary" : "app-btn-outline"}`} onClick={() => setView(v)}>
