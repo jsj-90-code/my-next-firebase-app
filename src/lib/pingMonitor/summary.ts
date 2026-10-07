@@ -16,12 +16,13 @@ export const BLOCKED_SUSPECT_SAMPLES = 72;
 export type DayTotals = { a: number; t: number; n: number };
 
 /**
- * 하루로 치는 최소 측정 횟수(1시간 간격이라 = 시간 수). 이보다 적게 잰 날은 가동률 평균에서 뺀다 —
+ * 하루로 치는 최소 측정 횟수(1시간 간격이라 = 시간 수). 24시간을 다 잰 날만 가동률 평균에 넣는다 —
  * 등록한 날 오후 5시부터 잰 7시간은 낮 시간이 빠져 치우친다(2026-10-07 사용자 "그 데이터는 날려야", "일일평균으로").
- * 서버 장애로 한두 시간 빠진 날(10-07 08시 회차 누락 등)은 살리려고 24가 아니라 22로 둔다.
+ * 10-07엔 서버 장애로 한두 시간 빠진 날을 살리려고 22로 뒀다가 2026-10-08 사용자 결정으로 24 —
+ * 빠진 2시간이 저녁 피크면 하루 가동률이 눈에 띄게 낮아진다. 장애로 한 회차라도 빠진 날은 통째로 뺀다.
  * 18로 두면 안 된다 — 등록 후 하루가 덜 지난 매장은 빠진 시간이 낮(11~16시)에 몰려 18칸이 차도 치우친다(10-07 암사역 콤마 실측).
  */
-export const FULL_DAY_MIN_SAMPLES = 22;
+export const FULL_DAY_MIN_SAMPLES = 24;
 
 /** "최근 24시간" 값이 나오는 최소 시간대 칸 수 — 24칸 꽉 찼을 때만(사용자 2026-10-07). */
 export const RECENT_MIN_HOURS = 24;
@@ -31,7 +32,7 @@ export const RECENT_MIN_HOURS = 24;
  * 0시~24시 날짜를 기다리지 않아도 24개 시간대가 고르게 들어가 꽉 찬 하루와 같은 기준이 된다 —
  * 신규 후보지는 오후에 등록해도 다음 날 같은 시각이면 값이 나온다(사용자 2026-10-07 "하루치로 하려면 2일을 기다려야 하니").
  * 24개 시간대가 다 차야 값을 낸다(RECENT_MIN_HOURS, 사용자 2026-10-07 "24시간 꽉 채웠을 때 뜨는 걸로").
- * 회차가 한 번 빠지면 그 시각부터 24시간 동안 "-"로 보인다 — 날짜 평균(22시간)과 달리 장애를 봐주지 않는다.
+ * 회차가 한 번 빠지면 그 시각부터 24시간 동안 "-"로 보인다 — 날짜 평균(FULL_DAY_MIN_SAMPLES)처럼 장애를 봐주지 않는다.
  */
 export function recent24h(recent: Record<string, RecentSlot>, now = new Date()): { util: number | null; hours: number } {
   let a = 0, t = 0, hours = 0;
@@ -50,7 +51,7 @@ export function fullDayRate(days: Record<string, DayTotals>, date: string, today
   return v && isFullDay(date, v, today) ? v.a / v.t : null;
 }
 
-/** 하루를 다 찬 날로 칠지 — 오늘(진행 중)은 측정이 18번을 넘어도 아직 아니다. */
+/** 하루를 다 찬 날로 칠지 — 오늘(진행 중)은 아직 아니다. */
 export function isFullDay(date: string, v: DayTotals, today: string): boolean {
   return date < today && v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0;
 }

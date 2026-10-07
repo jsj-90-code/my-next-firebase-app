@@ -374,7 +374,7 @@ function PingMeasurePanel({
       )}
       {m.state === "short" && (
         <p className="mt-1 text-[var(--sl-ink-soft)]">
-          {FULL_DAY_MIN_SAMPLES}시간 이상 잰 날만 하루로 칩니다. 7일이 다 차지 않아 {m.fullDays}일치 평균입니다.
+          {FULL_DAY_MIN_SAMPLES}시간을 다 잰 날만 하루로 칩니다. 7일이 다 차지 않아 {m.fullDays}일치 평균입니다.
         </p>
       )}
     </div>

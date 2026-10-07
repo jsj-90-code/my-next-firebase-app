@@ -308,7 +308,7 @@ export default function PingMonitorPage() {
                 <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">표시가 붙는 경우</h3>
                 <ul className="flex flex-col gap-1">
                   <li>
-                    <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. {FULL_DAY_MIN_SAMPLES}시간 넘게 못 잰 날(등록한 날 등)은 낮·밤이 치우쳐 뺍니다.
+                    <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. {FULL_DAY_MIN_SAMPLES}시간을 다 못 잰 날(등록한 날, 서버 장애로 한 회차라도 빠진 날)은 낮·밤이 치우쳐 뺍니다.
                   </li>
                   <li>
                     <b>&ldquo;측정 불가 의심&rdquo;</b> — {BLOCKED_SUSPECT_SAMPLES}번 넘게 재도 한 대도 대답하지 않을 때(PC가 바깥 확인을 막아 둔 매장).
