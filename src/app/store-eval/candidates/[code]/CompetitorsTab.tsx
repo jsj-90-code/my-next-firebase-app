@@ -166,7 +166,11 @@ function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: 
     room1: note.room1 ?? base.room1,
     room2: note.room2,
     teamRoom: note.teamRoom,
-    ratePer1000Won: note.ratePer1000Won,
+    // 2026-10-07 — 시간당환산요금은 폼에서 분을 손으로 칠 때만 채워져, 붙여넣기 땐 분을 지우고 다시 쳐야 했다(사용자).
+    // 폼 칸과 같은 식(60000 / 분)으로 같이 채운다. 원문에 요금 줄이 없으면 기존 값을 지우지 않는다.
+    ratePer1000Won: note.ratePer1000Won ?? base.ratePer1000Won,
+    hourlyRateConverted:
+      note.ratePer1000Won != null && note.ratePer1000Won > 0 ? Math.round(60000 / note.ratePer1000Won) : base.hourlyRateConverted,
     paidDeduction: note.paidDeduction,
     visitedAt: note.visitedAt,
     visitorCount: note.visitorCount,
