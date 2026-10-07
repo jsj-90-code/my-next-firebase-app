@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getPingStore, listPingDaily, updatePingStore } from "@/lib/pingMonitor/clientStore";
 import {
+  dateRangeLabel,
   denominator,
   formatPct,
   kstDaysAgo,
@@ -201,6 +202,11 @@ export default function PingStoreDetailPage() {
               onClick={() => applyPreset(p.key)}
             >
               {p.label}
+              {p.days != null && (
+                <span className="ml-1 opacity-70">
+                  {p.days === 0 ? dateRangeLabel(kstDaysAgo(0), kstDaysAgo(0)) : dateRangeLabel(lastFullDays(p.days).from, lastFullDays(p.days).to)}
+                </span>
+              )}
             </button>
           ))}
           <label className="ml-auto flex items-center gap-1 text-xs">

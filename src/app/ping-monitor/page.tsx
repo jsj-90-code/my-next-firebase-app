@@ -22,6 +22,7 @@ import {
   rangeUtilization,
   storeStatus,
   type PingStore,
+  dateRangeLabel,
 } from "@/lib/pingMonitor/summary";
 import { StoreForm } from "./StoreForm";
 
@@ -76,10 +77,10 @@ function CompetitorTable({ stores, showOwn = false }: { stores: PingStore[]; sho
             <th className="px-3 py-2 text-right font-medium">거리</th>
             <th className="px-3 py-2 text-right font-medium">대수</th>
             <th className="px-3 py-2 text-right font-medium">최근 측정</th>
-            <th className="px-3 py-2 text-right font-medium">오늘(진행 중)</th>
-            <th className="px-3 py-2 text-right font-medium">어제</th>
-            <th className="px-3 py-2 text-right font-medium">최근 7일</th>
-            <th className="px-3 py-2 text-right font-medium">최근 30일</th>
+            <th className="px-3 py-2 text-right font-medium">오늘(진행 중)<div className="font-normal">{dateRangeLabel(today, today)}</div></th>
+            <th className="px-3 py-2 text-right font-medium">어제<div className="font-normal">{dateRangeLabel(yesterday, yesterday)}</div></th>
+            <th className="px-3 py-2 text-right font-medium">최근 7일<div className="font-normal">{dateRangeLabel(from7, yesterday)}</div></th>
+            <th className="px-3 py-2 text-right font-medium">최근 30일<div className="font-normal">{dateRangeLabel(from30, yesterday)}</div></th>
             <th className="px-3 py-2 text-right font-medium">전체</th>
             <th className="px-3 py-2 font-medium">상태</th>
           </tr>
@@ -164,6 +165,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
             {note7 && ` (${note7})`}
           </span>
           <span>30일 {formatPct(groupUtilization(group.stores, from30, yesterday))}</span>
+          <span>({dateRangeLabel(from7, yesterday)} · 30일 {dateRangeLabel(from30, yesterday)})</span>
         </span>
       </button>
       {open && (

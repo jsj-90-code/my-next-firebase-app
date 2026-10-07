@@ -73,6 +73,12 @@ export function lastFullDays(n: number, now = new Date()): { from: string; to: s
   return { from: kstDaysAgo(n, now), to: kstDaysAgo(1, now) };
 }
 
+/** 기간 칸 밑에 붙이는 날짜(2026-10-07 사용자) — "10/7" 또는 "9/30~10/6". */
+export function dateRangeLabel(from: string, to: string): string {
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+  return from === to ? md(from) : `${md(from)}~${md(to)}`;
+}
+
 export function denominator(store: Pick<PingStore, "pcCount" | "ipCount">): number {
   return store.pcCount && store.pcCount > 0 ? store.pcCount : store.ipCount;
 }
