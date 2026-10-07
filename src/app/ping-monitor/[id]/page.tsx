@@ -246,7 +246,7 @@ export default function PingStoreDetailPage() {
             <div className="text-xs text-[var(--sl-ink-soft)]">최근 24시간</div>
             <div className="text-xl font-semibold tabular-nums text-[#171310] dark:text-[#f2ede2]">{formatPct(r24.util)}</div>
             <div className="text-xs text-[var(--sl-ink-soft)]">
-              {r24.util != null ? `시간대 ${r24.hours}/24칸` : `시간대 ${r24.hours}/24칸 — ${FULL_DAY_MIN_SAMPLES}칸부터 값이 나옴`}
+              {r24.util != null ? `시간대 ${r24.hours}/24칸` : `시간대 ${r24.hours}/24칸 — 24칸이 다 차면 값이 나옴`}
             </div>
           </div>
         </div>

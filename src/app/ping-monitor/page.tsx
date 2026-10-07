@@ -68,7 +68,7 @@ function groupFullDays(stores: PingStore[], from: string, to: string): number {
   return Math.max(0, ...stores.map((s) => rangeUtilization(s.days, from, to).days));
 }
 
-// 최근 24시간 — 시간대가 FULL_DAY_MIN_SAMPLES칸 이상 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
+// 최근 24시간 — 시간대 24칸이 다 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
 function Recent24Cell({ store }: { store: PingStore }) {
   const r = recent24h(store.recent);
   return (
@@ -239,8 +239,8 @@ export default function PingMonitorPage() {
             {BLOCKED_SUSPECT_SAMPLES}번 넘게 재는 동안 한 대도 대답하지 않으면 &ldquo;측정 불가 의심&rdquo;(PC가 바깥 확인을 막아 둔 매장)으로 따로 표시합니다.
             최근 7일·30일은 <b>일일평균</b>입니다 — 하루(한국 시각 0~24시) 가동률을 날마다 구해 평균하고,
             {` ${FULL_DAY_MIN_SAMPLES}`}시간 넘게 못 잰 날(등록한 날 오후부터 잰 날 등)은 낮·밤이 치우치므로 뺍니다. 다 찬 날이 모자라면 &ldquo;3일치&rdquo;처럼 적습니다.
-            &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다(진행 중인 &ldquo;오늘&rdquo;은 보는 시각에 따라 치우쳐 상세 화면에만 둡니다) — 시간대가
-            {` ${FULL_DAY_MIN_SAMPLES}`}칸 이상 차면 값이 나와서, 신규 후보지는 등록 다음 날 같은 시각이면 하루치 값을 쓸 수 있습니다.
+            &ldquo;최근 24시간&rdquo;은 지금부터 거꾸로 24시간입니다(진행 중인 &ldquo;오늘&rdquo;은 보는 시각에 따라 치우쳐 상세 화면에만 둡니다) — 24개 시간대가
+            꽉 차야 값이 나와서, 신규 후보지는 등록 다음 날 같은 시각이면 하루치 값을 쓸 수 있습니다.
             매장 줄의 &ldquo;우리 매장&rdquo;은 우리 매장 PC를 같은 방식으로 잰 최근 7일, &ldquo;경쟁점&rdquo;은 날마다 그 매장 경쟁점들의 켜진 PC 합 ÷ 대수 합을 구해 평균한 최근 7일입니다.
             어제·전체 같은 다른 기간은 매장 상세 화면에서 고릅니다.
           </details>

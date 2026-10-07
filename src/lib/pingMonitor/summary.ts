@@ -23,11 +23,15 @@ export type DayTotals = { a: number; t: number; n: number };
  */
 export const FULL_DAY_MIN_SAMPLES = 22;
 
+/** "최근 24시간" 값이 나오는 최소 시간대 칸 수 — 24칸 꽉 찼을 때만(사용자 2026-10-07). */
+export const RECENT_MIN_HOURS = 24;
+
 /**
  * 최근 24시간 가동률 — 시간대 칸마다 마지막 측정(24시간 안)을 합친다(켜진 합 ÷ 대수 합).
  * 0시~24시 날짜를 기다리지 않아도 24개 시간대가 고르게 들어가 꽉 찬 하루와 같은 기준이 된다 —
  * 신규 후보지는 오후에 등록해도 다음 날 같은 시각이면 값이 나온다(사용자 2026-10-07 "하루치로 하려면 2일을 기다려야 하니").
- * 시간대가 FULL_DAY_MIN_SAMPLES개보다 적게 차 있으면 util=null(낮이 빠진 7시간치 같은 값을 내지 않는다).
+ * 24개 시간대가 다 차야 값을 낸다(RECENT_MIN_HOURS, 사용자 2026-10-07 "24시간 꽉 채웠을 때 뜨는 걸로").
+ * 회차가 한 번 빠지면 그 시각부터 24시간 동안 "-"로 보인다 — 날짜 평균(22시간)과 달리 장애를 봐주지 않는다.
  */
 export function recent24h(recent: Record<string, RecentSlot>, now = new Date()): { util: number | null; hours: number } {
   let a = 0, t = 0, hours = 0;
@@ -37,7 +41,7 @@ export function recent24h(recent: Record<string, RecentSlot>, now = new Date()):
     t += v.t;
     hours += 1;
   }
-  return { util: hours >= FULL_DAY_MIN_SAMPLES ? a / t : null, hours };
+  return { util: hours >= RECENT_MIN_HOURS ? a / t : null, hours };
 }
 
 /** 하루를 다 찬 날로 칠지 — 오늘(진행 중)은 측정이 18번을 넘어도 아직 아니다. */
