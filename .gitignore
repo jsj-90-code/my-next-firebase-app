@@ -563,3 +563,10 @@ src/**/_*.test.ts
 
 # Offline decision audit; observations remain in ignored .local-tools files.
 !src/lib/storeEval/_decisionAudit20260929.test.ts
+# 2026-10-07 — 배후지 나눠 갖기(허프) 재료. 공공자료뿐, 매출 없음. docs/huff-hinterland-20261007.md
+!/.local-tools/trade-zones.json
+!/.local-tools/resident-grid-1km.json
+!/.local-tools/business-grid-1km.json
+!/.local-tools/store-grid-500m.json
+!/.local-tools/resident-grid-500m.json
+!/.local-tools/huff-share.json
