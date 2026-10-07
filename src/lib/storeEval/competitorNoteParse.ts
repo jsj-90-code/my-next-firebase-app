@@ -78,9 +78,66 @@ function findIpRanges(block: string): string | null {
   return m ? m[0].replace(/\s+/g, "") : null;
 }
 
+type SpecKind = "cpu" | "vga" | "ram";
+
+/**
+ * 사양 값 하나를 모양으로 가려 표준 표기로 바꾼다(2026-10-07 사용자 "14400 32 3060 -> i5 14400F / 32GB / RTX 3060").
+ * 조사표엔 "VGA : 32 · RAM : 3060"처럼 칸이 뒤바뀐 채 오기도 한다 — 그대로 두면 점수 계산이 3060GB 램으로 읽는다.
+ * 모양으로 못 가리는 값은 null(원래 칸에 원문 그대로 둔다).
+ */
+export function classifySpecValue(text: string): { kind: SpecKind; value: string } | null {
+  const t = text.trim().replace(/\s+/g, " ");
+  // 그래픽카드 — 접두어가 있으면 띄어쓰기만 고른다. 숫자만 있으면 1050~5090 꼴(둘째 자리 0·6, 끝 0)만.
+  const gpu = t.match(/^(RTX|GTX|RX)\s*-?\s*(\d{3,4})\s*(TI|SUPER|XT)?$/i);
+  if (gpu) {
+    const suffix = gpu[3] ? ` ${/^ti$/i.test(gpu[3]) ? "Ti" : gpu[3].toUpperCase()}` : "";
+    return { kind: "vga", value: `${gpu[1].toUpperCase()} ${gpu[2]}${suffix}` };
+  }
+  const bareGpu = t.match(/^([1-5])([06])([5-9])0\s*(TI|SUPER)?$/i);
+  if (bareGpu) {
+    const num = `${bareGpu[1]}${bareGpu[2]}${bareGpu[3]}0`;
+    const prefix = num.startsWith("10") || num.startsWith("16") ? "GTX" : "RTX";
+    const suffix = bareGpu[4] ? (/ti/i.test(bareGpu[4]) ? " Ti" : " SUPER") : "";
+    return { kind: "vga", value: `${prefix} ${num}${suffix}` };
+  }
+  // 램 — 4~128 사이 2의 거듭제곱(+48), 단위 G/GB/기가는 있어도 없어도.
+  const ram = t.match(/^(\d{1,3})\s*(?:G|GB|기가)?$/i);
+  if (ram && [4, 8, 16, 32, 48, 64, 128].includes(Number(ram[1]))) return { kind: "ram", value: `${ram[1]}GB` };
+  // 인텔 10~14세대 — "14400"·"i5-14400F"·"14600KF". 접미어가 없으면 PC방 표준인 F로 본다(사용자 예시).
+  const intel = t.match(/^(?:I([3579])\s*-?\s*)?(1[0-4])([1-9])00\s*(KF|F|K)?$/i);
+  if (intel) {
+    const tierDigit = Number(intel[3]);
+    const tier = intel[1] ?? (tierDigit <= 3 ? "3" : tierDigit <= 6 ? "5" : tierDigit <= 8 ? "7" : "9");
+    return { kind: "cpu", value: `i${tier} ${intel[2]}${intel[3]}00${(intel[4] ?? "F").toUpperCase()}` };
+  }
+  // 라이젠 — 접미어(X·F·X3D)가 있어야 그래픽카드 번호와 안 헷갈린다.
+  const ryzen = t.match(/^(?:라이젠|RYZEN|R)?\s*([579])?\s*([5-9])(\d)00(X3D|X|F|G)$/i);
+  if (ryzen) {
+    const tier = ryzen[1] ?? (Number(ryzen[3]) >= 8 ? "7" : "5");
+    return { kind: "cpu", value: `Ryzen ${tier} ${ryzen[2]}${ryzen[3]}00${ryzen[4].toUpperCase()}` };
+  }
+  return null;
+}
+
+/** CPU·VGA·RAM 칸을 모양으로 다시 나눈다. 가린 값이 그 칸을 차지하고, 못 가린 원문은 빈 제 칸에만 남는다. */
+export function normalizeSpecSlots(raw: Record<SpecKind, string | null>): Record<SpecKind, string | null> {
+  const out: Record<SpecKind, string | null> = { cpu: null, vga: null, ram: null };
+  const unknown: [SpecKind, string][] = [];
+  for (const slot of ["cpu", "vga", "ram"] as const) {
+    const v = raw[slot];
+    if (v == null || v.trim() === "") continue;
+    const c = classifySpecValue(v);
+    if (c && out[c.kind] == null) out[c.kind] = c.value;
+    else unknown.push([slot, v.trim()]);
+  }
+  for (const [slot, v] of unknown) if (out[slot] == null) out[slot] = v;
+  return out;
+}
+
 function matchLine(block: string, label: RegExp): string | null {
   const m = block.match(label);
-  return m ? m[1].trim() : null;
+  const v = m ? m[1].trim() : "";
+  return v === "" ? null : v;
 }
 
 /** "없음" -> 0, "10개"/"11석"처럼 숫자+단위가 있으면 첫 숫자, 그 외 판단 불가면 null. */
@@ -139,44 +196,51 @@ function parseVisitLine(text: string | null): { visitedAt: string | null; visito
   return { visitedAt, visitorCount: visitorM ? Number(visitorM[1]) : null };
 }
 
-/** "1000원 40분" -> 40 */
+/** "1000원 40분" -> 40 · "2시간 3000원" -> 40(2026-10-07, 묶음 요금을 1,000원당 분으로 환산) */
 function parseRatePer1000Won(text: string | null): number | null {
   if (text == null) return null;
+  const bundle = text.match(/(\d+(?:\.\d+)?)\s*시간\s*(\d[\d,]*)\s*원/);
+  if (bundle) {
+    const won = Number(bundle[2].replace(/,/g, ""));
+    return won > 0 ? Math.round((Number(bundle[1]) * 60 * 1000) / won) : null;
+  }
   const m = text.match(/(\d+)\s*분/);
   return m ? Number(m[1]) : null;
 }
 
 function parseOneBlock(block: string): ParsedCompetitorNote | null {
-  const name = matchLine(block, /매장\s*명\s*[:：]\s*(.+)/);
+  const name = matchLine(block, /매장\s*명\s*[:：][ \t]*(.+)/);
   if (!name) return null;
 
-  const totalPcCountText = matchLine(block, /전체\s*대수\s*[:：]\s*(.+)/);
+  const totalPcCountText = matchLine(block, /전체\s*대수\s*[:：][ \t]*(.+)/);
   const totalPcCountMatch = totalPcCountText?.match(/(\d+)/)?.[1];
   const totalPcCount = totalPcCountMatch != null ? Number(totalPcCountMatch) : null;
 
-  const cpu = matchLine(block, /CPU\s*[:：]\s*(.+)/);
-  const vgaBase = matchLine(block, /VGA\s*[:：]\s*(.+)/);
-  const ram = matchLine(block, /RAM\s*[:：]\s*(.+)/);
-  const monitor = matchLine(block, /모니터\s*[:：]\s*(.+)/);
+  const { cpu, vga: vgaBase, ram } = normalizeSpecSlots({
+    cpu: matchLine(block, /CPU\s*[:：][ \t]*(.+)/),
+    vga: matchLine(block, /VGA\s*[:：][ \t]*(.+)/),
+    ram: matchLine(block, /RAM\s*[:：][ \t]*(.+)/),
+  });
+  const monitor = matchLine(block, /모니터\s*[:：][ \t]*(.+)/);
 
-  const coupleZone = sumGaeCounts(matchLine(block, /커플석\s*[:：]?\s*(.+)/));
-  const singleSeatCount = parseCountLike(matchLine(block, /1인석\s*[:：]?\s*(.+)/));
-  const room1 = parseCountLike(matchLine(block, /1인\s*룸\s*[:：]?\s*(.+)/));
-  const room2 = parseCountLike(matchLine(block, /2인석\s*[:：]?\s*(.+)/));
-  const teamRoom = sumGaeCounts(matchLine(block, /팀룸\s*[:：]?\s*(.+)/));
+  const coupleZone = sumGaeCounts(matchLine(block, /커플석\s*[:：]?[ \t]*(.+)/));
+  const singleSeatCount = parseCountLike(matchLine(block, /1인석\s*[:：]?[ \t]*(.+)/));
+  const room1 = parseCountLike(matchLine(block, /1인\s*룸\s*[:：]?[ \t]*(.+)/));
+  const room2 = parseCountLike(matchLine(block, /2인석\s*[:：]?[ \t]*(.+)/));
+  const teamRoom = sumGaeCounts(matchLine(block, /팀룸\s*[:：]?[ \t]*(.+)/));
 
   // "방문일시 고객수" 순서가 형식마다 다르다 - 구형식은 "26년 3월23일 오전 11시30분 9명 이용중"
   // (날짜 먼저), 신형식은 "56명 (4시 30분)"(인원 먼저, 날짜 자체가 없음) - 라벨 뒤 전체를 그대로
   // parseVisitLine에 넘기면 두 형식 다 정규식이 알아서 필요한 조각만 뽑아온다.
-  const { visitedAt, visitorCount } = parseVisitLine(matchLine(block, /방문\s*일시\s*고객수\s*[:：]\s*(.+)/));
-  const interiorLevel = matchLine(block, /인테리어\s*수준\s*[:：]\s*(.+)/);
-  const manageLevel = matchLine(block, /매장\s*관리\s*상태[^:：\n]*[:：]\s*(.+)/);
+  const { visitedAt, visitorCount } = parseVisitLine(matchLine(block, /방문\s*일시\s*고객수\s*[:：][ \t]*(.+)/));
+  const interiorLevel = matchLine(block, /인테리어\s*수준\s*[:：][ \t]*(.+)/);
+  const manageLevel = matchLine(block, /매장\s*관리\s*상태[^:：\n]*[:：][ \t]*(.+)/);
   // "먹거리 브랜드"(구형식)와 "먹거리 수준, 브랜드"(신형식, 값이 브랜드명이 아니라 "중" 같은 수준일
   // 수도 있음) 둘 다 받는다 - "먹거리"와 콜론 사이에 어떤 텍스트가 와도 매칭한다.
-  const foodBasis = matchLine(block, /먹거리[^:：\n]*[:：]\s*(.+)/);
+  const foodBasis = matchLine(block, /먹거리[^:：\n]*[:：][ \t]*(.+)/);
   // "1,000원 시간"(구형식, 붙여씀)과 "1,000 원 시간"(신형식, 띄어씀) 둘 다 받는다.
-  const ratePer1000Won = parseRatePer1000Won(matchLine(block, /1,?000\s*원\s*시간\s*[:：]\s*(.+)/));
-  const paidDeduction = matchLine(block, /유료차감\s*[:：]\s*(.+)/);
+  const ratePer1000Won = parseRatePer1000Won(matchLine(block, /1,?000\s*원\s*시간\s*[:：][ \t]*(.+)/));
+  const paidDeduction = matchLine(block, /유료차감\s*[:：][ \t]*(.+)/);
 
   const summaryM = block.match(/종합\s*평가\s*[:：]?\s*([\s\S]*)$/);
   // 블록 경계에 다음 매장의 날짜줄("26.03.23")만 딸려 들어오는 경우가 있어 끝에서부터 정리한다.
@@ -226,7 +290,7 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
  * 화면엔 아무 반응이 없었다(사용자 "분석 눌렀는데 반응이 없다"). 줄 앞 기호·번호를 넓게 받는다.
  */
 export function parseCompetitorNotes(text: string): ParsedCompetitorNote[] {
-  const markerRe = /^[ \t]*(?:[■□▶▷►●○•·◆◇★☆※*\-]+\s*|\d+\s*[.)]\s*)?매장\s*명\s*[:：]/gm;
+  const markerRe = /^[ \t]*(?:[■□▶▷►●○•·◆◇★☆※*\-]+\s*|\d+\s*[.)]\s*)?(?:경쟁점\s*)?매장\s*명\s*[:：]/gm;
   const starts: number[] = [];
   let m: RegExpExecArray | null;
   while ((m = markerRe.exec(text)) !== null) {

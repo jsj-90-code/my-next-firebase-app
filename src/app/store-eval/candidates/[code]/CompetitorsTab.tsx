@@ -1101,7 +1101,8 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
             직접 검토하고 저장해주세요. 인테리어 수준·매장 관리 상태는 아래 기준표대로(하 2.0 · 중하 2.5 · 중 3.0 · 중상 3.5 ·
             상 4.0) 점수로 채우고, 먹거리는 수준 글자가 있으면 그 점수, &ldquo;파악안됨&rdquo;이면 중(3.0), 브랜드가 적혀 있으면 그
             브랜드를 고릅니다. 매장명 밑 IP 대역은 폼의 &ldquo;IP 대역(가동률 측정기용)&rdquo; 칸에 들어갑니다 — &ldquo;지금 확인&rdquo;으로
-            켜진 PC가 대답하는지 본 뒤 저장하면 측정기로 넘어갑니다. 적용대수·거리는 판단이 필요해 자동으로 채우지 않습니다.
+            켜진 PC가 대답하는지 본 뒤 저장하면 측정기로 넘어갑니다. CPU·VGA·RAM은 값 모양으로 가려 표준 표기로 바꿉니다(예
+            &ldquo;14400 / 32 / 3060&rdquo; → i5 14400F · 32GB · RTX 3060, 칸이 뒤바뀌어 적혀도 제자리로). 적용대수·거리는 판단이 필요해 자동으로 채우지 않습니다.
           </p>
           <TextAreaField label="붙여넣기" value={pasteText} onChange={setPasteText} rows={8} />
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1114,7 +1115,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
             <p className="app-notice app-badge-warn mt-3 w-full justify-start px-3 py-2 text-xs">
               {pasteText.trim() === ""
                 ? "붙여넣은 내용이 없습니다."
-                : "매장을 하나도 인식하지 못했습니다. 매장마다 “매장명 : 이름” 줄이 있어야 그 줄을 기준으로 나눠 읽습니다(앞에 -, ■, 1. 같은 기호는 있어도 됩니다)."}
+                : "매장을 하나도 인식하지 못했습니다. 매장마다 “매장명 : 이름” 줄이 있어야 그 줄을 기준으로 나눠 읽습니다(앞에 -, ■, 1., “경쟁점”이 붙어도 됩니다)."}
             </p>
           )}
           {parsedNotes.length > 0 && (

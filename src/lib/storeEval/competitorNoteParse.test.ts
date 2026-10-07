@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCompetitorNotes, parseFoodLine } from "./competitorNoteParse";
+import { classifySpecValue, normalizeSpecSlots, parseCompetitorNotes, parseFoodLine } from "./competitorNoteParse";
 
 // 2026-08-27: 사용자가 실제로 붙여넣는 "경쟁점 설명" 원문 그대로 픽스처로 씀(점포개발자 4곳 조사분).
 const REAL_PASTE = `경쟁점 설명
@@ -152,9 +152,9 @@ describe("parseCompetitorNotes", () => {
   it("1번째 매장(레드포스pc아레나 삼산점) 필드를 정확히 추출한다", () => {
     const [e] = parseCompetitorNotes(REAL_PASTE);
     expect(e.totalPcCount).toBe(158);
-    expect(e.cpu).toBe("14400");
-    expect(e.vgaBase).toBe("4060");
-    expect(e.ram).toBe("16G");
+    expect(e.cpu).toBe("i5 14400F");
+    expect(e.vgaBase).toBe("RTX 4060");
+    expect(e.ram).toBe("16GB");
     expect(e.monitor).toBe("평면32인치 240Hz");
     expect(e.coupleZone).toBe(0);
     expect(e.singleSeatCount).toBe(0);
@@ -286,7 +286,7 @@ describe("parseCompetitorNotes — 2번째 원문 형식(■ 매장명 마커, �
     const [e] = parseCompetitorNotes(REAL_PASTE_FORMAT2);
     expect(e.totalPcCount).toBe(194);
     expect(e.cpu).toBe("i5 14세대");
-    expect(e.vgaBase).toBe("3070");
+    expect(e.vgaBase).toBe("RTX 3070");
     expect(e.coupleZone).toBe(36); // 괄호 breakdown 없음 -> 단순 숫자 그대로
     expect(e.singleSeatCount).toBe(1);
     expect(e.teamRoom).toBe(0); // 없음
@@ -393,5 +393,75 @@ describe("매장명 줄 앞 기호·번호(2026-10-07)", () => {
       ["가게A", 80],
       ["가게B", 60],
     ]);
+  });
+});
+
+// 2026-10-07 사용자가 실제로 붙여넣은 원문 — "■ 경쟁점 매장명"으로 시작해 0곳으로 끝났다.
+const GWANGALLI_PASTE = `■ 경쟁점 매장명 : 스컬스pc 광안리
+
+- 전체 대수 : 87대
+- 아이피 주소 : 210.207.56.1~87
+- 일반석 :
+1. CPU : 14400
+2. VGA : 32
+3. RAM : 3060
+4. 모니터 : 
+
+- 프리미엄석 : 없음
+- 커플석 : 없음
+-1인석 : 없음
+- 팀룸 : 없음
+
+[매장 현황]
+1. 방문 일시 고객수 : 평일 오전 9시반 기준 10명
+2. 인테리어 수준 : 중
+3. 매장 관리 상태 (청결, 친절 등) : 중
+4. 먹거리 수준, 브랜드 : 중
+5. 1,000원 시간 : 2시간 3000원
+6. 유료차감 : 없음
+
+[종합 평가]
+- 실내흡연실 1
+- 회원 구매시 최저시간과 구매가격이 2시간 3000원이였음`;
+
+describe("'■ 경쟁점 매장명' 형식(2026-10-07)", () => {
+  const [n] = parseCompetitorNotes(GWANGALLI_PASTE);
+  it("매장을 인식하고 값을 읽는다", () => {
+    expect(n.name).toBe("스컬스pc 광안리");
+    expect(n.totalPcCount).toBe(87);
+    expect(n.ipRanges).toBe("210.207.56.1~87");
+    expect(n.visitorCount).toBe(10);
+    expect(n.interiorScore).toBe(3);
+    expect(n.managementScore).toBe(3);
+    expect(n.foodScore).toBe(3);
+    expect([n.coupleZone, n.singleSeatCount, n.teamRoom]).toEqual([0, 0, 0]);
+  });
+  it("빈 모니터 칸은 다음 줄을 끌어오지 않는다", () => {
+    expect(n.monitor).toBeNull();
+  });
+  it("'2시간 3000원'은 1,000원당 40분", () => {
+    expect(n.ratePer1000Won).toBe(40);
+  });
+});
+
+describe("사양 정리(2026-10-07)", () => {
+  it("칸이 뒤바뀐 '14400 / 32 / 3060'을 제자리 표준 표기로", () => {
+    const [n] = parseCompetitorNotes(GWANGALLI_PASTE);
+    expect([n.cpu, n.vgaBase, n.ram]).toEqual(["i5 14400F", "RTX 3060", "32GB"]);
+  });
+  it.each([
+    ["13400", "cpu", "i5 13400F"],
+    ["i7-14700KF", "cpu", "i7 14700KF"],
+    ["7500F", "cpu", "Ryzen 5 7500F"],
+    ["4060", "vga", "RTX 4060"],
+    ["1660 super", "vga", "GTX 1660 SUPER"],
+    ["rtx4060ti", "vga", "RTX 4060 Ti"],
+    ["16G", "ram", "16GB"],
+    ["32기가", "ram", "32GB"],
+  ])("%s -> %s %s", (input, kind, value) => {
+    expect(classifySpecValue(input)).toEqual({ kind, value });
+  });
+  it("모양으로 못 가리면 원래 칸에 원문 그대로", () => {
+    expect(normalizeSpecSlots({ cpu: "인텔 최신", vga: null, ram: "DDR5 32G" })).toEqual({ cpu: "인텔 최신", vga: null, ram: "DDR5 32G" });
   });
 });
