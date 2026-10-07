@@ -39,11 +39,11 @@ export type ParsedCompetitorNote = {
   raw: string; // 원문 블록 (검토용)
 };
 
-/** 수준 글자 -> 1~5점. 화면 기준표(formFields.tsx InteriorScoringGuide)와 같은 값: 하 2.0 · 중하 2.5 · 중 3.0 · 중상 3.5 · 상 4.5. */
+/** 수준 글자 -> 1~5점. 화면 기준표(formFields.tsx InteriorScoringGuide)와 같은 값: 하 2.0 · 중하 2.5 · 중 3.0 · 중상 3.5 · 상 4.0(2026-10-07 사용자, 옛 4.5 — 자사 신규오픈 기준값 4.0보다 높았다). */
 export const LEVEL_WORD_SCORES: { word: string; score: number }[] = [
   { word: "중상", score: 3.5 },
   { word: "중하", score: 2.5 },
-  { word: "상", score: 4.5 },
+  { word: "상", score: 4.0 },
   { word: "중", score: 3.0 },
   { word: "하", score: 2.0 },
 ];
