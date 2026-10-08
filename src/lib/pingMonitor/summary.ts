@@ -256,22 +256,22 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 export function storeStatus(store: PingStore): StoreStatus {
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
-  // 사람이 남긴 꼬리표가 있으면 평가에 값을 안 쓴다(간헐적 1대 응답도 못 믿음). 정상 측정 중인데 꼬리표가 낡았으면 DB에서 지운다.
+  // 실측이 1% 이상이면 꼬리표보다 실측 우선 — 데이터가 뜨는 매장은 꼬리표(확인 전 등) 있어도 무조건 보인다(2026-10-08 스컬스피시).
+  // 스침(일일평균 1% 미만)은 측정으로 안 친다(카사 3번 스침 → 0.N%).
+  const maxDayUtil = Math.max(0, ...Object.values(store.days).map((v) => (v.t > 0 ? v.a / v.t : 0)));
+  if (maxDayUtil >= 0.01) {
+    const full = Object.values(store.days).filter((v) => v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0);
+    const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
+    if (dailyAvg != null && dailyAvg > 0.6) return { label: "과응답 · IP 확인", tone: "warn" };
+    return { label: "측정 중", tone: "ok" };
+  }
+  // 실측이 거의 없는 경우: 사람이 남긴 꼬리표가 있으면 평가에 값을 안 쓴다(간헐적 응답도 못 믿음).
   if (store.ipCheck) {
     if (/확인 전/.test(store.ipCheck)) return { label: "IP 확인 전", tone: "warn" };
     return { label: "IP·핑차단 확인", tone: "warn" };
   }
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
-  // "측정 중"은 응답이 스치는 정도(일일평균 1% 미만)면 안 친다 — 몇 번 스친 IP로 0.N%가 측정 중처럼 뜨는 걸 막는다(2026-10-08 카사 3번 스침).
-  const maxDayUtil = Math.max(0, ...Object.values(store.days).map((v) => (v.t > 0 ? v.a / v.t : 0)));
-  if (maxDayUtil >= 0.01) {
-    // 다 찬 날 일일평균이 60% 넘으면 과응답(공유기·늘 켜진 기기 섞인 의심) — 손님만으론 하루 평균 60%가 잘 안 나온다(2026-10-08 사용자, 라이브 기준).
-    const full = Object.values(store.days).filter((v) => v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0);
-    const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
-    if (dailyAvg != null && dailyAvg > 0.6) return { label: "과응답 · IP 확인", tone: "warn" };
-    return { label: "측정 중", tone: "ok" };
-  }
   // IP는 넣었는데 응답이 0 — IP가 틀렸는지 핑이 막혔는지는 자료로 구분 못 한다(한 문구로).
   if (all.samples >= BLOCKED_SUSPECT_SAMPLES) return { label: "IP·핑차단 확인", tone: "danger" };
   return { label: "IP·핑차단 확인", tone: "warn" };
