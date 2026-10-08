@@ -67,14 +67,14 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
       <td className="px-3 py-2 text-right tabular-nums">{ping ? denominator(ping) : "-"}</td>
       {ping ? (
         <>
-          <RealtimeCell store={ping} />
-          <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress />
-          <Recent24Cell store={ping} />
-          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold />
-          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} />
+          <RealtimeCell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <Recent24Cell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
         </>
       ) : (
-        <td colSpan={4} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
+        <td colSpan={5} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
           우리 매장 IP 없음 — 측정 안 함
         </td>
       )}
@@ -103,10 +103,11 @@ function headcount(util: number | null, seats: number | undefined): string {
   return util != null && seats && seats > 0 ? `${Math.round(util * seats)}대` : "";
 }
 
-function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean }) {
+function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false, muted = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean; muted?: boolean }) {
   const r = rangeUtilization(days, from, to, { includePartial: inProgress });
   const note = inProgress ? partialNote(r.samples, 1) : fullDaysNote(r.days, nDays);
   const head = headcount(r.util, seats);
+  if (muted) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">-</td>;
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
@@ -117,9 +118,10 @@ function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = fal
 }
 
 // 실시간 — 마지막 회차(lastSample)의 켜진 수/대수. 지금 몇 대 켜져 있나(현재 손님 규모).
-function RealtimeCell({ store }: { store: PingStore }) {
+function RealtimeCell({ store, muted = false }: { store: PingStore; muted?: boolean }) {
   const ls = store.lastSample;
   const util = ls && ls.total > 0 ? ls.alive / ls.total : null;
+  if (muted) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">-</td>;
   return (
     <td className="px-3 py-2 text-right tabular-nums">
       {formatPct(util)}
@@ -129,9 +131,10 @@ function RealtimeCell({ store }: { store: PingStore }) {
 }
 
 // 최근 24시간 — 시간대 24칸이 다 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
-function Recent24Cell({ store, seats }: { store: PingStore; seats?: number }) {
+function Recent24Cell({ store, seats, muted = false }: { store: PingStore; seats?: number; muted?: boolean }) {
   const r = recent24h(store.recent);
   const head = headcount(r.util, seats);
+  if (muted) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">-</td>;
   return (
     <td className="px-3 py-2 text-right tabular-nums">
       {r.util == null && r.hours > 0 ? (
@@ -176,6 +179,8 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
           {ownRow}
           {stores.map((s) => {
             const status = storeStatus(s);
+            // 측정 중·과응답만 값 표시, 그 외(IP·핑차단·미등록·확인전·대기)는 모든 가동률 칸을 "-"로(2026-10-08 사용자).
+            const muted = status.tone !== "ok" && !status.label.startsWith("과응답");
             return (
               <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
                 <td className="px-3 py-2">
@@ -191,11 +196,11 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{hasNoIp(s) ? (s.pcCount ?? "-") : denominator(s)}</td>
-                <RealtimeCell store={s} />
-                <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
-                <Recent24Cell store={s} />
-                <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold />
-                <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} />
+                <RealtimeCell store={s} muted={muted} />
+                <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress muted={muted} />
+                <Recent24Cell store={s} muted={muted} />
+                <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold muted={muted} />
+                <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} muted={muted} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>
