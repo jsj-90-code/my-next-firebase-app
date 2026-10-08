@@ -60,3 +60,21 @@ ssh -i ~/.ssh/oci_ping_monitor opc@168.110.12.33
 ```
 
 GitHub Actions(`.github/workflows/ping-monitor.yml`, Vercel TCP만)는 매시 35분에 예비로 돈다 — 같은 시(時)는 먼저 쓴 쪽만 남으니 서버가 살아 있으면 건너뛴다.
+
+### OCI CLI(API 키) — 집 PC에서도 재부팅·서버 생성 (2026-10-08)
+
+- 콘솔은 2단계가 회사 노트북 FIDO뿐이라 집에서 못 들어간다. API 키는 2단계를 안 거친다.
+- 집 PC가 만든 키(비밀 키는 집 PC `~/.oci/oci_api_key.pem`, 밖으로 안 나감). 아래 공개 키를 회사에서 콘솔 → 프로필 → 내 프로필 → API 키 → API 키 추가 → "공개 키 붙여넣기"로 등록. 지문 `8d:37:62:80:95:67:06:b1:9e:56:29:d6:30:8a:ee:fa`.
+- 등록 뒤 화면에 뜨는 "구성 파일 미리보기"(tenancy·user OCID, region) 내용을 Claude에게 주면 집 PC에서 CLI 설정.
+
+```
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxnEhOmDxhCUuvdAqgEej
+/tx6xvyBAY61TTBy106btbtgMrv/3dctfn8FQ1dq70Yar3gvIvdACQSvf/nryxel
+uuxBSz9kNOdk3w2yI7McI/5zFfmqArcMFqVlQLl7c8Za9vvNh2Smt0usa41//si4
+iSsYLKIKDrhSql7BHhM3l55Z/Jnt4sSyzl3CJVzAYozhfnyvHXaYZQV9aSJT0eXZ
+772Qlm53ePPgluD+8/Nd1ixHdOqkYfh4Q1BLPExQiOb/ArFcKSHtAsLO4KuG7UrQ
+sxnMHmQOB2r/ziUAcpUXjbJ0/7I4PLB4DRfucHnaK+whbqXa2dOTfuYy4UagTb4i
+MQIDAQAB
+-----END PUBLIC KEY-----
+```
