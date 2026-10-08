@@ -1,5 +1,5 @@
 // 경쟁점 가동률 측정 — 집/회사 PC 대리 측정(2026-10-08 밤, Oracle 서버가 멈추고 콘솔 로그인이 막혀 재부팅 못 한 동안).
-// Oracle 에이전트(agent/agent.mjs)와 같은 핑 + TCP(80·3389)를 이 PC에서 재고, 웹을 거치지 않고 Firestore에 직접 쓴다.
+// Oracle 에이전트(agent/agent.mjs)와 같은 핑 + TCP(80·3389·1688)를 이 PC에서 재고, 웹을 거치지 않고 Firestore에 직접 쓴다.
 // 저장은 src/lib/pingMonitor/runRound.ts recordRound와 같은 모양·같은 "같은 시(時)는 먼저 쓴 쪽만" 규칙 — 서버가 살아나도 겹쳐 세지 않는다.
 // 타임스탬프 측정은 없다(관리자 권한 raw 소켓이 필요) — method는 "home-icmp+tcp".
 // ⚠️ 등록된 IP대역 안의 주소에만 보낸다(사용자 규칙 2026-10-06).
@@ -94,7 +94,7 @@ const ips = [...new Set(targets.flatMap((t) => t.ips))];
 
 const [byPing, byTcp] = await Promise.all([
   pool(ips, 100, pingOne),
-  pool(ips, 250, async (ip) => (await Promise.all([80, 3389].map((port) => knock(ip, port)))).some(Boolean)),
+  pool(ips, 250, async (ip) => (await Promise.all([80, 3389, 1688].map((port) => knock(ip, port)))).some(Boolean)),
 ]);
 const alive = new Set([...byPing, ...byTcp]);
 const method = "home-icmp+tcp";

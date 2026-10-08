@@ -1,6 +1,6 @@
 // 등록 전 확인 — 계획 파일의 각 경쟁점 IP대역을 한 번만 재서 몇 대가 대답하는지 본다(2026-10-07).
 // ⚠️ 적힌 대역 안의 주소에만 보낸다. 주변 IP·/24 전체는 건드리지 않는다(사용자 2026-10-06).
-// 방식은 src/lib/pingMonitor/probe.ts와 같다(포트 80·3389를 한 번 두드리고 끊음, 거절 = 켜짐).
+// 방식은 src/lib/pingMonitor/probe.ts와 같다(포트 80·3389·1688을 한 번 두드리고 끊음, 거절 = 켜짐).
 // 실행: node scripts/pingMonitor/precheck.mjs --file=.local-tools/xxx-plan.json   (plan.register[].ipRanges)
 // 결과: 같은 파일의 register[]에 _alive(대답 수)·_checkedAt을 적는다. 5대 이상이면 등록 후보.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -33,7 +33,7 @@ const knock = (ip, port) => new Promise((resolve) => {
   s.once("connect", () => fin(true));
   s.once("error", (e) => fin(e.code === "ECONNREFUSED" || e.code === "ECONNRESET"));
 });
-const alive = async (ip) => (await Promise.all([80, 3389].map((p) => knock(ip, p)))).some(Boolean);
+const alive = async (ip) => (await Promise.all([80, 3389, 1688].map((p) => knock(ip, p)))).some(Boolean);
 
 for (const r of plan.register) {
   const ips = expand(r.ipRanges);
