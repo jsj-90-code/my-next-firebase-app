@@ -340,7 +340,7 @@ export default function PingMonitorPage() {
                     <b>&ldquo;IP·핑차단 확인&rdquo;</b> — IP를 넣었는데 응답이 없을 때. IP가 틀렸거나 PC가 바깥 확인(핑)을 막아 둔 것 — 자료로는 둘을 못 가립니다.
                   </li>
                   <li>
-                    <b>&ldquo;과응답 · IP 확인&rdquo;</b> — 손님과 상관없이 너무 많은 IP가 응답할 때(공유기·다른 기기가 섞인 듯).
+                    <b>&ldquo;과응답 · IP 확인&rdquo;</b> — 일일평균이 60%를 넘을 때. 손님만으론 잘 안 나오는 값이라 공유기·늘 켜진 기기가 섞인 의심입니다.
                   </li>
                 </ul>
               </section>

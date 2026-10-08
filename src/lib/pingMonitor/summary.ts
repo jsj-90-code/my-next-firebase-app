@@ -223,7 +223,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   // 레드포스처럼 하루 0~1대만 응답한 값이 정상 가동률로 점포평가에 들어가지 않게 한다.
   if (s.ipCheck) return { ...base, state: "blocked", label: storeStatus(s).label, store: s };
   const status = storeStatus(s);
-  if (status.tone === "danger" || status.label.startsWith("IP·핑차단")) return { ...base, state: "blocked", label: status.label, store: s };
+  if (status.tone === "danger" || status.label.startsWith("IP·핑차단") || status.label.startsWith("과응답")) return { ...base, state: "blocked", label: status.label, store: s };
   const used = Object.entries(s.days)
     .filter(([date, v]) => date >= from && date <= to && isFullDay(date, v, today))
     .map(([date]) => date)
@@ -256,16 +256,21 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 export function storeStatus(store: PingStore): StoreStatus {
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
+  // 사람이 남긴 꼬리표가 있으면 평가에 값을 안 쓴다(간헐적 1대 응답도 못 믿음). 정상 측정 중인데 꼬리표가 낡았으면 DB에서 지운다.
   if (store.ipCheck) {
-    // 사유별로 나눈다: "NN%가 응답"(과응답, 공유기 섞임) · "확인 전"(붙여넣기 미확인) · 그 밖(0대 등)은 IP틀림/차단 구분 불가.
-    if (/%가/.test(store.ipCheck)) return { label: "과응답 · IP 확인", tone: "warn" };
     if (/확인 전/.test(store.ipCheck)) return { label: "IP 확인 전", tone: "warn" };
     return { label: "IP·핑차단 확인", tone: "warn" };
   }
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
   const aliveEver = Object.values(store.days).some((v) => v.a > 0);
-  if (aliveEver) return { label: "측정 중", tone: "ok" };
+  if (aliveEver) {
+    // 다 찬 날 일일평균이 60% 넘으면 과응답(공유기·늘 켜진 기기 섞인 의심) — 손님만으론 하루 평균 60%가 잘 안 나온다(2026-10-08 사용자, 라이브 기준).
+    const full = Object.values(store.days).filter((v) => v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0);
+    const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
+    if (dailyAvg != null && dailyAvg > 0.6) return { label: "과응답 · IP 확인", tone: "warn" };
+    return { label: "측정 중", tone: "ok" };
+  }
   // IP는 넣었는데 응답이 0 — IP가 틀렸는지 핑이 막혔는지는 자료로 구분 못 한다(한 문구로).
   if (all.samples >= BLOCKED_SUSPECT_SAMPLES) return { label: "IP·핑차단 확인", tone: "danger" };
   return { label: "IP·핑차단 확인", tone: "warn" };
