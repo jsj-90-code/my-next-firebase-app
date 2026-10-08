@@ -272,6 +272,22 @@ export default function PingMonitorPage() {
     [visibleStores],
   );
 
+  // 최근 24시간 중 서버가 거른(측정 안 된) 시각 — 전 매장 공통이라, 어느 매장도 그 시각 칸이 최근 24시간 안에 안 차 있으면 거른 회차다.
+  // 진행 중인 현재 시각은 아직 안 찬 게 정상이라 뺀다(오탐 방지). 2026-10-08 사용자 "어느 시간대 빠졌는지 알게".
+  const missedHours = useMemo(() => {
+    const now = Date.now();
+    const nowKstHour = (new Date().getUTCHours() + 9) % 24;
+    const fresh = new Set<number>();
+    for (const s of stores ?? []) {
+      for (const [h, v] of Object.entries(s.recent ?? {})) {
+        if (v.at && now - v.at.getTime() <= 24 * 3600 * 1000 && v.t > 0) fresh.add(Number(h));
+      }
+    }
+    const missing: number[] = [];
+    for (let h = 0; h < 24; h++) if (h !== nowKstHour && !fresh.has(h)) missing.push(h);
+    return missing;
+  }, [stores]);
+
   const intervalText = SAMPLE_INTERVAL_MINUTES % 60 === 0 ? `${SAMPLE_INTERVAL_MINUTES / 60}시간` : `${SAMPLE_INTERVAL_MINUTES}분`;
 
   function toggle(key: string) {
@@ -386,6 +402,13 @@ export default function PingMonitorPage() {
           </div>
           {hiddenCount > 0 && (
             <p className="text-xs text-[var(--sl-ink-soft)]">폐업·중지한 매장 {hiddenCount}곳은 목록에서 숨겼습니다.</p>
+          )}
+          {missedHours.length > 0 && (
+            <p className="app-notice app-badge-warn rounded-xl px-3 py-2 text-xs leading-5">
+              ⚠ 최근 24시간 중 <b>{missedHours.map((h) => `${h}시`).join("·")}</b> 회차가 측정 안 됐습니다({24 - missedHours.length}/24시각).
+              서버가 그 시각 회차를 걸러서입니다 — &ldquo;최근 24시간&rdquo; 값은 나머지 {24 - missedHours.length}시간 기준입니다.
+              같은 시각이 자꾸 빠지면 측정 시간을 조정해야 할 수 있습니다.
+            </p>
           )}
           {view !== "all" && view !== "check" && shownGroups.length === 0 && (
             <p className="app-card-sm rounded-xl p-4 text-sm text-[var(--sl-ink-soft)]">{VIEW_LABEL[view]}에 연결된 경쟁점이 아직 없습니다.</p>
