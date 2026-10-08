@@ -120,7 +120,6 @@ function RealtimeCell({ store }: { store: PingStore }) {
     <td className="px-3 py-2 text-right tabular-nums">
       {formatPct(util)}
       {ls && ls.total > 0 && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="마지막 회차에 켜져 있던 PC 수">{ls.alive}대</span>}
-      {ls?.hour && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{Number(ls.hour)}시</div>}
     </td>
   );
 }
