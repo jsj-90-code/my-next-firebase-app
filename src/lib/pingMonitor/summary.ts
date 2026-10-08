@@ -10,7 +10,7 @@ export const PING_DAILY = "pingMonitorDaily";
 /** 측정 간격(분). vercel.json의 /api/ping-monitor/cron 예약(매시 5분)과 맞춘다. */
 export const SAMPLE_INTERVAL_MINUTES = 60;
 
-/** 이만큼 재는 동안 한 대도 대답이 없으면 "측정 불가 의심"(PC가 대답을 막아 둔 매장). */
+/** 이만큼 재는 동안 한 대도 대답이 없으면 "핑 차단 의심"(PC가 대답을 막아 둔 매장). */
 export const BLOCKED_SUSPECT_SAMPLES = 72;
 
 export type DayTotals = { a: number; t: number; n: number };
@@ -180,7 +180,7 @@ export function rangeUtilization(
 
 /** 점포평가 경쟁점 하나에 대한 측정기 "최근 7일" 요약 — 후보지 경쟁점 탭에서 핑봇 칸에 넣을 값(2026-10-07 신설). */
 export type CompetitorMeasurement = {
-  /** none = 측정기에 등록 안 됨, noIp = IP 미등록, stopped = 측정 중지, blocked = 대답 없음(측정 불가 의심·확인 중),
+  /** none = 측정기에 등록 안 됨, noIp = IP 미등록, stopped = 측정 중지, blocked = 핑 차단 의심·IP대역 재확인,
    *  waiting = 아직 다 찬 날 없음, short = 7일 미달, ok = 7일 다 참. */
   state: "none" | "noIp" | "stopped" | "blocked" | "waiting" | "short" | "ok";
   label: string;
@@ -220,9 +220,9 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   if (!s.active) return { ...base, state: "stopped", label: "측정 중지", store: s };
   // 응답이 한 번이라도 있었다고 해서 IP 확인 경고가 해소된 것은 아니다.
   // 레드포스처럼 하루 0~1대만 응답한 값이 정상 가동률로 점포평가에 들어가지 않게 한다.
-  if (s.ipCheck) return { ...base, state: "blocked", label: "측정값 확인 필요(IP·응답)", store: s };
+  if (s.ipCheck) return { ...base, state: "blocked", label: "IP대역 재확인", store: s };
   const status = storeStatus(s);
-  if (status.tone === "danger" || status.label.startsWith("대답 없음")) return { ...base, state: "blocked", label: status.label, store: s };
+  if (status.tone === "danger" || status.label.startsWith("핑 차단")) return { ...base, state: "blocked", label: status.label, store: s };
   const used = Object.entries(s.days)
     .filter(([date, v]) => date >= from && date <= to && isFullDay(date, v, today))
     .map(([date]) => date)
@@ -255,13 +255,13 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 export function storeStatus(store: PingStore): StoreStatus {
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
-  if (store.ipCheck) return { label: "측정값 확인 필요", tone: "warn" };
+  if (store.ipCheck) return { label: "IP대역 재확인", tone: "warn" };
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
   const aliveEver = Object.values(store.days).some((v) => v.a > 0);
   if (aliveEver) return { label: "측정 중", tone: "ok" };
-  if (all.samples >= BLOCKED_SUSPECT_SAMPLES) return { label: "측정 불가 의심", tone: "danger" };
-  return { label: "대답 없음(확인 중)", tone: "warn" };
+  if (all.samples >= BLOCKED_SUSPECT_SAMPLES) return { label: "핑 차단 의심", tone: "danger" };
+  return { label: "핑 차단 의심(확인 중)", tone: "warn" };
 }
 
 /** 켜진 IP를 짧게 — 모두 같은 앞 세 자리면 끝자리만("10, 24번"), 아니면 전체 IP. */
