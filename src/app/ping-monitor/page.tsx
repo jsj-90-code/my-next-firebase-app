@@ -67,10 +67,10 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
       <td className="px-3 py-2 text-right tabular-nums">{ping ? denominator(ping) : "-"}</td>
       {ping ? (
         <>
-          <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress />
-          <Recent24Cell store={ping} />
-          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold />
-          <UtilCell days={ping.days} from={from30} to={yesterday} nDays={30} />
+          <UtilCell days={ping.days} from={today} to={today} nDays={1} seats={denominator(ping)} inProgress />
+          <Recent24Cell store={ping} seats={denominator(ping)} />
+          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} seats={denominator(ping)} bold />
+          <UtilCell days={ping.days} from={from30} to={yesterday} nDays={30} seats={denominator(ping)} />
         </>
       ) : (
         <td colSpan={4} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
@@ -93,23 +93,32 @@ function useRanges() {
 
 // 가동률 + 꼬리말. 오늘(진행 중)은 덜 찬 그대로 "15시간치", n일 칸은 다 찬 날 일일평균에 모자라면 "3일치".
 // 칸 구성 오늘·최근 24시간·7일·30일(2026-10-07 사용자 — 신규후보지는 첫날 "오늘"밖에 값이 없다).
-function UtilCell({ days, from, to, nDays, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; bold?: boolean; inProgress?: boolean }) {
+// 가동률 밑에 "≈N명"(가동률×대수 = 켜진 PC 수). 대수 많은 곳이 낮은 %여도 손님 많은 걸 보려고(2026-10-08 사용자).
+function headcount(util: number | null, seats: number | undefined): string {
+  return util != null && seats && seats > 0 ? `≈${Math.round(util * seats)}명` : "";
+}
+
+function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean }) {
   const r = rangeUtilization(days, from, to, { includePartial: inProgress });
   const note = inProgress ? partialNote(r.samples, 1) : fullDaysNote(r.days, nDays);
+  const head = headcount(r.util, seats);
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
+      {head && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{head}</div>}
       {note && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{note}</div>}
     </td>
   );
 }
 
 // 최근 24시간 — 시간대 24칸이 다 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
-function Recent24Cell({ store }: { store: PingStore }) {
+function Recent24Cell({ store, seats }: { store: PingStore; seats?: number }) {
   const r = recent24h(store.recent);
+  const head = headcount(r.util, seats);
   return (
     <td className="px-3 py-2 text-right tabular-nums">
       {formatPct(r.util)}
+      {head && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{head}</div>}
       {r.util == null && r.hours > 0 && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{r.hours}/24시간</div>}
     </td>
   );
@@ -159,10 +168,10 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{hasNoIp(s) ? (s.pcCount ?? "-") : denominator(s)}</td>
-                <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
-                <Recent24Cell store={s} />
-                <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold />
-                <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
+                <UtilCell days={s.days} from={today} to={today} nDays={1} seats={denominator(s)} inProgress />
+                <Recent24Cell store={s} seats={denominator(s)} />
+                <UtilCell days={s.days} from={from7} to={to7} nDays={7} seats={denominator(s)} bold />
+                <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} seats={denominator(s)} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>
