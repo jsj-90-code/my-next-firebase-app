@@ -68,6 +68,10 @@ describe("rangeUtilization — 꽉 찬 날인데 종일 0대는 측정 실패로
     expect(r.days).toBe(0);
     expect(r.skipped).toBe(1);
   });
+  it("1% 미만(노이즈 몇 개)인 꽉 찬 날도 측정 실패로 뺀다 — 레드포스 10-07 1/3360", () => {
+    const r = rangeUtilization({ "2026-10-07": { a: 1, t: 3360, n: 24 } }, "2026-10-05", "2026-10-08", { today });
+    expect(r.util).toBeNull();
+  });
   it("값이 있는 꽉 찬 날은 그대로 평균, 종일 0대 날만 뺀다", () => {
     const r = rangeUtilization({ "2026-10-06": { a: 0, t: 100, n: 24 }, "2026-10-07": { a: 50, t: 100, n: 24 } }, "2026-10-05", "2026-10-08", { today });
     expect(r.util).toBeCloseTo(0.5, 6);

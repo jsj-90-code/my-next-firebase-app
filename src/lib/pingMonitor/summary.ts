@@ -25,6 +25,10 @@ export type DayTotals = { a: number; t: number; n: number };
  */
 export const FULL_DAY_MIN_SAMPLES = 22;
 
+/** 꽉 찬 날인데 하루 평균 가동률이 이 값 미만이면 측정 실패로 보고 이번주·이달 평균에서 뺀다(2026-10-09).
+ *  정상 영업 PC방이 24시간 평균 1% 미만일 수 없다 — IP 틀림·핑/포트 차단으로 노이즈 몇 개만 잡힌 날. */
+export const MEASURE_FAIL_MAX_UTIL = 0.01;
+
 /** "최근 24시간" 값이 나오는 최소 시간대 칸 수 — 날짜 기준(FULL_DAY_MIN_SAMPLES)과 같은 관용(2026-10-08). */
 export const RECENT_MIN_HOURS = FULL_DAY_MIN_SAMPLES;
 
@@ -178,9 +182,10 @@ export function rangeUtilization(
       n += v.n;
       d += 1;
     } else if (isFullDay(date, v, today)) {
-      // 꽉 찬 날인데 하루 종일 0대면 측정 실패로 본다(정상 영업 PC방이 22시간+ 내내 0대일 수 없다 — IP 틀림·핑/포트 차단).
+      // 꽉 찬 날인데 하루 평균 가동률이 MEASURE_FAIL_MAX_UTIL(1%) 미만이면 측정 실패로 본다 — 정상 영업 PC방이
+      // 22시간+ 내내 거의 0대일 수 없다(IP 틀림·핑/포트 차단으로 노이즈 몇 개만 잡힘: 레드포스 10-07 1/3360, 뉴블랙 4/3096).
       // 평균에서 빼서 0%가 아니라 "-"로 보이게 한다(2026-10-09 사용자: "측정 안 된 날은 0이 아니라 빼라").
-      if (v.a === 0) { skipped += 1; continue; }
+      if (v.a / v.t < MEASURE_FAIL_MAX_UTIL) { skipped += 1; continue; }
       sumDaily += v.a / v.t;
       n += v.n;
       d += 1;
