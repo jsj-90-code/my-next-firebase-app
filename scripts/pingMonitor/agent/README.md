@@ -22,6 +22,13 @@
   Oracle 콘솔 로그인은 2단계가 회사 노트북 FIDO(Windows Hello)뿐이라 집에서 안 됐다(10-08) — 휴대폰 인증 앱·우회 코드를 추가할 것.
   원인이 스왑 몸살(2G 스왑에서 몇 시간 허우적)이면 `/swapfile2`를 끄는 것도 검토 — 그러면 메모리가 모자랄 때 서버가 굳는 대신 그 회차만 죽고 다음 회차는 돈다.
 
+### 무료 최대 사양으로 옮기기 (2026-10-08 결정, 회사에서 실행)
+
+- 옛 Micro(메모리 498MB)가 멈춤 두 번 → Always Free 최대 **Ampere A1 4 OCPU·24GB**(ARM)로 새 서버를 만들어 옮긴다. 도쿄는 A1 재고 부족(Out of capacity)이 잦다 — 다시 시도.
+- 콘솔: Compute → Instances → Create → Shape `VM.Standard.A1.Flex` 4 OCPU·24GB · Oracle Linux 9 · 같은 VCN · 공개 키는 회사 PC `~/.ssh/oci_ping_monitor.pub`.
+- 세팅: `setup-a1.sh` 맨 위 명령 그대로(서명 열쇠는 옛 서버에서 옮겨 웹 수정 불필요). 새 서버 첫 회차가 기록되면 옛 서버 `crontab -r`. 이 README의 IP도 새 것으로.
+- 이걸 하면 `harden.sh`(옛 서버용)는 건너뛰어도 된다.
+
 ### 타임스탬프 추가 (2026-10-08)
 
 - 모든 활성 매장의 등록 IP에 핑·TCP와 함께 ICMP timestamp(type 13)를 보내며,
