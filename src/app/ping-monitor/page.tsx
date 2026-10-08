@@ -95,7 +95,7 @@ function useRanges() {
 // 칸 구성 오늘·최근 24시간·7일·30일(2026-10-07 사용자 — 신규후보지는 첫날 "오늘"밖에 값이 없다).
 // 가동률 밑에 "≈N명"(가동률×대수 = 켜진 PC 수). 대수 많은 곳이 낮은 %여도 손님 많은 걸 보려고(2026-10-08 사용자).
 function headcount(util: number | null, seats: number | undefined): string {
-  return util != null && seats && seats > 0 ? `≈${Math.round(util * seats)}대` : "";
+  return util != null && seats && seats > 0 ? `${Math.round(util * seats)}대` : "";
 }
 
 function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean }) {
@@ -105,7 +105,7 @@ function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = fal
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
-      {head && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{head}</div>}
+      {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">{head}</span>}
       {note && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{note}</div>}
     </td>
   );
@@ -118,7 +118,7 @@ function Recent24Cell({ store, seats }: { store: PingStore; seats?: number }) {
   return (
     <td className="px-3 py-2 text-right tabular-nums">
       {formatPct(r.util)}
-      {head && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{head}</div>}
+      {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">{head}</span>}
       {r.util == null && r.hours > 0 && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{r.hours}/24시간</div>}
     </td>
   );
