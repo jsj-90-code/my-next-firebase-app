@@ -105,7 +105,7 @@ function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = fal
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
-      {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">{head}</span>}
+      {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
       {note && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{note}</div>}
     </td>
   );
@@ -118,7 +118,7 @@ function Recent24Cell({ store, seats }: { store: PingStore; seats?: number }) {
   return (
     <td className="px-3 py-2 text-right tabular-nums">
       {formatPct(r.util)}
-      {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">{head}</span>}
+      {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
       {r.util == null && r.hours > 0 && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{r.hours}/24시간</div>}
     </td>
   );
@@ -409,6 +409,7 @@ export default function PingMonitorPage() {
               </button>
             )}
           </div>
+          <p className="text-xs text-[var(--sl-ink-soft)]">가동률 옆 <b>○대</b> = 그 기간 평균 동시에 켜진 PC 수(가동률×대수) — 대수 다른 매장끼리 손님 규모 비교용.</p>
           {hiddenCount > 0 && (
             <p className="text-xs text-[var(--sl-ink-soft)]">폐업·중지한 매장 {hiddenCount}곳은 목록에서 숨겼습니다.</p>
           )}
