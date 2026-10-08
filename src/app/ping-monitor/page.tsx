@@ -11,8 +11,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
 import {
   BLOCKED_SUSPECT_SAMPLES,
-  FULL_DAY_MIN_SAMPLES,
+  RECENT_MIN_HOURS,
   SAMPLE_INTERVAL_MINUTES,
+  fullDayRuleText,
   dateRangeLabel,
   denominator,
   formatPct,
@@ -130,7 +131,7 @@ function RealtimeCell({ store, muted = false }: { store: PingStore; muted?: bool
   );
 }
 
-// 최근 24시간 — 시간대 24칸이 다 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
+// 최근 24시간 — 시간대 칸이 RECENT_MIN_HOURS 이상 차야 값이 나온다(신규 후보지용, 날짜 하루를 안 기다려도 됨).
 function Recent24Cell({ store, seats, muted = false }: { store: PingStore; seats?: number; muted?: boolean }) {
   const r = recent24h(store.recent);
   const head = headcount(r.util, seats);
@@ -372,7 +373,7 @@ export default function PingMonitorPage() {
                 <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">표시가 붙는 경우</h3>
                 <ul className="flex flex-col gap-1">
                   <li>
-                    <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. {FULL_DAY_MIN_SAMPLES}시간을 다 못 잰 날(등록한 날, 서버 장애로 한 회차라도 빠진 날)은 낮·밤이 치우쳐 뺍니다.
+                    <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. 하루로 치는 건 {fullDayRuleText()}뿐이고, 그보다 덜 잰 날(등록한 날, 서버 장애가 길었던 날)은 낮·밤이 치우쳐 뺍니다.
                   </li>
                   <li>
                     <b>&ldquo;IP·핑차단 확인&rdquo;</b> — IP를 넣었는데 응답이 없을 때. IP가 틀렸거나 PC가 바깥 확인(핑)을 막아 둔 것 — 자료로는 둘을 못 가립니다.
@@ -444,7 +445,10 @@ export default function PingMonitorPage() {
           )}
           {missedHours.length > 0 && (
             <p className="app-notice app-badge-warn rounded-xl px-3 py-2 text-xs leading-5">
-              ⚠ 최근 24시간 중 <b>{missedHours.map((h) => `${h}시`).join("·")}</b> 회차가 측정 안 됐습니다. &ldquo;최근 24시간&rdquo; 값은 나머지 {24 - missedHours.length}시간 기준입니다.
+              ⚠ 최근 24시간 중 <b>{missedHours.map((h) => `${h}시`).join("·")}</b> 회차가 측정 안 됐습니다.{" "}
+              {24 - missedHours.length >= RECENT_MIN_HOURS
+                ? <>&ldquo;최근 24시간&rdquo; 값은 나머지 {24 - missedHours.length}시간 기준입니다.</>
+                : <>&ldquo;최근 24시간&rdquo;은 {RECENT_MIN_HOURS}시간 이상 차야 값이 나와, 빠진 회차가 24시간 밖으로 밀려날 때까지 비어 있습니다.</>}
             </p>
           )}
           {view !== "all" && view !== "check" && shownGroups.length === 0 && (

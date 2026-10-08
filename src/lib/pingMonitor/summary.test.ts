@@ -49,10 +49,10 @@ describe("competitorMeasurement", () => {
     expect(m.fullDays).toBe(1);
     expect(m.pingbotUtilization).toBe(20);
   });
-  it("23시간 잰 날(한 회차 빠짐)도 뺀다 — 24시간 다 잰 날만(2026-10-08 사용자)", () => {
-    const m = competitorMeasurement([store({ days: { "2026-10-05": { a: 10, t: 230, n: 23 }, "2026-10-06": full(48) } })], NOW);
-    expect(m.fullDays).toBe(1);
-    expect(m.pingbotUtilization).toBe(20);
+  it("22시간 잰 날(두 회차 빠짐)은 넣고 21시간은 뺀다 — 2026-10-08 오후 사용자 \"2시간 빠진 거 다 넣자\"", () => {
+    const m = competitorMeasurement([store({ days: { "2026-10-04": { a: 99, t: 210, n: 21 }, "2026-10-05": { a: 22, t: 220, n: 22 }, "2026-10-06": full(48) } })], NOW);
+    expect(m.fullDays).toBe(2);
+    expect(m.pingbotUtilization).toBe(15);
   });
   it("중복 등록이면 IP 있는 쪽", () => {
     const m = competitorMeasurement([store({ id: "a", ipRanges: "", ipCount: 0 }), store({ id: "b", days: { "2026-10-06": full(24) } })], NOW);

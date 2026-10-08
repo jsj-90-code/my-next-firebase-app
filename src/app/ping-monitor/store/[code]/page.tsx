@@ -18,7 +18,7 @@ import {
   dateRangeLabel,
   denominator,
   formatPct,
-  FULL_DAY_MIN_SAMPLES,
+  fullDayRuleText,
   fullDayRate,
   fullDaysNote,
   hasNoIp,
@@ -431,7 +431,7 @@ export default function PingOwnComparePage() {
             />
           ) : (
             <p className="text-xs text-[var(--sl-ink-soft)]">
-              이 기간엔 꽉 찬 날({FULL_DAY_MIN_SAMPLES}시간을 다 잰 날)이 아직 없습니다. 등록한 날은
+              이 기간엔 꽉 찬 날({fullDayRuleText()})이 아직 없습니다. 등록한 날은
               빼고, 다음 날부터 하루씩 쌓입니다.
             </p>
           )}

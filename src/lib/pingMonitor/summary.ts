@@ -16,24 +16,34 @@ export const BLOCKED_SUSPECT_SAMPLES = 72;
 export type DayTotals = { a: number; t: number; n: number };
 
 /**
- * 하루로 치는 최소 측정 횟수(1시간 간격이라 = 시간 수). 24시간을 다 잰 날만 가동률 평균에 넣는다 —
+ * 하루로 치는 최소 측정 횟수(1시간 간격이라 = 시간 수). 이만큼 잰 날만 가동률 평균에 넣는다 —
  * 등록한 날 오후 5시부터 잰 7시간은 낮 시간이 빠져 치우친다(2026-10-07 사용자 "그 데이터는 날려야", "일일평균으로").
- * 10-07엔 서버 장애로 한두 시간 빠진 날을 살리려고 22로 뒀다가 2026-10-08 사용자 결정으로 24 —
- * 빠진 2시간이 저녁 피크면 하루 가동률이 눈에 띄게 낮아진다. 장애로 한 회차라도 빠진 날은 통째로 뺀다.
+ * 경위: 10-07 22 → 10-08 오전 24(저녁 피크가 빠질까 봐) → 10-08 오후 다시 22(사용자 "2시간 빠진 거 다 넣자, 영향력 안 크면").
+ * 근거(10-07 24시간 다 잰 134곳에서 2시간씩 빼 본 실측): 하루 가동률 변화 중앙값 0.42%p · 95% 1.69%p · 최대 6.0%p.
+ * 새벽 3·4시 +0.69%p, 저녁 17·20시 −1.22%p로 시간대별 차이도 크지 않다. 주·월은 여러 날 평균이라 영향이 더 작다.
  * 18로 두면 안 된다 — 등록 후 하루가 덜 지난 매장은 빠진 시간이 낮(11~16시)에 몰려 18칸이 차도 치우친다(10-07 암사역 콤마 실측).
  */
-export const FULL_DAY_MIN_SAMPLES = 24;
+export const FULL_DAY_MIN_SAMPLES = 22;
 
-/** "최근 24시간" 값이 나오는 최소 시간대 칸 수. 2026-10-07엔 24(꽉 참)였으나, 서버가 한 회차만 걸러도 전 매장이 비어
- *  2026-10-08 22로 완화(일일 기준 FULL_DAY_MIN_SAMPLES=22와 같은 관용). 1~2시간 빠져도 가동률 %엔 영향 미미. */
-export const RECENT_MIN_HOURS = 22;
+/** "최근 24시간" 값이 나오는 최소 시간대 칸 수 — 날짜 기준(FULL_DAY_MIN_SAMPLES)과 같은 관용(2026-10-08). */
+export const RECENT_MIN_HOURS = FULL_DAY_MIN_SAMPLES;
+
+/** 그날 측정이 하루치로 충분한지(오늘 여부는 안 본다). */
+export function coversFullDay(v: DayTotals): boolean {
+  return v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0;
+}
+
+/** 화면에 붙이는 "하루로 치는 날" 설명 — 상수에서 만든다(숫자를 글자로 박지 않기). */
+export function fullDayRuleText(): string {
+  return `24시간 중 ${FULL_DAY_MIN_SAMPLES}시간 이상 잰 날`;
+}
 
 /**
  * 최근 24시간 가동률 — 시간대 칸마다 마지막 측정(24시간 안)을 합친다(켜진 합 ÷ 대수 합).
  * 0시~24시 날짜를 기다리지 않아도 24개 시간대가 고르게 들어가 꽉 찬 하루와 같은 기준이 된다 —
  * 신규 후보지는 오후에 등록해도 다음 날 같은 시각이면 값이 나온다(사용자 2026-10-07 "하루치로 하려면 2일을 기다려야 하니").
  * 시간대 칸이 RECENT_MIN_HOURS(2026-10-08 기준 22개) 이상 차면 값을 낸다 — 서버가 한두 회차 걸러도 안 비게.
- * 회차가 한 번 빠지면 그 시각부터 24시간 동안 "-"로 보인다 — 날짜 평균(FULL_DAY_MIN_SAMPLES)처럼 장애를 봐주지 않는다.
+ * 회차가 RECENT_MIN_HOURS를 못 채울 만큼 빠지면 그 시각부터 24시간 동안 "-"로 보인다.
  */
 export function recent24h(recent: Record<string, RecentSlot>, now = new Date()): { util: number | null; hours: number } {
   let a = 0, t = 0, hours = 0;
@@ -54,7 +64,7 @@ export function fullDayRate(days: Record<string, DayTotals>, date: string, today
 
 /** 하루를 다 찬 날로 칠지 — 오늘(진행 중)은 아직 아니다. */
 export function isFullDay(date: string, v: DayTotals, today: string): boolean {
-  return date < today && v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0;
+  return date < today && coversFullDay(v);
 }
 
 export type PingStore = {
@@ -260,7 +270,7 @@ export function storeStatus(store: PingStore): StoreStatus {
   // 스침(일일평균 1% 미만)은 측정으로 안 친다(카사 3번 스침 → 0.N%).
   const maxDayUtil = Math.max(0, ...Object.values(store.days).map((v) => (v.t > 0 ? v.a / v.t : 0)));
   if (maxDayUtil >= 0.01) {
-    const full = Object.values(store.days).filter((v) => v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0);
+    const full = Object.values(store.days).filter(coversFullDay);
     const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
     if (dailyAvg != null && dailyAvg > 0.6) return { label: "과응답 · IP 확인", tone: "warn" };
     return { label: "측정 중", tone: "ok" };

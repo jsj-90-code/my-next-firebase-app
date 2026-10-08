@@ -29,7 +29,7 @@ import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSe
 import { isRegistrableCompetitor, listPingStoresByCompetitorIds, registerCompetitorsToPing, updatePingStore } from "@/lib/pingMonitor/clientStore";
 import { StoreForm } from "@/app/ping-monitor/StoreForm";
 import { parseIpRanges } from "@/lib/pingMonitor/ipRange";
-import { competitorMeasurement, formatPct, FULL_DAY_MIN_SAMPLES, type CompetitorMeasurement } from "@/lib/pingMonitor/summary";
+import { competitorMeasurement, formatPct, fullDayRuleText, type CompetitorMeasurement } from "@/lib/pingMonitor/summary";
 import {
   BooleanSelectField,
   CompetitorInteriorFallbackGuide,
@@ -374,7 +374,7 @@ function PingMeasurePanel({
       )}
       {m.state === "short" && (
         <p className="mt-1 text-[var(--sl-ink-soft)]">
-          {FULL_DAY_MIN_SAMPLES}시간을 다 잰 날만 하루로 칩니다. 7일이 다 차지 않아 {m.fullDays}일치 평균입니다.
+          {fullDayRuleText()}만 하루로 칩니다. {m.windowDays}일이 다 차지 않아 {m.fullDays}일치 평균입니다.
         </p>
       )}
     </div>
