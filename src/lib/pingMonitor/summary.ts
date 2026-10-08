@@ -24,14 +24,15 @@ export type DayTotals = { a: number; t: number; n: number };
  */
 export const FULL_DAY_MIN_SAMPLES = 24;
 
-/** "최근 24시간" 값이 나오는 최소 시간대 칸 수 — 24칸 꽉 찼을 때만(사용자 2026-10-07). */
-export const RECENT_MIN_HOURS = 24;
+/** "최근 24시간" 값이 나오는 최소 시간대 칸 수. 2026-10-07엔 24(꽉 참)였으나, 서버가 한 회차만 걸러도 전 매장이 비어
+ *  2026-10-08 22로 완화(일일 기준 FULL_DAY_MIN_SAMPLES=22와 같은 관용). 1~2시간 빠져도 가동률 %엔 영향 미미. */
+export const RECENT_MIN_HOURS = 22;
 
 /**
  * 최근 24시간 가동률 — 시간대 칸마다 마지막 측정(24시간 안)을 합친다(켜진 합 ÷ 대수 합).
  * 0시~24시 날짜를 기다리지 않아도 24개 시간대가 고르게 들어가 꽉 찬 하루와 같은 기준이 된다 —
  * 신규 후보지는 오후에 등록해도 다음 날 같은 시각이면 값이 나온다(사용자 2026-10-07 "하루치로 하려면 2일을 기다려야 하니").
- * 24개 시간대가 다 차야 값을 낸다(RECENT_MIN_HOURS, 사용자 2026-10-07 "24시간 꽉 채웠을 때 뜨는 걸로").
+ * 시간대 칸이 RECENT_MIN_HOURS(2026-10-08 기준 22개) 이상 차면 값을 낸다 — 서버가 한두 회차 걸러도 안 비게.
  * 회차가 한 번 빠지면 그 시각부터 24시간 동안 "-"로 보인다 — 날짜 평균(FULL_DAY_MIN_SAMPLES)처럼 장애를 봐주지 않는다.
  */
 export function recent24h(recent: Record<string, RecentSlot>, now = new Date()): { util: number | null; hours: number } {

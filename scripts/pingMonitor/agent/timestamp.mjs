@@ -40,8 +40,8 @@ export function timestampAll(ips) {
     };
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
-      finish(new Error('Timestamp helper exceeded 25 minutes'));
-    }, 25 * 60 * 1000);
+      finish(new Error('Timestamp helper exceeded 15 minutes'));
+    }, 15 * 60 * 1000); // 기본 회차(핑+TCP)가 ~12분이라 15분 안에 못 끝나면 먹통 — 빨리 포기하고 핑+TCP로(2026-10-08, 걸러진 회차 방지)
     child.stdout.on('data', (chunk) => {
       stdout += chunk;
       if (stdout.length > 2_000_000) {
