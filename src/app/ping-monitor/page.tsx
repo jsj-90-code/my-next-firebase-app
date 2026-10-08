@@ -49,7 +49,7 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
  * 우리 매장 IP가 없는 곳(2026-10-07 단톡 보강 뒤 41곳 중 양주덕정 1곳)은 줄만 두고 "IP 없음".
  */
 function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
-  const { today, yesterday, from7, to7, from30 } = useRanges();
+  const { today, yesterday, from7, to7, monthStart, monthLabel } = useRanges();
   const status = ping ? storeStatus(ping) : null;
   return (
     <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
@@ -71,7 +71,7 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
           <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress />
           <Recent24Cell store={ping} />
           <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold />
-          <UtilCell days={ping.days} from={from30} to={yesterday} nDays={30} />
+          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} />
         </>
       ) : (
         <td colSpan={4} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
@@ -88,7 +88,11 @@ function useRanges() {
   return useMemo(() => {
     const d30 = lastFullDays(30);
     const week = thisWeek();
-    return { today: kstDaysAgo(0), yesterday: d30.to, from7: week.from, to7: week.to, from30: d30.from };
+    const today = kstDaysAgo(0);
+    // 이달(달력 월) 1일~어제. "최근 30일" 대신 월 가동률로(2026-10-08 사용자).
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const monthLabel = `${Number(today.slice(5, 7))}월`;
+    return { today, yesterday: d30.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel };
   }, []);
 }
 
@@ -151,7 +155,7 @@ function byMeasuredThenDistance(a: PingStore, b: PingStore): number {
 }
 
 function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
-  const { today, yesterday, from7, to7, from30 } = useRanges();
+  const { today, yesterday, from7, to7, monthStart, monthLabel } = useRanges();
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[800px] text-sm">
@@ -164,7 +168,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">오늘<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(today, today)})</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">24시간</th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">이번주<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(from7, to7)})</span></th>
-            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">30일<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(from30, yesterday)})</span></th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">{monthLabel}<span className="font-normal text-[var(--sl-ink-soft)]"> (이달)</span></th>
             <th className="px-3 py-2 font-medium">상태</th>
           </tr>
         </thead>
@@ -191,7 +195,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
                 <Recent24Cell store={s} />
                 <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold />
-                <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
+                <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>
