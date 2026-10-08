@@ -68,10 +68,10 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
       {ping ? (
         <>
           <RealtimeCell store={ping} />
-          <UtilCell days={ping.days} from={today} to={today} nDays={1} seats={denominator(ping)} inProgress />
-          <Recent24Cell store={ping} seats={denominator(ping)} />
+          <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress />
+          <Recent24Cell store={ping} />
           <UtilCell days={ping.days} from={from7} to={to7} nDays={7} seats={denominator(ping)} bold />
-          <UtilCell days={ping.days} from={from30} to={yesterday} nDays={30} seats={denominator(ping)} />
+          <UtilCell days={ping.days} from={from30} to={yesterday} nDays={30} />
         </>
       ) : (
         <td colSpan={4} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
@@ -156,11 +156,11 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
             <th className="px-3 py-2 font-medium">점포명</th>
             <th className="px-3 py-2 text-right font-medium">거리</th>
             <th className="px-3 py-2 text-right font-medium">대수</th>
-            <th className="px-3 py-2 text-right font-medium">실시간<div className="font-normal">마지막 회차</div></th>
-            <th className="px-3 py-2 text-right font-medium">오늘(진행 중)<div className="font-normal">{dateRangeLabel(today, today)}</div></th>
-            <th className="px-3 py-2 text-right font-medium">최근 24시간<div className="font-normal">&nbsp;</div></th>
-            <th className="px-3 py-2 text-right font-medium">이번 주(월~일)<div className="font-normal">{dateRangeLabel(from7, to7)}</div></th>
-            <th className="px-3 py-2 text-right font-medium">최근 30일<div className="font-normal">{dateRangeLabel(from30, yesterday)}</div></th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">실시간</th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">오늘<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(today, today)})</span></th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">24시간</th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">이번주<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(from7, to7)})</span></th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap">30일<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(from30, yesterday)})</span></th>
             <th className="px-3 py-2 font-medium">상태</th>
           </tr>
         </thead>
@@ -184,10 +184,10 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <td className="px-3 py-2 text-right tabular-nums">{s.distanceM != null ? `${s.distanceM}m` : "-"}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{hasNoIp(s) ? (s.pcCount ?? "-") : denominator(s)}</td>
                 <RealtimeCell store={s} />
-                <UtilCell days={s.days} from={today} to={today} nDays={1} seats={denominator(s)} inProgress />
-                <Recent24Cell store={s} seats={denominator(s)} />
+                <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
+                <Recent24Cell store={s} />
                 <UtilCell days={s.days} from={from7} to={to7} nDays={7} seats={denominator(s)} bold />
-                <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} seats={denominator(s)} />
+                <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>
