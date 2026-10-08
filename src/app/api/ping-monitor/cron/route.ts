@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { checkGithubOidc } from "@/lib/pingMonitor/githubOidc";
-import { runPingRound } from "@/lib/pingMonitor/runRound";
+import { runPingRound, supplement1688 } from "@/lib/pingMonitor/runRound";
 import { kstParts } from "@/lib/pingMonitor/summary";
 
 // 경쟁점 가동률 측정기 1시간 알람 — GitHub Actions(.github/workflows/ping-monitor.yml)가 매시 부른다.
@@ -39,9 +39,13 @@ export async function GET(request: Request) {
     const now = new Date();
     const { date, hour } = kstParts(now);
     const minute = Number(new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(14, 16));
-    if (minute < 30) return NextResponse.json({ ok: true, skipped: "측정 서버 차례(매시 30분 전)" });
     const last = (await adminDb?.collection("storeEvalSystemStatus").doc("pingMonitor").get())?.data();
-    if (last?.date === date && last?.hour === hour) return NextResponse.json({ ok: true, skipped: `${date} ${hour}시 이미 기록됨(${last.method})` });
+    if (last?.date === date && last?.hour === hour) {
+      // 서버가 쓴 시엔 1688 보충만(probe1688 매장, 한 시에 한 번) — 서버에 1688이 들어가기 전 다리(2026-10-08 밤).
+      const supplement = await supplement1688(now);
+      return NextResponse.json({ ok: true, skipped: `${date} ${hour}시 이미 기록됨(${last.method}) · 1688 보충 ${supplement.stores}곳 +${supplement.added}` });
+    }
+    if (minute < 30) return NextResponse.json({ ok: true, skipped: "측정 서버 차례(매시 30분 전)" });
     const result = await runPingRound(now);
     // 마지막 실행 기록(알람이 실제로 도는지 확인용) — 문서 하나를 덮어쓴다.
     await adminDb

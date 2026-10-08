@@ -40,19 +40,19 @@ function knock(ip: string, port: number): Promise<boolean> {
   });
 }
 
-async function isAlive(ip: string): Promise<boolean> {
-  const results = await Promise.all(PORTS.map((port) => knock(ip, port)));
+async function isAlive(ip: string, ports: number[]): Promise<boolean> {
+  const results = await Promise.all(ports.map((port) => knock(ip, port)));
   return results.some(Boolean);
 }
 
 /** IP 목록을 확인해 켜진 IP 집합을 돌려준다. */
-export async function probeIps(ips: string[]): Promise<Set<string>> {
+export async function probeIps(ips: string[], ports: number[] = PORTS): Promise<Set<string>> {
   const alive = new Set<string>();
   let next = 0;
   async function worker() {
     while (next < ips.length) {
       const ip = ips[next++];
-      if (await isAlive(ip)) alive.add(ip);
+      if (await isAlive(ip, ports)) alive.add(ip);
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, ips.length) }, worker));

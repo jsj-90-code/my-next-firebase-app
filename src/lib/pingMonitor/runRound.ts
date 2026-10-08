@@ -86,6 +86,44 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
   return { ok: true, at: now.toISOString(), date, hour, method, stores: results };
 }
 
+/**
+ * 1688 보충(2026-10-08 밤) — 측정 서버(Oracle)에 1688이 들어가기 전 다리. `probe1688: true`인 매장(1688에만 대답하는 곳 —
+ * 평택 뉴블랙 소사벌·비전, 욜로)만 1688로 다시 재서, 서버가 이번 시에 못 잡은 IP를 그 시 기록에 더한다(합집합).
+ * 한 시에 한 번만(m에 "1688"이 붙으면 끝). 서버 기록이 없으면 아무것도 안 한다.
+ */
+export async function supplement1688(now = new Date()): Promise<{ stores: number; added: number }> {
+  const db = requireDb();
+  const { date, hour } = kstParts(now);
+  const snap = await db.collection(PING_STORES).where("probe1688", "==", true).get();
+  const stores = snap.docs
+    .filter((d) => d.get("active") === true)
+    .map((d) => ({ ref: d.ref, id: d.id, ips: parseIpRanges(String(d.get("ipRanges") ?? "")).ips }));
+  const alive = await probeIps(stores.flatMap((s) => s.ips), [1688]);
+  let added = 0;
+  for (const s of stores) {
+    const dailyRef = db.collection(PING_DAILY).doc(`${s.id}_${date}`);
+    added += await db.runTransaction(async (tx) => {
+      const [daily, store] = await Promise.all([tx.get(dailyRef), tx.get(s.ref)]);
+      const h = daily.exists ? daily.get(`hours.${hour}`) : null;
+      const ls = store.get("lastSample");
+      if (!h || String(h.m).includes("1688") || ls?.date !== date || ls?.hour !== hour) return 0;
+      const base = new Set<string>(ls.aliveIps ?? []);
+      const extra = s.ips.filter((ip) => alive.has(ip) && !base.has(ip));
+      tx.update(dailyRef, { [`hours.${hour}.a`]: h.a + extra.length, [`hours.${hour}.m`]: `${h.m}+1688` });
+      if (extra.length)
+        tx.update(s.ref, {
+          [`days.${date}.a`]: FieldValue.increment(extra.length),
+          [`recent.${hour}.a`]: FieldValue.increment(extra.length),
+          "lastSample.alive": (ls.alive ?? base.size) + extra.length,
+          "lastSample.aliveIps": [...base, ...extra],
+          "lastSample.method": `${ls.method}+1688`,
+        });
+      return extra.length;
+    });
+  }
+  return { stores: stores.length, added };
+}
+
 /** Vercel에서 TCP만으로 재는 예비 경로. */
 export async function runPingRound(now = new Date()): Promise<RoundResult> {
   const targets = await loadTargets();
