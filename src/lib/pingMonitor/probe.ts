@@ -19,7 +19,8 @@ const PORTS = [80, 3389, 1688];
 // 함수 한도(300초) 안에 재려면 서버에선 짧게 둔다.
 const TIMEOUT_MS = process.platform === "win32" ? 4000 : 2000;
 /** 동시에 확인하는 IP 수(포트가 셋이라 소켓은 세 배). 함수의 파일 핸들 한도(약 1024) 아래로 둔다. */
-const CONCURRENCY = 300;
+// 300(소켓 900)으로 올렸던 10-08 22시 회차에서 121곳이 0대로 나왔다(파일 핸들 부족 추정) → 200(소켓 600).
+const CONCURRENCY = 200;
 
 function knock(ip: string, port: number): Promise<boolean> {
   return new Promise((resolve) => {

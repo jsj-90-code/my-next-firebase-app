@@ -1,6 +1,6 @@
 # 경쟁점 가동률 측정기 — 예비 "계속 도는" 알람(2026-10-08 밤).
 # 매시 예약(ping-monitor.yml)은 GitHub가 4~6시간에 한 번꼴로만 돌려 예비가 안 됐다. 그래서 작업 하나가 ~5시간 45분 동안 깨어 있으면서
-# 매시 36분(·50분 재시도)에 Vercel 측정(/api/ping-monitor/cron, TCP만)을 부르고, 끝날 때 자기 자신을 다시 실행한다.
+# 매시 50분(·57분 재시도)에 Vercel 측정(/api/ping-monitor/cron, TCP만)을 부르고, 끝날 때 자기 자신을 다시 실행한다.
 # Vercel 쪽은 측정 서버(Oracle)가 이미 쓴 시는 읽기 1번으로 건너뛴다 — 서버가 살아 있으면 아무것도 안 쓴다.
 # 공개 저장소라 GitHub 실행 시간은 무료. 끊겨도 아래 예약(3시간마다)이 다시 살린다(같은 묶음은 하나만 돈다).
 # ⚠️ 공개 저장소라 실행 기록이 누구에게나 보인다 — 경쟁점 이름·값은 찍지 않는다.
@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
-      - name: 매시 36·50분 측정 요청 (약 5시간 45분)
+      - name: 매시 50·57분 측정 요청 (약 5시간 45분)
         run: |
           end=$(( $(date +%s) + 345*60 ))
           call() {
@@ -38,10 +38,11 @@ jobs:
           }
           while :; do
             now=$(date +%s); m=$(( (now / 60) % 60 ))
-            if [ "$m" -lt 36 ]; then wait=$(( (36 - m) * 60 )); else wait=$(( (96 - m) * 60 )); fi
+            # 50분: 10-08 22시에 서버 회차가 36분까지 안 끝나 예비(TCP)가 먼저 써 버렸다 — 서버에 45분을 준다.
+            if [ "$m" -lt 50 ]; then wait=$(( (50 - m) * 60 )); else wait=$(( (110 - m) * 60 )); fi
             [ $(( now + wait + 20*60 )) -gt "$end" ] && break
             sleep "$wait"
-            call || { sleep 840; call || true; }
+            call || { sleep 300; call || true; }
           done
       - name: 다음 묶음 실행
         if: always()
