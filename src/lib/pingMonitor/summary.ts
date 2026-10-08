@@ -263,8 +263,9 @@ export function storeStatus(store: PingStore): StoreStatus {
   }
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
-  const aliveEver = Object.values(store.days).some((v) => v.a > 0);
-  if (aliveEver) {
+  // "측정 중"은 응답이 스치는 정도(일일평균 1% 미만)면 안 친다 — 몇 번 스친 IP로 0.N%가 측정 중처럼 뜨는 걸 막는다(2026-10-08 카사 3번 스침).
+  const maxDayUtil = Math.max(0, ...Object.values(store.days).map((v) => (v.t > 0 ? v.a / v.t : 0)));
+  if (maxDayUtil >= 0.01) {
     // 다 찬 날 일일평균이 60% 넘으면 과응답(공유기·늘 켜진 기기 섞인 의심) — 손님만으론 하루 평균 60%가 잘 안 나온다(2026-10-08 사용자, 라이브 기준).
     const full = Object.values(store.days).filter((v) => v.n >= FULL_DAY_MIN_SAMPLES && v.t > 0);
     const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
