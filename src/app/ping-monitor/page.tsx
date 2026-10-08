@@ -130,9 +130,14 @@ function Recent24Cell({ store, seats }: { store: PingStore; seats?: number }) {
   const head = headcount(r.util, seats);
   return (
     <td className="px-3 py-2 text-right tabular-nums">
-      {formatPct(r.util)}
-      {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
-      {r.util == null && r.hours > 0 && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">모으는 중</span>}
+      {r.util == null && r.hours > 0 ? (
+        <span className="text-xs font-normal text-[var(--sl-ink-soft)]">수집중</span>
+      ) : (
+        <>
+          {formatPct(r.util)}
+          {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
+        </>
+      )}
     </td>
   );
 }
