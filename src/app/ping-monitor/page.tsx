@@ -117,9 +117,9 @@ function Recent24Cell({ store }: { store: PingStore }) {
 
 // 목록은 한눈에 볼 칸만(2026-10-07 사용자 "덕지덕지 부산스럽다") — 어제·전체·최근 측정·메모는 상세 화면에.
 // showOwn: "IP대역 재확인" 탭 — 우리 매장 이름과 확인 사유·IP대역을 같이 보인다.
-// 측정되는 곳(측정 중)을 위로, 안 되는 곳을 아래로. 각 묶음 안에서는 거리순(2026-10-08 사용자).
+// 정렬: 측정 중(맨 위) → IP 있는데 안 됨(핑차단·과응답 등) → IP 미등록(맨 아래). 각 묶음 안에서는 거리순(2026-10-08 사용자).
 function byMeasuredThenDistance(a: PingStore, b: PingStore): number {
-  const rank = (s: PingStore) => (storeStatus(s).tone === "ok" ? 0 : 1);
+  const rank = (s: PingStore) => (storeStatus(s).tone === "ok" ? 0 : hasNoIp(s) ? 2 : 1);
   return rank(a) - rank(b) || (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9);
 }
 
