@@ -107,7 +107,7 @@ function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = fal
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
       {formatPct(r.util)}
       {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
-      {note && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{note}</div>}
+      {note && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">{note}</span>}
     </td>
   );
 }
@@ -132,7 +132,7 @@ function Recent24Cell({ store, seats }: { store: PingStore; seats?: number }) {
     <td className="px-3 py-2 text-right tabular-nums">
       {formatPct(r.util)}
       {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
-      {r.util == null && r.hours > 0 && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">모으는 중</div>}
+      {r.util == null && r.hours > 0 && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">모으는 중</span>}
     </td>
   );
 }
