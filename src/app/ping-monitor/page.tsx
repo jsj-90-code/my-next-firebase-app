@@ -95,7 +95,7 @@ function useRanges() {
 // 칸 구성 오늘·최근 24시간·7일·30일(2026-10-07 사용자 — 신규후보지는 첫날 "오늘"밖에 값이 없다).
 // 가동률 밑에 "≈N명"(가동률×대수 = 켜진 PC 수). 대수 많은 곳이 낮은 %여도 손님 많은 걸 보려고(2026-10-08 사용자).
 function headcount(util: number | null, seats: number | undefined): string {
-  return util != null && seats && seats > 0 ? `≈${Math.round(util * seats)}명` : "";
+  return util != null && seats && seats > 0 ? `≈${Math.round(util * seats)}대` : "";
 }
 
 function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean }) {
