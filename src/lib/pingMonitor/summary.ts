@@ -178,6 +178,9 @@ export function rangeUtilization(
       n += v.n;
       d += 1;
     } else if (isFullDay(date, v, today)) {
+      // 꽉 찬 날인데 하루 종일 0대면 측정 실패로 본다(정상 영업 PC방이 22시간+ 내내 0대일 수 없다 — IP 틀림·핑/포트 차단).
+      // 평균에서 빼서 0%가 아니라 "-"로 보이게 한다(2026-10-09 사용자: "측정 안 된 날은 0이 아니라 빼라").
+      if (v.a === 0) { skipped += 1; continue; }
       sumDaily += v.a / v.t;
       n += v.n;
       d += 1;

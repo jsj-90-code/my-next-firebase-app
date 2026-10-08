@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { competitorMeasurement, storeStatus, thisWeek, type PingStore } from "./summary";
+import { competitorMeasurement, rangeUtilization, storeStatus, thisWeek, type PingStore } from "./summary";
 
 // 2026-10-07 기준: 한국 시각 10-07 낮 → 최근 7일 = 09-30~10-06.
 const NOW = new Date("2026-10-07T03:00:00Z");
@@ -57,6 +57,21 @@ describe("competitorMeasurement", () => {
   it("중복 등록이면 IP 있는 쪽", () => {
     const m = competitorMeasurement([store({ id: "a", ipRanges: "", ipCount: 0 }), store({ id: "b", days: { "2026-10-06": full(24) } })], NOW);
     expect(m.store?.id).toBe("b");
+  });
+});
+
+describe("rangeUtilization — 꽉 찬 날인데 종일 0대는 측정 실패로 뺀다(2026-10-09)", () => {
+  const today = "2026-10-09";
+  it("종일 0대인 꽉 찬 날만 있으면 util=null(0%가 아니라 '-')", () => {
+    const r = rangeUtilization({ "2026-10-06": { a: 0, t: 92, n: 24 } }, "2026-10-05", "2026-10-08", { today });
+    expect(r.util).toBeNull();
+    expect(r.days).toBe(0);
+    expect(r.skipped).toBe(1);
+  });
+  it("값이 있는 꽉 찬 날은 그대로 평균, 종일 0대 날만 뺀다", () => {
+    const r = rangeUtilization({ "2026-10-06": { a: 0, t: 100, n: 24 }, "2026-10-07": { a: 50, t: 100, n: 24 } }, "2026-10-05", "2026-10-08", { today });
+    expect(r.util).toBeCloseTo(0.5, 6);
+    expect(r.days).toBe(1);
   });
 });
 
