@@ -6,7 +6,7 @@
 // 설치·갱신: scripts/pingMonitor/agent/README.md
 import { createHash, createPrivateKey, sign } from "node:crypto";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { timestampAll, combineResponses } from "./timestamp.mjs";
 
@@ -74,9 +74,53 @@ async function tcpAll(ips) {
   return alive;
 }
 
+// 웹 요청은 시간 제한 + 다시 시도(2026-10-08 — 한 번 실패로 회차 전체를 잃지 않게). 서명은 시도마다 새로 만든다(5분 넘으면 거절).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function call(method, path, body) {
+  let last;
+  for (const wait of [0, 20_000, 60_000, 120_000]) {
+    if (wait) await sleep(wait);
+    try {
+      const res = await fetch(BASE + path, {
+        method,
+        headers: { ...(body ? { "content-type": "application/json" } : {}), ...signedHeaders(method, path, body ?? "") },
+        body: body ?? undefined,
+        signal: AbortSignal.timeout(90_000),
+      });
+      if (res.ok || (res.status >= 400 && res.status < 500)) return res; // 4xx는 다시 해도 같다
+      last = new Error(`${res.status}: ${await res.text()}`);
+    } catch (error) {
+      last = error;
+    }
+    console.error(`${method} ${path} 실패 — ${last.message}`);
+  }
+  throw last;
+}
+
+// 못 보낸 회차는 pending/에 두고 다음 회차 시작 때 다시 보낸다. 웹은 잰 시각(at)의 시(時)로 묶고 6시간까지 받는다.
+const PENDING = new URL("./pending/", import.meta.url);
+const rPath = "/api/ping-monitor/agent/results";
+mkdirSync(PENDING, { recursive: true });
+if (!DRY) {
+  for (const f of readdirSync(PENDING).filter((n) => n.endsWith(".json")).sort()) {
+    const file = new URL(f, PENDING);
+    try {
+      const res = await call("POST", rPath, readFileSync(file, "utf8"));
+      console.log(`밀린 회차 ${f} 보냄 ${res.status}: ${await res.text()}`);
+      unlinkSync(file); // 4xx(6시간 지남 등)도 지운다 — 다시 보내도 안 받는다
+    } catch (error) {
+      console.error(`밀린 회차 ${f} 아직 못 보냄 — ${error.message}`);
+    }
+  }
+}
+
+// 지난 회차가 timeout으로 죽으면 node만 죽고 sudo python 타임스탬프 helper는 남을 수 있다 — 메모리 498MB라 쌓이면 서버가 멈춘다.
+// cron은 flock으로 한 번에 하나만 돌리므로 지금 남아 있는 helper는 전부 낡은 것이다(2026-10-08).
+await new Promise((r) => spawn("sudo", ["-n", "pkill", "-f", "timestamp_prob[e]\.py"], { stdio: "ignore" }).on("close", r).on("error", r));
+
 const started = new Date();
 const tPath = "/api/ping-monitor/agent/targets";
-const tRes = await fetch(BASE + tPath, { headers: signedHeaders("GET", tPath, "") });
+const tRes = await call("GET", tPath);
 if (!tRes.ok) throw new Error(`목록 받기 실패 ${tRes.status}: ${await tRes.text()}`);
 const { targets } = await tRes.json();
 const ips = [...new Set(targets.flatMap((t) => t.ips))];
@@ -95,8 +139,13 @@ const secs = ((Date.now() - started.getTime()) / 1000).toFixed(0);
 console.log(`${started.toISOString()} 매장 ${targets.length} · IP ${ips.length} · 응답 ${alive.length}(핑 ${byPing.size} · TCP ${byTcp.size} · 핑만 ${pingOnly} · TCP만 ${tcpOnly} · 타임스탬프 ${byTimestamp?.size ?? "실패"} · 타임스탬프만 ${timestampOnly}) · ${method} · ${secs}초`);
 if (DRY) process.exit(0);
 
-const rPath = "/api/ping-monitor/agent/results";
 const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive });
-const rRes = await fetch(BASE + rPath, { method: "POST", headers: { "content-type": "application/json", ...signedHeaders("POST", rPath, body) }, body });
-console.log(`보냄 ${rRes.status}: ${await rRes.text()}`);
-if (!rRes.ok) process.exit(1);
+try {
+  const rRes = await call("POST", rPath, body);
+  console.log(`보냄 ${rRes.status}: ${await rRes.text()}`);
+  if (!rRes.ok) process.exit(1);
+} catch (error) {
+  writeFileSync(new URL(`${started.toISOString().replace(/[:.]/g, "-")}.json`, PENDING), body);
+  console.error(`보내기 실패 — pending/에 두고 다음 회차에 다시 보낸다: ${error.message}`);
+  process.exit(1);
+}

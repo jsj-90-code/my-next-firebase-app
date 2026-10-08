@@ -16,7 +16,8 @@ export async function POST(request: Request) {
   const parsed = JSON.parse(body) as { at?: string; aliveIps?: unknown; method?: unknown };
   if (!Array.isArray(parsed.aliveIps)) return NextResponse.json({ error: "aliveIps가 없습니다." }, { status: 400 });
   const at = parsed.at ? new Date(parsed.at) : new Date();
-  if (Number.isNaN(at.getTime()) || Math.abs(Date.now() - at.getTime()) > 3600_000) {
+  // 6시간까지 받는다 — 보내기에 실패한 회차를 서버가 다음 회차에 다시 보낸다(2026-10-08). 시(時)는 잰 시각으로 묶인다.
+  if (Number.isNaN(at.getTime()) || at.getTime() > Date.now() + 600_000 || Date.now() - at.getTime() > 6 * 3600_000) {
     return NextResponse.json({ error: "측정 시각이 이상합니다." }, { status: 400 });
   }
 

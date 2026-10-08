@@ -8,6 +8,26 @@
 
 ## 설치 / 갱신
 
+### 회차 빠짐 막기 (2026-10-08 저녁 — 서버가 또 멈춰 19·20시가 빠짐)
+
+- 증상: 22번 포트는 열리는데 ssh 인사말이 30초 넘게 안 옴 = 10-07 08시와 같은 멈춤. 콘솔에서 **Force reboot**.
+- `agent.mjs`: 웹 요청 90초 제한·4번 시도, 못 보낸 결과는 `pending/`에 두고 다음 회차에 다시 보냄(웹은 6시간까지 받음),
+  시작할 때 지난 회차가 남긴 타임스탬프 helper를 정리(`timeout`은 node만 죽여서 sudo python이 남을 수 있다).
+- 예비 GitHub는 매시 32·42·52분 세 번. 서버가 이미 쓴 시·30분 전 도착은 Vercel이 읽기 1번으로 건너뛴다.
+- **재부팅 뒤 서버에서 할 일**(회사 PC, 키 있음):
+  ```
+  scp -i ~/.ssh/oci_ping_monitor scripts/pingMonitor/agent/agent.mjs opc@168.110.12.33:~/ping-agent/
+  ssh -i ~/.ssh/oci_ping_monitor opc@168.110.12.33
+    journalctl -b -1 -p warning --no-pager | tail -80     # 멈춘 원인(메모리 부족·OOM 등) 확인 — 10-07에 디스크에 남기게 해 둠
+    free -m; swapon --show
+    # 멈춤 자동 복구: 커널 감시견 — 시스템이 60초 넘게 굳으면 스스로 재부팅
+    sudo modprobe softdog && echo softdog | sudo tee /etc/modules-load.d/softdog.conf
+    sudo mkdir -p /etc/systemd/system.conf.d && printf '[Manager]\nRuntimeWatchdogSec=60s\nRebootWatchdogSec=5min\n' | sudo tee /etc/systemd/system.conf.d/watchdog.conf
+    sudo systemctl daemon-reexec
+    # crontab의 timeout을 `timeout -k 60 3000`으로(안 죽으면 60초 뒤 강제 종료)
+  ```
+  원인이 스왑 몸살(2G 스왑에서 몇 시간 허우적)이면 `/swapfile2`를 끄는 것도 검토 — 그러면 메모리가 모자랄 때 서버가 굳는 대신 그 회차만 죽고 다음 회차는 돈다.
+
 ### 타임스탬프 추가 (2026-10-08)
 
 - 모든 활성 매장의 등록 IP에 핑·TCP와 함께 ICMP timestamp(type 13)를 보내며,
