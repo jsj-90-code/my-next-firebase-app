@@ -22,6 +22,7 @@ import {
   kstDaysAgo,
   lastFullDays,
   thisWeek,
+  lastWeek,
   partialNote,
   rangeUtilization,
   recent24h,
@@ -50,7 +51,7 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
  * 우리 매장 IP가 없는 곳(2026-10-07 단톡 보강 뒤 41곳 중 양주덕정 1곳)은 줄만 두고 "IP 없음".
  */
 function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
-  const { today, yesterday, from7, to7, monthStart, monthLabel } = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel } = useRanges();
   const status = ping ? storeStatus(ping) : null;
   return (
     <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
@@ -71,11 +72,12 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
           <RealtimeCell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <Recent24Cell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={fromPrev} to={toPrev} nDays={7} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
         </>
       ) : (
-        <td colSpan={5} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
+        <td colSpan={6} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
           우리 매장 IP 없음 — 측정 안 함
         </td>
       )}
@@ -89,11 +91,12 @@ function useRanges() {
   return useMemo(() => {
     const d30 = lastFullDays(30);
     const week = thisWeek();
+    const prevWeek = lastWeek();
     const today = kstDaysAgo(0);
     // 이달(달력 월) 1일~어제. "최근 30일" 대신 월 가동률로(2026-10-08 사용자).
     const monthStart = `${today.slice(0, 7)}-01`;
     const monthLabel = `${Number(today.slice(5, 7))}월`;
-    return { today, yesterday: d30.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel };
+    return { today, yesterday: d30.to, fromPrev: prevWeek.from, toPrev: prevWeek.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel };
   }, []);
 }
 
@@ -159,7 +162,7 @@ function byMeasuredThenDistance(a: PingStore, b: PingStore): number {
 }
 
 function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
-  const { today, yesterday, from7, to7, monthStart, monthLabel } = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel } = useRanges();
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[800px] text-sm">
@@ -171,6 +174,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">실시간</th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">오늘<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(today, today)})</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">24시간</th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-[var(--sl-ink-soft)]">지난주<span className="font-normal"> ({dateRangeLabel(fromPrev, toPrev)})</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">이번주<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(from7, to7)})</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">{monthLabel}<span className="font-normal text-[var(--sl-ink-soft)]"> (이달)</span></th>
             <th className="px-3 py-2 font-medium">상태</th>
@@ -200,6 +204,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <RealtimeCell store={s} muted={muted} />
                 <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress muted={muted} />
                 <Recent24Cell store={s} muted={muted} />
+                <UtilCell days={s.days} from={fromPrev} to={toPrev} nDays={7} muted={muted} />
                 <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold muted={muted} />
                 <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} muted={muted} />
                 <td className="px-3 py-2">

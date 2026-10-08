@@ -155,6 +155,14 @@ export function thisWeek(now = new Date()): { from: string; to: string } {
   return { from: kstDaysAgo(back, now), to: kstDaysAgo(back - 6, now) };
 }
 
+/** 지난주(이번 주 바로 앞 월~일) — 이번 주에서 7일 뒤로(2026-10-09 사용자 요청, 이번주 왼쪽 열). */
+export function lastWeek(now = new Date()): { from: string; to: string } {
+  const today = kstDaysAgo(0, now);
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const back = (dow - WEEK_START_DAY + 7) % 7;
+  return { from: kstDaysAgo(back + 7, now), to: kstDaysAgo(back + 1, now) };
+}
+
 export function denominator(store: Pick<PingStore, "pcCount" | "ipCount">): number {
   return store.pcCount && store.pcCount > 0 ? store.pcCount : store.ipCount;
 }

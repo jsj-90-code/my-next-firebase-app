@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { competitorMeasurement, rangeUtilization, storeStatus, thisWeek, type PingStore } from "./summary";
+import { competitorMeasurement, lastWeek, rangeUtilization, storeStatus, thisWeek, type PingStore } from "./summary";
 
 // 2026-10-07 기준: 한국 시각 10-07 낮 → 최근 7일 = 09-30~10-06.
 const NOW = new Date("2026-10-07T03:00:00Z");
@@ -76,6 +76,16 @@ describe("rangeUtilization — 꽉 찬 날인데 종일 0대는 측정 실패로
     const r = rangeUtilization({ "2026-10-06": { a: 0, t: 100, n: 24 }, "2026-10-07": { a: 50, t: 100, n: 24 } }, "2026-10-05", "2026-10-08", { today });
     expect(r.util).toBeCloseTo(0.5, 6);
     expect(r.days).toBe(1);
+  });
+});
+
+describe("lastWeek — 이번 주 바로 앞 월~일(2026-10-09)", () => {
+  it.each([
+    ["2026-10-09T03:00:00Z", "2026-09-28", "2026-10-04"], // 금 → 지난주 월~일
+    ["2026-10-05T03:00:00Z", "2026-09-28", "2026-10-04"], // 이번주 월 → 지난주
+    ["2026-10-12T03:00:00Z", "2026-10-05", "2026-10-11"], // 다음주 월 → 이번주가 지난주로
+  ])("%s → %s~%s", (now, from, to) => {
+    expect(lastWeek(new Date(now))).toEqual({ from, to });
   });
 });
 
