@@ -1,0 +1,10 @@
+{
+  "name": "ping-monitor-oci",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "oci-common": "^2",
+    "oci-core": "^2",
+    "oci-identity": "^2"
+  }
+}
