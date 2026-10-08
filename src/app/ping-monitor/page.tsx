@@ -70,7 +70,7 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
           <RealtimeCell store={ping} />
           <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress />
           <Recent24Cell store={ping} />
-          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} seats={denominator(ping)} bold />
+          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold />
           <UtilCell days={ping.days} from={from30} to={yesterday} nDays={30} />
         </>
       ) : (
@@ -132,7 +132,7 @@ function Recent24Cell({ store, seats }: { store: PingStore; seats?: number }) {
     <td className="px-3 py-2 text-right tabular-nums">
       {formatPct(r.util)}
       {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
-      {r.util == null && r.hours > 0 && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">{r.hours}/24시간</div>}
+      {r.util == null && r.hours > 0 && <div className="text-xs font-normal text-[var(--sl-ink-soft)]">모으는 중</div>}
     </td>
   );
 }
@@ -185,7 +185,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <RealtimeCell store={s} />
                 <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress />
                 <Recent24Cell store={s} />
-                <UtilCell days={s.days} from={from7} to={to7} nDays={7} seats={denominator(s)} bold />
+                <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold />
                 <UtilCell days={s.days} from={from30} to={yesterday} nDays={30} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
@@ -424,7 +424,7 @@ export default function PingMonitorPage() {
               </button>
             )}
           </div>
-          <p className="text-xs text-[var(--sl-ink-soft)]">가동률 옆 <b>○대</b> = 그 기간 평균 동시에 켜진 PC 수(가동률×대수) — 대수 다른 매장끼리 손님 규모 비교용.</p>
+          <p className="text-xs text-[var(--sl-ink-soft)]">실시간 옆 <b>○대</b> = 지금 켜져 있는 PC 수(≈현재 손님) — 대수 다른 매장끼리 규모 비교용.</p>
           {hiddenCount > 0 && (
             <p className="text-xs text-[var(--sl-ink-soft)]">폐업·중지한 매장 {hiddenCount}곳은 목록에서 숨겼습니다.</p>
           )}
