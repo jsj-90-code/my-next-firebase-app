@@ -254,7 +254,7 @@ export function StoreForm({
             <p className="mt-1 break-all font-mono text-xs text-[var(--sl-ink-soft)]">{shortIps(probe.aliveIps)}</p>
           )}
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-            지금 확인은 TCP만 검사합니다. 정기 측정은 핑(ICMP)과 TCP를 함께 사용하므로 결과가 다를 수 있습니다. 응답 수만으로 실제 이용 좌석 수를 확정할 수 없습니다.
+            지금 확인은 TCP만 검사합니다. 매시간 정기 측정은 핑(ICMP)·TCP·타임스탬프를 함께 검사하므로 결과가 다를 수 있습니다. 응답 수만으로 실제 이용 좌석 수를 확정할 수 없습니다.
           </p>
         </div>
       )}

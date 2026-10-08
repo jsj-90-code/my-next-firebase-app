@@ -8,8 +8,21 @@
 
 ## 설치 / 갱신
 
+### 타임스탬프 추가 (2026-10-08)
+
+- 모든 활성 매장의 등록 IP에 핑·TCP와 함께 ICMP timestamp(type 13)를 보내며,
+  요청한 IP의 type 14 응답에서 식별자·순번·체크섬까지 일치해야 집계한다. 중간 라우터 오류는 제외한다.
+- `agent.mjs`, `timestamp.mjs`, `timestamp_probe.py`를 **함께** 배포한다. Python 3 표준 라이브러리만 사용한다.
+  helper는 `sudo -n /usr/bin/python3`로 실행한다(기존 Oracle sudo 권한 사용). Node 전체를 root로 실행하지 않는다.
+- 초당 최대 100개, 미응답 IP에 한 번 재시도. 핑·TCP와 병렬이며 IP 합집합으로 중복을 제거한다.
+  helper가 실패하면 로그에 오류를 남기고 기존 `icmp+tcp`로 측정한다. 성공한 회차는 `icmp+tcp+timestamp`로 기록한다.
+- 서버 로그의 `타임스탬프만`은 기존 두 방식에서 놓쳤던 추가 응답 수다. 실제 이용 좌석 수의 검증을 뜻하지 않는다.
+- 과거 기록·매시 5분 cron·중복 회차 방지 방식은 그대로다. 웹의 즉석 확인과 예비 GitHub 경로는 TCP만 가능하다.
+- 검증: `node --test scripts/pingMonitor/agent/timestamp.test.mjs`,
+  `python3 scripts/pingMonitor/agent/test_timestamp_probe.py`. 배포 전 등록 IP로 helper 실측을 확인한다.
+
 ```
-scp -i ~/.ssh/oci_ping_monitor scripts/pingMonitor/agent/agent.mjs opc@168.110.12.33:~/ping-agent/
+scp -i ~/.ssh/oci_ping_monitor scripts/pingMonitor/agent/agent.mjs scripts/pingMonitor/agent/timestamp.mjs scripts/pingMonitor/agent/timestamp_probe.py opc@168.110.12.33:~/ping-agent/
 ssh -i ~/.ssh/oci_ping_monitor opc@168.110.12.33
   # 처음 한 번: Node 공식 파일을 /usr/local/lib/nodejs에(dnf는 메모리 부족으로 두 번 죽어 안 씀 — fping 없이 시스템 ping)
   curl -fsSL -o node.tar.xz https://nodejs.org/dist/v22.20.0/node-v22.20.0-linux-x64.tar.xz && mkdir -p ~/node && tar -xJf node.tar.xz -C ~/node --strip-components=1

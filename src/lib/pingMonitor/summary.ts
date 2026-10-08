@@ -85,6 +85,7 @@ export type PingStore = {
     alive: number;
     total: number;
     aliveIps: string[];
+    method?: string;
   } | null;
   days: Record<string, DayTotals>;
   /** 시간대(0~23시)별 가장 최근 측정 1개씩 — "최근 24시간" 계산용(2026-10-07). 서버가 매 회차 그 시 칸을 덮어쓴다. */

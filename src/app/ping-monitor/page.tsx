@@ -288,7 +288,8 @@ export default function PingMonitorPage() {
             <div className="app-card-sm mt-2 flex flex-col gap-3 rounded-xl p-3 leading-5">
               <section>
                 <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">가동률</h3>
-                <p>{intervalText}마다 <b>켜진 PC 수 ÷ 대수</b>를 잽니다.</p>
+                <p>{intervalText}마다 핑·TCP·타임스탬프를 검사해 <b>응답 IP 수 ÷ 대수</b>를 계산합니다. 같은 IP는 한 번만 셉니다.</p>
+                <p>응답 수는 실제 이용 좌석 수와 다를 수 있으며, 무응답만으로 PC 꺼짐이나 실제 가동률 0%를 확정할 수 없습니다.</p>
               </section>
               <section>
                 <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">칸별 뜻</h3>

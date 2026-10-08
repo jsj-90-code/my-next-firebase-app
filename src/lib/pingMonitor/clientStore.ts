@@ -68,6 +68,7 @@ function toStore(id: string, d: DocumentData): PingStore {
           alive: Number(ls.alive ?? 0),
           total: Number(ls.total ?? 0),
           aliveIps: Array.isArray(ls.aliveIps) ? ls.aliveIps.map(String) : [],
+          method: typeof ls.method === "string" ? ls.method : undefined,
         }
       : null,
     days: (d.days ?? {}) as Record<string, DayTotals>,

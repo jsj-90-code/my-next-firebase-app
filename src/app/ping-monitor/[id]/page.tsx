@@ -190,8 +190,10 @@ export default function PingStoreDetailPage() {
         </p>
         {store.lastSample && (
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-            최근 측정 {store.lastSample.date} {store.lastSample.hour}시 — {store.lastSample.alive}/{store.lastSample.total}대 켜짐
+            최근 측정 {store.lastSample.date} {store.lastSample.hour}시 — 응답 IP {store.lastSample.alive}개 / 기준 대수 {store.lastSample.total}대
             {store.lastSample.aliveIps.length > 0 ? ` (${shortIps(store.lastSample.aliveIps)})` : ""}
+            {store.lastSample.method && <><br />검사 방식: {store.lastSample.method === "icmp+tcp+timestamp" ? "핑 · TCP · 타임스탬프" : store.lastSample.method === "icmp+tcp" ? "핑 · TCP" : store.lastSample.method === "tcp" ? "TCP" : "서버 측정"}</>}
+            {store.lastSample.alive === 0 && <><br />응답이 없습니다. 실제 가동률 0%를 뜻하지는 않습니다.</>}
           </p>
         )}
         {store.ipCheck && (
