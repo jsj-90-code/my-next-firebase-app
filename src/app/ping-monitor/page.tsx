@@ -236,9 +236,12 @@ export default function PingMonitorPage() {
     };
   }, [user]);
 
+  // 측정 중지(폐업·중복)된 매장은 목록에서 숨긴다(2026-10-08 사용자). 숨긴 수만 따로 보여준다.
+  const visibleStores = useMemo(() => (stores ?? []).filter((s) => s.active !== false), [stores]);
+  const hiddenCount = useMemo(() => (stores ?? []).filter((s) => s.active === false).length, [stores]);
   const groups = useMemo<Group[]>(() => {
     const map = new Map<string, Group>();
-    for (const s of stores ?? []) {
+    for (const s of visibleStores) {
       const key = s.ownCode ?? UNLINKED;
       const g = map.get(key) ?? { key, name: s.ownCode ? (s.ownName ?? s.ownCode) : "우리 매장 연결 안 됨", own: null, stores: [] };
       if (s.isOwnStore) g.own = s;
@@ -246,7 +249,7 @@ export default function PingMonitorPage() {
       map.set(key, g);
     }
     return [...map.values()].sort((a, b) => (a.key === UNLINKED ? 1 : b.key === UNLINKED ? -1 : a.name.localeCompare(b.name, "ko")));
-  }, [stores]);
+  }, [visibleStores]);
   // 우리 매장에 연결되지 않은 경쟁점은 "경쟁점 전체"에서만 보인다.
   const groupsByView: Record<"existing" | "candidate", Group[]> = useMemo(
     () => ({
@@ -256,11 +259,11 @@ export default function PingMonitorPage() {
     [groups],
   );
   const shownGroups = view === "all" || view === "check" ? [] : groupsByView[view];
-  const competitorsOnly = useMemo(() => (stores ?? []).filter((s) => !s.isOwnStore), [stores]);
+  const competitorsOnly = useMemo(() => visibleStores.filter((s) => !s.isOwnStore), [visibleStores]);
   // 2026-10-06 사용자 "웹에 표기해주면 내가 따로 서치해볼게" — 등록 IP가 의심스러운 곳(우리 매장 자체 포함)만 모아 본다.
   const ipCheckStores = useMemo(
-    () => (stores ?? []).filter((s) => s.ipCheck).sort((a, b) => String(a.ownName).localeCompare(String(b.ownName), "ko")),
-    [stores],
+    () => visibleStores.filter((s) => s.ipCheck).sort((a, b) => String(a.ownName).localeCompare(String(b.ownName), "ko")),
+    [visibleStores],
   );
 
   const intervalText = SAMPLE_INTERVAL_MINUTES % 60 === 0 ? `${SAMPLE_INTERVAL_MINUTES / 60}시간` : `${SAMPLE_INTERVAL_MINUTES}분`;
@@ -372,6 +375,9 @@ export default function PingMonitorPage() {
               </button>
             )}
           </div>
+          {hiddenCount > 0 && (
+            <p className="text-xs text-[var(--sl-ink-soft)]">폐업·중지한 매장 {hiddenCount}곳은 목록에서 숨겼습니다.</p>
+          )}
           {view !== "all" && view !== "check" && shownGroups.length === 0 && (
             <p className="app-card-sm rounded-xl p-4 text-sm text-[var(--sl-ink-soft)]">{VIEW_LABEL[view]}에 연결된 경쟁점이 아직 없습니다.</p>
           )}
