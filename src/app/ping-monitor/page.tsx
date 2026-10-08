@@ -405,9 +405,7 @@ export default function PingMonitorPage() {
           )}
           {missedHours.length > 0 && (
             <p className="app-notice app-badge-warn rounded-xl px-3 py-2 text-xs leading-5">
-              ⚠ 최근 24시간 중 <b>{missedHours.map((h) => `${h}시`).join("·")}</b> 회차가 측정 안 됐습니다({24 - missedHours.length}/24시각).
-              서버가 그 시각 회차를 걸러서입니다 — &ldquo;최근 24시간&rdquo; 값은 나머지 {24 - missedHours.length}시간 기준입니다.
-              같은 시각이 자꾸 빠지면 측정 시간을 조정해야 할 수 있습니다.
+              ⚠ 최근 24시간 중 <b>{missedHours.map((h) => `${h}시`).join("·")}</b> 회차가 측정 안 됐습니다. &ldquo;최근 24시간&rdquo; 값은 나머지 {24 - missedHours.length}시간 기준입니다.
             </p>
           )}
           {view !== "all" && view !== "check" && shownGroups.length === 0 && (
