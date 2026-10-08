@@ -574,3 +574,4 @@ src/**/_*.test.ts
 !src/lib/storeEval/_huffDemand.test.ts
 !/.local-tools/hub-points.json
 !/.local-tools/sbiz-floating-time.json
+scripts/pingMonitor/oci/node_modules/
