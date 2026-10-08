@@ -98,7 +98,7 @@ export async function supplement1688(now = new Date()): Promise<{ stores: number
   const stores = snap.docs
     .filter((d) => d.get("active") === true)
     .map((d) => ({ ref: d.ref, id: d.id, ips: parseIpRanges(String(d.get("ipRanges") ?? "")).ips }));
-  const alive = await probeIps(stores.flatMap((s) => s.ips), [1688]);
+  const alive = await probeIps(stores.flatMap((s) => s.ips), [1688, 5040]); // 서버에 아직 없는 보조 포트
   let added = 0;
   for (const s of stores) {
     const dailyRef = db.collection(PING_DAILY).doc(`${s.id}_${date}`);

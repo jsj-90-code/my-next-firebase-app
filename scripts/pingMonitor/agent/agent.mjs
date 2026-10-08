@@ -66,7 +66,7 @@ async function tcpAll(ips) {
   async function worker() {
     while (next < ips.length) {
       const ip = ips[next++];
-      const r = await Promise.all([80, 3389, 1688].map((port) => knock(ip, port))); // 1688: 2026-10-08 추가(src/lib/pingMonitor/probe.ts 주석)
+      const r = await Promise.all([80, 3389, 1688, 5040].map((port) => knock(ip, port))); // 1688: 2026-10-08 추가(src/lib/pingMonitor/probe.ts 주석)
       if (r.some(Boolean)) alive.add(ip);
     }
   }
