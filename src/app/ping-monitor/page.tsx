@@ -39,7 +39,7 @@ const UNLINKED = "__unlinked__";
 // 후보지 코드는 N0xx, 기존점은 숫자 가맹점코드다(후보지 → 기존점 전환 시 코드도 바뀐다).
 const isCandidateCode = (code: string) => /^N\d+$/.test(code);
 type View = "existing" | "candidate" | "all" | "check";
-const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체", check: "IP대역 재확인" };
+const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체", check: "IP 확인" };
 
 // own = 우리 매장 자체를 잰 등록(있으면). stores = 경쟁점만.
 type Group = { key: string; name: string; own: PingStore | null; stores: PingStore[] };
@@ -117,6 +117,12 @@ function Recent24Cell({ store }: { store: PingStore }) {
 
 // 목록은 한눈에 볼 칸만(2026-10-07 사용자 "덕지덕지 부산스럽다") — 어제·전체·최근 측정·메모는 상세 화면에.
 // showOwn: "IP대역 재확인" 탭 — 우리 매장 이름과 확인 사유·IP대역을 같이 보인다.
+// 측정되는 곳(측정 중)을 위로, 안 되는 곳을 아래로. 각 묶음 안에서는 거리순(2026-10-08 사용자).
+function byMeasuredThenDistance(a: PingStore, b: PingStore): number {
+  const rank = (s: PingStore) => (storeStatus(s).tone === "ok" ? 0 : 1);
+  return rank(a) - rank(b) || (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9);
+}
+
 function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
   const { today, yesterday, from7, to7, from30 } = useRanges();
   return (
@@ -145,9 +151,9 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                   <Link href={`/ping-monitor/${s.id}`} className="font-medium text-[#171310] hover:underline dark:text-[#f2ede2]">
                     {s.name}
                   </Link>
-                  {s.ipCheck && (
+                  {s.ipCheck && showOwn && (
                     <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
-                      ⚠ IP대역 재확인{showOwn && <> — {s.ipCheck} <span className="font-mono">({s.ipRanges})</span></>}
+                      ⚠ {s.ipCheck} <span className="font-mono">({s.ipRanges})</span>
                     </div>
                   )}
                 </td>
@@ -190,7 +196,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
         )}
         <button type="button" onClick={onToggle} className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-left">
         <span className="text-xs text-[var(--sl-ink-soft)]">
-          경쟁점 {group.stores.length}곳{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}{ipCheck > 0 ? ` · IP대역 재확인 ${ipCheck}` : ""}{blocked > 0 ? ` · 핑 차단 의심 ${blocked}` : ""}
+          경쟁점 {group.stores.length}곳{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}{ipCheck > 0 ? ` · IP 확인 ${ipCheck}` : ""}{blocked > 0 ? ` · 핑차단 ${blocked}` : ""}
         </span>
         <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
           {group.own && (
@@ -206,7 +212,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
       {open && (
         <div className="border-t border-[var(--sl-hairline)]">
           <CompetitorTable
-            stores={[...group.stores].sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))}
+            stores={[...group.stores].sort(byMeasuredThenDistance)}
             ownRow={isCandidateCode(group.key) || group.key === UNLINKED ? undefined : <OwnRow name={group.name} ping={group.own} />}
           />
         </div>
@@ -259,7 +265,7 @@ export default function PingMonitorPage() {
     [groups],
   );
   const shownGroups = view === "all" || view === "check" ? [] : groupsByView[view];
-  const competitorsOnly = useMemo(() => visibleStores.filter((s) => !s.isOwnStore), [visibleStores]);
+  const competitorsOnly = useMemo(() => visibleStores.filter((s) => !s.isOwnStore).sort(byMeasuredThenDistance), [visibleStores]);
   // 2026-10-06 사용자 "웹에 표기해주면 내가 따로 서치해볼게" — 등록 IP가 의심스러운 곳(우리 매장 자체 포함)만 모아 본다.
   const ipCheckStores = useMemo(
     () => visibleStores.filter((s) => s.ipCheck).sort((a, b) => String(a.ownName).localeCompare(String(b.ownName), "ko")),
@@ -315,7 +321,10 @@ export default function PingMonitorPage() {
                     <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. {FULL_DAY_MIN_SAMPLES}시간을 다 못 잰 날(등록한 날, 서버 장애로 한 회차라도 빠진 날)은 낮·밤이 치우쳐 뺍니다.
                   </li>
                   <li>
-                    <b>&ldquo;핑 차단 의심&rdquo;</b> — {BLOCKED_SUSPECT_SAMPLES}번 넘게 재도 한 대도 대답하지 않을 때(PC가 바깥 확인을 막아 둔 매장).
+                    <b>&ldquo;IP·핑차단 확인&rdquo;</b> — IP를 넣었는데 응답이 없을 때. IP가 틀렸거나 PC가 바깥 확인(핑)을 막아 둔 것 — 자료로는 둘을 못 가립니다.
+                  </li>
+                  <li>
+                    <b>&ldquo;과응답 · IP 확인&rdquo;</b> — 손님과 상관없이 너무 많은 IP가 응답할 때(공유기·다른 기기가 섞인 듯).
                   </li>
                 </ul>
               </section>

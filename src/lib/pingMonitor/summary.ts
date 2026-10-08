@@ -220,9 +220,9 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   if (!s.active) return { ...base, state: "stopped", label: "측정 중지", store: s };
   // 응답이 한 번이라도 있었다고 해서 IP 확인 경고가 해소된 것은 아니다.
   // 레드포스처럼 하루 0~1대만 응답한 값이 정상 가동률로 점포평가에 들어가지 않게 한다.
-  if (s.ipCheck) return { ...base, state: "blocked", label: "IP대역 재확인", store: s };
+  if (s.ipCheck) return { ...base, state: "blocked", label: storeStatus(s).label, store: s };
   const status = storeStatus(s);
-  if (status.tone === "danger" || status.label.startsWith("핑 차단")) return { ...base, state: "blocked", label: status.label, store: s };
+  if (status.tone === "danger" || status.label.startsWith("IP·핑차단")) return { ...base, state: "blocked", label: status.label, store: s };
   const used = Object.entries(s.days)
     .filter(([date, v]) => date >= from && date <= to && isFullDay(date, v, today))
     .map(([date]) => date)
@@ -255,13 +255,19 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 export function storeStatus(store: PingStore): StoreStatus {
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
-  if (store.ipCheck) return { label: "IP대역 재확인", tone: "warn" };
+  if (store.ipCheck) {
+    // 사유별로 나눈다: "NN%가 응답"(과응답, 공유기 섞임) · "확인 전"(붙여넣기 미확인) · 그 밖(0대 등)은 IP틀림/차단 구분 불가.
+    if (/%가/.test(store.ipCheck)) return { label: "과응답 · IP 확인", tone: "warn" };
+    if (/확인 전/.test(store.ipCheck)) return { label: "IP 확인 전", tone: "warn" };
+    return { label: "IP·핑차단 확인", tone: "warn" };
+  }
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
   if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
   const aliveEver = Object.values(store.days).some((v) => v.a > 0);
   if (aliveEver) return { label: "측정 중", tone: "ok" };
-  if (all.samples >= BLOCKED_SUSPECT_SAMPLES) return { label: "핑 차단 의심", tone: "danger" };
-  return { label: "핑 차단 의심(확인 중)", tone: "warn" };
+  // IP는 넣었는데 응답이 0 — IP가 틀렸는지 핑이 막혔는지는 자료로 구분 못 한다(한 문구로).
+  if (all.samples >= BLOCKED_SUSPECT_SAMPLES) return { label: "IP·핑차단 확인", tone: "danger" };
+  return { label: "IP·핑차단 확인", tone: "warn" };
 }
 
 /** 켜진 IP를 짧게 — 모두 같은 앞 세 자리면 끝자리만("10, 24번"), 아니면 전체 IP. */
