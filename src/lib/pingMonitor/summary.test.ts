@@ -49,8 +49,8 @@ describe("competitorMeasurement", () => {
     expect(m.fullDays).toBe(1);
     expect(m.pingbotUtilization).toBe(20);
   });
-  it("22시간 잰 날(두 회차 빠짐)은 넣고 21시간은 뺀다 — 2026-10-08 오후 사용자 \"2시간 빠진 거 다 넣자\"", () => {
-    const m = competitorMeasurement([store({ days: { "2026-10-04": { a: 99, t: 210, n: 21 }, "2026-10-05": { a: 22, t: 220, n: 22 }, "2026-10-06": full(48) } })], NOW);
+  it("20시간 잰 날(네 회차 빠짐)은 넣고 19시간은 뺀다 — 2026-10-09 사용자(22→20, 어제 3개 빠진 날 살리기)", () => {
+    const m = competitorMeasurement([store({ days: { "2026-10-04": { a: 99, t: 210, n: 19 }, "2026-10-05": { a: 22, t: 220, n: 20 }, "2026-10-06": full(48) } })], NOW);
     expect(m.fullDays).toBe(2);
     expect(m.pingbotUtilization).toBe(15);
   });
