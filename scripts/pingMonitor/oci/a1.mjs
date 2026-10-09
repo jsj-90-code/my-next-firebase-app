@@ -46,7 +46,7 @@ if (cmd === "status") {
     console.log(`${i.displayName} · ${i.shape} · ${i.shapeConfig?.ocpus ?? "?"} OCPU · ${i.shapeConfig?.memoryInGBs ?? "?"}GB · ${i.lifecycleState} · ${i.publicIp ?? "IP 없음"} · ${i.availabilityDomain}`);
 } else if (cmd === "reboot") {
   const i = await byIp(arg);
-  await compute.instanceAction({ instanceId: i.id, action: core.requests.InstanceActionRequest.Action.Reset });
+  await compute.instanceAction({ instanceId: i.id, action: "RESET" });
   console.log(`${i.displayName}(${arg}) 강제 재부팅 요청함`);
 } else if (cmd === "launch") {
   const all = await instances();

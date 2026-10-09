@@ -72,9 +72,9 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
           <RealtimeCell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <Recent24Cell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={fromPrev} to={toPrev} nDays={7} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
         </>
       ) : (
         <td colSpan={6} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
@@ -107,8 +107,8 @@ function headcount(util: number | null, seats: number | undefined): string {
   return util != null && seats && seats > 0 ? `${Math.round(util * seats)}대` : "";
 }
 
-function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false, muted = false }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean; muted?: boolean }) {
-  const r = rangeUtilization(days, from, to, { includePartial: inProgress });
+function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false, muted = false, excludeUpTo = null }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean; muted?: boolean; excludeUpTo?: string | null }) {
+  const r = rangeUtilization(days, from, to, { includePartial: inProgress, excludeUpTo });
   const note = inProgress ? partialNote(r.samples, 1) : fullDaysNote(r.days, nDays);
   const head = headcount(r.util, seats);
   if (muted) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">-</td>;
@@ -204,9 +204,9 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <RealtimeCell store={s} muted={muted} />
                 <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress muted={muted} />
                 <Recent24Cell store={s} muted={muted} />
-                <UtilCell days={s.days} from={fromPrev} to={toPrev} nDays={7} muted={muted} />
-                <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold muted={muted} />
-                <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} muted={muted} />
+                <UtilCell days={s.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={s.portSwitchDate} muted={muted} />
+                <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold excludeUpTo={s.portSwitchDate} muted={muted} />
+                <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>
@@ -246,7 +246,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
           {group.own && (
             <span>
               우리 매장{" "}
-              <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, to7).util)}</b>
+              <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, to7, { excludeUpTo: group.own.portSwitchDate }).util)}</b>
             </span>
           )}
           <span>이번 주 {dateRangeLabel(from7, to7)}</span>

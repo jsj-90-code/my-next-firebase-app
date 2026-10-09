@@ -7,7 +7,7 @@ const NOW = new Date("2026-10-07T03:00:00Z");
 function store(over: Partial<PingStore>): PingStore {
   return {
     id: "p1", name: "x", address: "", ipRanges: "1.2.3.1-10", ipCount: 10, pcCount: 10, memo: "", active: true,
-    ownCode: "N001", ownName: null, competitorId: "c1", distanceM: null, isOwnStore: false, ipCheck: null,
+    ownCode: "N001", ownName: null, competitorId: "c1", distanceM: null, isOwnStore: false, ipCheck: null, portSwitchDate: null,
     createdAt: null, createdBy: null, lastSample: null, days: {}, recent: {}, ...over,
   };
 }

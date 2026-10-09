@@ -94,6 +94,8 @@ export type PingStore = {
   isOwnStore: boolean;
   /** "IP 확인 필요" 사유(2026-10-06 점검). IP를 고쳐 저장하면 지워진다. 등록 범위 안에서 잰 결과만 근거로 쓴다. */
   ipCheck: string | null;
+  /** 포트 전환 날(YYYY-MM-DD) — 이 날과 그 이전은 이번주·이달 평균에서 뺀다(전환 전 못 재서 0, 전환 날 섞임). 2026-10-09. */
+  portSwitchDate: string | null;
   createdAt: Date | null;
   createdBy: string | null;
   lastSample: {
@@ -181,12 +183,14 @@ export function rangeUtilization(
   days: Record<string, DayTotals>,
   from: string | null,
   to: string | null,
-  { includePartial = false, today = kstDaysAgo(0) }: { includePartial?: boolean; today?: string } = {},
+  { includePartial = false, today = kstDaysAgo(0), excludeUpTo = null }: { includePartial?: boolean; today?: string; excludeUpTo?: string | null } = {},
 ): RangeUtil {
   let a = 0, t = 0, n = 0, d = 0, skipped = 0, sumDaily = 0;
   for (const [date, v] of Object.entries(days)) {
     if (from && date < from) continue;
     if (to && date > to) continue;
+    // 포트 전환 날과 그 이전은 뺀다 — 전환 전엔 못 재서 0, 전환 날은 앞뒤가 섞여 낮게 깔린다(2026-10-09 사용자).
+    if (excludeUpTo && date <= excludeUpTo) { skipped += 1; continue; }
     if (includePartial) {
       a += v.a;
       t += v.t;
