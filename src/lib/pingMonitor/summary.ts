@@ -96,6 +96,8 @@ export type PingStore = {
   ipCheck: string | null;
   /** 포트 전환 날(YYYY-MM-DD) — 이 날과 그 이전은 이번주·이달 평균에서 뺀다(전환 전 못 재서 0, 전환 날 섞임). 2026-10-09. */
   portSwitchDate: string | null;
+  /** 사람이 "계산 제외"로 확정한 측정 오류 매장(IP 틀림·장비 과응답·몇 대만 평평하게 응답 등). 평균·수요계산 제외, 화면 "-"(2026-10-09). */
+  excludeFromStats: boolean;
   createdAt: Date | null;
   createdBy: string | null;
   lastSample: {
@@ -250,6 +252,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
     .map((s) => ({ s, r: rangeUtilization(s.days, from, to, { today, excludeUpTo: s.portSwitchDate }) }))
     .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(y.s.active) - Number(x.s.active) || Number(Boolean(x.s.ipCheck)) - Number(Boolean(y.s.ipCheck)) || y.r.days - x.r.days);
   const { s, r } = ranked[0];
+  if (s.excludeFromStats) return { ...base, state: "blocked", label: "계산 제외(IP 확인 필요)", store: s };
   if (hasNoIp(s)) return { ...base, state: "noIp", label: "IP 미등록", store: s };
   if (!s.active) return { ...base, state: "stopped", label: "측정 중지", store: s };
   // 응답이 한 번이라도 있었다고 해서 IP 확인 경고가 해소된 것은 아니다.
@@ -291,6 +294,9 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 }
 
 export function storeStatus(store: PingStore): StoreStatus {
+  // 사람이 "계산 제외"로 확정한 매장 — 측정값이 어떻든(과응답·몇 대만 응답 등 IP 오류) 평균·수요계산에서 빼고 화면은 "-"(2026-10-09).
+  // 실측 우선 규칙(스컬스피시)보다 앞선다 — 보보스3·치즈 처럼 24시간 평평한 몇 대 응답은 노이즈라 실측으로 안 친다.
+  if (store.excludeFromStats) return { label: "계산 제외(IP 확인 필요)", tone: "danger" };
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
   if (!store.active) return { label: "중지", tone: "neutral" };
   // 실측이 1% 이상이면 꼬리표보다 실측 우선 — 데이터가 뜨는 매장은 꼬리표(확인 전 등) 있어도 무조건 보인다(2026-10-08 스컬스피시).

@@ -59,6 +59,7 @@ function toStore(id: string, d: DocumentData): PingStore {
     isOwnStore: d.isOwnStore === true,
     ipCheck: typeof d.ipCheck === "string" && d.ipCheck ? d.ipCheck : null,
     portSwitchDate: typeof d.portSwitchDate === "string" && d.portSwitchDate ? d.portSwitchDate : null,
+    excludeFromStats: d.excludeFromStats === true,
     createdAt: toDate(d.createdAt),
     createdBy: d.createdBy ?? null,
     lastSample: ls
