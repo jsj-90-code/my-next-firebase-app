@@ -60,13 +60,16 @@ function knock(ip, port) {
   });
 }
 
-async function tcpAll(ips) {
+// 기본 포트는 전 IP(80·3389). extraByIp에 있는 IP(1688·5040 필요한 매장)만 그 포트를 더 두드린다 —
+// 전 매장에 1688·5040을 다 쏘면 작은 서버(498MB)가 버벅인다(2026-10-09 최적화). extraByIp: Map<ip, number[]>.
+async function tcpAll(ips, extraByIp) {
   const alive = new Set();
   let next = 0;
   async function worker() {
     while (next < ips.length) {
       const ip = ips[next++];
-      const r = await Promise.all([80, 3389, 1688, 5040].map((port) => knock(ip, port))); // 1688: 2026-10-08 추가(src/lib/pingMonitor/probe.ts 주석)
+      const ports = [80, 3389, ...(extraByIp.get(ip) ?? [])];
+      const r = await Promise.all(ports.map((port) => knock(ip, port)));
       if (r.some(Boolean)) alive.add(ip);
     }
   }
@@ -124,9 +127,12 @@ const tRes = await call("GET", tPath);
 if (!tRes.ok) throw new Error(`목록 받기 실패 ${tRes.status}: ${await tRes.text()}`);
 const { targets } = await tRes.json();
 const ips = [...new Set(targets.flatMap((t) => t.ips))];
+// IP별 추가 포트 — 그 IP가 속한 매장에 extraPorts가 있으면 모은다(여러 매장이 같은 IP면 합집합).
+const extraByIp = new Map();
+for (const t of targets) if (t.extraPorts?.length) for (const ip of t.ips) extraByIp.set(ip, [...new Set([...(extraByIp.get(ip) ?? []), ...t.extraPorts])]);
 
 const [byPing, byTcp, byTimestamp] = await Promise.all([
-  pingAll(ips), tcpAll(ips),
+  pingAll(ips), tcpAll(ips, extraByIp),
   timestampAll(ips).catch((error) => {
     console.error(`타임스탬프 검사 실패 — 이번 회차는 기존 핑+TCP만 사용: ${error.message}`);
     return null;

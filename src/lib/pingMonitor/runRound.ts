@@ -17,7 +17,11 @@ import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 //   - "agent": Oracle 무료 서버(도쿄)가 핑 + TCP를 둘 다 재서 보낸다(/api/ping-monitor/agent/*). 기본.
 //   - "tcp": Vercel이 TCP만 잰다(runPingRound). 핑에만 대답하는 매장(106곳 중 23곳)을 못 봐서 예비용.
 
-export type PingTarget = { id: string; name: string; ips: string[]; total: number };
+export type PingTarget = { id: string; name: string; ips: string[]; total: number; extraPorts?: number[] };
+
+/** 기본 포트는 전 매장(80·3389). 추가 포트(1688·5040)는 그게 먹히는 매장에만 — 서버 부하를 줄이는 최적화(2026-10-09).
+ *  probe1688 매장(핑·80·3389 막혀서 1688·5040으로만 잡히는 곳)만 추가 포트를 받는다. */
+const EXTRA_PORTS = [1688, 5040];
 
 export type RoundResult = {
   ok: true;
@@ -43,6 +47,7 @@ export async function loadTargets(): Promise<PingTarget[]> {
       name: String(data.name ?? ""),
       ips,
       total: denominator({ pcCount: data.pcCount ?? null, ipCount: ips.length }),
+      ...(data.probe1688 ? { extraPorts: EXTRA_PORTS } : {}),
     };
   });
 }

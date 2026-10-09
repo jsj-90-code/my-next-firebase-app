@@ -7,5 +7,6 @@ export async function GET(request: Request) {
   const denied = checkAgentSignature(request, "");
   if (denied) return NextResponse.json({ error: `인증되지 않은 요청입니다 — ${denied}` }, { status: 401 });
   const targets = await loadTargets();
-  return NextResponse.json({ targets: targets.map((t) => ({ id: t.id, ips: t.ips })) });
+  // extraPorts: 기본(80·3389) 외에 그 매장에만 보낼 포트(1688·5040) — 서버 부하 최소화(2026-10-09).
+  return NextResponse.json({ targets: targets.map((t) => ({ id: t.id, ips: t.ips, ...(t.extraPorts ? { extraPorts: t.extraPorts } : {}) })) });
 }
