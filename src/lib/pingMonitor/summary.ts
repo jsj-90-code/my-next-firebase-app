@@ -332,6 +332,12 @@ export function fullDaysNote(fullDays: number, days: number): string {
   return fullDays > 0 && fullDays < days ? `${fullDays}일치` : "";
 }
 
+/** 화면 표시용 가동률 상한 — 100% 초과(켜진 IP > 대수)는 공유기·장비 과응답이라 100%로 막는다(2026-10-09 보보스1 103%).
+ *  과응답 상태 표시(storeStatus "과응답 · IP 확인")는 그대로라 사용자는 이상을 안다. 평가값은 이미 과응답 매장을 제외. */
+export function capUtil(v: number | null): number | null {
+  return v == null ? null : Math.min(v, 1);
+}
+
 export function formatPct(v: number | null, digits = 1): string {
   return v == null ? "-" : `${(v * 100).toFixed(digits)}%`;
 }

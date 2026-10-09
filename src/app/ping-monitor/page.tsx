@@ -17,6 +17,7 @@ import {
   dateRangeLabel,
   denominator,
   formatPct,
+  capUtil,
   fullDaysNote,
   hasNoIp,
   kstDaysAgo,
@@ -109,12 +110,13 @@ function headcount(util: number | null, seats: number | undefined): string {
 
 function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = false, muted = false, excludeUpTo = null }: { days: PingStore["days"]; from: string; to: string; nDays: number; seats?: number; bold?: boolean; inProgress?: boolean; muted?: boolean; excludeUpTo?: string | null }) {
   const r = rangeUtilization(days, from, to, { includePartial: inProgress, excludeUpTo });
+  const util = capUtil(r.util); // 100% 초과(과응답)는 100%로 막아 표시
   const note = inProgress ? partialNote(r.samples, 1) : fullDaysNote(r.days, nDays);
-  const head = headcount(r.util, seats);
+  const head = headcount(util, seats);
   if (muted) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">-</td>;
   return (
     <td className={`px-3 py-2 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
-      {formatPct(r.util)}
+      {formatPct(util)}
       {head && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]" title="평균 동시에 켜진 PC 대수 = 가동률 × 대수 (≈손님 규모)">{head}</span>}
       {note && <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">{note}</span>}
     </td>
@@ -124,7 +126,7 @@ function UtilCell({ days, from, to, nDays, seats, bold = false, inProgress = fal
 // 실시간 — 마지막 회차(lastSample)의 켜진 수/대수. 지금 몇 대 켜져 있나(현재 손님 규모).
 function RealtimeCell({ store, muted = false }: { store: PingStore; muted?: boolean }) {
   const ls = store.lastSample;
-  const util = ls && ls.total > 0 ? ls.alive / ls.total : null;
+  const util = capUtil(ls && ls.total > 0 ? ls.alive / ls.total : null); // 100% 초과(과응답) 막음
   if (muted) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">-</td>;
   return (
     <td className="px-3 py-2 text-right tabular-nums">
