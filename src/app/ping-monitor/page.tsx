@@ -18,6 +18,7 @@ import {
   denominator,
   formatPct,
   capUtil,
+  hasFullDay,
   fullDaysNote,
   hasNoIp,
   kstDaysAgo,
@@ -141,6 +142,8 @@ function Recent24Cell({ store, seats, muted = false }: { store: PingStore; seats
   const r = recent24h(store.recent);
   const head = headcount(r.util, seats);
   if (muted) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]">-</td>;
+  // 일별 가동률(꽉 찬 날)이 쌓인 매장은 24시간 칸이 의미 없다 — 신규 후보지(일별 없음)용이라 "-"로 비운다(2026-10-09).
+  if (hasFullDay(store.days)) return <td className="px-3 py-2 text-right tabular-nums text-[var(--sl-ink-soft)]" title="일별 가동률이 있어 '최근 24시간'은 생략 — 24시간 칸은 신규 후보지(등록 하루)용">-</td>;
   return (
     <td className="px-3 py-2 text-right tabular-nums">
       {r.util == null && r.hours > 0 ? (

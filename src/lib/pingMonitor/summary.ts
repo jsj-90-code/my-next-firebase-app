@@ -74,6 +74,12 @@ export function isFullDay(date: string, v: DayTotals, today: string): boolean {
   return date < today && coversFullDay(v);
 }
 
+/** 꽉 찬 날(일별 가동률)이 하나라도 있나 — "최근 24시간" 칸은 일별이 쌓이면 의미 없어 숨긴다(2026-10-09 사용자).
+ *  24시간 칸은 신규 후보지가 등록 하루 만에 급히 판단할 때만 쓴다. */
+export function hasFullDay(days: Record<string, DayTotals>, today = kstDaysAgo(0)): boolean {
+  return Object.entries(days).some(([date, v]) => isFullDay(date, v, today));
+}
+
 export type PingStore = {
   id: string;
   name: string;
