@@ -32,7 +32,7 @@ export const FULL_DAY_MIN_SAMPLES = 20;
  *  정상 영업 PC방이 24시간 평균 1% 미만일 수 없다 — IP 틀림·핑/포트 차단으로 노이즈 몇 개만 잡힌 날. */
 export const MEASURE_FAIL_MAX_UTIL = 0.01;
 
-/** "최근 24시간" 값이 나오는 최소 시간대 칸 수 — 날짜 기준(FULL_DAY_MIN_SAMPLES)과 같은 관용(2026-10-08). */
+/** "최근 24시간" 값이 나오는 최소 시간대 칸 수 — 날짜 기준(FULL_DAY_MIN_SAMPLES)과 같은 관용(2026-10-08, 10-09 22→20). */
 export const RECENT_MIN_HOURS = FULL_DAY_MIN_SAMPLES;
 
 /** 그날 측정이 하루치로 충분한지(오늘 여부는 안 본다). */
@@ -49,7 +49,7 @@ export function fullDayRuleText(): string {
  * 최근 24시간 가동률 — 시간대 칸마다 마지막 측정(24시간 안)을 합친다(켜진 합 ÷ 대수 합).
  * 0시~24시 날짜를 기다리지 않아도 24개 시간대가 고르게 들어가 꽉 찬 하루와 같은 기준이 된다 —
  * 신규 후보지는 오후에 등록해도 다음 날 같은 시각이면 값이 나온다(사용자 2026-10-07 "하루치로 하려면 2일을 기다려야 하니").
- * 시간대 칸이 RECENT_MIN_HOURS(2026-10-08 기준 22개) 이상 차면 값을 낸다 — 서버가 한두 회차 걸러도 안 비게.
+ * 시간대 칸이 RECENT_MIN_HOURS(= FULL_DAY_MIN_SAMPLES, 2026-10-09 기준 20개) 이상 차면 값을 낸다 — 서버가 한두 회차 걸러도 안 비게.
  * 회차가 RECENT_MIN_HOURS를 못 채울 만큼 빠지면 그 시각부터 24시간 동안 "-"로 보인다.
  */
 export function recent24h(recent: Record<string, RecentSlot>, now = new Date()): { util: number | null; hours: number } {
@@ -247,7 +247,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   const candidates = stores.filter((s) => !s.isOwnStore);
   if (candidates.length === 0) return { ...base, state: "none", label: "측정기 미등록(측정 안 함)", store: null };
   const ranked = candidates
-    .map((s) => ({ s, r: rangeUtilization(s.days, from, to, { today }) }))
+    .map((s) => ({ s, r: rangeUtilization(s.days, from, to, { today, excludeUpTo: s.portSwitchDate }) }))
     .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(y.s.active) - Number(x.s.active) || Number(Boolean(x.s.ipCheck)) - Number(Boolean(y.s.ipCheck)) || y.r.days - x.r.days);
   const { s, r } = ranked[0];
   if (hasNoIp(s)) return { ...base, state: "noIp", label: "IP 미등록", store: s };
@@ -257,8 +257,12 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   if (s.ipCheck) return { ...base, state: "blocked", label: storeStatus(s).label, store: s };
   const status = storeStatus(s);
   if (status.tone === "danger" || status.label.startsWith("IP·핑차단") || status.label.startsWith("과응답")) return { ...base, state: "blocked", label: status.label, store: s };
+  // 평균에 실제로 들어간 날과 같은 조건(꽉 찬 날 + 측정실패 1% 미만 제외 + 포트 전환 날 이후)이라야
+  // first~last 기간·일수가 r.days/r.util과 안 어긋난다(2026-10-09).
   const used = Object.entries(s.days)
-    .filter(([date, v]) => date >= from && date <= to && isFullDay(date, v, today))
+    .filter(([date, v]) => date >= from && date <= to && isFullDay(date, v, today)
+      && v.a / v.t >= MEASURE_FAIL_MAX_UTIL
+      && !(s.portSwitchDate && date <= s.portSwitchDate))
     .map(([date]) => date)
     .sort();
   if (r.util == null || used.length === 0) return { ...base, state: "waiting", label: "다 찬 날 없음(첫 하루 대기)", store: s };

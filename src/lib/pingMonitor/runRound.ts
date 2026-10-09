@@ -129,10 +129,16 @@ export async function supplement1688(now = new Date()): Promise<{ stores: number
   return { stores: stores.length, added };
 }
 
-/** Vercel에서 TCP만으로 재는 예비 경로. */
+/** Vercel에서 TCP만으로 재는 예비 경로. 서버 에이전트와 같은 포트 규칙 — 기본 80·3389는 전 IP, 추가 1688·5040은
+ *  extraPorts 매장에만(2026-10-09). 전 매장 4포트로 재면 서버 회차(2포트)와 커버리지가 달라 같은 날 집계가 섞인다. */
 export async function runPingRound(now = new Date()): Promise<RoundResult> {
   const targets = await loadTargets();
-  // 모든 매장의 IP를 한 번에 확인한다(매장마다 기다리면 2초×매장 수가 된다).
-  const alive = await probeIps(targets.flatMap((s) => s.ips));
+  const allIps = [...new Set(targets.flatMap((s) => s.ips))];
+  const extraIps = [...new Set(targets.filter((t) => t.extraPorts?.length).flatMap((t) => t.ips))];
+  const [baseAlive, extraAlive] = await Promise.all([
+    probeIps(allIps, [80, 3389]),
+    extraIps.length ? probeIps(extraIps, EXTRA_PORTS) : Promise.resolve(new Set<string>()),
+  ]);
+  const alive = new Set([...baseAlive, ...extraAlive]);
   return recordRound(targets, alive, "tcp", now);
 }
