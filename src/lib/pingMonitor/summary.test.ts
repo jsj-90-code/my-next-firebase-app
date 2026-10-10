@@ -106,3 +106,30 @@ describe("thisWeek — 오늘이 속한 월~일(2026-10-07 사용자)", () => {
     expect(thisWeek(new Date(now))).toEqual({ from, to });
   });
 });
+
+describe("2026-10-10 정밀점검 — 평가로 넘어가는 값 지키기", () => {
+  it("일주일 평균이 1% 남짓(반올림 1.0)이면 넘기지 않는다 — 점포평가가 1을 100%로 읽는다", () => {
+    const m = competitorMeasurement([store({ days: { "2026-10-06": { a: 245, t: 24000, n: 24 } } })], NOW); // 1.02%
+    expect(m.state).toBe("blocked");
+    expect(m.pingbotUtilization).toBeNull();
+  });
+  it("1.1%부터는 넘긴다(1보다 커서 퍼센트로 읽힌다)", () => {
+    const m = competitorMeasurement([store({ days: { "2026-10-06": { a: 264, t: 24000, n: 24 } } })], NOW); // 1.1%
+    expect(m.pingbotUtilization).toBe(1.1);
+  });
+  it("과응답 판정에 포트 전환 전 0% 날이 섞여 희석되지 않는다", () => {
+    const days: Record<string, { a: number; t: number; n: number }> = {};
+    for (const d of ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03"]) days[d] = full(0);
+    for (const d of ["2026-10-04", "2026-10-05", "2026-10-06"]) days[d] = full(216); // 90%
+    const s = store({ portSwitchDate: "2026-10-03", days });
+    expect(storeStatus(s).label).toBe("과응답 · IP 확인");
+    expect(competitorMeasurement([s], NOW).state).toBe("blocked");
+  });
+  it("같은 경쟁점에 '계산 제외' 문서와 정상 문서가 있으면 정상 문서를 고른다", () => {
+    const bad = store({ id: "bad", excludeFromStats: true, days: { "2026-10-04": full(30), "2026-10-05": full(30), "2026-10-06": full(30) } });
+    const good = store({ id: "good", days: { "2026-10-06": full(48) } });
+    const m = competitorMeasurement([bad, good], NOW);
+    expect(m.store?.id).toBe("good");
+    expect(m.state).toBe("short");
+  });
+});

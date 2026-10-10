@@ -12,6 +12,7 @@ import {
   RECENT_MIN_HOURS,
   dateRangeLabel,
   denominator,
+  capUtil,
   formatPct,
   isFullDay,
   kstDaysAgo,
@@ -137,7 +138,8 @@ export default function PingStoreDetailPage() {
   const today = kstDaysAgo(0);
   // 오늘 하루만 고르면 진행 중인 값을 그대로, 그 밖엔 다 찬 날의 일일평균(2026-10-07 사용자).
   const inProgress = from === today && to === today;
-  const range = rangeUtilization(store.days, from, to, { includePartial: inProgress });
+  // 목록과 같은 규칙 — 포트 전환 날·그 이전은 빼고(excludeUpTo), 100% 초과는 화면에서 자른다(2026-10-10 정밀점검: 상세만 값이 달랐다).
+  const range = rangeUtilization(store.days, from, to, { includePartial: inProgress, excludeUpTo: store.portSwitchDate });
   const r24 = recent24h(store.recent);
   const dates = from <= to ? dateRange(from, to) : [];
   const dayBars: Bar[] = dates.map((d) => {
@@ -238,7 +240,7 @@ export default function PingStoreDetailPage() {
         <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
           <div>
             <div className="text-xs text-[var(--sl-ink-soft)]">기간 가동률</div>
-            <div className="text-3xl font-bold tabular-nums text-[#171310] dark:text-[#f2ede2]">{formatPct(range.util)}</div>
+            <div className="text-3xl font-bold tabular-nums text-[#171310] dark:text-[#f2ede2]">{formatPct(capUtil(range.util))}</div>
           </div>
           <div className="text-xs text-[var(--sl-ink-soft)]">
             {inProgress ? (

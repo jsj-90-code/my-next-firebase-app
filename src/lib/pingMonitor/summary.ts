@@ -256,7 +256,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   if (candidates.length === 0) return { ...base, state: "none", label: "측정기 미등록(측정 안 함)", store: null };
   const ranked = candidates
     .map((s) => ({ s, r: rangeUtilization(s.days, from, to, { today, excludeUpTo: s.portSwitchDate }) }))
-    .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(y.s.active) - Number(x.s.active) || Number(Boolean(x.s.ipCheck)) - Number(Boolean(y.s.ipCheck)) || y.r.days - x.r.days);
+    .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(Boolean(x.s.excludeFromStats)) - Number(Boolean(y.s.excludeFromStats)) || Number(y.s.active) - Number(x.s.active) || Number(Boolean(x.s.ipCheck)) - Number(Boolean(y.s.ipCheck)) || y.r.days - x.r.days);
   const { s, r } = ranked[0];
   if (s.excludeFromStats) return { ...base, state: "blocked", label: "계산 제외(IP 확인 필요)", store: s };
   if (hasNoIp(s)) return { ...base, state: "noIp", label: "IP 미등록", store: s };
@@ -276,6 +276,9 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
     .map(([date]) => date)
     .sort();
   if (r.util == null || used.length === 0) return { ...base, state: "waiting", label: "다 찬 날 없음(첫 하루 대기)", store: s };
+  // 평균이 1% 남짓이면 넘기지 않는다 — 소수 첫째 자리로 반올림하면 "1"이 되는데, 점포평가는 1 이하를 비율로 읽어(normalizePercentLike)
+  // 100%가 된다(2026-10-10 정밀점검). 정상 영업 PC방이 일주일 평균 1%일 수도 없어 측정 의심으로 막는 게 맞다.
+  if (Math.round(r.util * 1000) / 10 <= 1) return { ...base, state: "blocked", label: "가동률 1% 남짓 — 측정 의심", store: s };
   const first = used[0];
   const last = used[used.length - 1];
   const short = r.days < windowDays;
@@ -310,7 +313,11 @@ export function storeStatus(store: PingStore): StoreStatus {
   // 스침(일일평균 1% 미만)은 측정으로 안 친다(카사 3번 스침 → 0.N%).
   const maxDayUtil = Math.max(0, ...Object.values(store.days).map((v) => (v.t > 0 ? v.a / v.t : 0)));
   if (maxDayUtil >= 0.01) {
-    const full = Object.values(store.days).filter(coversFullDay);
+    // 과응답 판정도 평가값과 같은 날만 본다 — 포트 전환 전 0% 날·측정실패(1% 미만) 날이 섞이면 평균이 희석돼
+    // 과응답 매장이 "측정 중"으로 통과했다(2026-10-10 정밀점검).
+    const full = Object.entries(store.days)
+      .filter(([date, v]) => coversFullDay(v) && v.a / v.t >= MEASURE_FAIL_MAX_UTIL && !(store.portSwitchDate && date <= store.portSwitchDate))
+      .map(([, v]) => v);
     const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
     if (dailyAvg != null && dailyAvg > 0.6) return { label: "과응답 · IP 확인", tone: "warn" };
     return { label: "측정 중", tone: "ok" };
@@ -346,7 +353,8 @@ export function fullDaysNote(fullDays: number, days: number): string {
 }
 
 /** 화면 표시용 가동률 상한 — 100% 초과(켜진 IP > 대수)는 공유기·장비 과응답이라 100%로 막는다(2026-10-09 보보스1 103%).
- *  과응답 상태 표시(storeStatus "과응답 · IP 확인")는 그대로라 사용자는 이상을 안다. 평가값은 이미 과응답 매장을 제외. */
+ *  과응답 상태 표시(storeStatus "과응답 · IP 확인")는 그대로라 사용자는 이상을 안다. 평가값은 과응답(하루 평균 60% 초과) 매장을 제외하고,
+ *  2026-10-10부터는 저장할 때도 시간마다 켜진 수를 대수로 자른다(runRound.recordRound) — 그 전 날짜 기록만 100%를 넘을 수 있다. */
 export function capUtil(v: number | null): number | null {
   return v == null ? null : Math.min(v, 1);
 }

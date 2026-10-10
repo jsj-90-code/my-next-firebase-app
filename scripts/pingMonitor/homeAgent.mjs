@@ -107,19 +107,20 @@ let written = 0;
 const stores = await Promise.all(
   targets.map(async (s) => {
     const aliveIps = s.ips.filter((ip) => alive.has(ip));
+    const on = s.total > 0 ? Math.min(aliveIps.length, s.total) : aliveIps.length; // 대수 상한(runRound.recordRound와 같음, 2026-10-10)
     if (s.ips.length === 0) return { id: s.id, name: s.name, alive: 0, total: 0, skipped: "IP 없음" };
     const dailyRef = db.collection("pingMonitorDaily").doc(`${s.id}_${date}`);
     const storeRef = db.collection("pingMonitorStores").doc(s.id);
     const ok = await db.runTransaction(async (tx) => {
       const daily = await tx.get(dailyRef);
       if (daily.exists && daily.get(`hours.${hour}`) != null) return false;
-      tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: aliveIps.length, t: s.total, m: method } } }, { merge: true });
+      tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: on, t: s.total, m: method } } }, { merge: true });
       tx.set(
         storeRef,
         {
-          days: { [date]: { a: FieldValue.increment(aliveIps.length), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
-          lastSample: { at: started, date, hour, alive: aliveIps.length, total: s.total, aliveIps, method },
-          recent: { [hour]: { a: aliveIps.length, t: s.total, at: started } },
+          days: { [date]: { a: FieldValue.increment(on), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
+          lastSample: { at: started, date, hour, alive: on, total: s.total, aliveIps, method },
+          recent: { [hour]: { a: on, t: s.total, at: started } },
         },
         { merge: true },
       );

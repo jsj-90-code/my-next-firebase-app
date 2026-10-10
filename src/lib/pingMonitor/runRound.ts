@@ -61,18 +61,24 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
     targets.map(async (s) => {
       const aliveIps = s.ips.filter((ip) => alive.has(ip));
       if (s.ips.length === 0) return { id: s.id, name: s.name, alive: 0, total: 0, skipped: "IP 없음" };
+      // 켜진 수는 대수를 못 넘는다 — IP대역이 대수보다 넓은 매장(고트 215 IP/110대)에서 장비·공유기 응답이 얹히면
+      // 시간 칸이 100%를 넘어 날·주 평균까지 부풀었다(2026-10-10 정밀점검). 켜진 IP 목록(aliveIps)은 원본 그대로 남긴다.
+      const on = s.total > 0 ? Math.min(aliveIps.length, s.total) : aliveIps.length;
       const dailyRef = db.collection(PING_DAILY).doc(`${s.id}_${date}`);
       const storeRef = db.collection(PING_STORES).doc(s.id);
       const written = await db.runTransaction(async (tx) => {
-        const daily = await tx.get(dailyRef);
+        const [daily, store] = await Promise.all([tx.get(dailyRef), tx.get(storeRef)]);
         if (daily.exists && daily.get(`hours.${hour}`) != null) return false;
-        tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: aliveIps.length, t: s.total, m: method } } }, { merge: true });
+        // 늦게 다시 보낸 회차(서버 pending, 최대 6시간)가 "실시간" 칸을 옛 값으로 되돌리지 않게 — 더 새 회차가 있으면 lastSample은 둔다.
+        const prevAt = store.get("lastSample.at")?.toDate?.() as Date | undefined;
+        const newest = !prevAt || prevAt.getTime() <= now.getTime();
+        tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: on, t: s.total, m: method } } }, { merge: true });
         tx.set(
           storeRef,
           {
-            days: { [date]: { a: FieldValue.increment(aliveIps.length), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
-            lastSample: { at: now, date, hour, alive: aliveIps.length, total: s.total, aliveIps, method },
-            recent: { [hour]: { a: aliveIps.length, t: s.total, at: now } },
+            days: { [date]: { a: FieldValue.increment(on), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
+            ...(newest ? { lastSample: { at: now, date, hour, alive: on, total: s.total, aliveIps, method } } : {}),
+            recent: { [hour]: { a: on, t: s.total, at: now } },
           },
           { merge: true },
         );
@@ -89,44 +95,6 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
   );
 
   return { ok: true, at: now.toISOString(), date, hour, method, stores: results };
-}
-
-/**
- * 1688 보충(2026-10-08 밤) — 측정 서버(Oracle)에 1688이 들어가기 전 다리. `probe1688: true`인 매장(1688에만 대답하는 곳 —
- * 평택 뉴블랙 소사벌·비전, 욜로)만 1688로 다시 재서, 서버가 이번 시에 못 잡은 IP를 그 시 기록에 더한다(합집합).
- * 한 시에 한 번만(m에 "1688"이 붙으면 끝). 서버 기록이 없으면 아무것도 안 한다.
- */
-export async function supplement1688(now = new Date()): Promise<{ stores: number; added: number }> {
-  const db = requireDb();
-  const { date, hour } = kstParts(now);
-  const snap = await db.collection(PING_STORES).where("probe1688", "==", true).get();
-  const stores = snap.docs
-    .filter((d) => d.get("active") === true)
-    .map((d) => ({ ref: d.ref, id: d.id, ips: parseIpRanges(String(d.get("ipRanges") ?? "")).ips }));
-  const alive = await probeIps(stores.flatMap((s) => s.ips), [1688, 5040]); // 서버에 아직 없는 보조 포트
-  let added = 0;
-  for (const s of stores) {
-    const dailyRef = db.collection(PING_DAILY).doc(`${s.id}_${date}`);
-    added += await db.runTransaction(async (tx) => {
-      const [daily, store] = await Promise.all([tx.get(dailyRef), tx.get(s.ref)]);
-      const h = daily.exists ? daily.get(`hours.${hour}`) : null;
-      const ls = store.get("lastSample");
-      if (!h || String(h.m).includes("1688") || ls?.date !== date || ls?.hour !== hour) return 0;
-      const base = new Set<string>(ls.aliveIps ?? []);
-      const extra = s.ips.filter((ip) => alive.has(ip) && !base.has(ip));
-      tx.update(dailyRef, { [`hours.${hour}.a`]: h.a + extra.length, [`hours.${hour}.m`]: `${h.m}+1688` });
-      if (extra.length)
-        tx.update(s.ref, {
-          [`days.${date}.a`]: FieldValue.increment(extra.length),
-          [`recent.${hour}.a`]: FieldValue.increment(extra.length),
-          "lastSample.alive": (ls.alive ?? base.size) + extra.length,
-          "lastSample.aliveIps": [...base, ...extra],
-          "lastSample.method": `${ls.method}+1688`,
-        });
-      return extra.length;
-    });
-  }
-  return { stores: stores.length, added };
 }
 
 /** Vercel에서 TCP만으로 재는 예비 경로. 서버 에이전트와 같은 포트 규칙 — 기본 80·3389는 전 IP, 추가 1688·5040은

@@ -283,6 +283,7 @@ function PingMeasurePanel({
   onRegister,
   onPingChanged,
   competitorIp,
+  competitorPcCount,
 }: {
   measurement: CompetitorMeasurement | undefined;
   current: { utilization: number | null; period: string | null };
@@ -294,6 +295,8 @@ function PingMeasurePanel({
   onPingChanged?: (() => void) | null;
   /** 경쟁점 정보의 IP 대역 — 측정기 칸이 비어 있으면 "IP 넣기"를 이 값으로 채워 연다. */
   competitorIp?: string | null;
+  /** 이 경쟁점의 적용 대수 — 측정기 대수(가동률 분모)와 다르면 경고한다(2026-10-10). */
+  competitorPcCount?: number | null;
 }) {
   const { user } = useAuth();
   const [ipOpen, setIpOpen] = useState(false);
@@ -343,6 +346,19 @@ function PingMeasurePanel({
           </button>
         )}
       </div>
+      {/* 2026-10-10 정밀점검 — 점포평가는 "이 경쟁점 대수 × 측정기 가동률"로 앉은 PC를 센다. 측정기가 다른 대수로 나눴으면 그만큼 틀어진다
+          (일부러 다르게 둔 곳도 있다: IP 대역 하나만 아는 링크·오토는 그 대역 비율로 전체를 본다). 막지 않고 보이게만 한다. */}
+      {m.pingbotUtilization != null && m.store?.pcCount != null && competitorPcCount != null && m.store.pcCount !== competitorPcCount && (
+        <p className="mt-1 text-[var(--sl-warn)]">
+          대수 확인: 측정기는 {m.store.pcCount}대로 나눈 가동률이고, 이 경쟁점은 {competitorPcCount}대입니다. 적용하면 {competitorPcCount}대 × 가동률로 계산됩니다.
+        </p>
+      )}
+      {/* 넣어 둔 값이 측정기에서 온 것인데 지금은 측정 불가 상태 — 값은 손으로 복사한 사본이라 저절로 안 빠진다(2026-10-10 정밀점검). */}
+      {current.utilization != null && current.period?.startsWith("측정기") && ["blocked", "stopped", "noIp", "none"].includes(m.state) && (
+        <p className="mt-1 text-[var(--sl-danger)]">
+          넣어 둔 측정기 값({current.utilization}%)이 지금은 &ldquo;{m.label}&rdquo; 상태입니다. 그대로 쓸지 확인하세요.
+        </p>
+      )}
       {m.state === "noIp" && !ipOpen && (
         <p className="mt-1 text-[var(--sl-ink-soft)]">측정기에 빈칸으로 올라가 있습니다. IP를 넣으면 다음 정시부터 잽니다.</p>
       )}
@@ -673,6 +689,7 @@ function CompetitorForm({
             applyLabel="핑봇 칸에 넣기"
             onPingChanged={onPingChanged}
             competitorIp={form.ipRanges}
+            competitorPcCount={computeCompetitorAppliedPcCount(form)}
             onApply={() => {
               if (measurement?.pingbotUtilization == null) return;
               set("pingbotUtilization", measurement.pingbotUtilization);
@@ -1356,6 +1373,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                     onRegister={editingId === null && !pingRegistering && isRegistrableCompetitor(c) ? () => void registerToPing([c]) : null}
                     onPingChanged={editingId === null ? () => setPingVersion((v) => v + 1) : null}
                     competitorIp={c.ipRanges}
+                    competitorPcCount={computeCompetitorAppliedPcCount(c)}
                   />
                 </div>
               )}
