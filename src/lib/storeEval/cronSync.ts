@@ -249,13 +249,16 @@ export type RevenueSyncSummary = {
   autoRegisterSkipped: string[];
   /** 매출DB엔 있는데 웹 기존점이 아닌 블랙라벨 정상 매장 — 후보지→기존점 전환이 필요하다는 신호(2026-10-10). */
   salesOnlyStores: string[];
+  /** 웹 오픈일이 비어 있어 매출DB 개점일로 채운 매장(2026-10-10). */
+  openedAtFilled: string[];
   brandUpdated: number;
   salesUpserted: number;
   storesRecalculated: number;
 };
 
 /**
- * 매출DB → storeEvalExistingStores(신규 매장 자동등록 포함)/storeEvalExistingStoreSales 동기화.
+ * 매출DB → storeEvalExistingStoreSales(월매출) + storeEvalExistingStores(brandType·빈 오픈일만) 동기화.
+ * 2026-10-10부터 신규 매장 자동등록은 안 한다 — 대신 salesOnlyStores로 알린다.
  * scripts/syncSalesFromRevenueSheet.mjs와 동일 로직 + Firestore 배치쓰기.
  */
 export async function runRevenueSync(): Promise<RevenueSyncSummary> {
@@ -282,7 +285,7 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
 
   const values = sheetValuesRes.data.values ?? [];
   if (values.length < SOURCE_DATA_START_ROW) {
-    return { registeredStoreCount: storeCodes.size, autoRegisteredStores: [], autoRegisterSkipped: [], salesOnlyStores: [], brandUpdated: 0, salesUpserted: 0, storesRecalculated: 0 };
+    return { registeredStoreCount: storeCodes.size, autoRegisteredStores: [], autoRegisterSkipped: [], salesOnlyStores: [], openedAtFilled: [], brandUpdated: 0, salesUpserted: 0, storesRecalculated: 0 };
   }
 
   // ---- 1) 자동 등록은 하지 않는다 (2026-10-10 사용자) ----
@@ -314,6 +317,22 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
       await writer.set(db.collection("storeEvalExistingStores").doc(code), { ...patch, updatedAt: Date.now() }, true);
       brandUpdated++;
     }
+  }
+
+  // ---- 1-2) 오픈일이 빈 매장만 매출DB 개점일(J열)로 채운다 (2026-10-10) ----
+  // 후보지→기존점 전환은 openedAt null로 시작한다(store.ts). 예전엔 01시트 동기화가 채웠는데 그 시트를 끊어서,
+  // 비어 있으면 completedMonths·실매출 평균·재측정 알림이 안 생긴다. 웹에 값이 있으면 절대 안 건드린다(웹이 정본).
+  const openedAtFilled: string[] = [];
+  for (let r = SOURCE_DATA_START_ROW - 1; r < values.length; r++) {
+    const row = values[r];
+    const code = row?.[0] ? String(row[0]).trim() : "";
+    if (!code || !storeCodes.has(code) || openedAtByCode.get(code)) continue;
+    const openedAt = parseKoreanDate(row[9]);
+    if (!openedAt) continue;
+    await writer.set(db.collection("storeEvalExistingStores").doc(code), { openedAt, updatedAt: Date.now() }, true);
+    openedAtByCode.set(code, openedAt);
+    storeDataByCode.set(code, { ...storeDataByCode.get(code), openedAt });
+    openedAtFilled.push(`${code} ${openedAt}`);
   }
 
   // ---- 2) 월별 매출 upsert + completedMonths/actualMonthlyRevenueAvg 재계산 ----
@@ -386,5 +405,5 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
 
   await writer.finish();
 
-  return { registeredStoreCount: storeCodes.size, autoRegisteredStores, autoRegisterSkipped, salesOnlyStores, brandUpdated, salesUpserted, storesRecalculated };
+  return { registeredStoreCount: storeCodes.size, autoRegisteredStores, autoRegisterSkipped, salesOnlyStores, openedAtFilled, brandUpdated, salesUpserted, storesRecalculated };
 }

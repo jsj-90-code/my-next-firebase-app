@@ -41,8 +41,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 매출DB(신규 매장 자동등록 + 월매출)를 먼저 반영해 새 매장이 등록된 뒤에, 그 매장들의
-    // 나머지 프로필(01/05/09/03)도 같은 실행에서 채운다.
+    // 매출DB(월매출·brandType·빈 오픈일)를 먼저 반영하고, 웹(Firestore) 값으로 기존점 경쟁력·수요 캐시를 다시 계산한다.
+    // 2026-10-10부터 01/05 시트는 안 읽고 자동등록도 안 한다(웹이 정본, 새 기존점은 후보지→기존점 전환으로만).
     const revenue = await runRevenueSync();
     const profile = await runFullProfileMigration();
     // 2026-09-26 — 동기화가 끝난 **새 자료로** 적중률 요약과 후보지 결과를 다시 계산해 저장한다

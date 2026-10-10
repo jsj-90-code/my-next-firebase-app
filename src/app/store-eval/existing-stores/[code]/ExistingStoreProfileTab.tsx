@@ -31,6 +31,7 @@ import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { getLocationEvaluation, getModelSettings, listManagementScores, upsertExistingStore } from "@/lib/storeEval/store";
 import type { ExistingStore, FoodBrand, GroundLevel, LocationEvaluation, ModelSettings } from "@/lib/storeEval/types";
 import {
+  BooleanSelectField,
   ComputedField,
   DateField,
   FoodScoringGuide,
@@ -199,6 +200,28 @@ function ExistingStoreProfileEditor({
       {/* 2026-10-06 — 후보지에서 전환된 매장은 openedAt이 null로 시작하는데(store.ts 전환 함수),
           입력칸이 신규 등록 폼에만 있어서 채울 길이 없었다(평택소사벌). 비어 있으면 평가 매출 창과
           검증 탭 재측정 알림이 안 뜬다. */}
+      {/* 2026-10-10 — 01_점포기본정보 시트를 더 이상 읽지 않는다(웹이 정본, 사용자). 그동안 시트로만 바뀌던 칸을 여기서 고친다. */}
+      <section className={sectionClass}>
+        <h3 className={sectionTitleClass}>기본 정보</h3>
+        <div className={`${gridClass} mt-4`}>
+          <TextField label="상호" value={form.storeName} onChange={(v) => set("storeName", v)} />
+          <TextField label="주소" value={form.address ?? ""} onChange={(v) => set("address", v || null)} />
+          <NumberField
+            label="PC대수(현재)"
+            value={form.pcCount}
+            onChange={(v) => set("pcCount", v)}
+            hint="지금 실제 운영 대수 — 후보지에서 전환된 매장은 예상 대수로 시작하니 개점 뒤 실제 대수로 고친다"
+          />
+          <NumberField
+            label="평가 기준 PC대수"
+            value={form.evaluationPcCount}
+            onChange={(v) => set("evaluationPcCount", v)}
+            hint="개점 뒤 좌석을 늘린 매장만 — 개점 당시 대수. 비우면 현재 대수로 계산"
+          />
+          <BooleanSelectField label="엘리베이터" value={form.hasElevator} onChange={(v) => set("hasElevator", v)} />
+        </div>
+      </section>
+
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>개점</h3>
         <div className={`${gridClass} mt-4`}>
@@ -206,7 +229,7 @@ function ExistingStoreProfileEditor({
             label="오픈일"
             value={form.openedAt}
             onChange={(v) => set("openedAt", v)}
-            hint="평가 매출 기간·재측정 알림의 기준. 시트 오픈일이 있으면 매일 동기화가 그 값으로 덮어쓴다"
+            hint="평가 매출 기간·재측정 알림의 기준. 비어 있으면 매일 동기화가 매출DB 개점일로 채운다(값이 있으면 안 건드림)"
           />
         </div>
       </section>

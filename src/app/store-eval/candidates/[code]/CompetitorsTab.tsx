@@ -304,7 +304,9 @@ function PingMeasurePanel({
   const m = measurement;
   const tone =
     m.state === "ok" ? "app-badge-ok" : m.state === "short" || m.state === "waiting" ? "app-badge-warn" : m.state === "none" ? "app-badge-neutral" : "app-badge-danger";
-  const same = m.pingbotUtilization != null && current.utilization === m.pingbotUtilization && current.period === m.pingbotPeriod;
+  // 기간 문구 뒤 "(평일 x·주말·공휴일 y)"는 10-10에 붙었다 — 그 전에 넣은 값도 기간·가동률이 같으면 같은 값으로 본다.
+  const basePeriod = (p: string | null) => (p ?? "").replace(/\(평일 [^)]*\)$/, "");
+  const same = m.pingbotUtilization != null && current.utilization === m.pingbotUtilization && basePeriod(current.period) === basePeriod(m.pingbotPeriod);
   return (
     <div className="app-card-sm rounded-lg px-3 py-2 text-[11px] leading-5 text-[#5c5346] dark:text-[#c9bfae]">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

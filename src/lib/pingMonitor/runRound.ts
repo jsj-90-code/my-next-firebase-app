@@ -52,6 +52,7 @@ export async function loadTargets(): Promise<PingTarget[]> {
       ips,
       total: denominator({ pcCount: data.pcCount ?? null, ipCount: ips.length }),
       ...(data.probe1688 ? { extraPorts: EXTRA_PORTS } : {}),
+      excluded: Boolean(data.excludeFromStats),
       recent: Object.fromEntries(
         Object.entries((data.recent ?? {}) as Record<string, { a?: number; at?: { toDate?: () => Date } }>).map(([h, v]) => [
           h,
@@ -73,7 +74,7 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
       return [s.id, s.total > 0 ? Math.min(n, s.total) : n];
     }),
   );
-  const broken = roundLooksBroken(targets, onById, hour, now);
+  const broken = roundLooksBroken(targets, onById, hour, now, method);
   if (broken) return { ok: true, at: now.toISOString(), date, hour, method, stores: [], rejected: broken };
 
   const results = await Promise.all(
@@ -91,7 +92,9 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
         if (prev != null && !shouldReplace(String(prev.m ?? ""), method)) return false;
         // 늦게 다시 보낸 회차(서버 pending, 최대 6시간)가 "실시간" 칸을 옛 값으로 되돌리지 않게 — 더 새 회차가 있으면 lastSample은 둔다.
         const prevAt = store.get("lastSample.at")?.toDate?.() as Date | undefined;
-        const newest = !prevAt || prevAt.getTime() <= now.getTime();
+        // 같은 시를 서버 결과로 바꿔 쓸 땐(prev 있음) 그 시의 lastSample도 서버 값으로 — 예비가 :52에 먼저 써서 시각이 더 늦어도.
+        const sameHourLast = store.get("lastSample.date") === date && store.get("lastSample.hour") === hour;
+        const newest = !prevAt || prevAt.getTime() <= now.getTime() || (prev != null && sameHourLast);
         tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: on, t: s.total, m: method } } }, { merge: true });
         tx.set(
           storeRef,

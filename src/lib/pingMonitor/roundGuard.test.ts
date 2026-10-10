@@ -24,8 +24,8 @@ describe("roundLooksBroken — 측정 고장 회차 버리기(2026-10-10)", () =
     const ts = targets(10);
     expect(roundLooksBroken(ts, on(ts, () => 0), "22", NOW)).toBeNull();
   });
-  it("오늘 이미 쓴 칸(12시간 안)·어제 5대 미만 매장은 비교에서 뺀다", () => {
-    const ts = targets(50).map((t) => ({ ...t, recent: { "22": { a: 30, at: new Date(NOW.getTime() - 3600_000) } } }));
+  it("36시간 넘은 기록·직전 5대 미만 매장은 비교에서 뺀다", () => {
+    const ts = targets(50).map((t) => ({ ...t, recent: { "22": { a: 30, at: new Date(NOW.getTime() - 40 * 3600_000) } } }));
     expect(roundLooksBroken(ts, on(ts, () => 0), "22", NOW)).toBeNull();
     const quiet = targets(50, 3);
     expect(roundLooksBroken(quiet, on(quiet, () => 0), "22", NOW)).toBeNull();
@@ -41,5 +41,22 @@ describe("shouldReplace — 서버 결과가 예비를 이긴다", () => {
     expect(shouldReplace("icmp+tcp+timestamp", "icmp+tcp+timestamp")).toBe(false);
     expect(shouldReplace("icmp+tcp+timestamp", "tcp")).toBe(false);
     expect(shouldReplace("tcp", "tcp")).toBe(false);
+  });
+});
+
+describe("10-10 최종점검 보완", () => {
+  it("예비(tcp)는 0대 비율을 안 보고 합계만 본다 — 핑 전용 매장이 0대여도 통과", () => {
+    const ts = targets(50);
+    expect(roundLooksBroken(ts, on(ts, (i) => (i < 12 ? 0 : 32)), "22", NOW, "tcp")).toBeNull();
+    expect(roundLooksBroken(ts, on(ts, () => 9), "22", NOW, "tcp")).toMatch(/40%/);
+  });
+  it("늦게 재전송된 결과는 오늘 이 시에 예비가 쓴 값과 견준다", () => {
+    const ts = targets(50).map((t) => ({ ...t, recent: { "22": { a: 30, at: new Date(NOW.getTime() + 47 * 60_000) } } }));
+    // now(잰 시각)보다 예비 기록이 뒤 — age 음수도 비교에 넣는다
+    expect(roundLooksBroken(ts, on(ts, () => 0), "22", NOW, "icmp+tcp+timestamp")).toMatch(/0대/);
+  });
+  it("계산 제외 매장은 비교에서 뺀다", () => {
+    const ts = [...targets(30), ...targets(30).map((t) => ({ ...t, id: `x${t.id}`, excluded: true }))];
+    expect(roundLooksBroken(ts, on(ts, (i) => (i >= 30 ? 0 : 30)), "22", NOW)).toBeNull();
   });
 });
