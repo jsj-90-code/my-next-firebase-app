@@ -305,8 +305,11 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
       distanceM: toNumber(c["거리_m"]),
       floor: toNumber(c["점포층수"]),
       groundLevel: toText(c["지상/지하"]),
-      totalPcCount: toNumber(c["전체대수"]),
-      appliedPcCount: toNumber(c["적용대수"]) ?? toNumber(c["전체대수"]),
+      // 2026-10-10 사용자 — 경쟁점 대수는 웹이 정본이다(측정기 정밀점검에서 IP 대역에 맞춰 웹 대수를 고쳤다: 고트PC 90→110,
+      // 긱스타 빈칸→115). 웹에 값이 있으면 시트로 덮어쓰지 않고, 웹이 빈칸일 때만 시트 값으로 채운다.
+      totalPcCount: (existingCompByid.get(id)?.totalPcCount as number | null | undefined) ?? toNumber(c["전체대수"]),
+      appliedPcCount:
+        (existingCompByid.get(id)?.appliedPcCount as number | null | undefined) ?? toNumber(c["적용대수"]) ?? toNumber(c["전체대수"]),
       hasElevator: toBool(c["엘리베이터"]),
       // 2026-08-28 (3차) — 05_경쟁점정보도 01_점포기본정보와 같은 기본/특화1/특화2(GPU·CPU)·
       // 기본/특화(RAM·모니터) 구조로 늘렸다(사용자 확정).
