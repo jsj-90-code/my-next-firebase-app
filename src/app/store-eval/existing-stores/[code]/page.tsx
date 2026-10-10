@@ -6,6 +6,7 @@
 // CompetitorsTab을 그대로 재사용한다(LocationEvalTab을 이미 같은 방식으로 재사용 중인 것과 동일).
 // 나머지 운영상태/월매출/회원스냅샷 편집은 그대로 existing-stores 목록 화면에서 한다 — 여긴 안 옮긴다.
 
+import { meterApplyBlockedForExistingStore } from "@/lib/pingMonitor/summary";
 import Link from "next/link";
 import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -132,7 +133,7 @@ function ExistingStoreDetail({ code }: { code: string }) {
       {activeTab === "basic" && (
         <ExistingStoreProfileTab store={store} actor={user?.email ?? null} onSaved={(updated) => setStore(updated)} />
       )}
-      {activeTab === "competitors" && <CompetitorsTab candidateCode={lookupCode} subjectLabel="가맹점" />}
+      {activeTab === "competitors" && <CompetitorsTab candidateCode={lookupCode} subjectLabel="가맹점" meterApplyBlockedReason={meterApplyBlockedForExistingStore(store.openedAt)} />}
       {activeTab === "sales" && <SalesTab key={`${store.storeCode}:${store.openedAt}`} storeCode={store.storeCode} openedAt={store.openedAt} />}
       {activeTab === "location" && (
         <LocationEvalTab

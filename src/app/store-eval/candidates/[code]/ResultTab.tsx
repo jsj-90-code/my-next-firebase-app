@@ -25,6 +25,7 @@ import {
   saveEvaluationResult,
   updateCandidateFields,
   getModelAccuracySummary,
+  getSalesOnlyStores,
 } from "@/lib/storeEval/store";
 import { evaluateCandidate } from "@/lib/storeEval/evaluate";
 import { findVerdictFlips, type VerdictFlip } from "@/lib/storeEval/verdictSensitivity";
@@ -644,6 +645,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 아닌 후보지코드가 그대로 가맹점코드로 저장되는 사고가 날 수 있었다 — 빈칸으로 시작해서
   // 사용자가 반드시 직접 입력하게 한다.
   const [newStoreCode, setNewStoreCode] = useState("");
+  // 2026-10-10 — 매출DB엔 있는데 웹 기존점이 아닌 블랙라벨(크론 salesOnlyStores). 입력한 코드를 이 목록과 대조한다.
+  const [salesOnlyStores, setSalesOnlyStores] = useState<{ code: string; label: string }[] | null>(null);
   const [existingStoreCodes, setExistingStoreCodes] = useState<Set<string>>(new Set());
   // 2026-09-13 — 예상매출 숫자 하나만으로는 "이게 좋은 건지" 알 수 없다는 문제. 기존 가맹점
   // 실제 매출은 이미 여기까지 로드돼 있는데(학습용) 화면에서 버리고 있었다. 분포에서의 위치를
@@ -707,6 +710,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
       .catch(() => setExistingCheckFailed(true));
   }, [candidateCode]);
 
+  useEffect(() => {
+    getSalesOnlyStores()
+      .then(setSalesOnlyStores)
+      .catch(() => setSalesOnlyStores(null));
+  }, []);
+
   async function handleConvert() {
     const storeCode = newStoreCode.trim();
     if (!storeCode) {
@@ -736,6 +745,19 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         setConvertMessage("전환 여부를 확인하지 못했습니다 — 중복 전환을 막기 위해 진행하지 않았습니다. 네트워크 확인 후 새로고침하고 다시 시도해주세요.");
         return;
       }
+    }
+    // 코드가 매출DB 전환 대기 목록에 없으면 한 번 더 묻는다 — 오타면 그 매장 매출이 영영 안 들어오고 웹에서 코드를 고칠 화면도 없다.
+    // (목록이 아직 없으면 — 크론이 이 기능 전이면 — 묻지 않는다. 매출DB에 아직 안 올라온 새 매장일 수도 있어 막지는 않는다.)
+    if (
+      salesOnlyStores &&
+      !salesOnlyStores.some((s) => s.code === storeCode) &&
+      !window.confirm(
+        `"${storeCode}"는 매출DB의 전환 대기 매장 목록(${salesOnlyStores.length}곳, 어제 06시 기준)에 없습니다. 오타면 이 매장 매출이 들어오지 않습니다.
+
+그래도 진행할까요? (매출DB에 아직 안 올라온 새 매장이면 진행해도 됩니다)`,
+      )
+    ) {
+      return;
     }
     if (!window.confirm(`가맹점코드 "${storeCode}"로 기존 가맹점 전환을 진행할까요? 전환 후에는 되돌릴 수 없습니다.`)) {
       return;
@@ -1551,9 +1573,24 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
                   value={newStoreCode}
                   onChange={(e) => setNewStoreCode(e.target.value)}
                   placeholder="예: 20260703437"
+                  list="sales-only-store-codes"
                   className="app-input w-40 px-2 py-1.5 text-sm"
                 />
+                {salesOnlyStores && (
+                  <datalist id="sales-only-store-codes">
+                    {salesOnlyStores.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </datalist>
+                )}
               </label>
+              {newStoreCode.trim() && salesOnlyStores && (
+                <span className="text-[11px] text-[var(--sl-ink-soft)]">
+                  {salesOnlyStores.find((s) => s.code === newStoreCode.trim())?.label ?? "매출DB 전환 대기 목록에 없는 코드"}
+                </span>
+              )}
               <button
                 type="button"
                 disabled={converting}

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { parseIpRanges } from "../../src/lib/pingMonitor/ipRange.ts";
+import { roundLooksBroken } from "../../src/lib/pingMonitor/roundGuard.ts";
 
 const DRY = process.argv.includes("--dry");
 process.loadEnvFile(new URL("../../.env.local", import.meta.url));
@@ -88,7 +89,8 @@ const snap = await db.collection("pingMonitorStores").where("active", "==", true
 const targets = snap.docs.map((d) => {
   const data = d.data();
   const ips = parseIpRanges(String(data.ipRanges ?? "")).ips;
-  return { id: d.id, name: String(data.name ?? ""), ips, total: data.pcCount && data.pcCount > 0 ? data.pcCount : ips.length };
+  const recent = Object.fromEntries(Object.entries(data.recent ?? {}).map(([h, v]) => [h, { a: Number(v.a ?? 0), at: v.at?.toDate?.() ?? null }]));
+  return { id: d.id, name: String(data.name ?? ""), ips, total: data.pcCount && data.pcCount > 0 ? data.pcCount : ips.length, recent, excluded: Boolean(data.excludeFromStats) };
 });
 const ips = [...new Set(targets.flatMap((t) => t.ips))];
 
@@ -101,6 +103,11 @@ const method = "home-icmp+tcp";
 const secs = ((Date.now() - started.getTime()) / 1000).toFixed(0);
 console.log(`${started.toISOString()} ${date} ${hour}시 · 매장 ${targets.length} · IP ${ips.length} · 응답 ${alive.size}(핑 ${byPing.size} · TCP ${byTcp.size}) · ${secs}초`);
 if (DRY) process.exit(0);
+
+// 회차 이상 점검 — 서버·예비와 같은 규칙(roundGuard.ts, 2026-10-10). 측정 고장으로 대량 0대면 저장하지 않는다.
+const onById = new Map(targets.filter((t) => t.ips.length).map((t) => { const n = t.ips.filter((ip) => alive.has(ip)).length; return [t.id, t.total > 0 ? Math.min(n, t.total) : n]; }));
+const broken = roundLooksBroken(targets, onById, hour, started, method);
+if (broken) { console.error(`저장 안 함 — ${broken}`); process.exit(1); }
 
 // 측정이 다음 시로 넘어가도 잰 시작 시각의 시(時)로 묶는다(서버 에이전트와 같음).
 let written = 0;

@@ -53,7 +53,7 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
  * 우리 매장 IP가 없는 곳(2026-10-07 단톡 보강 뒤 41곳 중 양주덕정 1곳)은 줄만 두고 "IP 없음".
  */
 function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
-  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel } = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar } = useRanges();
   const status = ping ? storeStatus(ping) : null;
   return (
     <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
@@ -75,9 +75,9 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
           <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <Recent24Cell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={from7} to={to7} nDays={weekDaysSoFar} bold excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={monthDaysSoFar} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
         </>
       ) : (
         <td colSpan={7} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
@@ -89,8 +89,22 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
   );
 }
 
+// 한국 날짜가 바뀌면 다시 그리게 — 화면을 켜 둔 채 자정을 넘기면 오늘·이번주·이달이 전날 기준으로 남던 것(2026-10-10 최종점검).
+function useKstToday(): string {
+  const [today, setToday] = useState(() => kstDaysAgo(0));
+  useEffect(() => {
+    const t = setInterval(() => setToday(kstDaysAgo(0)), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return today;
+}
+
+const daysBetween = (from: string, to: string) =>
+  to < from ? 0 : Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+
 // 기간은 날짜(0~24시) 단위 — 오늘은 진행 중, 어제·7일·30일은 어제까지 다 찬 날만(2026-10-07 사용자).
 function useRanges() {
+  const todayKey = useKstToday();
   return useMemo(() => {
     const d30 = lastFullDays(30);
     const week = thisWeek();
@@ -106,8 +120,12 @@ function useRanges() {
     const prevMonthStart = `${py}-${String(pm).padStart(2, "0")}-01`;
     const prevMonthEnd = `${py}-${String(pm).padStart(2, "0")}-${String(prevMonthDays).padStart(2, "0")}`;
     const prevMonthLabel = `${pm}월`;
-    return { today, yesterday: d30.to, fromPrev: prevWeek.from, toPrev: prevWeek.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel };
-  }, []);
+    // 이번주·이달 칸의 "N일치" 꼬리말은 지금까지 지난 날 수와 견준다 — 예전엔 7·31로 고정이라 늘 "N일치"가 붙었다(2026-10-10 최종점검).
+    const weekDaysSoFar = daysBetween(week.from, week.to < d30.to ? week.to : d30.to); // 월~어제(월요일이면 0)
+    const monthDaysSoFar = daysBetween(monthStart, d30.to);
+    return { today, yesterday: d30.to, fromPrev: prevWeek.from, toPrev: prevWeek.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- todayKey는 날짜가 바뀔 때 다시 계산하라는 신호
+  }, [todayKey]);
 }
 
 // 가동률 + 꼬리말. 오늘(진행 중)은 덜 찬 그대로 "15시간치", n일 칸은 다 찬 날 일일평균에 모자라면 "3일치".
@@ -175,7 +193,7 @@ function byMeasuredThenDistance(a: PingStore, b: PingStore): number {
 }
 
 function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
-  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel } = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar } = useRanges();
   return (
     <div className="overflow-x-auto">
       {/* 표는 한 줄로(2026-10-10 사용자) — 칸 줄바꿈 금지, 좁으면 가로 스크롤. 긴 IP 확인 메모만 줄바꿈 허용. */}
@@ -220,9 +238,9 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <UtilCell days={s.days} from={today} to={today} nDays={1} inProgress muted={muted} />
                 <Recent24Cell store={s} muted={muted} />
                 <UtilCell days={s.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={s.portSwitchDate} muted={muted} />
-                <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold excludeUpTo={s.portSwitchDate} muted={muted} />
+                <UtilCell days={s.days} from={from7} to={to7} nDays={weekDaysSoFar} bold excludeUpTo={s.portSwitchDate} muted={muted} />
                 <UtilCell days={s.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={s.portSwitchDate} muted={muted} />
-                <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} excludeUpTo={s.portSwitchDate} muted={muted} />
+                <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={monthDaysSoFar} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
                 </td>

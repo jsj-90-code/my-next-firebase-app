@@ -278,7 +278,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   // 레드포스처럼 하루 0~1대만 응답한 노이즈는 storeStatus(실측 1% 미만이면 메모 우선)와 rangeUtilization(1% 미만 날 제외)이 이미 막고,
   // 사람이 노이즈로 확정한 곳은 excludeFromStats(위)가 막는다.
   const status = storeStatus(s);
-  if (status.tone === "danger" || status.label.startsWith("IP·핑차단") || status.label.startsWith("과응답")) return { ...base, state: "blocked", label: status.label, store: s };
+  if (status.tone === "danger" || status.label.startsWith("IP·핑차단") || status.label.startsWith("과응답") || status.label.startsWith("측정 의심")) return { ...base, state: "blocked", label: status.label, store: s };
   // 평균에 실제로 들어간 날과 같은 조건(꽉 찬 날 + 측정실패 1% 미만 제외 + 포트 전환 날 이후)이라야
   // first~last 기간·일수가 r.days/r.util과 안 어긋난다(2026-10-09).
   const used = Object.entries(s.days)
@@ -297,7 +297,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   const weekendDays = countWeekendDays(used);
   return {
     state: short ? "short" : "ok",
-    label: short ? `7일 미달(${r.days}일치 · 주말·공휴일 ${weekendDays}일)` : "측정 중",
+    label: short ? `7일 미달(${r.days}일치)` : "측정 중", // 평일/주말·공휴일은 기간 문구와 경쟁점 탭에 따로 보인다
     store: s,
     util: r.util,
     fullDays: r.days,
@@ -334,6 +334,8 @@ export function storeStatus(store: PingStore): StoreStatus {
       .map(([, v]) => v);
     const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
     if (dailyAvg != null && dailyAvg > 0.6) return { label: "과응답 · IP 확인", tone: "warn" };
+    // 평균 1% 남짓(반올림 1.0 이하)은 경쟁점 탭에서 "측정 의심"으로 막는다 — 측정기 화면도 같은 말로(2026-10-10 최종점검: 두 화면이 달랐다).
+    if (dailyAvg != null && Math.round(dailyAvg * 1000) / 10 <= 1) return { label: "측정 의심(가동률 1% 남짓)", tone: "warn" };
     return { label: "측정 중", tone: "ok" };
   }
   // 실측이 거의 없는 경우: 사람이 남긴 꼬리표가 있으면 평가에 값을 안 쓴다(간헐적 응답도 못 믿음).
@@ -375,4 +377,15 @@ export function capUtil(v: number | null): number | null {
 
 export function formatPct(v: number | null, digits = 1): string {
   return v == null ? "-" : `${(v * 100).toFixed(digits)}%`;
+}
+
+/**
+ * 기존점 경쟁점 탭에서 측정기 값을 넣지 않는 이유(2026-10-10 사용자) — 기존점 평가는 개점 1년 안 경쟁 상황을 보는데 측정기는 지금
+ * 영업 중인 PC방을 잰다. 개점 1년(365일)이 지났으면 지금 값을 유지하고, 1년 안이거나 오픈일을 모르면 넣을 수 있다.
+ */
+export function meterApplyBlockedForExistingStore(openedAt: string | null | undefined, now = new Date()): string | null {
+  if (!openedAt) return null;
+  const opened = Date.parse(`${openedAt}T00:00:00+09:00`);
+  if (Number.isNaN(opened) || now.getTime() - opened <= 365 * 86_400_000) return null;
+  return `개점 1년 지남(${openedAt} 개점) — 기존점 경쟁점은 개점 당시 기준이라 측정기 값을 넣지 않고 지금 값을 유지합니다`;
 }

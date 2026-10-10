@@ -284,6 +284,8 @@ function PingMeasurePanel({
   onPingChanged,
   competitorIp,
   competitorPcCount,
+  competitorPcCountEstimated = false,
+  applyBlockedReason = null,
 }: {
   measurement: CompetitorMeasurement | undefined;
   current: { utilization: number | null; period: string | null };
@@ -297,6 +299,10 @@ function PingMeasurePanel({
   competitorIp?: string | null;
   /** 이 경쟁점의 적용 대수 — 측정기 대수(가동률 분모)와 다르면 경고한다(2026-10-10). */
   competitorPcCount?: number | null;
+  /** 경쟁점 대수가 빈칸이라 기본 대수로 계산되는 중인지 — 경고에 "추정"이라고 붙인다. */
+  competitorPcCountEstimated?: boolean;
+  /** 이 화면에선 측정기 값을 넣지 않는 이유(개점 1년 지난 기존점 등) — 있으면 넣기 버튼 대신 이 글을 보인다. */
+  applyBlockedReason?: string | null;
 }) {
   const { user } = useAuth();
   const [ipOpen, setIpOpen] = useState(false);
@@ -337,7 +343,8 @@ function PingMeasurePanel({
           {current.utilization != null ? `${current.utilization}%` : "-"}
           {current.period ? ` (${current.period})` : ""}
         </span>
-        {onApply && m.pingbotUtilization != null && (
+        {applyBlockedReason && m.pingbotUtilization != null && <span className="text-[var(--sl-ink-soft)]">{applyBlockedReason}</span>}
+        {onApply && !applyBlockedReason && m.pingbotUtilization != null && (
           <button
             type="button"
             disabled={same}
@@ -352,7 +359,7 @@ function PingMeasurePanel({
           (일부러 다르게 둔 곳도 있다: IP 대역 하나만 아는 링크·오토는 그 대역 비율로 전체를 본다). 막지 않고 보이게만 한다. */}
       {m.pingbotUtilization != null && m.store?.pcCount != null && competitorPcCount != null && m.store.pcCount !== competitorPcCount && (
         <p className="mt-1 text-[var(--sl-warn)]">
-          대수 확인: 측정기는 {m.store.pcCount}대로 나눈 가동률이고, 이 경쟁점은 {competitorPcCount}대입니다. 적용하면 {competitorPcCount}대 × 가동률로 계산됩니다.
+          대수 확인: 측정기는 {m.store.pcCount}대로 나눈 가동률이고, 이 경쟁점은 {competitorPcCount}대{competitorPcCountEstimated ? "(대수 빈칸 — 기본값으로 추정)" : ""}입니다. 적용하면 {competitorPcCount}대 × 가동률로 계산됩니다.
         </p>
       )}
       {/* 넣어 둔 값이 측정기에서 온 것인데 지금은 측정 불가 상태 — 값은 손으로 복사한 사본이라 저절로 안 빠진다(2026-10-10 정밀점검). */}
@@ -413,6 +420,7 @@ function CompetitorForm({
   measurement,
   onPingChanged,
   pingEnabled,
+  meterApplyBlockedReason = null,
 }: {
   initial: Competitor;
   baseline: Competitor | null;
@@ -423,6 +431,7 @@ function CompetitorForm({
   /** 이 경쟁점의 측정기 최근 7일 요약. 새 경쟁점(저장 전)은 측정기에 이어질 id가 없어 null. */
   measurement: CompetitorMeasurement | null | undefined;
   onPingChanged?: () => void;
+  meterApplyBlockedReason?: string | null;
   /** 후보지 화면에서만 IP 대역 칸을 보인다(기존점 경쟁점은 이번 범위 밖). */
   pingEnabled: boolean;
 }) {
@@ -692,6 +701,8 @@ function CompetitorForm({
             onPingChanged={onPingChanged}
             competitorIp={form.ipRanges}
             competitorPcCount={computeCompetitorAppliedPcCount(form)}
+            competitorPcCountEstimated={(form.appliedPcCount ?? form.totalPcCount) == null}
+            applyBlockedReason={meterApplyBlockedReason}
             onApply={() => {
               if (measurement?.pingbotUtilization == null) return;
               set("pingbotUtilization", measurement.pingbotUtilization);
@@ -859,7 +870,19 @@ type CompetitorLoadResult = {
 /** 렌더마다 새 배열이 생겨 useMemo 의존성이 매번 바뀌는 것을 막는다(ScorecardTab과 같은 패턴). */
 const NO_COMPETITORS: Competitor[] = [];
 
-export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { candidateCode: string; subjectLabel?: string }) {
+/**
+ * meterApplyBlockedReason(2026-10-10 사용자) — 기존점 평가는 개점 1년 안 경쟁 상황을 본다. 측정기는 지금 영업 중인 PC방을 재므로
+ * 개점 1년 안 된 기존점·후보지만 측정기 값을 넣고, 1년 지난 기존점은 지금 값을 유지한다. 이유 글이 있으면 넣기 버튼을 숨긴다.
+ */
+export function CompetitorsTab({
+  candidateCode,
+  subjectLabel = "후보지",
+  meterApplyBlockedReason = null,
+}: {
+  candidateCode: string;
+  subjectLabel?: string;
+  meterApplyBlockedReason?: string | null;
+}) {
   const { user } = useAuth();
   const [reloadVersion, setReloadVersion] = useState(0);
   const requestKey = JSON.stringify([candidateCode, reloadVersion]);
@@ -1290,6 +1313,7 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
           actor={user?.email ?? null}
           onPingChanged={() => setPingVersion((v) => v + 1)}
           pingEnabled={pingMeasureEnabled}
+          meterApplyBlockedReason={meterApplyBlockedReason}
           measurement={!pingMeasureEnabled || editingId === "new" || editingId == null ? null : measureError ? null : measurementOf(editingId)}
           onCancel={() => {
             setEditingId(null);
@@ -1376,6 +1400,8 @@ export function CompetitorsTab({ candidateCode, subjectLabel = "후보지" }: { 
                     onPingChanged={editingId === null ? () => setPingVersion((v) => v + 1) : null}
                     competitorIp={c.ipRanges}
                     competitorPcCount={computeCompetitorAppliedPcCount(c)}
+                    competitorPcCountEstimated={(c.appliedPcCount ?? c.totalPcCount) == null}
+                    applyBlockedReason={meterApplyBlockedReason}
                   />
                 </div>
               )}

@@ -1048,4 +1048,16 @@ export async function upsertModelAccuracySummary(summary: ModelAccuracySummary):
   await setDoc(doc(requireDb(), SYSTEM_STATUS, ACCURACY_DOC), sanitize(summary));
 }
 
+/**
+ * 매출DB엔 있는데 웹 기존점이 아닌 블랙라벨 정상 매장 — 06시 크론이 storeEvalSystemStatus/cronSync.revenue.salesOnlyStores에 남긴다
+ * ("코드 이름 (개점 날짜)" 글자). 후보지→기존점 전환 때 입력한 가맹점코드가 여기 있는지 대조하는 데 쓴다(2026-10-10 — 코드를
+ * 잘못 넣으면 그 매장 매출이 영영 안 들어오고 웹에서 고칠 화면도 없다). 크론이 아직 이 목록을 안 남겼으면 null.
+ */
+export async function getSalesOnlyStores(): Promise<{ code: string; label: string }[] | null> {
+  const snap = await getDoc(doc(requireDb(), SYSTEM_STATUS, "cronSync"));
+  const list = snap.exists() ? (snap.data()?.revenue?.salesOnlyStores as unknown) : undefined;
+  if (!Array.isArray(list)) return null;
+  return list.map((x) => String(x)).map((label) => ({ code: label.split(" ")[0], label }));
+}
+
 export { serverTimestamp };

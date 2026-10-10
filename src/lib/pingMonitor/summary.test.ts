@@ -139,7 +139,7 @@ describe("7일 미달 값에 며칠치·주말 수를 붙인다(2026-10-10 사�
     const m = competitorMeasurement([store({ days: { "2026-10-03": full(48), "2026-10-04": full(60) } })], NOW); // 10-03 토·10-04 일
     expect(m.state).toBe("short");
     expect(m.weekendDays).toBe(2);
-    expect(m.label).toBe("7일 미달(2일치 · 주말·공휴일 2일)");
+    expect(m.label).toBe("7일 미달(2일치)");
     expect(m.pingbotPeriod).toBe("측정기 2026-10-03~2026-10-04 일일평균 2일(평일 0·주말·공휴일 2)");
   });
 });
@@ -149,5 +149,15 @@ describe("공휴일도 주말과 한 묶음(2026-10-10 사용자 '주말+공휴�
     const m = competitorMeasurement([store({ days: { "2026-10-08": full(48), "2026-10-09": full(60) } })], new Date("2026-10-10T03:00:00Z"));
     expect(m.weekendDays).toBe(1);
     expect(m.pingbotPeriod).toBe("측정기 2026-10-08~2026-10-09 일일평균 2일(평일 1·주말·공휴일 1)");
+  });
+});
+
+describe("개점 1년 지난 기존점은 측정기 값 안 넣음(2026-10-10 사용자)", () => {
+  it("1년 안·오픈일 모름이면 넣을 수 있고, 1년 지나면 막는다", async () => {
+    const { meterApplyBlockedForExistingStore } = await import("./summary");
+    const now = new Date("2026-10-10T03:00:00Z");
+    expect(meterApplyBlockedForExistingStore("2026-03-01", now)).toBeNull();
+    expect(meterApplyBlockedForExistingStore(null, now)).toBeNull();
+    expect(meterApplyBlockedForExistingStore("2025-09-01", now)).toMatch(/개점 1년 지남/);
   });
 });
