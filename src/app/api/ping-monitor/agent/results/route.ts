@@ -23,6 +23,9 @@ export async function POST(request: Request) {
 
   const targets = await loadTargets();
   const result = await recordRound(targets, new Set(parsed.aliveIps.map(String)), String(parsed.method ?? "agent"), at);
+  // 회차 이상(측정 고장으로 대량 0대)이면 저장하지 않았다 — 상태 문서도 안 고쳐서 예비(:50)가 이 시를 다시 잰다(2026-10-10).
+  // 200으로 답한다: 4xx면 서버가 pending을 지우고, 5xx면 같은 결과를 계속 다시 보낸다.
+  if (result.rejected) return NextResponse.json({ ok: false, rejected: result.rejected, date: result.date, hour: result.hour });
   await adminDb
     ?.collection("storeEvalSystemStatus")
     .doc("pingMonitor")

@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { parseIpRanges } from "./ipRange";
 import { probeIps } from "./probe";
+import { roundLooksBroken, shouldReplace } from "./roundGuard";
 import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 
 // 경쟁점 가동률 측정기 — 1시간에 한 번, 측정 중인 매장 전부를 재서 저장한다(2026-10-06 신설).
@@ -17,7 +18,8 @@ import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 //   - "agent": Oracle 무료 서버(도쿄)가 핑 + TCP를 둘 다 재서 보낸다(/api/ping-monitor/agent/*). 기본.
 //   - "tcp": Vercel이 TCP만 잰다(runPingRound). 핑에만 대답하는 매장(106곳 중 23곳)을 못 봐서 예비용.
 
-export type PingTarget = { id: string; name: string; ips: string[]; total: number; extraPorts?: number[] };
+export type { PingTarget } from "./roundGuard";
+import type { PingTarget } from "./roundGuard";
 
 /** 기본 포트는 전 매장(80·3389). 추가 포트(1688·5040)는 그게 먹히는 매장에만 — 서버 부하를 줄이는 최적화(2026-10-09).
  *  probe1688 매장(핑·80·3389 막혀서 1688·5040으로만 잡히는 곳)만 추가 포트를 받는다. */
@@ -30,6 +32,8 @@ export type RoundResult = {
   hour: string;
   method: string;
   stores: { id: string; name: string; alive: number; total: number; skipped?: string }[];
+  /** 회차가 통째로 이상해 저장하지 않았으면 그 이유(2026-10-10). 이때 상태 문서도 안 고쳐서 예비가 그 시를 다시 잰다. */
+  rejected?: string;
 };
 
 function requireDb() {
@@ -48,6 +52,12 @@ export async function loadTargets(): Promise<PingTarget[]> {
       ips,
       total: denominator({ pcCount: data.pcCount ?? null, ipCount: ips.length }),
       ...(data.probe1688 ? { extraPorts: EXTRA_PORTS } : {}),
+      recent: Object.fromEntries(
+        Object.entries((data.recent ?? {}) as Record<string, { a?: number; at?: { toDate?: () => Date } }>).map(([h, v]) => [
+          h,
+          { a: Number(v.a ?? 0), at: v.at?.toDate?.() ?? null },
+        ]),
+      ),
     };
   });
 }
@@ -56,6 +66,15 @@ export async function loadTargets(): Promise<PingTarget[]> {
 export async function recordRound(targets: PingTarget[], alive: Set<string>, method: string, now = new Date()): Promise<RoundResult> {
   const db = requireDb();
   const { date, hour } = kstParts(now);
+
+  const onById = new Map(
+    targets.filter((s) => s.ips.length > 0).map((s) => {
+      const n = s.ips.filter((ip) => alive.has(ip)).length;
+      return [s.id, s.total > 0 ? Math.min(n, s.total) : n];
+    }),
+  );
+  const broken = roundLooksBroken(targets, onById, hour, now);
+  if (broken) return { ok: true, at: now.toISOString(), date, hour, method, stores: [], rejected: broken };
 
   const results = await Promise.all(
     targets.map(async (s) => {
@@ -68,7 +87,8 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
       const storeRef = db.collection(PING_STORES).doc(s.id);
       const written = await db.runTransaction(async (tx) => {
         const [daily, store] = await Promise.all([tx.get(dailyRef), tx.get(storeRef)]);
-        if (daily.exists && daily.get(`hours.${hour}`) != null) return false;
+        const prev = daily.exists ? (daily.get(`hours.${hour}`) as { a: number; t: number; m?: string } | undefined) : undefined;
+        if (prev != null && !shouldReplace(String(prev.m ?? ""), method)) return false;
         // 늦게 다시 보낸 회차(서버 pending, 최대 6시간)가 "실시간" 칸을 옛 값으로 되돌리지 않게 — 더 새 회차가 있으면 lastSample은 둔다.
         const prevAt = store.get("lastSample.at")?.toDate?.() as Date | undefined;
         const newest = !prevAt || prevAt.getTime() <= now.getTime();
@@ -76,7 +96,10 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
         tx.set(
           storeRef,
           {
-            days: { [date]: { a: FieldValue.increment(on), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
+            // 바꿔 쓸 땐 앞 기록만큼 빼고 더한다(같은 시가 두 번 세지지 않게, n은 그대로).
+            days: prev
+              ? { [date]: { a: FieldValue.increment(on - prev.a), t: FieldValue.increment(s.total - prev.t) } }
+              : { [date]: { a: FieldValue.increment(on), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
             ...(newest ? { lastSample: { at: now, date, hour, alive: on, total: s.total, aliveIps, method } } : {}),
             recent: { [hour]: { a: on, t: s.total, at: now } },
           },

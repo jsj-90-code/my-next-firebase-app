@@ -48,6 +48,7 @@ export async function GET(request: Request) {
     }
     if (minute < 30) return NextResponse.json({ ok: true, skipped: "측정 서버 차례(매시 30분 전)" });
     const result = await runPingRound(now);
+    if (result.rejected) return NextResponse.json(result); // 회차 이상 — 저장·상태 기록 안 함(다음 예비 호출이 다시 잰다)
     // 마지막 실행 기록(알람이 실제로 도는지 확인용) — 문서 하나를 덮어쓴다.
     await adminDb
       ?.collection("storeEvalSystemStatus")
