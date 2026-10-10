@@ -12,7 +12,7 @@ export function PingMonitorChrome({ children }: { children: ReactNode }) {
     <div className="app-theme flex min-h-screen flex-col">
       <AutoAuthGate>
         <header className="border-b border-[#171310]/[0.08] bg-[#fffdf7] dark:border-white/[0.08] dark:bg-[#1c1912]">
-          <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
             <Link href="/" className="text-xs text-[var(--sl-ink-soft)] hover:underline">
               홈
             </Link>
@@ -25,7 +25,7 @@ export function PingMonitorChrome({ children }: { children: ReactNode }) {
             <ThemeToggle className="app-btn-outline ml-auto rounded-full px-3 py-1.5 text-xs" />
           </div>
         </header>
-        <main className="mx-auto w-full min-w-0 max-w-5xl flex-1 px-4 py-6">{children}</main>
+        <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-6">{children}</main>
       </AutoAuthGate>
     </div>
   );
