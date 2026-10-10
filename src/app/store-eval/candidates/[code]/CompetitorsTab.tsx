@@ -996,8 +996,9 @@ export function CompetitorsTab({
   // 못 읽으면 카드마다 "확인 중"으로 남기지 않고 실패를 한 줄로 알린다.
   const [measurements, setMeasurements] = useState<{ key: string; byId: Map<string, CompetitorMeasurement> } | null>(null);
   const [measureError, setMeasureError] = useState<string | null>(null);
-  // 기존점(가맹점) 화면은 이번 범위 밖이다 — 그쪽 핑봇 칸은 시트 동기화(cronSync)가 덮어쓴다.
-  const pingMeasureEnabled = subjectLabel === "후보지";
+  // 기존점(가맹점) 화면은 예전엔 껐다(시트 동기화가 핑봇 칸을 덮어써서). 2026-10-10부터 시트를 안 읽고, 사용자 규칙상
+  // 개점 1년 안 기존점은 측정기 값을 넣는다 — 그래서 막는 이유(1년 지남)가 없는 기존점도 켠다. 1년 지난 곳은 예전처럼 꺼 둔다.
+  const pingMeasureEnabled = subjectLabel === "후보지" || meterApplyBlockedReason == null;
   const competitorIdsKey = pingMeasureEnabled ? competitors.map((c) => c.id).join(",") : "";
   // 측정기에 새로 올린 뒤 다시 읽으려고 올린다.
   const [pingVersion, setPingVersion] = useState(0);
