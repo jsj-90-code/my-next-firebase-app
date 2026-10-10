@@ -1,3 +1,5 @@
+import { isKrHoliday } from "./krHolidays";
+
 // 경쟁점 가동률 측정기 — 저장 모양과 가동률 계산(화면·서버 공용, 2026-10-06 신설).
 //
 // 가동률 = 다 찬 날들의 "하루 가동률"(그날 켜진 PC 수 합 ÷ 대수 합) 평균 — 일일평균(2026-10-07 사용자).
@@ -238,15 +240,15 @@ export type CompetitorMeasurement = {
   pingbotUtilization: number | null;
   /** 핑봇_조회기간 칸에 넣을 문구. */
   pingbotPeriod: string | null;
-  /** 평균에 들어간 날 중 토·일 수(2026-10-10 사용자: 7일 미달 값도 쓰되 며칠치·주말 포함인지 알 수 있게). 공휴일은 따로 안 가린다. */
+  /** 평균에 들어간 날 중 주말·공휴일 수(2026-10-10 사용자: 7일 미달 값도 쓰되 며칠치·쉬는 날 포함인지 알 수 있게 — "주말+공휴일" 한 묶음). */
   weekendDays: number;
 };
 
-/** 날짜(YYYY-MM-DD) 중 토·일 수. */
+/** 날짜(YYYY-MM-DD) 중 주말(토·일)·공휴일(대체공휴일 포함, krHolidays.ts) 수 — 쉬는 날 한 묶음. */
 export function countWeekendDays(dates: string[]): number {
   return dates.filter((d) => {
     const w = new Date(`${d}T00:00:00Z`).getUTCDay();
-    return w === 0 || w === 6;
+    return w === 0 || w === 6 || isKrHoliday(d);
   }).length;
 }
 
@@ -295,7 +297,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   const weekendDays = countWeekendDays(used);
   return {
     state: short ? "short" : "ok",
-    label: short ? `7일 미달(${r.days}일치 · 주말 ${weekendDays}일)` : "측정 중",
+    label: short ? `7일 미달(${r.days}일치 · 주말·공휴일 ${weekendDays}일)` : "측정 중",
     store: s,
     util: r.util,
     fullDays: r.days,
@@ -303,7 +305,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
     from: first,
     to: last,
     pingbotUtilization: Math.round(r.util * 1000) / 10,
-    pingbotPeriod: `측정기 ${first}~${last} 일일평균 ${r.days}일(평일 ${r.days - weekendDays}·주말 ${weekendDays})`,
+    pingbotPeriod: `측정기 ${first}~${last} 일일평균 ${r.days}일(평일 ${r.days - weekendDays}·주말·공휴일 ${weekendDays})`,
     weekendDays,
   };
 }

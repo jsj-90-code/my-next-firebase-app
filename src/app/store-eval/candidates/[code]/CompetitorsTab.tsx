@@ -312,7 +312,7 @@ function PingMeasurePanel({
         <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(m.util)}</b>
         {m.from && m.to && (
           <span>
-            {m.fullDays}/{m.windowDays}일(평일 {m.fullDays - m.weekendDays}·주말 {m.weekendDays}) · {m.from}~{m.to}
+            {m.fullDays}/{m.windowDays}일(평일 {m.fullDays - m.weekendDays}·주말·공휴일 {m.weekendDays}) · {m.from}~{m.to}
           </span>
         )}
         <span className={`app-badge ${tone}`}>{m.label}</span>
