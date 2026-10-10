@@ -48,7 +48,7 @@ describe("competitorMeasurement", () => {
     const m = competitorMeasurement([store({ days })], NOW);
     expect(m.state).toBe("ok");
     expect(m.pingbotUtilization).toBe(15);
-    expect(m.pingbotPeriod).toBe("측정기 2026-09-30~2026-10-06 일일평균 7일");
+    expect(m.pingbotPeriod).toBe("측정기 2026-09-30~2026-10-06 일일평균 7일(평일 5·주말 2)"); // 10-03 토·10-04 일
   });
   it("덜 찬 날은 빼고 7일 미달 표시", () => {
     const m = competitorMeasurement([store({ days: { "2026-10-05": { a: 30, t: 70, n: 7 }, "2026-10-06": full(48) } })], NOW);
@@ -131,5 +131,15 @@ describe("2026-10-10 정밀점검 — 평가로 넘어가는 값 지키기", () 
     const m = competitorMeasurement([bad, good], NOW);
     expect(m.store?.id).toBe("good");
     expect(m.state).toBe("short");
+  });
+});
+
+describe("7일 미달 값에 며칠치·주말 수를 붙인다(2026-10-10 사용자)", () => {
+  it("토·일 이틀치면 주말 2일로 표시", () => {
+    const m = competitorMeasurement([store({ days: { "2026-10-03": full(48), "2026-10-04": full(60) } })], NOW); // 10-03 토·10-04 일
+    expect(m.state).toBe("short");
+    expect(m.weekendDays).toBe(2);
+    expect(m.label).toBe("7일 미달(2일치 · 주말 2일)");
+    expect(m.pingbotPeriod).toBe("측정기 2026-10-03~2026-10-04 일일평균 2일(평일 0·주말 2)");
   });
 });

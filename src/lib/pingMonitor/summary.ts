@@ -238,7 +238,17 @@ export type CompetitorMeasurement = {
   pingbotUtilization: number | null;
   /** 핑봇_조회기간 칸에 넣을 문구. */
   pingbotPeriod: string | null;
+  /** 평균에 들어간 날 중 토·일 수(2026-10-10 사용자: 7일 미달 값도 쓰되 며칠치·주말 포함인지 알 수 있게). 공휴일은 따로 안 가린다. */
+  weekendDays: number;
 };
+
+/** 날짜(YYYY-MM-DD) 중 토·일 수. */
+export function countWeekendDays(dates: string[]): number {
+  return dates.filter((d) => {
+    const w = new Date(`${d}T00:00:00Z`).getUTCDay();
+    return w === 0 || w === 6;
+  }).length;
+}
 
 export const COMPETITOR_MEASURE_DAYS = 7;
 
@@ -251,7 +261,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   const windowDays = COMPETITOR_MEASURE_DAYS;
   const { from, to } = lastFullDays(windowDays, now);
   const today = kstDaysAgo(0, now);
-  const base = { util: null, fullDays: 0, windowDays, from: null, to: null, pingbotUtilization: null, pingbotPeriod: null };
+  const base = { util: null, fullDays: 0, windowDays, from: null, to: null, pingbotUtilization: null, pingbotPeriod: null, weekendDays: 0 };
   const candidates = stores.filter((s) => !s.isOwnStore);
   if (candidates.length === 0) return { ...base, state: "none", label: "측정기 미등록(측정 안 함)", store: null };
   const ranked = candidates
@@ -282,9 +292,10 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   const first = used[0];
   const last = used[used.length - 1];
   const short = r.days < windowDays;
+  const weekendDays = countWeekendDays(used);
   return {
     state: short ? "short" : "ok",
-    label: short ? `7일 미달(${r.days}일치)` : "측정 중",
+    label: short ? `7일 미달(${r.days}일치 · 주말 ${weekendDays}일)` : "측정 중",
     store: s,
     util: r.util,
     fullDays: r.days,
@@ -292,7 +303,8 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
     from: first,
     to: last,
     pingbotUtilization: Math.round(r.util * 1000) / 10,
-    pingbotPeriod: `측정기 ${first}~${last} 일일평균 ${r.days}일`,
+    pingbotPeriod: `측정기 ${first}~${last} 일일평균 ${r.days}일(평일 ${r.days - weekendDays}·주말 ${weekendDays})`,
+    weekendDays,
   };
 }
 
