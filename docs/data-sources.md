@@ -12,9 +12,11 @@
 ```
 구글시트(전수조사)                      Firestore                     웹 화면
 ─────────────────                    ──────────                    ────────
-매출DB              ──매일 06:00──▶  storeEvalExistingStores        기존 가맹점
-01_점포기본정보       ──매일 06:00──▶  storeEvalExistingStoreSales    검증 화면
-05_경쟁점정보(가맹점행) ─매일 06:00──▶  storeEvalCompetitors
+매출DB              ──매일 06:00──▶  storeEvalExistingStoreSales    검증 화면 (월매출·brandType만)
+01_점포기본정보·05_경쟁점정보      ✕ 2026-10-10부터 안 읽음 — 기존점 정보·경쟁점은 웹이 정본
+
+                                     storeEvalExistingStores   ◀──직접입력── 기존 가맹점(후보지→기존점 전환으로 생김)
+                                     storeEvalCompetitors      ◀──직접입력── 기존점·후보지 경쟁점
 
                                      storeEvalCandidates       ◀──직접입력── 신규후보지
                                      storeEvalCompetitors(N)   ◀──직접입력── 후보지 경쟁점
@@ -26,9 +28,11 @@
 
 | 탭 | 읽는 코드 | 들어가는 곳 |
 |---|---|---|
-| **매출DB** | `cronSync.ts:404` `SOURCE_SHEET_NAME` | `storeEvalExistingStores`(자동등록·brandType), `storeEvalExistingStoreSales`(월별 PC/상품매출·가동률) |
-| **01_점포기본정보** | `cronSync.ts:160`, `scripts/migrateFullExistingStoreProfiles.mjs:84` | `storeEvalExistingStores`의 자사 시설·요금·PC대수 |
-| **05_경쟁점정보** | `cronSync.ts:255`, `migrateFullExistingStoreProfiles.mjs:182` | `storeEvalCompetitors` (가맹점코드 행만) |
+| **매출DB** | `cronSync.ts` `runRevenueSync` | `storeEvalExistingStoreSales`(월별 PC/상품매출·가동률), `storeEvalExistingStores`의 brandType만. **자동등록은 2026-10-10에 끔** — 매출DB엔 있는데 웹 기존점이 아닌 블랙라벨은 `cronSync.revenue.salesOnlyStores`로 알림(후보지→기존점 전환 필요 신호) |
+
+**2026-10-10 사용자 결정: "매출만 불러오고 점포정보랑 경쟁점은 이제 웹을 본데이터로."** `01_점포기본정보`·`05_경쟁점정보`는
+크론이 더 이상 읽지 않는다(웹에서 고친 값이 다음 날 되돌아가던 문제). `scripts/migrateFullExistingStoreProfiles.mjs`도
+`--force-sheet` 없이는 안 돈다. 시트 탭은 참고용으로만 남는다.
 
 ⚠️ **01_점포기본정보의 유동인구·주거인구 컬럼은 2026-09-16부터 안 읽는다.** 그 필드들의
 정본은 자동수집으로 옮겨졌다 — 아래 "자동수집이 정본" 절을 봐라.

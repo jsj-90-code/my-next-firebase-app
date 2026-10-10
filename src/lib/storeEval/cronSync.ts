@@ -24,7 +24,7 @@ import type { Competitor, ExistingStore, LocationEvaluation, ModelSettings } fro
 // 핑봇_가동률 퍼센트 파싱 버그가 한쪽만 고쳐지고 이 파일엔 남아있던 사고가 있었다(2026-08-22,
 // docs/data-issues.md). 단일 출처로 합쳐 같은 드리프트가 재발하지 않게 한다(2026-08-24).
 import { needsWrite } from "../../../scripts/lib/diffWrite.mjs";
-import { toNumber, toPercentNumber, toBool, toText, toDateStr, parseKoreanDate, shouldAcceptSheetOpenDate } from "../../../scripts/lib/sheetParsers.mjs";
+import { toNumber, toPercentNumber, parseKoreanDate } from "../../../scripts/lib/sheetParsers.mjs";
 
 const SPREADSHEET_ID = process.env.STORE_EVAL_SPREADSHEET_ID || "1Q5yCOL5IT_pT8lYKvtzhzPK3ihC0otVifQBNPi0SjRA";
 const BATCH_LIMIT = 450; // Firestore 배치 한도(500)에서 여유를 둔 값
@@ -101,23 +101,6 @@ function isSameData(current: Record<string, unknown> | undefined, patch: Record<
   return !needsWrite(current, patch, { merge: true });
 }
 
-async function readSheetAsObjects(
-  sheets: ReturnType<typeof getSheetsClient>,
-  sheetName: string,
-  range: string,
-): Promise<Record<string, string>[]> {
-  const res = await sheets!.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `'${sheetName}'!${range}` });
-  const values = res.data.values ?? [];
-  const headers = (values[0] ?? []) as string[];
-  return values.slice(1).map((row) => {
-    const obj: Record<string, string> = {};
-    headers.forEach((h, i) => {
-      if (h) obj[h] = row[i] ?? "";
-    });
-    return obj;
-  });
-}
-
 export type ProfileMigrationSummary = {
   targetStoreCount: number;
   profileUpdated: number;
@@ -126,11 +109,9 @@ export type ProfileMigrationSummary = {
   suspiciousOpenDates: string[];
 };
 
-/** 01/05/09 시트 → Firestore 전체 마이그레이션 (scripts/migrateFullExistingStoreProfiles.mjs와 동일 로직). */
+/** 기존점 경쟁력점수·수요 캐시 재계산 — 웹(Firestore) 값만 쓴다. 2026-10-10부터 01/05 시트는 읽지 않는다(이름은 호출부 호환으로 유지). */
 export async function runFullProfileMigration(): Promise<ProfileMigrationSummary> {
   if (!adminDb) throw new Error("Firebase Admin이 초기화되지 않았습니다(FIREBASE_CLIENT_EMAIL/PRIVATE_KEY 확인).");
-  const sheets = getSheetsClient();
-  if (!sheets) throw new Error("Google Sheets 인증 정보가 없습니다.");
   const db = adminDb;
   const writer = new BatchWriter(db);
   const suspiciousOpenDates: string[] = [];
@@ -172,208 +153,13 @@ export async function runFullProfileMigration(): Promise<ProfileMigrationSummary
   }
   const settings: ModelSettings = mergeModelSettings(settingsSnap.exists ? (settingsSnap.data() as Partial<ModelSettings>) : null);
 
-  // ---- 01_점포기본정보 ----
-  const stores01 = await readSheetAsObjects(sheets, "01_점포기본정보", "A1:CQ1000");
-  let profileUpdated = 0;
-  for (const s of stores01) {
-    const code = toText(s["가맹점코드"]);
-    if (!code || !storeCodes.has(code)) continue;
-    const patch: Record<string, unknown> = {
-      address: toText(s["주소"]),
-      hasElevator: toBool(s["엘리베이터"]),
-      // 오픈 후 좌석을 늘린 매장은 이 값(오픈 초기 대수)으로 V61 학습/예측을 해야 한다
-      // (2026-08-22, migrateFullExistingStoreProfiles.mjs와 동일 필드 — 자동 동기화도
-      // 시트가 나중에 갱신되면 따라가도록 여기에도 추가).
-      evaluationPcCount: toNumber(s["평가기준_PC대수"]),
-      demographicsYear: toNumber(s["상권데이터기준연도"]),
-      renovationYear: toNumber(s["자사_리뉴얼연도"]),
-      // 2026-08-28 (2차) — 실제 시트 컬럼이 기본/특화1/특화2(GPU·CPU)·기본/특화(RAM·모니터)로
-      // 세분화됨(사용자 확정). 일부 좌석만 업그레이드된 경우를 반영하기 위해 calc.ts
-      // combineHardwareTiers(기본80%+특화균등분배20%)로 결합한다. 모니터는 더 이상 숫자 평가가
-      // 아니라 텍스트(주사율 Hz)에서 자동채점한다(scoreFromMonitor).
-      ownVgaBase: toText(s["자사_VGA_기본"]),
-      ownVgaTop: toText(s["자사_VGA_특화1"]),
-      ownVgaTop2: toText(s["자사_VGA_특화2"]),
-      ownCpu: toText(s["자사_CPU_기본"]),
-      ownCpuTop1: toText(s["자사_CPU_특화1"]),
-      ownCpuTop2: toText(s["자사_CPU_특화2"]),
-      ownRam: toText(s["자사_RAM_기본"]),
-      ownRamTop: toText(s["자사_RAM_특화"]),
-      ownMonitorBase: toText(s["자사_모니터_기본"]),
-      ownMonitorTop: toText(s["자사_모니터_특화"]),
-      // 2026-08-30 — 자사_게임존수(하드웨어 가산점 컬럼) 삭제(사용자 확정). 게임존은 인테리어
-      // 특화가 아니라 하드웨어 특화 좌석인데, 하드웨어는 특화1/특화2 컬럼으로 이미 별도 평가되므로
-      // 가산은 이중 반영이었다(프리미엄존 가산 폐지와 같은 이유, calc.ts computeSpecScore 참고).
-      // 2026-08-28 (3차) — "자사_1인석"(개방형 좌석) 컬럼 신설, 기존 "자사_1인룸"(독립 공간)과 분리.
-      ownSingleSeatCount: toNumber(s["자사_1인석"]),
-      ownRoom1: toNumber(s["자사_1인룸"]),
-      ownRoom2: toNumber(s["자사_2인룸"]),
-      ownTeamRoom: toNumber(s["자사_팀룸"]),
-      ownCoupleZone: toNumber(s["자사_커플존"]),
-      ownVipZone: toNumber(s["자사_VIP존"]),
-      ownFriendsZone: toNumber(s["자사_프렌즈존"]),
-      // 2026-08-30 추가 — 팀룸형 고급 컨셉존(파우더룸 포함, 방당 약 10좌석). 자동 산식엔 안 쓰고
-      // 평가자가 인테리어평가 매길 때 참고하는 사실 기록용(사용자 확인).
-      ownFirstClassZone: toNumber(s["자사_퍼스트클래스존"]),
-      // 2026-08-31(시설 평가 산식 개편) — 팀룸 "개수"와 별개로 "총좌석수" 직접입력을 읽는다(01시트
-      // BY/BZ, 신설 컬럼, migrateFullExistingStoreProfiles.mjs와 동일).
-      ownTeamRoomTotalSeats: toNumber(s["자사_팀룸좌석수"]),
-      ownTeamRoomTotalSeatsBasis: toText(s["자사_팀룸좌석근거"]),
-      ownFoodScore: toNumber(s["자사_먹거리평가"]),
-      ownInteriorScore: toNumber(s["자사_인테리어평가"]),
-      // 2026-09-01 버그 수정 — "관리점수는 시트 수식상 자사는 항상 상수 4라 읽어올 값이 없다"는
-      // 옛 전제가 더 이상 맞지 않는다. 01시트에 "자사_매장관리점수" 컬럼이 실제로 생겼으므로
-      // 읽어와야 한다(applyStandardOwnFacilityDefaults가 이 값이 있으면 우선 쓰고, 없을 때만
-      // 표준값 4로 폴백하도록 이미 짜여 있었는데 정작 이 필드를 아무도 채워준 적이 없었다).
-      ownManagementScore: toNumber(s["자사_매장관리점수"]),
-      area1kmKm2: toNumber(s["반경1km_조회면적_km2"]),
-      male1kmRatio: (() => {
-        const n = toNumber(s["반경1km_남성비율"]);
-        return n == null ? null : n > 1 ? n / 100 : n;
-      })(),
-      // ── 유동인구 500m·주거인구는 여기서 쓰지 않는다 (2026-09-16, 사용자 확정) ──────────
-      // 예전엔 시트의 `유동500_*` 8개 컬럼과 `반경500m_총인구`·`반경1km_총인구`·`반경1km_*세`
-      // 9구간을 여기서 매일 덮어썼다. 그 값들은 사람이 소상공인365/SGIS 화면을 보고 손으로
-      // 넣은 것이고, 출처·측정시점이 지점마다 달랐다.
-      //
-      // 2026-09-15에 두 출처를 API로 뚫어 52곳을 같은 기준으로 다시 받았고(반경 100~1000m,
-      // 최근 12개월 평균, 주거는 2024년), 그 과정에서 손입력 오류도 찾았다 — N003 호구포역점
-      // 유동 500m가 실제의 1/3이라 상권성격이 뒤집혀 있었고, 주거인구도 5곳이 3~10% 어긋났다.
-      //
-      // 그런데 자동수집분을 Firestore에 넣어도 **다음날 06시 이 크론이 시트 값으로 되돌렸다.**
-      // 2026-09-16 아침에 실제로 그 일이 일어나 기존점 41곳이 통째로 옛 값으로 복귀했고,
-      // 화면에 저장된 적중률(MAPE 9.26%)이 지금 데이터로는 재현되지 않는(9.37%) 상태가 됐다.
-      //
-      // 그래서 이 필드들의 **정본을 자동수집으로 옮긴다.** 시트의 해당 컬럼은 더 이상 읽지
-      // 않으며(값은 참고용으로 시트에 남아 있다), 갱신은 아래 스크립트로만 한다:
-      //   node scripts/collectSbizFloatingPopulation.mjs → writeFloatingPopulationToFirestore.mjs --include-500 --apply
-      //   node scripts/collectSgisResidentPopulation.mjs → writeResidentPopulationToFirestore.mjs --apply
-      //
-      // ⚠️ 새 매장이 시트에 등록되면 이 크론은 유동·주거를 채워주지 않는다. 위 두 수집기를
-      //    돌려야 채워진다(안 채우면 산식이 그 지점을 수요 0으로 본다).
-      //
-      // `area1kmKm2`·`male1kmRatio`·`operatingPcStores500m`은 자동수집 대상이 아니라서
-      // 그대로 시트에서 읽는다 — 경계를 여기 적어 둔다.
-      operatingPcStores500m: toNumber(s["실영업_PC방업소수_500m"]),
-      updatedAt: Date.now(),
-    };
-    const sheetOpenedAt = toDateStr(s["오픈일"]);
-    const storedOpenedAt = (storeDataByCode.get(code) as { openedAt?: string | null } | undefined)?.openedAt ?? null;
-    if (shouldAcceptSheetOpenDate(code, sheetOpenedAt, storedOpenedAt)) {
-      patch.openedAt = sheetOpenedAt;
-    } else if (sheetOpenedAt) {
-      // 2026-09-11 — 예전엔 "코드 이름"만 남겨서, 보고를 봐도 시트의 어떤 값이 왜 거부됐는지
-      // 알 수 없었다(매 실행마다 같은 줄만 반복). 거부된 시트값과 현재 저장값을 같이 적는다.
-      suspiciousOpenDates.push(
-        `${code} ${toText(s["가맹점명"]) ?? ""} — 시트 오픈일 ${sheetOpenedAt}이 코드 날짜와 30일 넘게 차이나고 저장값(${storedOpenedAt ?? "없음"})과도 달라 반영하지 않음`,
-      );
-    }
-    if (!isSameData(storeDataByCode.get(code), patch)) {
-      await writer.set(db.collection("storeEvalExistingStores").doc(code), patch, true);
-      profileUpdated++;
-    }
-    // Recalculate derived fields from the profile written in this same sync.
-    storeDataByCode.set(code, { ...storeDataByCode.get(code), ...patch });
-  }
-
-  // ---- 05_경쟁점정보 ----
-  const comps05 = await readSheetAsObjects(sheets, "05_경쟁점정보", "A1:AX2000");
-  let compWritten = 0;
-  // id를 "코드_이름_전역순번"으로 만들면(예전 방식) 시트 행이 추가/삭제되거나 다른 경쟁점이
-  // 먼저 스킵되는 순간 재실행 시 기존 문서를 덮어쓰지 못하고 옛 값이 orphan으로 남는다
-  // (migrateFullExistingStoreProfiles.mjs와 동일 이유로 2026-08-22 수정 - 이 파일이 그 스크립트와
-  // "완전히 동일"해야 한다는 파일 상단 주석과 어긋나 있던 걸 바로잡음). "코드_이름"만으로 키를
-  // 만들어 매장 내 순서가 바뀌어도 같은 경쟁점은 항상 같은 id로 덮어써지게 하고, 같은 매장에
-  // 동명 경쟁점이 있을 때만 매장별 순번을 붙여 구분한다(전역 순번 아님).
-  const seenKeyCount = new Map<string, number>();
-  for (const c of comps05) {
-    const code = toText(c["가맹점코드"]);
-    if (!code || !storeCodes.has(code)) continue;
-    const name = toText(c["경쟁점명"]);
-    if (!name) continue;
-    const baseKey = `${code}_${name}`;
-    const seenCount = seenKeyCount.get(baseKey) ?? 0;
-    seenKeyCount.set(baseKey, seenCount + 1);
-    const id = seenCount === 0 ? baseKey : `${baseKey}_${seenCount}`;
-    const competitor = {
-      id,
-      candidateCode: existingStoreSourceCode({ ...storeDataByCode.get(code), storeCode: code } as ExistingStore),
-      name,
-      surveyLevel: toText(c["조사수준"]) || "상세",
-      investigationStatus: "조사완료",
-      address: toText(c["경쟁점주소"]),
-      distanceM: toNumber(c["거리_m"]),
-      floor: toNumber(c["점포층수"]),
-      groundLevel: toText(c["지상/지하"]),
-      // 2026-10-10 사용자 — 경쟁점 대수는 웹이 정본이다(측정기 정밀점검에서 IP 대역에 맞춰 웹 대수를 고쳤다: 고트PC 90→110,
-      // 긱스타 빈칸→115). 웹에 값이 있으면 시트로 덮어쓰지 않고, 웹이 빈칸일 때만 시트 값으로 채운다.
-      totalPcCount: (existingCompByid.get(id)?.totalPcCount as number | null | undefined) ?? toNumber(c["전체대수"]),
-      appliedPcCount:
-        (existingCompByid.get(id)?.appliedPcCount as number | null | undefined) ?? toNumber(c["적용대수"]) ?? toNumber(c["전체대수"]),
-      hasElevator: toBool(c["엘리베이터"]),
-      // 2026-08-28 (3차) — 05_경쟁점정보도 01_점포기본정보와 같은 기본/특화1/특화2(GPU·CPU)·
-      // 기본/특화(RAM·모니터) 구조로 늘렸다(사용자 확정).
-      // 2026-08-28 (4차) — 실제 시트 헤더를 읽어보니 "CPU_기본"이 아니라 "CPU 기본"(밑줄 아님,
-      // 공백)이었다(추측으로 밑줄을 썼다가 실측 데이터로 확인·수정 — 이 오타 때문에 매번 동기화가
-      // 돌 때마다 사양 칸이 전부 공란으로 덮어써지고 있었다, 사용자 발견).
-      cpu: toText(c["CPU 기본"]),
-      cpuTop1: toText(c["CPU 특화1"]),
-      cpuTop2: toText(c["CPU 특화2"]),
-      vgaBase: toText(c["VGA 기본"]),
-      vgaTop: toText(c["VGA 특화1"]),
-      vgaTop2: toText(c["VGA 특화2"]),
-      ram: toText(c["RAM 기본"]),
-      ramTop: toText(c["RAM 특화"]),
-      monitorBase: toText(c["모니터 기본"]),
-      monitorTop: toText(c["모니터 특화"]),
-      ratePer1000Won: toNumber(c["1000원당분"]),
-      hourlyRateConverted: toNumber(c["시간당환산요금"]),
-      paidDeduction: toText(c["유료차감"]),
-      // 2026-08-30 — 방문일시/방문요일/이용객수/실측착석률은 05_경쟁점정보에서 컬럼 자체를
-      // 삭제했다(예측 계산에 안 쓰임, 사용자 확인 — types.ts Competitor 주석 참고). 더 이상
-      // 여기서 읽지 않는다 — 안 읽어야 웹에서 수동입력한 값이 매 동기화마다 null로 안 덮어써진다.
-      pingbotUtilization: toPercentNumber(c["핑봇_가동률"]),
-      pingbotPeriod: toText(c["핑봇_조회기간"]),
-      // 2026-08-30 — 경쟁점 리뉴얼연도 컬럼도 시트에서 삭제(인테리어평가로 대체, 사용자 확인).
-      foodScore: toNumber(c["먹거리평가"]),
-      foodBasis: toText(c["먹거리근거"]),
-      interiorScore: toNumber(c["인테리어평가"]),
-      interiorBasis: toText(c["인테리어근거"]),
-      // 2026-08-31(시설 평가 산식 개편) — 관리점수가 더 이상 인테리어에서 파생되지 않는 완전
-      // 독립값이 됐다(189곳 재검토, 사용자 확정, migrateFullExistingStoreProfiles.mjs와 동일).
-      // VIP존/프렌즈존/퍼스트클래스존은 이번에 시트에 컬럼이 새로 생겨(AP/AQ/AR) 동기화 대상으로
-      // 승격(예전엔 웹 전용 입력이었음).
-      // 2026-09-01 버그 수정 — 실제 시트 헤더는 "매장관리점수"가 아니라 "경쟁점_매장관리점수"였다
-      // (컬럼명 불일치로 상세조사 경쟁점 142곳 전부 이 값이 null 처리되고 있었음, 사용자 확인 후 발견).
-      managementScore: toNumber(c["경쟁점_매장관리점수"]),
-      singleSeatCount: toNumber(c["1인석"]),
-      room1: toNumber(c["1인룸"]),
-      room2: toNumber(c["2인룸"]),
-      teamRoom: toNumber(c["팀룸"]),
-      coupleZone: toNumber(c["커플존"]),
-      vipZone: toNumber(c["VIP존"]),
-      friendsZone: toNumber(c["프렌즈존"]),
-      firstClassZone: toNumber(c["퍼스트클래스존"]),
-      // 2026-08-31 신설 — 일반2인석(전용 커플존과 별개, '조' 단위)과 팀룸 총좌석수(개수와 분리).
-      regularCoupleSeatCount: toNumber(c["일반2인석"]),
-      teamRoomTotalSeats: toNumber(c["팀룸좌석수"]),
-      teamRoomTotalSeatsBasis: toText(c["팀룸좌석근거"]),
-      createdAt: (existingCompByid.get(id)?.createdAt as number | undefined) ?? Date.now(),
-      updatedAt: Date.now(),
-    };
-    if (!isSameData(existingCompByid.get(id), competitor)) {
-      // 2026-08-28 — merge:true로 변경. 예전엔 전체 덮어쓰기라 매일 이 동기화가 돌 때마다
-      // foodBrand/interiorLevelScore/seatZoneScore/comfortScore/source/lat/lng처럼 시트에 없고
-      // 웹에서만 입력하는 필드가 조용히 지워지는 위험이 있었다(발견된 버그, 이번에 같이 수정).
-      // 시트 원본 필드(위 competitor 객체가 명시한 것들)는 그대로 덮어쓰고, 명시 안 된 필드만 보존된다.
-      await writer.set(db.collection("storeEvalCompetitors").doc(id), competitor, true);
-      compWritten++;
-    }
-    // merge 후 실제로 Firestore에 남을 값(웹 전용 필드는 기존 문서 값 보존) — 아래 경쟁력점수
-    // 재계산에 쓴다. dirty 여부와 무관하게 항상 채운다(안 바뀐 경쟁점도 계산엔 포함돼야 함).
-    const mergedCompetitor = { ...existingCompByid.get(id), ...competitor } as unknown as Competitor;
-    existingCompByid.set(id, mergedCompetitor);
-  }
+  // ---- 01_점포기본정보 · 05_경쟁점정보: 더 이상 읽지 않는다 (2026-10-10 사용자) ----
+  // "매출만 불러오고 점포정보랑 경쟁점은 이제 웹을 본데이터로". 예전엔 매일 이 두 시트로 기존점 프로필·경쟁점을 덮어써서
+  // 웹에서 고친 값(측정기 정밀점검 때 고친 경쟁점 대수 등)이 다음 날 되돌아갔다. 새 기존점은 시트 자동등록이 아니라
+  // 웹의 "후보지 → 기존점 전환"(store.ts, originCandidateCode)으로만 생기므로 시트로 처음 채울 일도 없다.
+  // 아래 재계산은 웹(Firestore) 값만으로 한다. 옛 매핑 코드는 git 기록(b2b3d25 이전)에 있다.
+  const profileUpdated = 0;
+  const compWritten = 0;
 
   // Include web-created competitors too, exactly as the evaluation screens do.
   const competitorsByCandidateCode = new Map<string, Competitor[]>();
@@ -461,6 +247,8 @@ export type RevenueSyncSummary = {
   registeredStoreCount: number;
   autoRegisteredStores: string[];
   autoRegisterSkipped: string[];
+  /** 매출DB엔 있는데 웹 기존점이 아닌 블랙라벨 정상 매장 — 후보지→기존점 전환이 필요하다는 신호(2026-10-10). */
+  salesOnlyStores: string[];
   brandUpdated: number;
   salesUpserted: number;
   storesRecalculated: number;
@@ -494,70 +282,25 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
 
   const values = sheetValuesRes.data.values ?? [];
   if (values.length < SOURCE_DATA_START_ROW) {
-    return { registeredStoreCount: storeCodes.size, autoRegisteredStores: [], autoRegisterSkipped: [], brandUpdated: 0, salesUpserted: 0, storesRecalculated: 0 };
+    return { registeredStoreCount: storeCodes.size, autoRegisteredStores: [], autoRegisterSkipped: [], salesOnlyStores: [], brandUpdated: 0, salesUpserted: 0, storesRecalculated: 0 };
   }
 
-  // ---- 1) 매출DB!E열(가맹해지여부)이 "정상"인데 아직 미등록인 매장을 자동 등록 ----
+  // ---- 1) 자동 등록은 하지 않는다 (2026-10-10 사용자) ----
+  // 새 기존점은 웹의 "후보지 → 기존점 전환"(store.ts)으로만 생긴다. 예전엔 매출DB에 새 블랙라벨 코드가 보이면 빈 기존점 문서를
+  // 만들었는데, 전환보다 먼저 만들어지면 후보지 기록과 이어지지 않은 껍데기가 생긴다. 대신 "매출DB엔 있는데 웹 기존점이 아닌
+  // 블랙라벨 정상 매장"을 salesOnlyStores로 알려 준다 — 전환할 후보지가 생겼다는 신호(개점 3~6개월 뒤 경쟁점 재측정 과제의 출발점).
+  // 이 매장들의 매출은 전환 뒤 다음 크론부터 들어온다(아래 매출 쓰기는 웹에 등록된 매장만).
   const autoRegisteredStores: string[] = [];
   const autoRegisterSkipped: string[] = [];
+  const salesOnlyStores: string[] = [];
   for (let r = SOURCE_DATA_START_ROW - 1; r < values.length; r++) {
     const row = values[r];
     if (!row || !row[0]) continue;
     const code = String(row[0]).trim();
     if (storeCodes.has(code)) continue;
     if (String(row[4] ?? "").trim() !== "정상") continue;
-    // 2026-08-31(사용자 확정) — 블랙라벨만 평가 대상이라 리그(확인필요) 매장은 이제 자동등록도
-    // 하지 않는다. 이 필터가 없으면 리그 매장을 Firestore에서 지워도 다음 크론이 그대로
-    // 재등록해버린다(리그 92곳 일괄삭제 작업의 전제조건).
-    if (!isBlackLabelByCode.get(code)) {
-      autoRegisterSkipped.push(code);
-      continue;
-    }
-
-    const storeName = String(row[1] ?? "").trim();
-    const pcCount = toNumber(row[2]);
-    const address = String(row[12] ?? "").trim() || null;
-    const openedAt = parseKoreanDate(row[9]);
-    if (!storeName || !openedAt) {
-      autoRegisterSkipped.push(code);
-      continue;
-    }
-
-    const now = Date.now();
-    await writer.set(
-      db.collection("storeEvalExistingStores").doc(code),
-      {
-        storeCode: code,
-        storeName,
-        pcCount: pcCount ?? null,
-        evaluationPcCount: null,
-        floor: null,
-        groundLevel: null,
-        openedAt,
-        franchiseStatus: "정상",
-        excludedFromModel: false,
-        excludedReason: null,
-        v61Predicted: null,
-        referenceMarketDemand: null,
-        brandType: brandTypeFor(code),
-        validationUse: null,
-        hourlyRate: null,
-        ownDemand: null,
-        competitivenessScore: null,
-        actualMonthlyRevenueAvg: null,
-        completedMonths: 0,
-        specialDemandType: null,
-        specialDemandIntensity: null,
-        address,
-        createdAt: now,
-        updatedAt: now,
-        updatedBy: "cron-sync",
-      },
-      true,
-    );
-    storeCodes.add(code);
-    openedAtByCode.set(code, openedAt);
-    autoRegisteredStores.push(`${code} ${storeName}`);
+    if (!isBlackLabelByCode.get(code)) continue;
+    salesOnlyStores.push(`${code} ${String(row[1] ?? "").trim()} (개점 ${parseKoreanDate(row[9]) ?? "?"})`);
   }
 
   // ---- 1-1) 이미 등록된 매장도 매출DB 색상 기준으로 brandType을 매번 다시 맞춘다(멱등) ----
@@ -643,5 +386,5 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
 
   await writer.finish();
 
-  return { registeredStoreCount: storeCodes.size, autoRegisteredStores, autoRegisterSkipped, brandUpdated, salesUpserted, storesRecalculated };
+  return { registeredStoreCount: storeCodes.size, autoRegisteredStores, autoRegisterSkipped, salesOnlyStores, brandUpdated, salesUpserted, storesRecalculated };
 }

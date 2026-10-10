@@ -46,3 +46,11 @@
   실데이터 되짚기(10-07~10-10, 89회차, `.local-tools/_gateBacktest.mts`): 걸린 건 10-08 05시 예비(tcp) 1회 — 172곳 중 119곳 0대·합계 505(앞뒤 ~1300)인 진짜 고장. 정상 회차 오탐 0.
 - **출처 우선순위**(shouldReplace): 같은 시에 예비(tcp)·집 PC(home) 기록이 있으면 서버 결과(핑+TCP+타임스탬프)로 바꿔 씀(날 합계는 차이만큼 보정, n 그대로).
 - 서버(agent.mjs)는 안 건드림. 남은 서버 쪽(4xx면 결과 버림·pending이 측정을 밀어냄·결과 받을 때 대상 목록 다시 읽음·Vercel 예비 소켓 800)은 A1 이전 때.
+
+## 추가(같은 날 밤) — 시트는 매출DB만 (사용자 결정)
+- 사용자: "매출만 불러오고 점포정보랑 경쟁점은 이제 웹을 본데이터로" · "신규후보지가 기존점이 되는 구조라 자동등록 필요 없음".
+- `cronSync.ts`: 01_점포기본정보·05_경쟁점정보 읽기 삭제(재계산은 웹 값만). 매출DB 자동등록 끔 → 매출DB엔 있는데 웹 기존점이 아닌 블랙라벨 정상 매장을
+  `cronSync.revenue.salesOnlyStores`로 알림(후보지→기존점 전환 필요 신호). 매출 upsert·brandType은 그대로.
+- 수동 스크립트도 막음: `migrateFullExistingStoreProfiles.mjs`는 `--force-sheet` 없이 중단, `syncSalesFromRevenueSheet.mjs` 자동등록 주석 처리.
+- 문서: `docs/data-sources.md` 지도, CLAUDE.md·`long-term-pingbot-remeasure.md`의 autoRegisteredStores → salesOnlyStores.
+- 확인: 10-11 06시 크론 뒤 `node .local-tools/_readCronStatus.mjs` — profile.profileUpdated·competitorsWritten 0, revenue.salesOnlyStores 목록, 고트PC 110 유지.

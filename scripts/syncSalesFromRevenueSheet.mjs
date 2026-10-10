@@ -217,7 +217,8 @@ async function main() {
 
   // 1-1) 매출DB에서 아직 등록 안 된 신규 매장을 자동 등록 (storeCodes/openedAtByCode를 그
   //      자리에서 갱신하므로, 아래 매출 동기화 루프가 같은 실행에서 바로 반영한다)
-  await autoRegisterNewStores(storeCodes, openedAtByCode, isBlackLabelByCode);
+  // 2026-10-10 사용자 — 새 기존점은 웹의 후보지→기존점 전환으로만 생긴다. 시트 자동 등록은 끔(크론 cronSync와 같음).
+  // await autoRegisterNewStores(storeCodes, openedAtByCode, isBlackLabelByCode);
 
   // 1-2) 이미 등록된 매장도 매출DB 색상 기준으로 brandType을 매번 다시 맞춘다(멱등) —
   //      09_입지동선평가에 행이 없어 여태 브랜드를 확인할 방법이 없던 매장도 이걸로 채워진다.

@@ -37,19 +37,19 @@ vi.mock("./existingStoreEvaluation", async (importOriginal) => ({
 
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); mocks.writes.length = 0; });
 
-it.each(["N1", null])("동기화는 최신 기본정보와 올바른 연결 자료를 사용한다 (원본 코드 %s)", async (originCode) => {
+// 2026-10-10 — 01·05 시트는 더 이상 읽지 않는다(웹이 정본, 사용자). 시트에 다른 값이 있어도 웹 값으로만 재계산하고,
+// 시트 경쟁점을 새로 만들거나 기존점 프로필을 덮어쓰지 않아야 한다.
+it.each(["N1", null])("동기화는 웹 기본정보·웹 경쟁점만으로 재계산한다 (원본 코드 %s)", async (originCode) => {
   mocks.originCode = originCode;
   vi.stubEnv("FIREBASE_CLIENT_EMAIL", "test@example.invalid");
   vi.stubEnv("FIREBASE_PRIVATE_KEY", "test-only");
   const {runFullProfileMigration} = await import("./cronSync");
   const summary = await runFullProfileMigration();
-  expect(summary.profileUpdated).toBe(1);
+  expect(summary.profileUpdated).toBe(0);
+  expect(summary.competitorsWritten).toBe(0);
   expect(mocks.calculate).toHaveBeenCalledWith(
-    expect.objectContaining({ownVgaBase:"RTX 5060",originCandidateCode:originCode}),
-    [
-      expect.objectContaining({id:"web",candidateCode:originCode ?? "S1",investigationStatus:"경쟁점없음"}),
-      expect.objectContaining({id:"S1_시트 경쟁점",candidateCode:originCode ?? "S1",investigationStatus:"조사완료"}),
-    ],
+    expect.objectContaining({ownVgaBase:"RTX 3060",originCandidateCode:originCode}),
+    [expect.objectContaining({id:"web",candidateCode:originCode ?? "S1",investigationStatus:"경쟁점없음"})],
     null,
     expect.any(Object),
     // 2026-09-20 — QSC에서 환산한 관리 점수. 이 시험은 storeEvalQscScores가 비어 있으므로
@@ -57,5 +57,6 @@ it.each(["N1", null])("동기화는 최신 기본정보와 올바른 연결 자�
     null,
   );
   expect(mocks.writes).toContainEqual({id:"S1",data:expect.objectContaining({competitivenessScore:4})});
-  expect(mocks.writes).toContainEqual({id:"S1_시트 경쟁점",data:expect.objectContaining({candidateCode:originCode ?? "S1"})});
+  expect(mocks.writes.some((w) => w.id === "S1_시트 경쟁점")).toBe(false);
+  expect(mocks.writes.some((w) => w.data.ownVgaBase === "RTX 5060")).toBe(false);
 });

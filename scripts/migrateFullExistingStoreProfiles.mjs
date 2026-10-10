@@ -13,6 +13,12 @@
 // 실행: node scripts/migrateFullExistingStoreProfiles.mjs
 // 반복 실행해도 안전(멱등, set으로 덮어씀).
 
+// ⛔ 2026-10-10 사용자 — 기존점 정보·경쟁점은 웹(Firestore)이 정본이다. 이 스크립트는 시트 값으로 웹을 통째로 덮어쓰므로
+//    그대로는 돌지 않게 막는다. 정말 시트로 되돌려야 할 때만 --force-sheet를 붙인다(웹에서 고친 값이 사라진다).
+if (!process.argv.includes("--force-sheet")) {
+  console.error("중단: 기존점·경쟁점은 웹이 정본입니다(2026-10-10). 시트로 덮어쓰려면 --force-sheet를 붙이세요.");
+  process.exit(1);
+}
 import { readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
