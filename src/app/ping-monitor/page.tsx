@@ -53,7 +53,7 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
  * 우리 매장 IP가 없는 곳(2026-10-07 단톡 보강 뒤 41곳 중 양주덕정 1곳)은 줄만 두고 "IP 없음".
  */
 function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
-  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel } = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel } = useRanges();
   const status = ping ? storeStatus(ping) : null;
   return (
     <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
@@ -76,10 +76,11 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
           <Recent24Cell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={from7} to={to7} nDays={7} bold excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <UtilCell days={ping.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
           <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={31} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
         </>
       ) : (
-        <td colSpan={6} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
+        <td colSpan={7} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
           우리 매장 IP 없음 — 측정 안 함
         </td>
       )}
@@ -98,7 +99,14 @@ function useRanges() {
     // 이달(달력 월) 1일~어제. "최근 30일" 대신 월 가동률로(2026-10-08 사용자).
     const monthStart = `${today.slice(0, 7)}-01`;
     const monthLabel = `${Number(today.slice(5, 7))}월`;
-    return { today, yesterday: d30.to, fromPrev: prevWeek.from, toPrev: prevWeek.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel };
+    // 지난달(달력 월 전체) — 이번주와 이달 사이 칸(2026-10-10 사용자).
+    const y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7));
+    const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+    const prevMonthDays = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+    const prevMonthStart = `${py}-${String(pm).padStart(2, "0")}-01`;
+    const prevMonthEnd = `${py}-${String(pm).padStart(2, "0")}-${String(prevMonthDays).padStart(2, "0")}`;
+    const prevMonthLabel = `${pm}월`;
+    return { today, yesterday: d30.to, fromPrev: prevWeek.from, toPrev: prevWeek.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel };
   }, []);
 }
 
@@ -167,10 +175,10 @@ function byMeasuredThenDistance(a: PingStore, b: PingStore): number {
 }
 
 function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
-  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel } = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel } = useRanges();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[800px] text-sm">
+      <table className="w-full min-w-[880px] text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
             <th className="px-3 py-2 font-medium">점포명</th>
@@ -181,6 +189,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">24시간</th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-[var(--sl-ink-soft)]">지난주<span className="font-normal"> ({dateRangeLabel(fromPrev, toPrev)})</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">이번주<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(from7, to7)})</span></th>
+            <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-[var(--sl-ink-soft)]">{prevMonthLabel}<span className="font-normal"> (지난달)</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">{monthLabel}<span className="font-normal text-[var(--sl-ink-soft)]"> (이달)</span></th>
             <th className="px-3 py-2 font-medium">상태</th>
           </tr>
@@ -211,6 +220,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <Recent24Cell store={s} muted={muted} />
                 <UtilCell days={s.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <UtilCell days={s.days} from={from7} to={to7} nDays={7} bold excludeUpTo={s.portSwitchDate} muted={muted} />
+                <UtilCell days={s.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={31} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
@@ -226,9 +236,12 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
 
 function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
   const { from7, to7 } = useRanges();
-  const blocked = group.stores.filter((s) => storeStatus(s).tone === "danger").length;
-  const noIp = group.stores.filter(hasNoIp).length;
-  const ipCheck = group.stores.filter((s) => s.ipCheck).length + (group.own?.ipCheck ? 1 : 0);
+  // 숫자는 표의 상태 칸(storeStatus)과 같은 판정으로 센다 — 예전엔 사람 메모(ipCheck)가 붙은 매장 수를 세서,
+  // 메모가 남았지만 실측이 떠서 "측정 중"인 매장·우리 매장 메모까지 "IP 확인"에 들어가 표와 안 맞았다(2026-10-10 사용자).
+  const statuses = group.stores.map(storeStatus);
+  const measuring = statuses.filter((st) => st.tone === "ok").length;
+  const noIp = statuses.filter((st) => st.label === "IP 미등록").length;
+  const ipCheck = statuses.filter((st) => st.tone !== "ok" && st.tone !== "neutral" && st.label !== "IP 미등록").length;
   return (
     <li className="app-card overflow-hidden rounded-2xl">
       {/* 이름은 매장별 비교 화면으로, 나머지(화살표·숫자)는 펼치기 — 단추 안에 링크를 넣을 수 없어 나눴다(2026-10-07). */}
@@ -245,7 +258,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
         )}
         <button type="button" onClick={onToggle} className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-left">
         <span className="text-xs text-[var(--sl-ink-soft)]">
-          경쟁점 {group.stores.length}곳{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}{ipCheck > 0 ? ` · IP 확인 ${ipCheck}` : ""}{blocked > 0 ? ` · 핑차단 ${blocked}` : ""}
+          경쟁점 {group.stores.length}곳 · 측정 중 {measuring}{ipCheck > 0 ? ` · IP 확인 ${ipCheck}` : ""}{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}
         </span>
         <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
           {group.own && (
@@ -368,7 +381,7 @@ export default function PingMonitorPage() {
               <section>
                 <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">칸별 뜻</h3>
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                  <dt className="font-medium text-[var(--sl-ink)]">이번 주 · 최근 30일</dt>
+                  <dt className="font-medium text-[var(--sl-ink)]">이번 주 · 지난달 · 이달</dt>
                   <dd>
                     <b>일일평균</b> — 하루(0~24시) 가동률을 날마다 구해 평균합니다.
                     이번 주는 지나간 날만 넣어서 월요일엔 비어 있습니다.
