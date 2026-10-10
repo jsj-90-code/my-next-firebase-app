@@ -54,3 +54,11 @@
 - 수동 스크립트도 막음: `migrateFullExistingStoreProfiles.mjs`는 `--force-sheet` 없이 중단, `syncSalesFromRevenueSheet.mjs` 자동등록 주석 처리.
 - 문서: `docs/data-sources.md` 지도, CLAUDE.md·`long-term-pingbot-remeasure.md`의 autoRegisteredStores → salesOnlyStores.
 - 확인: 10-11 06시 크론 뒤 `node .local-tools/_readCronStatus.mjs` — profile.profileUpdated·competitorsWritten 0, revenue.salesOnlyStores 목록, 고트PC 110 유지.
+
+## 추가(10-10 밤 늦게) — 대역은 한 덩어리, IP 수 = 대수 (사용자 규칙)
+- 사용자: "IP 대역과 PC 대수는 무조건 맞춘다 · 손님 PC 대역은 나눠 쓰지 않는다(통으로)". 예외는 대역을 둘 이상 쓰는 매장(링크·오토 = 나머지 대역 모름, 그대로 · 브리즈 = 옛 핑봇에 두 회선 등록, 20시 두 대역 다 응답 20·70대, 34+214=248).
+- 뉴애플 1~120/90 → **10~106 = 97**(켜진 IP 10~106) · 고트 1~215/110 → **1~126 = 126**(두 덩어리 등록은 사용자가 반려).
+- 낮에 끝을 자른 24곳의 잘린 구간을 20:35 서버에서 핑+TCP로 재확인(`_cutProbe.server.mjs`, 결과 `cutProbe-result.json`) → 켜진 PC가 있던 8곳은 켜진 맨 뒤 번호까지 다시 늘리고 측정기·웹 대수 맞춤
+  (`_extendToAlive.mjs`, 백업 `backup-extendToAlive-20261010.json`): 옹포 97 · 팽PC 경성대 99 · 더엑스 111 · 쇼타임 85 · 히어로 111 · 소풍 92 · 보보스1 193 · 어쌔신 109(둘 다 계산 제외).
+- 결과: IP 등록 205곳 중 202곳 한 덩어리 + IP 수 = 측정기 대수 = 웹 대수. 한 시점 확인이라 10-16 자동 의심표시 때 일주일 기록으로 재점검.
+- 웹 경쟁점 대수가 바뀐 기존점 경쟁점(고트·더엑스 등)은 다음 06시 크론 재계산 때 V62 적중률이 조금 움직일 수 있다.
