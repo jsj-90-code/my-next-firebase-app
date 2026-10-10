@@ -23,6 +23,13 @@ describe("competitorMeasurement", () => {
     expect(m.pingbotUtilization).toBeNull();
     expect(m.pingbotPeriod).toBeNull();
   });
+  it("IP 확인 메모가 낡았어도 실측이 뜨면(화면 '측정 중') 평가에도 값을 넘긴다 — 2026-10-10", () => {
+    const s = store({ ipCheck: "10-06 점검에서 대답 0대", days: { "2026-10-06": full(36) } });
+    expect(storeStatus(s).label).toBe("측정 중");
+    const m = competitorMeasurement([s], NOW);
+    expect(m.state).toBe("short");
+    expect(m.pingbotUtilization).toBe(15);
+  });
   it("중복 중 확인 경고 없는 측정을 우선한다", () => {
     const flagged = store({ id: "flagged", ipCheck: "확인 필요", days: { "2026-10-05": full(1), "2026-10-06": full(1) } });
     const verified = store({ id: "verified", days: { "2026-10-06": full(36) } });

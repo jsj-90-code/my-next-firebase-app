@@ -261,9 +261,10 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   if (s.excludeFromStats) return { ...base, state: "blocked", label: "계산 제외(IP 확인 필요)", store: s };
   if (hasNoIp(s)) return { ...base, state: "noIp", label: "IP 미등록", store: s };
   if (!s.active) return { ...base, state: "stopped", label: "측정 중지", store: s };
-  // 응답이 한 번이라도 있었다고 해서 IP 확인 경고가 해소된 것은 아니다.
-  // 레드포스처럼 하루 0~1대만 응답한 값이 정상 가동률로 점포평가에 들어가지 않게 한다.
-  if (s.ipCheck) return { ...base, state: "blocked", label: storeStatus(s).label, store: s };
+  // 판정은 측정기 화면과 같은 storeStatus 하나로 한다(2026-10-10). 예전엔 IP 확인 메모(ipCheck)만 있어도 막아서,
+  // 메모가 낡아 화면은 "측정 중"인 매장(메타 하안·피에스타 배곧·크라우드 일도2동)이 여기선 빨간 "측정 중" 배지에 값 없음으로 떴다.
+  // 레드포스처럼 하루 0~1대만 응답한 노이즈는 storeStatus(실측 1% 미만이면 메모 우선)와 rangeUtilization(1% 미만 날 제외)이 이미 막고,
+  // 사람이 노이즈로 확정한 곳은 excludeFromStats(위)가 막는다.
   const status = storeStatus(s);
   if (status.tone === "danger" || status.label.startsWith("IP·핑차단") || status.label.startsWith("과응답")) return { ...base, state: "blocked", label: status.label, store: s };
   // 평균에 실제로 들어간 날과 같은 조건(꽉 찬 날 + 측정실패 1% 미만 제외 + 포트 전환 날 이후)이라야

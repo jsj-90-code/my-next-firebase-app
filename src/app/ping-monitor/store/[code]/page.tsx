@@ -29,10 +29,18 @@ import {
   rangeUtilization,
   recent24h,
   storeStatus,
+  capUtil,
   type PingDaily,
   type PingStore,
 } from "@/lib/pingMonitor/summary";
 import { LineChart, type LineSeries } from "../../LineChart";
+
+/** 값을 보여줄 매장 — 측정 중 또는 과응답(측정기 목록 page.tsx의 muted 규칙과 같다). */
+function showsValues(s: PingStore): boolean {
+  if (hasNoIp(s) || !s.active) return false;
+  const st = storeStatus(s);
+  return st.tone === "ok" || st.label.startsWith("과응답");
+}
 
 /** 시간대별은 날짜 문서를 매장마다 하나씩 읽는다 — 최근 이만큼만. */
 const HOURLY_MAX_DAYS = 92;
@@ -128,9 +136,12 @@ export default function PingOwnComparePage() {
     [stores],
   );
   const measured = useMemo(
-    () => rivals.filter((s) => !hasNoIp(s) && s.active),
+    // 화면 목록과 같은 판정(storeStatus) — IP만 있으면 "측정 중"으로 세던 것을 고침(2026-10-10).
+    // 과응답은 값이 있으니 그래프·표엔 넣고(100% 상한), "측정 중 N곳" 수엔 안 센다.
+    () => rivals.filter((s) => showsValues(s)),
     [rivals],
   );
+  const measuringCount = rivals.filter((s) => storeStatus(s).tone === "ok").length;
   /** 거리순 번호 → 색·선 모양. 7곳까지 서로 다른 색 실선, 8번째부터 같은 색 점선. */
   const lineOf = (s: PingStore) => {
     const i = measured.findIndex((m) => m.id === s.id);
@@ -215,23 +226,26 @@ export default function PingOwnComparePage() {
       )
     : null;
 
-  const cell = "px-3 py-2 text-right tabular-nums";
+  // 표는 한 줄로(2026-10-10 사용자) — 꼬리말은 값 옆에, 칸은 줄바꿈 안 함(좁으면 가로 스크롤).
+  const cell = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
   const util = (v: number | null, note?: string) => (
     <td className={cell}>
       {formatPct(v)}
-      {note && <div className="text-xs text-[var(--sl-ink-soft)]">{note}</div>}
+      {note && <span className="ml-1 text-xs text-[var(--sl-ink-soft)]">{note}</span>}
     </td>
   );
+  // 측정기 목록과 같은 규칙(2026-10-10): 측정 안 되는 매장은 "-", 100% 초과는 100%로, 포트 전환 날 이전은 평균에서 뺀다.
   const rowFor = (s: PingStore) => {
+    if (!showsValues(s)) return <>{util(null)}{util(null)}{util(null)}{util(null)}</>;
     const t = rangeUtilization(s.days, today, today, { includePartial: true });
-    const d7 = rangeUtilization(s.days, r7.from, r7.to);
-    const d30 = rangeUtilization(s.days, r30.from, r30.to);
+    const d7 = rangeUtilization(s.days, r7.from, r7.to, { excludeUpTo: s.portSwitchDate });
+    const d30 = rangeUtilization(s.days, r30.from, r30.to, { excludeUpTo: s.portSwitchDate });
     return (
       <>
-        {util(t.util, partialNote(t.samples, 1))}
-        {util(recent24h(s.recent).util)}
-        {util(d7.util, fullDaysNote(d7.days, 7))}
-        {util(d30.util, fullDaysNote(d30.days, 30))}
+        {util(capUtil(t.util), partialNote(t.samples, 1))}
+        {util(capUtil(recent24h(s.recent).util))}
+        {util(capUtil(d7.util), fullDaysNote(d7.days, 7))}
+        {util(capUtil(d30.util), fullDaysNote(d30.days, 30))}
       </>
     );
   };
@@ -250,7 +264,7 @@ export default function PingOwnComparePage() {
         </h1>
         <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           {isCandidate ? "신규후보지" : "기존가맹점"} · 경쟁점 {rivals.length}
-          곳(측정 중 {measured.length}곳)
+          곳(측정 중 {measuringCount}곳)
           {!own &&
             (isCandidate
               ? " · 개점 전이라 우리 매장 값은 없습니다"
@@ -262,29 +276,18 @@ export default function PingOwnComparePage() {
         <table className="w-full min-w-[680px] text-sm">
           <thead>
             <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
-              <th className="px-3 py-2 font-medium">매장</th>
+              <th className="px-3 py-2 font-medium whitespace-nowrap">매장</th>
               <th className="px-3 py-2 text-right font-medium">거리</th>
               <th className="px-3 py-2 text-right font-medium">대수</th>
-              <th className="px-3 py-2 text-right font-medium">
-                오늘(진행 중)
-                <div className="font-normal">
-                  {dateRangeLabel(today, today)}
-                </div>
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">
+                오늘(진행 중)<span className="font-normal"> ({dateRangeLabel(today, today)})</span>
               </th>
-              <th className="px-3 py-2 text-right font-medium">
-                최근 24시간<div className="font-normal">&nbsp;</div>
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">최근 24시간</th>
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">
+                이번 주(월~일)<span className="font-normal"> ({dateRangeLabel(r7.from, r7.to)})</span>
               </th>
-              <th className="px-3 py-2 text-right font-medium">
-                이번 주(월~일)
-                <div className="font-normal">
-                  {dateRangeLabel(r7.from, r7.to)}
-                </div>
-              </th>
-              <th className="px-3 py-2 text-right font-medium">
-                최근 30일
-                <div className="font-normal">
-                  {dateRangeLabel(r30.from, r30.to)}
-                </div>
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">
+                최근 30일<span className="font-normal"> ({dateRangeLabel(r30.from, r30.to)})</span>
               </th>
             </tr>
           </thead>
@@ -319,7 +322,7 @@ export default function PingOwnComparePage() {
                   onClick={() => !noIp && toggleHidden(s.id)}
                   aria-selected={isShown}
                 >
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 whitespace-nowrap">
                     {!noIp && (
                       <input
                         type="checkbox"

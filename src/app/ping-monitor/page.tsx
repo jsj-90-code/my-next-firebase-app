@@ -178,7 +178,8 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
   const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel } = useRanges();
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[880px] text-sm">
+      {/* 표는 한 줄로(2026-10-10 사용자) — 칸 줄바꿈 금지, 좁으면 가로 스크롤. 긴 IP 확인 메모만 줄바꿈 허용. */}
+      <table className="w-full min-w-[880px] whitespace-nowrap text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
             <th className="px-3 py-2 font-medium">점포명</th>
@@ -208,7 +209,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                     {s.name}
                   </Link>
                   {s.ipCheck && showOwn && (
-                    <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                    <div className="mt-0.5 max-w-[28rem] whitespace-normal text-xs text-amber-700 dark:text-amber-400">
                       ⚠ {s.ipCheck} <span className="font-mono">({s.ipRanges})</span>
                     </div>
                   )}
@@ -330,7 +331,9 @@ export default function PingMonitorPage() {
   const competitorsOnly = useMemo(() => visibleStores.filter((s) => !s.isOwnStore).sort(byMeasuredThenDistance), [visibleStores]);
   // 2026-10-06 사용자 "웹에 표기해주면 내가 따로 서치해볼게" — 등록 IP가 의심스러운 곳(우리 매장 자체 포함)만 모아 본다.
   const ipCheckStores = useMemo(
-    () => visibleStores.filter((s) => s.ipCheck).sort((a, b) => String(a.ownName).localeCompare(String(b.ownName), "ko")),
+    // 메모(ipCheck) 유무가 아니라 표 상태 칸과 같은 판정으로 모은다 — 낡은 메모가 붙은 "측정 중" 매장은 빼고,
+    // 메모 없이 응답 0인 매장·계산 제외 매장은 넣는다(2026-10-10). IP 미등록은 따로 숫자로 보이므로 뺀다.
+    () => visibleStores.filter((s) => { const st = storeStatus(s); return st.tone !== "ok" && st.tone !== "neutral" && st.label !== "IP 미등록"; }).sort((a, b) => String(a.ownName).localeCompare(String(b.ownName), "ko")),
     [visibleStores],
   );
 

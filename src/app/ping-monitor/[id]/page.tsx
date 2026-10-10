@@ -197,7 +197,8 @@ export default function PingStoreDetailPage() {
             {store.lastSample.alive === 0 && <><br />응답이 없습니다. 실제 가동률 0%를 뜻하지는 않습니다.</>}
           </p>
         )}
-        {store.ipCheck && (
+        {/* 실측이 떠서 "측정 중"이면 낡은 메모 경고는 숨긴다 — 상태 배지와 같은 판정(2026-10-10). */}
+        {store.ipCheck && status.tone !== "ok" && (
           <p className="app-notice app-badge-warn mt-2 px-3 py-2 text-xs leading-5">
             <b>IP 확인 필요</b> — {store.ipCheck}
             <br />

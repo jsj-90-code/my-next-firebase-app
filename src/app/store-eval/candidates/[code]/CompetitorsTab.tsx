@@ -313,7 +313,8 @@ function PingMeasurePanel({
           </span>
         )}
         <span className={`app-badge ${tone}`}>{m.label}</span>
-        {m.store?.ipCheck && <span className="app-badge app-badge-warn">IP 확인 필요</span>}
+        {/* 메모가 있어도 실측이 뜨는(측정 중) 매장엔 안 붙인다 — 낡은 메모가 값 옆에 경고로 남지 않게(2026-10-10). */}
+        {m.store?.ipCheck && m.state === "blocked" && <span className="app-badge app-badge-warn">IP 확인 필요</span>}
         {m.state === "none" && onRegister && (
           <button type="button" onClick={onRegister} className="app-btn-outline rounded-md px-2 py-1 text-[11px] print:hidden">
             측정기에 등록
