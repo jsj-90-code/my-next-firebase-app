@@ -293,6 +293,10 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
   // 만들었는데, 전환보다 먼저 만들어지면 후보지 기록과 이어지지 않은 껍데기가 생긴다. 대신 "매출DB엔 있는데 웹 기존점이 아닌
   // 블랙라벨 정상 매장"을 salesOnlyStores로 알려 준다 — 전환할 후보지가 생겼다는 신호(개점 3~6개월 뒤 경쟁점 재측정 과제의 출발점).
   // 이 매장들의 매출은 전환 뒤 다음 크론부터 들어온다(아래 매출 쓰기는 웹에 등록된 매장만).
+  // 폐점이라 웹 기존점에서 일부러 지운 매장 — 매출DB 상태가 "정상"으로 남아 있어도 알리지 않는다(시트는 사용자가 고치지 않음).
+  const SALES_ONLY_IGNORED_CODES = new Set([
+    "20260529432", // 검단사거리점 — 폐점, 웹에서 일부러 삭제(사용자 2026-10-11)
+  ]);
   const autoRegisteredStores: string[] = [];
   const autoRegisterSkipped: string[] = [];
   const salesOnlyStores: string[] = [];
@@ -301,6 +305,7 @@ export async function runRevenueSync(): Promise<RevenueSyncSummary> {
     if (!row || !row[0]) continue;
     const code = String(row[0]).trim();
     if (storeCodes.has(code)) continue;
+    if (SALES_ONLY_IGNORED_CODES.has(code)) continue;
     if (String(row[4] ?? "").trim() !== "정상") continue;
     if (!isBlackLabelByCode.get(code)) continue;
     salesOnlyStores.push(`${code} ${String(row[1] ?? "").trim()} (개점 ${parseKoreanDate(row[9]) ?? "?"})`);
