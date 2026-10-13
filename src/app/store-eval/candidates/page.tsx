@@ -314,7 +314,7 @@ export default function CandidateListPage() {
           {c.isDraft && <span className="app-badge app-badge-neutral mt-3">임시저장</span>}
           {freshnessByCode.get(c.code)?.state === "재계산필요" && <p className="app-notice app-badge-warn mt-3 px-3 py-2 text-xs">{freshnessHint(freshnessByCode.get(c.code)!) || "재계산 필요"}</p>}
           <p className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-mono tabular-nums">{formatWon(resultByCode.get(c.code)?.v62Final)}</span>
+            <span className="font-mono tabular-nums"><FinalRevenue candidate={c} result={resultByCode.get(c.code)} /></span>
             <JudgementBadge result={resultByCode.get(c.code)} />
           </p>
           <p className="mt-2 text-xs text-[var(--sl-ink-soft)]">최종 수정 {formatDateTime(c.updatedAt)}</p>
@@ -337,7 +337,7 @@ export default function CandidateListPage() {
               <th scope="col" className="px-3 py-2">이름</th>
               <th scope="col" className="px-3 py-2">주소</th>
               <th scope="col" className="px-3 py-2" title="계약이 이어져 기존 가맹점으로 전환된 후보지만 표시됩니다">전환</th>
-              <th scope="col" className="px-3 py-2">최종예상월매출</th>
+              <th scope="col" className="px-3 py-2" title="담당자 판단 월매출을 적었으면 그 값, 안 적었으면 V62 산식 값입니다">최종예상월매출</th>
               <th scope="col" className="px-3 py-2" title="입력이 덜 끝났으면 그 상태를, 끝났으면 진단 결과를 보여줍니다">최종운영판정</th>
               <th scope="col" className="px-3 py-2">최종수정일</th>
               <th scope="col" className="px-3 py-2 text-right">작업</th>
@@ -372,8 +372,8 @@ export default function CandidateListPage() {
                   <td className="px-3 py-2">
                     {convertedByCode.has(c.code) ? <ConvertedBadge store={convertedByCode.get(c.code)} /> : <span className="text-xs text-[var(--sl-ink-soft)]">-</span>}
                   </td>
-                  <td className="px-3 py-2 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]" title={resultByCode.get(c.code)?.dualEstimate?.reason ?? undefined}>
-                    {formatWon(resultByCode.get(c.code)?.v62Final)}
+                  <td className="px-3 py-2 font-mono tabular-nums text-[#5c5346] dark:text-[#c9bfae]">
+                    <FinalRevenue candidate={c} result={resultByCode.get(c.code)} />
                   </td>
                   <td className="px-3 py-2"><JudgementBadge result={resultByCode.get(c.code)} /></td>
                   {/* 날짜만 — 시각까지 적으면 칸이 접혀 두 줄이 됐다. 시각은 title(마우스 올리면)로. */}
@@ -388,6 +388,23 @@ export default function CandidateListPage() {
       </div>}
     </div>
   );
+}
+
+// 2026-10-13 사용자: "최종평가월매출에 내가 최종으로 평가한 값이 나와야" — 담당자 판단 월매출(결과 탭에서 입력)이
+// 있으면 그 값을, 없으면 V62 값을 보여준다. 어느 쪽인지 꼬리표를 붙이고, 판단값일 땐 V62·근거를 title로 남긴다.
+// 산식(calc/evaluate)은 judgedRevenue를 여전히 읽지 않는다 — 표시만 바뀐다.
+function FinalRevenue({ candidate, result }: { candidate: CandidateInput; result: EvaluationResult | undefined }) {
+  const judged = candidate.judgedRevenue;
+  if (judged != null) {
+    const v62Note = `V62 산식 ${formatWon(result?.v62Final)}`;
+    return <span title={candidate.judgedReason ? `${v62Note} · 근거: ${candidate.judgedReason}` : v62Note}>
+      {formatWon(judged)}<span className="app-badge app-badge-ok ml-1 px-1.5 py-0.5 font-sans text-[11px]">담당자</span>
+    </span>;
+  }
+  return <span title={result?.dualEstimate?.reason ?? undefined}>
+    {formatWon(result?.v62Final)}
+    {result?.v62Final != null && <span className="app-badge app-badge-neutral ml-1 px-1.5 py-0.5 font-sans text-[11px]">V62</span>}
+  </span>;
 }
 
 // 대시보드(2026-09-28 합침)에서 옮겨 온 판정 배지. 라벨은 저장된 최종운영판정 그대로, 없으면 "평가 대기".

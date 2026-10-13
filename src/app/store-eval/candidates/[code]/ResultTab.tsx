@@ -357,8 +357,9 @@ function JudgedRevenuePanel({
       </div>
       <p className="mt-2 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
         위 예상매출을 보고 <b className="text-[#171310] dark:text-[#f2ede2]">현장 감각으로는 다르게 본다</b>면 여기에
-        적어두세요. <b className="text-[#171310] dark:text-[#f2ede2]">위 예상매출은 바뀌지 않습니다</b> — 산식은 그대로 두고
-        판단만 나란히 기록합니다. 예측값을 직접 고치면 이 모형이 얼마나 맞는지 잴 수 없게 되기 때문입니다.
+        적어두세요. 적으면 <b className="text-[#171310] dark:text-[#f2ede2]">이 값이 최종평가 월매출</b>로 위 큰 카드와
+        후보지 목록에 나옵니다. <b className="text-[#171310] dark:text-[#f2ede2]">V62 산식 값은 그대로 계산돼 나란히 남습니다</b> —
+        산식에 판단을 섞으면 모형이 얼마나 맞는지 잴 수 없게 되기 때문입니다.
         <br />
         나중에 이 매장이 문을 열고 실제 매출이 나오면,{" "}
         <b className="text-[#171310] dark:text-[#f2ede2]">산식과 담당자 중 누가 더 잘 맞혔는지</b> 비교할 수 있습니다.
@@ -1115,12 +1116,31 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               비교("중앙값 6,378만원")·정확도 범위가 만원인데 이 카드만 원이라 같은 화면에서
               단위가 갈렸다. 두 값을 견주려면 머릿속에서 자릿수를 옮겨야 했다. 정밀도가 필요한
               자리라 원 단위를 버리지 않고 hint로 남긴다. */}
-          <ResultCard
-            label="최종예상월매출"
-            value={`약 ${formatManwonRough(result.v62Final)}`}
-            hint={formatWon(result.v62Final)}
-            emphasis
-          />
+          {/* 2026-10-13 사용자: "최종평가월매출에 내가 최종으로 평가한 값이 나와야" — 아래 담당자 판단 칸에 값을
+              적었으면 그게 맨 위 큰 카드가 되고, V62는 바로 밑 일반 카드로 남긴다(두 값을 다 본다). 산식은 판단값을
+              읽지 않으므로 V62·실험실 값과 개점 후 비교는 그대로다. */}
+          {candidateForReport?.judgedRevenue != null ? (
+            <>
+              <ResultCard
+                label="최종평가 월매출 (담당자 판단)"
+                value={`약 ${formatManwonRough(candidateForReport.judgedRevenue)}`}
+                hint={`${formatWon(candidateForReport.judgedRevenue)} · 아래 "담당자 판단 매출" 칸에서 고칩니다`}
+                emphasis
+              />
+              <ResultCard
+                label="V62 산식 예상월매출"
+                value={`약 ${formatManwonRough(result.v62Final)}`}
+                hint={formatWon(result.v62Final)}
+              />
+            </>
+          ) : (
+            <ResultCard
+              label="최종예상월매출 (V62 산식)"
+              value={`약 ${formatManwonRough(result.v62Final)}`}
+              hint={`${formatWon(result.v62Final)} · 아래 "담당자 판단 매출" 칸에 적으면 그 값이 최종이 됩니다`}
+              emphasis
+            />
+          )}
           {/* 2026-09-11 — V62가 **전제하는** 가동률. 아래 "예상 가동률"은 참고용 AA경로 값이라
               (호구포역 24.5%) 출점 판단 기준인 V62의 전제(40.3%)와 다르다. 사용자가 "경쟁점이
               30%인데 우리가 40%는 말이 안 된다"고 지적했을 때 그 40%가 화면 어디에도 없었다. */}

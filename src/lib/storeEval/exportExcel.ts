@@ -29,6 +29,7 @@ export async function exportCandidatesToExcel(
     { header: "V61(참고)", key: "v61Baseline", width: 14 },
     { header: "V62보정률", key: "v62Rate", width: 12 },
     { header: "V62최종예상월매출", key: "v62Final", width: 18 },
+    { header: "담당자판단월매출", key: "judgedRevenue", width: 18 },
     { header: "85%", key: "conservativeSales", width: 14 },
     { header: "115%", key: "upperSales", width: 14 },
     { header: "상권수요", key: "marketDemand", width: 12 },
@@ -55,6 +56,7 @@ export async function exportCandidatesToExcel(
       v61Baseline: result?.v61Baseline ?? null,
       v62Rate: result?.v62Rate ?? null,
       v62Final: result?.v62Final ?? null,
+      judgedRevenue: candidate.judgedRevenue ?? null,
       conservativeSales: result?.conservativeSales ?? null,
       upperSales: result?.upperSales ?? null,
       marketDemand: result?.marketDemand ?? null,
@@ -66,7 +68,7 @@ export async function exportCandidatesToExcel(
     });
   }
 
-  const wonColumns = ["hourlyRate", "v61Baseline", "v62Final", "conservativeSales", "upperSales", "marketDemand", "competitorIp"];
+  const wonColumns = ["hourlyRate", "v61Baseline", "v62Final", "judgedRevenue", "conservativeSales", "upperSales", "marketDemand", "competitorIp"];
   for (const key of wonColumns) {
     sheet.getColumn(key).numFmt = "#,##0";
   }
