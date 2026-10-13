@@ -18,6 +18,8 @@ New-Item -ItemType Directory -Force -Path $installPath | Out-Null
 $nodePath = (Get-Command node.exe).Source
 $sshPath = (Get-Command ssh.exe).Source
 $powershellPath = (Get-Command powershell.exe).Source
+$wscriptPath = Join-Path $env:WINDIR 'System32/wscript.exe'
+if (-not (Test-Path -LiteralPath $wscriptPath)) { throw 'Windows Script Host is required for a console-free scheduled launch.' }
 $codexCommand = (Get-Command codex).Source
 if ([IO.Path]::GetExtension($codexCommand) -eq '.exe') {
     $codexExecutable = $codexCommand
@@ -44,11 +46,13 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $watchPath = Join-Path $installPath 'watch.mjs'
 & $nodePath $watchPath $configPath
 if ($LASTEXITCODE -ne 0) { throw 'Initial server/notification check failed; no scheduled task was installed.' }
-$runner = Join-Path $installPath 'run.ps1'
-$escape = { param($value) "'" + $value.Replace("'", "''") + "'" }
-$runnerText = '& ' + (& $escape $nodePath) + ' ' + (& $escape $watchPath) + ' ' + (& $escape $configPath) + "`r`nexit `$LASTEXITCODE`r`n"
-[IO.File]::WriteAllText($runner, $runnerText, $utf8)
-$action = New-ScheduledTaskAction -Execute $powershellPath -Argument ('-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $runner + '"') -WorkingDirectory $workspacePath
+# powershell.exe -WindowStyle Hidden can briefly create a console before hiding it.
+# The GUI script host starts Node hidden from the outset and preserves its exit code.
+$runner = Join-Path $installPath 'run-hidden.vbs'
+$launchCommand = '"' + $nodePath + '" "' + $watchPath + '" "' + $configPath + '"'
+$runnerText = 'Set shell = CreateObject("WScript.Shell")' + "`r`n" + 'WScript.Quit shell.Run("' + $launchCommand.Replace('"','""') + '", 0, True)' + "`r`n"
+[IO.File]::WriteAllText($runner, $runnerText, [Text.Encoding]::Unicode)
+$action = New-ScheduledTaskAction -Execute $wscriptPath -Argument ('//B //NoLogo "' + $runner + '"') -WorkingDirectory $workspacePath
 $repeat = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
 $accountName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $login = New-ScheduledTaskTrigger -AtLogOn -User $accountName
