@@ -4,6 +4,7 @@
 
 import ExcelJS from "exceljs";
 import type { CandidateInput, EvaluationResult } from "./types";
+import { pickFinalRevenue } from "./finalRevenue";
 
 export async function exportCandidatesToExcel(
   candidates: CandidateInput[],
@@ -30,6 +31,9 @@ export async function exportCandidatesToExcel(
     { header: "V62보정률", key: "v62Rate", width: 12 },
     { header: "V62최종예상월매출", key: "v62Final", width: 18 },
     { header: "담당자판단월매출", key: "judgedRevenue", width: 18 },
+    // 2026-10-13 — 화면 "최종예상월매출"과 같은 값(판단값 → 추천 산식 → V62, finalRevenue.ts)과 그 출처.
+    { header: "최종예상월매출", key: "finalRevenue", width: 18 },
+    { header: "최종값출처", key: "finalSource", width: 12 },
     { header: "85%", key: "conservativeSales", width: 14 },
     { header: "115%", key: "upperSales", width: 14 },
     { header: "상권수요", key: "marketDemand", width: 12 },
@@ -57,6 +61,8 @@ export async function exportCandidatesToExcel(
       v62Rate: result?.v62Rate ?? null,
       v62Final: result?.v62Final ?? null,
       judgedRevenue: candidate.judgedRevenue ?? null,
+      finalRevenue: pickFinalRevenue(candidate, result).value,
+      finalSource: pickFinalRevenue(candidate, result).source ?? "",
       conservativeSales: result?.conservativeSales ?? null,
       upperSales: result?.upperSales ?? null,
       marketDemand: result?.marketDemand ?? null,
@@ -68,7 +74,7 @@ export async function exportCandidatesToExcel(
     });
   }
 
-  const wonColumns = ["hourlyRate", "v61Baseline", "v62Final", "judgedRevenue", "conservativeSales", "upperSales", "marketDemand", "competitorIp"];
+  const wonColumns = ["hourlyRate", "v61Baseline", "v62Final", "judgedRevenue", "finalRevenue", "conservativeSales", "upperSales", "marketDemand", "competitorIp"];
   for (const key of wonColumns) {
     sheet.getColumn(key).numFmt = "#,##0";
   }

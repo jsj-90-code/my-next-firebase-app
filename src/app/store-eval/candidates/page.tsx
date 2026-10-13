@@ -20,6 +20,7 @@ import {
 } from "@/lib/storeEval/store";
 import type { CandidateInput, EvaluationResult, FinalJudgement } from "@/lib/storeEval/types";
 import { formatDate, formatDateTime, formatWon } from "@/lib/storeEval/format";
+import { pickFinalRevenue } from "@/lib/storeEval/finalRevenue";
 import { freshnessHint, resultFreshness, type Freshness } from "@/lib/storeEval/resultFreshness";
 import { CANDIDATE_STATUSES, selectCandidates, type CandidateSort, type CandidateStatusFilter } from "@/lib/storeEval/candidateList";
 
@@ -337,7 +338,7 @@ export default function CandidateListPage() {
               <th scope="col" className="px-3 py-2">이름</th>
               <th scope="col" className="px-3 py-2">주소</th>
               <th scope="col" className="px-3 py-2" title="계약이 이어져 기존 가맹점으로 전환된 후보지만 표시됩니다">전환</th>
-              <th scope="col" className="px-3 py-2" title="담당자 판단 월매출을 적었으면 그 값, 안 적었으면 V62 산식 값입니다">최종예상월매출</th>
+              <th scope="col" className="px-3 py-2" title="담당자 판단 월매출을 적었으면 그 값, 안 적었으면 결과 탭 '어느 산식을 쓸까'가 추천한 산식(V62 또는 실험실) 값입니다">최종예상월매출</th>
               <th scope="col" className="px-3 py-2" title="입력이 덜 끝났으면 그 상태를, 끝났으면 진단 결과를 보여줍니다">최종운영판정</th>
               <th scope="col" className="px-3 py-2">최종수정일</th>
               <th scope="col" className="px-3 py-2 text-right">작업</th>
@@ -390,20 +391,20 @@ export default function CandidateListPage() {
   );
 }
 
-// 2026-10-13 사용자: "최종평가월매출에 내가 최종으로 평가한 값이 나와야" — 담당자 판단 월매출(결과 탭에서 입력)이
-// 있으면 그 값을, 없으면 V62 값을 보여준다. 어느 쪽인지 꼬리표를 붙이고, 판단값일 땐 V62·근거를 title로 남긴다.
-// 산식(calc/evaluate)은 judgedRevenue를 여전히 읽지 않는다 — 표시만 바뀐다.
+// 2026-10-13 사용자 — 최종예상월매출 = 담당자 판단값 → 추천 산식(실험실/V62) 값 → V62 (규칙은 finalRevenue.ts 한 곳).
+// 어느 쪽인지 꼬리표를 붙이고, 마우스를 올리면 V62·실험실 값과 근거가 보인다. 산식 계산 자체는 안 바뀐다.
 function FinalRevenue({ candidate, result }: { candidate: CandidateInput; result: EvaluationResult | undefined }) {
-  const judged = candidate.judgedRevenue;
-  if (judged != null) {
-    const v62Note = `V62 산식 ${formatWon(result?.v62Final)}`;
-    return <span title={candidate.judgedReason ? `${v62Note} · 근거: ${candidate.judgedReason}` : v62Note}>
-      {formatWon(judged)}<span className="app-badge app-badge-ok ml-1 px-1.5 py-0.5 font-sans text-[11px]">담당자</span>
-    </span>;
-  }
-  return <span title={result?.dualEstimate?.reason ?? undefined}>
-    {formatWon(result?.v62Final)}
-    {result?.v62Final != null && <span className="app-badge app-badge-neutral ml-1 px-1.5 py-0.5 font-sans text-[11px]">V62</span>}
+  const { value, source } = pickFinalRevenue(candidate, result);
+  const dual = result?.dualEstimate;
+  const note = [
+    `V62 ${formatWon(result?.v62Final)}`,
+    dual?.lab != null ? `실험실 ${formatWon(dual.lab)}` : null,
+    source === "담당자" ? (candidate.judgedReason ? `근거: ${candidate.judgedReason}` : null) : dual?.reason ?? null,
+  ].filter(Boolean).join(" · ");
+  const badge = source === "담당자" ? "app-badge-ok" : source === "실험실" ? "app-badge-warn" : "app-badge-neutral";
+  return <span title={note}>
+    {formatWon(value)}
+    {source && <span className={`app-badge ${badge} ml-1 px-1.5 py-0.5 font-sans text-[11px]`}>{source}</span>}
   </span>;
 }
 

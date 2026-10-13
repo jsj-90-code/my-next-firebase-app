@@ -9,6 +9,7 @@ import { toPng } from "html-to-image";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUnsavedInputGuard } from "@/components/storeEval/useUnsavedInputGuard";
 import { formatDate, formatManwon, formatManwonPerPc, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
+import { pickFinalRevenue } from "@/lib/storeEval/finalRevenue";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   convertCandidateToExistingStore,
@@ -1119,28 +1120,23 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           {/* 2026-10-13 사용자: "최종평가월매출에 내가 최종으로 평가한 값이 나와야" — 아래 담당자 판단 칸에 값을
               적었으면 그게 맨 위 큰 카드가 되고, V62는 바로 밑 일반 카드로 남긴다(두 값을 다 본다). 산식은 판단값을
               읽지 않으므로 V62·실험실 값과 개점 후 비교는 그대로다. */}
-          {candidateForReport?.judgedRevenue != null ? (
-            <>
-              <ResultCard
-                label="최종평가 월매출 (담당자 판단)"
-                value={`약 ${formatManwonRough(candidateForReport.judgedRevenue)}`}
-                hint={`${formatWon(candidateForReport.judgedRevenue)} · 아래 "담당자 판단 매출" 칸에서 고칩니다`}
-                emphasis
-              />
-              <ResultCard
-                label="V62 산식 예상월매출"
-                value={`약 ${formatManwonRough(result.v62Final)}`}
-                hint={formatWon(result.v62Final)}
-              />
-            </>
-          ) : (
-            <ResultCard
-              label="최종예상월매출 (V62 산식)"
-              value={`약 ${formatManwonRough(result.v62Final)}`}
-              hint={`${formatWon(result.v62Final)} · 아래 "담당자 판단 매출" 칸에 적으면 그 값이 최종이 됩니다`}
-              emphasis
-            />
-          )}
+          {/* 같은 날 사용자: "실험실 산식은 없네? 적용한 거 웹에 최종예상매출" — 판단값이 없으면 아래 "어느 산식을
+              쓸까"가 고른 주 값(실험실이면 실험실). 규칙은 finalRevenue.ts 한 곳(목록·엑셀과 같은 값). */}
+          {(() => {
+            const final = pickFinalRevenue(candidateForReport, result);
+            const label = final.source === "담당자" ? "최종평가 월매출 (담당자 판단)" : `최종예상월매출 (${final.source ?? "V62"} 산식 추천)`;
+            const hint = final.source === "담당자"
+              ? `${formatWon(final.value)} · 아래 "담당자 판단 매출" 칸에서 고칩니다`
+              : `${formatWon(final.value)} · 아래 "담당자 판단 매출" 칸에 적으면 그 값이 최종이 됩니다`;
+            return (
+              <>
+                <ResultCard label={label} value={`약 ${formatManwonRough(final.value)}`} hint={hint} emphasis />
+                {final.source !== "V62" && (
+                  <ResultCard label="V62 산식 예상월매출" value={`약 ${formatManwonRough(result.v62Final)}`} hint={formatWon(result.v62Final)} />
+                )}
+              </>
+            );
+          })()}
           {/* 2026-09-11 — V62가 **전제하는** 가동률. 아래 "예상 가동률"은 참고용 AA경로 값이라
               (호구포역 24.5%) 출점 판단 기준인 V62의 전제(40.3%)와 다르다. 사용자가 "경쟁점이
               30%인데 우리가 40%는 말이 안 된다"고 지적했을 때 그 40%가 화면 어디에도 없었다. */}
@@ -1151,7 +1147,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           />
           {/* 2026-09-28 사용자: "신규후보지 결과에 V62랑 실험실 산식 같이 뜨는 걸로" — 오전에 뺀 비교 패널 대신 카드 한 장.
               값은 저장된 dualEstimate(재계산 때 같이 계산)를 그대로 읽는다. 실험실은 "동네 수요 → 우리 몫 → 매출" 구조식이라
-              V62(기존점 회귀)와 갈리면 어느 쪽이 무엇을 못 보는지 이유 문장이 말한다. 결재 숫자는 여전히 V62. */}
+              V62(기존점 회귀)와 갈리면 어느 쪽이 무엇을 못 보는지 이유 문장이 말한다. 2026-10-13부터 위 큰 카드는 여기서 고른
+              주 값을 쓴다(판단값이 없을 때). v62Final 자체는 그대로 V62 값. */}
           {result.dualEstimate?.lab != null && (
             <ResultCard
               label="실험실(교과서식) 예상매출 — 참고"
