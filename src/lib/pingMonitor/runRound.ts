@@ -3,7 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { parseIpRanges } from "./ipRange";
 import { probeIps } from "./probe";
-import { roundLooksBroken, shouldReplace } from "./roundGuard";
+import { roundLooksBroken, shouldReplace, wantsExtraPorts } from "./roundGuard";
 import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 
 // 경쟁점 가동률 측정기 — 1시간에 한 번, 측정 중인 매장 전부를 재서 저장한다(2026-10-06 신설).
@@ -21,8 +21,8 @@ import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 export type { PingTarget } from "./roundGuard";
 import type { PingTarget } from "./roundGuard";
 
-/** 기본 포트는 전 매장(80·3389). 추가 포트(1688·5040)는 그게 먹히는 매장에만 — 서버 부하를 줄이는 최적화(2026-10-09).
- *  probe1688 매장(핑·80·3389 막혀서 1688·5040으로만 잡히는 곳)만 추가 포트를 받는다. */
+/** 기본 포트는 전 매장(80·3389). 추가 포트(1688·5040)는 그게 필요한 매장에만 — 서버 부하를 줄이는 최적화(2026-10-09).
+ *  누가 받는지는 wantsExtraPorts(roundGuard.ts): probe1688 매장 · 첫 24회차 학습 중인 새 매장 · 늘 0대 매장의 21시 재확인(2026-10-14). */
 const EXTRA_PORTS = [1688, 5040];
 
 export type RoundResult = {
@@ -41,17 +41,19 @@ function requireDb() {
   return adminDb;
 }
 
-export async function loadTargets(): Promise<PingTarget[]> {
+export async function loadTargets(now = new Date()): Promise<PingTarget[]> {
+  const { hour } = kstParts(now);
   const snap = await requireDb().collection(PING_STORES).where("active", "==", true).get();
   return snap.docs.map((d) => {
     const data = d.data();
     const ips = parseIpRanges(String(data.ipRanges ?? "")).ips;
+    const extraReason = wantsExtraPorts({ probe1688: Boolean(data.probe1688), recent: data.recent ?? {} }, hour);
     return {
       id: d.id,
       name: String(data.name ?? ""),
       ips,
       total: denominator({ pcCount: data.pcCount ?? null, ipCount: ips.length }),
-      ...(data.probe1688 ? { extraPorts: EXTRA_PORTS } : {}),
+      ...(extraReason ? { extraPorts: EXTRA_PORTS, extraReason } : {}),
       excluded: Boolean(data.excludeFromStats),
       recent: Object.fromEntries(
         Object.entries((data.recent ?? {}) as Record<string, { a?: number; at?: { toDate?: () => Date } }>).map(([h, v]) => [
@@ -123,10 +125,38 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
   return { ok: true, at: now.toISOString(), date, hour, method, stores: results };
 }
 
+/** 측정 방식 자동 학습(2026-10-14) — 서버가 "추가 포트(1688·5040)로만 대답한 IP"를 보내 오면, 학습 중이거나 21시 재확인 중인
+ *  매장 중 그런 IP가 3개 이상인 곳에 probe1688을 켠다(한두 개는 장비일 수 있음). 켜진 뒤엔 매시 추가 포트를 받는다.
+ *  늘 0대였다가 뚫린 매장은 그날을 portSwitchDate로 적어 그 전 0대 날이 평균에 안 섞이게 한다(ba11eeb와 같은 규칙).
+ *  새 매장(학습 중)은 첫 회차부터 추가 포트를 받았으니 전환 날이 없다. 켠 매장 이름을 돌려준다. */
+export async function learnExtraPorts(targets: PingTarget[], extraOnlyIps: Set<string>, now = new Date()): Promise<string[]> {
+  if (extraOnlyIps.size === 0) return [];
+  const { date } = kstParts(now);
+  const learned = targets.filter(
+    (t) => (t.extraReason === "learning" || t.extraReason === "silent-recheck") && t.ips.filter((ip) => extraOnlyIps.has(ip)).length >= 3,
+  );
+  await Promise.all(
+    learned.map((t) =>
+      requireDb()
+        .collection(PING_STORES)
+        .doc(t.id)
+        .set(
+          {
+            probe1688: true,
+            probe1688Auto: { at: now, reason: t.extraReason, ips: t.ips.filter((ip) => extraOnlyIps.has(ip)).length },
+            ...(t.extraReason === "silent-recheck" ? { portSwitchDate: date } : {}),
+          },
+          { merge: true },
+        ),
+    ),
+  );
+  return learned.map((t) => t.name);
+}
+
 /** Vercel에서 TCP만으로 재는 예비 경로. 서버 에이전트와 같은 포트 규칙 — 기본 80·3389는 전 IP, 추가 1688·5040은
  *  extraPorts 매장에만(2026-10-09). 전 매장 4포트로 재면 서버 회차(2포트)와 커버리지가 달라 같은 날 집계가 섞인다. */
 export async function runPingRound(now = new Date()): Promise<RoundResult> {
-  const targets = await loadTargets();
+  const targets = await loadTargets(now);
   const allIps = [...new Set(targets.flatMap((s) => s.ips))];
   const extraIps = [...new Set(targets.filter((t) => t.extraPorts?.length).flatMap((t) => t.ips))];
   const [baseAlive, extraAlive] = await Promise.all([

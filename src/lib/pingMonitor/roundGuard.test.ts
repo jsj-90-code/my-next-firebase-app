@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roundLooksBroken, shouldReplace, type PingTarget } from "./roundGuard";
+import { roundLooksBroken, shouldReplace, wantsExtraPorts, type PingTarget } from "./roundGuard";
 
 const NOW = new Date("2026-10-10T13:05:00Z"); // KST 22시
 const YESTERDAY = new Date(NOW.getTime() - 24 * 3600_000);
@@ -58,5 +58,19 @@ describe("10-10 최종점검 보완", () => {
   it("계산 제외 매장은 비교에서 뺀다", () => {
     const ts = [...targets(30), ...targets(30).map((t) => ({ ...t, id: `x${t.id}`, excluded: true }))];
     expect(roundLooksBroken(ts, on(ts, (i) => (i >= 30 ? 0 : 30)), "22", NOW)).toBeNull();
+  });
+});
+
+describe("wantsExtraPorts — 새 매장 측정 방식 자동 학습(2026-10-14)", () => {
+  const day = (a: number) => Object.fromEntries(Array.from({ length: 24 }, (_, h) => [String(h).padStart(2, "0"), { a }]));
+  it("probe1688 매장은 늘", () => expect(wantsExtraPorts({ probe1688: true, recent: day(30) }, "10")).toBe("probe1688"));
+  it("새 매장(24회차 전)은 전 방식", () => {
+    expect(wantsExtraPorts({}, "10")).toBe("learning");
+    expect(wantsExtraPorts({ recent: { "13": { a: 0 } } }, "14")).toBe("learning");
+  });
+  it("잘 잡히는 매장은 안 보냄", () => expect(wantsExtraPorts({ recent: day(30) }, "21")).toBeNull());
+  it("늘 0대 매장은 21시에만 다시 두드림", () => {
+    expect(wantsExtraPorts({ recent: day(0) }, "21")).toBe("silent-recheck");
+    expect(wantsExtraPorts({ recent: day(0) }, "20")).toBeNull();
   });
 });

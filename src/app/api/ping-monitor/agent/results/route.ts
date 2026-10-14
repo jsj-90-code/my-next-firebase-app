@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { checkAgentSignature } from "@/lib/pingMonitor/agentAuth";
-import { loadTargets, recordRound } from "@/lib/pingMonitor/runRound";
+import { learnExtraPorts, loadTargets, recordRound } from "@/lib/pingMonitor/runRound";
 
 // 측정 서버가 핑 + TCP로 잰 결과(켜진 IP 목록)를 받아 저장한다. 저장 방식은 Vercel TCP 경로와 같다(recordRound).
 // 대상 목록은 여기서 다시 읽는다 — 서버가 보낸 IP 중 등록된 대역에 든 것만 센다.
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const denied = checkAgentSignature(request, body);
   if (denied) return NextResponse.json({ error: `인증되지 않은 요청입니다 — ${denied}` }, { status: 401 });
 
-  const parsed = JSON.parse(body) as { at?: string; aliveIps?: unknown; method?: unknown };
+  const parsed = JSON.parse(body) as { at?: string; aliveIps?: unknown; method?: unknown; extraOnlyIps?: unknown };
   if (!Array.isArray(parsed.aliveIps)) return NextResponse.json({ error: "aliveIps가 없습니다." }, { status: 400 });
   const at = parsed.at ? new Date(parsed.at) : new Date();
   // 6시간까지 받는다 — 보내기에 실패한 회차를 서버가 다음 회차에 다시 보낸다(2026-10-08). 시(時)는 잰 시각으로 묶인다.
@@ -21,15 +21,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "측정 시각이 이상합니다." }, { status: 400 });
   }
 
-  const targets = await loadTargets();
+  // 잰 시각 기준으로 읽는다 — 어느 매장에 추가 포트를 보냈는지(extraReason)가 그 시와 맞아야 자동 학습이 맞다.
+  const targets = await loadTargets(at);
   const result = await recordRound(targets, new Set(parsed.aliveIps.map(String)), String(parsed.method ?? "agent"), at);
   // 회차 이상(측정 고장으로 대량 0대)이면 저장하지 않았다 — 상태 문서도 안 고쳐서 예비(:50)가 이 시를 다시 잰다(2026-10-10).
   // 200으로 답한다: 4xx면 서버가 pending을 지우고, 5xx면 같은 결과를 계속 다시 보낸다.
   if (result.rejected) return NextResponse.json({ ok: false, rejected: result.rejected, date: result.date, hour: result.hour });
+  // 추가 포트로만 잡힌 새 매장·뚫린 매장에 probe1688 자동으로 켜기(2026-10-14). 옛 에이전트는 extraOnlyIps를 안 보낸다 → 아무것도 안 함.
+  const extraOnly = Array.isArray(parsed.extraOnlyIps) ? new Set(parsed.extraOnlyIps.map(String)) : new Set<string>();
+  const learned = await learnExtraPorts(targets, extraOnly, at).catch((error) => {
+    console.error("ping-monitor 측정 방식 자동 학습 실패:", error);
+    return [] as string[];
+  });
   await adminDb
     ?.collection("storeEvalSystemStatus")
     .doc("pingMonitor")
     .set({ ...result, storeCount: result.stores.length })
     .catch((error) => console.error("ping-monitor 실행 기록 저장 실패:", error));
-  return NextResponse.json({ ok: true, date: result.date, hour: result.hour, stores: result.stores.length, written: result.stores.filter((s) => !s.skipped).length });
+  return NextResponse.json({ ok: true, date: result.date, hour: result.hour, stores: result.stores.length, written: result.stores.filter((s) => !s.skipped).length, ...(learned.length ? { learned } : {}) });
 }

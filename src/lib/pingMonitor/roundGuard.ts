@@ -7,6 +7,8 @@ export type PingTarget = {
   ips: string[];
   total: number;
   extraPorts?: number[];
+  /** 추가 포트를 보내는 이유(wantsExtraPorts) — 서버가 "추가포트만" 잡았을 때 probe1688을 켤지·전환 날을 적을지 가른다. */
+  extraReason?: "probe1688" | "learning" | "silent-recheck";
   recent?: Record<string, { a: number; at: Date | null }>;
   /** 계산 제외(excludeFromStats) 매장 — 노이즈라 회차 이상 점검 비교에서 뺀다. */
   excluded?: boolean;
@@ -62,3 +64,20 @@ export function shouldReplace(existingMethod: string, incomingMethod: string): b
   return isWeakMethod(existingMethod) && !isWeakMethod(incomingMethod);
 }
 
+/** 추가 포트(1688·5040)를 보낼지 — 새 매장도 사람 손 없이 측정 방식이 잡히게(2026-10-14 자동 학습).
+ *  - probe1688: 추가 포트로만 잡히는 게 확인된 매장(수동 또는 자동으로 켜짐) → 늘.
+ *  - 학습 중: IP를 넣고 아직 24회차를 안 채운 매장(recent 칸 < 24) → 첫 하루는 전 방식으로 잰다.
+ *  - 늘 0대: 24회차 내내 0대인 매장 → 하루 한 번(21시, 손님 가장 많은 때)만 다시 두드린다. 매장 설정이 바뀌어 뚫리면
+ *    서버가 "추가포트만" IP로 알려 와 probe1688이 자동으로 켜진다(results route).
+ *  전 매장에 늘 4포트를 보내면 작은 서버가 버벅인다(2026-10-09) — 그래서 이 세 경우만. */
+export const SILENT_RECHECK_HOUR = "21";
+export function wantsExtraPorts(
+  store: { probe1688?: boolean; recent?: Record<string, { a: number }> },
+  hour: string,
+): "probe1688" | "learning" | "silent-recheck" | null {
+  if (store.probe1688) return "probe1688";
+  const rounds = Object.values(store.recent ?? {});
+  if (rounds.length < 24) return "learning";
+  if (hour === SILENT_RECHECK_HOUR && rounds.every((r) => r.a === 0)) return "silent-recheck";
+  return null;
+}

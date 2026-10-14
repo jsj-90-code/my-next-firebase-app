@@ -62,8 +62,10 @@ function knock(ip, port) {
 
 // 기본 포트는 전 IP(80·3389). extraByIp에 있는 IP(1688·5040 필요한 매장)만 그 포트를 더 두드린다 —
 // 전 매장에 1688·5040을 다 쏘면 작은 서버(498MB)가 버벅인다(2026-10-09 최적화). extraByIp: Map<ip, number[]>.
+// extraOnly: 추가 포트로만 대답한 IP — 웹이 이걸 보고 그 매장에 1688·5040을 계속 보낼지 스스로 정한다(2026-10-14 자동 학습).
 async function tcpAll(ips, extraByIp) {
   const alive = new Set();
+  const extraOnly = new Set();
   let next = 0;
   async function worker() {
     while (next < ips.length) {
@@ -71,10 +73,11 @@ async function tcpAll(ips, extraByIp) {
       const ports = [80, 3389, ...(extraByIp.get(ip) ?? [])];
       const r = await Promise.all(ports.map((port) => knock(ip, port)));
       if (r.some(Boolean)) alive.add(ip);
+      if (!r[0] && !r[1] && r.slice(2).some(Boolean)) extraOnly.add(ip);
     }
   }
   await Promise.all(Array.from({ length: Math.min(120, ips.length) }, worker));
-  return alive;
+  return { alive, extraOnly };
 }
 
 // 웹 요청은 시간 제한 + 다시 시도(2026-10-08 — 한 번 실패로 회차 전체를 잃지 않게). 서명은 시도마다 새로 만든다(5분 넘으면 거절).
@@ -131,7 +134,7 @@ const ips = [...new Set(targets.flatMap((t) => t.ips))];
 const extraByIp = new Map();
 for (const t of targets) if (t.extraPorts?.length) for (const ip of t.ips) extraByIp.set(ip, [...new Set([...(extraByIp.get(ip) ?? []), ...t.extraPorts])]);
 
-const [byPing, byTcp, byTimestamp] = await Promise.all([
+const [byPing, { alive: byTcp, extraOnly }, byTimestamp] = await Promise.all([
   pingAll(ips), tcpAll(ips, extraByIp),
   timestampAll(ips).catch((error) => {
     console.error(`타임스탬프 검사 실패 — 이번 회차는 기존 핑+TCP만 사용: ${error.message}`);
@@ -141,11 +144,13 @@ const [byPing, byTcp, byTimestamp] = await Promise.all([
 const { alive, method, timestampOnly } = combineResponses(ips, byPing, byTcp, byTimestamp);
 const pingOnly = [...byPing].filter((ip) => !byTcp.has(ip)).length;
 const tcpOnly = [...byTcp].filter((ip) => !byPing.has(ip)).length;
+// 핑·타임스탬프로도 안 잡히고 1688·5040으로만 잡힌 IP만 — 그 매장은 추가 포트가 있어야 재진다.
+const extraOnlyIps = [...extraOnly].filter((ip) => !byPing.has(ip) && !byTimestamp?.has(ip));
 const secs = ((Date.now() - started.getTime()) / 1000).toFixed(0);
-console.log(`${started.toISOString()} 매장 ${targets.length} · IP ${ips.length} · 응답 ${alive.length}(핑 ${byPing.size} · TCP ${byTcp.size} · 핑만 ${pingOnly} · TCP만 ${tcpOnly} · 타임스탬프 ${byTimestamp?.size ?? "실패"} · 타임스탬프만 ${timestampOnly}) · ${method} · ${secs}초`);
+console.log(`${started.toISOString()} 매장 ${targets.length} · IP ${ips.length} · 응답 ${alive.length}(핑 ${byPing.size} · TCP ${byTcp.size} · 핑만 ${pingOnly} · TCP만 ${tcpOnly} · 타임스탬프 ${byTimestamp?.size ?? "실패"} · 타임스탬프만 ${timestampOnly} · 추가포트만 ${extraOnlyIps.length}) · ${method} · ${secs}초`);
 if (DRY) process.exit(0);
 
-const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive });
+const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive, extraOnlyIps });
 try {
   const rRes = await call("POST", rPath, body);
   console.log(`보냄 ${rRes.status}: ${await rRes.text()}`);
