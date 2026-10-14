@@ -320,17 +320,19 @@ export default function PingOwnComparePage() {
             )}
             {rivals.map((s) => {
               const noIp = hasNoIp(s);
-              const isShown = !noIp && !hidden.has(s.id);
-              const line = noIp ? null : lineOf(s);
+              // 체크박스·선 표시는 그래프에 그리는 매장(값이 있는 곳)에만 — 포트 조회 실패처럼 IP는 있어도 값이 없으면 안 붙인다(2026-10-14).
+              const plottable = measured.some((m) => m.id === s.id);
+              const isShown = plottable && !hidden.has(s.id);
+              const line = plottable ? lineOf(s) : null;
               return (
                 <tr
                   key={s.id}
-                  className={`border-b border-[var(--sl-hairline)] last:border-0 ${noIp ? "" : "cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"}`}
-                  onClick={() => !noIp && toggleHidden(s.id)}
+                  className={`border-b border-[var(--sl-hairline)] last:border-0 ${plottable ? "cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]" : ""}`}
+                  onClick={() => plottable && toggleHidden(s.id)}
                   aria-selected={isShown}
                 >
                   <td className="px-3 py-2 whitespace-nowrap">
-                    {!noIp && (
+                    {plottable && (
                       <input
                         type="checkbox"
                         className="mr-1.5 align-middle"
