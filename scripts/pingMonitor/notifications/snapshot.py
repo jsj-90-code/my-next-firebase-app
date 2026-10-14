@@ -8,7 +8,9 @@ import time
 base = pathlib.Path('/tmp/codex_pc_handoff_20261011_xlc0oc5o')
 manifest = json.loads((base / 'manifest.json').read_text())
 events = []
-for name in ['classicPaired20261012', 'fiveTimed20261013']:
+for name in ['classicPaired20261012', 'fiveTimed20261013', 'geekstarFocused20261014']:
+    if name not in manifest['jobs']:
+        continue
     spec = manifest['jobs'][name]
     completion = None
     evidence = collections.defaultdict(collections.Counter)
@@ -17,7 +19,7 @@ for name in ['classicPaired20261012', 'fiveTimed20261013']:
         event = json.loads(line)
         if event.get('event') == 'complete':
             completion = event
-        if name == 'fiveTimed20261013' and event.get('event') == 'sample':
+        if name != 'classicPaired20261012' and event.get('event') == 'sample':
             for store in event['stores']:
                 sid = store['id']
                 names[sid] = store['name']
