@@ -159,7 +159,8 @@ function BasicInfoTabForm({
   const marketLoadSequence = useRef(0);
   const busy = saving !== null || collecting || positionSaving;
   const dirty = JSON.stringify(form) !== JSON.stringify(savedForm);
-  const unsavedDialog = useUnsavedInputGuard(dirty, busy);
+  // SGIS·소상공인365를 받는 동안(상권자료 수집 뒤 자동, 약 30초)은 폼이 아직 안 바뀌어 dirty가 거짓이다 — 그 사이 나가면 받던 값이 조용히 사라지므로 같이 막는다.
+  const unsavedDialog = useUnsavedInputGuard(dirty, busy || sgisBusy || sbizBusy);
 
   const loadMarketData = useCallback(async (code: string, isCancelled: () => boolean = () => false) => {
     const sequence = ++marketLoadSequence.current;
