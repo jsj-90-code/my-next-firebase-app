@@ -586,7 +586,7 @@ function BasicInfoTabForm({
         {form.code === "new" && pingOptions && pingOptions.length > 0 && (
           <label className="mt-4 block text-sm">
             <span className="text-xs font-medium text-[var(--sl-ink-soft)]">
-              경쟁점 가동률 측정기에서 불러오기 — 다른 사람이 측정기에 먼저 등록한 후보지 {pingOptions.length}곳
+              측정기에서 불러오기 ({pingOptions.length}곳)
             </span>
             <select
               className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:max-w-md sm:text-sm"
@@ -606,7 +606,7 @@ function BasicInfoTabForm({
             </select>
             {pingImport && (
               <span className="mt-1 block text-xs text-[var(--sl-ink-soft)]">
-                후보지명은 아래에서 바꿔도 됩니다. 저장하면 측정기의 &ldquo;{pingImport.name}&rdquo; 경쟁점과 측정 기록이 이 후보지로 옮겨집니다.
+                저장하면 측정기 경쟁점이 이 후보지로 옮겨집니다. 후보지명은 바꿔도 됩니다.
               </span>
             )}
           </label>

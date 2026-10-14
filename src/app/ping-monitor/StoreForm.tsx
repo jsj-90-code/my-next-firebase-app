@@ -148,7 +148,7 @@ export function StoreForm({
     <div className="flex flex-col gap-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
-          <span className={LABEL}>우리 매장 (매장별로 묶어 보기용)</span>
+          <span className={LABEL}>우리 매장</span>
           <select
             className={FIELD}
             value={customMode ? CUSTOM_OPTION[customMode] : ownCode}
@@ -160,8 +160,8 @@ export function StoreForm({
             }}
           >
             <option value="">{ownOptions == null ? "불러오는 중..." : "연결 안 함"}</option>
-            <option value={CUSTOM_OPTION.기존점}>+ 기존점 등록 — 목록에 없는 매장명 직접 입력</option>
-            <option value={CUSTOM_OPTION.후보지}>+ 신규후보지 등록 — 목록에 없는 후보지명 직접 입력</option>
+            <option value={CUSTOM_OPTION.기존점}>+ 기존점 직접 입력 (목록에 없을 때)</option>
+            <option value={CUSTOM_OPTION.후보지}>+ 신규후보지 직접 입력 (목록에 없을 때)</option>
             {(["기존점", "후보지"] as const).map((kind) => (
               <optgroup key={kind} label={kind}>
                 {(ownOptions ?? [])
@@ -182,7 +182,7 @@ export function StoreForm({
               className={FIELD}
               value={customName}
               onChange={(e) => setCustomName(e.target.value)}
-              placeholder={customMode === "후보지" ? "후보지명 (예: 부평역 후보지) — 같은 이름끼리 한 묶음" : "우리 매장명 (예: 아이센스PC방 부평역점) — 같은 이름끼리 한 묶음"}
+              placeholder="지점명 (예: 부평역점)"
               autoFocus
             />
           )}
@@ -190,7 +190,7 @@ export function StoreForm({
         <label className="block">
           <span className={LABEL}>점포평가에 등록된 경쟁점에서 고르기 (상호·대수·거리 자동 입력)</span>
           <select className={FIELD} value={competitorId} disabled={!ownCode || !!customMode} onChange={(e) => pickCompetitor(e.target.value)}>
-            <option value="">{customMode ? "직접 입력한 매장은 아래에 직접 입력" : !ownCode ? "우리 매장을 먼저 고르세요" : competitors == null ? "불러오는 중..." : competitors.length === 0 ? "등록된 경쟁점 없음 — 직접 입력" : "직접 입력"}</option>
+            <option value="">{customMode ? "아래에 직접 입력" : !ownCode ? "우리 매장을 먼저 고르세요" : competitors == null ? "불러오는 중..." : competitors.length === 0 ? "등록된 경쟁점 없음 — 직접 입력" : "직접 입력"}</option>
             {(competitors ?? []).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -204,7 +204,7 @@ export function StoreForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>상호 *</span>
-          <input className={FIELD} value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 레벨업PC방 울산삼산점" />
+          <input className={FIELD} value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 레벨업PC방" />
         </label>
         <label className="block">
           <span className={LABEL}>주소</span>
@@ -245,7 +245,7 @@ export function StoreForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
           <span className={LABEL}>메모</span>
-          <input className={FIELD} value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="예: 울산삼산 후보지 43m" />
+          <input className={FIELD} value={memo} onChange={(e) => setMemo(e.target.value)} />
         </label>
       </div>
       {showActive && (

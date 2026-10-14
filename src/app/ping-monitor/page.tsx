@@ -481,7 +481,7 @@ export default function PingMonitorPage() {
             className="app-input w-full rounded-lg px-3 py-2 text-base sm:max-w-md sm:text-sm placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="매장 검색 — 우리 매장명·경쟁점 상호·주소 (기존·후보지·경쟁점 전체에서)"
+            placeholder="지점명·상호·주소 검색"
             aria-label="매장 검색"
           />
           {searchKey ? (

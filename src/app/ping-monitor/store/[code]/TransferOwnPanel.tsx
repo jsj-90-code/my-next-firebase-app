@@ -45,7 +45,7 @@ export function TransferOwnPanel({ fromCode, fromName, preferCandidate }: { from
   return (
     <section className="app-card-sm rounded-xl p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-[var(--sl-ink-soft)]">직접 입력한 매장입니다. 점포평가에 등록했다면 그 매장으로 옮길 수 있습니다.</span>
+        <span className="text-xs text-[var(--sl-ink-soft)]">직접 입력한 매장입니다.</span>
         <button type="button" className="app-btn-outline ml-auto rounded-lg px-3 py-1 text-xs" onClick={() => setOpen((v) => !v)}>
           {open ? "닫기" : "점포평가 매장으로 전환"}
         </button>
@@ -69,9 +69,6 @@ export function TransferOwnPanel({ fromCode, fromName, preferCandidate }: { from
           <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" disabled={!picked || busy} onClick={run}>
             {busy ? "옮기는 중..." : "옮기기"}
           </button>
-          <p className="w-full text-xs text-[var(--sl-ink-soft)]">
-            상호가 같은 점포평가 경쟁점이 있으면 자동으로 이어 줍니다 — 경쟁점 탭에서 &ldquo;측정기에 등록&rdquo;을 눌러도 중복으로 생기지 않습니다.
-          </p>
           {error && <p role="alert" className="app-notice app-badge-danger w-full px-3 py-2 text-sm">{error}</p>}
         </div>
       )}
