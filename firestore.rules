@@ -259,7 +259,11 @@ service cloud.firestore {
       allow create: if isCompanyAccount() && pingStoreKeysOnly(request.resource.data.keys());
       allow update: if isCompanyAccount()
         && pingStoreKeysOnly(request.resource.data.diff(resource.data).affectedKeys());
-      allow delete: if false;
+      // 빈 항목만 지울 수 있다 — IP도 없고 한 번도 안 잰(days 없음) 경쟁점 자리. 점포평가에서 경쟁점을 지울 때 같이 지운다(2026-10-14).
+      allow delete: if isCompanyAccount()
+        && resource.data.get('ipRanges', '') == ''
+        && !('days' in resource.data)
+        && resource.data.get('isOwnStore', false) != true;
     }
     match /pingMonitorDaily/{dailyId} {
       allow read: if isCompanyAccount();

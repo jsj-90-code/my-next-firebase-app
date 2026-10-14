@@ -26,7 +26,7 @@ import { formatScore } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getCandidate, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
 import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
-import { isRegistrableCompetitor, listPingStoresByCompetitorIds, registerCompetitorsToPing, updatePingStore } from "@/lib/pingMonitor/clientStore";
+import { isRegistrableCompetitor, listPingStoresByCompetitorIds, registerCompetitorsToPing, removePingPlaceholdersForCompetitor, updatePingStore } from "@/lib/pingMonitor/clientStore";
 import { StoreForm } from "@/app/ping-monitor/StoreForm";
 import { parseIpRanges } from "@/lib/pingMonitor/ipRange";
 import { competitorMeasurement, formatPct, fullDayRuleText, type CompetitorMeasurement } from "@/lib/pingMonitor/summary";
@@ -1105,6 +1105,10 @@ export function CompetitorsTab({
     setMutationError(null);
     try {
       await deleteCompetitor(id, user?.email ?? null);
+      // 측정기에 자동으로 올라간 빈 항목(IP·측정 기록 없음)도 같이 지운다(2026-10-14). 실패해도 경쟁점 삭제는 끝난 것이라 알림만.
+      const ping = await removePingPlaceholdersForCompetitor(id).catch(() => null);
+      if (ping === null) setPingNotice({ tone: "danger", text: "경쟁점은 지웠지만 측정기 쪽 빈 항목을 못 지웠습니다 — 측정기 화면에서 확인해 주세요." });
+      else if (ping.kept.length) setPingNotice({ tone: "ok", text: `측정 기록이 있어 측정기에는 남겨 뒀습니다: ${ping.kept.join(", ")}` });
       setReloadVersion((version) => version + 1);
     } catch (err) {
       setMutationError({

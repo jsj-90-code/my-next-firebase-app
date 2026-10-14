@@ -5,6 +5,7 @@
 // Firebase 무료 요금제라 읽기를 아낀다: 목록은 매장 문서만(매장당 1번), 시간대별은 상세 화면에서 고른 기간만.
 
 import {
+  deleteDoc,
   addDoc,
   collection,
   doc,
@@ -250,6 +251,18 @@ export async function listPingStoresByCompetitorIds(ids: string[]): Promise<Map<
     }
   }
   return out;
+}
+
+/**
+ * 점포평가에서 경쟁점을 지울 때 측정기 쪽 정리(2026-10-14 제주연동점 — 경쟁점은 지웠는데 탭 열 때 자동으로 올라간 빈 항목이 측정기에 남았다).
+ * IP도 없고 한 번도 안 잰 빈 항목만 지운다(보안 규칙도 그것만 허용). IP·측정 기록이 있으면 아까운 자료라 남기고 이름을 돌려준다.
+ * 반대 방향(측정기에서 지운다고 점포평가 경쟁점을 지우는 것)은 하지 않는다 — 개점 시점 평가 자료다.
+ */
+export async function removePingPlaceholdersForCompetitor(competitorId: string): Promise<{ deleted: number; kept: string[] }> {
+  const linked = ((await listPingStoresByCompetitorIds([competitorId])).get(competitorId) ?? []).filter((s) => !s.isOwnStore);
+  const empty = linked.filter((s) => hasNoIp(s) && Object.keys(s.days ?? {}).length === 0);
+  await Promise.all(empty.map((s) => deleteDoc(doc(requireDb(), PING_STORES, s.id))));
+  return { deleted: empty.length, kept: linked.filter((s) => !empty.includes(s)).map((s) => s.name) };
 }
 
 /** 측정기에 빈칸으로 올릴 수 있는 경쟁점인지 — "경쟁점 없음(독점상권 확인)" 표시용 문서는 실제 매장이 아니다. */
