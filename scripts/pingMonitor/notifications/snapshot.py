@@ -39,5 +39,9 @@ for sid, candidate in state.get('candidates', {}).items():
         events.append({'id': 'candidate:' + sid, 'type': 'repeat-connection', **candidate})
 if state.get('phase') == 'all-candidates-found':
     events.append({'id': 'complete:all-candidates', 'type': 'all-candidates-found'})
+if state.get('phase') == 'new-port-batch-complete':
+    events.append({'id': 'complete:' + state['batchId'], 'type': 'new-port-batch-complete',
+                   'checkedPorts': state.get('portCount'), 'checks': state.get('cursor'),
+                   'nextAction': 'Review this completed batch and continue with untested ports only.'})
 service = subprocess.run(['systemctl', 'is-active', 'ping-missing-discovery.service'], capture_output=True, text=True).stdout.strip()
 print(json.dumps({'at': time.time(), 'events': events, 'service': service, 'phase': state.get('phase'), 'utilizationVerified': False}, ensure_ascii=False))
