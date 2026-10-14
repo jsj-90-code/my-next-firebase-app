@@ -15,6 +15,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -157,7 +158,7 @@ export async function listOwnStoreOptions(): Promise<OwnStoreOption[]> {
   const [existing, candidates, custom] = await Promise.all([
     listExistingStores(),
     listCandidates(),
-    getDocs(query(collection(requireDb(), PING_STORES), where("ownCode", ">=", "직접"), where("ownCode", "<", "직접"))),
+    getDocs(query(collection(requireDb(), PING_STORES), where("ownCode", ">=", "직접"), where("ownCode", "<", "직접\uf8ff"))),
   ]);
   const existingNames = new Set(existing.map((s) => s.storeName.replace(/\s/g, "")));
   const customNames = new Map(custom.docs.map((d) => [String(d.get("ownCode")), String(d.get("ownName") ?? "") || String(d.get("ownCode"))]));
@@ -195,6 +196,41 @@ export async function listCompetitorOptions(ownCode: string): Promise<Competitor
       pcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
     }))
     .sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9));
+}
+
+export type TransferResult = { moved: number; linked: string[] };
+
+/**
+ * 직접 입력 매장(직접기존:·직접후보:) 묶음을 점포평가 매장(기존점 가맹점코드·후보지 N0xx)으로 통째로 옮긴다(2026-10-14 사용자 —
+ * 타부서가 먼저 측정기에 이름만 적어 둔 뒤 점포평가에 후보지를 등록하는 경우). 문서 id는 그대로라 측정 기록이 이어진다.
+ * 같은 상호(띄어쓰기 무시)의 점포평가 경쟁점이 하나뿐이면 competitorId로 이어 준다 — 그래야 경쟁점 탭 "측정기에 등록"이 중복을 안 만든다.
+ */
+export async function transferCustomOwn(fromCode: string, to: { code: string; name: string }, email: string | null): Promise<TransferResult> {
+  if (!isCustomOwnCode(fromCode)) throw new Error("직접 입력한 매장만 옮길 수 있습니다.");
+  if (isCustomOwnCode(to.code)) throw new Error("점포평가에 등록된 매장을 골라 주세요.");
+  const [rows, competitors, already] = await Promise.all([listPingStoresByOwn(fromCode), listCompetitors(to.code), listPingStoresByOwn(to.code)]);
+  const key = (s: string) => s.replace(/\s/g, "").toLowerCase();
+  const taken = new Set(already.map((s) => s.competitorId).filter(Boolean));
+  const result: TransferResult = { moved: 0, linked: [] };
+  const batch = writeBatch(requireDb());
+  for (const s of rows) {
+    const same = competitors.filter((c) => key(c.name) === key(s.name));
+    const link = !s.competitorId && same.length === 1 && !taken.has(same[0].id) ? same[0] : null;
+    if (link) {
+      taken.add(link.id);
+      result.linked.push(s.name);
+    }
+    batch.update(doc(requireDb(), PING_STORES, s.id), {
+      ownCode: to.code,
+      ownName: to.name,
+      ...(link ? { competitorId: link.id, ...(s.distanceM == null && link.distanceM != null ? { distanceM: link.distanceM } : {}) } : {}),
+      updatedAt: serverTimestamp(),
+      updatedBy: email,
+    });
+    result.moved++;
+  }
+  await batch.commit();
+  return result;
 }
 
 /**

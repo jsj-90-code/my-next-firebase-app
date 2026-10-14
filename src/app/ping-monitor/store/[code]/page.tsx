@@ -12,9 +12,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   isCustomCandidateCode,
+  isCustomOwnCode,
   listPingDaily,
   listPingStoresByOwn,
 } from "@/lib/pingMonitor/clientStore";
+import { TransferOwnPanel } from "./TransferOwnPanel";
 import {
   dateRangeLabel,
   denominator,
@@ -272,6 +274,8 @@ export default function PingOwnComparePage() {
               : " · 우리 매장 IP가 없어 우리 매장 값은 없습니다")}
         </p>
       </div>
+
+      {isCustomOwnCode(ownCode) && <TransferOwnPanel fromCode={ownCode} fromName={name} preferCandidate={isCandidate} />}
 
       <section className="app-card overflow-x-auto rounded-2xl">
         <table className="w-full min-w-[680px] text-sm">
