@@ -1024,7 +1024,7 @@ export function CompetitorsTab({
   const measurementOf = (id: string) => (measurements?.key === measureKey ? measurements.byId.get(id) : undefined);
 
   // 측정기에 경쟁점 올리기(2026-10-07 사용자 "신규후보지 등록할 때 가동률 웹에 경쟁점 추가") — 경쟁점을 저장하면 자동으로,
-  // 이미 있던 경쟁점은 버튼으로. IP 없이 빈칸으로 올라가고 IP는 측정기 화면에서 넣는다. 후보지 이름은 측정기의 "우리 매장" 칸.
+  // 이미 있던 경쟁점은 후보지면 탭을 열 때 자동으로(2026-10-14), 기존점이면 버튼으로. IP 없이 빈칸으로 올라가고 IP는 측정기 화면에서 넣는다. 후보지 이름은 측정기의 "우리 매장" 칸.
   const [candidateName, setCandidateName] = useState<string | null>(null);
   useEffect(() => {
     if (!pingMeasureEnabled) return;
@@ -1035,6 +1035,17 @@ export function CompetitorsTab({
   const [pingRegistering, setPingRegistering] = useState(false);
   const [pingNotice, setPingNotice] = useState<{ tone: "ok" | "danger"; text: string } | null>(null);
   const unregistered = competitors.filter((c) => isRegistrableCompetitor(c) && measurementOf(c.id)?.state === "none");
+  // 2026-10-14 신제주점 — 상권자료 수집이 만든 경쟁점은 폼 "저장"을 안 거치면 측정기에 안 올라갔다(IP 넣은 2곳만 올라감).
+  // 후보지는 경쟁점 전부가 측정기에 "IP 미등록"으로라도 떠야 하므로, 탭을 열 때 빠진 곳을 자동으로 올린다. 같은 목록으론 한 번만.
+  const autoRegisteredKey = useRef<string | null>(null);
+  const unregisteredKey = unregistered.map((c) => c.id).join(",");
+  useEffect(() => {
+    if (subjectLabel !== "후보지" || !pingMeasureEnabled || measureError || !unregisteredKey || pingRegistering) return;
+    if (autoRegisteredKey.current === unregisteredKey) return;
+    autoRegisteredKey.current = unregisteredKey;
+    void registerToPing(unregistered, { quietIfNone: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unregisteredKey, subjectLabel, pingMeasureEnabled, measureError, pingRegistering]);
 
   async function registerToPing(
     list: Competitor[],
