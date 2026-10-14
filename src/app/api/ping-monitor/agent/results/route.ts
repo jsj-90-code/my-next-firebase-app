@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const denied = checkAgentSignature(request, body);
   if (denied) return NextResponse.json({ error: `인증되지 않은 요청입니다 — ${denied}` }, { status: 401 });
 
-  const parsed = JSON.parse(body) as { at?: string; aliveIps?: unknown; method?: unknown; extraOnlyIps?: unknown };
+  const parsed = JSON.parse(body) as { at?: string; aliveIps?: unknown; method?: unknown; extraOnlyIps?: unknown; measured?: unknown };
   if (!Array.isArray(parsed.aliveIps)) return NextResponse.json({ error: "aliveIps가 없습니다." }, { status: 400 });
   const at = parsed.at ? new Date(parsed.at) : new Date();
   // 6시간까지 받는다 — 보내기에 실패한 회차를 서버가 다음 회차에 다시 보낸다(2026-10-08). 시(時)는 잰 시각으로 묶인다.
@@ -22,7 +22,10 @@ export async function POST(request: Request) {
   }
 
   // 잰 시각 기준으로 읽는다 — 어느 매장에 추가 포트를 보냈는지(extraReason)가 그 시와 맞아야 자동 학습이 맞다.
-  const targets = await loadTargets(at);
+  // 서버가 목록을 받은 뒤(회차 도중) 등록되거나 IP가 바뀐 매장은 이번 회차에 안 쟀다 — 기록하면 가짜 0대가 된다(2026-10-14 제주 노형 14시).
+  // 서버가 보낸 "잰 매장·IP 수"와 맞는 매장만 기록한다. 옛 에이전트(measured 없음)는 예전처럼 전부.
+  const measured = parsed.measured && typeof parsed.measured === "object" ? (parsed.measured as Record<string, unknown>) : null;
+  const targets = (await loadTargets(at)).filter((t) => !measured || measured[t.id] === t.ips.length);
   const result = await recordRound(targets, new Set(parsed.aliveIps.map(String)), String(parsed.method ?? "agent"), at);
   // 회차 이상(측정 고장으로 대량 0대)이면 저장하지 않았다 — 상태 문서도 안 고쳐서 예비(:50)가 이 시를 다시 잰다(2026-10-10).
   // 200으로 답한다: 4xx면 서버가 pending을 지우고, 5xx면 같은 결과를 계속 다시 보낸다.

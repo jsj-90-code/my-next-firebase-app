@@ -150,7 +150,9 @@ const secs = ((Date.now() - started.getTime()) / 1000).toFixed(0);
 console.log(`${started.toISOString()} 매장 ${targets.length} · IP ${ips.length} · 응답 ${alive.length}(핑 ${byPing.size} · TCP ${byTcp.size} · 핑만 ${pingOnly} · TCP만 ${tcpOnly} · 타임스탬프 ${byTimestamp?.size ?? "실패"} · 타임스탬프만 ${timestampOnly} · 추가포트만 ${extraOnlyIps.length}) · ${method} · ${secs}초`);
 if (DRY) process.exit(0);
 
-const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive, extraOnlyIps });
+// measured: 이번 회차에 실제로 잰 매장과 IP 수 — 회차 도중 등록·IP 변경된 매장을 웹이 0대로 적지 않게(2026-10-14 제주 노형 14시 가짜 0대).
+const measured = Object.fromEntries(targets.map((t) => [t.id, t.ips.length]));
+const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive, extraOnlyIps, measured });
 try {
   const rRes = await call("POST", rPath, body);
   console.log(`보냄 ${rRes.status}: ${await rRes.text()}`);
