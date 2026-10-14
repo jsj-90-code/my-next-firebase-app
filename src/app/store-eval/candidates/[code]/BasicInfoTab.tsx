@@ -294,6 +294,12 @@ function BasicInfoTabForm({
       // 2026-10-07 — 라우트가 돌려주던 부분 실패 안내(건축물대장 조회 실패 등)를 화면이 버리고 있었다.
       const warnings = data.collectionErrors ?? [];
       setCollectMessage(parts.join(" · ") + (warnings.length > 0 ? ` (주의: ${warnings.join(" ")})` : ""));
+      // 2026-10-14 사용자 요청 — 수집 뒤 SGIS·소상공인365 버튼을 따로 두 번 누르던 것을 한 번에.
+      // 확정 좌표가 나온 직후 둘을 같이 받아 폼에만 채운다(저장은 여전히 사람이). 각자 알림 칸에 결과가 뜬다.
+      if (fresh?.lat != null && fresh.lng != null) {
+        const coords = { lat: fresh.lat, lng: fresh.lng };
+        void Promise.all([handleFetchSgisResident(coords), handleFetchSbizFloating(coords)]);
+      }
     } catch (err) {
       setCollectError(err instanceof Error ? err.message : "상권자료 수집 중 오류가 발생했습니다.");
     } finally {
@@ -384,8 +390,11 @@ function BasicInfoTabForm({
     }
   }
 
-  async function handleFetchSgisResident() {
-    if (form.lat == null || form.lng == null || form.code === "new") return;
+  // coords — 상권자료 수집 직후 자동 호출 때는 방금 받은 좌표를 넘긴다(그 시점 form은 아직 옛 값이다).
+  async function handleFetchSgisResident(coords?: { lat: number; lng: number }) {
+    const lat = coords?.lat ?? form.lat;
+    const lng = coords?.lng ?? form.lng;
+    if (lat == null || lng == null || form.code === "new") return;
     setSgisBusy(true);
     setSgisNotice(null);
     try {
@@ -393,7 +402,7 @@ function BasicInfoTabForm({
       const response = await fetch("/api/store-eval/collect-resident-population", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ lat: form.lat, lng: form.lng }),
+        body: JSON.stringify({ lat, lng }),
       });
       const data = await readJsonOrText<{ patch: Record<string, number>; records: ExtractedFieldRecord[]; warnings: string[]; baseYear: string }>(response);
       if (!response.ok || data.error || !data.patch) throw new Error(data.error ?? "SGIS 주거인구를 받지 못했습니다.");
@@ -403,7 +412,7 @@ function BasicInfoTabForm({
         id: `${form.code}_sgis_life_area_${Date.now()}`,
         candidateCode: form.code,
         sourceType: "sgis_life_area",
-        coordAtUpload: { lat: form.lat, lng: form.lng },
+        coordAtUpload: { lat, lng },
         fileName: `SGIS API 자동(${data.baseYear}년 기준)`,
         fileHash: null,
         pastedTable: false,
@@ -421,8 +430,10 @@ function BasicInfoTabForm({
 
   // 소상공인365 반경 100·200·300·400·500m·1km 유동인구를 받아 **폼에만** 채운다(저장은 사람이 "저장"으로).
   // 한 반경이 실패해도 받은 반경은 채우고, 실패한 칸은 기존 값을 그대로 둔다.
-  async function handleFetchSbizFloating() {
-    if (form.lat == null || form.lng == null || form.code === "new") return;
+  async function handleFetchSbizFloating(coords?: { lat: number; lng: number }) {
+    const lat = coords?.lat ?? form.lat;
+    const lng = coords?.lng ?? form.lng;
+    if (lat == null || lng == null || form.code === "new") return;
     setSbizBusy(true);
     setSbizNotice(null);
     try {
@@ -430,7 +441,7 @@ function BasicInfoTabForm({
       const response = await fetch("/api/store-eval/collect-floating-population", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ lat: form.lat, lng: form.lng }),
+        body: JSON.stringify({ lat, lng }),
       });
       const data = await readJsonOrText<{
         patch: Record<string, number>;
@@ -445,7 +456,7 @@ function BasicInfoTabForm({
         id: `${form.code}_sosangongin365_${Date.now()}`,
         candidateCode: form.code,
         sourceType: "sosangongin365",
-        coordAtUpload: { lat: form.lat, lng: form.lng },
+        coordAtUpload: { lat, lng },
         fileName: "소상공인365 자동(반경 100·200·300·400·500m·1km, 최근 12개월 평균)",
         fileHash: null,
         pastedTable: false,
@@ -648,7 +659,7 @@ function BasicInfoTabForm({
             {collecting ? "수집 중..." : "상권자료 수집"}
           </button>
           <span className="text-xs text-[var(--sl-ink-soft)]">
-            {dirty ? "변경한 기본정보를 먼저 저장하면 수집할 수 있습니다." : "저장된 주소로 좌표 확인 + 행정구역 참고자료 + 주변 경쟁점(PC방)·수요거점을 자동으로 모읍니다."}
+            {dirty ? "변경한 기본정보를 먼저 저장하면 수집할 수 있습니다." : "저장된 주소로 좌표 확인 + 행정구역 참고자료 + 주변 경쟁점(PC방)·수요거점을 모으고, 이어서 SGIS 주거인구·소상공인365 유동인구까지 폼에 채웁니다(끝나면 \"저장\")."}
           </span>
         </div>
         {collectError && (
@@ -694,7 +705,8 @@ function BasicInfoTabForm({
         <section className={sectionClass}>
           <h3 className={sectionTitleClass}>SGIS·소상공인365 자동 채우기 (주거인구 · 유동인구)</h3>
           <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
-            <strong>SGIS 주거인구와 소상공인365 유동인구는 아래 버튼으로 자동으로 받습니다</strong>(2026-09-26). SGIS는 반경 통계 API(기존점
+            <strong>SGIS 주거인구와 소상공인365 유동인구는 &ldquo;상권자료 수집&rdquo;을 누르면 같이 받습니다</strong>(2026-10-14부터, 아래 버튼은
+            지도에서 좌표를 옮겼거나 실패했을 때 다시 받는 용도). SGIS는 반경 통계 API(기존점
             52곳 손입력과 중앙 차이 0.0%로 대조된 경로), 소상공인365는 기존점 유동인구를 넣은 것과 같은 경로·같은 규칙(최근 12개월 평균,
             연령·성별은 최근월 구성비를 평균 크기로 환산)입니다. 버튼은 폼에만 채우고, 이 탭의 &ldquo;저장&rdquo;을 눌러야 반영됩니다.
             버튼이 실패하면 아래 입력칸에 직접 입력하세요.
@@ -703,7 +715,7 @@ function BasicInfoTabForm({
             <button
               type="button"
               disabled={sgisBusy || form.code === "new" || authLoading}
-              onClick={handleFetchSgisResident}
+              onClick={() => handleFetchSgisResident()}
               className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
             >
               {sgisBusy ? "SGIS에서 받는 중..." : "SGIS 주거인구 자동 채우기 (500m·1km·연령)"}
@@ -711,7 +723,7 @@ function BasicInfoTabForm({
             <button
               type="button"
               disabled={sbizBusy || form.code === "new" || authLoading}
-              onClick={handleFetchSbizFloating}
+              onClick={() => handleFetchSbizFloating()}
               className="app-btn-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50"
             >
               {sbizBusy ? "소상공인365에서 받는 중(약 30초)..." : "소상공인365 유동인구 자동 채우기 (100·200·300·400·500m·1km)"}
