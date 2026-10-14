@@ -12,7 +12,10 @@ import {
   type OwnStoreOption,
   type PingStoreInput,
 } from "@/lib/pingMonitor/clientStore";
+import { customOwnCode, isCustomOwnCode } from "@/lib/pingMonitor/clientStore";
 import { shortIps } from "@/lib/pingMonitor/summary";
+
+const CUSTOM_OPTION = "__custom__";
 
 const FIELD = "app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70";
 const LABEL = "text-xs font-medium text-[var(--sl-ink-soft)]";
@@ -38,6 +41,9 @@ export function StoreForm({
   const [memo, setMemo] = useState(initial?.memo ?? "");
   const [active, setActive] = useState(initial?.active ?? true);
   const [ownCode, setOwnCode] = useState(initial?.ownCode ?? "");
+  /** 우리 매장 "직접 입력"을 고른 상태 — 점포평가에 없는 매장(2026-10-14 타부서 공유). */
+  const [customMode, setCustomMode] = useState(false);
+  const [customName, setCustomName] = useState("");
   const [competitorId, setCompetitorId] = useState(initial?.competitorId ?? "");
   const [distance, setDistance] = useState(initial?.distanceM != null ? String(initial.distanceM) : "");
   const [ownOptions, setOwnOptions] = useState<OwnStoreOption[] | null>(null);
@@ -58,7 +64,7 @@ export function StoreForm({
   }, []);
 
   useEffect(() => {
-    if (!ownCode) return;
+    if (!ownCode || isCustomOwnCode(ownCode)) return;
     let cancelled = false;
     listCompetitorOptions(ownCode)
       .then((rows) => !cancelled && setCompetitorOptions({ code: ownCode, rows }))
@@ -67,7 +73,9 @@ export function StoreForm({
       cancelled = true;
     };
   }, [ownCode]);
-  const competitors = competitorOptions?.code === ownCode ? competitorOptions.rows : null;
+  const competitors = ownCode && isCustomOwnCode(ownCode) ? [] : competitorOptions?.code === ownCode ? competitorOptions.rows : null;
+  const customTrimmed = customName.replace(/\s+/g, " ").trim();
+  const effectiveOwnCode = customMode ? (customTrimmed ? customOwnCode(customTrimmed) : "") : ownCode;
 
   function pickCompetitor(id: string) {
     setCompetitorId(id);
@@ -84,7 +92,7 @@ export function StoreForm({
   const pcInvalid = pcNum != null && !(Number.isInteger(pcNum) && pcNum > 0);
   const distNum = distance.trim() === "" ? null : Number(distance);
   const distInvalid = distNum != null && !(Number.isFinite(distNum) && distNum >= 0);
-  const canSubmit = name.trim() !== "" && parsed.ips.length > 0 && parsed.errors.length === 0 && !pcInvalid && !distInvalid && !busy;
+  const canSubmit = name.trim() !== "" && !(customMode && !customTrimmed) && parsed.ips.length > 0 && parsed.errors.length === 0 && !pcInvalid && !distInvalid && !busy;
 
   async function runProbe() {
     if (!user) return;
@@ -120,9 +128,11 @@ export function StoreForm({
         pcCount: pcNum,
         memo: memo.trim(),
         active,
-        ownCode: ownCode || null,
-        ownName: ownOptions?.find((o) => o.code === ownCode)?.name ?? initial?.ownName ?? null,
-        competitorId: ownCode && competitorId ? competitorId : null,
+        ownCode: effectiveOwnCode || null,
+        ownName: customMode
+          ? customTrimmed || null
+          : ownOptions?.find((o) => o.code === ownCode)?.name ?? (ownCode && ownCode === initial?.ownCode ? initial?.ownName ?? null : null),
+        competitorId: !customMode && ownCode && !isCustomOwnCode(ownCode) && competitorId ? competitorId : null,
         distanceM: distNum,
       });
     } catch (err) {
@@ -140,14 +150,17 @@ export function StoreForm({
           <span className={LABEL}>우리 매장 (매장별로 묶어 보기용)</span>
           <select
             className={FIELD}
-            value={ownCode}
+            value={customMode ? CUSTOM_OPTION : ownCode}
             onChange={(e) => {
-              setOwnCode(e.target.value);
+              const v = e.target.value;
+              setCustomMode(v === CUSTOM_OPTION);
+              setOwnCode(v === CUSTOM_OPTION ? "" : v);
               setCompetitorId("");
             }}
           >
             <option value="">{ownOptions == null ? "불러오는 중..." : "연결 안 함"}</option>
-            {(["기존점", "후보지"] as const).map((kind) => (
+            <option value={CUSTOM_OPTION}>+ 목록에 없음 — 매장명 직접 입력</option>
+            {(["기존점", "후보지", "직접 입력"] as const).map((kind) => (
               <optgroup key={kind} label={kind}>
                 {(ownOptions ?? [])
                   .filter((o) => o.kind === kind)
@@ -162,11 +175,20 @@ export function StoreForm({
               <option value={ownCode}>{initial?.ownName ?? ownCode}</option>
             )}
           </select>
+          {customMode && (
+            <input
+              className={FIELD}
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder="우리 매장명 (예: 아이센스PC방 부평역점) — 같은 이름끼리 한 묶음"
+              autoFocus
+            />
+          )}
         </label>
         <label className="block">
           <span className={LABEL}>점포평가에 등록된 경쟁점에서 고르기 (상호·대수·거리 자동 입력)</span>
-          <select className={FIELD} value={competitorId} disabled={!ownCode} onChange={(e) => pickCompetitor(e.target.value)}>
-            <option value="">{!ownCode ? "우리 매장을 먼저 고르세요" : competitors == null ? "불러오는 중..." : competitors.length === 0 ? "등록된 경쟁점 없음 — 직접 입력" : "직접 입력"}</option>
+          <select className={FIELD} value={competitorId} disabled={!ownCode || customMode} onChange={(e) => pickCompetitor(e.target.value)}>
+            <option value="">{customMode ? "직접 입력한 매장은 아래에 직접 입력" : !ownCode ? "우리 매장을 먼저 고르세요" : competitors == null ? "불러오는 중..." : competitors.length === 0 ? "등록된 경쟁점 없음 — 직접 입력" : "직접 입력"}</option>
             {(competitors ?? []).map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

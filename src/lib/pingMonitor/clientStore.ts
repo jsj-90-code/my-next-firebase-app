@@ -140,13 +140,29 @@ export async function listPingDaily(storeId: string, from: string, to: string): 
   });
 }
 
-export type OwnStoreOption = { code: string; name: string; kind: "기존점" | "후보지" };
+export type OwnStoreOption = { code: string; name: string; kind: "기존점" | "후보지" | "직접 입력" };
 
-/** 우리 매장 고르기 목록 — 기존점(가맹점코드) + 진행 중인 후보지. 기존점으로 전환된 후보지는 기존점 쪽만 남긴다. */
+/**
+ * 점포평가에 없는 우리 매장을 이름만 적어 묶는 코드(2026-10-14 타부서 공유 — 점포평가 기존점은 일부뿐이라).
+ * 기존점(숫자)·후보지(N0xx)와 안 겹치게 "직접:" 접두사. 목록에선 기존가맹점 쪽에 묶인다.
+ */
+export const CUSTOM_OWN_PREFIX = "직접:";
+export const customOwnCode = (name: string) => CUSTOM_OWN_PREFIX + name.replace(/\s+/g, " ").trim();
+export const isCustomOwnCode = (code: string) => code.startsWith(CUSTOM_OWN_PREFIX);
+
+/** 우리 매장 고르기 목록 — 기존점(가맹점코드) + 진행 중인 후보지 + 누군가 직접 입력해 둔 매장명. 기존점으로 전환된 후보지는 기존점 쪽만 남긴다. */
 export async function listOwnStoreOptions(): Promise<OwnStoreOption[]> {
-  const [existing, candidates] = await Promise.all([listExistingStores(), listCandidates()]);
+  const [existing, candidates, custom] = await Promise.all([
+    listExistingStores(),
+    listCandidates(),
+    getDocs(query(collection(requireDb(), PING_STORES), where("ownCode", ">=", CUSTOM_OWN_PREFIX), where("ownCode", "<", "직접;"))),
+  ]);
   const existingNames = new Set(existing.map((s) => s.storeName.replace(/\s/g, "")));
+  const customNames = new Map(custom.docs.map((d) => [String(d.get("ownCode")), String(d.get("ownName") ?? "") || String(d.get("ownCode")).slice(CUSTOM_OWN_PREFIX.length)]));
   return [
+    ...[...customNames]
+      .map(([code, name]) => ({ code, name, kind: "직접 입력" as const }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko")),
     ...existing
       .map((s) => ({ code: s.storeCode, name: s.storeName, kind: "기존점" as const }))
       .sort((a, b) => a.name.localeCompare(b.name, "ko")),
