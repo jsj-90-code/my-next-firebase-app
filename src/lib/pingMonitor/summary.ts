@@ -270,7 +270,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
     .map((s) => ({ s, r: rangeUtilization(s.days, from, to, { today, excludeUpTo: s.portSwitchDate }) }))
     .sort((x, y) => Number(hasNoIp(x.s)) - Number(hasNoIp(y.s)) || Number(Boolean(x.s.excludeFromStats)) - Number(Boolean(y.s.excludeFromStats)) || Number(y.s.active) - Number(x.s.active) || Number(Boolean(x.s.ipCheck)) - Number(Boolean(y.s.ipCheck)) || y.r.days - x.r.days);
   const { s, r } = ranked[0];
-  if (s.excludeFromStats) return { ...base, state: "blocked", label: "계산 제외(IP 확인 필요)", store: s };
+  if (s.excludeFromStats) return { ...base, state: "blocked", label: RECHECK, store: s };
   if (hasNoIp(s)) return { ...base, state: "noIp", label: "IP 미등록", store: s };
   if (!s.active) return { ...base, state: "stopped", label: "측정 중지", store: s };
   // 판정은 측정기 화면과 같은 storeStatus 하나로 한다(2026-10-10). 예전엔 IP 확인 메모(ipCheck)만 있어도 막아서,
@@ -278,7 +278,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   // 레드포스처럼 하루 0~1대만 응답한 노이즈는 storeStatus(실측 1% 미만이면 메모 우선)와 rangeUtilization(1% 미만 날 제외)이 이미 막고,
   // 사람이 노이즈로 확정한 곳은 excludeFromStats(위)가 막는다.
   const status = storeStatus(s);
-  if (status.tone === "danger" || status.label.startsWith("IP·핑차단") || status.label.startsWith("과응답") || status.label.startsWith("측정 의심")) return { ...base, state: "blocked", label: status.label, store: s };
+  if (status.kind !== "measuring" && status.kind !== "waiting") return { ...base, state: "blocked", label: status.label, store: s };
   // 평균에 실제로 들어간 날과 같은 조건(꽉 찬 날 + 측정실패 1% 미만 제외 + 포트 전환 날 이후)이라야
   // first~last 기간·일수가 r.days/r.util과 안 어긋난다(2026-10-09).
   const used = Object.entries(s.days)
@@ -310,7 +310,19 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   };
 }
 
-export type StoreStatus ={ label: string; tone: "ok" | "warn" | "danger" | "neutral" };
+/** 측정 상태(2026-10-14 사용자: 못 재는 곳은 세 갈래로) — 색은 "사람이 할 일"로 맞춘다.
+ *  IP 미등록(노랑, IP 받아 넣기) · IP대역 재확인(빨강, 틀렸다는 흔적 있음 — 매장에 IP 다시 확인) · 포트 조회 실패(회색, 핑·포트 전부 무응답 — 할 일 없음, 매일 21시 자동 재확인).
+ *  "전부 무응답"만으론 IP가 틀린 건지 매장이 막은 건지 못 가른다 — 그래서 흔적(과응답·늘 몇 대만·사람 표시)이 있을 때만 재확인으로.
+ *  kind: 화면이 값 표시 여부를 이름표 글자 말고 이걸로 판정한다(과응답은 값을 보여 준다). hint: 배지에 마우스를 올리면 보이는 한 줄. */
+export type StoreStatusKind = "measuring" | "overResponse" | "recheck" | "noIp" | "stopped" | "waiting" | "unmeasurable";
+export type StoreStatus = { label: string; tone: "ok" | "warn" | "danger" | "neutral"; kind: StoreStatusKind; hint?: string };
+
+/** 값(가동률)을 보여 줄 상태 — 측정 중 또는 과응답(값은 보이되 재확인 배지). */
+export function statusShowsValues(st: StoreStatus): boolean {
+  return st.kind === "measuring" || st.kind === "overResponse";
+}
+
+const RECHECK = "IP대역 재확인";
 
 /** IP를 아직 모르는 경쟁점 — 점포평가 경쟁점을 빈칸으로 넣어 둔 것(2026-10-06 사용자 "빈곳은 빈곳으로 냅두고"). */
 export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean {
@@ -320,9 +332,9 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
 export function storeStatus(store: PingStore): StoreStatus {
   // 사람이 "계산 제외"로 확정한 매장 — 측정값이 어떻든(과응답·몇 대만 응답 등 IP 오류) 평균·수요계산에서 빼고 화면은 "-"(2026-10-09).
   // 실측 우선 규칙(스컬스피시)보다 앞선다 — 보보스3·치즈 처럼 24시간 평평한 몇 대 응답은 노이즈라 실측으로 안 친다.
-  if (store.excludeFromStats) return { label: "계산 제외(IP 확인 필요)", tone: "danger" };
-  if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn" };
-  if (!store.active) return { label: "중지", tone: "neutral" };
+  if (store.excludeFromStats) return { label: RECHECK, tone: "danger", kind: "recheck", hint: "응답이 이상해 계산에서 뺀 매장(늘 몇 대만 켜짐 등) — 매장에 IP 다시 확인" };
+  if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn", kind: "noIp", hint: "IP를 받아 넣으면 다음 정각부터 잽니다" };
+  if (!store.active) return { label: "중지", tone: "neutral", kind: "stopped" };
   // 실측이 1% 이상이면 꼬리표보다 실측 우선 — 데이터가 뜨는 매장은 꼬리표(확인 전 등) 있어도 무조건 보인다(2026-10-08 스컬스피시).
   // 스침(일일평균 1% 미만)은 측정으로 안 친다(카사 3번 스침 → 0.N%).
   const maxDayUtil = Math.max(0, ...Object.values(store.days).map((v) => (v.t > 0 ? v.a / v.t : 0)));
@@ -333,21 +345,19 @@ export function storeStatus(store: PingStore): StoreStatus {
       .filter(([date, v]) => coversFullDay(v) && v.a / v.t >= MEASURE_FAIL_MAX_UTIL && !(store.portSwitchDate && date <= store.portSwitchDate))
       .map(([, v]) => v);
     const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
-    if (dailyAvg != null && dailyAvg > 0.6) return { label: "과응답 · IP 확인", tone: "warn" };
+    if (dailyAvg != null && dailyAvg > 0.6) return { label: RECHECK, tone: "danger", kind: "overResponse", hint: "일일평균 60% 넘음 — 공유기·늘 켜진 기기가 섞인 의심" };
     // 평균 1% 남짓(반올림 1.0 이하)은 경쟁점 탭에서 "측정 의심"으로 막는다 — 측정기 화면도 같은 말로(2026-10-10 최종점검: 두 화면이 달랐다).
-    if (dailyAvg != null && Math.round(dailyAvg * 1000) / 10 <= 1) return { label: "측정 의심(가동률 1% 남짓)", tone: "warn" };
-    return { label: "측정 중", tone: "ok" };
+    if (dailyAvg != null && Math.round(dailyAvg * 1000) / 10 <= 1) return { label: RECHECK, tone: "danger", kind: "recheck", hint: "가동률 1% 남짓 — PC가 아니라 늘 켜진 기기 몇 대만 잡히는 의심" };
+    return { label: "측정 중", tone: "ok", kind: "measuring" };
   }
   // 실측이 거의 없는 경우: 사람이 남긴 꼬리표가 있으면 평가에 값을 안 쓴다(간헐적 응답도 못 믿음).
-  if (store.ipCheck) {
-    if (/확인 전/.test(store.ipCheck)) return { label: "IP 확인 전", tone: "warn" };
-    return { label: "IP·핑차단 확인", tone: "warn" };
-  }
+  // 확인 메모 중 "대답 0대"·"확인 전"은 무응답 기록일 뿐 IP가 틀렸다는 흔적이 아니다(2026-10-14 기준 31곳이 10-06 "대답 0대" 메모) → 아래 포트 조회 실패로.
+  if (store.ipCheck && !/대답 0대|확인 전/.test(store.ipCheck)) return { label: RECHECK, tone: "danger", kind: "recheck", hint: `IP 확인 메모: ${store.ipCheck}` };
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
-  if (all.samples === 0) return { label: "첫 측정 대기", tone: "neutral" };
-  // IP는 넣었는데 응답이 0 — IP가 틀렸는지 핑이 막혔는지는 자료로 구분 못 한다(한 문구로).
-  if (all.samples >= BLOCKED_SUSPECT_SAMPLES) return { label: "IP·핑차단 확인", tone: "danger" };
-  return { label: "IP·핑차단 확인", tone: "warn" };
+  // 첫 24회차는 측정 방식을 배우는 중(1688·5040까지 두드림, roundGuard wantsExtraPorts) — 등록 직후 0대를 "포트 조회 실패"로 찍지 않는다.
+  if (all.samples < 24) return { label: "측정 대기", tone: "neutral", kind: "waiting", hint: "등록 후 첫 하루는 잴 방법을 찾는 중" };
+  // IP는 넣었는데 핑·타임스탬프·포트 전부 무응답 — IP가 틀렸는지 매장이 막았는지는 자료로 못 가른다(사실만 적는다).
+  return { label: "포트 조회 실패", tone: "neutral", kind: "unmeasurable", hint: "핑·포트 모두 대답 없음 — 매일 21시 자동으로 다시 확인" };
 }
 
 /** 켜진 IP를 짧게 — 모두 같은 앞 세 자리면 끝자리만("10, 24번"), 아니면 전체 IP. */

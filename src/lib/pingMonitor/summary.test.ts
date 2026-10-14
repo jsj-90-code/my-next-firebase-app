@@ -16,7 +16,7 @@ const full = (a: number) => ({ a, t: 240, n: 24 });
 describe("competitorMeasurement", () => {
   it("간헐적 1대 응답이 있어도 IP 확인 중이면 평가에 값을 넘기지 않는다", () => {
     const s = store({ ipCheck: "등록 범위 응답 확인 필요", days: { "2026-10-06": full(1) } });
-    expect(storeStatus(s).tone).toBe("warn");
+    expect(storeStatus(s).kind).toBe("recheck");
     const m = competitorMeasurement([s], NOW);
     expect(m.state).toBe("blocked");
     expect(m.util).toBeNull();
@@ -122,7 +122,7 @@ describe("2026-10-10 정밀점검 — 평가로 넘어가는 값 지키기", () 
     for (const d of ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03"]) days[d] = full(0);
     for (const d of ["2026-10-04", "2026-10-05", "2026-10-06"]) days[d] = full(216); // 90%
     const s = store({ portSwitchDate: "2026-10-03", days });
-    expect(storeStatus(s).label).toBe("과응답 · IP 확인");
+    expect(storeStatus(s).kind).toBe("overResponse");
     expect(competitorMeasurement([s], NOW).state).toBe("blocked");
   });
   it("같은 경쟁점에 '계산 제외' 문서와 정상 문서가 있으면 정상 문서를 고른다", () => {
@@ -160,4 +160,14 @@ describe("개점 1년 지난 기존점은 측정기 값 안 넣음(2026-10-10 �
     expect(meterApplyBlockedForExistingStore(null, now)).toBeNull();
     expect(meterApplyBlockedForExistingStore("2025-09-01", now)).toMatch(/개점 1년 지남/);
   });
+});
+
+describe("못 재는 곳 세 갈래(2026-10-14)", () => {
+  const zeros = (n: number) => ({ "2026-10-06": { a: 0, t: 100 * n, n } });
+  it("IP 없으면 IP 미등록", () => expect(storeStatus(store({ ipRanges: "", ipCount: 0 })).label).toBe("IP 미등록"));
+  it("첫 24회차 전 0대는 측정 대기", () => expect(storeStatus(store({ days: zeros(5) })).kind).toBe("waiting"));
+  it("하루 넘게 전부 무응답이면 포트 조회 실패", () => expect(storeStatus(store({ days: zeros(48) })).label).toBe("포트 조회 실패"));
+  it("'대답 0대' 메모는 흔적이 아니다 — 포트 조회 실패", () =>
+    expect(storeStatus(store({ ipCheck: "10-06 점검에서 등록 범위 안 대답 0대", days: zeros(48) })).kind).toBe("unmeasurable"));
+  it("계산 제외는 IP대역 재확인", () => expect(storeStatus(store({ excludeFromStats: true })).label).toBe("IP대역 재확인"));
 });

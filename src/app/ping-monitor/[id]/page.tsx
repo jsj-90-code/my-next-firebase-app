@@ -182,7 +182,7 @@ export default function PingStoreDetailPage() {
         <Link href="/ping-monitor" className="text-xs text-[var(--sl-ink-soft)] hover:underline">← 목록</Link>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <h1 className="text-lg font-semibold text-[#171310] dark:text-[#f2ede2]">{store.name}</h1>
-          <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
+          <span className={`app-badge ${TONE[status.tone]}`} title={status.hint}>{status.label}</span>
         </div>
         <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
           {store.ownName ? `우리 매장 ${store.ownName}${store.distanceM != null ? ` · ${store.distanceM}m` : ""}` : "우리 매장 연결 안 됨"}

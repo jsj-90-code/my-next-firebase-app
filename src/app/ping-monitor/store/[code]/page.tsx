@@ -32,6 +32,7 @@ import {
   rangeUtilization,
   recent24h,
   storeStatus,
+  statusShowsValues,
   capUtil,
   type PingDaily,
   type PingStore,
@@ -41,8 +42,7 @@ import { LineChart, type LineSeries } from "../../LineChart";
 /** 값을 보여줄 매장 — 측정 중 또는 과응답(측정기 목록 page.tsx의 muted 규칙과 같다). */
 function showsValues(s: PingStore): boolean {
   if (hasNoIp(s) || !s.active) return false;
-  const st = storeStatus(s);
-  return st.tone === "ok" || st.label.startsWith("과응답");
+  return statusShowsValues(storeStatus(s));
 }
 
 /** 시간대별은 날짜 문서를 매장마다 하나씩 읽는다 — 최근 이만큼만. */

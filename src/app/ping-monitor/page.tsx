@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
 import {
   BLOCKED_SUSPECT_SAMPLES,
+  statusShowsValues,
   RECENT_MIN_HOURS,
   SAMPLE_INTERVAL_MINUTES,
   fullDayRuleText,
@@ -75,20 +76,20 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
       <td className="px-3 py-2 text-right tabular-nums">{ping ? denominator(ping) : "-"}</td>
       {ping ? (
         <>
-          <RealtimeCell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <Recent24Cell store={ping} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={from7} to={to7} nDays={weekDaysSoFar} bold excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
-          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={monthDaysSoFar} excludeUpTo={ping.portSwitchDate} muted={!!status && status.tone !== "ok" && !status.label.startsWith("과응답")} />
+          <RealtimeCell store={ping} muted={!!status && !statusShowsValues(status)} />
+          <UtilCell days={ping.days} from={today} to={today} nDays={1} inProgress muted={!!status && !statusShowsValues(status)} />
+          <Recent24Cell store={ping} muted={!!status && !statusShowsValues(status)} />
+          <UtilCell days={ping.days} from={fromPrev} to={toPrev} nDays={7} excludeUpTo={ping.portSwitchDate} muted={!!status && !statusShowsValues(status)} />
+          <UtilCell days={ping.days} from={from7} to={to7} nDays={weekDaysSoFar} bold excludeUpTo={ping.portSwitchDate} muted={!!status && !statusShowsValues(status)} />
+          <UtilCell days={ping.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={ping.portSwitchDate} muted={!!status && !statusShowsValues(status)} />
+          <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={monthDaysSoFar} excludeUpTo={ping.portSwitchDate} muted={!!status && !statusShowsValues(status)} />
         </>
       ) : (
         <td colSpan={7} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
           우리 매장 IP 없음 — 측정 안 함
         </td>
       )}
-      <td className="px-3 py-2">{status && <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>}</td>
+      <td className="px-3 py-2">{status && <span className={`app-badge ${TONE[status.tone]}`} title={status.hint}>{status.label}</span>}</td>
     </tr>
   );
 }
@@ -222,7 +223,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
           {stores.map((s) => {
             const status = storeStatus(s);
             // 측정 중·과응답만 값 표시, 그 외(IP·핑차단·미등록·확인전·대기)는 모든 가동률 칸을 "-"로(2026-10-08 사용자).
-            const muted = status.tone !== "ok" && !status.label.startsWith("과응답");
+            const muted = !statusShowsValues(status);
             return (
               <tr key={s.id} className="border-b border-[var(--sl-hairline)] last:border-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]">
                 <td className="px-3 py-2">
@@ -246,7 +247,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <UtilCell days={s.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={monthDaysSoFar} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <td className="px-3 py-2">
-                  <span className={`app-badge ${TONE[status.tone]}`}>{status.label}</span>
+                  <span className={`app-badge ${TONE[status.tone]}`} title={status.hint}>{status.label}</span>
                 </td>
               </tr>
             );
@@ -439,10 +440,16 @@ export default function PingMonitorPage() {
                     <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. 하루로 치는 건 {fullDayRuleText()}뿐이고, 그보다 덜 잰 날(등록한 날, 서버 장애가 길었던 날)은 낮·밤이 치우쳐 뺍니다.
                   </li>
                   <li>
-                    <b>&ldquo;IP·핑차단 확인&rdquo;</b> — IP를 넣었는데 응답이 없을 때. IP가 틀렸거나 PC가 바깥 확인(핑)을 막아 둔 것 — 자료로는 둘을 못 가립니다.
+                    <b>&ldquo;IP 미등록&rdquo;</b> — IP를 아직 안 넣은 곳. 넣으면 다음 정각부터 잽니다.
                   </li>
                   <li>
-                    <b>&ldquo;과응답 · IP 확인&rdquo;</b> — 일일평균이 60%를 넘을 때. 손님만으론 잘 안 나오는 값이라 공유기·늘 켜진 기기가 섞인 의심입니다.
+                    <b>&ldquo;포트 조회 실패&rdquo;</b> — 핑·포트 모두 대답이 없는 곳. 할 일은 없고, 매일 21시에 자동으로 다시 확인합니다.
+                  </li>
+                  <li>
+                    <b>&ldquo;IP대역 재확인&rdquo;</b> — IP가 틀렸다는 흔적이 있는 곳(일일평균 60% 넘음, 늘 몇 대만 켜짐, 확인 메모). 매장에 IP를 다시 물어보세요.
+                  </li>
+                  <li>
+                    <b>&ldquo;측정 대기&rdquo;</b> — 등록 후 첫 하루. 잴 방법을 찾는 중입니다.
                   </li>
                 </ul>
               </section>
