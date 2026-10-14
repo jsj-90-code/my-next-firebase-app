@@ -583,22 +583,23 @@ function BasicInfoTabForm({
       {dirty && <p role="status" className="text-sm text-[var(--sl-warn)]">저장하지 않은 변경이 있습니다.</p>}
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>기본정보</h3>
-        {form.code === "new" && pingOptions && pingOptions.length > 0 && (
+        {form.code === "new" && (
           <label className="mt-4 block text-sm">
-            <span className="text-xs font-medium text-[var(--sl-ink-soft)]">
-              측정기에서 불러오기 ({pingOptions.length}곳)
-            </span>
+            <span className="text-xs font-medium text-[var(--sl-ink-soft)]">측정기에서 불러오기</span>
             <select
               className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:max-w-md sm:text-sm"
               value={pingImport?.code ?? ""}
+              disabled={!pingOptions || pingOptions.length === 0}
               onChange={(e) => {
-                const picked = pingOptions.find((o) => o.code === e.target.value) ?? null;
+                const picked = pingOptions?.find((o) => o.code === e.target.value) ?? null;
                 setPingImport(picked);
                 if (picked) set("name", picked.name);
               }}
             >
-              <option value="">불러오지 않음 (새로 입력)</option>
-              {pingOptions.map((o) => (
+              <option value="">
+                {pingOptions == null ? "불러오는 중..." : pingOptions.length === 0 ? "측정기에 직접 입력된 후보지 없음" : `불러오지 않음 (${pingOptions.length}곳 있음)`}
+              </option>
+              {(pingOptions ?? []).map((o) => (
                 <option key={o.code} value={o.code}>
                   {o.name}
                 </option>
