@@ -12,6 +12,7 @@ import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
 import {
   BLOCKED_SUSPECT_SAMPLES,
   statusShowsValues,
+  byMeasuredThenDistance,
   RECENT_MIN_HOURS,
   SAMPLE_INTERVAL_MINUTES,
   fullDayRuleText,
@@ -191,11 +192,7 @@ function Recent24Cell({ store, seats, muted = false }: { store: PingStore; seats
 
 // 목록은 한눈에 볼 칸만(2026-10-07 사용자 "덕지덕지 부산스럽다") — 어제·전체·최근 측정·메모는 상세 화면에.
 // showOwn: "IP대역 재확인" 탭 — 우리 매장 이름과 확인 사유·IP대역을 같이 보인다.
-// 정렬: 측정 중(맨 위) → IP 있는데 안 됨(핑차단·과응답 등) → IP 미등록(맨 아래). 각 묶음 안에서는 거리순(2026-10-08 사용자).
-function byMeasuredThenDistance(a: PingStore, b: PingStore): number {
-  const rank = (s: PingStore) => (storeStatus(s).tone === "ok" ? 0 : hasNoIp(s) ? 2 : 1);
-  return rank(a) - rank(b) || (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9);
-}
+// 정렬은 byMeasuredThenDistance(summary.ts) — 측정 중 → IP 있는데 못 잼 → IP 미등록, 묶음 안은 거리순.
 
 function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
   const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar } = useRanges();

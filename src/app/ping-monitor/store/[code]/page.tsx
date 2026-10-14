@@ -33,6 +33,7 @@ import {
   recent24h,
   storeStatus,
   statusShowsValues,
+  byMeasuredThenDistance,
   capUtil,
   type PingDaily,
   type PingStore,
@@ -135,7 +136,7 @@ export default function PingOwnComparePage() {
     () =>
       (stores ?? [])
         .filter((s) => !s.isOwnStore)
-        .sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9)),
+        .sort(byMeasuredThenDistance), // 측정기 목록과 같은 순서(2026-10-14)
     [stores],
   );
   const measured = useMemo(
