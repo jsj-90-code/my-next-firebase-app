@@ -13,9 +13,6 @@ export function PingMonitorChrome({ children }: { children: ReactNode }) {
       <AutoAuthGate>
         <header className="border-b border-[#171310]/[0.08] bg-[#fffdf7] dark:border-white/[0.08] dark:bg-[#1c1912]">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-            <Link href="/" className="text-xs text-[var(--sl-ink-soft)] hover:underline">
-              홈
-            </Link>
             <Link href="/ping-monitor" className="flex items-center gap-2 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="h-[18px] w-[18px] shrink-0 text-[var(--sl-gold)]">
                 <path d="M3 12h4l3-8 4 16 3-8h4" />
