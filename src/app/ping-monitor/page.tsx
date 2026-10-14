@@ -31,7 +31,11 @@ import {
   storeStatus,
   type PingStore,
 } from "@/lib/pingMonitor/summary";
+import { isCustomCandidateCode, isCustomOwnCode } from "@/lib/pingMonitor/clientStore";
 import { StoreForm } from "./StoreForm";
+
+// 검색 비교용 — 띄어쓰기·대소문자 무시("레벨업 PC" = "레벨업pc").
+const norm = (s: string | null | undefined) => String(s ?? "").replace(/\s/g, "").toLowerCase();
 
 const TONE: Record<string, string> = {
   ok: "app-badge-ok",
@@ -40,8 +44,8 @@ const TONE: Record<string, string> = {
   neutral: "app-badge-neutral",
 };
 const UNLINKED = "__unlinked__";
-// 후보지 코드는 N0xx, 기존점은 숫자 가맹점코드다(후보지 → 기존점 전환 시 코드도 바뀐다).
-const isCandidateCode = (code: string) => /^N\d+$/.test(code);
+// 후보지 코드는 N0xx, 기존점은 숫자 가맹점코드다(후보지 → 기존점 전환 시 코드도 바뀐다). 화면에서 이름만 적은 후보지는 "직접후보:"(2026-10-14).
+const isCandidateCode = (code: string) => /^N\d+$/.test(code) || isCustomCandidateCode(code);
 type View = "existing" | "candidate" | "all" | "check";
 const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidate: "신규후보지", all: "경쟁점 전체", check: "IP 확인" };
 
@@ -272,7 +276,9 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
           <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{group.name}</span>
         ) : (
           <Link href={`/ping-monitor/store/${encodeURIComponent(group.key)}`} className="font-semibold text-[#171310] underline-offset-2 hover:underline dark:text-[#f2ede2]">
-            {group.name} <span className="text-xs font-normal text-[var(--sl-ink-soft)]">비교 →</span>
+            {group.name}{" "}
+            {isCustomOwnCode(group.key) && <span className="app-badge-neutral rounded-full px-1.5 py-0.5 text-[10px] font-normal">직접 입력</span>}{" "}
+            <span className="text-xs font-normal text-[var(--sl-ink-soft)]">비교 →</span>
           </Link>
         )}
         <button type="button" onClick={onToggle} className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-left">
@@ -345,7 +351,20 @@ export default function PingMonitorPage() {
     }),
     [groups],
   );
-  const shownGroups = view === "all" || view === "check" ? [] : groupsByView[view];
+  // 검색(2026-10-14 사용자 "기존/신규후보지/경쟁점 구분 없이 전체에서") — 우리 매장명·경쟁점 상호·주소로 찾는다.
+  // 우리 매장명이 맞으면 그 묶음 통째로, 경쟁점만 맞으면 그 경쟁점만 남겨 펼쳐 보인다.
+  const [search, setSearch] = useState("");
+  const searchKey = norm(search);
+  const searchGroups = useMemo<Group[]>(() => {
+    if (!searchKey) return [];
+    const hit = (s: PingStore) => norm(s.name).includes(searchKey) || norm(s.address).includes(searchKey);
+    return groups.flatMap((g) => {
+      if (g.key !== UNLINKED && norm(g.name).includes(searchKey)) return [g];
+      const stores = g.stores.filter(hit);
+      return stores.length > 0 ? [{ ...g, stores }] : [];
+    });
+  }, [groups, searchKey]);
+  const shownGroups = searchKey ? searchGroups : view === "all" || view === "check" ? [] : groupsByView[view];
   const competitorsOnly = useMemo(() => visibleStores.filter((s) => !s.isOwnStore).sort(byMeasuredThenDistance), [visibleStores]);
   // 2026-10-06 사용자 "웹에 표기해주면 내가 따로 서치해볼게" — 등록 IP가 의심스러운 곳(우리 매장 자체 포함)만 모아 본다.
   const ipCheckStores = useMemo(
@@ -457,6 +476,20 @@ export default function PingMonitorPage() {
 
       {stores != null && stores.length > 0 && (
         <>
+          <input
+            type="search"
+            className="app-input w-full rounded-lg px-3 py-2 text-base sm:max-w-md sm:text-sm placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="매장 검색 — 우리 매장명·경쟁점 상호·주소 (기존·후보지·경쟁점 전체에서)"
+            aria-label="매장 검색"
+          />
+          {searchKey ? (
+            <p className="text-xs text-[var(--sl-ink-soft)]">
+              &ldquo;{search.trim()}&rdquo; 검색 결과 {searchGroups.length}개 묶음 · 경쟁점 {searchGroups.reduce((n, g) => n + g.stores.length, 0)}곳
+              <button type="button" className="ml-2 hover:underline" onClick={() => setSearch("")}>지우기</button>
+            </p>
+          ) : (
           <div className="flex flex-wrap items-center gap-2">
             {(["existing", "candidate", "all", "check"] as const).map((v) => (
               <button key={v} type="button" className={`rounded-full px-3 py-1 text-xs ${view === v ? "app-btn-primary" : "app-btn-outline"}`} onClick={() => setView(v)}>
@@ -483,6 +516,7 @@ export default function PingMonitorPage() {
               </button>
             )}
           </div>
+          )}
           <p className="text-xs text-[var(--sl-ink-soft)]">실시간 옆 <b>○대</b> = 지금 켜져 있는 PC 수(≈현재 손님) — 대수 다른 매장끼리 규모 비교용.</p>
           {hiddenCount > 0 && (
             <p className="text-xs text-[var(--sl-ink-soft)]">폐업·중지한 매장 {hiddenCount}곳은 목록에서 숨겼습니다.</p>
@@ -495,10 +529,21 @@ export default function PingMonitorPage() {
                 : <>&ldquo;최근 24시간&rdquo;은 {RECENT_MIN_HOURS}시간 이상 차야 값이 나와, 빠진 회차가 24시간 밖으로 밀려날 때까지 비어 있습니다.</>}
             </p>
           )}
-          {view !== "all" && view !== "check" && shownGroups.length === 0 && (
+          {!searchKey && view !== "all" && view !== "check" && shownGroups.length === 0 && (
             <p className="app-card-sm rounded-xl p-4 text-sm text-[var(--sl-ink-soft)]">{VIEW_LABEL[view]}에 연결된 경쟁점이 아직 없습니다.</p>
           )}
-          {view === "check" ? (
+          {searchKey ? (
+            searchGroups.length === 0 ? (
+              <p className="app-card-sm rounded-xl p-4 text-sm text-[var(--sl-ink-soft)]">맞는 매장이 없습니다.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {/* 검색 결과는 기본으로 펼쳐 둔다 — 접은 것만 openKeys에 "접음"으로 남긴다. */}
+                {searchGroups.map((g) => (
+                  <GroupRow key={g.key} group={g} open={!openKeys.has(`search:${g.key}`)} onToggle={() => toggle(`search:${g.key}`)} />
+                ))}
+              </ul>
+            )
+          ) : view === "check" ? (
             <div className="app-card rounded-2xl">
               <p className="border-b border-[var(--sl-hairline)] px-3 py-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
                 등록된 IP대역이 맞는지 확인이 필요한 곳입니다. 근거는 등록 범위 안에서 잰 결과뿐입니다(범위 밖 주소로는 보내지 않습니다).

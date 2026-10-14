@@ -11,6 +11,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+  isCustomCandidateCode,
   listPingDaily,
   listPingStoresByOwn,
 } from "@/lib/pingMonitor/clientStore";
@@ -205,7 +206,7 @@ export default function PingOwnComparePage() {
     return <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>;
 
   const name = stores[0]?.ownName ?? ownCode;
-  const isCandidate = /^N\d+$/.test(ownCode);
+  const isCandidate = /^N\d+$/.test(ownCode) || isCustomCandidateCode(ownCode);
   const dates = range.from <= range.to ? dateRange(range.from, range.to) : [];
 
   // 선 순서: 우리 매장 → 경쟁점(거리순).
