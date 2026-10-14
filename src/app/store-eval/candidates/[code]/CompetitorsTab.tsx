@@ -1051,6 +1051,7 @@ export function CompetitorsTab({
       const r = await registerCompetitorsToPing(list, { code: candidateCode, name: ownName }, user?.email ?? null, ipById, verifiedIds);
       const done = [
         r.created.length > 0 ? `측정기에 ${r.created.length}곳을 올렸습니다` : null,
+        r.linked.length > 0 ? `${r.linked.join(", ")}은 측정기에 먼저 등록돼 있어 그대로 이었습니다` : null,
         r.ipFilled.length > 0 ? `${r.ipFilled.join(", ")}의 측정기 칸에 IP를 넣었습니다` : null,
       ].filter(Boolean);
       const warns = [

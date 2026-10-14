@@ -23,6 +23,7 @@ import {
   scoreFromVgaSpec,
 } from "@/lib/storeEval/calc";
 import { CandidateMap, type MapPoint } from "@/components/storeEval/CandidateMap";
+import { listOwnStoreOptions, transferCustomOwn, type OwnStoreOption } from "@/lib/pingMonitor/clientStore";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import {
   generateNextCandidateCode,
@@ -130,6 +131,20 @@ function BasicInfoTabForm({
   const [sbizNotice, setSbizNotice] = useState<{ ok: boolean; text: string; warnings: string[]; trend: string | null } | null>(null);
   const [collectError, setCollectError] = useState<string | null>(null);
   const [nearbyWarnings, setNearbyWarnings] = useState<{ code: string; name: string }[]>([]);
+  // 2026-10-14 — 타부서가 경쟁점 가동률 측정기에 먼저 적어 둔 후보지(직접후보:)를 불러와 등록한다.
+  //   첫 저장 때 측정기 쪽 묶음(경쟁점·측정 기록)을 이 후보지 코드로 옮긴다 — 측정기에 따로 들어가 전환할 필요 없음.
+  const [pingOptions, setPingOptions] = useState<OwnStoreOption[] | null>(null);
+  const [pingImport, setPingImport] = useState<OwnStoreOption | null>(null);
+  useEffect(() => {
+    if (candidate.code !== "new") return;
+    let cancelled = false;
+    listOwnStoreOptions()
+      .then((rows) => !cancelled && setPingOptions(rows.filter((o) => o.custom && o.kind === "후보지")))
+      .catch(() => !cancelled && setPingOptions([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [candidate.code]);
   const [demandPoints, setDemandPoints] = useState<DemandPoint[]>([]);
   // 2026-09-28 — 주거 상권 반경(실험실 전용 사실)을 화면에서 확정한다. 2km 안 PC방 수(등록 때 자동 수집한 문서)를 같이 보여
   //   "0곳이면 2km 검토" 경고를 띄운다. 사용자: "이거 자동화 안 돼 있나? … 입력할 때 체크해서 하는 방안도".
@@ -541,10 +556,19 @@ function BasicInfoTabForm({
       const code = form.code === "new" ? await generateNextCandidateCode() : form.code;
       const toSave: CandidateInput = { ...form, code, isDraft };
       const saved = await saveCandidate(toSave, actor, form.code === "new" ? undefined : savedForm);
+      let pingNote = "";
+      if (form.code === "new" && pingImport) {
+        try {
+          const r = await transferCustomOwn(pingImport.code, { code: saved.code, name: saved.name }, actor);
+          pingNote = ` 측정기에 등록돼 있던 경쟁점 ${r.moved}곳을 이 후보지로 옮겼습니다.`;
+        } catch (err) {
+          pingNote = ` 측정기 경쟁점은 옮기지 못했습니다(${err instanceof Error ? err.message : "오류"}).`;
+        }
+      }
       setForm(saved);
       setSavedForm(saved);
       onSaved(saved);
-      setMessage(isDraft ? "임시저장했습니다." : "저장했습니다.");
+      setMessage((isDraft ? "임시저장했습니다." : "저장했습니다.") + pingNote);
     } catch (err) {
       setErrors([err instanceof Error ? err.message : "저장 중 오류가 발생했습니다."]);
     } finally {
@@ -559,6 +583,34 @@ function BasicInfoTabForm({
       {dirty && <p role="status" className="text-sm text-[var(--sl-warn)]">저장하지 않은 변경이 있습니다.</p>}
       <section className={sectionClass}>
         <h3 className={sectionTitleClass}>기본정보</h3>
+        {form.code === "new" && pingOptions && pingOptions.length > 0 && (
+          <label className="mt-4 block text-sm">
+            <span className="text-xs font-medium text-[var(--sl-ink-soft)]">
+              경쟁점 가동률 측정기에서 불러오기 — 다른 사람이 측정기에 먼저 등록한 후보지 {pingOptions.length}곳
+            </span>
+            <select
+              className="app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:max-w-md sm:text-sm"
+              value={pingImport?.code ?? ""}
+              onChange={(e) => {
+                const picked = pingOptions.find((o) => o.code === e.target.value) ?? null;
+                setPingImport(picked);
+                if (picked) set("name", picked.name);
+              }}
+            >
+              <option value="">불러오지 않음 (새로 입력)</option>
+              {pingOptions.map((o) => (
+                <option key={o.code} value={o.code}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+            {pingImport && (
+              <span className="mt-1 block text-xs text-[var(--sl-ink-soft)]">
+                후보지명은 아래에서 바꿔도 됩니다. 저장하면 측정기의 &ldquo;{pingImport.name}&rdquo; 경쟁점과 측정 기록이 이 후보지로 옮겨집니다.
+              </span>
+            )}
+          </label>
+        )}
         <div className={`${gridClass} mt-4`}>
           <FieldReadonly label="후보지코드" value={form.code === "new" ? "저장 시 자동 발급" : form.code} />
           <TextField label="후보지명" value={form.name} onChange={(v) => set("name", v)} required />

@@ -260,7 +260,7 @@ export function isRegistrableCompetitor(c: Competitor): boolean {
 /** 경쟁점 정보의 IP를 "지금 확인" 없이(또는 대답 없이) 넘긴 칸 — 측정기 화면 "IP 확인 필요"에 떠서 사람이 확인하게 한다. */
 export const PASTED_IP_CHECK = "경쟁점 정보 IP — 지금 확인 전(후보지 경쟁점 탭)";
 
-export type PingRegisterResult = { created: string[]; ipFilled: string[]; ipConflict: string[]; ipInvalid: string[] };
+export type PingRegisterResult = { created: string[]; linked: string[]; ipFilled: string[]; ipConflict: string[]; ipInvalid: string[] };
 
 /**
  * 후보지 경쟁점을 측정기에 올린다(2026-10-07 사용자 "신규후보지 등록할 때 가동률 웹에 경쟁점 추가").
@@ -277,10 +277,28 @@ export async function registerCompetitorsToPing(
   ipById: Record<string, string> = {},
   verifiedIds: Set<string> = new Set(),
 ): Promise<PingRegisterResult> {
-  const result: PingRegisterResult = { created: [], ipFilled: [], ipConflict: [], ipInvalid: [] };
+  const result: PingRegisterResult = { created: [], linked: [], ipFilled: [], ipConflict: [], ipInvalid: [] };
   const targets = competitors.filter(isRegistrableCompetitor);
   if (targets.length === 0) return result;
   const linked = await listPingStoresByCompetitorIds(targets.map((c) => c.id));
+  // 측정기에서 먼저 직접 등록해 둔 경쟁점(타부서 등록을 후보지로 불러온 경우, 2026-10-14)은 점포평가 경쟁점과 아직 안 이어져 있다 —
+  // 같은 상호(띄어쓰기 무시)면 새로 만들지 않고 이어 준다. 그 뒤로는 아래 기존 규칙(IP 채우기·충돌 알림)을 그대로 탄다.
+  const nameKey = (s: string) => s.replace(/\s/g, "").toLowerCase();
+  const unlinked = (await listPingStoresByOwn(own.code)).filter((p) => !p.isOwnStore && !p.competitorId);
+  for (const c of targets) {
+    if ((linked.get(c.id) ?? []).some((p) => !p.isOwnStore)) continue;
+    const i = unlinked.findIndex((p) => nameKey(p.name) === nameKey(c.name));
+    if (i < 0) continue;
+    const p = unlinked.splice(i, 1)[0];
+    await updateDoc(doc(requireDb(), PING_STORES, p.id), {
+      competitorId: c.id,
+      ...(p.distanceM == null && c.distanceM != null ? { distanceM: c.distanceM } : {}),
+      updatedAt: serverTimestamp(),
+      updatedBy: email,
+    });
+    linked.set(c.id, [{ ...p, competitorId: c.id }]);
+    result.linked.push(c.name);
+  }
   for (const c of targets) {
     const ipText = ipById[c.id]?.trim() ?? "";
     const parsed = ipText ? parseIpRanges(ipText) : null;

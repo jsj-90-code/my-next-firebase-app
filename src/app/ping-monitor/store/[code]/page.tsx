@@ -275,7 +275,8 @@ export default function PingOwnComparePage() {
         </p>
       </div>
 
-      {isCustomOwnCode(ownCode) && <TransferOwnPanel fromCode={ownCode} fromName={name} preferCandidate={isCandidate} />}
+      {/* 직접 입력 후보지는 점포평가 신규후보지 등록 화면의 "측정기에서 불러오기"로 옮긴다 — 여기 전환은 직접 입력 기존점용. */}
+      {isCustomOwnCode(ownCode) && !isCandidate && <TransferOwnPanel fromCode={ownCode} fromName={name} preferCandidate={false} />}
 
       <section className="app-card overflow-x-auto rounded-2xl">
         <table className="w-full min-w-[680px] text-sm">
