@@ -9,6 +9,7 @@ import "server-only";
 //
 // 자료는 웹 "AI로 초안 채우기"(api/store-eval/ai-location-eval)와 **같은 묶음**이다: 후보지 문서 + 그 후보지 경쟁점 + 수요거점
 // → buildLocationEvalContext. 채점 기준도 같은 문장(locationEvalAi.ts). 다른 건 채점하는 AI뿐(제미나이 → 사용자 AI).
+// 단 2026-10-15부터 채팅엔 "경쟁점 상세"(웹에 입력한 대수·층·조사 메모·카카오 장소 링크)를 더 붙인다 — competitorDetailText 주석.
 import { adminDb } from "@/lib/firebase-admin";
 import { buildLocationEvalContext } from "@/lib/storeEval/locationEvalContext";
 import { appendSiteFactsToContext } from "@/lib/storeEval/quickEval/quickEvalLocationContext";
@@ -43,6 +44,44 @@ export async function findCandidates(query: string): Promise<{ code: string; nam
     .map((c) => ({ code: c.code, name: c.name, address: c.roadAddress ?? c.address }));
 }
 
+const DETAIL_RADIUS_M = 1000;
+const DETAIL_MAX = 10;
+
+/**
+ * 웹에 입력된 경쟁점 상세를 채팅 문맥에 덧붙인다(2026-10-15 군산점 N024).
+ * buildLocationEvalContext는 경쟁점을 "이름 (거리)"만 적는다 — 그래서 채팅 AI가 대수·조사 메모·주소를 못 받고 "티티PC 층 확인 불가"라고 했다.
+ * 공용 함수는 웹 AI 초안·주소만 초기평가·되짚기 검증이 같이 써서(바꾸면 검증해 둔 성적이 움직인다) 여기, 채팅 경로에만 붙인다.
+ * 빈 칸은 "미입력"으로 적어 AI가 그 칸만 찾아보게 한다. 카카오 장소 페이지 주소엔 층이 적혀 있는 경우가 많다(예: 퀸PC "월명로 255 4층").
+ */
+function competitorDetailText(competitors: Competitor[]): string {
+  const near = competitors
+    .filter((c) => c.distanceM != null && c.distanceM <= DETAIL_RADIUS_M && c.investigationStatus !== "경쟁점없음")
+    .sort((a, b) => a.distanceM! - b.distanceM!)
+    .slice(0, DETAIL_MAX);
+  if (!near.length) return "";
+  const score = (v: number | null | undefined) => (v == null ? "미입력" : String(v));
+  const lines = near.map((c) => {
+    const floor = c.floor == null ? "매장 층 미입력" : `${c.groundLevel === "지하" ? "지하" : "지상"} ${c.floor}층`;
+    const pc = c.totalPcCount ?? c.appliedPcCount;
+    const pcText = pc != null ? `${pc}대` : c.permitHint?.suggestedPcCount != null ? `대수 미입력(인허가 게임기 ${c.permitHint.suggestedPcCount}대)` : "대수 미입력";
+    const parts = [
+      `- ${c.name} (${c.distanceM}m) · ${floor} · ${pcText}`,
+      `  엘리베이터 ${c.hasElevator == null ? "미입력" : c.hasElevator ? "있음" : "없음"}${c.elevatorBasis ? ` — ${c.elevatorBasis}(건물 전체 층수이지 매장 층이 아님)` : ""}`,
+      `  인테리어 ${score(c.interiorScore)} · 관리 ${score(c.managementScore)} · 먹거리 ${c.foodBrand ?? score(c.foodScore)} (1~5점, 현장조사)`,
+    ];
+    const memo = (c.interiorBasis ?? "").replace(/\s+/g, " ").trim();
+    if (memo) parts.push(`  조사 메모: ${memo.slice(0, 300)}`);
+    if (c.sourcePlaceId) parts.push(`  카카오 장소(주소·층 확인용): https://place.map.kakao.com/${c.sourcePlaceId}`);
+    return parts.join("\n");
+  });
+  return [
+    "",
+    `[경쟁점 상세 — 웹에 입력된 값 (${DETAIL_RADIUS_M / 1000}km 안 가까운 ${near.length}곳)]`,
+    ...lines,
+    "※ '미입력'인 칸만 카카오 장소 페이지·웹 검색으로 보완하고, 입력된 값은 그대로 믿을 것. 선점경쟁은 경쟁점 자리(층·대로변 여부)와 후보지 자리를 비교해 매긴다.",
+  ].join("\n");
+}
+
 export async function loadCandidateLocationContext(code: string): Promise<{ candidate: CandidateInput; contextText: string; hasSaved: boolean }> {
   const snap = await db().collection("storeEvalCandidates").doc(code).get();
   if (!snap.exists) throw new Error(`후보지 ${code}를 찾을 수 없습니다. find_candidate로 코드를 먼저 확인하세요.`);
@@ -55,12 +94,13 @@ export async function loadCandidateLocationContext(code: string): Promise<{ cand
   ]);
   // 층·지상/지하·엘리베이터는 buildLocationEvalContext에 없다 → 주소만 평가처럼 사실로 덧붙인다.
   // 2026-09-29 첫 실사용(N016 오송점, 지하 1층·엘베 있음)에서 AI가 층을 몰라 접근가시성을 비웠다.
+  const competitors = competitorsSnap.docs.map((d) => d.data() as Competitor);
   const contextText = appendSiteFactsToContext(
     buildLocationEvalContext({
       candidate,
-      competitors: competitorsSnap.docs.map((d) => d.data() as Competitor),
+      competitors,
       demandPoints: demandPointsSnap.docs.map((d) => d.data() as DemandPoint),
-    }),
+    }) + competitorDetailText(competitors),
     { floor: candidate.floor ?? null, groundLevel: candidate.groundLevel ?? null, hasElevator: candidate.hasElevator ?? null },
   );
   return { candidate, contextText, hasSaved: savedSnap.exists };
