@@ -6,7 +6,7 @@
 // 블록을 나눈 뒤 블록별로 라벨을 찾는다. 값 판단이 애매한 항목(적용대수, 존구성 세부 등)은
 // 지어내지 않고 비워둔다 - 사람이 미리보기에서 검토 후 저장한다.
 
-import type { FoodBrand } from "./types";
+import type { Competitor, FoodBrand } from "./types";
 
 export type ParsedCompetitorNote = {
   name: string;
@@ -205,7 +205,11 @@ function parseRatePer1000Won(text: string | null): number | null {
     return won > 0 ? Math.round((Number(bundle[1]) * 60 * 1000) / won) : null;
   }
   const m = text.match(/(\d+)\s*분/);
-  return m ? Number(m[1]) : null;
+  if (m) return Number(m[1]);
+  // 2026-10-15 군산점 — "1,000원 시간 : 45"처럼 단위 없이 숫자만 적기도 한다. 줄 라벨이 이미 "1,000원 시간"이라
+  // 숫자 하나뿐이면 분으로 읽는다(1,000원에 10~120분 밖이면 다른 뜻일 수 있어 비운다).
+  const bare = text.trim().match(/^(\d+)$/);
+  return bare && Number(bare[1]) >= 10 && Number(bare[1]) <= 120 ? Number(bare[1]) : null;
 }
 
 function parseOneBlock(block: string): ParsedCompetitorNote | null {
@@ -299,4 +303,50 @@ export function parseCompetitorNotes(text: string): ParsedCompetitorNote[] {
   if (starts.length === 0) return [];
   const blocks = starts.map((start, i) => text.slice(start, i + 1 < starts.length ? starts[i + 1] : text.length));
   return blocks.map(parseOneBlock).filter((v): v is ParsedCompetitorNote => v != null);
+}
+
+/**
+ * 붙여넣기 파싱 결과를 경쟁점 폼에 얹는다 - 판단이 애매해서 파서가 null로 둔 값(주소·거리·적용대수·
+ * 경쟁력 점수 등)은 그대로 비워둬서 사람이 직접 채우게 한다.
+ * base가 새 빈 경쟁점이면 매장명도 붙여넣은 이름 그대로 쓰지만, 이미 등록된 경쟁점에 병합하는
+ * 경우(2026-08-27 수정)에는 기존 매장명(보통 카카오 자동수집으로 이미 깔끔하게 들어있음)을
+ * 점포개발자가 줄여 쓴 이름으로 덮어쓰지 않는다 — 이름이 서로 완전히 다를 수 있다는 사용자 확인
+ * ("탑스타pc방" vs "탑스타PC 울산삼산점")으로 발견된 문제.
+ *
+ * 2026-10-15 — 화면(CompetitorsTab)에만 있던 것을 여기로 옮겼다. 다우 심사글 등록 스킬도 같은 규칙으로 채운다.
+ */
+export function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: { overwriteName: boolean }): Competitor {
+  return {
+    ...base,
+    name: options.overwriteName ? note.name : base.name,
+    surveyLevel: "상세",
+    totalPcCount: note.totalPcCount,
+    cpu: note.cpu,
+    vgaBase: note.vgaBase,
+    ram: note.ram,
+    monitorBase: note.monitor,
+    coupleZone: note.coupleZone,
+    // 2026-10-06 — "1인석" 줄은 1인석 칸으로(예전엔 1인룸으로 들어가 사용자가 매번 옮겨 고쳤다). 원문에 줄이 없으면
+    // 이미 손으로 넣어 둔 값을 지우지 않는다.
+    singleSeatCount: note.singleSeatCount ?? base.singleSeatCount,
+    room1: note.room1 ?? base.room1,
+    room2: note.room2,
+    teamRoom: note.teamRoom,
+    // 2026-10-07 — 시간당환산요금은 폼에서 분을 손으로 칠 때만 채워져, 붙여넣기 땐 분을 지우고 다시 쳐야 했다(사용자).
+    // 폼 칸과 같은 식(60000 / 분)으로 같이 채운다. 원문에 요금 줄이 없으면 기존 값을 지우지 않는다.
+    ratePer1000Won: note.ratePer1000Won ?? base.ratePer1000Won,
+    hourlyRateConverted:
+      note.ratePer1000Won != null && note.ratePer1000Won > 0 ? Math.round(60000 / note.ratePer1000Won) : base.hourlyRateConverted,
+    paidDeduction: note.paidDeduction,
+    visitedAt: note.visitedAt,
+    visitorCount: note.visitorCount,
+    foodBasis: note.foodBasis,
+    interiorBasis: note.interiorBasis,
+    ipRanges: note.ipRanges ?? base.ipRanges ?? null,
+    // 2026-10-07 사용자 "먹거리·인테리어·관리 평가가 자동완성이 안 된다" — 원문에 수준 글자가 있을 때만 채우고,
+    // 없으면 이미 넣어 둔 값을 지우지 않는다. 먹거리는 브랜드나 직접점수 중 하나만 채워진다(competitorNoteParse.parseFoodLine).
+    interiorScore: note.interiorScore ?? base.interiorScore,
+    managementScore: note.managementScore ?? base.managementScore,
+    ...(note.foodBrand != null || note.foodScore != null ? { foodBrand: note.foodBrand, foodScore: note.foodScore } : {}),
+  };
 }

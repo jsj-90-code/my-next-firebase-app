@@ -21,7 +21,7 @@ import {
   scoreFromRamSpec,
   scoreFromVgaSpec,
 } from "@/lib/storeEval/calc";
-import { parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
+import { applyParsedNote, parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
 import { formatScore } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getCandidate, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
@@ -138,50 +138,6 @@ function blankCompetitor(candidateCode: string): Competitor {
     teamRoomTotalSeatsBasis: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  };
-}
-
-/**
- * 붙여넣기 파싱 결과를 경쟁점 폼에 얹는다 - 판단이 애매해서 파서가 null로 둔 값(주소·거리·적용대수·
- * 경쟁력 점수 등)은 그대로 비워둬서 사람이 직접 채우게 한다.
- * base가 새 빈 경쟁점이면 매장명도 붙여넣은 이름 그대로 쓰지만, 이미 등록된 경쟁점에 병합하는
- * 경우(2026-08-27 수정)에는 기존 매장명(보통 카카오 자동수집으로 이미 깔끔하게 들어있음)을
- * 점포개발자가 줄여 쓴 이름으로 덮어쓰지 않는다 — 이름이 서로 완전히 다를 수 있다는 사용자 확인
- * ("탑스타pc방" vs "탑스타PC 울산삼산점")으로 발견된 문제.
- */
-function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, options: { overwriteName: boolean }): Competitor {
-  return {
-    ...base,
-    name: options.overwriteName ? note.name : base.name,
-    surveyLevel: "상세",
-    totalPcCount: note.totalPcCount,
-    cpu: note.cpu,
-    vgaBase: note.vgaBase,
-    ram: note.ram,
-    monitorBase: note.monitor,
-    coupleZone: note.coupleZone,
-    // 2026-10-06 — "1인석" 줄은 1인석 칸으로(예전엔 1인룸으로 들어가 사용자가 매번 옮겨 고쳤다). 원문에 줄이 없으면
-    // 이미 손으로 넣어 둔 값을 지우지 않는다.
-    singleSeatCount: note.singleSeatCount ?? base.singleSeatCount,
-    room1: note.room1 ?? base.room1,
-    room2: note.room2,
-    teamRoom: note.teamRoom,
-    // 2026-10-07 — 시간당환산요금은 폼에서 분을 손으로 칠 때만 채워져, 붙여넣기 땐 분을 지우고 다시 쳐야 했다(사용자).
-    // 폼 칸과 같은 식(60000 / 분)으로 같이 채운다. 원문에 요금 줄이 없으면 기존 값을 지우지 않는다.
-    ratePer1000Won: note.ratePer1000Won ?? base.ratePer1000Won,
-    hourlyRateConverted:
-      note.ratePer1000Won != null && note.ratePer1000Won > 0 ? Math.round(60000 / note.ratePer1000Won) : base.hourlyRateConverted,
-    paidDeduction: note.paidDeduction,
-    visitedAt: note.visitedAt,
-    visitorCount: note.visitorCount,
-    foodBasis: note.foodBasis,
-    interiorBasis: note.interiorBasis,
-    ipRanges: note.ipRanges ?? base.ipRanges ?? null,
-    // 2026-10-07 사용자 "먹거리·인테리어·관리 평가가 자동완성이 안 된다" — 원문에 수준 글자가 있을 때만 채우고,
-    // 없으면 이미 넣어 둔 값을 지우지 않는다. 먹거리는 브랜드나 직접점수 중 하나만 채워진다(competitorNoteParse.parseFoodLine).
-    interiorScore: note.interiorScore ?? base.interiorScore,
-    managementScore: note.managementScore ?? base.managementScore,
-    ...(note.foodBrand != null || note.foodScore != null ? { foodBrand: note.foodBrand, foodScore: note.foodScore } : {}),
   };
 }
 

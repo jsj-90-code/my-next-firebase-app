@@ -139,10 +139,16 @@ src/**/_*.test.ts
 # 항목이라 "그럼 존구성부터 손보자"는 얘기가 또 나올 자리인데, 그때 이 하네스를 다시
 # 만들지 않고 돌려보면 된다. 표본이 45~50곳 되면 r 기준 p=0.066을 다시 잰다.
 !src/lib/storeEval/_zoneComposition.test.ts
+# 다우 심사글 → 신규 후보지 등록 실행 파일(2026-10-15). 스킬(.claude/skills/daou-candidate)이 부른다 — 집·회사 PC 둘 다 필요.
+!src/lib/storeEval/_daouCandidate.test.ts
 
 # 에이전트 도구의 기계별 설정
 /.agents/
-/.claude/
+/.claude/*
+# 단, 이 저장소 전용 스킬은 집·회사 PC가 git으로 같이 쓴다(2026-10-15 daou-candidate). 다른 스킬 폴더는 기계별이라 계속 뺀다.
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/daou-candidate/
 /.mcp.json
 /skills-lock.json
 

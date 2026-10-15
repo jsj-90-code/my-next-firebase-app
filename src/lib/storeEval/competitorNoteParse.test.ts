@@ -465,3 +465,13 @@ describe("사양 정리(2026-10-07)", () => {
     expect(normalizeSpecSlots({ cpu: "인텔 최신", vga: null, ram: "DDR5 32G" })).toEqual({ cpu: "인텔 최신", vga: null, ram: "DDR5 32G" });
   });
 });
+
+describe("1,000원 시간 — 단위 없는 숫자(2026-10-15 군산점)", () => {
+  const block = (v: string) => `■ 매장명 : 레벨업PC방 전북군산점\n- 전체 대수 : 177\n5. 1,000원 시간 : ${v}\n6. 유료차감 : 없음`;
+  it("'45'는 45분으로", () => {
+    expect(parseCompetitorNotes(block("45"))[0].ratePer1000Won).toBe(45);
+  });
+  it("10~120 밖의 맨숫자는 비운다", () => {
+    expect(parseCompetitorNotes(block("1000"))[0].ratePer1000Won).toBeNull();
+  });
+});

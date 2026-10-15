@@ -7,6 +7,7 @@ import { usePathname, useParams, useRouter, useSearchParams } from "next/navigat
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getCandidate } from "@/lib/storeEval/store";
+import { blankCandidate } from "@/lib/storeEval/blankCandidate";
 import type { CandidateInput } from "@/lib/storeEval/types";
 import { BasicInfoTab } from "./BasicInfoTab";
 import { CompetitorsTab } from "./CompetitorsTab";
@@ -24,109 +25,6 @@ const TABS = [
   { key: "result", label: "최종결과" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
-
-function blankCandidate(code: string): CandidateInput {
-  return {
-    code,
-    name: "",
-    address: "",
-    lat: null,
-    lng: null,
-    roadAddress: null,
-    jibunAddress: null,
-    buildingName: null,
-    geocodedAt: null,
-    reviewDate: null,
-    reviewStatus: "진행",
-    expectedPcCount: null,
-    floor: null,
-    groundLevel: null,
-    hasElevator: null,
-    hourlyRate: null,
-    demographicsYear: null,
-    plannedOpenMonth: null,
-    pop500m: null,
-    area1kmKm2: null,
-    pop1km: null,
-    male1kmRatio: null,
-    age1km_0_9: null,
-    age1km_10_19: null,
-    age1km_20_29: null,
-    age1km_30_39: null,
-    age1km_40_49: null,
-    age1km_50_59: null,
-    age1km_60_69: null,
-    age1km_70_79: null,
-    age1km_80plus: null,
-    floating500Avg: null,
-    floating500Male: null,
-    floating500_10s: null,
-    floating500_20s: null,
-    floating500_30s: null,
-    floating500_40s: null,
-    floating500_50s: null,
-    floating500_60plus: null,
-    operatingPcStores500m: null,
-    commercialDataYearMonth: null,
-    businessCountAsOfDate: null,
-    operatingPcStores1km: null,
-    employ500Total: null,
-    employ500Male: null,
-    employ500Female: null,
-    employ1kmTotal: null,
-    employ1kmMale: null,
-    employ1kmFemale: null,
-    facility500SubwayRiders: null,
-    facility1kmSubwayRiders: null,
-    // 2026-09-01 사용자 확정 — 모니터와 동일한 원칙으로 GPU/CPU/RAM "기본사양"도 신규 후보지 생성
-    // 시 자동으로 채워둔다(scoreFromVga/scoreFromCpu의 앵커값과 동일한 "블랙라벨 현재 표준" 실제
-    // 구매 사양 — RTX5060/울트라5 225F/16GB, calc.ts computeSpecScore 주석 참고). 일반 텍스트
-    // 입력란 그대로라 저장 전 언제든 직접 수정 가능하다(특화1/특화2는 매장마다 실제로 다를 수
-    // 있어 자동으로 안 채움 — 필요하면 직접 입력).
-    ownCpu: "울트라5 225F",
-    ownCpuTop1: null,
-    ownCpuTop2: null,
-    ownRam: "16GB",
-    ownRamTop: null,
-    ownVgaBase: "RTX 5060",
-    ownVgaTop: null,
-    ownVgaTop2: null,
-    ownSingleSeatCount: null,
-    ownRoom1: null,
-    ownRoom2: null,
-    ownTeamRoom: null,
-    ownCoupleZone: null,
-    ownVipZone: null,
-    ownFriendsZone: null,
-    ownFirstClassZone: null,
-    ownTeamRoomTotalSeats: null,
-    ownTeamRoomTotalSeatsBasis: null,
-    ownFoodScore: null,
-    ownInteriorScore: null,
-    ownManagementScore: null,
-    // 2026-08-31 사용자 확정 — 최신매장 표준 모니터 스펙 기본값(신규 후보지 생성 시에만 채움,
-    // 이미 값이 있는 매장/경쟁점에는 영향 없음). scoreFromMonitorSpec 기준 3.7점(기본 3.5×80%+
-    // 특화 4.5×20%) — 정확히 4.0은 combineHardwareTiers(기본80%+특화20%) 공식의 수학적 상한
-    // (특화 만점이어도 3.8)이라 도달 불가능, 공식 자체 재설계는 검증 인프라(LOOCV) 복구 후 별도 논의.
-    ownMonitorBase: "제이씨현 32인치 FHD 240Hz",
-    ownMonitorTop: "QNIX IPS 27인치 FHD 300Hz, BenQ ZOWIE XL2540X+ 24.1인치 FHD 280Hz, 비트엠 34인치 WWQHD 165Hz, 비트엠 27인치 FHD 240Hz",
-    ownFoodBrand: null,
-    ownInteriorLevelScore: null,
-    ownInteriorConditionScore: null,
-    ownSeatZoneScore: null,
-    ownComfortScore: null,
-    // 2026-09-13 — 담당자 판단 매출(최종결과 탭에서 입력). 새 후보지는 항상 비어 있고, 끝까지
-    // 안 적어도 된다 — 산식은 이 값을 쓰지 않는다(types.ts judgedRevenue 주석 참고).
-    judgedRevenue: null,
-    judgedReason: null,
-    judgedAt: null,
-    judgedBy: null,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-    updatedBy: null,
-    isDraft: true,
-  };
-}
 
 export default function CandidateDetailPage() {
   const params = useParams<{ code: string }>();

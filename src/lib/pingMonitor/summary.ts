@@ -9,6 +9,10 @@ import { isKrHoliday } from "./krHolidays";
 export const PING_STORES = "pingMonitorStores";
 export const PING_DAILY = "pingMonitorDaily";
 
+/** 경쟁점 정보의 IP를 "지금 확인" 없이(또는 대답 없이) 넘긴 칸 — 측정기 화면 "IP 확인 필요"에 떠서 사람이 확인하게 한다.
+ * (2026-10-15 clientStore.ts에서 옮김 — 다우 심사글 등록 스킬이 서버 쪽에서 같은 표시를 단다.) */
+export const PASTED_IP_CHECK = "경쟁점 정보 IP — 지금 확인 전(후보지 경쟁점 탭)";
+
 /** 측정 간격(분). vercel.json의 /api/ping-monitor/cron 예약(매시 5분)과 맞춘다. */
 export const SAMPLE_INTERVAL_MINUTES = 60;
 

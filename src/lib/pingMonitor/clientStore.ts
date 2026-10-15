@@ -23,7 +23,8 @@ import { db } from "@/lib/firebase";
 import { listCandidates, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
 import type { Competitor } from "@/lib/storeEval/types";
 import { parseIpRanges } from "./ipRange";
-import { hasNoIp, PING_DAILY, PING_STORES, type DayTotals, type PingDaily, type PingStore } from "./summary";
+import { hasNoIp, PASTED_IP_CHECK, PING_DAILY, PING_STORES, type DayTotals, type PingDaily, type PingStore } from "./summary";
+export { PASTED_IP_CHECK };
 
 export type PingStoreInput = {
   name: string;
@@ -270,8 +271,6 @@ export function isRegistrableCompetitor(c: Competitor): boolean {
   return c.investigationStatus !== "경쟁점없음" && !/^경쟁점 없음/.test(c.name) && c.name.trim() !== "";
 }
 
-/** 경쟁점 정보의 IP를 "지금 확인" 없이(또는 대답 없이) 넘긴 칸 — 측정기 화면 "IP 확인 필요"에 떠서 사람이 확인하게 한다. */
-export const PASTED_IP_CHECK = "경쟁점 정보 IP — 지금 확인 전(후보지 경쟁점 탭)";
 
 export type PingRegisterResult = { created: string[]; linked: string[]; ipFilled: string[]; ipConflict: string[]; ipInvalid: string[] };
 
