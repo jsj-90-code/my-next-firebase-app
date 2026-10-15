@@ -6,6 +6,7 @@
 //                 여기선 바로 저장한다(업로드 이력 · 변경기록은 화면과 같은 모양으로 남긴다).
 //   competitors — 다우 "경쟁점 설명"을 화면의 붙여넣기 해석기(parseCompetitorNotes · applyParsedNote)로 읽어 카카오 경쟁점에 얹는다.
 //                 IP는 "시작 IP + 다우 전체 대수"(사용자 2026-10-15). 이름이 하나로 안 맞으면 쓰지 않고 후보를 보여 준다.
+//   elevator    — 건축물대장 엘리베이터만 다시(키 없이 collect를 돌렸을 때). 기본 단계엔 없다 — collect가 이미 한다.
 //   ping        — 후보지 경쟁점 전부를 측정기에 올린다(화면 경쟁점 탭이 여는 순간 하는 것과 같은 규칙, registerCompetitorsToPing).
 //
 // 실행: DAOU_SPEC=<spec.json> npx vitest run src/lib/storeEval/_daouCandidate.test.ts --disable-console-intercept
@@ -71,6 +72,10 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
     const now = () => Date.now();
     const actor = spec.actor ?? null;
     const report: Record<string, unknown> = {};
+    const warnings: string[] = [];
+    if ((steps.has("collect") || steps.has("elevator")) && !process.env.BUILDING_REGISTRY_API_KEY)
+      warnings.push("BUILDING_REGISTRY_API_KEY가 이 PC .env.local에 없어 건축물대장 엘리베이터 추천값이 비게 된다 — 키를 넣고 steps [\"elevator\"]로 다시");
+    report.warnings = warnings;
     const audit = (entityType: string, entityId: string, action: string, before: unknown, after: unknown) =>
       db.collection("storeEvalAuditLog").doc().set(JSON.parse(JSON.stringify({ entityType, entityId, action, before, after, actor, at: now() })));
 
@@ -160,6 +165,37 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
         pop.sbiz = { error: err instanceof Error ? err.message : String(err) };
       }
       report.population = pop;
+    }
+
+    // 3-1) 건축물대장만 다시 — collectMarketData와 같은 규칙: 근거(basis)는 늘 쓰고, 엘리베이터 칸은 비어 있을 때만 "있음"으로.
+    if (steps.has("elevator")) {
+      const { lookupBuildingElevator } = await import("./buildingElevator");
+      const cand = (await candRef.get()).data()!;
+      const elev: Record<string, unknown> = {};
+      if (cand.lat != null && cand.lng != null) {
+        try {
+          const e = await lookupBuildingElevator({ lat: cand.lat, lng: cand.lng });
+          const after = { ...cand, elevatorBasis: e.basis, ...(e.hasElevator === true && cand.hasElevator == null ? { hasElevator: true } : {}), updatedAt: now(), updatedBy: actor };
+          await candRef.set(after);
+          await audit("candidate", code, "수정", cand, after);
+          elev.candidate = e.basis;
+        } catch (err) { elev.candidate = `실패: ${err instanceof Error ? err.message : String(err)}`; }
+      }
+      const comps = (await db.collection("storeEvalCompetitors").where("candidateCode", "==", code).get()).docs;
+      const byComp: Record<string, string> = {};
+      for (const d of comps) {
+        const c = d.data();
+        if (c.lat == null || c.lng == null) continue;
+        try {
+          const e = await lookupBuildingElevator({ lat: c.lat, lng: c.lng });
+          const after = { ...c, elevatorBasis: e.basis, ...(e.hasElevator === true && c.hasElevator == null ? { hasElevator: true } : {}), updatedAt: now() };
+          await d.ref.set(after);
+          await audit("competitor", d.id, "수정", c, after);
+          byComp[String(c.name)] = e.basis;
+        } catch (err) { byComp[String(c.name)] = `실패: ${err instanceof Error ? err.message : String(err)}`; }
+      }
+      elev.competitors = byComp;
+      report.elevator = elev;
     }
 
     // 4) 경쟁점 — 붙여넣기 해석기로 읽어 카카오 경쟁점에 얹는다

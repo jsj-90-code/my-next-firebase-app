@@ -31,7 +31,7 @@ node scripts/daou/fetchDoc.mjs "<다우 링크>" "<scratch>/daou-<날짜>.json"
 | `candidate.name` | 전략점포명 | 브랜드 앞말("블랙라벨PC존 ", "아이센스…PC존 ")을 떼고 "○○점"만(예: 군산점). 같은 이름이 있으면 동 이름을 붙인다 |
 | `candidate.address` | 지번 전체주소 | 그대로 |
 | `candidate.floor` / `groundLevel` | 입점 층수 | "3층"→3/"지상", "지하1층"→1/"지하"(층은 늘 양수) |
-| `candidate.hasElevator` / `elevatorBasis` | 엘리베이터 | 1개 이상→true, "없음"→false. basis에 `다우오피스 심사글(<문서번호>): 엘리베이터 N개` |
+| `candidate.hasElevator` | 엘리베이터 | 1개 이상→true, "없음"→false. **`elevatorBasis`는 넣지 않는다** — 화면이 "상권자료 수집 때 자동: …"으로 보여 주는 건축물대장 근거 칸이다(10-15 다우 문구로 덮어 사용자가 지적) |
 | `candidate.expectedPcCount` | **진행 예정인 PC 댓수** | 예측 PC 대수·희망 대수가 아니라 이 칸(사용자 확인 2026-10-15) |
 | `candidate.hourlyRate` | **경쟁점 평균 1시간 요금** | 이 값을 그대로 쓴다(사용자 2026-10-15 "다우 경쟁점 평균 적용"). 비어 있을 때만 사용자에게 묻는다 |
 | `candidate.plannedOpenMonth` | 6개월 예상 매출 | 첫 달의 **직전 달**(2027년 1월부터면 12) |
@@ -50,6 +50,9 @@ DAOU_SPEC="<scratch>/<후보지>.json" npx vitest run src/lib/storeEval/_daouCan
 ```
 
 단계: `create → collect → population → competitors → ping`(spec `steps`로 고를 수 있음). 결과는 `<spec>.result.json`.
+
+- **건축물대장 키(`BUILDING_REGISTRY_API_KEY`)가 이 PC `.env.local`에 없으면** 엘리베이터 추천값(후보지·경쟁점 전부)이 빈다 — 결과의
+  `warnings`에 뜬다. 키는 Vercel에만 있을 수 있으니 사용자에게 `.env.local`에 넣어 달라고 하고, 넣은 뒤 `"steps": ["elevator"]`로 건축물대장만 다시 조회한다.
 
 - 이미 만든 후보지를 이어서 돌릴 땐 `"code": "N0xx"`를 넣고 `steps`에서 `create`를 뺀다.
 - `competitors` 결과에 `written:false`(같은 상호 없음·후보 여럿)가 있으면 `candidates` 목록에서 맞는 카카오 경쟁점 id를 골라
