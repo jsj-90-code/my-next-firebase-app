@@ -109,12 +109,21 @@ export async function collectMarketDataForCandidate(db: Firestore, candidateCode
   // 3) 경쟁점(PC방) + 수요거점 자동수집 (카카오)
   const origin = { lat: geocode.lat, lng: geocode.lng };
   let competitorsAdded = 0;
+  // 2026-10-15 군산점 — 카카오 "PC방" 검색이 오락실을 경쟁점으로 물어 왔다(사용자: "오락실·성인PC방은 경쟁점으로 인식 안 되게").
+  //   빼는 건 주소만 초기평가·2km와 같은 상호/업종 규칙(judgePcBangName)뿐. 인허가 짝이 없는 곳은 빼지 않고 알리기만 한다 —
+  //   진짜 새 PC방(군산 레벨업 177대)도 인허가 자료에 늦게 올라와 짝이 없다.
+  const competitorsExcluded: { name: string; reason: string }[] = [];
+  const competitorsWithoutPermit: string[] = [];
   let demandPointsAdded = 0;
   const collectionErrors: string[] = [];
   if (candidateElevatorFailed) collectionErrors.push("후보지 건물의 건축물대장 조회에 실패해 엘리베이터는 그대로 뒀습니다.");
 
   try {
-    const pcPlaces = await searchByKeyword(origin.lat, origin.lng, "PC방", NEARBY_PC_RADIUS_M);
+    const pcPlaces = (await searchByKeyword(origin.lat, origin.lng, "PC방", NEARBY_PC_RADIUS_M)).filter((p) => {
+      const v = judgePcBangName({ name: p.name, categoryName: p.categoryName ?? null });
+      if (!v.counted) competitorsExcluded.push({ name: p.name, reason: v.excludedReason ?? "" });
+      return v.counted;
+    });
     const existingCompetitorsSnap = await db.collection("storeEvalCompetitors").where("candidateCode", "==", candidateCode).get();
     const existingPlaceIds = new Set(existingCompetitorsSnap.docs.map((d) => d.data().sourcePlaceId).filter(Boolean));
     const batch = db.batch();
@@ -139,6 +148,8 @@ export async function collectMarketDataForCandidate(db: Firestore, candidateCode
     for (const place of pcPlaces) {
       if (existingPlaceIds.has(place.id)) continue;
       const distanceM = place.distanceM ?? Math.round(haversineDistanceMeters(origin, { lat: place.lat, lng: place.lng }));
+      const permitHint = lookupPcBangPermit({ name: place.name, lat: place.lat, lng: place.lng });
+      if (!permitHint) competitorsWithoutPermit.push(place.name);
       const competitor: Competitor = {
         id: `${candidateCode}_kakao_${place.id}`,
         candidateCode,
@@ -157,7 +168,7 @@ export async function collectMarketDataForCandidate(db: Firestore, candidateCode
         hasElevator: elevatorByPlace.get(place.id)?.hasElevator ?? null,
         elevatorBasis: elevatorByPlace.get(place.id)?.basis ?? null,
         // 2026-09-28 — 인허가 자료로 만든 조사표 초기값. 번들 색인이라 네트워크 없이 바로 찾는다. 조사 칸엔 안 넣는다.
-        permitHint: lookupPcBangPermit({ name: place.name, lat: place.lat, lng: place.lng }),
+        permitHint,
         cpu: null,
         cpuTop1: null,
         cpuTop2: null,
@@ -262,6 +273,8 @@ export async function collectMarketDataForCandidate(db: Firestore, candidateCode
       geocodeStatus: "자동수집 완료",
       nearbyDuplicateWarnings: nearby,
       competitorsAdded,
+      competitorsExcluded,
+      competitorsWithoutPermit,
       demandPointsAdded,
       rival2kmCount,
       collectionErrors,

@@ -36,6 +36,7 @@ type KakaoPlaceDocument = {
   id?: string;
   place_name?: string;
   category_group_code?: string;
+  category_name?: string;
   x?: string;
   y?: string;
   distance?: string;
@@ -113,6 +114,8 @@ export type KakaoPlace = {
   lat: number;
   lng: number;
   distanceM: number | null; // 카카오가 반경검색 시 계산해주는 직선거리(요청에 x/y/radius를 줬을 때만 채워짐)
+  /** 카카오 업종(예: "가정,생활 > 여가시설 > 게임방,PC방"). 2026-10-15 — 후보지 경쟁점 수집에서 오락실·성인업태를 거르려고 받는다. */
+  categoryName?: string | null;
 };
 
 function parsePlaceDocuments(data: KakaoLocalResponse<KakaoPlaceDocument>): KakaoPlace[] {
@@ -132,6 +135,7 @@ function parsePlaceDocuments(data: KakaoLocalResponse<KakaoPlaceDocument>): Kaka
       id: String(d.id),
       name: String(d.place_name ?? ""),
       categoryGroupCode: d.category_group_code || null,
+      categoryName: d.category_name?.trim() || null,
       lat,
       lng,
       // 같은 건물이면 카카오가 "0"을 준다 — 예전 `d.distance ? ...` 는 이걸 null로 버렸다.

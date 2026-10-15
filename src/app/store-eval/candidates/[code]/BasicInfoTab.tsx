@@ -276,6 +276,8 @@ function BasicInfoTabForm({
         demandPointsAdded: number;
         rival2kmCount?: number | null;
         collectionErrors?: string[];
+        competitorsExcluded?: { name: string; reason: string }[];
+        competitorsWithoutPermit?: string[];
       }>(response);
       if (!response.ok) throw new Error(data.error ?? "상권자료 수집에 실패했습니다.");
       if (data.error) {
@@ -292,6 +294,11 @@ function BasicInfoTabForm({
       setNearbyWarnings(data.nearbyDuplicateWarnings ?? []);
       const parts = [`좌표 확인 완료`, `경쟁점(PC방) ${data.competitorsAdded ?? 0}건`, `수요거점 ${data.demandPointsAdded ?? 0}건 자동수집`];
       if (data.rival2kmCount != null) parts.push(`2km PC방 ${data.rival2kmCount}곳(실험실 산식용)`);
+      // 2026-10-15 — 오락실·성인업태는 경쟁점으로 안 만든다. 조용히 빼면 왜 없는지 모르니 이유와 함께 보인다.
+      const excluded = data.competitorsExcluded ?? [];
+      if (excluded.length > 0) parts.push(`경쟁점에서 뺀 곳 ${excluded.map((e) => `${e.name}(${e.reason})`).join(", ")}`);
+      const noPermit = data.competitorsWithoutPermit ?? [];
+      if (noPermit.length > 0) parts.push(`PC방 인허가에 없는 곳 ${noPermit.join(", ")} — 새로 연 곳이거나 성인PC방·오락실일 수 있어 확인 필요`);
       // 2026-10-07 — 라우트가 돌려주던 부분 실패 안내(건축물대장 조회 실패 등)를 화면이 버리고 있었다.
       const warnings = data.collectionErrors ?? [];
       setCollectMessage(parts.join(" · ") + (warnings.length > 0 ? ` (주의: ${warnings.join(" ")})` : ""));
