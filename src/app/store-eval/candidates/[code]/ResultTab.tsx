@@ -46,6 +46,7 @@ import { collectReviewSignals, compareOwnVsRivalUtilization, RIVAL_UTILIZATION_W
 import { sectionClass, sectionTitleClass, DateField, NumberField, TextAreaField, TextField } from "./formFields";
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
+import { ProfitLossPanel } from "./ProfitLossPanel";
 
 function judgementStyle(j: FinalJudgement | null): string {
   if (j === "평가 완료") return "app-badge-ok";
@@ -1185,6 +1186,22 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <br />예상 PC 이용시간 {formatNumber(Math.round(result.revenueBreakdown.pcHours))}시간 × 시간당 {formatWon(result.hourlyRate)}
         </p>}
         <PriceScenarioPanel baselines={[{id:candidateCode,label:candidateForReport?.name ?? candidateCode,revenue:result.v62Final,hourlyRate:result.hourlyRate,pcRevenue:result.revenueBreakdown?.pcRevenue,productRevenue:result.revenueBreakdown?.productRevenue}]} productRatio={settingsUsed.measuredForecastProductRatio} />
+        {(() => {
+          const final = pickFinalRevenue(candidateForReport, result);
+          return (
+            <ProfitLossPanel
+              estimates={[
+                ...(final.source === "담당자" ? [{ label: "담당자 판단", revenue: final.value }] : []),
+                { label: "V62", revenue: result.v62Final },
+                { label: "실험실", revenue: result.dualEstimate?.lab },
+              ]}
+              pcCount={candidateForReport?.expectedPcCount ?? result.expectedPcCount}
+              monthlyRent={candidateForReport?.monthlyRent}
+              monthlyMaintenanceFee={candidateForReport?.monthlyMaintenanceFee}
+              settings={settingsUsed.profitLoss ?? defaultModelSettings().profitLoss}
+            />
+          );
+        })()}
         {result.capacityCapped && (
           <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
             가동률 물리적 상한({formatPercent(settingsUsed.v62MaxUtilizationRate)})에 걸려 예측값을 조정했습니다. 원래 예측은{" "}

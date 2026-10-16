@@ -71,6 +71,10 @@ export function validateCandidateInput(form: CandidateInput): string[] {
     }
   }
   if (form.ownTeamRoomTotalSeats != null && form.ownTeamRoomTotalSeats < 0) errors.push("팀룸 총좌석수는 음수가 될 수 없습니다.");
+  for (const [key, label] of [["monthlyRent", "월 임대료"], ["monthlyMaintenanceFee", "월 관리비"], ["depositAmount", "보증금"], ["keyMoney", "권리금"], ["rentFreeMonths", "렌트프리"]] as const) {
+    const v = form[key];
+    if (v != null && v < 0) errors.push(`${label}는 음수가 될 수 없습니다.`);
+  }
   return errors;
 }
 

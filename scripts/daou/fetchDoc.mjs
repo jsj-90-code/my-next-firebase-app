@@ -35,7 +35,8 @@ function parseFields(text) {
   const fields = {};
   let cur = null;
   for (const line of lines.slice(start < 0 ? 0 : start)) {
-    const t = line.trim();
+    // 다우가 일부 라벨에 줄바꿈 없는 공백(U+00A0)을 쓴다 — "기타 임차비용"이 안 잡혀 렌트프리 값에 붙어 나왔다(2026-10-16).
+    const t = line.replace(/ /g, " ").trim();
     const label = LABELS.find((l) => t === l || (t.startsWith(l) && t.length <= l.length + 40 && !t.includes(":")));
     if (label && !(label in fields)) {
       cur = label;

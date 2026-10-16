@@ -90,6 +90,14 @@ export type CandidateInput = {
   hourlyRate: number | null; // 요금표_시간당원
   demographicsYear: number | null; // 상권데이터기준연도
   plannedOpenMonth: number | null; // 예상오픈월 (1~12) — AA 기준매출(오픈월부터 10개월 평균) 계산 입력
+  // 2026-10-16 추가 — 임차 조건(다우 심사글의 같은 이름 칸, 원 단위·부가세 별도). 예상 손익(profitLoss.ts)이
+  // 임대료·관리비를 매장별 고정비로 쓴다. 보증금·권리금·렌트프리는 나중에 회수기간을 낼 때 쓰려고 같이 둔다.
+  // 옛 후보지엔 없어서 선택 필드다 — 비어 있으면 손익 카드가 "임대료 입력 필요"로 표시한다.
+  monthlyRent?: number | null; // 월 임대료
+  monthlyMaintenanceFee?: number | null; // 월 관리비
+  depositAmount?: number | null; // 보증금
+  keyMoney?: number | null; // 권리금
+  rentFreeMonths?: number | null; // 렌트프리(개월)
 
   // 반경 500m/1km 인구통계 (08_계산기준 상권분석 원수요 계산 입력)
   pop500m: number | null;
@@ -488,6 +496,22 @@ export type LocationEvaluation = {
 };
 
 // ---- 12_운영판정 : 모델 계수/판정기준 (관리자 전용, 변경이력 보존) ----
+/** 예상 손익 표준값(ModelSettings.profitLoss). 근거는 settings.ts defaultModelSettings 주석. */
+export type ProfitLossSettings = {
+  vatDivisor: number; // 1.1 — 예상매출(매출DB와 같은 부가세 포함 결제총액) → 공급가액
+  productSalesShare: number; // 매출 중 상품(먹거리) 비중
+  paidGameRate: number; // 유료게임비 ÷ 매출
+  foodCostRate: number; // 식자재 매입 ÷ 상품매출
+  laborRate: number; // 인건비 ÷ 매출
+  laborFloor: number; // 인건비 하한(원/월) — 매출이 낮아도 최소 근무 인원은 있다
+  royaltyRate: number; // 로열티 ÷ 매출(계약 요율)
+  cardFeeRate: number; // 카드수수료 ÷ 매출
+  utilitiesPerPc: number; // 수도광열비(원/월/대)
+  telecom: number; // 통신·노하드·OTT(원/월)
+  fixedFees: number; // 고정 수수료 — 무인기 관리비·보험료 등(원/월)
+  supplies: number; // 소모품(원/월)
+};
+
 export type ModelSettings = {
   id: string; // "current" 등
   modelVersion: string; // "V62"
@@ -577,6 +601,9 @@ export type ModelSettings = {
   // "신규점 실측예측" 공통계수 (08_계산기준!C50/C51)
   measuredForecastProductRatio: number; // 0.5 — 기본 상품매출비율(이 파이프라인 전용, 다른 상품비율과 별개)
   measuredForecastMaxReviewUtilization: number; // 0.5 — 초과 시 "데이터 재검토"
+  // 2026-10-16 신설 — 신규 후보지 예상 손익(profitLoss.ts) 표준값. 재경 "가맹관리부용 운영수익 파일" PC 탭
+  // 기존점 14곳 한 달 치에서 뽑은 중앙값. 금액은 원·월·부가세 별도(공급가액), 비율은 공급가액 매출 대비.
+  profitLoss: ProfitLossSettings;
   // 2026-08-30 추가(사용자 확인) — V61/V62 예측매출의 물리적 가동률 상한. 정식검증 26곳 실측
   // 환산가동률(24시간 평균)이 전부 20~49%였는데(최대 48.7%), V61/V62는 회귀 예측이라 이 범위를
   // 벗어난 극단값을 걸러줄 물리적 제약이 없었다. v62Final이 이 상한 넘게 나오면 상한에 맞춰

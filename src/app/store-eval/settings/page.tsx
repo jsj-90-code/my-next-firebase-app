@@ -659,6 +659,28 @@ export default function StoreEvalSettingsPage() {
         />
       </Section>
 
+      <Section
+        title="예상 손익 표준값" collapsed
+        description="신규 후보지 [결과] 탭 예상 손익에 쓰입니다. 비율은 공급가액 매출 대비, 금액은 원·월·부가세 별도. 임대료·관리비는 후보지마다 입력합니다. 기본값은 재경 운영수익 양식 기존점 14곳 중앙값(2026-10-16)."
+      >
+        {([
+          ["vatDivisor", "부가세 나눔값 (예상매출 → 공급가액)"],
+          ["productSalesShare", "상품(먹거리) 매출 비중"],
+          ["paidGameRate", "유료게임비 ÷ 매출"],
+          ["foodCostRate", "식자재 ÷ 상품매출"],
+          ["laborRate", "인건비 ÷ 매출"],
+          ["laborFloor", "인건비 하한 (원)"],
+          ["royaltyRate", "로열티 ÷ 매출"],
+          ["cardFeeRate", "카드수수료 ÷ 매출"],
+          ["utilitiesPerPc", "수도광열비 PC 1대당 (원)"],
+          ["telecom", "통신·노하드·OTT (원)"],
+          ["fixedFees", "고정 수수료 — 무인기·보험 등 (원)"],
+          ["supplies", "소모품 (원)"],
+        ] as const).map(([key, label]) => (
+          <NumberInput key={key} label={label} value={form.profitLoss[key]} onChange={(v) => updateGroup("profitLoss", key, v)} readOnly={readOnly} />
+        ))}
+      </Section>
+
       <Section title="브랜드 필터 / 포화 기준 / 모델버전" collapsed>
         <TextInput label="브랜드 필터" value={form.brandFilter} onChange={(v) => updateTop("brandFilter", v)} readOnly={readOnly} />
         <NumberInput

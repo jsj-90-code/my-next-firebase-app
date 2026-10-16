@@ -38,6 +38,8 @@ node scripts/daou/fetchDoc.mjs "<다우 링크>" "<scratch>/daou-<날짜>.json"
 | `candidate.hourlyRate` | **경쟁점 평균 1시간 요금** | 이 값을 그대로 쓴다(사용자 2026-10-15 "다우 경쟁점 평균 적용"). 비어 있을 때만 사용자에게 묻는다 |
 | `candidate.plannedOpenMonth` | 6개월 예상 매출 | 첫 달의 **직전 달**(2027년 1월부터면 12) |
 | `candidate.reviewDate` | — | 오늘(YYYY-MM-DD) |
+| `candidate.monthlyRent` / `monthlyMaintenanceFee` | 임대료 / 관리비 | "2,750,000 원" → 2750000(원, 부가세 별도로 본다). [결과] 탭 예상 손익의 고정비(2026-10-16). 빈칸이면 null — 0으로 넣지 않는다 |
+| `candidate.depositAmount` / `keyMoney` / `rentFreeMonths` | 보증금 / 권리금 / 렌트프리 | 원 단위 숫자, 렌트프리는 개월 수("1 개월"→1). 회수기간용으로 같이 저장 |
 | `competitorText` | 경쟁점 설명 | 원문 그대로(화면 붙여넣기 해석기가 읽는다) |
 | `competitors[]` | 경쟁점 설명의 IP 줄 | IP가 "동일"·빈칸이면 사용자가 준 시작 IP를 `{ "note": "<상호 앞말>", "ipStart": "a.b.c.d" }`로. **IP 범위는 늘 "시작 IP + 다우 전체 대수"**(사용자 2026-10-15) — 실행 파일이 계산한다 |
 
