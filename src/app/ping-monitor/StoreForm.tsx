@@ -244,7 +244,19 @@ export function StoreForm({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
-          <span className={LABEL}>메모 (다우 경쟁점 조사 양식을 그대로 붙여넣으면 줄바꿈이 유지됩니다)</span>
+          <span className={`${LABEL} flex flex-wrap items-center justify-between gap-2`}>
+            <span>메모 (다우 경쟁점 조사 양식을 그대로 붙여넣으면 줄바꿈이 유지됩니다)</span>
+            <button
+              type="button"
+              className="app-btn-outline rounded-lg px-3 py-1 text-xs"
+              onClick={() => {
+                if (memo.trim() && !window.confirm("지금 메모를 조사 양식으로 바꿀까요? 적어 둔 내용은 지워집니다.")) return;
+                setMemo(surveyTemplate({ name: name.trim(), address: address.trim(), ipRanges: ipRanges.trim(), pcCount: pcCount.trim() }));
+              }}
+            >
+              조사 양식 넣기
+            </button>
+          </span>
           {/* 2026-10-16 점포팀 요청 — 한 줄 입력이라 붙여넣은 양식의 줄바꿈이 사라져 다우에 다시 붙여넣을 때 읽기 어려웠다. */}
           <textarea className={`${FIELD} min-h-[160px] leading-6`} value={memo} onChange={(e) => setMemo(e.target.value)} />
         </label>
@@ -286,4 +298,40 @@ export function StoreForm({
       {error && <p role="alert" className="app-notice app-badge-danger px-3 py-2 text-sm">{error}</p>}
     </div>
   );
+}
+
+// 2026-10-16 점포팀 요청 — 현장 담당자가 빈칸만 채우게 다우 "경쟁점 조사 양식" 틀을 넣는다(사용자가 준 리벨 노형점 평가문 모양).
+// 위에 이미 적은 상호·주소·IP·대수는 미리 채운다.
+function surveyTemplate(s: { name: string; address: string; ipRanges: string; pcCount: string }): string {
+  return [
+    `- 매장명 : ${[s.name, s.address].filter(Boolean).join(" , ")}`,
+    s.ipRanges,
+    "",
+    `- 전체 대수 : ${s.pcCount ? `${s.pcCount}대` : ""}`,
+    "",
+    "- 일반석 ",
+    "1. CPU : ",
+    "2. VGA : ",
+    "3. RAM : ",
+    "4. 모니터 : ",
+    "",
+    "- 프리미엄석 : ",
+    "",
+    "- 커플석 : ",
+    "",
+    "- 1인석 : ",
+    "",
+    "- 팀룸 : ",
+    "",
+    "- 매장 현황",
+    "1. 방문 일시 고객수 : ",
+    "2. 인테리어 수준 : ",
+    "3. 매장 관리 상태 (청결, 친절 등) : ",
+    "4. 먹거리 브랜드 : ",
+    "5. 1,000원 시간 : ",
+    "6. 유료차감 : ",
+    "",
+    "종합 평가",
+    "",
+  ].join("\n");
 }
