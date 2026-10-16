@@ -1198,6 +1198,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               pcCount={candidateForReport?.expectedPcCount ?? result.expectedPcCount}
               monthlyRent={candidateForReport?.monthlyRent}
               monthlyMaintenanceFee={candidateForReport?.monthlyMaintenanceFee}
+              keyMoney={candidateForReport?.keyMoney}
+              depositAmount={candidateForReport?.depositAmount}
               settings={settingsUsed.profitLoss ?? defaultModelSettings().profitLoss}
             />
           );

@@ -677,6 +677,13 @@ export default function StoreEvalSettingsPage() {
           ["telecom", "통신·노하드·OTT (원)"],
           ["fixedFees", "고정 수수료 — 무인기·보험 등 (원)"],
           ["supplies", "소모품 (원)"],
+          ["investPerPc", "투자금 — PC 1대당 (원, 부가세 별도)"],
+          ["investPerPyeong", "투자금 — 1평당 인테리어 (원, 부가세 별도)"],
+          ["pyeongPerPc", "평수 ÷ PC 대수 (후보지 평수 추정)"],
+          ["investFixed", "투자금 — 고정 (원, 부가세 별도)"],
+          ["promoBase", "선투자 프로모션 — 기준 할인 (원, 부가세 포함)"],
+          ["promoPerSeat", "선투자 프로모션 — 좌석 1석당 증감 (원)"],
+          ["promoBaseSeats", "선투자 프로모션 — 기준 좌석 수"],
         ] as const).map(([key, label]) => (
           <NumberInput key={key} label={label} value={form.profitLoss[key]} onChange={(v) => updateGroup("profitLoss", key, v)} readOnly={readOnly} />
         ))}
