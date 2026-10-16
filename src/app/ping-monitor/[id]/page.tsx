@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { getPingStore, listPingDaily, updatePingStore } from "@/lib/pingMonitor/clientStore";
+import { formatSurveyMemo } from "@/lib/pingMonitor/memoFormat";
 import {
   FULL_DAY_MIN_SAMPLES,
   RECENT_MIN_HOURS,
@@ -187,8 +188,8 @@ export default function PingStoreDetailPage() {
         <p className="mt-1 text-xs leading-5 text-[var(--sl-ink-soft)]">
           {store.ownName ? `우리 매장 ${store.ownName}${store.distanceM != null ? ` · ${store.distanceM}m` : ""}` : "우리 매장 연결 안 됨"}
           <br />
-          {[store.address, store.memo].filter(Boolean).join(" · ")}
-          {store.address || store.memo ? <br /> : null}
+          {store.address}
+          {store.address ? <br /> : null}
           IP대역 <span className="font-mono">{store.ipRanges}</span> · IP {store.ipCount}개 · 대수 {denominator(store)}대
           {store.pcCount ? "" : "(IP 개수)"}
         </p>
@@ -208,6 +209,7 @@ export default function PingStoreDetailPage() {
             맞는 IP대역을 찾으면 아래 &ldquo;정보 수정&rdquo;에서 고쳐 저장하세요. IP대역을 바꾸면 이 표시는 사라집니다.
           </p>
         )}
+        {store.memo && <MemoBlock memo={store.memo} />}
       </div>
 
       <section className="app-card flex flex-col gap-4 rounded-2xl p-4">
@@ -356,6 +358,28 @@ export default function PingStoreDetailPage() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+// 2026-10-16 점포팀 요청 — 조사 메모를 다우 심사요청에 붙여넣는다. 주소와 한 줄로 이어 붙이던 걸 떼어 줄바꿈대로 보이고,
+// 복사 버튼은 화면에 보이는 그대로(옛 한 줄 메모는 양식 모양으로 나눈 것) 클립보드에 넣는다.
+function MemoBlock({ memo }: { memo: string }) {
+  const text = formatSurveyMemo(memo);
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="app-card mt-3 rounded-xl p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-[var(--sl-ink-soft)]">조사 메모</span>
+        <button
+          type="button"
+          className="app-btn-outline rounded-lg px-3 py-1 text-xs"
+          onClick={() => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => setCopied(false))}
+        >
+          {copied ? "복사됨" : "메모 복사"}
+        </button>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{text}</p>
     </div>
   );
 }

@@ -244,8 +244,9 @@ export function StoreForm({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
-          <span className={LABEL}>메모</span>
-          <input className={FIELD} value={memo} onChange={(e) => setMemo(e.target.value)} />
+          <span className={LABEL}>메모 (다우 경쟁점 조사 양식을 그대로 붙여넣으면 줄바꿈이 유지됩니다)</span>
+          {/* 2026-10-16 점포팀 요청 — 한 줄 입력이라 붙여넣은 양식의 줄바꿈이 사라져 다우에 다시 붙여넣을 때 읽기 어려웠다. */}
+          <textarea className={`${FIELD} min-h-[160px] leading-6`} value={memo} onChange={(e) => setMemo(e.target.value)} />
         </label>
       </div>
       {showActive && (
