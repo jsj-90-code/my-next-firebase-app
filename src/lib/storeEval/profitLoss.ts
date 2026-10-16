@@ -46,8 +46,9 @@ export function computeProfitLoss(input: {
   const fixedCosts: ProfitLossLine[] = [
     { key: "labor", label: "인건비", amount: Math.max(laborByRate, s.laborFloor),
       basis: `기본 ${manwon(s.laborBase)} + 매출의 ${pct(s.laborRate)}, 하한 ${manwon(s.laborFloor)}` },
-    { key: "rent", label: "임대료", amount: input.monthlyRent ?? 0, basis: rentMissing ? "미입력 — 0으로 계산" : "후보지 입력값" },
-    { key: "maintenance", label: "관리비", amount: input.monthlyMaintenanceFee ?? 0, basis: input.monthlyMaintenanceFee == null ? "미입력 — 0으로 계산" : "후보지 입력값" },
+    // 다우 임대료·관리비는 부가세 포함으로 가정한다(사용자 10-16 "포함이겠지" — 확인된 사실은 아님). 공급가액으로 맞춰 뺀다.
+    { key: "rent", label: "임대료", amount: (input.monthlyRent ?? 0) / s.vatDivisor, basis: rentMissing ? "미입력 — 0으로 계산" : `후보지 입력값 ÷ ${s.vatDivisor} (부가세 포함 가정)` },
+    { key: "maintenance", label: "관리비", amount: (input.monthlyMaintenanceFee ?? 0) / s.vatDivisor, basis: input.monthlyMaintenanceFee == null ? "미입력 — 0으로 계산" : `후보지 입력값 ÷ ${s.vatDivisor} (부가세 포함 가정)` },
     { key: "utilities", label: "수도광열비", amount: input.pcCount * s.utilitiesPerPc, basis: `PC ${input.pcCount}대 × ${(s.utilitiesPerPc / 10_000).toFixed(1)}만원` },
     { key: "telecom", label: "통신·노하드·OTT", amount: s.telecom, basis: "표준값" },
     { key: "fixedFees", label: "고정 수수료(무인기·보험 등)", amount: s.fixedFees, basis: "표준값" },

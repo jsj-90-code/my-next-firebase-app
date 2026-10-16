@@ -10,8 +10,8 @@ describe("computeProfitLoss", () => {
     expect(pl.sales).toBeCloseTo(60_000_000);
     expect(pl.productSales).toBeCloseTo(32_400_000);
     expect(pl.fixedCosts.find((l) => l.key === "labor")!.amount).toBeCloseTo(11_240_000); // 500만 + 6,000만 × 10.4%
-    expect(pl.totalCost).toBeCloseTo(38_946_000);
-    expect(pl.netProfit).toBeCloseTo(21_054_000);
+    expect(pl.totalCost).toBeCloseTo(38_673_273, -1); // 임대료·관리비 ÷ 1.1
+    expect(pl.netProfit).toBeCloseTo(21_326_727, -1);
     expect(pl.laborFloorApplied).toBe(false);
     expect(pl.rentMissing).toBe(false);
   });

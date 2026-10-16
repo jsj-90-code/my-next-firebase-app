@@ -90,7 +90,7 @@ export type CandidateInput = {
   hourlyRate: number | null; // 요금표_시간당원
   demographicsYear: number | null; // 상권데이터기준연도
   plannedOpenMonth: number | null; // 예상오픈월 (1~12) — AA 기준매출(오픈월부터 10개월 평균) 계산 입력
-  // 2026-10-16 추가 — 임차 조건(다우 심사글의 같은 이름 칸, 원 단위·부가세 별도). 예상 손익(profitLoss.ts)이
+  // 2026-10-16 추가 — 임차 조건(다우 심사글의 같은 이름 칸, 원 단위·부가세 포함으로 가정 — 사용자 10-16). 예상 손익(profitLoss.ts)이
   // 임대료·관리비를 매장별 고정비로 쓴다. 보증금·권리금·렌트프리는 나중에 회수기간을 낼 때 쓰려고 같이 둔다.
   // 옛 후보지엔 없어서 선택 필드다 — 비어 있으면 손익 카드가 "임대료 입력 필요"로 표시한다.
   monthlyRent?: number | null; // 월 임대료

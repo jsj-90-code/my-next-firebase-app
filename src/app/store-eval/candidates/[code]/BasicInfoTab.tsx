@@ -654,7 +654,7 @@ function BasicInfoTabForm({
               calc.ts resolveBaselineOpenMonth). 입력 이력이 남아 있는 후보지가 있어 칸은 지우지
               않고 참고용으로 둔다. */}
           <NumberField label="예상오픈월 (1~12)" value={form.plannedOpenMonth} onChange={(v) => set("plannedOpenMonth", v)} step={1} hint="참고용 메모입니다 — 기준매출은 '평가한 달의 다음 달 오픈' 기준으로 자동 계산됩니다" />
-          {/* 2026-10-16 — 임차 조건(다우 심사글 값, 원·부가세 별도). 임대료·관리비는 [결과] 탭 예상 손익의 고정비로 쓴다. */}
+          {/* 2026-10-16 — 임차 조건(다우 심사글 값, 원·부가세 포함으로 가정). 임대료·관리비는 [결과] 탭 예상 손익의 고정비로 쓴다. */}
           <NumberField label="월 임대료 (원)" value={form.monthlyRent ?? null} onChange={(v) => set("monthlyRent", v)} hint="다우 심사글 '임대료' — 예상 손익에 쓰입니다" />
           <NumberField label="월 관리비 (원)" value={form.monthlyMaintenanceFee ?? null} onChange={(v) => set("monthlyMaintenanceFee", v)} hint="다우 심사글 '관리비' — 예상 손익에 쓰입니다" />
           <NumberField label="보증금 (원)" value={form.depositAmount ?? null} onChange={(v) => set("depositAmount", v)} />
