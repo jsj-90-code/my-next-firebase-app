@@ -28,7 +28,7 @@ export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMainte
 
   return (
     <div className="app-card mt-3 rounded-xl p-4">
-      <p className="text-sm font-semibold">예상 손익 (월, 부가세 별도)</p>
+      <p className="text-sm font-semibold">예상 손익 (월, {settings.vatDivisor === 1 ? "부가세 포함" : "부가세 별도"})</p>
       {first.rentMissing && (
         <p className="app-notice app-badge-warn mt-2 w-full justify-start px-3 py-2 text-xs leading-5">
           임대료가 입력되지 않아 0으로 계산했습니다 — 순손익이 실제보다 높게 나옵니다. [기본정보] 탭의 월 임대료·관리비를 채워 주세요(다우 심사글 값).
@@ -55,7 +55,7 @@ export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMainte
               </tr>
             </thead>
             <tbody>
-              <tr><td className="px-2 py-1 font-semibold">매출</td>{pls.map(({ label, pl }) => <td key={label} className={`${cell} font-semibold`}>{formatManwon(pl.sales)}</td>)}<td className="px-2 py-1 text-[var(--sl-ink-soft)]">예상월매출 ÷ {settings.vatDivisor}</td></tr>
+              <tr><td className="px-2 py-1 font-semibold">매출</td>{pls.map(({ label, pl }) => <td key={label} className={`${cell} font-semibold`}>{formatManwon(pl.sales)}</td>)}<td className="px-2 py-1 text-[var(--sl-ink-soft)]">{settings.vatDivisor === 1 ? "예상월매출 그대로" : `예상월매출 ÷ ${settings.vatDivisor}`}</td></tr>
               <tr><td className="px-2 py-1 pl-4">PC / 상품</td>{pls.map(({ label, pl }) => <td key={label} className={cell}>{formatManwon(pl.pcSales)} / {formatManwon(pl.productSales)}</td>)}<td className="px-2 py-1 text-[var(--sl-ink-soft)]">상품 비중 {formatPercent(settings.productSalesShare, 0)}</td></tr>
               {groups.map((g) => (
                 <GroupRows key={g.title} title={g.title} rows={pls.map(({ label, pl }) => ({ label, lines: g.pick(pl), laborFloorApplied: pl.laborFloorApplied }))} cell={cell} />
@@ -67,6 +67,7 @@ export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMainte
         <p className="mt-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
           임대료·관리비는 후보지 입력값, 나머지는 기존 가맹점 14곳(재경 운영수익 양식 한 달 치, 2026-10-16 반영)의 중앙값이고 [설정]에서 바꿉니다.
           유료게임비 비율은 실측이 아니라 그 양식이 쓰는 공식값이고, 투자비 회수(감가상각)·이자는 빠져 있습니다.
+          {settings.vatDivisor === 1 && " 부가세 포함 기준이라 순손익에는 납부할 부가세(매출 부가세 − 비용 부가세)가 들어 있습니다(점포팀 손익표와 같은 방식)."}
         </p>
       </details>
     </div>

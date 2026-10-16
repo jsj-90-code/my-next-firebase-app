@@ -496,9 +496,9 @@ export type LocationEvaluation = {
 };
 
 // ---- 12_운영판정 : 모델 계수/판정기준 (관리자 전용, 변경이력 보존) ----
-/** 예상 손익 표준값(ModelSettings.profitLoss). 근거는 settings.ts defaultModelSettings 주석. */
+/** 예상 손익 표준값(ModelSettings.profitLoss). 금액·비율은 vatDivisor와 같은 기준(기본: 부가세 포함). 근거는 settings.ts defaultModelSettings 주석. */
 export type ProfitLossSettings = {
-  vatDivisor: number; // 1.1 — 예상매출(매출DB와 같은 부가세 포함 결제총액) → 공급가액
+  vatDivisor: number; // 예상매출·임대료·관리비를 나눌 값. 1 = 부가세 포함 그대로(운영 기본, 사용자 10-16), 1.1 = 공급가액으로
   productSalesShare: number; // 매출 중 상품(먹거리) 비중
   paidGameRate: number; // 유료게임비 ÷ 매출
   foodCostRate: number; // 식자재 매입 ÷ 상품매출

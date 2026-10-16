@@ -1,13 +1,13 @@
 // 신규 후보지 예상 손익(2026-10-16 사용자 지시: "점포평가할 때 손익 계산까지 함께").
-// 예상월매출(V62·실험실·담당자 판단 — 매출DB와 같은 부가세 포함 결제총액)을 공급가액으로 바꾼 뒤
-// 재경 운영수익 양식 순서대로 비용을 뺀다. 임대료·관리비는 후보지마다(다우 심사글), 나머지는
+// 예상월매출(V62·실험실·담당자 판단 — 매출DB와 같은 부가세 포함 결제총액)을 settings.vatDivisor로 나눈 기준(기본 1 =
+// 부가세 포함 그대로, 사용자 10-16)에서 재경 운영수익 양식 순서대로 비용을 뺀다. 임대료·관리비는 후보지마다(다우 심사글), 나머지는
 // settings.profitLoss 표준값(기존점 14곳 중앙, 근거는 settings.ts 주석).
 import type { ProfitLossSettings } from "./types";
 
 export type ProfitLossLine = { key: string; label: string; amount: number; basis: string };
 
 export type ProfitLoss = {
-  sales: number; // 공급가액 매출
+  sales: number; // 예상월매출 ÷ vatDivisor
   pcSales: number;
   productSales: number;
   costOfSales: ProfitLossLine[]; // 매출원가
@@ -15,7 +15,7 @@ export type ProfitLoss = {
   variableCosts: ProfitLossLine[];
   totalCost: number;
   netProfit: number;
-  netMargin: number; // 순손익 ÷ 공급가액 매출
+  netMargin: number; // 순손익 ÷ 매출
   laborFloorApplied: boolean;
   rentMissing: boolean; // 임대료 칸이 비어 0으로 계산함
 };
@@ -46,9 +46,9 @@ export function computeProfitLoss(input: {
   const fixedCosts: ProfitLossLine[] = [
     { key: "labor", label: "인건비", amount: Math.max(laborByRate, s.laborFloor),
       basis: `기본 ${manwon(s.laborBase)} + 매출의 ${pct(s.laborRate)}, 하한 ${manwon(s.laborFloor)}` },
-    // 다우 임대료·관리비는 부가세 포함으로 가정한다(사용자 10-16 "포함이겠지" — 확인된 사실은 아님). 공급가액으로 맞춰 뺀다.
-    { key: "rent", label: "임대료", amount: (input.monthlyRent ?? 0) / s.vatDivisor, basis: rentMissing ? "미입력 — 0으로 계산" : `후보지 입력값 ÷ ${s.vatDivisor} (부가세 포함 가정)` },
-    { key: "maintenance", label: "관리비", amount: (input.monthlyMaintenanceFee ?? 0) / s.vatDivisor, basis: input.monthlyMaintenanceFee == null ? "미입력 — 0으로 계산" : `후보지 입력값 ÷ ${s.vatDivisor} (부가세 포함 가정)` },
+    // 다우 임대료·관리비는 부가세 포함으로 가정한다(사용자 10-16 "포함이겠지" — 확인된 사실은 아님). 매출과 같은 기준으로 나눈다.
+    { key: "rent", label: "임대료", amount: (input.monthlyRent ?? 0) / s.vatDivisor, basis: rentMissing ? "미입력 — 0으로 계산" : (s.vatDivisor === 1 ? "후보지 입력값(부가세 포함 가정)" : `후보지 입력값 ÷ ${s.vatDivisor} (부가세 포함 가정)`) },
+    { key: "maintenance", label: "관리비", amount: (input.monthlyMaintenanceFee ?? 0) / s.vatDivisor, basis: input.monthlyMaintenanceFee == null ? "미입력 — 0으로 계산" : (s.vatDivisor === 1 ? "후보지 입력값(부가세 포함 가정)" : `후보지 입력값 ÷ ${s.vatDivisor} (부가세 포함 가정)`) },
     { key: "utilities", label: "수도광열비", amount: input.pcCount * s.utilitiesPerPc, basis: `PC ${input.pcCount}대 × ${(s.utilitiesPerPc / 10_000).toFixed(1)}만원` },
     { key: "telecom", label: "통신·노하드·OTT", amount: s.telecom, basis: "표준값" },
     { key: "fixedFees", label: "고정 수수료(무인기·보험 등)", amount: s.fixedFees, basis: "표준값" },
