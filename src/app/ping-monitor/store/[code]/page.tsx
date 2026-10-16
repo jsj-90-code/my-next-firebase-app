@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { PingMapSection } from "../../PingMap";
 import {
   isCustomCandidateCode,
   isCustomOwnCode,
@@ -278,6 +279,9 @@ export default function PingOwnComparePage() {
 
       {/* 직접 입력 후보지는 점포평가 신규후보지 등록 화면의 "측정기에서 불러오기"로 옮긴다 — 여기 전환은 직접 입력 기존점용. */}
       {isCustomOwnCode(ownCode) && !isCandidate && <TransferOwnPanel fromCode={ownCode} fromName={name} preferCandidate={false} />}
+
+      {/* 2026-10-16 점포팀 요청 — 우리 매장 기준 반경 1km 주변 지도. */}
+      <PingMapSection ownCode={ownCode} ownName={name} getToken={async () => { if (!user) throw new Error("로그인이 필요합니다."); return user.getIdToken(); }} />
 
       <section className="app-card overflow-x-auto rounded-2xl">
         <table className="w-full min-w-[680px] text-sm">

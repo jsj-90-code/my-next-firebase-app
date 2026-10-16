@@ -464,6 +464,7 @@ export default function PingMonitorPage() {
           <h2 className="mb-3 text-sm font-semibold">새 경쟁점</h2>
           <StoreForm
             submitLabel="등록하고 측정 시작"
+            showMap
             onSubmit={async (input) => {
               const id = await createPingStore(input, user?.email ?? null);
               router.push(`/ping-monitor/${id}`);

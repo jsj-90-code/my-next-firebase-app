@@ -2,7 +2,7 @@
 
 // 경쟁점 등록·수정 칸 + "지금 확인"(기록 안 남기는 즉석 측정). 목록 화면(등록)과 상세 화면(수정)이 같이 쓴다.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseIpRanges } from "@/lib/pingMonitor/ipRange";
 import {
@@ -14,6 +14,8 @@ import {
 } from "@/lib/pingMonitor/clientStore";
 import { customOwnCode, isCustomOwnCode, type CustomOwnKind } from "@/lib/pingMonitor/clientStore";
 import { shortIps } from "@/lib/pingMonitor/summary";
+import { distanceM as straightDistanceM } from "@/lib/pingMonitor/nearby";
+import { PingMap, geocodeAddresses, useOwnLocation, useRivalPins, type PingMapPin } from "./PingMap";
 
 const CUSTOM_OPTION: Record<CustomOwnKind, string> = { 기존점: "__custom_existing__", 후보지: "__custom_candidate__" };
 const customKindOf = (v: string): CustomOwnKind | null => (v === CUSTOM_OPTION.기존점 ? "기존점" : v === CUSTOM_OPTION.후보지 ? "후보지" : null);
@@ -28,11 +30,14 @@ export function StoreForm({
   submitLabel,
   onSubmit,
   showActive = false,
+  showMap = false,
 }: {
   initial?: Partial<PingStoreInput>;
   submitLabel: string;
   onSubmit: (input: PingStoreInput) => Promise<void>;
   showActive?: boolean;
+  /** 경쟁점 등록 때 지도(2026-10-16 점포팀 요청). 수정 화면은 상세 페이지 지도를 쓴다. */
+  showMap?: boolean;
 }) {
   const { user } = useAuth();
   const [name, setName] = useState(initial?.name ?? "");
@@ -53,6 +58,12 @@ export function StoreForm({
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 2026-10-16 — 거리는 주소 좌표로 자동 계산한다(사용자 "직접 거리 넣게 하지 말고"). 좌표는 같이 저장해 지도에 쓴다.
+  const [compLoc, setCompLoc] = useState<{ lat: number; lng: number } | null>(initial?.lat != null && initial?.lng != null ? { lat: initial.lat, lng: initial.lng } : null);
+  const [geoState, setGeoState] = useState<"idle" | "finding" | "notFound">("idle");
+  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const locatedAddress = useRef<string>(initial?.lat != null ? (initial?.address ?? "").trim() : "");
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +85,43 @@ export function StoreForm({
       cancelled = true;
     };
   }, [ownCode]);
+  const getToken = async () => {
+    if (!user) throw new Error("로그인이 필요합니다.");
+    return user.getIdToken();
+  };
+  const ownLoc = useOwnLocation(customMode ? null : ownCode);
+  const rivalPins = useRivalPins(showMap && !customMode ? ownCode : null, getToken);
+
+  // 주소를 고치면 잠시 뒤 좌표를 다시 찾는다. 지도에서 고른 매장은 이미 좌표가 있어 건너뛴다.
+  useEffect(() => {
+    const a = address.trim();
+    if (!a || a === locatedAddress.current || !user) return;
+    const t = setTimeout(() => {
+      setGeoState("finding");
+      geocodeAddresses([a], getToken)
+        .then((g) => {
+          locatedAddress.current = a;
+          const hit = g[a] ?? null;
+          setCompLoc(hit ? { lat: hit.lat, lng: hit.lng } : null);
+          setGeoState(hit ? "idle" : "notFound");
+        })
+        .catch(() => setGeoState("notFound"));
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, user]);
+
+  function locateMe() {
+    setGpsError(null);
+    if (!navigator.geolocation) return setGpsError("이 브라우저는 위치 기능을 지원하지 않습니다.");
+    navigator.geolocation.getCurrentPosition(
+      (p) => setGps({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => setGpsError("위치를 가져오지 못했습니다 — 브라우저에서 위치 사용을 허용해 주세요."),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+  const autoDistance = ownLoc && compLoc ? straightDistanceM(ownLoc, compLoc) : null;
+
   const competitors = ownCode && isCustomOwnCode(ownCode) ? [] : competitorOptions?.code === ownCode ? competitorOptions.rows : null;
   const customTrimmed = customName.replace(/\s+/g, " ").trim();
   const effectiveOwnCode = customMode ? (customTrimmed ? customOwnCode(customMode, customTrimmed) : "") : ownCode;
@@ -134,7 +182,9 @@ export function StoreForm({
           ? customTrimmed || null
           : ownOptions?.find((o) => o.code === ownCode)?.name ?? (ownCode && ownCode === initial?.ownCode ? initial?.ownName ?? null : null),
         competitorId: !customMode && ownCode && !isCustomOwnCode(ownCode) && competitorId ? competitorId : null,
-        distanceM: distNum,
+        distanceM: autoDistance ?? distNum,
+        lat: compLoc?.lat ?? null,
+        lng: compLoc?.lng ?? null,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장에 실패했습니다.");
@@ -201,6 +251,31 @@ export function StoreForm({
           </select>
         </label>
       </div>
+      {showMap && (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={LABEL}>주변 지도 — PC방 핀을 누르면 상호·주소가 채워집니다</span>
+            <button type="button" className="app-btn-outline rounded-lg px-3 py-1 text-xs" onClick={locateMe}>내 위치</button>
+            {gpsError && <span className="text-xs text-red-600 dark:text-red-400">{gpsError}</span>}
+          </div>
+          <PingMap
+            center={compLoc ?? gps ?? ownLoc}
+            getToken={getToken}
+            pins={[
+              ...(ownLoc ? [{ id: "own", name: ownOptions?.find((o) => o.code === ownCode)?.name ?? "우리 매장", lat: ownLoc.lat, lng: ownLoc.lng, kind: "own" as const }] : []),
+              ...rivalPins,
+              ...(compLoc && name.trim() ? [{ id: "self", name: `${name.trim()} (등록 중)`, lat: compLoc.lat, lng: compLoc.lng, kind: "self" as const }] : []),
+            ] satisfies PingMapPin[]}
+            onPickPc={(p) => {
+              locatedAddress.current = p.address.trim();
+              setName(p.name);
+              setAddress(p.address);
+              setCompLoc({ lat: p.lat, lng: p.lng });
+              setGeoState("idle");
+            }}
+          />
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>상호 *</span>
@@ -237,9 +312,13 @@ export function StoreForm({
           {pcInvalid && <span className="mt-1 block text-xs text-red-600 dark:text-red-400">1 이상의 정수를 넣어 주세요.</span>}
         </label>
         <label className="block">
-          <span className={LABEL}>우리 매장과 거리(m)</span>
-          <input className={`${FIELD} tabular-nums`} inputMode="numeric" value={distance} onChange={(e) => setDistance(e.target.value)} placeholder="예: 43" />
-          {distInvalid && <span className="mt-1 block text-xs text-red-600 dark:text-red-400">0 이상의 숫자를 넣어 주세요.</span>}
+          <span className={LABEL}>우리 매장과 거리 (주소로 자동 계산)</span>
+          <span className={`${FIELD} block tabular-nums`}>
+            {autoDistance != null ? `${autoDistance.toLocaleString("ko-KR")}m` : distNum != null ? `${distNum.toLocaleString("ko-KR")}m (이전 값)` : "-"}
+          </span>
+          <span className="mt-1 block text-xs text-[var(--sl-ink-soft)]">
+            {geoState === "finding" ? "주소 위치 찾는 중…" : geoState === "notFound" ? "주소로 위치를 못 찾았습니다 — 주소를 더 자세히 적거나 지도에서 매장을 고르세요." : customMode || !ownCode ? "우리 매장을 고르면 거리가 계산됩니다." : !ownLoc ? "우리 매장 위치가 점포평가에 없어 거리를 계산하지 못합니다." : !compLoc ? "주소를 넣으면 계산됩니다." : "직선거리"}
+          </span>
         </label>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -251,7 +330,7 @@ export function StoreForm({
               className="app-btn-outline rounded-lg px-3 py-1 text-xs"
               onClick={() => {
                 if (memo.trim() && !window.confirm("지금 메모를 조사 양식으로 바꿀까요? 적어 둔 내용은 지워집니다.")) return;
-                setMemo(SURVEY_TEMPLATE);
+                setMemo(surveyTemplate(new Date()));
               }}
             >
               조사 양식 넣기
@@ -303,29 +382,28 @@ export function StoreForm({
 // 2026-10-16 점포팀 요청 — 현장 담당자가 빈칸만 채우게 다우 "경쟁점 조사 양식" 틀을 넣는다(사용자가 준 리벨 노형점 평가문 모양).
 // 매장명·주소·IP·전체 대수는 위 기본정보 칸에 이미 적으므로 틀에 넣지 않는다 — 상세 화면 메모와 복사에 기본정보가 같이 붙는다
 // ([id]/page.tsx MemoBlock, 사용자 "굳이 또 넣게 하지 말고 기본정보를 불러와서").
-const SURVEY_TEMPLATE = [
-  "- 일반석 ",
-  "1. CPU : ",
-  "2. VGA : ",
-  "3. RAM : ",
-  "4. 모니터 : ",
-  "",
-  "- 프리미엄석 : ",
-  "",
-  "- 커플석 : ",
-  "",
-  "- 1인석 : ",
-  "",
-  "- 팀룸 : ",
-  "",
-  "- 매장 현황",
-  "1. 방문 일시 고객수 : ",
-  "2. 인테리어 수준 : ",
-  "3. 매장 관리 상태 (청결, 친절 등) : ",
-  "4. 먹거리 브랜드 : ",
-  "5. 1,000원 시간 : ",
-  "6. 유료차감 : ",
-  "",
-  "종합 평가",
-  "",
-].join("\n");
+// 사용자 10-16: 항목 사이 빈 줄 없이, "방문 일시 고객수"엔 버튼 누른 시각(현장 입력 시각)을 넣는다.
+function surveyTemplate(now: Date): string {
+  const h = now.getHours();
+  const visited = `${String(now.getFullYear()).slice(2)}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${h < 12 ? "오전" : "오후"} ${h % 12 || 12}시 ${now.getMinutes()}분`;
+  return [
+    "- 일반석",
+    "1. CPU : ",
+    "2. VGA : ",
+    "3. RAM : ",
+    "4. 모니터 : ",
+    "- 프리미엄석 : ",
+    "- 커플석 : ",
+    "- 1인석 : ",
+    "- 팀룸 : ",
+    "- 매장 현황",
+    `1. 방문 일시 고객수 : ${visited} `,
+    "2. 인테리어 수준 : ",
+    "3. 매장 관리 상태 (청결, 친절 등) : ",
+    "4. 먹거리 브랜드 : ",
+    "5. 1,000원 시간 : ",
+    "6. 유료차감 : ",
+    "종합 평가",
+    "",
+  ].join("\n");
+}

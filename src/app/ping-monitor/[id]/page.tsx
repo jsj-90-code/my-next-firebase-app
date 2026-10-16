@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { PingMapSection } from "../PingMap";
 import { getPingStore, listPingDaily, updatePingStore } from "@/lib/pingMonitor/clientStore";
 import { formatSurveyMemo } from "@/lib/pingMonitor/memoFormat";
 import {
@@ -211,6 +212,9 @@ export default function PingStoreDetailPage() {
         )}
         {store.memo && <MemoBlock memo={store.memo} header={memoHeader(store)} />}
       </div>
+
+      {/* 2026-10-16 점포팀 요청 — 이 경쟁점 기준 반경 1km 주변 지도(우리 매장·같은 매장의 다른 경쟁점 함께). */}
+      <PingMapSection ownCode={store.ownCode} ownName={store.ownName} selfId={store.id} getToken={async () => { if (!user) throw new Error("로그인이 필요합니다."); return user.getIdToken(); }} />
 
       <section className="app-card flex flex-col gap-4 rounded-2xl p-4">
         <div className="flex flex-wrap items-end gap-2">

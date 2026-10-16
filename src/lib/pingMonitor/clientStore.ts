@@ -38,6 +38,8 @@ export type PingStoreInput = {
   ownName: string | null;
   competitorId: string | null;
   distanceM: number | null;
+  lat?: number | null; // 2026-10-16 — 주소 좌표(지도·거리 자동 계산)
+  lng?: number | null;
 };
 
 function toDate(v: unknown): Date | null {
@@ -59,6 +61,8 @@ function toStore(id: string, d: DocumentData): PingStore {
     ownName: typeof d.ownName === "string" && d.ownName ? d.ownName : null,
     competitorId: typeof d.competitorId === "string" && d.competitorId ? d.competitorId : null,
     distanceM: typeof d.distanceM === "number" ? d.distanceM : null,
+    lat: typeof d.lat === "number" ? d.lat : null,
+    lng: typeof d.lng === "number" ? d.lng : null,
     isOwnStore: d.isOwnStore === true,
     ipCheck: typeof d.ipCheck === "string" && d.ipCheck ? d.ipCheck : null,
     portSwitchDate: typeof d.portSwitchDate === "string" && d.portSwitchDate ? d.portSwitchDate : null,
