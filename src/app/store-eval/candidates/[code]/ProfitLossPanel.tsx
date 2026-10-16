@@ -65,7 +65,7 @@ export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMainte
           </table>
         </div>
         <p className="mt-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
-          임대료·관리비는 후보지 입력값, 나머지는 기존 가맹점 14곳(재경 운영수익 양식 한 달 치, 2026-10-16 반영)의 중앙값이고 [설정]에서 바꿉니다.
+          임대료·관리비는 후보지 입력값, 나머지는 기존 가맹점 14곳(매장마다 협조받아 모은 한 달 치 손익, 2026-10-16 반영)의 중앙값이고 [설정]에서 바꿉니다.
           유료게임비 비율은 실측이 아니라 그 양식이 쓰는 공식값이고, 투자비 회수(감가상각)·이자는 빠져 있습니다.
           {settings.vatDivisor === 1 && " 부가세 포함 기준이라 순손익에는 납부할 부가세(매출 부가세 − 비용 부가세)가 들어 있습니다(점포팀 손익표와 같은 방식)."}
         </p>
