@@ -214,11 +214,16 @@ export function PingMapSection({ ownCode, ownName, selfId, getToken }: { ownCode
   const ownLoc = useOwnLocation(ownCode);
   const rivals = useRivalPins(ownCode, getToken, selfId);
   const self = selfId ? rivals.find((p) => p.id === selfId) ?? null : null;
-  const center = self ? { lat: self.lat, lng: self.lng } : ownLoc;
+  // 후보지 주소 없이 경쟁점만 넣은 상권답사 매장 — 경쟁점 좌표의 가운데를 임시 기준으로(우리 매장 핀은 안 찍음). 사용자 10-16.
+  const rivalMid = !self && !ownLoc && rivals.length
+    ? { lat: rivals.reduce((a, p) => a + p.lat, 0) / rivals.length, lng: rivals.reduce((a, p) => a + p.lng, 0) / rivals.length }
+    : null;
+  const center = self ? { lat: self.lat, lng: self.lng } : ownLoc ?? rivalMid;
   const pins: PingMapPin[] = [...(ownLoc ? [{ id: "own", name: ownName ?? "우리 매장", lat: ownLoc.lat, lng: ownLoc.lng, kind: "own" as const }] : []), ...rivals];
   return (
     <section className="app-card flex flex-col gap-2 rounded-2xl p-4">
       <h2 className="text-sm font-semibold">주변 지도</h2>
+      {rivalMid && <p className="text-xs text-[var(--sl-ink-soft)]">후보지 주소가 없어 경쟁점 {rivals.length}곳의 가운데를 기준으로 표시합니다.</p>}
       {!ownCode && !selfId ? <p className="text-xs text-[var(--sl-ink-soft)]">우리 매장이 연결되지 않아 지도를 그릴 기준이 없습니다.</p> : <PingMap center={center} pins={pins} getToken={getToken} />}
     </section>
   );
