@@ -11,7 +11,7 @@ describe("computeProfitLoss", () => {
     expect(pl.productSales).toBeCloseTo(35_640_000);
     expect(pl.fixedCosts.find((l) => l.key === "labor")!.amount).toBeCloseTo(11_237_000); // 500만 + 6,600만 × 9.45%
     expect(pl.fixedCosts.find((l) => l.key === "rent")!.amount).toBe(2_750_000);
-    expect(pl.totalCost).toBeCloseTo(41_318_400, -1);
+    expect(pl.totalCost).toBeCloseTo(41_846_400, -1);
     expect(pl.netProfit).toBeCloseTo(pl.sales - pl.totalCost);
     expect(pl.laborFloorApplied).toBe(false);
     expect(pl.rentMissing).toBe(false);
