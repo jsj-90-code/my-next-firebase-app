@@ -46,16 +46,17 @@ export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMainte
             <p className="text-xs text-[var(--sl-ink-soft)]">{label} 기준 순손익</p>
             <p className="mt-1 text-lg font-semibold">{formatManwon(pl.netProfit)}</p>
             <p className="text-xs text-[var(--sl-ink-soft)]">매출 {formatManwon(pl.sales)} · 순익률 {formatPercent(pl.netMargin)}</p>
-            <p className="mt-1 text-xs">투자금 회수 <b>{months(paybackMonths(inv.total, pl.netProfit))}</b></p>
-            {inv.promo > 0 && <p className="text-xs text-[var(--sl-ink-soft)]">선투자 프로모션 적용 시 {months(paybackMonths(inv.totalWithPromo, pl.netProfit))}</p>}
+            {/* 2026-10-16 사용자 "실투자금 4억6천이 맞는 것 아닌가" — 기본은 선투자 차감 후 실제 납부액, 미적용은 아래 작게. */}
+            <p className="mt-1 text-xs">실투자금 회수 <b>{months(paybackMonths(inv.totalWithPromo, pl.netProfit))}</b></p>
+            {inv.promo > 0 && <p className="text-xs text-[var(--sl-ink-soft)]">선투자 미적용 시 {months(paybackMonths(inv.total, pl.netProfit))}</p>}
           </div>
         ))}
       </div>
       {/* 2026-10-16 — 초기 투자금은 견적서 공급가 구조(settings.profitLoss.invest*)로 대수에서 낸다. */}
       <p className="mt-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
-        초기 투자금 {formatManwon(inv.total)}{settings.vatDivisor === 1 ? "(부가세 포함)" : ""} = 견적 {formatManwon(inv.quote)} (PC {pcCount}대·{inv.pyeong}평 기준 — 대당 {formatManwon(settings.investPerPc)} + 평당 {formatManwon(settings.investPerPyeong)} + 고정 {formatManwon(settings.investFixed)}, 부가세 별도 합 {formatManwon(inv.quoteSupply)})
+        실투자금 {formatManwon(inv.totalWithPromo)}{settings.vatDivisor === 1 ? "(부가세 포함, 계약 시 실제 납부액)" : ""} = 견적 {formatManwon(inv.quote)}{inv.promo > 0 ? ` − 선투자 프로모션 ${formatManwon(inv.promo)}` : ""} (PC {pcCount}대·{inv.pyeong}평 기준 — 대당 {formatManwon(settings.investPerPc)} + 평당 {formatManwon(settings.investPerPyeong)} + 고정 {formatManwon(settings.investFixed)}, 부가세 별도 합 {formatManwon(inv.quoteSupply)})
         {inv.keyMoney > 0 ? ` + 권리금 ${formatManwon(inv.keyMoney)}` : ""}.
-        {inv.promo > 0 && ` 선투자 프로모션 할인 ${formatManwon(inv.promo)}(승인 시).`}
+        {inv.promo > 0 && ` 선투자 프로모션은 승인될 때만 받습니다 — 미적용이면 ${formatManwon(inv.total)}.`}
         {depositAmount ? ` 보증금 ${formatManwon(depositAmount)}은 돌려받는 돈이라 회수기간에서 뺐습니다.` : ""}
       </p>
       <details className="mt-3">
