@@ -209,7 +209,7 @@ export default function PingStoreDetailPage() {
             맞는 IP대역을 찾으면 아래 &ldquo;정보 수정&rdquo;에서 고쳐 저장하세요. IP대역을 바꾸면 이 표시는 사라집니다.
           </p>
         )}
-        {store.memo && <MemoBlock memo={store.memo} />}
+        {store.memo && <MemoBlock memo={store.memo} header={memoHeader(store)} />}
       </div>
 
       <section className="app-card flex flex-col gap-4 rounded-2xl p-4">
@@ -364,8 +364,14 @@ export default function PingStoreDetailPage() {
 
 // 2026-10-16 점포팀 요청 — 조사 메모를 다우 심사요청에 붙여넣는다. 주소와 한 줄로 이어 붙이던 걸 떼어 줄바꿈대로 보이고,
 // 복사 버튼은 화면에 보이는 그대로(옛 한 줄 메모는 양식 모양으로 나눈 것) 클립보드에 넣는다.
-function MemoBlock({ memo }: { memo: string }) {
-  const text = formatSurveyMemo(memo);
+// 메모에 매장명이 없으면(조사 양식 버튼으로 쓴 새 메모) 기본정보(상호·주소·IP·대수)를 맨 위에 붙인다 — 사용자 10-16.
+function memoHeader(store: PingStore): string {
+  return [`- 매장명 : ${[store.name, store.address].filter(Boolean).join(" , ")}`, store.ipRanges, `- 전체 대수 : ${denominator(store)}대`].filter(Boolean).join("\n");
+}
+
+function MemoBlock({ memo, header }: { memo: string; header: string }) {
+  const body = formatSurveyMemo(memo);
+  const text = /매장명/.test(body) ? body : `${header}\n\n${body}`;
   const [copied, setCopied] = useState(false);
   return (
     <div className="app-card mt-3 rounded-xl p-3">

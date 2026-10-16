@@ -251,7 +251,7 @@ export function StoreForm({
               className="app-btn-outline rounded-lg px-3 py-1 text-xs"
               onClick={() => {
                 if (memo.trim() && !window.confirm("지금 메모를 조사 양식으로 바꿀까요? 적어 둔 내용은 지워집니다.")) return;
-                setMemo(surveyTemplate({ name: name.trim(), address: address.trim(), ipRanges: ipRanges.trim(), pcCount: pcCount.trim() }));
+                setMemo(SURVEY_TEMPLATE);
               }}
             >
               조사 양식 넣기
@@ -301,37 +301,31 @@ export function StoreForm({
 }
 
 // 2026-10-16 점포팀 요청 — 현장 담당자가 빈칸만 채우게 다우 "경쟁점 조사 양식" 틀을 넣는다(사용자가 준 리벨 노형점 평가문 모양).
-// 위에 이미 적은 상호·주소·IP·대수는 미리 채운다.
-function surveyTemplate(s: { name: string; address: string; ipRanges: string; pcCount: string }): string {
-  return [
-    `- 매장명 : ${[s.name, s.address].filter(Boolean).join(" , ")}`,
-    s.ipRanges,
-    "",
-    `- 전체 대수 : ${s.pcCount ? `${s.pcCount}대` : ""}`,
-    "",
-    "- 일반석 ",
-    "1. CPU : ",
-    "2. VGA : ",
-    "3. RAM : ",
-    "4. 모니터 : ",
-    "",
-    "- 프리미엄석 : ",
-    "",
-    "- 커플석 : ",
-    "",
-    "- 1인석 : ",
-    "",
-    "- 팀룸 : ",
-    "",
-    "- 매장 현황",
-    "1. 방문 일시 고객수 : ",
-    "2. 인테리어 수준 : ",
-    "3. 매장 관리 상태 (청결, 친절 등) : ",
-    "4. 먹거리 브랜드 : ",
-    "5. 1,000원 시간 : ",
-    "6. 유료차감 : ",
-    "",
-    "종합 평가",
-    "",
-  ].join("\n");
-}
+// 매장명·주소·IP·전체 대수는 위 기본정보 칸에 이미 적으므로 틀에 넣지 않는다 — 상세 화면 메모와 복사에 기본정보가 같이 붙는다
+// ([id]/page.tsx MemoBlock, 사용자 "굳이 또 넣게 하지 말고 기본정보를 불러와서").
+const SURVEY_TEMPLATE = [
+  "- 일반석 ",
+  "1. CPU : ",
+  "2. VGA : ",
+  "3. RAM : ",
+  "4. 모니터 : ",
+  "",
+  "- 프리미엄석 : ",
+  "",
+  "- 커플석 : ",
+  "",
+  "- 1인석 : ",
+  "",
+  "- 팀룸 : ",
+  "",
+  "- 매장 현황",
+  "1. 방문 일시 고객수 : ",
+  "2. 인테리어 수준 : ",
+  "3. 매장 관리 상태 (청결, 친절 등) : ",
+  "4. 먹거리 브랜드 : ",
+  "5. 1,000원 시간 : ",
+  "6. 유료차감 : ",
+  "",
+  "종합 평가",
+  "",
+].join("\n");
