@@ -35,16 +35,3 @@ describe("computeProfitLoss", () => {
     expect(pl.fixedCosts.find((l) => l.key === "rent")!.amount).toBe(0);
   });
 });
-
-describe("computeInvestment", () => {
-  it("견적서 예시 100대·80평을 재현한다(공급가 5억 755.78만원, 부가세 포함 ×1.1)", async () => {
-    const { computeInvestment, paybackMonths } = await import("./profitLoss");
-    const inv = computeInvestment({ pcCount: 100, keyMoney: 0, settings });
-    expect(inv.pyeong).toBe(80);
-    expect(inv.quoteSupply).toBe(507_557_800);
-    expect(inv.quote).toBeCloseTo(558_313_580);
-    expect(inv.promo).toBe(99_500_000); // 좌석 99석: 1억 − 50만
-    expect(paybackMonths(inv.total, 20_000_000)).toBeCloseTo(27.9, 1);
-    expect(paybackMonths(inv.total, -1)).toBeNull();
-  });
-});

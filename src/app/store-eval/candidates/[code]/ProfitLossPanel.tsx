@@ -2,29 +2,23 @@
 
 // 2026-10-16 사용자: "점포평가할 때 손익 계산까지 함께" — 예상월매출마다(담당자 판단·V62·실험실) 순손익을 나란히 보인다.
 // 계산은 profitLoss.ts, 표준값은 settings.profitLoss(기존점 14곳 중앙) — 여기선 글자로 숫자를 박지 않고 그 값을 읽어 그린다.
-import { computeInvestment, computeProfitLoss, paybackMonths, type ProfitLossLine } from "@/lib/storeEval/profitLoss";
+import { computeProfitLoss, type ProfitLossLine } from "@/lib/storeEval/profitLoss";
 import { formatManwon, formatPercent } from "@/lib/storeEval/format";
 import type { ProfitLossSettings } from "@/lib/storeEval/types";
 
 type Estimate = { label: string; revenue: number | null | undefined };
 
-// 회수기간 표기 — "27개월(2.3년)".
-const months = (m: number | null) => (m == null ? "회수 불가(적자)" : `${Math.round(m)}개월(${(m / 12).toFixed(1)}년)`);
-
-export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMaintenanceFee, keyMoney, depositAmount, settings }: {
+export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMaintenanceFee, settings }: {
   estimates: Estimate[];
   pcCount: number | null | undefined;
   monthlyRent: number | null | undefined;
   monthlyMaintenanceFee: number | null | undefined;
-  keyMoney?: number | null;
-  depositAmount?: number | null;
   settings: ProfitLossSettings;
 }) {
   const valid = estimates.filter((e): e is { label: string; revenue: number } => e.revenue != null && Number.isFinite(e.revenue) && e.revenue > 0);
   if (valid.length === 0 || !pcCount) return null;
   const pls = valid.map((e) => ({ ...e, pl: computeProfitLoss({ revenue: e.revenue, pcCount, monthlyRent, monthlyMaintenanceFee, settings }) }));
   const first = pls[0].pl;
-  const inv = computeInvestment({ pcCount, keyMoney, settings });
   const groups: { title: string; pick: (p: typeof first) => ProfitLossLine[] }[] = [
     { title: "매출원가", pick: (p) => p.costOfSales },
     { title: "고정비", pick: (p) => p.fixedCosts },
@@ -46,18 +40,9 @@ export function ProfitLossPanel({ estimates, pcCount, monthlyRent, monthlyMainte
             <p className="text-xs text-[var(--sl-ink-soft)]">{label} 기준 순손익</p>
             <p className="mt-1 text-lg font-semibold">{formatManwon(pl.netProfit)}</p>
             <p className="text-xs text-[var(--sl-ink-soft)]">매출 {formatManwon(pl.sales)} · 순익률 {formatPercent(pl.netMargin)}</p>
-            <p className="mt-1 text-xs">투자금 회수 <b>{months(paybackMonths(inv.total, pl.netProfit))}</b></p>
-            {inv.promo > 0 && <p className="text-xs text-[var(--sl-ink-soft)]">선투자 프로모션 적용 시 {months(paybackMonths(inv.totalWithPromo, pl.netProfit))}</p>}
           </div>
         ))}
       </div>
-      {/* 2026-10-16 — 초기 투자금은 견적서 공급가 구조(settings.profitLoss.invest*)로 대수에서 낸다. */}
-      <p className="mt-2 text-xs leading-5 text-[var(--sl-ink-soft)]">
-        초기 투자금 {formatManwon(inv.total)}{settings.vatDivisor === 1 ? "(부가세 포함)" : ""} = 견적 {formatManwon(inv.quote)} (PC {pcCount}대·{inv.pyeong}평 기준 — 대당 {formatManwon(settings.investPerPc)} + 평당 {formatManwon(settings.investPerPyeong)} + 고정 {formatManwon(settings.investFixed)}, 부가세 별도 합 {formatManwon(inv.quoteSupply)})
-        {inv.keyMoney > 0 ? ` + 권리금 ${formatManwon(inv.keyMoney)}` : ""}.
-        {inv.promo > 0 && ` 선투자 프로모션 할인 ${formatManwon(inv.promo)}(승인 시).`}
-        {depositAmount ? ` 보증금 ${formatManwon(depositAmount)}은 돌려받는 돈이라 회수기간에서 뺐습니다.` : ""}
-      </p>
       <details className="mt-3">
         <summary className="cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)]">항목별 보기</summary>
         <div className="mt-2 overflow-x-auto">

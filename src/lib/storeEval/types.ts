@@ -511,14 +511,6 @@ export type ProfitLossSettings = {
   telecom: number; // 통신·노하드·OTT(원/월)
   fixedFees: number; // 고정 수수료 — 무인기 관리비·보험료 등(원/월)
   supplies: number; // 소모품(원/월)
-  // 2026-10-16 — 초기 투자금(견적서 "[블랙] 2026_PC_견적서" 공급가 구조). 금액은 부가세 별도로 두고 화면 기준에 맞춰 ×1.1 한다.
-  investPerPc: number; // 대수에 따라 느는 몫(원/대) — 좌석 PC·모니터·주변기기·책상·의자·랜선
-  investPerPyeong: number; // 평수에 따라 느는 몫(원/평) — 인테리어 목공
-  pyeongPerPc: number; // 후보지엔 평수 칸이 없어 대수로 평수를 잡는다(견적서 예시 100대 80평)
-  investFixed: number; // 고정 몫(원) — 서버·CCTV·간판·감리·휴게·인허가·카운터 등
-  promoBase: number; // 선투자 프로모션 할인(부가세 포함, 원) — 좌석 promoBaseSeats석 기준
-  promoPerSeat: number; // 좌석 1석 늘거나 줄 때 프로모션 증감(원)
-  promoBaseSeats: number;
 };
 
 export type ModelSettings = {

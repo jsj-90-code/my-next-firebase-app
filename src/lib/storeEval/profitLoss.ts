@@ -68,32 +68,3 @@ export function computeProfitLoss(input: {
     laborFloorApplied, rentMissing,
   };
 }
-
-// 2026-10-16 사용자: "견적금액이 기본 투자금 — 대수에 따라 다르니 검토해서 투자금 회수 넣어 봐". 견적서 공급가 구조(settings.ts 주석)로
-// 대수만 받아 투자금을 내고, 월 순손익으로 회수기간을 낸다. 화면 기준이 부가세 포함(vatDivisor 1)이면 투자금도 ×1.1.
-// 권리금은 돌려받지 못하는 돈이라 투자금에 더하고, 보증금은 돌려받는 돈이라 회수기간에서 뺀다(화면에 따로 적는다).
-export type Investment = {
-  pyeong: number;
-  quoteSupply: number; // 견적서 공급가(부가세 별도)
-  quote: number; // 화면 기준 금액(부가세 포함 기준이면 ×1.1)
-  promo: number; // 선투자 프로모션 할인(부가세 포함)
-  keyMoney: number;
-  total: number; // quote + 권리금
-  totalWithPromo: number;
-};
-
-export function computeInvestment(input: { pcCount: number; keyMoney: number | null | undefined; settings: ProfitLossSettings }): Investment {
-  const s = input.settings;
-  const pyeong = Math.round(input.pcCount * s.pyeongPerPc);
-  const quoteSupply = s.investPerPc * input.pcCount + s.investPerPyeong * pyeong + s.investFixed;
-  const quote = (quoteSupply * 1.1) / s.vatDivisor;
-  const seats = input.pcCount - 1; // 카운터 1대 제외(견적서 C3)
-  const promo = Math.max(0, s.promoBase + (seats - s.promoBaseSeats) * s.promoPerSeat) / s.vatDivisor;
-  const keyMoney = input.keyMoney ?? 0;
-  return { pyeong, quoteSupply, quote, promo, keyMoney, total: quote + keyMoney, totalWithPromo: quote - promo + keyMoney };
-}
-
-/** 회수기간(개월). 순손익이 0 이하면 회수 불가(null). */
-export function paybackMonths(investment: number, monthlyNetProfit: number): number | null {
-  return monthlyNetProfit > 0 ? investment / monthlyNetProfit : null;
-}
