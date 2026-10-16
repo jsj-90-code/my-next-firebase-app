@@ -40,12 +40,12 @@ export function computeProfitLoss(input: {
     { key: "food", label: "식자재 매입", amount: productSales * s.foodCostRate, basis: `상품매출의 ${pct(s.foodCostRate)}` },
   ];
 
-  const laborByRate = sales * s.laborRate;
+  const laborByRate = s.laborBase + sales * s.laborRate;
   const laborFloorApplied = laborByRate < s.laborFloor;
   const rentMissing = input.monthlyRent == null;
   const fixedCosts: ProfitLossLine[] = [
     { key: "labor", label: "인건비", amount: Math.max(laborByRate, s.laborFloor),
-      basis: `매출의 ${pct(s.laborRate)}, 하한 ${manwon(s.laborFloor)}` },
+      basis: `기본 ${manwon(s.laborBase)} + 매출의 ${pct(s.laborRate)}, 하한 ${manwon(s.laborFloor)}` },
     { key: "rent", label: "임대료", amount: input.monthlyRent ?? 0, basis: rentMissing ? "미입력 — 0으로 계산" : "후보지 입력값" },
     { key: "maintenance", label: "관리비", amount: input.monthlyMaintenanceFee ?? 0, basis: input.monthlyMaintenanceFee == null ? "미입력 — 0으로 계산" : "후보지 입력값" },
     { key: "utilities", label: "수도광열비", amount: input.pcCount * s.utilitiesPerPc, basis: `PC ${input.pcCount}대 × ${(s.utilitiesPerPc / 10_000).toFixed(1)}만원` },

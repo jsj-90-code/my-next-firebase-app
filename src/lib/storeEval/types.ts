@@ -502,7 +502,8 @@ export type ProfitLossSettings = {
   productSalesShare: number; // 매출 중 상품(먹거리) 비중
   paidGameRate: number; // 유료게임비 ÷ 매출
   foodCostRate: number; // 식자재 매입 ÷ 상품매출
-  laborRate: number; // 인건비 ÷ 매출
+  laborBase: number; // 인건비 기본(원/월) — 매출과 무관하게 드는 몫
+  laborRate: number; // 인건비 중 매출에 비례하는 몫 ÷ 매출
   laborFloor: number; // 인건비 하한(원/월) — 매출이 낮아도 최소 근무 인원은 있다
   royaltyRate: number; // 로열티 ÷ 매출(계약 요율)
   cardFeeRate: number; // 카드수수료 ÷ 매출
