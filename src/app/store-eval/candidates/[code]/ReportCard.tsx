@@ -9,6 +9,7 @@
 
 import { formatDate, formatManwon, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { competitivenessLabel, storeEvaluationGrade } from "@/lib/storeEval/reportContext";
+import { computeImpliedUtilizationFromRevenue } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ModelAccuracySummary } from "@/lib/storeEval/types";
 
 // 2026-08-27: "경쟁력격차 1.63이면 처음 보는 사람은 감이 안 온다"는 지적 — 원점수 대신
@@ -110,8 +111,9 @@ export function ReportCard({
   // 2026-09-13 — 이 카드는 밖으로 내보내는 이미지다. "이 예측이 얼마나 맞는지"가 같이 없으면
   // 숫자만 단정적으로 보인다. 검증화면이 남긴 요약 1건을 받아 한 줄로 덧붙인다.
   accuracy?: ModelAccuracySummary | null;
-  // 환산 가동률이 전제하는 상품매출 비율(회사 기준 50%). 전제를 밝히지 않으면 읽는 사람이
+  // 환산 가동률이 전제하는 상품매출 비율. 전제를 밝히지 않으면 읽는 사람이
   // 다른 기준으로 오해한다 — 평가기록 문구와 같은 방식으로 명시한다.
+  // 2026-10-20 사용자 "50 말고 가맹점평균" → settings.franchiseProductShare를 받아 카드에서 다시 환산한다.
   productRatio?: number | null;
 }) {
   const investigated = competitors.filter((c) => c.investigationStatus !== "경쟁점없음");
@@ -238,10 +240,16 @@ export function ReportCard({
         {/* 2026-09-13 — 전제(상품매출 비율)를 밝힌다. 이 값은 "총매출 중 절반이 PC매출"이라는
             회사 기준을 깔고 역산한 것이라, 전제를 안 적으면 읽는 사람이 다른 기준으로 오해한다.
             실제 평가기록도 "상품매출 비율 50% 기준 약 29%의 가동률이 필요함"으로 쓴다. */}
+        {/* 2026-10-20 — v62ImpliedUtilization은 산식 계수(measuredForecastProductRatio 50%)로 역산한 값이라,
+            가맹점 평균 비율을 받으면 같은 공식(computeImpliedUtilizationFromRevenue)으로 여기서 다시 환산한다. */}
         <PercentBar
           label="이 매출이 나오려면 필요한 가동률"
-          value={result.v62ImpliedUtilization}
-          hint={`상품매출 비율 ${productRatio != null ? formatPercent(productRatio, 0) : "50%"} 기준으로 환산 (100% 초과 시 수요초과 신호)`}
+          value={
+            productRatio != null
+              ? (computeImpliedUtilizationFromRevenue(result.v62Final, candidate.hourlyRate, productRatio, candidate.expectedPcCount) ?? result.v62ImpliedUtilization)
+              : result.v62ImpliedUtilization
+          }
+          hint={`가맹점 평균 상품매출 비율 ${productRatio != null ? formatPercent(productRatio, 0) : "50%"} 기준으로 환산 (100% 초과 시 수요초과 신호)`}
         />
       </div>
 

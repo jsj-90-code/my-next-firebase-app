@@ -20,6 +20,21 @@ export type ProfitLoss = {
   rentMissing: boolean; // 임대료 칸이 비어 0으로 계산함
 };
 
+// 순수익 등급(2026-10-20 사용자 — 다우 심사글 "점포 개발자 AI 등급"과 같은 규칙): 1,000만원마다 A 하나, 남은 돈이 500만원 이상이면 +.
+// 1,000만→A · 1,500만→A+ · 2,000만→AA · 2,500만→AA+. 1,000만원 미만은 등급 없음(null).
+const PROFIT_GRADE_STEP = 10_000_000;
+const PROFIT_GRADE_PLUS = 5_000_000;
+
+export function profitGrade(netProfit: number | null | undefined): string | null {
+  if (netProfit == null || !Number.isFinite(netProfit) || netProfit < PROFIT_GRADE_STEP) return null;
+  const a = Math.floor(netProfit / PROFIT_GRADE_STEP);
+  return "A".repeat(a) + (netProfit - a * PROFIT_GRADE_STEP >= PROFIT_GRADE_PLUS ? "+" : "");
+}
+
+export function describeProfitGrade(): string {
+  return `순수익 ${manwon(PROFIT_GRADE_STEP)}당 A, 남은 ${manwon(PROFIT_GRADE_PLUS)} 이상이면 +`;
+}
+
 const pct = (r: number) => `${(r * 100).toFixed(1).replace(/\.0$/, "")}%`;
 const manwon = (won: number) => `${Math.round(won / 10_000).toLocaleString("ko-KR")}만원`;
 

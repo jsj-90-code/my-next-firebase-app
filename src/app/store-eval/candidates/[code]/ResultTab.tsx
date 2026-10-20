@@ -47,6 +47,7 @@ import { sectionClass, sectionTitleClass, DateField, NumberField, TextAreaField,
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 import { ProfitLossPanel } from "./ProfitLossPanel";
+import { computeProfitLoss, describeProfitGrade, profitGrade } from "@/lib/storeEval/profitLoss";
 
 function judgementStyle(j: FinalJudgement | null): string {
   if (j === "평가 완료") return "app-badge-ok";
@@ -1356,12 +1357,22 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <h3 className={sectionTitleClass}>상권 / 경쟁 지표</h3>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard label="상권수요" value={formatNumber(result.marketDemand)} />
-          {/* 2026-09-23 — 등급 기준(절대평가 경계선)을 같이 적는다. 숫자는 계산에 쓴 settings에서 읽는다. */}
-          <ResultCard
-            label="상권등급"
-            value={result.marketGrade ?? "-"}
-            hint={describeMarketGradeThresholds(settingsUsed)}
-          />
+          {/* 2026-10-20 사용자 — 상권등급을 상권수요(SS/S/A/B)가 아니라 순수익 등급(1,000만원당 A, 500만원 +)으로.
+              순수익은 아래 예상 손익과 같은 계산(최종예상월매출 기준). 옛 상권수요 등급은 hint에 남긴다. */}
+          {(() => {
+            const final = pickFinalRevenue(candidateForReport, result);
+            const pcCount = candidateForReport?.expectedPcCount ?? result.expectedPcCount;
+            const pl = final.value != null && final.value > 0 && pcCount
+              ? computeProfitLoss({ revenue: final.value, pcCount, monthlyRent: candidateForReport?.monthlyRent, monthlyMaintenanceFee: candidateForReport?.monthlyMaintenanceFee, settings: settingsUsed.profitLoss ?? defaultModelSettings().profitLoss })
+              : null;
+            return (
+              <ResultCard
+                label="상권등급"
+                value={pl ? (profitGrade(pl.netProfit) ?? "등급 없음") : "-"}
+                hint={`${pl ? `순수익 ${formatManwon(pl.netProfit)} (최종예상월매출 ${formatManwon(final.value)} · ${final.source === "담당자" ? "담당자 판단" : final.source} 기준) · ` : ""}${describeProfitGrade()}${pl?.rentMissing ? " · 임대료 미입력" : ""} · 상권수요 등급 ${result.marketGrade ?? "-"}(${describeMarketGradeThresholds(settingsUsed)})`}
+              />
+            );
+          })()}
           {/* 2026-09-28 사용자: "번화가라고 하면 지역에서 가장 활성화된 상권인데, 주거가 많으면 번화가로 안 잡힐 수 있잖아" —
               이 값은 상권 성격이 아니라 V62가 어느 원수요(유동/주거)를 쓰는지 고르는 **스위치**(유동÷주거 비율)다. 발산역(유동 21.9만)이
               "주거중심"으로 나오던 이유. 산식은 그대로 두고 표기만 뜻대로 바꾸고, 번화가 여부는 옆 카드의 유동 절대량으로 읽게 한다. */}
@@ -1522,7 +1533,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               competitors={competitorsForReport}
               summarySection={reportDraft?.summarySection}
               accuracy={accuracy}
-              productRatio={settingsUsed.measuredForecastProductRatio}
+              productRatio={settingsUsed.franchiseProductShare ?? defaultModelSettings().franchiseProductShare}
             />
           </div>
         </div>

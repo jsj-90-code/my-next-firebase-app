@@ -56,6 +56,7 @@ export function modelSettingsValidationErrors(f: ModelSettings): string[] {
   };
   ratio("기본 상품매출비율", f.measuredForecastProductRatio);
   ratio("데이터 재검토 가동률 기준", f.measuredForecastMaxReviewUtilization);
+  ratio("가맹점 평균 상품매출 비중", f.franchiseProductShare);
   ratio("물리적 가동률 상한", f.v62MaxUtilizationRate, { allowZero: false });
   for (const [k, v] of Object.entries(f.marketDemandEffectiveRate)) {
     ratio(`상권 유효수요율 - ${k}`, v, { allowZero: false });

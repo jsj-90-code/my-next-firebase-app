@@ -602,6 +602,9 @@ export type ModelSettings = {
   // "신규점 실측예측" 공통계수 (08_계산기준!C50/C51)
   measuredForecastProductRatio: number; // 0.5 — 기본 상품매출비율(이 파이프라인 전용, 다른 상품비율과 별개)
   measuredForecastMaxReviewUtilization: number; // 0.5 — 초과 시 "데이터 재검토"
+  // 2026-10-20 신설 — 가맹점 평균 상품매출 비중. 분석 카드의 "필요한 가동률" 환산 전제(사용자: "50 말고 가맹점평균").
+  // 산식 계수(measuredForecastProductRatio)는 그대로 두고 카드 표시만 이 값으로 다시 환산한다.
+  franchiseProductShare: number;
   // 2026-10-16 신설 — 신규 후보지 예상 손익(profitLoss.ts) 표준값. 재경 "가맹관리부용 운영수익 파일" PC 탭
   // 기존점 14곳 한 달 치에서 뽑은 중앙값. 금액은 원·월·부가세 별도(공급가액), 비율은 공급가액 매출 대비.
   profitLoss: ProfitLossSettings;

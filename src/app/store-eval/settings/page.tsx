@@ -680,6 +680,13 @@ export default function StoreEvalSettingsPage() {
         ] as const).map(([key, label]) => (
           <NumberInput key={key} label={label} value={form.profitLoss[key]} onChange={(v) => updateGroup("profitLoss", key, v)} readOnly={readOnly} />
         ))}
+        <NumberInput
+          label="가맹점 평균 상품매출 비중 (분석 카드 필요 가동률)"
+          value={form.franchiseProductShare}
+          onChange={(v) => updateTop("franchiseProductShare", v)}
+          readOnly={readOnly}
+          hint="매출DB 기존점 평균. 2026-10-20 40곳 측정 52.4%(중앙 52.8%)"
+        />
       </Section>
 
       <Section title="브랜드 필터 / 포화 기준 / 모델버전" collapsed>

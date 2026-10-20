@@ -153,6 +153,9 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     ],
     measuredForecastProductRatio: 0.5,
     measuredForecastMaxReviewUtilization: 0.5,
+    // 2026-10-20 측정 — 매출DB(storeEvalExistingStoreSales) 기존점 40곳, 매장별 (상품매출 합 ÷ 총매출 합)의 평균 52.4%
+    // (중앙 52.8%, 범위 43.8~59.1%, 최근 12개월만 39곳 52.3%). 분석 카드 필요 가동률의 전제. 표본이 늘면 다시 잰다.
+    franchiseProductShare: 0.524,
     // 2026-10-16 사용자 지시 — 신규 후보지 예상 손익 표준값. 원본: "가맹관리부용 운영수익 파일(샘플)"(양식만 재경, 숫자는 우리가 매장마다 협조받아 넣음 — 더 모으지 않는다, 사용자 10-16) PC 번화가·주택가·대학가
     // 탭, 기존점 14곳 한 달 치. 임대료·관리비는 후보지마다 다우 심사글 값을 쓰므로 여기 없다.
     // **전부 부가세 포함 금액 기준**(사용자 10-16 "매출이랑 매출원가 다 부가세 포함가로" — 점포팀 손익표와 같은 방식).
