@@ -17,6 +17,7 @@
 
 import { formatManwon, formatManwonRough, formatNumber, formatPercent, formatScore } from "./format";
 import { normalizePercentLike } from "./calc";
+import { profitGrade } from "./profitLoss";
 import type { CandidateInput, Competitor, EvaluationResult, LocationEvaluation } from "./types";
 
 export type DaouReportContextCandidate = Pick<
@@ -90,39 +91,22 @@ export function competitivenessLabel(gap: number | null): string | null {
 }
 
 /**
- * 점포평가 등급 (2026-09-13 사용자 확정 규칙)
- *
- * 실제 평가기록 맨 윗줄의 "점포평가 : MAA" 가 이것이다. 두 축을 붙여 만든다.
- *   앞자리 M — 상권성격이 "번화가"일 때만 붙인다(아니면 아예 안 붙임)
- *   뒷자리   — 선투자 프로모션 어느 기준까지 충족하는지
- *              AA : 2,000만원 기준매출 이상   (= 1억원 선투자 기준)
- *              A+ : 1,500만원 기준매출 이상
- *              A  : 1,000만원 기준매출 이상
- *
- * 기준매출은 "오픈월부터 10개월 순수익 N만원"을 내려면 필요한 월매출이므로, 기준이 높을수록
- * 요구 매출도 높다(2,000만원 기준 > 1,500만원 기준 > 1,000만원 기준). 그래서 높은 쪽부터 검사한다.
+ * 점포평가 등급 — 실제 평가기록 맨 윗줄의 "점포평가 : MAA" 가 이것이다. 두 축을 붙여 만든다.
+ *   앞자리 M — 상권성격이 "번화가"일 때만 붙인다(2026-09-13 사용자 확정)
+ *   뒷자리   — 순수익 등급(profitGrade: 1,000만원당 A, 남은 500만원 이상 +). 2026-10-20 사용자 "카드 배지랑 다우 등급도
+ *              순수익 등급으로" — 예전엔 선투자 기준매출(2,000/1,500/1,000만원 → AA/A+/A)로 매겼다.
+ *              순수익은 결과 탭 예상 손익과 같은 계산(최종예상월매출 기준, finalNetProfit).
  *
  * **AI에게 맡기지 않고 코드가 확정한다.** 이 한 줄이 결재 문서의 결론이라, 모델이 그럴듯하게
- * 지어내면 잘못된 등급이 그대로 올라간다. 셋 다 미달이면 null을 반환하고 화면이 "직접 입력"으로
+ * 지어내면 잘못된 등급이 그대로 올라간다. 순수익 1,000만원 미만이면 null을 반환하고 화면이 "직접 입력"으로
  * 표시한다 — 그 경우의 등급명은 정해진 바가 없어 임의로 만들지 않는다.
  */
 export function storeEvaluationGrade(
-  result: Pick<EvaluationResult, "marketCharacter" | "v62Final" | "aaBaselineRevenue" | "aaBaselineRevenue1500" | "aaBaselineRevenue1000">,
+  input: { marketCharacter: EvaluationResult["marketCharacter"]; netProfit: number | null | undefined },
 ): string | null {
-  const revenue = result.v62Final;
-  if (revenue == null) return null;
-
-  const tier =
-    result.aaBaselineRevenue != null && revenue >= result.aaBaselineRevenue
-      ? "AA"
-      : result.aaBaselineRevenue1500 != null && revenue >= result.aaBaselineRevenue1500
-        ? "A+"
-        : result.aaBaselineRevenue1000 != null && revenue >= result.aaBaselineRevenue1000
-          ? "A"
-          : null;
+  const tier = profitGrade(input.netProfit);
   if (tier == null) return null;
-
-  return result.marketCharacter === "번화가" ? `M${tier}` : tier;
+  return input.marketCharacter === "번화가" ? `M${tier}` : tier;
 }
 
 /** 1~5점 항목을 사람이 읽는 말로. 실제 문서가 "제약이 있음"/"우위" 같은 말로 쓰는 자리라 숫자만

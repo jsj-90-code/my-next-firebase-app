@@ -47,7 +47,7 @@ import { sectionClass, sectionTitleClass, DateField, NumberField, TextAreaField,
 import { ReportCard } from "./ReportCard";
 import { PriceScenarioPanel } from "@/components/storeEval/PriceScenarioPanel";
 import { ProfitLossPanel } from "./ProfitLossPanel";
-import { computeProfitLoss, describeProfitGrade, profitGrade } from "@/lib/storeEval/profitLoss";
+import { describeProfitGrade, finalNetProfit, profitGrade } from "@/lib/storeEval/profitLoss";
 
 function judgementStyle(j: FinalJudgement | null): string {
   if (j === "평가 완료") return "app-badge-ok";
@@ -1000,7 +1000,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   if (!result || !settingsUsed) return null;
 
   // 점포평가 등급 — 계산으로 확정한다(AI에게 맡기지 않는 이유는 아래 초안 섹션 주석 참고).
-  const reportGrade = storeEvaluationGrade(result);
+  // 2026-10-20 — 상권등급 카드·분석 카드 배지·다우 등급이 같은 순수익(최종예상월매출 기준 예상 손익)을 쓴다.
+  const gradeProfit = finalNetProfit(candidateForReport, result, settingsUsed.profitLoss ?? defaultModelSettings().profitLoss);
+  const reportGrade = storeEvaluationGrade({ marketCharacter: result.marketCharacter, netProfit: gradeProfit.pl?.netProfit });
 
   // 결재 전 확인 신호 — 규칙으로만 모은다(reviewSignals.ts). 후보지 값이 아직 로드되지 않았으면
   // 입력 기반 신호는 건너뛰고 계산 결과 기반 신호만 나온다.
@@ -1360,11 +1362,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           {/* 2026-10-20 사용자 — 상권등급을 상권수요(SS/S/A/B)가 아니라 순수익 등급(1,000만원당 A, 500만원 +)으로.
               순수익은 아래 예상 손익과 같은 계산(최종예상월매출 기준). 옛 상권수요 등급은 hint에 남긴다. */}
           {(() => {
-            const final = pickFinalRevenue(candidateForReport, result);
-            const pcCount = candidateForReport?.expectedPcCount ?? result.expectedPcCount;
-            const pl = final.value != null && final.value > 0 && pcCount
-              ? computeProfitLoss({ revenue: final.value, pcCount, monthlyRent: candidateForReport?.monthlyRent, monthlyMaintenanceFee: candidateForReport?.monthlyMaintenanceFee, settings: settingsUsed.profitLoss ?? defaultModelSettings().profitLoss })
-              : null;
+            const { final, pl } = gradeProfit;
             return (
               <ResultCard
                 label="상권등급"
@@ -1433,16 +1431,16 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <div className="mt-4 flex flex-col gap-3">
             {/* 2026-09-13 — 실제 평가기록은 맨 윗줄이 "점포평가 : MAA"다. 이 등급만은 AI가 아니라
                 코드가 확정한다(storeEvaluationGrade) — 결재 문서의 결론이라 모델이 그럴듯하게
-                지어내면 잘못된 등급이 그대로 올라간다. 규칙: 번화가면 앞에 M, 뒤는 선투자
-                프로모션 충족 기준(2,000만원→AA / 1,500만원→A+ / 1,000만원→A). */}
+                지어내면 잘못된 등급이 그대로 올라간다. 규칙: 번화가면 앞에 M, 뒤는 순수익 등급
+                (2026-10-20부터, describeProfitGrade). */}
             <div className="app-card-sm rounded-xl p-3">
               <p className="text-xs font-semibold text-[var(--sl-ink-soft)]">점포평가 등급</p>
               {reportGrade ? (
                 <p className="mt-1 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">점포평가 : {reportGrade}</p>
               ) : (
                 <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
-                  점포평가 : <span className="text-[var(--sl-warn)]">해당 없음</span> — 예상 월매출이 1,000만원 기준매출에도
-                  못 미쳐 자동 판정 대상이 아닙니다. 직접 판단해서 적어주세요.
+                  점포평가 : <span className="text-[var(--sl-warn)]">해당 없음</span> — 예상 순수익이 첫 등급(A)에 못 미쳐
+                  자동 판정 대상이 아닙니다({describeProfitGrade()}). 직접 판단해서 적어주세요.
                 </p>
               )}
             </div>
@@ -1534,6 +1532,7 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
               summarySection={reportDraft?.summarySection}
               accuracy={accuracy}
               productRatio={settingsUsed.franchiseProductShare ?? defaultModelSettings().franchiseProductShare}
+              grade={reportGrade}
             />
           </div>
         </div>

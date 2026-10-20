@@ -2,7 +2,8 @@
 // 예상월매출(V62·실험실·담당자 판단 — 매출DB와 같은 부가세 포함 결제총액)을 settings.vatDivisor로 나눈 기준(기본 1 =
 // 부가세 포함 그대로, 사용자 10-16)에서 재경 운영수익 양식 순서대로 비용을 뺀다. 임대료·관리비는 후보지마다(다우 심사글), 나머지는
 // settings.profitLoss 표준값(기존점 14곳 중앙, 근거는 settings.ts 주석).
-import type { ProfitLossSettings } from "./types";
+import { pickFinalRevenue } from "./finalRevenue";
+import type { CandidateInput, EvaluationResult, ProfitLossSettings } from "./types";
 
 export type ProfitLossLine = { key: string; label: string; amount: number; basis: string };
 
@@ -33,6 +34,20 @@ export function profitGrade(netProfit: number | null | undefined): string | null
 
 export function describeProfitGrade(): string {
   return `순수익 ${manwon(PROFIT_GRADE_STEP)}당 A, 남은 ${manwon(PROFIT_GRADE_PLUS)} 이상이면 +`;
+}
+
+/** 등급에 쓰는 순수익 — 최종예상월매출(pickFinalRevenue: 담당자 판단 → 추천 산식 → V62) 기준 예상 손익. 상권등급 카드·분석 카드 배지·다우 등급이 같이 쓴다. */
+export function finalNetProfit(
+  candidate: Pick<CandidateInput, "judgedRevenue" | "expectedPcCount" | "monthlyRent" | "monthlyMaintenanceFee"> | null | undefined,
+  result: Pick<EvaluationResult, "v62Final" | "dualEstimate" | "expectedPcCount">,
+  settings: ProfitLossSettings,
+): { final: ReturnType<typeof pickFinalRevenue>; pl: ProfitLoss | null } {
+  const final = pickFinalRevenue(candidate, result);
+  const pcCount = candidate?.expectedPcCount ?? result.expectedPcCount;
+  const pl = final.value != null && final.value > 0 && pcCount
+    ? computeProfitLoss({ revenue: final.value, pcCount, monthlyRent: candidate?.monthlyRent, monthlyMaintenanceFee: candidate?.monthlyMaintenanceFee, settings })
+    : null;
+  return { final, pl };
 }
 
 const pct = (r: number) => `${(r * 100).toFixed(1).replace(/\.0$/, "")}%`;

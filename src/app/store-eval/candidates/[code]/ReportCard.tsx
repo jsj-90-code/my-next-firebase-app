@@ -8,7 +8,7 @@
 // 있는 값 그대로다 - 새 계산 없음.
 
 import { formatDate, formatManwon, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
-import { competitivenessLabel, storeEvaluationGrade } from "@/lib/storeEval/reportContext";
+import { competitivenessLabel } from "@/lib/storeEval/reportContext";
 import { computeImpliedUtilizationFromRevenue } from "@/lib/storeEval/calc";
 import type { CandidateInput, Competitor, EvaluationResult, ModelAccuracySummary } from "@/lib/storeEval/types";
 
@@ -103,6 +103,7 @@ export function ReportCard({
   summarySection,
   accuracy,
   productRatio,
+  grade,
 }: {
   result: EvaluationResult;
   candidate: Pick<CandidateInput, "name" | "address" | "expectedPcCount" | "hourlyRate" | "judgedRevenue" | "judgedReason">;
@@ -115,13 +116,14 @@ export function ReportCard({
   // 다른 기준으로 오해한다 — 평가기록 문구와 같은 방식으로 명시한다.
   // 2026-10-20 사용자 "50 말고 가맹점평균" → settings.franchiseProductShare를 받아 카드에서 다시 환산한다.
   productRatio?: number | null;
+  // 점포평가 등급(storeEvaluationGrade) — 순수익을 내려면 임대료 등 후보지 값이 필요해 결과 탭이 계산해 넘긴다(2026-10-20).
+  grade: string | null;
 }) {
   const investigated = competitors.filter((c) => c.investigationStatus !== "경쟁점없음");
   const topCompetitors = [...investigated]
     .filter((c) => c.distanceM != null)
     .sort((a, b) => (a.distanceM ?? 0) - (b.distanceM ?? 0))
     .slice(0, 3);
-  const grade = storeEvaluationGrade(result);
 
   return (
     <div
