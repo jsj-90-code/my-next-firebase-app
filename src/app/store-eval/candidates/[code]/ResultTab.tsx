@@ -926,6 +926,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             groundLevel: candidateForReport.groundLevel,
             hasElevator: candidateForReport.hasElevator,
             expectedPcCount: candidateForReport.expectedPcCount,
+            // 2026-10-21 — 경쟁점 사양과 비교해 업그레이드 권장을 쓰는 재료(reportContext 주석).
+            ownCpu: candidateForReport.ownCpu,
+            ownVgaBase: candidateForReport.ownVgaBase,
+            ownRam: candidateForReport.ownRam,
           },
           competitors: competitorsForReport.map((c) => ({
             name: c.name,
@@ -935,6 +939,12 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
             // 근거로 쓸 수 있다(reportContext 주석 참고).
             totalPcCount: c.totalPcCount,
             pingbotUtilization: c.pingbotUtilization,
+            // 2026-10-21 — 층(우리 층 단점이 경쟁점과 같은 조건인지)과 기본 사양(업그레이드 권장 근거).
+            floor: c.floor,
+            groundLevel: c.groundLevel,
+            cpu: c.cpu,
+            vgaBase: c.vgaBase,
+            ram: c.ram,
           })),
           // 2026-09-13 추가 — 평가자가 직접 쓴 메모가 [상권] 섹션의 핵심 근거다.
           locationEvaluation: locationForReport

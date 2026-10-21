@@ -13,7 +13,12 @@
 //   - 층수·엘리베이터 → "7층에 위치해 접근성과 가시성에 일부 제약" 서술
 //   - 경쟁력 세부 점수 → "존 구성은 우위, 좌석 사양은 열위" 같은 구체적 비교
 //   - V62가 전제하는 가동률 → 실제 문서의 [종합 의견]에 거의 항상 나오는 문장
+//     (2026-10-21 뺐다 — 사용자: "V62는 가동률을 재지 않으니" 매출을 거꾸로 푼 숫자는 근거가 아니다)
 //   - 선투자 프로모션 기준매출 → 실제 문서의 네 번째 섹션
+//
+// 2026-10-21 — 경쟁점 층·대수·사양과 자사 기본 사양을 넘긴다. 사용자가 올린 구리돌다리점2 멘트가
+// "주요 경쟁점이 32GB 메모리라 메모리 32GB 업그레이드 권장"처럼 **사양 비교에서 바로 나오는 권장**과,
+// "경쟁점도 같은 지하라 층 단점이 아니다"는 판단을 썼다. 이름·거리만 주면 AI가 둘 다 할 수 없다.
 
 import { formatManwon, formatManwonRough, formatNumber, formatPercent, formatScore } from "./format";
 import { normalizePercentLike } from "./calc";
@@ -34,6 +39,10 @@ export type DaouReportContextCandidate = Pick<
   | "groundLevel"
   | "hasElevator"
   | "expectedPcCount"
+  // 2026-10-21 — 자사 기본 사양(경쟁점 사양과 비교해 업그레이드 권장을 쓰는 재료).
+  | "ownCpu"
+  | "ownVgaBase"
+  | "ownRam"
 >;
 // 2026-09-13 — 핑봇 가동률과 전체대수를 추가한다. 실제 평가기록이 "123대 규모에서 약 30%의
 // 가동률이 확인되어 기본적인 PC방 이용수요가 확보된 상권으로 판단됨"처럼 **경쟁점의 실측
@@ -42,6 +51,8 @@ export type DaouReportContextCandidate = Pick<
 export type DaouReportContextCompetitor = Pick<
   Competitor,
   "name" | "distanceM" | "investigationStatus" | "totalPcCount" | "pingbotUtilization"
+  // 2026-10-21 — 층(우리 층 단점이 경쟁점과 같은 조건인지)과 기본 사양(업그레이드 권장 근거).
+  | "floor" | "groundLevel" | "cpu" | "vgaBase" | "ram"
 >;
 // 2026-09-13 추가 — 입지동선평가. 점수(1~5)보다 **메모 두 개가 핵심**이다. 상권의 성격을 사람이
 // 직접 적어둔 유일한 자리이고, 실제 평가기록의 [상권] 섹션은 사실상 이 내용을 다듬은 것이다.
@@ -62,8 +73,8 @@ export type DaouReportContextInput = {
   competitors: DaouReportContextCompetitor[];
   locationEvaluation?: DaouReportContextLocation | null;
   result: EvaluationResult;
-  // 상품매출비율(기본 0.5) — 실제 문서가 "상품매출 비율 50% 기준 약 29%의 가동률"이라고 쓸 때의
-  // 그 50%다. v62ImpliedUtilization이 이 비율을 전제로 역산된 값이라 함께 넘겨야 문장이 맞는다.
+  // 상품매출비율(기본 0.5) — [필요 가동률] 문장용이었다. 2026-10-21 그 줄을 빼서 지금은 안 쓴다
+  // (호출부가 아직 넘기므로 자리만 둔다).
   productRatio?: number | null;
   // 2026-09-13 — 결재 전 확인 신호 중 **문서에 쓸 만한 것만**(forReport) 걸러서 넘긴다.
   // 실제 평가기록은 "다수의 경쟁점과 수요를 나눠야 하며", "요금 인하 등 적극적인 공동 대응이
@@ -125,7 +136,6 @@ export function buildDaouReportContext({
   competitors,
   locationEvaluation,
   result,
-  productRatio,
   riskNotes,
 }: DaouReportContextInput): string {
   const lines: string[] = [];
@@ -144,6 +154,8 @@ export function buildDaouReportContext({
   }
   if (candidate.hasElevator != null) siteFacts.push(candidate.hasElevator ? "엘리베이터 있음" : "엘리베이터 없음");
   if (siteFacts.length > 0) lines.push(`[점포 조건] ${siteFacts.join(", ")}`);
+  const ownSpec = [candidate.ownCpu, candidate.ownVgaBase, candidate.ownRam].filter((v): v is string => !!v?.trim());
+  if (ownSpec.length > 0) lines.push(`[자사 기본 사양] ${ownSpec.join(" · ")}`);
 
   // 2026-08-25 — 상권등급(SS/S/A/B)은 다우오피스 보고서에 언급하지 않는다(사용자 확인).
   // 반경500m 지하철승하차는 소상공인365에서 이미 뽑아둔 값인데 있을 때만 "특이사항"으로 붙인다
@@ -196,7 +208,14 @@ export function buildDaouReportContext({
     lines.push("[경쟁점] 조사된 경쟁점 없음.");
   } else {
     const list = investigated
-      .map((c) => `${c.name || "(이름 없음)"}(${c.distanceM != null ? `${formatNumber(c.distanceM)}m` : "거리 미상"})`)
+      .map((c) => {
+        const facts = [c.distanceM != null ? `${formatNumber(c.distanceM)}m` : "거리 미상"];
+        if (c.floor != null) facts.push(`${c.groundLevel === "지하" ? "지하" : ""}${c.floor}층`);
+        if (c.totalPcCount != null) facts.push(`${formatNumber(c.totalPcCount)}대`);
+        const spec = [c.cpu, c.vgaBase, c.ram].filter((v): v is string => !!v?.trim());
+        if (spec.length > 0) facts.push(spec.join(" · "));
+        return `${c.name || "(이름 없음)"}(${facts.join(", ")})`;
+      })
       .join(", ");
     lines.push(`[경쟁점] 총 ${investigated.length}곳 — ${list}`);
   }
@@ -250,19 +269,9 @@ export function buildDaouReportContext({
       `시간당요금 ${formatNumber(result.hourlyRate)}원, 예상 월매출 약 ${formatManwonRough(result.v62Final)}`,
   );
 
-  // 2026-09-13 추가 — **이 줄이 이번 수정의 핵심이다.** 실제 평가기록의 [종합 의견]은 거의 항상
-  // "N대·시간당 X원·상품매출 비율 50% 기준 약 Y%의 가동률이 필요함"으로 끝난다. 예전 프롬프트는
-  // 오히려 "V62는 회귀모형이라 가동률 같은 중간 단계가 없으니 지어내지 마라"고 **금지**하고
-  // 있었는데, 2026-09-11에 v62ImpliedUtilization(V62 최종예상월매출을 같은 공식으로 거꾸로 풀어낸
-  // 가동률)이 생기면서 이제 지어내지 않고도 쓸 수 있게 됐다. 금지를 풀고 정식 재료로 넘긴다.
-  if (result.v62ImpliedUtilization != null) {
-    const ratioText = productRatio != null ? `상품매출 비율 ${formatPercent(productRatio, 0)} 기준 ` : "";
-    lines.push(
-      `[필요 가동률] ${formatNumber(result.expectedPcCount)}대·시간당 이용요금 ${formatNumber(result.hourlyRate)}원·${ratioText}` +
-        `위 예상 월매출을 달성하려면 약 ${formatPercent(result.v62ImpliedUtilization, 0)}의 가동률이 필요함 ` +
-        `(위 예상 월매출을 거꾸로 풀어낸 값이므로 지어낸 수치가 아님 — 종합 의견에 반드시 포함할 것).`,
-    );
-  }
+  // 2026-09-13에 [필요 가동률](v62ImpliedUtilization — V62 매출을 거꾸로 푼 가동률) 줄을 넣었다가
+  // 2026-10-21에 뺐다. 사용자: "V62는 가동률을 재지 않으니" 결재 문서에 근거로 쓰지 않는다
+  // (구리돌다리점2 멘트부터). 재료에서 빼야 AI가 안 쓴다 — 프롬프트로 막는 것보다 확실하다.
 
   // 2026-09-13 추가 — 선투자 프로모션 섹션의 재료. 사용자 확인(2026-09-13): 실제 문서가 말하는
   // "1억원 선투자 프로모션에 필요한 평균 월매출"이 곧 화면의 "2,000만원 기준매출"(aaBaselineRevenue,

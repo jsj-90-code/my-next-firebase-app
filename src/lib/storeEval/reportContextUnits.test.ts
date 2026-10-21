@@ -27,6 +27,26 @@ const competitor = (over: Partial<Competitor> = {}) => ({
   totalPcCount: 100, pingbotUtilization: 30, ...over,
 }) as unknown as Competitor;
 
+// 2026-10-21 — 다우 멘트 구조 개편(사용자 구리돌다리점 멘트). 필요 가동률은 재료에서 빼고,
+// 층 비교·사양 업그레이드 권장에 쓸 경쟁점 층·사양과 자사 기본 사양을 넘긴다.
+describe("보고서 컨텍스트 — 2026-10-21 멘트 구조", () => {
+  it("[필요 가동률] 줄을 넘기지 않는다", () => {
+    const text = buildDaouReportContext({ candidate, competitors: [competitor()], result, productRatio: 0.5 });
+    expect(text).not.toContain("[필요 가동률]");
+    expect(text).not.toContain("가동률이 필요");
+  });
+
+  it("경쟁점 층·대수·사양과 자사 기본 사양을 넘긴다", () => {
+    const text = buildDaouReportContext({
+      candidate: { ...candidate, ownCpu: "울트라5 225F", ownVgaBase: "RTX 5060", ownRam: "16GB" },
+      competitors: [competitor({ floor: 1, groundLevel: "지하", cpu: "i5 14400F", vgaBase: "RTX 5060", ram: "32GB" })],
+      result,
+    });
+    expect(text).toContain("[자사 기본 사양] 울트라5 225F · RTX 5060 · 16GB");
+    expect(text).toContain("경쟁점A(200m, 지하1층, 100대, i5 14400F · RTX 5060 · 32GB)");
+  });
+});
+
 describe("보고서 컨텍스트 — 핑봇 가동률 단위", () => {
   it("% 표기(30)를 30%로 쓴다 (3000%가 아니다)", () => {
     const text = buildDaouReportContext({ candidate, competitors: [competitor()], result });
