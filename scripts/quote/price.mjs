@@ -48,6 +48,15 @@ function saleLines(t) {
   }
   return out;
 }
+// 계약 1건 총 마진 — 원본 최종 탭 '본사 내부 정리'의 "본사 마진 (최종)"(예시 매장 기준). 없으면 null
+// 목표 마진(블랙·골드 1건당)은 10-26 부장님께 확인 예정 — 받으면 여기서 "목표 대비 여유"를 같이 보인다
+async function totalMargin(id) {
+  const v = (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q("최종")}!A1:F80`, valueRenderOption: "UNFORMATTED_VALUE" })).data.values || [];
+  const r = v.find((x) => String(x[2] || "").startsWith("본사 마진 (최종)"));
+  return typeof r?.[5] === "number" ? r[5] : null;
+}
+const costTotal = (t) => t.v[t.end]?.[t.totalCol]; // 탭 '합계 금액' 줄의 원가 합계
+
 // 단위당 원가 전·후: 그 줄의 원가 K가 바뀌었으면 K, 아니면 원가 합계 L ÷ 수량(서버 세트처럼 부품 원가를 합계 칸에서 묶는 줄)
 function unitCosts(b, a) {
   if (typeof b.K === "number" && typeof a.K === "number" && a.K !== b.K) return [b.K, a.K];
@@ -90,6 +99,8 @@ async function preview() {
     const affected = [...new Set(costs.filter((c) => c.oldCost !== c.newCost).map((c) => c.tab))];
     const meta = (await sheets.spreadsheets.get({ spreadsheetId: id, fields: "sheets(properties(sheetId,title))" })).data.sheets;
     const temps = [];
+    const marginBefore = await totalMargin(id);
+    let dCostTotal = 0;
     try {
       for (const title of affected) {
         const src = meta.find((s) => s.properties.title === title).properties.sheetId;
@@ -99,7 +110,9 @@ async function preview() {
           { range: `${q(tmp.title)}!${c.costCol}${c.row}`, values: [[c.newCost]] },
           ...(c.vatCol ? [{ range: `${q(tmp.title)}!${c.vatCol}${c.row}`, values: [[c.newVat]] }] : [])]);
         await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "RAW", data } });
-        const before = saleLines(tabs[title]), after = saleLines(await readTab(id, tmp.title));
+        const tmpTab = await readTab(id, tmp.title);
+        dCostTotal += (costTotal(tmpTab) || 0) - (costTotal(tabs[title]) || 0);
+        const before = saleLines(tabs[title]), after = saleLines(tmpTab);
         for (const [row, b] of Object.entries(before)) {
           const a = after[row]; const uc = a && unitCosts(b, a); if (!uc) continue;
           const [kb, ka] = uc, dK = ka - kb, rate = kb ? b.F / kb : null;
@@ -111,7 +124,7 @@ async function preview() {
     } finally {
       if (temps.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: temps.map((sheetId) => ({ deleteSheet: { sheetId } })) } });
     }
-    plan.books[bk] = { costs, skipped, notFound, lines };
+    plan.books[bk] = { costs, skipped, notFound, lines, marginBefore, marginAfter: marginBefore == null ? null : marginBefore - dCostTotal };
   }
   mkdirSync(dirname(PLAN), { recursive: true });
   writeFileSync(PLAN, JSON.stringify(plan, null, 2));
@@ -121,6 +134,7 @@ async function preview() {
     for (const c of p.costs) console.log(`  ${c.tab} ${c.costCol}${c.row} [${c.text.replace(/\n/g, " ").slice(0, 34)}]${c.n > 1 ? ` ×${c.n}` : ""}: ${won(c.oldCost)} → ${won(c.newCost)}${c.oldCost === c.newCost ? " (같음)" : ""}${c.vatCol ? ` | 매입가 ${won(c.oldVat)} → ${won(c.newVat)}` : ""}`);
     for (const s of p.skipped) console.log(`  (안 고침) ${s.tab} ${s.row}행 [${s.text.slice(0, 30)}]: ${s.why}`);
     for (const x of p.notFound) console.log(`  ✗ 못 찾음: ${x.항목} ${x.모델}`);
+    if (p.marginBefore != null) console.log(`  계약 1건 총 마진(예시 매장, 판매 단가 그대로일 때): ${won(p.marginBefore)} → ${won(p.marginAfter)} (${p.marginAfter >= p.marginBefore ? "+" : ""}${won(p.marginAfter - p.marginBefore)})`);
     if (p.lines.length) console.log(`  판매 줄 마진 변화(단위당):`);
     for (const l of p.lines) {
       const pct = (m, F) => (F ? ((m / F) * 100).toFixed(1) + "%" : "-");
@@ -138,7 +152,7 @@ async function apply() {
   for (const [bk, p] of Object.entries(plan.books)) {
     const id = origOf(bk), fin = `${q("최종")}!${BOOKS[bk].finalCell}`;
     const amount = async () => (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: fin, valueRenderOption: "UNFORMATTED_VALUE" })).data.values?.[0]?.[0];
-    const before = await amount();
+    const before = await amount(), mBefore = await totalMargin(id);
     // 미리보기 뒤 원본이 바뀌었으면 멈춘다(누가 그 사이 고친 칸을 덮지 않게)
     const checks = p.costs.map((c) => `${q(c.tab)}!${c.costCol}${c.row}`);
     if (checks.length) {
@@ -152,8 +166,9 @@ async function apply() {
     const myPrices = prices.filter((x) => x.book === bk);
     for (const x of myPrices) data.push({ range: `${q(x.tab)}!F${x.row}`, values: [[x.price]] });
     if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "RAW", data } });
-    const after = await amount();
-    console.log(`■ ${BOOKS[bk].label}: 원가 ${data.length - myPrices.length}칸·판매 단가 ${myPrices.length}칸 씀 | 최종 금액 ${won(before)} → ${won(after)}${before === after ? " (변화 없음)" : ""}`);
+    const after = await amount(), mAfter = await totalMargin(id);
+    console.log(`■ ${BOOKS[bk].label}: 원가 ${data.length - myPrices.length}칸·판매 단가 ${myPrices.length}칸 씀 | 최종 금액 ${won(before)} → ${won(after)}${before === after ? " (변화 없음)" : ""}` +
+      (mBefore != null ? ` | 계약 1건 총 마진 ${won(mBefore)} → ${won(mAfter)}` : ""));
   }
 }
 
