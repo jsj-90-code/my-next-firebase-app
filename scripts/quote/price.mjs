@@ -146,28 +146,112 @@ async function preview() {
   console.log(`\n계획 저장: ${PLAN}`);
 }
 
+// ---------- 적용: 쓰기 전에 정답지를 만들고, 쓴 뒤 대조, 다르면 되돌림 ----------
+// 10-23 사용자 지적: 미리보기 표가 맞아도 실제 쓰기가 어긋나면 sync 검증("영업부용 = 원본")으로는 못 잡는다.
+const GRID = "A1:Z200";
+async function grids(id, titles) {
+  const out = {};
+  for (const t of titles) {
+    const [f, v] = await Promise.all(["FORMULA", "UNFORMATTED_VALUE"].map((o) =>
+      sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q(t)}!${GRID}`, valueRenderOption: o }).then((r) => r.data.values || [])));
+    out[t] = { f, v };
+  }
+  return out;
+}
+const cellAt = (g, a1) => { const m = a1.match(/^([A-Z]+)(\d+)$/); const c = m[1].split("").reduce((s, ch) => s * 26 + ch.charCodeAt(0) - 64, 0) - 1; return g[+m[2] - 1]?.[c] ?? ""; };
+function diffCells(a, b) { // 두 격자에서 다른 칸 목록(A1)
+  const out = [];
+  for (let r = 0; r < Math.max(a.length, b.length); r++) for (let c = 0; c < Math.max(a[r]?.length || 0, b[r]?.length || 0); c++) {
+    const x = a[r]?.[c] ?? "", y = b[r]?.[c] ?? "";
+    if (String(x) !== String(y)) out.push({ a1: colName(c) + (r + 1), from: x, to: y });
+  }
+  return out;
+}
+
 async function apply() {
   const plan = JSON.parse(readFileSync(args[1] && !args[1].startsWith("--") ? args[1] : PLAN, "utf8"));
   const prices = opt("--prices") ? JSON.parse(readFileSync(opt("--prices"), "utf8")) : [];
+
+  // 1) 쓸 칸 목록 + 지금 값이 미리보기 때와 같은지(블랙·골드 모두 먼저 확인 — 하나라도 어긋나면 아무것도 안 씀)
+  const jobs = [];
   for (const [bk, p] of Object.entries(plan.books)) {
-    const id = origOf(bk), fin = `${q("최종")}!${BOOKS[bk].finalCell}`;
-    const amount = async () => (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: fin, valueRenderOption: "UNFORMATTED_VALUE" })).data.values?.[0]?.[0];
-    const before = await amount(), mBefore = await totalMargin(id);
-    // 미리보기 뒤 원본이 바뀌었으면 멈춘다(누가 그 사이 고친 칸을 덮지 않게)
-    const checks = p.costs.map((c) => `${q(c.tab)}!${c.costCol}${c.row}`);
-    if (checks.length) {
-      const now = (await sheets.spreadsheets.values.batchGet({ spreadsheetId: id, ranges: checks, valueRenderOption: "UNFORMATTED_VALUE" })).data.valueRanges.map((x) => x.values?.[0]?.[0] ?? null);
-      const moved = p.costs.filter((c, i) => now[i] !== c.oldCost);
-      if (moved.length) { console.log(`■ ${BOOKS[bk].label}: 미리보기 뒤 원가 칸이 바뀜 → 중단(다시 미리보기 할 것)`); moved.forEach((c) => console.log(`  ${c.tab} ${c.costCol}${c.row}`)); process.exitCode = 2; return; }
+    const id = origOf(bk);
+    const writes = p.costs.filter((c) => c.oldCost !== c.newCost || (c.vatCol && c.oldVat !== c.newVat)).flatMap((c) => [
+      { tab: c.tab, a1: `${c.costCol}${c.row}`, value: c.newCost, expectOld: c.oldCost },
+      ...(c.vatCol ? [{ tab: c.tab, a1: `${c.vatCol}${c.row}`, value: c.newVat, expectOld: c.oldVat }] : [])]);
+    for (const x of prices.filter((x) => x.book === bk)) {
+      const line = p.lines.find((l) => l.tab === x.tab && l.row === x.row);
+      writes.push({ tab: x.tab, a1: `F${x.row}`, value: x.price, expectOld: line ? line.price : undefined, price: true });
     }
-    const data = p.costs.filter((c) => c.oldCost !== c.newCost || (c.vatCol && c.oldVat !== c.newVat)).flatMap((c) => [
-      { range: `${q(c.tab)}!${c.costCol}${c.row}`, values: [[c.newCost]] },
-      ...(c.vatCol ? [{ range: `${q(c.tab)}!${c.vatCol}${c.row}`, values: [[c.newVat]] }] : [])]);
-    const myPrices = prices.filter((x) => x.book === bk);
-    for (const x of myPrices) data.push({ range: `${q(x.tab)}!F${x.row}`, values: [[x.price]] });
-    if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "RAW", data } });
-    const after = await amount(), mAfter = await totalMargin(id);
-    console.log(`■ ${BOOKS[bk].label}: 원가 ${data.length - myPrices.length}칸·판매 단가 ${myPrices.length}칸 씀 | 최종 금액 ${won(before)} → ${won(after)}${before === after ? " (변화 없음)" : ""}` +
+    const tabs = [...new Set(writes.map((w) => w.tab))];
+    const before = await grids(id, tabs);
+    const bad = [];
+    for (const w of writes) {
+      const f = cellAt(before[w.tab].f, w.a1), v = cellAt(before[w.tab].v, w.a1);
+      if (String(f).startsWith("=")) bad.push(`${w.tab} ${w.a1}: 수식 칸(${f}) — 쓰지 않음`);
+      else if (w.expectOld !== undefined && v !== w.expectOld) bad.push(`${w.tab} ${w.a1}: 미리보기 때 ${won(w.expectOld)} → 지금 ${won(v)}`);
+    }
+    if (bad.length) { console.log(`■ ${BOOKS[bk].label}: 미리보기 뒤 원본이 바뀜 → 아무것도 쓰지 않고 중단(다시 미리보기 할 것)`); bad.forEach((x) => console.log("  " + x)); process.exitCode = 2; return; }
+    jobs.push({ bk, id, writes, tabs, before });
+  }
+
+  // 2) 책별로: 임시 탭에 같은 값을 넣어 정답지 → 실제로 쓰기 → 대조 → 어긋나면 지금까지 쓴 책 전부 되돌림
+  const done = [];
+  const revert = async () => {
+    for (const j of done.reverse()) {
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: j.id, requestBody: { valueInputOption: "RAW",
+        data: j.writes.map((w) => ({ range: `${q(w.tab)}!${w.a1}`, values: [[cellAt(j.before[w.tab].f, w.a1)]] })) } });
+      const back = await grids(j.id, j.tabs);
+      const left = j.tabs.flatMap((t) => diffCells(j.before[t].f, back[t].f).map((d) => `${t} ${d.a1}`));
+      console.log(`  되돌림 ${BOOKS[j.bk].label}: ${left.length ? "⚠ 원래대로 안 돌아온 칸 " + left.join(", ") + " — 버전 기록에서 확인할 것" : "원래 값으로 돌아옴(확인함)"}`);
+    }
+  };
+  for (const j of jobs) {
+    const fin = `${q("최종")}!${BOOKS[j.bk].finalCell}`;
+    const amount = async () => (await sheets.spreadsheets.values.get({ spreadsheetId: j.id, range: fin, valueRenderOption: "UNFORMATTED_VALUE" })).data.values?.[0]?.[0];
+    const amtBefore = await amount(), mBefore = await totalMargin(j.id);
+    const meta = (await sheets.spreadsheets.get({ spreadsheetId: j.id, fields: "sheets(properties(sheetId,title))" })).data.sheets;
+    const expect = {}, temps = [];
+    try {
+      for (const t of j.tabs) {
+        const src = meta.find((s) => s.properties.title === t).properties.sheetId;
+        const res = await sheets.spreadsheets.batchUpdate({ spreadsheetId: j.id, requestBody: { requests: [{ duplicateSheet: { sourceSheetId: src, newSheetName: PREVIEW + "정답_" + t.slice(0, 36), insertSheetIndex: 99 } }] } });
+        const tmp = res.data.replies[0].duplicateSheet.properties; temps.push(tmp.sheetId);
+        await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: j.id, requestBody: { valueInputOption: "RAW",
+          data: j.writes.filter((w) => w.tab === t).map((w) => ({ range: `${q(tmp.title)}!${w.a1}`, values: [[w.value]] })) } });
+        expect[t] = (await grids(j.id, [tmp.title]))[tmp.title].v;
+      }
+    } finally {
+      if (temps.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: j.id, requestBody: { requests: temps.map((sheetId) => ({ deleteSheet: { sheetId } })) } });
+    }
+
+    // QUOTE_FAULT=1: 되돌림 시험용으로 첫 칸에 일부러 1 더 씀(시험용 사본에서만)
+    const fault = process.env.QUOTE_FAULT === "1" && args.includes("--test");
+    await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: j.id, requestBody: { valueInputOption: "RAW",
+      data: j.writes.map((w, i) => ({ range: `${q(w.tab)}!${w.a1}`, values: [[fault && i === 0 ? w.value + 1 : w.value]] })) } });
+    done.push(j);
+
+    const after = await grids(j.id, j.tabs), problems = [];
+    const planned = new Map(j.writes.map((w) => [`${w.tab}!${w.a1}`, w.value]));
+    for (const t of j.tabs) {
+      // 입력(수식 말고 값) 칸: 계획한 칸만, 계획한 값으로 바뀌었는가
+      for (const d of diffCells(j.before[t].f, after[t].f)) {
+        const k = `${t}!${d.a1}`;
+        if (!planned.has(k)) problems.push(`${t} ${d.a1}: 계획에 없는 칸이 바뀜(${d.from} → ${d.to})`);
+        else if (Number(d.to) !== planned.get(k)) problems.push(`${t} ${d.a1}: ${planned.get(k)}을 썼는데 ${d.to}`);
+      }
+      for (const [k, val] of planned) if (k.startsWith(t + "!") && Number(cellAt(after[t].f, k.split("!")[1])) !== val) problems.push(`${k.replace("!", " ")}: 계획 값과 다름`);
+      // 계산 결과까지: 실제 탭 = 정답지(임시 탭)
+      diffCells(expect[t], after[t].v).slice(0, 10).forEach((d) => problems.push(`${t} ${d.a1}: 정답지 ${d.from} / 실제 ${d.to}`));
+    }
+    if (problems.length) {
+      console.log(`■ ${BOOKS[j.bk].label}: 적용 결과가 계획과 다름 → 되돌림`);
+      problems.slice(0, 20).forEach((x) => console.log("  · " + x));
+      await revert(); process.exitCode = 3; return;
+    }
+    const amtAfter = await amount(), mAfter = await totalMargin(j.id);
+    const nPrice = j.writes.filter((w) => w.price).length;
+    console.log(`■ ${BOOKS[j.bk].label}: 원가 ${j.writes.length - nPrice}칸·판매 단가 ${nPrice}칸 씀 | 적용 확인: 바뀐 칸 = 계획 ${j.writes.length}칸, 정답지와 전체 일치 ✓ | 최종 금액 ${won(amtBefore)} → ${won(amtAfter)}${amtBefore === amtAfter ? " (변화 없음)" : ""}` +
       (mBefore != null ? ` | 계약 1건 총 마진 ${won(mBefore)} → ${won(mAfter)}` : ""));
   }
 }
