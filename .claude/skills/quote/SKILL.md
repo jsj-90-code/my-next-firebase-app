@@ -67,10 +67,15 @@ node scripts/quote/price.mjs preview <단가표.json>
 ## 4. 원본에 쓰기 → 영업부용 반영 → 검증
 
 ```
+node scripts/quote/sync.mjs black --check     ← 먼저: 영업부용 직접 수정 확인(시트 안 바꿈)
+node scripts/quote/sync.mjs gold --check
 node scripts/quote/price.mjs apply [--prices <단가.json>]
 node scripts/quote/sync.mjs black
 node scripts/quote/sync.mjs gold
 ```
+
+- **원본에 쓰기 전에 `--check`부터** 돌린다(10-23 사용자: "원본은 두고 영업부용만 고친 경우"). "직접 바뀐 칸"이 하나라도 나오면 `apply`로 가지 않고
+  목록(탭·칸·전→후)을 그대로 보여 준 뒤 묻는다: 맞는 수정이면 원본에도 옮기고 진행 / 틀린 수정이면 `--force`로 덮어쓰기. 값·수식만 비교한다(서식 변경은 못 잡음).
 
 - `apply`는 미리보기 뒤 원본 원가·판매 단가 칸이 바뀌었으면 **아무것도 안 쓰고** 멈춘다 → 2단계부터 다시.
 - `apply`는 쓰기 전에 임시 탭에 같은 값을 넣어 **정답지**를 만들고, 쓴 뒤 ① 바뀐 입력 칸 = 계획한 칸·값 ② 원본 탭 전체 값 = 정답지를 대조한다.
