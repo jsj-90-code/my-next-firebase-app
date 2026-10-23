@@ -31,8 +31,6 @@ import {
 import { BarChart, type Bar } from "../BarChart";
 import { StoreForm } from "../StoreForm";
 
-/** 시간대별 그래프는 날짜 문서를 하나씩 읽는다 — 무료 요금제 읽기 한도 때문에 최근 이만큼만 본다. */
-const HOURLY_MAX_DAYS = 92;
 // 기간은 날짜(0~24시) 단위 — 오늘은 진행 중, n일은 오늘을 빼고 어제까지 다 찬 n일(2026-10-07 사용자). 전체만 오늘까지.
 const PRESETS = [
   { key: "today", label: "오늘(진행 중)", days: 0 },
@@ -55,12 +53,6 @@ function dateRange(from: string, to: string): string[] {
 
 function dayOfWeek(date: string): number {
   return new Date(`${date}T00:00:00Z`).getUTCDay();
-}
-
-function shiftDate(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 export default function PingStoreDetailPage() {
@@ -111,7 +103,8 @@ export default function PingStoreDetailPage() {
     }
   }
 
-  const hourlyFrom = from < shiftDate(to, -(HOURLY_MAX_DAYS - 1)) ? shiftDate(to, -(HOURLY_MAX_DAYS - 1)) : from;
+  // 시간대별도 고른 기간 전체를 읽는다(2026-10-23 사용자) — 92일 제한은 무료 요금제 시절 것. 종량제라 1년 치 365건 읽어도 1원 남짓.
+  const hourlyFrom = from;
 
   const storeId = store?.id ?? null;
   const dailyKey = storeId ? `${storeId}|${hourlyFrom}|${to}|${version}` : null;
@@ -290,9 +283,6 @@ export default function PingStoreDetailPage() {
                 {k === "all" ? "전체" : k === "weekday" ? "평일" : "주말"}
               </button>
             ))}
-            {hourlyFrom !== from && (
-              <span className="text-xs text-[var(--sl-ink-soft)]">최근 {HOURLY_MAX_DAYS}일({hourlyFrom}~)만 반영</span>
-            )}
           </div>
           {daily == null ? (
             <p className="text-xs text-[var(--sl-ink-soft)]">불러오는 중...</p>

@@ -47,8 +47,6 @@ function showsValues(s: PingStore): boolean {
   return statusShowsValues(storeStatus(s));
 }
 
-/** 시간대별은 날짜 문서를 매장마다 하나씩 읽는다 — 최근 이만큼만. */
-const HOURLY_MAX_DAYS = 92;
 const RIVAL_COLORS = ["var(--pm-c2)", "var(--pm-c3)", "var(--pm-c4)", "var(--pm-c5)", "var(--pm-c6)", "var(--pm-c7)", "var(--pm-c8)"];
 const PERIODS = [
   { key: "7", label: "이번 주(월~일)" },
@@ -66,11 +64,6 @@ function dateRange(from: string, to: string): string[] {
   )
     out.push(d.toISOString().slice(0, 10));
   return out;
-}
-function shiftDate(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 /** 시간대(0~23시)별 켜진 합 ÷ 대수 합 — 기간 안 잰 날들 전부(오늘·등록한 날 포함, 시간대끼리라 치우침 없음). */
 function hourProfile(rowsList: PingDaily[][]): (number | null)[] {
@@ -162,10 +155,8 @@ export default function PingOwnComparePage() {
   const shownStores = measured.filter((s) => !hidden.has(s.id));
 
   // 시간대별: 기간 시작 ~ 오늘(진행 중 포함). 우리 매장 + 측정 중인 경쟁점 전부.
-  const hFrom =
-    range.from < shiftDate(today, -(HOURLY_MAX_DAYS - 1))
-      ? shiftDate(today, -(HOURLY_MAX_DAYS - 1))
-      : range.from;
+  // 92일 제한은 2026-10-23에 풀었다(무료 요금제 시절 것, 종량제라 읽기 비용이 몇 원).
+  const hFrom = range.from;
   const hourlyIds = useMemo(
     () =>
       [own, ...measured].filter((s): s is PingStore => !!s).map((s) => s.id),
