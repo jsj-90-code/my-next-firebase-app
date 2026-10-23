@@ -1,7 +1,8 @@
 // 견적서 원본 → 영업부용 반영 (2026-10-23, Apps Script 버튼 대신 Claude Code에서 실행)
 //   node scripts/quote/sync.mjs <black|gold> [--test] [--dry]      반영(--dry: 원본 안 정리·검사까지만)
 //   node scripts/quote/sync.mjs <black|gold> [--test] --check      영업부용에서 직접 바뀐 칸만 확인
-//   node scripts/quote/sync.mjs <black|gold> [--test] --force      직접 바뀐 칸이 있어도 덮어씀
+//   node scripts/quote/sync.mjs <black|gold> [--test] --adopt      직접 바뀐 칸을 원본 같은 자리에 옮긴 뒤 반영(원본도 바뀐 칸·원가 수식 칸이 있으면 멈춤)
+//   node scripts/quote/sync.mjs <black|gold> [--test] --force      직접 바뀐 칸이 있어도 덮어씀(영업부용 수정을 버림)
 //   node scripts/quote/sync.mjs <black|gold> [--test] --rollback   검증 실패로 남겨 둔 백업으로 되돌림
 //   node scripts/quote/sync.mjs <black|gold> [--test] --accept     검증 차이를 확인하고 그대로 확정(백업 삭제·기록 저장)
 //
@@ -31,20 +32,51 @@ async function salesChanges() {
   if (!rows.length) return { noLog: true, list: [] };
   const when = rows[0][1];
   const saved = Object.fromEntries(rows.slice(1).filter((r) => r[0]).map((r) => [r[0], JSON.parse(r.slice(1).join(""))]));
-  const list = [];
+  const list = [], cells = [];
   const sm = await meta(book.sales);
   for (const [oName, sName] of TABS) {
-    if (!byTitle(sm, sName)) { list.push(`${sName}: 탭이 없어짐`); continue; }
+    if (!byTitle(sm, sName)) { list.push(`${sName}: 탭이 없어짐`); cells.push({ oName, sName, missing: true }); continue; }
     const now = await grid(book.sales, sName), before = saved[sName] || [];
     for (let r = 0; r < Math.max(now.length, before.length); r++) {
       const R = Math.max(now[r]?.length || 0, before[r]?.length || 0);
       for (let c = 0; c < R; c++) {
         const a = before[r]?.[c] ?? "", b = now[r]?.[c] ?? "";
-        if (a !== b) list.push(`${sName} ${colName(c)}${r + 1}: ${a.slice(0, 30) || "(빈칸)"} → ${b.slice(0, 30) || "(빈칸)"}`);
+        if (a !== b) { list.push(`${sName} ${colName(c)}${r + 1}: ${a.slice(0, 30) || "(빈칸)"} → ${b.slice(0, 30) || "(빈칸)"}`); cells.push({ oName, sName, a1: colName(c) + (r + 1), r, c, before: a, after: b }); }
       }
     }
   }
-  return { when, list };
+  return { when, list, cells };
+}
+
+// ---------- 영업부용에서만 바뀐 칸을 원본 같은 자리로 옮기기(--adopt) ----------
+// 10-23 사용자: "원본은 두고 영업부만 고친 데이터가 반영 때 날아가면 일 난다" → 잡힌 칸을 원본에 옮긴 뒤 반영.
+// 원본 그 칸이 마지막 반영 뒤 그대로일 때만 옮긴다. 원본도 바뀌었거나(양쪽 수정) 원본이 원가 참조 수식 칸이면 옮기지 않고 사람에게 묻는다.
+const toOrigRefs = (f) => { let y = f; for (const [o, s] of TABS) if (o !== s) y = y.split(`${q(s)}!`).join(`${q(o)}!`); return y; };
+async function adopt(cells) {
+  const moved = [], skipped = [], data = [];
+  for (const x of cells) {
+    if (x.missing) { skipped.push(`${x.sName}: 영업부용에서 탭이 없어짐 — 옮길 수 없음`); continue; }
+    const g = await grid(book.orig, x.oName); // 탭마다 한 번 읽도록 아래에서 캐시
+    const origNow = g[x.r]?.[x.c] ?? "";
+    const origAsSales = origNow.startsWith("=") ? renameRefs(origNow) : origNow;
+    const where = `${x.sName} ${x.a1}`;
+    if (origNow.startsWith("=") && refsBeyondJ(origNow)) { skipped.push(`${where}: 원본은 원가로 계산하는 칸(${origNow.slice(0, 30)}) — 영업부용 값 ${x.after}을 그대로 넣으면 수식이 사라짐`); continue; }
+    if (origAsSales === x.after) { moved.push(`${where}: 원본도 이미 같은 값`); continue; }
+    if (origAsSales !== x.before) { skipped.push(`${where}: 원본도 그 사이 바뀜(원본 ${origNow.slice(0, 20) || "(빈칸)"} / 영업부용 ${x.after.slice(0, 20) || "(빈칸)"}) — 어느 쪽이 맞는지 정해야 함`); continue; }
+    const v = x.after;
+    data.push({ range: `${q(x.oName)}!${x.a1}`, values: [[v.startsWith("=") ? toOrigRefs(v) : /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v]] , formula: v.startsWith("=") });
+    moved.push(`${where}: ${x.before.slice(0, 20) || "(빈칸)"} → ${v.slice(0, 20) || "(빈칸)"}`);
+  }
+  if (skipped.length) return { moved: [], skipped }; // 하나라도 못 옮기면 아무것도 안 씀
+  const f = data.filter((d) => d.formula), n = data.filter((d) => !d.formula);
+  if (f.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "USER_ENTERED", data: f.map(({ range, values }) => ({ range, values })) } });
+  if (n.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "RAW", data: n.map(({ range, values }) => ({ range, values })) } });
+  // 옮긴 뒤 원본을 다시 읽어 확인
+  for (const x of cells) {
+    const now = (await grid(book.orig, x.oName))[x.r]?.[x.c] ?? "";
+    if ((now.startsWith("=") ? renameRefs(now) : now) !== x.after) return { moved: [], skipped: [`${x.sName} ${x.a1}: 원본에 옮겼는데 다시 읽으니 ${now} — 확인 필요`] };
+  }
+  return { moved, skipped };
 }
 async function writeLog() {
   const m = await meta(book.orig);
@@ -201,7 +233,12 @@ async function dropBackups() {
   else if (ch.list.length) {
     console.log(`변경 감지: 마지막 반영(${ch.when}) 이후 영업부용에서 직접 바뀐 칸 ${ch.list.length}개`);
     ch.list.slice(0, 30).forEach((x) => console.log("  · " + x));
-    if (has("--check") || !has("--force")) { console.log(has("--check") ? "" : "→ 반영하지 않음. 원본에 먼저 옮기거나 --force로 덮어쓸 것"); process.exitCode = has("--check") ? 0 : 2; return; }
+    if (has("--adopt") && !has("--check")) {
+      const a = await adopt(ch.cells);
+      if (a.skipped.length) { console.log("→ 원본에 옮기지 못한 칸이 있어 아무것도 옮기지 않고 멈춤(반영도 안 함):"); a.skipped.forEach((x) => console.log("  · " + x)); process.exitCode = 6; return; }
+      console.log(`→ 원본에 옮김 ${a.moved.length}칸(옮긴 뒤 다시 읽어 확인함):`); a.moved.forEach((x) => console.log("  · " + x));
+      console.log("→ 이어서 반영");
+    } else if (has("--check") || !has("--force")) { console.log(has("--check") ? "" : "→ 반영하지 않음. 원본에 옮기려면 --adopt, 영업부용 수정을 버리려면 --force"); process.exitCode = has("--check") ? 0 : 2; return; }
   } else console.log(`변경 감지: 마지막 반영(${ch.when}) 이후 영업부용 직접 수정 없음`);
   if (has("--check")) return;
 
