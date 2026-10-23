@@ -1,6 +1,11 @@
 // 견적서(블랙·골드) 원본 → 영업부용 반영 공용 모듈 (2026-10-23)
-// 서비스 계정(FIREBASE_CLIENT_EMAIL/PRIVATE_KEY)으로 구글 시트에 접근한다. 대상 시트와 탭 보호에 이 계정이 편집자로 있어야 한다.
+// 기본은 사용자 본인 구글 계정(OAuth)으로 접근한다 — 시트 수정 기록에 로봇 이름 대신 본인 이름이 남게(10-23 사용자 요청).
+//   준비: .env.local에 QUOTE_OAUTH_CLIENT_ID·QUOTE_OAUTH_CLIENT_SECRET, PC마다 한 번 `node scripts/quote/login.mjs`
+//   로그인 정보는 저장소 밖 ~/.isens-quote/token.json(PC마다 따로, git에 안 올라감).
+// 로그인 정보가 없으면 서비스 계정(FIREBASE_CLIENT_EMAIL/PRIVATE_KEY)으로 — 이때는 대상 시트와 탭 보호에 그 계정이 편집자로 있어야 한다.
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { google } from "googleapis";
 
 function loadEnvLocal() {
@@ -15,13 +20,35 @@ function loadEnvLocal() {
   }
 }
 loadEnvLocal();
-const key = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\+n/g, "\n").replace(/^"|"$/g, "");
-if (!process.env.FIREBASE_CLIENT_EMAIL || !key) throw new Error(".env.local에 FIREBASE_CLIENT_EMAIL · FIREBASE_PRIVATE_KEY가 필요하다.");
 // 분당 읽기·쓰기 한도(429)나 일시 오류(5xx)면 기다렸다가 다시 시도(최대 6번, 점점 길게)
 google.options({ retryConfig: { retry: 6, retryDelay: 5000, statusCodesToRetry: [[429, 429], [500, 599]], httpMethodsToRetry: ["GET", "POST", "PUT"], onRetryAttempt: (e) => console.log(`  (구글 한도/오류 ${e.response?.status ?? ""} → 잠시 후 다시 시도)`) } });
-const auth = new google.auth.JWT({ email: process.env.FIREBASE_CLIENT_EMAIL, key, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
-export const sheets = google.sheets({ version: "v4", auth });
+
+export const SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "openid", "email"];
+export const TOKEN_FILE = join(homedir(), ".isens-quote", "token.json");
+export function oauthClient(redirectUri) {
+  const id = process.env.QUOTE_OAUTH_CLIENT_ID, secret = process.env.QUOTE_OAUTH_CLIENT_SECRET;
+  return id && secret ? new google.auth.OAuth2(id, secret, redirectUri) : null;
+}
+function readToken() { try { return JSON.parse(readFileSync(TOKEN_FILE, "utf8")); } catch { return null; } }
+
 export const saEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const token = process.env.QUOTE_AUTH === "sa" ? null : readToken();
+const userAuth = token?.refresh_token ? oauthClient() : null;
+let auth;
+if (userAuth) {
+  userAuth.setCredentials({ refresh_token: token.refresh_token });
+  auth = userAuth;
+} else {
+  const key = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\+n/g, "\n").replace(/^"|"$/g, "");
+  if (!saEmail || !key) throw new Error("로그인 정보도 서비스 계정도 없다 — node scripts/quote/login.mjs 로 로그인할 것");
+  if (!process.argv[1]?.endsWith("login.mjs")) console.log("  ※ 로그인 정보 없음 → 서비스 계정(로봇)으로 접근 — 시트 수정 기록에 로봇 이름이 남는다");
+  auth = new google.auth.JWT({ email: saEmail, key, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
+}
+export const sheets = google.sheets({ version: "v4", auth });
+export const userEmail = userAuth ? token.email : null;
+// 탭 잠금을 새로 걸 때 편집자에 꼭 넣을 계정(지금 시트를 고치는 계정) / 검증 때 비교에서 빼는 계정
+export const actorEmail = userEmail || saEmail;
+export const TOOL_EMAILS = [saEmail, userEmail].filter(Boolean);
 
 // 시트 주소. test = 반영 시험용 사본(사용자 내 드라이브).
 export const BOOKS = {

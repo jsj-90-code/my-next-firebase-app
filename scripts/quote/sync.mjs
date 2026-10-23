@@ -9,7 +9,7 @@
 //   → 영업부용 기존 탭은 이름만 바꿔 백업 → 깨끗한 탭 복사·행 높이/열 너비·보호 → 자동 검증
 //   → 통과하면 백업 삭제·기록 저장, 실패하면 백업을 남기고 멈춤(--rollback/--accept로 결정)
 // 원가가 들어간 내용은 영업부용 시트에 한 순간도 들어가지 않는다.
-import { sheets, saEmail, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
+import { sheets, actorEmail, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
 import { verify } from "./verify.mjs";
 
 const args = process.argv.slice(2);
@@ -150,7 +150,7 @@ async function replaceSales(temps) {
     const req = [{ updateSheetProperties: { properties: { sheetId: n.sheetId, title: t.s, gridProperties: { hideGridlines: !!t.src.properties.gridProperties.hideGridlines } }, fields: "title,gridProperties.hideGridlines" } }];
     req.push(...await sizeRequests(t.o, n.sheetId, n.gridProperties.rowCount, n.gridProperties.columnCount));
     const editors = prot[t.s];
-    if (editors) req.push({ addProtectedRange: { protectedRange: { range: { sheetId: n.sheetId }, description: "영업부용 원판 — 원본에서 반영", editors: { users: [...new Set([...(editors.users || []), saEmail])], groups: editors.groups || [], domainUsersCanEdit: !!editors.domainUsersCanEdit } } } });
+    if (editors) req.push({ addProtectedRange: { protectedRange: { range: { sheetId: n.sheetId }, description: "영업부용 원판 — 원본에서 반영", editors: { users: [...new Set([...(editors.users || []), actorEmail])], groups: editors.groups || [], domainUsersCanEdit: !!editors.domainUsersCanEdit } } } });
     await batch(book.sales, req);
   }
   const sm2 = await meta(book.sales);

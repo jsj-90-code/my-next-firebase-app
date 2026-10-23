@@ -2,7 +2,7 @@
 //   node scripts/quote/verify.mjs <black|gold> [--test]
 // 값·수식·서식(정렬·글꼴·색·숫자서식·테두리·줄바꿈)·메모·병합·열 너비·행 높이·보호·원가 유출·최종 금액
 import { pathToFileURL } from "node:url";
-import { sheets, saEmail, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, refsBeyondJ, colName, q, renameRefs, pickBook } from "./lib.mjs";
+import { sheets, TOOL_EMAILS, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, refsBeyondJ, colName, q, renameRefs, pickBook } from "./lib.mjs";
 
 const FIELDS = "sheets(properties(title,gridProperties),merges,protectedRanges(range,editors),data(columnMetadata(pixelSize,hiddenByUser),rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,userEnteredValue,note,effectiveFormat(horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat,backgroundColor,borders,textFormat(fontFamily,fontSize,bold,italic,strikethrough,underline,foregroundColor))))))";
 const fmtSig = (f = {}) => JSON.stringify({ h: f.horizontalAlignment, v: f.verticalAlignment, w: f.wrapStrategy, n: f.numberFormat?.pattern || f.numberFormat?.type, b: f.backgroundColor, t: f.textFormat && { ...f.textFormat, foregroundColorStyle: undefined }, br: f.borders && Object.fromEntries(Object.entries(f.borders).map(([k, x]) => [k, x.style])) });
@@ -48,7 +48,7 @@ export async function verify(book, { log = console.log, prot = null } = {}) {
       const want = prot[sName];
       if (!!want !== !!whole) issues.보호.push(want ? "탭 전체 잠금 빠짐" : "원래 없던 잠금이 걸림");
       else if (want) {
-        const users = (u) => [...new Set(u || [])].filter((x) => x !== saEmail).sort().join(",");
+        const users = (u) => [...new Set(u || [])].filter((x) => !TOOL_EMAILS.includes(x)).sort().join(",");
         if (users(want.users) !== users(whole.editors?.users)) issues.보호.push("잠금 편집자가 반영 전과 다름");
       }
     }
