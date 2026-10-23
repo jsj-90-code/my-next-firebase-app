@@ -47,5 +47,13 @@
   //   },
   // ]
   "indexes": [],
-  "fieldOverrides": []
+  // 측정기 기록 칸은 자동 색인을 끈다(2026-10-23 사용자). 하루 문서는 기록 1.2KB에 색인 27KB가 붙어 용량의 95%가 색인이었는데,
+  // 이 칸들로 검색하는 코드는 없다(하루 문서는 문서 id 범위로, 매장은 active·ownCode·isOwnStore·competitorId·ipRanges·createdAt로 찾는다 — 그 칸은 그대로).
+  // 맵 칸을 끄면 안의 하위 칸도 같이 꺼진다. 다시 필요하면 해당 항목을 지우고 배포하면 구글이 색인을 새로 만든다.
+  "fieldOverrides": [
+    { "collectionGroup": "pingMonitorDaily", "fieldPath": "hours", "indexes": [] },
+    { "collectionGroup": "pingMonitorStores", "fieldPath": "days", "indexes": [] },
+    { "collectionGroup": "pingMonitorStores", "fieldPath": "recent", "indexes": [] },
+    { "collectionGroup": "pingMonitorStores", "fieldPath": "lastSample", "indexes": [] }
+  ]
 }
