@@ -149,6 +149,7 @@ src/**/_*.test.ts
 !/.claude/skills/
 /.claude/skills/*
 !/.claude/skills/daou-candidate/
+!/.claude/skills/quote/
 /.mcp.json
 /skills-lock.json
 
