@@ -154,8 +154,8 @@ async function replaceSales(temps) {
   const synced = new Set(TABS.map(([, s]) => s));
   await batch(book.sales, [
     ...sm2.filter((s) => s.properties.title.startsWith(BAK)).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: true }, fields: "hidden" } })),
-    // 반영 대상이 아닌 탭은 숨김 상태를 반영 전과 똑같이
-    ...sm.filter((s) => !synced.has(s.properties.title) && !s.properties.title.startsWith(BAK)).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: !!s.properties.hidden }, fields: "hidden" } })),
+    // 반영 대상이 아닌 탭은 숨김 상태를 반영 전과 똑같이 — 바뀐 탭만(잠긴 탭은 바꾸지 않는 요청도 거부됨, 10-23 블랙 '최종(이전)_사용불가')
+    ...sm.filter((s) => !synced.has(s.properties.title) && !s.properties.title.startsWith(BAK) && !!byTitle(sm2, s.properties.title)?.properties.hidden !== !!s.properties.hidden).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: !!s.properties.hidden }, fields: "hidden" } })),
     ...order.map((name, i) => ({ updateSheetProperties: { properties: { sheetId: byTitle(sm2, name).properties.sheetId, index: i }, fields: "index" } })),
   ]);
 }
