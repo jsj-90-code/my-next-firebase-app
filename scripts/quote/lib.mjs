@@ -46,6 +46,7 @@ export const TABS = [
   ["최종", "최종_민주채린", false],
   ["표지", "표지", true],
 ];
+export const AUTO_ROW = 21; // 구글 시트가 "내용에 맞춤" 행에 알려 주는 높이(기본값)
 export const LAST_SALES_COL = 10; // J열까지만 영업부용으로
 export const INTERNAL_BLOCK = "본사 내부 정리"; // 최종 탭의 원본 전용 표(이 줄부터 아래는 안 보냄)
 export const LEAK_WORDS = ["원가(수정)", "원가 합계", "개별 마진", "본사 마진", "본사 내부 정리", "부품별 원가", "매입가", "원가 대비"];

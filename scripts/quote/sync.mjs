@@ -9,7 +9,7 @@
 //   → 영업부용 기존 탭은 이름만 바꿔 백업 → 깨끗한 탭 복사·행 높이/열 너비·보호 → 자동 검증
 //   → 통과하면 백업 삭제·기록 저장, 실패하면 백업을 남기고 멈춤(--rollback/--accept로 결정)
 // 원가가 들어간 내용은 영업부용 시트에 한 순간도 들어가지 않는다.
-import { sheets, saEmail, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
+import { sheets, saEmail, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
 import { verify } from "./verify.mjs";
 
 const args = process.argv.slice(2);
@@ -127,7 +127,9 @@ async function sizeRequests(srcSheetTitle, dstId, dstRows, dstCols) {
     let st = 0;
     for (let i = 1; i <= n; i++) {
       if (i < n && arr[i].pixelSize === arr[st].pixelSize && !!arr[i].hiddenByUser === !!arr[st].hiddenByUser) continue;
-      req.push({ updateDimensionProperties: { range: { sheetId: dstId, dimension: dim, startIndex: st, endIndex: i }, properties: { pixelSize: arr[st].pixelSize, hiddenByUser: !!arr[st].hiddenByUser }, fields: "pixelSize,hiddenByUser" } });
+      // 높이 21(기본값) 행은 '내용에 맞춤'일 수 있다 — API는 맞춤 행도 21로 알려 주므로 고정하지 말고 맞춤으로(10-23 표준 28행 외부 간판이 21 고정으로 잘림)
+      if (dim === "ROWS" && arr[st].pixelSize === AUTO_ROW && !arr[st].hiddenByUser) req.push({ autoResizeDimensions: { dimensions: { sheetId: dstId, dimension: dim, startIndex: st, endIndex: i } } });
+      else req.push({ updateDimensionProperties: { range: { sheetId: dstId, dimension: dim, startIndex: st, endIndex: i }, properties: { pixelSize: arr[st].pixelSize, hiddenByUser: !!arr[st].hiddenByUser }, fields: "pixelSize,hiddenByUser" } });
       st = i;
     }
   };
@@ -138,8 +140,8 @@ async function sizeRequests(srcSheetTitle, dstId, dstRows, dstCols) {
 
 async function replaceSales(temps) {
   const sm = await meta(book.sales);
-  const pc = byTitle(sm, "PC 및 주변 기기 내역");
-  const editors = pc?.protectedRanges?.find((p) => p.range.startRowIndex === undefined)?.editors || { users: [] };
+  // 탭마다 반영 전 잠금(편집자)을 그대로 — 없던 잠금은 걸지 않는다(10-23: 블랙 정보입력·표지는 원래 안 잠김, 골드는 탭마다 편집자 수가 다름)
+  const prot = salesProtection(sm);
   const order = TABS.map(([, s]) => s).sort((a, b) => (byTitle(sm, a)?.properties.index ?? 99) - (byTitle(sm, b)?.properties.index ?? 99));
   // 기존 탭은 이름만 바꿔 백업
   await batch(book.sales, TABS.map(([, s]) => byTitle(sm, s)).filter(Boolean).map((x) => ({ updateSheetProperties: { properties: { sheetId: x.properties.sheetId, title: BAK + x.properties.title }, fields: "title" } })));
@@ -147,7 +149,8 @@ async function replaceSales(temps) {
     const n = (await sheets.spreadsheets.sheets.copyTo({ spreadsheetId: book.orig, sheetId: t.id, requestBody: { destinationSpreadsheetId: book.sales } })).data;
     const req = [{ updateSheetProperties: { properties: { sheetId: n.sheetId, title: t.s, gridProperties: { hideGridlines: !!t.src.properties.gridProperties.hideGridlines } }, fields: "title,gridProperties.hideGridlines" } }];
     req.push(...await sizeRequests(t.o, n.sheetId, n.gridProperties.rowCount, n.gridProperties.columnCount));
-    req.push({ addProtectedRange: { protectedRange: { range: { sheetId: n.sheetId }, description: "영업부용 원판 — 원본에서 반영", editors: { users: [...new Set([...(editors.users || []), saEmail])], groups: editors.groups || [], domainUsersCanEdit: false } } } });
+    const editors = prot[t.s];
+    if (editors) req.push({ addProtectedRange: { protectedRange: { range: { sheetId: n.sheetId }, description: "영업부용 원판 — 원본에서 반영", editors: { users: [...new Set([...(editors.users || []), saEmail])], groups: editors.groups || [], domainUsersCanEdit: !!editors.domainUsersCanEdit } } } });
     await batch(book.sales, req);
   }
   const sm2 = await meta(book.sales);
@@ -158,6 +161,16 @@ async function replaceSales(temps) {
     ...sm.filter((s) => !synced.has(s.properties.title) && !s.properties.title.startsWith(BAK) && !!byTitle(sm2, s.properties.title)?.properties.hidden !== !!s.properties.hidden).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: !!s.properties.hidden }, fields: "hidden" } })),
     ...order.map((name, i) => ({ updateSheetProperties: { properties: { sheetId: byTitle(sm2, name).properties.sheetId, index: i }, fields: "index" } })),
   ]);
+}
+
+// 영업부용 탭별 탭 전체 잠금의 편집자(잠금 없으면 null). 처음 생기는 탭은 잠근다(편집자: 서비스 계정만).
+function salesProtection(sm) {
+  const out = {};
+  for (const [, s] of TABS) {
+    const x = byTitle(sm, s);
+    out[s] = !x ? { users: [] } : x.protectedRanges?.find((p) => p.range.startRowIndex === undefined && p.range.startColumnIndex === undefined)?.editors || null;
+  }
+  return out;
 }
 
 async function rollback() {
@@ -192,6 +205,7 @@ async function dropBackups() {
   } else console.log(`변경 감지: 마지막 반영(${ch.when}) 이후 영업부용 직접 수정 없음`);
   if (has("--check")) return;
 
+  const prot = salesProtection(await meta(book.sales)); // 검증 때 반영 전 잠금과 대조
   let temps;
   try {
     temps = await buildTemps();
@@ -205,7 +219,7 @@ async function dropBackups() {
   } finally { await deleteTemps(); }
 
   console.log("\n[자동 검증]");
-  const v = await verify(book);
+  const v = await verify(book, { prot });
   if (v.total) {
     console.log("\n검증 차이가 있어 백업을 남겨 둠. 확인 후 --rollback(되돌림) 또는 --accept(확정)");
     process.exitCode = 5; return;

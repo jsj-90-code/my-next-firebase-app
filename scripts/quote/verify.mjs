@@ -2,14 +2,14 @@
 //   node scripts/quote/verify.mjs <black|gold> [--test]
 // 값·수식·서식(정렬·글꼴·색·숫자서식·테두리·줄바꿈)·메모·병합·열 너비·행 높이·보호·원가 유출·최종 금액
 import { pathToFileURL } from "node:url";
-import { sheets, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, refsBeyondJ, colName, q, renameRefs, pickBook } from "./lib.mjs";
+import { sheets, saEmail, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, refsBeyondJ, colName, q, renameRefs, pickBook } from "./lib.mjs";
 
-const FIELDS = "sheets(properties(title,gridProperties),merges,protectedRanges(range),data(columnMetadata(pixelSize,hiddenByUser),rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,userEnteredValue,note,effectiveFormat(horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat,backgroundColor,borders,textFormat(fontFamily,fontSize,bold,italic,strikethrough,underline,foregroundColor))))))";
+const FIELDS = "sheets(properties(title,gridProperties),merges,protectedRanges(range,editors),data(columnMetadata(pixelSize,hiddenByUser),rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,userEnteredValue,note,effectiveFormat(horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat,backgroundColor,borders,textFormat(fontFamily,fontSize,bold,italic,strikethrough,underline,foregroundColor))))))";
 const fmtSig = (f = {}) => JSON.stringify({ h: f.horizontalAlignment, v: f.verticalAlignment, w: f.wrapStrategy, n: f.numberFormat?.pattern || f.numberFormat?.type, b: f.backgroundColor, t: f.textFormat && { ...f.textFormat, foregroundColorStyle: undefined }, br: f.borders && Object.fromEntries(Object.entries(f.borders).map(([k, x]) => [k, x.style])) });
 const load = async (id, title) => (await sheets.spreadsheets.get({ spreadsheetId: id, ranges: [q(title)], includeGridData: true, fields: FIELDS })).data.sheets[0];
 const mk = (m) => `${colName(m.startColumnIndex)}${m.startRowIndex + 1}:${colName(m.endColumnIndex - 1)}${m.endRowIndex}`;
 
-export async function verify(book, { log = console.log } = {}) {
+export async function verify(book, { log = console.log, prot = null } = {}) {
   let total = 0;
   const report = {};
   for (const [oName, sName, keepCols] of TABS) {
@@ -40,8 +40,18 @@ export async function verify(book, { log = console.log } = {}) {
     for (const x of om) if (!sm.has(x)) issues.병합.push("빠짐 " + x);
     for (const x of sm) if (!om.has(x)) issues.병합.push("추가 " + x);
     o.data[0].columnMetadata.slice(0, lastCol).forEach((m, i) => { const t = s.data[0].columnMetadata[i] || {}; if (m.pixelSize !== t.pixelSize || !!m.hiddenByUser !== !!t.hiddenByUser) issues.크기.push(`${colName(i)}열 ${m.pixelSize}/${t.pixelSize}`); });
-    o.data[0].rowMetadata.slice(0, lastRow).forEach((m, i) => { const t = s.data[0].rowMetadata[i] || {}; if (m.pixelSize !== t.pixelSize || !!m.hiddenByUser !== !!t.hiddenByUser) issues.크기.push(`${i + 1}행 ${m.pixelSize}/${t.pixelSize}`); });
-    if (!(s.protectedRanges || []).some((p) => p.range.startRowIndex === undefined && p.range.startColumnIndex === undefined)) issues.보호.push("탭 전체 보호 없음");
+    // 원본 높이 21 = '내용에 맞춤'일 수 있어 영업부용은 맞춤 결과(더 클 수 있음)라 높이는 비교하지 않는다
+    o.data[0].rowMetadata.slice(0, lastRow).forEach((m, i) => { const t = s.data[0].rowMetadata[i] || {}; if ((m.pixelSize !== AUTO_ROW && m.pixelSize !== t.pixelSize) || !!m.hiddenByUser !== !!t.hiddenByUser) issues.크기.push(`${i + 1}행 ${m.pixelSize}/${t.pixelSize}`); });
+    // 잠금은 반영 전 상태(prot)와 같아야 한다 — 따로 돌릴 때(prot 없음)는 잠금을 보지 않는다
+    if (prot) {
+      const whole = (s.protectedRanges || []).find((p) => p.range.startRowIndex === undefined && p.range.startColumnIndex === undefined);
+      const want = prot[sName];
+      if (!!want !== !!whole) issues.보호.push(want ? "탭 전체 잠금 빠짐" : "원래 없던 잠금이 걸림");
+      else if (want) {
+        const users = (u) => [...new Set(u || [])].filter((x) => x !== saEmail).sort().join(",");
+        if (users(want.users) !== users(whole.editors?.users)) issues.보호.push("잠금 편집자가 반영 전과 다름");
+      }
+    }
     const n = Object.values(issues).reduce((a, b) => a + b.length, 0);
     total += n;
     report[sName] = issues;
