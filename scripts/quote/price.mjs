@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { sheets, BOOKS, TABS, colName, q } from "./lib.mjs";
+import { sheets, BOOKS, TABS, colName, q, requireUserForWrite } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const mode = args[0];
@@ -65,6 +65,7 @@ function unitCosts(b, a) {
 }
 
 async function preview() {
+  requireUserForWrite(); // 미리보기도 원본에 임시 탭을 만들었다 지운다
   const input = JSON.parse(readFileSync(args[1], "utf8"));
   const books = (opt("--books") || "black,gold").split(",");
   // --skip "서버 및 PC 가구 내역:22,PC 및 주변 기기 내역:9" — 잘못 잡힌 줄 빼기(블랙·골드 공통)
@@ -169,6 +170,7 @@ function diffCells(a, b) { // 두 격자에서 다른 칸 목록(A1)
 }
 
 async function apply() {
+  requireUserForWrite();
   const plan = JSON.parse(readFileSync(args[1] && !args[1].startsWith("--") ? args[1] : PLAN, "utf8"));
   const prices = opt("--prices") ? JSON.parse(readFileSync(opt("--prices"), "utf8")) : [];
 

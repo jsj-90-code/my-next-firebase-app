@@ -10,7 +10,7 @@
 //   → 영업부용 기존 탭은 이름만 바꿔 백업 → 깨끗한 탭 복사·행 높이/열 너비·보호 → 자동 검증
 //   → 통과하면 백업 삭제·기록 저장, 실패하면 백업을 남기고 멈춤(--rollback/--accept로 결정)
 // 원가가 들어간 내용은 영업부용 시트에 한 순간도 들어가지 않는다.
-import { sheets, actorEmail, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
+import { sheets, actorEmail, requireUserForWrite, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
 import { verify } from "./verify.mjs";
 
 const args = process.argv.slice(2);
@@ -224,6 +224,7 @@ async function dropBackups() {
 // ---------- 실행 ----------
 (async () => {
   console.log(`[반영] ${book.label}${book.test ? " (시험용)" : ""}`);
+  if (!has("--check")) requireUserForWrite(); // --check(읽기만) 말고는 시트를 고친다
   if (has("--rollback")) { console.log(`백업으로 되돌림: ${await rollback()}건`); return; }
   if (has("--accept")) { await dropBackups(); await writeLog(); console.log("확정: 백업 삭제, 반영 기록 저장"); return; }
   if ((await meta(book.sales)).some((s) => s.properties.title.startsWith(BAK))) throw new Error("영업부용에 지난 반영 백업이 남아 있다. --rollback 또는 --accept로 먼저 정리할 것");

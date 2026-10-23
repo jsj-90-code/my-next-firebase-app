@@ -41,7 +41,7 @@ if (userAuth) {
 } else {
   const key = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\+n/g, "\n").replace(/^"|"$/g, "");
   if (!saEmail || !key) throw new Error("로그인 정보도 서비스 계정도 없다 — node scripts/quote/login.mjs 로 로그인할 것");
-  if (!process.argv[1]?.endsWith("login.mjs")) console.log("  ※ 로그인 정보 없음 → 서비스 계정(로봇)으로 접근 — 시트 수정 기록에 로봇 이름이 남는다");
+  if (!process.argv[1]?.endsWith("login.mjs")) console.log("  ※ 로그인 정보 없음 → 서비스 계정(로봇)으로 읽기만 함 — 시트를 고치는 작업은 멈춤(login.mjs로 로그인할 것)");
   auth = new google.auth.JWT({ email: saEmail, key, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
 }
 export const sheets = google.sheets({ version: "v4", auth });
@@ -49,6 +49,11 @@ export const userEmail = userAuth ? token.email : null;
 // 탭 잠금을 새로 걸 때 편집자에 꼭 넣을 계정(지금 시트를 고치는 계정) / 검증 때 비교에서 빼는 계정
 export const actorEmail = userEmail || saEmail;
 export const TOOL_EMAILS = [saEmail, userEmail].filter(Boolean);
+// 로봇(서비스 계정)으로는 시트를 고치지 않는다 — 수정 기록에 로봇 이름이 남는 걸 사용자가 싫어함(10-23). 꼭 필요하면 QUOTE_AUTH=sa로 명시
+export function requireUserForWrite() {
+  if (userEmail || process.env.QUOTE_AUTH === "sa") return;
+  throw new Error("이 PC에서 구글 로그인을 안 해서 시트를 고치지 않고 멈춤 — node scripts/quote/login.mjs 로 로그인한 뒤 다시");
+}
 
 // 시트 주소. test = 반영 시험용 사본(사용자 내 드라이브).
 export const BOOKS = {
