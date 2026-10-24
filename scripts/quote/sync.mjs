@@ -7,8 +7,9 @@
 //   node scripts/quote/sync.mjs <black|gold> [--test] --accept     검증 차이를 확인하고 그대로 확정(백업 삭제·기록 저장)
 //
 // 순서: 원본 안에 임시 탭 → 원가(K열~)·본사 내부 정리 표 삭제, 원가 참조 수식은 값으로 → 원가 흔적 검사(걸리면 중단)
-//   → 영업부용 기존 탭은 이름만 바꿔 백업 → 깨끗한 탭 복사·행 높이/열 너비·보호 → 자동 검증
-//   → 통과하면 백업 삭제·기록 저장, 실패하면 백업을 남기고 멈춤(--rollback/--accept로 결정)
+//   → 영업부용 탭마다 숨김 백업 사본 → 깨끗한 탭을 영업부용에 숨김 준비 탭으로 복사 → 기존 탭에 행 넣고 빼기·바뀐 칸만 덮어쓰기
+//     (10-24부터 탭을 갈아 끼우지 않음 — 칸별 수정 기록·댓글·탭 링크·잠금 유지) → 자동 검증
+//   → 통과하면 백업 삭제·기록 저장, 실패하면 백업을 남기고 멈춤(--rollback이면 백업 내용을 같은 탭에 되돌려 씀 / --accept)
 // 원가가 들어간 내용은 영업부용 시트에 한 순간도 들어가지 않는다.
 import { sheets, actorEmail, requireUserForWrite, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
 import { verify } from "./verify.mjs";
@@ -151,9 +152,93 @@ async function deleteTemps() {
   await batch(book.orig, m.filter((s) => s.properties.title.startsWith(TEMP)).map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })));
 }
 
-// ---------- 2) 영업부용 교체 ----------
-async function sizeRequests(srcSheetTitle, dstId, dstRows, dstCols) {
-  const s = (await sheets.spreadsheets.get({ spreadsheetId: book.orig, ranges: [q(srcSheetTitle)], fields: "sheets.data(rowMetadata(pixelSize,hiddenByUser),columnMetadata(pixelSize,hiddenByUser))" })).data.sheets[0].data[0];
+// ---------- 2) 영업부용에 덮어쓰기 ----------
+// 10-24 변경: 탭을 갈아 끼우면(옛 방식) 칸별 수정 기록·댓글·탭 링크가 반영마다 끊긴다(10-26 골드 표지 건) →
+// 탭은 그대로 두고 ① 원본에서 넣고 뺀 행을 같은 자리에서 넣고 빼고 ② 다른 칸만 덮어쓴다. 안 바뀐 칸은 건드리지 않는다.
+// 덮어쓸 내용은 원가를 뺀 임시 탭을 영업부용에 숨김 탭(STAGE)으로 복사해 그 안에서 칸 복사 — 원가는 여전히 한 순간도 안 들어간다.
+const STAGE = "__반영준비_";
+const GRID = "sheets(properties(sheetId,title,gridProperties),merges,data(rowData(values(userEnteredValue,userEnteredFormat,note,dataValidation))))";
+async function loadGrid(id, sheetTitle) {
+  const s = (await sheets.spreadsheets.get({ spreadsheetId: id, ranges: [q(sheetTitle)], includeGridData: true, fields: GRID })).data.sheets[0];
+  return { g: s.properties.gridProperties, merges: s.merges || [], rows: (s.data[0].rowData || []).map((r) => r.values || []) };
+}
+// 행 짝짓기 기준: 글자로 직접 쓴 칸(품목명·제목)만 — 번호·금액·수식은 행을 넣고 빼면 따라 바뀌므로 기준에서 뺀다
+const rowKey = (row = []) => row.map((c) => c.userEnteredValue?.stringValue ?? "").join("\u0001").replace(/\u0001+$/, "");
+const cellSig = (c = {}) => JSON.stringify([c.userEnteredValue ?? null, c.userEnteredFormat ?? null, c.note ?? "", c.dataValidation ?? null]);
+// 영업부용 행(a) ↔ 넣을 행(b) 최장 공통 순서로 짝짓기 → 짝 없는 구간마다 {at: 영업부용 행 위치, del, ins}
+function rowGaps(a, b) {
+  const n = a.length, m = b.length, W = m + 1, dp = new Int32Array((n + 1) * W);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i * W + j] = a[i] === b[j] ? dp[(i + 1) * W + j + 1] + 1 : Math.max(dp[(i + 1) * W + j], dp[i * W + j + 1]);
+  const gaps = []; let i = 0, j = 0, cur = null;
+  const flush = () => { if (cur) gaps.push(cur); cur = null; };
+  while (i < n || j < m) {
+    if (i < n && j < m && a[i] === b[j]) { flush(); i++; j++; continue; }
+    cur ??= { at: i, del: 0, ins: 0 };
+    if (j >= m || (i < n && dp[(i + 1) * W + j] >= dp[i * W + j + 1])) { cur.del++; i++; } else { cur.ins++; j++; }
+  }
+  flush();
+  return gaps;
+}
+const inside = (m, r) => m.startRowIndex < r.endRowIndex && r.startRowIndex < m.endRowIndex && m.startColumnIndex < r.endColumnIndex && r.startColumnIndex < m.endColumnIndex;
+const mkey = (m) => `${m.startRowIndex},${m.endRowIndex},${m.startColumnIndex},${m.endColumnIndex}`;
+const rng = (sheetId, m) => ({ sheetId, startRowIndex: m.startRowIndex, endRowIndex: m.endRowIndex, startColumnIndex: m.startColumnIndex, endColumnIndex: m.endColumnIndex });
+
+// src(같은 영업부용 시트 안의 탭) 내용으로 dst 탭을 맞춘다. size = 행 높이·열 너비를 읽어 올 곳 {id, title}
+async function applyTab(srcId, srcTitle, dstId, dstTitle, size) {
+  let src = await loadGrid(book.sales, srcTitle), dst = await loadGrid(book.sales, dstTitle);
+  const sR = src.g.rowCount, sC = src.g.columnCount;
+  // ① 행: 넣고 뺀 자리 맞추기(아래 구간부터 해야 위 위치가 안 밀린다). 같은 구간의 지움·넣음은 짝지어 '고친 행'으로 남기고 남는 만큼만 넣고 뺀다
+  const pad = (rows, n) => Array.from({ length: n }, (_, r) => rowKey(rows[r]));
+  const gaps = rowGaps(pad(dst.rows, dst.g.rowCount), pad(src.rows, sR));
+  const req = [];
+  for (const x of [...gaps].reverse()) {
+    const at = x.at + Math.min(x.del, x.ins);
+    if (x.ins > x.del) req.push({ insertDimension: { range: { sheetId: dstId, dimension: "ROWS", startIndex: at, endIndex: at + x.ins - x.del }, inheritFromBefore: at > 0 } });
+    if (x.del > x.ins) req.push({ deleteDimension: { range: { sheetId: dstId, dimension: "ROWS", startIndex: at, endIndex: at + x.del - x.ins } } });
+  }
+  // 열은 끝에서만 늘리고 줄인다(영업부용은 J열까지라 열 구성은 거의 안 바뀜)
+  if (sC > dst.g.columnCount) req.push({ appendDimension: { sheetId: dstId, dimension: "COLUMNS", length: sC - dst.g.columnCount } });
+  if (sC < dst.g.columnCount) req.push({ deleteDimension: { range: { sheetId: dstId, dimension: "COLUMNS", startIndex: sC, endIndex: dst.g.columnCount } } });
+  await batch(book.sales, req);
+  const rowOps = { ins: gaps.reduce((a, x) => a + Math.max(0, x.ins - x.del), 0), del: gaps.reduce((a, x) => a + Math.max(0, x.del - x.ins), 0) };
+  if (req.length) dst = await loadGrid(book.sales, dstTitle);
+  if (dst.g.rowCount !== sR) throw new Error(`${dstTitle}: 행 맞추기 뒤에도 행 수가 다름(${dst.g.rowCount}/${sR})`);
+
+  // ② 병합: 영업부용에만 있는 병합은 먼저 풀기
+  const sKeys = new Set(src.merges.map(mkey)), dKeys = new Set(dst.merges.map(mkey));
+  const keepMerges = dst.merges.filter((m) => sKeys.has(mkey(m)));
+  const pre = dst.merges.filter((m) => !sKeys.has(mkey(m))).map((m) => ({ unmergeCells: { range: rng(dstId, m) } }));
+  // ③ 다른 칸 찾기 → 행마다 이어진 구간 → 걸치는 병합까지 넓혀서 칸 복사
+  const rects = [];
+  let cells = 0;
+  for (let r = 0; r < sR; r++) {
+    let st = -1;
+    for (let c = 0; c <= sC; c++) {
+      const diff = c < sC && cellSig(src.rows[r]?.[c]) !== cellSig(dst.rows[r]?.[c]);
+      if (diff) { cells++; if (st < 0) st = c; }
+      else if (st >= 0) { rects.push({ startRowIndex: r, endRowIndex: r + 1, startColumnIndex: st, endColumnIndex: c }); st = -1; }
+    }
+  }
+  const allMerges = [...src.merges, ...keepMerges];
+  for (const rc of rects) for (let grown = true; grown;) {
+    grown = false;
+    for (const m of allMerges) if (inside(m, rc) && (m.startRowIndex < rc.startRowIndex || m.endRowIndex > rc.endRowIndex || m.startColumnIndex < rc.startColumnIndex || m.endColumnIndex > rc.endColumnIndex)) {
+      rc.startRowIndex = Math.min(rc.startRowIndex, m.startRowIndex); rc.endRowIndex = Math.max(rc.endRowIndex, m.endRowIndex);
+      rc.startColumnIndex = Math.min(rc.startColumnIndex, m.startColumnIndex); rc.endColumnIndex = Math.max(rc.endColumnIndex, m.endColumnIndex); grown = true;
+    }
+  }
+  await batch(book.sales, [...pre, ...rects.map((rc) => ({ copyPaste: { source: rng(srcId, rc), destination: rng(dstId, rc), pasteType: "PASTE_NORMAL", pasteOrientation: "NORMAL" } }))]);
+  // ④ 아직 없는 병합 걸기, 행 높이·열 너비·눈금선 (칸을 안 고쳤으면 다시 읽지 않는다 — 분당 읽기 한도)
+  const after = new Set((pre.length || rects.length ? (await loadGrid(book.sales, dstTitle)).merges : keepMerges).map(mkey));
+  const post = src.merges.filter((m) => !after.has(mkey(m))).map((m) => ({ mergeCells: { range: rng(dstId, m), mergeType: "MERGE_ALL" } }));
+  post.push({ updateSheetProperties: { properties: { sheetId: dstId, gridProperties: { hideGridlines: !!src.g.hideGridlines } }, fields: "gridProperties.hideGridlines" } });
+  post.push(...await sizeRequests(size, dstId, sR, sC));
+  await batch(book.sales, post);
+  return { cells, rects: rects.length, ...rowOps, merges: pre.length + post.filter((x) => x.mergeCells).length, dKeys: dKeys.size };
+}
+
+async function sizeRequests(from, dstId, dstRows, dstCols) {
+  const s = (await sheets.spreadsheets.get({ spreadsheetId: from.id, ranges: [q(from.title)], fields: "sheets.data(rowMetadata(pixelSize,hiddenByUser),columnMetadata(pixelSize,hiddenByUser))" })).data.sheets[0].data[0];
   const req = [];
   const runs = (arr, n, dim) => {
     let st = 0;
@@ -172,27 +257,33 @@ async function sizeRequests(srcSheetTitle, dstId, dstRows, dstCols) {
 
 async function replaceSales(temps) {
   const sm = await meta(book.sales);
-  // 탭마다 반영 전 잠금(편집자)을 그대로 — 없던 잠금은 걸지 않는다(10-23: 블랙 정보입력·표지는 원래 안 잠김, 골드는 탭마다 편집자 수가 다름)
-  const prot = salesProtection(sm);
-  const order = TABS.map(([, s]) => s).sort((a, b) => (byTitle(sm, a)?.properties.index ?? 99) - (byTitle(sm, b)?.properties.index ?? 99));
-  // 기존 탭은 이름만 바꿔 백업
-  await batch(book.sales, TABS.map(([, s]) => byTitle(sm, s)).filter(Boolean).map((x) => ({ updateSheetProperties: { properties: { sheetId: x.properties.sheetId, title: BAK + x.properties.title }, fields: "title" } })));
+  // 덮어쓰기 전에 탭마다 숨김 백업(같은 시트 안 사본) — 검증 실패면 이 내용으로 같은 탭에 되돌린다
+  await batch(book.sales, TABS.map(([, s]) => byTitle(sm, s)).filter(Boolean).map((x) => ({ duplicateSheet: { sourceSheetId: x.properties.sheetId, newSheetName: BAK + x.properties.title, insertSheetIndex: sm.length } })));
+  const sm2 = await meta(book.sales);
+  await batch(book.sales, sm2.filter((s) => s.properties.title.startsWith(BAK)).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: true }, fields: "hidden" } })));
   for (const t of temps) {
     const n = (await sheets.spreadsheets.sheets.copyTo({ spreadsheetId: book.orig, sheetId: t.id, requestBody: { destinationSpreadsheetId: book.sales } })).data;
-    const req = [{ updateSheetProperties: { properties: { sheetId: n.sheetId, title: t.s, gridProperties: { hideGridlines: !!t.src.properties.gridProperties.hideGridlines } }, fields: "title,gridProperties.hideGridlines" } }];
-    req.push(...await sizeRequests(t.o, n.sheetId, n.gridProperties.rowCount, n.gridProperties.columnCount));
-    const editors = prot[t.s];
-    if (editors) req.push({ addProtectedRange: { protectedRange: { range: { sheetId: n.sheetId }, description: "영업부용 원판 — 원본에서 반영", editors: { users: [...new Set([...(editors.users || []), actorEmail])], groups: editors.groups || [], domainUsersCanEdit: !!editors.domainUsersCanEdit } } } });
-    await batch(book.sales, req);
+    const stage = STAGE + t.s;
+    await batch(book.sales, [{ updateSheetProperties: { properties: { sheetId: n.sheetId, title: stage, hidden: true }, fields: "title,hidden" } }]);
+    const dst = byTitle(sm2, t.s);
+    if (!dst) {
+      // 영업부용에 아직 없는 탭: 준비 탭을 그대로 그 이름으로 쓰고 잠근다(편집자: 지금 고치는 계정만)
+      await batch(book.sales, [
+        { updateSheetProperties: { properties: { sheetId: n.sheetId, title: t.s, hidden: false }, fields: "title,hidden" } },
+        ...await sizeRequests({ id: book.orig, title: t.o }, n.sheetId, n.gridProperties.rowCount, n.gridProperties.columnCount),
+        { addProtectedRange: { protectedRange: { range: { sheetId: n.sheetId }, description: "영업부용 원판 — 원본에서 반영", editors: { users: [actorEmail] } } } },
+      ]);
+      console.log(`  ${t.s}: 새 탭으로 추가`);
+      continue;
+    }
+    const r = await applyTab(n.sheetId, stage, dst.properties.sheetId, t.s, { id: book.orig, title: t.o });
+    await batch(book.sales, [{ deleteSheet: { sheetId: n.sheetId } }]);
+    console.log(`  ${t.s}: 바뀐 칸 ${r.cells}개${r.ins ? `, 행 넣음 ${r.ins}` : ""}${r.del ? `, 행 지움 ${r.del}` : ""}${r.merges ? `, 병합 고침 ${r.merges}` : ""}`);
   }
-  const sm2 = await meta(book.sales);
-  const synced = new Set(TABS.map(([, s]) => s));
-  await batch(book.sales, [
-    ...sm2.filter((s) => s.properties.title.startsWith(BAK)).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: true }, fields: "hidden" } })),
-    // 반영 대상이 아닌 탭은 숨김 상태를 반영 전과 똑같이 — 바뀐 탭만(잠긴 탭은 바꾸지 않는 요청도 거부됨, 10-23 블랙 '최종(이전)_사용불가')
-    ...sm.filter((s) => !synced.has(s.properties.title) && !s.properties.title.startsWith(BAK) && !!byTitle(sm2, s.properties.title)?.properties.hidden !== !!s.properties.hidden).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: !!s.properties.hidden }, fields: "hidden" } })),
-    ...order.map((name, i) => ({ updateSheetProperties: { properties: { sheetId: byTitle(sm2, name).properties.sheetId, index: i }, fields: "index" } })),
-  ]);
+}
+async function dropStages() {
+  const sm = await meta(book.sales);
+  await batch(book.sales, sm.filter((s) => s.properties.title.startsWith(STAGE)).map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })));
 }
 
 // 영업부용 탭별 탭 전체 잠금의 편집자(잠금 없으면 null). 처음 생기는 탭은 잠근다(편집자: 서비스 계정만).
@@ -205,16 +296,21 @@ function salesProtection(sm) {
   return out;
 }
 
+// 백업 내용을 같은 탭에 다시 덮어써서 되돌린다(탭을 바꾸지 않으니 댓글·링크 유지). 탭이 없어졌으면 백업 이름만 되돌림
 async function rollback() {
+  await dropStages();
   const sm = await meta(book.sales);
-  const req = [];
+  let n = 0;
   for (const [, s] of TABS) {
     const bak = byTitle(sm, BAK + s); if (!bak) continue;
-    const cur = byTitle(sm, s); if (cur) req.push({ deleteSheet: { sheetId: cur.properties.sheetId } });
-    req.push({ updateSheetProperties: { properties: { sheetId: bak.properties.sheetId, title: s, hidden: false }, fields: "title,hidden" } });
+    const cur = byTitle(sm, s);
+    if (cur) {
+      await applyTab(bak.properties.sheetId, BAK + s, cur.properties.sheetId, s, { id: book.sales, title: BAK + s });
+      await batch(book.sales, [{ deleteSheet: { sheetId: bak.properties.sheetId } }]);
+    } else await batch(book.sales, [{ updateSheetProperties: { properties: { sheetId: bak.properties.sheetId, title: s, hidden: false }, fields: "title,hidden" } }]);
+    n++;
   }
-  await batch(book.sales, req);
-  return req.length;
+  return n;
 }
 async function dropBackups() {
   const sm = await meta(book.sales);
@@ -253,8 +349,8 @@ async function dropBackups() {
     console.log("원가 흔적 검사: 통과");
     if (has("--dry")) { console.log("--dry: 영업부용은 건드리지 않음"); return; }
     try { await replaceSales(temps); }
-    catch (e) { console.log("영업부용 교체 중 실패 → 자동 되돌림:", e.message); await rollback(); process.exitCode = 4; return; }
-  } finally { await deleteTemps(); }
+    catch (e) { console.log("영업부용 덮어쓰기 중 실패 → 자동 되돌림:", e.message); await rollback(); process.exitCode = 4; return; }
+  } finally { await deleteTemps(); await dropStages(); }
 
   console.log("\n[자동 검증]");
   const v = await verify(book, { prot });

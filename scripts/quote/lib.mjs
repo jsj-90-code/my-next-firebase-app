@@ -20,8 +20,9 @@ function loadEnvLocal() {
   }
 }
 loadEnvLocal();
-// 분당 읽기·쓰기 한도(429)나 일시 오류(5xx)면 기다렸다가 다시 시도(최대 6번, 점점 길게)
-google.options({ retryConfig: { retry: 6, retryDelay: 5000, statusCodesToRetry: [[429, 429], [500, 599]], httpMethodsToRetry: ["GET", "POST", "PUT"], onRetryAttempt: (e) => console.log(`  (구글 한도/오류 ${e.response?.status ?? ""} → 잠시 후 다시 시도)`) } });
+// 분당 읽기·쓰기 한도(429)나 일시 오류(5xx)면 기다렸다가 다시 시도(최대 8번, 점점 길게 — 합쳐 2분 남짓.
+// 6번이면 33초라 1분 한도가 풀리기 전에 포기했다, 10-24 덮어쓰기 반영 시험)
+google.options({ retryConfig: { retry: 8, retryDelay: 5000, statusCodesToRetry: [[429, 429], [500, 599]], httpMethodsToRetry: ["GET", "POST", "PUT"], onRetryAttempt: (e) => console.log(`  (구글 한도/오류 ${e.response?.status ?? ""} → 잠시 후 다시 시도)`) } });
 
 export const SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "openid", "email"];
 export const TOKEN_FILE = join(homedir(), ".isens-quote", "token.json");
