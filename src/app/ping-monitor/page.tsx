@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
+import { findExistingOverlaps } from "@/lib/pingMonitor/duplicate";
 import {
   BLOCKED_SUSPECT_SAMPLES,
   statusShowsValues,
@@ -327,6 +328,9 @@ export default function PingMonitorPage() {
     };
   }, [user]);
 
+  // 이미 겹쳐 들어가 있는 등록(2026-10-24 사용자 "뭐가 겹치는지 알려주고 고칠 수 있게") — 측정 중인 것끼리만.
+  const overlaps = useMemo(() => (stores ? findExistingOverlaps(stores.filter((s) => s.active)) : []), [stores]);
+
   // 측정 중지(폐업·중복)된 매장은 목록에서 숨긴다(2026-10-08 사용자). 숨긴 수만 따로 보여준다.
   const visibleStores = useMemo(() => (stores ?? []).filter((s) => s.active !== false), [stores]);
   const hiddenCount = useMemo(() => (stores ?? []).filter((s) => s.active === false).length, [stores]);
@@ -465,6 +469,7 @@ export default function PingMonitorPage() {
           <StoreForm
             submitLabel="등록하고 측정 시작"
             showMap
+            stores={stores}
             onSubmit={async (input) => {
               const id = await createPingStore(input, user?.email ?? null);
               router.push(`/ping-monitor/${id}`);
@@ -473,6 +478,23 @@ export default function PingMonitorPage() {
         </section>
       )}
 
+      {overlaps.length > 0 && (
+        <details className="app-notice app-badge-warn px-3 py-2 text-sm">
+          <summary className="cursor-pointer font-semibold">겹치는 등록 {overlaps.length}건 — 같은 매장이 두 번 들어갔거나 IP·주소가 잘못 들어간 곳</summary>
+          <ul className="mt-2 flex flex-col gap-1 text-xs">
+            {overlaps.map((o) => (
+              <li key={`${o.kind}-${o.a.id}-${o.b.id}`}>
+                {o.kind === "ip" ? `IP ${o.overlap}개 겹침` : "주소 같음"}:{" "}
+                <Link href={`/ping-monitor/${o.a.id}`} className="underline">{o.a.name}</Link> ({o.a.ownName ?? o.a.ownCode ?? "묶음 없음"}) ↔{" "}
+                <Link href={`/ping-monitor/${o.b.id}`} className="underline">{o.b.name}</Link> ({o.b.ownName ?? o.b.ownCode ?? "묶음 없음"})
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs">
+            매장을 눌러 잘못된 쪽의 IP·주소를 고치거나, 같은 매장이면 하나를 측정 중지하세요. 같은 건물의 다른 PC방이면 두 주소에 층·호수를 적으면 이 목록에서 빠집니다.
+          </p>
+        </details>
+      )}
       {error && <p role="alert" className="app-notice app-badge-danger px-3 py-2 text-sm">{error}</p>}
       {stores == null && !error && <p className="text-sm text-[var(--sl-ink-soft)]">불러오는 중...</p>}
       {stores != null && stores.length === 0 && (

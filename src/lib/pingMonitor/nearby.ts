@@ -3,7 +3,7 @@ export const PING_MAP_RADIUS_M = 1000; // 사용자 2026-10-16 "반경 1km"
 
 export type NearbyPlace = { id: string; name: string; address: string; category: string; lat: number; lng: number; distanceM: number };
 export type NearbyResponse = {
-  geocoded?: Record<string, { lat: number; lng: number; roadAddress: string | null } | null>;
+  geocoded?: Record<string, { lat: number; lng: number; roadAddress: string | null; jibunAddress?: string | null } | null>;
   pcBangs?: NearbyPlace[];
   demandPoints?: NearbyPlace[];
 };

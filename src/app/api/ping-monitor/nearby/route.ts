@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       out.geocoded = {};
       for (const a of addresses) {
         const g = await geocodeAddress(a).catch(() => null);
-        out.geocoded[a] = g ? { lat: g.lat, lng: g.lng, roadAddress: g.roadAddress } : null;
+        out.geocoded[a] = g ? { lat: g.lat, lng: g.lng, roadAddress: g.roadAddress, jibunAddress: g.jibunAddress } : null; // 지번은 중복 등록 확인용(2026-10-24)
       }
     }
     const layers = new Set(body.layers ?? []);

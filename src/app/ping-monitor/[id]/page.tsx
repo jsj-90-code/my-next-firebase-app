@@ -338,6 +338,7 @@ export default function PingStoreDetailPage() {
           <div className="mt-3">
             <StoreForm
               initial={store}
+              selfId={store.id}
               showActive
               submitLabel="저장"
               onSubmit={async (input) => {

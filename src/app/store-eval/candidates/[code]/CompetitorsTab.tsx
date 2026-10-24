@@ -340,6 +340,7 @@ function PingMeasurePanel({
               </p>
               <StoreForm
                 initial={{ ...m.store, ipRanges: m.store.ipRanges || competitorIp || "" }}
+                selfId={m.store.id}
                 submitLabel="측정기에 저장"
                 onSubmit={async (input) => {
                   const store = m.store!;

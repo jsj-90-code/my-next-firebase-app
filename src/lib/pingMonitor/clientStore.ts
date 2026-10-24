@@ -148,7 +148,8 @@ export async function listPingDaily(storeId: string, from: string, to: string): 
 }
 
 export type CustomOwnKind = "기존점" | "후보지";
-export type OwnStoreOption = { code: string; name: string; kind: "기존점" | "후보지"; custom?: boolean };
+/** lat·lng — 점포평가 좌표(가까운 순 정렬·근처 묶음 찾기, 2026-10-24). 직접 입력 묶음은 좌표가 없어 화면이 소속 경쟁점 좌표로 메운다. */
+export type OwnStoreOption = { code: string; name: string; kind: "기존점" | "후보지"; custom?: boolean; lat?: number | null; lng?: number | null };
 
 /**
  * 점포평가에 없는 우리 매장을 이름만 적어 묶는 코드(2026-10-14 타부서 공유 — 점포평가엔 일부 매장만 있어서).
@@ -173,11 +174,11 @@ export async function listOwnStoreOptions(): Promise<OwnStoreOption[]> {
       .map(([code, name]) => ({ code, name, kind: isCustomCandidateCode(code) ? ("후보지" as const) : ("기존점" as const), custom: true }))
       .sort((a, b) => a.name.localeCompare(b.name, "ko")),
     ...existing
-      .map((s) => ({ code: s.storeCode, name: s.storeName, kind: "기존점" as const }))
+      .map((s) => ({ code: s.storeCode, name: s.storeName, kind: "기존점" as const, lat: s.lat ?? null, lng: s.lng ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name, "ko")),
     ...candidates
       .filter((c) => c.reviewStatus !== "종료" && !existingNames.has(c.name.replace(/\s/g, "")))
-      .map((c) => ({ code: c.code, name: c.name, kind: "후보지" as const }))
+      .map((c) => ({ code: c.code, name: c.name, kind: "후보지" as const, lat: c.lat ?? null, lng: c.lng ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name, "ko")),
   ];
 }

@@ -2,26 +2,32 @@
 
 // 경쟁점 등록·수정 칸 + "지금 확인"(기록 안 남기는 즉석 측정). 목록 화면(등록)과 상세 화면(수정)이 같이 쓴다.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseIpRanges } from "@/lib/pingMonitor/ipRange";
 import {
   listCompetitorOptions,
   listOwnStoreOptions,
+  listPingStores,
   type CompetitorOption,
   type OwnStoreOption,
   type PingStoreInput,
 } from "@/lib/pingMonitor/clientStore";
 import { customOwnCode, isCustomOwnCode, type CustomOwnKind } from "@/lib/pingMonitor/clientStore";
-import { shortIps } from "@/lib/pingMonitor/summary";
+import { shortIps, type PingStore } from "@/lib/pingMonitor/summary";
 import { distanceM as straightDistanceM } from "@/lib/pingMonitor/nearby";
+import { findDuplicates, newAddressKeys, similarGroupName } from "@/lib/pingMonitor/duplicate";
 import { PingMap, geocodeAddresses, useOwnLocation, useRivalPins, type PingMapPin } from "./PingMap";
+import { OwnStorePicker } from "./OwnStorePicker";
 
 const CUSTOM_OPTION: Record<CustomOwnKind, string> = { 기존점: "__custom_existing__", 후보지: "__custom_candidate__" };
 const customKindOf = (v: string): CustomOwnKind | null => (v === CUSTOM_OPTION.기존점 ? "기존점" : v === CUSTOM_OPTION.후보지 ? "후보지" : null);
 
 const FIELD = "app-input mt-1 w-full rounded-lg px-3 py-2 text-base sm:text-sm placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70";
 const LABEL = "text-xs font-medium text-[var(--sl-ink-soft)]";
+// 2026-10-24 사용자 — 500m 안의 묶음은 같은 상권으로 보고(새 이름을 만들려면 "다른 상권 맞음"을 눌러야), 1km 안은 안내만.
+const SAME_AREA_M = 500;
+const NEAR_AREA_M = 1000;
 
 type ProbeResult = { at: string; total: number; aliveIps: string[] };
 
@@ -31,6 +37,8 @@ export function StoreForm({
   onSubmit,
   showActive = false,
   showMap = false,
+  selfId = null,
+  stores: givenStores = null,
 }: {
   initial?: Partial<PingStoreInput>;
   submitLabel: string;
@@ -38,6 +46,10 @@ export function StoreForm({
   showActive?: boolean;
   /** 경쟁점 등록 때 지도(2026-10-16 점포팀 요청). 수정 화면은 상세 페이지 지도를 쓴다. */
   showMap?: boolean;
+  /** 수정 중인 등록 id — 중복 확인에서 자기 자신을 뺀다. 없으면 새 등록. */
+  selfId?: string | null;
+  /** 측정기 등록 전체(목록 화면이 이미 읽은 것). 없으면 중복 확인용으로 한 번 읽는다. */
+  stores?: PingStore[] | null;
 }) {
   const { user } = useAuth();
   const [name, setName] = useState(initial?.name ?? "");
@@ -64,6 +76,23 @@ export function StoreForm({
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const locatedAddress = useRef<string>(initial?.lat != null ? (initial?.address ?? "").trim() : "");
+  /** 카카오가 찾은 도로명·지번 — 적은 주소와 다른 모양으로 저장된 기존 등록도 잡으려고(2026-10-24). */
+  const [geoAddr, setGeoAddr] = useState<{ roadAddress: string | null; jibunAddress: string | null } | null>(null);
+  const [loadedStores, setLoadedStores] = useState<PingStore[] | null>(null);
+  const allStores = givenStores ?? loadedStores;
+  const [otherArea, setOtherArea] = useState(false);
+  const isNew = !selfId;
+
+  useEffect(() => {
+    if (givenStores) return;
+    let cancelled = false;
+    listPingStores()
+      .then((rows) => !cancelled && setLoadedStores(rows))
+      .catch(() => !cancelled && setLoadedStores([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [givenStores]);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +125,7 @@ export function StoreForm({
   useEffect(() => {
     const a = address.trim();
     if (!a || a === locatedAddress.current || !user) return;
+    setGeoAddr(null);
     const t = setTimeout(() => {
       setGeoState("finding");
       geocodeAddresses([a], getToken)
@@ -103,6 +133,7 @@ export function StoreForm({
           locatedAddress.current = a;
           const hit = g[a] ?? null;
           setCompLoc(hit ? { lat: hit.lat, lng: hit.lng } : null);
+          setGeoAddr(hit ? { roadAddress: hit.roadAddress, jibunAddress: hit.jibunAddress ?? null } : null);
           setGeoState(hit ? "idle" : "notFound");
         })
         .catch(() => setGeoState("notFound"));
@@ -141,7 +172,53 @@ export function StoreForm({
   const pcInvalid = pcNum != null && !(Number.isInteger(pcNum) && pcNum > 0);
   const distNum = distance.trim() === "" ? null : Number(distance);
   const distInvalid = distNum != null && !(Number.isFinite(distNum) && distNum >= 0);
-  const canSubmit = name.trim() !== "" && !(customMode && !customTrimmed) && parsed.ips.length > 0 && parsed.errors.length === 0 && !pcInvalid && !distInvalid && !busy;
+  // 중복 등록 막기(2026-10-24 사용자: "IP대역·주소 겹치면 등록 안 되게, 뭐가 겹치는지 알려주고 고칠 수 있게").
+  // 수정 화면에선 고친 칸이 새로 겹칠 때만 막는다 — 원래 겹쳐 있던 등록은 알림만 해서, 잘못 들어간 쪽을 고치러 들어와 저장할 수 있게.
+  const addressKeys = useMemo(() => newAddressKeys(address, geoAddr), [address, geoAddr]);
+  const dupHits = useMemo(
+    () => (allStores ? findDuplicates({ ipRanges: parsed.errors.length ? "" : ipRanges, keys: addressKeys }, allStores, selfId) : []),
+    [allStores, ipRanges, parsed.errors.length, addressKeys, selfId],
+  );
+  const ipChanged = ipRanges.replace(/\s/g, "") !== (initial?.ipRanges ?? "").replace(/\s/g, "");
+  const addressChanged = address.trim() !== (initial?.address ?? "").trim();
+  // 측정 중지(폐업·중복 정리)한 등록은 막지 않는다 — 폐업한 자리에 새 PC방이 들어오면 주소·IP가 같을 수 있다.
+  const blocking = dupHits.filter((h) => h.store.active && ((h.kind === "ip" && (isNew || ipChanged)) || (h.kind === "address" && (isNew || addressChanged))));
+  const noticeOnly = dupHits.filter((h) => !blocking.includes(h));
+
+  // 상권 묶음 — 등록하는 매장 위치에서 가까운 우리 매장(기존점·후보지·직접 입력 묶음). 직접 입력 묶음은 소속 경쟁점 좌표 평균.
+  const here = compLoc ?? gps;
+  const customGroupLoc = useMemo(() => {
+    const acc = new Map<string, { lat: number; lng: number; n: number }>();
+    for (const s of allStores ?? []) {
+      if (!s.ownCode || !isCustomOwnCode(s.ownCode) || s.lat == null || s.lng == null) continue;
+      const a = acc.get(s.ownCode) ?? { lat: 0, lng: 0, n: 0 };
+      acc.set(s.ownCode, { lat: a.lat + s.lat, lng: a.lng + s.lng, n: a.n + 1 });
+    }
+    return new Map([...acc].map(([k, v]) => [k, { lat: v.lat / v.n, lng: v.lng / v.n }]));
+  }, [allStores]);
+  const locOf = useCallback(
+    (o: OwnStoreOption) => (o.lat != null && o.lng != null ? { lat: o.lat, lng: o.lng } : customGroupLoc.get(o.code) ?? null),
+    [customGroupLoc],
+  );
+  const nearGroups = useMemo(() => {
+    if (!compLoc || !ownOptions) return [];
+    return ownOptions
+      .map((o) => ({ o, at: locOf(o) }))
+      .filter((x): x is { o: OwnStoreOption; at: { lat: number; lng: number } } => x.at != null)
+      .map(({ o, at }) => ({ o, d: straightDistanceM(compLoc, at) }))
+      .filter((x) => x.d <= NEAR_AREA_M)
+      .sort((a, b) => a.d - b.d);
+  }, [compLoc, ownOptions, locOf]);
+  const sameAreaGroups = nearGroups.filter((g) => g.d <= SAME_AREA_M);
+  const similarGroups = customMode && customTrimmed ? (ownOptions ?? []).filter((o) => similarGroupName(o.name, customTrimmed)) : [];
+  // 새 상권 이름을 만들 때 500m 안에 묶음이 있으면 "다른 상권 맞음"을 눌러야 저장된다.
+  const needsAreaConfirm = isNew && !!customMode && !!customTrimmed && sameAreaGroups.length > 0 && !otherArea;
+  // 위치 필수(2026-10-24 사용자) — 새 등록만. 옛 등록(좌표 없는 118곳)을 고치러 들어왔을 때는 막지 않는다.
+  const needsLocation = isNew && !compLoc;
+
+  const canSubmit =
+    name.trim() !== "" && !(customMode && !customTrimmed) && parsed.ips.length > 0 && parsed.errors.length === 0 && !pcInvalid && !distInvalid && !busy &&
+    allStores != null && blocking.length === 0 && !needsAreaConfirm && !needsLocation;
 
   async function runProbe() {
     if (!user) return;
@@ -199,34 +276,21 @@ export function StoreForm({
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>우리 매장</span>
-          <select
+          <OwnStorePicker
             className={FIELD}
+            options={ownOptions}
             value={customMode ? CUSTOM_OPTION[customMode] : ownCode}
-            onChange={(e) => {
-              const v = e.target.value;
+            fallbackName={initial?.ownName ?? null}
+            customValues={CUSTOM_OPTION}
+            here={here}
+            locOf={locOf}
+            onChange={(v) => {
               setCustomMode(customKindOf(v));
               setOwnCode(customKindOf(v) ? "" : v);
               setCompetitorId("");
+              setOtherArea(false);
             }}
-          >
-            <option value="">{ownOptions == null ? "불러오는 중..." : "연결 안 함"}</option>
-            <option value={CUSTOM_OPTION.기존점}>+ 기존점 직접 입력 (목록에 없을 때)</option>
-            <option value={CUSTOM_OPTION.후보지}>+ 신규후보지 직접 입력 (목록에 없을 때)</option>
-            {(["기존점", "후보지"] as const).map((kind) => (
-              <optgroup key={kind} label={kind}>
-                {(ownOptions ?? [])
-                  .filter((o) => o.kind === kind)
-                  .map((o) => (
-                    <option key={o.code} value={o.code}>
-                      {o.name}
-                    </option>
-                  ))}
-              </optgroup>
-            ))}
-            {ownCode && ownOptions && !ownOptions.some((o) => o.code === ownCode) && (
-              <option value={ownCode}>{initial?.ownName ?? ownCode}</option>
-            )}
-          </select>
+          />
           {customMode && (
             <input
               className={FIELD}
@@ -235,6 +299,26 @@ export function StoreForm({
               placeholder="지점명 (예: 부평역점)"
               autoFocus
             />
+          )}
+          {customMode && (similarGroups.length > 0 || nearGroups.length > 0) && (
+            <AreaSuggestions
+              similar={similarGroups}
+              near={nearGroups}
+              confirmNeeded={isNew && !!customTrimmed && sameAreaGroups.length > 0}
+              otherArea={otherArea}
+              onOtherArea={setOtherArea}
+              onPick={(code) => {
+                setCustomMode(null);
+                setOwnCode(code);
+                setCompetitorId("");
+                setOtherArea(false);
+              }}
+            />
+          )}
+          {!customMode && !ownCode && nearGroups.length > 0 && (
+            <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+              이 근처 상권: {nearGroups.slice(0, 3).map((g) => `${g.o.name}(${g.d}m)`).join(" · ")} — 같은 상권이면 위에서 골라 묶어 주세요.
+            </p>
           )}
         </label>
         <label className="block">
@@ -257,6 +341,11 @@ export function StoreForm({
             <span className={LABEL}>주변 지도 — PC방 핀을 누르면 상호·주소가 채워집니다</span>
             <button type="button" className="app-btn-outline rounded-lg px-3 py-1 text-xs" onClick={locateMe}>내 위치</button>
             {gpsError && <span className="text-xs text-red-600 dark:text-red-400">{gpsError}</span>}
+            {gps && !compLoc && (
+              <button type="button" className="app-btn-outline rounded-lg px-3 py-1 text-xs" onClick={() => setCompLoc(gps)}>
+                지금 위치를 이 매장 위치로
+              </button>
+            )}
           </div>
           <PingMap
             center={compLoc ?? gps ?? ownLoc}
@@ -271,6 +360,7 @@ export function StoreForm({
               setName(p.name);
               setAddress(p.address);
               setCompLoc({ lat: p.lat, lng: p.lng });
+              setGeoAddr(null);
               setGeoState("idle");
             }}
           />
@@ -347,6 +437,15 @@ export function StoreForm({
         </label>
       )}
 
+      {(blocking.length > 0 || noticeOnly.length > 0) && <DuplicateNotice blocking={blocking} notice={noticeOnly} />}
+      {allStores == null && <p className="text-xs text-[var(--sl-ink-soft)]">이미 등록된 매장과 겹치는지 확인하는 중…</p>}
+      {needsLocation && (
+        <p className="app-notice app-badge-warn px-3 py-2 text-xs">
+          매장 위치가 필요합니다 — 주소를 적거나, 지도에서 PC방 핀을 누르거나, &ldquo;내 위치&rdquo; 뒤 &ldquo;지금 위치를 이 매장 위치로&rdquo;를 누르세요.
+          {geoState === "notFound" ? " (적은 주소로는 위치를 못 찾았습니다.)" : ""}
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" className="app-btn-outline rounded-lg px-4 py-2 text-sm" disabled={probing || parsed.ips.length === 0 || parsed.errors.length > 0} onClick={runProbe}>
           {probing ? "확인 중..." : "지금 확인"}
@@ -375,6 +474,91 @@ export function StoreForm({
         </div>
       )}
       {error && <p role="alert" className="app-notice app-badge-danger px-3 py-2 text-sm">{error}</p>}
+    </div>
+  );
+}
+
+function storeLine(s: PingStore) {
+  return (
+    <>
+      <a href={`/ping-monitor/${s.id}`} target="_blank" rel="noreferrer" className="font-medium underline">{s.name}</a>
+      <span className="text-[var(--sl-ink-soft)]"> · {s.ownName ?? (s.ownCode ? s.ownCode : "묶음 없음")}{s.address ? ` · ${s.address}` : ""}{s.ipCount === 0 ? " · IP 빈칸" : ""}</span>
+    </>
+  );
+}
+
+/** 겹치는 기존 등록 — 이름을 누르면 그 매장이 새 창으로 열려, 잘못 들어간 쪽을 바로 고칠 수 있다. */
+function DuplicateNotice({ blocking, notice }: { blocking: ReturnType<typeof findDuplicates<PingStore>>; notice: ReturnType<typeof findDuplicates<PingStore>> }) {
+  const reason = (h: (typeof blocking)[number]) =>
+    h.kind === "ip" ? `IP ${h.overlap}개 겹침 (${h.sample.join(", ")}${h.overlap > h.sample.length ? " …" : ""})` : h.kind === "address" ? "주소 같음" : "같은 건물 · 층·호수 다름";
+  return (
+    <div className="flex flex-col gap-2">
+      {blocking.length > 0 && (
+        <div role="alert" className="app-notice app-badge-danger px-3 py-2 text-xs">
+          <p className="font-semibold">이미 측정기에 있는 매장과 겹쳐 저장할 수 없습니다.</p>
+          <ul className="mt-1 list-disc pl-4">
+            {blocking.map((h) => (
+              <li key={`${h.kind}-${h.store.id}`}>{storeLine(h.store)} — {reason(h)}</li>
+            ))}
+          </ul>
+          <p className="mt-1">
+            같은 매장이면 새로 만들지 말고 그 매장을 열어 고치세요(IP 빈칸이면 거기에 IP를 넣으면 됩니다). 그쪽 IP·주소가 잘못 들어가 있었다면 그쪽을 고친 뒤 다시 저장하세요.
+            같은 건물의 다른 PC방이면 두 매장 주소 모두에 층·호수를 적으면 구분됩니다.
+          </p>
+        </div>
+      )}
+      {notice.length > 0 && (
+        <div className="app-notice app-badge-warn px-3 py-2 text-xs">
+          <p className="font-semibold">확인해 주세요 (저장은 됩니다)</p>
+          <ul className="mt-1 list-disc pl-4">
+            {notice.map((h) => (
+              <li key={`${h.kind}-${h.store.id}`}>{storeLine(h.store)} — {reason(h)}{h.kind === "building" ? "" : !h.store.active ? " (측정 중지된 등록 — 폐업 자리에 새로 들어온 매장이면 그대로 저장)" : " (원래부터 겹쳐 있던 등록)"}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 상권 이름을 직접 적을 때 — 이름이 비슷하거나 가까운 묶음을 먼저 보여 준다(구로점·구로디지털점처럼 갈라지지 않게, 2026-10-24). */
+function AreaSuggestions({
+  similar,
+  near,
+  confirmNeeded,
+  otherArea,
+  onOtherArea,
+  onPick,
+}: {
+  similar: OwnStoreOption[];
+  near: { o: OwnStoreOption; d: number }[];
+  confirmNeeded: boolean;
+  otherArea: boolean;
+  onOtherArea: (v: boolean) => void;
+  onPick: (code: string) => void;
+}) {
+  const rows = [
+    ...near.map((g) => ({ o: g.o, note: `${g.d}m${g.d <= SAME_AREA_M ? " · 같은 상권" : ""}` })),
+    ...similar.filter((o) => !near.some((g) => g.o.code === o.code)).map((o) => ({ o, note: "이름 비슷" })),
+  ];
+  return (
+    <div className={`app-notice mt-2 px-3 py-2 text-xs ${confirmNeeded && !otherArea ? "app-badge-warn" : "app-badge-neutral"}`}>
+      <p className="font-semibold">{confirmNeeded ? `${SAME_AREA_M}m 안에 이미 상권 묶음이 있습니다 — 같은 상권이면 그 묶음에 넣어 주세요.` : "이미 있는 묶음 — 같은 상권이면 여기에 넣어 주세요."}</p>
+      <ul className="mt-1 flex flex-col gap-1">
+        {rows.map(({ o, note }) => (
+          <li key={o.code} className="flex flex-wrap items-center gap-2">
+            <span>{o.name}</span>
+            <span className="text-[var(--sl-ink-soft)]">{o.kind}{o.custom ? "·직접" : ""} · {note}</span>
+            <button type="button" className="app-btn-outline rounded px-2 py-0.5" onClick={() => onPick(o.code)}>이 묶음에 넣기</button>
+          </li>
+        ))}
+      </ul>
+      {confirmNeeded && (
+        <label className="mt-2 flex items-center gap-2">
+          <input type="checkbox" checked={otherArea} onChange={(e) => onOtherArea(e.target.checked)} />
+          다른 상권이 맞습니다 — 새 이름으로 만들기
+        </label>
+      )}
     </div>
   );
 }
