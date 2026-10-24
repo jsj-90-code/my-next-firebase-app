@@ -22,7 +22,7 @@ export async function verify(book, { log = console.log, prot = null } = {}) {
     const issues = { 값: [], 수식: [], 서식: [], 메모: [], 병합: [], 크기: [], 유출: [], 보호: [] };
     const oRows = o.data[0].rowData || [], sRows = s.data[0].rowData || [];
     let lastRow = o.properties.gridProperties.rowCount;
-    if (oName === "최종") { const i = oRows.findIndex((r) => String(r.values?.[1]?.formattedValue || "").startsWith(INTERNAL_BLOCK)); if (i >= 0) lastRow = i; }
+    if (oName === "최종") { const i = oRows.findIndex((r) => (r.values || []).some((c) => String(c.formattedValue || "").trim().startsWith(INTERNAL_BLOCK))); if (i >= 0) lastRow = i; } // 반영과 같은 기준(어느 열·공백 무시)
     const lastCol = keepCols ? o.properties.gridProperties.columnCount : LAST_SALES_COL;
     let valueFixed = 0;
     for (let r = 0; r < Math.max(lastRow, sRows.length); r++) for (let c = 0; c < lastCol; c++) {

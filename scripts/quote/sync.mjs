@@ -143,27 +143,44 @@ async function buildTemps() {
       // 값으로 본다: 굳힐 값(0 아님)이 이 수식이 가리키는 K열 이후 칸 값과 같으면 멈춤
       if (!t.keep && c < LAST_SALES_COL && refsBeyondJ(x)) {
         const val = v[r]?.[c];
+        // 굳혀도 되는 꼴만 허용(4차 검토): K열 이후 '칸 하나씩'만 가리키고(범위·열 전체·찾기 함수 X — SUM(K5:K40)·VLOOKUP은 원가를 끌어옴),
+        // J열 이전 칸·정보입력과 섞지 않고(섞이면 영업부가 댓수를 바꿔도 굳은 값은 안 따라가 금액이 틀림), 결과가 숫자.
+        // 10-24 실제 견적서는 =ROUND((K6*1.1),-2) 꼴 5칸뿐 — 다른 꼴이 생기면 멈추고 사람이 본다
+        const bare = x.replace(/"[^"]*"/g, "");
+        const refs = [...bare.matchAll(/(?:('(?:[^']|'')+'|[^'!\s(),:=+\-*/&<>^]+)!)?\$?([A-Z]{1,3})\$?(\d+)(?![\d(A-Za-z_])/g)];
+        const allCost = refs.length && refs.every((m) => [...m[2]].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1 >= LAST_SALES_COL);
+        if (/:/.test(bare.replace(/'(?:[^']|'')+'!/g, "")) || !allCost || typeof val !== "number") t.rawCost.push(`${t.o} ${colName(c)}${r + 1} (${x.slice(0, 40)}): 값으로 굳힐 수 없는 꼴(원가 칸 하나씩만·숫자 결과만 허용)`);
         if (typeof val === "number" && val !== 0) {
           for (const m of x.replace(/"[^"]*"/g, "").matchAll(/(?:('(?:[^']|'')+'|[^'!\s(),:=+\-*/&<>^]+)!)?\$?([A-Z]{1,3})\$?(\d+)(?![\d(A-Za-z_])/g)) {
             const col = [...m[2]].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
             if (col < LAST_SALES_COL) continue;
             const tab = m[1] ? m[1].replace(/^'|'$/g, "").replace(/''/g, "'") : t.o;
             const cost = origVals[tab]?.[Number(m[3]) - 1]?.[col];
-            if (typeof cost === "number" && Math.abs(cost - val) < 1e-9) { t.rawCost.push(`${t.o} ${colName(c)}${r + 1} (${x.slice(0, 30)} = ${tab === t.o ? "" : tab + "!"}${m[2]}${m[3]} 값 그대로)`); break; }
+            if (typeof cost === "number" && Math.abs(cost - val) < 1e-9) { t.rawCost.push(`${t.o} ${colName(c)}${r + 1} (${x.slice(0, 30)} = ${tab === t.o ? "" : tab + "!"}${m[2]}${m[3]} 값 그대로): 원가 칸을 그대로 옮기는 수식`); break; }
           }
         }
-        asValue.push({ range: a1, values: [[v[r]?.[c] ?? ""]] });
+        asValue.push({ range: a1, values: [[v[r]?.[c] ?? ""]], r, c });
       }
       else if (renameRefs(x) !== x) renamed.push({ range: a1, values: [[renameRefs(x)]] });
     }));
-    if (asValue.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "RAW", data: asValue } });
+    if (asValue.length) {
+      // 수식 칸은 숫자 서식을 가리키는 칸(원가 ₩)에서 자동으로 물려받는다 — 값으로 굳히면 그 서식이 사라져 2160600처럼 보인다(4차 검토 뒤 시험).
+      // 굳히기 전에 보이던 숫자 서식을 칸 서식으로 박아 둔다(칸에 서식이 이미 지정돼 있으면 그대로)
+      const fm = (await sheets.spreadsheets.get({ spreadsheetId: book.orig, ranges: [q(title)], includeGridData: true, fields: "sheets(data(rowData(values(effectiveFormat(numberFormat),userEnteredFormat(numberFormat)))))" })).data.sheets[0].data[0].rowData || [];
+      const keepFmt = asValue.map(({ r, c }) => ({ r, c, x: fm[r]?.values?.[c] })).filter(({ x }) => x?.effectiveFormat?.numberFormat && !x?.userEnteredFormat?.numberFormat)
+        .map(({ r, c, x }) => ({ repeatCell: { range: { sheetId: t.id, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: c, endColumnIndex: c + 1 }, cell: { userEnteredFormat: { numberFormat: x.effectiveFormat.numberFormat } }, fields: "userEnteredFormat.numberFormat" } }));
+      await batch(book.orig, keepFmt);
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "RAW", data: asValue.map(({ range, values }) => ({ range, values })) } });
+    }
     if (renamed.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "USER_ENTERED", data: renamed } });
     t.valueFixed = asValue.length;
     if (t.keep) continue;
     const g = t.src.properties.gridProperties;
     const req = [];
     if (t.o === "최종") {
-      const i = f.findIndex((row) => String(row[1] || "").startsWith(INTERNAL_BLOCK));
+      // 표시 글자를 어느 열에서든(앞뒤 공백 무시) 찾고, 못 찾으면 멈춘다 — 못 찾은 채 넘어가면 내부 표(원가·마진)가 통째로 간다(4차 검토)
+      const i = f.findIndex((row) => row.some((x) => String(x ?? "").trim().startsWith(INTERNAL_BLOCK)));
+      if (i < 0) throw new Error(`원본 최종 탭에서 '${INTERNAL_BLOCK}' 표시를 못 찾음 — 내부 표가 영업부용으로 갈 수 있어 중단`);
       if (i >= 0) req.push({ deleteDimension: { range: { sheetId: t.id, dimension: "ROWS", startIndex: i, endIndex: g.rowCount } } });
     }
     if (g.columnCount > LAST_SALES_COL) req.push({ deleteDimension: { range: { sheetId: t.id, dimension: "COLUMNS", startIndex: LAST_SALES_COL, endIndex: g.columnCount } } });
@@ -173,7 +190,7 @@ async function buildTemps() {
 }
 
 async function leakCheck(temps) {
-  const out = temps.flatMap((t) => (t.rawCost || []).map((x) => `${x}: 원가 칸을 그대로 옮기는 수식`));
+  const out = temps.flatMap((t) => t.rawCost || []);
   // 이름 붙은 범위·표 참조는 주소가 안 보여 원가 열 참조 검사를 빠져나간다(2차 검토) — 10-24 기준 블랙·골드 원본에 없음, 생기면 멈춤
   const names = ((await sheets.spreadsheets.get({ spreadsheetId: book.orig, fields: "namedRanges(name)" })).data.namedRanges || []).map((n) => n.name);
   const nameRe = names.length ? new RegExp(`(^|[^A-Za-z0-9_.'!])(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?![A-Za-z0-9_(])`) : null;
