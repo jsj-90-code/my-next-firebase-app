@@ -4,7 +4,9 @@
 import { pathToFileURL } from "node:url";
 import { sheets, TOOL_EMAILS, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, refsBeyondJ, colName, q, renameRefs, pickBook } from "./lib.mjs";
 
-const FIELDS = "sheets(properties(title,gridProperties),merges,protectedRanges(range,editors),data(columnMetadata(pixelSize,hiddenByUser),rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,userEnteredValue,note,effectiveFormat(horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat,backgroundColor,borders,textFormat(fontFamily,fontSize,bold,italic,strikethrough,underline,foregroundColor))))))";
+// textFormatRuns(칸 안 일부 글자 서식)도 비교 — 10-24 덮어쓰기 방식 검토 때 이것만 바뀐 칸을 검증이 못 잡는 걸 확인
+const runsSig = (c) => JSON.stringify((c.textFormatRuns || []).map((r) => [r.startIndex || 0, { ...r.format, foregroundColorStyle: undefined, link: r.format?.link?.uri }]));
+const FIELDS = "sheets(properties(title,gridProperties),merges,protectedRanges(range,editors),data(columnMetadata(pixelSize,hiddenByUser),rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,userEnteredValue,note,textFormatRuns,effectiveFormat(horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat,backgroundColor,borders,textFormat(fontFamily,fontSize,bold,italic,strikethrough,underline,foregroundColor))))))";
 const fmtSig = (f = {}) => JSON.stringify({ h: f.horizontalAlignment, v: f.verticalAlignment, w: f.wrapStrategy, n: f.numberFormat?.pattern || f.numberFormat?.type, b: f.backgroundColor, t: f.textFormat && { ...f.textFormat, foregroundColorStyle: undefined }, br: f.borders && Object.fromEntries(Object.entries(f.borders).map(([k, x]) => [k, x.style])) });
 const load = async (id, title) => (await sheets.spreadsheets.get({ spreadsheetId: id, ranges: [q(title)], includeGridData: true, fields: FIELDS })).data.sheets[0];
 const mk = (m) => `${colName(m.startColumnIndex)}${m.startRowIndex + 1}:${colName(m.endColumnIndex - 1)}${m.endRowIndex}`;
@@ -27,7 +29,7 @@ export async function verify(book, { log = console.log, prot = null } = {}) {
       if ((oc.formattedValue || "") !== (sc.formattedValue || "")) issues.값.push(`${a1} 원본[${(oc.formattedValue || "").slice(0, 18)}] 영업[${(sc.formattedValue || "").slice(0, 18)}]`);
       if (of && !keepCols && refsBeyondJ(of)) { if (sf) issues.수식.push(`${a1} 원가 참조 수식이 값으로 안 바뀜`); else valueFixed++; }
       else if ((of ? renameRefs(of) : "") !== (sf || "")) issues.수식.push(`${a1} 원본[${(of || "").slice(0, 30)}] 영업[${(sf || "").slice(0, 30)}]`);
-      if (r < lastRow && fmtSig(oc.effectiveFormat) !== fmtSig(sc.effectiveFormat)) issues.서식.push(a1);
+      if (r < lastRow && (fmtSig(oc.effectiveFormat) !== fmtSig(sc.effectiveFormat) || runsSig(oc) !== runsSig(sc))) issues.서식.push(a1);
       if ((oc.note || "") !== (sc.note || "")) issues.메모.push(a1);
       if (LEAK_WORDS.some((w) => (sc.formattedValue || "").includes(w))) issues.유출.push(`${a1} "${sc.formattedValue.slice(0, 20)}"`);
       if (sc.note && NOTE_LEAK_WORDS.some((w) => sc.note.includes(w))) issues.유출.push(`${a1} 메모`);

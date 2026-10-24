@@ -157,14 +157,15 @@ async function deleteTemps() {
 // 탭은 그대로 두고 ① 원본에서 넣고 뺀 행을 같은 자리에서 넣고 빼고 ② 다른 칸만 덮어쓴다. 안 바뀐 칸은 건드리지 않는다.
 // 덮어쓸 내용은 원가를 뺀 임시 탭을 영업부용에 숨김 탭(STAGE)으로 복사해 그 안에서 칸 복사 — 원가는 여전히 한 순간도 안 들어간다.
 const STAGE = "__반영준비_";
-const GRID = "sheets(properties(sheetId,title,gridProperties),merges,data(rowData(values(userEnteredValue,userEnteredFormat,note,dataValidation))))";
+// textFormatRuns = 칸 안 일부 글자 서식(냉난방기 문구의 빨간 글자 등). 빼면 그 서식만 바뀐 칸을 '안 바뀜'으로 보고 건너뛴다(10-24 검토에서 잡음)
+const GRID = "sheets(properties(sheetId,title,gridProperties),merges,data(rowData(values(userEnteredValue,userEnteredFormat,textFormatRuns,note,dataValidation))))";
 async function loadGrid(id, sheetTitle) {
   const s = (await sheets.spreadsheets.get({ spreadsheetId: id, ranges: [q(sheetTitle)], includeGridData: true, fields: GRID })).data.sheets[0];
   return { g: s.properties.gridProperties, merges: s.merges || [], rows: (s.data[0].rowData || []).map((r) => r.values || []) };
 }
 // 행 짝짓기 기준: 글자로 직접 쓴 칸(품목명·제목)만 — 번호·금액·수식은 행을 넣고 빼면 따라 바뀌므로 기준에서 뺀다
 const rowKey = (row = []) => row.map((c) => c.userEnteredValue?.stringValue ?? "").join("\u0001").replace(/\u0001+$/, "");
-const cellSig = (c = {}) => JSON.stringify([c.userEnteredValue ?? null, c.userEnteredFormat ?? null, c.note ?? "", c.dataValidation ?? null]);
+const cellSig = (c = {}) => JSON.stringify([c.userEnteredValue ?? null, c.userEnteredFormat ?? null, c.textFormatRuns ?? null, c.note ?? "", c.dataValidation ?? null]);
 // 영업부용 행(a) ↔ 넣을 행(b) 최장 공통 순서로 짝짓기 → 짝 없는 구간마다 {at: 영업부용 행 위치, del, ins}
 function rowGaps(a, b) {
   const n = a.length, m = b.length, W = m + 1, dp = new Int32Array((n + 1) * W);
@@ -186,6 +187,20 @@ const rng = (sheetId, m) => ({ sheetId, startRowIndex: m.startRowIndex, endRowIn
 // src(같은 영업부용 시트 안의 탭) 내용으로 dst 탭을 맞춘다. size = 행 높이·열 너비를 읽어 올 곳 {id, title}
 async function applyTab(srcId, srcTitle, dstId, dstTitle, size) {
   let src = await loadGrid(book.sales, srcTitle), dst = await loadGrid(book.sales, dstTitle);
+  // 자기 탭 이름을 쓴 수식(='PC 및 …'!E27)은 준비·백업 탭으로 복사되며 그 탭 이름을 달고 온다 → 칸 복사 전에 원래 탭 이름으로
+  // (10-24 검토: 안 고치면 영업부용에 '__반영준비_…'!가 들어가 검증에서 멈춤)
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const selfRef = new RegExp(`${esc(q(srcTitle))}!|(?<![\\w'])${esc(srcTitle)}!`, "g");
+  const fix = [];
+  src.rows.forEach((row, r) => row.forEach((c, k) => {
+    const f = c.userEnteredValue?.formulaValue;
+    if (f && selfRef.test(f)) fix.push({ range: `${q(srcTitle)}!${colName(k)}${r + 1}`, values: [[f.replace(selfRef, `${q(dstTitle)}!`)]] });
+    selfRef.lastIndex = 0;
+  }));
+  if (fix.length) {
+    await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.sales, requestBody: { valueInputOption: "USER_ENTERED", data: fix } });
+    src = await loadGrid(book.sales, srcTitle);
+  }
   const sR = src.g.rowCount, sC = src.g.columnCount;
   // ① 행: 넣고 뺀 자리 맞추기(아래 구간부터 해야 위 위치가 안 밀린다). 같은 구간의 지움·넣음은 짝지어 '고친 행'으로 남기고 남는 만큼만 넣고 뺀다
   const pad = (rows, n) => Array.from({ length: n }, (_, r) => rowKey(rows[r]));
@@ -324,6 +339,7 @@ async function dropBackups() {
   if (has("--rollback")) { console.log(`백업으로 되돌림: ${await rollback()}건`); return; }
   if (has("--accept")) { await dropBackups(); await writeLog(); console.log("확정: 백업 삭제, 반영 기록 저장"); return; }
   if ((await meta(book.sales)).some((s) => s.properties.title.startsWith(BAK))) throw new Error("영업부용에 지난 반영 백업이 남아 있다. --rollback 또는 --accept로 먼저 정리할 것");
+  if (!has("--check")) await dropStages(); // 중간에 끊긴 반영이 남긴 준비 탭(원가 없는 내용) — 같은 이름으로 다시 만들 수 있게 지움
 
   const ch = await salesChanges();
   if (ch.noLog) console.log("변경 감지: 반영 기록 없음(첫 반영)");
