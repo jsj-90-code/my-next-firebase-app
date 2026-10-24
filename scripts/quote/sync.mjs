@@ -13,9 +13,6 @@
 // 원가가 들어간 내용은 영업부용 시트에 한 순간도 들어가지 않는다.
 import { sheets, actorEmail, requireUserForWrite, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
 import { verify } from "./verify.mjs";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
 
 const args = process.argv.slice(2);
 const book = pickBook(args);
@@ -30,12 +27,35 @@ async function grid(id, title) {
   const r = await sheets.spreadsheets.values.get({ spreadsheetId: id, range: q(title), valueRenderOption: "FORMULA", dateTimeRenderOption: "FORMATTED_STRING" });
   return (r.data.values || []).map((row) => row.map((x) => String(x)));
 }
+// 원본 안 숨김 탭에 [이름, JSON 조각…] 줄로 저장·읽기(칸 하나 5만 자 한도라 4만5천 자씩 나눔).
+// 쓸 때는 지우고 쓰지 않고 예전 크기만큼 빈칸으로 채워 한 번에 덮어쓴다 — 지운 뒤 쓰다 실패하면 기록이 비어
+// 다음 반영이 '첫 반영'으로 보고 영업부용 직접 수정을 확인 없이 덮어쓴다(10-24 2차 검토)
+async function writeJsonTab(title, head, entries) {
+  let prev = [];
+  if (!byTitle(await meta(book.orig), title)) await batch(book.orig, [{ addSheet: { properties: { title, hidden: true } } }]);
+  else prev = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: q(title) })).data.values || [];
+  const out = [head];
+  for (const [k, v] of entries) { const json = JSON.stringify(v), row = [k]; for (let i = 0; i < json.length; i += 45000) row.push(json.slice(i, i + 45000)); out.push(row); }
+  const W = Math.max(...out.map((r) => r.length), ...prev.map((r) => r.length)), H = Math.max(out.length, prev.length);
+  const values = Array.from({ length: H }, (_, r) => Array.from({ length: W }, (_, c) => out[r]?.[c] ?? ""));
+  const sh = byTitle(await meta(book.orig), title).properties;
+  if (sh.gridProperties.columnCount < W) await batch(book.orig, [{ appendDimension: { sheetId: sh.sheetId, dimension: "COLUMNS", length: W - sh.gridProperties.columnCount } }]);
+  if (sh.gridProperties.rowCount < H) await batch(book.orig, [{ appendDimension: { sheetId: sh.sheetId, dimension: "ROWS", length: H - sh.gridProperties.rowCount } }]);
+  await sheets.spreadsheets.values.update({ spreadsheetId: book.orig, range: `${q(title)}!A1`, valueInputOption: "RAW", requestBody: { values } });
+}
+// 탭이 없으면 null. 읽기 오류는 그대로 던진다(오류를 '기록 없음'으로 보면 직접 수정 확인이 조용히 빠진다 — 10-24 2차 검토)
+async function readJsonTab(title) {
+  if (!byTitle(await meta(book.orig), title)) return null;
+  const rows = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: q(title) })).data.values || [];
+  return { head: rows[0] || [], data: Object.fromEntries(rows.slice(1).filter((r) => r[0]).map((r) => [r[0], JSON.parse(r.slice(1).join(""))])) };
+}
+
 async function salesChanges() {
-  let rows;
-  try { rows = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: `${q(LOG_SHEET)}!A1:ZZ20` })).data.values || []; } catch { return { noLog: true, list: [] }; }
-  if (!rows.length) return { noLog: true, list: [] };
-  const when = rows[0][1];
-  const saved = Object.fromEntries(rows.slice(1).filter((r) => r[0]).map((r) => [r[0], JSON.parse(r.slice(1).join(""))]));
+  const log = await readJsonTab(LOG_SHEET);
+  if (!log) return { noLog: true, list: [] };
+  if (!log.head.length) throw new Error(`반영 기록 탭(${LOG_SHEET})이 비어 있다 — 영업부용 직접 수정을 확인할 수 없음. 사람이 영업부용을 확인한 뒤 --force로 반영`);
+  const when = log.head[1];
+  const saved = log.data;
   const list = [], cells = [];
   const sm = await meta(book.sales);
   for (const [oName, sName] of TABS) {
@@ -84,16 +104,9 @@ async function adopt(cells) {
   return { moved, skipped };
 }
 async function writeLog() {
-  const m = await meta(book.orig);
-  if (!byTitle(m, LOG_SHEET)) await batch(book.orig, [{ addSheet: { properties: { title: LOG_SHEET, hidden: true } } }]);
-  const out = [["반영 시각", new Date().toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).slice(0, 16)]];
-  for (const [, sName] of TABS) {
-    const json = JSON.stringify(await grid(book.sales, sName));
-    const parts = []; for (let i = 0; i < json.length; i += 45000) parts.push(json.slice(i, i + 45000));
-    out.push([sName, ...parts]);
-  }
-  await sheets.spreadsheets.values.clear({ spreadsheetId: book.orig, range: q(LOG_SHEET) });
-  await sheets.spreadsheets.values.update({ spreadsheetId: book.orig, range: `${q(LOG_SHEET)}!A1`, valueInputOption: "RAW", requestBody: { values: out } });
+  const entries = [];
+  for (const [, sName] of TABS) entries.push([sName, await grid(book.sales, sName)]);
+  await writeJsonTab(LOG_SHEET, ["반영 시각", new Date().toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).slice(0, 16)], entries);
 }
 
 // ---------- 1) 원본 안에서 깨끗한 임시 탭 ----------
@@ -114,9 +127,13 @@ async function buildTemps() {
     const f = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: q(title), valueRenderOption: "FORMULA" })).data.values || [];
     const v = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: q(title), valueRenderOption: "UNFORMATTED_VALUE" })).data.values || [];
     const asValue = [], renamed = [];
+    t.rawCost = [];
     f.forEach((row, r) => row.forEach((x, c) => {
       if (typeof x !== "string" || !x.startsWith("=")) return;
       const a1 = `${q(title)}!${colName(c)}${r + 1}`;
+      // 원가 칸을 그대로 옮기는 수식(=K5, ='최종'!$L$3, =K5*1 같은 꼴)은 값으로 굳히면 원가 숫자가 그대로 영업부용에 간다 → 멈춤(2차 검토).
+      // 판매 단가처럼 원가에서 계산한 값(=ROUND(K6*1.1,-2))은 계산 결과라 그대로 굳힌다
+      if (!t.keep && c < LAST_SALES_COL && /^=\s*[+-]?\s*(('[^']+'|[^'!\s()]+)!)?\$?([K-Z]|[A-Z]{2,3})\$?\d+\s*([*/]\s*1(\.0+)?)?\s*$/.test(x)) t.rawCost.push(`${t.o} ${colName(c)}${r + 1} (${x.slice(0, 30)})`);
       if (!t.keep && c < LAST_SALES_COL && refsBeyondJ(x)) asValue.push({ range: a1, values: [[v[r]?.[c] ?? ""]] });
       else if (renameRefs(x) !== x) renamed.push({ range: a1, values: [[renameRefs(x)]] });
     }));
@@ -137,7 +154,10 @@ async function buildTemps() {
 }
 
 async function leakCheck(temps) {
-  const out = [];
+  const out = temps.flatMap((t) => (t.rawCost || []).map((x) => `${x}: 원가 칸을 그대로 옮기는 수식`));
+  // 이름 붙은 범위·표 참조는 주소가 안 보여 원가 열 참조 검사를 빠져나간다(2차 검토) — 10-24 기준 블랙·골드 원본에 없음, 생기면 멈춤
+  const names = ((await sheets.spreadsheets.get({ spreadsheetId: book.orig, fields: "namedRanges(name)" })).data.namedRanges || []).map((n) => n.name);
+  const nameRe = names.length ? new RegExp(`(^|[^A-Za-z0-9_.'!])(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?![A-Za-z0-9_(])`) : null;
   for (const t of temps) {
     const r = (await sheets.spreadsheets.get({ spreadsheetId: book.orig, ranges: [q(TEMP + t.o)], includeGridData: true, fields: "sheets(properties(gridProperties),data(rowData(values(formattedValue,userEnteredValue,note))))" })).data.sheets[0];
     if (!t.keep && r.properties.gridProperties.columnCount > LAST_SALES_COL) out.push(`${t.o}: J열 뒤에 열이 남음`);
@@ -148,7 +168,9 @@ async function leakCheck(temps) {
       const fv = c.userEnteredValue?.formulaValue;
       if (!t.keep && fv && refsBeyondJ(fv)) out.push(`${a1} 수식이 원가 열 참조`);
       // 글자로 주소를 넘기는 수식은 위 검사(따옴표 안은 안 봄)를 빠져나간다 — 다른 시트·임의 칸을 끌어올 수 있어 무조건 멈춤(10-24 검토)
-      if (fv && /\b(IMPORTRANGE|INDIRECT|IMPORTDATA|IMPORTXML|IMPORTHTML)\s*\(/i.test(fv)) out.push(`${a1} 외부·간접 참조 수식(${fv.slice(0, 30)})`);
+      if (fv && /\b(IMPORTRANGE|INDIRECT|IMPORTDATA|IMPORTXML|IMPORTHTML|OFFSET)\s*\(/i.test(fv)) out.push(`${a1} 외부·간접 참조 수식(${fv.slice(0, 30)})`);
+      const bare = fv ? fv.replace(/"[^"]*"/g, "") : "";
+      if (fv && ((nameRe && nameRe.test(bare)) || /[A-Za-z_][\w.]*\[/.test(bare))) out.push(`${a1} 이름 붙은 범위·표 참조 수식(${fv.slice(0, 30)})`);
       // 열을 자르지 않는 탭(정보입력·표지)은 J열 뒤에 내용이 있으면 그대로 넘어간다 — 10-24 기준 비어 있음, 생기면 멈추고 사람이 확인
       if (t.keep && j >= LAST_SALES_COL && (c.formattedValue || fv || c.note)) out.push(`${a1} J열 뒤 내용(열을 안 자르는 탭)`);
     }));
@@ -290,17 +312,22 @@ async function layoutRequests(from, dstId, dstRows, dstCols) {
   return req;
 }
 
-// 반영 전 영업부용 탭 값·수식 스냅숏(이 PC에만). 백업 탭은 같은 시트 안에 살아 있어서, 반영 중 다른 탭의 행을 지우면
-// 백업의 그 행 참조도 #REF!가 된다 → 되돌린 뒤 이 스냅숏과 칸마다 대조해 고친다(10-24 검토)
-const SNAP = () => join(homedir(), ".isens-quote", `반영전-${book.name}${book.test ? "-시험" : ""}.json`);
+// 반영 직전 영업부용 탭 값·수식 기록. 백업 탭은 같은 시트 안에 살아 있어서, 반영 중 다른 탭의 행을 지우면 백업의 그 행 참조도
+// #REF!가 되고 행 위치도 어긋날 수 있다 → 되돌린 뒤 이 기록과 칸마다 대조해 고친다(10-24 검토).
+// 원본 안 숨김 탭에 두고 백업과 같은 반영에서 만들고 같이 지운다 — 어느 PC에서 되돌려도 그 반영의 기록이다
+// (처음엔 PC 파일이라 다른 PC·지난 반영의 기록으로 '고칠' 수 있었음, 2차 검토). 백업이 남아 있으면 새 반영을 안 하므로 짝이 안 바뀐다.
+const SNAP_SHEET = "__반영직전기록";
 async function valuesGrid(title) {
   return (await sheets.spreadsheets.values.get({ spreadsheetId: book.sales, range: q(title), valueRenderOption: "FORMULA", dateTimeRenderOption: "SERIAL_NUMBER" })).data.values || [];
 }
 async function saveSnapshot(sm) {
-  const tabs = {};
-  for (const [, s] of TABS) if (byTitle(sm, s)) tabs[s] = await valuesGrid(s);
-  mkdirSync(dirname(SNAP()), { recursive: true });
-  writeFileSync(SNAP(), JSON.stringify({ when: new Date().toISOString(), sales: book.sales, tabs }));
+  const entries = [];
+  for (const [, s] of TABS) if (byTitle(sm, s)) entries.push([s, await valuesGrid(s)]);
+  await writeJsonTab(SNAP_SHEET, ["반영 직전", new Date().toISOString(), book.sales], entries);
+}
+async function dropSnapshot() {
+  const x = byTitle(await meta(book.orig), SNAP_SHEET);
+  if (x) await batch(book.orig, [{ deleteSheet: { sheetId: x.properties.sheetId } }]);
 }
 
 async function replaceSales(temps) {
@@ -357,13 +384,14 @@ async function rollback() {
   await dropStages();
   const sm = await meta(book.sales);
   const pairs = TABS.map(([, s]) => ({ s, bak: byTitle(sm, BAK + s), cur: byTitle(sm, s) })).filter((p) => p.bak);
+  // 백업은 영업부용을 고치기 전에 한 번에 만든다 → 백업이 하나도 없으면 영업부용은 안 바뀐 상태
+  if (!pairs.length) { await dropSnapshot(); console.log("되돌릴 백업 없음 — 영업부용은 이번 반영에서 바뀌지 않음"); return 0; }
   for (const p of pairs.filter((p) => !p.cur)) await batch(book.sales, [{ updateSheetProperties: { properties: { sheetId: p.bak.properties.sheetId, title: p.s, hidden: false }, fields: "title,hidden" } }]);
   const live = pairs.filter((p) => p.cur);
   for (const p of live) await alignRows(book.sales, BAK + p.s, p.cur.properties.sheetId, p.s);
   for (const p of live) await copyCells(p.bak.properties.sheetId, BAK + p.s, p.cur.properties.sheetId, p.s, { id: book.sales, title: BAK + p.s });
-  let snap = null;
-  try { snap = JSON.parse(readFileSync(SNAP(), "utf8")); } catch {}
-  if (snap?.sales !== book.sales) snap = null;
+  const rec = await readJsonTab(SNAP_SHEET);
+  const snap = rec && rec.head[2] === book.sales ? { tabs: rec.data } : null;
   const bad = [];
   const cmp = (a, b) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
   for (const p of live) {
@@ -383,27 +411,38 @@ async function rollback() {
       for (let r = 0; r < Math.max(again.length, want.length); r++) for (let c = 0; c < Math.max(again[r]?.length || 0, want[r]?.length || 0); c++) if (!cmp(again[r]?.[c], want[r]?.[c])) bad.push(`${p.s} ${colName(c)}${r + 1}: 반영 전 ${String(want[r]?.[c] ?? "").slice(0, 20)} / 지금 ${String(again[r]?.[c] ?? "").slice(0, 20)}`);
     }
   }
-  if (bad.length) {
-    console.log(`되돌림 확인 실패 ${bad.length}칸 — 백업 탭을 지우지 않고 남겨 둠(사람이 확인):`); bad.slice(0, 20).forEach((x) => console.log("  · " + x));
-    if (!snap) console.log("  (이 PC에 반영 전 기록이 없어 #REF!만 검사함)");
+  // 반영 직전 기록이 없으면 행이 한 줄 어긋난 것까지는 못 잡는다 → '성공'이라 하지 않고 백업을 남긴 채 사람에게 넘긴다(2차 검토)
+  if (bad.length || !snap) {
+    if (bad.length) { console.log(`되돌림 확인 실패 ${bad.length}칸:`); bad.slice(0, 20).forEach((x) => console.log("  · " + x)); }
+    if (!snap) console.log(`반영 직전 기록(원본 '${SNAP_SHEET}' 탭)이 없어 되돌린 결과를 대조하지 못함`);
+    console.log("→ 백업 탭을 지우지 않고 남겨 둠. 사람이 영업부용을 확인할 것(백업 탭은 숨김 '__반영백업_…')");
     process.exitCode = 7;
     return pairs.length;
   }
   await batch(book.sales, live.map((p) => ({ deleteSheet: { sheetId: p.bak.properties.sheetId } })));
-  console.log(snap ? "되돌림 확인: 반영 전 기록과 값·수식 전부 일치" : "되돌림 확인: #REF! 없음(이 PC에 반영 전 기록이 없어 값 대조는 못 함)");
+  await dropSnapshot();
+  console.log("되돌림 확인: 반영 직전 기록과 값·수식 전부 일치");
   return pairs.length;
 }
 async function dropBackups() {
   const sm = await meta(book.sales);
   await batch(book.sales, sm.filter((s) => s.properties.title.startsWith(BAK)).map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })));
+  await dropSnapshot(); // 백업과 짝 — 같이 지운다
 }
 
 // ---------- 실행 ----------
 (async () => {
   console.log(`[반영] ${book.label}${book.test ? " (시험용)" : ""}`);
   if (!has("--check")) requireUserForWrite(); // --check(읽기만) 말고는 시트를 고친다
-  if (has("--rollback")) { console.log(`백업으로 되돌림: ${await rollback()}건`); return; }
-  if (has("--accept")) { await dropBackups(); await writeLog(); console.log("확정: 백업 삭제, 반영 기록 저장"); return; }
+  if (has("--rollback")) { const n = await rollback(); if (process.exitCode !== 7) console.log(`백업으로 되돌림: ${n}건`); return; }
+  if (has("--accept")) {
+    // 확정 전에 검증을 다시 돌려 차이를 보여 준다 — 반영이 중간에 끊겨 반쯤 된 시트가 그대로 기준이 되는 걸 막는다(2차 검토).
+    // 백업이 없으면 확정할 반영이 없다(이때 기록을 쓰면 영업부용 직접 수정이 기준에 묻힘)
+    if (!(await meta(book.sales)).some((s) => s.properties.title.startsWith(BAK))) throw new Error("확정할 반영(백업)이 없다");
+    const v = await verify(book);
+    if (v.total && !has("--force")) { console.log(`\n검증 차이 ${v.total}건이 있어 확정하지 않음. 이 차이를 알고도 확정하려면 --accept --force, 아니면 --rollback`); process.exitCode = 5; return; }
+    await dropBackups(); await writeLog(); console.log("확정: 백업 삭제, 반영 기록 저장"); return;
+  }
   if ((await meta(book.sales)).some((s) => s.properties.title.startsWith(BAK))) throw new Error("영업부용에 지난 반영 백업이 남아 있다. --rollback 또는 --accept로 먼저 정리할 것");
   if (!has("--check")) await dropStages(); // 중간에 끊긴 반영이 남긴 준비 탭(원가 없는 내용) — 같은 이름으로 다시 만들 수 있게 지움
 

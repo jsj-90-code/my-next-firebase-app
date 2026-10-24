@@ -93,6 +93,8 @@ export const refsBeyondJ = (f) => {
   const s = String(f).replace(/"[^"]*"/g, "");
   if (/(^|[^A-Za-z0-9_])\$?([K-Z]|[A-Z]{2,3})\$?\d+/.test(s)) return true;
   for (const m of s.matchAll(/(^|[^A-Za-z0-9_$])\$?([A-Z]{1,3})\s*:\s*\$?([A-Z]{1,3})(?![A-Za-z0-9_(])/g)) if (Math.max(colIdx(m[2]), colIdx(m[3])) >= 10) return true;
+  // 끝이 열린 범위(E5:K, $A$5:$K — 5행부터 K열 끝까지)도 K열 이후까지 걸침(2차 검토)
+  for (const m of s.matchAll(/\$?\d+\s*:\s*\$?([A-Z]{1,3})(?![A-Za-z0-9_(])/g)) if (colIdx(m[1]) >= 10) return true;
   return /(^|[^A-Za-z0-9_$:])\$?\d+\s*:\s*\$?\d+(?![\d.])/.test(s);
 };
 export const colName = (c) => { let s = ""; c++; while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); } return s; };
