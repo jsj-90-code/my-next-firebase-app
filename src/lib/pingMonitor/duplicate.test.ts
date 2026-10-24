@@ -34,9 +34,13 @@ describe("findDuplicates", () => {
     const hits = findDuplicates({ ipRanges: "", keys: newAddressKeys("경상남도 창원시 성산구 대암로 36 305호") }, stores);
     expect(hits).toMatchObject([{ kind: "address", store: { id: "a" } }]);
   });
-  it("한쪽에 호수가 없으면 겹침으로 본다", () => {
+  it("한쪽에만 호수가 있으면 확인 대상(막지 않음)", () => {
     const hits = findDuplicates({ ipRanges: "", keys: newAddressKeys("경남 창원시 성산구 대암로 36") }, stores);
-    expect(hits[0].kind).toBe("address");
+    expect(hits[0].kind).toBe("floorUnknown");
+  });
+  it("둘 다 층·호수가 없으면 주소 겹침", () => {
+    const hits = findDuplicates({ ipRanges: "", keys: newAddressKeys("울산 남구 삼산동 1476-2") }, stores);
+    expect(hits).toMatchObject([{ kind: "address", store: { id: "b" } }]);
   });
   it("같은 건물 다른 호수는 알림만", () => {
     const hits = findDuplicates({ ipRanges: "", keys: newAddressKeys("경남 창원시 성산구 대암로 36 401호") }, stores);
@@ -53,10 +57,11 @@ describe("findDuplicates", () => {
 
 describe("findExistingOverlaps", () => {
   it("이미 겹치는 쌍을 찾는다(IP·주소)", () => {
-    const rows = [store("a", "경남 창원시 성산구 대암로 36 305호", "10.0.0.1~10"), store("b", "경남 창원시 성산구 대암로 36 305호"), store("c", "", "10.0.0.5~6"), store("d", "경남 창원시 성산구 대암로 36 401호")];
+    const rows = [store("a", "경남 창원시 성산구 대암로 36 305호", "10.0.0.1~10"), store("b", "경남 창원시 성산구 대암로 36 305호"), store("c", "", "10.0.0.5~6"), store("d", "경남 창원시 성산구 대암로 36 401호"), store("e", "울산 남구 삼산로 5"), store("f", "울산 남구 삼산로 5 2층")];
     const out = findExistingOverlaps(rows);
     expect(out).toContainEqual(expect.objectContaining({ kind: "ip", overlap: 2 }));
     expect(out.filter((o) => o.kind === "address").map((o) => [o.a.id, o.b.id])).toEqual([["a", "b"]]);
+    expect(out.filter((o) => o.kind === "floorUnknown").map((o) => [o.a.id, o.b.id])).toEqual([["e", "f"]]);
   });
   it("우리 매장 등록은 주소 비교에서 뺀다", () => {
     const out = findExistingOverlaps([store("own", "울산 남구 삼산동 1", "", { isOwnStore: true }), store("x", "울산 남구 삼산동 1")]);

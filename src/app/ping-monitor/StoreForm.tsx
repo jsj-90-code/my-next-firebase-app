@@ -81,6 +81,8 @@ export function StoreForm({
   const [loadedStores, setLoadedStores] = useState<PingStore[] | null>(null);
   const allStores = givenStores ?? loadedStores;
   const [otherArea, setOtherArea] = useState(false);
+  /** "다른 층 매장 맞음"을 누른 주소 — 주소를 고치면 다시 확인받는다. */
+  const [otherFloorFor, setOtherFloorFor] = useState<string | null>(null);
   const isNew = !selfId;
 
   useEffect(() => {
@@ -183,7 +185,11 @@ export function StoreForm({
   const addressChanged = address.trim() !== (initial?.address ?? "").trim();
   // 측정 중지(폐업·중복 정리)한 등록은 막지 않는다 — 폐업한 자리에 새 PC방이 들어오면 주소·IP가 같을 수 있다.
   const blocking = dupHits.filter((h) => h.store.active && ((h.kind === "ip" && (isNew || ipChanged)) || (h.kind === "address" && (isNew || addressChanged))));
-  const noticeOnly = dupHits.filter((h) => !blocking.includes(h));
+  // 같은 건물인데 한쪽에만 층·호수가 있으면 막지 않고 "다른 층 매장 맞음" 확인을 받는다(2026-10-24 사용자).
+  const floorConfirm = dupHits.filter((h) => h.store.active && h.kind === "floorUnknown" && (isNew || addressChanged));
+  const otherFloor = otherFloorFor === address.trim();
+  const needsFloorConfirm = floorConfirm.length > 0 && !otherFloor;
+  const noticeOnly = dupHits.filter((h) => !blocking.includes(h) && !floorConfirm.includes(h));
 
   // 상권 묶음 — 등록하는 매장 위치에서 가까운 우리 매장(기존점·후보지·직접 입력 묶음). 직접 입력 묶음은 소속 경쟁점 좌표 평균.
   const here = compLoc ?? gps;
@@ -218,7 +224,7 @@ export function StoreForm({
 
   const canSubmit =
     name.trim() !== "" && !(customMode && !customTrimmed) && parsed.ips.length > 0 && parsed.errors.length === 0 && !pcInvalid && !distInvalid && !busy &&
-    allStores != null && blocking.length === 0 && !needsAreaConfirm && !needsLocation;
+    allStores != null && blocking.length === 0 && !needsAreaConfirm && !needsFloorConfirm && !needsLocation;
 
   async function runProbe() {
     if (!user) return;
@@ -437,7 +443,15 @@ export function StoreForm({
         </label>
       )}
 
-      {(blocking.length > 0 || noticeOnly.length > 0) && <DuplicateNotice blocking={blocking} notice={noticeOnly} />}
+      {(blocking.length > 0 || floorConfirm.length > 0 || noticeOnly.length > 0) && (
+        <DuplicateNotice
+          blocking={blocking}
+          floorConfirm={floorConfirm}
+          otherFloor={otherFloor}
+          onOtherFloor={(v) => setOtherFloorFor(v ? address.trim() : null)}
+          notice={noticeOnly}
+        />
+      )}
       {allStores == null && <p className="text-xs text-[var(--sl-ink-soft)]">이미 등록된 매장과 겹치는지 확인하는 중…</p>}
       {needsLocation && (
         <p className="app-notice app-badge-warn px-3 py-2 text-xs">
@@ -488,9 +502,27 @@ function storeLine(s: PingStore) {
 }
 
 /** 겹치는 기존 등록 — 이름을 누르면 그 매장이 새 창으로 열려, 잘못 들어간 쪽을 바로 고칠 수 있다. */
-function DuplicateNotice({ blocking, notice }: { blocking: ReturnType<typeof findDuplicates<PingStore>>; notice: ReturnType<typeof findDuplicates<PingStore>> }) {
+function DuplicateNotice({
+  blocking,
+  floorConfirm,
+  otherFloor,
+  onOtherFloor,
+  notice,
+}: {
+  blocking: ReturnType<typeof findDuplicates<PingStore>>;
+  floorConfirm: ReturnType<typeof findDuplicates<PingStore>>;
+  otherFloor: boolean;
+  onOtherFloor: (v: boolean) => void;
+  notice: ReturnType<typeof findDuplicates<PingStore>>;
+}) {
   const reason = (h: (typeof blocking)[number]) =>
-    h.kind === "ip" ? `IP ${h.overlap}개 겹침 (${h.sample.join(", ")}${h.overlap > h.sample.length ? " …" : ""})` : h.kind === "address" ? "주소 같음" : "같은 건물 · 층·호수 다름";
+    h.kind === "ip"
+      ? `IP ${h.overlap}개 겹침 (${h.sample.join(", ")}${h.overlap > h.sample.length ? " …" : ""})`
+      : h.kind === "address"
+        ? "주소 같음"
+        : h.kind === "building"
+          ? "같은 건물 · 층·호수 다름"
+          : "같은 건물 · 한쪽 층·호수 없음";
   return (
     <div className="flex flex-col gap-2">
       {blocking.length > 0 && (
@@ -503,8 +535,22 @@ function DuplicateNotice({ blocking, notice }: { blocking: ReturnType<typeof fin
           </ul>
           <p className="mt-1">
             같은 매장이면 새로 만들지 말고 그 매장을 열어 고치세요(IP 빈칸이면 거기에 IP를 넣으면 됩니다). 그쪽 IP·주소가 잘못 들어가 있었다면 그쪽을 고친 뒤 다시 저장하세요.
-            같은 건물의 다른 PC방이면 두 매장 주소 모두에 층·호수를 적으면 구분됩니다.
+            같은 건물의 다른 PC방이면 이 매장 주소에 층·호수를 적으면 확인만 받고 저장됩니다.
           </p>
+        </div>
+      )}
+      {floorConfirm.length > 0 && (
+        <div className={`app-notice px-3 py-2 text-xs ${otherFloor ? "app-badge-neutral" : "app-badge-warn"}`}>
+          <p className="font-semibold">같은 건물에 이미 등록된 매장이 있습니다 — 같은 매장이면 새로 만들지 말고 그 매장을 고치세요.</p>
+          <ul className="mt-1 list-disc pl-4">
+            {floorConfirm.map((h) => (
+              <li key={`${h.kind}-${h.store.id}`}>{storeLine(h.store)} — {reason(h)}</li>
+            ))}
+          </ul>
+          <label className="mt-2 flex items-center gap-2">
+            <input type="checkbox" checked={otherFloor} onChange={(e) => onOtherFloor(e.target.checked)} />
+            다른 층(다른 매장)이 맞습니다 — 아는 층·호수가 있으면 주소에 적어 주세요
+          </label>
         </div>
       )}
       {notice.length > 0 && (
@@ -512,7 +558,7 @@ function DuplicateNotice({ blocking, notice }: { blocking: ReturnType<typeof fin
           <p className="font-semibold">확인해 주세요 (저장은 됩니다)</p>
           <ul className="mt-1 list-disc pl-4">
             {notice.map((h) => (
-              <li key={`${h.kind}-${h.store.id}`}>{storeLine(h.store)} — {reason(h)}{h.kind === "building" ? "" : !h.store.active ? " (측정 중지된 등록 — 폐업 자리에 새로 들어온 매장이면 그대로 저장)" : " (원래부터 겹쳐 있던 등록)"}</li>
+              <li key={`${h.kind}-${h.store.id}`}>{storeLine(h.store)} — {reason(h)}{h.kind === "building" || h.kind === "floorUnknown" ? "" : !h.store.active ? " (측정 중지된 등록 — 폐업 자리에 새로 들어온 매장이면 그대로 저장)" : " (원래부터 겹쳐 있던 등록)"}</li>
             ))}
           </ul>
         </div>

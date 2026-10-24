@@ -49,7 +49,9 @@ export type DuplicateHit<S extends StoreLike = StoreLike> =
   | { kind: "ip"; store: S; overlap: number; sample: string[] }
   | { kind: "address"; store: S }
   /** 같은 건물인데 층·호수가 다르다 — 다른 매장일 수 있어 막지 않고 알리기만 한다. */
-  | { kind: "building"; store: S };
+  | { kind: "building"; store: S }
+  /** 같은 건물인데 한쪽에만 층·호수가 있다 — 같은 매장인지 몰라 "다른 층 매장 맞음" 확인을 받는다(2026-10-24 사용자). */
+  | { kind: "floorUnknown"; store: S };
 
 /** 이 IP·주소와 겹치는 기존 등록. selfId(수정 중인 자기 자신)는 뺀다. */
 export function findDuplicates<S extends StoreLike>(input: { ipRanges: string; keys: AddressKey[] }, stores: S[], selfId?: string | null): DuplicateHit<S>[] {
@@ -65,13 +67,13 @@ export function findDuplicates<S extends StoreLike>(input: { ipRanges: string; k
     if (!theirs || input.keys.length === 0) continue;
     const same = input.keys.find((k) => k.building === theirs.building);
     if (!same) continue;
-    const differentRoom = same.detail != null && theirs.detail != null && same.detail !== theirs.detail;
-    hits.push({ kind: differentRoom ? "building" : "address", store: s });
+    const kind = same.detail === theirs.detail ? "address" : same.detail != null && theirs.detail != null ? "building" : "floorUnknown";
+    hits.push({ kind, store: s });
   }
   return hits;
 }
 
-export type ExistingOverlap<S extends StoreLike = StoreLike> = { kind: "ip" | "address"; a: S; b: S; overlap?: number };
+export type ExistingOverlap<S extends StoreLike = StoreLike> = { kind: "ip" | "address" | "floorUnknown"; a: S; b: S; overlap?: number };
 
 /** 이미 들어가 있는 등록끼리 겹치는 쌍 — 목록 화면에서 고치라고 알린다. */
 export function findExistingOverlaps<S extends StoreLike>(stores: S[]): ExistingOverlap<S>[] {
@@ -101,7 +103,8 @@ export function findExistingOverlaps<S extends StoreLike>(stores: S[]): Existing
     for (let i = 0; i < list.length; i++)
       for (let j = i + 1; j < list.length; j++) {
         const x = list[i].key.detail, y = list[j].key.detail;
-        if (x == null || y == null || x === y) out.push({ kind: "address", a: list[i].s, b: list[j].s });
+        if (x === y) out.push({ kind: "address", a: list[i].s, b: list[j].s });
+        else if (x == null || y == null) out.push({ kind: "floorUnknown", a: list[i].s, b: list[j].s });
       }
   return out;
 }

@@ -484,7 +484,7 @@ export default function PingMonitorPage() {
           <ul className="mt-2 flex flex-col gap-1 text-xs">
             {overlaps.map((o) => (
               <li key={`${o.kind}-${o.a.id}-${o.b.id}`}>
-                {o.kind === "ip" ? `IP ${o.overlap}개 겹침` : "주소 같음"}:{" "}
+                {o.kind === "ip" ? `IP ${o.overlap}개 겹침` : o.kind === "address" ? "주소 같음" : "같은 건물 · 한쪽 층·호수 없음(다른 층이면 층을 적어 주세요)"}:{" "}
                 <Link href={`/ping-monitor/${o.a.id}`} className="underline">{o.a.name}</Link> ({o.a.ownName ?? o.a.ownCode ?? "묶음 없음"}) ↔{" "}
                 <Link href={`/ping-monitor/${o.b.id}`} className="underline">{o.b.name}</Link> ({o.b.ownName ?? o.b.ownCode ?? "묶음 없음"})
               </li>
