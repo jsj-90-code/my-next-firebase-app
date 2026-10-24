@@ -177,16 +177,28 @@ export function StoreForm({
   // 중복 등록 막기(2026-10-24 사용자: "IP대역·주소 겹치면 등록 안 되게, 뭐가 겹치는지 알려주고 고칠 수 있게").
   // 수정 화면에선 고친 칸이 새로 겹칠 때만 막는다 — 원래 겹쳐 있던 등록은 알림만 해서, 잘못 들어간 쪽을 고치러 들어와 저장할 수 있게.
   const addressKeys = useMemo(() => newAddressKeys(address, geoAddr), [address, geoAddr]);
+  // 측정기의 우리 매장 등록은 주소 칸이 비어 있다 — 점포평가 기존점·후보지 주소로 채워 비교한다
+  // (2026-10-24 평택소사벌점 건물에 경쟁점 "아이리스"가 그냥 들어갔다).
+  const compareStores = useMemo(() => {
+    if (!allStores) return null;
+    const ownAddr = new Map((ownOptions ?? []).filter((o) => o.address?.trim()).map((o) => [o.code, o.address!.trim()]));
+    return allStores.map((s) => (s.isOwnStore && !s.address.trim() && s.ownCode && ownAddr.has(s.ownCode) ? { ...s, address: ownAddr.get(s.ownCode)! } : s));
+  }, [allStores, ownOptions]);
   const dupHits = useMemo(
-    () => (allStores ? findDuplicates({ ipRanges: parsed.errors.length ? "" : ipRanges, keys: addressKeys }, allStores, selfId) : []),
-    [allStores, ipRanges, parsed.errors.length, addressKeys, selfId],
+    () => (compareStores ? findDuplicates({ ipRanges: parsed.errors.length ? "" : ipRanges, keys: addressKeys }, compareStores, selfId) : []),
+    [compareStores, ipRanges, parsed.errors.length, addressKeys, selfId],
   );
   const ipChanged = ipRanges.replace(/\s/g, "") !== (initial?.ipRanges ?? "").replace(/\s/g, "");
   const addressChanged = address.trim() !== (initial?.address ?? "").trim();
   // 측정 중지(폐업·중복 정리)한 등록은 막지 않는다 — 폐업한 자리에 새 PC방이 들어오면 주소·IP가 같을 수 있다.
-  const blocking = dupHits.filter((h) => h.store.active && ((h.kind === "ip" && (isNew || ipChanged)) || (h.kind === "address" && (isNew || addressChanged))));
+  // 우리 매장과 같은 건물이면 층이 없어도 막는다 — 우리 매장 건물에 경쟁점을 넣는 건 거의 언제나 잘못 넣은 것.
+  const blocking = dupHits.filter(
+    (h) =>
+      h.store.active &&
+      ((h.kind === "ip" && (isNew || ipChanged)) || ((h.kind === "address" || (h.kind === "floorUnknown" && h.store.isOwnStore)) && (isNew || addressChanged))),
+  );
   // 같은 건물인데 한쪽에만 층·호수가 있으면 막지 않고 "다른 층 매장 맞음" 확인을 받는다(2026-10-24 사용자).
-  const floorConfirm = dupHits.filter((h) => h.store.active && h.kind === "floorUnknown" && (isNew || addressChanged));
+  const floorConfirm = dupHits.filter((h) => !blocking.includes(h) && h.store.active && h.kind === "floorUnknown" && (isNew || addressChanged));
   const otherFloor = otherFloorFor === address.trim();
   const needsFloorConfirm = floorConfirm.length > 0 && !otherFloor;
   const noticeOnly = dupHits.filter((h) => !blocking.includes(h) && !floorConfirm.includes(h));
@@ -202,9 +214,29 @@ export function StoreForm({
     }
     return new Map([...acc].map(([k, v]) => [k, { lat: v.lat / v.n, lng: v.lng / v.n }]));
   }, [allStores]);
+  // 좌표가 없는 묶음은 주소로 찾는다 — 우리 매장 주소, 직접 입력 묶음은 소속 경쟁점 주소 하나.
+  // 2026-10-24 평택소사벌점(9-16 좌표 채우기 뒤 개점)과 소속 경쟁점이 모두 좌표가 없어 500m 확인이 안 돌았다.
+  const [addrGroupLoc, setAddrGroupLoc] = useState<Map<string, { lat: number; lng: number }>>(new Map());
+  const fillTried = useRef(false);
+  useEffect(() => {
+    if (fillTried.current || !ownOptions || !allStores || !user) return;
+    fillTried.current = true;
+    const memberAddr = new Map<string, string>();
+    for (const s of allStores) if (s.ownCode && s.address.trim() && !memberAddr.has(s.ownCode)) memberAddr.set(s.ownCode, s.address.trim());
+    const want = ownOptions
+      .filter((o) => (o.lat == null || o.lng == null) && !customGroupLoc.has(o.code))
+      .map((o) => ({ code: o.code, address: (o.address ?? "").trim() || memberAddr.get(o.code) || "" }))
+      .filter((w) => w.address)
+      .slice(0, 40);
+    if (want.length === 0) return;
+    geocodeAddresses(want.map((w) => w.address), getToken)
+      .then((g) => setAddrGroupLoc(new Map(want.flatMap((w) => { const hit = g[w.address]; return hit ? [[w.code, { lat: hit.lat, lng: hit.lng }] as const] : []; }))))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownOptions, allStores, user, customGroupLoc]);
   const locOf = useCallback(
-    (o: OwnStoreOption) => (o.lat != null && o.lng != null ? { lat: o.lat, lng: o.lng } : customGroupLoc.get(o.code) ?? null),
-    [customGroupLoc],
+    (o: OwnStoreOption) => (o.lat != null && o.lng != null ? { lat: o.lat, lng: o.lng } : customGroupLoc.get(o.code) ?? addrGroupLoc.get(o.code) ?? null),
+    [customGroupLoc, addrGroupLoc],
   );
   const nearGroups = useMemo(() => {
     if (!compLoc || !ownOptions) return [];
@@ -516,7 +548,9 @@ function DuplicateNotice({
   notice: ReturnType<typeof findDuplicates<PingStore>>;
 }) {
   const reason = (h: (typeof blocking)[number]) =>
-    h.kind === "ip"
+    h.store.isOwnStore && h.kind !== "ip"
+      ? "우리 매장과 같은 건물"
+      : h.kind === "ip"
       ? `IP ${h.overlap}개 겹침 (${h.sample.join(", ")}${h.overlap > h.sample.length ? " …" : ""})`
       : h.kind === "address"
         ? "주소 같음"

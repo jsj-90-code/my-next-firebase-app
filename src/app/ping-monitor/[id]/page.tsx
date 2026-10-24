@@ -3,7 +3,7 @@
 // 경쟁점 가동률 상세 — 기간 선택 · 날짜별 · 시간대별(전체/평일/주말) · 날짜별 표 · 수정. 2026-10-06 신설.
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { PingMapSection } from "../PingMap";
@@ -58,6 +58,9 @@ function dayOfWeek(date: string): number {
 export default function PingStoreDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [store, setStore] = useState<PingStore | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [preset, setPreset] = useState<string>("7");
@@ -353,6 +356,41 @@ export default function PingStoreDetailPage() {
           </div>
         )}
       </section>
+
+      {/* 2026-10-24 사용자 "경쟁점 삭제 버튼" — 잘못 넣은 등록을 측정 기록째 지운다. 그냥 안 재려면 위 "1시간마다 측정"을 끄면 된다. */}
+      {!store.isOwnStore && (
+        <section className="app-card rounded-2xl p-4">
+          <h2 className="text-sm font-semibold">경쟁점 삭제</h2>
+          <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+            잘못 넣었거나 두 번 들어간 등록을 지웁니다. 측정 기록({Object.keys(store.days ?? {}).length}일 치)도 같이 지워집니다.
+            폐업 등으로 측정만 멈추려면 지우지 말고 위 &ldquo;정보 수정&rdquo;에서 &ldquo;1시간마다 측정&rdquo;을 끄세요.
+          </p>
+          {deleteError && <p className="app-notice app-badge-danger mt-2 px-3 py-2 text-xs">{deleteError}</p>}
+          <button
+            type="button"
+            className="app-btn-outline mt-2 rounded-lg px-3 py-1 text-xs text-[var(--sl-danger)]"
+            disabled={deleting || !user}
+            onClick={async () => {
+              const days = Object.keys(store.days ?? {}).length;
+              if (!window.confirm(`"${store.name}"을(를) 측정기에서 지울까요?${days ? ` 측정 기록 ${days}일 치도 같이 지워집니다.` : ""}`)) return;
+              setDeleting(true);
+              setDeleteError(null);
+              try {
+                const token = await user!.getIdToken();
+                const res = await fetch("/api/ping-monitor/delete", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ id: store.id }) });
+                const body = (await res.json().catch(() => ({}))) as { error?: string };
+                if (!res.ok) throw new Error(body.error ?? "지우지 못했습니다.");
+                router.push("/ping-monitor");
+              } catch (err) {
+                setDeleteError(err instanceof Error ? err.message : "지우지 못했습니다.");
+                setDeleting(false);
+              }
+            }}
+          >
+            {deleting ? "지우는 중..." : "이 경쟁점 삭제"}
+          </button>
+        </section>
+      )}
     </div>
   );
 }

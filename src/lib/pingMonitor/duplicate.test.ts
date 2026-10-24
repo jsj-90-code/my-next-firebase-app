@@ -46,6 +46,10 @@ describe("findDuplicates", () => {
     const hits = findDuplicates({ ipRanges: "", keys: newAddressKeys("경남 창원시 성산구 대암로 36 401호") }, stores);
     expect(hits).toMatchObject([{ kind: "building" }]);
   });
+  it("띄어쓰기 없는 기존점 주소(비전5로21)도 같은 건물로 본다", () => {
+    const keys = newAddressKeys("비전동 1092-2", { roadAddress: "경기 평택시 비전5로 21", jibunAddress: "경기 평택시 비전동 1092-2" });
+    expect(findDuplicates({ ipRanges: "", keys }, [store("own", "경기도 평택시 비전5로21", "", { isOwnStore: true })])).toMatchObject([{ kind: "address", store: { id: "own" } }]);
+  });
   it("도로명으로 적어도 카카오 지번으로 맞춘다", () => {
     const keys = newAddressKeys("울산 남구 삼산로 100", { roadAddress: "울산 남구 삼산로 100", jibunAddress: "울산 남구 삼산동 1476-2" });
     expect(findDuplicates({ ipRanges: "", keys }, stores)).toMatchObject([{ kind: "address", store: { id: "b" } }]);
