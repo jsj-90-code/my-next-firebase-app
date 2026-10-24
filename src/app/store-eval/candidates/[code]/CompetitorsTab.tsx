@@ -26,7 +26,8 @@ import { formatScore } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getCandidate, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
 import type { Competitor, CompetitorSurveyState, FoodBrand, GroundLevel, ModelSettings, SurveyLevel } from "@/lib/storeEval/types";
-import { isRegistrableCompetitor, listPingStoresByCompetitorIds, registerCompetitorsToPing, removePingPlaceholdersForCompetitor, updatePingStore } from "@/lib/pingMonitor/clientStore";
+import { findExistingOverlaps } from "@/lib/pingMonitor/duplicate";
+import { isRegistrableCompetitor, listPingStores, listPingStoresByCompetitorIds, registerCompetitorsToPing, removePingPlaceholdersForCompetitor, updatePingStore } from "@/lib/pingMonitor/clientStore";
 import { StoreForm } from "@/app/ping-monitor/StoreForm";
 import { parseIpRanges } from "@/lib/pingMonitor/ipRange";
 import { competitorMeasurement, formatPct, fullDayRuleText, type CompetitorMeasurement } from "@/lib/pingMonitor/summary";
@@ -1026,6 +1027,18 @@ export function CompetitorsTab({
         r.ipConflict.length > 0 ? `${r.ipConflict.join(", ")}은 측정기에 다른 IP가 이미 있어 바꾸지 않았습니다(카드의 "측정기 칸 고치기"에서 확인)` : null,
         r.ipInvalid.length > 0 ? `${r.ipInvalid.join(", ")}의 IP 대역을 읽지 못했습니다` : null,
       ].filter(Boolean);
+      // 한꺼번에 올린 뒤 한 번 겹침 확인(2026-10-24 사용자 "중복등록한 이후에 한번 체크") — 측정기 목록의 "겹치는 등록"과 같은 판정.
+      // 막지는 않는다. 올린 경쟁점이 낀 쌍만 알린다.
+      if (r.created.length > 0 || r.ipFilled.length > 0) {
+        const ids = new Set(list.map((c) => c.id));
+        const mine = (s: { competitorId?: string | null; ownCode?: string | null }) => s.ownCode === candidateCode && !!s.competitorId && ids.has(s.competitorId);
+        const all = await listPingStores().catch(() => null);
+        const pairs = all ? findExistingOverlaps(all.filter((s) => s.active)).filter((o) => mine(o.a) || mine(o.b)) : [];
+        if (pairs.length > 0) {
+          const label = (o: (typeof pairs)[number]) => (o.kind === "ip" ? `IP ${o.overlap}개 겹침` : o.kind === "address" ? "주소 같음" : "같은 건물·한쪽 층 없음");
+          warns.push(`측정기에 이미 있는 매장과 겹칩니다 — ${pairs.map((o) => `${o.a.name}(${o.a.ownName ?? "묶음 없음"}) ↔ ${o.b.name}(${o.b.ownName ?? "묶음 없음"}) ${label(o)}`).join(", ")}. 측정기 화면 "겹치는 등록"에서 고치세요`);
+        }
+      }
       const unverified = Object.keys(ipById).filter((id) => !verifiedIds.has(id)).length;
       if (done.length > 0 || warns.length > 0) {
         const tail =
