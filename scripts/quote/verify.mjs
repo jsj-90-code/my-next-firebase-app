@@ -6,7 +6,10 @@ import { sheets, TOOL_EMAILS, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_
 
 // textFormatRuns(칸 안 일부 글자 서식)도 비교 — 10-24 덮어쓰기 방식 검토 때 이것만 바뀐 칸을 검증이 못 잡는 걸 확인
 const runsSig = (c) => JSON.stringify((c.textFormatRuns || []).map((r) => [r.startIndex || 0, { ...r.format, foregroundColorStyle: undefined, link: r.format?.link?.uri }]));
-const FIELDS = "sheets(properties(title,gridProperties),merges,protectedRanges(range,editors),data(columnMetadata(pixelSize,hiddenByUser),rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,userEnteredValue,note,textFormatRuns,effectiveFormat(horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat,backgroundColor,borders,textFormat(fontFamily,fontSize,bold,italic,strikethrough,underline,foregroundColor))))))";
+// 탭 단위 설정(틀 고정·탭 색·조건부 서식·차트·필터·밴드)과 칸 입력 규칙(드롭다운)도 비교 — 10-24 검토: 덮어쓰기 방식은 탭째 복사가 아니라 이것들이 안 따라갈 수 있다.
+// 시트 위에 띄운 그림·도형은 구글 API로 읽을 수 없어 비교 못 함(10-24 기준 블랙·골드 원본에 없음).
+const noId = (x) => JSON.parse(JSON.stringify(x ?? null, (k, v) => (k === "sheetId" || k === "ruleId" || k === "bandedRangeId" || k === "chartId" ? undefined : v)));
+const FIELDS = "sheets(properties(title,gridProperties,tabColorStyle),conditionalFormats,bandedRanges,basicFilter,charts(chartId),merges,protectedRanges(range,editors),data(columnMetadata(pixelSize,hiddenByUser),rowMetadata(pixelSize,hiddenByUser),rowData(values(formattedValue,userEnteredValue,note,textFormatRuns,dataValidation,effectiveFormat(horizontalAlignment,verticalAlignment,wrapStrategy,numberFormat,backgroundColor,borders,textFormat(fontFamily,fontSize,bold,italic,strikethrough,underline,foregroundColor))))))";
 const fmtSig = (f = {}) => JSON.stringify({ h: f.horizontalAlignment, v: f.verticalAlignment, w: f.wrapStrategy, n: f.numberFormat?.pattern || f.numberFormat?.type, b: f.backgroundColor, t: f.textFormat && { ...f.textFormat, foregroundColorStyle: undefined }, br: f.borders && Object.fromEntries(Object.entries(f.borders).map(([k, x]) => [k, x.style])) });
 const load = async (id, title) => (await sheets.spreadsheets.get({ spreadsheetId: id, ranges: [q(title)], includeGridData: true, fields: FIELDS })).data.sheets[0];
 const mk = (m) => `${colName(m.startColumnIndex)}${m.startRowIndex + 1}:${colName(m.endColumnIndex - 1)}${m.endRowIndex}`;
@@ -31,6 +34,7 @@ export async function verify(book, { log = console.log, prot = null } = {}) {
       else if ((of ? renameRefs(of) : "") !== (sf || "")) issues.수식.push(`${a1} 원본[${(of || "").slice(0, 30)}] 영업[${(sf || "").slice(0, 30)}]`);
       if (r < lastRow && (fmtSig(oc.effectiveFormat) !== fmtSig(sc.effectiveFormat) || runsSig(oc) !== runsSig(sc))) issues.서식.push(a1);
       if ((oc.note || "") !== (sc.note || "")) issues.메모.push(a1);
+      if (r < lastRow && JSON.stringify(oc.dataValidation ?? null) !== JSON.stringify(sc.dataValidation ?? null)) issues.서식.push(`${a1}(입력 규칙)`);
       if (LEAK_WORDS.some((w) => (sc.formattedValue || "").includes(w))) issues.유출.push(`${a1} "${sc.formattedValue.slice(0, 20)}"`);
       if (sc.note && NOTE_LEAK_WORDS.some((w) => sc.note.includes(w))) issues.유출.push(`${a1} 메모`);
       if (sf && !keepCols && refsBeyondJ(sf)) issues.유출.push(`${a1} 수식이 K열 이후 참조`);
@@ -44,6 +48,13 @@ export async function verify(book, { log = console.log, prot = null } = {}) {
     o.data[0].columnMetadata.slice(0, lastCol).forEach((m, i) => { const t = s.data[0].columnMetadata[i] || {}; if (m.pixelSize !== t.pixelSize || !!m.hiddenByUser !== !!t.hiddenByUser) issues.크기.push(`${colName(i)}열 ${m.pixelSize}/${t.pixelSize}`); });
     // 원본 높이 21 = '내용에 맞춤'일 수 있어 영업부용은 맞춤 결과(더 클 수 있음)라 높이는 비교하지 않는다
     o.data[0].rowMetadata.slice(0, lastRow).forEach((m, i) => { const t = s.data[0].rowMetadata[i] || {}; if ((m.pixelSize !== AUTO_ROW && m.pixelSize !== t.pixelSize) || !!m.hiddenByUser !== !!t.hiddenByUser) issues.크기.push(`${i + 1}행 ${m.pixelSize}/${t.pixelSize}`); });
+    const og = o.properties.gridProperties, sg = s.properties.gridProperties;
+    if ((og.frozenRowCount || 0) !== (sg.frozenRowCount || 0) || (og.frozenColumnCount || 0) !== (sg.frozenColumnCount || 0)) issues.서식.push("틀 고정");
+    if (JSON.stringify(o.properties.tabColorStyle ?? null) !== JSON.stringify(s.properties.tabColorStyle ?? null)) issues.서식.push("탭 색");
+    // 조건부 서식: 영업부용으로 안 가는 열(K~)에만 걸린 원본 규칙은 뺀다
+    const sentRule = (rule) => keepCols || (rule.ranges || []).some((x) => (x.startColumnIndex ?? 0) < LAST_SALES_COL);
+    if (JSON.stringify(noId((o.conditionalFormats || []).filter(sentRule))) !== JSON.stringify(noId(s.conditionalFormats || []))) issues.서식.push("조건부 서식");
+    if ((o.bandedRanges || []).length !== (s.bandedRanges || []).length || !!o.basicFilter !== !!s.basicFilter || (o.charts || []).length !== (s.charts || []).length) issues.서식.push("밴드·필터·차트 개수");
     // 잠금은 반영 전 상태(prot)와 같아야 한다 — 따로 돌릴 때(prot 없음)는 잠금을 보지 않는다
     if (prot) {
       const whole = (s.protectedRanges || []).find((p) => p.range.startRowIndex === undefined && p.range.startColumnIndex === undefined);

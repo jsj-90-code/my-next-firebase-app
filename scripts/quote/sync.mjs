@@ -13,6 +13,9 @@
 // 원가가 들어간 내용은 영업부용 시트에 한 순간도 들어가지 않는다.
 import { sheets, actorEmail, requireUserForWrite, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
 import { verify } from "./verify.mjs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, dirname } from "node:path";
 
 const args = process.argv.slice(2);
 const book = pickBook(args);
@@ -75,7 +78,8 @@ async function adopt(cells) {
   // 옮긴 뒤 원본을 다시 읽어 확인
   for (const x of cells) {
     const now = (await grid(book.orig, x.oName))[x.r]?.[x.c] ?? "";
-    if ((now.startsWith("=") ? renameRefs(now) : now) !== x.after) return { moved: [], skipped: [`${x.sName} ${x.a1}: 원본에 옮겼는데 다시 읽으니 ${now} — 확인 필요`] };
+    // 여기서 멈추면 원본에는 이미 써진 상태다 — "아무것도 안 옮김"이 아니므로 쓴 칸을 같이 알린다(10-24 검토)
+    if ((now.startsWith("=") ? renameRefs(now) : now) !== x.after) return { moved: [], skipped: [`${x.sName} ${x.a1}: 원본에 옮겼는데 다시 읽으니 ${now} — 확인 필요. ※ 원본에 이미 쓴 칸: ${data.map((d) => d.range).join(", ")}`] };
   }
   return { moved, skipped };
 }
@@ -141,7 +145,12 @@ async function leakCheck(temps) {
       const a1 = `${t.o} ${colName(j)}${i + 1}`;
       if (LEAK_WORDS.some((w) => (c.formattedValue || "").includes(w))) out.push(`${a1} "${c.formattedValue.slice(0, 20)}"`);
       if (c.note && NOTE_LEAK_WORDS.some((w) => c.note.includes(w))) out.push(`${a1} 메모에 원가 관련 단어`);
-      if (!t.keep && c.userEnteredValue?.formulaValue && refsBeyondJ(c.userEnteredValue.formulaValue)) out.push(`${a1} 수식이 원가 열 참조`);
+      const fv = c.userEnteredValue?.formulaValue;
+      if (!t.keep && fv && refsBeyondJ(fv)) out.push(`${a1} 수식이 원가 열 참조`);
+      // 글자로 주소를 넘기는 수식은 위 검사(따옴표 안은 안 봄)를 빠져나간다 — 다른 시트·임의 칸을 끌어올 수 있어 무조건 멈춤(10-24 검토)
+      if (fv && /\b(IMPORTRANGE|INDIRECT|IMPORTDATA|IMPORTXML|IMPORTHTML)\s*\(/i.test(fv)) out.push(`${a1} 외부·간접 참조 수식(${fv.slice(0, 30)})`);
+      // 열을 자르지 않는 탭(정보입력·표지)은 J열 뒤에 내용이 있으면 그대로 넘어간다 — 10-24 기준 비어 있음, 생기면 멈추고 사람이 확인
+      if (t.keep && j >= LAST_SALES_COL && (c.formattedValue || fv || c.note)) out.push(`${a1} J열 뒤 내용(열을 안 자르는 탭)`);
     }));
   }
   return out;
@@ -184,9 +193,37 @@ const inside = (m, r) => m.startRowIndex < r.endRowIndex && r.startRowIndex < m.
 const mkey = (m) => `${m.startRowIndex},${m.endRowIndex},${m.startColumnIndex},${m.endColumnIndex}`;
 const rng = (sheetId, m) => ({ sheetId, startRowIndex: m.startRowIndex, endRowIndex: m.endRowIndex, startColumnIndex: m.startColumnIndex, endColumnIndex: m.endColumnIndex });
 
-// src(같은 영업부용 시트 안의 탭) 내용으로 dst 탭을 맞춘다. size = 행 높이·열 너비를 읽어 올 곳 {id, title}
-async function applyTab(srcId, srcTitle, dstId, dstTitle, size) {
-  let src = await loadGrid(book.sales, srcTitle), dst = await loadGrid(book.sales, dstTitle);
+// ① 행 맞추기: src 탭(srcBook 시트)의 행 배치대로 영업부용 dst 탭에 행을 넣고 빼고, 열 수를 맞춘다.
+// 모든 탭의 행을 먼저 맞춘 뒤에 칸을 복사한다(10-24 검토) — 칸을 먼저 복사한 탭이 있으면, 그 뒤 다른 탭에 행을 넣을 때
+// 그 탭을 가리키는 수식이 한 번 더 밀린다. 준비 탭 복사(copyTo)도 행을 다 맞춘 뒤에 해야 다른 탭 참조가 맞는 행에 붙는다.
+async function alignRows(srcBook, srcTitle, dstId, dstTitle) {
+  const src = await loadGrid(srcBook, srcTitle), dst = await loadGrid(book.sales, dstTitle);
+  const sR = src.g.rowCount, sC = src.g.columnCount;
+  // 같은 구간의 지움·넣음은 짝지어 '고친 행'으로 남기고 남는 만큼만 넣고 뺀다. 아래 구간부터 해야 위 위치가 안 밀린다
+  const pad = (rows, n) => Array.from({ length: n }, (_, r) => rowKey(rows[r]));
+  const gaps = rowGaps(pad(dst.rows, dst.g.rowCount), pad(src.rows, sR));
+  const req = [];
+  for (const x of [...gaps].reverse()) {
+    const at = x.at + Math.min(x.del, x.ins);
+    if (x.ins > x.del) req.push({ insertDimension: { range: { sheetId: dstId, dimension: "ROWS", startIndex: at, endIndex: at + x.ins - x.del }, inheritFromBefore: at > 0 } });
+    if (x.del > x.ins) req.push({ deleteDimension: { range: { sheetId: dstId, dimension: "ROWS", startIndex: at, endIndex: at + x.del - x.ins } } });
+  }
+  // 열은 끝에서만 늘리고 줄인다(영업부용은 J열까지라 열 구성은 거의 안 바뀜)
+  if (sC > dst.g.columnCount) req.push({ appendDimension: { sheetId: dstId, dimension: "COLUMNS", length: sC - dst.g.columnCount } });
+  if (sC < dst.g.columnCount) req.push({ deleteDimension: { range: { sheetId: dstId, dimension: "COLUMNS", startIndex: sC, endIndex: dst.g.columnCount } } });
+  await batch(book.sales, req);
+  // 다시 시도로 같은 요청이 두 번 들어갔을 수도 있으니 행·열 수를 꼭 확인
+  const g = req.length ? byTitle(await meta(book.sales), dstTitle).properties.gridProperties : dst.g;
+  if (g.rowCount !== sR || g.columnCount !== sC) throw new Error(`${dstTitle}: 행·열 맞추기 뒤에도 크기가 다름(${g.rowCount}x${g.columnCount} / ${sR}x${sC})`);
+  return { ins: gaps.reduce((a, x) => a + Math.max(0, x.ins - x.del), 0), del: gaps.reduce((a, x) => a + Math.max(0, x.del - x.ins), 0) };
+}
+
+// ② 칸 맞추기: 같은 영업부용 시트 안 src 탭(준비 탭·백업 탭) 내용 중 다른 칸만 dst 탭에 복사. look = 행 높이·열 너비·탭 설정을 읽어 올 곳 {id, title}
+async function copyCells(srcId, srcTitle, dstId, dstTitle, look) {
+  let src = await loadGrid(book.sales, srcTitle);
+  const dst = await loadGrid(book.sales, dstTitle);
+  const sR = src.g.rowCount, sC = src.g.columnCount;
+  if (dst.g.rowCount !== sR || dst.g.columnCount !== sC) throw new Error(`${dstTitle}: 칸 복사 전 크기가 다름(${dst.g.rowCount}x${dst.g.columnCount} / ${sR}x${sC})`);
   // 자기 탭 이름을 쓴 수식(='PC 및 …'!E27)은 준비·백업 탭으로 복사되며 그 탭 이름을 달고 온다 → 칸 복사 전에 원래 탭 이름으로
   // (10-24 검토: 안 고치면 영업부용에 '__반영준비_…'!가 들어가 검증에서 멈춤)
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -201,29 +238,11 @@ async function applyTab(srcId, srcTitle, dstId, dstTitle, size) {
     await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.sales, requestBody: { valueInputOption: "USER_ENTERED", data: fix } });
     src = await loadGrid(book.sales, srcTitle);
   }
-  const sR = src.g.rowCount, sC = src.g.columnCount;
-  // ① 행: 넣고 뺀 자리 맞추기(아래 구간부터 해야 위 위치가 안 밀린다). 같은 구간의 지움·넣음은 짝지어 '고친 행'으로 남기고 남는 만큼만 넣고 뺀다
-  const pad = (rows, n) => Array.from({ length: n }, (_, r) => rowKey(rows[r]));
-  const gaps = rowGaps(pad(dst.rows, dst.g.rowCount), pad(src.rows, sR));
-  const req = [];
-  for (const x of [...gaps].reverse()) {
-    const at = x.at + Math.min(x.del, x.ins);
-    if (x.ins > x.del) req.push({ insertDimension: { range: { sheetId: dstId, dimension: "ROWS", startIndex: at, endIndex: at + x.ins - x.del }, inheritFromBefore: at > 0 } });
-    if (x.del > x.ins) req.push({ deleteDimension: { range: { sheetId: dstId, dimension: "ROWS", startIndex: at, endIndex: at + x.del - x.ins } } });
-  }
-  // 열은 끝에서만 늘리고 줄인다(영업부용은 J열까지라 열 구성은 거의 안 바뀜)
-  if (sC > dst.g.columnCount) req.push({ appendDimension: { sheetId: dstId, dimension: "COLUMNS", length: sC - dst.g.columnCount } });
-  if (sC < dst.g.columnCount) req.push({ deleteDimension: { range: { sheetId: dstId, dimension: "COLUMNS", startIndex: sC, endIndex: dst.g.columnCount } } });
-  await batch(book.sales, req);
-  const rowOps = { ins: gaps.reduce((a, x) => a + Math.max(0, x.ins - x.del), 0), del: gaps.reduce((a, x) => a + Math.max(0, x.del - x.ins), 0) };
-  if (req.length) dst = await loadGrid(book.sales, dstTitle);
-  if (dst.g.rowCount !== sR) throw new Error(`${dstTitle}: 행 맞추기 뒤에도 행 수가 다름(${dst.g.rowCount}/${sR})`);
-
-  // ② 병합: 영업부용에만 있는 병합은 먼저 풀기
-  const sKeys = new Set(src.merges.map(mkey)), dKeys = new Set(dst.merges.map(mkey));
+  // 병합: 영업부용에만 있는 병합은 먼저 풀기
+  const sKeys = new Set(src.merges.map(mkey));
   const keepMerges = dst.merges.filter((m) => sKeys.has(mkey(m)));
   const pre = dst.merges.filter((m) => !sKeys.has(mkey(m))).map((m) => ({ unmergeCells: { range: rng(dstId, m) } }));
-  // ③ 다른 칸 찾기 → 행마다 이어진 구간 → 걸치는 병합까지 넓혀서 칸 복사
+  // 다른 칸 찾기 → 행마다 이어진 구간 → 걸치는 병합까지 넓혀서 칸 복사
   const rects = [];
   let cells = 0;
   for (let r = 0; r < sR; r++) {
@@ -243,18 +262,19 @@ async function applyTab(srcId, srcTitle, dstId, dstTitle, size) {
     }
   }
   await batch(book.sales, [...pre, ...rects.map((rc) => ({ copyPaste: { source: rng(srcId, rc), destination: rng(dstId, rc), pasteType: "PASTE_NORMAL", pasteOrientation: "NORMAL" } }))]);
-  // ④ 아직 없는 병합 걸기, 행 높이·열 너비·눈금선 (칸을 안 고쳤으면 다시 읽지 않는다 — 분당 읽기 한도)
+  // 아직 없는 병합 걸기, 행 높이·열 너비·눈금선·틀 고정·탭 색 (칸을 안 고쳤으면 다시 읽지 않는다 — 분당 읽기 한도)
   const after = new Set((pre.length || rects.length ? (await loadGrid(book.sales, dstTitle)).merges : keepMerges).map(mkey));
   const post = src.merges.filter((m) => !after.has(mkey(m))).map((m) => ({ mergeCells: { range: rng(dstId, m), mergeType: "MERGE_ALL" } }));
-  post.push({ updateSheetProperties: { properties: { sheetId: dstId, gridProperties: { hideGridlines: !!src.g.hideGridlines } }, fields: "gridProperties.hideGridlines" } });
-  post.push(...await sizeRequests(size, dstId, sR, sC));
+  post.push(...await layoutRequests(look, dstId, sR, sC));
   await batch(book.sales, post);
-  return { cells, rects: rects.length, ...rowOps, merges: pre.length + post.filter((x) => x.mergeCells).length, dKeys: dKeys.size };
+  return { cells, merges: pre.length + post.filter((x) => x.mergeCells).length };
 }
 
-async function sizeRequests(from, dstId, dstRows, dstCols) {
-  const s = (await sheets.spreadsheets.get({ spreadsheetId: from.id, ranges: [q(from.title)], fields: "sheets.data(rowMetadata(pixelSize,hiddenByUser),columnMetadata(pixelSize,hiddenByUser))" })).data.sheets[0].data[0];
-  const req = [];
+// 행 높이·열 너비 + 탭 설정(눈금선·틀 고정·탭 색) — 탭을 그대로 두는 방식이라 이것들은 따로 맞춘다(10-24 검토: 틀 고정·탭 색이 안 따라감)
+async function layoutRequests(from, dstId, dstRows, dstCols) {
+  const sh = (await sheets.spreadsheets.get({ spreadsheetId: from.id, ranges: [q(from.title)], fields: "sheets(properties(tabColorStyle,gridProperties(hideGridlines,frozenRowCount,frozenColumnCount)),data(rowMetadata(pixelSize,hiddenByUser),columnMetadata(pixelSize,hiddenByUser)))" })).data.sheets[0];
+  const s = sh.data[0], gp = sh.properties.gridProperties || {};
+  const req = [{ updateSheetProperties: { properties: { sheetId: dstId, tabColorStyle: sh.properties.tabColorStyle, gridProperties: { hideGridlines: !!gp.hideGridlines, frozenRowCount: gp.frozenRowCount || 0, frozenColumnCount: gp.frozenColumnCount || 0 } }, fields: "tabColorStyle,gridProperties.hideGridlines,gridProperties.frozenRowCount,gridProperties.frozenColumnCount" } }];
   const runs = (arr, n, dim) => {
     let st = 0;
     for (let i = 1; i <= n; i++) {
@@ -270,12 +290,30 @@ async function sizeRequests(from, dstId, dstRows, dstCols) {
   return req;
 }
 
+// 반영 전 영업부용 탭 값·수식 스냅숏(이 PC에만). 백업 탭은 같은 시트 안에 살아 있어서, 반영 중 다른 탭의 행을 지우면
+// 백업의 그 행 참조도 #REF!가 된다 → 되돌린 뒤 이 스냅숏과 칸마다 대조해 고친다(10-24 검토)
+const SNAP = () => join(homedir(), ".isens-quote", `반영전-${book.name}${book.test ? "-시험" : ""}.json`);
+async function valuesGrid(title) {
+  return (await sheets.spreadsheets.values.get({ spreadsheetId: book.sales, range: q(title), valueRenderOption: "FORMULA", dateTimeRenderOption: "SERIAL_NUMBER" })).data.values || [];
+}
+async function saveSnapshot(sm) {
+  const tabs = {};
+  for (const [, s] of TABS) if (byTitle(sm, s)) tabs[s] = await valuesGrid(s);
+  mkdirSync(dirname(SNAP()), { recursive: true });
+  writeFileSync(SNAP(), JSON.stringify({ when: new Date().toISOString(), sales: book.sales, tabs }));
+}
+
 async function replaceSales(temps) {
   const sm = await meta(book.sales);
+  await saveSnapshot(sm);
   // 덮어쓰기 전에 탭마다 숨김 백업(같은 시트 안 사본) — 검증 실패면 이 내용으로 같은 탭에 되돌린다
   await batch(book.sales, TABS.map(([, s]) => byTitle(sm, s)).filter(Boolean).map((x) => ({ duplicateSheet: { sourceSheetId: x.properties.sheetId, newSheetName: BAK + x.properties.title, insertSheetIndex: sm.length } })));
   const sm2 = await meta(book.sales);
   await batch(book.sales, sm2.filter((s) => s.properties.title.startsWith(BAK)).map((s) => ({ updateSheetProperties: { properties: { sheetId: s.properties.sheetId, hidden: true }, fields: "hidden" } })));
+  // 1단계: 모든 탭 행 맞추기(원본 임시 탭 기준)
+  const rows = {};
+  for (const t of temps) { const d = byTitle(sm2, t.s); if (d) rows[t.s] = await alignRows(book.orig, TEMP + t.o, d.properties.sheetId, t.s); }
+  // 2단계: 준비 탭 복사 → 바뀐 칸만
   for (const t of temps) {
     const n = (await sheets.spreadsheets.sheets.copyTo({ spreadsheetId: book.orig, sheetId: t.id, requestBody: { destinationSpreadsheetId: book.sales } })).data;
     const stage = STAGE + t.s;
@@ -285,20 +323,22 @@ async function replaceSales(temps) {
       // 영업부용에 아직 없는 탭: 준비 탭을 그대로 그 이름으로 쓰고 잠근다(편집자: 지금 고치는 계정만)
       await batch(book.sales, [
         { updateSheetProperties: { properties: { sheetId: n.sheetId, title: t.s, hidden: false }, fields: "title,hidden" } },
-        ...await sizeRequests({ id: book.orig, title: t.o }, n.sheetId, n.gridProperties.rowCount, n.gridProperties.columnCount),
+        ...await layoutRequests({ id: book.orig, title: t.o }, n.sheetId, n.gridProperties.rowCount, n.gridProperties.columnCount),
         { addProtectedRange: { protectedRange: { range: { sheetId: n.sheetId }, description: "영업부용 원판 — 원본에서 반영", editors: { users: [actorEmail] } } } },
       ]);
       console.log(`  ${t.s}: 새 탭으로 추가`);
       continue;
     }
-    const r = await applyTab(n.sheetId, stage, dst.properties.sheetId, t.s, { id: book.orig, title: t.o });
+    const r = await copyCells(n.sheetId, stage, dst.properties.sheetId, t.s, { id: book.orig, title: t.o });
     await batch(book.sales, [{ deleteSheet: { sheetId: n.sheetId } }]);
-    console.log(`  ${t.s}: 바뀐 칸 ${r.cells}개${r.ins ? `, 행 넣음 ${r.ins}` : ""}${r.del ? `, 행 지움 ${r.del}` : ""}${r.merges ? `, 병합 고침 ${r.merges}` : ""}`);
+    const ro = rows[t.s];
+    console.log(`  ${t.s}: 바뀐 칸 ${r.cells}개${ro.ins ? `, 행 넣음 ${ro.ins}` : ""}${ro.del ? `, 행 지움 ${ro.del}` : ""}${r.merges ? `, 병합 고침 ${r.merges}` : ""}`);
   }
 }
+// 준비 탭과, 복사(copyTo)가 다시 시도로 두 번 돌았거나 이름 바꾸기 전에 끊겨 남은 '…__반영임시_…' 사본 탭(보이는 탭)까지 지운다(10-24 검토)
 async function dropStages() {
   const sm = await meta(book.sales);
-  await batch(book.sales, sm.filter((s) => s.properties.title.startsWith(STAGE)).map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })));
+  await batch(book.sales, sm.filter((s) => s.properties.title.startsWith(STAGE) || s.properties.title.includes(TEMP)).map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })));
 }
 
 // 영업부용 탭별 탭 전체 잠금의 편집자(잠금 없으면 null). 처음 생기는 탭은 잠근다(편집자: 서비스 계정만).
@@ -311,21 +351,47 @@ function salesProtection(sm) {
   return out;
 }
 
-// 백업 내용을 같은 탭에 다시 덮어써서 되돌린다(탭을 바꾸지 않으니 댓글·링크 유지). 탭이 없어졌으면 백업 이름만 되돌림
+// 백업 내용을 같은 탭에 다시 덮어써서 되돌린다(탭을 바꾸지 않으니 댓글·링크 유지). 행 맞추기를 모든 탭 먼저 → 칸 복사 →
+// 반영 전 스냅숏과 칸마다 대조해 다른 칸(#REF! 등)은 스냅숏 값으로 고치고 다시 확인. 하나라도 안 맞으면 백업을 지우지 않고 멈춤.
 async function rollback() {
   await dropStages();
   const sm = await meta(book.sales);
-  let n = 0;
-  for (const [, s] of TABS) {
-    const bak = byTitle(sm, BAK + s); if (!bak) continue;
-    const cur = byTitle(sm, s);
-    if (cur) {
-      await applyTab(bak.properties.sheetId, BAK + s, cur.properties.sheetId, s, { id: book.sales, title: BAK + s });
-      await batch(book.sales, [{ deleteSheet: { sheetId: bak.properties.sheetId } }]);
-    } else await batch(book.sales, [{ updateSheetProperties: { properties: { sheetId: bak.properties.sheetId, title: s, hidden: false }, fields: "title,hidden" } }]);
-    n++;
+  const pairs = TABS.map(([, s]) => ({ s, bak: byTitle(sm, BAK + s), cur: byTitle(sm, s) })).filter((p) => p.bak);
+  for (const p of pairs.filter((p) => !p.cur)) await batch(book.sales, [{ updateSheetProperties: { properties: { sheetId: p.bak.properties.sheetId, title: p.s, hidden: false }, fields: "title,hidden" } }]);
+  const live = pairs.filter((p) => p.cur);
+  for (const p of live) await alignRows(book.sales, BAK + p.s, p.cur.properties.sheetId, p.s);
+  for (const p of live) await copyCells(p.bak.properties.sheetId, BAK + p.s, p.cur.properties.sheetId, p.s, { id: book.sales, title: BAK + p.s });
+  let snap = null;
+  try { snap = JSON.parse(readFileSync(SNAP(), "utf8")); } catch {}
+  if (snap?.sales !== book.sales) snap = null;
+  const bad = [];
+  const cmp = (a, b) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
+  for (const p of live) {
+    const now = await valuesGrid(p.s);
+    if (!snap) { now.forEach((row, r) => row.forEach((x, c) => { if (String(x).includes("#REF!")) bad.push(`${p.s} ${colName(c)}${r + 1}: #REF!`); })); continue; }
+    const want = snap.tabs[p.s] || [];
+    const fixes = [];
+    for (let r = 0; r < Math.max(now.length, want.length); r++) for (let c = 0; c < Math.max(now[r]?.length || 0, want[r]?.length || 0); c++) {
+      if (cmp(now[r]?.[c], want[r]?.[c])) continue;
+      const v = want[r]?.[c] ?? "";
+      fixes.push({ range: `${q(p.s)}!${colName(c)}${r + 1}`, values: [[v]], f: typeof v === "string" && v.startsWith("=") });
+    }
+    if (fixes.length) {
+      console.log(`  ${p.s}: 백업으로 되돌린 뒤 반영 전 기록과 다른 칸 ${fixes.length}개 → 반영 전 값으로 고침`);
+      for (const [opt, list] of [["USER_ENTERED", fixes.filter((x) => x.f)], ["RAW", fixes.filter((x) => !x.f)]]) if (list.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.sales, requestBody: { valueInputOption: opt, data: list.map(({ range, values }) => ({ range, values })) } });
+      const again = await valuesGrid(p.s);
+      for (let r = 0; r < Math.max(again.length, want.length); r++) for (let c = 0; c < Math.max(again[r]?.length || 0, want[r]?.length || 0); c++) if (!cmp(again[r]?.[c], want[r]?.[c])) bad.push(`${p.s} ${colName(c)}${r + 1}: 반영 전 ${String(want[r]?.[c] ?? "").slice(0, 20)} / 지금 ${String(again[r]?.[c] ?? "").slice(0, 20)}`);
+    }
   }
-  return n;
+  if (bad.length) {
+    console.log(`되돌림 확인 실패 ${bad.length}칸 — 백업 탭을 지우지 않고 남겨 둠(사람이 확인):`); bad.slice(0, 20).forEach((x) => console.log("  · " + x));
+    if (!snap) console.log("  (이 PC에 반영 전 기록이 없어 #REF!만 검사함)");
+    process.exitCode = 7;
+    return pairs.length;
+  }
+  await batch(book.sales, live.map((p) => ({ deleteSheet: { sheetId: p.bak.properties.sheetId } })));
+  console.log(snap ? "되돌림 확인: 반영 전 기록과 값·수식 전부 일치" : "되돌림 확인: #REF! 없음(이 PC에 반영 전 기록이 없어 값 대조는 못 함)");
+  return pairs.length;
 }
 async function dropBackups() {
   const sm = await meta(book.sales);

@@ -86,7 +86,15 @@ export const LEAK_WORDS = ["원가(수정)", "원가 합계", "개별 마진", "
 export const NOTE_LEAK_WORDS = [...LEAK_WORDS, "원가", "마진", "공급가", "매입"];
 export const LOG_SHEET = "__반영기록"; // 원본 안 숨김 탭: 마지막 반영 때 영업부용 내용(변경 감지 기준)
 
-export const refsBeyondJ = (f) => /(^|[^A-Za-z0-9_])\$?([K-Z]|[A-Z]{2,3})\$?\d+/.test(String(f).replace(/"[^"]*"/g, ""));
+// K열 이후 칸 참조(K5, $AA$3) + 열 전체(K:K, A:K처럼 K열 이후까지 걸침) + 행 전체(5:5 — 모든 열이라 원가 열 포함)
+// 10-24 검토: 열·행 전체 참조를 못 잡았음
+const colIdx = (s) => [...s].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+export const refsBeyondJ = (f) => {
+  const s = String(f).replace(/"[^"]*"/g, "");
+  if (/(^|[^A-Za-z0-9_])\$?([K-Z]|[A-Z]{2,3})\$?\d+/.test(s)) return true;
+  for (const m of s.matchAll(/(^|[^A-Za-z0-9_$])\$?([A-Z]{1,3})\s*:\s*\$?([A-Z]{1,3})(?![A-Za-z0-9_(])/g)) if (Math.max(colIdx(m[2]), colIdx(m[3])) >= 10) return true;
+  return /(^|[^A-Za-z0-9_$:])\$?\d+\s*:\s*\$?\d+(?![\d.])/.test(s);
+};
 export const colName = (c) => { let s = ""; c++; while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); } return s; };
 export const q = (t) => `'${t.replace(/'/g, "''")}'`;
 export const nameMap = Object.fromEntries(TABS.filter(([o, s]) => o !== s).map(([o, s]) => [o, s]));
