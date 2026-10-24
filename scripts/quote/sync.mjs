@@ -53,7 +53,11 @@ async function readJsonTab(title) {
 async function salesChanges() {
   const log = await readJsonTab(LOG_SHEET);
   if (!log) return { noLog: true, list: [] };
-  if (!log.head.length) throw new Error(`반영 기록 탭(${LOG_SHEET})이 비어 있다 — 영업부용 직접 수정을 확인할 수 없음. 사람이 영업부용을 확인한 뒤 --force로 반영`);
+  if (!log.head.length) {
+    // --force(영업부용 직접 수정을 버려도 됨)일 때만 첫 반영처럼 진행 — 안내대로 --force가 실제로 통하게(3차 검토)
+    if (has("--force") && !has("--check")) { console.log(`  ※ 반영 기록 탭(${LOG_SHEET})이 비어 있음 → --force라 직접 수정 확인 없이 진행`); return { noLog: true, list: [] }; }
+    throw new Error(`반영 기록 탭(${LOG_SHEET})이 비어 있다 — 영업부용 직접 수정을 확인할 수 없음. 사람이 영업부용을 확인한 뒤 --force로 반영`);
+  }
   const when = log.head[1];
   const saved = log.data;
   const list = [], cells = [];
@@ -122,6 +126,9 @@ async function buildTemps() {
   // 복사된 보호 제거
   const m2 = await meta(book.orig);
   await batch(book.orig, temps.flatMap((t) => (byTitle(m2, TEMP + t.o).protectedRanges || []).map((p) => ({ deleteProtectedRange: { protectedRangeId: p.protectedRangeId } }))));
+  // 원본 탭 값(원가 칸 대조용) — 굳힐 값이 그 수식이 가리키는 K열 이후 칸 값과 같으면 원가 숫자가 그대로 넘어가는 것
+  const origVals = {};
+  for (const [o] of TABS) origVals[o] = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: q(o), valueRenderOption: "UNFORMATTED_VALUE" })).data.values || [];
   for (const t of temps) {
     const title = TEMP + t.o;
     const f = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: q(title), valueRenderOption: "FORMULA" })).data.values || [];
@@ -131,10 +138,22 @@ async function buildTemps() {
     f.forEach((row, r) => row.forEach((x, c) => {
       if (typeof x !== "string" || !x.startsWith("=")) return;
       const a1 = `${q(title)}!${colName(c)}${r + 1}`;
-      // 원가 칸을 그대로 옮기는 수식(=K5, ='최종'!$L$3, =K5*1 같은 꼴)은 값으로 굳히면 원가 숫자가 그대로 영업부용에 간다 → 멈춤(2차 검토).
-      // 판매 단가처럼 원가에서 계산한 값(=ROUND(K6*1.1,-2))은 계산 결과라 그대로 굳힌다
-      if (!t.keep && c < LAST_SALES_COL && /^=\s*[+-]?\s*(('[^']+'|[^'!\s()]+)!)?\$?([K-Z]|[A-Z]{2,3})\$?\d+\s*([*/]\s*1(\.0+)?)?\s*$/.test(x)) t.rawCost.push(`${t.o} ${colName(c)}${r + 1} (${x.slice(0, 30)})`);
-      if (!t.keep && c < LAST_SALES_COL && refsBeyondJ(x)) asValue.push({ range: a1, values: [[v[r]?.[c] ?? ""]] });
+      // 원가 칸을 그대로 옮기는 수식은 값으로 굳히면 원가 숫자가 그대로 영업부용에 간다 → 멈춤. 판매 단가처럼 원가에서 계산한 값
+      // (=ROUND(K6*1.1,-2))은 계산 결과라 그대로 굳힌다. 모양(=K5)만 보면 =IF(K5="","",K5)·=IFERROR(K5,0) 같은 감싼 꼴을 놓쳐서(3차 검토)
+      // 값으로 본다: 굳힐 값(0 아님)이 이 수식이 가리키는 K열 이후 칸 값과 같으면 멈춤
+      if (!t.keep && c < LAST_SALES_COL && refsBeyondJ(x)) {
+        const val = v[r]?.[c];
+        if (typeof val === "number" && val !== 0) {
+          for (const m of x.replace(/"[^"]*"/g, "").matchAll(/(?:('(?:[^']|'')+'|[^'!\s(),:=+\-*/&<>^]+)!)?\$?([A-Z]{1,3})\$?(\d+)(?![\d(A-Za-z_])/g)) {
+            const col = [...m[2]].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+            if (col < LAST_SALES_COL) continue;
+            const tab = m[1] ? m[1].replace(/^'|'$/g, "").replace(/''/g, "'") : t.o;
+            const cost = origVals[tab]?.[Number(m[3]) - 1]?.[col];
+            if (typeof cost === "number" && Math.abs(cost - val) < 1e-9) { t.rawCost.push(`${t.o} ${colName(c)}${r + 1} (${x.slice(0, 30)} = ${tab === t.o ? "" : tab + "!"}${m[2]}${m[3]} 값 그대로)`); break; }
+          }
+        }
+        asValue.push({ range: a1, values: [[v[r]?.[c] ?? ""]] });
+      }
       else if (renameRefs(x) !== x) renamed.push({ range: a1, values: [[renameRefs(x)]] });
     }));
     if (asValue.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "RAW", data: asValue } });
@@ -441,7 +460,7 @@ async function dropBackups() {
     if (!(await meta(book.sales)).some((s) => s.properties.title.startsWith(BAK))) throw new Error("확정할 반영(백업)이 없다");
     const v = await verify(book);
     if (v.total && !has("--force")) { console.log(`\n검증 차이 ${v.total}건이 있어 확정하지 않음. 이 차이를 알고도 확정하려면 --accept --force, 아니면 --rollback`); process.exitCode = 5; return; }
-    await dropBackups(); await writeLog(); console.log("확정: 백업 삭제, 반영 기록 저장"); return;
+    await writeLog(); await dropBackups(); console.log("확정: 반영 기록 저장, 백업 삭제"); return;
   }
   if ((await meta(book.sales)).some((s) => s.properties.title.startsWith(BAK))) throw new Error("영업부용에 지난 반영 백업이 남아 있다. --rollback 또는 --accept로 먼저 정리할 것");
   if (!has("--check")) await dropStages(); // 중간에 끊긴 반영이 남긴 준비 탭(원가 없는 내용) — 같은 이름으로 다시 만들 수 있게 지움
@@ -470,7 +489,7 @@ async function dropBackups() {
     console.log("원가 흔적 검사: 통과");
     if (has("--dry")) { console.log("--dry: 영업부용은 건드리지 않음"); return; }
     try { await replaceSales(temps); }
-    catch (e) { console.log("영업부용 덮어쓰기 중 실패 → 자동 되돌림:", e.message); await rollback(); process.exitCode = 4; return; }
+    catch (e) { console.log("영업부용 덮어쓰기 중 실패 → 자동 되돌림:", e.message); await rollback(); if (process.exitCode !== 7) process.exitCode = 4; return; } // 7(되돌림 확인 실패)은 덮어쓰지 않음
   } finally { await deleteTemps(); await dropStages(); }
 
   console.log("\n[자동 검증]");
@@ -479,7 +498,9 @@ async function dropBackups() {
     console.log("\n검증 차이가 있어 백업을 남겨 둠. 확인 후 --rollback(되돌림) 또는 --accept(확정)");
     process.exitCode = 5; return;
   }
-  await dropBackups();
+  // 기록 먼저, 백업은 나중에 — 기록 저장이 실패하면 백업이 남아 --accept로 다시 하면 된다. 반대 순서면 기록이 옛것으로 남아
+  // 다음 반영이 이번에 반영한 칸 전부를 '영업부용 직접 수정'으로 잘못 알린다(3차 검토)
   await writeLog();
+  await dropBackups();
   console.log(`\n반영 완료: 영업부용 최종 금액 ${Number(v.amount).toLocaleString("ko-KR")}원, 백업 삭제·반영 기록 저장`);
 })().catch((e) => { console.error("실패:", e.message); process.exit(1); });
