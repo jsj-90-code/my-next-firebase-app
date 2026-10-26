@@ -92,6 +92,8 @@ export default function PingOwnComparePage() {
   const [customTo, setCustomTo] = useState(lastFullDays(30).to);
   /** 그래프에서 숨긴 경쟁점 id. */
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  /** 표에서 마우스를 올린 매장 — 그래프에서 그 선만 진하게(2026-10-26). 우리 매장은 "own". */
+  const [rowHover, setRowHover] = useState<string | null>(null);
   const [hourlyLoaded, setHourlyLoaded] = useState<{
     key: string;
     byId: Record<string, PingDaily[]>;
@@ -295,7 +297,11 @@ export default function PingOwnComparePage() {
           </thead>
           <tbody>
             {own && (
-              <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
+              <tr
+                className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]"
+                onMouseEnter={() => setRowHover("own")}
+                onMouseLeave={() => setRowHover(null)}
+              >
                 <td className="px-3 py-2 font-semibold">
                   <span
                     className="mr-1.5 inline-block h-2 w-2 rounded-full"
@@ -324,6 +330,8 @@ export default function PingOwnComparePage() {
                   key={s.id}
                   className={`border-b border-[var(--sl-hairline)] last:border-0 ${plottable ? "cursor-pointer hover:bg-black/[0.02] dark:hover:bg-white/[0.03]" : ""}`}
                   onClick={() => plottable && toggleHidden(s.id)}
+                  onMouseEnter={() => isShown && setRowHover(s.id)}
+                  onMouseLeave={() => setRowHover(null)}
                   aria-selected={isShown}
                 >
                   <td className="px-3 py-2 whitespace-nowrap">
@@ -386,7 +394,7 @@ export default function PingOwnComparePage() {
           </tbody>
         </table>
         <p className="border-t border-[var(--sl-hairline)] px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
-          측정 중인 경쟁점은 모두 아래 그래프에 선으로 그려집니다. 체크를 풀면 그 선만 숨깁니다.
+          측정 중인 경쟁점은 모두 아래 그래프에 선으로 그려집니다. 체크를 풀면 그 선만 숨기고, 줄에 마우스를 올리면 그 선만 진하게 보입니다.
           이름을 누르면 그 매장 상세 화면으로 갑니다.
         </p>
       </section>
@@ -434,6 +442,7 @@ export default function PingOwnComparePage() {
               series={daySeries}
               xLabels={dates.map((d) => d.slice(5).replace("-", "/"))}
               ariaLabel="날짜별 가동률 비교"
+              highlightKey={rowHover}
               tickEvery={Math.max(1, Math.ceil(dates.length / 10))}
             />
           ) : (
@@ -458,6 +467,7 @@ export default function PingOwnComparePage() {
               series={hourSeries}
               xLabels={Array.from({ length: 24 }, (_, h) => `${h}시`)}
               ariaLabel="시간대별 가동률 비교"
+              highlightKey={rowHover}
               tickEvery={3}
             />
           )}
