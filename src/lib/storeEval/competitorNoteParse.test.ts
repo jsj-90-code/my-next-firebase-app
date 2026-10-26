@@ -335,6 +335,40 @@ describe("1인석과 1인룸 구분 (2026-10-06)", () => {
   });
 });
 
+// 2026-10-26 — 방이점(N028) 다우 원문. 팀룸 좌석이 비어 개수×5로 추정되던 것, 커플룸이 커플석 6조로 들어가고 "8석"을 버리던 것.
+describe("팀룸 총좌석·커플룸 (2026-10-26)", () => {
+  it("인원별 팀룸은 좌석을 더한다(맥PC 4인5개 5인1개 3인1개 → 28석)", () => {
+    const [e] = parseCompetitorNotes("- 매장명 : 맥 pc\n- 커플석 12개24석\n- 1인석 21석\n- 팀룸 4인5개 5인1개 3인1개");
+    expect(e.teamRoom).toBe(7);
+    expect(e.teamRoomTotalSeats).toBe(28);
+    expect(e.coupleZone).toBe(12);
+  });
+
+  it("커플룸은 2인 팀룸, 좌석만 적힌 커플석은 ÷2조(오아시스)", () => {
+    const [e] = parseCompetitorNotes("- 매장명 : 오아시스pc방\n- 커플석 8석 , 커플룸6개12석\n- 1인석 18석\n- 팀룸 5인 2개");
+    expect(e.coupleZone).toBe(4);
+    expect(e.teamRoom).toBe(8);
+    expect(e.teamRoomTotalSeats).toBe(22);
+    expect(e.teamRoomTotalSeatsBasis).toContain("커플룸 6개");
+  });
+
+  it("신 형식 괄호 쌍도 좌석으로(40 (3인 1, 4인 8, 5인 1) → 40석)", () => {
+    const [e] = parseCompetitorNotes("■ 매장명: 테스트PC\n4) 팀룸: 40 (3인 1, 4인 8, 5인 1)");
+    expect(e.teamRoom).toBe(10);
+    expect(e.teamRoomTotalSeats).toBe(40);
+  });
+
+  it("인원 없는 팀룸은 5석으로 보고 근거에 적는다, 없음은 0석", () => {
+    const [a] = parseCompetitorNotes("- 매장명 : A\n- 팀룸 3개");
+    expect(a.teamRoomTotalSeats).toBe(15);
+    expect(a.teamRoomTotalSeatsBasis).toContain("5석으로 봄");
+    const [b] = parseCompetitorNotes("- 매장명 : B\n- 팀룸 없음");
+    expect(b.teamRoomTotalSeats).toBe(0);
+    const [c] = parseCompetitorNotes("- 매장명 : C\n- 1인석 10석");
+    expect(c.teamRoomTotalSeats).toBeNull();
+  });
+});
+
 // 2026-10-07 — 암사역(N020) 실제 붙여넣기 원문(사용자 제공): IP 대역·인테리어/관리/먹거리 점수 자동완성.
 describe("parseCompetitorNotes — IP·수준 점수(2026-10-07)", () => {
   const AMSA = `경쟁점 설명

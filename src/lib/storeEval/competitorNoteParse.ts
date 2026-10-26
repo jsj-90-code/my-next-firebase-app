@@ -21,7 +21,11 @@ export type ParsedCompetitorNote = {
   singleSeatCount: number | null; // "1인석" 줄
   room1: number | null; // "1인룸" 줄이 있을 때만(없으면 null — 1인석을 룸으로 지어내지 않는다)
   room2: number | null; // 2인석 -> 2인룸 수 (근사 매핑, 사람이 검토)
-  teamRoom: number | null;
+  teamRoom: number | null; // 팀룸 개수 — "커플룸 N개"도 2인 팀룸으로 더한다(2026-10-26)
+  // 2026-10-26 사용자 "팀룸 좌석수 환산이 자동으로 안 된다" — 비어 있으면 계산이 개수×5석으로 추정한다(calc.ts).
+  // "4인5개 5인1개 3인1개"처럼 인원이 다 적혀 있으면 좌석 합(28)을 넣는다. 인원 모르는 팀룸은 5석으로 보고 근거에 적는다.
+  teamRoomTotalSeats: number | null;
+  teamRoomTotalSeatsBasis: string | null;
   ratePer1000Won: number | null;
   paidDeduction: string | null;
   visitedAt: string | null; // "YYYY-MM-DD HH:MM"
@@ -167,6 +171,41 @@ function sumGaeCounts(text: string | null): number | null {
   return parseCountLike(text);
 }
 
+/** 커플석 조(2석 묶음) 수. "12개24석"·"10개"는 개수, "8석"처럼 좌석만 있으면 ÷2(2026-10-26), 나머지는 sumGaeCounts와 같다. */
+function parseCoupleSeats(text: string | null): number | null {
+  if (text == null) return null;
+  const trimmed = text.trim();
+  if (!/\d+\s*개/.test(trimmed) && !/\d+\s*인/.test(trimmed)) {
+    const seatM = trimmed.match(/(\d+)\s*석/);
+    if (seatM) return Math.round(Number(seatM[1]) / 2);
+  }
+  return sumGaeCounts(text);
+}
+
+/**
+ * 팀룸 총좌석. "4인5개 5인1개"·"40 (3인 1, 4인 8)"의 "N인 M" 쌍을 N×M으로 더하고, 커플룸은 2석씩 더한다.
+ * 인원 쌍으로 센 룸 수가 팀룸 개수보다 적으면(예 "5인 2개, 3개") 남는 룸은 5석으로 보고 근거에 적는다.
+ * 팀룸·커플룸 둘 다 없으면 null(계산이 개수×5로 추정하던 그대로).
+ */
+function teamRoomSeats(
+  line: string | null,
+  teamRoomCount: number | null,
+  coupleRoomCount: number,
+): { teamRoomTotalSeats: number | null; teamRoomTotalSeatsBasis: string | null } {
+  if (teamRoomCount == null && coupleRoomCount === 0) return { teamRoomTotalSeats: null, teamRoomTotalSeatsBasis: null };
+  const pairs = [...(line ?? "").matchAll(/(\d+)\s*인\s*(\d+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
+  const pairRooms = pairs.reduce((s, [, n]) => s + n, 0);
+  const pairSeats = pairs.reduce((s, [p, n]) => s + p * n, 0);
+  const unknownRooms = Math.max(0, (teamRoomCount ?? 0) - pairRooms);
+  const total = pairSeats + unknownRooms * 5 + coupleRoomCount * 2;
+  const parts = [
+    line && (teamRoomCount ?? 0) > 0 ? `팀룸 ${line.trim()}` : null,
+    unknownRooms > 0 ? `인원 모르는 팀룸 ${unknownRooms}개는 5석으로 봄` : null,
+    coupleRoomCount > 0 ? `커플룸 ${coupleRoomCount}개를 2인 팀룸으로` : null,
+  ].filter(Boolean);
+  return { teamRoomTotalSeats: total, teamRoomTotalSeatsBasis: parts.length ? `붙여넣기: ${parts.join(" · ")}` : null };
+}
+
 /** "26년 3월23일 오전 11시30분 9명 이용중" -> {visitedAt: "2026-03-23 11:30", visitorCount: 9} */
 function parseVisitLine(text: string | null): { visitedAt: string | null; visitorCount: number | null } {
   if (text == null) return { visitedAt: null, visitorCount: null };
@@ -227,11 +266,19 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
   });
   const monitor = matchLine(block, /모니터\s*[:：][ \t]*(.+)/);
 
-  const coupleZone = sumGaeCounts(matchLine(block, /커플석\s*[:：]?[ \t]*(.+)/));
+  // 2026-10-26 — "커플석 8석 , 커플룸6개12석"(N028 오아시스)을 "6개"만 읽어 커플석 6조로 넣고 8석은 버렸다.
+  // 커플룸은 2인 팀룸으로 보내고(사용자 10-26), 커플석 줄에서는 떼어 낸 뒤 센다.
+  const coupleRoomM = block.match(/커플\s*룸\s*[:：]?\s*(\d+)\s*개/);
+  const coupleRoomCount = coupleRoomM ? Number(coupleRoomM[1]) : 0;
+  const coupleLine = matchLine(block, /커플석\s*[:：]?[ \t]*(.+)/);
+  const coupleZone = parseCoupleSeats(coupleLine?.replace(/[,，]?\s*커플\s*룸[^,，]*/g, "") ?? null);
   const singleSeatCount = parseCountLike(matchLine(block, /1인석\s*[:：]?[ \t]*(.+)/));
   const room1 = parseCountLike(matchLine(block, /1인\s*룸\s*[:：]?[ \t]*(.+)/));
   const room2 = parseCountLike(matchLine(block, /2인석\s*[:：]?[ \t]*(.+)/));
-  const teamRoom = sumGaeCounts(matchLine(block, /팀룸\s*[:：]?[ \t]*(.+)/));
+  const teamRoomLine = matchLine(block, /팀룸\s*[:：]?[ \t]*(.+)/);
+  const teamRoomOnly = sumGaeCounts(teamRoomLine);
+  const teamRoom = teamRoomOnly == null && coupleRoomCount === 0 ? null : (teamRoomOnly ?? 0) + coupleRoomCount;
+  const { teamRoomTotalSeats, teamRoomTotalSeatsBasis } = teamRoomSeats(teamRoomLine, teamRoomOnly, coupleRoomCount);
 
   // "방문일시 고객수" 순서가 형식마다 다르다 - 구형식은 "26년 3월23일 오전 11시30분 9명 이용중"
   // (날짜 먼저), 신형식은 "56명 (4시 30분)"(인원 먼저, 날짜 자체가 없음) - 라벨 뒤 전체를 그대로
@@ -273,6 +320,8 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
     room1,
     room2,
     teamRoom,
+    teamRoomTotalSeats,
+    teamRoomTotalSeatsBasis,
     ratePer1000Won,
     paidDeduction,
     visitedAt,
@@ -332,6 +381,8 @@ export function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, op
     room1: note.room1 ?? base.room1,
     room2: note.room2,
     teamRoom: note.teamRoom,
+    teamRoomTotalSeats: note.teamRoomTotalSeats,
+    teamRoomTotalSeatsBasis: note.teamRoomTotalSeatsBasis,
     // 2026-10-07 — 시간당환산요금은 폼에서 분을 손으로 칠 때만 채워져, 붙여넣기 땐 분을 지우고 다시 쳐야 했다(사용자).
     // 폼 칸과 같은 식(60000 / 분)으로 같이 채운다. 원문에 요금 줄이 없으면 기존 값을 지우지 않는다.
     ratePer1000Won: note.ratePer1000Won ?? base.ratePer1000Won,
