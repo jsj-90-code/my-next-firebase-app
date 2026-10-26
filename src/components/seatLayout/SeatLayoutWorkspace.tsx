@@ -1536,14 +1536,20 @@ export function SeatLayoutWorkspace() {
         const compressed = await compressSeatNumberPlateToBudget(rawSeatNumberPlateDataUrl, 400_000);
         seatNumberPlateDataUrl = compressed.dataUrl;
       }
+      // 도면은 문서에서 나머지(좌석번호표 이미지·존 정보)가 차지하고 남는 만큼 고화질로 담는다.
+      // 1MiB 한도에 필드 이름·메타 몫으로 여유를 둔다.
+      const floorBudget =
+        1_000_000 -
+        new Blob([JSON.stringify({ ...project, pcDefaults, seatNumberPlateDataUrl, floorPlanDataUrl: "" })]).size;
       let floorPlanDataUrl = project.floorPlanDataUrl;
       if (rawFloorPlanDataUrl) {
-        // 도면은 문서에서 나머지(좌석번호표 이미지·존 정보)가 차지하고 남는 만큼 고화질로 담는다.
-        // 1MiB 한도에 필드 이름·메타 몫으로 여유를 둔다.
-        const restBytes = new Blob([
-          JSON.stringify({ ...project, pcDefaults, seatNumberPlateDataUrl, floorPlanDataUrl: "" }),
-        ]).size;
-        const compressed = await compressFloorPlanToBudget(rawFloorPlanDataUrl, 1_000_000 - restBytes);
+        const compressed = await compressFloorPlanToBudget(rawFloorPlanDataUrl, floorBudget);
+        floorPlanDataUrl = compressed.dataUrl;
+      } else if (floorPlanDataUrl && floorPlanDataUrl.length > floorBudget) {
+        // 2026-10-26 — 저장된 프로젝트를 다시 열면 원본 도면이 없어 위 압축을 건너뛰고, 이미 한도를
+        // 거의 다 쓴 저장본(호구포점 959KB)을 그대로 넣었다. 거기에 피난안내도를 더하면 넘쳐서 저장이
+        // 거부되고, 안내도를 지우면 저장됐다. 넘칠 때만 저장본을 남은 자리에 맞게 다시 줄인다.
+        const compressed = await compressFloorPlanToBudget(floorPlanDataUrl, floorBudget);
         floorPlanDataUrl = compressed.dataUrl;
       }
       const toSave: SeatLayoutProject = {
