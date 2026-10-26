@@ -78,10 +78,11 @@ describe("결재 전 확인 신호", () => {
     expect(found?.level).toBe("확인");
   });
 
-  it("경쟁점이 8곳 이상이면 밀도 신호를 내고, 이건 문서에 쓴다", () => {
+  it("경쟁점이 8곳 이상이면 밀도 신호를 내지만, 모든 점포 공통 문장이라 문서엔 안 쓴다(2026-10-26)", () => {
     const many = Array.from({ length: 9 }, (_, i) => competitor({ id: `c${i}` }));
     const found = collectReviewSignals(makeInput({ competitors: many })).find((s) => s.title.includes("밀도"));
-    expect(found?.forReport).toBe(true);
+    expect(found).toBeDefined();
+    expect(found?.forReport).toBe(false);
   });
 
   it("계획 요금이 경쟁점 평균보다 15% 넘게 높으면 요금 경쟁 리스크로 잡는다", () => {
@@ -141,7 +142,7 @@ describe("결재 전 확인 신호", () => {
     expect(forReport.some((t) => t.includes("입지동선평가가 입력"))).toBe(false);
     expect(forReport.some((t) => t.includes("실측 가동률이 없"))).toBe(false);
     // 반면 점포 자체의 조건은 넘어간다.
-    expect(forReport.some((t) => t.includes("밀도"))).toBe(true);
+    expect(forReport.some((t) => t.includes("밀도"))).toBe(false); // 2026-10-26 모든 점포 공통 문장이라 뺌
     expect(forReport.some((t) => t.includes("7층"))).toBe(true);
   });
 });

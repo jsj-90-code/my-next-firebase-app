@@ -147,7 +147,8 @@ export function collectReviewSignals({
         level: "주의",
         title: `경쟁점이 ${investigated.length}곳으로 밀도가 높습니다`,
         detail: "다수의 경쟁점과 수요를 나눠야 합니다.",
-        forReport: true,
+        // 2026-10-26 사용자 — 모든 점포에 공통인 말이라 다우 평가문엔 안 쓴다(화면 신호로만).
+        forReport: false,
       });
     }
   }
