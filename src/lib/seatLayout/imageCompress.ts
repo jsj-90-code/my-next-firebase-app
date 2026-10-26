@@ -36,18 +36,43 @@ export async function compressImageDataUrl(
 // 2026-10-06 — 도면은 1600px·화질 0.6으로만 저장돼서, 저장한 프로젝트를 다시 열어 고해상도
 // (9600x5400)로 내려받으면 도면 선만 뭉개졌다. 남는 용량(maxBytes) 안에서 가장 좋은 단계를 고른다.
 // 1600px·0.6이 예전 기본값이라, 어떤 도면이든 최소한 예전 화질은 나온다.
+// 2026-10-26 — 호구포점에서 도면(959KB)에 피난안내도를 더하면 마지막 단계(1600px)로도 1MiB를
+// 넘겨 저장이 통째로 거부됐다. 아래 두 단계를 더해 끝까지 줄여 보게 했다.
+const LOW_STEPS: { maxDimension: number; quality: number }[] = [
+  { maxDimension: 1200, quality: 0.5 },
+  { maxDimension: 1000, quality: 0.45 },
+];
+
 const FLOOR_PLAN_LADDER: { maxDimension: number; quality: number }[] = [
   { maxDimension: 3200, quality: 0.8 },
   { maxDimension: 2400, quality: 0.75 },
   { maxDimension: MAX_DIMENSION, quality: JPEG_QUALITY },
+  ...LOW_STEPS,
 ];
 
-export async function compressFloorPlanToBudget(
+// 좌석번호표(피난안내도)는 예전엔 늘 1600px·0.6 한 단계였다. 사진으로 찍은 안내도는 이것만으로
+// 수백 KB라 도면 몫을 다 먹었다 — 같은 방식으로 한도 안에서 가장 좋은 단계를 고른다.
+const SEAT_NUMBER_PLATE_LADDER: { maxDimension: number; quality: number }[] = [
+  { maxDimension: MAX_DIMENSION, quality: JPEG_QUALITY },
+  ...LOW_STEPS,
+];
+
+export function compressFloorPlanToBudget(sourceDataUrl: string, maxBytes: number) {
+  return compressToBudget(sourceDataUrl, maxBytes, FLOOR_PLAN_LADDER);
+}
+
+export function compressSeatNumberPlateToBudget(sourceDataUrl: string, maxBytes: number) {
+  return compressToBudget(sourceDataUrl, maxBytes, SEAT_NUMBER_PLATE_LADDER);
+}
+
+// 한도 안에 드는 첫 단계를 돌려준다. 끝까지 안 들면 가장 작은 단계를 돌려준다 — 호출부가 전체 크기를 다시 확인한다.
+async function compressToBudget(
   sourceDataUrl: string,
   maxBytes: number,
+  ladder: { maxDimension: number; quality: number }[],
 ): Promise<{ dataUrl: string; width: number; height: number }> {
   let last: { dataUrl: string; width: number; height: number } | null = null;
-  for (const { maxDimension, quality } of FLOOR_PLAN_LADDER) {
+  for (const { maxDimension, quality } of ladder) {
     last = await compressImageDataUrl(sourceDataUrl, maxDimension, quality);
     // data URL은 ASCII라 글자 수 = 바이트 수다.
     if (last.dataUrl.length <= maxBytes) return last;

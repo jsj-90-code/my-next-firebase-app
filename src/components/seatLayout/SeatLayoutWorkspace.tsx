@@ -23,7 +23,7 @@ import {
   renderOrderSummaryImage,
   renderPcFloorplanImage,
 } from "@/lib/seatLayout/canvasRender";
-import { compressFloorPlanToBudget, compressImageDataUrl } from "@/lib/seatLayout/imageCompress";
+import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/lib/seatLayout/imageCompress";
 import { buildQuadrantTiles } from "@/lib/seatLayout/imageTiles";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
@@ -54,6 +54,11 @@ import {
 import type { SpecField, SpecFieldId } from "@/lib/seatLayout/constants";
 
 type ActiveZone = DeskZone | PcZone;
+
+// 2026-10-26 — "등록했습니다"만 있어서 저장된 줄 알고 나가 피난안내도가 사라졌다. 도면처럼 저장 안내를 붙인다.
+const SEAT_NUMBER_PLATE_ADDED_MSG =
+  "좌석번호표를 올렸습니다 — \"프로젝트 저장\"을 눌러야 보관됩니다. 오른쪽에서 도면과 나란히 보면서 " +
+  "존별로 직접 입력하거나, \"AI로 자동 채워보기\"를 눌러보세요.";
 
 const DEFAULT_DRAG_HINT =
   "먼저 위에서 존 유형을 선택한 뒤, 도면 위를 한 번 클릭(좌상단), 다시 한 번 클릭(우하단)하세요.";
@@ -259,6 +264,15 @@ export function SeatLayoutWorkspace() {
   const [rawFloorPlanDataUrl, setRawFloorPlanDataUrl] = useState<string | null>(null);
   // 좌석번호표(피난안내도 등) 원본 화질 이미지 — 번호 인식은 이걸로 하고, 저장 직전에만 압축한다.
   const [rawSeatNumberPlateDataUrl, setRawSeatNumberPlateDataUrl] = useState<string | null>(null);
+  // 2026-10-26 — 피난안내도를 올리면 "등록했습니다"만 떠서 저장된 줄 알고 나가 사라지는 일이 있었다.
+  // 올린 이미지를 아직 저장하지 않았으면 페이지를 닫을 때 브라우저가 한 번 묻게 한다.
+  const [imagesUnsaved, setImagesUnsaved] = useState(false);
+  useEffect(() => {
+    if (!imagesUnsaved) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [imagesUnsaved]);
   const [seatNumberRecognizing, setSeatNumberRecognizing] = useState(false);
   // 좌석수가 겹치는 존이나 어느 존과도 안 맞는 번호 그룹처럼, 자동 배정을 포기하고 사람 확인이
   // 필요한 경우를 알려주는 안내문. (틀린 값을 억지로 채우는 것보다 안전하다.)
@@ -1446,6 +1460,7 @@ export function SeatLayoutWorkspace() {
       // 불러와도 seatNumberPlateDataUrl/seatNumberRanges 등이 undefined가 되지 않게 한다.
       setProject({ ...emptyProject(), ...loaded });
       setRawSeatNumberPlateDataUrl(null);
+      setImagesUnsaved(false);
       setSeatNumberWarnings([]);
       setSeatNumberUnmatchedGroups([]);
       aiFilledZoneNamesRef.current.clear();
@@ -1472,6 +1487,7 @@ export function SeatLayoutWorkspace() {
     setProject({ id: crypto.randomUUID(), ...emptyProject() });
     setRawFloorPlanDataUrl(null);
     setRawSeatNumberPlateDataUrl(null);
+    setImagesUnsaved(false);
     setSeatNumberWarnings([]);
     setSeatNumberUnmatchedGroups([]);
     aiFilledZoneNamesRef.current.clear();
@@ -1516,7 +1532,8 @@ export function SeatLayoutWorkspace() {
       // rawFloorPlanDataUrl(원본 화질)을 쓴다 — 압축본으로 덮어쓰지 않는다.
       let seatNumberPlateDataUrl = project.seatNumberPlateDataUrl;
       if (rawSeatNumberPlateDataUrl) {
-        const compressed = await compressImageDataUrl(rawSeatNumberPlateDataUrl);
+        // 좌석번호표는 번호만 읽히면 되므로 400KB 안에서 고르고, 남는 자리는 도면 화질에 준다.
+        const compressed = await compressSeatNumberPlateToBudget(rawSeatNumberPlateDataUrl, 400_000);
         seatNumberPlateDataUrl = compressed.dataUrl;
       }
       let floorPlanDataUrl = project.floorPlanDataUrl;
@@ -1536,8 +1553,15 @@ export function SeatLayoutWorkspace() {
         floorPlanDataUrl,
         seatNumberPlateDataUrl,
       };
+      // 끝까지 줄여도 넘치면 Firestore의 영어 오류("exceeds the maximum allowed size") 대신 할 일을 알려준다.
+      if (new Blob([JSON.stringify(toSave)]).size > 1_000_000) {
+        throw new Error(
+          "도면과 좌석번호표(피난안내도)를 합친 크기가 저장 한도를 넘습니다. 좌석번호표를 좌석 번호 부분만 잘라서 다시 올려주세요.",
+        );
+      }
       const saved = await saveProject(toSave, user.uid);
       setProject(saved);
+      setImagesUnsaved(false);
       await refreshProjectList();
       return saved;
     } catch (err) {
@@ -1558,6 +1582,7 @@ export function SeatLayoutWorkspace() {
     // 원본 화질 그대로 세션에 보관 (화면 표시 + AI 인식용). Firestore 저장용 압축은
     // silentSave에서 저장 직전에만 한다 — 여기서 미리 압축해두면 인식 정확도가 떨어진다.
     setRawFloorPlanDataUrl(dataUrl);
+    setImagesUnsaved(true);
     setProject((p) => ({ ...p, imageWidth: width, imageHeight: height }));
   }
 
@@ -1772,11 +1797,8 @@ export function SeatLayoutWorkspace() {
     if (cropTarget === "seatNumberPlate") {
       closeCrop();
       setRawSeatNumberPlateDataUrl(dataUrl);
-      setStatusMsg(
-        "좌석번호표를 등록했습니다 — 오른쪽에서 도면과 나란히 보면서 존별로 직접 입력하거나, " +
-          "\"AI로 자동 채워보기\"를 눌러보세요.",
-        "success",
-      );
+      setImagesUnsaved(true);
+      setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG, "success");
     } else {
       applyFloorPlanDataUrl(dataUrl, off.width, off.height);
       closeCrop();
@@ -1790,11 +1812,8 @@ export function SeatLayoutWorkspace() {
       const dataUrl = pdfCropSource.dataUrl;
       closeCrop();
       setRawSeatNumberPlateDataUrl(dataUrl);
-      setStatusMsg(
-        "좌석번호표를 등록했습니다 — 오른쪽에서 도면과 나란히 보면서 존별로 직접 입력하거나, " +
-          "\"AI로 자동 채워보기\"를 눌러보세요.",
-        "success",
-      );
+      setImagesUnsaved(true);
+      setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG, "success");
     } else {
       applyFloorPlanDataUrl(pdfCropSource.dataUrl, pdfCropSource.width, pdfCropSource.height);
       closeCrop();
