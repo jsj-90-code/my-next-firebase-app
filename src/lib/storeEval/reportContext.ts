@@ -236,7 +236,7 @@ export function buildDaouReportContext({
   } else {
     const label = competitivenessLabel(result.competitivenessGap);
     lines.push(
-      `[경쟁력 비교] 자사 시설·서비스 경쟁력은 경쟁점 평균 대비 ${label ?? "비교 불가"} 수준` +
+      `[경쟁력 비교] 자사 시설 경쟁력은 경쟁점 평균 대비 ${label ?? "비교 불가"} 수준` +
         (result.demandCaptureRate != null ? `, 예상 수요확보율 ${formatPercent(result.demandCaptureRate)}` : "") +
         `, 경쟁점 공급 규모 ${formatNumber(result.competitorIp)}, 공급 대비 수요 ${formatScore(result.ipPerDemand)}(15 이상 여유 / 7 미만 포화)`,
     );
