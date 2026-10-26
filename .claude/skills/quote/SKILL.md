@@ -49,7 +49,15 @@ node scripts/quote/price.mjs preview <단가표.json>
 
 ## 3. 판매 단가 정하기
 
-원가가 바뀐 판매 줄마다 선택지 세 개를 보여 주고 **사용자가 고르게** 한다(10-23: 단가 규칙은 아직 없음 — 고른 결과가 쌓이면 규칙으로 만든다).
+원가가 바뀐 판매 줄마다 선택지 세 개와 **관리선 규칙에 따른 추천**을 보여 주고 **사용자가 고르게** 한다.
+
+**관리선 규칙(2026-10-26 사용자 확정)** — 100대·80평 기준 계약 1건 총 마진의 관리선 **블랙 8,000만 · 골드 5,000만**(부장님 목표보다 위, 현재 업견적 마진 근처):
+- 원가가 올라도 **판매 단가 그대로 둔 총 마진이 관리선 이상이면 → 전부 '그대로'**(그 품목 마진은 줄어도 됨).
+- 관리선 **미만이면 → 원가가 오른 줄을 '마진금액 유지'**로 추천. 추천대로 해도 모자라면 미리보기에 "추천대로 해도 모자람"이 나온다 — 어디를 더 올릴지 사용자에게 묻는다.
+- 원가가 내리면 단가 그대로(마진이 늚). 새 품목은 비슷한 기존 품목 마진율로 단가 초안 → 넣은 뒤 총 마진이 관리선 이상인지 확인.
+- 관리선은 부장님 목표 아래로 내리지 않는다. 값은 `price.mjs`의 `FLOOR`. 블랙은 여유가 작다(10-26 +598만 ≈ 대당 6만) — 인상 추천이 너무 잦으면 7,500만으로 낮출지 사용자에게 묻는다.
+- 미리보기가 추천 단가를 `~/.isens-quote/recommended-prices.json`에 저장한다 → 사용자가 "추천대로"면 `apply --prices` 그 파일.
+  사용자가 다르게 고르면 그 단가로 JSON을 만들어 **`price.mjs check --prices <파일>`로 총 마진·관리선·지원금을 먼저 보여 준 뒤** 승인받고 apply.
 
 **판단 기준은 계약 1건 총 마진이다**(10-23 사용자, 인계 때 들은 개념): 블랙·골드별로 1건당 목표 마진이 있고, 총 마진이 목표만 넘으면
 품목 하나 마진이 줄어도 단가를 그대로 둬도 된다. 미리보기의 "계약 1건 총 마진(100대·80평 기준) 전→후 | 목표 대비" 줄을 표 맨 위에 보인다.
@@ -80,7 +88,8 @@ node scripts/quote/price.mjs preview <단가표.json>
 ```
 node scripts/quote/sync.mjs black --check     ← 먼저: 영업부용 직접 수정 확인(시트 안 바꿈)
 node scripts/quote/sync.mjs gold --check
-node scripts/quote/price.mjs apply [--prices <단가.json>]
+node scripts/quote/price.mjs check --prices <단가.json>     ← 사용자가 추천과 다르게 골랐을 때: 총 마진·관리선 먼저(시트 안 바꿈)
+node scripts/quote/price.mjs apply [--prices <단가.json>]   ← 추천대로면 ~/.isens-quote/recommended-prices.json
 node scripts/quote/sync.mjs black
 node scripts/quote/sync.mjs gold
 ```

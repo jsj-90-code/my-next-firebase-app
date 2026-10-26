@@ -1,5 +1,6 @@
 // 견적서 원가(단가표) 갱신 — 모델명으로 블랙·골드 원본의 원가 칸을 찾아 미리보기·적용 (2026-10-23, "견적서" 스킬이 부름)
 //   node scripts/quote/price.mjs preview <단가표.json> [--books black,gold] [--skip "탭:행,..."] [--tabs all]   찾기(기본 PC 탭만) + 원본 안 임시 탭에서 계산해 본 마진 변화(시트는 그대로)
+//   node scripts/quote/price.mjs check --prices 단가.json                   미리보기 계획 + 고른 판매 단가로 총 마진·관리선·지원금 계산만(시트 그대로)
 //   node scripts/quote/price.mjs apply [계획.json] [--prices 단가.json]        미리보기 계획대로 원가(+정한 판매 단가) 쓰기
 // 단가표.json: [{ "항목": "그래픽카드", "모델": "RTX5060 8GB", "가격": 565000 }]  ← 가격은 부가세 포함(받은 그대로)
 // 단가.json:   [{ "book": "black", "tab": "PC 및 주변 기기 내역", "row": 18, "price": 700000 }]  ← 판매 단가(부가세 별도)
@@ -15,6 +16,7 @@ const args = process.argv.slice(2);
 const mode = args[0];
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
 const PLAN = join(homedir(), ".isens-quote", "last-plan.json");
+const REC = join(homedir(), ".isens-quote", "recommended-prices.json"); // 미리보기가 관리선 규칙으로 고른 판매 단가(apply --prices에 그대로 넣을 수 있음)
 const PREVIEW = "__단가미리보기_";
 // --test: 시험용 사본(lib.mjs BOOKS.*.test)에 — 스킬 고칠 때 확인용
 const origOf = (bk) => { if (!args.includes("--test")) return BOOKS[bk].orig; if (!BOOKS[bk].test) throw new Error(`${BOOKS[bk].label}은 시험용 사본이 없다`); return BOOKS[bk].test.orig; };
@@ -61,6 +63,10 @@ async function totalMargin(id, tab = "최종") {
 // 목표 마진(2026-10-26 부장님 확인): 계약 1건, 100대 매장 기준. 평수는 80평으로 본다(10-26 사용자).
 const TARGET = { black: [70000000, 70000000], gold: [40000000, 50000000] };
 const STD = { seats: 100, pyeong: 80 };
+// 관리선(10-26 사용자 확정): 단가를 정할 때 쓰는 우리 기준. 부장님 목표보다 위 — 지금 견적이 업견적이라 현재 마진(블랙 8,598만·골드 5,797만) 근처로 잡음.
+// 원가가 올라도 판매 단가 그대로 두고 총 마진이 관리선 이상이면 '그대로', 미만이면 원가 오른 줄을 '마진금액 유지'로 추천. 관리선은 목표 아래로 내리지 않는다.
+const FLOOR = { black: 80000000, gold: 50000000 };
+const vsFloor = (bk, m) => `관리선 ${(FLOOR[bk] / 1e4).toLocaleString("ko-KR")}만 ${m >= FLOOR[bk] ? "대비 여유" : "보다 부족"} ${won만(m - FLOOR[bk])}${m >= FLOOR[bk] ? "" : " ⚠"}`;
 const SUBSIDY_CAP = 8000000; // 인터넷 지원금 대체 품목 합계(PC 탭 I열) 한도 — 넘으면 최종 탭이 아니라 단가 수정·제품 교체(10-26 사용자)
 const INFO = "정보입력(댓수,평수)", PC = "PC 및 주변 기기 내역", STD_TMP = "__마진100_";
 const won만 = (n) => `${n < 0 ? "−" : "+"}${Math.round(Math.abs(n) / 10000).toLocaleString("ko-KR")}만`;
@@ -71,7 +77,8 @@ const subsidyLine = (n) => n == null ? "인터넷 지원금 줄 못 찾음 — �
 
 // 100대·80평 기준 마진: 원본 안에 품목·최종 탭을 숨김 임시 탭으로 복사하고 서로를 가리키게 고친 뒤 대수·평수만 바꿔 계산(원본 탭은 그대로).
 // writes([{tab, a1, value}])를 주면 그 값을 넣은 뒤 값도 계산 → { before, after, subsidyBefore, subsidyAfter }
-async function standardMargin(id, writes = []) {
+// next(after)가 추가 쓰기 목록(추천 판매 단가)을 돌려주면 그것까지 넣고 계산 → rec: { margin, subsidy, writes }
+async function standardMargin(id, writes = [], next = null) {
   const titles = TABS.map(([o]) => o).filter((t) => t !== "표지");
   const meta = (await sheets.spreadsheets.get({ spreadsheetId: id, fields: "sheets(properties(sheetId,title))" })).data.sheets;
   const tmp = (t) => STD_TMP + t;
@@ -103,7 +110,13 @@ async function standardMargin(id, writes = []) {
       await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "RAW", data: writes.map((w) => ({ range: `${q(tmp(w.tab))}!${w.a1}`, values: [[w.value]] })) } });
       a = await read();
     }
-    return { before: b.margin, after: a.margin, subsidyBefore: b.subsidy, subsidyAfter: a.subsidy };
+    let rec = null;
+    const extra = next ? next(a) : [];
+    if (extra.length) {
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "RAW", data: extra.map((w) => ({ range: `${q(tmp(w.tab))}!${w.a1}`, values: [[w.value]] })) } });
+      rec = { ...(await read()), writes: extra };
+    }
+    return { before: b.margin, after: a.margin, subsidyBefore: b.subsidy, subsidyAfter: a.subsidy, rec };
   } finally {
     if (temps.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: temps.map((sheetId) => ({ deleteSheet: { sheetId } })) } });
   }
@@ -180,18 +193,30 @@ async function preview() {
     }
     const costWrites = costs.filter((c) => c.oldCost !== c.newCost || (c.vatCol && c.oldVat !== c.newVat)).flatMap((c) => [
       { tab: c.tab, a1: `${c.costCol}${c.row}`, value: c.newCost }, ...(c.vatCol ? [{ tab: c.tab, a1: `${c.vatCol}${c.row}`, value: c.newVat }] : [])]);
-    const std = await standardMargin(id, costWrites);
-    plan.books[bk] = { costs, skipped, notFound, lines, marginBefore, marginAfter: marginBefore == null ? null : marginBefore - dCostTotal, std };
+    // 관리선 규칙으로 줄마다 추천 단가: 단가 그대로 둔 총 마진이 관리선 이상 → 전부 그대로, 미만 → 원가 오른 줄만 마진금액 유지
+    const raise = (a) => a.margin != null && a.margin < FLOOR[bk]
+      ? lines.filter((l) => !l.auto && l.newCost > l.oldCost && l.options.마진금액유지 !== l.price).map((l) => ({ tab: l.tab, a1: `F${l.row}`, value: l.options.마진금액유지, row: l.row }))
+      : [];
+    const std = await standardMargin(id, costWrites, raise);
+    for (const l of lines) { const w = std.rec?.writes.find((x) => x.tab === l.tab && x.row === l.row); l.rec = l.auto ? null : w ? "마진금액 유지" : "그대로"; l.recPrice = w ? w.value : l.price; }
+    plan.books[bk] = { costs, skipped, notFound, lines, marginBefore, marginAfter: marginBefore == null ? null : marginBefore - dCostTotal, std,
+      recommend: (std.rec?.writes || []).map((w) => ({ book: bk, tab: w.tab, row: w.row, price: w.value })) };
   }
   mkdirSync(dirname(PLAN), { recursive: true });
   writeFileSync(PLAN, JSON.stringify(plan, null, 2));
+  const recAll = Object.values(plan.books).flatMap((p) => p.recommend);
+  writeFileSync(REC, JSON.stringify(recAll, null, 2));
 
   for (const [bk, p] of Object.entries(plan.books)) {
     console.log(`\n■ ${BOOKS[bk].label} — 원가 칸 ${p.costs.length}곳`);
     for (const c of p.costs) console.log(`  ${c.tab} ${c.costCol}${c.row} [${c.text.replace(/\n/g, " ").slice(0, 34)}]${c.n > 1 ? ` ×${c.n}` : ""}: ${won(c.oldCost)} → ${won(c.newCost)}${c.oldCost === c.newCost ? " (같음)" : ""}${c.vatCol ? ` | 매입가 ${won(c.oldVat)} → ${won(c.newVat)}` : ""}`);
     for (const s of p.skipped) console.log(`  (안 고침) ${s.tab} ${s.row}행 [${s.text.slice(0, 30)}]: ${s.why}`);
     for (const x of p.notFound) console.log(`  ✗ 못 찾음: ${x.항목} ${x.모델}`);
-    if (p.std?.before != null) console.log(`  계약 1건 총 마진(${STD.seats}대·${STD.pyeong}평 기준, 판매 단가 그대로일 때): ${won(p.std.before)} → ${won(p.std.after)} | ${vsTarget(bk, p.std.before)} → ${vsTarget(bk, p.std.after)}`);
+    if (p.std?.before != null) {
+      console.log(`  계약 1건 총 마진(${STD.seats}대·${STD.pyeong}평 기준, 판매 단가 그대로일 때): ${won(p.std.before)} → ${won(p.std.after)} | ${vsFloor(bk, p.std.after)} | ${vsTarget(bk, p.std.after)}`);
+      if (p.std.rec) console.log(`  → 관리선 미달이라 원가 오른 줄 ${p.recommend.length}개를 마진금액 유지로 추천 — 추천대로면 총 마진 ${won(p.std.rec.margin)} | ${vsFloor(bk, p.std.rec.margin)}${p.std.rec.margin < FLOOR[bk] ? " (추천대로 해도 모자람 — 사용자에게 물을 것)" : ""}`);
+      else if (p.std.after != null) console.log(`  → 관리선 이상이라 판매 단가 전부 그대로 추천`);
+    }
     if (p.marginBefore != null) console.log(`  (참고) 예시 매장 기준: ${won(p.marginBefore)} → ${won(p.marginAfter)} (${p.marginAfter >= p.marginBefore ? "+" : ""}${won(p.marginAfter - p.marginBefore)})`);
     if (p.std) console.log(`  ${subsidyLine(p.std.subsidyBefore)}`);
     if (p.lines.length) console.log(`  판매 줄 마진 변화(단위당):`);
@@ -199,10 +224,25 @@ async function preview() {
       const pct = (m, F) => (F ? ((m / F) * 100).toFixed(1) + "%" : "-");
       console.log(`   · ${l.tab} ${l.row}행 [${l.name.replace(/\n/g, " ")}] 단가 ${won(l.price)} | 원가 ${won(l.oldCost)} → ${won(l.newCost)} | 마진 ${won(l.oldMargin)}(${pct(l.oldMargin, l.price)}) → ${won(l.newMargin)}(${pct(l.newMargin, l.newPriceIfAuto ?? l.price)})${l.newMargin < 0 ? " ⚠ 손해" : ""}`);
       if (l.auto) console.log(`       단가 자동(${l.auto}) → ${won(l.newPriceIfAuto)}`);
-      else console.log(`       선택지: 그대로 ${won(l.options.그대로)} / 마진금액 유지 ${won(l.options.마진금액유지)} / 마진율 유지 ${won(l.options.마진율유지)}`);
+      else console.log(`       선택지: 그대로 ${won(l.options.그대로)} / 마진금액 유지 ${won(l.options.마진금액유지)} / 마진율 유지 ${won(l.options.마진율유지)}  ← 추천: ${l.rec} ${won(l.recPrice)}`);
     }
   }
-  console.log(`\n계획 저장: ${PLAN}`);
+  console.log(`\n계획 저장: ${PLAN}\n추천 판매 단가: ${REC} (${recAll.length}줄${recAll.length ? "" : " — 전부 그대로"}) — 다르게 고르면 'check --prices'로 총 마진 다시 확인`);
+}
+
+// ---------- 확인: 고른 판매 단가로 총 마진만 계산(쓰지 않음) ----------
+async function check() {
+  requireUserForWrite(); // 원본 안 임시 탭을 만들었다 지운다
+  const plan = JSON.parse(readFileSync(PLAN, "utf8"));
+  const prices = opt("--prices") ? JSON.parse(readFileSync(opt("--prices"), "utf8")) : [];
+  for (const [bk, p] of Object.entries(plan.books)) {
+    const writes = p.costs.filter((c) => c.oldCost !== c.newCost || (c.vatCol && c.oldVat !== c.newVat)).flatMap((c) => [
+      { tab: c.tab, a1: `${c.costCol}${c.row}`, value: c.newCost }, ...(c.vatCol ? [{ tab: c.tab, a1: `${c.vatCol}${c.row}`, value: c.newVat }] : [])]);
+    const mine = prices.filter((x) => x.book === bk);
+    for (const x of mine) writes.push({ tab: x.tab, a1: `F${x.row}`, value: x.price });
+    const std = await standardMargin(origOf(bk), writes);
+    console.log(`■ ${BOOKS[bk].label}: 판매 단가 ${mine.length}줄 바꾸면 총 마진(${STD.seats}대·${STD.pyeong}평) ${won(std.before)} → ${won(std.after)} | ${vsFloor(bk, std.after)} | ${vsTarget(bk, std.after)} | ${subsidyLine(std.subsidyAfter)}`);
+  }
 }
 
 // ---------- 적용: 쓰기 전에 정답지를 만들고, 쓴 뒤 대조, 다르면 되돌림 ----------
@@ -320,9 +360,9 @@ async function apply() {
     console.log(`■ ${BOOKS[j.bk].label}: 원가 ${j.writes.length - nPrice}칸·판매 단가 ${nPrice}칸 씀 | 적용 확인: 바뀐 칸 = 계획 ${j.writes.length}칸, 정답지와 전체 일치 ✓ | 최종 금액 ${won(amtBefore)} → ${won(amtAfter)}${amtBefore === amtAfter ? " (변화 없음)" : ""}` +
       (mBefore != null ? ` | 예시 매장 총 마진 ${won(mBefore)} → ${won(mAfter)}` : ""));
     const std = await standardMargin(j.id), sb = plan.books[j.bk].std?.before;
-    console.log(`  ${STD.seats}대·${STD.pyeong}평 기준 총 마진 ${sb != null ? won(sb) + " → " : ""}${won(std.before)} | ${vsTarget(j.bk, std.before)} | ${subsidyLine(std.subsidyBefore)}`);
+    console.log(`  ${STD.seats}대·${STD.pyeong}평 기준 총 마진 ${sb != null ? won(sb) + " → " : ""}${won(std.before)} | ${vsFloor(j.bk, std.before)} | ${vsTarget(j.bk, std.before)} | ${subsidyLine(std.subsidyBefore)}`);
   }
 }
 
-(mode === "preview" ? preview() : mode === "apply" ? apply() : Promise.reject(new Error("preview | apply")))
+(mode === "preview" ? preview() : mode === "check" ? check() : mode === "apply" ? apply() : Promise.reject(new Error("preview | check | apply")))
   .catch((e) => { console.error("실패:", e.message); process.exit(1); });
