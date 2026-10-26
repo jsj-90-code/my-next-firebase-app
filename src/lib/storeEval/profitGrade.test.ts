@@ -10,6 +10,9 @@ describe("순수익 등급 — 1,000만원당 A, 남은 500만원 이상 +", () 
   });
   it("경계", () => {
     expect(profitGrade(14_999_999)).toBe("A");
+    expect(profitGrade(29_999_999)).toBe("AA+");
+    expect(profitGrade(30_000_000)).toBe("S"); // AAA 아님(2026-10-26 사용자)
+    expect(profitGrade(52_000_000)).toBe("S");
     expect(profitGrade(9_999_999)).toBeNull();
     expect(profitGrade(-3_000_000)).toBeNull();
     expect(profitGrade(null)).toBeNull();

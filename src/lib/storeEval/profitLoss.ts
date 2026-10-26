@@ -23,17 +23,20 @@ export type ProfitLoss = {
 
 // 순수익 등급(2026-10-20 사용자 — 다우 심사글 "점포 개발자 AI 등급"과 같은 규칙): 1,000만원마다 A 하나, 남은 돈이 500만원 이상이면 +.
 // 1,000만→A · 1,500만→A+ · 2,000만→AA · 2,500만→AA+. 1,000만원 미만은 등급 없음(null).
+// 3,000만원 이상은 AAA가 아니라 S(2026-10-26 사용자, 방이점 N028).
 const PROFIT_GRADE_STEP = 10_000_000;
 const PROFIT_GRADE_PLUS = 5_000_000;
+const PROFIT_GRADE_S = 30_000_000;
 
 export function profitGrade(netProfit: number | null | undefined): string | null {
   if (netProfit == null || !Number.isFinite(netProfit) || netProfit < PROFIT_GRADE_STEP) return null;
+  if (netProfit >= PROFIT_GRADE_S) return "S";
   const a = Math.floor(netProfit / PROFIT_GRADE_STEP);
   return "A".repeat(a) + (netProfit - a * PROFIT_GRADE_STEP >= PROFIT_GRADE_PLUS ? "+" : "");
 }
 
 export function describeProfitGrade(): string {
-  return `순수익 ${manwon(PROFIT_GRADE_STEP)}당 A, 남은 ${manwon(PROFIT_GRADE_PLUS)} 이상이면 +`;
+  return `순수익 ${manwon(PROFIT_GRADE_STEP)}당 A, 남은 ${manwon(PROFIT_GRADE_PLUS)} 이상이면 +, ${manwon(PROFIT_GRADE_S)} 이상은 S`;
 }
 
 /** 등급에 쓰는 순수익 — 최종예상월매출(pickFinalRevenue: 담당자 판단 → 추천 산식 → V62) 기준 예상 손익. 상권등급 카드·분석 카드 배지·다우 등급이 같이 쓴다. */
