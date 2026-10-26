@@ -1,6 +1,6 @@
 // 측정기 회차 저장 전 점검(2026-10-10 정밀점검) — runRound.ts(server-only)에서 빼서 시험할 수 있게 둔 순수 함수.
 
-/** recent: 그 시간대 칸에 남아 있던 직전 기록(보통 어제 같은 시각) — 회차 이상 점검(roundLooksBroken)에 쓴다. */
+/** recent: 시간대 칸마다 남아 있는 마지막 기록(1시간 전 칸 · 어제 같은 시각 칸) — 회차 이상 점검(roundLooksBroken)에 쓴다. */
 export type PingTarget = {
   id: string;
   name: string;
@@ -21,7 +21,7 @@ export function isWeakMethod(m: string): boolean {
 
 /**
  * 회차 이상 점검(2026-10-10 정밀점검) — 측정 쪽 고장(소켓·메모리 부족, 10-08 22시 121곳 0대)은 "꺼짐"과 구분이 안 돼
- * 0대로 저장되고, 같은 시는 먼저 쓴 쪽이 이겨 그대로 굳었다. 그래서 저장 전에 어제 같은 시각과 견준다:
+ * 0대로 저장되고, 같은 시는 먼저 쓴 쪽이 이겨 그대로 굳었다. 그래서 저장 전에 직전 기록과 견준다(2026-10-26부터 1시간 전 기록 먼저, referenceOf):
  * 어제 이 시각 5대 이상 켜져 있던 매장(20곳 이상일 때만 판정) 중 20% 이상이 이번에 0대거나, 그 매장들 합계가
  * 어제의 40% 미만이면 회차 전체를 버린다. 하루 사이 실제 변동은 시간대 합계로 0.8~1.08배였다(10-09 휴일 vs 10-10 토).
  * 버린 시는 그 시의 남은 예비 호출(GitHub :52 등)이 다시 잰다 — 그것도 버려지면 그 시는 빈다.
@@ -41,11 +41,11 @@ export function roundLooksBroken(
   method = "",
 ): string | null {
   let compared = 0, zero = 0, prevSum = 0, nowSum = 0;
+  const prevHour = String((Number(hour) + 23) % 24).padStart(2, "0");
   for (const t of targets) {
-    const p = t.recent?.[hour];
-    if (!p?.at || !onById.has(t.id) || t.excluded) continue;
-    const age = now.getTime() - p.at.getTime();
-    if (age > 36 * 3600_000 || p.a < 5) continue;
+    if (!onById.has(t.id) || t.excluded) continue;
+    const p = referenceOf(t, hour, prevHour, now);
+    if (!p || p.a < 5) continue;
     const on = onById.get(t.id) ?? 0;
     compared += 1;
     prevSum += p.a;
@@ -53,8 +53,26 @@ export function roundLooksBroken(
     if (on === 0) zero += 1;
   }
   if (compared < 20) return null;
-  if (!isWeakMethod(method) && zero / compared >= 0.2) return `직전 이 시각 기록에서 켜져 있던 ${compared}곳 중 ${zero}곳이 0대 — 측정 고장으로 보고 버림`;
-  if (nowSum < prevSum * 0.4) return `켜진 합계 ${nowSum}대가 직전 이 시각 기록(${prevSum}대)의 40% 미만 — 측정 고장으로 보고 버림`;
+  if (!isWeakMethod(method) && zero / compared >= 0.2) return `직전 기록에서 켜져 있던 ${compared}곳 중 ${zero}곳이 0대 — 측정 고장으로 보고 버림`;
+  if (nowSum < prevSum * 0.4) return `켜진 합계 ${nowSum}대가 직전 기록(${prevSum}대)의 40% 미만 — 측정 고장으로 보고 버림`;
+  return null;
+}
+
+/**
+ * 비교 기준 고르기(2026-10-26) — 어제 같은 시각과 견주면 일요일→월요일 낮에 실제로 0.39배까지 줄어 정상 회차를 버렸다
+ * (10-26 14시 3,601대 vs 일 9,336대 → 14시 통째로 빔, 15시도 서버 결과 버려짐. 지난주 10-19는 0.41배로 겨우 통과).
+ * 그래서 1시간 전 기록을 먼저 쓴다 — 한 시간 사이 시간대 합계는 0.8~1.3배라 0.4 미만이면 여전히 고장이다.
+ *   1. 이 시 칸이 12시간 안 기록(늦게 재전송된 서버 결과 → 오늘 이 시에 예비가 쓴 값) — 가장 가까운 기준
+ *   2. 1시간 전 칸이 3시간 안 기록
+ *   3. 없으면 예전처럼 이 시 칸의 36시간 안 기록(어제 같은 시각)
+ */
+function referenceOf(t: PingTarget, hour: string, prevHour: string, now: Date): { a: number } | null {
+  const age = (p?: { at: Date | null }) => (p?.at ? now.getTime() - p.at.getTime() : Infinity);
+  const same = t.recent?.[hour];
+  const prev = t.recent?.[prevHour];
+  if (same && age(same) < 12 * 3600_000) return same;
+  if (prev && age(prev) < 3 * 3600_000) return prev;
+  if (same && age(same) <= 36 * 3600_000) return same;
   return null;
 }
 

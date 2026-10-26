@@ -32,6 +32,31 @@ describe("roundLooksBroken — 측정 고장 회차 버리기(2026-10-10)", () =
   });
 });
 
+describe("비교 기준은 1시간 전 기록 먼저(2026-10-26 일→월 14시 오판)", () => {
+  const HOUR_AGO = new Date(NOW.getTime() - 60 * 60_000);
+  const withPrev = (n: number, yesterdayA: number, prevA: number): PingTarget[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `s${i}`, name: `s${i}`, ips: ["1.1.1.1"], total: 100,
+      recent: { "22": { a: yesterdayA, at: YESTERDAY }, "21": { a: prevA, at: HOUR_AGO } },
+    }));
+  it("어제(일요일)의 39%여도 1시간 전과 비슷하면 통과", () => {
+    const ts = withPrev(50, 93, 30);
+    expect(roundLooksBroken(ts, on(ts, () => 36), "22", NOW)).toBeNull();
+  });
+  it("1시간 전의 40% 미만이면 여전히 버린다", () => {
+    const ts = withPrev(50, 30, 30);
+    expect(roundLooksBroken(ts, on(ts, () => 10), "22", NOW)).toMatch(/40%/);
+  });
+  it("0시는 전날 23시 칸과 견준다", () => {
+    const at0 = new Date("2026-10-10T15:05:00Z"); // KST 0시
+    const ts: PingTarget[] = Array.from({ length: 50 }, (_, i) => ({
+      id: `s${i}`, name: `s${i}`, ips: ["1.1.1.1"], total: 100,
+      recent: { "00": { a: 90, at: new Date(at0.getTime() - 24 * 3600_000) }, "23": { a: 30, at: new Date(at0.getTime() - 3600_000) } },
+    }));
+    expect(roundLooksBroken(ts, on(ts, () => 28), "00", at0)).toBeNull();
+  });
+});
+
 describe("shouldReplace — 서버 결과가 예비를 이긴다", () => {
   it("예비(tcp)·집 PC(home) 기록은 서버 결과로 바꾼다", () => {
     expect(shouldReplace("tcp", "icmp+tcp+timestamp")).toBe(true);
