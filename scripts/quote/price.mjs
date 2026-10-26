@@ -44,23 +44,76 @@ function saleLines(t) {
   for (let r = t.h + 1; r < t.end; r++) {
     const F = t.v[r]?.[5], K = t.v[r]?.[t.costSumCol], L = t.v[r]?.[t.totalCol], G = t.v[r]?.[6];
     if (typeof F === "number" && (typeof K === "number" || typeof L === "number"))
-      out[r + 1] = { F, K, L, G, name: String(t.v[r][4] || "").slice(0, 40), fFormula: isFormula(t.f[r]?.[5]) ? t.f[r][5] : null };
+      out[r + 1] = { F, K, L, G, name: String(t.v[r][4] || "").slice(0, 40), fFormula: isFormula(t.f[r]?.[5]) ? t.f[r][5] : null,
+        // L이 여러 줄 원가를 묶은 합계(예: PC 탭 L16 = G16*K16+…+G20*K20, 좌석 세트 전체)면 이 줄 하나의 원가가 아니다
+        groupL: (String(t.f[r]?.[t.totalCol] ?? "").match(/K\d+/g) || []).length > 1 };
   }
   return out;
 }
 // 계약 1건 총 마진 — 원본 최종 탭 '본사 내부 정리'의 "본사 마진 (최종)"(예시 매장 기준). 없으면 null
-// 목표 마진(블랙·골드 1건당)은 10-26 부장님께 확인 예정 — 받으면 여기서 "목표 대비 여유"를 같이 보인다
-async function totalMargin(id) {
-  const v = (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q("최종")}!A1:F80`, valueRenderOption: "UNFORMATTED_VALUE" })).data.values || [];
+// (10-26부터 블랙은 선투자 성실이행 지원 2,500만을 '보정 ④'로 뺀 값 — 분할 상환분은 돌려받으니 안 뺌)
+async function totalMargin(id, tab = "최종") {
+  const v = (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q(tab)}!A1:F80`, valueRenderOption: "UNFORMATTED_VALUE" })).data.values || [];
   const r = v.find((x) => String(x[2] || "").startsWith("본사 마진 (최종)"));
   return typeof r?.[5] === "number" ? r[5] : null;
+}
+
+// 목표 마진(2026-10-26 부장님 확인): 계약 1건, 100대 매장 기준. 평수는 80평으로 본다(10-26 사용자).
+const TARGET = { black: [70000000, 70000000], gold: [40000000, 50000000] };
+const STD = { seats: 100, pyeong: 80 };
+const SUBSIDY_CAP = 8000000; // 인터넷 지원금 대체 품목 합계(PC 탭 I열) 한도 — 넘으면 최종 탭이 아니라 단가 수정·제품 교체(10-26 사용자)
+const INFO = "정보입력(댓수,평수)", PC = "PC 및 주변 기기 내역", STD_TMP = "__마진100_";
+const won만 = (n) => `${n < 0 ? "−" : "+"}${Math.round(Math.abs(n) / 10000).toLocaleString("ko-KR")}만`;
+const vsTarget = (bk, m) => { const [lo, hi] = TARGET[bk]; return m > hi ? `목표 ${(hi / 1e4).toLocaleString("ko-KR")}만보다 ${won만(m - hi)}` : m < lo ? `목표 ${(lo / 1e4).toLocaleString("ko-KR")}만보다 ${won만(m - lo)}` : "목표 안"; };
+// PC 탭 '인터넷 지원금' 줄의 금액(I열). 줄을 못 찾으면 null
+const subsidyOf = (v) => { const r = v.find((x) => String(x[2] || "").startsWith("인터넷 지원금")); return typeof r?.[8] === "number" ? r[8] : null; };
+const subsidyLine = (n) => n == null ? "인터넷 지원금 줄 못 찾음 — 확인할 것" : n > SUBSIDY_CAP ? `⚠ 인터넷 지원금 품목 합계 ${won(n)} — 800만 초과: 단가 수정·제품 교체 필요` : `인터넷 지원금 품목 합계 ${won(n)} (800만 이하)`;
+
+// 100대·80평 기준 마진: 원본 안에 품목·최종 탭을 숨김 임시 탭으로 복사하고 서로를 가리키게 고친 뒤 대수·평수만 바꿔 계산(원본 탭은 그대로).
+// writes([{tab, a1, value}])를 주면 그 값을 넣은 뒤 값도 계산 → { before, after, subsidyBefore, subsidyAfter }
+async function standardMargin(id, writes = []) {
+  const titles = TABS.map(([o]) => o).filter((t) => t !== "표지");
+  const meta = (await sheets.spreadsheets.get({ spreadsheetId: id, fields: "sheets(properties(sheetId,title))" })).data.sheets;
+  const tmp = (t) => STD_TMP + t;
+  const fix = (f) => { let y = f; for (const o of titles) { y = y.split(`${q(o)}!`).join(`${q(tmp(o))}!`); if (!/[\s(),]/.test(o)) y = y.replace(new RegExp(`(^|[^'\\w가-힣])${o}!`, "g"), `$1${q(tmp(o))}!`); } return y; };
+  const read = async () => ({
+    margin: await totalMargin(id, tmp("최종")),
+    subsidy: subsidyOf((await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q(tmp(PC))}!A1:J60`, valueRenderOption: "UNFORMATTED_VALUE" })).data.values || []),
+  });
+  const stale = meta.filter((s) => s.properties.title.startsWith(STD_TMP)); // 지난번에 끊겨 남은 임시 탭
+  if (stale.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: stale.map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })) } });
+  const temps = [];
+  try {
+    for (const t of titles) {
+      const src = meta.find((s) => s.properties.title === t)?.properties.sheetId; if (src == null) throw new Error(`탭 없음: ${t}`);
+      const r = await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ duplicateSheet: { sourceSheetId: src, newSheetName: tmp(t), insertSheetIndex: 99 } }] } });
+      const sid = r.data.replies[0].duplicateSheet.properties.sheetId; temps.push(sid);
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ updateSheetProperties: { properties: { sheetId: sid, hidden: true }, fields: "hidden" } }] } });
+    }
+    for (const t of titles) {
+      const f = (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q(tmp(t))}!A1:Z200`, valueRenderOption: "FORMULA" })).data.values || [];
+      const data = [];
+      f.forEach((row, i) => row.forEach((c, j) => { if (typeof c === "string" && c.startsWith("=")) { const y = fix(c); if (y !== c) data.push({ range: `${q(tmp(t))}!${colName(j)}${i + 1}`, values: [[y]] }); } }));
+      if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "USER_ENTERED", data } });
+    }
+    await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${q(tmp(INFO))}!B3:B4`, valueInputOption: "RAW", requestBody: { values: [[STD.seats], [STD.pyeong]] } });
+    const b = await read();
+    let a = b;
+    if (writes.length) {
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "RAW", data: writes.map((w) => ({ range: `${q(tmp(w.tab))}!${w.a1}`, values: [[w.value]] })) } });
+      a = await read();
+    }
+    return { before: b.margin, after: a.margin, subsidyBefore: b.subsidy, subsidyAfter: a.subsidy };
+  } finally {
+    if (temps.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: temps.map((sheetId) => ({ deleteSheet: { sheetId } })) } });
+  }
 }
 const costTotal = (t) => t.v[t.end]?.[t.totalCol]; // 탭 '합계 금액' 줄의 원가 합계
 
 // 단위당 원가 전·후: 그 줄의 원가 K가 바뀌었으면 K, 아니면 원가 합계 L ÷ 수량(서버 세트처럼 부품 원가를 합계 칸에서 묶는 줄)
 function unitCosts(b, a) {
   if (typeof b.K === "number" && typeof a.K === "number" && a.K !== b.K) return [b.K, a.K];
-  if (typeof b.L === "number" && typeof a.L === "number" && a.L !== b.L && b.G > 0) return [b.L / b.G, a.L / a.G];
+  if (!b.groupL && typeof b.L === "number" && typeof a.L === "number" && a.L !== b.L && b.G > 0) return [b.L / b.G, a.L / a.G];
   return null;
 }
 
@@ -125,7 +178,10 @@ async function preview() {
     } finally {
       if (temps.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: temps.map((sheetId) => ({ deleteSheet: { sheetId } })) } });
     }
-    plan.books[bk] = { costs, skipped, notFound, lines, marginBefore, marginAfter: marginBefore == null ? null : marginBefore - dCostTotal };
+    const costWrites = costs.filter((c) => c.oldCost !== c.newCost || (c.vatCol && c.oldVat !== c.newVat)).flatMap((c) => [
+      { tab: c.tab, a1: `${c.costCol}${c.row}`, value: c.newCost }, ...(c.vatCol ? [{ tab: c.tab, a1: `${c.vatCol}${c.row}`, value: c.newVat }] : [])]);
+    const std = await standardMargin(id, costWrites);
+    plan.books[bk] = { costs, skipped, notFound, lines, marginBefore, marginAfter: marginBefore == null ? null : marginBefore - dCostTotal, std };
   }
   mkdirSync(dirname(PLAN), { recursive: true });
   writeFileSync(PLAN, JSON.stringify(plan, null, 2));
@@ -135,7 +191,9 @@ async function preview() {
     for (const c of p.costs) console.log(`  ${c.tab} ${c.costCol}${c.row} [${c.text.replace(/\n/g, " ").slice(0, 34)}]${c.n > 1 ? ` ×${c.n}` : ""}: ${won(c.oldCost)} → ${won(c.newCost)}${c.oldCost === c.newCost ? " (같음)" : ""}${c.vatCol ? ` | 매입가 ${won(c.oldVat)} → ${won(c.newVat)}` : ""}`);
     for (const s of p.skipped) console.log(`  (안 고침) ${s.tab} ${s.row}행 [${s.text.slice(0, 30)}]: ${s.why}`);
     for (const x of p.notFound) console.log(`  ✗ 못 찾음: ${x.항목} ${x.모델}`);
-    if (p.marginBefore != null) console.log(`  계약 1건 총 마진(예시 매장, 판매 단가 그대로일 때): ${won(p.marginBefore)} → ${won(p.marginAfter)} (${p.marginAfter >= p.marginBefore ? "+" : ""}${won(p.marginAfter - p.marginBefore)})`);
+    if (p.std?.before != null) console.log(`  계약 1건 총 마진(${STD.seats}대·${STD.pyeong}평 기준, 판매 단가 그대로일 때): ${won(p.std.before)} → ${won(p.std.after)} | ${vsTarget(bk, p.std.before)} → ${vsTarget(bk, p.std.after)}`);
+    if (p.marginBefore != null) console.log(`  (참고) 예시 매장 기준: ${won(p.marginBefore)} → ${won(p.marginAfter)} (${p.marginAfter >= p.marginBefore ? "+" : ""}${won(p.marginAfter - p.marginBefore)})`);
+    if (p.std) console.log(`  ${subsidyLine(p.std.subsidyBefore)}`);
     if (p.lines.length) console.log(`  판매 줄 마진 변화(단위당):`);
     for (const l of p.lines) {
       const pct = (m, F) => (F ? ((m / F) * 100).toFixed(1) + "%" : "-");
@@ -226,6 +284,12 @@ async function apply() {
     } finally {
       if (temps.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: j.id, requestBody: { requests: temps.map((sheetId) => ({ deleteSheet: { sheetId } })) } });
     }
+    // 판매 단가를 바꿔 인터넷 지원금 품목 합계가 800만을 넘으면 쓰지 않는다(이 책은 아직 안 씀, 앞서 쓴 책은 되돌림)
+    const sub = expect[PC] ? subsidyOf(expect[PC]) : null;
+    if (sub != null && sub > SUBSIDY_CAP) {
+      console.log(`■ ${BOOKS[j.bk].label}: ${subsidyLine(sub)} → 쓰지 않고 중단`);
+      await revert(); process.exitCode = 4; return;
+    }
 
     // QUOTE_FAULT=1: 되돌림 시험용으로 첫 칸에 일부러 1 더 씀(시험용 사본에서만)
     const fault = process.env.QUOTE_FAULT === "1" && args.includes("--test");
@@ -254,7 +318,9 @@ async function apply() {
     const amtAfter = await amount(), mAfter = await totalMargin(j.id);
     const nPrice = j.writes.filter((w) => w.price).length;
     console.log(`■ ${BOOKS[j.bk].label}: 원가 ${j.writes.length - nPrice}칸·판매 단가 ${nPrice}칸 씀 | 적용 확인: 바뀐 칸 = 계획 ${j.writes.length}칸, 정답지와 전체 일치 ✓ | 최종 금액 ${won(amtBefore)} → ${won(amtAfter)}${amtBefore === amtAfter ? " (변화 없음)" : ""}` +
-      (mBefore != null ? ` | 계약 1건 총 마진 ${won(mBefore)} → ${won(mAfter)}` : ""));
+      (mBefore != null ? ` | 예시 매장 총 마진 ${won(mBefore)} → ${won(mAfter)}` : ""));
+    const std = await standardMargin(j.id), sb = plan.books[j.bk].std?.before;
+    console.log(`  ${STD.seats}대·${STD.pyeong}평 기준 총 마진 ${sb != null ? won(sb) + " → " : ""}${won(std.before)} | ${vsTarget(j.bk, std.before)} | ${subsidyLine(std.subsidyBefore)}`);
   }
 }
 
