@@ -4,7 +4,7 @@
 // 계열은 우리 매장 + 측정 중인 경쟁점 전부(8번째부터 점선) — 범례·올렸을 때 값·표로 색 말고도 구별된다.
 // 가독성 개선(2026-10-26 사용자 "비교 그래프 가시성/가독성 올려 줘"):
 // 높이 260px · 왼쪽 세로 눈금(%) · 우리 매장 선은 굵게 맨 위 · 범례/표 줄에 올리면 그 선만 진하게(나머지 흐리게) ·
-// 올렸을 때 값은 커서 옆 상자에 높은 순으로 · 터치로도 값이 뜬다. 값이 없는 지점은 선을 끊는다.
+// 올렸을 때 값은 커서 옆 상자에 높은 순으로 · 터치로도 값이 뜬다 · 선 끝에 매장 이름(색만으로 구별하지 않게). 값이 없는 지점은 선을 끊는다.
 
 import { useRef, useState } from "react";
 import { formatPct } from "@/lib/pingMonitor/summary";
@@ -104,6 +104,23 @@ export function LineChart({
           .sort((a, b) => (b.v ?? -1) - (a.v ?? -1));
   const tipLeft = hover != null && x(hover) / W > 0.55;
 
+  // 선 끝 이름표(2026-10-26 사용자 "색 구분이 힘들다") — 마지막 값 높이에 이름을 달고, 겹치면 위아래로 민다.
+  const LABEL_GAP = 14;
+  const ends = series
+    .map((s) => {
+      let last = -1;
+      s.values.forEach((v, i) => v != null && (last = i));
+      return last < 0 ? null : { s, y: y(s.values[last] as number) };
+    })
+    .filter((e): e is { s: LineSeries; y: number } => e != null)
+    .sort((a, b) => a.y - b.y);
+  for (let k = 1; k < ends.length; k++)
+    ends[k].y = Math.max(ends[k].y, ends[k - 1].y + LABEL_GAP);
+  for (let k = ends.length - 1; k >= 0; k--) {
+    const limit = k === ends.length - 1 ? H - 6 : ends[k + 1].y - LABEL_GAP;
+    ends[k].y = Math.max(6, Math.min(ends[k].y, limit));
+  }
+
   return (
     <figure className="flex flex-col gap-2" aria-label={ariaLabel}>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
@@ -136,9 +153,10 @@ export function LineChart({
           ))}
         </div>
         <div className="min-w-0 flex-1">
+          <div className="flex">
           <div
             ref={plotRef}
-            className="relative touch-pan-y"
+            className="relative min-w-0 flex-1 touch-pan-y"
             style={{ height: H }}
             onPointerMove={(e) => pick(e.clientX)}
             onPointerDown={(e) => pick(e.clientX)}
@@ -235,7 +253,22 @@ export function LineChart({
               </div>
             )}
           </div>
-          <div className="relative mt-1 h-4 text-[11px] tabular-nums text-[var(--sl-ink-soft)]">
+          <div className="relative w-16 shrink-0 sm:w-24" style={{ height: H }}>
+            {ends.map(({ s, y: ly }) => (
+              <span
+                key={s.key}
+                className={`absolute left-1.5 right-0 -translate-y-1/2 cursor-default truncate text-[11px] leading-none transition-opacity ${s.key === OWN_KEY || s.key === focus ? "font-bold" : "font-medium"} ${dim(s.key) ? "opacity-25" : ""}`}
+                style={{ top: ly, color: s.color }}
+                title={s.label}
+                onMouseEnter={() => setLegendHover(s.key)}
+                onMouseLeave={() => setLegendHover(null)}
+              >
+                {s.label}
+              </span>
+            ))}
+          </div>
+          </div>
+          <div className="relative mt-1 mr-16 h-4 text-[11px] tabular-nums text-[var(--sl-ink-soft)] sm:mr-24">
             {xLabels.map((l, i) =>
               i % tickEvery === 0 ? (
                 <span
