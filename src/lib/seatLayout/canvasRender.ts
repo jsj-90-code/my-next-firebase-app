@@ -208,6 +208,7 @@ function resolveTagOverlaps(
 const CARD_SHORT_NAMES: [RegExp, string][] = [
   [/스틸시리즈 라이벌3(\(번지\))?/g, "스틸 라이벌3"],
   [/Razer BlackShark V2 Hyperspeed/g, "블랙샤크 V2"],
+  [/(\d+인치) 울트라와이드/g, "$1"],
 ];
 function cardShortName(value: string): string {
   return CARD_SHORT_NAMES.reduce((v, [re, to]) => v.replace(re, to), value);
