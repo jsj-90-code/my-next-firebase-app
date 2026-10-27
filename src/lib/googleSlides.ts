@@ -109,33 +109,35 @@ export async function publishCompositeToSlides({
   });
 
   if (existingSlide?.objectId) {
-    // 기존 슬라이드: 도형을 전부 지우고 새 이미지로 교체한 뒤, 맨 앞으로 이동
-    const slideId = existingSlide.objectId;
-    const deleteRequests = (existingSlide.pageElements ?? [])
-      .filter((el) => el.objectId)
-      .map((el) => ({ deleteObject: { objectId: el.objectId! } }));
-
+    // 10-27 사용자: 다시 등록하면 덮어써서 위험한데, 이미지에 "(2)"를 붙이면 보기 안 좋다 →
+    // 예전 장은 지우지 않고 맨 뒤로 옮겨 "이전 등록본"으로 남긴다(노트 마커를 바꿔 다시 찾히지 않게).
+    // 새 장은 아래 "새 슬라이드" 경로로 앞자리에 만든다. 쌓인 이전 장은 사람이 정리한다.
+    const oldId = existingSlide.objectId;
+    const oldNotesId = existingSlide.slideProperties?.notesPage?.notesProperties?.speakerNotesObjectId;
+    const stamp = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+    const lastIndex = (presentation.data.slides ?? []).length;
     await slides.presentations.batchUpdate({
       presentationId,
       requestBody: {
         requests: [
-          ...deleteRequests,
-          // 1번 슬라이드(매뉴얼 안내문구)는 그대로 두고, 그 다음 자리(인덱스 1)부터 채운다.
-          { updateSlidesPosition: { slideObjectIds: [slideId], insertionIndex: 1 } },
-          {
-            createImage: {
-              url: imageUrl,
-              elementProperties: {
-                pageObjectId: slideId,
-                size,
-                transform: { scaleX: 1, scaleY: 1, translateX: 0, translateY: 0, unit: "EMU" },
-              },
-            },
-          },
+          ...(oldNotesId
+            ? [
+                { deleteText: { objectId: oldNotesId, textRange: { type: "ALL" } } },
+                {
+                  insertText: {
+                    objectId: oldNotesId,
+                    insertionIndex: 0,
+                    text: `이전 등록본(${stamp}에 새로 등록되어 뒤로 옮김) PREV_${slideKey}`,
+                  },
+                },
+              ]
+            : []),
+          { updateSlidesPosition: { slideObjectIds: [oldId], insertionIndex: lastIndex } },
         ],
       },
     });
-  } else {
+  }
+  {
     // 새 슬라이드: 맨 앞에 만들고, 이미지 삽입 + 스피커 노트에 마커 기록
     const newSlideId = `slide_${Date.now()}`;
     await slides.presentations.batchUpdate({
