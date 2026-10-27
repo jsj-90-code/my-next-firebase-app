@@ -14,6 +14,7 @@ export type ZoneTypeKey =
   | "one_room"
   | "two"
   | "three"
+  | "four_room"
   | "fc"
   | "fps"
   | "friends"

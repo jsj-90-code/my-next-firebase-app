@@ -11,7 +11,7 @@ import type {
 } from "./types";
 
 // 순서: 멀티존-LOL존-FC ONLINE존-FPS존-프렌즈존-커플석-커플존-VIP존-세레머니 팀룸-팀룸-1인석-
-// 1인룸-2인룸-3인룸-버프존/리얼프로게이머존-책상만 설치 (기타(직접입력)는 항상 맨 끝 유지).
+// 1인룸-2인룸-3인룸-4인룸-버프존/리얼프로게이머존-책상만 설치 (기타(직접입력)는 항상 맨 끝 유지).
 export const ZONE_TYPES: ZoneType[] = [
   { key: "multi", label: "멀티존", color: "#C1543F" },
   { key: "lol", label: "LOL존", color: "#C98B3E" },
@@ -27,6 +27,8 @@ export const ZONE_TYPES: ZoneType[] = [
   { key: "one_room", label: "1인룸", color: "#7FAF7C" },
   { key: "two", label: "2인룸", color: "#3E8E82" },
   { key: "three", label: "3인룸", color: "#3E7A8E" },
+  // 10-28 사용자: 4인룸을 정식 유형으로(옛: "기타" 유형에 이름 "4인룸"). 사양은 팀룸과 같다.
+  { key: "four_room", label: "4인룸", color: "#3E5F8E" },
   { key: "buff", label: "버프존", color: "#7A5C4A" },
   { key: "progamer", label: "리얼프로게이머존", color: "#4A4E5C" },
   { key: "desk_only", label: "책상만 설치", color: "#6B6B6B" },
@@ -86,6 +88,7 @@ export const TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, Partial<Record<SpecField
   one_room: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
   two: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
   three: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
+  four_room: { desk: "퍼스트클래스", partition: "없음", monitorArm: "관절암" },
   fc: { monitorArm: "관절암" },
   couple_seat: { partition: "없음", monitorArm: "관절암", chair: "커플석의자" },
   couple_room: { partition: "없음", monitorArm: "관절암", chair: "커플석의자" },
@@ -187,6 +190,11 @@ export const PC_TYPE_DEFAULTS: Partial<Record<ZoneTypeKey, PcSpecValues>> = {
     headset: "앱코 N800(핑크)",
   },
   one_seat: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
+  // 10-28 사용자: 1·2·3·4인룸 PC 기본사양은 팀룸과 같게.
+  one_room: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
+  two: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
+  three: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
+  four_room: { monitorArm: "관절암", monitor: "비트엠 27인치 IPS 240Hz" },
 };
 
 export function defaultPcDefaults(): PcSpecValues {
@@ -262,7 +270,7 @@ export const ZONE_GROUPS: ZoneGroup[] = [
   {
     key: "zone",
     label: "존 특화 (인테리어)",
-    typeKeys: ["friends", "vip", "couple_seat", "couple_room", "ceremony_team", "team", "one_seat", "one_room", "two", "three"],
+    typeKeys: ["friends", "vip", "couple_seat", "couple_room", "ceremony_team", "team", "one_seat", "one_room", "two", "three", "four_room"],
   },
   { key: "etc", label: "기타", typeKeys: ["desk_only", "etc"] },
   {

@@ -77,6 +77,7 @@ const ZONE_DESCRIPTIONS: Partial<Record<ZoneTypeKey, string>> = {
   one_room: "혼자서 몰입할 수 있는 아이센스만의 1인 전용 좌석",
   two: "둘만의 몰입감을 높여주는 2인 전용 프라이빗 좌석",
   three: TEAM_DESC,
+  four_room: TEAM_DESC,
   vip: "더 넓은 와이드데스크로 VIP만을 위한 프라이빗 좌석",
   multi: "더 빠르고 부드러운 플레이를 위한 240Hz 고주사율 모니터 좌석",
   team: TEAM_DESC,
@@ -85,7 +86,7 @@ const ZONE_DESCRIPTIONS: Partial<Record<ZoneTypeKey, string>> = {
 };
 
 function zoneDescription(typeKey: ZoneTypeKey, name: string): string {
-  // 4인룸은 유형 목록에 없어 "기타" 유형에 이름 "4인룸"으로 들어온다(울산 시트: 팀 문구).
+  // 10-28 전에 만든 4인룸은 "기타" 유형에 이름 "4인룸"으로 저장돼 있다(울산 시트: 팀 문구).
   if (typeKey === "etc" && /^[34]인룸/.test(name)) return TEAM_DESC;
   return ZONE_DESCRIPTIONS[typeKey] ?? "";
 }

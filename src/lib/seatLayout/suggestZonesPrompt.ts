@@ -119,7 +119,7 @@ export function buildSuggestZonesPrompt(multiTile: boolean): string {
   );
 }
 
-// four_room(4인룸)은 존 유형 목록(constants.ts)에 없다 — 울산삼산처럼 "기타" 유형에 이름 "4인룸"으로 넣는다(웹 applyZoneDraft).
+// four_room(4인룸)은 10-28부터 정식 존 유형(constants.ts). 그 전 프로젝트(울산삼산)는 "기타" 유형 이름 "4인룸"으로 남아 있다.
 export const VALID_ZONE_TYPES = [
   "ceremony_team", "vip", "friends", "one_seat", "couple_seat", "two", "couple_room",
   "one_room", "three", "four_room", "fps", "fc", "lol", "multi",
