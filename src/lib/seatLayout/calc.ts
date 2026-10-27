@@ -31,6 +31,7 @@ export function baseZoneName(name: string): string {
 // **같은 계열 안에서 묶음 순서대로 A, B, C…를 다시 매긴다**(예: A+B 묶음·C → A·B). 카드와 도면 위 상자 이름표가
 // 같은 이름을 쓴다. 저장된 존 이름은 그대로라 웹 작업 화면·좌석번호·채팅 인식은 원래 이름(A/B/C)으로 구분한다.
 // groups엔 그 도면의 존이 빠짐없이 한 번씩 들어 있어야 한다(합쳐지지 않은 존은 혼자 한 묶음).
+// 10-27 밤 사용자: 계열에 묶음이 하나뿐이면(예: 멀티존A만, 또는 A·B가 한 카드로 합쳐짐) 알파벳 없이 "멀티존"으로.
 export function zoneDisplayLabels(groups: { names: string[] }[]): Map<string, string> {
   const labels = new Map<string, string>();
   const byBase = new Map<string, string[][]>();
@@ -45,9 +46,11 @@ export function zoneDisplayLabels(groups: { names: string[] }[]): Map<string, st
     const lettered = list.filter((names) => names[0] !== base);
     // 알파벳 26개를 넘는 계열은 다시 매기지 않는다(원래 이름의 첫 번째).
     const relabel = lettered.length <= 26;
+    const only = list.length === 1;
     let i = 0;
     for (const names of list) {
-      const label = names[0] === base || !relabel ? names[0] : `${base}${String.fromCharCode(65 + i++)}`;
+      const label =
+        names[0] === base || !relabel ? names[0] : only ? base : `${base}${String.fromCharCode(65 + i++)}`;
       for (const n of names) labels.set(n, label);
     }
   }
