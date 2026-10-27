@@ -2302,17 +2302,7 @@ export function SeatLayoutWorkspace() {
               </button>
             ))}
           </div>
-          {activeTab !== "seatNumber" && (
-            <>
-              <div className="hidden h-5 w-px bg-[#171310]/[0.12] dark:bg-white/[0.12] sm:block" />
-              <span className="app-badge app-badge-ok shrink-0 gap-1.5">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3 w-3 shrink-0">
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-                존 {activeZones.length}개 등록됨
-              </span>
-            </>
-          )}
+          {/* 10-27 밤 사용자: 위쪽 "존 N개 등록됨" 배지는 뺐다 — 작업 순서·존 목록에 이미 보이고, 초록 체크가 0개일 때도 끝난 것처럼 보였다. */}
           <div className="hidden h-5 w-px bg-[#171310]/[0.12] dark:bg-white/[0.12] sm:block" />
           <div className="flex flex-wrap items-center gap-2">
           <button type="button" disabled={busy} onClick={handleDownload} className="app-btn-outline rounded-lg px-3 py-2 text-sm">
