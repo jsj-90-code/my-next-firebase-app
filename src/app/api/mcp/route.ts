@@ -374,7 +374,7 @@ function registerTools(server: McpServer, owner: boolean) {
             y: z.number().min(0).max(1),
             w: z.number().min(0.001).max(1),
             h: z.number().min(0.001).max(1),
-            type: z.enum(VALID_ZONE_TYPES).nullable().optional().describe("확신할 때만. FPS·FC는 지시문의 하드웨어 특화 규칙대로 소량만, 멀티·LOL 등 일반 줄은 비운다"),
+            type: z.enum(VALID_ZONE_TYPES).nullable().optional().describe("방·VIP·프렌즈 등은 확신할 때만. 일반 줄·섬은 지시문의 하드웨어 사양 존 순서(fps→fc→lol→multi)대로 붙인다"),
           })).min(1).describe("위치는 ①번 전체 도면 기준 왼쪽 위 원점 0~1 비율"),
           note: z.string().max(2000).nullable().optional().describe("애매했던 구역·확인이 필요한 점(한국어)"),
           modelName: z.string().max(100).describe("지금 판단한 AI 모델 이름"),
