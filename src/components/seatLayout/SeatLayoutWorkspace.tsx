@@ -1840,13 +1840,22 @@ export function SeatLayoutWorkspace() {
     const outputs = renderAllOutputs(EXPORT_SCALE);
     if (outputs) {
       const sizeLabel = `${Math.round(COMPOSITE_W * EXPORT_SCALE)}x${Math.round(COMPOSITE_H * EXPORT_SCALE)}`;
-      outputs.forEach((item) => {
+      // 10-27 밤 사용자: 한 번 눌러도 1장만 받아져 3번 눌러야 했다 — 링크 클릭 3번을 한꺼번에 하면 크롬이
+      // 첫 장만 받고 나머지를 막는다. 장마다 blob 주소로 바꿔(큰 data: 주소는 다운로드가 끊기기도 함) 간격을 두고 받는다.
+      // 크롬이 처음 한 번 "여러 파일 다운로드 허용"을 물으면 허용해야 한다(사이트별로 기억됨).
+      for (const [i, item] of outputs.entries()) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 400));
+        const blob = await (await fetch(item.dataUrl)).blob();
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.download = `${project.name || "floorplan"}_${item.label}_${sizeLabel}.png`;
-        link.href = item.dataUrl;
+        link.href = url;
+        document.body.appendChild(link);
         link.click();
-      });
-      setStatusMsg(`${sizeLabel} 이미지 ${outputs.length}장을 다운로드했습니다.`, "success");
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      }
+      setStatusMsg(`${sizeLabel} 이미지 ${outputs.length}장을 다운로드했습니다. 1장만 받아졌으면 주소창의 '여러 파일 다운로드'를 허용해 주세요.`, "success");
     }
     setBusy(false);
   }
