@@ -1043,7 +1043,11 @@ export function SeatLayoutWorkspace() {
         return;
       }
       if (kind === "zones") applyZoneDraft(draft.zones?.rows ?? []);
-      else setChatDraftModal({ kind, draft });
+      else {
+        setChatDraftModal({ kind, draft });
+        // 10-27 사용자: 오른쪽에 붙는 창을 못 보고 "안 된다"고 생각했다 → 작업 순서에도 안내.
+        setStatusMsg("👉 오른쪽에 뜬 창에서 결과를 확인하고 [체크한 존에 넣기]를 누르세요.");
+      }
     } catch (err) {
       setStatusMsg(`채팅 결과를 불러오지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
     } finally {

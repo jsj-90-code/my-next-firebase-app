@@ -123,8 +123,8 @@ export function ChatDraftImportModal({
     // 10-27 밤 사용자: 가운데 팝업이 도면을 가려 브라켓 수량을 도면과 대조할 수 없다 → 화면을 어둡게 덮지 않고
     // 오른쪽에 붙는 창으로. 도면(가운데 칸)을 보면서 표를 확인한다. 바깥을 눌러도 닫히지 않는다(도면 확대·스크롤용).
     <div className="pointer-events-none fixed inset-x-2 bottom-2 top-16 z-50 flex justify-end sm:inset-x-4 sm:bottom-4">
-      <div className="app-card pointer-events-auto flex h-full w-full max-w-[460px] flex-col overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/10 dark:ring-white/10">
-        <div className="border-b border-[#171310]/[0.08] dark:border-white/[0.08] p-5">
+      <div className="app-card pointer-events-auto flex h-full w-full max-w-[460px] flex-col overflow-hidden rounded-2xl shadow-2xl ring-2 ring-[var(--sl-gold)]">
+        <div className="border-b border-[#171310]/[0.08] bg-[var(--sl-gold)]/[0.12] p-5 dark:border-white/[0.08]">
           <h2 className="font-semibold text-[#171310] dark:text-[#f2ede2]">채팅 결과 불러오기 — {KIND_LABEL[kind]}</h2>
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             {meta?.modelName ?? "채팅 AI"} · {meta?.createdAt ? new Date(meta.createdAt).toLocaleString("ko-KR") : ""}
