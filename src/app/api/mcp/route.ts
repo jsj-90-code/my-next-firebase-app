@@ -17,7 +17,11 @@ import { verifyAccessToken, type McpUser } from "@/lib/server/mcpOAuth";
 import {
   findCandidates, isMcpOwner, loadCandidateLocationContext, saveCandidateLocationDraft,
 } from "@/lib/server/mcpCandidateLocation";
-import { buildFloorPlanImages, findSeatLayoutProjects, loadSeatLayoutProject, zoneListText } from "@/lib/server/mcpSeatLayout";
+import { getSuggestZonesGeminiModel } from "@/lib/gemini";
+import { buildSuggestZonesPrompt, SUGGEST_ZONES_IMAGE_LABELS } from "@/lib/seatLayout/suggestZonesPrompt";
+import {
+  buildFloorPlanImages, resolveSeatLayoutProject, runGeminiZoneSuggestion, scoreZoneDraft, zoneListText, zoneScoreTable,
+} from "@/lib/server/mcpSeatLayout";
 import { loadQuickEvalTraining } from "@/lib/server/quickEvalTraining";
 import {
   INFLOW_LEVELS, LOCATION_EVAL_FIELD_DESCRIPTIONS, SPECIAL_DEMAND_INTENSITIES, SPECIAL_DEMAND_TYPES,
@@ -268,32 +272,82 @@ function registerTools(server: McpServer, owner: boolean) {
         description:
           "좌석배치도 작업 툴에 저장된 프로젝트(매장) 이름으로 책상 배치 도면 이미지를 돌려준다 — 전체 1장 + 좌상·우상·좌하·우하 확대 4장" +
           "(경계가 10% 겹치게 잘림)과 저장된 존 목록. 담당자 전용 시험 도구.",
-        inputSchema: z.object({ projectName: z.string().min(1).describe("좌석배치도 프로젝트 이름 일부(예: 평택소사벌)") }),
+        inputSchema: z.object({
+          projectName: z.string().min(1).describe("좌석배치도 프로젝트 이름 일부(예: 평택소사벌)"),
+          hideZones: z.boolean().optional().describe(
+            "true면 저장된 존을 숨기고 존 초안 작업 지시문(웹 Gemini 버튼과 같은 문장)을 준다 — 정확도 비교 시험용",
+          ),
+        }),
       },
-      async ({ projectName }, ctx) => {
+      async ({ projectName, hideZones }, ctx) => {
         const user = userOf(ctx.http?.authInfo);
         if (!isMcpOwner(user)) return text(ownerOnly, true);
         try {
-          const found = await findSeatLayoutProjects(projectName);
-          if (!found.length) return text(`'${projectName}'와 맞는 좌석배치도 프로젝트가 없습니다.`);
-          if (found.length > 1) {
-            return text(`여러 개가 맞습니다. 이름을 더 정확히 주세요:\n${found.slice(0, 20).map((p) => `- ${p.name}`).join("\n")}`);
-          }
-          const project = await loadSeatLayoutProject(found[0].id);
-          if (!project?.floorPlanDataUrl) return text(`'${found[0].name}'에 도면 이미지가 없습니다.`, true);
-          const images = await buildFloorPlanImages(project.floorPlanDataUrl);
+          const r = await resolveSeatLayoutProject(projectName);
+          if ("error" in r) return text(r.error, r.isError);
+          const { project } = r;
+          const images = await buildFloorPlanImages(project.floorPlanDataUrl!);
+          const intro =
+            `프로젝트: ${project.name}\n도면 원본 크기: ${project.imageWidth}×${project.imageHeight}px\n` +
+            `이미지 ${images.length}장: ${images.map((im, i) => `${SUGGEST_ZONES_IMAGE_LABELS[i] ?? im.label}`).join(", ")}\n\n`;
+          // 숨김 모드: 정답(저장된 존)을 보여주면 답을 베낄 수 있어 빼고, Gemini와 같은 지시문만 준다.
+          const body = hideZones
+            ? `${buildSuggestZonesPrompt(true)}\n\n다 하면 compare_seat_layout_zone_draft에 projectName과 위 ZONE 줄들을 zones 배열로 넣어 채점받을 것.`
+            : `저장된 존(위치는 전체 도면 기준 0~1 비율):\n${zoneListText(project.zones ?? [])}`;
           return {
             content: [
-              {
-                type: "text" as const,
-                text:
-                  `프로젝트: ${project.name}\n도면 원본 크기: ${project.imageWidth}×${project.imageHeight}px\n` +
-                  `이미지 ${images.length}장: ${images.map((im, i) => `${i + 1}) ${im.label}`).join(", ")}\n\n` +
-                  `저장된 존(위치는 전체 도면 기준 0~1 비율):\n${zoneListText(project.zones ?? [])}`,
-              },
+              { type: "text" as const, text: intro + body },
               ...images.map((im) => ({ type: "image" as const, data: im.data, mimeType: im.mimeType })),
             ],
           };
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
+
+    // ── 존 초안 정확도 비교 (2026-10-27 2단계) — 채팅 AI의 존 초안과, 같은 도면으로 지금 돌린 웹 Gemini 버튼 결과를
+    //    사람이 확정해 저장한 존에 대고 채점한다. 읽기만 한다(프로젝트·초안 어디에도 저장 안 함).
+    server.registerTool(
+      "compare_seat_layout_zone_draft",
+      {
+        title: "존 초안 정확도 비교(시험·담당자 전용)",
+        description:
+          "get_seat_layout_floorplan(hideZones=true)으로 도면을 보고 만든 존 초안을 넣으면, 같은 도면으로 웹 Gemini 존 초안도 돌려 " +
+          "둘 다 저장된 존(정답)과 비교한 채점표를 돌려준다. 1~2분 걸린다. 프로젝트는 수정하지 않는다. 담당자 전용 시험 도구.",
+        inputSchema: z.object({
+          projectName: z.string().min(1),
+          zones: z.array(z.object({
+            seats: z.number().int().min(1),
+            x: z.number().min(0).max(1),
+            y: z.number().min(0).max(1),
+            w: z.number().min(0).max(1),
+            h: z.number().min(0).max(1),
+            type: z.string().optional(),
+          })).min(1).describe("ZONE 줄들을 옮긴 것. 위치는 전체 도면 기준 0~1 비율"),
+          modelName: z.string().max(100).describe("초안을 만든 AI 모델 이름"),
+        }),
+      },
+      async ({ projectName, zones, modelName }, ctx) => {
+        const user = userOf(ctx.http?.authInfo);
+        if (!isMcpOwner(user)) return text(ownerOnly, true);
+        try {
+          const r = await resolveSeatLayoutProject(projectName);
+          if ("error" in r) return text(r.error, r.isError);
+          const truth = r.project.zones ?? [];
+          if (!truth.length) return text(`'${r.project.name}'에 저장된 존이 없어 채점할 수 없습니다.`, true);
+          const gemini = await runGeminiZoneSuggestion(r.project.floorPlanDataUrl!)
+            .then((z) => ({ score: z.length ? scoreZoneDraft(z, truth) : null, error: z.length ? undefined : "구역을 못 찾음" }))
+            .catch((e: unknown) => ({ score: null, error: e instanceof Error ? e.message : String(e) }));
+          const table = zoneScoreTable(
+            [{ label: modelName || "채팅 AI", score: scoreZoneDraft(zones, truth) }, { label: `Gemini(${getSuggestZonesGeminiModel()})`, ...gemini }],
+            truth,
+          );
+          return text(
+            `프로젝트: ${r.project.name}\n${table}\n\n` +
+              "읽는 법: 맞은 존·평균 겹침·덮은 좌석 비율은 높을수록, 좌석 차이는 0에 가까울수록 좋다. " +
+              "사용자에게 이 표를 그대로 보여줄 것(아무것도 저장하지 않았음).",
+          );
         } catch (err) {
           return text(err instanceof Error ? err.message : String(err), true);
         }
