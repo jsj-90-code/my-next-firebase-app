@@ -276,6 +276,8 @@ export function SeatLayoutWorkspace() {
   // 마지막 [프로젝트 저장] 때와 달라졌는지 본다. 이미지는 저장할 때 압축본으로 바뀌어 비교에서 빼고 imagesUnsaved로 따로 본다.
   // 채팅 인식은 **저장된** 존을 보므로, 저장 안 한 채 채팅에 물으면 옛 존 기준으로 센다.
   const [savedProjectKey, setSavedProjectKey] = useState(() => projectChangeKey(project));
+  // 마지막으로 저장(또는 불러온) 상태 — "작업 순서"가 '저장 단계를 지났는지'를 지금 화면 변경과 따로 본다.
+  const [lastSavedProject, setLastSavedProject] = useState<SeatLayoutProject | null>(null);
   const currentProjectKey = useMemo(() => projectChangeKey(project), [project]);
   const hasUnsavedChanges = imagesUnsaved || currentProjectKey !== savedProjectKey;
   useEffect(() => {
@@ -904,9 +906,12 @@ export function SeatLayoutWorkspace() {
   }
 
   // 탭별 "작업 순서" 단계(SeatLayoutSteps). 끝났는지는 지금 프로젝트 상태로 판단한다 — 저장 여부는 hasUnsavedChanges.
+  // 10-27 밤 사용자: 채팅 결과를 불러온 직후(저장 전)엔 "존 다듬고 저장"으로 되돌아가 보였다 → 저장 단계는 지금 화면이
+  // 아니라 마지막 저장 상태(lastSavedProject)로 판단하고, 채팅 단계는 저장 안 된 변경이 있으면 버튼을 [저장]으로 바꾼다.
   function buildWorkSteps(): WorkStep[] {
     const name = project.name.trim() || "○○점";
     const saved = !!project.updatedAt && !hasUnsavedChanges;
+    const last = lastSavedProject?.id === project.id && project.updatedAt ? lastSavedProject : null;
     const saveAction = {
       label: hasUnsavedChanges ? "● 프로젝트 저장" : "프로젝트 저장",
       onClick: () => void handleSaveClick(),
@@ -922,17 +927,17 @@ export function SeatLayoutWorkspace() {
         { key: "save1", title: "프로젝트 저장", done: !!project.updatedAt,
           hint: "채팅은 저장된 도면을 봅니다.", action: saveAction },
         { key: "zones", title: "존 초안 받기 (Claude 채팅)", done: zones.length > 0,
-          hint: "구역 상자를 한 번에 넣습니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
+          hint: "구역 상자를 한 번에 넣습니다. 채팅 답이 오기까지 1분 30초쯤 걸립니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
           prompt: `${name} 존 초안 만들어 줘`,
           action: { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
             emphasize: hasNewChatDraft("zones") } },
-        { key: "tidy", title: "존 다듬고 저장", done: zones.length > 0 && saved,
+        { key: "tidy", title: "존 다듬고 저장", done: (last?.zones.length ?? 0) > 0,
           hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 ×로 삭제. 유형·이름은 존 목록에서 고칩니다.",
           action: saveAction },
         { key: "desk", title: "책상 수량 채우기 (Claude 채팅)", done: counted && saved,
-          hint: "결과를 불러와 확인·적용한 뒤 [프로젝트 저장]을 눌러야 반영됩니다. 구역을 옮기면 노란 느낌표(!)가 붙으니 다시 인식하세요.",
+          hint: "채팅 답이 오기까지 30초쯤 걸립니다. 결과를 불러와 확인·적용한 뒤 [프로젝트 저장]을 눌러야 반영됩니다. 구역을 옮기면 노란 느낌표(!)가 붙으니 다시 인식하세요.",
           prompt: `${name} 책상 인식해 줘`,
-          action: hasUnsavedChanges && counted ? saveAction
+          action: hasUnsavedChanges ? saveAction
             : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("desk"), disabled: chatDraftLoading || zones.length === 0,
                 emphasize: hasNewChatDraft("desk") } },
       ];
@@ -943,12 +948,13 @@ export function SeatLayoutWorkspace() {
         { key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
           hint: "책상 발주 도면의 존을 그대로 가져옵니다. 사양이 다른 자리는 존을 나눠 주세요.",
           action: { label: "책상 구역 불러오기", onClick: importDeskZonesToPc } },
-        { key: "save", title: "사양 맞추고 저장", done: pcZones.length > 0 && saved, action: saveAction },
+        { key: "save", title: "사양 맞추고 저장", done: (last?.pcZones.length ?? 0) > 0, action: saveAction },
         { key: "pc", title: "PC 대수 세기 (나눈 존이 있을 때)", done: pcZones.length > 0 && saved && !hasNewChatDraft("pc"),
           hint: "존을 나눴으면 대수를 다시 셉니다. 불러와 적용한 뒤 저장하세요.",
           prompt: `${name} PC 대수 세어 줘`,
-          action: { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("pc"), disabled: chatDraftLoading || pcZones.length === 0,
-            emphasize: hasNewChatDraft("pc") } },
+          action: hasUnsavedChanges ? saveAction
+            : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("pc"), disabled: chatDraftLoading || pcZones.length === 0,
+                emphasize: hasNewChatDraft("pc") } },
       ];
     }
     const filled = activeZones.length > 0 && activeZones.every((z) =>
@@ -956,11 +962,11 @@ export function SeatLayoutWorkspace() {
     return [
       { key: "plate", title: "피난안내도(좌석번호표) 올리기", done: !!seatNumberPlateSrc,
         hint: "아래 [좌석번호표] 칸에 이미지나 PDF를 올립니다." },
-      { key: "save", title: "프로젝트 저장", done: !!seatNumberPlateSrc && saved, action: saveAction },
+      { key: "save", title: "프로젝트 저장", done: !!last?.seatNumberPlateDataUrl, action: saveAction },
       { key: "match", title: "좌석번호 매칭 (Claude 채팅)", done: filled && saved,
         hint: "불러와 확인·적용하고, 틀린 번호는 아래 표에서 고친 뒤 저장하세요.",
         prompt: `${name} 좌석번호 매칭해 줘`,
-        action: hasUnsavedChanges && filled ? saveAction
+        action: hasUnsavedChanges ? saveAction
           : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("seatNumbers"), disabled: chatDraftLoading,
               emphasize: hasNewChatDraft("seatNumbers") } },
       { key: "sheet", title: "좌석번호표 발주 등록", done: !!seatNumberSheetUrl,
@@ -1366,6 +1372,7 @@ export function SeatLayoutWorkspace() {
       const opened = { ...emptyProject(), ...loaded };
       setProject(opened);
       setSavedProjectKey(projectChangeKey(opened));
+      setLastSavedProject(opened);
       setRawSeatNumberPlateDataUrl(null);
       setImagesUnsaved(false);
       setRawFloorPlanDataUrl(null);
@@ -1391,6 +1398,7 @@ export function SeatLayoutWorkspace() {
     const fresh = { id: crypto.randomUUID(), ...emptyProject() };
     setProject(fresh);
     setSavedProjectKey(projectChangeKey(fresh));
+      setLastSavedProject(fresh);
     setRawFloorPlanDataUrl(null);
     setRawSeatNumberPlateDataUrl(null);
     setImagesUnsaved(false);
@@ -1471,6 +1479,7 @@ export function SeatLayoutWorkspace() {
       const saved = await saveProject(toSave, user.uid);
       setProject(saved);
       setSavedProjectKey(projectChangeKey(saved));
+      setLastSavedProject(saved);
       setImagesUnsaved(false);
       await refreshProjectList();
       return saved;
