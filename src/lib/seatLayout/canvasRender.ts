@@ -685,7 +685,9 @@ export function renderPcFloorplanImage(
         break;
       }
     }
-    if (!best || scale > best.scale + 0.02) {
+    // 10-27 밤 사용자(산삼점 PC 도면): 카드 8개 + VIP 보조 모니터 두 줄로 4열이 되며 도면이 작아져 "맛이 갔다" →
+    // 열을 늘리는 건 글자가 확실히 커질 때만(0.02 → 0.1). 조금 작은 글자보다 도면 크기가 더 중요하다.
+    if (!best || scale > best.scale + 0.1) {
       best = { cols, panelAreaW, colW, scale, wrapped };
     }
     if (cols === 6 || colW < MIN_COL_W) break;
