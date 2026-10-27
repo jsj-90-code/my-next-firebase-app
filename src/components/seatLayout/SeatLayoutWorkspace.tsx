@@ -56,6 +56,11 @@ import type { SpecField, SpecFieldId } from "@/lib/seatLayout/constants";
 type ActiveZone = DeskZone | PcZone;
 
 // 2026-10-26 — "등록했습니다"만 있어서 저장된 줄 알고 나가 피난안내도가 사라졌다. 도면처럼 저장 안내를 붙인다.
+// 저장 안 된 변경 확인용 — 이미지(저장 때 압축본으로 바뀜)와 저장 시각은 빼고 비교한다.
+function projectChangeKey(p: SeatLayoutProject): string {
+  return JSON.stringify({ ...p, floorPlanDataUrl: null, seatNumberPlateDataUrl: null, updatedAt: null, updatedBy: null });
+}
+
 const SEAT_NUMBER_PLATE_ADDED_MSG =
   "좌석번호표를 올렸습니다 — \"프로젝트 저장\"을 눌러야 보관됩니다. 오른쪽에서 도면과 나란히 보면서 " +
   "존별로 직접 입력하거나, 저장 후 Claude 채팅으로 매칭해 [채팅 결과 불러오기]로 넣으세요.";
@@ -263,12 +268,18 @@ export function SeatLayoutWorkspace() {
   // 2026-10-26 — 피난안내도를 올리면 "등록했습니다"만 떠서 저장된 줄 알고 나가 사라지는 일이 있었다.
   // 올린 이미지를 아직 저장하지 않았으면 페이지를 닫을 때 브라우저가 한 번 묻게 한다.
   const [imagesUnsaved, setImagesUnsaved] = useState(false);
+  // 2026-10-27 사용자: PC 존을 불러와 고친 뒤 저장해야 한다는 걸 알 수 없다 — 이미지뿐 아니라 존·사양·좌석번호가
+  // 마지막 [프로젝트 저장] 때와 달라졌는지 본다. 이미지는 저장할 때 압축본으로 바뀌어 비교에서 빼고 imagesUnsaved로 따로 본다.
+  // 채팅 인식은 **저장된** 존을 보므로, 저장 안 한 채 채팅에 물으면 옛 존 기준으로 센다.
+  const [savedProjectKey, setSavedProjectKey] = useState(() => projectChangeKey(project));
+  const currentProjectKey = useMemo(() => projectChangeKey(project), [project]);
+  const hasUnsavedChanges = imagesUnsaved || currentProjectKey !== savedProjectKey;
   useEffect(() => {
-    if (!imagesUnsaved) return;
+    if (!hasUnsavedChanges) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [imagesUnsaved]);
+  }, [hasUnsavedChanges]);
   // 작업자가 실제로 하는 작업은 "존 설정한 도면"과 "피난안내도"를 나란히 띄워놓고 눈으로 비교하며
   // 존별 좌석번호를 직접 입력하는 것이라, "좌석번호표 발주" 탭에서는 항상 이 비교 화면을 보여준다
   // (별도 탭으로 분리했으니, 탭 전환 자체가 켜고 끄는 역할을 한다).
@@ -1229,7 +1240,9 @@ export function SeatLayoutWorkspace() {
       hasLoadedProjectRef.current = true;
       // emptyProject()로 기본값을 먼저 채워서, 이 필드가 추가되기 전에 저장된 옛날 프로젝트를
       // 불러와도 seatNumberPlateDataUrl/seatNumberRanges 등이 undefined가 되지 않게 한다.
-      setProject({ ...emptyProject(), ...loaded });
+      const opened = { ...emptyProject(), ...loaded };
+      setProject(opened);
+      setSavedProjectKey(projectChangeKey(opened));
       setRawSeatNumberPlateDataUrl(null);
       setImagesUnsaved(false);
       setRawFloorPlanDataUrl(null);
@@ -1252,7 +1265,9 @@ export function SeatLayoutWorkspace() {
   }
 
   function newProject() {
-    setProject({ id: crypto.randomUUID(), ...emptyProject() });
+    const fresh = { id: crypto.randomUUID(), ...emptyProject() };
+    setProject(fresh);
+    setSavedProjectKey(projectChangeKey(fresh));
     setRawFloorPlanDataUrl(null);
     setRawSeatNumberPlateDataUrl(null);
     setImagesUnsaved(false);
@@ -1332,6 +1347,7 @@ export function SeatLayoutWorkspace() {
       }
       const saved = await saveProject(toSave, user.uid);
       setProject(saved);
+      setSavedProjectKey(projectChangeKey(saved));
       setImagesUnsaved(false);
       await refreshProjectList();
       return saved;
@@ -1350,8 +1366,8 @@ export function SeatLayoutWorkspace() {
   }
 
   function applyFloorPlanDataUrl(dataUrl: string, width: number, height: number) {
-    // 원본 화질 그대로 세션에 보관 (화면 표시 + AI 인식용). Firestore 저장용 압축은
-    // silentSave에서 저장 직전에만 한다 — 여기서 미리 압축해두면 인식 정확도가 떨어진다.
+    // 원본 화질 그대로 세션에 보관(화면 표시용). Firestore 저장용 압축은 silentSave에서 저장 직전에만 한다.
+    // (2026-10-27부터 AI 인식은 채팅 커넥터가 저장된 압축본으로 한다 — 울산삼산 압축본으로 치수 글씨까지 읽음.)
     setRawFloorPlanDataUrl(dataUrl);
     setImagesUnsaved(true);
     setProject((p) => ({ ...p, imageWidth: width, imageHeight: height }));
@@ -2499,9 +2515,14 @@ export function SeatLayoutWorkspace() {
                 onClick={handleSaveClick}
                 className="flex-1 app-btn-primary rounded-lg px-3 py-2 text-sm"
               >
-                프로젝트 저장
+                {hasUnsavedChanges ? "● 프로젝트 저장 (저장 안 된 변경 있음)" : "프로젝트 저장"}
               </button>
             </div>
+            {hasUnsavedChanges && (
+              <p className="app-notice app-badge-warn mt-2 w-full justify-start py-1.5 text-xs">
+                저장하지 않은 변경이 있습니다 — 채팅 인식은 저장된 존을 보고 세니, Claude에 묻기 전에 먼저 저장하세요.
+              </p>
+            )}
           </section>
 
           {activeTab !== "seatNumber" && (
