@@ -203,6 +203,16 @@ function resolveTagOverlaps(
   return resolved;
 }
 
+// 10-27 사용자: PC 도면 존 카드에서 긴 제품명이 두 줄을 먹는다 → 카드에 보이는 글자만 줄인다.
+// 저장값·발주 요약표(주문용 정식 이름)·어댑터 판정(블랙샤크 = 3구)은 원래 이름을 그대로 쓴다.
+const CARD_SHORT_NAMES: [RegExp, string][] = [
+  [/스틸시리즈 라이벌3(\(번지\))?/g, "스틸 라이벌3"],
+  [/Razer BlackShark V2 Hyperspeed/g, "블랙샤크 V2"],
+];
+function cardShortName(value: string): string {
+  return CARD_SHORT_NAMES.reduce((v, [re, to]) => v.replace(re, to), value);
+}
+
 export function drawZoneOverlaysOnCard(
   c: CanvasRenderingContext2D,
   zones: (DeskZone | PcZone)[],
@@ -504,7 +514,7 @@ export function renderPcFloorplanImage(
       .map((f) => {
         const value = normalizeFieldValue(f.id, ov[f.id] as string);
         const defaultValue = normalizeFieldValue(f.id, pcDefaults[f.id] ?? f.def);
-        return { label: f.label, value, redundant: value === defaultValue };
+        return { label: f.label, value: cardShortName(value), redundant: value === defaultValue };
       })
       .filter((ln) => !ln.redundant)
       .map(({ label, value }) => ({ label, value }));
