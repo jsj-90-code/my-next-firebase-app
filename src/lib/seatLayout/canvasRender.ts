@@ -218,8 +218,8 @@ export function drawZoneOverlaysOnCard(
     const zh = z.h * geo.areaH;
 
     c.strokeStyle = z.color;
-    // 10-27 사용자: 결과 이미지의 존 테두리가 너무 굵다 → 5에서 3으로.
-    c.lineWidth = 3;
+    // 10-27 사용자: 결과 이미지의 존 테두리가 너무 굵다 → 5 → 3 → 2.
+    c.lineWidth = 2;
     c.strokeRect(zx, zy, zw, zh);
 
     return { z, zx, zy, zw, zh };
