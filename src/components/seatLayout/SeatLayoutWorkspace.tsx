@@ -556,8 +556,9 @@ export function SeatLayoutWorkspace() {
   // 구역이 선택된 상태에서 Enter를 누르면(양쪽을 번갈아 드래그로 다 조정한 뒤) 그 구역의
   // 수정 폼을 띄워 수량을 다시 확인하게 한다(2026-10-27 웹 AI 재인식은 지움 — 채팅으로 한 번에). 다른 입력창에 포커스가 있거나 폼이 이미
   // 열려있을 때는 무시한다.
+  // 10-27 밤 사용자: 선택한 구역을 Delete 키로도 지우게(오른쪽 위 ×와 같음). Backspace는 실수로 눌리기 쉬워 뺐다.
   const onZoneKeyDown = useEffectEvent((e: KeyboardEvent) => {
-    if (e.key !== "Enter") return;
+    if (e.key !== "Enter" && e.key !== "Delete") return;
     if (formOpen) return;
     if (activeTab === "seatNumber") return;
     if (selectedZoneIndex === null) return;
@@ -566,6 +567,11 @@ export function SeatLayoutWorkspace() {
     const z = activeZones[selectedZoneIndex];
     if (!z) return;
     e.preventDefault();
+    if (e.key === "Delete") {
+      deleteZone(selectedZoneIndex);
+      setStatusMsg(`${z.name} 구역을 지웠습니다. [프로젝트 저장]을 눌러야 반영됩니다.`);
+      return;
+    }
     setDirtyZoneIndex((cur) => (cur === selectedZoneIndex ? null : cur));
     editZone(selectedZoneIndex);
   });
@@ -951,7 +957,7 @@ export function SeatLayoutWorkspace() {
           action: { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
             emphasize: hasNewChatDraft("zones") } },
         { key: "tidy", title: "존 다듬고 저장", done: (last?.zones.length ?? 0) > 0,
-          hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 ×로 삭제. 유형·이름은 존 목록에서 고칩니다.",
+          hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 × 또는 Delete 키로 삭제. 유형·이름은 존 목록에서 고칩니다.",
           action: saveAction },
         { key: "desk", title: "책상 수량 채우기 (Claude 채팅)", done: counted && saved,
           hint: "채팅 답이 오기까지 30초쯤 걸립니다. 결과를 불러와 확인·적용한 뒤 [프로젝트 저장]을 눌러야 반영됩니다. 구역을 옮기면 노란 느낌표(!)가 붙으니 다시 인식하세요.",
@@ -3163,7 +3169,7 @@ export function SeatLayoutWorkspace() {
                   </details>
                   {/* 10-27 밤: 채팅 순서 안내는 왼쪽 "작업 순서"로 옮겼다. 여기엔 도면 위 조작 요령만 남긴다. */}
                   <ul className="space-y-2.5">
-                    <li>구역을 클릭해 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿉니다. 오른쪽 위 ×로 삭제합니다.</li>
+                    <li>구역을 클릭해 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿉니다. 오른쪽 위 × 또는 Delete 키로 삭제합니다.</li>
                     <li>구역을 옮기거나 크기를 바꾸면 노란 느낌표(!)가 붙습니다 — Enter로 수량을 고치거나, 저장 후 채팅으로 다시 인식하세요.</li>
                   </ul>
                 </div>
