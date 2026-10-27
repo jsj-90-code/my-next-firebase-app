@@ -208,6 +208,7 @@ function resolveTagOverlaps(
 const CARD_SHORT_NAMES: [RegExp, string][] = [
   [/스틸시리즈 라이벌3(\(번지\))?/g, "스틸 라이벌3"],
   [/Razer BlackShark V2 Hyperspeed/g, "블랙샤크 V2"],
+  [/Razer Huntsman V3 Pro/g, "레이저 헌츠맨 V3"],
   [/(\d+인치) 울트라와이드/g, "$1"],
 ];
 function cardShortName(value: string): string {
@@ -687,7 +688,22 @@ export function renderPcFloorplanImage(
     const availH = panelBottomLimitForCols(cols) - panelTop;
     let scale = 0.6;
     let wrapped = wrapItemsFor(colW, scale);
-    for (let s = 1.0; s >= 0.6 - 1e-9; s -= 0.05) {
+    // 10-28 사용자: 이름을 줄여도 남는 공간만큼 글자가 커져 다시 두 줄로 꺾였다 → 먼저 "모든 값이 한 줄"인
+    // 가장 큰 크기를 찾고(0.75배 이상일 때), 그게 없을 때만 예전처럼 줄바꿈을 허용한다.
+    const ONE_LINE_MIN_SCALE = 0.75;
+    let found = false;
+    for (let s = 1.0; s >= ONE_LINE_MIN_SCALE - 1e-9; s -= 0.05) {
+      const w = wrapItemsFor(colW, s);
+      const oneLine = w.every((lines) => lines.every((ln) => ln.segs.length <= 1));
+      const totalNeededH = rowHeightsFor(cols, w).reduce((sum, h) => sum + h, 0) * s;
+      if (oneLine && totalNeededH <= availH && allSegsFit(w, colW, s)) {
+        scale = s;
+        wrapped = w;
+        found = true;
+        break;
+      }
+    }
+    for (let s = 1.0; !found && s >= 0.6 - 1e-9; s -= 0.05) {
       const w = wrapItemsFor(colW, s);
       const totalNeededH = rowHeightsFor(cols, w).reduce((sum, h) => sum + h, 0) * s;
       if (totalNeededH <= availH && allSegsFit(w, colW, s)) {
