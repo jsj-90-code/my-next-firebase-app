@@ -937,6 +937,10 @@ export function SeatLayoutWorkspace() {
     const name = project.name.trim() || "○○점";
     const saved = !!project.updatedAt && !hasUnsavedChanges;
     const last = lastSavedProject?.id === project.id && project.updatedAt ? lastSavedProject : null;
+    // 10-27 밤 사용자: PC 탭에서 존을 나눈 뒤 저장 전인데 채팅 단계가 먼저 펼쳐졌다 — "저장 단계"는 존 모양
+    // (이름·위치·크기)이 마지막 저장과 같은지로 본다. 채팅 결과는 수량만 바꾸므로 넣어도 이 단계는 그대로다.
+    const shapeKey = (zs: { name: string; x: number; y: number; w: number; h: number }[]) =>
+      zs.map((z) => `${z.name}|${z.x.toFixed(4)}|${z.y.toFixed(4)}|${z.w.toFixed(4)}|${z.h.toFixed(4)}`).join(";");
     const saveAction = {
       label: hasUnsavedChanges ? "● 프로젝트 저장" : "프로젝트 저장",
       onClick: () => void handleSaveClick(),
@@ -956,7 +960,8 @@ export function SeatLayoutWorkspace() {
           prompt: `${name} 존 초안 만들어 줘`,
           action: { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
             emphasize: hasNewChatDraft("zones") } },
-        { key: "tidy", title: "존 다듬고 저장", done: (last?.zones.length ?? 0) > 0,
+        { key: "tidy", title: "존 다듬고 저장",
+          done: zones.length > 0 && !!last && shapeKey(last.zones) === shapeKey(zones),
           hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 × 또는 Delete 키로 삭제. 유형·이름은 존 목록에서 고칩니다.",
           action: saveAction },
         { key: "desk", title: "책상 수량 채우기 (Claude 채팅)", done: counted && saved,
@@ -979,7 +984,10 @@ export function SeatLayoutWorkspace() {
         { key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
           hint: "책상 발주 도면의 존을 그대로 가져옵니다. 사양이 다른 자리는 존을 나눠 주세요.",
           action: { label: "책상 구역 불러오기", onClick: importDeskZonesToPc } },
-        { key: "save", title: "사양 맞추고 저장", done: (last?.pcZones.length ?? 0) > 0, action: saveAction },
+        { key: "save", title: "존 나누기·사양 맞추고 저장",
+          done: pcZones.length > 0 && !!last && shapeKey(last.pcZones) === shapeKey(pcZones),
+          hint: "사양이 다른 자리는 존을 나눕니다. 다 고쳤으면 [프로젝트 저장] — 채팅은 저장된 존을 보고 셉니다.",
+          action: saveAction },
         { key: "pc", title: split ? "PC 대수 세기 (나눈 존이 있음)" : "PC 대수 세기 (나눈 존 없음 — 건너뜀)",
           done: pcZones.length > 0 && saved && pcCounted,
           hint: "존을 나눴으면 대수를 다시 셉니다. 채팅 답은 30초쯤 걸립니다. 불러와 적용한 뒤 저장하세요.",
