@@ -275,6 +275,10 @@ export function SeatLayoutWorkspace() {
   const [seatNumberImageModalOpen, setSeatNumberImageModalOpen] = useState(false);
   const [chatDraftModal, setChatDraftModal] = useState<{ kind: ChatDraftKind; draft: SeatLayoutChatDraft } | null>(null);
   const [chatDraftLoading, setChatDraftLoading] = useState(false);
+  // 이 프로젝트에 와 있는 채팅 초안(알림 띠용). 프로젝트를 열거나 저장할 때, 그리고 claude.ai에 갔다가
+  // 이 탭으로 돌아올 때(focus) 다시 읽는다 — 버튼이 눈에 안 띈다는 10-27 사용자 지적.
+  // 다른 프로젝트로 바꿔 열었을 때 옛 알림이 남지 않게 어느 프로젝트의 초안인지 같이 둔다.
+  const [latestChatDraft, setLatestChatDraft] = useState<{ projectId: string; draft: SeatLayoutChatDraft | null } | null>(null);
   const seatNumberPlateInputRef = useRef<HTMLInputElement>(null);
   // PDF 업로드 시: 페이지가 여러 장이라 어떤 페이지가 배치도인지 직접 골라야 한다.
   const [pdfPickerPages, setPdfPickerPages] = useState<
@@ -836,14 +840,63 @@ export function SeatLayoutWorkspace() {
   // ---------------- 채팅 결과 불러오기 (2026-10-27) ----------------
   // 직원 개인 Claude(커넥터)가 저장된 프로젝트의 도면을 보고 낸 초안(seatLayoutChatDrafts)을 확인 화면에 띄운다.
   // 채팅은 **저장된** 프로젝트를 읽으므로, 존을 그린 뒤 [저장]부터 해야 채팅에서 인식할 수 있다.
+  useEffect(() => {
+    const projectId = project.id;
+    if (!projectId || !project.updatedAt) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const draft = await loadChatDraft(projectId);
+        if (!cancelled) setLatestChatDraft({ projectId, draft });
+      } catch {
+        // 알림 띠는 보조 기능 — 못 읽어도 [채팅 결과 불러오기] 버튼으로 다시 시도할 수 있다.
+      }
+    };
+    void load();
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", load);
+    };
+  }, [project.id, project.updatedAt]);
+
+  /** 마지막 [프로젝트 저장] 뒤에 들어온 채팅 결과인가 — 넣고 저장하면 알림이 사라진다. */
+  function hasNewChatDraft(kind: ChatDraftKind): boolean {
+    if (latestChatDraft?.projectId !== project.id) return false;
+    const createdAt = latestChatDraft.draft?.[kind]?.createdAt;
+    return !!createdAt && createdAt > (project.updatedAt ?? 0);
+  }
+
+  function chatDraftBanner(kind: ChatDraftKind) {
+    if (!hasNewChatDraft(kind)) return null;
+    const meta = latestChatDraft?.draft?.[kind];
+    return (
+      <div className="app-notice app-badge-info mt-3 flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
+        <span>
+          Claude 채팅 인식 결과가 도착했습니다
+          {meta?.createdAt ? ` (${new Date(meta.createdAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })})` : ""}
+        </span>
+        <button
+          type="button"
+          disabled={chatDraftLoading}
+          onClick={() => openChatDraft(kind)}
+          className="app-btn-accent rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50"
+        >
+          확인하고 넣기
+        </button>
+      </div>
+    );
+  }
+
   async function openChatDraft(kind: ChatDraftKind) {
     if (!project.id || !project.updatedAt) {
-      setStatusMsg("먼저 [저장]하세요 — 채팅은 저장된 도면과 존을 보고 인식합니다.", "error");
+      setStatusMsg("먼저 [프로젝트 저장]을 누르세요 — 채팅은 저장된 도면과 존을 보고 인식합니다.", "error");
       return;
     }
     setChatDraftLoading(true);
     try {
       const draft = await loadChatDraft(project.id);
+      setLatestChatDraft({ projectId: project.id, draft });
       if (!draft?.[kind]) {
         const ask = kind === "seatNumbers" ? "좌석번호 매칭해 줘" : kind === "desk" ? "책상 인식해 줘" : "PC 대수 세어 줘";
         setStatusMsg(`아직 채팅 결과가 없습니다 — Claude 채팅에서 "${project.name} ${ask}"라고 한 뒤 다시 누르세요.`, "error");
@@ -2460,12 +2513,13 @@ export function SeatLayoutWorkspace() {
                     type="button"
                     disabled={chatDraftLoading}
                     onClick={() => openChatDraft(activeTab === "pc" ? "pc" : "desk")}
-                    className="app-btn-outline rounded-full px-3 py-1 text-xs disabled:opacity-50"
+                    className="app-btn-accent rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50"
                   >
                     {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
                   </button>
                 )}
               </div>
+              {activeZones.length > 0 && chatDraftBanner(activeTab === "pc" ? "pc" : "desk")}
               <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
                 {activeZones.length === 0 && (
                   <p className="text-sm text-[var(--sl-ink-soft)]">아직 등록된 존이 없습니다.</p>
@@ -2610,12 +2664,13 @@ export function SeatLayoutWorkspace() {
                       type="button"
                       disabled={chatDraftLoading}
                       onClick={() => openChatDraft("seatNumbers")}
-                      className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
+                      className="rounded-full app-btn-accent px-3 py-1 text-xs font-semibold disabled:opacity-50"
                     >
                       {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
                     </button>
                   </div>
                 </div>
+                {chatDraftBanner("seatNumbers")}
                 <p className="text-xs text-[var(--sl-ink-soft)]">
                   기본은 직접 입력입니다 — 오른쪽에서 책상 도면과 피난안내도를 나란히 보면서
                   아래 칸에 존별 번호를 적어주세요. 존과 피난안내도를 저장한 뒤 Claude 채팅에서
