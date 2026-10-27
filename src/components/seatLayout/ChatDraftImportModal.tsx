@@ -18,8 +18,11 @@ function buildRows(kind: ChatDraftKind, project: SeatLayoutProject, draft: SeatL
     return project.zones.map((z) => {
       const d = rows.find((r) => r.zoneName === z.name);
       const current = `${z.seats}석 (${sizesText(z.sizeBreakdown) || z.deskSize || "-"}) · 브라켓 ${z.bagShelfCount ?? 0}`;
-      const proposed = d ? `${d.seats}석 (${sizesText(d.sizeBreakdown)}) · 브라켓 ${d.bagShelfCount}` : null;
-      return { zoneName: z.name, current, proposed, differs: proposed !== null && proposed !== current };
+      // 가방 선반을 판단 못 했으면(null) 지금 값을 그대로 쓰므로 비교도 지금 값으로 한다.
+      const bag = d?.bagShelfCount ?? z.bagShelfCount ?? 0;
+      const proposed = d ? `${d.seats}석 (${sizesText(d.sizeBreakdown)}) · 브라켓 ${bag}${d.bagShelfCount == null ? "(유지)" : ""}` : null;
+      const differs = !!d && proposed!.replace("(유지)", "") !== current;
+      return { zoneName: z.name, current, proposed, differs };
     });
   }
   if (kind === "pc") {
@@ -63,7 +66,7 @@ export function applyChatDraft(
           sizeBreakdown,
           deskSize: sizeBreakdown[0]?.deskSize ?? "",
           seats,
-          bagShelfCount: Math.max(0, Math.min(d.bagShelfCount, seats)),
+          bagShelfCount: Math.max(0, Math.min(d.bagShelfCount ?? z.bagShelfCount ?? 0, seats)),
         };
       }),
     };

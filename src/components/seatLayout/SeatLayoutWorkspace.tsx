@@ -2672,9 +2672,9 @@ export function SeatLayoutWorkspace() {
                 </div>
                 {chatDraftBanner("seatNumbers")}
                 <p className="text-xs text-[var(--sl-ink-soft)]">
-                  기본은 직접 입력입니다 — 오른쪽에서 책상 도면과 피난안내도를 나란히 보면서
-                  아래 칸에 존별 번호를 적어주세요. 존과 피난안내도를 저장한 뒤 Claude 채팅에서
-                  &quot;○○점 좌석번호 매칭해 줘&quot;라고 하면 한 번에 찾아 주고, [채팅 결과 불러오기]로 확인해 넣을 수 있습니다.
+                  존별 좌석번호는 비워 둬도 됩니다. Claude(claude.ai)에 「PC 점포평가」 커넥터를 연결해 두고, 존과
+                  피난안내도를 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 좌석번호 매칭해 줘&quot; → [채팅 결과 불러오기]로
+                  한 번에 채워집니다.
                 </p>
                 {/* PC 발주 도면에서만 사양 차이로 존을 더 쪼갠 경우(예: 책상은 "FPS존A" 하나인데
                     PC는 "FPS존A"/"FPS존B"로 나눠 사양을 다르게 지정한 경우), 그 PC 전용 존 이름도
@@ -3090,8 +3090,8 @@ function ZoneForm(props: ZoneFormProps) {
       {/* 2026-10-27 웹 Gemini 자동인식을 지웠다 — 수량은 직접 넣거나, 존을 다 그려 저장한 뒤 Claude 채팅으로 한 번에
           인식해 [채팅 결과 불러오기]로 넣는다(mcpSeatLayout.ts). */}
       <p className="app-card-sm rounded-lg p-3 text-xs text-[var(--sl-ink-soft)]">
-        {activeTab === "pc" ? "PC 대수" : "책상 수량·사이즈·가방 선반"}은 비워 둔 채 [저장]해도 됩니다. 존을 다 그리고
-        [프로젝트 저장] → Claude 채팅에서 &quot;○○점 {activeTab === "pc" ? "PC 대수 세어 줘" : "책상 인식해 줘"}&quot; →
+        {activeTab === "pc" ? "PC 대수" : "책상 수량·사이즈·가방 선반"}은 비워 둔 채 [저장]해도 됩니다. Claude(claude.ai)에 「PC 점포평가」
+        커넥터를 연결해 두고, 존을 다 그려 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 {activeTab === "pc" ? "PC 대수 세어 줘" : "책상 인식해 줘"}&quot; →
         존 목록 위 [채팅 결과 불러오기]로 한 번에 채워집니다.
       </p>
 

@@ -14,7 +14,9 @@ export type DeskCountDraftRow = {
   zoneName: string;
   seats: number;
   sizeBreakdown: SizeBreakdownEntry[];
-  bagShelfCount: number;
+  // null = 도면에 브라켓 표시가 없거나 구분 못 함 → 웹에서 지금 값을 그대로 둔다(10-27 평택: 표시 없는 도면이라 전부 0이 나와
+  // 손으로 넣은 값을 지울 뻔함). 0은 "표시는 그리는 도면인데 이 존엔 없음".
+  bagShelfCount: number | null;
 };
 export type PcCountDraftRow = { zoneName: string; seats: number };
 export type SeatNumberDraftRow = { zoneName: string; ranges: string };

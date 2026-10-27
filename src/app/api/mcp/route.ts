@@ -222,7 +222,7 @@ function registerTools(server: McpServer, owner: boolean) {
             batch.map((z, i) => `${i + 1}. ${z.name}`).join("\n") +
             "\n\n아래 지시문은 이미지 한 장(존 하나) 기준이다. 존마다 따로 적용해 하나씩 나열·검산한 뒤, " +
             "COUNT/GROUP/BRACKET 줄 대신 submit_seat_layout_zone_counts의 rows에 존마다 넣어라" +
-            (target === "desk" ? "(seats = sizeBreakdown 수량 합, bagShelfCount = 브라켓 표시가 있는 책상 수)" : "") +
+            (target === "desk" ? "(seats = sizeBreakdown 수량 합, bagShelfCount = 브라켓 표시가 있는 책상 수. 도면에 브라켓 표시가 아예 없거나 구분이 안 되면 null — 0과 다르다)" : "") +
             ". 판단이 애매한 존은 note에 적을 것.\n" +
             (more ? `존이 더 남았다 — 다 내면 offset ${offset + batch.length}로 다시 받아 이어서 하고, 그때는 append=true로 낸다.\n` : "") +
             `\n--- 인식 지시문 ---\n${buildRecognizePrompt(target)}`;
@@ -255,7 +255,10 @@ function registerTools(server: McpServer, owner: boolean) {
               deskSize: z.enum(DESK_SIZE_OPTIONS as [DeskSize, ...DeskSize[]]),
               qty: z.number().int().min(1),
             })).optional().describe("desk만: 사이즈별 책상 수. 합이 seats와 같아야 한다"),
-            bagShelfCount: z.number().int().min(0).optional().describe("desk만: 가방선반 브라켓 표시(주황/빨간 점·선)가 있는 책상 수. 없으면 0"),
+            bagShelfCount: z.number().int().min(0).nullable().optional().describe(
+              "desk만: 가방선반 브라켓 표시(주황/빨간 점·선)가 있는 책상 수. 표시를 그리는 도면인데 이 존엔 없으면 0. " +
+              "도면에 브라켓 표시가 아예 없거나 해상도 때문에 구분이 안 되면 null(웹에서 지금 값을 그대로 둔다)",
+            ),
           })).min(1),
           append: z.boolean().optional().describe("true면 이전 초안에 이어 붙인다(존이 많아 나눠 낼 때 두 번째부터)"),
           note: z.string().max(2000).nullable().optional().describe("애매했던 존·확인이 필요한 점(한국어)"),
@@ -284,7 +287,7 @@ function registerTools(server: McpServer, owner: boolean) {
 
           const clean: (DeskCountDraftRow | PcCountDraftRow)[] = rows.map((row) =>
             target === "desk"
-              ? { zoneName: row.zoneName, seats: row.seats, sizeBreakdown: row.sizeBreakdown ?? [], bagShelfCount: row.bagShelfCount ?? 0 }
+              ? { zoneName: row.zoneName, seats: row.seats, sizeBreakdown: row.sizeBreakdown ?? [], bagShelfCount: row.bagShelfCount ?? null }
               : { zoneName: row.zoneName, seats: row.seats },
           );
           let merged = clean;
@@ -298,7 +301,7 @@ function registerTools(server: McpServer, owner: boolean) {
             .map((m) => {
               if (!("sizeBreakdown" in m)) return `- ${m.zoneName}: ${m.seats}대`;
               const sizes = m.sizeBreakdown.map((b) => `${b.deskSize} ${b.qty}`).join(", ");
-              return `- ${m.zoneName}: ${m.seats}석 (${sizes}) · 브라켓 ${m.bagShelfCount}`;
+              return `- ${m.zoneName}: ${m.seats}석 (${sizes}) · 브라켓 ${m.bagShelfCount ?? "판단 못 함(지금 값 유지)"}`;
             })
             .join("\n");
           return text(
