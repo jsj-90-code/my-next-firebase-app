@@ -940,9 +940,15 @@ export function SeatLayoutWorkspace() {
     const startIdx = project.zones.length;
     const namesSoFar: ActiveZone[] = [...project.zones];
     const drafts: DeskZone[] = rows.map((r, i) => {
-      const matchedType = r.type ? ZONE_TYPES.find((t) => t.key === r.type) : undefined;
+      // 4인룸은 존 유형 목록에 없어 "기타" 유형에 이름 "4인룸A"로 넣는다(울산삼산 "4인룸"과 같은 방식).
+      const isFourRoom = r.type === "four_room";
+      const matchedType = r.type && !isFourRoom ? ZONE_TYPES.find((t) => t.key === r.type) : undefined;
       const typeKey: ZoneTypeKey = matchedType?.key ?? "etc";
-      const name = matchedType ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label) : `초안${startIdx + i + 1}`;
+      const name = isFourRoom
+        ? nextAvailableZoneName(namesSoFar, "etc", "4인룸")
+        : matchedType
+          ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label)
+          : `초안${startIdx + i + 1}`;
       const spec = resetDeskSpecDraft(typeKey, effectiveSpecFields, settings.typeDefaults);
       const zone: DeskZone = {
         x: r.x,
@@ -951,7 +957,7 @@ export function SeatLayoutWorkspace() {
         h: r.h,
         name,
         typeKey,
-        color: matchedType?.color ?? draftColors[(startIdx + i) % draftColors.length],
+        color: matchedType?.color ?? (isFourRoom ? ZONE_TYPES.find((t) => t.key === "etc")!.color : draftColors[(startIdx + i) % draftColors.length]),
         seats: r.seats,
         deskSize: "",
         sizeBreakdown: [],
