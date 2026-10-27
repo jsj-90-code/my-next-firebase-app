@@ -27,7 +27,7 @@ import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/li
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { deleteProject, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
+import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
   defaultSeatLayoutSettings,
   loadSeatLayoutSettings,
@@ -154,6 +154,25 @@ function statusToneClass(tone: "info" | "success" | "error") {
 
 export function SeatLayoutWorkspace() {
   const { user, logout } = useAuth();
+  // 이 사람이 좌석배치도 커넥터를 써 봤는가 — 처음이면 "작업 순서"의 연결 안내를 펼쳐 둔다(10-27 사용자).
+  // 연결하고 돌아오면 바로 접히게 창으로 돌아올 때(focus)마다 다시 읽는다. 한 번 true면 더 안 읽는다.
+  const [connectorUsed, setConnectorUsed] = useState<boolean | null>(null);
+  useEffect(() => {
+    const email = user?.email;
+    if (!email || connectorUsed) return;
+    let cancelled = false;
+    const check = () => {
+      void hasUsedSeatConnector(email).then((v) => {
+        if (!cancelled) setConnectorUsed(v);
+      });
+    };
+    check();
+    window.addEventListener("focus", check);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", check);
+    };
+  }, [user?.email, connectorUsed]);
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [project, setProject] = useState<SeatLayoutProject>(() => ({
@@ -2698,7 +2717,7 @@ export function SeatLayoutWorkspace() {
             )}
           </section>
 
-          <SeatLayoutSteps key={activeTab} steps={buildWorkSteps()} />
+          <SeatLayoutSteps key={activeTab} steps={buildWorkSteps()} connectorUsed={connectorUsed} />
 
           {activeTab !== "seatNumber" && (
             <section className="app-card rounded-2xl p-5">

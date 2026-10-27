@@ -253,6 +253,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 좌석배치도 커넥터 사용 기록(2026-10-27) — 서버(/api/mcp)만 쓰고, 웹은 자기 이메일 문서만 읽는다(처음이면 연결 안내 펼침).
+    match /seatLayoutConnectorUsers/{email} {
+      allow read: if isCompanyAccount() && request.auth.token.email.lower() == email;
+      allow write: if false;
+    }
+
     // 경쟁점 가동률 측정기(2026-10-06, /ping-monitor). 화면은 등록 정보 칸만 쓴다 —
     // 측정 기록(days·lastSample)은 1시간 알람 서버(admin SDK)만 쓴다. 지우기는 막는다(기록을 기한 없이 남기는 게 목적).
     function pingStoreKeysOnly(keys) {

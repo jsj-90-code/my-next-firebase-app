@@ -44,6 +44,19 @@ export const maxDuration = 300;
 const D = LOCATION_EVAL_FIELD_DESCRIPTIONS;
 const score = (key: keyof typeof D) => z.number().int().min(1).max(5).nullable().describe(D[key]);
 
+// 좌석배치도 커넥터를 한 번이라도 쓴 사람(문서 id = 소문자 이메일). 웹은 자기 문서만 읽는다(firestore.rules).
+// 기록 실패는 도구 동작과 무관하므로 삼킨다.
+const SEAT_CONNECTOR_USERS = "seatLayoutConnectorUsers";
+async function markConnectorUse(user: McpUser) {
+  if (!adminDb) return;
+  try {
+    await adminDb.collection(SEAT_CONNECTOR_USERS).doc(user.email.toLowerCase())
+      .set({ email: user.email, name: user.name ?? null, lastUsedAt: Date.now() }, { merge: true });
+  } catch {
+    // 무시
+  }
+}
+
 const userOf = (authInfo: { extra?: Record<string, unknown> } | undefined): McpUser | null =>
   (authInfo?.extra?.user as McpUser | undefined) ?? null;
 
@@ -181,6 +194,12 @@ function registerTools(server: McpServer, owner: boolean) {
     //    웹 [채팅 결과 불러오기]에서 사람이 확인·적용하고 [저장]해야 반영된다. 지시문은 recognizePrompt.ts(예전 웹 버튼 문장).
     //    10-27 울산삼산점으로 책상·PC·좌석번호를 저장값과 대조해 전부 맞아서 **전 직원(회사 계정)에게 열고** 웹 Gemini 버튼은 지웠다.
     const seatOnly = "좌석배치도 채팅 인식은 회사 계정(@isens.camp)으로 연결해야 쓸 수 있습니다.";
+    // 회사 계정이면 통과 + 커넥터를 쓴 사람으로 기록(웹 "작업 순서"가 처음 쓰는 사람에게만 연결 안내를 펼친다, 10-27).
+    const seatAllowed = (user: McpUser | null): boolean => {
+      if (!user || !isAllowedEmail(user.email)) return false;
+      void markConnectorUse(user);
+      return true;
+    };
     const projectNameField = z.string().min(1).describe("좌석배치도 프로젝트(매장) 이름 일부(예: 울산삼산점)");
     const targetField = z.enum(["desk", "pc"]).describe("desk = 책상 발주 도면(책상 수량·사이즈·가방선반 브라켓), pc = PC 발주 도면(PC 대수)");
     const CROP_BATCH = 20;
@@ -203,7 +222,7 @@ function registerTools(server: McpServer, owner: boolean) {
         }),
       },
       async ({ projectName, target, offset = 0 }, ctx) => {
-        if (!isAllowedEmail(userOf(ctx.http?.authInfo)?.email)) return text(seatOnly, true);
+        if (!seatAllowed(userOf(ctx.http?.authInfo))) return text(seatOnly, true);
         try {
           const r = await resolveSeatLayoutProject(projectName);
           if ("error" in r) return text(r.error);
@@ -268,7 +287,7 @@ function registerTools(server: McpServer, owner: boolean) {
       },
       async ({ projectName, target, rows, append, note, modelName }, ctx) => {
         const user = userOf(ctx.http?.authInfo);
-        if (!isAllowedEmail(user?.email)) return text(seatOnly, true);
+        if (!seatAllowed(user)) return text(seatOnly, true);
         try {
           const r = await resolveSeatLayoutProject(projectName);
           if ("error" in r) return text(r.error);
@@ -328,7 +347,7 @@ function registerTools(server: McpServer, owner: boolean) {
         inputSchema: z.object({ projectName: projectNameField }),
       },
       async ({ projectName }, ctx) => {
-        if (!isAllowedEmail(userOf(ctx.http?.authInfo)?.email)) return text(seatOnly, true);
+        if (!seatAllowed(userOf(ctx.http?.authInfo))) return text(seatOnly, true);
         try {
           const r = await resolveSeatLayoutProject(projectName);
           if ("error" in r) return text(r.error);
@@ -382,7 +401,7 @@ function registerTools(server: McpServer, owner: boolean) {
       },
       async ({ projectName, zones, note, modelName }, ctx) => {
         const user = userOf(ctx.http?.authInfo);
-        if (!isAllowedEmail(user?.email)) return text(seatOnly, true);
+        if (!seatAllowed(user)) return text(seatOnly, true);
         try {
           const r = await resolveSeatLayoutProject(projectName);
           if ("error" in r) return text(r.error);
@@ -419,7 +438,7 @@ function registerTools(server: McpServer, owner: boolean) {
         inputSchema: z.object({ projectName: projectNameField }),
       },
       async ({ projectName }, ctx) => {
-        if (!isAllowedEmail(userOf(ctx.http?.authInfo)?.email)) return text(seatOnly, true);
+        if (!seatAllowed(userOf(ctx.http?.authInfo))) return text(seatOnly, true);
         try {
           const r = await resolveSeatLayoutProject(projectName);
           if ("error" in r) return text(r.error);
@@ -474,7 +493,7 @@ function registerTools(server: McpServer, owner: boolean) {
       },
       async ({ projectName, rows, unsure, note, modelName }, ctx) => {
         const user = userOf(ctx.http?.authInfo);
-        if (!isAllowedEmail(user?.email)) return text(seatOnly, true);
+        if (!seatAllowed(user)) return text(seatOnly, true);
         try {
           const r = await resolveSeatLayoutProject(projectName);
           if ("error" in r) return text(r.error);

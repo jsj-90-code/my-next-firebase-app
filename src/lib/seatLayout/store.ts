@@ -115,6 +115,16 @@ export async function loadChatDraft(projectId: string): Promise<SeatLayoutChatDr
   return snap.exists() ? (snap.data() as SeatLayoutChatDraft) : null;
 }
 
+// 이 사람이 좌석배치도 커넥터를 한 번이라도 썼는가(서버 /api/mcp가 기록, 10-27). 읽기 실패는 "모름"(null).
+export async function hasUsedSeatConnector(email: string): Promise<boolean | null> {
+  try {
+    const snap = await getDoc(doc(requireDb(), "seatLayoutConnectorUsers", email.toLowerCase()));
+    return snap.exists();
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteProject(id: string): Promise<void> {
   const batch = writeBatch(requireDb());
   batch.delete(doc(requireDb(), PROJECTS_COLLECTION, id));

@@ -16,7 +16,9 @@ export type WorkStep = {
   action?: { label: string; onClick: () => void; disabled?: boolean; emphasize?: boolean };
 };
 
-export function SeatLayoutSteps({ steps }: { steps: WorkStep[] }) {
+export function SeatLayoutSteps({ steps, connectorUsed = null }: { steps: WorkStep[]; connectorUsed?: boolean | null }) {
+  // 커넥터를 한 번도 안 쓴 사람(서버 기록 없음)이면 연결 안내를 펼치고 강조한다. 모르면(null) 접어 둔다.
+  const firstTime = connectorUsed === false;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const currentIdx = steps.findIndex((s) => !s.done);
@@ -42,21 +44,30 @@ export function SeatLayoutSteps({ steps }: { steps: WorkStep[] }) {
       </div>
       {/* 10-27 밤 사용자: 커넥터 설치 안내가 없다. 조직 커넥터 "PC 점포평가"는 관리자가 이미 추가해 둠(09-29,
           docs/chat-location-eval-20260929.md) — 직원은 각자 처음 한 번 [연결]만 하면 된다. */}
-      <details className="mt-3 rounded-xl border border-[#171310]/[0.1] px-3 py-2 dark:border-white/[0.1]">
+      <details
+        open={firstTime}
+        className={`mt-3 rounded-xl border px-3 py-2 ${
+          firstTime
+            ? "border-[var(--sl-gold)]/60 bg-[var(--sl-gold)]/[0.08]"
+            : "border-[#171310]/[0.1] dark:border-white/[0.1]"
+        }`}
+      >
         <summary className="cursor-pointer text-xs font-semibold text-[var(--sl-gold-ink)]">
-          처음이면: Claude 커넥터 연결 (한 번만)
+          {firstTime ? "먼저 Claude 커넥터를 연결하세요 (한 번만)" : "처음이면: Claude 커넥터 연결 (한 번만)"}
         </summary>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
           <li>
-            PC 웹 claude.ai →{" "}
+            PC 웹{" "}
+            {/* 커넥터 페이지로 바로 가면 빈 화면이 뜬다(10-27 사용자) — 설정 첫 화면으로 열고 메뉴를 누르게 한다. */}
             <a
-              href="https://claude.ai/settings/connectors"
+              href="https://claude.ai/settings"
               target="_blank"
               rel="noopener noreferrer"
               className="font-medium text-[var(--sl-gold-ink)] underline"
             >
-              설정 → 커넥터 ↗
-            </a>
+              claude.ai 설정 열기 ↗
+            </a>{" "}
+            → 왼쪽 메뉴 [커넥터]
           </li>
           <li><strong>PC 점포평가</strong> 옆 [연결] → 회사 구글 계정으로 로그인 → [허용]</li>
           <li>도구 권한은 &quot;항상 허용&quot;으로 두면 매번 묻지 않습니다.</li>
