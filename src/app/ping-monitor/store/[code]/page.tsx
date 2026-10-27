@@ -18,6 +18,7 @@ import {
   listPingStoresByOwn,
 } from "@/lib/pingMonitor/clientStore";
 import { TransferOwnPanel } from "./TransferOwnPanel";
+import { OwnIpPanel } from "./OwnIpPanel";
 import {
   dateRangeLabel,
   denominator,
@@ -94,6 +95,8 @@ export default function PingOwnComparePage() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   /** 표에서 마우스를 올린 매장 — 그래프에서 그 선만 진하게(2026-10-26). 우리 매장은 "own". */
   const [rowHover, setRowHover] = useState<string | null>(null);
+  /** 우리 매장 IP를 등록하면 올려서 목록을 다시 읽는다(2026-10-28). */
+  const [reloadKey, setReloadKey] = useState(0);
   const [hourlyLoaded, setHourlyLoaded] = useState<{
     key: string;
     byId: Record<string, PingDaily[]>;
@@ -112,7 +115,7 @@ export default function PingOwnComparePage() {
     return () => {
       cancelled = true;
     };
-  }, [user, ownCode]);
+  }, [user, ownCode, reloadKey]);
 
   const today = kstDaysAgo(0);
   const r7 = thisWeek();
@@ -272,6 +275,7 @@ export default function PingOwnComparePage() {
 
       {/* 직접 입력 후보지는 점포평가 신규후보지 등록 화면의 "측정기에서 불러오기"로 옮긴다 — 여기 전환은 직접 입력 기존점용. */}
       {isCustomOwnCode(ownCode) && !isCandidate && <TransferOwnPanel fromCode={ownCode} fromName={name} preferCandidate={false} />}
+      {stores && !own && !isCandidate && !isCustomOwnCode(ownCode) && <OwnIpPanel ownCode={ownCode} onSaved={() => setReloadKey((k) => k + 1)} />}
 
       {/* 2026-10-16 점포팀 요청 — 우리 매장 기준 반경 1km 주변 지도. */}
       <PingMapSection ownCode={ownCode} ownName={name} getToken={async () => { if (!user) throw new Error("로그인이 필요합니다."); return user.getIdToken(); }} />

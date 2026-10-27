@@ -59,7 +59,7 @@ type Group = { key: string; name: string; own: PingStore | null; stores: PingSto
  * 우리 가맹점 줄 — 펼친 표 맨 위(2026-10-07 사용자 "기존가맹점도 목록에 같이"). 핑으로 잰 우리 매장 값을 경쟁점과 같은 칸에.
  * 우리 매장 IP가 없는 곳(2026-10-07 단톡 보강 뒤 41곳 중 양주덕정 1곳)은 줄만 두고 "IP 없음".
  */
-function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
+function OwnRow({ code, name, ping }: { code: string; name: string; ping: PingStore | null }) {
   const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar } = useRanges();
   const status = ping ? storeStatus(ping) : null;
   return (
@@ -88,7 +88,11 @@ function OwnRow({ name, ping }: { name: string; ping: PingStore | null }) {
         </>
       ) : (
         <td colSpan={7} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
-          우리 매장 IP 없음 — 측정 안 함
+          우리 매장 IP 없음 — 측정 안 함 ·{" "}
+          {/* 2026-10-28 — 비교 화면의 "우리 매장 IP 등록"으로 보낸다. */}
+          <Link href={`/ping-monitor/store/${encodeURIComponent(code)}`} className="underline">
+            등록
+          </Link>
         </td>
       )}
       <td className="px-3 py-2">{status && <span className={`app-badge ${TONE[status.tone]}`} title={status.hint}>{status.label}</span>}</td>
@@ -299,7 +303,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
         <div className="border-t border-[var(--sl-hairline)]">
           <CompetitorTable
             stores={[...group.stores].sort(byMeasuredThenDistance)}
-            ownRow={isCandidateCode(group.key) || group.key === UNLINKED ? undefined : <OwnRow name={group.name} ping={group.own} />}
+            ownRow={isCandidateCode(group.key) || group.key === UNLINKED ? undefined : <OwnRow code={group.key} name={group.name} ping={group.own} />}
           />
         </div>
       )}
