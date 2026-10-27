@@ -101,7 +101,8 @@ export async function runGeminiZoneSuggestion(dataUrl: string): Promise<ZoneSugg
   if (!client) throw new Error("GEMINI_API_KEY가 설정되지 않았습니다.");
   // 웹 버튼은 브라우저에서 긴 변 1800px로 줄인 PNG 5장을 보낸다 — 같은 크기로 맞춘다.
   const images = await buildFloorPlanImages(dataUrl, 1800);
-  const response = await client.models.generateContent({
+  // 무료 키라 구글 쪽 과부하(503)·한도(429)가 잦다 — 10-27 첫 비교가 503으로 비었다. 몇 번 쉬었다 다시 부른다.
+  const call = () => client.models.generateContent({
     model: getSuggestZonesGeminiModel(),
     contents: [{
       role: "user",
@@ -115,7 +116,15 @@ export async function runGeminiZoneSuggestion(dataUrl: string): Promise<ZoneSugg
     }],
     config: { maxOutputTokens: 16000, thinkingConfig: { thinkingBudget: -1 } },
   });
-  return parseZoneSuggestions(response.text ?? "");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return parseZoneSuggestions((await call()).text ?? "");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt >= 3 || !/503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded/i.test(msg)) throw err;
+      await new Promise((r) => setTimeout(r, [5000, 15000, 30000][attempt]));
+    }
+  }
 }
 
 type Rect = { x: number; y: number; w: number; h: number };
