@@ -973,7 +973,7 @@ export function SeatLayoutWorkspace() {
                 emphasize: hasNewChatDraft("desk") } },
         // 10-27 밤 사용자: 좌석번호 탭처럼 마지막에 등록 버튼 — 책상은 인테/가맹 통합발주서.
         { key: "order", title: "인테/가맹 통합발주서 등록", done: !!deskOrderSheetUrl,
-          hint: "수량을 다 채우고 저장했으면 발주서 시트에 올립니다. 위쪽 바의 같은 버튼과 같습니다.",
+          hint: "수량을 다 채우고 저장했으면 발주서 시트에 올립니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
           action: { label: "인테/가맹 통합발주서 등록", onClick: () => void handlePublishDeskOrder(), disabled: busy, emphasize: true } },
       ];
     }
@@ -1006,7 +1006,7 @@ export function SeatLayoutWorkspace() {
                 emphasize: hasNewChatDraft("pc") } },
         // 10-27 밤 사용자: PC 탭 마지막은 책상·의자·PC 범례 데이터 등록(프레젠테이션).
         { key: "slides", title: "책상의자PC범례 데이터 등록", done: !!presentationUrl,
-          hint: "대수·사양을 다 맞추고 저장했으면 프레젠테이션에 올립니다. 위쪽 바의 같은 버튼과 같습니다.",
+          hint: "대수·사양을 다 맞추고 저장했으면 프레젠테이션에 올립니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
           action: { label: "책상의자PC범례 데이터 등록", onClick: () => void handlePublishToSlides(), disabled: busy, emphasize: true } },
       ];
     }
