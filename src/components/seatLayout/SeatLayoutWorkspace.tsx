@@ -2377,7 +2377,7 @@ export function SeatLayoutWorkspace() {
           <p className="text-sm font-semibold text-[var(--sl-warn)]">책상 구역 불러오기</p>
           <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">
             책상 발주 도면에서 지정한 구역을 그대로 가져와서 PC 존으로 씁니다. 이름/색상/좌표/대수는 그대로 복사되고,
-            PC 사양은 기본사양으로 시작합니다.
+            PC 사양은 각 존 유형의 기본사양으로 시작합니다.
           </p>
           <button
             type="button"
@@ -2959,7 +2959,7 @@ export function SeatLayoutWorkspace() {
                 <div className="space-y-2.5 text-sm text-[#5c5346] dark:text-[#c9bfae]">
                   <details className="rounded-lg border border-[var(--sl-warn)]/30 bg-[var(--sl-warn-soft)] px-3 py-2">
                     <summary className="cursor-pointer text-sm font-medium text-[var(--sl-warn)]">
-                      그릴 때 꼭 지킬 것 {DRAW_RULES.length}가지 (인식 정확도에 영향)
+                      그릴 때 꼭 지킬 것 {DRAW_RULES.length}가지 (채팅 인식 정확도에 영향)
                     </summary>
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[var(--sl-warn)]">
                       {DRAW_RULES.map((rule) => <li key={rule}>{rule}</li>)}
@@ -2967,8 +2967,9 @@ export function SeatLayoutWorkspace() {
                   </details>
                   <ul className="space-y-2.5">
                     <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
-                    <li>노란 느낌표(!)는 책상 수량/사이즈 인식 전이라는 뜻입니다. 조정 후 Enter를 누르면 재인식됩니다.</li>
+                    <li>구역을 옮기거나 크기를 바꾸면 노란 느낌표(!)가 붙습니다 — 수량을 다시 확인하라는 뜻입니다. Enter로 수정 창을 열어 고치거나, [프로젝트 저장] 후 채팅으로 다시 인식하세요.</li>
                     <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>
+                    <li>존을 다 그리면 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 책상 인식해 줘&quot; → 존 목록 위 [채팅 결과 불러오기]로 수량을 한 번에 채웁니다.</li>
                   </ul>
                 </div>
               )}
@@ -2981,9 +2982,11 @@ export function SeatLayoutWorkspace() {
   );
 }
 
-/** 구역을 그릴 때 지켜야 할 규칙. 그리는 중과 대기 상태 양쪽에서 같은 문장을 쓴다(2026-09-14). */
+/** 구역을 그릴 때 지켜야 할 규칙. 그리는 중과 대기 상태 양쪽에서 같은 문장을 쓴다(2026-09-14).
+ *  2026-10-27 채팅 인식은 저장된 존 상자를 그대로 잘라 세므로, 상자 안에 그 존 책상이 다 들어가는 게 핵심이다.
+ *  "파티션이 겹치지 않게"는 뺐다(사용자: 이제 겹쳐도 되는 것 같다 — 옛 웹 AI가 파티션을 책상으로 헷갈리던 때 규칙). */
 const DRAW_RULES = [
-  "존 구역 설정 시 파티션이 겹치지 않게 구역을 지정합니다.",
+  "구역 상자 안에 그 존의 책상(치수 글씨 포함)이 빠짐없이 들어가게 지정합니다. 옆 존이 조금 겹치는 건 괜찮습니다.",
   "책가방선반 설치 좌석은 구역 설정 시 브라켓 표시가 한 면이라도 겹치도록 지정합니다.",
 ] as const;
 
