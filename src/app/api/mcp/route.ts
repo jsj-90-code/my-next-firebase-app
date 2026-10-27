@@ -17,6 +17,7 @@ import { verifyAccessToken, type McpUser } from "@/lib/server/mcpOAuth";
 import {
   findCandidates, isMcpOwner, loadCandidateLocationContext, saveCandidateLocationDraft,
 } from "@/lib/server/mcpCandidateLocation";
+import { buildFloorPlanImages, findSeatLayoutProjects, loadSeatLayoutProject, zoneListText } from "@/lib/server/mcpSeatLayout";
 import { loadQuickEvalTraining } from "@/lib/server/quickEvalTraining";
 import {
   INFLOW_LEVELS, LOCATION_EVAL_FIELD_DESCRIPTIONS, SPECIAL_DEMAND_INTENSITIES, SPECIAL_DEMAND_TYPES,
@@ -252,6 +253,47 @@ function registerTools(server: McpServer, owner: boolean) {
             `${code} 입지평가 초안을 저장했습니다. 웹 신규후보지 > ${code} > 입지평가 탭에서 [채팅 초안 불러오기]를 누르면 ` +
               "승인 화면에 뜹니다. 확인·수정 후 적용하고 [저장]을 눌러야 반영됩니다(자동 저장 아님). 사용자에게 이 안내와 점수표를 보여줄 것.",
           );
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
+
+    // ── 좌석배치도 도면 받기 (2026-10-27 1단계 시험) — 커넥터가 돌려준 이미지를 채팅 AI가 실제로 보는지 확인용.
+    //    시험 중이라 담당자 전용. 통과하면 존 초안·좌석번호 초안 도구와 함께 전 직원에게 연다(mcpSeatLayout.ts).
+    server.registerTool(
+      "get_seat_layout_floorplan",
+      {
+        title: "좌석배치도 도면 받기(시험·담당자 전용)",
+        description:
+          "좌석배치도 작업 툴에 저장된 프로젝트(매장) 이름으로 책상 배치 도면 이미지를 돌려준다 — 전체 1장 + 좌상·우상·좌하·우하 확대 4장" +
+          "(경계가 10% 겹치게 잘림)과 저장된 존 목록. 담당자 전용 시험 도구.",
+        inputSchema: z.object({ projectName: z.string().min(1).describe("좌석배치도 프로젝트 이름 일부(예: 평택소사벌)") }),
+      },
+      async ({ projectName }, ctx) => {
+        const user = userOf(ctx.http?.authInfo);
+        if (!isMcpOwner(user)) return text(ownerOnly, true);
+        try {
+          const found = await findSeatLayoutProjects(projectName);
+          if (!found.length) return text(`'${projectName}'와 맞는 좌석배치도 프로젝트가 없습니다.`);
+          if (found.length > 1) {
+            return text(`여러 개가 맞습니다. 이름을 더 정확히 주세요:\n${found.slice(0, 20).map((p) => `- ${p.name}`).join("\n")}`);
+          }
+          const project = await loadSeatLayoutProject(found[0].id);
+          if (!project?.floorPlanDataUrl) return text(`'${found[0].name}'에 도면 이미지가 없습니다.`, true);
+          const images = await buildFloorPlanImages(project.floorPlanDataUrl);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  `프로젝트: ${project.name}\n도면 원본 크기: ${project.imageWidth}×${project.imageHeight}px\n` +
+                  `이미지 ${images.length}장: ${images.map((im, i) => `${i + 1}) ${im.label}`).join(", ")}\n\n` +
+                  `저장된 존(위치는 전체 도면 기준 0~1 비율):\n${zoneListText(project.zones ?? [])}`,
+              },
+              ...images.map((im) => ({ type: "image" as const, data: im.data, mimeType: im.mimeType })),
+            ],
+          };
         } catch (err) {
           return text(err instanceof Error ? err.message : String(err), true);
         }
