@@ -963,13 +963,20 @@ export function SeatLayoutWorkspace() {
     }
     if (activeTab === "pc") {
       const pcZones = project.pcZones;
+      // 10-27 밤 사용자: 존을 나누고 저장만 했는데 "PC 대수 세기"가 ✓가 됐다. → 책상 존 그대로(이름·석수 같음)면
+      // 셀 필요가 없어 완료, 나눈 존이 있으면 PC 채팅 결과를 받아 넣고 저장해야 완료(결과 시각 ≤ 마지막 저장).
+      const split = pcZones.length !== project.zones.length ||
+        pcZones.some((p) => !project.zones.some((d) => d.name === p.name && d.seats === p.seats));
+      const pcDraftAt = latestChatDraft?.projectId === project.id ? latestChatDraft.draft?.pc?.createdAt : undefined;
+      const pcCounted = !split || (!!pcDraftAt && pcDraftAt <= (project.updatedAt ?? 0));
       return [
         { key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
           hint: "책상 발주 도면의 존을 그대로 가져옵니다. 사양이 다른 자리는 존을 나눠 주세요.",
           action: { label: "책상 구역 불러오기", onClick: importDeskZonesToPc } },
         { key: "save", title: "사양 맞추고 저장", done: (last?.pcZones.length ?? 0) > 0, action: saveAction },
-        { key: "pc", title: "PC 대수 세기 (나눈 존이 있을 때)", done: pcZones.length > 0 && saved && !hasNewChatDraft("pc"),
-          hint: "존을 나눴으면 대수를 다시 셉니다. 불러와 적용한 뒤 저장하세요.",
+        { key: "pc", title: split ? "PC 대수 세기 (나눈 존이 있음)" : "PC 대수 세기 (나눈 존 없음 — 건너뜀)",
+          done: pcZones.length > 0 && saved && pcCounted,
+          hint: "존을 나눴으면 대수를 다시 셉니다. 채팅 답은 30초쯤 걸립니다. 불러와 적용한 뒤 저장하세요.",
           prompt: `${name} PC 대수 세어 줘`,
           action: hasUnsavedChanges ? saveAction
             : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("pc"), disabled: chatDraftLoading || pcZones.length === 0,
