@@ -22,6 +22,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { SEAT_LAYOUT_CHAT_DRAFTS, type SeatLayoutChatDraft } from "./chatDraft";
 import type { ProjectSummary, SeatLayoutProject } from "./types";
 
 const PROJECTS_COLLECTION = "seatLayoutProjects";
@@ -106,6 +107,12 @@ export async function saveProject(
   batch.set(indexRef(), { projects: { [id]: entry } }, { merge: true });
   await batch.commit();
   return toSave;
+}
+
+/** 채팅(개인 Claude 커넥터)이 남긴 인식 초안 — 읽기만 한다(쓰기는 서버만, chatDraft.ts). */
+export async function loadChatDraft(projectId: string): Promise<SeatLayoutChatDraft | null> {
+  const snap = await getDoc(doc(requireDb(), SEAT_LAYOUT_CHAT_DRAFTS, projectId));
+  return snap.exists() ? (snap.data() as SeatLayoutChatDraft) : null;
 }
 
 export async function deleteProject(id: string): Promise<void> {

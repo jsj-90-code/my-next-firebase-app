@@ -28,7 +28,7 @@ import { buildQuadrantTiles } from "@/lib/seatLayout/imageTiles";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { deleteProject, listProjects, loadProject, saveProject } from "@/lib/seatLayout/store";
+import { deleteProject, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
   defaultSeatLayoutSettings,
   loadSeatLayoutSettings,
@@ -36,6 +36,8 @@ import {
   type SeatLayoutSettings,
 } from "@/lib/seatLayout/settings";
 import { SettingsPanel } from "@/components/seatLayout/SettingsPanel";
+import { applyChatDraft, ChatDraftImportModal, type ChatDraftKind } from "@/components/seatLayout/ChatDraftImportModal";
+import type { SeatLayoutChatDraft } from "@/lib/seatLayout/chatDraft";
 import {
   emptyProject,
   type DeskSize,
@@ -286,6 +288,8 @@ export function SeatLayoutWorkspace() {
   // 존별 좌석번호를 직접 입력하는 것이라, "좌석번호표 발주" 탭에서는 항상 이 비교 화면을 보여준다
   // (별도 탭으로 분리했으니, 탭 전환 자체가 켜고 끄는 역할을 한다).
   const [seatNumberImageModalOpen, setSeatNumberImageModalOpen] = useState(false);
+  const [chatDraftModal, setChatDraftModal] = useState<{ kind: ChatDraftKind; draft: SeatLayoutChatDraft } | null>(null);
+  const [chatDraftLoading, setChatDraftLoading] = useState(false);
   // AI가 채워 넣은(=사람이 아직 확인/수정하지 않은) 존 이름 집합. 다음에 다시 "AI로 자동
   // 채워보기"를 눌렀을 때, 사람이 직접 고친 값은 보호하되 AI가 예전에 잘못 채운 값은 다시
   // 고칠 수 있게 구분하는 용도다. (state로 두면 렌더마다 갱신 타이밍을 신경 써야 해서 ref로 둔다.)
@@ -1031,6 +1035,38 @@ export function SeatLayoutWorkspace() {
   // 재사용한다.
   // PC 발주 도면에서 사양 차이로 존을 더 쪼갠 경우(예: "FPS존A"/"FPS존B")까지 AI가 한 번에 구분해
   // 채울 수 있도록, PC 존이 있으면 PC 존 기준으로, 아직 PC 탭을 안 채웠으면 책상 존 기준으로 인식한다.
+  // ---------------- 채팅 결과 불러오기 (2026-10-27) ----------------
+  // 직원 개인 Claude(커넥터)가 저장된 프로젝트의 도면을 보고 낸 초안(seatLayoutChatDrafts)을 확인 화면에 띄운다.
+  // 채팅은 **저장된** 프로젝트를 읽으므로, 존을 그린 뒤 [저장]부터 해야 채팅에서 인식할 수 있다.
+  async function openChatDraft(kind: ChatDraftKind) {
+    if (!project.id || !project.updatedAt) {
+      setStatusMsg("먼저 [저장]하세요 — 채팅은 저장된 도면과 존을 보고 인식합니다.", "error");
+      return;
+    }
+    setChatDraftLoading(true);
+    try {
+      const draft = await loadChatDraft(project.id);
+      if (!draft?.[kind]) {
+        const ask = kind === "seatNumbers" ? "좌석번호 매칭해 줘" : kind === "desk" ? "책상 인식해 줘" : "PC 대수 세어 줘";
+        setStatusMsg(`아직 채팅 결과가 없습니다 — Claude 채팅에서 "${project.name} ${ask}"라고 한 뒤 다시 누르세요.`, "error");
+        return;
+      }
+      setChatDraftModal({ kind, draft });
+    } catch (err) {
+      setStatusMsg(`채팅 결과를 불러오지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
+    } finally {
+      setChatDraftLoading(false);
+    }
+  }
+
+  function applyChatDraftPicked(picked: Set<string>) {
+    if (!chatDraftModal) return;
+    const { kind, draft } = chatDraftModal;
+    setProject((p) => applyChatDraft(kind, p, draft, picked));
+    setChatDraftModal(null);
+    setStatusMsg(`채팅 결과를 ${picked.size}개 존에 넣었습니다 — 도면과 비교해 확인한 뒤 [저장]을 누르세요.`, "success");
+  }
+
   function getSeatNumberRecognitionZones(): (DeskZone | PcZone)[] {
     return project.pcZones.length ? project.pcZones : project.zones;
   }
@@ -2467,6 +2503,16 @@ export function SeatLayoutWorkspace() {
 
       {/* 피난안내도를 원본 해상도 그대로 크게 보고 싶을 때 (작은 번호 글씨 확인용). 스크롤해서
           이동하면서 볼 수 있게 이미지를 축소하지 않고 그대로 띄운다. */}
+      {chatDraftModal && (
+        <ChatDraftImportModal
+          kind={chatDraftModal.kind}
+          project={project}
+          draft={chatDraftModal.draft}
+          onApply={applyChatDraftPicked}
+          onClose={() => setChatDraftModal(null)}
+        />
+      )}
+
       {seatNumberImageModalOpen && seatNumberPlateSrc && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4"
@@ -2740,6 +2786,16 @@ export function SeatLayoutWorkspace() {
             <section className="app-card rounded-2xl p-5">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-semibold text-[#171310] dark:text-[#f2ede2]">존 목록</h2>
+                {activeZones.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={chatDraftLoading}
+                    onClick={() => openChatDraft(activeTab === "pc" ? "pc" : "desk")}
+                    className="app-btn-outline rounded-full px-3 py-1 text-xs disabled:opacity-50"
+                  >
+                    {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
+                  </button>
+                )}
                 {activeTab === "desk" && floorPlanSrc && (
                   <button
                     type="button"
@@ -2899,6 +2955,14 @@ export function SeatLayoutWorkspace() {
                       className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
                     >
                       AI로 자동 채워보기
+                    </button>
+                    <button
+                      type="button"
+                      disabled={seatNumberRecognizing || chatDraftLoading}
+                      onClick={() => openChatDraft("seatNumbers")}
+                      className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
+                    >
+                      {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
                     </button>
                   </div>
                 </div>

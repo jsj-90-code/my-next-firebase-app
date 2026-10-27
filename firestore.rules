@@ -247,6 +247,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 좌석배치도 채팅 인식 초안(2026-10-27) — 채팅 커넥터(서버)만 쓰고, 웹은 [채팅 결과 불러오기]로 읽기만.
+    match /seatLayoutChatDrafts/{projectId} {
+      allow read: if isCompanyAccount();
+      allow write: if false;
+    }
+
     // 경쟁점 가동률 측정기(2026-10-06, /ping-monitor). 화면은 등록 정보 칸만 쓴다 —
     // 측정 기록(days·lastSample)은 1시간 알람 서버(admin SDK)만 쓴다. 지우기는 막는다(기록을 기한 없이 남기는 게 목적).
     function pingStoreKeysOnly(keys) {
