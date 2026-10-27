@@ -14,6 +14,8 @@ export type WorkStep = {
   /** Claude 채팅에 칠 문장 — 복사 버튼과 같이 보인다 */
   prompt?: string;
   action?: { label: string; onClick: () => void; disabled?: boolean; emphasize?: boolean };
+  /** 버튼 아래 "또는 …" — 채팅 대신 손으로 하는 길(10-27 사용자: 몇 개만 고칠 땐 직접 입력이 편하다) */
+  alt?: string;
 };
 
 export function SeatLayoutSteps({ steps, connectorUsed = null }: { steps: WorkStep[]; connectorUsed?: boolean | null }) {
@@ -116,7 +118,7 @@ export function SeatLayoutSteps({ steps, connectorUsed = null }: { steps: WorkSt
                   {s.title}
                 </span>
               </button>
-              {expanded && (s.hint || s.prompt || s.action) && (
+              {expanded && (s.hint || s.prompt || s.action || s.alt) && (
                 <div className="mt-2 space-y-2 pl-7">
                   {s.hint && <p className="text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">{s.hint}</p>}
                   {s.prompt && (
@@ -145,6 +147,12 @@ export function SeatLayoutSteps({ steps, connectorUsed = null }: { steps: WorkSt
                     >
                       {s.action.label}
                     </button>
+                  )}
+                  {s.alt && (
+                    <p className="text-xs leading-5 text-[var(--sl-ink-soft)]">
+                      <span className="font-semibold text-[#5c5346] dark:text-[#c9bfae]">또는 직접 수정: </span>
+                      {s.alt}
+                    </p>
                   )}
                 </div>
               )}

@@ -967,6 +967,7 @@ export function SeatLayoutWorkspace() {
         { key: "desk", title: "책상 수량 채우기 (Claude 채팅)", done: counted && saved,
           hint: "채팅 답이 오기까지 30초쯤 걸립니다. 결과를 불러와 확인·적용한 뒤 [프로젝트 저장]을 눌러야 반영됩니다. 구역을 옮기면 노란 느낌표(!)가 붙으니 다시 인식하세요.",
           prompt: `${name} 책상 인식해 줘`,
+          alt: "몇 개만 고칠 땐 존 목록의 [수정](또는 구역 클릭 → Enter)으로 수량·사이즈·브라켓을 넣고 [프로젝트 저장]하면 됩니다.",
           action: hasUnsavedChanges ? saveAction
             : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("desk"), disabled: chatDraftLoading || zones.length === 0,
                 emphasize: hasNewChatDraft("desk") } },
@@ -978,14 +979,11 @@ export function SeatLayoutWorkspace() {
       // 셀 필요가 없어 완료, 나눈 존이 있으면 PC 채팅 결과를 받아 넣고 저장해야 완료(결과 시각 ≤ 마지막 저장).
       const split = pcZones.length !== project.zones.length ||
         pcZones.some((p) => !project.zones.some((d) => d.name === p.name && d.seats === p.seats));
-      // 10-27 밤 호구점: 나누기 전에 받은 PC 결과(22:54) 뒤에 FPS존을 A·B로 나눠 저장(22:58)했더니 옛 결과로 완료 처리됐다
-      // → 결과가 지금 PC 존 이름을 전부 담고 있고, 0대인 존이 없어야 완료.
-      const pcDraft = latestChatDraft?.projectId === project.id ? latestChatDraft.draft?.pc : undefined;
-      const pcDraftNames = new Set(pcDraft?.rows.map((r) => r.zoneName) ?? []);
-      const pcCounted = !split || (
-        !!pcDraft && pcDraft.createdAt <= (project.updatedAt ?? 0) &&
-        pcZones.every((z) => pcDraftNames.has(z.name) && z.seats > 0)
-      );
+      // 10-27 밤 호구점: 나누기 전에 받은 PC 결과 뒤에 FPS존을 A·B로 나눠 저장했더니 옛 결과로 완료 처리됐다.
+      // 나눈 존은 0대로 시작하므로 "0대 존이 없음"으로 판단한다 — 채팅으로 넣든 존 목록 [수정]으로 직접 넣든 같다.
+      const pcCounted = !split || pcZones.every((z) => z.seats > 0);
+      const pcTotal = pcZones.reduce((s, z) => s + z.seats, 0);
+      const deskTotal = project.zones.reduce((s, z) => s + z.seats, 0);
       return [
         { key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
           hint: "책상 발주 도면의 존을 그대로 가져옵니다. 사양이 다른 자리는 존을 나눠 주세요.",
@@ -996,7 +994,8 @@ export function SeatLayoutWorkspace() {
           action: saveAction },
         { key: "pc", title: split ? "PC 대수 세기 (나눈 존이 있음)" : "PC 대수 세기 (나눈 존 없음 — 건너뜀)",
           done: pcZones.length > 0 && saved && pcCounted,
-          hint: "존을 나눴으면 대수를 다시 셉니다. 채팅 답은 30초쯤 걸립니다. 불러와 적용한 뒤 저장하세요.",
+          hint: `존을 나눴으면 대수를 다시 셉니다(지금 PC 합계 ${pcTotal}대 · 책상 ${deskTotal}석). 채팅 답은 30초쯤 걸립니다. 불러와 적용한 뒤 저장하세요.`,
+          alt: "몇 개만 나눴으면 존 목록의 [수정](또는 구역 클릭 → Enter)으로 대수를 넣고 [프로젝트 저장]하면 됩니다.",
           prompt: `${name} PC 대수 세어 줘`,
           action: hasUnsavedChanges ? saveAction
             : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("pc"), disabled: chatDraftLoading || pcZones.length === 0,
@@ -1012,6 +1011,7 @@ export function SeatLayoutWorkspace() {
       { key: "match", title: "좌석번호 매칭 (Claude 채팅)", done: filled && saved,
         hint: "불러와 확인·적용하고, 틀린 번호는 아래 표에서 고친 뒤 저장하세요.",
         prompt: `${name} 좌석번호 매칭해 줘`,
+        alt: "아래 존별 좌석번호 칸에 \"1~10, 25~30\"처럼 직접 적고 [프로젝트 저장]하면 됩니다.",
         action: hasUnsavedChanges ? saveAction
           : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("seatNumbers"), disabled: chatDraftLoading,
               emphasize: hasNewChatDraft("seatNumbers") } },
