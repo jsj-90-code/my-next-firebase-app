@@ -27,19 +27,29 @@ export function baseZoneName(name: string): string {
   return name.replace(/[A-Za-z]$/, "");
 }
 
-// 합쳐진 카드의 이름표. 이름이 전부 같으면 그대로, "기본이름+알파벳"이 섞여 있으면
-// "FPS존A,B"처럼 접미사만 이어붙인다.
+// 합쳐진 카드의 이름표. 2026-10-27 사용자: "FPS존A,B" 대신 둘 다 "FPS존A"로 보이는 게 보기 편하다 —
+// 같은 계열에서 가장 앞 알파벳 하나만 쓴다. 도면 위 존 상자 이름표도 같은 이름으로 그린다
+// (zoneDisplayAliases). 저장된 존 이름은 그대로라 좌석번호·채팅 인식은 A/B를 그대로 구분한다.
 export function mergeZoneDisplayNames(names: string[]): string {
-  if (names.length <= 1) return names[0] ?? "";
-  const unique = Array.from(new Set(names));
-  if (unique.length === 1) return unique[0];
-  const base = baseZoneName(names[0]);
-  const suffixes = names.map((n) => (n.startsWith(base) ? n.slice(base.length) : n)).filter(Boolean);
-  return suffixes.length ? `${base}${suffixes.join(",")}` : base;
+  const unique = Array.from(new Set(names)).sort();
+  return unique[0] ?? "";
+}
+
+/** 카드로 합친 묶음마다 "실제 존 이름 → 발주 도면에 보일 이름". 안 합쳐진 존은 넣지 않는다(원래 이름 그대로). */
+export function zoneDisplayAliases(groups: { names: string[] }[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const g of groups) {
+    if (new Set(g.names).size < 2) continue;
+    const label = mergeZoneDisplayNames(g.names);
+    for (const n of g.names) aliases.set(n, label);
+  }
+  return aliases;
 }
 
 export type DeskCardGroup = {
   name: string;
+  // 이 카드로 합쳐진 실제 존 이름들(도면 위 이름표를 카드 이름과 맞추는 데 쓴다).
+  names: string[];
   seats: number;
   color: string;
   desk: string;
@@ -110,6 +120,7 @@ export function groupDeskZonesForCard(zones: DeskZone[]): DeskCardGroup[] {
       .join(", ");
     return {
       name: mergeZoneDisplayNames(g.names),
+      names: g.names,
       seats: g.seats,
       color: g.color,
       desk: g.desk,

@@ -19,6 +19,7 @@ import {
   getContrastText,
   groupDeskZonesForCard,
   mergeZoneDisplayNames,
+  zoneDisplayAliases,
   normalizeFieldValue,
   resolveAdapterValue,
   splitMouseValue,
@@ -207,7 +208,10 @@ export function drawZoneOverlaysOnCard(
   c: CanvasRenderingContext2D,
   zones: (DeskZone | PcZone)[],
   geo: FloorPlanGeo,
+  // 카드로 합친 존은 상자 이름표도 카드와 같은 이름("FPS존A")으로 — zoneDisplayAliases(calc.ts).
+  aliases: Map<string, string> = new Map(),
 ) {
+  const labelOf = (z: DeskZone | PcZone) => aliases.get(z.name) ?? z.name;
   const rects = zones.map((z) => {
     const zx = geo.imgX + z.x * geo.areaW;
     const zy = geo.imgY + z.y * geo.areaH;
@@ -225,7 +229,7 @@ export function drawZoneOverlaysOnCard(
   c.font = "bold 16px sans-serif";
   const tagH = 22;
   const naiveTags = rects.map(({ zx, zy, z }) => {
-    const textW = c.measureText(z.name).width;
+    const textW = c.measureText(labelOf(z)).width;
     return { x: zx, y: Math.max(0, zy - tagH - 4), w: textW + 14, h: tagH };
   });
   const tags = resolveTagOverlaps(naiveTags);
@@ -236,7 +240,7 @@ export function drawZoneOverlaysOnCard(
     c.fillRect(tag.x, tag.y, tag.w, tag.h);
     c.fillStyle = getContrastText(z.color);
     c.font = "bold 16px sans-serif";
-    c.fillText(z.name, tag.x + 7, tag.y + 15.5);
+    c.fillText(labelOf(z), tag.x + 7, tag.y + 15.5);
   });
 }
 
@@ -372,7 +376,7 @@ export function renderDeskFloorplanImage(
 
   const geometry = computeLegendGeometry(cardGroups.length);
   const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
-  drawZoneOverlaysOnCard(c, zones, geo);
+  drawZoneOverlaysOnCard(c, zones, geo, zoneDisplayAliases(cardGroups));
 
   const panelAreaX = 20;
   const panelAreaY = 20;
@@ -486,6 +490,9 @@ export function renderPcFloorplanImage(
     { names: string[]; seats: number; color: string; lines: { label: string; value: string }[] }
   >();
   const overrideCardOrder: string[] = [];
+  // 기본사양 그대로인 존(카드 없이 "(멀티존)" 기본사양표에 들어가는 존)도 같은 계열이면 구성이 같으므로
+  // 도면 이름표를 하나로 맞춘다(2026-10-27 사용자).
+  const defaultSpecNamesByBase = new Map<string, string[]>();
   pcZones.forEach((z) => {
     const ov = z.pcOverrides || {};
     // 옛날 문구 그대로 저장된 override는 정식 이름으로 바꿔서 보여주고, 정규화 후 값이 기본값과
@@ -513,7 +520,11 @@ export function renderPcFloorplanImage(
       }
     }
 
-    if (!lines.length) return;
+    if (!lines.length) {
+      const base = baseZoneName(z.name);
+      defaultSpecNamesByBase.set(base, [...(defaultSpecNamesByBase.get(base) ?? []), z.name]);
+      return;
+    }
     const linesKey = lines.map((l) => `${l.label}=${l.value}`).join("|");
     const key = `${baseZoneName(z.name)}::${linesKey}`;
     let g = overrideCardsByKey.get(key);
@@ -689,7 +700,15 @@ export function renderPcFloorplanImage(
   const cardW = baseCardX + baseCardW - cardX;
 
   const geo = drawFloorPlanCard(c, img, cardY, cardH, cardX, cardW);
-  drawZoneOverlaysOnCard(c, pcZones, geo);
+  drawZoneOverlaysOnCard(
+    c,
+    pcZones,
+    geo,
+    zoneDisplayAliases([
+      ...[...overrideCardsByKey.values()],
+      ...[...defaultSpecNamesByBase.values()].map((names) => ({ names })),
+    ]),
+  );
 
   c.fillStyle = "#2A2520";
   c.fillRect(panelAreaX, panelAreaY, panelAreaW, defHeaderH);
