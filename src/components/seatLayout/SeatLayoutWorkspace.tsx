@@ -36,6 +36,7 @@ import {
 } from "@/lib/seatLayout/settings";
 import { SettingsPanel } from "@/components/seatLayout/SettingsPanel";
 import { applyChatDraft, ChatDraftImportModal, type ChatDraftKind } from "@/components/seatLayout/ChatDraftImportModal";
+import { SeatLayoutSteps, type WorkStep } from "@/components/seatLayout/SeatLayoutSteps";
 import type { SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
 
 // 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안.
@@ -900,6 +901,71 @@ export function SeatLayoutWorkspace() {
         </button>
       </div>
     );
+  }
+
+  // 탭별 "작업 순서" 단계(SeatLayoutSteps). 끝났는지는 지금 프로젝트 상태로 판단한다 — 저장 여부는 hasUnsavedChanges.
+  function buildWorkSteps(): WorkStep[] {
+    const name = project.name.trim() || "○○점";
+    const saved = !!project.updatedAt && !hasUnsavedChanges;
+    const saveAction = {
+      label: hasUnsavedChanges ? "● 프로젝트 저장" : "프로젝트 저장",
+      onClick: () => void handleSaveClick(),
+      disabled: busy,
+      emphasize: hasUnsavedChanges,
+    };
+    if (activeTab === "desk") {
+      const zones = project.zones;
+      const counted = zones.length > 0 && zones.every((z) => z.sizeBreakdown.length > 0 || !!z.deskSize);
+      return [
+        { key: "upload", title: "매장명 입력·도면(PDF) 올리기", done: !!project.name.trim() && !!floorPlanSrc,
+          hint: "위 [매장명 / 도면]에서 넣습니다. 채팅은 이 매장명으로 프로젝트를 찾습니다." },
+        { key: "save1", title: "프로젝트 저장", done: !!project.updatedAt,
+          hint: "채팅은 저장된 도면을 봅니다.", action: saveAction },
+        { key: "zones", title: "존 초안 받기 (Claude 채팅)", done: zones.length > 0,
+          hint: "구역 상자를 한 번에 넣습니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
+          prompt: `${name} 존 초안 만들어 줘`,
+          action: { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
+            emphasize: hasNewChatDraft("zones") } },
+        { key: "tidy", title: "존 다듬고 저장", done: zones.length > 0 && saved,
+          hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 ×로 삭제. 유형·이름은 존 목록에서 고칩니다.",
+          action: saveAction },
+        { key: "desk", title: "책상 수량 채우기 (Claude 채팅)", done: counted && saved,
+          hint: "결과를 불러와 확인·적용한 뒤 [프로젝트 저장]을 눌러야 반영됩니다. 구역을 옮기면 노란 느낌표(!)가 붙으니 다시 인식하세요.",
+          prompt: `${name} 책상 인식해 줘`,
+          action: hasUnsavedChanges && counted ? saveAction
+            : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("desk"), disabled: chatDraftLoading || zones.length === 0,
+                emphasize: hasNewChatDraft("desk") } },
+      ];
+    }
+    if (activeTab === "pc") {
+      const pcZones = project.pcZones;
+      return [
+        { key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
+          hint: "책상 발주 도면의 존을 그대로 가져옵니다. 사양이 다른 자리는 존을 나눠 주세요.",
+          action: { label: "책상 구역 불러오기", onClick: importDeskZonesToPc } },
+        { key: "save", title: "사양 맞추고 저장", done: pcZones.length > 0 && saved, action: saveAction },
+        { key: "pc", title: "PC 대수 세기 (나눈 존이 있을 때)", done: pcZones.length > 0 && saved && !hasNewChatDraft("pc"),
+          hint: "존을 나눴으면 대수를 다시 셉니다. 불러와 적용한 뒤 저장하세요.",
+          prompt: `${name} PC 대수 세어 줘`,
+          action: { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("pc"), disabled: chatDraftLoading || pcZones.length === 0,
+            emphasize: hasNewChatDraft("pc") } },
+      ];
+    }
+    const filled = activeZones.length > 0 && activeZones.every((z) =>
+      project.seatNumberRanges.some((r) => r.zoneName === z.name && r.ranges.trim()));
+    return [
+      { key: "plate", title: "피난안내도(좌석번호표) 올리기", done: !!seatNumberPlateSrc,
+        hint: "아래 [좌석번호표] 칸에 이미지나 PDF를 올립니다." },
+      { key: "save", title: "프로젝트 저장", done: !!seatNumberPlateSrc && saved, action: saveAction },
+      { key: "match", title: "좌석번호 매칭 (Claude 채팅)", done: filled && saved,
+        hint: "불러와 확인·적용하고, 틀린 번호는 아래 표에서 고친 뒤 저장하세요.",
+        prompt: `${name} 좌석번호 매칭해 줘`,
+        action: hasUnsavedChanges && filled ? saveAction
+          : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("seatNumbers"), disabled: chatDraftLoading,
+              emphasize: hasNewChatDraft("seatNumbers") } },
+      { key: "sheet", title: "좌석번호표 발주 등록", done: !!seatNumberSheetUrl,
+        action: { label: "좌석번호표 발주 등록", onClick: openSeatNumberSheetDialog, disabled: busy } },
+    ];
   }
 
   async function openChatDraft(kind: DraftKind) {
@@ -2497,7 +2563,7 @@ export function SeatLayoutWorkspace() {
 
           <section className="app-card rounded-2xl p-5">
             <div className="flex items-center justify-between gap-2">
-              <label className="text-xs font-medium text-[var(--sl-ink-soft)]">매장명 / 도면</label>
+              <label className="text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">매장명 / 도면</label>
               {imgEl && (
                 <button
                   type="button"
@@ -2511,12 +2577,24 @@ export function SeatLayoutWorkspace() {
 
             {uploadPanelOpen ? (
               <>
+                {/* 10-27 밤 사용자: 매장명 칸이 잘 안 보여 꼭 넣는 칸인지 모르겠다 → 이름표·크기를 키우고 비어 있으면 강조. */}
+                <label htmlFor="store-name-input" className="mt-2 block text-xs font-semibold text-[#171310] dark:text-[#f2ede2]">
+                  매장명 <span className="text-[var(--sl-warn)]">*</span>
+                </label>
                 <input
+                  id="store-name-input"
                   value={project.name}
                   onChange={(e) => setProject((p) => ({ ...p, name: e.target.value }))}
                   placeholder="예: 광주첨단점"
-                  className="mt-1 w-full app-input px-3 py-2 text-sm"
+                  className={`mt-1 w-full app-input px-3 py-2.5 text-base font-medium ${
+                    project.name.trim() ? "" : "ring-2 ring-[var(--sl-warn)]/60"
+                  }`}
                 />
+                {!project.name.trim() && (
+                  <p className="mt-1 text-xs font-medium text-[var(--sl-warn)]">
+                    매장명을 입력하세요 — Claude 채팅이 이 이름으로 프로젝트를 찾습니다.
+                  </p>
+                )}
                 <label
                   htmlFor="floorplan-file-input"
                   className="mt-3 block cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)]"
@@ -2587,7 +2665,9 @@ export function SeatLayoutWorkspace() {
               </>
             ) : (
               <div className="mt-1 flex items-center gap-2 text-sm text-[#5c5346] dark:text-[#c9bfae]">
-                <span className="font-medium">{project.name || "(매장명 미입력)"}</span>
+                <span className={`text-base font-semibold ${project.name ? "text-[#171310] dark:text-[#f2ede2]" : "text-[var(--sl-warn)]"}`}>
+                  {project.name || "(매장명 미입력)"}
+                </span>
                 <span className="text-xs text-[var(--sl-ink-soft)]">· 도면 업로드됨</span>
               </div>
             )}
@@ -2608,6 +2688,8 @@ export function SeatLayoutWorkspace() {
               </p>
             )}
           </section>
+
+          <SeatLayoutSteps key={activeTab} steps={buildWorkSteps()} />
 
           {activeTab !== "seatNumber" && (
             <section className="app-card rounded-2xl p-5">
@@ -3044,12 +3126,10 @@ export function SeatLayoutWorkspace() {
                       {DRAW_RULES.map((rule) => <li key={rule}>{rule}</li>)}
                     </ul>
                   </details>
+                  {/* 10-27 밤: 채팅 순서 안내는 왼쪽 "작업 순서"로 옮겼다. 여기엔 도면 위 조작 요령만 남긴다. */}
                   <ul className="space-y-2.5">
-                    <li>도면만 올린 상태라면 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 존 초안 만들어 줘&quot; → 존 목록 위 [채팅 존 초안 불러오기]로 구역 상자를 한 번에 넣고 다듬을 수 있습니다.</li>
-                    <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
-                    <li>구역을 옮기거나 크기를 바꾸면 노란 느낌표(!)가 붙습니다 — 수량을 다시 확인하라는 뜻입니다. Enter로 수정 창을 열어 고치거나, [프로젝트 저장] 후 채팅으로 다시 인식하세요.</li>
-                    <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>
-                    <li>존을 다 그리면 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 책상 인식해 줘&quot; → 존 목록 위 [채팅 결과 불러오기]로 수량을 한 번에 채웁니다.</li>
+                    <li>구역을 클릭해 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿉니다. 오른쪽 위 ×로 삭제합니다.</li>
+                    <li>구역을 옮기거나 크기를 바꾸면 노란 느낌표(!)가 붙습니다 — Enter로 수량을 고치거나, 저장 후 채팅으로 다시 인식하세요.</li>
                   </ul>
                 </div>
               )}
