@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { uniqueSheetTitle } from "./googleSheets";
 import { computeDeskSummary } from "./seatLayout/calc";
 import type { DeskZone } from "./seatLayout/types";
 
@@ -112,16 +113,11 @@ export async function publishDeskOrderToSheet({
     throw new Error(`양식 탭("${TEMPLATE_SHEET_TITLE}")을 찾을 수 없습니다.`);
   }
 
-  const sheetTitle = projectName.trim();
+  // 같은 이름 탭(양식 탭 포함)이 있으면 덮어쓰지 않고 "(2)"… 새 탭(10-27 사용자, googleSheets.ts uniqueSheetTitle).
+  const sheetTitle = uniqueSheetTitle(projectName.trim(), allSheets.map((s) => s.properties?.title ?? ""));
 
-  // 같은 이름으로 이미 등록한 적이 있으면(양식 탭 자신은 제외) 새로 복제하지 않고 그 탭을 갱신한다.
   let targetSheetId: number;
-  const existing = allSheets.find(
-    (s) => s.properties?.title === sheetTitle && s.properties?.sheetId !== templateSheet.properties!.sheetId,
-  );
-  if (existing?.properties?.sheetId != null) {
-    targetSheetId = existing.properties.sheetId;
-  } else {
+  {
     const dup = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {

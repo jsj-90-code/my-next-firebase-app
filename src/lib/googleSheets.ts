@@ -36,6 +36,17 @@ function stripZoneLetterSuffix(name: string): string {
   return name.replace(/[A-Za-z]$/, "");
 }
 
+// 같은 이름의 탭이 이미 있으면 덮어쓰지 않고 "(2)", "(3)"…을 붙인 새 탭으로 만든다
+// (10-27 사용자: 다시 등록하면 앞 탭을 덮어써서 위험 — 지난 등록본이 남아야 대조·되돌리기가 된다).
+export function uniqueSheetTitle(base: string, taken: Iterable<string>): string {
+  const set = new Set(taken);
+  if (!set.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const t = `${base}(${n})`;
+    if (!set.has(t)) return t;
+  }
+}
+
 function todayTabPrefix(): string {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(2);
@@ -240,14 +251,13 @@ export async function publishSeatNumbersToSheet({
     throw new Error(`양식 탭("${TEMPLATE_SHEET_TITLE}")을 찾을 수 없습니다.`);
   }
 
-  const sheetTitle = `${todayTabPrefix()} ${projectName}`.trim();
+  const sheetTitle = uniqueSheetTitle(
+    `${todayTabPrefix()} ${projectName}`.trim(),
+    allSheets.map((s) => s.properties?.title ?? ""),
+  );
 
-  // 같은 날 같은 프로젝트로 이미 등록한 적이 있으면 새로 복제하지 않고 그 탭을 갱신한다.
   let targetSheetId: number;
-  const existing = allSheets.find((s) => s.properties?.title === sheetTitle);
-  if (existing?.properties?.sheetId != null) {
-    targetSheetId = existing.properties.sheetId;
-  } else {
+  {
     const dup = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSheetRows, type SeatNumberSheetEntry } from "./googleSheets";
+import { buildSheetRows, uniqueSheetTitle, type SeatNumberSheetEntry } from "./googleSheets";
 
 // 울산삼산점 웹 사양(10-27 저장값) → 수기 탭 "261015 울산삼산점"과 같은 문구가 나와야 한다.
 const base = { baseKeyboard: "K400", baseHeadset: "G58", baseRam: "16GB" };
@@ -49,5 +49,13 @@ describe("좌석번호표 시트 문구(울산 기준)", () => {
     expect(rows[0][4]).toBe("커플을 위한 핑크 헤드셋과 무선 마우스");
     expect(rows[0][6]).toBe("커플들을 위한 아이센스만의 꽁냥꽁냥 커플석");
     expect(skipped).toEqual(["19~26", "28~32"]);
+  });
+});
+
+describe("uniqueSheetTitle", () => {
+  it("같은 이름이 있으면 (2), (3)을 붙인다", () => {
+    expect(uniqueSheetTitle("261027 호구점", ["안내"])).toBe("261027 호구점");
+    expect(uniqueSheetTitle("261027 호구점", ["261027 호구점"])).toBe("261027 호구점(2)");
+    expect(uniqueSheetTitle("261027 호구점", ["261027 호구점", "261027 호구점(2)"])).toBe("261027 호구점(3)");
   });
 });
