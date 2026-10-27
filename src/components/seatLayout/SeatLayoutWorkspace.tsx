@@ -24,7 +24,6 @@ import {
   renderPcFloorplanImage,
 } from "@/lib/seatLayout/canvasRender";
 import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/lib/seatLayout/imageCompress";
-import { buildQuadrantTiles } from "@/lib/seatLayout/imageTiles";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
 import type { PDFDocumentProxy } from "pdfjs-dist";
@@ -48,7 +47,6 @@ import {
   type PcZone,
   type ProjectSummary,
   type SeatLayoutProject,
-  type SeatNumberRangeEntry,
   type SizeBreakdownEntry,
   type TabKey,
   type ZoneTypeKey,
@@ -60,7 +58,7 @@ type ActiveZone = DeskZone | PcZone;
 // 2026-10-26 — "등록했습니다"만 있어서 저장된 줄 알고 나가 피난안내도가 사라졌다. 도면처럼 저장 안내를 붙인다.
 const SEAT_NUMBER_PLATE_ADDED_MSG =
   "좌석번호표를 올렸습니다 — \"프로젝트 저장\"을 눌러야 보관됩니다. 오른쪽에서 도면과 나란히 보면서 " +
-  "존별로 직접 입력하거나, \"AI로 자동 채워보기\"를 눌러보세요.";
+  "존별로 직접 입력하거나, 저장 후 Claude 채팅으로 매칭해 [채팅 결과 불러오기]로 넣으세요.";
 
 const DEFAULT_DRAG_HINT =
   "먼저 위에서 존 유형을 선택한 뒤, 도면 위를 한 번 클릭(좌상단), 다시 한 번 클릭(우하단)하세요.";
@@ -237,10 +235,6 @@ export function SeatLayoutWorkspace() {
     ownerPhone: "",
     address: "",
   });
-  const [aiResultText, setAiResultText] = useState("");
-  const [recognizing, setRecognizing] = useState(false);
-  // 도면 등록 직후 "AI로 구역 초안 제안받기"를 누르는 동안의 로딩 상태 (테스트용 기능).
-  const [zoneSuggestBusy, setZoneSuggestBusy] = useState(false);
   // 드래그로 위치/크기를 바꿨지만 아직 Enter로 재인식하지 않은 존 — 드래그만 해서는 재인식이
   // 시작되지 않으므로(Enter를 눌러야 시작), 캔버스에 "재인식 필요" 표시를 남겨서 상태바 문구를
   // 놓쳐도 알 수 있게 한다.
@@ -262,9 +256,9 @@ export function SeatLayoutWorkspace() {
     setUploadPanelOpen(!imgEl);
   }
   // 방금 업로드한 원본 화질 도면 (세션 동안만 메모리에 유지, Firestore에는 저장 안 함).
-  // AI 좌석 인식은 화질이 중요해서, Firestore 저장용으로 압축한 이미지가 아니라 이걸로 잘라낸다.
+  // (예전 웹 AI 인식은 이 원본으로 잘라 보냈다. 2026-10-27부터 인식은 채팅 커넥터가 **저장된 압축본**으로 한다.)
   const [rawFloorPlanDataUrl, setRawFloorPlanDataUrl] = useState<string | null>(null);
-  // 좌석번호표(피난안내도 등) 원본 화질 이미지 — 번호 인식은 이걸로 하고, 저장 직전에만 압축한다.
+  // 좌석번호표(피난안내도 등) 원본 화질 이미지 — 화면 비교용, 저장 직전에만 압축한다.
   const [rawSeatNumberPlateDataUrl, setRawSeatNumberPlateDataUrl] = useState<string | null>(null);
   // 2026-10-26 — 피난안내도를 올리면 "등록했습니다"만 떠서 저장된 줄 알고 나가 사라지는 일이 있었다.
   // 올린 이미지를 아직 저장하지 않았으면 페이지를 닫을 때 브라우저가 한 번 묻게 한다.
@@ -275,25 +269,12 @@ export function SeatLayoutWorkspace() {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [imagesUnsaved]);
-  const [seatNumberRecognizing, setSeatNumberRecognizing] = useState(false);
-  // 좌석수가 겹치는 존이나 어느 존과도 안 맞는 번호 그룹처럼, 자동 배정을 포기하고 사람 확인이
-  // 필요한 경우를 알려주는 안내문. (틀린 값을 억지로 채우는 것보다 안전하다.)
-  const [seatNumberWarnings, setSeatNumberWarnings] = useState<string[]>([]);
-  // 벽 경계로 나뉜 그룹이 어느 존과도 안 맞아서 자동 배정 못한 번호 그룹들. 버튼으로 보여줘서
-  // 클릭하면 클립보드에 복사되게 하면, 경고 문구 속 숫자를 다시 옮겨 적는 것보다 훨씬 빠르다.
-  const [seatNumberUnmatchedGroups, setSeatNumberUnmatchedGroups] = useState<
-    { ranges: string; count: number }[]
-  >([]);
   // 작업자가 실제로 하는 작업은 "존 설정한 도면"과 "피난안내도"를 나란히 띄워놓고 눈으로 비교하며
   // 존별 좌석번호를 직접 입력하는 것이라, "좌석번호표 발주" 탭에서는 항상 이 비교 화면을 보여준다
   // (별도 탭으로 분리했으니, 탭 전환 자체가 켜고 끄는 역할을 한다).
   const [seatNumberImageModalOpen, setSeatNumberImageModalOpen] = useState(false);
   const [chatDraftModal, setChatDraftModal] = useState<{ kind: ChatDraftKind; draft: SeatLayoutChatDraft } | null>(null);
   const [chatDraftLoading, setChatDraftLoading] = useState(false);
-  // AI가 채워 넣은(=사람이 아직 확인/수정하지 않은) 존 이름 집합. 다음에 다시 "AI로 자동
-  // 채워보기"를 눌렀을 때, 사람이 직접 고친 값은 보호하되 AI가 예전에 잘못 채운 값은 다시
-  // 고칠 수 있게 구분하는 용도다. (state로 두면 렌더마다 갱신 타이밍을 신경 써야 해서 ref로 둔다.)
-  const aiFilledZoneNamesRef = useRef<Set<string>>(new Set());
   const seatNumberPlateInputRef = useRef<HTMLInputElement>(null);
   // PDF 업로드 시: 페이지가 여러 장이라 어떤 페이지가 배치도인지 직접 골라야 한다.
   const [pdfPickerPages, setPdfPickerPages] = useState<
@@ -457,8 +438,8 @@ export function SeatLayoutWorkspace() {
     ctx.fillStyle = getContrastText(z.color);
     ctx.fillText(z.name, tagX + 5, tagY + 12);
 
-    // 위치/크기를 바꿨지만 아직 Enter로 재인식하지 않은 존 — 선택 여부와 무관하게 항상
-    // 표시해서, 다른 존을 만지는 동안에도 "이 존은 재인식이 안 끝났다"는 걸 알 수 있게 한다.
+    // 위치/크기를 바꿨지만 아직 Enter로 수량을 다시 확인하지 않은 존 — 선택 여부와 무관하게 항상
+    // 표시해서, 다른 존을 만지는 동안에도 "이 존은 수량 확인이 안 끝났다"는 걸 알 수 있게 한다.
     if (dirty) {
       const bx = x;
       const by = y - 12;
@@ -532,8 +513,8 @@ export function SeatLayoutWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgEl, activeZones, selectedZoneIndex, dirtyZoneIndex]);
 
-  // 구역이 선택된 상태에서 Enter를 누르면(양쪽을 번갈아 드래그로 다 조정한 뒤) 그 구역을
-  // 최종 위치로 다시 인식하고 수정 폼을 띄운다. 다른 입력창에 포커스가 있거나 폼이 이미
+  // 구역이 선택된 상태에서 Enter를 누르면(양쪽을 번갈아 드래그로 다 조정한 뒤) 그 구역의
+  // 수정 폼을 띄워 수량을 다시 확인하게 한다(2026-10-27 웹 AI 재인식은 지움 — 채팅으로 한 번에). 다른 입력창에 포커스가 있거나 폼이 이미
   // 열려있을 때는 무시한다.
   const onZoneKeyDown = useEffectEvent((e: KeyboardEvent) => {
     if (e.key !== "Enter") return;
@@ -545,10 +526,8 @@ export function SeatLayoutWorkspace() {
     const z = activeZones[selectedZoneIndex];
     if (!z) return;
     e.preventDefault();
-    const rect: NormalizedRect = { x: z.x, y: z.y, w: z.w, h: z.h };
     setDirtyZoneIndex((cur) => (cur === selectedZoneIndex ? null : cur));
     editZone(selectedZoneIndex);
-    void runRecognize(rect, activeTab);
   });
 
   useEffect(() => {
@@ -716,7 +695,7 @@ export function SeatLayoutWorkspace() {
       h: rh / canvas.height,
     };
     setCurRect(rectNorm);
-    openZoneForm(rectNorm);
+    openZoneForm();
   }
 
   function handleCanvasMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -827,7 +806,7 @@ export function SeatLayoutWorkspace() {
     }
     setDirtyZoneIndex(drag.index);
     setStatusMsg(
-      "구역 위치를 변경했습니다 — 아직 재인식 전입니다(노란 느낌표). 다 조정했으면 Enter를 눌러 다시 인식하세요.",
+      "구역 위치를 변경했습니다(노란 느낌표) — 다 조정했으면 Enter로 수량을 확인하거나, 저장 후 채팅으로 다시 인식하세요.",
       "success",
     );
   }
@@ -854,187 +833,6 @@ export function SeatLayoutWorkspace() {
     return nextAvailableZoneName(activeZones, typeKey, type.label, editingIndex);
   }
 
-  // ---------------- AI 자동 인식 ----------------
-  function cropZoneImageBase64(rect: NormalizedRect): string {
-    if (!imgEl) throw new Error("이미지가 없습니다.");
-    const sx = rect.x * imgEl.naturalWidth;
-    const sy = rect.y * imgEl.naturalHeight;
-    const sw = rect.w * imgEl.naturalWidth;
-    const sh = rect.h * imgEl.naturalHeight;
-    const off = document.createElement("canvas");
-    off.width = Math.max(1, Math.round(sw));
-    off.height = Math.max(1, Math.round(sh));
-    const ctx = off.getContext("2d");
-    if (!ctx) throw new Error("캔버스를 생성할 수 없습니다.");
-    ctx.drawImage(imgEl, sx, sy, sw, sh, 0, 0, off.width, off.height);
-    return off.toDataURL("image/jpeg", 0.92).split(",")[1];
-  }
-
-  async function runRecognize(rect: NormalizedRect, tab: TabKey) {
-    if (!user) return;
-    setRecognizing(true);
-    setAiResultText("AI가 인식하는 중...");
-    setStatusMsg("AI 인식 중...");
-    try {
-      const base64 = cropZoneImageBase64(rect);
-      const token = await user.getIdToken();
-      const res = await fetch("/api/seat-layout/recognize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ imageBase64: base64, mimeType: "image/jpeg", mode: tab }),
-      });
-      // 이미지를 보내는 경로라 게이트웨이가 순수 텍스트("Request Entity Too Large")를 돌려줄
-      // 수 있다. res.json()을 그대로 쓰면 진짜 원인 대신 파싱 에러가 표시된다(readJsonOrText 주석 참고).
-      const data = await readJsonOrText<{
-        seats: number; deskSize: DeskSize | null;
-        sizeBreakdown: SizeBreakdownEntry[]; bagShelfCount: number;
-      }>(res);
-      if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
-
-      const seats: number = data.seats ?? 0;
-      const deskSize: DeskSize | null = data.deskSize ?? null;
-      const sizeBreakdown: SizeBreakdownEntry[] | undefined = data.sizeBreakdown;
-      const bagShelfCount: number | undefined = data.bagShelfCount;
-
-      if (tab === "desk") {
-        setBagShelfDraft(String(bagShelfCount ?? 0));
-        // 2026-09-14 — 예전에는 0이면 **아무 말도 안 했다.** 그래서 "브라켓 표시가 없는 도면이라
-        // 못 센 것"인지 "원래 가방 선반이 없는 매장"인지 구분이 안 됐고, 사용자는 인식이 안 된 줄도
-        // 모른 채 넘어갔다. 0도 결과이므로 말하게 한다.
-        const bagShelfMsg = bagShelfCount
-          ? ` / 가방 선반(아이락스 헤드셋걸이) ${bagShelfCount}석`
-          : " / 브라켓 표시 없음(전부 아이센스 헤드셋걸이)";
-        if (sizeBreakdown && sizeBreakdown.length) {
-          setBreakdown(sizeBreakdown.map((r) => ({ ...r })));
-          const total = sizeBreakdown.reduce((s, r) => s + r.qty, 0);
-          const sizeMsg = sizeBreakdown.map((r) => `${r.deskSize} ${r.qty}개`).join(", ");
-          setAiResultText(`AI 인식 결과: 총 ${total}석 (${sizeMsg})${bagShelfMsg} — 틀리면 아래에서 직접 수정하세요.`);
-        } else {
-          const size = deskSize ?? DESK_SIZE_OPTIONS[0];
-          setBreakdown([{ deskSize: size, qty: seats }]);
-          const sizeMsg = deskSize ? `책상사이즈 ${deskSize}` : "책상사이즈 인식 실패(직접 선택 필요)";
-          setAiResultText(
-            `AI 인식 결과: ${seats}석 / ${sizeMsg}${bagShelfMsg} — 사이즈가 섞여있으면 아래에서 줄을 나눠주세요.`,
-          );
-        }
-      } else {
-        setSeatsDraft(String(seats));
-        setAiResultText(`AI 인식 결과: ${seats}대 (틀리면 아래에서 직접 수정하세요)`);
-      }
-      setStatusMsg("인식 완료 — 이대로 괜찮으면 바로 저장하세요", "success");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "알 수 없는 오류";
-      setAiResultText(`인식 실패: ${message} — 아래 항목을 직접 입력해주세요.`);
-      setStatusMsg("AI 인식 실패 - 수동 입력 필요", "error");
-      if (tab === "desk") {
-        setBreakdown([{ deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }]);
-        setBagShelfDraft("0");
-      }
-    } finally {
-      setRecognizing(false);
-    }
-  }
-
-  // ---------------- 존 구역 초안 제안 (테스트용) ----------------
-  // 도면에는 존 이름표가 없어서(그건 사람이 정함) AI는 기본적으로 위치/좌석수만 제안하고 유형은
-  // "기타"로 둔다. 다만 파티션 두께/색이나 방 형태처럼 도면에서 실제로 구분 가능한 몇몇 유형
-  // (세레머니 팀룸/VIP존/프렌즈존/1인석/커플석)은 확신이 있을 때만 AI가 유형까지 붙여주는데,
-  // 100% 정확하진 않으니 사람이 확인은 해야 한다 — 존을 만든 뒤 이름/유형을 바꾸려면 지우고
-  // 다시 그려야 하는 건 기존 수동 작업과 동일하다.
-  const DRAFT_COLORS = ZONE_TYPES.filter((t) => t.key !== "etc").map((t) => t.color);
-
-  async function suggestZoneDrafts() {
-    if (!user || !floorPlanSrc) return;
-    if (project.zones.length > 0) {
-      const ok = window.confirm(
-        `이미 존이 ${project.zones.length}개 있습니다. AI가 제안하는 구역 초안을 추가로 넣을까요?`,
-      );
-      if (!ok) return;
-    }
-    setZoneSuggestBusy(true);
-    setStatusMsg("AI가 도면에서 구역 초안을 찾는 중...");
-    try {
-      // 전체 이미지 1장만으로는 책상 경계선이 뭉개져 구역 상자가 책상을 반쯤 자르거나 빠뜨리는
-      // 경우가 있어, 좌석번호 인식과 동일하게 확대 사분면 4장을 같이 보내 경계를 정밀하게 잡는다.
-      // 원본 도면은 고화질 그대로라 5장을 그대로 만들면 요청 용량이 너무 커지므로(Request Entity
-      // Too Large 발생 확인) 타일을 자르기 전에 적당히 축소한다 — 구역 경계 판단에는 이 정도
-      // 해상도면 충분하다.
-      const images = await buildQuadrantTiles(floorPlanSrc, 1800);
-      const token = await user.getIdToken();
-      const res = await fetch("/api/seat-layout/suggest-zones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ images }),
-      });
-      // 위 주석대로 이 경로는 실제로 Too Large를 겪었다. 그때 res.json()을 쓰면 진짜 원인
-      // 대신 파싱 에러가 뜬다(readJsonOrText 주석 참고).
-      type SuggestedZone = { seats: number; x: number; y: number; w: number; h: number; type?: string };
-      const resData = await readJsonOrText<{ zones: SuggestedZone[] }>(res);
-      if (!res.ok) throw new Error(resData.error ?? "구역 제안에 실패했습니다.");
-
-      const suggestions: SuggestedZone[] = resData.zones ?? [];
-      const startIdx = project.zones.length;
-      // 파티션 두께/색이나 방 형태로 유형까지 확신 있게 추정된 구역은 실제 그 유형으로 만들고
-      // (수동으로 그 유형 버튼을 눌러 그린 것과 동일하게 사양 기본값도 적용), 확신이 없는 구역은
-      // 기존처럼 "기타"로 두고 사람이 고르게 한다.
-      const namesSoFar: ActiveZone[] = [...activeZones];
-      const drafts: DeskZone[] = suggestions.map((s, i) => {
-        const matchedType = s.type ? ZONE_TYPES.find((t) => t.key === s.type) : undefined;
-        const typeKey: ZoneTypeKey = matchedType?.key ?? "etc";
-        const name = matchedType
-          ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label)
-          : `AI제안${startIdx + i + 1}`;
-        const specValues = resetDeskSpecDraft(typeKey, SPEC_FIELDS, settings.typeDefaults);
-        const zone: DeskZone = {
-          x: s.x,
-          y: s.y,
-          w: s.w,
-          h: s.h,
-          name,
-          typeKey,
-          color: matchedType?.color ?? DRAFT_COLORS[(startIdx + i) % DRAFT_COLORS.length],
-          seats: s.seats,
-          deskSize: DESK_SIZE_OPTIONS[0],
-          sizeBreakdown: [{ deskSize: DESK_SIZE_OPTIONS[0], qty: s.seats }],
-          desk: specValues.desk,
-          cooler: specValues.cooler,
-          partition: specValues.partition,
-          monitorArm: specValues.monitorArm,
-          chair: specValues.chair,
-          bagShelfCount: 0,
-        };
-        namesSoFar.push(zone);
-        return zone;
-      });
-
-      setProject((p) => ({ ...p, zones: [...p.zones, ...drafts] }));
-      setStatusMsg(
-        `구역 초안 ${drafts.length}개를 추가했습니다 — 위치를 확인하고, 이름/유형이 다르면 ` +
-          "지우고 다시 그려주세요 (참고용, 100% 정확하지 않을 수 있습니다).",
-        "success",
-      );
-    } catch (err) {
-      setStatusMsg(`구역 제안 실패: ${err instanceof Error ? err.message : err}`, "error");
-    } finally {
-      setZoneSuggestBusy(false);
-    }
-  }
-
-  // ---------------- 좌석번호표 인식 ----------------
-  // 통짜 이미지 한 장만 AI에게 주면, 좌석이 촘촘하게 몰린 구역은 내부적으로 축소되며 글씨가
-  // 뭉개져 통째로 못 읽는 경우가 있었다(93석짜리 피난안내도에서 14석이 통째로 누락된 사례 확인).
-  // 그래서 전체 이미지 1장에 더해 좌상단/우상단/좌하단/우하단을 확대한 이미지 4장을 같이
-  // 보내서, 그룹 경계는 전체 이미지로 판단하고 작은 글씨는 확대본으로 검증하게 한다. (9/11 존이
-  // 맞았던 조합 — 여기서 더 손대지 않고 이대로 확정한다.) 구역 초안 제안에도 같은 이유로 재사용.
-  const buildSeatNumberTiles = buildQuadrantTiles;
-
-  // 좌석번호표(피난안내도 등)는 도면과 별개의 그림이라 좌표를 그대로 겹칠 수 없다. 그래서 존별
-  // "좌석 수"(이미 등록되어 있음)를 기준으로, 이미지에서 읽은 번호 그룹을 그 개수와 대조해 매칭한다.
-  // 존 이름/색상 박스가 그려진 책상 배치도 1장 — 피난안내도의 어느 구역이 어느 존인지 AI가
-  // 위치로 대응시키는 기준으로 쓰인다. 기존 FHD 합성용 캔버스(compositeCanvasRef)를 그대로
-  // 재사용한다.
-  // PC 발주 도면에서 사양 차이로 존을 더 쪼갠 경우(예: "FPS존A"/"FPS존B")까지 AI가 한 번에 구분해
-  // 채울 수 있도록, PC 존이 있으면 PC 존 기준으로, 아직 PC 탭을 안 채웠으면 책상 존 기준으로 인식한다.
   // ---------------- 채팅 결과 불러오기 (2026-10-27) ----------------
   // 직원 개인 Claude(커넥터)가 저장된 프로젝트의 도면을 보고 낸 초안(seatLayoutChatDrafts)을 확인 화면에 띄운다.
   // 채팅은 **저장된** 프로젝트를 읽으므로, 존을 그린 뒤 [저장]부터 해야 채팅에서 인식할 수 있다.
@@ -1065,102 +863,6 @@ export function SeatLayoutWorkspace() {
     setProject((p) => applyChatDraft(kind, p, draft, picked));
     setChatDraftModal(null);
     setStatusMsg(`채팅 결과를 ${picked.size}개 존에 넣었습니다 — 도면과 비교해 확인한 뒤 [저장]을 누르세요.`, "success");
-  }
-
-  function getSeatNumberRecognitionZones(): (DeskZone | PcZone)[] {
-    return project.pcZones.length ? project.pcZones : project.zones;
-  }
-
-  function buildZoneReferenceImageBase64(): string | null {
-    const cv = compositeCanvasRef.current;
-    if (!cv || !imgEl) return null;
-    cv.width = COMPOSITE_W;
-    cv.height = COMPOSITE_H;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return null;
-    if (project.pcZones.length) {
-      renderPcFloorplanImage(ctx, imgEl, project.name, project.pcZones, pcDefaults);
-    } else {
-      renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
-    }
-    return cv.toDataURL("image/png").split(",")[1];
-  }
-
-  async function runSeatNumberRecognize(dataUrlOverride?: string) {
-    const dataUrl = dataUrlOverride ?? rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl;
-    if (!user || !dataUrl) return;
-    const recognitionZones = getSeatNumberRecognitionZones();
-    if (!recognitionZones.length) {
-      setStatusMsg("먼저 책상 발주 도면(또는 PC 발주 도면) 탭에서 존을 등록해주세요.", "error");
-      return;
-    }
-    const zoneImageData = buildZoneReferenceImageBase64();
-    if (!zoneImageData) {
-      setStatusMsg("먼저 도면을 업로드하세요.", "error");
-      return;
-    }
-    setSeatNumberRecognizing(true);
-    setStatusMsg("AI로 좌석번호 채워보는 중... (참고용 — 직접 입력한 존은 건드리지 않습니다)");
-    try {
-      const images = await buildSeatNumberTiles(dataUrl);
-      const token = await user.getIdToken();
-      const res = await fetch("/api/seat-layout/recognize-seat-numbers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          zoneImage: { data: zoneImageData, mimeType: "image/png" },
-          images,
-          zones: recognitionZones.map((z) => ({ name: z.name, seats: z.seats })),
-        }),
-      });
-      // 여기도 이미지를 보낸다 — 텍스트 응답에 대비한다(readJsonOrText 주석 참고).
-      const data = await readJsonOrText<{
-        ranges: SeatNumberRangeEntry[]; warnings: string[];
-        unmatchedGroups: { ranges: string; count: number }[];
-      }>(res);
-      if (!res.ok) throw new Error(data.error ?? "인식에 실패했습니다.");
-      const ranges: SeatNumberRangeEntry[] = data.ranges ?? [];
-      const warnings: string[] = data.warnings ?? [];
-      const unmatchedGroups: { ranges: string; count: number }[] = data.unmatchedGroups ?? [];
-      // 사람이 직접 고친 값은 AI 결과로 덮어쓰지 않는다. 다만 이전에 AI가 채워 넣고 사람이 손을
-      // 대지 않은 값은, AI가 이번엔 스스로 고칠 수 있게 계속 덮어쓸 수 있어야 한다 (안 그러면
-      // AI의 예전 오답이 영영 안 고쳐진 채로 남는다).
-      let filledCount = 0;
-      setProject((p) => {
-        const manuallyFilledZoneNames = new Set(
-          p.seatNumberRanges
-            .filter((r) => r.ranges.trim() && !aiFilledZoneNamesRef.current.has(r.zoneName))
-            .map((r) => r.zoneName),
-        );
-        const additions = ranges.filter((r) => !manuallyFilledZoneNames.has(r.zoneName));
-        filledCount = additions.length;
-        if (!additions.length) return p;
-        additions.forEach((a) => aiFilledZoneNamesRef.current.add(a.zoneName));
-        const rest = p.seatNumberRanges.filter(
-          (r) => !additions.some((a) => a.zoneName === r.zoneName),
-        );
-        return { ...p, seatNumberRanges: [...rest, ...additions] };
-      });
-      setSeatNumberWarnings(warnings);
-      setSeatNumberUnmatchedGroups(unmatchedGroups);
-      if (filledCount) {
-        setStatusMsg(
-          `AI가 ${filledCount}개 존을 채웠습니다 — 틀릴 수 있으니 꼭 도면과 비교해서 확인하세요. ` +
-            (warnings.length ? "나머지는 아래 안내를 보고 직접 입력하세요." : ""),
-          "success",
-        );
-      } else {
-        setStatusMsg(
-          "AI가 새로 채운 존이 없습니다 (이미 직접 입력했거나, 인식에 실패했어요). " +
-            "오른쪽에서 도면과 비교하며 직접 입력해주세요.",
-          "error",
-        );
-      }
-    } catch (err) {
-      setStatusMsg(`AI 자동 채우기 실패: ${err instanceof Error ? err.message : err} — 직접 입력해주세요.`, "error");
-    } finally {
-      setSeatNumberRecognizing(false);
-    }
   }
 
   // 좌석번호표(피난안내도 등)는 안내문구/범례가 많이 섞여 있어 처음부터 통째로 인식을 시키면
@@ -1214,28 +916,14 @@ export function SeatLayoutWorkspace() {
   }
 
   function setSeatNumberRangeFor(zoneName: string, value: string) {
-    // 사람이 손으로 직접 고친 값이므로, 이후 AI 자동 채우기가 이 존은 더 이상 건드리지 않게
-    // "AI가 채운 값" 표시를 지운다.
-    aiFilledZoneNamesRef.current.delete(zoneName);
     setProject((p) => {
       const rest = p.seatNumberRanges.filter((r) => r.zoneName !== zoneName);
       return { ...p, seatNumberRanges: value ? [...rest, { zoneName, ranges: value }] : rest };
     });
   }
 
-  // 벽 경계가 존 구분과 안 맞는 도면은 자동 배정이 잘 안 되는 게 정상이라, 매칭 못한 그룹을
-  // 클립보드로 복사해서 사람이 알맞은 존에 빠르게 옮겨 적을 수 있게 돕는다.
-  async function copySeatNumberGroup(ranges: string) {
-    try {
-      await navigator.clipboard.writeText(ranges);
-      setStatusMsg(`"${ranges}" 복사됨 — 알맞은 존의 입력칸에 붙여넣으세요.`, "success");
-    } catch {
-      setStatusMsg("복사에 실패했습니다. 숫자를 직접 옮겨 적어주세요.", "error");
-    }
-  }
-
   // ---------------- 존 폼 열기/닫기 ----------------
-  function openZoneForm(rect: NormalizedRect) {
+  function openZoneForm() {
     if (!selectedTypeKey) return;
     setEditingIndex(null);
     setEtcName("");
@@ -1250,7 +938,6 @@ export function SeatLayoutWorkspace() {
       setPcSpecDraft(resetPcSpecDraft(selectedTypeKey, pcDefaults, settings.pcTypeDefaults));
     }
     setFormOpen(true);
-    void runRecognize(rect, activeTab);
   }
 
   function editZone(index: number) {
@@ -1258,9 +945,6 @@ export function SeatLayoutWorkspace() {
     setEditingIndex(index);
     setCurRect(null);
     setFormOpen(true);
-    // 드래그로 위치를 바꾼 뒤 Enter로 열린 경우, 이 값이 runRecognize가 끝날 때까지 잠깐 보이다가
-    // "AI가 인식하는 중..."으로 바로 바뀐다 — 인식이 진행/완료 중인지 폼 안에서 알 수 있게 한다.
-    setAiResultText("아래 값을 직접 입력하거나 \"다시 인식\"을 눌러 AI로 확인할 수 있습니다.");
     setEditTypeDraft(z.typeKey);
     setEditEtcNameDraft(z.typeKey === "etc" ? z.name : "");
     setEditEtcColorDraft(z.typeKey === "etc" ? z.color : "#555555");
@@ -1497,9 +1181,6 @@ export function SeatLayoutWorkspace() {
       setProject({ ...emptyProject(), ...loaded });
       setRawSeatNumberPlateDataUrl(null);
       setImagesUnsaved(false);
-      setSeatNumberWarnings([]);
-      setSeatNumberUnmatchedGroups([]);
-      aiFilledZoneNamesRef.current.clear();
       setRawFloorPlanDataUrl(null);
       setActiveTab("desk");
       setSelectedTypeKey(null);
@@ -1524,9 +1205,6 @@ export function SeatLayoutWorkspace() {
     setRawFloorPlanDataUrl(null);
     setRawSeatNumberPlateDataUrl(null);
     setImagesUnsaved(false);
-    setSeatNumberWarnings([]);
-    setSeatNumberUnmatchedGroups([]);
-    aiFilledZoneNamesRef.current.clear();
     setPcDefaults(pcDefaultsFromFields(effectivePcSpecFields));
     setPcDefaultsDraft(pcDefaultsFromFields(effectivePcSpecFields));
     setActiveTab("desk");
@@ -2571,13 +2249,6 @@ export function SeatLayoutWorkspace() {
                 onEditEtcNameChange={setEditEtcNameDraft}
                 editEtcColor={editEtcColorDraft}
                 onEditEtcColorChange={setEditEtcColorDraft}
-                showAi
-                aiResultText={aiResultText}
-                recognizing={recognizing}
-                onRecognizeAgain={() => {
-                  const rect = editingIndex !== null ? activeZones[editingIndex] : curRect;
-                  if (rect) void runRecognize(rect, activeTab);
-                }}
                 breakdown={breakdown}
                 onBreakdownChange={setBreakdown}
                 bagShelfDraft={bagShelfDraft}
@@ -2796,16 +2467,6 @@ export function SeatLayoutWorkspace() {
                     {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
                   </button>
                 )}
-                {activeTab === "desk" && floorPlanSrc && (
-                  <button
-                    type="button"
-                    disabled={zoneSuggestBusy}
-                    onClick={suggestZoneDrafts}
-                    className="app-btn-accent rounded-full px-3 py-1 text-xs disabled:opacity-50"
-                  >
-                    {zoneSuggestBusy ? "제안받는 중..." : "AI로 구역 초안 제안받기 (테스트)"}
-                  </button>
-                )}
               </div>
               <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
                 {activeZones.length === 0 && (
@@ -2827,7 +2488,7 @@ export function SeatLayoutWorkspace() {
                         {activeTab === "pc" ? "대" : "개"})
                       </span>
                       {i === dirtyZoneIndex && (
-                        <span className="app-badge app-badge-warn shrink-0">재인식 필요</span>
+                        <span className="app-badge app-badge-warn shrink-0">수량 확인 필요</span>
                       )}
                     </span>
                     <div className="flex shrink-0 gap-1">
@@ -2937,12 +2598,11 @@ export function SeatLayoutWorkspace() {
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs font-semibold text-[#5c5346] dark:text-[#c9bfae]">
-                    {seatNumberRecognizing ? "AI가 채우는 중..." : "존별 좌석번호 (직접 입력, 틀리면 수정)"}
+                    존별 좌석번호 (직접 입력, 틀리면 수정)
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
-                      disabled={seatNumberRecognizing}
                       onClick={openSeatNumberPlateCrop}
                       className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
                     >
@@ -2950,15 +2610,7 @@ export function SeatLayoutWorkspace() {
                     </button>
                     <button
                       type="button"
-                      disabled={seatNumberRecognizing}
-                      onClick={() => runSeatNumberRecognize()}
-                      className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
-                    >
-                      AI로 자동 채워보기
-                    </button>
-                    <button
-                      type="button"
-                      disabled={seatNumberRecognizing || chatDraftLoading}
+                      disabled={chatDraftLoading}
                       onClick={() => openChatDraft("seatNumbers")}
                       className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
                     >
@@ -2968,29 +2620,9 @@ export function SeatLayoutWorkspace() {
                 </div>
                 <p className="text-xs text-[var(--sl-ink-soft)]">
                   기본은 직접 입력입니다 — 오른쪽에서 책상 도면과 피난안내도를 나란히 보면서
-                  아래 칸에 존별 번호를 적어주세요. &quot;AI로 자동 채워보기&quot;는 참고용이며, 이미
-                  직접 입력한 존은 덮어쓰지 않습니다.
+                  아래 칸에 존별 번호를 적어주세요. 존과 피난안내도를 저장한 뒤 Claude 채팅에서
+                  &quot;○○점 좌석번호 매칭해 줘&quot;라고 하면 한 번에 찾아 주고, [채팅 결과 불러오기]로 확인해 넣을 수 있습니다.
                 </p>
-                {seatNumberWarnings.map((w, i) => (
-                  <p key={i} className="app-notice app-badge-warn w-full justify-start py-1.5 text-xs">
-                    {w}
-                  </p>
-                ))}
-                {seatNumberUnmatchedGroups.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {seatNumberUnmatchedGroups.map((g, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => copySeatNumberGroup(g.ranges)}
-                        title="클릭하면 복사됩니다"
-                        className="rounded-full border border-[var(--sl-warn)]/40 bg-[var(--sl-warn-soft)] px-2.5 py-1 text-xs font-medium text-[var(--sl-warn)] hover:opacity-80"
-                      >
-                        {g.ranges} ({g.count}개) 복사
-                      </button>
-                    ))}
-                  </div>
-                )}
                 {/* PC 발주 도면에서만 사양 차이로 존을 더 쪼갠 경우(예: 책상은 "FPS존A" 하나인데
                     PC는 "FPS존A"/"FPS존B"로 나눠 사양을 다르게 지정한 경우), 그 PC 전용 존 이름도
                     목록에 같이 보여줘서 좌석번호를 따로 입력할 수 있게 한다. */}
@@ -3122,7 +2754,7 @@ export function SeatLayoutWorkspace() {
             </div>
 
             {/* 존별 좌석번호는 결국 사람이 이 도면(왼쪽)과 피난안내도(오른쪽)를 눈으로 비교하며
-                입력하는 작업이라, 두 이미지를 나란히 띄워주는 게 AI 자동인식보다 핵심 기능이다. */}
+                입력하는 작업이라, 두 이미지를 나란히 띄워주는 게 AI 인식보다 핵심 기능이다. */}
             {activeTab === "seatNumber" && seatNumberPlateSrc && (
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center justify-between">
@@ -3282,10 +2914,6 @@ type ZoneFormProps = {
   onEditEtcNameChange: (v: string) => void;
   editEtcColor: string;
   onEditEtcColorChange: (v: string) => void;
-  showAi: boolean;
-  aiResultText: string;
-  recognizing: boolean;
-  onRecognizeAgain: () => void;
   breakdown: SizeBreakdownEntry[];
   onBreakdownChange: (next: SizeBreakdownEntry[]) => void;
   bagShelfDraft: string;
@@ -3319,10 +2947,6 @@ function ZoneForm(props: ZoneFormProps) {
     onEditEtcNameChange,
     editEtcColor,
     onEditEtcColorChange,
-    showAi,
-    aiResultText,
-    recognizing,
-    onRecognizeAgain,
     breakdown,
     onBreakdownChange,
     bagShelfDraft,
@@ -3410,22 +3034,13 @@ function ZoneForm(props: ZoneFormProps) {
         </div>
       )}
 
-      {showAi && (
-        <div className="app-card-sm rounded-lg p-3">
-          <p className="text-xs font-semibold text-[var(--sl-warn)]">
-            AI 자동인식 {activeTab === "pc" ? "(PC 대수)" : "(좌석 수량 + 책상사이즈)"}
-          </p>
-          <p className="mt-1 text-sm text-[#5c5346] dark:text-[#c9bfae]">{aiResultText}</p>
-          <button
-            type="button"
-            disabled={recognizing}
-            onClick={onRecognizeAgain}
-            className="app-btn-accent mt-2 rounded-full px-3 py-1 text-xs disabled:opacity-50"
-          >
-            다시 인식
-          </button>
-        </div>
-      )}
+      {/* 2026-10-27 웹 Gemini 자동인식을 지웠다 — 수량은 직접 넣거나, 존을 다 그려 저장한 뒤 Claude 채팅으로 한 번에
+          인식해 [채팅 결과 불러오기]로 넣는다(mcpSeatLayout.ts). */}
+      <p className="app-card-sm rounded-lg p-3 text-xs text-[var(--sl-ink-soft)]">
+        {activeTab === "pc" ? "PC 대수" : "책상 수량·사이즈·가방 선반"}를 직접 입력하세요. 존을 다 그리고 저장한 뒤 Claude 채팅에서
+        &quot;○○점 {activeTab === "pc" ? "PC 대수 세어 줘" : "책상 인식해 줘"}&quot;라고 하면 한 번에 인식해 줍니다
+        (존 목록 위 [채팅 결과 불러오기]).
+      </p>
 
       {activeTab === "desk" ? (
         <>

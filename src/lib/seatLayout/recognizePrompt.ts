@@ -1,6 +1,6 @@
-// 좌석배치도 AI 인식 지시문 — 웹 Gemini 버튼(api/seat-layout/recognize, recognize-seat-numbers)과
-// 채팅 커넥터(api/mcp, 직원 개인 Claude)가 **같은 문장**을 쓰도록 라우트에서 꺼냈다(2026-10-27).
-// 지시문을 고치면 두 경로가 같이 바뀐다.
+// 좌석배치도 AI 인식 지시문 — 채팅 커넥터(api/mcp, 직원 개인 Claude)가 도면과 함께 넘긴다.
+// 원래 웹 Gemini 버튼(api/seat-layout/recognize, recognize-seat-numbers)의 문장이다. 2026-10-27 채팅으로 옮기며
+// 같은 문장으로 울산삼산점 책상·PC·좌석번호를 전부 맞혀서(저장값 대조) 그대로 두고, 웹 버튼은 지웠다.
 
 export const EXCLUDE_NOTE =
   "이 구역 안에는 좌석이 아닌 다른 도면 기호(에어컨 실내기, 소화기, 기둥, 콘센트, 배관, 문, 화분, 카운터, 안내판 등)도 " +

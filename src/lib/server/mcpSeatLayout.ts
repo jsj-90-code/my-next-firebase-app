@@ -82,7 +82,7 @@ export async function buildZoneCrops(dataUrl: string, rects: NormalizedRect[]): 
   );
 }
 
-/** 전체 1장 + 좌상·우상·좌하·우하 확대 4장(10% 겹침) — 브라우저 imageTiles.ts와 같은 방식. */
+/** 전체 1장 + 좌상·우상·좌하·우하 확대 4장(10% 겹침) — 예전 웹 버튼(imageTiles.ts, 10-27 삭제)과 같은 방식. */
 export async function buildQuadrantImages(dataUrl: string): Promise<ChatImage[]> {
   const buf = decode(dataUrl);
   const { width: w = 0, height: h = 0 } = await sharp(buf).metadata();
