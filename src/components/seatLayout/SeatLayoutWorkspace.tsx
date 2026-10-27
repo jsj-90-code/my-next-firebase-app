@@ -2128,8 +2128,10 @@ export function SeatLayoutWorkspace() {
         const typeKey = pcZone?.typeKey ?? deskZone?.typeKey;
         if (!typeKey) return null;
         const overrides = pcZone?.pcOverrides ?? {};
-        const spec = (fieldId: PcSpecFieldId) =>
-          overrides[fieldId] ?? pcDefaults[fieldId] ?? PC_SPEC_FIELDS.find((f) => f.id === fieldId)?.def ?? "";
+        const base = (fieldId: PcSpecFieldId) =>
+          pcDefaults[fieldId] ?? PC_SPEC_FIELDS.find((f) => f.id === fieldId)?.def ?? "";
+        const spec = (fieldId: PcSpecFieldId) => overrides[fieldId] ?? base(fieldId);
+        // 10-27: 시트 문구를 그 존의 실제 사양에서 뽑는다 — 매장 기본과 다른 장비가 그 존의 "대표 장비"(googleSheets.ts).
         return {
           zoneName: name,
           ranges: rangeEntry.ranges,
@@ -2138,6 +2140,11 @@ export function SeatLayoutWorkspace() {
           monitor: spec("monitor"),
           keyboard: spec("keyboard"),
           mouse: spec("mouse"),
+          headset: spec("headset"),
+          ram: spec("ram"),
+          baseKeyboard: base("keyboard"),
+          baseHeadset: base("headset"),
+          baseRam: base("ram"),
         };
       })
       .filter((e): e is NonNullable<typeof e> => Boolean(e));
