@@ -2308,9 +2308,7 @@ export function SeatLayoutWorkspace() {
           <button type="button" disabled={busy} onClick={handleDownload} className="app-btn-outline rounded-lg px-3 py-2 text-sm">
             이미지 다운로드
           </button>
-          <button type="button" disabled={busy} onClick={handlePublishToSlides} className="app-btn-accent rounded-lg px-3 py-2 text-sm">
-            책상의자PC범례 데이터 등록
-          </button>
+          {/* 10-27 밤 사용자: 등록 버튼 두 개는 작업 순서 마지막 단계로 옮겼다(중복·미리 누르는 실수). 열기 링크는 남긴다. */}
           {presentationUrl && (
             <a
               href={presentationUrl}
@@ -2321,9 +2319,6 @@ export function SeatLayoutWorkspace() {
               프레젠테이션 열기 ↗
             </a>
           )}
-          <button type="button" disabled={busy} onClick={handlePublishDeskOrder} className="app-btn-accent rounded-lg px-3 py-2 text-sm">
-            인테/가맹 통합발주서 등록
-          </button>
           {deskOrderSheetUrl && (
             <a
               href={deskOrderSheetUrl}
