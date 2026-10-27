@@ -2142,6 +2142,7 @@ export function SeatLayoutWorkspace() {
           mouse: spec("mouse"),
           headset: spec("headset"),
           ram: spec("ram"),
+          subMonitor: spec("subMonitor"),
           baseKeyboard: base("keyboard"),
           baseHeadset: base("headset"),
           baseRam: base("ram"),

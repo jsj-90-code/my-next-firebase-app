@@ -124,8 +124,8 @@ function formatSpec4(e: SeatNumberSheetEntry): string {
 const MONITOR_BRAND_PREFIXES = ["제이씨현", "비트엠", "큐닉스"];
 
 // "제이씨현 32인치 240Hz" -> "32인치 240Hz 모니터" / BenQ, LG 울트라기어는 제조사명을 유지한다.
-// 보조 모니터가 붙은 "큐닉스 27인치 300Hz + 제우스랩 16인치 …"는 "27인치 300Hz + 듀얼 모니터"(울산 시트).
-function formatMonitorSpec(raw: string): string {
+// 보조 모니터가 있으면(보조 모니터 칸, 또는 예전처럼 모니터 칸에 "+ 제우스랩 …"로 붙인 값) "27인치 300Hz + 듀얼 모니터"(울산 시트).
+function formatMonitorSpec(raw: string, subMonitor?: string): string {
   // 앞에 띄어쓰기가 있는 " +"만 보조 모니터 — "BenQ XL2540X+ 280Hz"처럼 모델명 안의 +는 그대로 둔다.
   const [main, ...extra] = (raw ?? "").split(/\s+\+/);
   const trimmed = main.replace(/\s+/g, " ").trim();
@@ -136,7 +136,8 @@ function formatMonitorSpec(raw: string): string {
     const brand = MONITOR_BRAND_PREFIXES.find((b) => trimmed.startsWith(b));
     body = brand ? trimmed.slice(brand.length).trim() : trimmed;
   }
-  if (extra.some((x) => x.trim())) return `${body.replace(/\s*모니터$/, "")} + 듀얼 모니터`;
+  const hasSub = !!subMonitor && !["없음", "해당없음", ""].includes(subMonitor.trim());
+  if (hasSub || extra.some((x) => x.trim())) return `${body.replace(/\s*모니터$/, "")} + 듀얼 모니터`;
   return body.endsWith("모니터") ? body : `${body} 모니터`;
 }
 
@@ -157,7 +158,7 @@ export function buildSheetRows(entries: SeatNumberSheetEntry[]): { rows: SheetRo
     }
     const name = stripZoneLetterSuffix(e.zoneName);
     const gpu = (e.gpu ?? "").trim();
-    const monitor = formatMonitorSpec(e.monitor);
+    const monitor = formatMonitorSpec(e.monitor, e.subMonitor);
     const spec3 = formatSpec3(e);
     const spec4 = formatSpec4(e);
     const description = zoneDescription(e.typeKey, name);
@@ -183,6 +184,7 @@ export type SeatNumberSheetEntry = {
   mouse: string;
   headset?: string;
   ram?: string;
+  subMonitor?: string;
   // 매장 기본사양 — 존 사양이 이와 다르면 "그 존의 대표 장비"로 본다.
   baseKeyboard?: string;
   baseHeadset?: string;

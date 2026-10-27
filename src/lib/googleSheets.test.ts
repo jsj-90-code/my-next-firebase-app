@@ -32,6 +32,13 @@ describe("좌석번호표 시트 문구(울산 기준)", () => {
     expect(byName["세레머니 팀룸"][4]).toBe("팀 게임을 위한 아이센스만의 프리미엄 좌석");
   });
 
+  it("보조 모니터 칸이 있으면 듀얼 모니터", () => {
+    const { rows } = buildSheetRows([e("VIP존A", "vip", { monitor: "큐닉스 27인치 300Hz", subMonitor: "제우스랩 16인치 Z16 Lite" }),
+      e("LOL존A", "lol", { monitor: "큐닉스 27인치 300Hz", subMonitor: "없음" })]);
+    expect(rows[0][3]).toBe("27인치 300Hz + 듀얼 모니터");
+    expect(rows[1][3]).toBe("27인치 300Hz 모니터");
+  });
+
   it("커플존은 핑크 헤드셋 문구, 책상만 설치는 행에서 빼고 번호를 모은다", () => {
     const { rows, skipped } = buildSheetRows([
       e("커플존A", "couple_room", { headset: "앱코 N800(핑크)", mouse: "G304(3개) + 오로치(3개)" }),
