@@ -72,6 +72,7 @@ export type PcSpecFieldId =
   | "monitorArm"
   | "monitor"
   | "subMonitor"
+  | "subMonitorArm"
   | "mouse"
   | "keyboard"
   | "headset"

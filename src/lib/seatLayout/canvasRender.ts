@@ -557,8 +557,8 @@ export function renderPcFloorplanImage(
   // 붙어도 이 박스 제목에는 항상 "멀티존"만 표시한다.
   const defaultSpecLabel = "(멀티존)";
 
-  // 보조 모니터는 대부분 "없음"이라 기본사양 박스에서 뺀다(있는 존은 존 카드에 따로 뜬다).
-  const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad" && f.id !== "case" && f.id !== "subMonitor");
+  // 보조 모니터·보조 모니터암은 대부분 "없음"이라 기본사양 박스에서 뺀다(있는 존은 존 카드에 따로 뜬다).
+  const DEFAULT_BOX_FIELDS = PC_SPEC_FIELDS.filter((f) => f.id !== "joypad" && f.id !== "case" && f.id !== "subMonitor" && f.id !== "subMonitorArm");
   const defHeaderH = 34;
   const defLineH = 25;
   const DEF_FONT = 16;

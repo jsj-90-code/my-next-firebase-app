@@ -115,6 +115,8 @@ export const PC_SPEC_FIELDS: PcSpecField[] = [
   { id: "monitor", label: "모니터", def: "제이씨현 32인치 240Hz" },
   // 10-27 사용자: 듀얼 모니터를 "모니터" 칸에 "+ 제우스랩…"로 붙여 쓰던 것을 따로 뺐다(발주 수량 집계·좌석번호표 문구).
   { id: "subMonitor", label: "보조 모니터", def: "없음" },
+  // 보조 모니터를 다는 암도 따로 센다 — 관절암 선택지에 "관절암+엔산"을 섞으면 관절암 수량이 갈라진다(10-27 사용자).
+  { id: "subMonitorArm", label: "보조 모니터암", def: "없음" },
   { id: "mouse", label: "마우스", def: "로지텍 G304_화이트 무선 마우스 & ROCCAT PURE SEL 유선 화이트" },
   { id: "keyboard", label: "키보드", def: "ISENS K400 광청축 크리스탈 키캡 키보드" },
   { id: "headset", label: "헤드셋", def: "젬스트 LEF G58" },
@@ -143,6 +145,7 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
     "LG 울트라기어 GP750 240Hz",
   ],
   subMonitor: ["없음", "제우스랩 16인치 Z16 Lite"],
+  subMonitorArm: ["없음", "엔산마운트암(제우스랩)"],
   mouse: [
     "로지텍 G304_화이트 무선 마우스 & ROCCAT PURE SEL 유선 화이트",
     "로지텍 G304_화이트 무선 마우스 & 스틸시리즈 라이벌3",
