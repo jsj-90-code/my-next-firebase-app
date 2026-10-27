@@ -18,7 +18,19 @@ export type WorkStep = {
   alt?: string;
 };
 
-export function SeatLayoutSteps({ steps, connectorUsed = null }: { steps: WorkStep[]; connectorUsed?: boolean | null }) {
+// 10-27 밤 사용자: 작업 순서에서 [채팅 결과 불러오기]를 눌렀는데 "반응이 없다" — 안내(결과 없음·오류)가 위쪽 바에만 떠서
+// 안 보였다. 같은 문구를 지금 단계 버튼 아래에도 띄운다.
+type Status = { text: string; tone: "info" | "success" | "error" };
+
+export function SeatLayoutSteps({
+  steps,
+  connectorUsed = null,
+  status,
+}: {
+  steps: WorkStep[];
+  connectorUsed?: boolean | null;
+  status?: Status;
+}) {
   // 커넥터를 한 번도 안 쓴 사람(서버 기록 없음)이면 연결 안내를 펼치고 강조한다. 모르면(null) 접어 둔다.
   const firstTime = connectorUsed === false;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -147,6 +159,19 @@ export function SeatLayoutSteps({ steps, connectorUsed = null }: { steps: WorkSt
                     >
                       {s.action.label}
                     </button>
+                  )}
+                  {isCurrent && status?.text && (
+                    <p
+                      className={`text-xs font-medium leading-5 ${
+                        status.tone === "error"
+                          ? "text-[var(--sl-danger)]"
+                          : status.tone === "success"
+                            ? "text-[var(--sl-ok)]"
+                            : "text-[var(--sl-ink-soft)]"
+                      }`}
+                    >
+                      {status.text}
+                    </p>
                   )}
                   {s.alt && (
                     <p className="text-xs leading-5 text-[var(--sl-ink-soft)]">

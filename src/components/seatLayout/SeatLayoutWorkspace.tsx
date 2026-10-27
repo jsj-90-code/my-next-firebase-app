@@ -2745,7 +2745,7 @@ export function SeatLayoutWorkspace() {
             )}
           </section>
 
-          <SeatLayoutSteps key={activeTab} steps={buildWorkSteps()} connectorUsed={connectorUsed} />
+          <SeatLayoutSteps key={activeTab} steps={buildWorkSteps()} connectorUsed={connectorUsed} status={status} />
 
           {activeTab !== "seatNumber" && (
             <section className="app-card rounded-2xl p-5">
