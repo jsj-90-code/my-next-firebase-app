@@ -145,7 +145,7 @@ export const FIELD_SUGGESTIONS: Partial<Record<PcSpecFieldId, string[]>> = {
     "LG 울트라기어 GP750 240Hz",
   ],
   subMonitor: ["없음", "제우스랩 Z16 Lite"],
-  subMonitorArm: ["없음", "엔산마운트암(제우스랩)"],
+  subMonitorArm: ["없음", "엔산 마운트암"],
   mouse: [
     "로지텍 G304_화이트 무선 마우스 & ROCCAT PURE SEL 유선 화이트",
     "로지텍 G304_화이트 무선 마우스 & 스틸시리즈 라이벌3",

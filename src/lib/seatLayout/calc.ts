@@ -390,6 +390,9 @@ const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>
   subMonitor: {
     "제우스랩 16인치 Z16 Lite": "제우스랩 Z16 Lite",
   },
+  subMonitorArm: {
+    "엔산마운트암(제우스랩)": "엔산 마운트암",
+  },
   // "1구 어답터"(예전 기본값)는 항상 "그때는 기본값이었다"는 뜻이라 안전하게 새 기본값
   // "2구 어답터"로 옮길 수 있다. 반대로 "2구→3구"는 여기 넣지 않는다 — "2구 어답터"라는
   // 문자열이 이제는 새 기본값 자체이기도 해서, 옛 값인지 방금 계산된 새 기본값인지 문자열만
