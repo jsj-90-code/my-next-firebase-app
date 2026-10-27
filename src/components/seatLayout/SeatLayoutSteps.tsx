@@ -40,6 +40,30 @@ export function SeatLayoutSteps({ steps }: { steps: WorkStep[] }) {
           {doneCount} / {steps.length}
         </span>
       </div>
+      {/* 10-27 밤 사용자: 커넥터 설치 안내가 없다. 조직 커넥터 "PC 점포평가"는 관리자가 이미 추가해 둠(09-29,
+          docs/chat-location-eval-20260929.md) — 직원은 각자 처음 한 번 [연결]만 하면 된다. */}
+      <details className="mt-3 rounded-xl border border-[#171310]/[0.1] px-3 py-2 dark:border-white/[0.1]">
+        <summary className="cursor-pointer text-xs font-semibold text-[var(--sl-gold-ink)]">
+          처음이면: Claude 커넥터 연결 (한 번만)
+        </summary>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-5 text-[#5c5346] dark:text-[#c9bfae]">
+          <li>
+            PC 웹 claude.ai →{" "}
+            <a
+              href="https://claude.ai/settings/connectors"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[var(--sl-gold-ink)] underline"
+            >
+              설정 → 커넥터 ↗
+            </a>
+          </li>
+          <li><strong>PC 점포평가</strong> 옆 [연결] → 회사 구글 계정으로 로그인 → [허용]</li>
+          <li>도구 권한은 &quot;항상 허용&quot;으로 두면 매번 묻지 않습니다.</li>
+          <li>새 채팅에서 아래 단계의 문장을 붙여 넣으면 됩니다. 모델은 Opus를 권장합니다(도면 읽기 정확도).</li>
+          <li>도구가 안 보이거나 예전 목록이면: 커넥터 [연결 해제] 후 다시 [연결].</li>
+        </ol>
+      </details>
       <ol className="mt-3 space-y-1.5">
         {steps.map((s, i) => {
           const isCurrent = i === currentIdx;
