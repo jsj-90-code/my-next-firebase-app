@@ -27,23 +27,31 @@ export function baseZoneName(name: string): string {
   return name.replace(/[A-Za-z]$/, "");
 }
 
-// 합쳐진 카드의 이름표. 2026-10-27 사용자: "FPS존A,B" 대신 둘 다 "FPS존A"로 보이는 게 보기 편하다 —
-// 같은 계열에서 가장 앞 알파벳 하나만 쓴다. 도면 위 존 상자 이름표도 같은 이름으로 그린다
-// (zoneDisplayAliases). 저장된 존 이름은 그대로라 좌석번호·채팅 인식은 A/B를 그대로 구분한다.
-export function mergeZoneDisplayNames(names: string[]): string {
-  const unique = Array.from(new Set(names)).sort();
-  return unique[0] ?? "";
-}
-
-/** 카드로 합친 묶음마다 "실제 존 이름 → 발주 도면에 보일 이름". 안 합쳐진 존은 넣지 않는다(원래 이름 그대로). */
-export function zoneDisplayAliases(groups: { names: string[] }[]): Map<string, string> {
-  const aliases = new Map<string, string>();
+// 발주 도면에 보일 존 이름. 2026-10-27 사용자: 구성이 같아 합친 "FPS존A,B"는 "FPS존A"로, 그러면 다음이 C로 건너뛰니
+// **같은 계열 안에서 묶음 순서대로 A, B, C…를 다시 매긴다**(예: A+B 묶음·C → A·B). 카드와 도면 위 상자 이름표가
+// 같은 이름을 쓴다. 저장된 존 이름은 그대로라 웹 작업 화면·좌석번호·채팅 인식은 원래 이름(A/B/C)으로 구분한다.
+// groups엔 그 도면의 존이 빠짐없이 한 번씩 들어 있어야 한다(합쳐지지 않은 존은 혼자 한 묶음).
+export function zoneDisplayLabels(groups: { names: string[] }[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  const byBase = new Map<string, string[][]>();
   for (const g of groups) {
-    if (new Set(g.names).size < 2) continue;
-    const label = mergeZoneDisplayNames(g.names);
-    for (const n of g.names) aliases.set(n, label);
+    const names = Array.from(new Set(g.names)).sort();
+    if (!names.length) continue;
+    const base = baseZoneName(names[0]);
+    byBase.set(base, [...(byBase.get(base) ?? []), names]);
   }
-  return aliases;
+  for (const [base, list] of byBase) {
+    list.sort((a, b) => a[0].localeCompare(b[0]));
+    const lettered = list.filter((names) => names[0] !== base);
+    // 알파벳 26개를 넘는 계열은 다시 매기지 않는다(원래 이름의 첫 번째).
+    const relabel = lettered.length <= 26;
+    let i = 0;
+    for (const names of list) {
+      const label = names[0] === base || !relabel ? names[0] : `${base}${String.fromCharCode(65 + i++)}`;
+      for (const n of names) labels.set(n, label);
+    }
+  }
+  return labels;
 }
 
 export type DeskCardGroup = {
@@ -113,13 +121,14 @@ export function groupDeskZonesForCard(zones: DeskZone[]): DeskCardGroup[] {
     g.names.push(z.name);
     g.seats += Number(z.seats) || 0;
   });
+  const labels = zoneDisplayLabels(order.map((key) => map.get(key)!));
   return order.map((key) => {
     const g = map.get(key)!;
     const sizeText = DESK_SIZE_OPTIONS.filter((s) => g.qtyByDeskSize.has(s))
       .map((s) => `${s} x${g.qtyByDeskSize.get(s)}`)
       .join(", ");
     return {
-      name: mergeZoneDisplayNames(g.names),
+      name: labels.get(g.names[0]) ?? g.names[0],
       names: g.names,
       seats: g.seats,
       color: g.color,

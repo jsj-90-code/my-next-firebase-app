@@ -18,8 +18,7 @@ import {
   computePcTotal,
   getContrastText,
   groupDeskZonesForCard,
-  mergeZoneDisplayNames,
-  zoneDisplayAliases,
+  zoneDisplayLabels,
   normalizeFieldValue,
   resolveAdapterValue,
   splitMouseValue,
@@ -208,7 +207,7 @@ export function drawZoneOverlaysOnCard(
   c: CanvasRenderingContext2D,
   zones: (DeskZone | PcZone)[],
   geo: FloorPlanGeo,
-  // 카드로 합친 존은 상자 이름표도 카드와 같은 이름("FPS존A")으로 — zoneDisplayAliases(calc.ts).
+  // 발주 도면에 보일 이름(합친 존은 하나로, A·B·C 다시 매김) — zoneDisplayLabels(calc.ts).
   aliases: Map<string, string> = new Map(),
 ) {
   const labelOf = (z: DeskZone | PcZone) => aliases.get(z.name) ?? z.name;
@@ -376,7 +375,7 @@ export function renderDeskFloorplanImage(
 
   const geometry = computeLegendGeometry(cardGroups.length);
   const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
-  drawZoneOverlaysOnCard(c, zones, geo, zoneDisplayAliases(cardGroups));
+  drawZoneOverlaysOnCard(c, zones, geo, zoneDisplayLabels(cardGroups));
 
   const panelAreaX = 20;
   const panelAreaY = 20;
@@ -537,10 +536,14 @@ export function renderPcFloorplanImage(
     g.seats += Number(z.seats) || 0;
   });
 
+  const pcLabels = zoneDisplayLabels([
+    ...overrideCardsByKey.values(),
+    ...[...defaultSpecNamesByBase.values()].map((names) => ({ names })),
+  ]);
   const overrideZones = overrideCardOrder
     .map((key) => {
       const g = overrideCardsByKey.get(key)!;
-      return { name: mergeZoneDisplayNames(g.names), seats: g.seats, color: g.color, lines: g.lines };
+      return { name: pcLabels.get(g.names[0]) ?? g.names[0], seats: g.seats, color: g.color, lines: g.lines };
     })
     .sort((a, b) => {
       const baseCmp = baseZoneName(a.name).localeCompare(baseZoneName(b.name));
@@ -700,15 +703,7 @@ export function renderPcFloorplanImage(
   const cardW = baseCardX + baseCardW - cardX;
 
   const geo = drawFloorPlanCard(c, img, cardY, cardH, cardX, cardW);
-  drawZoneOverlaysOnCard(
-    c,
-    pcZones,
-    geo,
-    zoneDisplayAliases([
-      ...[...overrideCardsByKey.values()],
-      ...[...defaultSpecNamesByBase.values()].map((names) => ({ names })),
-    ]),
-  );
+  drawZoneOverlaysOnCard(c, pcZones, geo, pcLabels);
 
   c.fillStyle = "#2A2520";
   c.fillRect(panelAreaX, panelAreaY, panelAreaW, defHeaderH);
