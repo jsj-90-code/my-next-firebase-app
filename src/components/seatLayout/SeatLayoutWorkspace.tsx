@@ -2621,9 +2621,9 @@ export function SeatLayoutWorkspace() {
               className="mt-1 w-full text-sm text-[#5c5346] file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:opacity-80 dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
             />
             <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-              등록하면 먼저 필요한 영역만 잘라낼 수 있고, 그 뒤 존별 좌석번호 범위를 자동으로
-              인식해서 발주요약(슬라이드3)에 함께 넣습니다. 번호 인식은 100% 정확하지 않을 수
-              있어요 — 틀린 부분은 아래에서 직접 고치면 됩니다.
+              등록하면 먼저 필요한 영역만 잘라낼 수 있습니다. [프로젝트 저장] 후 Claude 채팅에서
+              &quot;○○점 좌석번호 매칭해 줘&quot; → [채팅 결과 불러오기]로 존별 번호를 채우고, 틀린 부분은 아래에서
+              직접 고친 뒤 [좌석번호표 발주 등록]으로 시트에 올립니다.
             </p>
 
             {/* 스크롤해서 아래로 내려가야 겨우 보이던 문제 때문에, 등록 버튼은 이 탭 맨 위(업로드
