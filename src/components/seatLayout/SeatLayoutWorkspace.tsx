@@ -978,8 +978,14 @@ export function SeatLayoutWorkspace() {
       // 셀 필요가 없어 완료, 나눈 존이 있으면 PC 채팅 결과를 받아 넣고 저장해야 완료(결과 시각 ≤ 마지막 저장).
       const split = pcZones.length !== project.zones.length ||
         pcZones.some((p) => !project.zones.some((d) => d.name === p.name && d.seats === p.seats));
-      const pcDraftAt = latestChatDraft?.projectId === project.id ? latestChatDraft.draft?.pc?.createdAt : undefined;
-      const pcCounted = !split || (!!pcDraftAt && pcDraftAt <= (project.updatedAt ?? 0));
+      // 10-27 밤 호구점: 나누기 전에 받은 PC 결과(22:54) 뒤에 FPS존을 A·B로 나눠 저장(22:58)했더니 옛 결과로 완료 처리됐다
+      // → 결과가 지금 PC 존 이름을 전부 담고 있고, 0대인 존이 없어야 완료.
+      const pcDraft = latestChatDraft?.projectId === project.id ? latestChatDraft.draft?.pc : undefined;
+      const pcDraftNames = new Set(pcDraft?.rows.map((r) => r.zoneName) ?? []);
+      const pcCounted = !split || (
+        !!pcDraft && pcDraft.createdAt <= (project.updatedAt ?? 0) &&
+        pcZones.every((z) => pcDraftNames.has(z.name) && z.seats > 0)
+      );
       return [
         { key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
           hint: "책상 발주 도면의 존을 그대로 가져옵니다. 사양이 다른 자리는 존을 나눠 주세요.",
