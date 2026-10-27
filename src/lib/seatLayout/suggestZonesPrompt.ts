@@ -1,6 +1,8 @@
-// 존 초안(구역 제안) 지시문·응답 해석 — 원래 웹 Gemini 버튼(api/seat-layout/suggest-zones, 2026-10-27 삭제) 문장.
-// 채팅으로 존 초안을 받는 도구에 다시 쓰려고 남겨 둔다(사용자 10-27: 평택소사벌 시험 뒤 초안받기 시험 예정).
-// 주의: 2번 규칙("통로 양쪽 두 줄은 한 구역")은 실제 저장 존(게임 종류별로 줄마다 나눔)과 어긋난다 — 10-27 울산삼산 시험.
+// 존 초안(구역 제안) 지시문 — 채팅 커넥터(get_seat_layout_floorplan → submit_seat_layout_zone_draft)가 도면과 함께 넘긴다.
+// 원래 웹 Gemini 버튼(api/seat-layout/suggest-zones) 문장이었다. 2026-10-27 버튼을 지우고 채팅으로 옮기며 두 군데 고쳤다:
+//   - 2번: 옛 규칙 "통로를 사이에 둔 두 줄 + 통로를 한 구역"은 실제 저장 존과 어긋났다(울산삼산은 FPS·LOL·멀티가
+//     줄마다 15석씩 따로) — 그 규칙을 따른 Claude가 두 줄을 30석 하나로 묶었다. → "한 줄 = 한 구역"으로.
+//   - 답 형식: ZONE 줄 대신 도구 입력(zones 배열)으로.
 
 export const SUGGEST_ZONES_IMAGE_LABELS = [
   "① 전체 도면",
@@ -33,16 +35,10 @@ export function buildSuggestZonesPrompt(multiTile: boolean): string {
     "1. 이미지에서 책상/좌석이 물리적으로 한 덩어리로 묶여 보이는 구역을 찾으세요 (같은 줄로 " +
     "나란히 붙어있거나, 벽/통로로 분리된 섬 모양 덩어리 등). 벽, 카운터, 주방, 화장실, 창고처럼 " +
     "좌석이 아예 없는 공간은 절대로 구역 상자 안에 포함하지 마세요 — 다 그린 뒤에 각 구역 " +
-    "상자 안을 다시 살펴서 이런 비좌석 공간이 섞여 들어간 게 있으면 경계를 좁히세요. (통로는 " +
-    "예외라 2번을 보세요.)\n" +
-    "2. 마주보는 좌석 사이의 좁은 통로(복도)는 이렇게 알아보세요: 책상 없이 빈 바닥이 좁게 " +
-    "이어지고, 그 양쪽에 의자들이 서로 마주보는 방향으로 붙어 있는 형태입니다. 이런 통로를 " +
-    "찾으면, 통로 양쪽 두 줄과 통로 자체까지 통틀어 하나의 구역으로 잡으세요 (손님이 그 통로에 " +
-    "서서 봤을 때 한 구역으로 보이게 하는 게 목적입니다). 처음엔 하나로 이어진 덩어리처럼 " +
-    "보여도, 그 덩어리 중간에 이런 좁은 통로가 있으면 그 통로를 기준으로 좌/우(또는 상/하)로 " +
-    "쪼갠 뒤, 각 쪽을 통로 건너 반대편에 있는 옆줄과 다시 짝지어 하나의 구역으로 묶으세요 — " +
-    "즉 통로 하나마다 그 통로를 감싸는 구역이 하나씩 나와야 하고, 통로를 사이에 둔 두 줄을 " +
-    "각각 별도 구역으로 쪼개면 안 됩니다.\n" +
+    "상자 안을 다시 살펴서 이런 비좌석 공간이 섞여 들어간 게 있으면 경계를 좁히세요.\n" +
+    "2. 한 줄로 쭉 이어진 좌석 줄 하나를 한 구역으로 잡으세요. 통로를 사이에 두고 마주보는 두 줄이나 " +
+    "등을 맞댄 두 줄은 각각 따로 구역으로 나누세요 — 이 매장들은 보통 게임 종류별 존을 줄 단위로 나눕니다 " +
+    "(예: 15석 한 줄 = 존 하나). 벽과 문으로 둘러싸인 방은 방 하나를 한 구역으로 잡으세요.\n" +
     "3. 각 구역의 사각형 경계는 책상뿐 아니라 그 책상에 딸린 의자까지 전부 포함하도록 잡으세요 " +
     "— 의자가 구역 상자 밖으로 삐져나오면 안 됩니다.\n" +
     "4. 겉보기엔 한 줄로 쭉 이어진 것 같아도, 좌석 사이 파티션(칸막이) 두께나 색이 중간에 " +
@@ -67,47 +63,9 @@ export function buildSuggestZonesPrompt(multiTile: boolean): string {
     "- 의자 하나가 두 사람이 나란히 앉는 넓은 2인용 형태 → couple_seat\n" +
     "- 위 어느 것도 뚜렷하지 않으면 type을 아예 쓰지 마세요 (게임 종류로 정해지는 멀티존/LOL존/" +
     "FC/FPS존 등은 도면만으로 알 수 없으니 추측하지 마세요).\n\n" +
-    "구역 사각형 위치는 ①번 전체 이미지 기준 왼쪽 위 원점의 비율 좌표(0~1 사이 값)로 답하세요.\n" +
-    "다른 설명 없이, 구역마다 정확히 한 줄씩 이 형식으로만 답하세요 (왼쪽 위부터 아래로, 보이는 " +
-    "순서대로, type은 확신이 있을 때만 붙이세요):\n" +
-    "ZONE: [type=<ceremony_team|vip|friends|one_seat|couple_seat>] seats=<좌석수> x=<0~1> " +
-    "y=<0~1> w=<0~1> h=<0~1>"
+    "구역 사각형 위치는 ①번 전체 이미지 기준 왼쪽 위 원점의 비율 좌표(0~1 사이 값)로, 왼쪽 위부터 보이는 " +
+    "순서대로 submit_seat_layout_zone_draft의 zones에 넣으세요(type은 확신이 있을 때만)."
   );
 }
 
-export const VALID_ZONE_TYPES = new Set(["ceremony_team", "vip", "friends", "one_seat", "couple_seat"]);
-
-export type ZoneSuggestion = {
-  seats: number;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  type?: string;
-};
-
-export function parseZoneSuggestions(text: string): ZoneSuggestion[] {
-  const zones: ZoneSuggestion[] = [];
-  for (const m of text.matchAll(
-    /ZONE:\s*(?:type=(\w+)\s+)?seats=(\d+)\s+x=([\d.]+)\s+y=([\d.]+)\s+w=([\d.]+)\s+h=([\d.]+)/g,
-  )) {
-    const type = m[1] && VALID_ZONE_TYPES.has(m[1]) ? m[1] : undefined;
-    const seats = parseInt(m[2], 10);
-    const x = parseFloat(m[3]);
-    const y = parseFloat(m[4]);
-    const w = parseFloat(m[5]);
-    const h = parseFloat(m[6]);
-    if (!Number.isFinite(seats) || seats <= 0) continue;
-    if (![x, y, w, h].every((v) => Number.isFinite(v))) continue;
-    if (w <= 0 || h <= 0) continue;
-    zones.push({
-      seats,
-      x: Math.max(0, Math.min(1, x)),
-      y: Math.max(0, Math.min(1, y)),
-      w: Math.max(0.001, Math.min(1, w)),
-      h: Math.max(0.001, Math.min(1, h)),
-      ...(type ? { type } : {}),
-    });
-  }
-  return zones;
-}
+export const VALID_ZONE_TYPES = ["ceremony_team", "vip", "friends", "one_seat", "couple_seat"] as const;

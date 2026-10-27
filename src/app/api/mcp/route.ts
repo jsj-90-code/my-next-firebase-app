@@ -22,6 +22,7 @@ import type { DeskCountDraftRow, PcCountDraftRow } from "@/lib/seatLayout/chatDr
 import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 import { DESK_SIZE_OPTIONS } from "@/lib/seatLayout/constants";
 import { buildRecognizePrompt, buildSeatNumberPrompt, compressRanges } from "@/lib/seatLayout/recognizePrompt";
+import { buildSuggestZonesPrompt, SUGGEST_ZONES_IMAGE_LABELS, VALID_ZONE_TYPES } from "@/lib/seatLayout/suggestZonesPrompt";
 import type { DeskSize } from "@/lib/seatLayout/types";
 import {
   buildQuadrantImages, buildZoneCrops, buildZoneReferenceImage, loadSeatLayoutChatDraft, parseSeatNumbers,
@@ -315,6 +316,99 @@ function registerTools(server: McpServer, owner: boolean) {
       },
     );
 
+    // ── 존 초안 (2026-10-27) — 도면 전체를 보고 존 구역 상자를 제안한다. 옛 웹 Gemini [구역 초안 제안] 버튼을 채팅으로.
+    //    결과는 초안(seatLayoutChatDrafts.zones)만 — 웹 책상 발주 도면 탭 [채팅 존 초안 불러오기]에서 넣고 다듬어 저장한다.
+    server.registerTool(
+      "get_seat_layout_floorplan",
+      {
+        title: "좌석배치도 존 초안용 도면 받기",
+        description:
+          "좌석배치도 프로젝트의 책상 배치 도면 전체 1장 + 좌상·우상·좌하·우하 확대 4장과 존 초안 지시문을 돌려준다. " +
+          "도면을 보고 존 구역 상자(위치·좌석 수)를 정해 submit_seat_layout_zone_draft로 낸다.",
+        inputSchema: z.object({ projectName: projectNameField }),
+      },
+      async ({ projectName }, ctx) => {
+        if (!isAllowedEmail(userOf(ctx.http?.authInfo)?.email)) return text(seatOnly, true);
+        try {
+          const r = await resolveSeatLayoutProject(projectName);
+          if ("error" in r) return text(r.error);
+          const { project } = r;
+          if (!project.floorPlanDataUrl) {
+            return text(`'${project.name}'에 도면 이미지가 없습니다. 웹에서 도면 PDF를 올리고 [프로젝트 저장]부터 해야 합니다.`, true);
+          }
+          const images = await buildQuadrantImages(project.floorPlanDataUrl);
+          const existing = project.zones?.length
+            ? `\n이미 그려진 책상 존 ${project.zones.length}개가 있다 — 그 구역은 빼고 아직 안 그려진 좌석만 제안하라:\n` +
+              project.zones.map((zn) => `- ${zn.name} x=${zn.x.toFixed(3)} y=${zn.y.toFixed(3)} w=${zn.w.toFixed(3)} h=${zn.h.toFixed(3)}`).join("\n") +
+              "\n"
+            : "";
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  `프로젝트: ${project.name} · 이미지 5장: ${SUGGEST_ZONES_IMAGE_LABELS.join(", ")}\n${existing}\n` +
+                  `--- 존 초안 지시문 ---\n${buildSuggestZonesPrompt(true)}`,
+              },
+              ...images.map((im) => ({ type: "image" as const, data: im.data, mimeType: im.mimeType })),
+            ],
+          };
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
+
+    server.registerTool(
+      "submit_seat_layout_zone_draft",
+      {
+        title: "좌석배치도 존 초안 내기",
+        description:
+          "get_seat_layout_floorplan으로 보고 정한 존 구역 상자들을 **초안**으로 저장한다. 프로젝트는 고치지 않는다 — 웹 책상 발주 도면 탭 " +
+          "[채팅 존 초안 불러오기]에서 넣고 위치·이름을 다듬어 저장한다.",
+        inputSchema: z.object({
+          projectName: projectNameField,
+          zones: z.array(z.object({
+            seats: z.number().int().min(1).describe("구역 안 책상(좌석) 수"),
+            x: z.number().min(0).max(1),
+            y: z.number().min(0).max(1),
+            w: z.number().min(0.001).max(1),
+            h: z.number().min(0.001).max(1),
+            type: z.enum(VALID_ZONE_TYPES).nullable().optional().describe("확신할 때만. 게임 종류 존(멀티·LOL·FPS·FC)은 비운다"),
+          })).min(1).describe("위치는 ①번 전체 도면 기준 왼쪽 위 원점 0~1 비율"),
+          note: z.string().max(2000).nullable().optional().describe("애매했던 구역·확인이 필요한 점(한국어)"),
+          modelName: z.string().max(100).describe("지금 판단한 AI 모델 이름"),
+        }),
+      },
+      async ({ projectName, zones, note, modelName }, ctx) => {
+        const user = userOf(ctx.http?.authInfo);
+        if (!isAllowedEmail(user?.email)) return text(seatOnly, true);
+        try {
+          const r = await resolveSeatLayoutProject(projectName);
+          if ("error" in r) return text(r.error);
+          const { project } = r;
+          // 도면 밖으로 삐져나간 상자는 도면 안으로 자른다.
+          const rows = zones.map((zn) => ({
+            seats: zn.seats,
+            x: zn.x,
+            y: zn.y,
+            w: Math.max(0.001, Math.min(1 - zn.x, zn.w)),
+            h: Math.max(0.001, Math.min(1 - zn.y, zn.h)),
+            type: zn.type ?? null,
+          }));
+          await saveSeatLayoutChatDraft(project, "zones", { rows }, { modelName: modelName || null, note: note ?? null, user });
+          return text(
+            `${project.name} 존 초안 ${rows.length}개를 저장했습니다(좌석 합계 ${rows.reduce((s, zn) => s + zn.seats, 0)}).\n` +
+              rows.map((zn, i) => `${i + 1}. ${zn.type ?? "유형 미정"} · ${zn.seats}석`).join("\n") +
+              "\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭 존 목록의 [채팅 존 초안 불러오기]를 누르면 존으로 들어갑니다. " +
+              "상자 위치·이름·유형을 다듬고 [프로젝트 저장]한 뒤, 책상 수량·사이즈는 \"○○점 책상 인식해 줘\"로 채웁니다. 사용자에게 이 안내를 보여줄 것.",
+          );
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
+
     server.registerTool(
       "get_seat_number_data",
       {
@@ -517,7 +611,7 @@ const PUBLIC_INSTRUCTIONS =
   "아이센스 PC방 후보지 입지평가. 사용자가 주소를 주고 입지평가·예상매출을 물으면: " +
   "(1) get_site_data로 자료와 채점 기준을 받고 (2) 웹 검색으로 그 주소를 직접 조사한 뒤 " +
   "(3) submit_location_scores로 7개 항목을 내서 받은 결과 요약을 사용자에게 보여준다. 점수를 지어내지 말 것." +
-  " 사용자가 좌석배치도 매장(프로젝트)의 책상 인식·PC 대수·좌석번호 매칭을 요청하면: 책상·PC는 get_seat_layout_zone_crops → " +
+  " 사용자가 좌석배치도 매장(프로젝트)의 존 초안·책상 인식·PC 대수·좌석번호 매칭을 요청하면: 존 초안은 get_seat_layout_floorplan → submit_seat_layout_zone_draft, 책상·PC는 get_seat_layout_zone_crops → " +
   "존마다 세기 → submit_seat_layout_zone_counts, 좌석번호는 get_seat_number_data → submit_seat_number_draft. 결과는 초안이라 웹에서 확인·저장한다.";
 
 const publicHandler = createMcpHandler((server) => registerTools(server, false), {

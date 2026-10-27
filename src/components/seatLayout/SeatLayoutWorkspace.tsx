@@ -36,7 +36,10 @@ import {
 } from "@/lib/seatLayout/settings";
 import { SettingsPanel } from "@/components/seatLayout/SettingsPanel";
 import { applyChatDraft, ChatDraftImportModal, type ChatDraftKind } from "@/components/seatLayout/ChatDraftImportModal";
-import type { SeatLayoutChatDraft } from "@/lib/seatLayout/chatDraft";
+import type { SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
+
+// 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안.
+type DraftKind = ChatDraftKind | "zones";
 import {
   emptyProject,
   type DeskSize,
@@ -872,19 +875,19 @@ export function SeatLayoutWorkspace() {
   }, [project.id, project.updatedAt]);
 
   /** 마지막 [프로젝트 저장] 뒤에 들어온 채팅 결과인가 — 넣고 저장하면 알림이 사라진다. */
-  function hasNewChatDraft(kind: ChatDraftKind): boolean {
+  function hasNewChatDraft(kind: DraftKind): boolean {
     if (latestChatDraft?.projectId !== project.id) return false;
     const createdAt = latestChatDraft.draft?.[kind]?.createdAt;
     return !!createdAt && createdAt > (project.updatedAt ?? 0);
   }
 
-  function chatDraftBanner(kind: ChatDraftKind) {
+  function chatDraftBanner(kind: DraftKind) {
     if (!hasNewChatDraft(kind)) return null;
     const meta = latestChatDraft?.draft?.[kind];
     return (
       <div className="app-notice app-badge-info mt-3 flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
         <span>
-          Claude 채팅 인식 결과가 도착했습니다
+          {kind === "zones" ? "Claude 존 초안이 도착했습니다" : "Claude 채팅 인식 결과가 도착했습니다"}
           {meta?.createdAt ? ` (${new Date(meta.createdAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })})` : ""}
         </span>
         <button
@@ -893,13 +896,13 @@ export function SeatLayoutWorkspace() {
           onClick={() => openChatDraft(kind)}
           className="app-btn-accent rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50"
         >
-          확인하고 넣기
+          {kind === "zones" ? "존으로 넣기" : "확인하고 넣기"}
         </button>
       </div>
     );
   }
 
-  async function openChatDraft(kind: ChatDraftKind) {
+  async function openChatDraft(kind: DraftKind) {
     if (!project.id || !project.updatedAt) {
       setStatusMsg("먼저 [프로젝트 저장]을 누르세요 — 채팅은 저장된 도면과 존을 보고 인식합니다.", "error");
       return;
@@ -909,16 +912,64 @@ export function SeatLayoutWorkspace() {
       const draft = await loadChatDraft(project.id);
       setLatestChatDraft({ projectId: project.id, draft });
       if (!draft?.[kind]) {
-        const ask = kind === "seatNumbers" ? "좌석번호 매칭해 줘" : kind === "desk" ? "책상 인식해 줘" : "PC 대수 세어 줘";
+        const ask = { seatNumbers: "좌석번호 매칭해 줘", desk: "책상 인식해 줘", pc: "PC 대수 세어 줘", zones: "존 초안 만들어 줘" }[kind];
         setStatusMsg(`아직 채팅 결과가 없습니다 — Claude 채팅에서 "${project.name} ${ask}"라고 한 뒤 다시 누르세요.`, "error");
         return;
       }
-      setChatDraftModal({ kind, draft });
+      if (kind === "zones") applyZoneDraft(draft.zones?.rows ?? []);
+      else setChatDraftModal({ kind, draft });
     } catch (err) {
       setStatusMsg(`채팅 결과를 불러오지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
     } finally {
       setChatDraftLoading(false);
     }
+  }
+
+  // 존 초안(2026-10-27): 확인 화면 없이 상자를 바로 존으로 넣는다 — 위치는 넣은 뒤 도면 위에서 끌어 다듬는 게 빠르다.
+  // 옛 웹 Gemini [구역 초안 제안]과 같은 규칙: 유형을 확신한 구역은 그 유형 이름·사양 기본값, 아니면 "기타"로 두고
+  // 사람이 고른다. 책상 사이즈는 비워 둔다 — 넣고 저장한 뒤 "책상 인식"이 존마다 잘라 정확히 센다.
+  function applyZoneDraft(rows: ZoneDraftRow[]) {
+    if (!rows.length) return;
+    if (project.zones.length > 0) {
+      const ok = window.confirm(
+        `이미 책상 존이 ${project.zones.length}개 있습니다. 채팅 존 초안 ${rows.length}개를 추가로 넣을까요?`,
+      );
+      if (!ok) return;
+    }
+    const draftColors = ZONE_TYPES.filter((t) => t.key !== "etc").map((t) => t.color);
+    const startIdx = project.zones.length;
+    const namesSoFar: ActiveZone[] = [...project.zones];
+    const drafts: DeskZone[] = rows.map((r, i) => {
+      const matchedType = r.type ? ZONE_TYPES.find((t) => t.key === r.type) : undefined;
+      const typeKey: ZoneTypeKey = matchedType?.key ?? "etc";
+      const name = matchedType ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label) : `초안${startIdx + i + 1}`;
+      const spec = resetDeskSpecDraft(typeKey, effectiveSpecFields, settings.typeDefaults);
+      const zone: DeskZone = {
+        x: r.x,
+        y: r.y,
+        w: r.w,
+        h: r.h,
+        name,
+        typeKey,
+        color: matchedType?.color ?? draftColors[(startIdx + i) % draftColors.length],
+        seats: r.seats,
+        deskSize: "",
+        sizeBreakdown: [],
+        desk: spec.desk,
+        cooler: spec.cooler,
+        partition: spec.partition,
+        monitorArm: spec.monitorArm,
+        chair: spec.chair,
+        bagShelfCount: 0,
+      };
+      namesSoFar.push(zone);
+      return zone;
+    });
+    setProject((p) => ({ ...p, zones: [...p.zones, ...drafts] }));
+    setStatusMsg(
+      `존 초안 ${drafts.length}개를 넣었습니다 — 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 "책상 인식"을 하세요.`,
+      "success",
+    );
   }
 
   function applyChatDraftPicked(picked: Set<string>) {
@@ -2547,17 +2598,30 @@ export function SeatLayoutWorkspace() {
             <section className="app-card rounded-2xl p-5">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-semibold text-[#171310] dark:text-[#f2ede2]">존 목록</h2>
-                {activeZones.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={chatDraftLoading}
-                    onClick={() => openChatDraft(activeTab === "pc" ? "pc" : "desk")}
-                    className="app-btn-accent rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50"
-                  >
-                    {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
-                  </button>
-                )}
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  {activeTab === "desk" && floorPlanSrc && (
+                    <button
+                      type="button"
+                      disabled={chatDraftLoading}
+                      onClick={() => openChatDraft("zones")}
+                      className="app-btn-outline rounded-full px-3 py-1 text-xs disabled:opacity-50"
+                    >
+                      채팅 존 초안 불러오기
+                    </button>
+                  )}
+                  {activeZones.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={chatDraftLoading}
+                      onClick={() => openChatDraft(activeTab === "pc" ? "pc" : "desk")}
+                      className="app-btn-accent rounded-full px-3 py-1 text-xs font-semibold disabled:opacity-50"
+                    >
+                      {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
+                    </button>
+                  )}
+                </div>
               </div>
+              {activeTab === "desk" && floorPlanSrc && chatDraftBanner("zones")}
               {activeZones.length > 0 && chatDraftBanner(activeTab === "pc" ? "pc" : "desk")}
               <div className="mt-3 max-h-[420px] space-y-2 overflow-y-auto pr-1">
                 {activeZones.length === 0 && (
@@ -2966,6 +3030,7 @@ export function SeatLayoutWorkspace() {
                     </ul>
                   </details>
                   <ul className="space-y-2.5">
+                    <li>도면만 올린 상태라면 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 존 초안 만들어 줘&quot; → 존 목록 위 [채팅 존 초안 불러오기]로 구역 상자를 한 번에 넣고 다듬을 수 있습니다.</li>
                     <li>기존 구역을 클릭해서 선택한 뒤, 모서리를 드래그해 크기를, 안쪽을 드래그해 위치를 바꿀 수 있습니다.</li>
                     <li>구역을 옮기거나 크기를 바꾸면 노란 느낌표(!)가 붙습니다 — 수량을 다시 확인하라는 뜻입니다. Enter로 수정 창을 열어 고치거나, [프로젝트 저장] 후 채팅으로 다시 인식하세요.</li>
                     <li>선택된 구역의 오른쪽 위 × 를 누르면 삭제됩니다.</li>

@@ -19,6 +19,8 @@ export type DeskCountDraftRow = {
   bagShelfCount: number | null;
 };
 export type PcCountDraftRow = { zoneName: string; seats: number };
+// 존 초안(2026-10-27): 도면 전체를 보고 제안한 구역 상자. 위치는 도면 기준 0~1 비율, type은 확신할 때만.
+export type ZoneDraftRow = { seats: number; x: number; y: number; w: number; h: number; type: string | null };
 export type SeatNumberDraftRow = { zoneName: string; ranges: string };
 
 export type SeatLayoutChatDraft = {
@@ -27,4 +29,5 @@ export type SeatLayoutChatDraft = {
   desk?: DraftMeta & { rows: DeskCountDraftRow[] };
   pc?: DraftMeta & { rows: PcCountDraftRow[] };
   seatNumbers?: DraftMeta & { rows: SeatNumberDraftRow[]; unsure: string };
+  zones?: DraftMeta & { rows: ZoneDraftRow[] };
 };
