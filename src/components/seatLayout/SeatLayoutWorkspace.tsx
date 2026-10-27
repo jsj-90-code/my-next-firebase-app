@@ -1415,21 +1415,21 @@ export function SeatLayoutWorkspace() {
   }
 
   // 2026-10-27 사용자: 저장 안 하고 다른 탭으로 가면 팝업으로 알려 달라. 탭을 옮겨도 작업은 남지만, 저장을 잊으면
-  // 채팅 인식이 옛 존으로 세고 페이지를 닫으면 사라진다. [확인] = 저장하고 이동, [취소] = 저장 없이 이동.
+  // 채팅 인식이 옛 존으로 세고 페이지를 닫으면 사라진다. [확인] = 저장하고 이동, [취소] = 이동하지 않고 이 탭에 남음
+  // (10-27 밤 사용자: 보통 웹사이트처럼 취소는 그 자리 유지가 익숙하다 — 옛 [취소] = 저장 없이 이동).
   async function switchTab(tab: TabKey) {
     if (tab === activeTab) return;
     if (hasUnsavedChanges) {
-      const saveFirst = window.confirm(
-        "저장하지 않은 변경이 있습니다.\n\n[확인] 지금 저장하고 이동\n[취소] 저장하지 않고 이동(나중에 꼭 [프로젝트 저장])",
+      const ok = window.confirm(
+        "저장하지 않은 변경이 있습니다. 저장하고 이동할까요?\n\n[확인] 저장하고 이동\n[취소] 이동하지 않고 이 탭에 남기",
       );
-      if (saveFirst) {
-        setBusy(true);
-        setStatusMsg("저장 중...");
-        const saved = await silentSave();
-        setBusy(false);
-        if (!saved) return; // 저장 실패 — 오류 문구를 보여 주고 이 탭에 남는다.
-        setStatusMsg("저장되었습니다.", "success");
-      }
+      if (!ok) return;
+      setBusy(true);
+      setStatusMsg("저장 중...");
+      const saved = await silentSave();
+      setBusy(false);
+      if (!saved) return; // 저장 실패 — 오류 문구를 보여 주고 이 탭에 남는다.
+      setStatusMsg("저장되었습니다.", "success");
     }
     setActiveTab(tab);
     setSelectedTypeKey(null);
