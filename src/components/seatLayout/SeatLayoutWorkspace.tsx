@@ -1033,11 +1033,9 @@ export function SeatLayoutWorkspace() {
     const color = isEtc ? etcColor : selectedType.color;
 
     if (activeTab === "desk") {
+      // 2026-10-27 수량은 비워 둔 채로 존을 만들 수 있다 — 존을 다 그려 저장한 뒤 채팅 인식으로 한 번에 채운다
+      // (예전엔 웹 AI가 그 자리에서 채워 줘서 0이면 막았다).
       const filtered = breakdown.filter((r) => r.qty > 0);
-      if (!filtered.length) {
-        setStatusMsg("수량이 0입니다. 사이즈별 수량을 확인해주세요.", "error");
-        return;
-      }
       const totalSeats = filtered.reduce((s, r) => s + r.qty, 0);
       const zNew: DeskZone = {
         ...curRect,
@@ -1045,7 +1043,7 @@ export function SeatLayoutWorkspace() {
         typeKey: selectedType.key,
         color,
         sizeBreakdown: filtered,
-        deskSize: filtered[0].deskSize,
+        deskSize: filtered[0]?.deskSize ?? "",
         seats: totalSeats,
         bagShelfCount: Math.max(0, Math.min(Number(bagShelfDraft) || 0, totalSeats)),
         desk: deskSpecDraft.desk,
@@ -3037,9 +3035,9 @@ function ZoneForm(props: ZoneFormProps) {
       {/* 2026-10-27 웹 Gemini 자동인식을 지웠다 — 수량은 직접 넣거나, 존을 다 그려 저장한 뒤 Claude 채팅으로 한 번에
           인식해 [채팅 결과 불러오기]로 넣는다(mcpSeatLayout.ts). */}
       <p className="app-card-sm rounded-lg p-3 text-xs text-[var(--sl-ink-soft)]">
-        {activeTab === "pc" ? "PC 대수" : "책상 수량·사이즈·가방 선반"}를 직접 입력하세요. 존을 다 그리고 저장한 뒤 Claude 채팅에서
-        &quot;○○점 {activeTab === "pc" ? "PC 대수 세어 줘" : "책상 인식해 줘"}&quot;라고 하면 한 번에 인식해 줍니다
-        (존 목록 위 [채팅 결과 불러오기]).
+        {activeTab === "pc" ? "PC 대수" : "책상 수량·사이즈·가방 선반"}은 비워 둔 채 [저장]해도 됩니다. 존을 다 그리고
+        [프로젝트 저장] → Claude 채팅에서 &quot;○○점 {activeTab === "pc" ? "PC 대수 세어 줘" : "책상 인식해 줘"}&quot; →
+        존 목록 위 [채팅 결과 불러오기]로 한 번에 채워집니다.
       </p>
 
       {activeTab === "desk" ? (
