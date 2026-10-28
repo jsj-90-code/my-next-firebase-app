@@ -26,6 +26,7 @@ import {
 import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/lib/seatLayout/imageCompress";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
+import { cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
@@ -43,6 +44,7 @@ import type { SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDra
 type DraftKind = ChatDraftKind | "zones";
 import {
   emptyProject,
+  type DeskLabelSet,
   type DeskSize,
   type DeskZone,
   type NormalizedRect,
@@ -331,6 +333,8 @@ export function SeatLayoutWorkspace() {
     "floorplan",
   );
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
+  // 고른 도면 페이지의 책상 치수 글씨 위치(페이지 기준). 자르기를 확정할 때 자른 도면 기준으로 바꿔 프로젝트에 넣는다.
+  const pageDeskLabelsRef = useRef<DeskLabelSet | null>(null);
   // PDF 페이지를 고른 다음(또는 좌석번호표 이미지 업로드 후): 필요없는 부분을 빼고 실제 필요한
   // 영역만 잘라내는 단계. 도면 크롭과 좌석번호표 크롭이 이 crop 상태/캔버스를 공유한다 —
   // cropTarget으로 크롭 완료 후 결과를 어디에 적용할지만 구분한다.
@@ -1068,6 +1072,10 @@ export function SeatLayoutWorkspace() {
     }
     const draftColors = ZONE_TYPES.filter((t) => t.key !== "etc").map((t) => t.color);
     const startIdx = project.zones.length;
+    // 10-28: 도면 PDF의 책상 글씨 위치가 있으면 AI가 어림한 상자를 책상·의자 끝에 맞춘다(deskLabels.ts).
+    const snaps = project.deskLabels
+      ? snapZonesToDesks(rows.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, typeKey: r.type })), project.deskLabels)
+      : null;
     const namesSoFar: ActiveZone[] = [...project.zones];
     const drafts: DeskZone[] = rows.map((r, i) => {
       // 10-28: 4인룸도 정식 유형이 되어 다른 유형과 같이 처리한다(옛: "기타" 유형에 이름 "4인룸A").
@@ -1077,11 +1085,12 @@ export function SeatLayoutWorkspace() {
         ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label)
         : `초안${startIdx + i + 1}`;
       const spec = resetDeskSpecDraft(typeKey, effectiveSpecFields, settings.typeDefaults);
+      const rect = snaps?.[i].rect ?? r;
       const zone: DeskZone = {
-        x: r.x,
-        y: r.y,
-        w: r.w,
-        h: r.h,
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: rect.h,
         name,
         typeKey,
         color: matchedType?.color ?? draftColors[(startIdx + i) % draftColors.length],
@@ -1099,9 +1108,22 @@ export function SeatLayoutWorkspace() {
       return zone;
     });
     setProject((p) => ({ ...p, zones: [...p.zones, ...drafts] }));
+    const snappedCount = snaps?.filter((x) => x.snapped).length ?? 0;
+    // 상자 안 책상 글씨 수와 AI가 센 좌석 수가 다르면 상자가 책상을 빠뜨렸거나 더 먹은 것 — 그 존만 짚어 준다.
+    const mismatches = snaps
+      ? drafts.flatMap((z, i) =>
+          snaps[i].deskCount !== null && snaps[i].deskCount !== z.seats
+            ? [`${z.name}(AI ${z.seats}석 · 도면 책상 ${snaps[i].deskCount}개)`]
+            : [],
+        )
+      : [];
+    const snapNote = !project.deskLabels
+      ? " (도면 책상 글씨 위치가 없어 상자 맞춤은 건너뜀 — 도면 PDF를 다시 올리면 됩니다)"
+      : ` 상자 ${snappedCount}개를 책상·의자 끝에 맞췄습니다.`;
+    const mismatchNote = mismatches.length ? ` 좌석 수 확인: ${mismatches.join(", ")}.` : "";
     setStatusMsg(
-      `존 초안 ${drafts.length}개를 넣었습니다 — 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 "책상 인식"을 하세요.`,
-      "success",
+      `존 초안 ${drafts.length}개를 넣었습니다.${snapNote}${mismatchNote} 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 "책상 인식"을 하세요.`,
+      mismatches.length ? "info" : "success",
     );
   }
 
@@ -1655,6 +1677,15 @@ export function SeatLayoutWorkspace() {
     setStatusMsg("선택한 페이지를 고해상도로 불러오는 중...");
     try {
       const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 10000);
+      pageDeskLabelsRef.current = null;
+      if (pdfPickerTarget === "floorplan") {
+        // 부가 기능 — 글씨를 못 읽어도(그림으로 된 치수) 도면 올리기는 그대로 간다. 그때는 존 초안 상자 맞춤만 빠진다.
+        try {
+          pageDeskLabelsRef.current = await extractDeskLabels(await pdf.getPage(pageNumber));
+        } catch {
+          pageDeskLabelsRef.current = null;
+        }
+      }
       const probe = new Image();
       await new Promise<void>((resolve, reject) => {
         probe.onload = () => resolve();
@@ -1799,6 +1830,8 @@ export function SeatLayoutWorkspace() {
       setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG, "success");
     } else {
       applyFloorPlanDataUrl(dataUrl, off.width, off.height);
+      const labels = pageDeskLabelsRef.current;
+      setProject((p) => ({ ...p, deskLabels: labels ? cropDeskLabels(labels, cropRect) : null }));
       closeCrop();
       setStatusMsg("도면 영역을 잘라서 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
     }
@@ -1814,6 +1847,8 @@ export function SeatLayoutWorkspace() {
       setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG, "success");
     } else {
       applyFloorPlanDataUrl(pdfCropSource.dataUrl, pdfCropSource.width, pdfCropSource.height);
+      const labels = pageDeskLabelsRef.current;
+      setProject((p) => ({ ...p, deskLabels: labels }));
       closeCrop();
       setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
     }

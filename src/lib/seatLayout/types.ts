@@ -100,6 +100,14 @@ export type SeatNumberRangeEntry = {
   ranges: string;
 };
 
+// 도면 PDF의 책상 치수 글씨로 알아낸 책상 위치(2026-10-28, deskLabels.ts). 좌표는 자른 도면 기준 0~1.
+// mmX·mmY = 실제 1mm가 도면 가로·세로 비율로 얼마인지(의자 깊이를 상자에 더할 때 쓴다).
+export type DeskLabelSet = {
+  desks: NormalizedRect[];
+  mmX: number;
+  mmY: number;
+};
+
 export type SeatLayoutProject = {
   id: string;
   name: string;
@@ -114,6 +122,8 @@ export type SeatLayoutProject = {
   // 좌석번호표(피난안내도 등) 이미지 — 존별 좌석번호 자동인식용. 도면과 별개로 선택 업로드.
   seatNumberPlateDataUrl: string | null;
   seatNumberRanges: SeatNumberRangeEntry[];
+  // 도면을 PDF에서 올릴 때만 채워진다. 없으면(옛 프로젝트·글씨가 그림으로 된 도면) 존 초안 상자 맞춤을 건너뛴다.
+  deskLabels?: DeskLabelSet | null;
   updatedAt: number | null;
   updatedBy: string | null;
 };
@@ -129,6 +139,7 @@ export function emptyProject(): Omit<SeatLayoutProject, "id"> {
     pcDefaults: {},
     seatNumberPlateDataUrl: null,
     seatNumberRanges: [],
+    deskLabels: null,
     updatedAt: null,
     updatedBy: null,
   };
