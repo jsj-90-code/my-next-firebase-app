@@ -582,3 +582,7 @@ src/**/_*.test.ts
 !/.local-tools/hub-points.json
 !/.local-tools/sbiz-floating-time.json
 scripts/pingMonitor/oci/node_modules/
+
+# python
+__pycache__/
+*.pyc
