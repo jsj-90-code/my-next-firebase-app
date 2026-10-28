@@ -183,21 +183,25 @@ export function snapZonesToDesks(
     });
   });
 
-  // 존끼리 겹치면(마주 보는 줄의 의자가 통로에서 만남) 두 존 책상 사이 가운데에서 나눈다.
+  // 존끼리 겹치면 두 존 책상 사이 가운데에서 나눈다 — 마주 보는 줄의 의자가 통로에서 만날 때, 그리고 등 맞댄 두 줄을
+  // 따로 잡았을 때(10-28 호구포TEST FPS존A·멀티존A). 등 맞댄 줄은 치수 글씨가 책상 한가운데가 아니라 맞댄 쪽에 붙어 있어
+  // 글씨로 그린 책상 상자가 서로 겹친다 → 겹친 책상 범위의 가운데 = 실제 맞댄 선에서 나눈다.
+  // 나누는 방향은 상자가 덜 겹친 쪽(위아래로 붙은 줄이면 세로로 조금, 가로로 길게 겹친다 → 위아래로 나눔).
   for (let i = 0; i < work.length; i++) {
     for (let j = i + 1; j < work.length; j++) {
       const a = work[i];
       const b = work[j];
       if (!a.ext || !b.ext) continue;
-      const overlap = a.box.x0 < b.box.x1 && b.box.x0 < a.box.x1 && a.box.y0 < b.box.y1 && b.box.y0 < a.box.y1;
-      if (!overlap) continue;
-      const [top, bottom] = a.ext.y1 <= b.ext.y0 ? [a, b] : b.ext.y1 <= a.ext.y0 ? [b, a] : [null, null];
-      const [left, right] = a.ext.x1 <= b.ext.x0 ? [a, b] : b.ext.x1 <= a.ext.x0 ? [b, a] : [null, null];
-      if (top && bottom) {
+      const ox = Math.min(a.box.x1, b.box.x1) - Math.max(a.box.x0, b.box.x0);
+      const oy = Math.min(a.box.y1, b.box.y1) - Math.max(a.box.y0, b.box.y0);
+      if (ox <= 0 || oy <= 0) continue;
+      if (oy <= ox) {
+        const [top, bottom] = center(a.ext).y <= center(b.ext).y ? [a, b] : [b, a];
         const mid = (top.ext!.y1 + bottom.ext!.y0) / 2;
         top.box.y1 = Math.min(top.box.y1, mid);
         bottom.box.y0 = Math.max(bottom.box.y0, mid);
-      } else if (left && right) {
+      } else {
+        const [left, right] = center(a.ext).x <= center(b.ext).x ? [a, b] : [b, a];
         const mid = (left.ext!.x1 + right.ext!.x0) / 2;
         left.box.x1 = Math.min(left.box.x1, mid);
         right.box.x0 = Math.max(right.box.x0, mid);

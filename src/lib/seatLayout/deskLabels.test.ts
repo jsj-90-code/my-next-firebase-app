@@ -59,6 +59,22 @@ describe("snapZonesToDesks", () => {
     expect(b.rect.y).toBeCloseTo(0.409, 4);
   });
 
+  it("등 맞댄 두 줄을 따로 잡으면 글씨로 그린 책상이 겹쳐도 맞댄 선에서 나눈다", () => {
+    // 글씨가 맞댄 쪽에 붙어 있어 위 줄 책상이 0.51까지, 아래 줄 책상이 0.49부터로 겹친 경우 — 실제 맞댄 선 0.5.
+    const labels = set([...row(0.1, 0.442), ...row(0.1, 0.49)]);
+    const [a, b] = snapZonesToDesks(
+      [
+        { x: 0.1, y: 0.38, w: 0.34, h: 0.13, typeKey: "fps" },
+        { x: 0.1, y: 0.495, w: 0.34, h: 0.13, typeKey: "multi" },
+      ],
+      labels,
+    );
+    expect(a.deskCount).toBe(4);
+    expect(b.deskCount).toBe(4);
+    expect(a.rect.y + a.rect.h).toBeCloseTo(0.5, 4);
+    expect(b.rect.y).toBeCloseTo(0.5, 4);
+  });
+
   it("책상 글씨가 없는 상자는 그대로 두고 좌석 수 비교도 하지 않는다", () => {
     const [r] = snapZonesToDesks([{ x: 0.7, y: 0.7, w: 0.1, h: 0.1 }], set(row(0.1, 0.5)));
     expect(r).toEqual({ rect: { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }, deskCount: null, snapped: false });
