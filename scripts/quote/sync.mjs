@@ -325,7 +325,24 @@ async function copyCells(srcId, srcTitle, dstId, dstTitle, look) {
   const post = src.merges.filter((m) => !after.has(mkey(m))).map((m) => ({ mergeCells: { range: rng(dstId, m), mergeType: "MERGE_ALL" } }));
   post.push(...await layoutRequests(look, dstId, sR, sC));
   await batch(book.sales, post);
-  return { cells, merges: pre.length + post.filter((x) => x.mergeCells).length };
+  // ③ 테두리 다시 긋기: 칸 복사는 붙인 칸의 빈 테두리로 이웃 칸과 같이 쓰는 선을 지운다
+  // (10-29: 원본에 줄 2개를 넣고 반영하니 넣은 줄 아래 '특이사항'·'합계 금액' 줄의 위 굵은 선이 영업부용에서 빠짐)
+  // → 붙인 뒤 테두리가 원본과 다른 칸만 원본 테두리로 다시 긋는다
+  let borders = 0;
+  if (rects.length) {
+    const now = await loadGrid(book.sales, dstTitle);
+    const edge = (e) => e && { style: e.style, ...(e.colorStyle ? { colorStyle: e.colorStyle } : {}) };
+    const fixB = [];
+    for (let r = 0; r < sR; r++) for (let c = 0; c < sC; c++) {
+      const sb = src.rows[r]?.[c]?.userEnteredFormat?.borders, db = now.rows[r]?.[c]?.userEnteredFormat?.borders;
+      if (!sb || JSON.stringify(sb) === JSON.stringify(db ?? null)) continue;
+      const set = Object.fromEntries(["top", "bottom", "left", "right"].filter((k) => sb[k]).map((k) => [k, edge(sb[k])]));
+      if (Object.keys(set).length) fixB.push({ updateBorders: { range: { sheetId: dstId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: c, endColumnIndex: c + 1 }, ...set } });
+    }
+    await batch(book.sales, fixB);
+    borders = fixB.length;
+  }
+  return { cells, merges: pre.length + post.filter((x) => x.mergeCells).length, borders };
 }
 
 // 행 높이·열 너비 + 탭 설정(눈금선·틀 고정·탭 색) — 탭을 그대로 두는 방식이라 이것들은 따로 맞춘다(10-24 검토: 틀 고정·탭 색이 안 따라감)
@@ -395,7 +412,7 @@ async function replaceSales(temps) {
     const r = await copyCells(n.sheetId, stage, dst.properties.sheetId, t.s, { id: book.orig, title: t.o });
     await batch(book.sales, [{ deleteSheet: { sheetId: n.sheetId } }]);
     const ro = rows[t.s];
-    console.log(`  ${t.s}: 바뀐 칸 ${r.cells}개${ro.ins ? `, 행 넣음 ${ro.ins}` : ""}${ro.del ? `, 행 지움 ${ro.del}` : ""}${r.merges ? `, 병합 고침 ${r.merges}` : ""}`);
+    console.log(`  ${t.s}: 바뀐 칸 ${r.cells}개${ro.ins ? `, 행 넣음 ${ro.ins}` : ""}${ro.del ? `, 행 지움 ${ro.del}` : ""}${r.merges ? `, 병합 고침 ${r.merges}` : ""}${r.borders ? `, 테두리 다시 그음 ${r.borders}` : ""}`);
   }
 }
 // 준비 탭과, 복사(copyTo)가 다시 시도로 두 번 돌았거나 이름 바꾸기 전에 끊겨 남은 '…__반영임시_…' 사본 탭(보이는 탭)까지 지운다(10-24 검토)
