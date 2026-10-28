@@ -26,7 +26,7 @@ import {
 import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/lib/seatLayout/imageCompress";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
-import { cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
+import { countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
@@ -954,16 +954,24 @@ export function SeatLayoutWorkspace() {
     if (activeTab === "desk") {
       const zones = project.zones;
       const counted = zones.length > 0 && zones.every((z) => z.sizeBreakdown.length > 0 || !!z.deskSize);
+      // 10-28 사용자: 존 하나를 지웠는데 작업 순서가 "책상 수량 채우기"에 머물렀다 — 도면 책상 글씨 위치가 있으면
+      // 어느 존에도 안 든 책상이 남았는지로 "존 초안" 단계를 다시 연다(채팅 존 초안은 이미 그린 존을 빼고 빈 곳만 제안한다).
+      const uncovered = project.deskLabels && zones.length > 0 ? countUncoveredDesks(project.deskLabels, zones) : 0;
       return [
         { key: "upload", title: "매장명 입력·도면(PDF) 올리기", done: !!project.name.trim() && !!floorPlanSrc,
           hint: "위 [매장명 / 도면]에서 넣습니다. 채팅은 이 매장명으로 프로젝트를 찾습니다." },
         { key: "save1", title: "프로젝트 저장", done: !!project.updatedAt,
           hint: "채팅은 저장된 도면을 봅니다.", action: saveAction },
-        { key: "zones", title: "존 초안 받기 (Claude 채팅)", done: zones.length > 0,
-          hint: "구역 상자를 한 번에 넣습니다. 채팅 답이 오기까지 1분 30초쯤 걸립니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
+        { key: "zones",
+          title: uncovered > 0 ? `존 초안 받기 — 도면 책상 ${uncovered}개가 아직 어느 존에도 없습니다` : "존 초안 받기 (Claude 채팅)",
+          done: zones.length > 0 && uncovered === 0,
+          hint: uncovered > 0
+            ? "지운 자리나 덜 그린 자리입니다. [프로젝트 저장] 후 채팅으로 존 초안을 다시 받으면 이미 그린 존은 빼고 빈 곳만 제안합니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요."
+            : "구역 상자를 한 번에 넣습니다. 채팅 답이 오기까지 1분 30초쯤 걸립니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
           prompt: `${name} 존 초안 만들어 줘`,
-          action: { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
-            emphasize: hasNewChatDraft("zones") } },
+          action: uncovered > 0 && hasUnsavedChanges ? saveAction
+            : { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
+                emphasize: hasNewChatDraft("zones") } },
         { key: "tidy", title: "존 다듬고 저장",
           done: zones.length > 0 && !!last && shapeKey(last.zones) === shapeKey(zones),
           hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 × 또는 Delete 키로 삭제. 유형·이름은 존 목록에서 고칩니다.",

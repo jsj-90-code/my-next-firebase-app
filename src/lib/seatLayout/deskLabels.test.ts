@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cropDeskLabels, snapZonesToDesks } from "./deskLabels";
+import { countUncoveredDesks, cropDeskLabels, snapZonesToDesks } from "./deskLabels";
 import type { DeskLabelSet } from "./types";
 
 // 1mm = 0.0001(가로·세로 같음) — 850×680 책상 = 0.085×0.068, 의자 600mm = 0.06.
@@ -101,5 +101,14 @@ describe("cropDeskLabels", () => {
     expect(out.desks[0].x).toBeCloseTo(0.2, 4);
     expect(out.desks[0].w).toBeCloseTo(0.17, 4);
     expect(out.mmX).toBeCloseTo(MM / 0.5, 8);
+  });
+});
+
+describe("countUncoveredDesks", () => {
+  it("존 상자에 가운데가 안 든 책상만 센다", () => {
+    const labels = set(row(0.1, 0.5));
+    expect(countUncoveredDesks(labels, [])).toBe(4);
+    expect(countUncoveredDesks(labels, [{ x: 0.09, y: 0.44, w: 0.18, h: 0.14 }])).toBe(2);
+    expect(countUncoveredDesks(labels, [{ x: 0.09, y: 0.44, w: 0.36, h: 0.14 }])).toBe(0);
   });
 });

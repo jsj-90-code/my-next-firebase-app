@@ -216,3 +216,12 @@ export function snapZonesToDesks(
     return { rect: toRect(clamped), deskCount: w.mine.length, snapped: true };
   });
 }
+
+/** 어느 존 상자에도 가운데가 들어가지 않은 책상 수. 존을 지우거나 덜 그렸을 때 작업 순서를 "존 초안"으로 되돌리는 데 쓴다. */
+export function countUncoveredDesks(labels: DeskLabelSet, zones: NormalizedRect[]): number {
+  const boxes = zones.map(toBox);
+  return labels.desks.filter((d) => {
+    const c = center(toBox(d));
+    return !boxes.some((b) => inside(c, b));
+  }).length;
+}
