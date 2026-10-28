@@ -106,8 +106,9 @@ export type DeskLabelSet = {
   desks: NormalizedRect[];
   mmX: number;
   mmY: number;
-  // 긴 수평·수직선(벽·칸막이 후보) [x0,y0,x1,y1] — 등 맞댄 방 찾기용(roomSplit.ts, 10-28). 없으면 방 나누기를 건너뛴다.
-  walls?: number[][];
+  // 긴 수평·수직선(벽·칸막이 후보)을 x0,y0,x1,y1 넷씩 이어 붙인 평평한 목록 — 등 맞댄 방 찾기용(roomSplit.ts, 10-28).
+  // Firestore는 배열 안 배열을 저장하지 못한다(10-28 저장 오류 "Nested arrays are not supported"). 없으면 방 나누기를 건너뛴다.
+  walls?: number[];
 };
 
 export type SeatLayoutProject = {

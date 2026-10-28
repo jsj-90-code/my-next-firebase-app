@@ -16,7 +16,7 @@ describe("findWalledRoom", () => {
   it("위 줄 의자 쪽이 위 벽 + 양 끝 벽으로 막혔으면 4인룸 + 아래 줄로 나눈다", () => {
     const labels: DeskLabelSet = {
       desks, mmX: MM, mmY: MM,
-      walls: [seam, [0.09, 0.21, 0.45, 0.21], [0.095, 0.21, 0.095, 0.368], [0.445, 0.21, 0.445, 0.368]],
+      walls: [seam, [0.09, 0.21, 0.45, 0.21], [0.095, 0.21, 0.095, 0.368], [0.445, 0.21, 0.445, 0.368]].flat(),
     };
     const r = findWalledRoom(all, rect, labels, "multi")!;
     expect(r.roomType).toBe("four_room");
@@ -33,21 +33,28 @@ describe("findWalledRoom", () => {
   it("양 끝 칸막이가 책상 깊이까지만 있으면(일반 섬) 나누지 않는다", () => {
     const labels: DeskLabelSet = {
       desks, mmX: MM, mmY: MM,
-      walls: [seam, [0.09, 0.21, 0.45, 0.21], [0.095, 0.29, 0.095, 0.446], [0.445, 0.29, 0.445, 0.446]],
+      walls: [seam, [0.09, 0.21, 0.45, 0.21], [0.095, 0.29, 0.095, 0.446], [0.445, 0.29, 0.445, 0.446]].flat(),
     };
     expect(findWalledRoom(all, rect, labels, "multi")).toBeNull();
   });
 
   it("VIP 같은 모양 유형과 벽 선 없는 도면은 건드리지 않는다", () => {
-    const walls = [seam, [0.09, 0.21, 0.45, 0.21], [0.095, 0.21, 0.095, 0.368], [0.445, 0.21, 0.445, 0.368]];
+    const walls = [seam, [0.09, 0.21, 0.45, 0.21], [0.095, 0.21, 0.095, 0.368], [0.445, 0.21, 0.445, 0.368]].flat();
     expect(findWalledRoom(all, rect, { desks, mmX: MM, mmY: MM, walls }, "vip")).toBeNull();
     expect(findWalledRoom(all, rect, { desks, mmX: MM, mmY: MM }, "multi")).toBeNull();
   });
 });
 
+describe("저장 모양", () => {
+  it("Firestore에 넣을 수 있게 배열 안 배열이 없다", () => {
+    const out = cropWallLines([0.3, 0.3, 0.6, 0.3], { x: 0, y: 0, w: 1, h: 1 });
+    expect(out.every((v) => typeof v === "number")).toBe(true);
+  });
+});
+
 describe("cropWallLines", () => {
   it("자른 영역 기준으로 바꾸고 밖의 선은 버린다", () => {
-    const out = cropWallLines([[0.3, 0.3, 0.6, 0.3], [0.9, 0.9, 0.95, 0.9]], { x: 0.2, y: 0.2, w: 0.5, h: 0.5 });
-    expect(out).toEqual([[0.2, 0.2, 0.8, 0.2]]);
+    const out = cropWallLines([0.3, 0.3, 0.6, 0.3, 0.9, 0.9, 0.95, 0.9], { x: 0.2, y: 0.2, w: 0.5, h: 0.5 });
+    expect(out).toEqual([0.2, 0.2, 0.8, 0.2]);
   });
 });

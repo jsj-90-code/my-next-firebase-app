@@ -33,8 +33,12 @@ const mul = (m: Mat, n: number[]): Mat => [
   m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5],
 ];
 
-/** 페이지의 긴 수평·수직선(벽·칸막이 후보)을 페이지 기준 0~1 좌표 [x0,y0,x1,y1]로. */
-export async function extractWallLines(page: PDFPageProxy, unitsPerMm: number): Promise<number[][]> {
+/** 선 목록(넷씩 평평하게) ↔ [x0,y0,x1,y1] 묶음. Firestore가 배열 안 배열을 못 담아 저장은 평평하게 한다. */
+export const unflattenWalls = (flat: number[]): number[][] =>
+  Array.from({ length: Math.floor(flat.length / 4) }, (_, i) => flat.slice(i * 4, i * 4 + 4));
+
+/** 페이지의 긴 수평·수직선(벽·칸막이 후보)을 페이지 기준 0~1 좌표로, x0,y0,x1,y1 넷씩 평평하게. */
+export async function extractWallLines(page: PDFPageProxy, unitsPerMm: number): Promise<number[]> {
   const vp = page.getViewport({ scale: 1 });
   const ol = await page.getOperatorList();
   const minLen = WALL_MIN_MM * unitsPerMm;
@@ -75,17 +79,18 @@ export async function extractWallLines(page: PDFPageProxy, unitsPerMm: number): 
       }
     }
   }
-  return [...out.values()];
+  return [...out.values()].flat();
 }
 
 /** 페이지 기준 벽 선 → 자른 도면 기준. 자른 영역과 겹치지 않는 선은 버린다. */
-export function cropWallLines(walls: number[][], crop: NormalizedRect): number[][] {
-  return walls
+export function cropWallLines(walls: number[], crop: NormalizedRect): number[] {
+  return unflattenWalls(walls)
     .filter(([x0, y0, x1, y1]) =>
       Math.max(x0, x1) >= crop.x && Math.min(x0, x1) <= crop.x + crop.w &&
       Math.max(y0, y1) >= crop.y && Math.min(y0, y1) <= crop.y + crop.h)
     .map(([x0, y0, x1, y1]) =>
-      [(x0 - crop.x) / crop.w, (y0 - crop.y) / crop.h, (x1 - crop.x) / crop.w, (y1 - crop.y) / crop.h].map(r4));
+      [(x0 - crop.x) / crop.w, (y0 - crop.y) / crop.h, (x1 - crop.x) / crop.w, (y1 - crop.y) / crop.h].map(r4))
+    .flat();
 }
 
 // ---- 판정은 mm 좌표에서 한다(가로·세로 비율이 다른 0~1 좌표로는 거리를 못 잰다). "along" = 줄 방향, "across" = 줄에 수직.
@@ -180,7 +185,7 @@ export function findWalledRoom(
   // 벽 선을 mm 좌표 Line으로: parallel = 줄과 나란한 선, perp = 줄에 수직인 선.
   const parallel: Line[] = [];
   const perp: Line[] = [];
-  for (const [x0, y0, x1, y1] of walls) {
+  for (const [x0, y0, x1, y1] of unflattenWalls(walls)) {
     const X0 = x0 / mmX, Y0 = y0 / mmY, X1 = x1 / mmX, Y1 = y1 / mmY;
     const isHoriz = Math.abs(Y1 - Y0) < Math.abs(X1 - X0);
     const line: Line = isHoriz

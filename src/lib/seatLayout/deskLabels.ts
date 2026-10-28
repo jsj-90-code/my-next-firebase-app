@@ -81,7 +81,7 @@ export async function extractDeskLabels(page: PDFPageProxy): Promise<DeskLabelSe
     };
   });
   // 벽 선은 부가 정보 — 못 읽어도 책상 위치는 그대로 쓴다.
-  let walls: number[][] | undefined;
+  let walls: number[] | undefined;
   try {
     walls = await extractWallLines(page, unitsPerMm);
   } catch {
