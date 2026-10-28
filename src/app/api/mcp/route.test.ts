@@ -35,13 +35,19 @@ async function toolNames(token: string): Promise<string[]> {
 }
 
 describe("채팅 입지평가 도구 목록은 사람마다 다르다", () => {
-  it("담당자 본인: 5개(주소만 2 + 정밀평가 3)", async () => {
+  it("담당자 본인: 11개(주소만 2 + 정밀평가 3 + 좌석배치도 6)", async () => {
     expect(await toolNames("owner")).toEqual(
-      ["find_candidate", "get_candidate_location_data", "get_site_data", "submit_candidate_location_draft", "submit_location_scores"],
+      [
+        "find_candidate", "get_candidate_location_data", "get_seat_layout_floorplan", "get_seat_layout_zone_crops", "get_seat_number_data", "get_site_data",
+        "submit_candidate_location_draft", "submit_location_scores", "submit_seat_layout_zone_counts", "submit_seat_layout_zone_draft", "submit_seat_number_draft",
+      ],
     );
   });
-  it("다른 직원: 주소만 초기평가 2개만 보인다", async () => {
-    expect(await toolNames("staff")).toEqual(["get_site_data", "submit_location_scores"]);
+  it("다른 직원: 주소만 초기평가 2개 + 좌석배치도 6개(전 직원 공개)", async () => {
+    expect(await toolNames("staff")).toEqual([
+      "get_seat_layout_floorplan", "get_seat_layout_zone_crops", "get_seat_number_data", "get_site_data",
+      "submit_location_scores", "submit_seat_layout_zone_counts", "submit_seat_layout_zone_draft", "submit_seat_number_draft",
+    ]);
   });
   it("토큰이 없거나 틀리면 401", async () => {
     const res = await POST(new Request("https://example.test/api/mcp", { method: "POST", headers: { Authorization: "Bearer nope" }, body: "{}" }));
