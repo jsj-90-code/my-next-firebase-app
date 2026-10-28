@@ -60,9 +60,12 @@ function knock(ip, port) {
   });
 }
 
-// 기본 포트는 전 IP(80·3389). extraByIp에 있는 IP(1688·5040 필요한 매장)만 그 포트를 더 두드린다 —
+// 기본 포트는 전 IP(80). extraByIp에 있는 IP(1688·5040 필요한 매장)만 그 포트를 더 두드린다 —
 // 전 매장에 1688·5040을 다 쏘면 작은 서버(498MB)가 버벅인다(2026-10-09 최적화). extraByIp: Map<ip, number[]>.
 // extraOnly: 추가 포트로만 대답한 IP — 웹이 이걸 보고 그 매장에 1688·5040을 계속 보낼지 스스로 정한다(2026-10-14 자동 학습).
+// 3389(윈도우 원격접속)는 뺐다(2026-10-28): 저장 안 하는 진단 측정에서 3389로만 잡히는 IP가 0개 —
+// 핑·80·타임스탬프가 이미 다 덮어 측정 손실이 없고, 보안 장비에 '원격접속 탐색'으로 오인될 소지만 컸다.
+// 조회 안 되는 매장이 생기면 그 매장 extraPorts에 3389를 넣어 되살릴 수 있다(매장 단위, 전 IP 아님).
 async function tcpAll(ips, extraByIp) {
   const alive = new Set();
   const extraOnly = new Set();
@@ -70,10 +73,10 @@ async function tcpAll(ips, extraByIp) {
   async function worker() {
     while (next < ips.length) {
       const ip = ips[next++];
-      const ports = [80, 3389, ...(extraByIp.get(ip) ?? [])];
+      const ports = [80, ...(extraByIp.get(ip) ?? [])];
       const r = await Promise.all(ports.map((port) => knock(ip, port)));
       if (r.some(Boolean)) alive.add(ip);
-      if (!r[0] && !r[1] && r.slice(2).some(Boolean)) extraOnly.add(ip);
+      if (!r[0] && r.slice(1).some(Boolean)) extraOnly.add(ip);
     }
   }
   await Promise.all(Array.from({ length: Math.min(120, ips.length) }, worker));

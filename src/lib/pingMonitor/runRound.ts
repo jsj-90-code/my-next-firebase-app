@@ -21,7 +21,7 @@ import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 export type { PingTarget } from "./roundGuard";
 import type { PingTarget } from "./roundGuard";
 
-/** 기본 포트는 전 매장(80·3389). 추가 포트(1688·5040)는 그게 필요한 매장에만 — 서버 부하를 줄이는 최적화(2026-10-09).
+/** 기본 포트는 전 매장(80). 추가 포트(1688·5040)는 그게 필요한 매장에만 — 서버 부하를 줄이는 최적화(2026-10-09).
  *  누가 받는지는 wantsExtraPorts(roundGuard.ts): probe1688 매장 · 첫 24회차 학습 중인 새 매장 · 늘 0대 매장의 21시 재확인(2026-10-14). */
 const EXTRA_PORTS = [1688, 5040];
 
@@ -153,14 +153,14 @@ export async function learnExtraPorts(targets: PingTarget[], extraOnlyIps: Set<s
   return learned.map((t) => t.name);
 }
 
-/** Vercel에서 TCP만으로 재는 예비 경로. 서버 에이전트와 같은 포트 규칙 — 기본 80·3389는 전 IP, 추가 1688·5040은
- *  extraPorts 매장에만(2026-10-09). 전 매장 4포트로 재면 서버 회차(2포트)와 커버리지가 달라 같은 날 집계가 섞인다. */
+/** Vercel에서 TCP만으로 재는 예비 경로. 서버 에이전트와 같은 포트 규칙 — 기본 80은 전 IP, 추가 1688·5040은
+ *  extraPorts 매장에만(2026-10-09). 3389는 뺐다(2026-10-28, 서버 에이전트와 같이): 진단에서 3389로만 잡히는 IP 0개. */
 export async function runPingRound(now = new Date()): Promise<RoundResult> {
   const targets = await loadTargets(now);
   const allIps = [...new Set(targets.flatMap((s) => s.ips))];
   const extraIps = [...new Set(targets.filter((t) => t.extraPorts?.length).flatMap((t) => t.ips))];
   const [baseAlive, extraAlive] = await Promise.all([
-    probeIps(allIps, [80, 3389]),
+    probeIps(allIps, [80]),
     extraIps.length ? probeIps(extraIps, EXTRA_PORTS) : Promise.resolve(new Set<string>()),
   ]);
   const alive = new Set([...baseAlive, ...extraAlive]);
