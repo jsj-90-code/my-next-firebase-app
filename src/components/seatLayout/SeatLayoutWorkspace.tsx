@@ -27,6 +27,7 @@ import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/li
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
 import { countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
+import { findWalledRoom } from "@/lib/seatLayout/roomSplit";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
 import {
@@ -1081,11 +1082,29 @@ export function SeatLayoutWorkspace() {
     const draftColors = ZONE_TYPES.filter((t) => t.key !== "etc").map((t) => t.color);
     const startIdx = project.zones.length;
     // 10-28: 도면 PDF의 책상 글씨 위치가 있으면 AI가 어림한 상자를 책상·의자 끝에 맞춘다(deskLabels.ts).
-    const snaps = project.deskLabels
-      ? snapZonesToDesks(rows.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, typeKey: r.type })), project.deskLabels)
+    const labels = project.deskLabels ?? null;
+    const snaps = labels
+      ? snapZonesToDesks(rows.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, typeKey: r.type })), labels)
       : null;
+    // 상자 안 책상 글씨 수와 AI가 센 좌석 수가 다르면 상자가 책상을 빠뜨렸거나 더 먹은 것 — 그 존만 짚어 준다(나누기 전 기준).
+    const mismatchAt = new Set(
+      snaps ? rows.flatMap((r, i) => (snaps[i].deskCount !== null && snaps[i].deskCount !== r.seats ? [i] : [])) : [],
+    );
+    // 10-28: 등 맞댄 두 줄 중 한 줄이 벽·문으로 막힌 방이면 PDF 벽 선으로 찾아 방 + 나머지 줄로 나눈다(roomSplit.ts).
+    type Piece = { row: ZoneDraftRow; rect: { x: number; y: number; w: number; h: number }; srcIdx: number; splitFrom?: string };
+    const pieces: Piece[] = rows.flatMap((r, i): Piece[] => {
+      const snap = snaps?.[i];
+      if (!snap?.snapped || !labels) return [{ row: r, rect: snap?.rect ?? r, srcIdx: i }];
+      const split = findWalledRoom(snap.desks, snap.rect, labels, r.type);
+      if (!split) return [{ row: r, rect: snap.rect, srcIdx: i }];
+      const from = `${r.seats}석`;
+      return [
+        { row: { ...r, type: split.roomType, seats: split.roomDesks.length }, rect: split.roomRect, srcIdx: i, splitFrom: from },
+        { row: { ...r, seats: split.otherDesks.length }, rect: split.otherRect, srcIdx: i, splitFrom: from },
+      ];
+    });
     const namesSoFar: ActiveZone[] = [...project.zones];
-    const drafts: DeskZone[] = rows.map((r, i) => {
+    const drafts: DeskZone[] = pieces.map(({ row: r, rect }, i) => {
       // 10-28: 4인룸도 정식 유형이 되어 다른 유형과 같이 처리한다(옛: "기타" 유형에 이름 "4인룸A").
       const matchedType = r.type ? ZONE_TYPES.find((t) => t.key === r.type) : undefined;
       const typeKey: ZoneTypeKey = matchedType?.key ?? "etc";
@@ -1093,7 +1112,6 @@ export function SeatLayoutWorkspace() {
         ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label)
         : `초안${startIdx + i + 1}`;
       const spec = resetDeskSpecDraft(typeKey, effectiveSpecFields, settings.typeDefaults);
-      const rect = snaps?.[i].rect ?? r;
       const zone: DeskZone = {
         x: rect.x,
         y: rect.y,
@@ -1117,20 +1135,21 @@ export function SeatLayoutWorkspace() {
     });
     setProject((p) => ({ ...p, zones: [...p.zones, ...drafts] }));
     const snappedCount = snaps?.filter((x) => x.snapped).length ?? 0;
-    // 상자 안 책상 글씨 수와 AI가 센 좌석 수가 다르면 상자가 책상을 빠뜨렸거나 더 먹은 것 — 그 존만 짚어 준다.
-    const mismatches = snaps
-      ? drafts.flatMap((z, i) =>
-          snaps[i].deskCount !== null && snaps[i].deskCount !== z.seats
-            ? [`${z.name}(AI ${z.seats}석 · 도면 책상 ${snaps[i].deskCount}개)`]
-            : [],
-        )
-      : [];
-    const snapNote = !project.deskLabels
+    const mismatches = [...mismatchAt].map((i) => {
+      const names = drafts.filter((_, k) => pieces[k].srcIdx === i).map((z) => z.name).join("+");
+      return `${names}(AI ${rows[i].seats}석 · 도면 책상 ${snaps![i].deskCount}개)`;
+    });
+    const splits = [...new Set(pieces.filter((pc) => pc.splitFrom).map((pc) => pc.srcIdx))].map((i) => {
+      const names = drafts.filter((_, k) => pieces[k].srcIdx === i).map((z) => `${z.name} ${z.seats}석`);
+      return `${rows[i].seats}석 → ${names.join(" + ")}`;
+    });
+    const snapNote = !labels
       ? " (도면 책상 글씨 위치가 없어 상자 맞춤은 건너뜀 — 도면 PDF를 다시 올리면 됩니다)"
       : ` 상자 ${snappedCount}개를 책상·의자 끝에 맞췄습니다.`;
+    const splitNote = splits.length ? ` 벽으로 막힌 방을 따로 나눴습니다: ${splits.join(", ")}.` : "";
     const mismatchNote = mismatches.length ? ` 좌석 수 확인: ${mismatches.join(", ")}.` : "";
     setStatusMsg(
-      `존 초안 ${drafts.length}개를 넣었습니다.${snapNote}${mismatchNote} 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 "책상 인식"을 하세요.`,
+      `존 초안 ${drafts.length}개를 넣었습니다.${snapNote}${splitNote}${mismatchNote} 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 "책상 인식"을 하세요.`,
       mismatches.length ? "info" : "success",
     );
   }

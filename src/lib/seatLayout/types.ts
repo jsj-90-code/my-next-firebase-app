@@ -106,6 +106,8 @@ export type DeskLabelSet = {
   desks: NormalizedRect[];
   mmX: number;
   mmY: number;
+  // 긴 수평·수직선(벽·칸막이 후보) [x0,y0,x1,y1] — 등 맞댄 방 찾기용(roomSplit.ts, 10-28). 없으면 방 나누기를 건너뛴다.
+  walls?: number[][];
 };
 
 export type SeatLayoutProject = {

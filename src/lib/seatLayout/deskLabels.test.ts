@@ -77,7 +77,7 @@ describe("snapZonesToDesks", () => {
 
   it("책상 글씨가 없는 상자는 그대로 두고 좌석 수 비교도 하지 않는다", () => {
     const [r] = snapZonesToDesks([{ x: 0.7, y: 0.7, w: 0.1, h: 0.1 }], set(row(0.1, 0.5)));
-    expect(r).toEqual({ rect: { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }, deskCount: null, snapped: false });
+    expect(r).toEqual({ rect: { x: 0.7, y: 0.7, w: 0.1, h: 0.1 }, deskCount: null, snapped: false, desks: [] });
   });
 
   it("책상이 두 상자에 걸치면 작은 상자 몫", () => {

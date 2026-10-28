@@ -9,6 +9,7 @@
 //   1mm가 몇 단위인지 잰다(세 도면 모두 사분위가 같은 값으로 나옴).
 // - 의자는 책상 끝에서 약 600mm까지 나온다(울산 확대 화면 실측 — 책상 깊이 680의 약 0.86배).
 import type { PDFPageProxy } from "pdfjs-dist";
+import { cropWallLines, extractWallLines } from "./roomSplit";
 import type { DeskLabelSet, NormalizedRect, ZoneTypeKey } from "./types";
 
 const DIM_RE = /^(\d{3,4})\*(\d{3,4})$/;
@@ -79,7 +80,14 @@ export async function extractDeskLabels(page: PDFPageProxy): Promise<DeskLabelSe
       h: r4((2 * ey) / vp.height),
     };
   });
-  return { desks, mmX: unitsPerMm / vp.width, mmY: unitsPerMm / vp.height };
+  // 벽 선은 부가 정보 — 못 읽어도 책상 위치는 그대로 쓴다.
+  let walls: number[][] | undefined;
+  try {
+    walls = await extractWallLines(page, unitsPerMm);
+  } catch {
+    walls = undefined;
+  }
+  return { desks, mmX: unitsPerMm / vp.width, mmY: unitsPerMm / vp.height, ...(walls ? { walls } : {}) };
 }
 
 /** 페이지 기준 좌표 → 자른 도면 기준 좌표. 자른 바깥(범례·제목 칸)의 글씨는 버린다. */
@@ -97,7 +105,8 @@ export function cropDeskLabels(set: DeskLabelSet, crop: NormalizedRect): DeskLab
       h: r4(d.h / crop.h),
     }));
   if (!desks.length) return null;
-  return { desks, mmX: set.mmX / crop.w, mmY: set.mmY / crop.h };
+  const walls = set.walls ? cropWallLines(set.walls, crop) : undefined;
+  return { desks, mmX: set.mmX / crop.w, mmY: set.mmY / crop.h, ...(walls ? { walls } : {}) };
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -111,6 +120,8 @@ export type SnapResult = {
   /** 상자 안 책상 글씨 수(도면 기준 좌석 수). 방이거나 글씨가 없으면 null. */
   deskCount: number | null;
   snapped: boolean;
+  /** 이 상자 몫 책상(labels.desks 번호) — 방 나누기(roomSplit.ts)가 쓴다 */
+  desks: number[];
 };
 
 /**
@@ -210,10 +221,10 @@ export function snapZonesToDesks(
   }
 
   return work.map((w) => {
-    if (!w.ext) return { rect: toRect(w.ai), deskCount: null, snapped: false };
+    if (!w.ext) return { rect: toRect(w.ai), deskCount: null, snapped: false, desks: [] };
     const b = w.box;
     const clamped: Box = { x0: Math.max(0, b.x0), y0: Math.max(0, b.y0), x1: Math.min(1, b.x1), y1: Math.min(1, b.y1) };
-    return { rect: toRect(clamped), deskCount: w.mine.length, snapped: true };
+    return { rect: toRect(clamped), deskCount: w.mine.length, snapped: true, desks: w.mine };
   });
 }
 
