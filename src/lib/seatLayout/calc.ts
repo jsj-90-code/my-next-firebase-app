@@ -65,6 +65,8 @@ export type DeskCardGroup = {
   color: string;
   desk: string;
   sizeText: string;
+  // 사이즈별 수량(작은 것부터) — 발주도면 카드가 도면 위 사이즈 표와 같은 색 칩으로 그린다(10-29).
+  sizes: { deskSize: DeskSize; qty: number }[];
   cooler: string;
   partition: string;
   monitorArm: string;
@@ -133,6 +135,7 @@ export function groupDeskZonesForCard(zones: DeskZone[]): DeskCardGroup[] {
       color: g.color,
       desk: g.desk,
       sizeText,
+      sizes: DESK_SIZE_OPTIONS.filter((s) => g.qtyByDeskSize.has(s)).map((s) => ({ deskSize: s, qty: g.qtyByDeskSize.get(s)! })),
       cooler: g.cooler,
       partition: g.partition,
       monitorArm: g.monitorArm,
