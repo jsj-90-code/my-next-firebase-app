@@ -26,7 +26,7 @@ import {
 import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/lib/seatLayout/imageCompress";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
-import { countDesksByZone, countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
+import { autoCropRect, countDesksByZone, countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
 import { findWalledRoom } from "@/lib/seatLayout/roomSplit";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
@@ -344,6 +344,11 @@ export function SeatLayoutWorkspace() {
     "floorplan",
   );
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
+  // 10-29 사용자: 브라켓 도면은 PDF마다 3쪽 — 자동으로 고르고 영역도 자동으로 자른다. 수동으로 바꾸는 버튼([다른 페이지 고르기]·
+  // [영역 다시 자르기])을 위해 올린 PDF와 고른 쪽(그림·글씨·자른 영역)을 이 화면에 있는 동안 들고 있는다.
+  const floorPdfRef = useRef<PDFDocumentProxy | null>(null);
+  const lastFloorPageRef = useRef<{ dataUrl: string; labels: DeskLabelSet | null; rect: NormalizedRect | null; page: number } | null>(null);
+  const [floorPdfLoaded, setFloorPdfLoaded] = useState(false);
   // 고른 도면 페이지의 책상 치수 글씨 위치(페이지 기준). 자르기를 확정할 때 자른 도면 기준으로 바꿔 프로젝트에 넣는다.
   const pageDeskLabelsRef = useRef<DeskLabelSet | null>(null);
   // 10-29 사용자: 도면(브라켓 쪽)을 고르면 [프로젝트 저장]을 따로 누르지 않아도 저장 — 다음 렌더(도면·글씨가 들어간 뒤)에 저장한다.
@@ -1750,12 +1755,6 @@ export function SeatLayoutWorkspace() {
     setProject((p) => ({ ...p, imageWidth: width, imageHeight: height }));
   }
 
-  function applyFloorPlanDataUrlFromProbe(dataUrl: string) {
-    const probe = new Image();
-    probe.onload = () => applyFloorPlanDataUrl(dataUrl, probe.naturalWidth, probe.naturalHeight);
-    probe.src = dataUrl;
-  }
-
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1772,30 +1771,11 @@ export function SeatLayoutWorkspace() {
       setStatusMsg("PDF에서 페이지를 불러오는 중...");
       try {
         const pdf = await loadPdfDocument(file);
-        pdfDocRef.current = pdf;
-        // 2026-09-14 — 그리는 대로 하나씩 붙인다(위 좌석번호표 쪽 주석 참고).
-        setPdfPickerTarget("floorplan");
-        setPdfPickerPages([]);
-        // 브라켓 색 비율은 **그리는 김에** 같이 구한다(renderPdfPageToDataUrl의 inspect).
-        // 예전엔 다 그린 뒤 data URL을 하나씩 다시 디코딩해서 읽었는데, 그 재작업 때문에
-        // 10장짜리 도면에서는 힌트가 한참 뒤에야 떴다.
-        const ratios: { pageNumber: number; ratio: number }[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          let ratio = 0;
-          const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260, (px) => {
-            ratio = bracketColorRatio(px);
-          });
-          ratios.push({ pageNumber: i, ratio });
-          setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
-          // 2026-09-14 — 다 그린 뒤에 짚었더니 실제 도면에서 힌트를 못 보고 지나갔다. 페이지마다
-          // 렌더 시간이 천차만별이라서다(평택소사벌점 실측: 1~8페이지는 각 0.1~1.5초인데 9·10페이지가
-          // 15.8초·13.3초로 전체 35초 중 29초를 잡아먹는다). 정작 필요한 3페이지는 3초면 나온다.
-          // 그래서 지금까지 그린 것만으로 매번 다시 짚는다 — 뒤 페이지가 더 진하면 그때 바뀐다.
-          // 어차피 "확인해주세요"라고 적어둔 힌트라 바뀌어도 판단은 사람이 한다.
-          setBracketHintPage(pickLikelyBracketPage(ratios));
-          setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
-        }
-        setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
+        floorPdfRef.current = pdf;
+        setFloorPdfLoaded(true);
+        // 10-29 사용자: 실무 PDF 10여 개 모두 브라켓 도면이 3쪽 → 3쪽을 바로 골라 영역까지 자동으로. 책상 글씨가 없으면 직접 고르기로.
+        if (pdf.numPages >= 3 && (await autoPickFloorPage(pdf, 3))) return;
+        await openFloorPagePicker(pdf);
       } catch (err) {
         setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
       } finally {
@@ -1803,15 +1783,94 @@ export function SeatLayoutWorkspace() {
       }
       return;
     }
+  }
 
-    const reader = new FileReader();
-    reader.onload = (evt) => applyFloorPlanDataUrlFromProbe(evt.target?.result as string);
-    reader.onerror = () => setStatusMsg("도면 파일을 읽지 못했습니다.", "error");
-    reader.readAsDataURL(file);
-    // 2026-09-11 — 이 줄이 빠져 있었다. input의 value가 그대로 남으면 **같은 파일을 다시
-    // 고를 때 change 이벤트가 안 떠서** 업로드가 통째로 먹통이 된다(다른 파일을 한 번
-    // 거쳤다 와야 한다). PDF 경로와 좌석번호표 핸들러에는 이미 있고 여기만 없었다.
-    e.target.value = "";
+  /** 쪽 하나를 골라 책상 글씨로 도면 영역을 자동으로 잘라 넣는다(저장은 자동 저장 효과가). 글씨가 없으면 false. */
+  async function autoPickFloorPage(pdf: PDFDocumentProxy, pageNumber: number): Promise<boolean> {
+    setStatusMsg(`${pageNumber}쪽(브라켓 도면)을 불러오는 중...`);
+    let labels: DeskLabelSet | null = null;
+    try {
+      labels = await extractDeskLabels(await pdf.getPage(pageNumber));
+    } catch {
+      labels = null;
+    }
+    if (!labels) {
+      setStatusMsg(`${pageNumber}쪽에서 책상 치수 글씨를 못 찾았습니다 — 배치도 페이지를 직접 골라 주세요.`, "error");
+      return false;
+    }
+    const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 10000);
+    const img = await loadImage(dataUrl);
+    const rect = autoCropRect(labels);
+    const found = labels;
+    lastFloorPageRef.current = { dataUrl, labels: found, rect, page: pageNumber };
+    const cropped = cropImage(img, rect);
+    applyFloorPlanDataUrl(cropped.dataUrl, cropped.width, cropped.height);
+    setProject((p) => ({ ...p, deskLabels: cropDeskLabels(found, rect) }));
+    autoSavePendingRef.current = "floor";
+    setStatusMsg(`${pageNumber}쪽(브라켓 도면)을 골라 도면 영역을 자동으로 잘랐습니다. 저장 중...`);
+    return true;
+  }
+
+  function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("페이지 이미지를 불러오지 못했습니다."));
+      img.src = dataUrl;
+    });
+  }
+
+  function cropImage(img: HTMLImageElement, r: NormalizedRect): { dataUrl: string; width: number; height: number } {
+    const sx = r.x * img.naturalWidth;
+    const sy = r.y * img.naturalHeight;
+    const sw = r.w * img.naturalWidth;
+    const sh = r.h * img.naturalHeight;
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.round(sw));
+    off.height = Math.max(1, Math.round(sh));
+    off.getContext("2d")?.drawImage(img, sx, sy, sw, sh, 0, 0, off.width, off.height);
+    return { dataUrl: off.toDataURL("image/png"), width: off.width, height: off.height };
+  }
+
+  /** 수동: 자동으로 자른 영역을 다시 잡는다 — 자른 영역을 미리 채운 자르기 화면을 연다. */
+  async function reopenFloorCrop() {
+    const last = lastFloorPageRef.current;
+    if (!last) return;
+    const img = await loadImage(last.dataUrl);
+    cropImgRef.current = img;
+    pageDeskLabelsRef.current = last.labels;
+    setCropTarget("floorplan");
+    setPdfCropSource({ dataUrl: last.dataUrl, width: img.naturalWidth, height: img.naturalHeight });
+    setCropRect(last.rect);
+    setCropHint("자동으로 잡은 영역입니다. 다시 잡으려면 도면 영역의 왼쪽 위를 클릭하세요.");
+  }
+
+  /** 수동: 쪽 그림을 하나씩 그려 고르게 한다(예전 방식). */
+  async function openFloorPagePicker(pdf: PDFDocumentProxy) {
+    pdfDocRef.current = pdf;
+    // 2026-09-14 — 그리는 대로 하나씩 붙인다(위 좌석번호표 쪽 주석 참고).
+    setPdfPickerTarget("floorplan");
+    setPdfPickerPages([]);
+    // 브라켓 색 비율은 **그리는 김에** 같이 구한다(renderPdfPageToDataUrl의 inspect).
+    // 예전엔 다 그린 뒤 data URL을 하나씩 다시 디코딩해서 읽었는데, 그 재작업 때문에
+    // 10장짜리 도면에서는 힌트가 한참 뒤에야 떴다.
+    const ratios: { pageNumber: number; ratio: number }[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      let ratio = 0;
+      const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260, (px) => {
+        ratio = bracketColorRatio(px);
+      });
+      ratios.push({ pageNumber: i, ratio });
+      setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
+      // 2026-09-14 — 다 그린 뒤에 짚었더니 실제 도면에서 힌트를 못 보고 지나갔다. 페이지마다
+      // 렌더 시간이 천차만별이라서다(평택소사벌점 실측: 1~8페이지는 각 0.1~1.5초인데 9·10페이지가
+      // 15.8초·13.3초로 전체 35초 중 29초를 잡아먹는다). 정작 필요한 3페이지는 3초면 나온다.
+      // 그래서 지금까지 그린 것만으로 매번 다시 짚는다 — 뒤 페이지가 더 진하면 그때 바뀐다.
+      // 어차피 "확인해주세요"라고 적어둔 힌트라 바뀌어도 판단은 사람이 한다.
+      setBracketHintPage(pickLikelyBracketPage(ratios));
+      setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
+    }
+    setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
   }
 
   async function selectPdfPage(pageNumber: number) {
@@ -1837,6 +1896,9 @@ export function SeatLayoutWorkspace() {
         probe.src = dataUrl;
       });
       cropImgRef.current = probe;
+      if (pdfPickerTarget === "floorplan") {
+        lastFloorPageRef.current = { dataUrl, labels: pageDeskLabelsRef.current, rect: null, page: pageNumber };
+      }
       setCropTarget(pdfPickerTarget);
       setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
       setCropRect(null);
@@ -2054,6 +2116,7 @@ export function SeatLayoutWorkspace() {
     } else {
       applyFloorPlanDataUrl(dataUrl, off.width, off.height);
       const labels = pageDeskLabelsRef.current;
+      if (lastFloorPageRef.current) lastFloorPageRef.current = { ...lastFloorPageRef.current, rect: cropRect };
       setProject((p) => ({ ...p, deskLabels: labels ? cropDeskLabels(labels, cropRect) : null }));
       closeCrop();
       autoSavePendingRef.current = "floor";
@@ -2986,8 +3049,26 @@ export function SeatLayoutWorkspace() {
                 <p className="mt-1 text-xs font-medium text-[var(--sl-warn)]">
                   도면은 모든 탭에서 공통으로 사용됩니다.
                   <br />
-                  💡 <strong>책가방 선반 브라켓 도면 (3페이지)</strong>을 고르세요.
+                  💡 PDF를 고르면 <strong>3페이지(브라켓 도면)</strong>를 자동으로 골라 도면 영역만 잘라 저장합니다.
                 </p>
+                {floorPdfLoaded && !pdfPickerPages && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => floorPdfRef.current && void openFloorPagePicker(floorPdfRef.current)}
+                      className="app-btn-outline rounded-full px-3 py-1 text-xs"
+                    >
+                      다른 페이지 고르기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void reopenFloorCrop()}
+                      className="app-btn-outline rounded-full px-3 py-1 text-xs"
+                    >
+                      영역 다시 자르기
+                    </button>
+                  </div>
+                )}
                 {pdfPickerPages && pdfPickerTarget === "floorplan" && (
                   <div className="app-card-sm mt-3 rounded-lg p-3">
                     <p className="text-xs font-semibold text-[var(--sl-warn)]">
@@ -3360,7 +3441,7 @@ export function SeatLayoutWorkspace() {
                       {/* 2026-09-14 — 처음엔 세 문단으로 길게 적었는데 사용자 지적: "글이 길면
                           사람들이 잘 안 읽어. 요약해서 할 만한 것만 딱." 한 줄로 줄였다. */}
                       <p className="app-notice app-badge-warn mt-2 max-w-md px-4 py-2.5 text-left text-xs leading-5">
-                        <strong>책가방 선반 브라켓 도면 (3페이지)</strong>을 고르세요 — 헤드셋걸이 수량이 자동으로 세어집니다.
+                        PDF를 올리면 <strong>3페이지(브라켓 도면)</strong>를 자동으로 골라 잘라 저장합니다 — 다르면 [다른 페이지 고르기].
                       </p>
                     </div>
                   )}

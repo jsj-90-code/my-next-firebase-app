@@ -10,7 +10,7 @@
 // - 의자는 책상 끝에서 약 600mm까지 나온다(울산 확대 화면 실측 — 책상 깊이 680의 약 0.86배).
 import type { PDFPageProxy } from "pdfjs-dist";
 import { extractBracketSegments, markBracketDesks } from "./bracketLines";
-import { cropWallLines, extractWallLines } from "./roomSplit";
+import { cropWallLines, extractWallLines, unflattenWalls } from "./roomSplit";
 import { DESK_SIZE_OPTIONS } from "./constants";
 import type { DeskLabelSet, DeskSize, NormalizedRect, SizeBreakdownEntry, ZoneTypeKey } from "./types";
 
@@ -323,4 +323,37 @@ export function countDesksByZone(labels: DeskLabelSet, zones: NormalizedRect[]):
     const sizeBreakdown = DESK_SIZE_OPTIONS.filter((s) => qty.has(s)).map((s) => ({ deskSize: s, qty: qty.get(s)! }));
     return { seats: ws.length, sizeBreakdown, unknown, bagShelf: brackets ? bracketsPerZone[zi] : null };
   });
+}
+
+/**
+ * 도면 영역 자동 자르기(10-29 사용자 「PDF 고르면 사용자가 구역 지정 안 하고 자동으로」). 페이지 기준 0~1.
+ * 책상 글씨를 감싼 상자에서 시작해, 그 상자 1.5m 안에 닿는 벽 선을 따라 건물 바깥 벽까지 넓힌다(몇 번 되풀이).
+ * 쪽 테두리처럼 쪽 절반 넘게 긴 선은 건물이 아니라 넘긴다 — 제목 칸·범례 표는 건물 벽과 떨어져 있어 안 잡힌다.
+ * 시험 도면 3장 3쪽에서 건물 전체가 들어가고 제목 칸·범례는 빠지는 것을 그림으로 확인. 끝에 30cm 여백.
+ */
+export function autoCropRect(labels: DeskLabelSet): NormalizedRect {
+  let x0 = Math.min(...labels.desks.map((d) => d.x));
+  let y0 = Math.min(...labels.desks.map((d) => d.y));
+  let x1 = Math.max(...labels.desks.map((d) => d.x + d.w));
+  let y1 = Math.max(...labels.desks.map((d) => d.y + d.h));
+  const gx = 1500 * labels.mmX;
+  const gy = 1500 * labels.mmY;
+  const walls = unflattenWalls(labels.walls ?? []);
+  for (let round = 0; round < 6; round++) {
+    let grew = false;
+    for (const [a, b, c, e] of walls) {
+      const wx0 = Math.min(a, c), wx1 = Math.max(a, c), wy0 = Math.min(b, e), wy1 = Math.max(b, e);
+      if (wx1 - wx0 > 0.6 || wy1 - wy0 > 0.6) continue;
+      if (wx1 < x0 - gx || wx0 > x1 + gx || wy1 < y0 - gy || wy0 > y1 + gy) continue;
+      if (wx0 < x0 || wy0 < y0 || wx1 > x1 || wy1 > y1) {
+        x0 = Math.min(x0, wx0); y0 = Math.min(y0, wy0); x1 = Math.max(x1, wx1); y1 = Math.max(y1, wy1);
+        grew = true;
+      }
+    }
+    if (!grew) break;
+  }
+  const mx = 300 * labels.mmX;
+  const my = 300 * labels.mmY;
+  const rx0 = Math.max(0, x0 - mx), ry0 = Math.max(0, y0 - my);
+  return { x: r4(rx0), y: r4(ry0), w: r4(Math.min(1, x1 + mx) - rx0), h: r4(Math.min(1, y1 + my) - ry0) };
 }

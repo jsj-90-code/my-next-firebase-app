@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countDesksByZone, countUncoveredDesks, cropDeskLabels, deskSizeOfWidth, snapZonesToDesks } from "./deskLabels";
+import { autoCropRect, countDesksByZone, countUncoveredDesks, cropDeskLabels, deskSizeOfWidth, snapZonesToDesks } from "./deskLabels";
 import type { DeskLabelSet } from "./types";
 
 // 1mm = 0.0001(가로·세로 같음) — 850×680 책상 = 0.085×0.068, 의자 600mm = 0.06.
@@ -172,5 +172,24 @@ describe("브라켓 (10-29 도면 주황 선)", () => {
   it("자를 때 브라켓 표시도 따라간다", () => {
     const labels: DeskLabelSet = { ...set(row(0.1, 0.5)), widths: [850, 850, 910, 1000], brackets: [true, false, true, false] };
     expect(cropDeskLabels(labels, { x: 0.18, y: 0.4, w: 0.5, h: 0.3 })!.brackets).toEqual([false, true, false]);
+  });
+});
+
+describe("autoCropRect (10-29 도면 영역 자동 자르기)", () => {
+  it("책상에서 이어진 벽까지 넓히고, 떨어진 선(제목 칸)과 쪽 테두리는 넘긴다", () => {
+    const labels: DeskLabelSet = {
+      ...set(row(0.3, 0.5)), // 책상 x 0.3~0.64, y 0.5~0.568
+      walls: [
+        0.25, 0.4, 0.7, 0.4, // 책상 위 1m 벽(닿음) → 위로 넓힘
+        0.25, 0.4, 0.25, 0.65, // 왼쪽 벽(닿음) → 왼쪽으로 넓힘
+        0.9, 0.1, 0.9, 0.4, // 오른쪽 멀리 떨어진 제목 칸 선 → 안 넓힘
+        0, 0.98, 1, 0.98, // 쪽 테두리(아주 긴 선) → 안 넓힘
+      ],
+    };
+    const r = autoCropRect(labels);
+    expect(r.x).toBeCloseTo(0.25 - 0.03, 4); // 30cm 여백
+    expect(r.y).toBeCloseTo(0.4 - 0.03, 4);
+    expect(r.x + r.w).toBeCloseTo(0.7 + 0.03, 4);
+    expect(r.y + r.h).toBeCloseTo(0.65 + 0.03, 4);
   });
 });
