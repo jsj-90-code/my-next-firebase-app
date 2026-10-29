@@ -432,6 +432,11 @@ export function SeatLayoutWorkspace() {
   // 방금 업로드한 원본(rawFloorPlanDataUrl)이 있으면 그걸 우선 쓰고, 없으면(=프로젝트를
   // 불러오기만 한 경우) Firestore에 저장된 압축본을 쓴다.
   const floorPlanSrc = rawFloorPlanDataUrl ?? project.floorPlanDataUrl;
+  // 10-29 사용자: 좌석번호 탭에서 피난안내도에 존 구역을 겹쳐 볼 수 있으면 왼쪽 도면은 숨기고 겹친 피난안내도만 크게 — 비교가 쉽다.
+  // [존 구역 겹쳐 보기]를 끄면 예전처럼 도면·피난안내도를 나란히.
+  const plateOnly =
+    activeTab === "seatNumber" && !!(rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl) &&
+    project.plateTransform?.length === 6 && plateOverlayOn;
   // 좌석번호표(피난안내도) 미리보기 — 도면과 나란히 비교해서 볼 때 쓴다.
   const seatNumberPlateSrc = rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl;
   useEffect(() => {
@@ -3030,10 +3035,12 @@ export function SeatLayoutWorkspace() {
         </div>
       )}
 
+      {/* 10-29 사용자: 좌석번호 오른쪽 창(420px)이 피난안내도를 가렸다 — 창이 열려 있는 동안 그만큼 오른쪽을 비워 가운데를 왼쪽으로
+          붙인다(FHD 1920 기준 가운데 약 1,070px). 창을 닫으면 원래 너비. 좁은 화면(lg 미만)은 창이 화면을 덮는 게 원래 동작. */}
       <div
         className={`grid grid-cols-1 gap-6 ${
           activeTab === "seatNumber" ? "lg:grid-cols-[340px_1fr]" : "lg:grid-cols-[320px_1fr_300px]"
-        }`}
+        } ${activeTab === "seatNumber" && seatPanel && !seatNumberStoreInfoOpen ? "lg:pr-[420px]" : ""}`}
       >
         <div className="flex flex-col gap-4">
           <section className="app-card rounded-2xl p-5">
@@ -3476,7 +3483,7 @@ export function SeatLayoutWorkspace() {
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-4 lg:flex-row">
-            <div className="min-w-0 flex-1">
+            <div className={`min-w-0 flex-1 ${plateOnly ? "hidden" : ""}`}>
               {/* 좌석번호표 크롭은 왼쪽 "좌석번호표" 섹션에 따로 표시한다 — 여기서 같이 보여주면
                   도면 크롭 때와 똑같이 도면 캔버스 자리를 가려서, 도면이 화면에서 사라진
                   것처럼 보이는 문제가 있었다. */}
@@ -3537,7 +3544,7 @@ export function SeatLayoutWorkspace() {
                     {project.plateTransform?.length === 6 && (
                       <label className="flex cursor-pointer items-center gap-1 font-normal">
                         <input type="checkbox" checked={plateOverlayOn} onChange={(e) => setPlateOverlayOn(e.target.checked)} />
-                        존 구역 겹쳐 보기
+                        존 구역 겹쳐 보기 (끄면 도면과 나란히)
                       </label>
                     )}
                   </p>
@@ -3549,7 +3556,7 @@ export function SeatLayoutWorkspace() {
                     크게 보기 ↗
                   </button>
                 </div>
-                <div className="max-h-[720px] overflow-auto app-frame rounded-2xl p-2">
+                <div className={`${plateOnly ? "max-h-[85vh]" : "max-h-[720px]"} overflow-auto app-frame rounded-2xl p-2`}>
                   <div className="relative">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
