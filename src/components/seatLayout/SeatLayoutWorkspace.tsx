@@ -26,7 +26,7 @@ import {
 import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/lib/seatLayout/imageCompress";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
-import { autoCropRect, countDesksByZone, countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
+import { autoCropRect, mergeFacingZones, countDesksByZone, countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
 import { findWalledRoom } from "@/lib/seatLayout/roomSplit";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
@@ -1266,7 +1266,15 @@ export function SeatLayoutWorkspace() {
       namesSoFar.push(zone);
       return zone;
     });
-    setProject((p) => ({ ...p, zones: [...p.zones, ...drafts] }));
+    // 10-29 광주첨단점TEST: 통로를 사이에 두고 마주 보는 프렌즈 두 줄이 B·C로 갈렸다 → 마주 보는 같은 유형 프렌즈·VIP는 한 존으로.
+    const mergedDrafts: DeskZone[] = mergeFacingZones(drafts, labels).map((idx) => {
+      if (idx.length === 1) return drafts[idx[0]];
+      const parts = idx.map((k) => drafts[k]);
+      const x0 = Math.min(...parts.map((z) => z.x)), y0 = Math.min(...parts.map((z) => z.y));
+      const x1 = Math.max(...parts.map((z) => z.x + z.w)), y1 = Math.max(...parts.map((z) => z.y + z.h));
+      return { ...parts[0], x: x0, y: y0, w: x1 - x0, h: y1 - y0, seats: parts.reduce((s, z) => s + z.seats, 0), bagShelfKey: null };
+    });
+    setProject((p) => ({ ...p, zones: [...p.zones, ...mergedDrafts] }));
     const snappedCount = snaps?.filter((x) => x.snapped).length ?? 0;
     const mismatches = [...mismatchAt].map((i) => {
       const names = drafts.filter((_, k) => pieces[k].srcIdx === i).map((z) => z.name).join("+");

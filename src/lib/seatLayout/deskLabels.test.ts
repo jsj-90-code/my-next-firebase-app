@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autoCropRect, countDesksByZone, countUncoveredDesks, cropDeskLabels, deskSizeOfWidth, snapZonesToDesks } from "./deskLabels";
+import { autoCropRect, mergeFacingZones, countDesksByZone, countUncoveredDesks, cropDeskLabels, deskSizeOfWidth, snapZonesToDesks } from "./deskLabels";
 import type { DeskLabelSet } from "./types";
 
 // 1mm = 0.0001(가로·세로 같음) — 850×680 책상 = 0.085×0.068, 의자 600mm = 0.06.
@@ -208,5 +208,22 @@ describe("상자 밖 가까운 책상 붙이기 (10-29 호구포TEST)", () => {
   it("좌석 수를 모르면 30cm 넘게 떨어진 책상은 안 붙인다", () => {
     const [r] = snapZonesToDesks([{ x: 0.09, y: 0.44, w: 0.36, h: 0.13 }], two());
     expect(r.deskCount).toBe(4);
+  });
+});
+
+describe("mergeFacingZones (10-29 광주첨단점TEST)", () => {
+  // 광주 저장값 그대로(mmX 0.000053, mmY 0.00004)
+  const L = { desks: [], mmX: 0.000053, mmY: 0.00004 } as DeskLabelSet;
+  const z = (typeKey: string, x: number, y: number, w: number, h: number) => ({ typeKey, x, y, w, h });
+  it("통로를 사이에 두고 마주 보는 프렌즈 B·C는 합치고, 사이에 다른 존이 끼는 프렌즈 A는 안 합친다", () => {
+    const zones = [
+      z("friends", 0.534, 0.504, 0.36, 0.098), // 프렌즈존A
+      z("lol", 0.539, 0.647, 0.124, 0.166),
+      z("multi", 0.71, 0.647, 0.065, 0.166),
+      z("friends", 0.774, 0.637, 0.065, 0.189), // 프렌즈존B
+      z("friends", 0.885, 0.637, 0.068, 0.189), // 프렌즈존C
+      z("one_seat", 0.77, 0.836, 0.068, 0.04),
+    ];
+    expect(mergeFacingZones(zones, L)).toEqual([[0], [1], [2], [3, 4], [5]]);
   });
 });

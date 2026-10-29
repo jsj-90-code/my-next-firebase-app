@@ -396,3 +396,54 @@ export function autoCropRect(labels: DeskLabelSet): NormalizedRect {
   const rx0 = Math.max(0, x0 - mx), ry0 = Math.max(0, y0 - my);
   return { x: r4(rx0), y: r4(ry0), w: r4(Math.min(1, x1 + mx) - rx0), h: r4(Math.min(1, y1 + my) - ry0) };
 }
+
+const MERGE_FACING_TYPES: ReadonlySet<string> = new Set(["friends", "vip"]);
+
+/**
+ * 같은 공간에서 통로를 사이에 두고 마주 보는 같은 유형 존(프렌즈·VIP)을 한 존으로 합친다(10-29 광주첨단점TEST 사용자 「프렌즈존 B·C가
+ * 한 구역이 보기 좋다」). 조건: 같은 유형, 마주 보는 방향 범위가 짧은 쪽의 70% 이상 겹침, 사이 틈 1.5m 이하, 합친 상자가 다른 존과
+ * 겹치거나 다른 존 책상(가운데)을 먹지 않음. 합친 결과의 i번째 = 남는 존 번호 목록(앞 존이 이름·사양을 가진다).
+ */
+export function mergeFacingZones(
+  zones: (NormalizedRect & { typeKey: string })[],
+  labels: DeskLabelSet | null,
+): number[][] {
+  const groups: { idx: number[]; box: NormalizedRect; type: string }[] = zones.map((z, i) => ({ idx: [i], box: { x: z.x, y: z.y, w: z.w, h: z.h }, type: z.typeKey }));
+  const mmX = labels?.mmX ?? 0.0001;
+  const mmY = labels?.mmY ?? 0.0001;
+  const ov = (a0: number, a1: number, b0: number, b1: number) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+  // 맞닿은 이웃 상자(맞춘 상자끼리 0.1% 겹침)는 겹침으로 보지 않는다 — 30cm 넘게 파고들어야 겹침.
+  const overlaps = (a: NormalizedRect, b: NormalizedRect) =>
+    ov(a.x, a.x + a.w, b.x, b.x + b.w) > 300 * mmX && ov(a.y, a.y + a.h, b.y, b.y + b.h) > 300 * mmY;
+  let merged = true;
+  while (merged) {
+    merged = false;
+    for (let i = 0; i < groups.length && !merged; i++) {
+      for (let j = i + 1; j < groups.length && !merged; j++) {
+        const A = groups[i], B = groups[j];
+        if (A.type !== B.type || !MERGE_FACING_TYPES.has(A.type)) continue;
+        const a = A.box, b = B.box;
+        const yOv = ov(a.y, a.y + a.h, b.y, b.y + b.h) / Math.min(a.h, b.h);
+        const xOv = ov(a.x, a.x + a.w, b.x, b.x + b.w) / Math.min(a.w, b.w);
+        const gapX = Math.max(0, Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w)) / mmX;
+        const gapY = Math.max(0, Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h)) / mmY;
+        const facing = (yOv >= 0.7 && gapX <= 1500) || (xOv >= 0.7 && gapY <= 1500);
+        if (!facing) continue;
+        const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
+        const u = { x: x0, y: y0, w: Math.max(a.x + a.w, b.x + b.w) - x0, h: Math.max(a.y + a.h, b.y + b.h) - y0 };
+        const others = groups.filter((_, k) => k !== i && k !== j);
+        if (others.some((o) => overlaps(u, o.box))) continue;
+        const inside = (c: { x: number; y: number }, r: NormalizedRect) => c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h;
+        const steals = (labels?.desks ?? []).some((d) => {
+          const c = { x: d.x + d.w / 2, y: d.y + d.h / 2 };
+          return inside(c, u) && !inside(c, a) && !inside(c, b);
+        });
+        if (steals) continue;
+        groups[i] = { idx: [...A.idx, ...B.idx], box: u, type: A.type };
+        groups.splice(j, 1);
+        merged = true;
+      }
+    }
+  }
+  return groups.map((g) => g.idx);
+}
