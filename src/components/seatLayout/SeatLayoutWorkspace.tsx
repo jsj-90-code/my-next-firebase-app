@@ -41,6 +41,7 @@ import { applyChatDraft, ChatDraftImportModal, type ChatDraftKind } from "@/comp
 import { SeatLayoutSteps, type WorkStep } from "@/components/seatLayout/SeatLayoutSteps";
 import { DeskCountPanel } from "@/components/seatLayout/DeskCountPanel";
 import { SeatNumberPanel } from "@/components/seatLayout/SeatNumberPanel";
+import { fitPlateTransform, mapRect, type Affine } from "@/lib/seatLayout/plateOverlay";
 import type { BracketDraftRow, SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
 
 // 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안·브라켓 다시 세기(10-29).
@@ -319,6 +320,9 @@ export function SeatLayoutWorkspace() {
   const [deskPanelOpen, setDeskPanelOpen] = useState(false);
   // 10-29 사용자: 좌석번호 채팅 결과는 체크 없이 바로 넣고 오른쪽 창(SeatNumberPanel)에서 고쳐 바로 발주 등록. 닫아도 [좌석번호 창 열기]로 다시 연다.
   const [seatPanel, setSeatPanel] = useState<{ fromChat: Set<string>; unsure: string; meta: string | null } | null>(null);
+  // 피난안내도 위 존 구역 겹쳐 그리기(10-29): 원본 크기(글자 크기용)와 켜고 끄기.
+  const [plateDims, setPlateDims] = useState<{ w: number; h: number } | null>(null);
+  const [plateOverlayOn, setPlateOverlayOn] = useState(true);
   const [chatDraftLoading, setChatDraftLoading] = useState(false);
   // 이 프로젝트에 와 있는 채팅 초안(알림 띠용). 프로젝트를 열거나 저장할 때, 그리고 claude.ai에 갔다가
   // 이 탭으로 돌아올 때(focus) 다시 읽는다 — 버튼이 눈에 안 띈다는 10-27 사용자 지적.
@@ -1113,7 +1117,14 @@ export function SeatLayoutWorkspace() {
       else if (kind === "seatNumbers") {
         const rows = draft.seatNumbers?.rows ?? [];
         const names = new Set(rows.map((r) => r.zoneName));
-        setProject((p) => applyChatDraft("seatNumbers", p, draft, names));
+        // 채팅이 존마다 낸 피난안내도 위 상자로 "도면 → 피난안내도" 변환을 맞춘다(plateOverlay.ts). 3개 미만이면 겹쳐 그리기 없음.
+        const seatZones = project.pcZones.length ? project.pcZones : project.zones;
+        const fit = fitPlateTransform(rows.flatMap((r) => {
+          const z = seatZones.find((q) => q.name === r.zoneName);
+          return z && r.plateRect ? [{ src: z, dst: r.plateRect }] : [];
+        }));
+        setProject((p) => ({ ...applyChatDraft("seatNumbers", p, draft, names), ...(fit ? { plateTransform: fit.transform } : {}) }));
+        if (fit) setPlateOverlayOn(true);
         const at = draft.seatNumbers?.createdAt;
         setSeatPanel({
           fromChat: names,
@@ -3362,8 +3373,14 @@ export function SeatLayoutWorkspace() {
             {activeTab === "seatNumber" && seatNumberPlateSrc && (
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center justify-between">
-                  <p className="text-xs font-semibold text-[var(--sl-ink-soft)]">
+                  <p className="flex items-center gap-3 text-xs font-semibold text-[var(--sl-ink-soft)]">
                     피난안내도(좌석번호표)
+                    {project.plateTransform?.length === 6 && (
+                      <label className="flex cursor-pointer items-center gap-1 font-normal">
+                        <input type="checkbox" checked={plateOverlayOn} onChange={(e) => setPlateOverlayOn(e.target.checked)} />
+                        존 구역 겹쳐 보기
+                      </label>
+                    )}
                   </p>
                   <button
                     type="button"
@@ -3374,12 +3391,51 @@ export function SeatLayoutWorkspace() {
                   </button>
                 </div>
                 <div className="max-h-[720px] overflow-auto app-frame rounded-2xl p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={seatNumberPlateSrc}
-                    alt="피난안내도"
-                    className="w-full rounded-lg border border-black/10 dark:border-white/10"
-                  />
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={seatNumberPlateSrc}
+                      alt="피난안내도"
+                      onLoad={(e) => setPlateDims({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+                      className="w-full rounded-lg border border-black/10 dark:border-white/10"
+                    />
+                    {/* 10-29 사용자: 피난안내도에 도면 존 구역을 겹쳐 한 장으로 — 좌석번호 채팅 결과로 맞춘 변환(plateTransform). */}
+                    {plateOverlayOn && project.plateTransform?.length === 6 && plateDims && (
+                      <svg
+                        viewBox={`0 0 ${plateDims.w} ${plateDims.h}`}
+                        className="pointer-events-none absolute inset-0 h-full w-full"
+                        aria-hidden
+                      >
+                        {activeZones.map((z, i) => {
+                          const pts = mapRect(project.plateTransform as Affine, z).map(([x, y]) => [x * plateDims.w, y * plateDims.h]);
+                          const fs = Math.max(12, plateDims.w / 90);
+                          return (
+                            <g key={`${z.name}-${i}`}>
+                              <polygon
+                                points={pts.map((q) => q.join(",")).join(" ")}
+                                fill={z.color}
+                                fillOpacity={0.14}
+                                stroke={z.color}
+                                strokeWidth={Math.max(2, plateDims.w / 600)}
+                              />
+                              <text
+                                x={pts[0][0] + fs * 0.3}
+                                y={pts[0][1] + fs * 1.1}
+                                fontSize={fs}
+                                fontWeight={700}
+                                fill={z.color}
+                                stroke="#fff"
+                                strokeWidth={fs / 5}
+                                paintOrder="stroke"
+                              >
+                                {z.name}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

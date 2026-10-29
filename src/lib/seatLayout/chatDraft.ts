@@ -26,7 +26,8 @@ export type ZoneDraftRow = {
 };
 // 존을 고친 뒤 브라켓만 다시 센 결과(10-29). shapeKey = 채팅이 본 저장된 존 모양 — 그 뒤 또 옮겼으면 웹이 계속 "다시 세기"로 둔다.
 export type BracketDraftRow = { zoneName: string; bagShelfCount: number | null; shapeKey: string };
-export type SeatNumberDraftRow = { zoneName: string; ranges: string };
+// plateRect(10-29): 피난안내도 위에서 그 존 좌석번호들을 감싸는 대략의 상자(0~1) — 웹이 존 전체로 변환을 맞춰 구역을 겹쳐 그린다.
+export type SeatNumberDraftRow = { zoneName: string; ranges: string; plateRect?: { x: number; y: number; w: number; h: number } };
 
 export type SeatLayoutChatDraft = {
   projectId: string;

@@ -140,6 +140,8 @@ export type SeatLayoutProject = {
   seatNumberRanges: SeatNumberRangeEntry[];
   // 도면을 PDF에서 올릴 때만 채워진다. 없으면(옛 프로젝트·글씨가 그림으로 된 도면) 존 초안 상자 맞춤을 건너뛴다.
   deskLabels?: DeskLabelSet | null;
+  // 도면 → 피난안내도 아핀 변환 6개 값(plateOverlay.ts, 10-29). 좌석번호 채팅 결과로 맞춘다. 없으면 겹쳐 그리기를 안 한다.
+  plateTransform?: number[] | null;
   updatedAt: number | null;
   updatedBy: string | null;
 };

@@ -656,6 +656,9 @@ function registerTools(server: McpServer, owner: boolean) {
           rows: z.array(z.object({
             zoneName: z.string().min(1).describe("존 이름(받은 표 그대로)"),
             numbers: z.string().min(1).describe("좌석번호 목록 또는 범위(예: \"1~10, 25~30\" 또는 \"1,2,3\")"),
+            plateBox: z.object({
+              x: z.number().min(0).max(1), y: z.number().min(0).max(1), w: z.number().min(0.001).max(1), h: z.number().min(0.001).max(1),
+            }).optional().describe("②번 피난안내도 전체 이미지에서 이 존 좌석번호들을 감싸는 상자(왼쪽 위 원점 0~1). 웹이 존 구역을 겹쳐 그리는 데 쓴다"),
           })),
           unsure: z.string().max(2000).optional().describe("어느 존에도 확신 있게 배정 못 한 번호들"),
           note: z.string().max(2000).nullable().optional(),
@@ -676,12 +679,13 @@ function registerTools(server: McpServer, owner: boolean) {
           }
           const clean = rows.map((row) => {
             const nums = parseSeatNumbers(row.numbers);
-            return { zoneName: row.zoneName, ranges: compressRanges(nums), count: new Set(nums).size };
+            return { zoneName: row.zoneName, ranges: compressRanges(nums), count: new Set(nums).size, plateRect: row.plateBox };
           });
           const unsureRanges = compressRanges(parseSeatNumbers(unsure ?? ""));
           await saveSeatLayoutChatDraft(
             project, "seatNumbers",
-            { rows: clean.map(({ zoneName, ranges }) => ({ zoneName, ranges })), unsure: unsureRanges },
+            // Firestore는 undefined를 못 쓴다 — 상자를 안 낸 존은 칸 없이.
+            { rows: clean.map(({ zoneName, ranges, plateRect }) => ({ zoneName, ranges, ...(plateRect ? { plateRect } : {}) })), unsure: unsureRanges },
             { modelName: modelName || null, note: note ?? null, user },
           );
           const lines = clean.map((c) => {
