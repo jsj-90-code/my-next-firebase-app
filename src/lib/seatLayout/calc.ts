@@ -94,14 +94,10 @@ export function groupDeskZonesForCard(zones: DeskZone[]): DeskCardGroup[] {
   >();
   zones.forEach((z) => {
     const entries = getZoneSizeEntries(z);
-    // 병합 키에는 "어떤 사이즈를 쓰는지"만 반영하고 좌석 수(qty)는 넣지 않는다 — 그렇지 않으면
-    // 사양은 완전히 같은데 좌석 수만 다른 같은 계열 존(예: VIP존A 5석/VIP존B 3석, 둘 다
-    // 950mm)이 카드로 안 합쳐지는 문제가 생긴다. 화면에 보여줄 사이즈 텍스트는 아래에서 그룹
-    // 전체 수량을 합산해 다시 만든다.
-    const sizeSignature = Array.from(new Set(entries.map((e) => e.deskSize))).sort().join(",");
-    const key = [baseZoneName(z.name), z.desk, sizeSignature, z.cooler, z.partition, z.monitorArm, z.chair].join(
-      " ",
-    );
+    // 10-29 사용자(호구포TEST 발주도면): 사이즈 조합이 다르다고 같은 사양 멀티존이 A(910)·B(850+910)·C(820)·D(850)로
+    // 갈려 도면 이름표와 엇갈리고 이상했다 → "같은 존이면 한 카드에 책상 사이즈를 쭉 나열". 병합 키에서 사이즈를 뺐다.
+    // 사양(책상·쿨러·칸막이·모니터암·의자)이 하나라도 다르면 여전히 따로(사양 차이로 존을 쪼갠 경우). 사이즈 글은 아래에서 합산.
+    const key = [baseZoneName(z.name), z.desk, z.cooler, z.partition, z.monitorArm, z.chair].join(" ");
     let g = map.get(key);
     if (!g) {
       g = {

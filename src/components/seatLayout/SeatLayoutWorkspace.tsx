@@ -2261,7 +2261,7 @@ export function SeatLayoutWorkspace() {
     if (!ctx) return null;
     ctx.scale(scale, scale);
 
-    renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones);
+    renderDeskFloorplanImage(ctx, imgEl, project.name, project.zones, project.deskLabels);
     const desk = { key: "desk", label: "책상발주도면", dataUrl: cv.toDataURL(format, quality) };
 
     renderPcFloorplanImage(ctx, imgEl, project.name, project.pcZones, pcDefaults);

@@ -17,6 +17,7 @@ import {
   computePeripheralsExclusionNote,
   computePcTotal,
   getContrastText,
+  getZoneSizeEntries,
   groupDeskZonesForCard,
   zoneDisplayLabels,
   normalizeFieldValue,
@@ -25,7 +26,8 @@ import {
   tintColor,
 } from "./calc";
 import { COMPOSITE_H, COMPOSITE_W, PC_SPEC_FIELDS } from "./constants";
-import type { DeskZone, PcSpecValues, PcZone, SeatNumberRangeEntry } from "./types";
+import { deskSizeOfWidth } from "./deskLabels";
+import type { DeskLabelSet, DeskZone, PcSpecValues, PcZone, SeatNumberRangeEntry } from "./types";
 
 type TableCol = { title: string; width: number };
 
@@ -374,6 +376,8 @@ export function renderDeskFloorplanImage(
   img: HTMLImageElement,
   projectName: string,
   zones: DeskZone[],
+  // 도면 PDF 책상 글씨 위치·폭(deskLabels.ts). 있으면 사이즈가 섞인 존의 책상마다 사이즈 표를 그린다(10-29).
+  deskLabels?: DeskLabelSet | null,
 ) {
   fillBackground(c);
 
@@ -389,6 +393,7 @@ export function renderDeskFloorplanImage(
   const geometry = computeLegendGeometry(cardGroups.length);
   const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
   drawZoneOverlaysOnCard(c, zones, geo, zoneDisplayLabels(cardGroups));
+  if (deskLabels) drawMixedSizeTags(c, zones, deskLabels, geo);
 
   const panelAreaX = 20;
   const panelAreaY = 20;
@@ -1089,4 +1094,75 @@ export function renderOrderSummaryImage(
   const bottomH = sectionH(leftBottom, s, leftW);
   const bottomY = Math.max(ly + BASE_SECTION_GAP * s, ry - bottomH);
   drawSection(leftBottom, marginX, bottomY, leftW);
+}
+
+// 사이즈별 표 색 — 820·850·910·950·1000이 한눈에 갈리게.
+const SIZE_TAG_COLORS: Record<string, string> = {
+  "820": "#0F766E",
+  "850": "#1D4ED8",
+  "910": "#C2410C",
+  "950": "#7E22CE",
+  "1000": "#B91C1C",
+};
+
+/**
+ * 사이즈가 두 가지 이상 섞인 존만, 책상마다 가운데에 반투명 색 표 + 폭(mm) 숫자를 그린다(10-29 사용자 「도면에 책상 사이즈가 잘
+ * 안 보이니 피난안내도에 겹친 것처럼 음영으로, 사이즈 여러 개인 좌석만」). 책상 위치·폭은 도면 PDF 글씨(deskLabels) — 존 배정은
+ * 수량 세기(countDesksByZone)와 같은 규칙(가운데가 든 가장 작은 존).
+ */
+function drawMixedSizeTags(c: CanvasRenderingContext2D, zones: DeskZone[], labels: DeskLabelSet, geo: FloorPlanGeo) {
+  const widths = labels.widths;
+  if (!widths || widths.length !== labels.desks.length) return;
+  const mixed = new Set(
+    zones.flatMap((z, i) => (new Set(getZoneSizeEntries(z).map((e) => e.deskSize)).size > 1 ? [i] : [])),
+  );
+  if (!mixed.size) return;
+  c.save();
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  labels.desks.forEach((d, di) => {
+    const cx = d.x + d.w / 2;
+    const cy = d.y + d.h / 2;
+    let owner = -1;
+    let ownerArea = Infinity;
+    zones.forEach((z, zi) => {
+      if (cx >= z.x && cx <= z.x + z.w && cy >= z.y && cy <= z.y + z.h && z.w * z.h < ownerArea) {
+        ownerArea = z.w * z.h;
+        owner = zi;
+      }
+    });
+    if (owner < 0 || !mixed.has(owner)) return;
+    const size = deskSizeOfWidth(widths[di]);
+    const text = size ? size.replace("mm", "") : String(widths[di]);
+    const px = geo.imgX + cx * geo.areaW;
+    const py = geo.imgY + cy * geo.areaH;
+    const dw = d.w * geo.areaW;
+    const dh = d.h * geo.areaH;
+    // 표는 책상 긴 쪽(폭) 방향으로 — 세로로 놓인 책상은 세워 그린다(가로로 그리면 옆 책상 표와 겹쳤다, 호구포 FC존).
+    // 크기는 책상 안에 들어가게: 높이 ≤ 짧은 쪽의 75%, 너비 ≤ 긴 쪽의 92%.
+    const long = Math.max(dw, dh);
+    const short = Math.min(dw, dh);
+    let fs = Math.max(6, short * 0.55);
+    c.font = `700 ${fs}px "Pretendard", "Noto Sans KR", sans-serif`;
+    let tw = c.measureText(text).width + fs * 0.5;
+    if (tw > long * 0.92) {
+      fs *= (long * 0.92) / tw;
+      c.font = `700 ${fs}px "Pretendard", "Noto Sans KR", sans-serif`;
+      tw = c.measureText(text).width + fs * 0.5;
+    }
+    const th = Math.min(fs * 1.3, short * 0.75);
+    c.save();
+    c.translate(px, py);
+    if (dh > dw) c.rotate(-Math.PI / 2);
+    c.globalAlpha = 0.85;
+    c.fillStyle = SIZE_TAG_COLORS[text] ?? "#334155";
+    c.beginPath();
+    c.roundRect(-tw / 2, -th / 2, tw, th, th * 0.3);
+    c.fill();
+    c.globalAlpha = 1;
+    c.fillStyle = "#ffffff";
+    c.fillText(text, 0, fs * 0.04);
+    c.restore();
+  });
+  c.restore();
 }
