@@ -425,7 +425,7 @@ function registerTools(server: McpServer, owner: boolean) {
             ").\n" +
             rows
               .map((zn, i) =>
-                `${i + 1}. ${zn.type ?? "유형 미정"} · ${zn.seats}석` +
+                `${i + 1}. ${zn.type ?? "유형 없음 → 웹에서 멀티존으로 넣음"} · ${zn.seats}석` +
                 (check && check.actual[i] !== zn.seats ? ` → 실제 ${check.actual[i]}석` : ""),
               )
               .join("\n");
@@ -710,6 +710,17 @@ function registerTools(server: McpServer, owner: boolean) {
             return `- ${c.zoneName}: ${c.ranges} (${c.count}개${c.count !== seats ? ` ⚠️ 존 좌석 ${seats}석과 다름` : ""})`;
           });
           const missing = zones.filter((z) => !clean.some((c) => c.zoneName === z.name)).map((z) => z.name);
+          // 10-29 호구포TEST: 앱이 예전 도구 목록을 기억해 plateBox 없이 냈다 → 웹이 피난안내도에 존을 못 겹쳤다. 3개 미만이면 되돌린다
+          // (앱이 기억하는 목록에 칸이 없어도 서버는 받으므로, 이 안내를 보고 넣으면 된다).
+          const boxed = clean.filter((c) => c.plateRect).length;
+          if (project.seatNumberPlateDataUrl && clean.length >= 3 && boxed < 3) {
+            return text(
+              `${project.name} 좌석번호는 저장했지만 아직 끝나지 않았다 — rows의 존마다 plateBox가 빠졌다(${boxed}/${clean.length}). ` +
+                "plateBox = ②번 피난안내도 전체 이미지에서 그 존 좌석번호들을 감싸는 상자 {x, y, w, h}(왼쪽 위 원점 0~1 비율). " +
+                "도구 설명에 칸이 안 보여도 서버는 받는다. 같은 rows에 존마다 plateBox를 넣어 submit_seat_number_draft로 다시 내라(덮어씀). " +
+                "웹이 이 상자들로 도면 존 구역을 피난안내도 위에 겹쳐 그린다.",
+            );
+          }
           return text(
             `${project.name} 좌석번호 초안을 저장했습니다(존 ${clean.length}/${zones.length}개).\n${lines.join("\n")}\n` +
               (missing.length ? `\n비운 존(사람이 직접 입력): ${missing.join(", ")}\n` : "") +

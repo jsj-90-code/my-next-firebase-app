@@ -42,6 +42,7 @@ import { SeatLayoutSteps, type WorkStep } from "@/components/seatLayout/SeatLayo
 import { DeskCountPanel } from "@/components/seatLayout/DeskCountPanel";
 import { SeatNumberPanel } from "@/components/seatLayout/SeatNumberPanel";
 import { fitPlateTransform, mapRect, type Affine } from "@/lib/seatLayout/plateOverlay";
+import { findPlateMapRect } from "@/lib/seatLayout/plateAutoCrop";
 import type { BracketDraftRow, SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
 
 // 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안·브라켓 다시 세기(10-29).
@@ -73,7 +74,7 @@ function projectChangeKey(p: SeatLayoutProject): string {
 }
 
 // 10-29 사용자: 피난안내도도 올리면 자동 저장 — 올린 직후엔 "저장 중", 저장되면 아래 효과가 다음 할 일을 띄운다.
-const SEAT_NUMBER_PLATE_ADDED_MSG = "좌석번호표를 올렸습니다. 저장 중...";
+const SEAT_NUMBER_PLATE_ADDED_MSG = "피난안내도를 올렸습니다. 저장 중...";
 
 const DEFAULT_DRAG_HINT =
   "먼저 위에서 존 유형을 선택한 뒤, 도면 위를 한 번 클릭(좌상단), 다시 한 번 클릭(우하단)하세요.";
@@ -349,6 +350,8 @@ export function SeatLayoutWorkspace() {
   const floorPdfRef = useRef<PDFDocumentProxy | null>(null);
   const lastFloorPageRef = useRef<{ dataUrl: string; labels: DeskLabelSet | null; rect: NormalizedRect | null; page: number } | null>(null);
   const [floorPdfLoaded, setFloorPdfLoaded] = useState(false);
+  // 피난안내도 자동 자르기(10-29) 뒤 [영역 다시 자르기]가 잘리기 전 원본에서 다시 자르게 원본과 자동 영역을 들고 있는다.
+  const plateSourceRef = useRef<{ dataUrl: string; rect: NormalizedRect } | null>(null);
   // 고른 도면 페이지의 책상 치수 글씨 위치(페이지 기준). 자르기를 확정할 때 자른 도면 기준으로 바꿔 프로젝트에 넣는다.
   const pageDeskLabelsRef = useRef<DeskLabelSet | null>(null);
   // 10-29 사용자: 도면(브라켓 쪽)을 고르면 [프로젝트 저장]을 따로 누르지 않아도 저장 — 다음 렌더(도면·글씨가 들어간 뒤)에 저장한다.
@@ -1100,9 +1103,13 @@ export function SeatLayoutWorkspace() {
       project.seatNumberRanges.some((r) => r.zoneName === z.name && r.ranges.trim()));
     return [
       // 10-29 사용자: 올리면 자동 저장 — 따로 있던 [프로젝트 저장] 단계를 합쳤다. 자동 저장이 실패했을 때만 저장 버튼이 뜬다.
-      { key: "plate", title: "피난안내도(좌석번호표) 올리기", done: !!seatNumberPlateSrc && !!last?.seatNumberPlateDataUrl,
-        hint: "아래 [좌석번호표] 칸에 이미지나 PDF를 올리면 자동으로 저장됩니다.",
-        action: seatNumberPlateSrc && !last?.seatNumberPlateDataUrl ? saveAction : undefined },
+      // 10-29 사용자: 파일 선택이 아래쪽에 있어 찾아야 했다 → 이 단계에 [파일 선택] 버튼. 평면도 부분은 자동으로 잘린다.
+      { key: "plate", title: "피난안내도 올리기", done: !!seatNumberPlateSrc && !!last?.seatNumberPlateDataUrl,
+        hint: "이미지나 PDF를 고르면 평면도 부분만 자동으로 잘라 저장합니다. 잘린 게 이상하면 아래 [영역 다시 자르기].",
+        action: seatNumberPlateSrc && !last?.seatNumberPlateDataUrl
+          ? saveAction
+          : { label: seatNumberPlateSrc ? "다른 파일 선택" : "파일 선택", onClick: () => seatNumberPlateInputRef.current?.click(),
+              emphasize: !seatNumberPlateSrc } },
       { key: "match", title: "좌석번호 매칭 (Claude 채팅)", done: filled && saved,
         hint: "불러오면 오른쪽 창에 바로 채워집니다. 틀린 번호만 고치고 창의 [좌석번호표 발주 등록](저장 포함).",
         prompt: `${name} 좌석번호 매칭해 줘`,
@@ -1201,7 +1208,8 @@ export function SeatLayoutWorkspace() {
     const namesSoFar: ActiveZone[] = [...project.zones];
     const drafts: DeskZone[] = pieces.map(({ row: r, rect, splitFrom }, i) => {
       // 10-28: 4인룸도 정식 유형이 되어 다른 유형과 같이 처리한다(옛: "기타" 유형에 이름 "4인룸A").
-      const matchedType = r.type ? ZONE_TYPES.find((t) => t.key === r.type) : undefined;
+      // 10-29 호구포TEST: AI가 일반 줄 하나의 유형을 비워 내 "초안1"이 생겼다 — 유형 없는 상자는 일반 줄로 보고 멀티존으로 넣는다.
+      const matchedType = ZONE_TYPES.find((t) => t.key === (r.type || "multi"));
       const typeKey: ZoneTypeKey = matchedType?.key ?? "etc";
       const name = matchedType
         ? nextAvailableZoneName(namesSoFar, typeKey, matchedType.label)
@@ -1334,13 +1342,14 @@ export function SeatLayoutWorkspace() {
       const dataUrl = evt.target?.result as string;
       const probe = new Image();
       probe.onload = () => {
+        if (autoCropPlate(probe, dataUrl)) return;
         cropImgRef.current = probe;
         setCropTarget("seatNumberPlate");
         setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
         setCropRect(null);
         setCropHint("좌석 번호가 보이는 영역의 왼쪽 위를 클릭하세요 (안내문구/범례는 빼고).");
       };
-      probe.onerror = () => setStatusMsg("좌석번호표 이미지를 읽지 못했습니다.", "error");
+      probe.onerror = () => setStatusMsg("피난안내도 이미지를 읽지 못했습니다.", "error");
       probe.src = dataUrl;
     };
     reader.onerror = () => setStatusMsg("좌석번호표 이미지를 읽지 못했습니다.", "error");
@@ -1912,6 +1921,11 @@ export function SeatLayoutWorkspace() {
         probe.onerror = () => reject(new Error("페이지 이미지를 불러오지 못했습니다."));
         probe.src = dataUrl;
       });
+      if (pdfPickerTarget === "seatNumberPlate" && autoCropPlate(probe, dataUrl)) {
+        setPdfPickerPages(null);
+        pdfDocRef.current = null;
+        return;
+      }
       cropImgRef.current = probe;
       if (pdfPickerTarget === "floorplan") {
         lastFloorPageRef.current = { dataUrl, labels: pageDeskLabelsRef.current, rect: null, page: pageNumber };
@@ -1963,7 +1977,7 @@ export function SeatLayoutWorkspace() {
       setStatusMsg(
         kind === "floor"
           ? `도면을 저장했습니다. 이제 Claude 앱에서 "${saved.name} 존 초안 만들어 줘"라고 보내세요.`
-          : `좌석번호표(피난안내도)를 저장했습니다. 오른쪽에서 도면과 나란히 보며 존별로 직접 입력하거나, ` +
+          : `피난안내도를 저장했습니다. 오른쪽에서 도면과 나란히 보며 존별로 직접 입력하거나, ` +
             `Claude 앱에서 "${saved.name} 좌석번호 매칭해 줘"라고 보낸 뒤 [채팅 결과 불러오기]로 넣으세요.`,
         "success",
       );
@@ -2170,18 +2184,47 @@ export function SeatLayoutWorkspace() {
   // 방금 업로드한(또는 이미 갖고 있던) 좌석번호표 이미지에서 필요한 영역만 잘라서 재인식한다.
   // 피난안내도처럼 안내문구/범례가 많이 섞인 이미지에서 인식이 잘 안 될 때 쓰라고 만든 기능이다 —
   // 잘라내면 상대적으로 확대되는 효과라 작은 번호 글씨의 인식률이 올라간다.
+  /**
+   * 피난안내도 그림에서 평면도 부분만 자동으로 잘라 넣고 자동 저장(10-29 사용자 「이미지 업로드하면 자동 구역 지정」).
+   * 회사 양식 왼쪽 칸의 가장 큰 그림 덩어리(plateAutoCrop.ts). 못 찾으면 false → 예전처럼 사람이 자른다.
+   */
+  function autoCropPlate(img: HTMLImageElement, dataUrl: string): boolean {
+    const W = 800;
+    const H = Math.max(1, Math.round((img.naturalHeight / img.naturalWidth) * W));
+    const cv = document.createElement("canvas");
+    cv.width = W;
+    cv.height = H;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, W, H);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    const gray = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) gray[i] = Math.round(0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2]);
+    const rect = findPlateMapRect(gray, W, H);
+    if (!rect) return false;
+    plateSourceRef.current = { dataUrl, rect };
+    const cropped = cropImage(img, rect);
+    setRawSeatNumberPlateDataUrl(cropped.dataUrl);
+    setImagesUnsaved(true);
+    autoSavePendingRef.current = "plate";
+    setStatusMsg("피난안내도에서 평면도 부분만 자동으로 잘랐습니다. 저장 중... (다르면 [영역 다시 자르기])");
+    return true;
+  }
+
   function openSeatNumberPlateCrop() {
-    const dataUrl = rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl;
+    // 자동으로 잘랐으면 잘리기 전 원본에서, 자동 영역을 미리 채워 다시 자른다.
+    const source = plateSourceRef.current;
+    const dataUrl = source?.dataUrl ?? rawSeatNumberPlateDataUrl ?? project.seatNumberPlateDataUrl;
     if (!dataUrl) return;
     const probe = new Image();
     probe.onload = () => {
       cropImgRef.current = probe;
       setCropTarget("seatNumberPlate");
       setPdfCropSource({ dataUrl, width: probe.naturalWidth, height: probe.naturalHeight });
-      setCropRect(null);
+      setCropRect(source?.rect ?? null);
       setCropHint("좌석 번호가 보이는 도면 영역의 왼쪽 위를 클릭하세요 (안내문구/범례는 빼고).");
     };
-    probe.onerror = () => setStatusMsg("좌석번호표 이미지를 불러오지 못했습니다.", "error");
+    probe.onerror = () => setStatusMsg("피난안내도 이미지를 불러오지 못했습니다.", "error");
     probe.src = dataUrl;
   }
 
@@ -3284,7 +3327,7 @@ export function SeatLayoutWorkspace() {
               htmlFor="seat-number-plate-input"
               className="block cursor-pointer text-xs font-medium text-[var(--sl-ink-soft)]"
             >
-              좌석번호표 (선택 — 피난안내도 등, 이미지 또는 PDF)
+              피난안내도 (이미지 또는 PDF)
             </label>
             <input
               id="seat-number-plate-input"
@@ -3295,9 +3338,8 @@ export function SeatLayoutWorkspace() {
               className="mt-1 w-full text-sm text-[#5c5346] file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:opacity-80 dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
             />
             <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
-              등록하면 먼저 필요한 영역만 잘라낼 수 있습니다. [프로젝트 저장] 후 Claude 채팅에서
-              &quot;○○점 좌석번호 매칭해 줘&quot; → [채팅 결과 불러오기]로 존별 번호를 채우고, 틀린 부분은 아래에서
-              직접 고친 뒤 [좌석번호표 발주 등록]으로 시트에 올립니다.
+              올리면 평면도 부분만 자동으로 잘라 저장합니다. Claude 채팅에서 &quot;○○점 좌석번호 매칭해 줘&quot; →
+              [채팅 결과 불러오기]로 오른쪽 창에 존별 번호가 채워지면, 틀린 것만 고쳐 [좌석번호표 발주 등록].
             </p>
 
             {/* 스크롤해서 아래로 내려가야 겨우 보이던 문제 때문에, 등록 버튼은 이 탭 맨 위(업로드
@@ -3361,7 +3403,7 @@ export function SeatLayoutWorkspace() {
 
             {(rawSeatNumberPlateDataUrl || project.seatNumberPlateDataUrl) && project.zones.length > 0 && (
               <div className="mt-3 space-y-2">
-                {/* 10-29 사용자: 존별 좌석번호 입력 표는 오른쪽 창(SeatNumberPanel)으로 옮겼다 — 여기엔 여는 버튼만. */}
+                {/* 10-29 사용자: 존별 좌석번호 입력 표는 오른쪽 창(SeatNumberPanel)으로 옮겼다. 자동으로 잘린 영역을 고치는 버튼만 남김. */}
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
@@ -3370,27 +3412,9 @@ export function SeatLayoutWorkspace() {
                   >
                     영역 다시 자르기
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setSeatPanel((cur) => cur ?? { fromChat: new Set(), unsure: "", meta: null })}
-                    className="rounded-full app-btn-outline px-3 py-1 text-xs"
-                  >
-                    좌석번호 창 열기
-                  </button>
-                  <button
-                    type="button"
-                    disabled={chatDraftLoading}
-                    onClick={() => openChatDraft("seatNumbers")}
-                    className="rounded-full app-btn-accent px-3 py-1 text-xs font-semibold disabled:opacity-50"
-                  >
-                    {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
-                  </button>
                 </div>
                 {chatDraftBanner("seatNumbers")}
-                <p className="text-xs text-[var(--sl-ink-soft)]">
-                  Claude 앱에서 &quot;○○점 좌석번호 매칭해 줘&quot; → [채팅 결과 불러오기]를 누르면 오른쪽 창에 바로 채워집니다.
-                  직접 적으려면 [좌석번호 창 열기].
-                </p>
+                {/* 10-29 사용자: [채팅 결과 불러오기]는 작업 순서 2번, [좌석번호 창 열기]는 오른쪽 가장자리 탭과 겹쳐 뺐다. */}
               </div>
             )}
           </section>
@@ -3509,7 +3533,7 @@ export function SeatLayoutWorkspace() {
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center justify-between">
                   <p className="flex items-center gap-3 text-xs font-semibold text-[var(--sl-ink-soft)]">
-                    피난안내도(좌석번호표)
+                    피난안내도
                     {project.plateTransform?.length === 6 && (
                       <label className="flex cursor-pointer items-center gap-1 font-normal">
                         <input type="checkbox" checked={plateOverlayOn} onChange={(e) => setPlateOverlayOn(e.target.checked)} />
