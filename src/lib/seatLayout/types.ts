@@ -114,6 +114,9 @@ export type DeskLabelSet = {
   desks: NormalizedRect[];
   // desks와 같은 순서의 책상 폭(mm, 글씨 "850*680"의 850). 10-29 전에 올린 도면엔 없다 → 수량 자동 세기를 건너뛴다.
   widths?: number[];
+  // desks와 같은 순서 — 브라켓 도면의 주황 선이 지나가는 책상인가(bracketLines.ts, 10-29). 주황 선이 없는 쪽을 올렸거나
+  // 그 전에 올린 도면이면 없다 → 브라켓은 채팅으로 센다.
+  brackets?: boolean[];
   mmX: number;
   mmY: number;
   // 긴 수평·수직선(벽·칸막이 후보)을 x0,y0,x1,y1 넷씩 이어 붙인 평평한 목록 — 등 맞댄 방 찾기용(roomSplit.ts, 10-28).

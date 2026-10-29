@@ -418,7 +418,17 @@ function registerTools(server: McpServer, owner: boolean) {
           const head =
             `${project.name} 존 초안 ${rows.length}개를 저장했습니다(좌석 합계 ${rows.reduce((s, zn) => s + zn.seats, 0)}).\n` +
             rows.map((zn, i) => `${i + 1}. ${zn.type ?? "유형 미정"} · ${zn.seats}석`).join("\n");
-          // 10-29: 도면 PDF 글씨 폭이 있으면 책상 수량·사이즈는 웹이 세므로, 같은 채팅에서 브라켓만 이어 센다(사용자 한 번 불러오기).
+          // 10-29: 브라켓 도면 주황 선까지 읽었으면 수량·사이즈·브라켓 모두 웹이 도면 PDF로 센다 — 채팅은 여기서 끝.
+          if (project.deskLabels?.brackets?.length) {
+            return text(
+              `${head}
+
+웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면 존이 들어가고, ` +
+                "책상 수량·사이즈·가방 선반 브라켓은 웹이 도면 PDF로 바로 셉니다(존을 고쳐도 바로 다시 셈). 확인한 뒤 [확인하고 통합발주서 등록]. " +
+                "사용자에게 이 안내를 보여줄 것.",
+            );
+          }
+          // 도면 PDF 글씨 폭만 있으면(브라켓 주황 선은 못 읽음) 수량·사이즈는 웹이 세고, 같은 채팅에서 브라켓만 이어 센다.
           if (project.deskLabels?.widths?.length) {
             return text(
               `${head}\n\n아직 끝나지 않았다 — 사용자에게 묻지 말고 **바로 이어서** get_seat_layout_bracket_crops(source="draft")로 ` +

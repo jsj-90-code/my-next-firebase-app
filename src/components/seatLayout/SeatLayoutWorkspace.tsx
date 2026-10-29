@@ -340,7 +340,7 @@ export function SeatLayoutWorkspace() {
   // 10-29 사용자: 도면(브라켓 쪽)을 고르면 [프로젝트 저장]을 따로 누르지 않아도 저장 — 다음 렌더(도면·글씨가 들어간 뒤)에 저장한다.
   const autoSavePendingRef = useRef(false);
   // 존 모양이 바뀌면 책상 수량·사이즈·PC 대수를 도면 PDF 글씨로 다시 센다(아래 효과). 프로젝트를 새로 열 땐 세지 않는다.
-  const recountRef = useRef<{ id: string; desk: string; pc: string } | null>(null);
+  const recountRef = useRef<{ id: string; desk: string; pc: string; labels: DeskLabelSet | null | undefined } | null>(null);
   // PDF 페이지를 고른 다음(또는 좌석번호표 이미지 업로드 후): 필요없는 부분을 빼고 실제 필요한
   // 영역만 잘라내는 단계. 도면 크롭과 좌석번호표 크롭이 이 crop 상태/캔버스를 공유한다 —
   // cropTarget으로 크롭 완료 후 결과를 어디에 적용할지만 구분한다.
@@ -967,7 +967,9 @@ export function SeatLayoutWorkspace() {
       // 브라켓까지 센다 → 도면 올리기(자동 저장) → 존 초안 채팅 → (존을 고쳤으면 그 존만 브라켓 다시) → 확인하고 발주서 등록.
       // 글씨가 없는 옛 도면은 예전 순서(존 다듬고 저장 → 책상 인식 채팅)를 그대로 쓴다.
       const autoCount = !!project.deskLabels?.widths?.length;
-      const staleBrackets = autoCount ? zones.filter((z) => z.bagShelfKey !== zoneShapeKey(z)) : [];
+      // 브라켓 도면 주황 선까지 읽었으면 브라켓도 웹이 세므로 "다시 세기"가 없다(10-29 사용자 「초안 받을 때 브라켓까지」).
+      const autoBrackets = !!project.deskLabels?.brackets?.length;
+      const staleBrackets = autoCount && !autoBrackets ? zones.filter((z) => z.bagShelfKey !== zoneShapeKey(z)) : [];
       const steps: WorkStep[] = [
         { key: "upload", title: "매장명 입력·도면(PDF) 올리기", done: !!project.name.trim() && !!floorPlanSrc && !!project.updatedAt,
           hint: "매장명을 먼저 넣고 도면 PDF에서 브라켓 도면(보통 3페이지)을 고르면 자동으로 저장됩니다. 채팅은 이 매장명으로 프로젝트를 찾습니다.",
@@ -977,7 +979,9 @@ export function SeatLayoutWorkspace() {
           done: zones.length > 0 && uncovered === 0,
           hint: uncovered > 0
             ? "지운 자리나 덜 그린 자리입니다. [프로젝트 저장] 후 채팅으로 존 초안을 다시 받으면 이미 그린 존은 빼고 빈 곳만 제안합니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요."
-            : autoCount
+            : autoBrackets
+              ? "채팅이 존을 나눕니다(1분 30초쯤). 불러오면 책상 수량·사이즈·브라켓은 도면 PDF로 바로 세어 한 번에 들어갑니다. 존을 고쳐도 바로 다시 셉니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요."
+              : autoCount
               ? "채팅이 존을 나누고 이어서 브라켓까지 셉니다(2~3분). 불러오면 존·책상 수량·사이즈·브라켓이 한 번에 들어갑니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요."
               : "구역 상자를 한 번에 넣습니다. 채팅 답이 오기까지 1분 30초쯤 걸립니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
           prompt: `${name} 존 초안 만들어 줘`,
@@ -985,7 +989,9 @@ export function SeatLayoutWorkspace() {
             : { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
                 emphasize: hasNewChatDraft("zones") } },
       ];
-      if (autoCount) {
+      if (autoBrackets) {
+        // 브라켓까지 도면으로 세므로 따로 단계 없음.
+      } else if (autoCount) {
         steps.push({ key: "brackets",
           title: staleBrackets.length > 0 ? `브라켓 다시 세기 — 존 ${staleBrackets.length}개 (Claude 채팅)` : "브라켓 확인",
           done: zones.length > 0 && staleBrackets.length === 0,
@@ -1193,7 +1199,7 @@ export function SeatLayoutWorkspace() {
     const splitNote = splits.length ? ` 벽으로 막힌 방을 따로 나눴습니다: ${splits.join(", ")}.` : "";
     const mismatchNote = mismatches.length ? ` 좌석 수 확인: ${mismatches.join(", ")}.` : "";
     const autoCount = !!labels?.widths?.length;
-    const bracketPending = drafts.filter((z) => z.bagShelfKey !== zoneShapeKey(z)).length;
+    const bracketPending = labels?.brackets?.length ? 0 : drafts.filter((z) => z.bagShelfKey !== zoneShapeKey(z)).length;
     const next = !autoCount
       ? " 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 \"책상 인식\"을 하세요."
       : bracketPending > 0
@@ -1847,22 +1853,25 @@ export function SeatLayoutWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawFloorPlanDataUrl, project.deskLabels]);
 
-  // 10-29: 존을 넣거나 옮기면 그 안의 도면 책상 글씨로 수량·사이즈(책상 탭)·대수(PC 탭, 책상 수 = PC 대수)를 다시 센다 —
+  // 10-29: 존을 넣거나 옮기면 그 안의 도면 책상 글씨로 수량·사이즈·브라켓(책상 탭)·대수(PC 탭, 책상 수 = PC 대수)를 다시 센다 —
   // 옛 채팅 "책상 인식"·"PC 대수" 단계 대신. 책상이 하나도 안 든 존(카운터 PC 등)과 옛 도면(글씨 폭 없음)은 손대지 않는다.
   useEffect(() => {
     const deskKey = project.zones.map(zoneShapeKey).join(";");
     const pcKey = project.pcZones.map(zoneShapeKey).join(";");
     const prev = recountRef.current;
-    recountRef.current = { id: project.id, desk: deskKey, pc: pcKey };
     const labels = project.deskLabels;
+    recountRef.current = { id: project.id, desk: deskKey, pc: pcKey, labels };
     if (!prev || prev.id !== project.id || !labels?.widths?.length) return;
-    const deskCounts = deskKey !== prev.desk ? countDesksByZone(labels, project.zones) : null;
-    const pcCounts = pcKey !== prev.pc ? countDesksByZone(labels, project.pcZones) : null;
+    // 같은 프로젝트에 도면을 다시 올려 글씨·브라켓 정보가 바뀌어도 다시 센다.
+    const relabeled = labels !== prev.labels;
+    const deskCounts = deskKey !== prev.desk || relabeled ? countDesksByZone(labels, project.zones) : null;
+    const pcCounts = pcKey !== prev.pc || relabeled ? countDesksByZone(labels, project.pcZones) : null;
     const sameBreakdown = (a: SizeBreakdownEntry[], b: SizeBreakdownEntry[]) =>
       a.length === b.length && a.every((x, i) => x.deskSize === b[i].deskSize && x.qty === b[i].qty);
     const deskChanged = deskCounts?.some((c, i) => {
       const z = project.zones[i];
-      return !!c && (c.seats !== z.seats || !sameBreakdown(c.sizeBreakdown, z.sizeBreakdown));
+      return !!c && (c.seats !== z.seats || !sameBreakdown(c.sizeBreakdown, z.sizeBreakdown) ||
+        (c.bagShelf !== null && (c.bagShelf !== z.bagShelfCount || z.bagShelfKey !== zoneShapeKey(z))));
     });
     const pcChanged = pcCounts?.some((c, i) => {
       const z = project.pcZones[i];
@@ -1875,12 +1884,15 @@ export function SeatLayoutWorkspace() {
         ? p.zones.map((z, i) => {
             const c = deskCounts?.[i];
             if (!c) return z;
+            // 브라켓 도면 주황 선 정보가 있으면 브라켓도 같이 센다(바로 "센 상태"). 없으면 채팅으로 센 값을 그대로 둔다.
             return {
               ...z,
               seats: c.seats,
               sizeBreakdown: c.sizeBreakdown,
               deskSize: c.sizeBreakdown[0]?.deskSize ?? "",
-              bagShelfCount: Math.min(z.bagShelfCount, c.seats),
+              ...(c.bagShelf !== null
+                ? { bagShelfCount: c.bagShelf, bagShelfKey: zoneShapeKey(z) }
+                : { bagShelfCount: Math.min(z.bagShelfCount, c.seats) }),
             };
           })
         : p.zones,

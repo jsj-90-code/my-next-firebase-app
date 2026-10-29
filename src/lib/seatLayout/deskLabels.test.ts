@@ -120,6 +120,7 @@ describe("countDesksByZone (10-29 책상 인식 채팅 대신)", () => {
   it("존 안 책상 글씨로 수량·사이즈를 센다", () => {
     const [c] = countDesksByZone(withWidths(), [{ x: 0.09, y: 0.44, w: 0.36, h: 0.14 }]);
     expect(c).toEqual({
+      bagShelf: null,
       seats: 4,
       sizeBreakdown: [
         { deskSize: "850mm", qty: 2 },
@@ -158,5 +159,18 @@ describe("countDesksByZone (10-29 책상 인식 채팅 대신)", () => {
     const cropped = cropDeskLabels(labels, { x: 0.18, y: 0.4, w: 0.5, h: 0.3 })!; // 첫 책상(가운데 x=0.1425) 빠짐
     expect(cropped.desks).toHaveLength(3);
     expect(cropped.widths).toEqual([850, 910, 1000]);
+  });
+});
+
+describe("브라켓 (10-29 도면 주황 선)", () => {
+  it("존마다 브라켓 달린 책상 수를 같이 센다", () => {
+    const labels: DeskLabelSet = { ...set(row(0.1, 0.5)), widths: [850, 850, 850, 850], brackets: [true, true, false, false] };
+    const [a, b] = countDesksByZone(labels, [{ x: 0.09, y: 0.44, w: 0.18, h: 0.14 }, { x: 0.27, y: 0.44, w: 0.18, h: 0.14 }]);
+    expect(a?.bagShelf).toBe(2);
+    expect(b?.bagShelf).toBe(0);
+  });
+  it("자를 때 브라켓 표시도 따라간다", () => {
+    const labels: DeskLabelSet = { ...set(row(0.1, 0.5)), widths: [850, 850, 910, 1000], brackets: [true, false, true, false] };
+    expect(cropDeskLabels(labels, { x: 0.18, y: 0.4, w: 0.5, h: 0.3 })!.brackets).toEqual([false, true, false]);
   });
 });

@@ -9,6 +9,7 @@
 //   1mm가 몇 단위인지 잰다(세 도면 모두 사분위가 같은 값으로 나옴).
 // - 의자는 책상 끝에서 약 600mm까지 나온다(울산 확대 화면 실측 — 책상 깊이 680의 약 0.86배).
 import type { PDFPageProxy } from "pdfjs-dist";
+import { extractBracketSegments, markBracketDesks } from "./bracketLines";
 import { cropWallLines, extractWallLines } from "./roomSplit";
 import { DESK_SIZE_OPTIONS } from "./constants";
 import type { DeskLabelSet, DeskSize, NormalizedRect, SizeBreakdownEntry, ZoneTypeKey } from "./types";
@@ -81,6 +82,16 @@ export async function extractDeskLabels(page: PDFPageProxy): Promise<DeskLabelSe
       h: r4((2 * ey) / vp.height),
     };
   });
+  // 브라켓(10-29): 브라켓 도면이면 주황 선이 지나가는 책상을 바로 찾는다(bracketLines.ts). 주황 선이 없거나 못 읽으면 없음 → 채팅으로 센다.
+  let brackets: boolean[] | null = null;
+  try {
+    brackets = markBracketDesks(
+      raws.map((r) => ({ cx: r.cx, cy: r.cy, ux: r.ux, uy: r.uy, hw: (r.wMm * unitsPerMm) / 2, hd: (r.dMm * unitsPerMm) / 2 })),
+      await extractBracketSegments(page),
+    );
+  } catch {
+    brackets = null;
+  }
   // 벽 선은 부가 정보 — 못 읽어도 책상 위치는 그대로 쓴다.
   let walls: number[] | undefined;
   try {
@@ -91,6 +102,7 @@ export async function extractDeskLabels(page: PDFPageProxy): Promise<DeskLabelSe
   return {
     desks,
     widths: raws.map((r) => r.wMm),
+    ...(brackets ? { brackets } : {}),
     mmX: unitsPerMm / vp.width,
     mmY: unitsPerMm / vp.height,
     ...(walls ? { walls } : {}),
@@ -105,6 +117,7 @@ export function cropDeskLabels(set: DeskLabelSet, crop: NormalizedRect): DeskLab
     return cx >= crop.x && cx <= crop.x + crop.w && cy >= crop.y && cy <= crop.y + crop.h;
   });
   const widths = set.widths?.filter((_, i) => keep[i]);
+  const brackets = set.brackets?.filter((_, i) => keep[i]);
   const desks = set.desks
     .filter((_, i) => keep[i])
     .map((d) => ({
@@ -118,6 +131,7 @@ export function cropDeskLabels(set: DeskLabelSet, crop: NormalizedRect): DeskLab
   return {
     desks,
     ...(widths ? { widths } : {}),
+    ...(brackets ? { brackets } : {}),
     mmX: set.mmX / crop.w,
     mmY: set.mmY / crop.h,
     ...(walls ? { walls } : {}),
@@ -266,7 +280,8 @@ export function deskSizeOfWidth(mm: number): DeskSize | null {
   return bestDiff <= 30 ? best : null;
 }
 
-export type ZoneDeskCount = { seats: number; sizeBreakdown: SizeBreakdownEntry[]; unknown: number };
+/** bagShelf = 브라켓 달린 책상 수. 도면에 브라켓 표시 정보가 없으면 null(지금 값 유지). */
+export type ZoneDeskCount = { seats: number; sizeBreakdown: SizeBreakdownEntry[]; unknown: number; bagShelf: number | null };
 
 /**
  * 존마다 그 안 책상 글씨를 세어 수량·사이즈를 낸다(10-29 — 채팅 "책상 인식" 단계를 없앴다. 글씨 수는 세 도면 모두 범례 수량과 같음).
@@ -278,6 +293,8 @@ export function countDesksByZone(labels: DeskLabelSet, zones: NormalizedRect[]):
   if (!widths || widths.length !== labels.desks.length) return zones.map(() => null);
   const boxes = zones.map(toBox);
   const perZone = zones.map(() => [] as number[]);
+  const bracketsPerZone = zones.map(() => 0);
+  const brackets = labels.brackets?.length === labels.desks.length ? labels.brackets : null;
   labels.desks.forEach((d, di) => {
     const c = center(toBox(d));
     let best = -1;
@@ -289,9 +306,12 @@ export function countDesksByZone(labels: DeskLabelSet, zones: NormalizedRect[]):
         best = zi;
       }
     });
-    if (best >= 0) perZone[best].push(widths[di]);
+    if (best >= 0) {
+      perZone[best].push(widths[di]);
+      if (brackets?.[di]) bracketsPerZone[best] += 1;
+    }
   });
-  return perZone.map((ws) => {
+  return perZone.map((ws, zi) => {
     if (!ws.length) return null;
     const qty = new Map<DeskSize, number>();
     let unknown = 0;
@@ -301,6 +321,6 @@ export function countDesksByZone(labels: DeskLabelSet, zones: NormalizedRect[]):
       else unknown += 1;
     }
     const sizeBreakdown = DESK_SIZE_OPTIONS.filter((s) => qty.has(s)).map((s) => ({ deskSize: s, qty: qty.get(s)! }));
-    return { seats: ws.length, sizeBreakdown, unknown };
+    return { seats: ws.length, sizeBreakdown, unknown, bagShelf: brackets ? bracketsPerZone[zi] : null };
   });
 }
