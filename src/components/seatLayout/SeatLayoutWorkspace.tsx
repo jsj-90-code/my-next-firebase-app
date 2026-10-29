@@ -3610,7 +3610,8 @@ export function SeatLayoutWorkspace() {
                           const pts = mapRect(project.plateTransform as Affine, z).map(([x, y]) => [x * plateDims.w, y * plateDims.h]);
                           // 10-29 사용자: 존 이름이 상자 안 왼쪽 위에 찍혀 좌석 번호를 가렸다 → 이름표를 상자 바깥 위쪽에 붙이고(그림
                           // 맨 위라 자리가 없을 때만 안쪽), 존 색 반투명 바탕 + 흰 글씨로 작게 — 겹쳐도 밑 번호가 비친다.
-                          const fs = Math.max(10, plateDims.w / 120);
+                          // 10-29 사용자 「존 이름이 너무 작아 안 보인다」: 120분의 1 → 60분의 1(최소 16px)
+                          const fs = Math.max(16, plateDims.w / 60);
                           const tagH = fs * 1.4;
                           // 글자 폭 어림: 한글 1자 ≈ 글자 크기, 영문·숫자 ≈ 0.6배
                           const tagW = [...z.name].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? fs : fs * 0.62), fs * 0.7);

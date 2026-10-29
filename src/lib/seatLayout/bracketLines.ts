@@ -7,8 +7,8 @@
 //   (선을 채운 사각형·여러 겹으로 그려서 1을 넘는다). 0.5를 기준으로 가른다.
 // - 점은 곡선이라 세지 않는다. 도면 제목 옆 "브라켓 수량 90개"는 이 점(부품) 수라 책상 수와 다르다.
 // - 평택 VIP처럼 기운 책상·기운 선이 있어 축 정렬이 아니라 책상 방향(글씨 방향)으로 잰다.
-// 결과(브라켓 달린 책상 수): 울산 32 · 평택 71 · 호구포 48 — 도면 위에 초록으로 칠해 눈으로 맞춰 봄(평택 기운 VIP 2석 포함,
-// 호구포 기둥 밑 850은 점만 있고 선이 없어 아님 — 10-29 겹친 조각 합집합으로 바꾸며 49→48).
+// 결과(브라켓 달린 책상 수): 울산 32 · 평택 71 · 호구포 49 — 도면 위에 초록으로 칠해 눈으로 맞춰 봄(평택 기운 VIP 2석 포함,
+// 호구포 기둥 밑 850은 선을 짧게 쳤지만 양 끝 점이 있어 브라켓 — 사용자 확인).
 // 운영 프로젝트에 저장돼 있던 값(35·59·62)은 예전 AI 어림이라 다르다.
 import type { PDFPageProxy } from "pdfjs-dist";
 
@@ -80,9 +80,22 @@ export function clippedAlong(desk: DeskFrame, seg: [number, number, number, numb
 }
 
 /** 선분 목록으로 책상마다 브라켓 여부. 주황 선이 하나도 없으면 null(브라켓 도면이 아님 → 채팅으로 센다). */
-export function markBracketDesks(desks: DeskFrame[], segs: [number, number, number, number][]): boolean[] | null {
+export function markBracketDesks(
+  desks: DeskFrame[],
+  segs: [number, number, number, number][],
+  dots: [number, number][] = [],
+): boolean[] | null {
   if (!segs.length) return null;
   return desks.map((d) => {
+    // 10-29 호구포TEST(사용자 「49개가 맞다 — 기둥 밑 850은 선을 좀 짧게 쳤다」): 선이 폭의 24%뿐이어도 책상 양 끝(폭 방향 ±반폭,
+    // 반폭의 25% 안)에 주황 점(브라켓)이 둘 다 있으면 브라켓 책상. 한쪽 끝에만 점이 걸린 옆 존 책상(광주 프렌즈)은 아님.
+    const endHit = (sign: number) =>
+      dots.some(([x, y]) => {
+        const u = (x - d.cx) * d.ux + (y - d.cy) * d.uy;
+        const v = -(x - d.cx) * d.uy + (y - d.cy) * d.ux;
+        return Math.abs(u - sign * d.hw) <= d.hw * 0.25 && Math.abs(v) <= d.hd;
+      });
+    if (endHit(-1) && endHit(1)) return true;
     const r = Math.hypot(d.hw, d.hd);
     // 10-29 광주첨단점TEST: 옆 VIP 브라켓 선 끝의 짧은 조각이 프렌즈 책상 가장자리에 걸렸는데, 같은 조각이 여러 겹(채운 사각형
     // 테두리 등)으로 그려져 길이를 더하면 폭의 절반을 넘었다 → 덮인 구간의 합집합 길이로 잰다(진짜 브라켓 책상은 폭 전체가 덮임).
@@ -106,8 +119,11 @@ export function markBracketDesks(desks: DeskFrame[], segs: [number, number, numb
   });
 }
 
-/** 페이지의 주황 직선 조각(화면 좌표). 곡선(점)은 뺀다. */
-export async function extractBracketSegments(page: PDFPageProxy): Promise<[number, number, number, number][]> {
+/** 페이지의 주황 직선 조각과 주황 점(곡선 도형의 가운데, 화면 좌표). */
+export async function extractBracketMarks(
+  page: PDFPageProxy,
+): Promise<{ segs: [number, number, number, number][]; dots: [number, number][] }> {
+  const dots: [number, number][] = [];
   const vp = page.getViewport({ scale: 1 });
   const ol = await page.getOperatorList();
   const out: [number, number, number, number][] = [];
@@ -137,16 +153,33 @@ export async function extractBracketSegments(page: PDFPageProxy): Promise<[numbe
         out.push([px, py, qx, qy]);
       };
       let k = 0, cx = 0, cy = 0, sx = 0, sy = 0;
+      // 곡선으로 그린 도형(주황 점)은 감싼 상자의 가운데를 점 하나로 모은다.
+      let curved = false;
+      const ptsX: number[] = [];
+      const ptsY: number[] = [];
+      const note = (x: number, y: number) => {
+        const [px, py] = toVp(x, y);
+        ptsX.push(px);
+        ptsY.push(py);
+      };
       while (k < d.length) {
         const op = d[k++];
-        if (op === D_MOVE) { cx = d[k++]; cy = d[k++]; sx = cx; sy = cy; }
-        else if (op === D_LINE) { const x = d[k++], y = d[k++]; push(cx, cy, x, y); cx = x; cy = y; }
-        else if (op === D_CURVE) { k += 4; cx = d[k++]; cy = d[k++]; }
+        if (op === D_MOVE) { cx = d[k++]; cy = d[k++]; sx = cx; sy = cy; note(cx, cy); }
+        else if (op === D_LINE) { const x = d[k++], y = d[k++]; push(cx, cy, x, y); cx = x; cy = y; note(cx, cy); }
+        else if (op === D_CURVE) { curved = true; note(d[k], d[k + 1]); note(d[k + 2], d[k + 3]); k += 4; cx = d[k++]; cy = d[k++]; note(cx, cy); }
         else if (op === D_QUAD) { k += 2; cx = d[k++]; cy = d[k++]; }
         else if (op === D_CLOSE) { push(cx, cy, sx, sy); cx = sx; cy = sy; }
         else break;
       }
+      // 점은 곡선으로도, 짧은 직선 여러 개(다각형)로도 그린다(호구포) — 곡선이 있거나, 작고(쪽 단위 4~40) 정사각형에 가까운 도형이면 점.
+      if (ptsX.length) {
+        const w = Math.max(...ptsX) - Math.min(...ptsX);
+        const h = Math.max(...ptsY) - Math.min(...ptsY);
+        const big = Math.max(w, h);
+        const roundish = big >= 4 && big <= 40 && Math.abs(w - h) <= big * 0.3;
+        if (curved || roundish) dots.push([(Math.min(...ptsX) + Math.max(...ptsX)) / 2, (Math.min(...ptsY) + Math.max(...ptsY)) / 2]);
+      }
     }
   }
-  return out;
+  return { segs: out, dots };
 }

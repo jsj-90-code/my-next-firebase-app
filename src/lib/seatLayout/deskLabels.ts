@@ -9,7 +9,7 @@
 //   1mm가 몇 단위인지 잰다(세 도면 모두 사분위가 같은 값으로 나옴).
 // - 의자는 책상 끝에서 약 600mm까지 나온다(울산 확대 화면 실측 — 책상 깊이 680의 약 0.86배).
 import type { PDFPageProxy } from "pdfjs-dist";
-import { extractBracketSegments, markBracketDesks } from "./bracketLines";
+import { extractBracketMarks, markBracketDesks } from "./bracketLines";
 import { cropWallLines, extractWallLines, unflattenWalls } from "./roomSplit";
 import { DESK_SIZE_OPTIONS } from "./constants";
 import type { DeskLabelSet, DeskSize, NormalizedRect, SizeBreakdownEntry, ZoneTypeKey } from "./types";
@@ -87,9 +87,11 @@ export async function extractDeskLabels(page: PDFPageProxy): Promise<DeskLabelSe
   // 브라켓(10-29): 브라켓 도면이면 주황 선이 지나가는 책상을 바로 찾는다(bracketLines.ts). 주황 선이 없거나 못 읽으면 없음 → 채팅으로 센다.
   let brackets: boolean[] | null = null;
   try {
+    const marks = await extractBracketMarks(page);
     brackets = markBracketDesks(
       raws.map((r) => ({ cx: r.cx, cy: r.cy, ux: r.ux, uy: r.uy, hw: (r.wMm * unitsPerMm) / 2, hd: (r.dMm * unitsPerMm) / 2 })),
-      await extractBracketSegments(page),
+      marks.segs,
+      marks.dots,
     );
   } catch {
     brackets = null;
