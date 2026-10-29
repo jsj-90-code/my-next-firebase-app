@@ -49,6 +49,7 @@ import type { BracketDraftRow, SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/s
 type DraftKind = ChatDraftKind | "zones" | "brackets";
 import {
   emptyProject,
+  pcZonesSyncKey,
   zoneShapeKey,
   type DeskLabelSet,
   type DeskSize,
@@ -1625,7 +1626,7 @@ export function SeatLayoutWorkspace() {
       if (!ok) return;
     }
     const pcZones = deskZonesAsPcZones(project.zones);
-    setProject((p) => ({ ...p, pcZones }));
+    setProject((p) => ({ ...p, pcZones, pcSyncedKey: pcZonesSyncKey(pcZones) }));
     setStatusMsg(`책상 구역 ${pcZones.length}개를 PC 탭으로 불러왔습니다. 사양이 필요한 존만 [수정]으로 바꿔주세요.`, "success");
   }
 
@@ -1653,11 +1654,13 @@ export function SeatLayoutWorkspace() {
     });
   }
 
-  // 10-30 사용자 「통합발주서 등록을 누르면 PC 발주 도면에 그 존 구성 자동 반영」. PC 존이 없거나 책상 존과 이름이 1:1이면
-  // 그대로 맞추고(사양은 유지), PC 탭에서 따로 나눈 존이 있으면 덮어쓸지 묻는다 — [취소]면 PC 존은 그대로(null).
+  // 10-30 사용자 「통합발주서 등록을 누르면 PC 발주 도면에 그 존 구성 자동 반영」. PC 존이 없거나, 지난 반영 뒤 PC 탭에서 손대지
+  // 않았거나, 책상 존과 이름이 1:1이면 그대로 맞추고(사양은 유지), PC 탭에서 따로 나눈 존이 있으면 덮어쓸지 묻는다 — [취소]면 그대로(null).
+  // 사용자 「책상 저장하고 다시 수정한 경우」: 반영 뒤 책상 존 이름을 바꾸거나 지우면 PC에 옛 이름이 남는데, 그건 나눈 존이 아니다(pcSyncedKey로 구분).
   function pcZonesForDeskPublish(): PcZone[] | null {
     const deskNames = new Set(project.zones.map((z) => z.name));
-    const splitInPc = project.pcZones.some((pz) => !deskNames.has(pz.name));
+    const untouched = !!project.pcSyncedKey && pcZonesSyncKey(project.pcZones) === project.pcSyncedKey;
+    const splitInPc = !untouched && project.pcZones.some((pz) => !deskNames.has(pz.name));
     if (splitInPc && !window.confirm(
       "PC 발주 도면에 따로 나눈 존이 있습니다. 책상 존 구성으로 PC 발주 도면을 덮어쓸까요?\n\n" +
         "[확인] 덮어쓰기(같은 이름 존의 PC 사양은 유지)\n[취소] PC 발주 도면은 그대로 두고 등록만",
@@ -1750,6 +1753,11 @@ export function SeatLayoutWorkspace() {
   async function silentSave(patch: Partial<SeatLayoutProject> = {}): Promise<SeatLayoutProject | null> {
     if (!user) return null;
     const base = { ...project, ...patch };
+    // 10-30: 반영 뒤 PC 탭에서 손대지 않았으면 책상 존을 고쳐 저장할 때 PC 존도 따라간다(등록을 다시 안 눌러도).
+    if (!patch.pcZones && base.pcSyncedKey && pcZonesSyncKey(base.pcZones) === base.pcSyncedKey) {
+      base.pcZones = deskZonesAsPcZones(base.zones, base.pcZones);
+      base.pcSyncedKey = pcZonesSyncKey(base.pcZones);
+    }
     try {
       // Firestore 문서 용량 제한 때문에, 저장하는 순간에만 압축한다. 화면/AI 인식은 계속
       // rawFloorPlanDataUrl(원본 화질)을 쓴다 — 압축본으로 덮어쓰지 않는다.
@@ -2534,7 +2542,7 @@ export function SeatLayoutWorkspace() {
     setBusy(true);
     setStatusMsg("저장 중...");
     setDeskOrderSheetUrl(null);
-    const saved = await silentSave(pcZones ? { pcZones } : {});
+    const saved = await silentSave(pcZones ? { pcZones, pcSyncedKey: pcZonesSyncKey(pcZones) } : {});
     if (!saved) {
       setBusy(false);
       return;

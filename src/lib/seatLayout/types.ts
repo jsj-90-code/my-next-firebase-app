@@ -142,9 +142,16 @@ export type SeatLayoutProject = {
   deskLabels?: DeskLabelSet | null;
   // 도면 → 피난안내도 아핀 변환 6개 값(plateOverlay.ts, 10-29). 좌석번호 채팅 결과로 맞춘다. 없으면 겹쳐 그리기를 안 한다.
   plateTransform?: number[] | null;
+  // 책상 존을 PC 존으로 옮긴(자동 반영·책상 구역 불러오기) 직후의 PC 존 모양(pcZonesSyncKey, 10-30). 지금 PC 존이 이것과 같으면
+  // PC 탭에서 손대지 않은 것이라, 책상 존을 고쳐 저장하면 PC 존도 따라간다. 다르면(나누기·대수 수정) PC 존은 그대로 둔다.
+  pcSyncedKey?: string | null;
   updatedAt: number | null;
   updatedBy: string | null;
 };
+
+export function pcZonesSyncKey(zs: (NormalizedRect & { name: string; typeKey: string; seats: number })[]): string {
+  return zs.map((z) => `${z.name}|${z.typeKey}|${z.seats}|${zoneShapeKey(z)}`).join(";");
+}
 
 export function emptyProject(): Omit<SeatLayoutProject, "id"> {
   return {
