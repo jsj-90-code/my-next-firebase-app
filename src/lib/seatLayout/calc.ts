@@ -663,7 +663,9 @@ export function getContrastText(hex: string): string {
   const g = parseInt(clean.substr(2, 2), 16);
   const b = parseInt(clean.substr(4, 2), 16);
   const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 150 ? "#000000" : "#ffffff";
+  // 10-29 사용자: 세레머니 팀룸(#C9A227, 밝기 160)·1인룸(155)만 카드 머리 글씨가 검정이었다 — 기본 존 색은 모두 흰 글씨가 되게
+  // 기준을 150 → 180으로. 직접 고른 아주 밝은 색(기타 존)만 검정.
+  return yiq >= 180 ? "#000000" : "#ffffff";
 }
 
 export type CompactLayout = {
