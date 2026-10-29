@@ -397,10 +397,11 @@ export function autoCropRect(labels: DeskLabelSet): NormalizedRect {
   return { x: r4(rx0), y: r4(ry0), w: r4(Math.min(1, x1 + mx) - rx0), h: r4(Math.min(1, y1 + my) - ry0) };
 }
 
-const MERGE_FACING_TYPES: ReadonlySet<string> = new Set(["friends", "vip"]);
+// 10-29 광주: 커플석 A·B(위아래 2석 부스 둘, 틈 약 80cm)도 한 존으로 — 사용자 「커플석은 왜 안 합쳐졌을까」.
+const MERGE_FACING_TYPES: ReadonlySet<string> = new Set(["friends", "vip", "couple_seat"]);
 
 /**
- * 같은 공간에서 통로를 사이에 두고 마주 보는 같은 유형 존(프렌즈·VIP)을 한 존으로 합친다(10-29 광주첨단점TEST 사용자 「프렌즈존 B·C가
+ * 같은 공간에서 통로를 사이에 두고 마주 보는 같은 유형 존(프렌즈·VIP·커플석)을 한 존으로 합친다(10-29 광주첨단점TEST 사용자 「프렌즈존 B·C가
  * 한 구역이 보기 좋다」). 조건: 같은 유형, 마주 보는 방향 범위가 짧은 쪽의 70% 이상 겹침, 사이 틈 1.5m 이하, 합친 상자가 다른 존과
  * 겹치거나 다른 존 책상(가운데)을 먹지 않음. 합친 결과의 i번째 = 남는 존 번호 목록(앞 존이 이름·사양을 가진다).
  */

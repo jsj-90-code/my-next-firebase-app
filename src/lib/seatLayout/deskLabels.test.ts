@@ -223,7 +223,9 @@ describe("mergeFacingZones (10-29 광주첨단점TEST)", () => {
       z("friends", 0.774, 0.637, 0.065, 0.189), // 프렌즈존B
       z("friends", 0.885, 0.637, 0.068, 0.189), // 프렌즈존C
       z("one_seat", 0.77, 0.836, 0.068, 0.04),
+      z("couple_seat", 0.266, 0.683, 0.087, 0.052), // 커플석A
+      z("couple_seat", 0.266, 0.767, 0.087, 0.052), // 커플석B
     ];
-    expect(mergeFacingZones(zones, L)).toEqual([[0], [1], [2], [3, 4], [5]]);
+    expect(mergeFacingZones(zones, L)).toEqual([[0], [1], [2], [3, 4], [5], [6, 7]]);
   });
 });
