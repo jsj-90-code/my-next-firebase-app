@@ -19,6 +19,8 @@ export type ZoneDraftCheck = {
   fpsShort: boolean;
   /** VIP 상자인데 1000mm 책상이 절반이 안 되는 상자(1부터) — 10-29 광주: 910 줄 + 1000mm 1인석을 VIP로 묶음 */
   vipMixed: number[];
+  /** FPS가 있는데 실제 딱 10석이 아님(11석 줄 등) — 딱 10석 조합이 있는지 한 번 더 묻는다 */
+  fpsNotTen: boolean;
 };
 
 export function checkZoneDraft(
@@ -40,5 +42,10 @@ export function checkZoneDraft(
     const big = b.find((e) => e.deskSize === "1000mm")?.qty ?? 0;
     return big * 2 < total ? [i + 1] : [];
   });
-  return { actual, mismatched, fpsActual, fpsShort: fpsIdx.length > 0 && fpsActual < FPS_MIN_SEATS, vipMixed };
+  return {
+    actual, mismatched, fpsActual,
+    fpsShort: fpsIdx.length > 0 && fpsActual < FPS_MIN_SEATS,
+    fpsNotTen: fpsIdx.length > 0 && fpsActual !== FPS_MIN_SEATS,
+    vipMixed,
+  };
 }

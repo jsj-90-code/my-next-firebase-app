@@ -429,12 +429,22 @@ function registerTools(server: McpServer, owner: boolean) {
                 (check && check.actual[i] !== zn.seats ? ` → 실제 ${check.actual[i]}석` : ""),
               )
               .join("\n");
-          if (check?.fpsShort) {
+          // AI가 "정말 없다"고 확인했으면(note에 "10석 조합 없음") 되돌리지 않는다 — 같은 답이 계속 되돌아오지 않게.
+          const fpsConfirmed = /10석 조합 없음/.test(note ?? "");
+          if (check?.fpsNotTen && !check.fpsShort && !fpsConfirmed) {
+            return text(
+              `${head}\n\n⚠️ 아직 끝나지 않았다 — FPS존이 실제 ${check.fpsActual}석이다. 딱 10석이 먼저다: 딱 10석인 한 줄, 또는 통로를 사이에 두고 ` +
+                "마주 보는 두 줄(서로 다른 섬의 한쪽 줄끼리, 예: 5석 + 5석)의 합이 딱 10석인 조합이 있으면 그걸 FPS로 바꾸고(두 상자 모두 fps), " +
+                "원래 FPS 줄은 다른 유형으로 돌려 submit_seat_layout_zone_draft로 다시 내라(덮어씀). 위 '실제' 좌석 수를 참고하라. " +
+                "딱 10석 조합이 정말 없으면 지금 그대로 note에 \"10석 조합 없음\"을 적어 다시 내라.",
+            );
+          }
+          if (check?.fpsShort && !fpsConfirmed) {
             return text(
               `${head}\n\n⚠️ 아직 끝나지 않았다 — FPS존이 실제로는 ${check.fpsActual}석이다(최소 ${FPS_MIN_SEATS}석). ` +
                 `존을 잘라 붙여 맞추지 말고, 도면에서 실제 ${FPS_MIN_SEATS}석 이상인 한 줄(기둥 건너 이어지는 줄 포함, 딱 ${FPS_MIN_SEATS}석이 먼저)을 ` +
                 "다시 찾아 FPS로 바꾸고, 원래 FPS로 잡았던 줄은 다른 유형으로 돌려 submit_seat_layout_zone_draft로 다시 내라(덮어씀). " +
-                "위 '실제' 좌석 수를 참고하라. 그런 줄이 정말 없으면 지금 FPS를 그대로 두고 note에 이유를 적어 다시 내라.",
+                "위 '실제' 좌석 수를 참고하라. 그런 줄이 정말 없으면 지금 FPS를 그대로 두고 note에 \"10석 조합 없음\"과 이유를 적어 다시 내라.",
             );
           }
           if (check?.vipMixed.length) {
