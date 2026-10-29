@@ -433,8 +433,8 @@ function registerTools(server: McpServer, owner: boolean) {
           const fpsConfirmed = /10석 조합 없음/.test(note ?? "");
           if (check?.fpsNotTen && !check.fpsShort && !fpsConfirmed) {
             return text(
-              `${head}\n\n⚠️ 아직 끝나지 않았다 — FPS존이 실제 ${check.fpsActual}석이다. 딱 10석이 먼저다: 딱 10석인 한 줄, 또는 통로를 사이에 두고 ` +
-                "마주 보는 두 줄(서로 다른 섬의 한쪽 줄끼리, 예: 5석 + 5석)의 합이 딱 10석인 조합이 있으면 그걸 FPS로 바꾸고(두 상자 모두 fps), " +
+              `${head}\n\n⚠️ 아직 끝나지 않았다 — FPS존이 실제 ${check.fpsActual}석이다. 딱 10석이 먼저다: 딱 10석인 한 줄, 또는 서로 다른 섬의 ` +
+                "한쪽 줄끼리 의자 쪽을 맞대고 나란히 붙은 두 줄(사이에 의자·통로만, 예: 5석 + 5석 — 한 섬에서 책상을 사이에 두고 마주 앉는 두 줄보다 먼저)의 합이 딱 10석인 조합이 있으면 그걸 FPS로 바꾸고(두 상자 모두 fps), " +
                 "원래 FPS 줄은 다른 유형으로 돌려 submit_seat_layout_zone_draft로 다시 내라(덮어씀). 위 '실제' 좌석 수를 참고하라. " +
                 "딱 10석 조합이 정말 없으면 지금 그대로 note에 \"10석 조합 없음\"을 적어 다시 내라.",
             );
