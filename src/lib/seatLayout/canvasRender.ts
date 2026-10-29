@@ -7,6 +7,7 @@ import {
   computeBasicPcQty,
   computeBezelTable,
   computeChairSummary,
+  computeCompactLayout,
   computeDeskSummary,
   computeHeadsetHookTotals,
   computeJangpadTable,
@@ -19,6 +20,7 @@ import {
   getZoneSizeEntries,
   groupDeskZonesForCard,
   zoneDisplayLabels,
+  ZONE_LEGEND_OVERFLOW_THRESHOLD,
   normalizeFieldValue,
   resolveAdapterValue,
   splitMouseValue,
@@ -222,6 +224,8 @@ export function drawZoneOverlaysOnCard(
   geo: FloorPlanGeo,
   // 발주 도면에 보일 이름(합친 존은 하나로, A·B·C 다시 매김) — zoneDisplayLabels(calc.ts).
   aliases: Map<string, string> = new Map(),
+  // 이름표가 피해야 할 상자(책상 사이즈 표). 겹치면 상자 윗변을 따라 빈자리로, 없으면 상자 아래로 옮긴다.
+  avoid: { x: number; y: number; w: number; h: number }[] = [],
 ) {
   const labelOf = (z: DeskZone | PcZone) => aliases.get(z.name) ?? z.name;
   const rects = zones.map((z) => {
@@ -246,6 +250,24 @@ export function drawZoneOverlaysOnCard(
     return { x: zx, y: Math.max(0, zy - tagH - 4), w: textW + 14, h: tagH };
   });
   const tags = resolveTagOverlaps(naiveTags);
+  if (avoid.length) {
+    const hit = (t: { x: number; y: number; w: number; h: number }, others: { x: number; y: number; w: number; h: number }[]) =>
+      others.some((o) => t.x < o.x + o.w && t.x + t.w > o.x && t.y < o.y + o.h && t.y + t.h > o.y);
+    tags.forEach((tag, i) => {
+      const others = tags.filter((_, k) => k !== i);
+      if (!hit(tag, avoid)) return;
+      const { zx, zy, zw, zh } = rects[i];
+      for (const y of [tag.y, zy + zh + 4]) {
+        for (let x = zx; x <= zx + Math.max(0, zw - tag.w); x += 6) {
+          const t = { ...tag, x, y };
+          if (!hit(t, avoid) && !hit(t, others)) {
+            tags[i] = t;
+            return;
+          }
+        }
+      }
+    });
+  }
 
   rects.forEach(({ z }, i) => {
     const tag = tags[i];
@@ -277,6 +299,61 @@ function fitValueFontSize(
   const baseWidth = c.measureText(text).width;
   if (baseWidth <= maxWidth) return baseSize;
   return Math.max(minSize, Math.floor((maxWidth / baseWidth) * baseSize));
+}
+
+// 책상사이즈 칸의 여러 줄 배치. 여러 줄일 때 사이즈 줄은 촘촘하게(글자 높이의 1.15배) 붙이고,
+// 나머지 5칸은 예전 비율(글자 = 칸 높이의 0.72)을 지킨다.
+const SIZE_LINE_GAP = 1.15;
+const SIZE_MAX_LINES = 4;
+
+// ", "로 이어진 목록(예: "850mm x10, 910mm x6")을 maxWidth에 맞게 앞에서부터 채워 줄을 나눈다.
+// maxLines에 닿으면 남은 항목은 마지막 줄에 붙인다(넘치는 줄은 fitValueFontSize가 줄여서 맞춘다).
+function packListLines(c: CanvasRenderingContext2D, parts: string[], maxWidth: number, maxLines: number): string[] {
+  const lines: string[] = [];
+  for (const part of parts) {
+    const last = lines.length - 1;
+    const joined = last >= 0 ? `${lines[last]}, ${part}` : part;
+    if (last >= 0 && (c.measureText(joined).width <= maxWidth || lines.length >= maxLines)) {
+      lines[last] = joined;
+    } else {
+      lines.push(part);
+    }
+  }
+  return lines;
+}
+
+// 2026-10-06 — 책상사이즈가 2종류 이상이면 한 줄에 다 넣느라 글자가 아주 작아졌다(사용자 지적).
+// 원래 글자의 85% 이상으로 한 줄에 들어가면 그대로 한 줄(줄을 나누면 다른 칸도 조금 작아지므로).
+// 아니면 2줄, 3줄 순으로 해보는데, **그 줄 수일 때의 글자 크기로** 몇 개씩 들어가는지 판단한다
+// — 원래 크기로 판단하면 2줄이면 될 것도 3줄로 나뉘어 카드 전체가 쓸데없이 작아진다.
+function layoutSizeRow(
+  c: CanvasRenderingContext2D,
+  text: string,
+  label: string,
+  cardW: number,
+  baseFont: number,
+  bodyH: number,
+): { lines: string[]; font: number } {
+  const parts = text.split(", ");
+  const maxWidthAt = (font: number) => {
+    c.font = `bold ${font}px sans-serif`;
+    const labelW = c.measureText(label).width;
+    c.font = `${font}px sans-serif`;
+    return cardW - 22 - labelW;
+  };
+  const maxW = maxWidthAt(baseFont);
+  if (parts.length < 2 || c.measureText(text).width * 0.85 <= maxW) return { lines: [text], font: baseFont };
+
+  // k줄 기준 글자 크기에서 실제로 몇 줄이 나오는지 보고 k줄 이하면 채택한다. 글자가 작아진 덕에
+  // k보다 적은 줄로 들어가도 그 크기는 그대로 둔다 — 더 큰 크기는 앞 단계에서 이미 안 들어갔다.
+  let font = baseFont;
+  for (let k = 2; k <= SIZE_MAX_LINES; k++) {
+    font = Math.max(10, Math.min(baseFont, Math.floor((bodyH - 8) / (5 / 0.72 + SIZE_LINE_GAP * k))));
+    const lines = packListLines(c, parts, maxWidthAt(font), Infinity);
+    if (lines.length <= k) return { lines, font };
+  }
+  // 상한 줄 수로도 안 들어가면 상한까지만 나누고, 넘치는 줄은 fitValueFontSize가 줄인다.
+  return { lines: packListLines(c, parts, maxWidthAt(font), SIZE_MAX_LINES), font };
 }
 
 // 2026-10-06 — PC 사양 값(마우스·파워·키보드 제품명)이 칸보다 길면 줄을 바꾼다. 마우스처럼
@@ -336,32 +413,99 @@ export function renderDeskFloorplanImage(
 
   const geometry = computeLegendGeometry(cardGroups.length);
   const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
-  drawZoneOverlaysOnCard(c, zones, geo, zoneDisplayLabels(cardGroups));
-  if (deskLabels) drawMixedSizeTags(c, zones, deskLabels, geo, cardGroups);
+  // 10-29 울산TEST: 존 이름표가 옆 존 책상의 사이즈 표와 겹쳐 둘 다 안 보였다 → 사이즈 표를 먼저 그리고, 이름표는 그 표를 피해 놓는다.
+  const sizeTagRects = deskLabels ? drawMixedSizeTags(c, zones, deskLabels, geo, cardGroups) : [];
+  drawZoneOverlaysOnCard(c, zones, geo, zoneDisplayLabels(cardGroups), sizeTagRects);
 
   const panelAreaX = 20;
   const panelAreaY = 20;
   const panelAreaW = geometry.panelAreaW;
   const panelBottomLimit = geometry.panelBottomLimit;
-  // 10-29 사용자 「카드 수가 많지 않으니 더 키워도 될 듯 — 가시성·디자인, 간결하게」: 같은 사양 존을 한 카드로 합친 뒤라
-  // 보통 6~9장이다. 카드 수에 맞춰 열(1~3, 많으면 예전 4~5)과 높이를 정해 왼쪽 공간을 채우고, 글씨도 카드 크기에 맞춘다.
-  // 디자인: 흰 카드 + 왼쪽 존 색 띠, 머리 = 존 이름 + 좌석 수 알약, 본문 = 연한 항목명 | 진한 값. 책상사이즈는 도면 위 사이즈
-  // 표와 같은 색 칩(drawMixedSizeTags의 SIZE_TAG_COLORS)으로 — 카드와 도면이 바로 이어진다.
-  const n = cardGroups.length;
-  const cols = n <= 2 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : geometry.cols;
-  const rows = Math.max(1, Math.ceil(n / cols));
-  const gapX = 16;
-  const gapY = 16;
-  const availH = panelBottomLimit - panelAreaY;
-  const specW = (panelAreaW - (cols - 1) * gapX) / cols;
-  const specH = Math.min(440, (availH - (rows - 1) * gapY) / rows);
-  const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-  const headerFont = clampN(specH * 0.1, 14, 32);
-  const bodyFont = clampN(Math.min(specH * 0.068, specW * 0.075), 11, 24);
+  const gap = 14;
+  // 10-29 사용자 「카드 수가 많지 않으니 더 키워도 될 듯」(새 디자인은 「기존이 더 좋다」로 되돌림 — 모양은 그대로, 크기만):
+  // 같은 사양 존을 합쳐 보통 6~9장이라, 카드 수에 맞춰 열(2~3, 10장 넘으면 예전대로)을 정하고 남는 높이를 채우게 키운다.
+  // 글씨는 예전 비율(줄 225px에 머리 48·25px, 본문 19px)을 커진 만큼 키우되 상한을 둔다.
+  const nCards = cardGroups.length;
+  const cols = nCards <= 4 ? 2 : nCards <= 9 ? 3 : geometry.cols;
+  const rowsN = Math.max(1, Math.ceil(nCards / cols));
+  const grow = nCards <= ZONE_LEGEND_OVERFLOW_THRESHOLD
+    ? Math.max(1, Math.min(1.45, (panelBottomLimit - panelAreaY) / rowsN / 225))
+    : 1;
+  const layout = computeCompactLayout(
+    nCards,
+    panelBottomLimit - panelAreaY,
+    225 * grow,
+    Math.min(64, 48 * grow),
+    Math.min(32, 25 * grow),
+    Math.min(24, 19 * grow),
+    cols,
+  );
+  const colW = (panelAreaW - (layout.cols - 1) * gap) / layout.cols;
+  const specLabels = ["책상", "책상사이즈", "쿨러", "칸막이", "모니터암", "의자"];
+
   cardGroups.forEach((g, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    drawSpecCard(c, g, panelAreaX + col * (specW + gapX), panelAreaY + row * (specH + gapY), specW, specH, headerFont, bodyFont);
+    const col = idx % layout.cols;
+    const row = Math.floor(idx / layout.cols);
+    const px = panelAreaX + col * (colW + gap);
+    const py = panelAreaY + row * layout.rowH;
+    const pw = colW;
+    const ph = layout.rowH - 10;
+    const textColor = getContrastText(g.color);
+    const bodyBg = tintColor(g.color, 0.93);
+    const labelBg = tintColor(g.color, 0.72);
+
+    c.fillStyle = bodyBg;
+    c.fillRect(px, py, pw, ph);
+    c.strokeStyle = g.color;
+    c.lineWidth = 2;
+    c.strokeRect(px, py, pw, ph);
+    c.fillStyle = g.color;
+    c.fillRect(px, py, pw, layout.headerH);
+    c.fillStyle = textColor;
+    const deskHeaderText = `[${g.name}- ${g.seats}석]`;
+    const deskHeaderFont = fitValueFontSize(c, deskHeaderText, pw - 16, layout.headerFont, 11, true);
+    c.font = `bold ${deskHeaderFont}px sans-serif`;
+    c.fillText(deskHeaderText, px + 8, py + layout.headerH * 0.68);
+
+    // 책상사이즈가 한 줄에 안 들어가면 줄을 나누고 그 칸만 높인다(layoutSizeRow 참고).
+    // 한 줄일 땐 예전과 똑같이 6칸을 균등하게 나눈다.
+    const bodyH = ph - layout.headerH;
+    const { lines: sizeLines, font: bodyFont } = layoutSizeRow(c, g.sizeText, specLabels[1], pw, layout.bodyFont, bodyH);
+    const values: string[][] = [[g.desk], sizeLines, [g.cooler], [g.partition], [g.monitorArm], [g.chair]];
+    const k = sizeLines.length;
+    const sizeRowH = k > 1 ? k * SIZE_LINE_GAP * bodyFont + 8 : bodyH / specLabels.length;
+    const otherRowH = k > 1 ? (bodyH - sizeRowH) / (specLabels.length - 1) : bodyH / specLabels.length;
+
+    let ly = py + layout.headerH;
+    specLabels.forEach((label, li) => {
+      const lines = values[li];
+      const rowH = li === 1 ? sizeRowH : otherRowH;
+      const labelBaseline = lines.length > 1 ? ly + rowH / 2 + bodyFont * 0.35 : ly + rowH * 0.68;
+      c.font = `bold ${bodyFont}px sans-serif`;
+      const labelW = c.measureText(label).width;
+      c.fillStyle = labelBg;
+      c.fillRect(px + 4, ly + 4, labelW + 10, rowH - 8);
+      c.fillStyle = "#2A2520";
+      c.fillText(label, px + 9, labelBaseline);
+      const valueMaxW = pw - 22 - labelW;
+      const lineGap = SIZE_LINE_GAP * bodyFont;
+      const blockTop = ly + (rowH - lineGap * lines.length) / 2;
+      lines.forEach((text, i) => {
+        const valueFont = fitValueFontSize(c, text, valueMaxW, bodyFont);
+        c.font = `${valueFont}px sans-serif`;
+        const baseline = lines.length > 1 ? blockTop + lineGap * i + bodyFont * 0.92 : labelBaseline;
+        c.fillText(text, px + 18 + labelW, baseline);
+      });
+      if (li < specLabels.length - 1) {
+        c.strokeStyle = "#E5DFD3";
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(px + 4, ly + rowH);
+        c.lineTo(px + pw - 4, ly + rowH);
+        c.stroke();
+      }
+      ly += rowH;
+    });
   });
 
   const totalSeats = zones.reduce((s, z) => s + (Number(z.seats) || 0), 0) + 1;
@@ -1004,9 +1148,10 @@ function drawMixedSizeTags(
   labels: DeskLabelSet,
   geo: FloorPlanGeo,
   groups: { names: string[] }[],
-) {
+): { x: number; y: number; w: number; h: number }[] {
+  const drawn: { x: number; y: number; w: number; h: number }[] = [];
   const widths = labels.widths;
-  if (!widths || widths.length !== labels.desks.length) return;
+  if (!widths || widths.length !== labels.desks.length) return drawn;
   const mixedNames = new Set(
     groups.flatMap((g) => {
       const sizes = new Set(
@@ -1016,7 +1161,7 @@ function drawMixedSizeTags(
     }),
   );
   const mixed = new Set(zones.flatMap((z, i) => (mixedNames.has(z.name) ? [i] : [])));
-  if (!mixed.size) return;
+  if (!mixed.size) return drawn;
   c.save();
   c.textAlign = "center";
   c.textBaseline = "middle";
@@ -1051,6 +1196,7 @@ function drawMixedSizeTags(
       tw = c.measureText(text).width + fs * 0.5;
     }
     const th = Math.min(fs * 1.3, short * 0.75);
+    drawn.push(dh > dw ? { x: px - th / 2, y: py - tw / 2, w: th, h: tw } : { x: px - tw / 2, y: py - th / 2, w: tw, h: th });
     c.save();
     c.translate(px, py);
     if (dh > dw) c.rotate(-Math.PI / 2);
@@ -1065,156 +1211,5 @@ function drawMixedSizeTags(
     c.restore();
   });
   c.restore();
-}
-
-/** 발주도면 사양 카드 하나(10-29 새 디자인). */
-function drawSpecCard(
-  c: CanvasRenderingContext2D,
-  g: ReturnType<typeof groupDeskZonesForCard>[number],
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  headerFont: number,
-  bodyFont: number,
-) {
-  const radius = Math.min(16, h * 0.06);
-  const accent = 8;
-  // 바탕·테두리
-  c.save();
-  c.fillStyle = "#ffffff";
-  c.strokeStyle = "#E3DCCD";
-  c.lineWidth = 1.5;
-  c.beginPath();
-  c.roundRect(x, y, w, h, radius);
-  c.fill();
-  c.stroke();
-  // 왼쪽 존 색 띠
-  c.beginPath();
-  c.roundRect(x, y, accent + radius, h, [radius, 0, 0, radius]);
-  c.clip();
-  c.fillStyle = g.color;
-  c.fillRect(x, y, accent, h);
-  c.restore();
-
-  const padL = x + accent + Math.max(12, w * 0.045);
-  const padR = x + w - Math.max(12, w * 0.045);
-  const innerW = padR - padL;
-
-  // 머리: 존 이름 + 좌석 수 알약
-  const headerH = headerFont * 2.1;
-  const pillText = `${g.seats}석`;
-  c.font = `bold ${headerFont * 0.78}px sans-serif`;
-  const pillW = c.measureText(pillText).width + headerFont * 0.9;
-  const pillH = headerFont * 1.25;
-  const nameMax = innerW - pillW - 10;
-  const nameFont = fitValueFontSize(c, g.name, nameMax, headerFont, 12, true);
-  c.font = `bold ${nameFont}px sans-serif`;
-  c.fillStyle = "#1F1B16";
-  c.textBaseline = "middle";
-  c.fillText(g.name, padL, y + headerH / 2 + 1);
-  c.fillStyle = g.color;
-  c.beginPath();
-  c.roundRect(padR - pillW, y + (headerH - pillH) / 2, pillW, pillH, pillH / 2);
-  c.fill();
-  c.fillStyle = getContrastText(g.color);
-  c.font = `bold ${headerFont * 0.78}px sans-serif`;
-  c.textAlign = "center";
-  c.fillText(pillText, padR - pillW / 2, y + headerH / 2 + 1);
-  c.textAlign = "left";
-  c.strokeStyle = "#EEE8DC";
-  c.lineWidth = 1;
-  c.beginPath();
-  c.moveTo(padL, y + headerH);
-  c.lineTo(padR, y + headerH);
-  c.stroke();
-
-  // 본문: 항목명 | 값. 책상사이즈는 색 칩(여러 줄로 넘김).
-  const labelFont = bodyFont * 0.82;
-  c.font = `${labelFont}px sans-serif`;
-  const labelColW = Math.max(c.measureText("모니터암").width, innerW * 0.26) + 10;
-  const valueX = padL + labelColW;
-  const valueW = padR - valueX;
-
-  // 칩 배치 먼저 재서 사이즈 줄 높이를 정한다
-  const chipFont = bodyFont * 0.86;
-  const chipH = chipFont * 1.45;
-  const chipGap = chipFont * 0.4;
-  c.font = `bold ${chipFont}px sans-serif`;
-  const chips = g.sizes.map((s) => {
-    const num = s.deskSize.replace("mm", "");
-    const text = `${num} × ${s.qty}`;
-    return { text, color: SIZE_TAG_COLORS[num] ?? "#334155", w: c.measureText(text).width + chipFont * 0.9 };
-  });
-  const chipRows: (typeof chips)[] = [[]];
-  let lineW = 0;
-  for (const chip of chips) {
-    if (lineW > 0 && lineW + chipGap + chip.w > valueW) {
-      chipRows.push([]);
-      lineW = 0;
-    }
-    chipRows[chipRows.length - 1].push(chip);
-    lineW += (lineW > 0 ? chipGap : 0) + chip.w;
-  }
-
-  const rowsSpec: { label: string; value?: string; chips?: boolean }[] = [
-    { label: "책상", value: g.desk },
-    { label: "사이즈", chips: true },
-    { label: "쿨러", value: g.cooler },
-    { label: "칸막이", value: g.partition },
-    { label: "모니터암", value: g.monitorArm },
-    { label: "의자", value: g.chair },
-  ];
-  const bodyTop = y + headerH;
-  const bodyH = h - headerH - 6;
-  const chipBlockH = chipRows.length * chipH + (chipRows.length - 1) * chipGap;
-  const baseRowH = bodyH / rowsSpec.length;
-  const sizeRowH = Math.max(baseRowH, chipBlockH + bodyFont * 0.6);
-  const otherRowH = (bodyH - sizeRowH) / (rowsSpec.length - 1);
-
-  let ry = bodyTop;
-  rowsSpec.forEach((r, i) => {
-    const rh = r.chips ? sizeRowH : otherRowH;
-    const mid = ry + rh / 2;
-    c.textBaseline = "middle";
-    c.font = `${labelFont}px sans-serif`;
-    c.fillStyle = "#8A8172";
-    c.fillText(r.label, padL, mid);
-    if (r.chips) {
-      let cy = mid - chipBlockH / 2;
-      chipRows.forEach((line) => {
-        let cx = valueX;
-        line.forEach((chip) => {
-          c.fillStyle = chip.color;
-          c.beginPath();
-          c.roundRect(cx, cy, chip.w, chipH, chipH * 0.3);
-          c.fill();
-          c.fillStyle = "#ffffff";
-          c.font = `bold ${chipFont}px sans-serif`;
-          c.textAlign = "center";
-          c.fillText(chip.text, cx + chip.w / 2, cy + chipH / 2 + 1);
-          c.textAlign = "left";
-          cx += chip.w + chipGap;
-        });
-        cy += chipH + chipGap;
-      });
-    } else {
-      const v = r.value || "—";
-      const muted = !r.value || r.value === "없음";
-      const vf = fitValueFontSize(c, v, valueW, bodyFont, 10, !muted);
-      c.font = `${muted ? "" : "600 "}${vf}px sans-serif`;
-      c.fillStyle = muted ? "#B0A796" : "#2A2520";
-      c.fillText(v, valueX, mid + 1);
-    }
-    if (i < rowsSpec.length - 1) {
-      c.strokeStyle = "#F1ECE2";
-      c.lineWidth = 1;
-      c.beginPath();
-      c.moveTo(padL, ry + rh);
-      c.lineTo(padR, ry + rh);
-      c.stroke();
-    }
-    ry += rh;
-  });
-  c.textBaseline = "alphabetic";
+  return drawn;
 }
