@@ -508,10 +508,12 @@ export function renderDeskFloorplanImage(
     });
   });
 
-  const totalSeats = zones.reduce((s, z) => s + (Number(z.seats) || 0), 0) + 1;
+  // 10-29 사용자: 카운터는 책상이 아니라 주방까지 이어진 붙박이 선반이라 책상 발주에 합산하지 않는다 — 예전 "+1석(카운터포함)"을 뺐다.
+  // (PC 발주도면은 카운터 PC가 있으니 그대로 "카운터, 대체PC 포함")
+  const totalSeats = zones.reduce((s, z) => s + (Number(z.seats) || 0), 0);
   c.fillStyle = "#2A2520";
   c.font = "bold 48px sans-serif";
-  c.fillText(`${projectName || "매장명"}_${totalSeats}석(카운터포함)`, panelAreaX, 1020);
+  c.fillText(`${projectName || "매장명"}_${totalSeats}석`, panelAreaX, 1020);
 }
 
 // PC 발주 도면: 장패드 수량 표는 renderOrderSummaryImage로 분리되었으므로,
