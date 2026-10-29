@@ -1079,8 +1079,8 @@ export function SeatLayoutWorkspace() {
         hint: blocked && zones.length > 0
           ? "위 단계가 남아 있습니다 — 브라켓을 다 세고 모든 책상이 존에 들어가야 등록할 수 있습니다."
           : autoCount
-            ? "오른쪽 확인 창에서 존마다 책상 수량·사이즈·브라켓을 도면과 맞춰 보고 [확인하고 통합발주서 등록]. 저장도 같이 됩니다. 등록하면 위쪽 바에 열기 링크가 생깁니다."
-            : "존 목록의 수량·사이즈·브라켓을 확인하고 누르면 합계를 한 번 보여 준 뒤 저장하고 발주서 시트에 올립니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
+            ? "오른쪽 확인 창에서 존마다 책상 수량·사이즈·브라켓을 도면과 맞춰 보고 [확인하고 통합발주서 등록]. 저장도 같이 되고, PC 발주 도면에도 같은 존 구성이 들어갑니다. 등록하면 위쪽 바에 열기 링크가 생깁니다."
+            : "존 목록의 수량·사이즈·브라켓을 확인하고 누르면 합계를 한 번 보여 준 뒤 저장하고 발주서 시트에 올립니다. PC 발주 도면에도 같은 존 구성이 들어갑니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
         action: autoCount
           ? { label: "수량 확인 · 통합발주서 등록", onClick: () => setDeskPanelOpen(true), disabled: busy || zones.length === 0, emphasize: true }
           : { label: "확인하고 통합발주서 등록", onClick: () => void confirmAndPublishDeskOrder(), disabled: busy || blocked, emphasize: true } });
@@ -1097,10 +1097,13 @@ export function SeatLayoutWorkspace() {
       const pcCounted = !split || pcZones.every((z) => z.seats > 0);
       const pcTotal = pcZones.reduce((s, z) => s + z.seats, 0);
       const deskTotal = project.zones.reduce((s, z) => s + z.seats, 0);
+      // 10-30 사용자: 책상 통합발주서 등록 때 PC 존이 책상 존 구성으로 자동 반영됐으면(모양이 같으면) 이 단계는 뺀다.
+      // 반영 안 됐으면(PC에서 나눈 존을 지키려고 [취소] 등) 예전처럼 둔다.
+      const synced = pcZones.length > 0 && shapeKey(pcZones) === shapeKey(project.zones);
       return [
-        { key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
+        ...(synced ? [] : [{ key: "import", title: "책상 구역 불러오기", done: pcZones.length > 0,
           hint: "책상 발주 도면의 존을 그대로 가져옵니다. 사양이 다른 자리는 존을 나눠 주세요.",
-          action: { label: "책상 구역 불러오기", onClick: importDeskZonesToPc } },
+          action: { label: "책상 구역 불러오기", onClick: importDeskZonesToPc } }]),
         { key: "save", title: "존 나누기·사양 맞추고 저장",
           done: pcZones.length > 0 && !!last && shapeKey(last.pcZones) === shapeKey(pcZones),
           hint: "사양이 다른 자리는 존을 나눕니다. 다 고쳤으면 [프로젝트 저장] — 채팅은 저장된 존을 보고 셉니다.",
@@ -1621,28 +1624,45 @@ export function SeatLayoutWorkspace() {
       );
       if (!ok) return;
     }
-    const pcZones: PcZone[] = project.zones
-      .map((z) => {
-        const typeDef = settings.pcTypeDefaults[z.typeKey] ?? {};
-        const overrides: PcSpecValues = {};
-        (Object.keys(typeDef) as PcSpecFieldId[]).forEach((k) => {
-          if (typeDef[k] !== (pcDefaults[k] ?? "")) overrides[k] = typeDef[k];
-        });
-        return {
-          x: z.x,
-          y: z.y,
-          w: z.w,
-          h: z.h,
-          name: z.name,
-          typeKey: z.typeKey,
-          color: z.color,
-          // "책상만 설치" 존은 PC가 없는 존이라, 책상 좌석수를 그대로 옮기지 않고 0대로 불러온다.
-          seats: z.typeKey === "desk_only" ? 0 : z.seats,
-          pcOverrides: overrides,
-        };
-      });
+    const pcZones = deskZonesAsPcZones(project.zones);
     setProject((p) => ({ ...p, pcZones }));
     setStatusMsg(`책상 구역 ${pcZones.length}개를 PC 탭으로 불러왔습니다. 사양이 필요한 존만 [수정]으로 바꿔주세요.`, "success");
+  }
+
+  // 책상 존 → PC 존. keepFrom에 이름·유형이 같은 PC 존이 있으면 그 존에서 고친 PC 사양(pcOverrides)은 그대로 둔다(10-30 등록 때 자동 반영).
+  function deskZonesAsPcZones(zones: DeskZone[], keepFrom: PcZone[] = []): PcZone[] {
+    return zones.map((z) => {
+      const kept = keepFrom.find((pz) => pz.name === z.name && pz.typeKey === z.typeKey);
+      const typeDef = settings.pcTypeDefaults[z.typeKey] ?? {};
+      const overrides: PcSpecValues = {};
+      (Object.keys(typeDef) as PcSpecFieldId[]).forEach((k) => {
+        if (typeDef[k] !== (pcDefaults[k] ?? "")) overrides[k] = typeDef[k];
+      });
+      return {
+        x: z.x,
+        y: z.y,
+        w: z.w,
+        h: z.h,
+        name: z.name,
+        typeKey: z.typeKey,
+        color: z.color,
+        // "책상만 설치" 존은 PC가 없는 존이라, 책상 좌석수를 그대로 옮기지 않고 0대로 불러온다.
+        seats: z.typeKey === "desk_only" ? 0 : z.seats,
+        pcOverrides: kept ? kept.pcOverrides : overrides,
+      };
+    });
+  }
+
+  // 10-30 사용자 「통합발주서 등록을 누르면 PC 발주 도면에 그 존 구성 자동 반영」. PC 존이 없거나 책상 존과 이름이 1:1이면
+  // 그대로 맞추고(사양은 유지), PC 탭에서 따로 나눈 존이 있으면 덮어쓸지 묻는다 — [취소]면 PC 존은 그대로(null).
+  function pcZonesForDeskPublish(): PcZone[] | null {
+    const deskNames = new Set(project.zones.map((z) => z.name));
+    const splitInPc = project.pcZones.some((pz) => !deskNames.has(pz.name));
+    if (splitInPc && !window.confirm(
+      "PC 발주 도면에 따로 나눈 존이 있습니다. 책상 존 구성으로 PC 발주 도면을 덮어쓸까요?\n\n" +
+        "[확인] 덮어쓰기(같은 이름 존의 PC 사양은 유지)\n[취소] PC 발주 도면은 그대로 두고 등록만",
+    )) return null;
+    return deskZonesAsPcZones(project.zones, project.pcZones);
   }
 
   // ---------------- 프로젝트 CRUD ----------------
@@ -1726,12 +1746,14 @@ export function SeatLayoutWorkspace() {
     }
   }
 
-  async function silentSave(): Promise<SeatLayoutProject | null> {
+  // patch: 화면 상태와 같이 바꿔 저장할 값(10-30 책상 발주 등록 때 PC 존).
+  async function silentSave(patch: Partial<SeatLayoutProject> = {}): Promise<SeatLayoutProject | null> {
     if (!user) return null;
+    const base = { ...project, ...patch };
     try {
       // Firestore 문서 용량 제한 때문에, 저장하는 순간에만 압축한다. 화면/AI 인식은 계속
       // rawFloorPlanDataUrl(원본 화질)을 쓴다 — 압축본으로 덮어쓰지 않는다.
-      let seatNumberPlateDataUrl = project.seatNumberPlateDataUrl;
+      let seatNumberPlateDataUrl = base.seatNumberPlateDataUrl;
       if (rawSeatNumberPlateDataUrl) {
         // 좌석번호표는 번호만 읽히면 되므로 400KB 안에서 고르고, 남는 자리는 도면 화질에 준다.
         const compressed = await compressSeatNumberPlateToBudget(rawSeatNumberPlateDataUrl, 400_000);
@@ -1741,8 +1763,8 @@ export function SeatLayoutWorkspace() {
       // 1MiB 한도에 필드 이름·메타 몫으로 여유를 둔다.
       const floorBudget =
         1_000_000 -
-        new Blob([JSON.stringify({ ...project, pcDefaults, seatNumberPlateDataUrl, floorPlanDataUrl: "" })]).size;
-      let floorPlanDataUrl = project.floorPlanDataUrl;
+        new Blob([JSON.stringify({ ...base, pcDefaults, seatNumberPlateDataUrl, floorPlanDataUrl: "" })]).size;
+      let floorPlanDataUrl = base.floorPlanDataUrl;
       if (rawFloorPlanDataUrl) {
         const compressed = await compressFloorPlanToBudget(rawFloorPlanDataUrl, floorBudget);
         floorPlanDataUrl = compressed.dataUrl;
@@ -1754,8 +1776,8 @@ export function SeatLayoutWorkspace() {
         floorPlanDataUrl = compressed.dataUrl;
       }
       const toSave: SeatLayoutProject = {
-        ...project,
-        name: project.name || "이름없음",
+        ...base,
+        name: base.name || "이름없음",
         pcDefaults,
         floorPlanDataUrl,
         seatNumberPlateDataUrl,
@@ -2508,14 +2530,16 @@ export function SeatLayoutWorkspace() {
       setStatusMsg("먼저 책상 발주 도면 탭에서 존을 등록해주세요.", "error");
       return;
     }
+    const pcZones = pcZonesForDeskPublish();
     setBusy(true);
     setStatusMsg("저장 중...");
     setDeskOrderSheetUrl(null);
-    const saved = await silentSave();
+    const saved = await silentSave(pcZones ? { pcZones } : {});
     if (!saved) {
       setBusy(false);
       return;
     }
+    const pcNote = pcZones ? ` PC 발주 도면에도 존 ${pcZones.length}개를 반영했습니다.` : " PC 발주 도면은 그대로 뒀습니다.";
     try {
       setStatusMsg("통합발주서에 등록 중... (몇 초 걸릴 수 있습니다)");
       const token = await user.getIdToken();
@@ -2526,7 +2550,7 @@ export function SeatLayoutWorkspace() {
       });
       const data = await readJsonOrText<{ sheetTitle: string; spreadsheetUrl: string }>(res);
       if (!res.ok) throw new Error(data.error ?? "등록에 실패했습니다.");
-      setStatusMsg(`통합발주서에 등록 완료! ("${data.sheetTitle}" 탭)`, "success");
+      setStatusMsg(`통합발주서에 등록 완료! ("${data.sheetTitle}" 탭)${pcNote}`, "success");
       if (data.spreadsheetUrl) {
         setDeskOrderSheetUrl(data.spreadsheetUrl);
         window.open(data.spreadsheetUrl, "_blank");
