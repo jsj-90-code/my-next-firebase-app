@@ -1216,6 +1216,19 @@ export function SeatLayoutWorkspace() {
         { row: { ...r, seats: split.otherDesks.length }, rect: split.otherRect, srcIdx: i, splitFrom: from },
       ];
     });
+    // 10-29 사용자(광주첨단점TEST): 매장마다 세레머니 팀룸이 2개인데, 도면 자리가 안 나와 하나를 4인룸으로 만드는 매장이 있다 →
+    // 세레머니 팀룸이 매장에 2개가 안 되면 4인룸을 세레머니 팀룸으로 바꿔 2개를 채운다(앞에 있는 4인룸부터).
+    const CEREMONY_PER_STORE = 2;
+    let ceremonyCount =
+      project.zones.filter((z) => z.typeKey === "ceremony_team").length +
+      pieces.filter((pc) => pc.row.type === "ceremony_team").length;
+    for (const pc of pieces) {
+      if (ceremonyCount >= CEREMONY_PER_STORE) break;
+      if (pc.row.type === "four_room") {
+        pc.row = { ...pc.row, type: "ceremony_team" };
+        ceremonyCount += 1;
+      }
+    }
     const namesSoFar: ActiveZone[] = [...project.zones];
     const drafts: DeskZone[] = pieces.map(({ row: r, rect, splitFrom }, i) => {
       // 10-28: 4인룸도 정식 유형이 되어 다른 유형과 같이 처리한다(옛: "기타" 유형에 이름 "4인룸A").

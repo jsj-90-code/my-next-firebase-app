@@ -7,7 +7,8 @@
 //   (선을 채운 사각형·여러 겹으로 그려서 1을 넘는다). 0.5를 기준으로 가른다.
 // - 점은 곡선이라 세지 않는다. 도면 제목 옆 "브라켓 수량 90개"는 이 점(부품) 수라 책상 수와 다르다.
 // - 평택 VIP처럼 기운 책상·기운 선이 있어 축 정렬이 아니라 책상 방향(글씨 방향)으로 잰다.
-// 결과(브라켓 달린 책상 수): 울산 32 · 평택 71 · 호구포 49 — 도면 위에 초록으로 칠해 눈으로 맞춰 봄(평택 기운 VIP 2석 포함).
+// 결과(브라켓 달린 책상 수): 울산 32 · 평택 71 · 호구포 48 — 도면 위에 초록으로 칠해 눈으로 맞춰 봄(평택 기운 VIP 2석 포함,
+// 호구포 기둥 밑 850은 점만 있고 선이 없어 아님 — 10-29 겹친 조각 합집합으로 바꾸며 49→48).
 // 운영 프로젝트에 저장돼 있던 값(35·59·62)은 예전 AI 어림이라 다르다.
 import type { PDFPageProxy } from "pdfjs-dist";
 
@@ -48,6 +49,20 @@ export function isBracketOrange(hex: unknown): boolean {
 /** 책상 하나(화면 좌표): 가운데, 폭 방향 단위벡터, 폭·깊이의 반. */
 export type DeskFrame = { cx: number; cy: number; ux: number; uy: number; hw: number; hd: number };
 
+/** 선분을 책상 좌표(u = 폭 방향, v = 깊이 방향)로 옮겨 책상 안에 든 폭 방향 구간 [lo, hi]. 나란하지 않거나 밖이면 null. */
+export function clippedInterval(desk: DeskFrame, seg: [number, number, number, number]): [number, number] | null {
+  const [x0, y0, x1, y1] = seg;
+  const toU = (x: number, y: number) => (x - desk.cx) * desk.ux + (y - desk.cy) * desk.uy;
+  const toV = (x: number, y: number) => -(x - desk.cx) * desk.uy + (y - desk.cy) * desk.ux;
+  const u0 = toU(x0, y0), v0 = toV(x0, y0), u1 = toU(x1, y1), v1 = toV(x1, y1);
+  const len = Math.hypot(u1 - u0, v1 - v0);
+  if (!len || Math.abs(u1 - u0) / len < PARALLEL_MIN) return null;
+  if (Math.abs((v0 + v1) / 2) > desk.hd) return null;
+  const lo = Math.max(Math.min(u0, u1), -desk.hw);
+  const hi = Math.min(Math.max(u0, u1), desk.hw);
+  return hi > lo ? [lo, hi] : null;
+}
+
 /** 선분을 책상 좌표(u = 폭 방향, v = 깊이 방향)로 옮겨 책상 안에 든 폭 방향 길이. 나란하지 않으면 0. */
 export function clippedAlong(desk: DeskFrame, seg: [number, number, number, number]): number {
   const [x0, y0, x1, y1] = seg;
@@ -69,14 +84,25 @@ export function markBracketDesks(desks: DeskFrame[], segs: [number, number, numb
   if (!segs.length) return null;
   return desks.map((d) => {
     const r = Math.hypot(d.hw, d.hd);
-    let along = 0;
+    // 10-29 광주첨단점TEST: 옆 VIP 브라켓 선 끝의 짧은 조각이 프렌즈 책상 가장자리에 걸렸는데, 같은 조각이 여러 겹(채운 사각형
+    // 테두리 등)으로 그려져 길이를 더하면 폭의 절반을 넘었다 → 덮인 구간의 합집합 길이로 잰다(진짜 브라켓 책상은 폭 전체가 덮임).
+    const parts: [number, number][] = [];
     for (const s of segs) {
       // 멀리 있는 선은 건너뛴다(선분 양 끝이 모두 한쪽 바깥)
       if (Math.max(s[0], s[2]) < d.cx - r || Math.min(s[0], s[2]) > d.cx + r) continue;
       if (Math.max(s[1], s[3]) < d.cy - r || Math.min(s[1], s[3]) > d.cy + r) continue;
-      along += clippedAlong(d, s);
+      const iv = clippedInterval(d, s);
+      if (iv) parts.push(iv);
     }
-    return along / (2 * d.hw) >= COVER_MIN;
+    parts.sort((a, b) => a[0] - b[0]);
+    let covered = 0;
+    let end = -Infinity;
+    for (const [lo, hi] of parts) {
+      if (hi <= end) continue;
+      covered += hi - Math.max(lo, end);
+      end = hi;
+    }
+    return covered / (2 * d.hw) >= COVER_MIN;
   });
 }
 

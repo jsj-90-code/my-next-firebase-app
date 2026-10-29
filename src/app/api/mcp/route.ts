@@ -437,6 +437,14 @@ function registerTools(server: McpServer, owner: boolean) {
                 "위 '실제' 좌석 수를 참고하라. 그런 줄이 정말 없으면 지금 FPS를 그대로 두고 note에 이유를 적어 다시 내라.",
             );
           }
+          if (check?.vipMixed.length) {
+            return text(
+              `${head}\n\n⚠️ 아직 끝나지 않았다 — VIP로 잡은 상자 ${check.vipMixed.join(", ")}번은 도면 글씨로 보면 1000mm 책상이 절반도 안 된다. ` +
+                "VIP는 1000mm 책상이 모인 구역(같은 칸의 다른 폭 1~2석 포함)이다. 다른 폭(910 등)이 대부분인 줄은 VIP에서 빼 원래 유형" +
+                "(칸막이로 몇 석씩 끊긴 줄이면 friends, 아니면 하드웨어 존)으로 잡고, 칸막이로 혼자 둘러싸인 1000mm 1석은 one_seat(1인석)으로 " +
+                "따로 잡아 submit_seat_layout_zone_draft로 다시 내라(덮어씀).",
+            );
+          }
           // 10-29: 브라켓 도면 주황 선까지 읽었으면 수량·사이즈·브라켓 모두 웹이 도면 PDF로 센다 — 채팅은 여기서 끝.
           if (project.deskLabels?.brackets?.length) {
             return text(
