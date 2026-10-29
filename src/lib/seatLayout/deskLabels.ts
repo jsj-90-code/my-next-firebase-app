@@ -16,6 +16,8 @@ import type { DeskLabelSet, DeskSize, NormalizedRect, SizeBreakdownEntry, ZoneTy
 
 const DIM_RE = /^(\d{3,4})\*(\d{3,4})$/;
 const CHAIR_MM = 600;
+const STRAY_ATTACH_MM = 1500; // AI 좌석 수가 모자란 존에 붙일 바깥 책상 거리 한도
+const STRAY_TOUCH_MM = 300; // 그냥 상자에 걸친 것으로 볼 거리
 // 방은 상자를 책상이 아니라 방 벽 안쪽에 맞추므로(존 초안 지시문 3번) 건드리지 않는다.
 const ROOM_TYPES: ReadonlySet<string> = new Set<ZoneTypeKey>([
   "one_room", "two", "three", "four_room", "team", "ceremony_team", "couple_room",
@@ -162,7 +164,7 @@ export type SnapResult = {
  * - 늘린 상자가 다른 존 책상을 먹으면 그 책상 앞까지 줄이고, 존끼리 겹치면 두 존 책상 사이 가운데에서 나눈다.
  */
 export function snapZonesToDesks(
-  zones: (NormalizedRect & { typeKey?: string | null })[],
+  zones: (NormalizedRect & { typeKey?: string | null; seats?: number })[],
   labels: DeskLabelSet,
 ): SnapResult[] {
   const chairX = CHAIR_MM * labels.mmX;
@@ -180,6 +182,41 @@ export function snapZonesToDesks(
         owner[di] = zi;
       }
     });
+  });
+
+  // 10-29 호구포TEST: AI가 좌석 수는 맞게 셌는데(멀티존C 4·FC존 8) 상자 아래 끝이 마지막 줄 책상 가운데보다 0.05% 모자라
+  // 책상 3개가 어느 존에도 안 들었다. 상자 밖 가까운 책상(방 안 책상 제외)을 이렇게 붙인다:
+  //  1) AI 좌석 수보다 상자 안 책상이 적은 존 — 1.5m 안의 가장 가까운 책상부터 모자란 만큼
+  //  2) 그래도 남은 책상 — 30cm 안이면 가장 가까운 존
+  const gapMm = (c: { x: number; y: number }, b: Box) =>
+    Math.hypot(Math.max(b.x0 - c.x, 0, c.x - b.x1) / labels.mmX, Math.max(b.y0 - c.y, 0, c.y - b.y1) / labels.mmY);
+  const inRoom = deskBoxes.map((d) => zones.some((z, zi) => isRoom[zi] && inside(center(d), toBox(z))));
+  const free = () => deskBoxes.flatMap((d, di) => (owner[di] < 0 && !inRoom[di] ? [di] : []));
+  zones.forEach((z, zi) => {
+    if (isRoom[zi] || !z.seats) return;
+    let short = z.seats - owner.filter((o) => o === zi).length;
+    if (short <= 0) return;
+    const near = free()
+      .map((di) => ({ di, gap: gapMm(center(deskBoxes[di]), toBox(z)) }))
+      .filter((n) => n.gap <= STRAY_ATTACH_MM)
+      .sort((a, b) => a.gap - b.gap);
+    for (const n of near) {
+      if (short-- <= 0) break;
+      owner[n.di] = zi;
+    }
+  });
+  free().forEach((di) => {
+    let best = -1;
+    let bestGap = STRAY_TOUCH_MM;
+    zones.forEach((z, zi) => {
+      if (isRoom[zi]) return;
+      const gap = gapMm(center(deskBoxes[di]), toBox(z));
+      if (gap <= bestGap) {
+        bestGap = gap;
+        best = zi;
+      }
+    });
+    if (best >= 0) owner[di] = best;
   });
 
   const work = zones.map((z, zi) => {

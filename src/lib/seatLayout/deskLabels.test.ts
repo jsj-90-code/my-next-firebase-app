@@ -193,3 +193,20 @@ describe("autoCropRect (10-29 도면 영역 자동 자르기)", () => {
     expect(r.y + r.h).toBeCloseTo(0.65 + 0.03, 4);
   });
 });
+
+describe("상자 밖 가까운 책상 붙이기 (10-29 호구포TEST)", () => {
+  // 세로로 두 줄(위 줄 y=0.5, 아래 줄 y=0.568) — 아래 줄 가운데는 y≈0.602
+  const two = (): DeskLabelSet => set([...row(0.1, 0.5), ...row(0.1, 0.568)]);
+
+  it("AI 좌석 수가 상자 안 책상보다 많으면 바로 밖 줄을 모자란 만큼 붙인다", () => {
+    // 상자 아래 끝 0.6 — 아래 줄 가운데(0.602)보다 조금 모자람
+    const [r] = snapZonesToDesks([{ x: 0.09, y: 0.44, w: 0.36, h: 0.16, seats: 8 }], two());
+    expect(r.deskCount).toBe(8);
+    expect(r.rect.y + r.rect.h).toBeGreaterThan(0.6);
+  });
+
+  it("좌석 수를 모르면 30cm 넘게 떨어진 책상은 안 붙인다", () => {
+    const [r] = snapZonesToDesks([{ x: 0.09, y: 0.44, w: 0.36, h: 0.13 }], two());
+    expect(r.deskCount).toBe(4);
+  });
+});

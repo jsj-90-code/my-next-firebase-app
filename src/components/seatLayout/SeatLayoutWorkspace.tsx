@@ -712,6 +712,20 @@ export function SeatLayoutWorkspace() {
     return false;
   }
 
+  // 10-29 사용자: 구역을 더블클릭하면 Enter와 같은 수정 창. 첫 클릭(mousedown)이 이미 그 구역을 골라 둔다.
+  function handleCanvasDoubleClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (activeTab === "seatNumber" || formOpen || editingIndex !== null || selectedZoneIndex === null) return;
+    const canvas = canvasRef.current;
+    const z = activeZones[selectedZoneIndex];
+    if (!canvas || !z) return;
+    const r = canvas.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width;
+    const fy = (e.clientY - r.top) / r.height;
+    if (fx < z.x || fx > z.x + z.w || fy < z.y || fy > z.y + z.h) return;
+    setDirtyZoneIndex((cur) => (cur === selectedZoneIndex ? null : cur));
+    editZone(selectedZoneIndex);
+  }
+
   function handleCanvasMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     // "좌석번호표 발주" 탭에서는 도면이 비교용 참고 이미지일 뿐이라 존 지정을 받지 않는다.
     if (activeTab === "seatNumber") return;
@@ -1165,7 +1179,7 @@ export function SeatLayoutWorkspace() {
     // 10-28: 도면 PDF의 책상 글씨 위치가 있으면 AI가 어림한 상자를 책상·의자 끝에 맞춘다(deskLabels.ts).
     const labels = project.deskLabels ?? null;
     const snaps = labels
-      ? snapZonesToDesks(rows.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, typeKey: r.type })), labels)
+      ? snapZonesToDesks(rows.map((r) => ({ x: r.x, y: r.y, w: r.w, h: r.h, typeKey: r.type, seats: r.seats })), labels)
       : null;
     // 상자 안 책상 글씨 수와 AI가 센 좌석 수가 다르면 상자가 책상을 빠뜨렸거나 더 먹은 것 — 그 존만 짚어 준다(나누기 전 기준).
     const mismatchAt = new Set(
@@ -2800,6 +2814,23 @@ export function SeatLayoutWorkspace() {
 
       {/* 피난안내도를 원본 해상도 그대로 크게 보고 싶을 때 (작은 번호 글씨 확인용). 스크롤해서
           이동하면서 볼 수 있게 이미지를 축소하지 않고 그대로 띄운다. */}
+      {/* 10-29 사용자: 오른쪽 창을 닫으면 다시 켜는 버튼을 못 찾았다 — 닫혀 있는 동안 화면 오른쪽 가장자리에 탭을 붙인다. */}
+      {((activeTab === "desk" && !deskPanelOpen && project.zones.length > 0 && !!project.deskLabels?.widths?.length) ||
+        (activeTab === "seatNumber" && !seatPanel && !!seatNumberPlateSrc && project.zones.length > 0)) &&
+        !chatDraftModal && (
+          <button
+            type="button"
+            onClick={() =>
+              activeTab === "desk"
+                ? setDeskPanelOpen(true)
+                : setSeatPanel({ fromChat: new Set(), unsure: "", meta: null })
+            }
+            className="app-btn-accent fixed right-0 top-1/2 z-40 -translate-y-1/2 rounded-l-xl px-2 py-3 text-xs font-semibold shadow-lg [writing-mode:vertical-rl]"
+          >
+            {activeTab === "desk" ? "◀ 수량 확인 창" : "◀ 좌석번호 창"}
+          </button>
+        )}
+
       {/* 발주 등록 때 뜨는 매장 정보 창을 가리지 않게 그동안은 숨긴다 */}
       {seatPanel && activeTab === "seatNumber" && !seatNumberStoreInfoOpen && (
         <SeatNumberPanel
@@ -3413,6 +3444,7 @@ export function SeatLayoutWorkspace() {
                     <canvas
                       ref={canvasRef}
                       onMouseDown={handleCanvasMouseDown}
+                      onDoubleClick={handleCanvasDoubleClick}
                       onMouseMove={handleCanvasMouseMove}
                       onMouseUp={handleCanvasMouseUp}
                       className="max-h-[76vh] max-w-full cursor-crosshair rounded-lg border border-black/10 bg-white dark:border-white/10"
