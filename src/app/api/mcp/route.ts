@@ -577,7 +577,7 @@ function registerTools(server: McpServer, owner: boolean) {
             merged = [...prev.filter((p) => !clean.some((c) => c.zoneName === p.zoneName)), ...clean];
           }
           await saveSeatLayoutChatDraft(project, "brackets", { rows: merged }, meta);
-          const counted = targets.filter((t) => merged.some((m) => m.zoneName === t.name)).length;
+          const counted = targets.filter((t) => merged.some((m) => m.zoneName === t.name)).length;
           return text(
             `${project.name} 바뀐 존 브라켓을 저장했습니다(${counted}/${targets.length}개).\n` +
               merged.map((m) => `- ${m.zoneName}: 브라켓 ${m.bagShelfCount ?? "판단 못 함"}`).join("\n") +
