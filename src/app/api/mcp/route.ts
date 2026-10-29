@@ -24,6 +24,7 @@ import { DESK_SIZE_OPTIONS } from "@/lib/seatLayout/constants";
 import { buildBracketPrompt, buildRecognizePrompt, buildSeatNumberPrompt, compressRanges } from "@/lib/seatLayout/recognizePrompt";
 import { buildSuggestZonesPrompt, SUGGEST_ZONES_IMAGE_LABELS, VALID_ZONE_TYPES } from "@/lib/seatLayout/suggestZonesPrompt";
 import { zoneShapeKey, type DeskSize, type SeatLayoutProject } from "@/lib/seatLayout/types";
+import { checkZoneDraft, FPS_MIN_SEATS } from "@/lib/seatLayout/zoneDraftCheck";
 import {
   buildQuadrantImages, buildZoneCrops, buildZoneReferenceImage, loadSeatLayoutChatDraft, parseSeatNumbers,
   resolveSeatLayoutProject, saveSeatLayoutChatDraft,
@@ -415,15 +416,31 @@ function registerTools(server: McpServer, owner: boolean) {
             type: zn.type ?? null,
           }));
           await saveSeatLayoutChatDraft(project, "zones", { rows }, { modelName: modelName || null, note: note ?? null, user });
+          // 10-29: 도면 PDF 책상 글씨로 상자마다 실제 좌석 수를 세어 돌려준다(zoneDraftCheck.ts). FPS가 실제 10석 미만이면
+          // 존을 잘라 맞추지 말고 10석 이상인 한 줄로 다시 고르게 되돌린다(사용자 「FPS존은 최소 10개로, 구역은 안 나눠지면서」).
+          const check = project.deskLabels?.desks?.length ? checkZoneDraft(rows, project.deskLabels) : null;
           const head =
-            `${project.name} 존 초안 ${rows.length}개를 저장했습니다(좌석 합계 ${rows.reduce((s, zn) => s + zn.seats, 0)}).\n` +
-            rows.map((zn, i) => `${i + 1}. ${zn.type ?? "유형 미정"} · ${zn.seats}석`).join("\n");
+            `${project.name} 존 초안 ${rows.length}개를 저장했습니다(좌석 합계 ${rows.reduce((s, zn) => s + zn.seats, 0)}` +
+            (check ? ` · 도면 글씨로 센 실제 ${check.actual.reduce((s, n) => s + n, 0)}` : "") +
+            ").\n" +
+            rows
+              .map((zn, i) =>
+                `${i + 1}. ${zn.type ?? "유형 미정"} · ${zn.seats}석` +
+                (check && check.actual[i] !== zn.seats ? ` → 실제 ${check.actual[i]}석` : ""),
+              )
+              .join("\n");
+          if (check?.fpsShort) {
+            return text(
+              `${head}\n\n⚠️ 아직 끝나지 않았다 — FPS존이 실제로는 ${check.fpsActual}석이다(최소 ${FPS_MIN_SEATS}석). ` +
+                `존을 잘라 붙여 맞추지 말고, 도면에서 실제 ${FPS_MIN_SEATS}석 이상인 한 줄(기둥 건너 이어지는 줄 포함, 딱 ${FPS_MIN_SEATS}석이 먼저)을 ` +
+                "다시 찾아 FPS로 바꾸고, 원래 FPS로 잡았던 줄은 다른 유형으로 돌려 submit_seat_layout_zone_draft로 다시 내라(덮어씀). " +
+                "위 '실제' 좌석 수를 참고하라. 그런 줄이 정말 없으면 지금 FPS를 그대로 두고 note에 이유를 적어 다시 내라.",
+            );
+          }
           // 10-29: 브라켓 도면 주황 선까지 읽었으면 수량·사이즈·브라켓 모두 웹이 도면 PDF로 센다 — 채팅은 여기서 끝.
           if (project.deskLabels?.brackets?.length) {
             return text(
-              `${head}
-
-웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면 존이 들어가고, ` +
+              `${head}\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면 존이 들어가고, ` +
                 "책상 수량·사이즈·가방 선반 브라켓은 웹이 도면 PDF로 바로 셉니다(존을 고쳐도 바로 다시 셈). 확인한 뒤 [확인하고 통합발주서 등록]. " +
                 "사용자에게 이 안내를 보여줄 것.",
             );
