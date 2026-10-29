@@ -3036,11 +3036,18 @@ export function SeatLayoutWorkspace() {
       )}
 
       {/* 10-29 사용자: 좌석번호 오른쪽 창(420px)이 피난안내도를 가렸다 — 창이 열려 있는 동안 그만큼 오른쪽을 비워 가운데를 왼쪽으로
-          붙인다(FHD 1920 기준 가운데 약 1,070px). 창을 닫으면 원래 너비. 좁은 화면(lg 미만)은 창이 화면을 덮는 게 원래 동작. */}
+          붙인다(FHD 1920 기준 가운데 약 1,070px). 책상 탭 수량 확인 창(420px)·채팅 결과 확인 창(460px)도 같게("혹시 가려질 수 있으니").
+          창을 닫으면 원래 너비. 좁은 화면(lg 미만)은 창이 화면을 덮는 게 원래 동작. */}
       <div
         className={`grid grid-cols-1 gap-6 ${
           activeTab === "seatNumber" ? "lg:grid-cols-[340px_1fr]" : "lg:grid-cols-[320px_1fr_300px]"
-        } ${activeTab === "seatNumber" && seatPanel && !seatNumberStoreInfoOpen ? "lg:pr-[420px]" : ""}`}
+        } ${
+          chatDraftModal
+            ? "lg:pr-[460px]"
+            : (activeTab === "seatNumber" && seatPanel && !seatNumberStoreInfoOpen) || (activeTab === "desk" && deskPanelOpen)
+              ? "lg:pr-[420px]"
+              : ""
+        }`}
       >
         <div className="flex flex-col gap-4">
           <section className="app-card rounded-2xl p-5">
