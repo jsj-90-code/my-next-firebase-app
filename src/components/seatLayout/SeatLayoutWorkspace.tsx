@@ -3085,7 +3085,7 @@ export function SeatLayoutWorkspace() {
                   <br />
                   💡 PDF를 고르면 <strong>3페이지(브라켓 도면)</strong>를 자동으로 골라 도면 영역만 잘라 저장합니다.
                 </p>
-                {floorPdfLoaded && !pdfPickerPages && (
+                {floorPdfLoaded && !pdfPickerPages && project.zones.length === 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     <button
                       type="button"
@@ -3157,8 +3157,8 @@ export function SeatLayoutWorkspace() {
                 <span className="text-xs text-[var(--sl-ink-soft)]">· 도면 업로드됨</span>
               </div>
             )}
-            {/* 10-29 사용자: 도면이 들어오면 이 칸이 접혀 수동 버튼이 같이 사라졌다 — 접힌 상태에서도 보이게(펼친 상태엔 위에 있음). */}
-            {!uploadPanelOpen && floorPdfLoaded && !pdfPickerPages && (
+            {/* 10-29 사용자: 도면이 들어오면 이 칸이 접혀 수동 버튼이 같이 사라졌다 — 접힌 상태에서도 보이게. 존 초안을 넣은 뒤엔 숨긴다(쪽·영역을 바꾸면 존이 어긋남). */}
+            {!uploadPanelOpen && floorPdfLoaded && !pdfPickerPages && project.zones.length === 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button
                   type="button"
