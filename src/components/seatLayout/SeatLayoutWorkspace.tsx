@@ -40,6 +40,7 @@ import { SettingsPanel } from "@/components/seatLayout/SettingsPanel";
 import { applyChatDraft, ChatDraftImportModal, type ChatDraftKind } from "@/components/seatLayout/ChatDraftImportModal";
 import { SeatLayoutSteps, type WorkStep } from "@/components/seatLayout/SeatLayoutSteps";
 import { DeskCountPanel } from "@/components/seatLayout/DeskCountPanel";
+import { SeatNumberPanel } from "@/components/seatLayout/SeatNumberPanel";
 import type { BracketDraftRow, SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
 
 // 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안·브라켓 다시 세기(10-29).
@@ -316,6 +317,8 @@ export function SeatLayoutWorkspace() {
   const [chatDraftModal, setChatDraftModal] = useState<{ kind: ChatDraftKind; draft: SeatLayoutChatDraft } | null>(null);
   // 10-29 사용자: 존 초안을 넣은 뒤 오른쪽에 책상 수량·사이즈·브라켓 확인 창(DeskCountPanel). 마지막 단계 버튼으로도 연다.
   const [deskPanelOpen, setDeskPanelOpen] = useState(false);
+  // 10-29 사용자: 좌석번호 채팅 결과는 체크 없이 바로 넣고 오른쪽 창(SeatNumberPanel)에서 고쳐 바로 발주 등록. 닫아도 [좌석번호 창 열기]로 다시 연다.
+  const [seatPanel, setSeatPanel] = useState<{ fromChat: Set<string>; unsure: string; meta: string | null } | null>(null);
   const [chatDraftLoading, setChatDraftLoading] = useState(false);
   // 이 프로젝트에 와 있는 채팅 초안(알림 띠용). 프로젝트를 열거나 저장할 때, 그리고 claude.ai에 갔다가
   // 이 탭으로 돌아올 때(focus) 다시 읽는다 — 버튼이 눈에 안 띈다는 10-27 사용자 지적.
@@ -1078,12 +1081,11 @@ export function SeatLayoutWorkspace() {
         hint: "아래 [좌석번호표] 칸에 이미지나 PDF를 올리면 자동으로 저장됩니다.",
         action: seatNumberPlateSrc && !last?.seatNumberPlateDataUrl ? saveAction : undefined },
       { key: "match", title: "좌석번호 매칭 (Claude 채팅)", done: filled && saved,
-        hint: "불러와 확인·적용하고, 틀린 번호는 아래 표에서 고친 뒤 저장하세요.",
+        hint: "불러오면 오른쪽 창에 바로 채워집니다. 틀린 번호만 고치고 창의 [좌석번호표 발주 등록](저장 포함).",
         prompt: `${name} 좌석번호 매칭해 줘`,
-        alt: "아래 존별 좌석번호 칸에 \"1~10, 25~30\"처럼 직접 적고 [프로젝트 저장]하면 됩니다.",
-        action: hasUnsavedChanges ? saveAction
-          : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("seatNumbers"), disabled: chatDraftLoading,
-              emphasize: hasNewChatDraft("seatNumbers") } },
+        alt: "직접 적으려면 아래 [좌석번호 창 열기]에서 \"1~10, 25~30\"처럼 적으면 됩니다.",
+        action: { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("seatNumbers"), disabled: chatDraftLoading,
+          emphasize: hasNewChatDraft("seatNumbers") } },
       { key: "sheet", title: "좌석번호표 발주 등록", done: !!seatNumberSheetUrl,
         action: { label: "좌석번호표 발주 등록", onClick: openSeatNumberSheetDialog, disabled: busy } },
     ];
@@ -1108,7 +1110,18 @@ export function SeatLayoutWorkspace() {
       }
       if (kind === "zones") applyZoneDraft(draft.zones?.rows ?? []);
       else if (kind === "brackets") applyBracketDraft(draft.brackets?.rows ?? []);
-      else {
+      else if (kind === "seatNumbers") {
+        const rows = draft.seatNumbers?.rows ?? [];
+        const names = new Set(rows.map((r) => r.zoneName));
+        setProject((p) => applyChatDraft("seatNumbers", p, draft, names));
+        const at = draft.seatNumbers?.createdAt;
+        setSeatPanel({
+          fromChat: names,
+          unsure: draft.seatNumbers?.unsure ?? "",
+          meta: `${draft.seatNumbers?.modelName ?? "채팅 AI"}${at ? ` · ${new Date(at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` : ""}`,
+        });
+        setStatusMsg(`채팅 결과를 ${names.size}개 존에 넣었습니다 — 오른쪽 창에서 틀린 번호만 고치고 [좌석번호표 발주 등록].`, "success");
+      } else {
         setChatDraftModal({ kind, draft });
         // 10-27 사용자: 오른쪽에 붙는 창을 못 보고 "안 된다"고 생각했다 → 작업 순서에도 안내.
         setStatusMsg("👉 오른쪽에 뜬 창에서 결과를 확인하고 [체크한 존에 넣기]를 누르세요.");
@@ -2711,6 +2724,21 @@ export function SeatLayoutWorkspace() {
 
       {/* 피난안내도를 원본 해상도 그대로 크게 보고 싶을 때 (작은 번호 글씨 확인용). 스크롤해서
           이동하면서 볼 수 있게 이미지를 축소하지 않고 그대로 띄운다. */}
+      {/* 발주 등록 때 뜨는 매장 정보 창을 가리지 않게 그동안은 숨긴다 */}
+      {seatPanel && activeTab === "seatNumber" && !seatNumberStoreInfoOpen && (
+        <SeatNumberPanel
+          zoneNames={seatNumberZoneNames}
+          ranges={Object.fromEntries(project.seatNumberRanges.map((r) => [r.zoneName, r.ranges]))}
+          fromChat={seatPanel.fromChat}
+          unsure={seatPanel.unsure}
+          meta={seatPanel.meta}
+          busy={busy}
+          onChange={setSeatNumberRangeFor}
+          onPublish={openSeatNumberSheetDialog}
+          onClose={() => setSeatPanel(null)}
+        />
+      )}
+
       {deskPanelOpen && activeTab === "desk" && !chatDraftModal && (
         <DeskCountPanel
           zones={project.zones}
@@ -3038,7 +3066,15 @@ export function SeatLayoutWorkspace() {
                       채팅 존 초안 불러오기
                     </button>
                   )}
-                  {activeZones.length > 0 && (
+                  {activeTab === "desk" && project.zones.length > 0 && project.deskLabels?.widths?.length ? (
+                    <button
+                      type="button"
+                      onClick={() => setDeskPanelOpen(true)}
+                      className="app-btn-accent rounded-full px-3 py-1 text-xs font-semibold"
+                    >
+                      수량 확인 창 열기
+                    </button>
+                  ) : activeZones.length > 0 && (
                     <button
                       type="button"
                       disabled={chatDraftLoading}
@@ -3180,53 +3216,36 @@ export function SeatLayoutWorkspace() {
 
             {(rawSeatNumberPlateDataUrl || project.seatNumberPlateDataUrl) && project.zones.length > 0 && (
               <div className="mt-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-[#5c5346] dark:text-[#c9bfae]">
-                    존별 좌석번호 (직접 입력, 틀리면 수정)
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={openSeatNumberPlateCrop}
-                      className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
-                    >
-                      영역 다시 자르기
-                    </button>
-                    <button
-                      type="button"
-                      disabled={chatDraftLoading}
-                      onClick={() => openChatDraft("seatNumbers")}
-                      className="rounded-full app-btn-accent px-3 py-1 text-xs font-semibold disabled:opacity-50"
-                    >
-                      {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
-                    </button>
-                  </div>
+                {/* 10-29 사용자: 존별 좌석번호 입력 표는 오른쪽 창(SeatNumberPanel)으로 옮겼다 — 여기엔 여는 버튼만. */}
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={openSeatNumberPlateCrop}
+                    className="rounded-full app-btn-outline px-3 py-1 text-xs disabled:opacity-50"
+                  >
+                    영역 다시 자르기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSeatPanel((cur) => cur ?? { fromChat: new Set(), unsure: "", meta: null })}
+                    className="rounded-full app-btn-outline px-3 py-1 text-xs"
+                  >
+                    좌석번호 창 열기
+                  </button>
+                  <button
+                    type="button"
+                    disabled={chatDraftLoading}
+                    onClick={() => openChatDraft("seatNumbers")}
+                    className="rounded-full app-btn-accent px-3 py-1 text-xs font-semibold disabled:opacity-50"
+                  >
+                    {chatDraftLoading ? "불러오는 중..." : "채팅 결과 불러오기"}
+                  </button>
                 </div>
                 {chatDraftBanner("seatNumbers")}
                 <p className="text-xs text-[var(--sl-ink-soft)]">
-                  존별 좌석번호는 비워 둬도 됩니다. Claude(claude.ai)에 「PC 점포평가」 커넥터를 연결해 두고, 존과
-                  피난안내도를 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 좌석번호 매칭해 줘&quot; → [채팅 결과 불러오기]로
-                  한 번에 채워집니다.
+                  Claude 앱에서 &quot;○○점 좌석번호 매칭해 줘&quot; → [채팅 결과 불러오기]를 누르면 오른쪽 창에 바로 채워집니다.
+                  직접 적으려면 [좌석번호 창 열기].
                 </p>
-                {/* PC 발주 도면에서만 사양 차이로 존을 더 쪼갠 경우(예: 책상은 "FPS존A" 하나인데
-                    PC는 "FPS존A"/"FPS존B"로 나눠 사양을 다르게 지정한 경우), 그 PC 전용 존 이름도
-                    목록에 같이 보여줘서 좌석번호를 따로 입력할 수 있게 한다. */}
-                {seatNumberZoneNames.map((name) => {
-                  const entry = project.seatNumberRanges.find((r) => r.zoneName === name);
-                  return (
-                    <div key={name} className="flex items-center gap-2">
-                      <span className="w-20 shrink-0 truncate text-xs text-[var(--sl-ink-soft)]" title={name}>
-                        {name}
-                      </span>
-                      <input
-                        value={entry?.ranges ?? ""}
-                        onChange={(e) => setSeatNumberRangeFor(name, e.target.value)}
-                        placeholder="예: 1~10, 25~30"
-                        className="app-input flex-1 px-2 py-1 text-xs"
-                      />
-                    </div>
-                  );
-                })}
               </div>
             )}
           </section>
