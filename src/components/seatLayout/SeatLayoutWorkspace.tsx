@@ -1862,6 +1862,7 @@ export function SeatLayoutWorkspace() {
 
   /** 수동: 쪽 그림을 하나씩 그려 고르게 한다(예전 방식). */
   async function openFloorPagePicker(pdf: PDFDocumentProxy, reason?: string) {
+    setUploadPanelOpen(true); // 쪽 그림 목록은 "매장명 / 도면" 칸 안에 그려진다 — 접혀 있으면 안 보인다.
     const lead = reason ? `${reason} ` : "";
     pdfDocRef.current = pdf;
     // 2026-09-14 — 그리는 대로 하나씩 붙인다(위 좌석번호표 쪽 주석 참고).
@@ -3154,6 +3155,25 @@ export function SeatLayoutWorkspace() {
                   {project.name || "(매장명 미입력)"}
                 </span>
                 <span className="text-xs text-[var(--sl-ink-soft)]">· 도면 업로드됨</span>
+              </div>
+            )}
+            {/* 10-29 사용자: 도면이 들어오면 이 칸이 접혀 수동 버튼이 같이 사라졌다 — 접힌 상태에서도 보이게(펼친 상태엔 위에 있음). */}
+            {!uploadPanelOpen && floorPdfLoaded && !pdfPickerPages && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => floorPdfRef.current && void openFloorPagePicker(floorPdfRef.current)}
+                  className="app-btn-outline rounded-full px-3 py-1 text-xs"
+                >
+                  다른 페이지 고르기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void reopenFloorCrop()}
+                  className="app-btn-outline rounded-full px-3 py-1 text-xs"
+                >
+                  영역 다시 자르기
+                </button>
               </div>
             )}
 
