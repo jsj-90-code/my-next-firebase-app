@@ -1164,9 +1164,10 @@ function drawMixedSizeTags(
   );
   const mixed = new Set(zones.flatMap((z, i) => (mixedNames.has(z.name) ? [i] : [])));
   if (!mixed.size) return drawn;
-  c.save();
-  c.textAlign = "center";
-  c.textBaseline = "middle";
+  // 10-29 사용자 「숫자가 너무 많다」: 책상마다 표 하나 → 한 줄에서 같은 사이즈가 이어진 구간을 띠 하나로 묶어 "850 × 6"처럼 한 번만.
+  // 띠가 바뀌는 곳 = 사이즈가 바뀌는 곳이라 설치팀이 어디부터 어디까지 몇 개인지 바로 본다.
+  type D = { di: number; zone: number; size: string; horiz: boolean; cx: number; cy: number; x0: number; y0: number; x1: number; y1: number; depth: number; width: number };
+  const list: D[] = [];
   labels.desks.forEach((d, di) => {
     const cx = d.x + d.w / 2;
     const cy = d.y + d.h / 2;
@@ -1180,15 +1181,49 @@ function drawMixedSizeTags(
     });
     if (owner < 0 || !mixed.has(owner)) return;
     const size = deskSizeOfWidth(widths[di]);
-    const text = size ? size.replace("mm", "") : String(widths[di]);
-    const px = geo.imgX + cx * geo.areaW;
-    const py = geo.imgY + cy * geo.areaH;
-    const dw = d.w * geo.areaW;
-    const dh = d.h * geo.areaH;
-    // 표는 책상 긴 쪽(폭) 방향으로 — 세로로 놓인 책상은 세워 그린다(가로로 그리면 옆 책상 표와 겹쳤다, 호구포 FC존).
-    // 크기는 책상 안에 들어가게: 높이 ≤ 짧은 쪽의 75%, 너비 ≤ 긴 쪽의 92%.
-    const long = Math.max(dw, dh);
-    const short = Math.min(dw, dh);
+    const horiz = d.w / labels.mmX >= d.h / labels.mmY;
+    // 화면 좌표(px)로 — 줄 방향 = 책상 폭 방향
+    const x0 = geo.imgX + d.x * geo.areaW, x1 = x0 + d.w * geo.areaW;
+    const y0 = geo.imgY + d.y * geo.areaH, y1 = y0 + d.h * geo.areaH;
+    list.push({
+      di, zone: owner, size: size ? size.replace("mm", "") : String(widths[di]), horiz,
+      cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, x0, y0, x1, y1,
+      width: horiz ? x1 - x0 : y1 - y0, depth: horiz ? y1 - y0 : x1 - x0,
+    });
+  });
+  // 같은 존·사이즈·방향이고, 줄 수직 방향 가운데가 깊이의 25% 안, 줄 방향으로 폭의 1.3배 안에 이어진 책상끼리 한 구간.
+  const used = new Set<number>();
+  const runs: D[][] = [];
+  const along = (d: D) => (d.horiz ? d.cx : d.cy);
+  const across = (d: D) => (d.horiz ? d.cy : d.cx);
+  [...list].sort((p, q) => along(p) - along(q)).forEach((d) => {
+    if (used.has(d.di)) return;
+    const run = [d];
+    used.add(d.di);
+    let last = d;
+    for (const e of [...list].sort((p, q) => along(p) - along(q))) {
+      if (used.has(e.di) || e.zone !== d.zone || e.size !== d.size || e.horiz !== d.horiz) continue;
+      if (Math.abs(across(e) - across(d)) > d.depth * 0.25) continue;
+      const step = along(e) - along(last);
+      if (step <= 0 || step > last.width * 1.3) continue;
+      run.push(e);
+      used.add(e.di);
+      last = e;
+    }
+    runs.push(run);
+  });
+
+  c.save();
+  c.textAlign = "center";
+  c.textBaseline = "middle";
+  for (const run of runs) {
+    const f = run[0];
+    const text = run.length > 1 ? `${f.size} × ${run.length}` : f.size;
+    const a0 = Math.min(...run.map((r) => (r.horiz ? r.x0 : r.y0)));
+    const a1 = Math.max(...run.map((r) => (r.horiz ? r.x1 : r.y1)));
+    const mid = run.reduce((sum, r) => sum + across(r), 0) / run.length;
+    const long = a1 - a0;
+    const short = f.depth;
     let fs = Math.max(6, short * 0.55);
     c.font = `700 ${fs}px "Pretendard", "Noto Sans KR", sans-serif`;
     let tw = c.measureText(text).width + fs * 0.5;
@@ -1198,20 +1233,28 @@ function drawMixedSizeTags(
       tw = c.measureText(text).width + fs * 0.5;
     }
     const th = Math.min(fs * 1.3, short * 0.75);
-    drawn.push(dh > dw ? { x: px - th / 2, y: py - tw / 2, w: th, h: tw } : { x: px - tw / 2, y: py - th / 2, w: tw, h: th });
+    // 띠는 구간 전체 길이(양 끝 3% 안쪽), 글씨는 가운데
+    const barL = long * 0.94;
+    const centerA = (a0 + a1) / 2;
+    const px = f.horiz ? centerA : mid;
+    const py = f.horiz ? mid : centerA;
+    const rect = f.horiz
+      ? { x: centerA - barL / 2, y: mid - th / 2, w: barL, h: th }
+      : { x: mid - th / 2, y: centerA - barL / 2, w: th, h: barL };
+    drawn.push(rect);
     c.save();
-    c.translate(px, py);
-    if (dh > dw) c.rotate(-Math.PI / 2);
     c.globalAlpha = 0.85;
-    c.fillStyle = SIZE_TAG_COLORS[text] ?? "#334155";
+    c.fillStyle = SIZE_TAG_COLORS[f.size] ?? "#334155";
     c.beginPath();
-    c.roundRect(-tw / 2, -th / 2, tw, th, th * 0.3);
+    c.roundRect(rect.x, rect.y, rect.w, rect.h, th * 0.3);
     c.fill();
     c.globalAlpha = 1;
+    c.translate(px, py);
+    if (!f.horiz) c.rotate(-Math.PI / 2);
     c.fillStyle = "#ffffff";
     c.fillText(text, 0, fs * 0.04);
     c.restore();
-  });
+  }
   c.restore();
   return drawn;
 }
