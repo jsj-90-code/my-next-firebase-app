@@ -39,6 +39,7 @@ import {
 import { SettingsPanel } from "@/components/seatLayout/SettingsPanel";
 import { applyChatDraft, ChatDraftImportModal, type ChatDraftKind } from "@/components/seatLayout/ChatDraftImportModal";
 import { SeatLayoutSteps, type WorkStep } from "@/components/seatLayout/SeatLayoutSteps";
+import { DeskCountPanel } from "@/components/seatLayout/DeskCountPanel";
 import type { BracketDraftRow, SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
 
 // 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안·브라켓 다시 세기(10-29).
@@ -314,6 +315,8 @@ export function SeatLayoutWorkspace() {
   // (별도 탭으로 분리했으니, 탭 전환 자체가 켜고 끄는 역할을 한다).
   const [seatNumberImageModalOpen, setSeatNumberImageModalOpen] = useState(false);
   const [chatDraftModal, setChatDraftModal] = useState<{ kind: ChatDraftKind; draft: SeatLayoutChatDraft } | null>(null);
+  // 10-29 사용자: 존 초안을 넣은 뒤 오른쪽에 책상 수량·사이즈·브라켓 확인 창(DeskCountPanel). 마지막 단계 버튼으로도 연다.
+  const [deskPanelOpen, setDeskPanelOpen] = useState(false);
   const [chatDraftLoading, setChatDraftLoading] = useState(false);
   // 이 프로젝트에 와 있는 채팅 초안(알림 띠용). 프로젝트를 열거나 저장할 때, 그리고 claude.ai에 갔다가
   // 이 탭으로 돌아올 때(focus) 다시 읽는다 — 버튼이 눈에 안 띈다는 10-27 사용자 지적.
@@ -1026,8 +1029,12 @@ export function SeatLayoutWorkspace() {
       steps.push({ key: "order", title: "확인하고 통합발주서 등록", done: !!deskOrderSheetUrl,
         hint: blocked && zones.length > 0
           ? "위 단계가 남아 있습니다 — 브라켓을 다 세고 모든 책상이 존에 들어가야 등록할 수 있습니다."
-          : "존 목록의 수량·사이즈·브라켓을 확인하고 누르면 합계를 한 번 보여 준 뒤 저장하고 발주서 시트에 올립니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
-        action: { label: "확인하고 통합발주서 등록", onClick: () => void confirmAndPublishDeskOrder(), disabled: busy || blocked, emphasize: true } });
+          : autoCount
+            ? "오른쪽 확인 창에서 존마다 책상 수량·사이즈·브라켓을 도면과 맞춰 보고 [확인하고 통합발주서 등록]. 저장도 같이 됩니다. 등록하면 위쪽 바에 열기 링크가 생깁니다."
+            : "존 목록의 수량·사이즈·브라켓을 확인하고 누르면 합계를 한 번 보여 준 뒤 저장하고 발주서 시트에 올립니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
+        action: autoCount
+          ? { label: "수량 확인 · 통합발주서 등록", onClick: () => setDeskPanelOpen(true), disabled: busy || zones.length === 0, emphasize: true }
+          : { label: "확인하고 통합발주서 등록", onClick: () => void confirmAndPublishDeskOrder(), disabled: busy || blocked, emphasize: true } });
       return steps;
     }
     if (activeTab === "pc") {
@@ -1204,7 +1211,8 @@ export function SeatLayoutWorkspace() {
       ? " 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 \"책상 인식\"을 하세요."
       : bracketPending > 0
         ? ` 책상 수량·사이즈는 도면 글씨로 채웠습니다. 브라켓을 아직 안 센 존이 ${bracketPending}개 있습니다 — 작업 순서의 "브라켓 다시 세기"를 따르세요.`
-        : " 책상 수량·사이즈·브라켓까지 채웠습니다. 존을 고치면 그 존만 브라켓을 다시 셉니다. 다 됐으면 [확인하고 통합발주서 등록].";
+        : " 책상 수량·사이즈·브라켓까지 채웠습니다 — 오른쪽 창에서 도면과 맞는지 보세요. 존을 고치면 바로 다시 셉니다.";
+    if (autoCount) setDeskPanelOpen(true);
     setStatusMsg(
       `존 초안 ${drafts.length}개를 넣었습니다.${snapNote}${splitNote}${mismatchNote}${next}`,
       mismatches.length ? "info" : "success",
@@ -2693,6 +2701,23 @@ export function SeatLayoutWorkspace() {
 
       {/* 피난안내도를 원본 해상도 그대로 크게 보고 싶을 때 (작은 번호 글씨 확인용). 스크롤해서
           이동하면서 볼 수 있게 이미지를 축소하지 않고 그대로 띄운다. */}
+      {deskPanelOpen && activeTab === "desk" && !chatDraftModal && (
+        <DeskCountPanel
+          zones={project.zones}
+          uncovered={project.deskLabels && project.zones.length > 0 ? countUncoveredDesks(project.deskLabels, project.zones) : 0}
+          staleNames={
+            project.deskLabels?.widths?.length && !project.deskLabels.brackets?.length
+              ? project.zones.filter((z) => z.bagShelfKey !== zoneShapeKey(z)).map((z) => z.name)
+              : []
+          }
+          selectedIndex={selectedZoneIndex}
+          busy={busy}
+          onSelect={(i) => setSelectedZoneIndex(i)}
+          onPublish={() => void handlePublishDeskOrder()}
+          onClose={() => setDeskPanelOpen(false)}
+        />
+      )}
+
       {chatDraftModal && (
         <ChatDraftImportModal
           kind={chatDraftModal.kind}
