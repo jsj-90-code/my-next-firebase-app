@@ -1304,7 +1304,7 @@ export function SeatLayoutWorkspace() {
         for (let i = 1; i <= pdf.numPages; i++) {
           const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260);
           setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
-          setStatusMsg(`${lead}PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
+          setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
         }
         setStatusMsg(`PDF ${pdf.numPages}페이지 중 좌석번호표(피난안내도) 페이지를 선택해주세요.`, "success");
       } catch (err) {
@@ -1870,7 +1870,7 @@ export function SeatLayoutWorkspace() {
       // 그래서 지금까지 그린 것만으로 매번 다시 짚는다 — 뒤 페이지가 더 진하면 그때 바뀐다.
       // 어차피 "확인해주세요"라고 적어둔 힌트라 바뀌어도 판단은 사람이 한다.
       setBracketHintPage(pickLikelyBracketPage(ratios));
-      setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
+      setStatusMsg(`${lead}PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
     }
     setStatusMsg(`${lead}PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, reason ? "info" : "success");
   }
