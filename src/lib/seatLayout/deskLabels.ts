@@ -397,11 +397,12 @@ export function autoCropRect(labels: DeskLabelSet): NormalizedRect {
   return { x: r4(rx0), y: r4(ry0), w: r4(Math.min(1, x1 + mx) - rx0), h: r4(Math.min(1, y1 + my) - ry0) };
 }
 
-// 10-29 광주: 커플석 A·B(위아래 2석 부스 둘, 틈 약 80cm)도 한 존으로 — 사용자 「커플석은 왜 안 합쳐졌을까」.
-const MERGE_FACING_TYPES: ReadonlySet<string> = new Set(["friends", "vip", "couple_seat"]);
+// 10-29 광주 사용자: 프렌즈·VIP → 커플석 → 「같은 존이면 기준에 맞는 모든 존을 합쳐」(1인석·멀티·LOL·FPS 등 전부).
+// 방(2인룸·4인룸·팀룸 등)만 빼서 따로 둔다 — 10-27 사용자 「팀룸 따로따로 잡아줘라. 룸 같이 잡지 말고」.
+const canMergeType = (t: string) => !ROOM_TYPES.has(t);
 
 /**
- * 같은 공간에서 통로를 사이에 두고 마주 보는 같은 유형 존(프렌즈·VIP·커플석)을 한 존으로 합친다(10-29 광주첨단점TEST 사용자 「프렌즈존 B·C가
+ * 같은 공간에서 통로를 사이에 두고 나란히 붙은 같은 유형 존(방을 뺀 모든 유형)을 한 존으로 합친다(10-29 광주첨단점TEST 사용자 「프렌즈존 B·C가
  * 한 구역이 보기 좋다」). 조건: 같은 유형, 마주 보는 방향 범위가 짧은 쪽의 70% 이상 겹침, 사이 틈 1.5m 이하, 합친 상자가 다른 존과
  * 겹치거나 다른 존 책상(가운데)을 먹지 않음. 합친 결과의 i번째 = 남는 존 번호 목록(앞 존이 이름·사양을 가진다).
  */
@@ -422,7 +423,7 @@ export function mergeFacingZones(
     for (let i = 0; i < groups.length && !merged; i++) {
       for (let j = i + 1; j < groups.length && !merged; j++) {
         const A = groups[i], B = groups[j];
-        if (A.type !== B.type || !MERGE_FACING_TYPES.has(A.type)) continue;
+        if (A.type !== B.type || !canMergeType(A.type)) continue;
         const a = A.box, b = B.box;
         const yOv = ov(a.y, a.y + a.h, b.y, b.y + b.h) / Math.min(a.h, b.h);
         const xOv = ov(a.x, a.x + a.w, b.x, b.x + b.w) / Math.min(a.w, b.w);
