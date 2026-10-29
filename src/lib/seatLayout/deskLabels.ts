@@ -400,11 +400,16 @@ export function autoCropRect(labels: DeskLabelSet): NormalizedRect {
 // 10-29 광주 사용자: 프렌즈·VIP → 커플석 → 「같은 존이면 기준에 맞는 모든 존을 합쳐」 → 「룸도 합칠 수 있으면 합쳐」(10-27 「팀룸 따로따로」를
 // 바꿈). 같은 유형이면 방까지 모든 유형. 채팅은 여전히 방마다 상자를 내고(벽 맞춤·방 나누기는 방 단위가 정확) 웹이 넣을 때 합친다.
 const canMergeType = (t: string) => t.length > 0;
+// 10-30 울산삼산점TEST 사용자: 세로로 긴 팀룸 + 가로로 긴 팀룸이 아래 끝만 맞아 ㄴ자인데, 감싸는 네모로 합쳐 빈 귀퉁이까지 존이 됐다
+// (빈 공간 = 두 방 넓이의 약 49%). 존은 네모만 되므로 빈 공간이 크면 따로 둔다. 광주 프렌즈 B·C·1인석·커플석은 나란해서 약 0%.
+// 20%면 같은 길이 두 줄이 길이의 20%까지 어긋나도 합친다.
+const MERGE_MAX_EMPTY = 0.2;
 
 /**
  * 같은 공간에서 통로를 사이에 두고 나란히 붙은 같은 유형 존(방 포함 모든 유형)을 한 존으로 합친다(10-29 광주첨단점TEST 사용자 「프렌즈존 B·C가
  * 한 구역이 보기 좋다」). 조건: 같은 유형, 마주 보는 방향 범위가 짧은 쪽의 70% 이상 겹침, 사이 틈 1.5m 이하, 합친 상자가 다른 존과
- * 겹치거나 다른 존 책상(가운데)을 먹지 않음. 합친 결과의 i번째 = 남는 존 번호 목록(앞 존이 이름·사양을 가진다).
+ * 겹치거나 다른 존 책상(가운데)을 먹지 않음, 합친 상자의 빈 공간(두 상자와 그 사이 통로를 뺀 나머지)이 두 상자 넓이 합의
+ * MERGE_MAX_EMPTY 이하. 합친 결과의 i번째 = 남는 존 번호 목록(앞 존이 이름·사양을 가진다).
  */
 export function mergeFacingZones(
   zones: (NormalizedRect & { typeKey: string })[],
@@ -433,6 +438,12 @@ export function mergeFacingZones(
         if (!facing) continue;
         const x0 = Math.min(a.x, b.x), y0 = Math.min(a.y, b.y);
         const u = { x: x0, y: y0, w: Math.max(a.x + a.w, b.x + b.w) - x0, h: Math.max(a.y + a.h, b.y + b.h) - y0 };
+        // 사이 통로 띠(틈 × 마주 보는 길이)는 빈 공간으로 치지 않는다.
+        const aisle = yOv >= 0.7 && gapX <= 1500
+          ? gapX * mmX * ov(a.y, a.y + a.h, b.y, b.y + b.h)
+          : gapY * mmY * ov(a.x, a.x + a.w, b.x, b.x + b.w);
+        const partsArea = a.w * a.h + b.w * b.h;
+        if (u.w * u.h - partsArea - aisle > MERGE_MAX_EMPTY * partsArea) continue;
         const others = groups.filter((_, k) => k !== i && k !== j);
         if (others.some((o) => overlaps(u, o.box))) continue;
         const inside = (c: { x: number; y: number }, r: NormalizedRect) => c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h;

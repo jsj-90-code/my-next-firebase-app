@@ -231,4 +231,14 @@ describe("mergeFacingZones (10-29 광주첨단점TEST)", () => {
     ];
     expect(mergeFacingZones(zones, L)).toEqual([[0], [1], [2], [3, 4], [5, 6], [7], [8], [9, 10]]);
   });
+
+  it("10-30 울산삼산점TEST: 세로 팀룸 + 가로 팀룸이 ㄴ자면(빈 공간 약 49%) 안 합치고, 나란한 2인룸 둘은 합친다", () => {
+    const zones = [
+      z("ceremony_team", 0.369, 0.232, 0.109, 0.216), // 오른쪽 세로로 긴 방
+      z("ceremony_team", 0.142, 0.336, 0.225, 0.113), // 왼쪽 가로로 긴 방(아래 끝만 맞음)
+      z("two", 0.069, 0.821, 0.082, 0.101),
+      z("two", 0.155, 0.821, 0.09, 0.101),
+    ];
+    expect(mergeFacingZones(zones, L)).toEqual([[0], [1], [2, 3]]);
+  });
 });
