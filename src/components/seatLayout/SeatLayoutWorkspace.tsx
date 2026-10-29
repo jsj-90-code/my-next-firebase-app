@@ -319,6 +319,9 @@ export function SeatLayoutWorkspace() {
   const [chatDraftModal, setChatDraftModal] = useState<{ kind: ChatDraftKind; draft: SeatLayoutChatDraft } | null>(null);
   // 10-29 사용자: 존 초안을 넣은 뒤 오른쪽에 책상 수량·사이즈·브라켓 확인 창(DeskCountPanel). 마지막 단계 버튼으로도 연다.
   const [deskPanelOpen, setDeskPanelOpen] = useState(false);
+  // 10-29 사용자 「화면을 크게 해도 존 유형 때문에 도면이 너무 작다」: 존이 생기면 오른쪽 존 유형 칸을 얇은 띠로 접는다.
+  // null = 자동(존이 있으면 접힘), true/false = 사람이 펼침/접음을 고름. 존 유형을 고른 상태면 늘 펼친다.
+  const [zoneTypesOpen, setZoneTypesOpen] = useState<boolean | null>(null);
   // 10-29 사용자: 좌석번호 채팅 결과는 체크 없이 바로 넣고 오른쪽 창(SeatNumberPanel)에서 고쳐 바로 발주 등록. 닫아도 [좌석번호 창 열기]로 다시 연다.
   const [seatPanel, setSeatPanel] = useState<{ fromChat: Set<string>; unsure: string; meta: string | null } | null>(null);
   // 피난안내도 위 존 구역 겹쳐 그리기(10-29): 원본 크기(글자 크기용)와 켜고 끄기.
@@ -432,6 +435,9 @@ export function SeatLayoutWorkspace() {
   // 방금 업로드한 원본(rawFloorPlanDataUrl)이 있으면 그걸 우선 쓰고, 없으면(=프로젝트를
   // 불러오기만 한 경우) Firestore에 저장된 압축본을 쓴다.
   const floorPlanSrc = rawFloorPlanDataUrl ?? project.floorPlanDataUrl;
+  const zoneTypesCollapsed =
+    activeTab !== "seatNumber" && !selectedTypeKey &&
+    (zoneTypesOpen === false || (zoneTypesOpen === null && (activeTab === "pc" ? project.pcZones : project.zones).length > 0));
   // 10-29 사용자: 좌석번호 탭에서 피난안내도에 존 구역을 겹쳐 볼 수 있으면 왼쪽 도면은 숨기고 겹친 피난안내도만 크게 — 비교가 쉽다.
   // [존 구역 겹쳐 보기]를 끄면 예전처럼 도면·피난안내도를 나란히.
   const plateOnly =
@@ -3040,11 +3046,19 @@ export function SeatLayoutWorkspace() {
           창을 닫으면 원래 너비. 좁은 화면(lg 미만)은 창이 화면을 덮는 게 원래 동작. */}
       <div
         className={`grid grid-cols-1 gap-6 ${
-          activeTab === "seatNumber" ? "lg:grid-cols-[340px_1fr]" : "lg:grid-cols-[320px_1fr_300px]"
+          activeTab === "seatNumber"
+            ? "lg:grid-cols-[340px_1fr]"
+            : // 10-29 사용자: 책상 탭 수량 확인 창은 화면 전체를 밀지 말고 오른쪽 존 유형 칸 위에 — 그 칸을 창 너비(420px)로만 넓혀
+              // 창이 그 자리를 덮게 한다(도면은 120px만 줄어듦). 존 유형은 창을 닫으면 다시 보인다.
+              activeTab === "desk" && deskPanelOpen && !chatDraftModal
+              ? "lg:grid-cols-[320px_1fr_404px]"
+              : zoneTypesCollapsed
+                ? "lg:grid-cols-[320px_1fr_44px]"
+                : "lg:grid-cols-[320px_1fr_300px]"
         } ${
           chatDraftModal
             ? "lg:pr-[460px]"
-            : (activeTab === "seatNumber" && seatPanel && !seatNumberStoreInfoOpen) || (activeTab === "desk" && deskPanelOpen)
+            : activeTab === "seatNumber" && seatPanel && !seatNumberStoreInfoOpen
               ? "lg:pr-[420px]"
               : ""
         }`}
@@ -3617,10 +3631,36 @@ export function SeatLayoutWorkspace() {
           <canvas ref={compositeCanvasRef} className="hidden" />
         </div>
 
-        {activeTab !== "seatNumber" && (
+        {activeTab !== "seatNumber" && zoneTypesCollapsed && (
+          <div className="lg:sticky lg:top-24 lg:self-start">
+            <button
+              type="button"
+              onClick={() => setZoneTypesOpen(true)}
+              className="app-btn-outline w-full rounded-2xl px-2 py-4 text-xs font-semibold lg:[writing-mode:vertical-rl]"
+              title="존을 직접 그리거나 유형을 바꿀 때 펼치세요"
+            >
+              ◀ 존 유형 펼치기
+            </button>
+          </div>
+        )}
+        {activeTab !== "seatNumber" && !zoneTypesCollapsed && (
           <div className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
             <section className="app-card rounded-2xl p-4">
-              <h2 className="font-semibold text-[#171310] dark:text-[#f2ede2]">① 존 유형</h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="font-semibold text-[#171310] dark:text-[#f2ede2]">① 존 유형</h2>
+                {(activeTab === "pc" ? project.pcZones : project.zones).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTypeKey(null);
+                      setZoneTypesOpen(false);
+                    }}
+                    className="text-xs font-medium text-[var(--sl-ink-soft)] hover:text-[#171310] dark:hover:text-[#f2ede2]"
+                  >
+                    접기 ▸
+                  </button>
+                )}
+              </div>
               <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
                 클릭 후 도면에서 영역을 지정하면 이름/색상이 자동으로 부여됩니다
               </p>
