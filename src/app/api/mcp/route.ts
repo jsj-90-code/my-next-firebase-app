@@ -240,8 +240,7 @@ function registerTools(server: McpServer, owner: boolean) {
             `프로젝트: ${project.name} · ${target === "desk" ? "책상 발주 도면" : "PC 발주 도면"} · 존 ${zones.length}개 중 ${offset + 1}~${offset + batch.length}번째\n` +
             "이미지 순서(이미지 k장 = 아래 k번 존을 잘라낸 것):\n" +
             batch.map((z, i) => `${i + 1}. ${z.name}`).join("\n") +
-            "\n\n아래 지시문은 이미지 한 장(존 하나) 기준이다. 존마다 따로 적용해 하나씩 나열·검산한 뒤, " +
-            "COUNT/GROUP/BRACKET 줄 대신 submit_seat_layout_zone_counts의 rows에 존마다 넣어라" +
+            "\n\n아래 지시문은 이미지 한 장(존 하나) 기준이다. 존마다 따로 적용해 submit_seat_layout_zone_counts의 rows에 존마다 넣어라" +
             (target === "desk" ? "(seats = sizeBreakdown 수량 합, bagShelfCount = 브라켓 표시가 있는 책상 수. 도면에 브라켓 표시가 아예 없거나 구분이 안 되면 null — 0과 다르다)" : "") +
             ". 판단이 애매한 존은 note에 적을 것.\n" +
             (more ? `존이 더 남았다 — 다 내면 offset ${offset + batch.length}로 다시 받아 이어서 하고, 그때는 append=true로 낸다.\n` : "") +
@@ -458,8 +457,7 @@ function registerTools(server: McpServer, owner: boolean) {
             `프로젝트: ${project.name} · 이미지 6장: ①존 배치도, ②피난안내도 전체, ③좌상단 확대, ④우상단 확대, ⑤좌하단 확대, ⑥우하단 확대\n` +
             "①번 배치도의 박스에는 존 이름 대신 번호가 적혀 있다(서버에 한글 글꼴이 없어서). 번호 ↔ 존 이름:\n" +
             zones.map((z, i) => `${i + 1} = ${z.name} (${z.seats}석)`).join("\n") +
-            "\n\n아래 지시문의 \"이름표\"는 이 번호로 읽어라. ZONE/UNSURE 줄 대신 submit_seat_number_draft의 rows(존 이름과 번호 범위, " +
-            "예: \"1~10, 25~30\")와 unsure(어느 존에도 확신 있게 배정 못 한 번호)에 넣어라. 확신 없는 존은 rows에서 빼라.\n" +
+            "\n\n①번 배치도의 박스 번호는 위 표로 존 이름에 대응시켜라.\n" +
             `\n--- 매칭 지시문 ---\n${buildSeatNumberPrompt(zones.map((z) => ({ name: z.name, seats: z.seats })), true)}`;
           return {
             content: [
