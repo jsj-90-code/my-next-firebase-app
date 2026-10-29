@@ -3595,26 +3595,26 @@ export function SeatLayoutWorkspace() {
                       >
                         {activeZones.map((z, i) => {
                           const pts = mapRect(project.plateTransform as Affine, z).map(([x, y]) => [x * plateDims.w, y * plateDims.h]);
-                          const fs = Math.max(12, plateDims.w / 90);
+                          // 10-29 사용자: 존 이름이 상자 안 왼쪽 위에 찍혀 좌석 번호를 가렸다 → 이름표를 상자 바깥 위쪽에 붙이고(그림
+                          // 맨 위라 자리가 없을 때만 안쪽), 존 색 반투명 바탕 + 흰 글씨로 작게 — 겹쳐도 밑 번호가 비친다.
+                          const fs = Math.max(10, plateDims.w / 120);
+                          const tagH = fs * 1.4;
+                          // 글자 폭 어림: 한글 1자 ≈ 글자 크기, 영문·숫자 ≈ 0.6배
+                          const tagW = [...z.name].reduce((w, ch) => w + (/[가-힣]/.test(ch) ? fs : fs * 0.62), fs * 0.7);
+                          const minX = Math.min(...pts.map((q) => q[0]));
+                          const minY = Math.min(...pts.map((q) => q[1]));
+                          const tagY = minY - tagH - 2 >= 0 ? minY - tagH - 2 : minY + 2;
                           return (
                             <g key={`${z.name}-${i}`}>
                               <polygon
                                 points={pts.map((q) => q.join(",")).join(" ")}
                                 fill={z.color}
-                                fillOpacity={0.14}
+                                fillOpacity={0.1}
                                 stroke={z.color}
                                 strokeWidth={Math.max(2, plateDims.w / 600)}
                               />
-                              <text
-                                x={pts[0][0] + fs * 0.3}
-                                y={pts[0][1] + fs * 1.1}
-                                fontSize={fs}
-                                fontWeight={700}
-                                fill={z.color}
-                                stroke="#fff"
-                                strokeWidth={fs / 5}
-                                paintOrder="stroke"
-                              >
+                              <rect x={minX} y={tagY} width={tagW} height={tagH} rx={tagH * 0.25} fill={z.color} fillOpacity={0.78} />
+                              <text x={minX + fs * 0.35} y={tagY + tagH * 0.72} fontSize={fs} fontWeight={700} fill="#fff">
                                 {z.name}
                               </text>
                             </g>
