@@ -70,9 +70,8 @@ function projectChangeKey(p: SeatLayoutProject): string {
   return JSON.stringify({ ...p, floorPlanDataUrl: null, seatNumberPlateDataUrl: null, updatedAt: null, updatedBy: null });
 }
 
-const SEAT_NUMBER_PLATE_ADDED_MSG =
-  "좌석번호표를 올렸습니다 — \"프로젝트 저장\"을 눌러야 보관됩니다. 오른쪽에서 도면과 나란히 보면서 " +
-  "존별로 직접 입력하거나, 저장 후 Claude 채팅으로 매칭해 [채팅 결과 불러오기]로 넣으세요.";
+// 10-29 사용자: 피난안내도도 올리면 자동 저장 — 올린 직후엔 "저장 중", 저장되면 아래 효과가 다음 할 일을 띄운다.
+const SEAT_NUMBER_PLATE_ADDED_MSG = "좌석번호표를 올렸습니다. 저장 중...";
 
 const DEFAULT_DRAG_HINT =
   "먼저 위에서 존 유형을 선택한 뒤, 도면 위를 한 번 클릭(좌상단), 다시 한 번 클릭(우하단)하세요.";
@@ -341,7 +340,8 @@ export function SeatLayoutWorkspace() {
   // 고른 도면 페이지의 책상 치수 글씨 위치(페이지 기준). 자르기를 확정할 때 자른 도면 기준으로 바꿔 프로젝트에 넣는다.
   const pageDeskLabelsRef = useRef<DeskLabelSet | null>(null);
   // 10-29 사용자: 도면(브라켓 쪽)을 고르면 [프로젝트 저장]을 따로 누르지 않아도 저장 — 다음 렌더(도면·글씨가 들어간 뒤)에 저장한다.
-  const autoSavePendingRef = useRef(false);
+  // 무엇을 올려서 자동 저장하는지(도면 / 피난안내도). 다음 렌더(이미지가 들어간 뒤)에 저장한다.
+  const autoSavePendingRef = useRef<"floor" | "plate" | null>(null);
   // 존 모양이 바뀌면 책상 수량·사이즈·PC 대수를 도면 PDF 글씨로 다시 센다(아래 효과). 프로젝트를 새로 열 땐 세지 않는다.
   const recountRef = useRef<{ id: string; desk: string; pc: string; labels: DeskLabelSet | null | undefined } | null>(null);
   // PDF 페이지를 고른 다음(또는 좌석번호표 이미지 업로드 후): 필요없는 부분을 빼고 실제 필요한
@@ -1073,9 +1073,10 @@ export function SeatLayoutWorkspace() {
     const filled = activeZones.length > 0 && activeZones.every((z) =>
       project.seatNumberRanges.some((r) => r.zoneName === z.name && r.ranges.trim()));
     return [
-      { key: "plate", title: "피난안내도(좌석번호표) 올리기", done: !!seatNumberPlateSrc,
-        hint: "아래 [좌석번호표] 칸에 이미지나 PDF를 올립니다." },
-      { key: "save", title: "프로젝트 저장", done: !!last?.seatNumberPlateDataUrl, action: saveAction },
+      // 10-29 사용자: 올리면 자동 저장 — 따로 있던 [프로젝트 저장] 단계를 합쳤다. 자동 저장이 실패했을 때만 저장 버튼이 뜬다.
+      { key: "plate", title: "피난안내도(좌석번호표) 올리기", done: !!seatNumberPlateSrc && !!last?.seatNumberPlateDataUrl,
+        hint: "아래 [좌석번호표] 칸에 이미지나 PDF를 올리면 자동으로 저장됩니다.",
+        action: seatNumberPlateSrc && !last?.seatNumberPlateDataUrl ? saveAction : undefined },
       { key: "match", title: "좌석번호 매칭 (Claude 채팅)", done: filled && saved,
         hint: "불러와 확인·적용하고, 틀린 번호는 아래 표에서 고친 뒤 저장하세요.",
         prompt: `${name} 좌석번호 매칭해 줘`,
@@ -1843,23 +1844,30 @@ export function SeatLayoutWorkspace() {
   }
 
   useEffect(() => {
-    if (!autoSavePendingRef.current || !rawFloorPlanDataUrl) return;
-    autoSavePendingRef.current = false;
-    if (!project.name.trim()) return; // 업로드는 매장명이 있어야 열리지만, 그 사이 이름을 지운 경우
+    const kind = autoSavePendingRef.current;
+    if (!kind || !(kind === "floor" ? rawFloorPlanDataUrl : rawSeatNumberPlateDataUrl)) return;
+    autoSavePendingRef.current = null;
     void (async () => {
+      if (!project.name.trim()) {
+        // 도면은 매장명이 있어야 올릴 수 있지만, 피난안내도를 먼저 올렸거나 그 사이 이름을 지운 경우
+        setStatusMsg("매장명을 넣고 [프로젝트 저장]을 누르세요 — 채팅은 매장명으로 프로젝트를 찾습니다.", "error");
+        return;
+      }
       setBusy(true);
       const saved = await silentSave();
       setBusy(false);
-      if (saved) {
-        setStatusMsg(
-          `도면을 저장했습니다. 이제 Claude 앱에서 "${saved.name} 존 초안 만들어 줘"라고 보내세요.`,
-          "success",
-        );
-      }
+      if (!saved) return; // 오류 문구는 silentSave가 띄운다
+      setStatusMsg(
+        kind === "floor"
+          ? `도면을 저장했습니다. 이제 Claude 앱에서 "${saved.name} 존 초안 만들어 줘"라고 보내세요.`
+          : `좌석번호표(피난안내도)를 저장했습니다. 오른쪽에서 도면과 나란히 보며 존별로 직접 입력하거나, ` +
+            `Claude 앱에서 "${saved.name} 좌석번호 매칭해 줘"라고 보낸 뒤 [채팅 결과 불러오기]로 넣으세요.`,
+        "success",
+      );
     })();
     // silentSave는 매 렌더 새로 만들어지는 함수라 의존성에 넣지 않는다 — 도면이 새로 들어온 렌더(표시가 켜진 뒤)에 한 번만 돈다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawFloorPlanDataUrl, project.deskLabels]);
+  }, [rawFloorPlanDataUrl, rawSeatNumberPlateDataUrl, project.deskLabels]);
 
   // 10-29: 존을 넣거나 옮기면 그 안의 도면 책상 글씨로 수량·사이즈·브라켓(책상 탭)·대수(PC 탭, 책상 수 = PC 대수)를 다시 센다 —
   // 옛 채팅 "책상 인식"·"PC 대수" 단계 대신. 책상이 하나도 안 든 존(카운터 PC 등)과 옛 도면(글씨 폭 없음)은 손대지 않는다.
@@ -2017,13 +2025,14 @@ export function SeatLayoutWorkspace() {
       closeCrop();
       setRawSeatNumberPlateDataUrl(dataUrl);
       setImagesUnsaved(true);
-      setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG, "success");
+      autoSavePendingRef.current = "plate";
+      setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG);
     } else {
       applyFloorPlanDataUrl(dataUrl, off.width, off.height);
       const labels = pageDeskLabelsRef.current;
       setProject((p) => ({ ...p, deskLabels: labels ? cropDeskLabels(labels, cropRect) : null }));
       closeCrop();
-      autoSavePendingRef.current = true;
+      autoSavePendingRef.current = "floor";
       setStatusMsg("도면 영역을 잘라서 불러왔습니다. 저장 중...");
     }
   }
@@ -2035,13 +2044,14 @@ export function SeatLayoutWorkspace() {
       closeCrop();
       setRawSeatNumberPlateDataUrl(dataUrl);
       setImagesUnsaved(true);
-      setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG, "success");
+      autoSavePendingRef.current = "plate";
+      setStatusMsg(SEAT_NUMBER_PLATE_ADDED_MSG);
     } else {
       applyFloorPlanDataUrl(pdfCropSource.dataUrl, pdfCropSource.width, pdfCropSource.height);
       const labels = pageDeskLabelsRef.current;
       setProject((p) => ({ ...p, deskLabels: labels }));
       closeCrop();
-      autoSavePendingRef.current = true;
+      autoSavePendingRef.current = "floor";
       setStatusMsg("도면을 불러왔습니다. 저장 중...");
     }
   }
