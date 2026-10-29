@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countUncoveredDesks, cropDeskLabels, snapZonesToDesks } from "./deskLabels";
+import { countDesksByZone, countUncoveredDesks, cropDeskLabels, deskSizeOfWidth, snapZonesToDesks } from "./deskLabels";
 import type { DeskLabelSet } from "./types";
 
 // 1mm = 0.0001(가로·세로 같음) — 850×680 책상 = 0.085×0.068, 의자 600mm = 0.06.
@@ -110,5 +110,53 @@ describe("countUncoveredDesks", () => {
     expect(countUncoveredDesks(labels, [])).toBe(4);
     expect(countUncoveredDesks(labels, [{ x: 0.09, y: 0.44, w: 0.18, h: 0.14 }])).toBe(2);
     expect(countUncoveredDesks(labels, [{ x: 0.09, y: 0.44, w: 0.36, h: 0.14 }])).toBe(0);
+  });
+});
+
+describe("countDesksByZone (10-29 책상 인식 채팅 대신)", () => {
+  // 한 줄 4개: 850·850·910·1000
+  const withWidths = (): DeskLabelSet => ({ ...set(row(0.1, 0.5)), widths: [850, 850, 910, 1000] });
+
+  it("존 안 책상 글씨로 수량·사이즈를 센다", () => {
+    const [c] = countDesksByZone(withWidths(), [{ x: 0.09, y: 0.44, w: 0.36, h: 0.14 }]);
+    expect(c).toEqual({
+      seats: 4,
+      sizeBreakdown: [
+        { deskSize: "850mm", qty: 2 },
+        { deskSize: "910mm", qty: 1 },
+        { deskSize: "1000mm", qty: 1 },
+      ],
+      unknown: 0,
+    });
+  });
+
+  it("두 존에 걸친 책상은 더 작은 존 몫, 책상이 없는 존(카운터)은 null", () => {
+    const big = { x: 0.09, y: 0.44, w: 0.36, h: 0.14 };
+    const small = { x: 0.09, y: 0.44, w: 0.1, h: 0.14 }; // 첫 책상만
+    const counter = { x: 0.8, y: 0.1, w: 0.05, h: 0.05 };
+    const [b, s, k] = countDesksByZone(withWidths(), [big, small, counter]);
+    expect(b?.seats).toBe(3);
+    expect(s?.seats).toBe(1);
+    expect(k).toBeNull();
+  });
+
+  it("폭 정보가 없는 옛 도면이면 모두 null(지금 값 유지)", () => {
+    expect(countDesksByZone(set(row(0.1, 0.5)), [{ x: 0, y: 0, w: 1, h: 1 }])).toEqual([null]);
+  });
+
+  it("표준에서 30mm 넘게 벗어난 폭은 사이즈 미정으로 센다", () => {
+    expect(deskSizeOfWidth(820)).toBe("820mm");
+    expect(deskSizeOfWidth(940)).toBe("950mm");
+    expect(deskSizeOfWidth(1200)).toBeNull();
+    const [c] = countDesksByZone({ ...set(row(0.1, 0.5)), widths: [850, 850, 850, 1200] }, [{ x: 0, y: 0, w: 1, h: 1 }]);
+    expect(c?.seats).toBe(4);
+    expect(c?.unknown).toBe(1);
+  });
+
+  it("도면을 자를 때 폭도 같이 따라간다", () => {
+    const labels: DeskLabelSet = withWidths();
+    const cropped = cropDeskLabels(labels, { x: 0.18, y: 0.4, w: 0.5, h: 0.3 })!; // 첫 책상(가운데 x=0.1425) 빠짐
+    expect(cropped.desks).toHaveLength(3);
+    expect(cropped.widths).toEqual([850, 910, 1000]);
   });
 });

@@ -180,7 +180,7 @@ export function parseSeatNumbers(raw: string): number[] {
 /** 초안 저장 — 프로젝트 문서는 건드리지 않는다. 종류마다 마지막 결과 1건(덮어쓰기). */
 export async function saveSeatLayoutChatDraft(
   project: SeatLayoutProject,
-  kind: "desk" | "pc" | "seatNumbers" | "zones",
+  kind: "desk" | "pc" | "seatNumbers" | "zones" | "brackets",
   body: Record<string, unknown>,
   meta: { modelName: string | null; note: string | null; user: McpUser | null },
 ): Promise<void> {

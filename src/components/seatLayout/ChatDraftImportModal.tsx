@@ -4,7 +4,7 @@
 // 고른 존만 화면의 프로젝트에 넣는다. 넣은 뒤에도 [저장]을 눌러야 반영된다(점포평가 입지 초안과 같은 방식, 2026-10-27).
 import { useMemo, useState } from "react";
 import type { SeatLayoutChatDraft } from "@/lib/seatLayout/chatDraft";
-import type { SeatLayoutProject, SizeBreakdownEntry } from "@/lib/seatLayout/types";
+import { zoneShapeKey, type SeatLayoutProject, type SizeBreakdownEntry } from "@/lib/seatLayout/types";
 
 export type ChatDraftKind = "desk" | "pc" | "seatNumbers";
 
@@ -67,6 +67,8 @@ export function applyChatDraft(
           deskSize: sizeBreakdown[0]?.deskSize ?? "",
           seats,
           bagShelfCount: Math.max(0, Math.min(d.bagShelfCount ?? z.bagShelfCount ?? 0, seats)),
+          // 채팅이 브라켓을 셌으면 지금 모양으로 "센 상태"(10-29). null(구분 못 함)이면 옛 표시 그대로.
+          bagShelfKey: d.bagShelfCount != null ? zoneShapeKey(z) : z.bagShelfKey ?? null,
         };
       }),
     };

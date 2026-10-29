@@ -18,12 +18,12 @@ import { verifyAccessToken, type McpUser } from "@/lib/server/mcpOAuth";
 import {
   findCandidates, isMcpOwner, loadCandidateLocationContext, saveCandidateLocationDraft,
 } from "@/lib/server/mcpCandidateLocation";
-import type { DeskCountDraftRow, PcCountDraftRow } from "@/lib/seatLayout/chatDraft";
+import type { BracketDraftRow, DeskCountDraftRow, PcCountDraftRow } from "@/lib/seatLayout/chatDraft";
 import { isAllowedEmail } from "@/lib/seatLayout/authDomain";
 import { DESK_SIZE_OPTIONS } from "@/lib/seatLayout/constants";
-import { buildRecognizePrompt, buildSeatNumberPrompt, compressRanges } from "@/lib/seatLayout/recognizePrompt";
+import { buildBracketPrompt, buildRecognizePrompt, buildSeatNumberPrompt, compressRanges } from "@/lib/seatLayout/recognizePrompt";
 import { buildSuggestZonesPrompt, SUGGEST_ZONES_IMAGE_LABELS, VALID_ZONE_TYPES } from "@/lib/seatLayout/suggestZonesPrompt";
-import type { DeskSize } from "@/lib/seatLayout/types";
+import { zoneShapeKey, type DeskSize, type SeatLayoutProject } from "@/lib/seatLayout/types";
 import {
   buildQuadrantImages, buildZoneCrops, buildZoneReferenceImage, loadSeatLayoutChatDraft, parseSeatNumbers,
   resolveSeatLayoutProject, saveSeatLayoutChatDraft,
@@ -415,11 +415,174 @@ function registerTools(server: McpServer, owner: boolean) {
             type: zn.type ?? null,
           }));
           await saveSeatLayoutChatDraft(project, "zones", { rows }, { modelName: modelName || null, note: note ?? null, user });
-          return text(
+          const head =
             `${project.name} 존 초안 ${rows.length}개를 저장했습니다(좌석 합계 ${rows.reduce((s, zn) => s + zn.seats, 0)}).\n` +
-              rows.map((zn, i) => `${i + 1}. ${zn.type ?? "유형 미정"} · ${zn.seats}석`).join("\n") +
-              "\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭 존 목록의 [채팅 존 초안 불러오기]를 누르면 존으로 들어갑니다. " +
-              "상자 위치·이름·유형을 다듬고 [프로젝트 저장]한 뒤, 책상 수량·사이즈는 \"○○점 책상 인식해 줘\"로 채웁니다. 사용자에게 이 안내를 보여줄 것.",
+            rows.map((zn, i) => `${i + 1}. ${zn.type ?? "유형 미정"} · ${zn.seats}석`).join("\n");
+          // 10-29: 도면 PDF 글씨 폭이 있으면 책상 수량·사이즈는 웹이 세므로, 같은 채팅에서 브라켓만 이어 센다(사용자 한 번 불러오기).
+          if (project.deskLabels?.widths?.length) {
+            return text(
+              `${head}\n\n아직 끝나지 않았다 — 사용자에게 묻지 말고 **바로 이어서** get_seat_layout_bracket_crops(source="draft")로 ` +
+                "상자마다 잘린 도면을 받아 가방 선반 브라켓을 세고 submit_seat_layout_brackets(source=\"draft\")로 내라. " +
+                "책상 수량·사이즈는 웹이 도면 PDF 글씨로 센다.",
+            );
+          }
+          return text(
+            `${head}\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭 존 목록의 [채팅 존 초안 불러오기]를 누르면 존으로 들어갑니다. ` +
+              "상자 위치·이름·유형을 다듬고 [프로젝트 저장]한 뒤, 책상 수량·사이즈는 \"○○점 책상 인식해 줘\"로 채웁니다" +
+              "(이 도면은 PDF 책상 글씨가 없어 웹이 자동으로 못 셉니다). 사용자에게 이 안내를 보여줄 것.",
+          );
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
+
+    // ── 브라켓만 세기 (2026-10-29) — 책상 수량·사이즈는 웹이 도면 PDF 글씨로 세고(deskLabels.ts), 채팅은 브라켓만 본다.
+    //    source=draft: 방금 낸 존 초안 상자들(같은 채팅에서 이어서). source=changed: 저장된 존 중 브라켓을 센 뒤 옮긴 존만
+    //    (zoneShapeKey가 bagShelfKey와 다른 존 — 사용자가 존을 고친 뒤 "바뀐 존 브라켓 다시 세 줘").
+    const sourceField = z.enum(["draft", "changed"]).describe("draft = 방금 낸 존 초안 상자, changed = 저장된 존 중 고쳐서 다시 세야 하는 존");
+    type BracketTarget = { label: string; rect: { x: number; y: number; w: number; h: number } };
+    const bracketTargets = async (project: SeatLayoutProject, source: "draft" | "changed"): Promise<BracketTarget[]> => {
+      if (source === "draft") {
+        const rows = (await loadSeatLayoutChatDraft(project.id))?.zones?.rows ?? [];
+        return rows.map((r, i) => ({ label: `상자 ${i + 1}`, rect: r }));
+      }
+      return (project.zones ?? [])
+        .filter((zn) => zn.bagShelfKey !== zoneShapeKey(zn))
+        .map((zn) => ({ label: zn.name, rect: zn }));
+    };
+    // 도면 제목 옆 "브라켓 수량 90개"는 부품 개수(책상 경계마다 점 하나)라 브라켓 달린 책상 수와 다르다 — 검산에 쓰지 않는다
+    // (10-29 평택: 부품 90 · 저장된 브라켓 달린 책상 59).
+
+    server.registerTool(
+      "get_seat_layout_bracket_crops",
+      {
+        title: "좌석배치도 브라켓 세기용 도면 받기",
+        description:
+          "존 상자마다 도면을 잘라 이미지로 돌려준다(상자 1개 = 이미지 1장) + 가방 선반 브라켓 세는 지시문. " +
+          "책상 수량·사이즈는 웹이 도면 PDF 글씨로 세므로 브라켓만 센다. 결과는 submit_seat_layout_brackets로 낸다. 20개 넘으면 offset으로 나눠 받는다.",
+        inputSchema: z.object({
+          projectName: projectNameField,
+          source: sourceField,
+          offset: z.number().int().min(0).optional().describe("몇 번째부터 받을지(0부터). 기본 0"),
+        }),
+      },
+      async ({ projectName, source, offset = 0 }, ctx) => {
+        if (!seatAllowed(userOf(ctx.http?.authInfo))) return text(seatOnly, true);
+        try {
+          const r = await resolveSeatLayoutProject(projectName);
+          if ("error" in r) return text(r.error);
+          const { project } = r;
+          if (!project.floorPlanDataUrl) return text(`'${project.name}'에 도면 이미지가 없습니다.`, true);
+          const targets = await bracketTargets(project, source);
+          if (!targets.length) {
+            return text(
+              source === "draft"
+                ? `'${project.name}'에 존 초안이 없습니다. 먼저 get_seat_layout_floorplan → submit_seat_layout_zone_draft.`
+                : `'${project.name}'에는 다시 셀 존이 없습니다(저장된 존 모두 브라켓을 센 모양 그대로). 웹에서 존을 고쳤다면 [프로젝트 저장]부터 해야 합니다.`,
+              source === "draft",
+            );
+          }
+          const batch = targets.slice(offset, offset + CROP_BATCH);
+          if (!batch.length) return text(`offset ${offset}부터는 없습니다(전체 ${targets.length}개).`, true);
+          const images = await buildZoneCrops(project.floorPlanDataUrl, batch.map((t) => t.rect));
+          const more = offset + batch.length < targets.length;
+          const intro =
+            `프로젝트: ${project.name} · ${source === "draft" ? "존 초안 상자" : "다시 셀 존"} ${targets.length}개 중 ${offset + 1}~${offset + batch.length}번째\n` +
+            "이미지 순서(이미지 k장 = 아래 k번):\n" +
+            batch.map((t, i) => `${i + 1}. ${t.label}`).join("\n") +
+            `\n\n결과는 submit_seat_layout_brackets(source="${source}")의 rows에 ` +
+            (source === "draft" ? "box(상자 번호, 1부터)" : "zoneName(위 이름 그대로)") +
+            "와 bagShelfCount로 넣어라." +
+            (more ? ` 더 남았다 — 다 내면 offset ${offset + batch.length}로 다시 받아 이어서 하고, 그때는 append=true로 낸다.` : "") +
+            `\n\n--- 지시문 ---\n${buildBracketPrompt()}`;
+          return {
+            content: [
+              { type: "text" as const, text: intro },
+              ...images.map((im) => ({ type: "image" as const, data: im.data, mimeType: im.mimeType })),
+            ],
+          };
+        } catch (err) {
+          return text(err instanceof Error ? err.message : String(err), true);
+        }
+      },
+    );
+
+    server.registerTool(
+      "submit_seat_layout_brackets",
+      {
+        title: "좌석배치도 브라켓 수 내기",
+        description:
+          "get_seat_layout_bracket_crops로 보고 센 상자·존별 가방 선반 브라켓 수를 **초안**으로 저장한다. 프로젝트는 고치지 않는다 — " +
+          "웹 [채팅 결과 불러오기]에서 넣고 사람이 확인한다.",
+        inputSchema: z.object({
+          projectName: projectNameField,
+          source: sourceField,
+          rows: z.array(z.object({
+            box: z.number().int().min(1).optional().describe("source=draft: 상자 번호(1부터, 받은 목록 그대로)"),
+            zoneName: z.string().optional().describe("source=changed: 존 이름(받은 목록 그대로)"),
+            bagShelfCount: z.number().int().min(0).nullable().describe("브라켓 표시가 있는 책상 수. 구분이 안 되면 null(0과 다르다)"),
+          })).min(1),
+          append: z.boolean().optional().describe("true면 이전 결과에 이어 붙인다(나눠 낼 때 두 번째부터)"),
+          note: z.string().max(2000).nullable().optional().describe("애매했던 곳(한국어)"),
+          modelName: z.string().max(100).describe("지금 센 AI 모델 이름"),
+        }),
+      },
+      async ({ projectName, source, rows, append, note, modelName }, ctx) => {
+        const user = userOf(ctx.http?.authInfo);
+        if (!seatAllowed(user)) return text(seatOnly, true);
+        try {
+          const r = await resolveSeatLayoutProject(projectName);
+          if ("error" in r) return text(r.error);
+          const { project } = r;
+          const meta = { modelName: modelName || null, note: note ?? null, user };
+          const leftLine = (counted: number, all: number) =>
+            counted < all ? `\n(아직 ${all - counted}개 남음 — 마저 받아 append=true로 낸다)` : "";
+
+          if (source === "draft") {
+            const draft = await loadSeatLayoutChatDraft(project.id);
+            const zoneRows = draft?.zones?.rows ?? [];
+            if (!zoneRows.length) return text("존 초안이 없습니다. 먼저 submit_seat_layout_zone_draft.", true);
+            const bad = rows.filter((row) => !row.box || row.box > zoneRows.length).map((row) => String(row.box ?? "번호 없음"));
+            if (bad.length) return text(`저장하지 않았습니다 — 없는 상자 번호: ${bad.join(", ")} (1~${zoneRows.length})`, true);
+            const over = rows.filter((row) => (row.bagShelfCount ?? 0) > zoneRows[row.box! - 1].seats).map((row) => `상자 ${row.box}`);
+            if (over.length) return text(`저장하지 않았습니다 — 브라켓 수가 좌석 수보다 많음: ${over.join(", ")}`, true);
+            const next = zoneRows.map((zr, i) => {
+              const hit = rows.find((row) => row.box === i + 1);
+              // Firestore는 undefined 값을 못 쓴다 — 안 센 상자는 칸 없이 그대로 둔다.
+              return hit ? { ...zr, bagShelfCount: hit.bagShelfCount } : zr;
+            });
+            await saveSeatLayoutChatDraft(project, "zones", { rows: next }, { ...meta, note: note ?? draft?.zones?.note ?? null });
+            const counted = next.filter((zr) => zr.bagShelfCount !== undefined).length;
+            const sum = next.reduce((s, zr) => s + (zr.bagShelfCount ?? 0), 0);
+            return text(
+              `${project.name} 존 초안 ${next.length}개에 브라켓 수를 넣었습니다(센 상자 ${counted}개, 합계 ${sum}).\n` +
+                next.map((zr, i) => `${i + 1}. ${zr.type ?? "유형 미정"} · ${zr.seats}석 · 브라켓 ${zr.bagShelfCount === undefined ? "아직" : zr.bagShelfCount ?? "판단 못 함"}`).join("\n") +
+                leftLine(counted, next.length) +
+                "\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면 존·책상 수량·사이즈·브라켓이 한 번에 들어갑니다. " +
+                "상자를 고치면 그 존만 \"○○점 바뀐 존 브라켓 다시 세 줘\"로 다시 셉니다. 확인한 뒤 [확인하고 통합발주서 등록]. 사용자에게 이 안내를 보여줄 것.",
+            );
+          }
+
+          const targets = (project.zones ?? []).filter((zn) => zn.bagShelfKey !== zoneShapeKey(zn));
+          const bad = rows.filter((row) => !targets.some((t) => t.name === row.zoneName)).map((row) => row.zoneName ?? "이름 없음");
+          if (bad.length) return text(`저장하지 않았습니다 — 다시 셀 목록에 없는 존: ${bad.join(", ")}`, true);
+          const clean: BracketDraftRow[] = rows.map((row) => {
+            const zn = targets.find((t) => t.name === row.zoneName)!;
+            return { zoneName: zn.name, bagShelfCount: row.bagShelfCount, shapeKey: zoneShapeKey(zn) };
+          });
+          let merged = clean;
+          if (append) {
+            const prev = (await loadSeatLayoutChatDraft(project.id))?.brackets?.rows ?? [];
+            merged = [...prev.filter((p) => !clean.some((c) => c.zoneName === p.zoneName)), ...clean];
+          }
+          await saveSeatLayoutChatDraft(project, "brackets", { rows: merged }, meta);
+          const counted = targets.filter((t) => merged.some((m) => m.zoneName === t.name)).length;
+          return text(
+            `${project.name} 바뀐 존 브라켓을 저장했습니다(${counted}/${targets.length}개).\n` +
+              merged.map((m) => `- ${m.zoneName}: 브라켓 ${m.bagShelfCount ?? "판단 못 함"}`).join("\n") +
+              leftLine(counted, targets.length) +
+              "\n\n웹 [책상 발주 도면] 탭 작업 순서의 [채팅 결과 불러오기]를 누르면 들어갑니다. 사용자에게 이 안내를 보여줄 것.",
           );
         } catch (err) {
           return text(err instanceof Error ? err.message : String(err), true);
@@ -628,8 +791,11 @@ const PUBLIC_INSTRUCTIONS =
   "아이센스 PC방 후보지 입지평가. 사용자가 주소를 주고 입지평가·예상매출을 물으면: " +
   "(1) get_site_data로 자료와 채점 기준을 받고 (2) 웹 검색으로 그 주소를 직접 조사한 뒤 " +
   "(3) submit_location_scores로 7개 항목을 내서 받은 결과 요약을 사용자에게 보여준다. 점수를 지어내지 말 것." +
-  " 사용자가 좌석배치도 매장(프로젝트)의 존 초안·책상 인식·PC 대수·좌석번호 매칭을 요청하면: 존 초안은 get_seat_layout_floorplan → submit_seat_layout_zone_draft, 책상·PC는 get_seat_layout_zone_crops → " +
-  "존마다 세기 → submit_seat_layout_zone_counts, 좌석번호는 get_seat_number_data → submit_seat_number_draft. 결과는 초안이라 웹에서 확인·저장한다.";
+  " 사용자가 좌석배치도 매장(프로젝트)의 존 초안·책상 인식·PC 대수·좌석번호 매칭을 요청하면: 존 초안은 get_seat_layout_floorplan → submit_seat_layout_zone_draft " +
+  "(답에 이어서 하라고 나오면 같은 채팅에서 get_seat_layout_bracket_crops(source=draft) → submit_seat_layout_brackets까지), " +
+  "\"바뀐 존 브라켓 다시 세 줘\"는 get_seat_layout_bracket_crops(source=changed) → submit_seat_layout_brackets, " +
+  "책상·PC 인식(PDF 글씨 없는 옛 도면)은 get_seat_layout_zone_crops → 존마다 세기 → submit_seat_layout_zone_counts, " +
+  "좌석번호는 get_seat_number_data → submit_seat_number_draft. 결과는 초안이라 웹에서 확인·저장한다.";
 
 const publicHandler = createMcpHandler((server) => registerTools(server, false), {
   serverInfo: { name: "isens-location-eval", version: "1.2.0" },

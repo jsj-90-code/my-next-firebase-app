@@ -20,7 +20,12 @@ export type DeskCountDraftRow = {
 };
 export type PcCountDraftRow = { zoneName: string; seats: number };
 // 존 초안(2026-10-27): 도면 전체를 보고 제안한 구역 상자. 위치는 도면 기준 0~1 비율, type은 확신할 때만.
-export type ZoneDraftRow = { seats: number; x: number; y: number; w: number; h: number; type: string | null };
+// bagShelfCount(10-29): 존 초안을 낸 같은 채팅에서 상자마다 잘라 본 브라켓 수. 아직 안 셌으면 없음, 구분 못 하면 null.
+export type ZoneDraftRow = {
+  seats: number; x: number; y: number; w: number; h: number; type: string | null; bagShelfCount?: number | null;
+};
+// 존을 고친 뒤 브라켓만 다시 센 결과(10-29). shapeKey = 채팅이 본 저장된 존 모양 — 그 뒤 또 옮겼으면 웹이 계속 "다시 세기"로 둔다.
+export type BracketDraftRow = { zoneName: string; bagShelfCount: number | null; shapeKey: string };
 export type SeatNumberDraftRow = { zoneName: string; ranges: string };
 
 export type SeatLayoutChatDraft = {
@@ -30,4 +35,5 @@ export type SeatLayoutChatDraft = {
   pc?: DraftMeta & { rows: PcCountDraftRow[] };
   seatNumbers?: DraftMeta & { rows: SeatNumberDraftRow[]; unsure: string };
   zones?: DraftMeta & { rows: ZoneDraftRow[] };
+  brackets?: DraftMeta & { rows: BracketDraftRow[] };
 };

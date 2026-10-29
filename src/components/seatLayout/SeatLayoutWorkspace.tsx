@@ -26,7 +26,7 @@ import {
 import { compressFloorPlanToBudget, compressSeatNumberPlateToBudget } from "@/lib/seatLayout/imageCompress";
 import { loadPdfDocument, renderPdfPageToDataUrl } from "@/lib/seatLayout/pdfRender";
 import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/bracketHint";
-import { countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
+import { countDesksByZone, countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
 import { findWalledRoom } from "@/lib/seatLayout/roomSplit";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
@@ -39,12 +39,13 @@ import {
 import { SettingsPanel } from "@/components/seatLayout/SettingsPanel";
 import { applyChatDraft, ChatDraftImportModal, type ChatDraftKind } from "@/components/seatLayout/ChatDraftImportModal";
 import { SeatLayoutSteps, type WorkStep } from "@/components/seatLayout/SeatLayoutSteps";
-import type { SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
+import type { BracketDraftRow, SeatLayoutChatDraft, ZoneDraftRow } from "@/lib/seatLayout/chatDraft";
 
-// 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안.
-type DraftKind = ChatDraftKind | "zones";
+// 채팅 결과 종류 — 확인 화면(ChatDraftImportModal)으로 넣는 3종 + 바로 존으로 넣는 존 초안·브라켓 다시 세기(10-29).
+type DraftKind = ChatDraftKind | "zones" | "brackets";
 import {
   emptyProject,
+  zoneShapeKey,
   type DeskLabelSet,
   type DeskSize,
   type DeskZone,
@@ -336,6 +337,10 @@ export function SeatLayoutWorkspace() {
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null);
   // 고른 도면 페이지의 책상 치수 글씨 위치(페이지 기준). 자르기를 확정할 때 자른 도면 기준으로 바꿔 프로젝트에 넣는다.
   const pageDeskLabelsRef = useRef<DeskLabelSet | null>(null);
+  // 10-29 사용자: 도면(브라켓 쪽)을 고르면 [프로젝트 저장]을 따로 누르지 않아도 저장 — 다음 렌더(도면·글씨가 들어간 뒤)에 저장한다.
+  const autoSavePendingRef = useRef(false);
+  // 존 모양이 바뀌면 책상 수량·사이즈·PC 대수를 도면 PDF 글씨로 다시 센다(아래 효과). 프로젝트를 새로 열 땐 세지 않는다.
+  const recountRef = useRef<{ id: string; desk: string; pc: string } | null>(null);
   // PDF 페이지를 고른 다음(또는 좌석번호표 이미지 업로드 후): 필요없는 부분을 빼고 실제 필요한
   // 영역만 잘라내는 단계. 도면 크롭과 좌석번호표 크롭이 이 crop 상태/캔버스를 공유한다 —
   // cropTarget으로 크롭 완료 후 결과를 어디에 적용할지만 구분한다.
@@ -958,37 +963,66 @@ export function SeatLayoutWorkspace() {
       // 10-28 사용자: 존 하나를 지웠는데 작업 순서가 "책상 수량 채우기"에 머물렀다 — 도면 책상 글씨 위치가 있으면
       // 어느 존에도 안 든 책상이 남았는지로 "존 초안" 단계를 다시 연다(채팅 존 초안은 이미 그린 존을 빼고 빈 곳만 제안한다).
       const uncovered = project.deskLabels && zones.length > 0 ? countUncoveredDesks(project.deskLabels, zones) : 0;
-      return [
-        { key: "upload", title: "매장명 입력·도면(PDF) 올리기", done: !!project.name.trim() && !!floorPlanSrc,
-          hint: "위 [매장명 / 도면]에서 넣습니다. 채팅은 이 매장명으로 프로젝트를 찾습니다." },
-        { key: "save1", title: "프로젝트 저장", done: !!project.updatedAt,
-          hint: "채팅은 저장된 도면을 봅니다.", action: saveAction },
+      // 10-29 사용자 「초단순화」: 도면 PDF 글씨 폭이 있으면 책상 수량·사이즈는 웹이 세고(위 효과), 채팅은 존 초안을 낸 김에
+      // 브라켓까지 센다 → 도면 올리기(자동 저장) → 존 초안 채팅 → (존을 고쳤으면 그 존만 브라켓 다시) → 확인하고 발주서 등록.
+      // 글씨가 없는 옛 도면은 예전 순서(존 다듬고 저장 → 책상 인식 채팅)를 그대로 쓴다.
+      const autoCount = !!project.deskLabels?.widths?.length;
+      const staleBrackets = autoCount ? zones.filter((z) => z.bagShelfKey !== zoneShapeKey(z)) : [];
+      const steps: WorkStep[] = [
+        { key: "upload", title: "매장명 입력·도면(PDF) 올리기", done: !!project.name.trim() && !!floorPlanSrc && !!project.updatedAt,
+          hint: "매장명을 먼저 넣고 도면 PDF에서 브라켓 도면(보통 3페이지)을 고르면 자동으로 저장됩니다. 채팅은 이 매장명으로 프로젝트를 찾습니다.",
+          action: floorPlanSrc && project.name.trim() && !project.updatedAt ? saveAction : undefined },
         { key: "zones",
           title: uncovered > 0 ? `존 초안 받기 — 도면 책상 ${uncovered}개가 아직 어느 존에도 없습니다` : "존 초안 받기 (Claude 채팅)",
           done: zones.length > 0 && uncovered === 0,
           hint: uncovered > 0
             ? "지운 자리나 덜 그린 자리입니다. [프로젝트 저장] 후 채팅으로 존 초안을 다시 받으면 이미 그린 존은 빼고 빈 곳만 제안합니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요."
-            : "구역 상자를 한 번에 넣습니다. 채팅 답이 오기까지 1분 30초쯤 걸립니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
+            : autoCount
+              ? "채팅이 존을 나누고 이어서 브라켓까지 셉니다(2~3분). 불러오면 존·책상 수량·사이즈·브라켓이 한 번에 들어갑니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요."
+              : "구역 상자를 한 번에 넣습니다. 채팅 답이 오기까지 1분 30초쯤 걸립니다. 직접 그리려면 오른쪽에서 존 유형을 고르세요.",
           prompt: `${name} 존 초안 만들어 줘`,
           action: uncovered > 0 && hasUnsavedChanges ? saveAction
             : { label: "채팅 존 초안 불러오기", onClick: () => void openChatDraft("zones"), disabled: chatDraftLoading,
                 emphasize: hasNewChatDraft("zones") } },
-        { key: "tidy", title: "존 다듬고 저장",
-          done: zones.length > 0 && !!last && shapeKey(last.zones) === shapeKey(zones),
-          hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 × 또는 Delete 키로 삭제. 유형·이름은 존 목록에서 고칩니다.",
-          action: saveAction },
-        { key: "desk", title: "책상 수량 채우기 (Claude 채팅)", done: counted && saved,
-          hint: "채팅 답이 오기까지 30초쯤 걸립니다. 결과를 불러와 확인·적용한 뒤 [프로젝트 저장]을 눌러야 반영됩니다. 구역을 옮기면 노란 느낌표(!)가 붙으니 다시 인식하세요.",
-          prompt: `${name} 책상 인식해 줘`,
-          alt: "몇 개만 고칠 땐 존 목록의 [수정](또는 구역 클릭 → Enter)으로 수량·사이즈·브라켓을 넣고 [프로젝트 저장]하면 됩니다.",
-          action: hasUnsavedChanges ? saveAction
-            : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("desk"), disabled: chatDraftLoading || zones.length === 0,
-                emphasize: hasNewChatDraft("desk") } },
-        // 10-27 밤 사용자: 좌석번호 탭처럼 마지막에 등록 버튼 — 책상은 인테/가맹 통합발주서.
-        { key: "order", title: "인테/가맹 통합발주서 등록", done: !!deskOrderSheetUrl,
-          hint: "수량을 다 채우고 저장했으면 발주서 시트에 올립니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
-          action: { label: "인테/가맹 통합발주서 등록", onClick: () => void handlePublishDeskOrder(), disabled: busy, emphasize: true } },
       ];
+      if (autoCount) {
+        steps.push({ key: "brackets",
+          title: staleBrackets.length > 0 ? `브라켓 다시 세기 — 존 ${staleBrackets.length}개 (Claude 채팅)` : "브라켓 확인",
+          done: zones.length > 0 && staleBrackets.length === 0,
+          hint: staleBrackets.length > 0
+            ? `${staleBrackets.map((z) => z.name).join(", ")} — 고쳤거나 직접 그려서 브라켓을 아직 안 센 존입니다. 책상 수량·사이즈는 이미 다시 셌습니다. ` +
+              "저장한 뒤 채팅에 보내면 이 존들만 1분 안에 셉니다."
+            : "존을 고치면(옮기기·크기·새로 그리기) 그 존만 여기서 다시 셉니다.",
+          prompt: staleBrackets.length > 0 ? `${name} 바뀐 존 브라켓 다시 세 줘` : undefined,
+          alt: staleBrackets.length > 0 ? "몇 개만 고칠 땐 존 목록의 [수정]으로 브라켓 수를 직접 넣어도 됩니다." : undefined,
+          action: staleBrackets.length === 0 ? undefined
+            : hasUnsavedChanges ? saveAction
+            : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("brackets"), disabled: chatDraftLoading,
+                emphasize: hasNewChatDraft("brackets") } });
+      } else {
+        steps.push(
+          { key: "tidy", title: "존 다듬고 저장",
+            done: zones.length > 0 && !!last && shapeKey(last.zones) === shapeKey(zones),
+            hint: "구역을 클릭해 선택 → 모서리 드래그로 크기, 안쪽 드래그로 위치. 오른쪽 위 × 또는 Delete 키로 삭제. 유형·이름은 존 목록에서 고칩니다.",
+            action: saveAction },
+          { key: "desk", title: "책상 수량 채우기 (Claude 채팅)", done: counted && saved,
+            hint: "이 도면은 PDF 책상 글씨가 없어 웹이 수량을 못 셉니다. 채팅 답이 오기까지 30초쯤 걸립니다. 결과를 불러와 확인·적용한 뒤 [프로젝트 저장]을 눌러야 반영됩니다.",
+            prompt: `${name} 책상 인식해 줘`,
+            alt: "몇 개만 고칠 땐 존 목록의 [수정](또는 구역 클릭 → Enter)으로 수량·사이즈·브라켓을 넣고 [프로젝트 저장]하면 됩니다.",
+            action: hasUnsavedChanges ? saveAction
+              : { label: "채팅 결과 불러오기", onClick: () => void openChatDraft("desk"), disabled: chatDraftLoading || zones.length === 0,
+                  emphasize: hasNewChatDraft("desk") } },
+        );
+      }
+      // 10-27 밤 사용자: 좌석번호 탭처럼 마지막에 등록 버튼 — 책상은 인테/가맹 통합발주서.
+      // 10-29 사용자: "확인" = 등록 — 합계를 한 번 보여 주고 바로 발주서에 올린다(저장도 같이).
+      const blocked = zones.length === 0 || (autoCount && (staleBrackets.length > 0 || uncovered > 0));
+      steps.push({ key: "order", title: "확인하고 통합발주서 등록", done: !!deskOrderSheetUrl,
+        hint: blocked && zones.length > 0
+          ? "위 단계가 남아 있습니다 — 브라켓을 다 세고 모든 책상이 존에 들어가야 등록할 수 있습니다."
+          : "존 목록의 수량·사이즈·브라켓을 확인하고 누르면 합계를 한 번 보여 준 뒤 저장하고 발주서 시트에 올립니다. 등록하면 위쪽 바에 열기 링크가 생깁니다.",
+        action: { label: "확인하고 통합발주서 등록", onClick: () => void confirmAndPublishDeskOrder(), disabled: busy || blocked, emphasize: true } });
+      return steps;
     }
     if (activeTab === "pc") {
       const pcZones = project.pcZones;
@@ -1051,11 +1085,15 @@ export function SeatLayoutWorkspace() {
       const draft = await loadChatDraft(project.id);
       setLatestChatDraft({ projectId: project.id, draft });
       if (!draft?.[kind]) {
-        const ask = { seatNumbers: "좌석번호 매칭해 줘", desk: "책상 인식해 줘", pc: "PC 대수 세어 줘", zones: "존 초안 만들어 줘" }[kind];
+        const ask = {
+          seatNumbers: "좌석번호 매칭해 줘", desk: "책상 인식해 줘", pc: "PC 대수 세어 줘", zones: "존 초안 만들어 줘",
+          brackets: "바뀐 존 브라켓 다시 세 줘",
+        }[kind];
         setStatusMsg(`아직 채팅 결과가 없습니다 — Claude 채팅에서 "${project.name} ${ask}"라고 한 뒤 다시 누르세요.`, "error");
         return;
       }
       if (kind === "zones") applyZoneDraft(draft.zones?.rows ?? []);
+      else if (kind === "brackets") applyBracketDraft(draft.brackets?.rows ?? []);
       else {
         setChatDraftModal({ kind, draft });
         // 10-27 사용자: 오른쪽에 붙는 창을 못 보고 "안 된다"고 생각했다 → 작업 순서에도 안내.
@@ -1104,7 +1142,7 @@ export function SeatLayoutWorkspace() {
       ];
     });
     const namesSoFar: ActiveZone[] = [...project.zones];
-    const drafts: DeskZone[] = pieces.map(({ row: r, rect }, i) => {
+    const drafts: DeskZone[] = pieces.map(({ row: r, rect, splitFrom }, i) => {
       // 10-28: 4인룸도 정식 유형이 되어 다른 유형과 같이 처리한다(옛: "기타" 유형에 이름 "4인룸A").
       const matchedType = r.type ? ZONE_TYPES.find((t) => t.key === r.type) : undefined;
       const typeKey: ZoneTypeKey = matchedType?.key ?? "etc";
@@ -1130,6 +1168,12 @@ export function SeatLayoutWorkspace() {
         chair: spec.chair,
         bagShelfCount: 0,
       };
+      // 10-29: 같은 채팅에서 상자마다 센 브라켓 수. 안 셌으면(undefined) "다시 세기"로 남는다. 방으로 나눈 상자는 브라켓이
+      // 어느 쪽 몫인지 모르니, 0이 아니면 두 조각 모두 다시 센다. null(구분 못 함)은 0으로 두고 센 것으로 본다(평택 같은 표시 없는 도면).
+      if (r.bagShelfCount !== undefined && !(splitFrom && (r.bagShelfCount ?? 0) > 0)) {
+        zone.bagShelfCount = Math.max(0, Math.min(r.bagShelfCount ?? 0, zone.seats));
+        zone.bagShelfKey = zoneShapeKey(zone);
+      }
       namesSoFar.push(zone);
       return zone;
     });
@@ -1148,9 +1192,43 @@ export function SeatLayoutWorkspace() {
       : ` 상자 ${snappedCount}개를 책상·의자 끝에 맞췄습니다.`;
     const splitNote = splits.length ? ` 벽으로 막힌 방을 따로 나눴습니다: ${splits.join(", ")}.` : "";
     const mismatchNote = mismatches.length ? ` 좌석 수 확인: ${mismatches.join(", ")}.` : "";
+    const autoCount = !!labels?.widths?.length;
+    const bracketPending = drafts.filter((z) => z.bagShelfKey !== zoneShapeKey(z)).length;
+    const next = !autoCount
+      ? " 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 \"책상 인식\"을 하세요."
+      : bracketPending > 0
+        ? ` 책상 수량·사이즈는 도면 글씨로 채웠습니다. 브라켓을 아직 안 센 존이 ${bracketPending}개 있습니다 — 작업 순서의 "브라켓 다시 세기"를 따르세요.`
+        : " 책상 수량·사이즈·브라켓까지 채웠습니다. 존을 고치면 그 존만 브라켓을 다시 셉니다. 다 됐으면 [확인하고 통합발주서 등록].";
     setStatusMsg(
-      `존 초안 ${drafts.length}개를 넣었습니다.${snapNote}${splitNote}${mismatchNote} 상자 위치를 다듬고 이름·유형을 고른 뒤 [프로젝트 저장], 그다음 채팅으로 "책상 인식"을 하세요.`,
+      `존 초안 ${drafts.length}개를 넣었습니다.${snapNote}${splitNote}${mismatchNote}${next}`,
       mismatches.length ? "info" : "success",
+    );
+  }
+
+  // 브라켓 다시 세기(10-29): 확인 화면 없이 바로 넣는다 — 채팅이 본 존 모양(shapeKey)과 지금 모양이 같은 존만.
+  // 그 사이 또 옮긴 존은 그대로 "다시 세기"로 남긴다.
+  function applyBracketDraft(rows: BracketDraftRow[]) {
+    const applied: string[] = [];
+    const moved: string[] = [];
+    const next = project.zones.map((z) => {
+      const row = rows.find((r) => r.zoneName === z.name);
+      if (!row) return z;
+      if (row.shapeKey !== zoneShapeKey(z)) {
+        moved.push(z.name);
+        return z;
+      }
+      applied.push(`${z.name} ${row.bagShelfCount ?? "판단 못 함"}`);
+      return {
+        ...z,
+        bagShelfCount: row.bagShelfCount == null ? z.bagShelfCount : Math.max(0, Math.min(row.bagShelfCount, z.seats)),
+        bagShelfKey: zoneShapeKey(z),
+      };
+    });
+    setProject((p) => ({ ...p, zones: next }));
+    setStatusMsg(
+      (applied.length ? `브라켓을 넣었습니다: ${applied.join(", ")}.` : "넣을 브라켓 결과가 없습니다.") +
+        (moved.length ? ` 채팅이 센 뒤 또 옮긴 존은 다시 세야 합니다: ${moved.join(", ")}.` : ""),
+      moved.length || !applied.length ? "info" : "success",
     );
   }
 
@@ -1750,6 +1828,71 @@ export function SeatLayoutWorkspace() {
     pdfDocRef.current = null;
   }
 
+  useEffect(() => {
+    if (!autoSavePendingRef.current || !rawFloorPlanDataUrl) return;
+    autoSavePendingRef.current = false;
+    if (!project.name.trim()) return; // 업로드는 매장명이 있어야 열리지만, 그 사이 이름을 지운 경우
+    void (async () => {
+      setBusy(true);
+      const saved = await silentSave();
+      setBusy(false);
+      if (saved) {
+        setStatusMsg(
+          `도면을 저장했습니다. 이제 Claude 앱에서 "${saved.name} 존 초안 만들어 줘"라고 보내세요.`,
+          "success",
+        );
+      }
+    })();
+    // silentSave는 매 렌더 새로 만들어지는 함수라 의존성에 넣지 않는다 — 도면이 새로 들어온 렌더(표시가 켜진 뒤)에 한 번만 돈다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawFloorPlanDataUrl, project.deskLabels]);
+
+  // 10-29: 존을 넣거나 옮기면 그 안의 도면 책상 글씨로 수량·사이즈(책상 탭)·대수(PC 탭, 책상 수 = PC 대수)를 다시 센다 —
+  // 옛 채팅 "책상 인식"·"PC 대수" 단계 대신. 책상이 하나도 안 든 존(카운터 PC 등)과 옛 도면(글씨 폭 없음)은 손대지 않는다.
+  useEffect(() => {
+    const deskKey = project.zones.map(zoneShapeKey).join(";");
+    const pcKey = project.pcZones.map(zoneShapeKey).join(";");
+    const prev = recountRef.current;
+    recountRef.current = { id: project.id, desk: deskKey, pc: pcKey };
+    const labels = project.deskLabels;
+    if (!prev || prev.id !== project.id || !labels?.widths?.length) return;
+    const deskCounts = deskKey !== prev.desk ? countDesksByZone(labels, project.zones) : null;
+    const pcCounts = pcKey !== prev.pc ? countDesksByZone(labels, project.pcZones) : null;
+    const sameBreakdown = (a: SizeBreakdownEntry[], b: SizeBreakdownEntry[]) =>
+      a.length === b.length && a.every((x, i) => x.deskSize === b[i].deskSize && x.qty === b[i].qty);
+    const deskChanged = deskCounts?.some((c, i) => {
+      const z = project.zones[i];
+      return !!c && (c.seats !== z.seats || !sameBreakdown(c.sizeBreakdown, z.sizeBreakdown));
+    });
+    const pcChanged = pcCounts?.some((c, i) => {
+      const z = project.pcZones[i];
+      return !!c && (z.typeKey === "desk_only" ? 0 : c.seats) !== z.seats;
+    });
+    if (!deskChanged && !pcChanged) return;
+    setProject((p) => ({
+      ...p,
+      zones: deskChanged
+        ? p.zones.map((z, i) => {
+            const c = deskCounts?.[i];
+            if (!c) return z;
+            return {
+              ...z,
+              seats: c.seats,
+              sizeBreakdown: c.sizeBreakdown,
+              deskSize: c.sizeBreakdown[0]?.deskSize ?? "",
+              bagShelfCount: Math.min(z.bagShelfCount, c.seats),
+            };
+          })
+        : p.zones,
+      pcZones: pcChanged
+        ? p.pcZones.map((z, i) => {
+            const c = pcCounts?.[i];
+            return c ? { ...z, seats: z.typeKey === "desk_only" ? 0 : c.seats } : z;
+          })
+        : p.pcZones,
+    }));
+  }, [project.id, project.zones, project.pcZones, project.deskLabels]);
+
   // ---------------- PDF 페이지 크롭 (제목 블록/범례 등을 빼고 도면 영역만 선택) ----------------
   useEffect(() => {
     const canvas = cropCanvasRef.current;
@@ -1860,7 +2003,8 @@ export function SeatLayoutWorkspace() {
       const labels = pageDeskLabelsRef.current;
       setProject((p) => ({ ...p, deskLabels: labels ? cropDeskLabels(labels, cropRect) : null }));
       closeCrop();
-      setStatusMsg("도면 영역을 잘라서 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+      autoSavePendingRef.current = true;
+      setStatusMsg("도면 영역을 잘라서 불러왔습니다. 저장 중...");
     }
   }
 
@@ -1877,7 +2021,8 @@ export function SeatLayoutWorkspace() {
       const labels = pageDeskLabelsRef.current;
       setProject((p) => ({ ...p, deskLabels: labels }));
       closeCrop();
-      setStatusMsg("도면을 불러왔습니다. \"프로젝트 저장\"을 눌러야 보관됩니다.", "success");
+      autoSavePendingRef.current = true;
+      setStatusMsg("도면을 불러왔습니다. 저장 중...");
     }
   }
 
@@ -2115,6 +2260,25 @@ export function SeatLayoutWorkspace() {
       }
     }
     setBusy(false);
+  }
+
+  // 10-29 사용자: 마지막 [확인] = 통합발주서 등록. 누르기 전에 합계(책상·사이즈·브라켓 달린 책상)를 한 번 보여 준다.
+  // 도면 제목 옆 "브라켓 수량 90개"는 부품 개수(책상 경계마다 점 하나 — 3석 줄이면 4개)라 이 합과 다르다 — 대조하지 않는다
+  // (10-29 평택: 부품 90 · 브라켓 달린 책상 59).
+  async function confirmAndPublishDeskOrder() {
+    const zones = project.zones;
+    const seats = zones.reduce((s, z) => s + z.seats, 0);
+    const bySize = new Map<string, number>();
+    zones.forEach((z) => z.sizeBreakdown.forEach((b) => bySize.set(b.deskSize, (bySize.get(b.deskSize) ?? 0) + b.qty)));
+    const brackets = zones.reduce((s, z) => s + (z.bagShelfCount ?? 0), 0);
+    const ok = window.confirm(
+      `${project.name} 통합발주서에 등록합니다.\n\n` +
+        `존 ${zones.length}개 · 책상 ${seats}개\n` +
+        [...bySize].map(([size, qty]) => `  ${size} ${qty}개`).join("\n") +
+        `\n브라켓 달린 책상 ${brackets}개\n\n이대로 등록할까요?`,
+    );
+    if (!ok) return;
+    await handlePublishDeskOrder();
   }
 
   async function handlePublishDeskOrder() {
@@ -2711,7 +2875,7 @@ export function SeatLayoutWorkspace() {
                 />
                 {!project.name.trim() && (
                   <p className="mt-1 text-xs font-medium text-[var(--sl-warn)]">
-                    매장명을 입력하세요 — Claude 채팅이 이 이름으로 프로젝트를 찾습니다.
+                    매장명을 먼저 입력하세요 — 넣어야 도면을 올릴 수 있습니다(Claude 채팅이 이 이름으로 프로젝트를 찾습니다).
                   </p>
                 )}
                 <label
@@ -2723,13 +2887,15 @@ export function SeatLayoutWorkspace() {
                 {/* 2026-09-14 — 이미지도 받다가 PDF만 받는다(사용자 확정). 실무 PDF에는 배치도와
                     책가방 선반 도면이 함께 들어 있는데, 화면 캡처 이미지를 올리면 그중 한 장만
                     들어와 브라켓 표시가 아예 없는 상태가 된다. 권유로는 안 지켜졌다. */}
+                {/* 10-29 사용자: 매장명을 넣어야 도면을 올릴 수 있게 — 도면을 고르면 바로 자동 저장하는데, 채팅은 매장명으로 찾는다. */}
                 <input
                   id="floorplan-file-input"
                   ref={fileInputRef}
                   type="file"
                   accept="application/pdf,.pdf"
                   onChange={handleFileChange}
-                  className="mt-1 w-full text-sm text-[#5c5346] file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:opacity-80 dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
+                  disabled={!project.name.trim()}
+                  className="mt-1 w-full disabled:cursor-not-allowed disabled:opacity-50 text-sm text-[#5c5346] file:mr-3 file:cursor-pointer file:rounded-full file:border-0 file:bg-[#171310] file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white file:transition file:duration-150 hover:file:opacity-80 dark:text-[#c9bfae] dark:file:bg-[#f2ede2] dark:file:text-[#171310]"
                 />
                 <p className="mt-1 text-xs font-medium text-[var(--sl-warn)]">
                   도면은 모든 탭에서 공통으로 사용됩니다.

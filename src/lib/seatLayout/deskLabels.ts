@@ -10,7 +10,8 @@
 // - 의자는 책상 끝에서 약 600mm까지 나온다(울산 확대 화면 실측 — 책상 깊이 680의 약 0.86배).
 import type { PDFPageProxy } from "pdfjs-dist";
 import { cropWallLines, extractWallLines } from "./roomSplit";
-import type { DeskLabelSet, NormalizedRect, ZoneTypeKey } from "./types";
+import { DESK_SIZE_OPTIONS } from "./constants";
+import type { DeskLabelSet, DeskSize, NormalizedRect, SizeBreakdownEntry, ZoneTypeKey } from "./types";
 
 const DIM_RE = /^(\d{3,4})\*(\d{3,4})$/;
 const CHAIR_MM = 600;
@@ -87,17 +88,25 @@ export async function extractDeskLabels(page: PDFPageProxy): Promise<DeskLabelSe
   } catch {
     walls = undefined;
   }
-  return { desks, mmX: unitsPerMm / vp.width, mmY: unitsPerMm / vp.height, ...(walls ? { walls } : {}) };
+  return {
+    desks,
+    widths: raws.map((r) => r.wMm),
+    mmX: unitsPerMm / vp.width,
+    mmY: unitsPerMm / vp.height,
+    ...(walls ? { walls } : {}),
+  };
 }
 
 /** 페이지 기준 좌표 → 자른 도면 기준 좌표. 자른 바깥(범례·제목 칸)의 글씨는 버린다. */
 export function cropDeskLabels(set: DeskLabelSet, crop: NormalizedRect): DeskLabelSet | null {
+  const keep = set.desks.map((d) => {
+    const cx = d.x + d.w / 2;
+    const cy = d.y + d.h / 2;
+    return cx >= crop.x && cx <= crop.x + crop.w && cy >= crop.y && cy <= crop.y + crop.h;
+  });
+  const widths = set.widths?.filter((_, i) => keep[i]);
   const desks = set.desks
-    .filter((d) => {
-      const cx = d.x + d.w / 2;
-      const cy = d.y + d.h / 2;
-      return cx >= crop.x && cx <= crop.x + crop.w && cy >= crop.y && cy <= crop.y + crop.h;
-    })
+    .filter((_, i) => keep[i])
     .map((d) => ({
       x: r4((d.x - crop.x) / crop.w),
       y: r4((d.y - crop.y) / crop.h),
@@ -106,7 +115,13 @@ export function cropDeskLabels(set: DeskLabelSet, crop: NormalizedRect): DeskLab
     }));
   if (!desks.length) return null;
   const walls = set.walls ? cropWallLines(set.walls, crop) : undefined;
-  return { desks, mmX: set.mmX / crop.w, mmY: set.mmY / crop.h, ...(walls ? { walls } : {}) };
+  return {
+    desks,
+    ...(widths ? { widths } : {}),
+    mmX: set.mmX / crop.w,
+    mmY: set.mmY / crop.h,
+    ...(walls ? { walls } : {}),
+  };
 }
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -235,4 +250,57 @@ export function countUncoveredDesks(labels: DeskLabelSet, zones: NormalizedRect[
     const c = center(toBox(d));
     return !boxes.some((b) => inside(c, b));
   }).length;
+}
+
+/** 글씨 폭(mm) → 표준 책상 사이즈. 표준에서 30mm 넘게 벗어나면 null(사람이 확인). */
+export function deskSizeOfWidth(mm: number): DeskSize | null {
+  let best: DeskSize | null = null;
+  let bestDiff = Infinity;
+  for (const s of DESK_SIZE_OPTIONS) {
+    const diff = Math.abs(parseInt(s, 10) - mm);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = s;
+    }
+  }
+  return bestDiff <= 30 ? best : null;
+}
+
+export type ZoneDeskCount = { seats: number; sizeBreakdown: SizeBreakdownEntry[]; unknown: number };
+
+/**
+ * 존마다 그 안 책상 글씨를 세어 수량·사이즈를 낸다(10-29 — 채팅 "책상 인식" 단계를 없앴다. 글씨 수는 세 도면 모두 범례 수량과 같음).
+ * 책상 = 가운데가 존 상자 안에 든 글씨. 두 존에 걸치면 더 작은 존 몫(snapZonesToDesks와 같은 규칙, 방도 포함).
+ * 폭 정보가 없는 옛 도면이면 null — 그땐 지금 값을 그대로 둔다. 책상이 하나도 안 든 존(카운터 등)도 null.
+ */
+export function countDesksByZone(labels: DeskLabelSet, zones: NormalizedRect[]): (ZoneDeskCount | null)[] {
+  const widths = labels.widths;
+  if (!widths || widths.length !== labels.desks.length) return zones.map(() => null);
+  const boxes = zones.map(toBox);
+  const perZone = zones.map(() => [] as number[]);
+  labels.desks.forEach((d, di) => {
+    const c = center(toBox(d));
+    let best = -1;
+    let bestArea = Infinity;
+    boxes.forEach((b, zi) => {
+      const area = zones[zi].w * zones[zi].h;
+      if (inside(c, b) && area < bestArea) {
+        bestArea = area;
+        best = zi;
+      }
+    });
+    if (best >= 0) perZone[best].push(widths[di]);
+  });
+  return perZone.map((ws) => {
+    if (!ws.length) return null;
+    const qty = new Map<DeskSize, number>();
+    let unknown = 0;
+    for (const w of ws) {
+      const size = deskSizeOfWidth(w);
+      if (size) qty.set(size, (qty.get(size) ?? 0) + 1);
+      else unknown += 1;
+    }
+    const sizeBreakdown = DESK_SIZE_OPTIONS.filter((s) => qty.has(s)).map((s) => ({ deskSize: s, qty: qty.get(s)! }));
+    return { seats: ws.length, sizeBreakdown, unknown };
+  });
 }

@@ -60,6 +60,9 @@ export type DeskZone = NormalizedRect & {
   // 이 존 안에서 "가방 선반 브라켓" 표시(도면 위 마주보는 책상 표시)가 있는 좌석 수.
   // 이 좌석엔 아이락스 헤드셋걸이, 나머지(= seats - bagShelfCount)엔 아이센스 헤드셋걸이가 설치된다.
   bagShelfCount: number;
+  // 브라켓 수를 넣었을 때의 존 모양(zoneShapeKey). 지금 모양과 다르면 존을 옮긴 뒤라 브라켓을 다시 세야 한다(10-29).
+  // 없으면(직접 그린 존·옛 프로젝트) 아직 안 센 것으로 본다.
+  bagShelfKey?: string | null;
 };
 
 export type PcSpecFieldId =
@@ -93,6 +96,11 @@ export type PcZone = NormalizedRect & {
   pcOverrides: PcSpecValues;
 };
 
+/** 존 모양(위치·크기) 비교용 글자. 브라켓을 센 뒤 존을 옮겼는지 웹·채팅 서버가 같은 식으로 본다. */
+export function zoneShapeKey(z: NormalizedRect): string {
+  return `${z.x.toFixed(4)}|${z.y.toFixed(4)}|${z.w.toFixed(4)}|${z.h.toFixed(4)}`;
+}
+
 // 존 하나에 매칭된 좌석번호표 상의 번호 범위 (예: "1~10, 25~30"). AI가 자동 인식한 값을
 // 그대로 쓰거나, 틀린 부분은 사람이 직접 고쳐서 저장한다.
 export type SeatNumberRangeEntry = {
@@ -104,6 +112,8 @@ export type SeatNumberRangeEntry = {
 // mmX·mmY = 실제 1mm가 도면 가로·세로 비율로 얼마인지(의자 깊이를 상자에 더할 때 쓴다).
 export type DeskLabelSet = {
   desks: NormalizedRect[];
+  // desks와 같은 순서의 책상 폭(mm, 글씨 "850*680"의 850). 10-29 전에 올린 도면엔 없다 → 수량 자동 세기를 건너뛴다.
+  widths?: number[];
   mmX: number;
   mmY: number;
   // 긴 수평·수직선(벽·칸막이 후보)을 x0,y0,x1,y1 넷씩 이어 붙인 평평한 목록 — 등 맞댄 방 찾기용(roomSplit.ts, 10-28).
