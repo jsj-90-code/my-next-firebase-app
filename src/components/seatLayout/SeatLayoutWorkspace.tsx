@@ -437,7 +437,8 @@ export function SeatLayoutWorkspace() {
   const floorPlanSrc = rawFloorPlanDataUrl ?? project.floorPlanDataUrl;
   const zoneTypesCollapsed =
     activeTab !== "seatNumber" && !selectedTypeKey &&
-    (zoneTypesOpen === false || (zoneTypesOpen === null && (activeTab === "pc" ? project.pcZones : project.zones).length > 0));
+    // 10-29 사용자: 존 초안을 받은 직후가 바로 직접 수정할 때라 자동으로 접히면 불편 → 자동 접기 없앰, [접기 ▸]로만 접는다.
+    zoneTypesOpen === false;
   // 10-29 사용자: 좌석번호 탭에서 피난안내도에 존 구역을 겹쳐 볼 수 있으면 왼쪽 도면은 숨기고 겹친 피난안내도만 크게 — 비교가 쉽다.
   // [존 구역 겹쳐 보기]를 끄면 예전처럼 도면·피난안내도를 나란히.
   const plateOnly =
