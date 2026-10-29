@@ -1304,7 +1304,7 @@ export function SeatLayoutWorkspace() {
         for (let i = 1; i <= pdf.numPages; i++) {
           const thumbnail = await renderPdfPageToDataUrl(pdf, i, 260);
           setPdfPickerPages((prev) => [...(prev ?? []), { pageNumber: i, thumbnail }]);
-          setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
+          setStatusMsg(`${lead}PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
         }
         setStatusMsg(`PDF ${pdf.numPages}페이지 중 좌석번호표(피난안내도) 페이지를 선택해주세요.`, "success");
       } catch (err) {
@@ -1775,7 +1775,11 @@ export function SeatLayoutWorkspace() {
         setFloorPdfLoaded(true);
         // 10-29 사용자: 실무 PDF 10여 개 모두 브라켓 도면이 3쪽 → 3쪽을 바로 골라 영역까지 자동으로. 책상 글씨가 없으면 직접 고르기로.
         if (pdf.numPages >= 3 && (await autoPickFloorPage(pdf, 3))) return;
-        await openFloorPagePicker(pdf);
+        // 자동으로 못 고른 이유를 쪽 고르기 안내 앞에 남긴다(10-29: 이유 문구가 "그리는 중…"에 바로 덮였다).
+        await openFloorPagePicker(
+          pdf,
+          pdf.numPages >= 3 ? "3쪽에서 책상 치수 글씨를 못 찾았습니다." : `${pdf.numPages}쪽짜리 PDF라 3쪽(브라켓 도면)이 없습니다.`,
+        );
       } catch (err) {
         setStatusMsg(`PDF를 읽지 못했습니다: ${err instanceof Error ? err.message : err}`, "error");
       } finally {
@@ -1794,10 +1798,7 @@ export function SeatLayoutWorkspace() {
     } catch {
       labels = null;
     }
-    if (!labels) {
-      setStatusMsg(`${pageNumber}쪽에서 책상 치수 글씨를 못 찾았습니다 — 배치도 페이지를 직접 골라 주세요.`, "error");
-      return false;
-    }
+    if (!labels) return false;
     const dataUrl = await renderPdfPageToDataUrl(pdf, pageNumber, 10000);
     const img = await loadImage(dataUrl);
     const rect = autoCropRect(labels);
@@ -1846,7 +1847,8 @@ export function SeatLayoutWorkspace() {
   }
 
   /** 수동: 쪽 그림을 하나씩 그려 고르게 한다(예전 방식). */
-  async function openFloorPagePicker(pdf: PDFDocumentProxy) {
+  async function openFloorPagePicker(pdf: PDFDocumentProxy, reason?: string) {
+    const lead = reason ? `${reason} ` : "";
     pdfDocRef.current = pdf;
     // 2026-09-14 — 그리는 대로 하나씩 붙인다(위 좌석번호표 쪽 주석 참고).
     setPdfPickerTarget("floorplan");
@@ -1870,7 +1872,7 @@ export function SeatLayoutWorkspace() {
       setBracketHintPage(pickLikelyBracketPage(ratios));
       setStatusMsg(`PDF ${pdf.numPages}장 중 ${i}장째 그리는 중...`);
     }
-    setStatusMsg(`PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, "success");
+    setStatusMsg(`${lead}PDF ${pdf.numPages}페이지 중 배치도 페이지를 선택해주세요.`, reason ? "info" : "success");
   }
 
   async function selectPdfPage(pageNumber: number) {
