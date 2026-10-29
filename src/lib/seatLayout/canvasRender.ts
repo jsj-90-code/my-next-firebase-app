@@ -393,7 +393,7 @@ export function renderDeskFloorplanImage(
   const geometry = computeLegendGeometry(cardGroups.length);
   const geo = drawFloorPlanCard(c, img, cardY, cardH, geometry.cardX, geometry.cardW);
   drawZoneOverlaysOnCard(c, zones, geo, zoneDisplayLabels(cardGroups));
-  if (deskLabels) drawMixedSizeTags(c, zones, deskLabels, geo);
+  if (deskLabels) drawMixedSizeTags(c, zones, deskLabels, geo, cardGroups);
 
   const panelAreaX = 20;
   const panelAreaY = 20;
@@ -1106,16 +1106,29 @@ const SIZE_TAG_COLORS: Record<string, string> = {
 };
 
 /**
- * 사이즈가 두 가지 이상 섞인 존만, 책상마다 가운데에 반투명 색 표 + 폭(mm) 숫자를 그린다(10-29 사용자 「도면에 책상 사이즈가 잘
- * 안 보이니 피난안내도에 겹친 것처럼 음영으로, 사이즈 여러 개인 좌석만」). 책상 위치·폭은 도면 PDF 글씨(deskLabels) — 존 배정은
- * 수량 세기(countDesksByZone)와 같은 규칙(가운데가 든 가장 작은 존).
+ * 사이즈가 두 가지 이상 섞인 카드의 존만, 책상마다 가운데에 반투명 색 표 + 폭(mm) 숫자를 그린다(10-29 사용자 「도면에 책상 사이즈가
+ * 잘 안 보이니 피난안내도에 겹친 것처럼 음영으로, 사이즈 여러 개인 좌석만」). 기준은 존 하나가 아니라 **카드**(같은 유형·사양으로
+ * 합친 묶음) — 「존 섞여 있으면 다 넣어야지, 멀티존 사이즈 3종류니까 멀티존 전부」: 멀티존 카드가 820·850·910이면 820만 쓰는
+ * 멀티존 조각에도 표를 그린다. 책상 위치·폭은 도면 PDF 글씨(deskLabels), 존 배정은 수량 세기와 같은 규칙(가운데가 든 가장 작은 존).
  */
-function drawMixedSizeTags(c: CanvasRenderingContext2D, zones: DeskZone[], labels: DeskLabelSet, geo: FloorPlanGeo) {
+function drawMixedSizeTags(
+  c: CanvasRenderingContext2D,
+  zones: DeskZone[],
+  labels: DeskLabelSet,
+  geo: FloorPlanGeo,
+  groups: { names: string[] }[],
+) {
   const widths = labels.widths;
   if (!widths || widths.length !== labels.desks.length) return;
-  const mixed = new Set(
-    zones.flatMap((z, i) => (new Set(getZoneSizeEntries(z).map((e) => e.deskSize)).size > 1 ? [i] : [])),
+  const mixedNames = new Set(
+    groups.flatMap((g) => {
+      const sizes = new Set(
+        zones.filter((z) => g.names.includes(z.name)).flatMap((z) => getZoneSizeEntries(z).map((e) => e.deskSize)),
+      );
+      return sizes.size > 1 ? g.names : [];
+    }),
   );
+  const mixed = new Set(zones.flatMap((z, i) => (mixedNames.has(z.name) ? [i] : [])));
   if (!mixed.size) return;
   c.save();
   c.textAlign = "center";
