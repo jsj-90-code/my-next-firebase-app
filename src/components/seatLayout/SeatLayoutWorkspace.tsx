@@ -29,7 +29,7 @@ import { bracketColorRatio, pickLikelyBracketPage } from "@/lib/seatLayout/brack
 import { autoCropRect, mergeFacingZones, countDesksByZone, countUncoveredDesks, cropDeskLabels, extractDeskLabels, snapZonesToDesks } from "@/lib/seatLayout/deskLabels";
 import { findWalledRoom } from "@/lib/seatLayout/roomSplit";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject } from "@/lib/seatLayout/store";
+import { deleteProject, hasUsedSeatConnector, listProjects, loadChatDraft, loadProject, saveProject, watchChatDraft } from "@/lib/seatLayout/store";
 import {
   defaultSeatLayoutSettings,
   loadSeatLayoutSettings,
@@ -936,25 +936,33 @@ export function SeatLayoutWorkspace() {
   // ---------------- 채팅 결과 불러오기 (2026-10-27) ----------------
   // 직원 개인 Claude(커넥터)가 저장된 프로젝트의 도면을 보고 낸 초안(seatLayoutChatDrafts)을 확인 화면에 띄운다.
   // 채팅은 **저장된** 프로젝트를 읽으므로, 존을 그린 뒤 [저장]부터 해야 채팅에서 인식할 수 있다.
+  // 10-30 사용자 「불러오기를 자동으로」: 창에 돌아올 때만 읽던 것을 실시간으로 지켜보고, 이 프로젝트를 연 뒤에 새로 온 결과는
+  // 버튼을 안 눌러도 넣는다(존 초안·브라켓·좌석번호는 바로, 책상·PC는 확인 창만 띄움). 열기 전에 와 있던 결과는 이미 넣었다가
+  // 버린 것일 수 있어 예전처럼 알림 띠·버튼으로만 넣는다. 같은 결과(종류+시각)는 한 번만.
+  const autoAppliedDraftRef = useRef(new Set<string>());
+  const onChatDraftArrived = useEffectEvent((projectId: string, draft: SeatLayoutChatDraft | null, watchStartedAt: number) => {
+    setLatestChatDraft({ projectId, draft });
+    if (!draft || projectId !== project.id || chatDraftLoading) return;
+    const kinds: DraftKind[] = ["zones", "brackets", "desk", "pc", "seatNumbers"];
+    const kind = kinds.find((k) => {
+      const at = draft[k]?.createdAt;
+      // 존 초안은 채팅이 덮어쓸 수 있어(FPS·VIP 되돌림, 브라켓 이어 세기) 마지막 초안(final)만 — 먼저 넣으면 존이 두 번 들어간다.
+      if (k === "zones" && !draft.zones?.final) return false;
+      return !!at && at > watchStartedAt && at > (project.updatedAt ?? 0) && !autoAppliedDraftRef.current.has(`${projectId}:${k}:${at}`);
+    });
+    if (!kind) return;
+    autoAppliedDraftRef.current.add(`${projectId}:${kind}:${draft[kind]!.createdAt}`);
+    void openChatDraft(kind);
+  });
   useEffect(() => {
     const projectId = project.id;
     if (!projectId || !project.updatedAt) return;
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const draft = await loadChatDraft(projectId);
-        if (!cancelled) setLatestChatDraft({ projectId, draft });
-      } catch {
-        // 알림 띠는 보조 기능 — 못 읽어도 [채팅 결과 불러오기] 버튼으로 다시 시도할 수 있다.
-      }
-    };
-    void load();
-    window.addEventListener("focus", load);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", load);
-    };
-  }, [project.id, project.updatedAt]);
+    const watchStartedAt = Date.now();
+    // 알림 띠·자동 넣기는 보조 기능 — 못 읽어도 [채팅 결과 불러오기] 버튼으로 다시 시도할 수 있다.
+    return watchChatDraft(projectId, (draft) => onChatDraftArrived(projectId, draft, watchStartedAt), () => {});
+    // project.updatedAt이 바뀔 때(저장)마다 다시 걸면 "연 뒤" 기준 시각이 저장 시각으로 밀린다 — 프로젝트를 바꿀 때만.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id, !!project.updatedAt]);
 
   /** 마지막 [프로젝트 저장] 뒤에 들어온 채팅 결과인가 — 넣고 저장하면 알림이 사라진다. */
   function hasNewChatDraft(kind: DraftKind): boolean {

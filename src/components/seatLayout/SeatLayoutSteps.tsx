@@ -146,6 +146,8 @@ export function SeatLayoutSteps({
                           {copiedKey === s.key ? "복사됨" : "복사"}
                         </button>
                       </div>
+                      {/* 10-30: 이 화면이 채팅 결과를 실시간으로 받아 넣는다(SeatLayoutWorkspace onChatDraftArrived). */}
+                      <p className="mt-1 text-[11px] text-[var(--sl-ink-soft)]">이 화면을 열어 둔 채 채팅하면 결과가 저절로 들어옵니다(아래 버튼은 다시 넣을 때).</p>
                     </div>
                   )}
                   {s.action && (

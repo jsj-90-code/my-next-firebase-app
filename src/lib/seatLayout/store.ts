@@ -18,6 +18,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   setDoc,
   writeBatch,
 } from "firebase/firestore";
@@ -113,6 +114,19 @@ export async function saveProject(
 export async function loadChatDraft(projectId: string): Promise<SeatLayoutChatDraft | null> {
   const snap = await getDoc(doc(requireDb(), SEAT_LAYOUT_CHAT_DRAFTS, projectId));
   return snap.exists() ? (snap.data() as SeatLayoutChatDraft) : null;
+}
+
+/** 채팅 초안을 실시간으로 지켜본다(10-30 사용자 「불러오기 자동으로」). 끄는 함수를 돌려준다. */
+export function watchChatDraft(
+  projectId: string,
+  onDraft: (draft: SeatLayoutChatDraft | null) => void,
+  onError: () => void,
+): () => void {
+  return onSnapshot(
+    doc(requireDb(), SEAT_LAYOUT_CHAT_DRAFTS, projectId),
+    (snap) => onDraft(snap.exists() ? (snap.data() as SeatLayoutChatDraft) : null),
+    onError,
+  );
 }
 
 // 이 사람이 좌석배치도 커넥터를 한 번이라도 썼는가(서버 /api/mcp가 기록, 10-27). 읽기 실패는 "모름"(null).

@@ -35,6 +35,7 @@ export type SeatLayoutChatDraft = {
   desk?: DraftMeta & { rows: DeskCountDraftRow[] };
   pc?: DraftMeta & { rows: PcCountDraftRow[] };
   seatNumbers?: DraftMeta & { rows: SeatNumberDraftRow[]; unsure: string };
-  zones?: DraftMeta & { rows: ZoneDraftRow[] };
+  // final(10-30): 채팅이 더 덮어쓰지 않을 마지막 초안 — 웹은 이것만 자동으로 넣는다(없으면 옛 초안, 버튼으로만).
+  zones?: DraftMeta & { rows: ZoneDraftRow[]; final?: boolean };
   brackets?: DraftMeta & { rows: BracketDraftRow[] };
 };

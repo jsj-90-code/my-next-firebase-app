@@ -205,7 +205,7 @@ function registerTools(server: McpServer, owner: boolean) {
     const targetField = z.enum(["desk", "pc"]).describe("desk = 책상 발주 도면(책상 수량·사이즈·가방선반 브라켓), pc = PC 발주 도면(PC 대수)");
     const CROP_BATCH = 20;
     const webGuide = (tab: string) =>
-      `웹 좌석배치도에서 이 프로젝트를 열고 [${tab}] 탭의 [채팅 결과 불러오기]를 누르면 확인 화면에 뜹니다. ` +
+      `웹 좌석배치도에서 이 프로젝트를 열고 [${tab}] 탭의 [채팅 결과 불러오기]를 누르면(웹에 이 프로젝트를 열어 두었으면 누르지 않아도 저절로) 확인 화면에 뜹니다. ` +
       "확인·수정 후 적용하고 [저장]을 눌러야 반영됩니다(자동 저장 아님). 사용자에게 이 안내와 결과표를 보여줄 것.";
 
     server.registerTool(
@@ -415,10 +415,15 @@ function registerTools(server: McpServer, owner: boolean) {
             h: Math.max(0.001, Math.min(1 - zn.y, zn.h)),
             type: zn.type ?? null,
           }));
-          await saveSeatLayoutChatDraft(project, "zones", { rows }, { modelName: modelName || null, note: note ?? null, user });
           // 10-29: 도면 PDF 책상 글씨로 상자마다 실제 좌석 수를 세어 돌려준다(zoneDraftCheck.ts). FPS가 실제 10석 미만이면
           // 존을 잘라 맞추지 말고 10석 이상인 한 줄로 다시 고르게 되돌린다(사용자 「FPS존은 최소 10개로, 구역은 안 나눠지면서」).
           const check = project.deskLabels?.desks?.length ? checkZoneDraft(rows, project.deskLabels) : null;
+          // 10-30: 웹이 마지막 초안만 자동으로 넣도록(덮어쓸 초안을 먼저 넣으면 존이 두 번 들어감) — 아래에서 되돌리거나
+          // 브라켓을 이어 셀 거면 아직 마지막이 아니다. 같은 조건을 아래 return들이 그대로 쓴다.
+          const fpsOk = /10석 조합 없음/.test(note ?? "");
+          const redo = (check?.fpsNotTen && !check.fpsShort && !fpsOk) || (check?.fpsShort && !fpsOk) || !!check?.vipMixed.length;
+          const bracketsNext = !project.deskLabels?.brackets?.length && !!project.deskLabels?.widths?.length;
+          await saveSeatLayoutChatDraft(project, "zones", { rows, final: !redo && !bracketsNext }, { modelName: modelName || null, note: note ?? null, user });
           const head =
             `${project.name} 존 초안 ${rows.length}개를 저장했습니다(좌석 합계 ${rows.reduce((s, zn) => s + zn.seats, 0)}` +
             (check ? ` · 도면 글씨로 센 실제 ${check.actual.reduce((s, n) => s + n, 0)}` : "") +
@@ -429,8 +434,8 @@ function registerTools(server: McpServer, owner: boolean) {
                 (check && check.actual[i] !== zn.seats ? ` → 실제 ${check.actual[i]}석` : ""),
               )
               .join("\n");
-          // AI가 "정말 없다"고 확인했으면(note에 "10석 조합 없음") 되돌리지 않는다 — 같은 답이 계속 되돌아오지 않게.
-          const fpsConfirmed = /10석 조합 없음/.test(note ?? "");
+          // AI가 "정말 없다"고 확인했으면(note에 "10석 조합 없음", 위 fpsOk) 되돌리지 않는다 — 같은 답이 계속 되돌아오지 않게.
+          const fpsConfirmed = fpsOk;
           if (check?.fpsNotTen && !check.fpsShort && !fpsConfirmed) {
             return text(
               `${head}\n\n⚠️ 아직 끝나지 않았다 — FPS존이 실제 ${check.fpsActual}석이다. 딱 10석이 먼저다: 딱 10석인 한 줄, 또는 서로 다른 섬의 ` +
@@ -458,7 +463,7 @@ function registerTools(server: McpServer, owner: boolean) {
           // 10-29: 브라켓 도면 주황 선까지 읽었으면 수량·사이즈·브라켓 모두 웹이 도면 PDF로 센다 — 채팅은 여기서 끝.
           if (project.deskLabels?.brackets?.length) {
             return text(
-              `${head}\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면 존이 들어가고, ` +
+              `${head}\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면(웹에 이 프로젝트를 열어 두었으면 누르지 않아도 저절로) 존이 들어가고, ` +
                 "책상 수량·사이즈·가방 선반 브라켓은 웹이 도면 PDF로 바로 셉니다(존을 고쳐도 바로 다시 셈). 확인한 뒤 [확인하고 통합발주서 등록]. " +
                 "사용자에게 이 안내를 보여줄 것.",
             );
@@ -472,7 +477,7 @@ function registerTools(server: McpServer, owner: boolean) {
             );
           }
           return text(
-            `${head}\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭 존 목록의 [채팅 존 초안 불러오기]를 누르면 존으로 들어갑니다. ` +
+            `${head}\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭 존 목록의 [채팅 존 초안 불러오기]를 누르면(웹에 이 프로젝트를 열어 두었으면 누르지 않아도 저절로) 존으로 들어갑니다. ` +
               "상자 위치·이름·유형을 다듬고 [프로젝트 저장]한 뒤, 책상 수량·사이즈는 \"○○점 책상 인식해 줘\"로 채웁니다" +
               "(이 도면은 PDF 책상 글씨가 없어 웹이 자동으로 못 셉니다). 사용자에게 이 안내를 보여줄 것.",
           );
@@ -597,14 +602,14 @@ function registerTools(server: McpServer, owner: boolean) {
               // Firestore는 undefined 값을 못 쓴다 — 안 센 상자는 칸 없이 그대로 둔다.
               return hit ? { ...zr, bagShelfCount: hit.bagShelfCount } : zr;
             });
-            await saveSeatLayoutChatDraft(project, "zones", { rows: next }, { ...meta, note: note ?? draft?.zones?.note ?? null });
             const counted = next.filter((zr) => zr.bagShelfCount !== undefined).length;
+            await saveSeatLayoutChatDraft(project, "zones", { rows: next, final: counted === next.length }, { ...meta, note: note ?? draft?.zones?.note ?? null });
             const sum = next.reduce((s, zr) => s + (zr.bagShelfCount ?? 0), 0);
             return text(
               `${project.name} 존 초안 ${next.length}개에 브라켓 수를 넣었습니다(센 상자 ${counted}개, 합계 ${sum}).\n` +
                 next.map((zr, i) => `${i + 1}. ${zr.type ?? "유형 미정"} · ${zr.seats}석 · 브라켓 ${zr.bagShelfCount === undefined ? "아직" : zr.bagShelfCount ?? "판단 못 함"}`).join("\n") +
                 leftLine(counted, next.length) +
-                "\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면 존·책상 수량·사이즈·브라켓이 한 번에 들어갑니다. " +
+                "\n\n웹 좌석배치도에서 이 프로젝트를 열고 [책상 발주 도면] 탭의 [채팅 존 초안 불러오기]를 누르면(웹에 이 프로젝트를 열어 두었으면 누르지 않아도 저절로) 존·책상 수량·사이즈·브라켓이 한 번에 들어갑니다. " +
                 "상자를 고치면 그 존만 \"○○점 바뀐 존 브라켓 다시 세 줘\"로 다시 셉니다. 확인한 뒤 [확인하고 통합발주서 등록]. 사용자에게 이 안내를 보여줄 것.",
             );
           }
@@ -627,7 +632,7 @@ function registerTools(server: McpServer, owner: boolean) {
             `${project.name} 바뀐 존 브라켓을 저장했습니다(${counted}/${targets.length}개).\n` +
               merged.map((m) => `- ${m.zoneName}: 브라켓 ${m.bagShelfCount ?? "판단 못 함"}`).join("\n") +
               leftLine(counted, targets.length) +
-              "\n\n웹 [책상 발주 도면] 탭 작업 순서의 [채팅 결과 불러오기]를 누르면 들어갑니다. 사용자에게 이 안내를 보여줄 것.",
+              "\n\n웹 [책상 발주 도면] 탭 작업 순서의 [채팅 결과 불러오기]를 누르면(웹에 이 프로젝트를 열어 두었으면 누르지 않아도 저절로) 들어갑니다. 사용자에게 이 안내를 보여줄 것.",
           );
         } catch (err) {
           return text(err instanceof Error ? err.message : String(err), true);
