@@ -81,5 +81,6 @@ export function recomputeSourceFromSnapshot(snap: any): import("./dailyRecompute
     labTradeAreaJudgments: snap.labTradeAreaJudgments ?? [],
     labResidentRadius: snap.labResidentRadius ?? [],
     labRoadviewJudgments: snap.labRoadviewJudgments ?? [],
+    candidateRival2km: snap.candidateRival2km ?? [],
   };
 }

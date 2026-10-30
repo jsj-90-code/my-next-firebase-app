@@ -54,7 +54,7 @@ async function dumpCollection(name) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, labTradeAreaJudgments, labResidentRadius, qscScores, labRoadviewJudgments, settingsDoc, accuracyDoc] =
+const [candidates, results, existingStores, competitors, locationEvaluations, sales, labQscScores, labResidentRings, labTradeAreaJudgments, labResidentRadius, qscScores, labRoadviewJudgments, candidateRival2km, settingsDoc, accuracyDoc] =
   await Promise.all([
     dumpCollection("storeEvalCandidates"),
     dumpCollection("storeEvalResults"),
@@ -78,6 +78,9 @@ const [candidates, results, existingStores, competitors, locationEvaluations, sa
     // listQscScores가 읽는 쪽이고(내용은 실험실 QSC와 같은 원자료), 로드뷰 판정은 결과 탭 실험실 값이 읽는다.
     dumpCollection("storeEvalQscScores"),
     dumpCollection("storeEvalLabRoadviewJudgments"),
+    // 2026-10-30 — 크론이 읽는 후보지별 2km 경쟁점(2026-09-28부터). 빠지면 그 문서가 있는 후보지(N019 이후)의
+    // 실험실 값이 크론과 달라져 storedAccuracyParity가 헛되이 붉었다.
+    dumpCollection("storeEvalCandidateRival2km"),
     db.collection("storeEvalSettings").doc("current").get(),
     db.collection("storeEvalSystemStatus").doc("accuracy").get(),
   ]);
@@ -96,6 +99,7 @@ const snapshot = {
   labResidentRadius,
   qscScores,
   labRoadviewJudgments,
+  candidateRival2km,
   settings: settingsDoc.exists ? settingsDoc.data() : null,
   storedAccuracy: accuracyDoc.exists ? accuracyDoc.data() : null,
 };
