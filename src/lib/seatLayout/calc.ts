@@ -577,7 +577,7 @@ export function computeChairSummary(zones: DeskZone[]): OrderSummaryRow[] {
 
 export type JangpadRow = { name: string; qty: number; total: number };
 
-// 장패드 수량 계산 (책상사이즈/존유형 기준, 여분 +2 — 수량 0인 장패드는 여분도 없음, 10-30 사용자)
+// 장패드 수량 계산 (책상사이즈/존유형 기준, 여분 +2 — 수량 0인 장패드는 줄을 빼서 여분도 없음, 10-30 사용자)
 // 커플석·커플존은 820mm 책상일 때만 IS-M800_R(커플), 다른 사이즈는 일반 장패드(10-30 사용자 확정).
 // "책상만 설치" 존은 PC/모니터 없이 책상만 있는 존이라 장패드(PC 앞에 까는 패드)도 필요 없어 제외한다.
 export function computeJangpadTable(deskZones: DeskZone[]): JangpadRow[] {
@@ -610,8 +610,8 @@ export function computeJangpadTable(deskZones: DeskZone[]): JangpadRow[] {
     { name: "IS-M890_B(신규)", qty: m890B, total: 0 },
     { name: "아이센스 장패드(카운터)", qty: 1, total: 0 },
   ];
-  rows.forEach((r) => (r.total = r.qty > 0 ? r.qty + 2 : 0)); // 여분 +2(0개면 여분도 안 줌)
-  return rows;
+  rows.forEach((r) => (r.total = r.qty + 2)); // 여분 +2
+  return rows.filter((r) => r.qty > 0);
 }
 
 export function computeDeskSeatsSum(zones: DeskZone[]): number {

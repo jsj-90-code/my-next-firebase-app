@@ -933,7 +933,7 @@ export function renderOrderSummaryImage(
   // (PC 존 기준, 카운터 PC 1대분 포함) 사양별 실제 주문 수량.
   const pcOrderTableRows = pcOrderRows.map((r) => [r.field, r.value, `${r.qty} EA`, r.note ?? "-"]);
   const pcOrderHalf = Math.ceil(pcOrderTableRows.length / 2);
-  const jangpadTableRows = jangpadRows.map((r) => [r.name, `${r.total} EA`, r.qty > 0 ? `기준 ${r.qty} + 여분 2` : "해당 없음"]);
+  const jangpadTableRows = jangpadRows.map((r) => [r.name, `${r.total} EA`, `기준 ${r.qty} + 여분 2`]);
   // 가방 선반 브라켓이 있는 좌석은 아이락스, 없는 좌석은 아이센스 헤드셋걸이.
   const headsetTableRows = [
     ["아이락스 헤드셋걸이", `${headsetTotals.irock} EA`, "가방 선반 있는 좌석"],
