@@ -3997,12 +3997,20 @@ function ZoneForm(props: ZoneFormProps) {
         </div>
       )}
 
-      {/* 2026-10-27 웹 Gemini 자동인식을 지웠다 — 수량은 직접 넣거나, 존을 다 그려 저장한 뒤 Claude 채팅으로 한 번에
-          인식해 [채팅 결과 불러오기]로 넣는다(mcpSeatLayout.ts). */}
+      {/* 2026-10-27 웹 Gemini 자동인식을 지웠다. 10-30 안내를 지금 흐름으로: PDF 도면이면 존 초안 때 도면 글씨로 수량이 들어오고,
+          PC 대수는 통합발주서 등록 때 책상 존에서 오며, 채팅 결과는 화면을 열어 두면 저절로 들어온다(onChatDraftArrived). */}
       <p className="app-card-sm rounded-lg p-3 text-xs text-[var(--sl-ink-soft)]">
-        {activeTab === "pc" ? "PC 대수" : "책상 수량·사이즈·가방 선반"}은 비워 둔 채 [저장]해도 됩니다. Claude(claude.ai)에 「PC 점포평가」
-        커넥터를 연결해 두고, 존을 다 그려 [프로젝트 저장] → Claude 채팅에서 &quot;○○점 {activeTab === "pc" ? "PC 대수 세어 줘" : "책상 인식해 줘"}&quot; →
-        존 목록 위 [채팅 결과 불러오기]로 한 번에 채워집니다.
+        {activeTab === "pc" ? (
+          <>
+            PC 대수는 책상 통합발주서를 등록하면 책상 수로 들어옵니다. 존을 나눴으면 [프로젝트 저장] → Claude 채팅에서
+            &quot;○○점 PC 대수 세어 줘&quot; → 이 화면을 열어 두면 결과가 저절로 들어옵니다.
+          </>
+        ) : (
+          <>
+            PDF 도면이면 책상 수량·사이즈·브라켓은 존 초안 때 도면 글씨로 자동으로 들어옵니다. 글씨 없는 옛 도면이면 비워 둔 채
+            [프로젝트 저장] → Claude 채팅에서 &quot;○○점 책상 인식해 줘&quot; → 이 화면을 열어 두면 결과가 저절로 들어옵니다.
+          </>
+        )}
       </p>
 
       {activeTab === "desk" ? (
