@@ -43,6 +43,14 @@ const TOOLS = [
     description: `경쟁점 상호·주소·IP대역만 넣으면 ${SAMPLE_INTERVAL_MINUTES / 60}시간마다 켜진 PC를 세어 가동률을 기한 없이 쌓습니다. 기간·시간대별로 봅니다.`,
     icon: <path d="M3 12h4l3-8 4 16 3-8h4" />,
   },
+  {
+    // 2026-10-30 신설 — 가맹점 Q&A 챗봇(별도 앱 isens-qna). 이 웹 밖이라 새 탭으로 열고, 아래 표제란(이 웹 자료 기준)은 달지 않는다.
+    href: "https://isens-qna.vercel.app",
+    label: "가맹점 Q&A 챗봇",
+    description: "가맹점 문의에 원본 매뉴얼 기준으로 답하고, 안 풀리면 SV에게 넘깁니다. 시범판이라 시험 계정으로만 씁니다.",
+    icon: <path d="M4 5h16v11H9l-5 4z M8 9h8 M8 12h5" />,
+    external: true,
+  },
 ] as const;
 
 export default function Home() {
@@ -72,6 +80,7 @@ export default function Home() {
             <a
               key={tool.href}
               href={tool.href}
+              {...("external" in tool ? { target: "_blank", rel: "noopener noreferrer" } : {})}
               className="app-card group flex flex-col overflow-hidden rounded-2xl text-left transition hover:border-[#c05a2c]/40"
             >
               <div className="flex flex-1 items-start gap-4 p-5">
@@ -90,7 +99,9 @@ export default function Home() {
                   <p className="mt-1 text-sm leading-6 text-[var(--sl-ink-soft)]">{tool.description}</p>
                 </div>
               </div>
-              <HomeToolStatus tool={tool.href === "/seat-layout" ? "seat-layout" : "store-eval"} />
+              {"external" in tool ? null : (
+                <HomeToolStatus tool={tool.href === "/seat-layout" ? "seat-layout" : "store-eval"} />
+              )}
             </a>
           ))}
         </div>
