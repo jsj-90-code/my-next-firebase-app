@@ -2,7 +2,7 @@
 //   node scripts/quote/verify.mjs <black|gold> [--test]
 // 값·수식·서식(정렬·글꼴·색·숫자서식·테두리·줄바꿈)·메모·병합·열 너비·행 높이·보호·원가 유출·최종 금액
 import { pathToFileURL } from "node:url";
-import { sheets, TOOL_EMAILS, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, refsBeyondJ, colName, q, renameRefs, pickBook } from "./lib.mjs";
+import { sheets, TOOL_EMAILS, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, SALES_INPUTS, linkedCopies, refsBeyondJ, colName, q, renameRefs, pickBook } from "./lib.mjs";
 
 // textFormatRuns(칸 안 일부 글자 서식)도 비교 — 10-24 덮어쓰기 방식 검토 때 이것만 바뀐 칸을 검증이 못 잡는 걸 확인
 const runsSig = (c) => JSON.stringify((c.textFormatRuns || []).map((r) => [r.startIndex || 0, { ...r.format, foregroundColorStyle: undefined, link: r.format?.link?.uri }]));
@@ -14,22 +14,38 @@ const fmtSig = (f = {}) => JSON.stringify({ h: f.horizontalAlignment, v: f.verti
 const load = async (id, title) => (await sheets.spreadsheets.get({ spreadsheetId: id, ranges: [q(title)], includeGridData: true, fields: FIELDS })).data.sheets[0];
 const mk = (m) => `${colName(m.startColumnIndex)}${m.startRowIndex + 1}:${colName(m.endColumnIndex - 1)}${m.endRowIndex}`;
 
-export async function verify(book, { log = console.log, prot = null } = {}) {
+// 영업부용 대수·평수가 원본과 다르면(실무자가 고친 값 — 10-30 사용자: 안 맞아도 됨) 값은 그 대수·평수로 다시 계산한 원본 사본과 대조한다.
+// 수식·서식 등은 그대로 원본과 대조(사본은 탭 이름을 바꾼 수식이라). 같으면 사본 없이 원본과 바로 대조
+const EXP = "__검증_";
+export async function verify(book, opts = {}) {
+  const ranges = SALES_INPUTS.cells.map((a1) => `${q(SALES_INPUTS.tab)}!${a1}`);
+  const get = async (id) => { try { return (await sheets.spreadsheets.values.batchGet({ spreadsheetId: id, ranges, valueRenderOption: "FORMULA" })).data.valueRanges.map((r) => String(r.values?.[0]?.[0] ?? "")); } catch { return null; } };
+  const oi = await get(book.orig), si = await get(book.sales);
+  if (!oi || !si || oi.every((v, i) => v === si[i])) return verifyWith(book, opts, null);
+  const { tmp, drop } = await linkedCopies(book.orig, EXP, TABS.map(([o]) => o));
+  try {
+    await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "USER_ENTERED", data: SALES_INPUTS.cells.map((a1, i) => ({ range: `${q(tmp(SALES_INPUTS.tab))}!${a1}`, values: [[si[i]]] })) } });
+    (opts.log || console.log)(`(대수·평수: 영업부용 ${si.join("·")} / 원본 ${oi.join("·")} — 값은 영업부용 대수·평수로 다시 계산한 원본과 대조)`);
+    return await verifyWith(book, opts, tmp);
+  } finally { await drop(); }
+}
+async function verifyWith(book, { log = console.log, prot = null } = {}, tmp) {
   let total = 0;
   const report = {};
   for (const [oName, sName, keepCols] of TABS) {
     const o = await load(book.orig, oName), s = await load(book.sales, sName);
     const issues = { 값: [], 수식: [], 서식: [], 메모: [], 병합: [], 크기: [], 유출: [], 보호: [] };
     const oRows = o.data[0].rowData || [], sRows = s.data[0].rowData || [];
+    const vRows = tmp ? (await load(book.orig, tmp(oName))).data[0].rowData || [] : oRows; // 값 대조 기준
     let lastRow = o.properties.gridProperties.rowCount;
     if (oName === "최종") { const i = oRows.findIndex((r) => (r.values || []).some((c) => String(c.formattedValue || "").trim().startsWith(INTERNAL_BLOCK))); if (i >= 0) lastRow = i; } // 반영과 같은 기준(어느 열·공백 무시)
     const lastCol = keepCols ? o.properties.gridProperties.columnCount : LAST_SALES_COL;
     let valueFixed = 0;
     for (let r = 0; r < Math.max(lastRow, sRows.length); r++) for (let c = 0; c < lastCol; c++) {
-      const oc = r < lastRow ? oRows[r]?.values?.[c] || {} : {}, sc = sRows[r]?.values?.[c] || {};
+      const oc = r < lastRow ? oRows[r]?.values?.[c] || {} : {}, sc = sRows[r]?.values?.[c] || {}, vc = r < lastRow ? vRows[r]?.values?.[c] || {} : {};
       const a1 = colName(c) + (r + 1);
       const of = oc.userEnteredValue?.formulaValue, sf = sc.userEnteredValue?.formulaValue;
-      if ((oc.formattedValue || "") !== (sc.formattedValue || "")) issues.값.push(`${a1} 원본[${(oc.formattedValue || "").slice(0, 18)}] 영업[${(sc.formattedValue || "").slice(0, 18)}]`);
+      if ((vc.formattedValue || "") !== (sc.formattedValue || "")) issues.값.push(`${a1} 원본[${(vc.formattedValue || "").slice(0, 18)}] 영업[${(sc.formattedValue || "").slice(0, 18)}]`);
       if (of && !keepCols && refsBeyondJ(of)) { if (sf) issues.수식.push(`${a1} 원가 참조 수식이 값으로 안 바뀜`); else valueFixed++; }
       else if ((of ? renameRefs(of) : "") !== (sf || "")) issues.수식.push(`${a1} 원본[${(of || "").slice(0, 30)}] 영업[${(sf || "").slice(0, 30)}]`);
       if (r < lastRow && (fmtSig(oc.effectiveFormat) !== fmtSig(sc.effectiveFormat) || runsSig(oc) !== runsSig(sc))) issues.서식.push(a1);
@@ -73,7 +89,7 @@ export async function verify(book, { log = console.log, prot = null } = {}) {
   }
   const fin = TABS.find(([o]) => o === "최종");
   const [a, b] = await Promise.all([
-    sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: `${q(fin[0])}!${book.finalCell}`, valueRenderOption: "UNFORMATTED_VALUE" }),
+    sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: `${q(tmp ? tmp(fin[0]) : fin[0])}!${book.finalCell}`, valueRenderOption: "UNFORMATTED_VALUE" }),
     sheets.spreadsheets.values.get({ spreadsheetId: book.sales, range: `${q(fin[1])}!${book.finalCell}`, valueRenderOption: "UNFORMATTED_VALUE" }),
   ]);
   const amountO = a.data.values?.[0]?.[0], amountS = b.data.values?.[0]?.[0];

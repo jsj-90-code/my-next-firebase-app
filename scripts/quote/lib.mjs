@@ -85,6 +85,37 @@ export const INTERNAL_BLOCK = "본사 내부 정리"; // 최종 탭의 원본 �
 export const LEAK_WORDS = ["원가(수정)", "원가 합계", "개별 마진", "본사 마진", "본사 내부 정리", "부품별 원가", "매입가", "원가 대비"];
 export const NOTE_LEAK_WORDS = [...LEAK_WORDS, "원가", "마진", "공급가", "매입"];
 export const LOG_SHEET = "__반영기록"; // 원본 안 숨김 탭: 마지막 반영 때 영업부용 내용(변경 감지 기준)
+// 영업부용에서 실무자가 상담하며 고치는 칸(대수·평수) — 원본과 달라도 된다. 반영 때 덮어쓰지 않고, 직접 수정으로 잡지 않고,
+// 검증은 이 값으로 다시 계산한 원본과 대조한다(2026-10-30 사용자)
+export const SALES_INPUTS = { tab: "정보입력(댓수,평수)", cells: ["B3", "B4"] };
+export const isSalesInput = (tab, a1) => tab === SALES_INPUTS.tab && SALES_INPUTS.cells.includes(a1);
+
+// 원본 안에 tabs를 prefix 붙은 숨김 사본으로 만들고, 사본끼리 서로를 가리키게 수식을 고친다(원본 탭은 그대로).
+// 대수·평수만 바꿔 계산해 볼 때 쓴다 — 사본은 원본과 행·열이 같다. 돌려준 drop()으로 지운다.
+export async function linkedCopies(id, prefix, tabs) {
+  const meta = (await sheets.spreadsheets.get({ spreadsheetId: id, fields: "sheets(properties(sheetId,title))" })).data.sheets;
+  const tmp = (t) => prefix + t;
+  const fix = (f) => { let y = f; for (const o of tabs) { y = y.split(`${q(o)}!`).join(`${q(tmp(o))}!`); if (!/[\s(),]/.test(o)) y = y.replace(new RegExp(`(^|[^'\\w가-힣])${o}!`, "g"), `$1${q(tmp(o))}!`); } return y; };
+  const stale = meta.filter((s) => s.properties.title.startsWith(prefix)); // 지난번에 끊겨 남은 사본
+  if (stale.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: stale.map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })) } });
+  const ids = [];
+  const drop = async () => { if (ids.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: ids.map((sheetId) => ({ deleteSheet: { sheetId } })) } }); };
+  try {
+    for (const t of tabs) {
+      const src = meta.find((s) => s.properties.title === t)?.properties.sheetId; if (src == null) throw new Error(`탭 없음: ${t}`);
+      const r = await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ duplicateSheet: { sourceSheetId: src, newSheetName: tmp(t), insertSheetIndex: 99 } }] } });
+      const sid = r.data.replies[0].duplicateSheet.properties.sheetId; ids.push(sid);
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ updateSheetProperties: { properties: { sheetId: sid, hidden: true }, fields: "hidden" } }] } });
+    }
+    for (const t of tabs) {
+      const f = (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: q(tmp(t)), valueRenderOption: "FORMULA" })).data.values || [];
+      const data = [];
+      f.forEach((row, i) => row.forEach((c, j) => { if (typeof c === "string" && c.startsWith("=")) { const y = fix(c); if (y !== c) data.push({ range: `${q(tmp(t))}!${colName(j)}${i + 1}`, values: [[y]] }); } }));
+      if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "USER_ENTERED", data } });
+    }
+  } catch (e) { await drop(); throw e; }
+  return { tmp, drop };
+}
 
 // K열 이후 칸 참조(K5, $AA$3) + 열 전체(K:K, A:K처럼 K열 이후까지 걸침) + 행 전체(5:5 — 모든 열이라 원가 열 포함)
 // 10-24 검토: 열·행 전체 참조를 못 잡았음

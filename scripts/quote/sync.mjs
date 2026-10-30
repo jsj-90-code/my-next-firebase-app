@@ -11,7 +11,7 @@
 //     (10-24부터 탭을 갈아 끼우지 않음 — 칸별 수정 기록·댓글·탭 링크·잠금 유지) → 자동 검증
 //   → 통과하면 백업 삭제·기록 저장, 실패하면 백업을 남기고 멈춤(--rollback이면 백업 내용을 같은 탭에 되돌려 씀 / --accept)
 // 원가가 들어간 내용은 영업부용 시트에 한 순간도 들어가지 않는다.
-import { sheets, actorEmail, requireUserForWrite, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
+import { sheets, actorEmail, requireUserForWrite, AUTO_ROW, TABS, LEAK_WORDS, NOTE_LEAK_WORDS, LAST_SALES_COL, INTERNAL_BLOCK, LOG_SHEET, SALES_INPUTS, isSalesInput, refsBeyondJ, renameRefs, colName, q, pickBook } from "./lib.mjs";
 import { verify } from "./verify.mjs";
 
 const args = process.argv.slice(2);
@@ -69,7 +69,7 @@ async function salesChanges() {
       const R = Math.max(now[r]?.length || 0, before[r]?.length || 0);
       for (let c = 0; c < R; c++) {
         const a = before[r]?.[c] ?? "", b = now[r]?.[c] ?? "";
-        if (a !== b) { list.push(`${sName} ${colName(c)}${r + 1}: ${a.slice(0, 30) || "(빈칸)"} → ${b.slice(0, 30) || "(빈칸)"}`); cells.push({ oName, sName, a1: colName(c) + (r + 1), r, c, before: a, after: b }); }
+        if (a !== b && !isSalesInput(sName, colName(c) + (r + 1))) { list.push(`${sName} ${colName(c)}${r + 1}: ${a.slice(0, 30) || "(빈칸)"} → ${b.slice(0, 30) || "(빈칸)"}`); cells.push({ oName, sName, a1: colName(c) + (r + 1), r, c, before: a, after: b }); }
       }
     }
   }
@@ -113,6 +113,13 @@ async function writeLog() {
   await writeJsonTab(LOG_SHEET, ["반영 시각", new Date().toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).slice(0, 16)], entries);
 }
 
+// 영업부용 대수·평수 칸의 지금 값(수식이면 수식). 영업부용에 그 탭이 없으면(첫 반영) null
+async function salesInputs() {
+  if (!byTitle(await meta(book.sales), SALES_INPUTS.tab)) return null;
+  const g = await grid(book.sales, SALES_INPUTS.tab);
+  return SALES_INPUTS.cells.map((a1) => { const m = a1.match(/^([A-Z]+)(\d+)$/), c = [...m[1]].reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0) - 1; return { a1, v: g[Number(m[2]) - 1]?.[c] ?? "" }; });
+}
+
 // ---------- 1) 원본 안에서 깨끗한 임시 탭 ----------
 async function buildTemps() {
   const m = await meta(book.orig);
@@ -126,6 +133,10 @@ async function buildTemps() {
   // 복사된 보호 제거
   const m2 = await meta(book.orig);
   await batch(book.orig, temps.flatMap((t) => (byTitle(m2, TEMP + t.o).protectedRanges || []).map((p) => ({ deleteProtectedRange: { protectedRangeId: p.protectedRangeId } }))));
+  // 대수·평수는 영업부용 지금 값을 임시 탭에 넣어 둔다 → 칸 복사가 '같은 값'으로 보고 덮어쓰지 않는다(10-30 사용자: 실무자가 고치는 칸).
+  // 다른 탭 임시 사본은 원본 정보입력을 가리키지만, 값으로 굳히는 칸은 원가 칸만 보므로(아래 검사) 대수·평수와 상관없다
+  const inputs = await salesInputs();
+  if (inputs) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: book.orig, requestBody: { valueInputOption: "USER_ENTERED", data: inputs.map(({ a1, v }) => ({ range: `${q(TEMP + SALES_INPUTS.tab)}!${a1}`, values: [[v]] })) } });
   // 원본 탭 값(원가 칸 대조용) — 굳힐 값이 그 수식이 가리키는 K열 이후 칸 값과 같으면 원가 숫자가 그대로 넘어가는 것
   const origVals = {};
   for (const [o] of TABS) origVals[o] = (await sheets.spreadsheets.values.get({ spreadsheetId: book.orig, range: q(o), valueRenderOption: "UNFORMATTED_VALUE" })).data.values || [];

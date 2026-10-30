@@ -10,7 +10,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { sheets, BOOKS, TABS, colName, q, requireUserForWrite } from "./lib.mjs";
+import { sheets, BOOKS, TABS, colName, q, requireUserForWrite, linkedCopies } from "./lib.mjs";
 
 const args = process.argv.slice(2);
 const mode = args[0];
@@ -80,29 +80,12 @@ const subsidyLine = (n) => n == null ? "인터넷 지원금 줄 못 찾음 — �
 // next(after)가 추가 쓰기 목록(추천 판매 단가)을 돌려주면 그것까지 넣고 계산 → rec: { margin, subsidy, writes }
 async function standardMargin(id, writes = [], next = null) {
   const titles = TABS.map(([o]) => o).filter((t) => t !== "표지");
-  const meta = (await sheets.spreadsheets.get({ spreadsheetId: id, fields: "sheets(properties(sheetId,title))" })).data.sheets;
-  const tmp = (t) => STD_TMP + t;
-  const fix = (f) => { let y = f; for (const o of titles) { y = y.split(`${q(o)}!`).join(`${q(tmp(o))}!`); if (!/[\s(),]/.test(o)) y = y.replace(new RegExp(`(^|[^'\\w가-힣])${o}!`, "g"), `$1${q(tmp(o))}!`); } return y; };
+  const { tmp, drop } = await linkedCopies(id, STD_TMP, titles);
   const read = async () => ({
     margin: await totalMargin(id, tmp("최종")),
     subsidy: subsidyOf((await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q(tmp(PC))}!A1:J60`, valueRenderOption: "UNFORMATTED_VALUE" })).data.values || []),
   });
-  const stale = meta.filter((s) => s.properties.title.startsWith(STD_TMP)); // 지난번에 끊겨 남은 임시 탭
-  if (stale.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: stale.map((s) => ({ deleteSheet: { sheetId: s.properties.sheetId } })) } });
-  const temps = [];
   try {
-    for (const t of titles) {
-      const src = meta.find((s) => s.properties.title === t)?.properties.sheetId; if (src == null) throw new Error(`탭 없음: ${t}`);
-      const r = await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ duplicateSheet: { sourceSheetId: src, newSheetName: tmp(t), insertSheetIndex: 99 } }] } });
-      const sid = r.data.replies[0].duplicateSheet.properties.sheetId; temps.push(sid);
-      await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: [{ updateSheetProperties: { properties: { sheetId: sid, hidden: true }, fields: "hidden" } }] } });
-    }
-    for (const t of titles) {
-      const f = (await sheets.spreadsheets.values.get({ spreadsheetId: id, range: `${q(tmp(t))}!A1:Z200`, valueRenderOption: "FORMULA" })).data.values || [];
-      const data = [];
-      f.forEach((row, i) => row.forEach((c, j) => { if (typeof c === "string" && c.startsWith("=")) { const y = fix(c); if (y !== c) data.push({ range: `${q(tmp(t))}!${colName(j)}${i + 1}`, values: [[y]] }); } }));
-      if (data.length) await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: id, requestBody: { valueInputOption: "USER_ENTERED", data } });
-    }
     await sheets.spreadsheets.values.update({ spreadsheetId: id, range: `${q(tmp(INFO))}!B3:B4`, valueInputOption: "RAW", requestBody: { values: [[STD.seats], [STD.pyeong]] } });
     const b = await read();
     let a = b;
@@ -117,9 +100,7 @@ async function standardMargin(id, writes = [], next = null) {
       rec = { ...(await read()), writes: extra };
     }
     return { before: b.margin, after: a.margin, subsidyBefore: b.subsidy, subsidyAfter: a.subsidy, rec };
-  } finally {
-    if (temps.length) await sheets.spreadsheets.batchUpdate({ spreadsheetId: id, requestBody: { requests: temps.map((sheetId) => ({ deleteSheet: { sheetId } })) } });
-  }
+  } finally { await drop(); }
 }
 const costTotal = (t) => t.v[t.end]?.[t.totalCol]; // 탭 '합계 금액' 줄의 원가 합계
 
@@ -359,6 +340,10 @@ async function apply() {
     const nPrice = j.writes.filter((w) => w.price).length;
     console.log(`■ ${BOOKS[j.bk].label}: 원가 ${j.writes.length - nPrice}칸·판매 단가 ${nPrice}칸 씀 | 적용 확인: 바뀐 칸 = 계획 ${j.writes.length}칸, 정답지와 전체 일치 ✓ | 최종 금액 ${won(amtBefore)} → ${won(amtAfter)}${amtBefore === amtAfter ? " (변화 없음)" : ""}` +
       (mBefore != null ? ` | 예시 매장 총 마진 ${won(mBefore)} → ${won(mAfter)}` : ""));
+    // 영업부용에 보이는 칸(J열까지)이 바뀌었나 — 원가만 바뀌고 판매 단가·원가로 계산하는 판매가(서버 =ROUND(K*1.1,-2))가 그대로면 반영할 게 없다(10-30 사용자)
+    const seen = j.tabs.flatMap((t) => diffCells(j.before[t].v, after[t].v).filter((d) => { const col = d.a1.match(/^[A-Z]+/)[0]; return col.length === 1 && col < "K"; }));
+    j.needSync = seen.length > 0 || amtBefore !== amtAfter;
+    console.log(`  영업부용 반영: ${j.needSync ? `필요 — 영업부용에 보이는 칸 ${seen.length}개 바뀜(${seen.slice(0, 5).map((d) => d.a1).join(", ")}) → sync.mjs ${j.bk}` : "필요 없음 — 영업부용에 보이는 칸(J열까지)은 그대로, 원가 칸만 바뀜"}`);
     const std = await standardMargin(j.id), sb = plan.books[j.bk].std?.before;
     console.log(`  ${STD.seats}대·${STD.pyeong}평 기준 총 마진 ${sb != null ? won(sb) + " → " : ""}${won(std.before)} | ${vsFloor(j.bk, std.before)} | ${vsTarget(j.bk, std.before)} | ${subsidyLine(std.subsidyBefore)}`);
   }
