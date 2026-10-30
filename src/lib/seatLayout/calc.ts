@@ -577,41 +577,36 @@ export function computeChairSummary(zones: DeskZone[]): OrderSummaryRow[] {
 
 export type JangpadRow = { name: string; qty: number; total: number };
 
-// 장패드 수량 계산 (책상사이즈/존유형 기준, 여분 +2 — 수량 0인 장패드는 줄을 빼서 여분도 없음, 10-30 사용자)
-// 커플석·커플존은 820mm 책상일 때만 IS-M800_R(커플), 다른 사이즈는 일반 장패드(10-30 사용자 확정).
-// "책상만 설치" 존은 PC/모니터 없이 책상만 있는 존이라 장패드(PC 앞에 까는 패드)도 필요 없어 제외한다.
-export function computeJangpadTable(deskZones: DeskZone[]): JangpadRow[] {
-  let m800B = 0;
-  let m800R = 0;
-  let m830B = 0;
-  let m890B = 0;
+// 책상 존 창의 장패드 칸 목록(10-30 사용자: 웹에서 품목을 고칠 수 있게). 목록에 없는 건 "기타(직접입력)".
+export const JANGPAD_OPTIONS = ["IS-M800_B(신규)", "IS-M800_R(커플)", "IS-M830_B(신규)", "IS-M890_B(신규)"];
+const JANGPAD_COUNTER = "아이센스 장패드(카운터)";
 
+// 자동 규칙: 책상사이즈/존유형 기준. 커플석·커플존은 820mm 책상일 때만 IS-M800_R(커플), 다른 사이즈는 일반 장패드(10-30 사용자 확정).
+export function autoJangpad(deskSize: string, typeKey: string): string | null {
+  const isCouple = typeKey === "couple_seat" || typeKey === "couple_room";
+  if (deskSize === "820mm") return isCouple ? "IS-M800_R(커플)" : "IS-M800_B(신규)";
+  if (deskSize === "850mm") return "IS-M830_B(신규)";
+  if (["910mm", "950mm", "1000mm"].includes(deskSize)) return "IS-M890_B(신규)";
+  return null;
+}
+
+// 장패드 수량 계산 — 존의 책상사이즈별 좌석 수만큼. 존에서 그 사이즈에 장패드를 직접 골랐으면(z.jangpad) 그것, 아니면 자동 규칙.
+// 여분 +2 — 수량 0인 장패드는 줄을 빼서 여분도 없음(10-30 사용자). 직접 적은 장패드는 정해진 장패드 뒤·카운터 앞에 이름별로 한 줄씩.
+// "책상만 설치" 존은 PC/모니터 없이 책상만 있는 존이라 장패드(PC 앞에 까는 패드)도 필요 없어 제외한다(직접 골라도 — 10-30 사용자: 수량 기준은 그대로).
+export function computeJangpadTable(deskZones: DeskZone[]): JangpadRow[] {
+  const qty = new Map<string, number>(JANGPAD_OPTIONS.map((n) => [n, 0]));
   deskZones
     .filter((z) => z.typeKey !== "desk_only")
     .forEach((z) => {
-      const isCouple = z.typeKey === "couple_seat" || z.typeKey === "couple_room";
       getZoneSizeEntries(z).forEach((entry) => {
-        const qty = Number(entry.qty) || 0;
-        if (entry.deskSize === "820mm") {
-          if (isCouple) m800R += qty;
-          else m800B += qty;
-        } else if (entry.deskSize === "850mm") {
-          m830B += qty;
-        } else if (["910mm", "950mm", "1000mm"].includes(entry.deskSize)) {
-          m890B += qty;
-        }
+        const name = z.jangpad?.[entry.deskSize]?.trim() || autoJangpad(entry.deskSize, z.typeKey);
+        if (name) qty.set(name, (qty.get(name) ?? 0) + (Number(entry.qty) || 0));
       });
     });
-
-  const rows: JangpadRow[] = [
-    { name: "IS-M800_B(신규)", qty: m800B, total: 0 },
-    { name: "IS-M800_R(커플)", qty: m800R, total: 0 },
-    { name: "IS-M830_B(신규)", qty: m830B, total: 0 },
-    { name: "IS-M890_B(신규)", qty: m890B, total: 0 },
-    { name: "아이센스 장패드(카운터)", qty: 1, total: 0 },
-  ];
-  rows.forEach((r) => (r.total = r.qty + 2)); // 여분 +2
-  return rows.filter((r) => r.qty > 0);
+  qty.set(JANGPAD_COUNTER, (qty.get(JANGPAD_COUNTER) ?? 0) + 1);
+  return Array.from(qty.entries())
+    .filter(([, q]) => q > 0)
+    .map(([name, q]) => ({ name, qty: q, total: q + 2 })); // 여분 +2
 }
 
 export function computeDeskSeatsSum(zones: DeskZone[]): number {

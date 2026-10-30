@@ -63,6 +63,8 @@ export type DeskZone = NormalizedRect & {
   // 브라켓 수를 넣었을 때의 존 모양(zoneShapeKey). 지금 모양과 다르면 존을 옮긴 뒤라 브라켓을 다시 세야 한다(10-29).
   // 없으면(직접 그린 존·옛 프로젝트) 아직 안 센 것으로 본다.
   bagShelfKey?: string | null;
+  // 책상사이즈별로 직접 고른 장패드(10-30). 없는 사이즈는 자동 규칙(calc.ts autoJangpad). 수량을 다시 세도 사이즈가 같으면 그대로 간다.
+  jangpad?: Partial<Record<DeskSize, string>> | null;
 };
 
 export type PcSpecFieldId =

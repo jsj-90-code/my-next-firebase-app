@@ -17,7 +17,7 @@ import {
   SLIDES_EXPORT_SCALE,
   defaultPcDefaults,
 } from "@/lib/seatLayout/constants";
-import { computeBasicPcQty, getContrastText, nextSuffix } from "@/lib/seatLayout/calc";
+import { JANGPAD_OPTIONS, autoJangpad, computeBasicPcQty, getContrastText, nextSuffix } from "@/lib/seatLayout/calc";
 import {
   renderDeskFloorplanImage,
   renderOrderSummaryImage,
@@ -196,6 +196,8 @@ export function SeatLayoutWorkspace() {
   const [breakdown, setBreakdown] = useState<SizeBreakdownEntry[]>([]);
   // 이 존에서 "가방 선반 브라켓" 표시가 있는(=아이락스 헤드셋걸이가 설치될) 좌석 수.
   const [bagShelfDraft, setBagShelfDraft] = useState("0");
+  // 책상사이즈별로 직접 고른 장패드(빈 값 = 자동). 저장할 때 지금 사이즈에 있는 것만 남긴다.
+  const [jangpadDraft, setJangpadDraft] = useState<Partial<Record<DeskSize, string>>>({});
   const [deskSpecDraft, setDeskSpecDraft] = useState<Record<SpecFieldId, string>>(
     defaultDeskSpecValues(SPEC_FIELDS),
   );
@@ -1418,6 +1420,7 @@ export function SeatLayoutWorkspace() {
     setSeatsDraft("");
     setBreakdown([{ deskSize: DESK_SIZE_OPTIONS[0], qty: 0 }]);
     setBagShelfDraft("0");
+    setJangpadDraft({});
 
     if (activeTab === "desk") {
       setDeskSpecDraft(resetDeskSpecDraft(selectedTypeKey, effectiveSpecFields, settings.typeDefaults));
@@ -1444,6 +1447,7 @@ export function SeatLayoutWorkspace() {
           : [{ deskSize: (dz.deskSize || DESK_SIZE_OPTIONS[0]) as DeskSize, qty: dz.seats || 0 }],
       );
       setBagShelfDraft(String(dz.bagShelfCount ?? 0));
+      setJangpadDraft({ ...(dz.jangpad ?? {}) });
       setDeskSpecDraft({
         desk: dz.desk,
         cooler: dz.cooler,
@@ -1470,6 +1474,16 @@ export function SeatLayoutWorkspace() {
     drawCanvas();
   }
 
+  // 지금 존에 있는 사이즈 중 장패드를 직접 고른 것만. 하나도 없으면 null(전부 자동).
+  function jangpadFor(rows: SizeBreakdownEntry[]): DeskZone["jangpad"] {
+    const out: Partial<Record<DeskSize, string>> = {};
+    rows.forEach((r) => {
+      const v = jangpadDraft[r.deskSize]?.trim();
+      if (v) out[r.deskSize] = v;
+    });
+    return Object.keys(out).length ? out : null;
+  }
+
   function confirmZone() {
     if (editingIndex !== null) {
       const editType = ZONE_TYPES.find((t) => t.key === editTypeDraft);
@@ -1493,6 +1507,7 @@ export function SeatLayoutWorkspace() {
           z.partition = deskSpecDraft.partition;
           z.monitorArm = deskSpecDraft.monitorArm;
           z.chair = deskSpecDraft.chair;
+          z.jangpad = jangpadFor(filtered);
           zones[editingIndex] = z;
           return { ...p, zones };
         });
@@ -1538,6 +1553,7 @@ export function SeatLayoutWorkspace() {
         partition: deskSpecDraft.partition,
         monitorArm: deskSpecDraft.monitorArm,
         chair: deskSpecDraft.chair,
+        jangpad: jangpadFor(filtered),
       };
       setProject((p) => ({ ...p, zones: [...p.zones, zNew] }));
     } else {
@@ -3035,6 +3051,7 @@ export function SeatLayoutWorkspace() {
                 etcColor={etcColor}
                 onEtcColorChange={setEtcColor}
                 editTypeKey={editTypeDraft}
+                createTypeKey={selectedType?.key ?? null}
                 onEditTypeChange={(key) => {
                   setEditTypeDraft(key);
                   if (activeTab === "desk") {
@@ -3052,6 +3069,8 @@ export function SeatLayoutWorkspace() {
                 onBreakdownChange={setBreakdown}
                 bagShelfDraft={bagShelfDraft}
                 onBagShelfDraftChange={setBagShelfDraft}
+                jangpadDraft={jangpadDraft}
+                onJangpadChange={(size, v) => setJangpadDraft((d) => ({ ...d, [size]: v }))}
                 deskSpecDraft={deskSpecDraft}
                 onDeskSpecChange={(id, v) => setDeskSpecDraft((d) => ({ ...d, [id]: v }))}
                 seatsDraft={seatsDraft}
@@ -3846,6 +3865,7 @@ type ZoneFormProps = {
   onEtcColorChange: (v: string) => void;
   // 수정 모드에서만 쓰는 존 유형 변경 (예: 멀티존A가 이미 있으면 멀티존B로 재배정)
   editTypeKey: ZoneTypeKey;
+  createTypeKey: ZoneTypeKey | null;
   onEditTypeChange: (key: ZoneTypeKey) => void;
   editNamePreview: string;
   editEtcName: string;
@@ -3856,6 +3876,8 @@ type ZoneFormProps = {
   onBreakdownChange: (next: SizeBreakdownEntry[]) => void;
   bagShelfDraft: string;
   onBagShelfDraftChange: (v: string) => void;
+  jangpadDraft: Partial<Record<DeskSize, string>>;
+  onJangpadChange: (size: DeskSize, value: string) => void;
   deskSpecDraft: Record<SpecFieldId, string>;
   onDeskSpecChange: (id: SpecFieldId, value: string) => void;
   seatsDraft: string;
@@ -3879,6 +3901,7 @@ function ZoneForm(props: ZoneFormProps) {
     etcColor,
     onEtcColorChange,
     editTypeKey,
+    createTypeKey,
     onEditTypeChange,
     editNamePreview,
     editEtcName,
@@ -3889,6 +3912,8 @@ function ZoneForm(props: ZoneFormProps) {
     onBreakdownChange,
     bagShelfDraft,
     onBagShelfDraftChange,
+    jangpadDraft,
+    onJangpadChange,
     deskSpecDraft,
     onDeskSpecChange,
     seatsDraft,
@@ -4061,6 +4086,22 @@ function ZoneForm(props: ZoneFormProps) {
             </p>
           </div>
 
+          {/* 10-30 사용자: 장패드도 웹에서 고칠 수 있게 — 책상사이즈마다 한 칸(섞인 존은 사이즈별). 수량 기준은 자동과 같다. */}
+          <div>
+            <label className="text-xs font-medium text-[var(--sl-ink-soft)]">장패드</label>
+            <div className="mt-1 space-y-2">
+              {[...new Set(breakdown.map((r) => r.deskSize))].map((size) => (
+                <JangpadSelect
+                  key={size}
+                  label={breakdown.length > 1 ? size : null}
+                  autoName={autoJangpad(size, mode === "edit" ? editTypeKey : (createTypeKey ?? ""))}
+                  value={jangpadDraft[size] ?? ""}
+                  onChange={(v) => onJangpadChange(size, v)}
+                />
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-2 border-t border-dashed border-black/[0.06] pt-3 dark:border-white/[0.08]">
             {specFields.map((f) => (
               <SelectOrEtc
@@ -4109,6 +4150,59 @@ function ZoneForm(props: ZoneFormProps) {
             ))}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// 장패드 칸: "자동(규칙대로 고른 이름)" + 정해진 장패드 + "기타(직접입력)". 빈 값 = 자동.
+function JangpadSelect({
+  label,
+  autoName,
+  value,
+  onChange,
+}: {
+  label: string | null;
+  autoName: string | null;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const isKnown = !value || JANGPAD_OPTIONS.includes(value);
+  const [customMode, setCustomMode] = useState(false);
+  const showCustomInput = customMode || !isKnown;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        {label && <span className="w-16 shrink-0 text-xs text-[var(--sl-ink-soft)]">{label}</span>}
+        <select
+          value={showCustomInput ? "__etc__" : value}
+          onChange={(e) => {
+            if (e.target.value === "__etc__") {
+              setCustomMode(true);
+              onChange("");
+            } else {
+              setCustomMode(false);
+              onChange(e.target.value);
+            }
+          }}
+          className="w-full app-input px-3 py-2 text-sm"
+        >
+          <option value="">자동{autoName ? ` (${autoName})` : ""}</option>
+          {JANGPAD_OPTIONS.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+          <option value="__etc__">기타(직접입력)</option>
+        </select>
+      </div>
+      {showCustomInput && (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="장패드 모델명 직접입력"
+          className="w-full app-input px-3 py-2 text-sm"
+        />
       )}
     </div>
   );
