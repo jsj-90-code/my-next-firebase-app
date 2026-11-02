@@ -1302,11 +1302,9 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           여기 숫자는 경쟁점에 실제로 몇 자리가 돌아가는지(경쟁점 탭의 핑봇_가동률 칸 — 옛 핑봇 값이나, 경쟁점 탭에서
           &ldquo;핑봇 칸에 넣기&rdquo;로 옮긴 경쟁점 가동률 측정기 최근 7일 값)를 우리 매장 좌석점유로 환산한 <strong>별도 자료</strong>입니다.
           위 &ldquo;최종예상월매출&rdquo;과는 계산 경로가 다릅니다. <strong>이 경로로 매출 금액까지 환산한 값은 2026-09-14에
-          기존점 28곳으로 재봤더니 오차가 46%여서 화면에서 뺐습니다</strong>
-          (정식 경로는 {accuracy?.meanAbsoluteErrorPct != null ? formatPercent(accuracy.meanAbsoluteErrorPct) : "검증화면 참고"}). 좌석·가동률은 실측 자료라 남겨두었으니
-          &ldquo;예상매출이 전제하는 가동률이 경쟁점 실측보다 과한가&rdquo;를 가늠하는 데만 써주세요.
-          {result.measuredForecastNeedsReview &&
-            " 예상 가동률이 계획한 PC대수를 넘는데, 경쟁점이 많은 상권은 주요 경쟁점 위주로만 실사하는 게 정상 업무 프로세스라(전수조사 아님) 흔히 나오는 결과입니다 — 데이터가 잘못됐다는 뜻은 아닙니다."}
+          기존점 28곳으로 재봤더니 오차가 46%여서 화면에서 뺐고, 같은 경로의 예상 가동률도 2026-11-02에 뺐습니다</strong>
+          (정식 경로는 {accuracy?.meanAbsoluteErrorPct != null ? formatPercent(accuracy.meanAbsoluteErrorPct) : "검증화면 참고"}).
+          경쟁점 실가동좌석은 실측 자료라 남겨두었으니 상권에 실제로 도는 자리 수를 가늠하는 데만 써주세요.
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard
@@ -1321,11 +1319,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <ResultCard label="예상 수요확보율" value={formatPercent(result.demandCaptureRate)} />
           <ResultCard label="신규수요 증가율" value={formatPercent(result.newDemandGrowthRate)} />
           <ResultCard label="예상 평균가동좌석" value={formatNumber(result.expectedOccupiedSeats)} />
-          <ResultCard
-            label="예상 가동률"
-            value={formatPercent(result.expectedUtilization)}
-            hint={result.measuredForecastNeedsReview ? "주요 경쟁점 위주 실측 기준 추정치로, 실제보다 높게 나올 수 있음" : undefined}
-          />
+          {/* 2026-11-02 — "예상 가동률"(expectedUtilization)도 뺐다. 매출 46%로 뺀 것과 같은 경로의 값이라
+              (사용자 「빼버리자」, N029 결과 탭 확인 중). 계산(calc.ts)은 그대로 둔다. */}
           {/* 2026-09-14 — "예상 대당 일매출"과 "실측기반 예상월매출"을 뺐다. 둘은 같은 값을 단위만
               바꾼 것이고(dailyRevenuePerPc = monthlyRevenue / 대수 / 30), 기존점 28곳 백테스트에서
               MAPE 46.45% · ±10% 10.7% · 계통편향 -19.8%였다. 2026-09-13에 같은 경로(AA경로, 오차 52%)를
