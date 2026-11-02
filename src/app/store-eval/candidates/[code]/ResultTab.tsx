@@ -1338,8 +1338,8 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         <h3 className={sectionTitleClass}>선투자 프로모션 기준매출 판정 (참고용)</h3>
         <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
           <strong>평가한 달의 다음 달에 오픈한다고 보고</strong>, 그 <strong>다음 달부터 10개월간</strong> &ldquo;순수익
-          2,000/1,500/1,000만원 대당 일매출목표&rdquo; 평균과 위 최종예상월매출을 비교하는 3단계 등급
-          판정입니다(1,500만원은 2,000/1,000만원 실측표의 월별 평균). PC대수는 100대 상한이 적용됩니다(100대 초과여도
+          2,000/1,000만원 대당 일매출목표&rdquo; 평균과 위 최종예상월매출을 비교하는 등급
+          판정입니다(1,500만원 기준선은 2026-11-02에 화면에서 뺐습니다 — 필요 없는 자료, 사용자). PC대수는 100대 상한이 적용됩니다(100대 초과여도
           100대 기준으로 계산). 선투자 프로모션 대상 판단용이라 최종운영판정과는 별개이고, 출점 여부 결정에는 쓰지 않습니다.
           {/* 2026-09-13 — 오픈월을 사람이 찍던 것을 "평가월+1"로 통일하고, 계산 구간도 오픈 첫 달을
               빼고 그 다음 달부터 세도록 바꿨다(사용자 확정). 달이 바뀌면 같은 후보지라도 기준매출이
@@ -1349,11 +1349,10 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
         </p>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ResultCard label="2,000만원 기준매출" value={formatManwon(result.aaBaselineRevenue)} hint={formatWon(result.aaBaselineRevenue)} />
-          <ResultCard label="1,500만원 기준매출" value={formatManwon(result.aaBaselineRevenue1500)} hint={formatWon(result.aaBaselineRevenue1500)} />
           <ResultCard label="1,000만원 기준매출" value={formatManwon(result.aaBaselineRevenue1000)} hint={formatWon(result.aaBaselineRevenue1000)} />
           <ResultCard
             label="자동평가"
-            value={result.aaJudgement ?? "-"}
+            value={result.aaJudgement === "1,500만원 이상" ? "1,000만원 이상" : (result.aaJudgement ?? "-")}
             hint={
               result.aaJudgement === "1,000만원 미달"
                 ? "1,000만원 기준 미달"

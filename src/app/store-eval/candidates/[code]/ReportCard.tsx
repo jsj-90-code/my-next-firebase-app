@@ -255,17 +255,18 @@ export function ReportCard({
         />
       </div>
 
-      {/* 2026-08-27 (3차) — 카드 상단의 "2,000만원 이상" 같은 등급 배지를 빼고, 이 매장의 실제
+      {/* 2026-11-02 — 1,500만원 기준선은 뺐다(사용자 "필요없는 자료"). 판정 계산(aaJudgement)은 그대로라 "1,500만원 이상"이면
+          1,000만원 칸만 달성으로 칠한다.
+          2026-08-27 (3차) — 카드 상단의 "2,000만원 이상" 같은 등급 배지를 빼고, 이 매장의 실제
           선투자 프로모션 기준매출 원화 값을 아래쪽에 보여달라는 요청(사용자 확인) — 추상적인
           등급 라벨 대신 세 기준선 실제 금액과 이 매장의 V62가 어디에 해당하는지를 함께 보여준다. */}
       {result.aaJudgement && result.aaJudgement !== "오픈월 입력 필요" && result.aaJudgement !== "실측자료 부족" && (
         <div className="mt-4">
           <p className="text-[10px] font-semibold text-[var(--sl-ink-soft)]">선투자 프로모션 기준매출</p>
-          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+          <div className="mt-1.5 grid grid-cols-2 gap-1.5">
             {(
               [
                 { tier: "2,000만원 이상" as const, amount: result.aaBaselineRevenue },
-                { tier: "1,500만원 이상" as const, amount: result.aaBaselineRevenue1500 },
                 { tier: "1,000만원 이상" as const, amount: result.aaBaselineRevenue1000 },
               ]
             ).map(({ tier, amount }) => {
@@ -285,7 +286,7 @@ export function ReportCard({
             })}
           </div>
           <p className="mt-1 text-[9px] text-[var(--sl-ink-soft)]">
-            {result.aaJudgement === "1,000만원 미달" ? "1,000만원 기준 미달" : `${result.aaJudgement} 달성`} · 출점 판단과는 별개 판정
+            {result.aaJudgement === "1,000만원 미달" ? "1,000만원 기준 미달" : `${result.aaJudgement === "1,500만원 이상" ? "1,000만원 이상" : result.aaJudgement} 달성`} · 출점 판단과는 별개 판정
           </p>
         </div>
       )}
