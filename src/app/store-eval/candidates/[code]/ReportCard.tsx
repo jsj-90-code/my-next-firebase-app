@@ -10,6 +10,7 @@
 import { formatDate, formatManwon, formatManwonRough, formatNumber, formatPercent, formatScore, formatWon } from "@/lib/storeEval/format";
 import { competitivenessLabel } from "@/lib/storeEval/reportContext";
 import { computeImpliedUtilizationFromRevenue } from "@/lib/storeEval/calc";
+import { pickFinalRevenue } from "@/lib/storeEval/finalRevenue";
 import type { CandidateInput, Competitor, EvaluationResult, ModelAccuracySummary } from "@/lib/storeEval/types";
 
 // 2026-08-27: "경쟁력격차 1.63이면 처음 보는 사람은 감이 안 온다"는 지적 — 원점수 대신
@@ -44,7 +45,7 @@ function PercentBar({ label, value, hint }: { label: string; value: number | nul
  * 예상 가동률(실측기반 별도 경로)은 이 체인에 안 쓴다 — V62는 회귀모형이라 가동률이라는 중간
  * 단계 자체가 없다(reportContext.ts와 동일 원칙).
  */
-function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: EvaluationResult; hourlyRate: number | null; expectedPcCount: number | null }) {
+function ReasoningChain({ result, hourlyRate, expectedPcCount, finalLabel }: { result: EvaluationResult; hourlyRate: number | null; expectedPcCount: number | null; finalLabel: string }) {
   const steps = [
     { label: "상권수요", value: result.marketDemand != null ? `${formatNumber(result.marketDemand)}명` : "-" },
     { label: "자사 확보 예상 수요", value: result.expectedOwnDemand != null ? `${formatNumber(result.expectedOwnDemand)}명` : "-", hint: "경쟁력·PC대수 비중 반영" },
@@ -70,7 +71,7 @@ function ReasoningChain({ result, hourlyRate, expectedPcCount }: { result: Evalu
           ↓ 기존 가맹점 실적으로 학습한 예측모형
         </p>
         <div className="flex items-baseline justify-between text-[11px]">
-          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">예상 월매출</span>
+          <span className="font-semibold text-[#171310] dark:text-[#f2ede2]">{finalLabel}</span>
           <span className="font-bold text-[var(--sl-gold-ink)]">약 {formatManwonRough(result.v62Final)}</span>
         </div>
       </div>
@@ -124,6 +125,11 @@ export function ReportCard({
     .filter((c) => c.distanceM != null)
     .sort((a, b) => (a.distanceM ?? 0) - (b.distanceM ?? 0))
     .slice(0, 3);
+  // 2026-11-02 사용자 "예상매출 수정하면 분석카드에 자동반영" — 큰 숫자·필요 가동률을 결과 탭 큰 카드·후보지 목록과 같은
+  // 최종예상월매출(pickFinalRevenue: 담당자 판단 → 추천 산식 → V62)로 그린다. 검증 오차·±20% 폭은 V62의 성적이라 V62 값에 붙여 둔다.
+  const final = pickFinalRevenue(candidate, result);
+  const finalValue = final.value ?? result.v62Final;
+  const finalIsV62 = final.source === "V62" || final.source == null;
 
   return (
     <div
@@ -148,11 +154,14 @@ export function ReportCard({
       </div>
 
       <div className="mt-4 rounded-xl bg-[#171310] p-4 text-white dark:bg-[#f2ede2] dark:text-[#171310]">
-        <p className="text-[10px] text-white/60 dark:text-[#171310]/60">예상 월매출</p>
+        <p className="text-[10px] text-white/60 dark:text-[#171310]/60">예상 월매출{final.source === "담당자" ? " (담당자 판단)" : ""}</p>
         {/* 2026-09-13 — 원 단위("58,280,450원")에서 만원 단위로 바꿨다. 420px 카드에서 자릿수가
             길어 읽기 어려웠고, 실제 평가기록도 "약 5,800만원"으로 쓴다. 회귀 예측값이라 만원
             단위까지 주장할 정밀도가 없기도 하다(100만원 단위로 끊는 formatManwonRough). */}
-        <p className="mt-1 text-2xl font-bold">약 {formatManwonRough(result.v62Final)}</p>
+        <p className="mt-1 text-2xl font-bold">약 {formatManwonRough(finalValue)}</p>
+        {final.source === "담당자" && candidate.judgedReason && (
+          <p className="mt-1 text-[10px] leading-relaxed text-white/70 dark:text-[#171310]/70">{candidate.judgedReason}</p>
+        )}
         <p className="mt-1 text-[10px] text-white/60 dark:text-[#171310]/60">
           {/* 2026-09-13 — 상권등급(SS/S/A/B)을 뺐다. 이 카드는 점포팀 등 다른 팀이 보는 물건인데
               그 등급 체계는 이 시스템 안에서만 쓰는 내부 지표라 밖에서는 읽히지 않는다. 상권성격
@@ -167,6 +176,7 @@ export function ReportCard({
             덮는 비율을 같이 적는다. 숫자는 저장된 검증값에서 읽는다 — 여기에 글자로 박지 않는다. */}
         {accuracy && accuracy.sampleCount > 0 && accuracy.meanAbsoluteErrorPct != null && (
           <p className="mt-1 text-[10px] text-white/60 dark:text-[#171310]/60">
+            {!finalIsV62 && <>산식(V62) 예측 약 {formatManwonRough(result.v62Final)} · </>}
             기존 가맹점 {accuracy.sampleCount}곳 실적으로 검증 · 평균오차 {formatPercent(accuracy.meanAbsoluteErrorPct)}
             {accuracy.within20PctRatio != null && result.v62Final != null && (
               <>
@@ -191,19 +201,8 @@ export function ReportCard({
         )}
       </div>
 
-      {/* 2026-09-13 — 담당자가 판단 매출을 적어둔 후보지만 함께 보여준다. 산식과 사람의 판단을
-          나란히 두는 게 이 기능의 취지라(types.ts judgedRevenue), 카드에서도 같이 보이는 게 맞다. */}
-      {candidate.judgedRevenue != null && (
-        <div className="mt-2 rounded-xl border border-[var(--sl-gold-ink)]/40 p-3">
-          <div className="flex items-baseline justify-between">
-            <p className="text-[10px] font-semibold text-[var(--sl-ink-soft)]">담당자 판단 매출</p>
-            <p className="text-sm font-bold text-[var(--sl-gold-ink)]">약 {formatManwonRough(candidate.judgedRevenue)}</p>
-          </div>
-          {candidate.judgedReason && <p className="mt-1 text-[10px] leading-relaxed text-[#5c5346] dark:text-[#c9bfae]">{candidate.judgedReason}</p>}
-        </div>
-      )}
-
-      <ReasoningChain result={result} hourlyRate={candidate.hourlyRate} expectedPcCount={candidate.expectedPcCount} />
+      {/* 2026-09-13 담당자 판단 매출 상자는 2026-11-02에 위 큰 숫자로 합쳤다(판단값이 있으면 큰 숫자가 그 값, 산식 값은 그 아래 한 줄). */}
+      <ReasoningChain result={result} hourlyRate={candidate.hourlyRate} expectedPcCount={candidate.expectedPcCount} finalLabel={finalIsV62 ? "예상 월매출" : "산식(V62) 예상 월매출"} />
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <StatTile
@@ -248,10 +247,10 @@ export function ReportCard({
           label="이 매출이 나오려면 필요한 가동률"
           value={
             productRatio != null
-              ? (computeImpliedUtilizationFromRevenue(result.v62Final, candidate.hourlyRate, productRatio, candidate.expectedPcCount) ?? result.v62ImpliedUtilization)
+              ? (computeImpliedUtilizationFromRevenue(finalValue, candidate.hourlyRate, productRatio, candidate.expectedPcCount) ?? result.v62ImpliedUtilization)
               : result.v62ImpliedUtilization
           }
-          hint={`가맹점 평균 상품매출 비율 ${productRatio != null ? formatPercent(productRatio, 0) : "50%"} 기준으로 환산 (100% 초과 시 수요초과 신호)`}
+          hint={`위 예상 월매출을 가맹점 평균 상품매출 비율 ${productRatio != null ? formatPercent(productRatio, 0) : "50%"} 기준으로 환산 (100% 초과 시 수요초과 신호)`}
         />
       </div>
 
