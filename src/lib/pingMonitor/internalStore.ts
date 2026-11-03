@@ -37,8 +37,9 @@ export function decodeValue(v: unknown): unknown {
 }
 
 async function call<T>(path: string, payload: unknown): Promise<T> {
-  const base = process.env.PING_STORE_URL;
-  const secret = process.env.PING_STORE_SECRET;
+  // 환경변수를 파이프로 넣으면 끝에 줄바꿈이 붙을 수 있다 — 서버도 열쇠 파일을 trim해서 쓴다(2026-11-03).
+  const secret = process.env.PING_STORE_SECRET?.trim();
+  const base = process.env.PING_STORE_URL?.trim();
   if (!base || !secret) throw new Error("사내 저장소 설정(PING_STORE_URL·PING_STORE_SECRET)이 없습니다.");
   const body = seal(secret, payload);
   const ts = Date.now();
