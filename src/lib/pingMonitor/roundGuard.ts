@@ -89,10 +89,15 @@ export function shouldReplace(existingMethod: string, incomingMethod: string): b
  *    서버가 "추가포트만" IP로 알려 와 probe1688이 자동으로 켜진다(results route).
  *  전 매장에 늘 4포트를 보내면 작은 서버가 버벅인다(2026-10-09) — 그래서 이 세 경우만. */
 export const SILENT_RECHECK_HOUR = "21";
+/** 1688·5040 조회 허용 여부 — 2026-11-03 품의 조건으로 false. 승인 문서가 바뀌기 전엔 켜지 말 것. */
+export const EXTRA_PORTS_ALLOWED = false;
 export function wantsExtraPorts(
   store: { probe1688?: boolean; recent?: Record<string, { a: number }> },
   hour: string,
 ): "probe1688" | "learning" | "silent-recheck" | null {
+  // 2026-11-03 멈춤: 측정기 품의 조건(부사장 반려 의견) — 측정은 핑·80번 포트로 한정, 1688·5040 조회는 하지 않는다.
+  // 그래서 어떤 매장에도 추가 포트를 보내지 않는다(정기·학습·21시 재확인 전부). 아래 규칙은 기록으로 남겨 둔다.
+  if (!EXTRA_PORTS_ALLOWED) return null;
   if (store.probe1688) return "probe1688";
   const rounds = Object.values(store.recent ?? {});
   if (rounds.length < 24) return "learning";

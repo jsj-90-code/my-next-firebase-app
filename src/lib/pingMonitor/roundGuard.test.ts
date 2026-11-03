@@ -86,16 +86,12 @@ describe("10-10 최종점검 보완", () => {
   });
 });
 
-describe("wantsExtraPorts — 새 매장 측정 방식 자동 학습(2026-10-14)", () => {
+describe("wantsExtraPorts — 2026-11-03부터 1688·5040 안 보냄(품의 조건: 핑·80번 한정)", () => {
   const day = (a: number) => Object.fromEntries(Array.from({ length: 24 }, (_, h) => [String(h).padStart(2, "0"), { a }]));
-  it("probe1688 매장은 늘", () => expect(wantsExtraPorts({ probe1688: true, recent: day(30) }, "10")).toBe("probe1688"));
-  it("새 매장(24회차 전)은 전 방식", () => {
-    expect(wantsExtraPorts({}, "10")).toBe("learning");
-    expect(wantsExtraPorts({ recent: { "13": { a: 0 } } }, "14")).toBe("learning");
-  });
-  it("잘 잡히는 매장은 안 보냄", () => expect(wantsExtraPorts({ recent: day(30) }, "21")).toBeNull());
-  it("늘 0대 매장은 21시에만 다시 두드림", () => {
-    expect(wantsExtraPorts({ recent: day(0) }, "21")).toBe("silent-recheck");
-    expect(wantsExtraPorts({ recent: day(0) }, "20")).toBeNull();
+  it("probe1688 매장·새 매장·늘 0대 매장 모두 안 보냄", () => {
+    expect(wantsExtraPorts({ probe1688: true, recent: day(30) }, "10")).toBeNull();
+    expect(wantsExtraPorts({}, "10")).toBeNull();
+    expect(wantsExtraPorts({ recent: day(0) }, "21")).toBeNull();
+    expect(wantsExtraPorts({ recent: day(30) }, "21")).toBeNull();
   });
 });

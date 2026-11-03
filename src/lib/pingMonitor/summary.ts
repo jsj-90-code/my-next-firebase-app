@@ -113,6 +113,9 @@ export type PingStore = {
   portSwitchDate: string | null;
   /** 사람이 "계산 제외"로 확정한 측정 오류 매장(IP 틀림·장비 과응답·몇 대만 평평하게 응답 등). 평균·수요계산 제외, 화면 "-"(2026-10-09). */
   excludeFromStats: boolean;
+  /** 1688·5040번 포트로만 대답하는 매장(문서 칸 probe1688). 2026-11-03 품의 조건(핑·80번 한정)으로 이 포트 측정을 멈춰서
+   *  "조회 가능" 표시만 하고 값은 쓰지 않는다. 옛 문서·테스트엔 없다. */
+  extraPortsOnly?: boolean;
   createdAt: Date | null;
   createdBy: string | null;
   lastSample: {
@@ -342,6 +345,8 @@ export function storeStatus(store: PingStore): StoreStatus {
   if (store.excludeFromStats) return { label: RECHECK, tone: "danger", kind: "recheck", hint: "응답이 이상해 계산에서 뺀 매장(늘 몇 대만 켜짐 등) — 매장에 IP 다시 확인" };
   if (hasNoIp(store)) return { label: "IP 미등록", tone: "warn", kind: "noIp", hint: "IP를 받아 넣으면 다음 정각부터 잽니다" };
   if (!store.active) return { label: "중지", tone: "neutral", kind: "stopped" };
+  // 1688·5040으로만 잡히던 매장 — 2026-11-03부터 그 포트는 안 잰다(품의 조건: 핑·80번 한정). 옛 값이 남아 있어도 이어지지 않으니 쓰지 않는다.
+  if (store.extraPortsOnly) return { label: "1688·5040 조회 가능", tone: "neutral", kind: "unmeasurable", hint: "핑·80번엔 대답 없고 1688·5040번 포트로만 조회되는 매장 — 2026-11-03부터 이 포트는 측정하지 않음" };
   // 실측이 1% 이상이면 꼬리표보다 실측 우선 — 데이터가 뜨는 매장은 꼬리표(확인 전 등) 있어도 무조건 보인다(2026-10-08 스컬스피시).
   // 스침(일일평균 1% 미만)은 측정으로 안 친다(카사 3번 스침 → 0.N%).
   const maxDayUtil = Math.max(0, ...Object.values(store.days).map((v) => (v.t > 0 ? v.a / v.t : 0)));
@@ -361,10 +366,11 @@ export function storeStatus(store: PingStore): StoreStatus {
   // 확인 메모 중 "대답 0대"·"확인 전"은 무응답 기록일 뿐 IP가 틀렸다는 흔적이 아니다(2026-10-14 기준 31곳이 10-06 "대답 0대" 메모) → 아래 포트 조회 실패로.
   if (store.ipCheck && !/대답 0대|확인 전/.test(store.ipCheck)) return { label: RECHECK, tone: "danger", kind: "recheck", hint: `IP 확인 메모: ${store.ipCheck}` };
   const all = rangeUtilization(store.days, null, null, { includePartial: true });
-  // 첫 24회차는 측정 방식을 배우는 중(1688·5040까지 두드림, roundGuard wantsExtraPorts) — 등록 직후 0대를 "포트 조회 실패"로 찍지 않는다.
-  if (all.samples < 24) return { label: "측정 대기", tone: "neutral", kind: "waiting", hint: "등록 후 첫 하루는 잴 방법을 찾는 중" };
-  // IP는 넣었는데 핑·타임스탬프·포트 전부 무응답 — IP가 틀렸는지 매장이 막았는지는 자료로 못 가른다(사실만 적는다).
-  return { label: "포트 조회 실패", tone: "neutral", kind: "unmeasurable", hint: "핑·포트 모두 대답 없음 — 매일 21시 자동으로 다시 확인" };
+  // 첫 24회차는 아직 하루가 안 찼다 — 등록 직후 0대를 "포트 조회 실패"로 찍지 않는다.
+  // (10-14~11-02엔 이 동안 1688·5040까지 두드려 잴 방법을 배웠다. 11-03 품의 조건으로 멈춤 — roundGuard wantsExtraPorts.)
+  if (all.samples < 24) return { label: "측정 대기", tone: "neutral", kind: "waiting", hint: "등록 후 첫 하루 측정 중" };
+  // IP는 넣었는데 핑·타임스탬프·80번 전부 무응답 — IP가 틀렸는지 매장이 막았는지는 자료로 못 가른다(사실만 적는다).
+  return { label: "포트 조회 실패", tone: "neutral", kind: "unmeasurable", hint: "핑·80번 포트 모두 대답 없음" };
 }
 
 /** 경쟁점 정렬 — 측정 중(맨 위) → IP 있는데 못 잼(포트 조회 실패·재확인 등) → IP 미등록(맨 아래), 묶음 안은 거리순(2026-10-08 사용자).
