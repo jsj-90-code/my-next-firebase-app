@@ -13,7 +13,10 @@
 //   spec.json — { actor, code?, candidate?, competitorText?, competitors?: [{ note, target?, ipStart? }], steps?, dryRun? }
 //   결과는 spec 옆 <spec>.result.json에도 남는다. DAOU_SPEC이 없으면 건너뛴다(npm test에서 안 돈다).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
+
+// 측정기 사내 저장소(internalStore.ts)가 "server-only"를 부른다 — 하네스에선 막을 이유가 없다(2026-11-03).
+vi.mock("server-only", () => ({}));
 
 const SPEC_PATH = process.env.DAOU_SPEC;
 
@@ -240,9 +243,20 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
 
     // 5) 측정기 — clientStore.registerCompetitorsToPing과 같은 규칙(경쟁점 전부, IP 있으면 "IP 확인 필요" 표시)
     if (steps.has("ping")) {
+      // 측정기 저장소가 사내로 옮겨졌으면(PING_STORE_BACKEND=internal, 2026-11-03) 거기에 쓴다 — 규칙은 같다.
+      const internal = process.env.PING_STORE_BACKEND === "internal";
+      const { istore } = await import("@/lib/pingMonitor/internalStore");
+      const stamp = () => (internal ? { __now: true } : FieldValue.serverTimestamp());
+      const pingByOwn = async (ownCode: string) =>
+        internal
+          ? (await istore.list(PING_STORES, { where: [["ownCode", "==", ownCode]] })).map((d) => ({ id: d.id, ...d.data }))
+          : (await db.collection(PING_STORES).where("ownCode", "==", ownCode).get()).docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      const pingUpdate = async (id: string, data: Record<string, unknown>) =>
+        internal ? istore.commit([{ op: "update", c: PING_STORES, id, data }]) : void (await db.collection(PING_STORES).doc(id).update(data));
+      const pingAdd = async (data: Record<string, unknown>) => (internal ? istore.add(PING_STORES, data) : (await db.collection(PING_STORES).add(data)).id);
       const ownName = ((await candRef.get()).data()?.name as string | undefined) ?? null;
       const comps = (await listComps()).filter((c) => c.investigationStatus !== "경쟁점없음" && !/^경쟁점 없음/.test(c.name) && c.name.trim() !== "");
-      const existing = (await db.collection(PING_STORES).where("ownCode", "==", code).get()).docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      const existing = (await pingByOwn(code)) as ({ id: string } & Record<string, unknown>)[];
       const nameKey = (s: string) => s.replace(/\s/g, "").toLowerCase();
       const res = { created: [] as string[], linked: [] as string[], ipFilled: [] as string[], ipConflict: [] as string[], ipInvalid: [] as string[], already: [] as string[] };
       for (const c of comps) {
@@ -254,7 +268,7 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
         if (mine.length === 0) {
           const loose = existing.find((p) => !p.competitorId && p.isOwnStore !== true && nameKey(String(p.name)) === nameKey(c.name));
           if (loose) {
-            await db.collection(PING_STORES).doc(loose.id).update({ competitorId: c.id, ...(loose.distanceM == null && c.distanceM != null ? { distanceM: c.distanceM } : {}), updatedAt: FieldValue.serverTimestamp(), updatedBy: actor });
+            await pingUpdate(loose.id, { competitorId: c.id, ...(loose.distanceM == null && c.distanceM != null ? { distanceM: c.distanceM } : {}), updatedAt: stamp(), updatedBy: actor });
             loose.competitorId = c.id;
             mine = [loose];
             res.linked.push(c.name);
@@ -268,18 +282,18 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
             continue;
           }
           if (blank) {
-            await db.collection(PING_STORES).doc(blank.id).update({ ...ip, ipCheck: PASTED_IP_CHECK, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor });
+            await pingUpdate(blank.id, { ...ip, ipCheck: PASTED_IP_CHECK, updatedAt: stamp(), updatedBy: actor });
             res.ipFilled.push(c.name);
           }
           continue;
         }
-        await db.collection(PING_STORES).add({
+        await pingAdd({
           name: c.name.trim(), address: c.address ?? "", ipRanges: ip?.ipRanges ?? "", ipCount: ip?.ipCount ?? 0,
           pcCount: c.totalPcCount ?? c.appliedPcCount ?? null,
           memo: ip ? "점포평가 경쟁점 · 경쟁점 정보의 IP" : "점포평가 경쟁점 · IP 미등록",
           active: true, ownCode: code, ownName, competitorId: c.id, distanceM: c.distanceM ?? null,
           ...(ip ? { ipCheck: PASTED_IP_CHECK } : {}),
-          createdAt: FieldValue.serverTimestamp(), createdBy: actor, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor,
+          createdAt: stamp(), createdBy: actor, updatedAt: stamp(), updatedBy: actor,
         });
         res.created.push(c.name);
       }

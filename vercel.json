@@ -36,6 +36,31 @@
       "regions": [
         "icn1"
       ]
+    },
+    "src/app/api/ping-monitor/db/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "src/app/api/ping-monitor/agent/results/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "src/app/api/ping-monitor/agent/targets/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "src/app/api/ping-monitor/delete/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "src/app/api/ping-monitor/own-register/route.ts": {
+      "regions": [
+        "icn1"
+      ]
     }
   }
 }

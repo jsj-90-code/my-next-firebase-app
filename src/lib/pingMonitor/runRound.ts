@@ -5,6 +5,7 @@ import { parseIpRanges } from "./ipRange";
 import { probeIps } from "./probe";
 import { roundLooksBroken, shouldReplace, wantsExtraPorts } from "./roundGuard";
 import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
+import { istore, usesInternalStore } from "./internalStore";
 
 // 경쟁점 가동률 측정기 — 1시간에 한 번, 측정 중인 매장 전부를 재서 저장한다(2026-10-06 신설).
 //
@@ -41,32 +42,37 @@ function requireDb() {
   return adminDb;
 }
 
+/** 매장 문서 하나 → 잴 대상. Firebase(Timestamp)·사내 저장소(Date) 둘 다 받는다. */
+function toTarget(id: string, data: Record<string, unknown>, hour: string): PingTarget {
+  const ips = parseIpRanges(String(data.ipRanges ?? "")).ips;
+  const recentRaw = (data.recent ?? {}) as Record<string, { a?: number; at?: unknown }>;
+  const extraReason = wantsExtraPorts({ probe1688: Boolean(data.probe1688), recent: recentRaw as Record<string, { a: number }> }, hour);
+  return {
+    id,
+    name: String(data.name ?? ""),
+    ips,
+    total: denominator({ pcCount: (data.pcCount as number | null | undefined) ?? null, ipCount: ips.length }),
+    ...(extraReason ? { extraPorts: EXTRA_PORTS, extraReason } : {}),
+    excluded: Boolean(data.excludeFromStats),
+    recent: Object.fromEntries(Object.entries(recentRaw).map(([h, v]) => [h, { a: Number(v.a ?? 0), at: toDateValue(v.at) }])),
+  };
+}
+const toDateValue = (v: unknown): Date | null =>
+  v instanceof Date ? v : v && typeof v === "object" && "toDate" in v ? (v as { toDate: () => Date }).toDate() : null;
+
 export async function loadTargets(now = new Date()): Promise<PingTarget[]> {
   const { hour } = kstParts(now);
+  if (usesInternalStore()) {
+    const docs = await istore.list(PING_STORES, { where: [["active", "==", true]] });
+    return docs.map((d) => toTarget(d.id, d.data, hour));
+  }
   const snap = await requireDb().collection(PING_STORES).where("active", "==", true).get();
-  return snap.docs.map((d) => {
-    const data = d.data();
-    const ips = parseIpRanges(String(data.ipRanges ?? "")).ips;
-    const extraReason = wantsExtraPorts({ probe1688: Boolean(data.probe1688), recent: data.recent ?? {} }, hour);
-    return {
-      id: d.id,
-      name: String(data.name ?? ""),
-      ips,
-      total: denominator({ pcCount: data.pcCount ?? null, ipCount: ips.length }),
-      ...(extraReason ? { extraPorts: EXTRA_PORTS, extraReason } : {}),
-      excluded: Boolean(data.excludeFromStats),
-      recent: Object.fromEntries(
-        Object.entries((data.recent ?? {}) as Record<string, { a?: number; at?: { toDate?: () => Date } }>).map(([h, v]) => [
-          h,
-          { a: Number(v.a ?? 0), at: v.at?.toDate?.() ?? null },
-        ]),
-      ),
-    };
-  });
+  return snap.docs.map((d) => toTarget(d.id, d.data(), hour));
 }
 
 /** 켜진 IP 집합을 받아 매장별로 저장한다. */
 export async function recordRound(targets: PingTarget[], alive: Set<string>, method: string, now = new Date()): Promise<RoundResult> {
+  if (usesInternalStore()) return recordRoundInternal(targets, alive, method, now);
   const db = requireDb();
   const { date, hour } = kstParts(now);
 
@@ -135,6 +141,10 @@ export async function learnExtraPorts(targets: PingTarget[], extraOnlyIps: Set<s
   const learned = targets.filter(
     (t) => (t.extraReason === "learning" || t.extraReason === "silent-recheck") && t.ips.filter((ip) => extraOnlyIps.has(ip)).length >= 3,
   );
+  if (usesInternalStore()) {
+    await istore.commit(learned.map((t) => ({ op: "merge" as const, c: PING_STORES, id: t.id, data: learnedPatch(t, extraOnlyIps, now, date) })));
+    return learned.map((t) => t.name);
+  }
   await Promise.all(
     learned.map((t) =>
       requireDb()
@@ -165,4 +175,77 @@ export async function runPingRound(now = new Date()): Promise<RoundResult> {
   ]);
   const alive = new Set([...baseAlive, ...extraAlive]);
   return recordRound(targets, alive, "tcp", now);
+}
+
+// ---------- 사내 저장소 쪽(2026-11-03, PING_STORE_BACKEND=internal일 때) ----------
+// 규칙은 위 Firebase 쪽과 똑같다 — 같은 시 두 번이면 한 번만(서버 결과가 예비를 이김), 늦게 온 회차는 lastSample을 안 되돌림.
+// 차이: Firebase 트랜잭션 대신 "그날 문서·매장 문서를 한 번에 읽고 → 한 묶음으로 쓰기". 같은 시를 동시에 두 경로가 쓰는 일은
+// 예비가 서버 기록이 없을 때만(30분 뒤) 돌아서 사실상 없다.
+
+function learnedPatch(t: PingTarget, extraOnlyIps: Set<string>, now: Date, date: string): Record<string, unknown> {
+  return {
+    probe1688: true,
+    probe1688Auto: { at: now, reason: t.extraReason, ips: t.ips.filter((ip) => extraOnlyIps.has(ip)).length },
+    ...(t.extraReason === "silent-recheck" ? { portSwitchDate: date } : {}),
+  };
+}
+
+async function recordRoundInternal(targets: PingTarget[], alive: Set<string>, method: string, now: Date): Promise<RoundResult> {
+  const { date, hour } = kstParts(now);
+  const onById = new Map(
+    targets.filter((s) => s.ips.length > 0).map((s) => {
+      const n = s.ips.filter((ip) => alive.has(ip)).length;
+      return [s.id, s.total > 0 ? Math.min(n, s.total) : n];
+    }),
+  );
+  const broken = roundLooksBroken(targets, onById, hour, now, method);
+  if (broken) return { ok: true, at: now.toISOString(), date, hour, method, stores: [], rejected: broken };
+
+  const measured = targets.filter((s) => s.ips.length > 0);
+  const [dailies, stores] = await Promise.all([
+    istore.getMany(PING_DAILY, measured.map((s) => `${s.id}_${date}`)),
+    istore.getMany(PING_STORES, measured.map((s) => s.id)),
+  ]);
+  const writes: Parameters<typeof istore.commit>[0] = [];
+  const results = targets.map((s) => {
+    if (s.ips.length === 0) return { id: s.id, name: s.name, alive: 0, total: 0, skipped: "IP 없음" };
+    const aliveIps = s.ips.filter((ip) => alive.has(ip));
+    const on = s.total > 0 ? Math.min(aliveIps.length, s.total) : aliveIps.length;
+    const daily = dailies[`${s.id}_${date}`];
+    const store = stores[s.id] ?? {};
+    const prev = (daily?.hours as Record<string, { a: number; t: number; m?: string }> | undefined)?.[hour];
+    if (prev != null && !shouldReplace(String(prev.m ?? ""), method)) return { id: s.id, name: s.name, alive: aliveIps.length, total: s.total, skipped: "이번 시간 이미 기록됨" };
+    const last = (store.lastSample ?? {}) as { at?: unknown; date?: string; hour?: string };
+    const prevAt = toDateValue(last.at);
+    const sameHourLast = last.date === date && last.hour === hour;
+    const newest = !prevAt || prevAt.getTime() <= now.getTime() || (prev != null && sameHourLast);
+    writes.push({ op: "merge", c: PING_DAILY, id: `${s.id}_${date}`, data: { storeId: s.id, date, hours: { [hour]: { a: on, t: s.total, m: method } } } });
+    writes.push({
+      op: "merge",
+      c: PING_STORES,
+      id: s.id,
+      data: {
+        days: prev
+          ? { [date]: { a: { __inc: on - prev.a }, t: { __inc: s.total - prev.t } } }
+          : { [date]: { a: { __inc: on }, t: { __inc: s.total }, n: { __inc: 1 } } },
+        ...(newest ? { lastSample: { at: now, date, hour, alive: on, total: s.total, aliveIps, method } } : {}),
+        recent: { [hour]: { a: on, t: s.total, at: now } },
+      },
+    });
+    return { id: s.id, name: s.name, alive: aliveIps.length, total: s.total };
+  });
+  await istore.commit(writes);
+  return { ok: true, at: now.toISOString(), date, hour, method, stores: results };
+}
+
+// ---------- 마지막 회차 기록(storeEvalSystemStatus/pingMonitor) — 예비가 "이번 시 이미 기록됨"을 보는 문서 ----------
+const STATUS = { c: "storeEvalSystemStatus", id: "pingMonitor" };
+export async function readRoundStatus(): Promise<Record<string, unknown> | undefined> {
+  if (usesInternalStore()) return (await istore.get(STATUS.c, STATUS.id)) ?? undefined;
+  return (await adminDb?.collection(STATUS.c).doc(STATUS.id).get())?.data();
+}
+export async function writeRoundStatus(result: RoundResult): Promise<void> {
+  const data = { ...result, storeCount: result.stores.length };
+  if (usesInternalStore()) return istore.commit([{ op: "set", c: STATUS.c, id: STATUS.id, data }]);
+  await adminDb?.collection(STATUS.c).doc(STATUS.id).set(data);
 }

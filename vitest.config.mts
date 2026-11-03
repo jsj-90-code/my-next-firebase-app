@@ -19,6 +19,7 @@ export default defineConfig({
       "**/.local-tools/**",
       "scripts/pingMonitor/agent/timestamp.test.mjs",
       "scripts/pingMonitor/notifications/watch.test.mjs",
+      "scripts/pingMonitor/store/server.test.mjs", // node --test (2026-11-03 사내 저장소)
     ],
   },
 });

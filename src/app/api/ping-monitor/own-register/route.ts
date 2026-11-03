@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { MAX_IPS_PER_STORE, parseIpRanges } from "@/lib/pingMonitor/ipRange";
 import { PING_STORES } from "@/lib/pingMonitor/summary";
+import { istore, usesInternalStore } from "@/lib/pingMonitor/internalStore";
 
 // 우리 매장 IP 등록(2026-10-28 사용자 "만드셈" — 울산삼산점 IP를 넣으려는데 화면에 칸이 없었다). 그전엔 스크립트로만 넣었다.
 // 보안 규칙이 화면에서 isOwnStore를 못 쓰게 막아 두었으므로(경쟁점을 우리 매장으로 바꾸는 걸 막으려고) 여기(admin)서 만든다.
@@ -29,7 +30,10 @@ export async function POST(request: Request) {
   if (!storeSnap.exists) return NextResponse.json({ error: "점포평가 기존점만 우리 매장 IP를 넣을 수 있습니다(후보지는 개점 후 기존점 전환 뒤에)." }, { status: 400 });
   const store = storeSnap.data() ?? {};
 
-  const all = await adminDb.collection(PING_STORES).get();
+  // 사내 저장소로 옮긴 뒤(2026-11-03, PING_STORE_BACKEND=internal)엔 거기서 읽고 거기에 만든다 — 아래 검사는 같은 모양(get)으로.
+  const all = usesInternalStore()
+    ? { docs: (await istore.list(PING_STORES)).map((d) => ({ id: d.id, get: (k: string) => d.data[k] })) }
+    : await adminDb.collection(PING_STORES).get();
   if (all.docs.some((d) => d.get("ownCode") === ownCode && d.get("isOwnStore") === true))
     return NextResponse.json({ error: "이미 우리 매장 등록이 있습니다 — 우리 매장 줄을 눌러 \"정보 수정\"에서 고쳐 주세요." }, { status: 409 });
 
@@ -45,7 +49,9 @@ export async function POST(request: Request) {
   const count = parsed.ips.length;
   const webPcCount = typeof store.pcCount === "number" ? store.pcCount : null;
   const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
-  const ref = await adminDb.collection(PING_STORES).add({
+  const internal = usesInternalStore();
+  const now = internal ? { __now: true } : FieldValue.serverTimestamp();
+  const data = {
     name: `${storeName} (우리 매장)`,
     address: "",
     lat: typeof store.lat === "number" ? store.lat : null,
@@ -60,10 +66,11 @@ export async function POST(request: Request) {
     ipCount: count,
     pcCount: count,
     memo: `우리 매장 · 화면 등록 ${today} ${ipRanges} 손님 PC 대역 ${count}대${webPcCount != null && webPcCount !== count ? `(웹 대수 ${webPcCount})` : ""}`,
-    createdAt: FieldValue.serverTimestamp(),
+    createdAt: now,
     createdBy: user.email ?? null,
-    updatedAt: FieldValue.serverTimestamp(),
+    updatedAt: now,
     updatedBy: user.email ?? null,
-  });
-  return NextResponse.json({ id: ref.id, ipCount: count, webPcCount });
+  };
+  const id = internal ? await istore.add(PING_STORES, data) : (await adminDb.collection(PING_STORES).add(data)).id;
+  return NextResponse.json({ id, ipCount: count, webPcCount });
 }

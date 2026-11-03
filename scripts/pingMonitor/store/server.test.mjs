@@ -1,7 +1,7 @@
 // 사내 저장소 문서 다루기 시험: node --test scripts/pingMonitor/store/server.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeStore, openDb, sign } from "./server.mjs";
+import { makeStore, openDb, seal, sign, unseal } from "./server.mjs";
 
 const fresh = () => makeStore(openDb(":memory:"));
 
@@ -52,4 +52,19 @@ test("add는 20자 ID, 서명은 본문·경로·시각이 다 들어간다", ()
   const k = "k".repeat(40);
   assert.notEqual(sign(k, 1, "/v1/get", "{}"), sign(k, 2, "/v1/get", "{}"));
   assert.notEqual(sign(k, 1, "/v1/get", "{}"), sign(k, 1, "/v1/list", "{}"));
+});
+
+test("getMany는 없는 건 null", () => {
+  const s = fresh();
+  s.commit([{ op: "set", c: "D", id: "a", data: { x: 1 } }]);
+  assert.deepEqual(s.getMany("D", ["a", "b"]), { a: { x: 1 }, b: null });
+});
+
+test("암호화: 같은 열쇠로만 풀리고 매번 다른 암호문", () => {
+  const k = "k".repeat(48);
+  const a = seal(k, { ip: "10.0.0.1" });
+  assert.notEqual(a, seal(k, { ip: "10.0.0.1" }));
+  assert.ok(!a.includes("10.0.0.1"));
+  assert.deepEqual(unseal(k, a), { ip: "10.0.0.1" });
+  assert.throws(() => unseal("x".repeat(48), a));
 });

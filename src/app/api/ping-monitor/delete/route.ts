@@ -3,6 +3,7 @@ import { FieldPath, FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { getVerifiedCompanyUser } from "@/lib/server/companyAuth";
 import { PING_DAILY, PING_STORES } from "@/lib/pingMonitor/summary";
+import { istore, usesInternalStore } from "@/lib/pingMonitor/internalStore";
 
 // 측정기 경쟁점 삭제(2026-10-24 사용자 "경쟁점 삭제 버튼 만들어줘") — 잘못 넣은 등록을 측정 기록째 지운다.
 // 화면(보안 규칙)은 빈 항목만 지울 수 있어서, 기록이 있는 등록은 여기(admin)서 지운다.
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { id?: unknown } | null;
   const id = typeof body?.id === "string" ? body.id : "";
   if (!id || id.includes("/")) return NextResponse.json({ error: "매장 id가 없습니다." }, { status: 400 });
+
+  if (usesInternalStore()) return deleteInternal(id, user.email ?? null);
 
   const ref = adminDb.collection(PING_STORES).doc(id);
   const snap = await ref.get();
@@ -41,4 +44,21 @@ export async function POST(request: Request) {
   }
   await ref.delete();
   return NextResponse.json({ deleted: id, dailyDeleted: daily.size });
+}
+
+/** 사내 저장소 쪽(2026-11-03) — 규칙은 위와 같다. 매장·일별 기록 삭제와 삭제 기록 남기기를 한 묶음으로. */
+async function deleteInternal(id: string, email: string | null) {
+  const data = await istore.get(PING_STORES, id);
+  if (!data) return NextResponse.json({ error: "이미 없는 매장입니다." }, { status: 404 });
+  if (data.isOwnStore === true) return NextResponse.json({ error: "우리 매장 등록은 지울 수 없습니다." }, { status: 400 });
+  const daily = await istore.list(PING_DAILY, { idFrom: `${id}_`, idTo: `${id}_￿` });
+  const info = { ...data };
+  delete info.days;
+  delete info.lastSample;
+  await istore.commit([
+    { op: "set", c: "pingMonitorDeleted", id, data: { ...info, dailyCount: daily.length, deletedAt: { __now: true }, deletedBy: email } },
+    ...daily.map((x) => ({ op: "delete" as const, c: PING_DAILY, id: x.id })),
+    { op: "delete", c: PING_STORES, id },
+  ]);
+  return NextResponse.json({ deleted: id, dailyDeleted: daily.length });
 }

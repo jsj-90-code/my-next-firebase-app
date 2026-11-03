@@ -1,8 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
 import { checkGithubOidc } from "@/lib/pingMonitor/githubOidc";
-import { runPingRound } from "@/lib/pingMonitor/runRound";
+import { readRoundStatus, runPingRound, writeRoundStatus } from "@/lib/pingMonitor/runRound";
 import { kstParts } from "@/lib/pingMonitor/summary";
 
 // 경쟁점 가동률 측정기 1시간 알람 — GitHub Actions(.github/workflows/ping-monitor.yml)가 매시 부른다.
@@ -39,7 +38,7 @@ export async function GET(request: Request) {
     const now = new Date();
     const { date, hour } = kstParts(now);
     const minute = Number(new Date(now.getTime() + 9 * 3600 * 1000).toISOString().slice(14, 16));
-    const last = (await adminDb?.collection("storeEvalSystemStatus").doc("pingMonitor").get())?.data();
+    const last = await readRoundStatus();
     if (last?.date === date && last?.hour === hour) {
       // 서버가 쓴 시엔 아무것도 안 한다. 예전엔 1688 보충(supplement1688)을 했는데, 10-09부터 서버가 probe1688 매장에
       // 1688·5040을 직접 재므로 20~45분 뒤 다시 재서 합치면 그 사이 켜진 PC만 더해져 위로만 치우쳤다
@@ -50,11 +49,7 @@ export async function GET(request: Request) {
     const result = await runPingRound(now);
     if (result.rejected) return NextResponse.json(result); // 회차 이상 — 저장·상태 기록 안 함(이 시의 다음 예비 호출이 있으면 다시 잰다, 없으면 그 시는 빈다)
     // 마지막 실행 기록(알람이 실제로 도는지 확인용) — 문서 하나를 덮어쓴다.
-    await adminDb
-      ?.collection("storeEvalSystemStatus")
-      .doc("pingMonitor")
-      .set({ ...result, storeCount: result.stores.length })
-      .catch((error) => console.error("ping-monitor 실행 기록 저장 실패:", error));
+    await writeRoundStatus(result).catch((error) => console.error("ping-monitor 실행 기록 저장 실패:", error));
     return NextResponse.json(result);
   } catch (error) {
     console.error("ping-monitor 측정 실패:", error);

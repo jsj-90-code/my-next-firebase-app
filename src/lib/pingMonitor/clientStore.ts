@@ -1,6 +1,6 @@
 "use client";
 
-// 경쟁점 가동률 측정기 — 화면에서 Firestore 읽기·쓰기(2026-10-06 신설).
+// 경쟁점 가동률 측정기 — 화면에서 Firestore 읽기·쓰기(2026-10-06 신설). 2026-11-03부터 사내 저장소로도(아래 "저장소 고르기").
 // 화면이 쓰는 칸은 상호·주소·IP대역·대수·메모·측정여부뿐이다. 측정 기록(days·lastSample)은 서버만 쓴다(firestore.rules).
 // Firebase 무료 요금제라 읽기를 아낀다: 목록은 매장 문서만(매장당 1번), 시간대별은 상세 화면에서 고른 기간만.
 
@@ -19,7 +19,7 @@ import {
   writeBatch,
   type DocumentData,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { listCandidates, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
 import type { Competitor } from "@/lib/storeEval/types";
 import { parseIpRanges } from "./ipRange";
@@ -43,6 +43,7 @@ export type PingStoreInput = {
 };
 
 function toDate(v: unknown): Date | null {
+  if (v instanceof Date) return v; // 사내 저장소 창구가 돌려준 값
   return v && typeof v === "object" && "toDate" in v ? (v as { toDate: () => Date }).toDate() : null;
 }
 
@@ -96,46 +97,111 @@ function requireDb() {
   return db;
 }
 
+// ---------- 저장소 고르기(2026-11-03) ----------
+// NEXT_PUBLIC_PING_STORE_API=1이면 사내 저장소(/api/ping-monitor/db — 로그인 확인·규칙은 거기서), 아니면 예전처럼 Firebase 직접.
+// 아래 도우미만 두 갈래이고, 나머지 함수는 도우미만 부른다. 문서는 {id, data} 한 모양으로 다룬다.
+const VIA_API = process.env.NEXT_PUBLIC_PING_STORE_API === "1";
+type RawDoc = { id: string; data: DocumentData };
+type WhereClause = [string, "==" | "in" | ">=" | "<", unknown];
+
+function decode(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(decode);
+  if (v && typeof v === "object") {
+    const ts = (v as { __ts?: unknown }).__ts;
+    if (typeof ts === "string" && Object.keys(v).length === 1) return new Date(ts);
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, decode(x)]));
+  }
+  return v;
+}
+async function api<T>(body: unknown): Promise<T> {
+  const token = await auth?.currentUser?.getIdToken();
+  if (!token) throw new Error("로그인이 필요합니다.");
+  const res = await fetch("/api/ping-monitor/db", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error(json.error ?? "측정기 저장소 요청에 실패했습니다.");
+  return decode(json) as T;
+}
+/** 서버 시각 칸 — Firebase는 serverTimestamp(), 사내 저장소는 창구가 지금 시각을 넣는다. */
+const nowValue = () => (VIA_API ? { __now: true } : serverTimestamp());
+
+async function storesWhere(clauses: WhereClause[] = []): Promise<RawDoc[]> {
+  if (VIA_API) return (await api<{ docs: RawDoc[] }>({ op: "list", c: PING_STORES, where: clauses })).docs;
+  const base = collection(requireDb(), PING_STORES);
+  const snap = await getDocs(clauses.length ? query(base, ...clauses.map(([f, op, v]) => where(f, op, v))) : base);
+  return snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+}
+async function storeGet(id: string): Promise<RawDoc | null> {
+  if (VIA_API) {
+    const { doc: data } = await api<{ doc: DocumentData | null }>({ op: "get", c: PING_STORES, id });
+    return data ? { id, data } : null;
+  }
+  const snap = await getDoc(doc(requireDb(), PING_STORES, id));
+  return snap.exists() ? { id: snap.id, data: snap.data() } : null;
+}
+async function storeAdd(data: DocumentData): Promise<string> {
+  if (VIA_API) return (await api<{ id: string }>({ op: "add", c: PING_STORES, data })).id;
+  return (await addDoc(collection(requireDb(), PING_STORES), data)).id;
+}
+async function storeUpdates(list: { id: string; data: DocumentData }[]): Promise<void> {
+  if (list.length === 0) return;
+  if (VIA_API) {
+    await api({ op: "commit", writes: list.map((u) => ({ op: "update", c: PING_STORES, id: u.id, data: u.data })) });
+    return;
+  }
+  if (list.length === 1) return updateDoc(doc(requireDb(), PING_STORES, list[0].id), list[0].data);
+  const batch = writeBatch(requireDb());
+  for (const u of list) batch.update(doc(requireDb(), PING_STORES, u.id), u.data);
+  await batch.commit();
+}
+async function storeDelete(id: string): Promise<void> {
+  if (VIA_API) {
+    await api({ op: "commit", writes: [{ op: "delete", c: PING_STORES, id }] });
+    return;
+  }
+  await deleteDoc(doc(requireDb(), PING_STORES, id));
+}
+
 export async function listPingStores(): Promise<PingStore[]> {
-  const snap = await getDocs(collection(requireDb(), PING_STORES));
-  return snap.docs.map((d) => toStore(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  return (await storesWhere()).map((d) => toStore(d.id, d.data)).sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }
 
 /** 우리 매장 하나(기존점 가맹점코드·후보지 N0xx)에 붙은 등록 전부 — 매장별 비교 화면(2026-10-07). */
 export async function listPingStoresByOwn(ownCode: string): Promise<PingStore[]> {
-  const snap = await getDocs(query(collection(requireDb(), PING_STORES), where("ownCode", "==", ownCode)));
-  return snap.docs.map((d) => toStore(d.id, d.data()));
+  return (await storesWhere([["ownCode", "==", ownCode]])).map((d) => toStore(d.id, d.data));
 }
 
 export async function getPingStore(id: string): Promise<PingStore | null> {
-  const snap = await getDoc(doc(requireDb(), PING_STORES, id));
-  return snap.exists() ? toStore(snap.id, snap.data()) : null;
+  const d = await storeGet(id);
+  return d ? toStore(d.id, d.data) : null;
 }
 
 export async function createPingStore(input: PingStoreInput, email: string | null, extra: { ipCheck?: string | null } = {}): Promise<string> {
-  const ref = await addDoc(collection(requireDb(), PING_STORES), {
+  return storeAdd({
     ...input,
     ...(extra.ipCheck ? { ipCheck: extra.ipCheck } : {}),
-    createdAt: serverTimestamp(),
+    createdAt: nowValue(),
     createdBy: email,
-    updatedAt: serverTimestamp(),
+    updatedAt: nowValue(),
     updatedBy: email,
   });
-  return ref.id;
 }
 
 /** IP대역을 바꿔 저장하면 "IP 확인 필요" 표시를 지운다(clearIpCheck). */
 export async function updatePingStore(id: string, input: PingStoreInput, email: string | null, opts: { clearIpCheck?: boolean } = {}): Promise<void> {
-  await updateDoc(doc(requireDb(), PING_STORES, id), {
-    ...input,
-    ...(opts.clearIpCheck ? { ipCheck: null } : {}),
-    updatedAt: serverTimestamp(),
-    updatedBy: email,
-  });
+  await storeUpdates([{ id, data: { ...input, ...(opts.clearIpCheck ? { ipCheck: null } : {}), updatedAt: nowValue(), updatedBy: email } }]);
 }
 
 /** from~to(포함) 날짜의 시간별 기록. 문서 id가 `{매장id}_{날짜}`라 id 범위로 한 번에 읽는다(색인 불필요). */
 export async function listPingDaily(storeId: string, from: string, to: string): Promise<PingDaily[]> {
+  if (VIA_API) {
+    // 창구의 ID 범위는 [idFrom, idTo) — "<= 매장_to"를 맞추려고 끝에 \u0000을 붙인다.
+    const { docs } = await api<{ docs: RawDoc[] }>({ op: "list", c: PING_DAILY, idFrom: `${storeId}_${from}`, idTo: `${storeId}_${to}\u0000` });
+    return docs.map(({ data }) => ({ storeId: String(data.storeId ?? storeId), date: String(data.date ?? ""), hours: data.hours ?? {} }));
+  }
   const q = query(
     collection(requireDb(), PING_DAILY),
     where(documentId(), ">=", `${storeId}_${from}`),
@@ -167,10 +233,10 @@ export async function listOwnStoreOptions(): Promise<OwnStoreOption[]> {
   const [existing, candidates, custom] = await Promise.all([
     listExistingStores(),
     listCandidates(),
-    getDocs(query(collection(requireDb(), PING_STORES), where("ownCode", ">=", "직접"), where("ownCode", "<", "직접\uf8ff"))),
+    storesWhere([["ownCode", ">=", "직접"], ["ownCode", "<", "직접\uf8ff"]]),
   ]);
   const existingNames = new Set(existing.map((s) => s.storeName.replace(/\s/g, "")));
-  const customNames = new Map(custom.docs.map((d) => [String(d.get("ownCode")), String(d.get("ownName") ?? "") || String(d.get("ownCode"))]));
+  const customNames = new Map(custom.map((d) => [String(d.data.ownCode), String(d.data.ownName ?? "") || String(d.data.ownCode)]));
   return [
     ...[...customNames]
       .map(([code, name]) => ({ code, name, kind: isCustomCandidateCode(code) ? ("후보지" as const) : ("기존점" as const), custom: true }))
@@ -221,7 +287,7 @@ export async function transferCustomOwn(fromCode: string, to: { code: string; na
   const key = (s: string) => s.replace(/\s/g, "").toLowerCase();
   const taken = new Set(already.map((s) => s.competitorId).filter(Boolean));
   const result: TransferResult = { moved: 0, linked: [] };
-  const batch = writeBatch(requireDb());
+  const updates: { id: string; data: DocumentData }[] = [];
   for (const s of rows) {
     const same = competitors.filter((c) => key(c.name) === key(s.name));
     const link = !s.competitorId && same.length === 1 && !taken.has(same[0].id) ? same[0] : null;
@@ -229,16 +295,19 @@ export async function transferCustomOwn(fromCode: string, to: { code: string; na
       taken.add(link.id);
       result.linked.push(s.name);
     }
-    batch.update(doc(requireDb(), PING_STORES, s.id), {
-      ownCode: to.code,
-      ownName: to.name,
-      ...(link ? { competitorId: link.id, ...(s.distanceM == null && link.distanceM != null ? { distanceM: link.distanceM } : {}) } : {}),
-      updatedAt: serverTimestamp(),
-      updatedBy: email,
+    updates.push({
+      id: s.id,
+      data: {
+        ownCode: to.code,
+        ownName: to.name,
+        ...(link ? { competitorId: link.id, ...(s.distanceM == null && link.distanceM != null ? { distanceM: link.distanceM } : {}) } : {}),
+        updatedAt: nowValue(),
+        updatedBy: email,
+      },
     });
     result.moved++;
   }
-  await batch.commit();
+  await storeUpdates(updates);
   return result;
 }
 
@@ -251,9 +320,8 @@ export async function listPingStoresByCompetitorIds(ids: string[]): Promise<Map<
   const out = new Map<string, PingStore[]>();
   for (let i = 0; i < unique.length; i += 10) {
     const chunk = unique.slice(i, i + 10);
-    const snap = await getDocs(query(collection(requireDb(), PING_STORES), where("competitorId", "in", chunk)));
-    for (const d of snap.docs) {
-      const s = toStore(d.id, d.data());
+    for (const d of await storesWhere([["competitorId", "in", chunk]])) {
+      const s = toStore(d.id, d.data);
       if (!s.competitorId) continue;
       out.set(s.competitorId, [...(out.get(s.competitorId) ?? []), s]);
     }
@@ -269,7 +337,7 @@ export async function listPingStoresByCompetitorIds(ids: string[]): Promise<Map<
 export async function removePingPlaceholdersForCompetitor(competitorId: string): Promise<{ deleted: number; kept: string[] }> {
   const linked = ((await listPingStoresByCompetitorIds([competitorId])).get(competitorId) ?? []).filter((s) => !s.isOwnStore);
   const empty = linked.filter((s) => hasNoIp(s) && Object.keys(s.days ?? {}).length === 0);
-  await Promise.all(empty.map((s) => deleteDoc(doc(requireDb(), PING_STORES, s.id))));
+  await Promise.all(empty.map((s) => storeDelete(s.id)));
   return { deleted: empty.length, kept: linked.filter((s) => !empty.includes(s)).map((s) => s.name) };
 }
 
@@ -309,12 +377,7 @@ export async function registerCompetitorsToPing(
     const i = unlinked.findIndex((p) => nameKey(p.name) === nameKey(c.name));
     if (i < 0) continue;
     const p = unlinked.splice(i, 1)[0];
-    await updateDoc(doc(requireDb(), PING_STORES, p.id), {
-      competitorId: c.id,
-      ...(p.distanceM == null && c.distanceM != null ? { distanceM: c.distanceM } : {}),
-      updatedAt: serverTimestamp(),
-      updatedBy: email,
-    });
+    await storeUpdates([{ id: p.id, data: { competitorId: c.id, ...(p.distanceM == null && c.distanceM != null ? { distanceM: c.distanceM } : {}), updatedAt: nowValue(), updatedBy: email } }]);
     linked.set(c.id, [{ ...p, competitorId: c.id }]);
     result.linked.push(c.name);
   }
@@ -332,12 +395,7 @@ export async function registerCompetitorsToPing(
         continue;
       }
       if (blank) {
-        await updateDoc(doc(requireDb(), PING_STORES, blank.id), {
-          ...ip,
-          ipCheck: verifiedIds.has(c.id) ? null : PASTED_IP_CHECK,
-          updatedAt: serverTimestamp(),
-          updatedBy: email,
-        });
+        await storeUpdates([{ id: blank.id, data: { ...ip, ipCheck: verifiedIds.has(c.id) ? null : PASTED_IP_CHECK, updatedAt: nowValue(), updatedBy: email } }]);
         result.ipFilled.push(c.name);
       }
       continue;

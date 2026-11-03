@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
 import { checkAgentSignature } from "@/lib/pingMonitor/agentAuth";
-import { learnExtraPorts, loadTargets, recordRound } from "@/lib/pingMonitor/runRound";
+import { learnExtraPorts, loadTargets, recordRound, writeRoundStatus } from "@/lib/pingMonitor/runRound";
 
 // 측정 서버가 핑 + TCP로 잰 결과(켜진 IP 목록)를 받아 저장한다. 저장 방식은 Vercel TCP 경로와 같다(recordRound).
 // 대상 목록은 여기서 다시 읽는다 — 서버가 보낸 IP 중 등록된 대역에 든 것만 센다.
@@ -36,10 +35,6 @@ export async function POST(request: Request) {
     console.error("ping-monitor 측정 방식 자동 학습 실패:", error);
     return [] as string[];
   });
-  await adminDb
-    ?.collection("storeEvalSystemStatus")
-    .doc("pingMonitor")
-    .set({ ...result, storeCount: result.stores.length })
-    .catch((error) => console.error("ping-monitor 실행 기록 저장 실패:", error));
+  await writeRoundStatus(result).catch((error) => console.error("ping-monitor 실행 기록 저장 실패:", error));
   return NextResponse.json({ ok: true, date: result.date, hour: result.hour, stores: result.stores.length, written: result.stores.filter((s) => !s.skipped).length, ...(learned.length ? { learned } : {}) });
 }
