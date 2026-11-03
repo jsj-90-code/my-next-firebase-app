@@ -205,6 +205,8 @@ export function defaultModelSettings(): Omit<ModelSettings, "updatedAt" | "updat
     aaMonthlyTargets1500: AA_MONTHLY_TARGETS_1500,
     aaMaxPcCount: 100,
     marketCharacterThreshold: { downtown: 8, mixed: 4 },
+    // 2026-11-03 — 등급 M 기준. 기존점 42곳 유동 500m 중앙값(약 10.3만)을 반올림한 10만 → 기존점 22곳(절반)이 M.
+    mainLocationFloating500Min: 100000,
     // 2026-09-03 재보정 — 상권성격별 예측 편향을 실측하니 **번화가 14곳을 평균 4.81% 과소예측**
     // 하고 있었다(혼합 -2.65%, 주거중심 +0.48%로 나머지는 거의 정확). 번화가 유효율을 올리고
     // 주거중심을 내리는 방향이 이 편향을 직접 겨냥한다 — 임의 튜닝이 아니라 편향 교정이다.

@@ -40,6 +40,7 @@ const FIELD_LABELS: Record<string, string> = {
   "v61Fallback.competitivenessCoef": "V61 폴백 - 자사점수계수",
   "marketCharacterThreshold.downtown": "상권성격 임계값 - 번화가(8배)",
   "marketCharacterThreshold.mixed": "상권성격 임계값 - 혼합(4배)",
+  mainLocationFloating500Min: "점포평가 등급 M 기준 - 유동 500m 하루(명)",
   "marketDemandEffectiveRate.downtown": "상권수요 유효율 - 번화가",
   "marketDemandEffectiveRate.mixed": "상권수요 유효율 - 혼합",
   "marketDemandEffectiveRate.residential": "상권수요 유효율 - 주거중심",
@@ -462,6 +463,12 @@ export default function StoreEvalSettingsPage() {
           label="상권성격 임계값 - 혼합(4배)"
           value={form.marketCharacterThreshold.mixed}
           onChange={(v) => updateGroup("marketCharacterThreshold", "mixed", v)}
+          readOnly={readOnly}
+        />
+        <NumberInput
+          label="점포평가 등급 M 기준 - 유동 500m 하루(명, 등급 표시만·산식 안 씀)"
+          value={form.mainLocationFloating500Min}
+          onChange={(v) => updateTop("mainLocationFloating500Min", v)}
           readOnly={readOnly}
         />
         <div className="hidden md:block" aria-hidden />

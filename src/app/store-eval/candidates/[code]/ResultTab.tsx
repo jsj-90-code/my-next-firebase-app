@@ -1012,7 +1012,11 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
   // 점포평가 등급 — 계산으로 확정한다(AI에게 맡기지 않는 이유는 아래 초안 섹션 주석 참고).
   // 2026-10-20 — 상권등급 카드·분석 카드 배지·다우 등급이 같은 순수익(최종예상월매출 기준 예상 손익)을 쓴다.
   const gradeProfit = finalNetProfit(candidateForReport, result, settingsUsed.profitLoss ?? defaultModelSettings().profitLoss);
-  const reportGrade = storeEvaluationGrade({ marketCharacter: result.marketCharacter, netProfit: gradeProfit.pl?.netProfit });
+  const reportGrade = storeEvaluationGrade({
+    floating500Avg: candidateForReport?.floating500Avg,
+    mainLocationFloating500Min: settingsUsed.mainLocationFloating500Min ?? defaultModelSettings().mainLocationFloating500Min,
+    netProfit: gradeProfit.pl?.netProfit,
+  });
 
   // 결재 전 확인 신호 — 규칙으로만 모은다(reviewSignals.ts). 후보지 값이 아직 로드되지 않았으면
   // 입력 기반 신호는 건너뛰고 계산 결과 기반 신호만 나온다.
@@ -1435,12 +1439,18 @@ export function ResultTab({ candidateCode }: { candidateCode: string }) {
           <div className="mt-4 flex flex-col gap-3">
             {/* 2026-09-13 — 실제 평가기록은 맨 윗줄이 "점포평가 : MAA"다. 이 등급만은 AI가 아니라
                 코드가 확정한다(storeEvaluationGrade) — 결재 문서의 결론이라 모델이 그럴듯하게
-                지어내면 잘못된 등급이 그대로 올라간다. 규칙: 번화가면 앞에 M, 뒤는 순수익 등급
+                지어내면 잘못된 등급이 그대로 올라간다. 규칙: 유동 500m 절대량이 기준 이상이면 앞에 M(2026-11-03, 옛 기준은 유동÷주거 비율 번화가), 뒤는 순수익 등급
                 (2026-10-20부터, describeProfitGrade). */}
             <div className="app-card-sm rounded-xl p-3">
               <p className="text-xs font-semibold text-[var(--sl-ink-soft)]">점포평가 등급</p>
               {reportGrade ? (
-                <p className="mt-1 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">점포평가 : {reportGrade}</p>
+                <>
+                  <p className="mt-1 text-sm font-semibold text-[#171310] dark:text-[#f2ede2]">점포평가 : {reportGrade}</p>
+                  <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
+                    M = 유동 500m 하루 {formatNumber(settingsUsed.mainLocationFloating500Min ?? defaultModelSettings().mainLocationFloating500Min)}명 이상
+                    (이 후보지 {candidateForReport?.floating500Avg != null ? `${formatNumber(candidateForReport.floating500Avg)}명` : "-"}) · 뒤는 {describeProfitGrade()}
+                  </p>
+                </>
               ) : (
                 <p className="mt-1 text-sm text-[var(--sl-ink-soft)]">
                   점포평가 : <span className="text-[var(--sl-warn)]">해당 없음</span> — 예상 순수익이 첫 등급(A)에 못 미쳐

@@ -103,7 +103,8 @@ export function competitivenessLabel(gap: number | null): string | null {
 
 /**
  * 점포평가 등급 — 실제 평가기록 맨 윗줄의 "점포평가 : MAA" 가 이것이다. 두 축을 붙여 만든다.
- *   앞자리 M — 상권성격이 "번화가"일 때만 붙인다(2026-09-13 사용자 확정)
+ *   앞자리 M — 유동 500m 하루 절대량이 settings.mainLocationFloating500Min 이상일 때 붙인다(2026-11-03 사용자).
+ *              예전(09-13)엔 상권성격(유동÷주거 비율 8배)이 "번화가"일 때였다 — 아파트가 많은 번화가(화정역)를 놓쳤다.
  *   뒷자리   — 순수익 등급(profitGrade: 1,000만원당 A, 남은 500만원 이상 +, 3,000만원 이상 S — 10-26). 2026-10-20 사용자 "카드 배지랑 다우 등급도
  *              순수익 등급으로" — 예전엔 선투자 기준매출(2,000/1,500/1,000만원 → AA/A+/A)로 매겼다.
  *              순수익은 결과 탭 예상 손익과 같은 계산(최종예상월매출 기준, finalNetProfit).
@@ -113,11 +114,16 @@ export function competitivenessLabel(gap: number | null): string | null {
  * 표시한다 — 그 경우의 등급명은 정해진 바가 없어 임의로 만들지 않는다.
  */
 export function storeEvaluationGrade(
-  input: { marketCharacter: EvaluationResult["marketCharacter"]; netProfit: number | null | undefined },
+  input: { floating500Avg: number | null | undefined; mainLocationFloating500Min: number; netProfit: number | null | undefined },
 ): string | null {
   const tier = profitGrade(input.netProfit);
   if (tier == null) return null;
-  return input.marketCharacter === "번화가" ? `M${tier}` : tier;
+  return isMainLocation(input.floating500Avg, input.mainLocationFloating500Min) ? `M${tier}` : tier;
+}
+
+/** 등급 앞 M 여부 — 유동 500m 하루 절대량 기준(2026-11-03). 값이 없으면 붙이지 않는다. */
+export function isMainLocation(floating500Avg: number | null | undefined, min: number): boolean {
+  return floating500Avg != null && floating500Avg >= min;
 }
 
 /** 1~5점 항목을 사람이 읽는 말로. 실제 문서가 "제약이 있음"/"우위" 같은 말로 쓰는 자리라 숫자만

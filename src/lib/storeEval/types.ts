@@ -635,6 +635,9 @@ export type ModelSettings = {
   aaMaxPcCount: number; // 100 — MIN(예상PC대수,100)
   // 08_계산기준의 상권/경쟁력 계수 (하드코딩 금지 대상)
   marketCharacterThreshold: { downtown: number; mixed: number }; // 8배/4배
+  // 2026-11-03 사용자 — 점포평가 등급 앞 "M"(메인입지·번화가)은 유동÷주거 **비율**이 아니라 유동 500m 하루 **절대량**으로 붙인다.
+  // 비율은 주거가 많은 번화가(화정역 11.5만·비율 4.3)를 놓친다. 등급 표시에만 쓰고 산식(수요 스위치)은 안 건드린다(V62 동결).
+  mainLocationFloating500Min: number;
   marketDemandEffectiveRate: { downtown: number; mixed: number; residential: number }; // 0.53/0.61/0.78
   // 2026-08-27 (2차) — 상대평가(상위10/30/60% 백분위)에서 절대평가로 바꿨다(사용자 확정, calc.ts
   // computeMarketGrade 주석 참고). 값은 그 상대평가가 쓰던 실제 경계값을 반올림한 고정 금액이다.
