@@ -40,6 +40,11 @@ export type ParsedCompetitorNote = {
   foodScore: number | null;
   /** 경쟁점 가동률 측정기용 IP 대역(예 "210.221.225.1~106") — 원문에 있을 때만. */
   ipRanges: string | null;
+  // 2026-11-03 N030 화정역점 — 다우 글은 매장마다 "주소 , 5층" 줄이 **매장명보다 먼저** 온다. 매장명 줄에서만 끊어서
+  // 그 줄이 앞 매장 종합평가 끝에 붙고 층은 비었다(사용자 지적). 매장명 위 주소 줄을 그 매장 몫으로 읽는다.
+  addressLine: string | null;
+  floor: number | null; // 층 숫자(지하도 양수)
+  groundLevel: "지상" | "지하" | null;
   raw: string; // 원문 블록 (검토용)
 };
 
@@ -251,7 +256,31 @@ function parseRatePer1000Won(text: string | null): number | null {
   return bare && Number(bare[1]) >= 10 && Number(bare[1]) <= 120 ? Number(bare[1]) : null;
 }
 
-function parseOneBlock(block: string): ParsedCompetitorNote | null {
+/** 매장명 위에 오는 주소·층 줄인가 — "고양시 덕양구 화정동979-2 , 5층", "*인천 서해구 승학로 491 4층", "지하1층". */
+function looksLikeAddressLine(line: string): boolean {
+  const t = line.trim();
+  if (!t || t.length > 80 || /[:：]/.test(t)) return false;
+  return /\d+\s*층/.test(t) || /[가-힣]+(?:시|군|구)\s+[가-힣\d]+(?:동|읍|면|로|길)/.test(t);
+}
+
+/** 주소 줄의 층 — "지하1층"→지하 1, "5층"→지상 5, "B2층"→지하 2. 층 글자가 없으면 null. */
+export function parseFloorFromAddress(line: string | null): { floor: number | null; groundLevel: "지상" | "지하" | null } {
+  const m = line?.match(/(지하|B)?\s*(\d+)\s*층/);
+  if (!m) return { floor: null, groundLevel: null };
+  return { floor: Number(m[2]), groundLevel: m[1] ? "지하" : "지상" };
+}
+
+function parseOneBlock(fullBlock: string): ParsedCompetitorNote | null {
+  // 블록 앞머리(매장명 줄 위)는 주소 줄이다 — parseCompetitorNotes가 붙여 준다.
+  const markerAt = fullBlock.search(MARKER_LINE_RE);
+  const head = markerAt > 0 ? fullBlock.slice(0, markerAt) : "";
+  const block = markerAt > 0 ? fullBlock.slice(markerAt) : fullBlock;
+  const addressLine =
+    head
+      .split(/\r?\n/)
+      .map((l) => l.trim().replace(/^[*※\-•·]+\s*/, ""))
+      .filter(Boolean)
+      .join(" ") || null;
   const name = matchLine(block, /매장\s*명\s*[:：][ \t]*(.+)/);
   if (!name) return null;
 
@@ -332,8 +361,31 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
     managementScore: levelWordScore(manageLevel),
     ...parseFoodLine(foodBasis),
     ipRanges: findIpRanges(block),
-    raw: block.trim(),
+    addressLine,
+    ...parseFloorFromAddress(addressLine),
+    raw: fullBlock.trim(),
   };
+}
+
+const MARKER_SRC = String.raw`^[ \t]*(?:[■□▶▷►●○•·◆◇★☆※*\-]+\s*|\d+\s*[.)]\s*)?(?:경쟁점\s*)?매장\s*명\s*[:：]`;
+const MARKER_LINE_RE = new RegExp(MARKER_SRC, "m");
+
+/** 매장명 줄(marker) 바로 위가 주소 줄이면 그 줄 시작 위치를, 아니면 marker를 돌려준다. 빈 줄은 건너뛰고 주소 줄은 최대 2줄. */
+function pullBackOverAddress(text: string, marker: number, floorLimit: number): number {
+  let start = marker;
+  let pos = marker; // 지금 줄의 시작
+  let taken = 0;
+  while (taken < 2 && pos > floorLimit) {
+    const prevEnd = pos - 1; // pos 앞 "\n" 위치
+    const lineStart = Math.max(text.lastIndexOf("\n", prevEnd - 1) + 1, floorLimit);
+    const line = text.slice(lineStart, prevEnd);
+    pos = lineStart;
+    if (!line.trim()) continue;
+    if (!looksLikeAddressLine(line)) break;
+    start = lineStart;
+    taken++;
+  }
+  return start;
 }
 
 /**
@@ -343,13 +395,15 @@ function parseOneBlock(block: string): ParsedCompetitorNote | null {
  * 화면엔 아무 반응이 없었다(사용자 "분석 눌렀는데 반응이 없다"). 줄 앞 기호·번호를 넓게 받는다.
  */
 export function parseCompetitorNotes(text: string): ParsedCompetitorNote[] {
-  const markerRe = /^[ \t]*(?:[■□▶▷►●○•·◆◇★☆※*\-]+\s*|\d+\s*[.)]\s*)?(?:경쟁점\s*)?매장\s*명\s*[:：]/gm;
-  const starts: number[] = [];
+  const markerRe = new RegExp(MARKER_SRC, "gm");
+  const markers: number[] = [];
   let m: RegExpExecArray | null;
   while ((m = markerRe.exec(text)) !== null) {
-    starts.push(m.index);
+    markers.push(m.index);
   }
-  if (starts.length === 0) return [];
+  if (markers.length === 0) return [];
+  // 2026-11-03 — 매장명 바로 위 주소 줄(빈 줄 건너 최대 2줄)까지 그 매장 블록으로 당긴다. 앞 매장 종합평가에 안 붙게.
+  const starts = markers.map((mk, i) => pullBackOverAddress(text, mk, i === 0 ? 0 : markers[i - 1] + 1));
   const blocks = starts.map((start, i) => text.slice(start, i + 1 < starts.length ? starts[i + 1] : text.length));
   return blocks.map(parseOneBlock).filter((v): v is ParsedCompetitorNote => v != null);
 }
@@ -369,6 +423,9 @@ export function applyParsedNote(base: Competitor, note: ParsedCompetitorNote, op
     ...base,
     name: options.overwriteName ? note.name : base.name,
     surveyLevel: "상세",
+    // 2026-11-03 — 매장명 위 주소 줄의 층. 원문에 층이 없으면 이미 넣어 둔 값을 지우지 않는다.
+    floor: note.floor ?? base.floor,
+    groundLevel: note.groundLevel ?? base.groundLevel,
     totalPcCount: note.totalPcCount,
     cpu: note.cpu,
     vgaBase: note.vgaBase,

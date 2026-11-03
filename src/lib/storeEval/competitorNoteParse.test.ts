@@ -509,3 +509,43 @@ describe("1,000원 시간 — 단위 없는 숫자(2026-10-15 군산점)", () =>
     expect(parseCompetitorNotes(block("1000"))[0].ratePer1000Won).toBeNull();
   });
 });
+
+describe("매장명 위 주소·층 줄(2026-11-03 N030 화정역점)", () => {
+  const text = [
+    "고양시 덕양구 화정동979-2 , 5층",
+    "- 매장명 : 앤유pc",
+    "- 전체 대수 : 154대",
+    "종합 평가",
+    "만석시 긱스타 이용하라는 배너",
+    "",
+    "고양시 덕양구 화정동978-2 , 4층",
+    "- 매장명 : 레드포스pc아레나 화정점",
+    "- 전체 대수 : 166대",
+    "종합 평가",
+    "여느 레드포스와 같음",
+    "",
+    " 고양시 덕양구 화신로272번길58 , 지하1층",
+    "- 매장명 : 스타디움pc 화정점",
+    "- 전체 대수 : 180대",
+  ].join("\r\n");
+  const notes = parseCompetitorNotes(text);
+  it("주소 줄이 앞 매장 종합평가에 붙지 않는다", () => {
+    expect(notes.map((n) => n.name)).toEqual(["앤유pc", "레드포스pc아레나 화정점", "스타디움pc 화정점"]);
+    expect(notes[0].interiorBasis).not.toMatch(/978-2/);
+    expect(notes[1].interiorBasis).not.toMatch(/화신로/);
+    expect(notes[0].interiorBasis).toMatch(/배너$/);
+  });
+  it("층을 그 매장 것으로 읽는다", () => {
+    expect(notes.map((n) => [n.floor, n.groundLevel])).toEqual([[5, "지상"], [4, "지상"], [1, "지하"]]);
+    expect(notes[1].addressLine).toBe("고양시 덕양구 화정동978-2 , 4층");
+  });
+  it("빈 줄을 사이에 둔 주소 줄도 읽는다(N029 검암 형식)", () => {
+    const n = parseCompetitorNotes("*인천 서해구 승학로 491 4층\n\n- 매장명 : 크라우드\n- 전체 대수 : 112대");
+    expect([n[0].floor, n[0].groundLevel, n[0].addressLine]).toEqual([4, "지상", "인천 서해구 승학로 491 4층"]);
+  });
+  it("주소처럼 안 생긴 종합평가 끝줄은 당기지 않는다", () => {
+    const n = parseCompetitorNotes("- 매장명 : A\n종합 평가\n손님 많음\n- 매장명 : B\n- 전체 대수 : 10");
+    expect(n[0].interiorBasis).toMatch(/손님 많음/);
+    expect(n[1].floor).toBeNull();
+  });
+});
