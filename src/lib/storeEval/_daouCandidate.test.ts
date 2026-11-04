@@ -21,7 +21,7 @@ vi.mock("server-only", () => ({}));
 const SPEC_PATH = process.env.DAOU_SPEC;
 
 // create: 카카오에 없는 다우 경쟁점을 새로 만든다(2026-11-04 사용자 "카카오에 없어도 다우에 있음 올려야"). 다우 주소로 좌표·거리를 잡고,
-// 주소를 못 찾으면 만들지 않고 보고한다(거리 없는 경쟁점은 계산에서 조용히 빠지므로).
+// 위치를 못 찾아도 만든다 — 거리 빈칸은 V62·실험실이 "바로 옆(무게 1)"으로 센다(빠지지 않음). 보고에 "거리 넣어야 함".
 type CompetitorDirective = { note: string; target?: string | null; ipStart?: string | null; create?: boolean };
 type Spec = {
   actor: string | null;
@@ -261,19 +261,18 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
               locatedBy = `카카오 키워드(${p.name})`;
             }
           }
-          if (!geo || cand.lat == null || cand.lng == null) {
-            out.push({ note: note.name, written: false, why: `새로 만들기 실패 — 다우 주소(${note.addressLine ?? "없음"})·카카오 상호 검색 둘 다 위치를 못 찾음` });
-            continue;
-          }
-          out.push({ note: note.name, locatedBy });
+          // 위치를 못 찾아도 다우 경쟁점은 넣는다(11-04 사용자 "매칭 안 되는 것도 넣긴 해야지") — 거리만 비우고 보고에 "거리 넣어야 함"을 단다.
+          const located = geo != null && cand.lat != null && cand.lng != null;
+          out.push({ note: note.name, locatedBy: located ? locatedBy : null,
+            ...(located ? {} : { warning: `위치 못 찾음(다우 주소 ${note.addressLine ?? "없음"}) — 거리 비워 둠, 사람이 넣어야 계산에 들어감` }) });
           target = {
             ...blankCompetitor(code),
             id: `${code}_${Date.now()}`,
             source: "manual",
-            address: geo.roadAddress ?? geo.jibunAddress ?? note.addressLine,
-            lat: geo.lat,
-            lng: geo.lng,
-            distanceM: Math.round(haversineDistanceMeters({ lat: Number(cand.lat), lng: Number(cand.lng) }, geo)),
+            address: geo ? geo.roadAddress ?? geo.jibunAddress ?? note.addressLine : note.addressLine ?? null,
+            lat: geo?.lat ?? null,
+            lng: geo?.lng ?? null,
+            distanceM: located ? Math.round(haversineDistanceMeters({ lat: Number(cand.lat), lng: Number(cand.lng) }, geo!)) : null,
           };
           created = true;
         }
