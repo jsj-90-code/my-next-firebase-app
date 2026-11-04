@@ -22,6 +22,7 @@ import {
   scoreFromVgaSpec,
 } from "@/lib/storeEval/calc";
 import { applyParsedNote, parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
+import { blankCompetitor } from "@/lib/storeEval/blankCompetitor";
 import { formatScore } from "@/lib/storeEval/format";
 import { defaultModelSettings } from "@/lib/storeEval/settings";
 import { deleteCompetitor, getCandidate, getModelSettings, listCompetitors, saveCompetitor } from "@/lib/storeEval/store";
@@ -82,65 +83,6 @@ const GROUND_LEVEL_OPTIONS: { value: GroundLevel; label: string }[] = [
 
 const DOW_OPTIONS = ["월", "화", "수", "목", "금", "토", "일"].map((d) => ({ value: d, label: d }));
 
-function blankCompetitor(candidateCode: string): Competitor {
-  return {
-    id: `${candidateCode}_${Date.now()}`,
-    candidateCode,
-    name: "",
-    surveyLevel: null,
-    investigationStatus: "조사완료",
-    distanceM: null,
-    floor: null,
-    groundLevel: null,
-    totalPcCount: null,
-    appliedPcCount: null,
-    hasElevator: null,
-    cpu: null,
-    cpuTop1: null,
-    cpuTop2: null,
-    vgaBase: null,
-    vgaTop: null,
-    vgaTop2: null,
-    ram: null,
-    ramTop: null,
-    monitorBase: null,
-    monitorTop: null,
-    ratePer1000Won: null,
-    hourlyRateConverted: null,
-    paidDeduction: null,
-    visitedAt: null,
-    visitedDow: null,
-    visitorCount: null,
-    measuredSeatRate: null,
-    pingbotUtilization: null,
-    pingbotPeriod: null,
-    renovationYear: null,
-    foodScore: null,
-    foodBasis: null,
-    foodBrand: null,
-    interiorScore: null,
-    interiorBasis: null,
-    interiorLevelScore: null,
-    interiorConditionScore: null,
-    monitorBasis: null,
-    seatZoneScore: null,
-    comfortScore: null,
-    singleSeatCount: null,
-    room1: null,
-    room2: null,
-    teamRoom: null,
-    coupleZone: null,
-    vipZone: null,
-    friendsZone: null,
-    firstClassZone: null,
-    managementScore: null,
-    regularCoupleSeatCount: null,
-    teamRoomTotalSeats: null,
-    teamRoomTotalSeatsBasis: null,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-}
 
 /**
  * 2026-08-30 추가 — "상세" 조사수준은 "간략"과 달리 미입력 항목을 기본값(2.5)으로

@@ -60,7 +60,14 @@ DAOU_SPEC="<scratch>/<후보지>.json" npx vitest run src/lib/storeEval/_daouCan
 
 - 이미 만든 후보지를 이어서 돌릴 땐 `"code": "N0xx"`를 넣고 `steps`에서 `create`를 뺀다.
 - `competitors` 결과에 `written:false`(같은 상호 없음·후보 여럿)가 있으면 `candidates` 목록에서 맞는 카카오 경쟁점 id를 골라
-  `competitors[].target`에 넣고 `"steps": ["competitors","ping"]`으로 다시 돌린다. 카카오에 없는 경쟁점은 만들지 않는다(보고만).
+  `competitors[].target`에 넣고 `"steps": ["competitors","ping"]`으로 다시 돌린다.
+- **상호가 아예 다른 같은 가게**(간판 교체 — 다우 "스타디움" ↔ 카카오 "윈드 PC방", 2026-11-04 사용자): 실행 파일이 다우 주소 50m 안의 카카오
+  경쟁점이 하나면 저절로 맞춘다(`matchedBy`). 주소가 없거나 못 찾으면(예: 신설 "인천 서해구"는 카카오 주소 검색이 못 찾음) 결과의
+  `daouPcCount`·`daouAddress`와 후보의 `totalPcCount`·`address`·거리로 판단한다(N029 재로백 83대 ↔ 제로백PC 83대). 대수만 같고 위치 근거가 없으면 맞추지 않는다.
+  로드뷰 간판은 사진 날짜가 옛날일 수 있어 근거로 약하다 — 애매하면 웹 검색으로 주소 대조.
+- **카카오에 없는 다우 경쟁점도 올린다**(2026-11-04 사용자 "카카오에 없어도 다우에 있음 올려야"): 후보 중 맞는 곳이 없으면
+  `competitors[]`에 `{ "note": "<상호>", "create": true }`를 넣고 `"steps": ["competitors","ping"]`으로 다시 돌린다. 다우 주소로 좌표·거리를
+  잡아 새로 만든다(source "manual"). 주소로 위치를 못 찾으면 만들지 않고 보고한다. 카카오에서 불러온 나머지 경쟁점은 지우지 않는다.
 - `population.sbiz.errors`가 남으면(소상공인365 시간 초과) `"steps": ["population"]`로 한 번 더.
 - 측정기에는 그 후보지 경쟁점이 **전부** 올라간다(화면 경쟁점 탭을 여는 것과 같은 규칙). IP 넣은 곳은 "IP 확인 필요" 표시가 붙는다 — 실측 전이라 정상.
 

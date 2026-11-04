@@ -20,7 +20,9 @@ vi.mock("server-only", () => ({}));
 
 const SPEC_PATH = process.env.DAOU_SPEC;
 
-type CompetitorDirective = { note: string; target?: string | null; ipStart?: string | null };
+// create: 카카오에 없는 다우 경쟁점을 새로 만든다(2026-11-04 사용자 "카카오에 없어도 다우에 있음 올려야"). 다우 주소로 좌표·거리를 잡고,
+// 주소를 못 찾으면 만들지 않고 보고한다(거리 없는 경쟁점은 계산에서 조용히 빠지므로).
+type CompetitorDirective = { note: string; target?: string | null; ipStart?: string | null; create?: boolean };
 type Spec = {
   actor: string | null;
   code?: string | null;
@@ -218,12 +220,70 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
           candidates = core.length >= 2 ? comps.filter((c) => nameCore(c.name).startsWith(core) || c.name.toLowerCase().replace(/\s/g, "").includes(core)) : [];
           if (candidates.length === 1) target = candidates[0];
         }
+        // 상호가 아예 다른 같은 가게(다우 "스타디움" ↔ 카카오 "윈드 PC방" — 간판만 바뀐 경우, 11-04 사용자): 이름으로 못 찾았고
+        // 다우 주소가 있으면 그 주소에서 50m 안의 카카오 경쟁점이 딱 하나일 때 같은 가게로 본다. 이름은 카카오 것을 둔다(보고에 둘 다).
+        let addrGeo: { lat: number; lng: number; roadAddress?: string | null; jibunAddress?: string | null } | null = null;
+        if (!target && !dir?.create && candidates.length === 0 && note.addressLine) {
+          const { geocodeAddress } = await import("@/lib/kakao");
+          const { haversineDistanceMeters } = await import("./geo");
+          addrGeo = await geocodeAddress(note.addressLine);
+          if (addrGeo) {
+            const g = addrGeo;
+            const near = comps.filter((c) => c.lat != null && c.lng != null && haversineDistanceMeters({ lat: Number(c.lat), lng: Number(c.lng) }, g) <= 50);
+            if (near.length === 1) {
+              target = near[0];
+              out.push({ note: note.name, matchedBy: `다우 주소와 같은 자리(50m 안)의 카카오 경쟁점 "${near[0].name}"` });
+            }
+          }
+        }
+        let created = false;
+        if (!target && dir?.create) {
+          const { blankCompetitor } = await import("./blankCompetitor");
+          const { geocodeAddress } = await import("@/lib/kakao");
+          const { haversineDistanceMeters } = await import("./geo");
+          const cand = (await candRef.get()).data()!;
+          // 위치: 다우 블록 머리의 주소 줄 → 없거나 못 찾으면 후보지 3km 안에서 상호로 카카오 키워드 검색(PC방 분류에 안 걸린 가게용,
+          // 다우 글엔 주소가 없을 때가 많다 — 11-04 사용자). 키워드 결과는 상호 앞말이 맞는 가장 가까운 곳만 쓴다.
+          let geo: { lat: number; lng: number; roadAddress?: string | null; jibunAddress?: string | null } | null =
+            note.addressLine ? await geocodeAddress(note.addressLine) : null;
+          let locatedBy = geo ? "다우 주소" : null;
+          if (!geo && cand.lat != null && cand.lng != null) {
+            const { searchByKeyword } = await import("@/lib/kakao");
+            const core = nameCore(note.name);
+            const hits = core.length >= 2
+              ? (await searchByKeyword(Number(cand.lat), Number(cand.lng), note.name, 3000))
+                  .filter((p) => nameCore(p.name).includes(core))
+                  .sort((a, b) => (a.distanceM ?? 1e9) - (b.distanceM ?? 1e9))
+              : [];
+            const p = hits[0];
+            if (p) {
+              geo = { lat: p.lat, lng: p.lng };
+              locatedBy = `카카오 키워드(${p.name})`;
+            }
+          }
+          if (!geo || cand.lat == null || cand.lng == null) {
+            out.push({ note: note.name, written: false, why: `새로 만들기 실패 — 다우 주소(${note.addressLine ?? "없음"})·카카오 상호 검색 둘 다 위치를 못 찾음` });
+            continue;
+          }
+          out.push({ note: note.name, locatedBy });
+          target = {
+            ...blankCompetitor(code),
+            id: `${code}_${Date.now()}`,
+            source: "manual",
+            address: geo.roadAddress ?? geo.jibunAddress ?? note.addressLine,
+            lat: geo.lat,
+            lng: geo.lng,
+            distanceM: Math.round(haversineDistanceMeters({ lat: Number(cand.lat), lng: Number(cand.lng) }, geo)),
+          };
+          created = true;
+        }
         if (!target) {
           out.push({ note: note.name, written: false, why: candidates.length ? "후보가 여럿" : "같은 상호 없음",
-            candidates: (candidates.length ? candidates : comps).map((c) => ({ id: c.id, name: c.name, distanceM: c.distanceM })) });
+            daouAddress: note.addressLine ?? null, daouPcCount: note.totalPcCount ?? null,
+            candidates: (candidates.length ? candidates : comps).map((c) => ({ id: c.id, name: c.name, distanceM: c.distanceM, address: c.address ?? null, totalPcCount: c.totalPcCount })) });
           continue;
         }
-        const filled = applyParsedNote(target, note, { overwriteName: false });
+        const filled = applyParsedNote(target, note, { overwriteName: created });
         const start = dir?.ipStart ?? (note.ipRanges ? parseIpRanges(note.ipRanges).ips[0] ?? null : null);
         const ip = start && filled.totalPcCount ? ipRangeFrom(start, filled.totalPcCount) : null;
         if (start && !ip) out.push({ note: note.name, ipWarning: `IP ${start} + ${filled.totalPcCount}대가 한 대역(…255)을 넘거나 읽을 수 없어 IP는 원문대로 둠` });
@@ -232,9 +292,9 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
         if (errors.length) { out.push({ note: note.name, written: false, why: errors.join(" / ") }); continue; }
         if (!spec.dryRun) {
           await db.collection("storeEvalCompetitors").doc(target.id).set(JSON.parse(JSON.stringify(after)));
-          await audit("competitor", target.id, "수정", target, after);
+          await audit("competitor", target.id, created ? "생성" : "수정", created ? null : target, after);
         }
-        out.push({ note: note.name, written: !spec.dryRun, id: target.id, kakaoName: target.name, distanceM: target.distanceM,
+        out.push({ note: note.name, written: !spec.dryRun, created, id: target.id, kakaoName: target.name, distanceM: target.distanceM,
           totalPcCount: after.totalPcCount, ipRanges: after.ipRanges, interiorScore: after.interiorScore, managementScore: after.managementScore,
           foodBrand: after.foodBrand, foodScore: after.foodScore, hourlyRateConverted: after.hourlyRateConverted });
       }
