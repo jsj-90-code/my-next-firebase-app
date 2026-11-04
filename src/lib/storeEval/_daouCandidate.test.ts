@@ -359,6 +359,47 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
       report.ping = res;
     }
 
+    // 6) location — 채팅 입지평가 초안(storeEvalLocationChatDrafts/{코드})을 확정 입지평가로 저장한다(2026-11-04 사용자
+    //    "입지평가 초안 자동 적용, 디폴트로"). 화면 [채팅 초안 불러오기]→[적용]→[저장]과 같은 값이 들어간다(빈 양식 + 초안 7칸 +
+    //    메모 "AI 초안(자동 적용): 근거"). ⚠️ 이미 입지평가가 저장돼 있으면 사람이 손댄 값일 수 있어 덮지 않는다.
+    //    기본 단계엔 없다 — 초안은 실행 뒤 커넥터로 내므로 스킬이 ["location","recompute"]로 한 번 더 부른다.
+    if (steps.has("location")) {
+      const draftSnap = await db.collection("storeEvalLocationChatDrafts").doc(code).get();
+      const evalRef = db.collection("storeEvalLocationEvaluations").doc(code);
+      const existing = await evalRef.get();
+      if (!draftSnap.exists) report.location = { applied: false, why: "채팅 초안 없음" };
+      else if (existing.exists) report.location = { applied: false, why: "이미 저장된 입지평가가 있어 덮지 않음" };
+      else {
+        const d = draftSnap.data() as { fields: Record<string, unknown>; rationale?: string; modelName?: string | null };
+        const cand = (await candRef.get()).data()!;
+        const pick = ["locationScore", "preemptionScore", "visibilityScore", "specialDemandType", "specialDemandIntensity", "inflowRestriction", "marketStructureMemo"];
+        const after: Record<string, unknown> = {
+          candidateCode: code, name: cand.name ?? null, address: cand.address ?? null,
+          locationScore: null, flowScore: null, preemptionScore: null, visibilityScore: null, mapMemo: null, attractionScore: null,
+          specialDemandType: null, specialDemandIntensity: null, inflowRestriction: null, demandLeakageRisk: null,
+          marketStructureMemo: null, brandType: null,
+        };
+        for (const k of pick) if (d.fields?.[k] !== undefined) after[k] = d.fields[k];
+        after.mapMemo = `AI 초안(자동 적용 · ${d.modelName ?? "모델 미기재"}): ${d.rationale ?? ""}`.trim();
+        after.updatedAt = now(); after.updatedBy = actor;
+        if (!spec.dryRun) {
+          await evalRef.set(JSON.parse(JSON.stringify(after)));
+          await audit("locationEvaluation", code, "생성", null, after);
+        }
+        report.location = { applied: !spec.dryRun, fields: Object.fromEntries(pick.map((k) => [k, after[k]])) };
+      }
+    }
+
+    // 7) recompute — 매일 새벽 재계산을 지금 한 번 돌려 이 후보지의 예상매출·등급을 저장하고 보고에 싣는다(화면을 안 열어도 숫자가 나오게).
+    if (steps.has("recompute") && !spec.dryRun) {
+      const { runDailyRecompute } = await import("./dailyRecomputeRun");
+      await runDailyRecompute();
+      const r = (await db.collection("storeEvalResults").doc(code).get()).data() as Record<string, unknown> | undefined;
+      report.result = r
+        ? { v62Final: r.v62Final, conservativeSales: r.conservativeSales, upperSales: r.upperSales, marketGrade: r.marketGrade, locationScore: r.locationScore }
+        : { why: "결과 없음(입지평가가 없으면 계산이 안 됨)" };
+    }
+
     writeFileSync(`${SPEC_PATH}.result.json`, JSON.stringify(report, null, 1));
     console.log(JSON.stringify(report, null, 1));
   });

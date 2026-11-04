@@ -76,7 +76,10 @@ DAOU_SPEC="<scratch>/<후보지>.json" npx vitest run src/lib/storeEval/_daouCan
 `mcp__claude_ai_PC__get_candidate_location_data(N0xx)` → 웹 검색 2~3번(상권 성격·중심 위치·특수수요) →
 `mcp__claude_ai_PC__submit_candidate_location_draft`. 채점 기준은 받은 자료의 기준표를 그대로 따른다. 다우 글의
 "점포 개발자 직접 점포 평가"(상권 설명)와 등급의 M(메인입지) 여부도 근거로 쓴다. modelName은 지금 모델명.
-초안은 사람이 웹 입지평가 탭 [채팅 초안 불러오기]로 확정한다 — 그 안내를 보고에 넣는다.
+**초안은 바로 확정한다**(2026-11-04 사용자 "입지평가 초안 자동 적용, 디폴트로"): 초안을 낸 뒤 spec에 `"code"`를 넣고
+`"steps": ["location","recompute"]`로 실행 파일을 한 번 더 돌린다. `location`은 화면 [채팅 초안 불러오기]→[적용]→[저장]과 같은 값을
+저장하고(이미 저장된 입지평가가 있으면 덮지 않음), `recompute`는 새벽 재계산을 지금 돌려 결과의 `result`에 예상매출(v62Final·보수·상한)을 싣는다.
+보고엔 그 숫자와 "입지평가는 AI가 자동 확정 — 웹에서 확인·수정 가능"을 적는다.
 
 ## 5. 보고 (한국어, 짧게)
 
@@ -86,8 +89,8 @@ DAOU_SPEC="<scratch>/<후보지>.json" npx vitest run src/lib/storeEval/_daouCan
 4. 측정기 등록 수, 수집 경고(건축물대장 실패 등)
    - `collect.competitorsExcluded`(오락실·성인업태 규칙으로 뺀 곳)와 `collect.competitorsWithoutPermit`(PC방 인허가 짝 없음 —
      새로 연 곳이거나 성인PC방일 수 있음)을 꼭 적는다. 인허가 없는 곳은 지우지 말고 사용자 판단에 맡긴다(군산 레벨업 177대도 인허가 없음).
-5. 입지평가 초안 점수표 + "[채팅 초안 불러오기]로 확정" 안내
-6. 사람이 할 일: 존 구성(다우 글에 없음 — 비워 둠), 입지평가 확정
+5. 입지평가 점수표(자동 확정됨) + 예상매출(result)
+6. 사람이 할 일: 존 구성(다우 글에 없음 — 비워 둠), 자동 확정된 입지평가 확인
 
 ## 6. Asana 하위업무 (매번 자동 — 2026-11-03 추가)
 
