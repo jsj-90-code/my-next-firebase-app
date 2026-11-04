@@ -395,8 +395,23 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
       const { runDailyRecompute } = await import("./dailyRecomputeRun");
       await runDailyRecompute();
       const r = (await db.collection("storeEvalResults").doc(code).get()).data() as Record<string, unknown> | undefined;
+      // 등급은 결과 탭·다우 멘트와 같은 "점포평가 등급"(M + 순수익 등급, 예: MA+)을 같은 함수로 계산해 싣는다.
+      // marketGrade(상권수요 등급)는 다른 것이라 헷갈리지 않게 이름을 따로 둔다(11-04 사용자 "등급이 왜 A냐").
+      let storeGrade: string | null = null;
+      let netProfit: number | null = null;
+      if (r) {
+        const { mergeModelSettings } = await import("./settings");
+        const { finalNetProfit } = await import("./profitLoss");
+        const { storeEvaluationGrade } = await import("./reportContext");
+        const settings = mergeModelSettings((await db.collection("storeEvalSettings").doc("current").get()).data() as never);
+        const cand = (await candRef.get()).data() as never as import("./types").CandidateInput;
+        const gp = finalNetProfit(cand, r as never, settings.profitLoss);
+        netProfit = gp.pl?.netProfit ?? null;
+        storeGrade = storeEvaluationGrade({ floating500Avg: cand.floating500Avg, mainLocationFloating500Min: settings.mainLocationFloating500Min, netProfit });
+      }
       report.result = r
-        ? { v62Final: r.v62Final, conservativeSales: r.conservativeSales, upperSales: r.upperSales, marketGrade: r.marketGrade, locationScore: r.locationScore }
+        ? { v62Final: r.v62Final, conservativeSales: r.conservativeSales, upperSales: r.upperSales, storeGrade, netProfit,
+            marketDemandGrade: r.marketGrade, locationScore: r.locationScore }
         : { why: "결과 없음(입지평가가 없으면 계산이 안 됨)" };
     }
 
