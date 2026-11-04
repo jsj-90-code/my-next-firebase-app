@@ -413,6 +413,45 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
         ? { v62Final: r.v62Final, conservativeSales: r.conservativeSales, upperSales: r.upperSales, storeGrade, netProfit,
             marketDemandGrade: r.marketGrade, locationScore: r.locationScore }
         : { why: "결과 없음(입지평가가 없으면 계산이 안 됨)" };
+
+      // 8) 다우 멘트 — 결과 탭 [다우 멘트 만들기]와 같은 재료·같은 함수(buildDaouReportContext → runDaouReportDraft, 무료 Gemini)로
+      //    다우에 그대로 붙일 전체 글을 만든다(11-04 사용자 "다우에 올릴 멘트가 와야 복붙하지"). 맨 윗줄 등급은 코드가 확정한 storeGrade.
+      if (r) {
+        try {
+          const { buildDaouReportContext } = await import("./reportContext");
+          const { runDaouReportDraft } = await import("./daouReportAi");
+          const { collectReviewSignals } = await import("./reviewSignals");
+          const { mergeModelSettings } = await import("./settings");
+          const settings = mergeModelSettings((await db.collection("storeEvalSettings").doc("current").get()).data() as never);
+          const c = (await candRef.get()).data() as never as import("./types").CandidateInput;
+          const comps = await listComps();
+          const loc = ((await db.collection("storeEvalLocationEvaluations").doc(code).get()).data() ?? null) as import("./types").LocationEvaluation | null;
+          const risk = collectReviewSignals({ result: r as never, candidate: c, competitors: comps, locationEvaluation: loc, usedDefaultSettings: false })
+            .filter((s) => s.forReport).map((s) => `${s.title} (${s.detail})`);
+          const ctx = buildDaouReportContext({
+            candidate: { name: c.name, address: c.address, pop500m: c.pop500m, floating500Avg: c.floating500Avg, facility500SubwayRiders: c.facility500SubwayRiders,
+              floor: c.floor, groundLevel: c.groundLevel, hasElevator: c.hasElevator, expectedPcCount: c.expectedPcCount, ownCpu: c.ownCpu, ownVgaBase: c.ownVgaBase, ownRam: c.ownRam },
+            competitors: comps.map((x) => ({ name: x.name, distanceM: x.distanceM, investigationStatus: x.investigationStatus, totalPcCount: x.totalPcCount,
+              pingbotUtilization: x.pingbotUtilization, floor: x.floor, groundLevel: x.groundLevel, cpu: x.cpu, vgaBase: x.vgaBase, ram: x.ram })),
+            locationEvaluation: loc ? { locationScore: loc.locationScore, visibilityScore: loc.visibilityScore, preemptionScore: loc.preemptionScore, mapMemo: loc.mapMemo,
+              marketStructureMemo: loc.marketStructureMemo, specialDemandType: loc.specialDemandType, specialDemandIntensity: loc.specialDemandIntensity, inflowRestriction: loc.inflowRestriction } : null,
+            productRatio: settings.measuredForecastProductRatio ?? null,
+            riskNotes: risk,
+            result: r as never,
+          });
+          const d = await runDaouReportDraft(ctx);
+          report.daouText = [
+            `점포평가 : ${storeGrade ?? ""}`, "",
+            `[상권] ${d.marketSection}`, "",
+            `[경쟁] ${d.competitionSection}`, "",
+            `[종합 의견] ${d.summarySection}`,
+            ...(d.promotionSection?.trim() ? ["", `[선투자 프로모션] ${d.promotionSection}`] : []),
+          ].join("\n");
+        } catch (err) {
+          report.daouText = null;
+          report.daouTextError = err instanceof Error ? err.message : String(err);
+        }
+      }
     }
 
     writeFileSync(`${SPEC_PATH}.result.json`, JSON.stringify(report, null, 1));
