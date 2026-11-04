@@ -1,5 +1,14 @@
 # 경쟁점 가동률 측정 서버 (2026-10-06)
 
+## 2026-11-04 사내 서버가 기록 — 품의 승인
+
+- 정식 운영 품의 승인(11-04). 조건: 핑·80번만(1688·5040 안 함, `EXTRA_PORTS_ALLOWED=false`), 사내 용도만, 중단 요청 시 즉시 중단·보고, 6개월 뒤 법무 재검토.
+- **사내 서버**(`ping@192.168.0.17`, 키 `~/.ssh/ping_pc`)가 12시 회차부터 기록한다:
+  `5 * * * * cd /home/ping/ping-agent && flock -n /tmp/ping-agent.lock timeout -k 60 3000 /home/ping/node/bin/node agent.mjs --copy >> /home/ping/ping-agent/cron.log 2>&1`
+- **해외 서버(Oracle)는 1~2주 대조용** — `--local`로 재서 `compare/`에만 남기고 웹에 안 보낸다(같은 시에 둘이 보내면 덮어씀). 옛 crontab은 양쪽 `~/crontab.bak-20261104`.
+- 대조: 두 서버 `~/ping-agent/compare/`를 받아 `node compareRounds.mjs <사내> <해외>`. 비슷하면 Oracle `crontab -r` → 서비스 바깥 감시용으로 돌린다.
+- 되돌리기: 사내 crontab에서 측정 줄 지우고, Oracle 줄에서 `--local` 빼기.
+
 - Oracle Cloud 무료(Always Free) `VM.Standard.E2.1.Micro`, 도쿄(ap-tokyo-1, 서울·춘천은 가입 목록에 없었음), Oracle Linux 9.
   계정 이름(tenancy) `jsj90`, 공개 IP `168.110.12.33`(임시형 — 서버를 지웠다 만들면 바뀜), 사용자 `opc`.
 - 접속 키: 이 저장소를 쓰는 회사 PC의 `~/.ssh/oci_ping_monitor`(git 밖). 다른 PC에서 접속하려면 그 PC의 공개 키를 서버 `~/.ssh/authorized_keys`에 더한다.

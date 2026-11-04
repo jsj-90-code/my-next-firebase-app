@@ -156,6 +156,18 @@ if (DRY) process.exit(0);
 // measured: 이번 회차에 실제로 잰 매장과 IP 수 — 회차 도중 등록·IP 변경된 매장을 웹이 0대로 적지 않게(2026-10-14 제주 노형 14시 가짜 0대).
 const measured = Object.fromEntries(targets.map((t) => [t.id, t.ips.length]));
 const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive, extraOnlyIps, measured });
+// --local: 웹에 안 보내고 compare/에만 남긴다(2026-11-04 품의 승인 — 사내 서버가 기록, 해외 서버는 1~2주 대조용).
+// 같은 시에 두 서버가 다 보내면 서로 덮어쓰므로 대조하는 쪽은 반드시 --local. --copy: 보내면서 compare/에도 사본(사내 쪽).
+// 대조: scripts/pingMonitor/agent/compareRounds.mjs
+if (process.argv.includes("--local") || process.argv.includes("--copy")) {
+  const dir = new URL("./compare/", import.meta.url);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(new URL(`${started.toISOString().slice(0, 13)}.json`, dir), body);
+  if (process.argv.includes("--local")) {
+    console.log(`대조용으로 compare/에 저장(웹에 안 보냄)`);
+    process.exit(0);
+  }
+}
 try {
   const rRes = await call("POST", rPath, body);
   console.log(`보냄 ${rRes.status}: ${await rRes.text()}`);
