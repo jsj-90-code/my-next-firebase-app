@@ -1773,7 +1773,10 @@ export function SeatLayoutWorkspace() {
     if (!user) return null;
     const base = { ...project, ...patch };
     // 10-30: 반영 뒤 PC 탭에서 손대지 않았으면 책상 존을 고쳐 저장할 때 PC 존도 따라간다(등록을 다시 안 눌러도).
-    if (!patch.pcZones && base.pcSyncedKey && pcZonesSyncKey(base.pcZones) === base.pcSyncedKey) {
+    // 11-04 사용자 「저장하면 PC 발주 도면에 적용되는 거 아니야?」: PC 존이 아직 하나도 없으면 첫 저장 때 책상 존으로 채운다
+    // (등록 전에도 PC 담당이 시작할 수 있게 — PC 발주 *시트* 등록은 여전히 PC 담당 버튼). PC 존이 있으면 덮어쓰지 않는다.
+    const pcEmpty = !patch.pcZones && base.pcZones.length === 0 && base.zones.length > 0;
+    if (pcEmpty || (!patch.pcZones && base.pcSyncedKey && pcZonesSyncKey(base.pcZones) === base.pcSyncedKey)) {
       base.pcZones = deskZonesAsPcZones(base.zones, base.pcZones);
       base.pcSyncedKey = pcZonesSyncKey(base.pcZones);
     }
