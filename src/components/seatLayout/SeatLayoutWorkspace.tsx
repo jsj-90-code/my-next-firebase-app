@@ -941,7 +941,7 @@ export function SeatLayoutWorkspace() {
   // 채팅은 **저장된** 프로젝트를 읽으므로, 존을 그린 뒤 [저장]부터 해야 채팅에서 인식할 수 있다.
   // 10-30 사용자 「불러오기를 자동으로」: 창에 돌아올 때만 읽던 것을 실시간으로 지켜보고, 이 프로젝트를 연 뒤에 새로 온 결과는
   // 버튼을 안 눌러도 넣는다(존 초안·브라켓·좌석번호는 바로, 책상·PC는 확인 창만 띄움). 열기 전에 와 있던 결과는 이미 넣었다가
-  // 버린 것일 수 있어 예전처럼 알림 띠·버튼으로만 넣는다. 같은 결과(종류+시각)는 한 번만.
+  // 버린 것일 수 있어 예전처럼 알림 띠·버튼으로만 넣는다 — 단, 존이 0개인 프로젝트의 마지막 존 초안은 열 때 넣는다(11-04 도면공유방 자동 초안). 같은 결과(종류+시각)는 한 번만.
   const autoAppliedDraftRef = useRef(new Set<string>());
   const onChatDraftArrived = useEffectEvent((projectId: string, draft: SeatLayoutChatDraft | null, watchStartedAt: number) => {
     setLatestChatDraft({ projectId, draft });
@@ -951,7 +951,10 @@ export function SeatLayoutWorkspace() {
       const at = draft[k]?.createdAt;
       // 존 초안은 채팅이 덮어쓸 수 있어(FPS·VIP 되돌림, 브라켓 이어 세기) 마지막 초안(final)만 — 먼저 넣으면 존이 두 번 들어간다.
       if (k === "zones" && !draft.zones?.final) return false;
-      return !!at && at > watchStartedAt && at > (project.updatedAt ?? 0) && !autoAppliedDraftRef.current.has(`${projectId}:${k}:${at}`);
+      // 11-04 도면공유방 자동 초안: 초안이 사람이 열기 전에 먼저 와 있다 → 존이 0개이고 마지막 저장 뒤에 온 존 초안이면 열 때 바로 넣는다
+      // (넣었다가 버렸다면 그 뒤 저장이 있어 at > updatedAt에 걸리지 않는다).
+      const beforeOpenOk = k === "zones" && project.zones.length === 0;
+      return !!at && (at > watchStartedAt || beforeOpenOk) && at > (project.updatedAt ?? 0) && !autoAppliedDraftRef.current.has(`${projectId}:${k}:${at}`);
     });
     if (!kind) return;
     autoAppliedDraftRef.current.add(`${projectId}:${kind}:${draft[kind]!.createdAt}`);
