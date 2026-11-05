@@ -18,7 +18,10 @@ if (!m || !textPath || !outPath) {
 const [, appletId, docId] = m;
 const text = readFileSync(textPath, "utf8").replace(/^﻿/, "").replace(/\r\n/g, "\n").trim();
 const done = (r) => { writeFileSync(outPath, JSON.stringify({ docId, at: new Date().toISOString(), ...r }, null, 1)); console.log(r.status + (r.reason ? " — " + r.reason : "")); };
-if (!text.startsWith("점포평가")) { done({ status: "error", reason: "멘트가 '점포평가'로 시작하지 않음 — 잘못된 글로 보고 올리지 않음" }); process.exit(2); }
+// "[시험]"으로 시작하는 글(11-05 사용자 승인 시험용)은 같은 첫 줄이 이미 있을 때만 막는다 — 실제 평가가 있는 글에도 시험할 수 있게.
+const isTest = text.startsWith("[시험]");
+const dupKey = isTest ? text.split("\n")[0].trim() : "점포평가";
+if (!isTest && !text.startsWith("점포평가")) { done({ status: "error", reason: "멘트가 '점포평가'로 시작하지 않음 — 잘못된 글로 보고 올리지 않음" }); process.exit(2); }
 
 // 멘트(줄글) → 다우 에디터 HTML: 한 줄 = 한 문단, 빈 줄 = 빈 문단
 const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -29,13 +32,13 @@ try {
   session = await openDaou(url, { readyText: "전략점포명" });
   const { page } = session;
   await page.waitForTimeout(1500);
-  const readMine = () => page.evaluate(async ({ appletId, docId }) => {
+  const readMine = () => page.evaluate(async ({ appletId, docId, dupKey }) => {
     const me = (await (await fetch("/gw/api/user/session")).json()).data;
     const acts = (await (await fetch(`/gw/api/works/applets/${appletId}/docs/${docId}/activity`)).json()).data ?? [];
     const plain = (h) => { const d = document.createElement("div"); d.innerHTML = h ?? ""; return d.innerText.replace(/ /g, " ").trim(); };
     const mine = acts.filter((a) => a.createdBy?.loginId === me.loginId).map((a) => ({ id: a.id, createdAt: a.createdAt, text: plain(a.content) }));
-    return { me: { loginId: me.loginId, name: me.name }, total: acts.length, evals: mine.filter((a) => a.text.startsWith("점포평가")) };
-  }, { appletId, docId });
+    return { me: { loginId: me.loginId, name: me.name }, total: acts.length, evals: mine.filter((a) => a.text.startsWith(dupKey)) };
+  }, { appletId, docId, dupKey });
 
   const before = await readMine();
   if (before.evals.length) {
