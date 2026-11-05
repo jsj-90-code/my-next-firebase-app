@@ -13,7 +13,7 @@ export const PING_DAILY = "pingMonitorDaily";
  * (2026-10-15 clientStore.ts에서 옮김 — 다우 심사글 등록 스킬이 서버 쪽에서 같은 표시를 단다.) */
 export const PASTED_IP_CHECK = "경쟁점 정보 IP — 지금 확인 전(후보지 경쟁점 탭)";
 
-/** 측정 간격(분). vercel.json의 /api/ping-monitor/cron 예약(매시 5분)과 맞춘다. */
+/** 측정 간격(분). 사내 측정 서버 cron(매시 5분)과 맞춘다. (옛 Vercel 예비 /api/ping-monitor/cron은 2026-11-05 삭제) */
 export const SAMPLE_INTERVAL_MINUTES = 60;
 
 /** 이만큼 재는 동안 한 대도 대답이 없으면 "핑 차단 의심"(PC가 대답을 막아 둔 매장). */

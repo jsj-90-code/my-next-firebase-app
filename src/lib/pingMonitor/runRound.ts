@@ -18,6 +18,7 @@ import { istore, usesInternalStore } from "./internalStore";
 // 재는 쪽은 둘이다(2026-10-06):
 //   - "agent": Oracle 무료 서버(도쿄)가 핑 + TCP를 둘 다 재서 보낸다(/api/ping-monitor/agent/*). 기본.
 //   - "tcp": Vercel이 TCP만 잰다(runPingRound). 핑에만 대답하는 매장(106곳 중 23곳)을 못 봐서 예비용.
+//     2026-11-05 예비 경로(GitHub 예약 → /api/ping-monitor/cron)를 삭제해 지금은 부르는 곳이 없다 — 옛 "tcp" 기록 읽기용으로 남김.
 
 export type { PingTarget } from "./roundGuard";
 import type { PingTarget } from "./roundGuard";

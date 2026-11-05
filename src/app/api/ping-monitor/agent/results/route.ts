@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   const measured = parsed.measured && typeof parsed.measured === "object" ? (parsed.measured as Record<string, unknown>) : null;
   const targets = (await loadTargets(at)).filter((t) => !measured || measured[t.id] === t.ips.length);
   const result = await recordRound(targets, new Set(parsed.aliveIps.map(String)), String(parsed.method ?? "agent"), at);
-  // 회차 이상(측정 고장으로 대량 0대)이면 저장하지 않았다 — 상태 문서도 안 고쳐서 예비(:50)가 이 시를 다시 잰다(2026-10-10).
+  // 회차 이상(측정 고장으로 대량 0대)이면 저장하지 않았다 — 상태 문서도 안 고친다(2026-10-10). 예전엔 예비(:50)가 이 시를 다시 쟀지만 예비는 2026-11-05 삭제 — 지금은 그 시가 빈다.
   // 200으로 답한다: 4xx면 서버가 pending을 지우고, 5xx면 같은 결과를 계속 다시 보낸다.
   if (result.rejected) return NextResponse.json({ ok: false, rejected: result.rejected, date: result.date, hour: result.hour });
   // 추가 포트로만 잡힌 새 매장·뚫린 매장에 probe1688 자동으로 켜기(2026-10-14). 옛 에이전트는 extraOnlyIps를 안 보낸다 → 아무것도 안 함.

@@ -151,7 +151,7 @@ TCP: PC토랑 135/135 · 플레이존 386/400. 핑: 아이비스 90/100 · 보�
 | 부분 | 위치 |
 |---|---|
 | 매시 측정(기본) | **Oracle 무료 서버(도쿄 168.110.12.33) 사용자 cron 매시 5분** → 핑 + TCP → `/api/ping-monitor/agent/results`(서버 안 열쇠로 서명, `agentAuth.ts`) → `recordRound` |
-| 매시 측정(예비) | `.github/workflows/ping-monitor.yml` 매시 35분 → `/api/ping-monitor/cron`(Vercel 서울, TCP만, GitHub OIDC 인증). 그 시(時)를 서버가 이미 썼으면 건너뛴다 |
+| ~~매시 측정(예비)~~ | **2026-11-05 삭제**(사용자 「예비 삭제하자」). 예전엔 GitHub 예약 → `/api/ping-monitor/cron`(Vercel, TCP만)이 서버가 못 쓴 시를 대신 쟀다. 저장소가 사내로 옮겨진 뒤(11-04)엔 사내가 꺼지면 넣을 곳도 같이 없어 쓸모가 없고, 품의 조건(사내 서버에서만 측정)과도 맞지 않아 뺐다 |
 | 지금 확인(기록 안 함) | `/api/ping-monitor/probe` (회사 계정) |
 | 화면 | `/ping-monitor` 목록·등록, `/ping-monitor/[id]` 기간·날짜별·시간대별(평일/주말) |
 

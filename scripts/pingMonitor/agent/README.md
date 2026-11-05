@@ -68,7 +68,7 @@ ssh -i ~/.ssh/oci_ping_monitor opc@168.110.12.33
   tail ~/ping-agent/cron.log             # 매시 기록
 ```
 
-GitHub Actions(`.github/workflows/ping-monitor.yml`, Vercel TCP만)는 매시 35분에 예비로 돈다 — 같은 시(時)는 먼저 쓴 쪽만 남으니 서버가 살아 있으면 건너뛴다.
+~~GitHub Actions(`.github/workflows/ping-monitor.yml`, Vercel TCP만)는 매시 35분에 예비로 돈다~~ — **2026-11-05 예비 경로 삭제**(사내 측정 서버·사내 저장소로 옮긴 뒤 쓸모없음, 품의 조건). 이 문서의 예비 GitHub 언급은 옛 기록이다.
 
 ### OCI CLI(API 키) — 집 PC에서도 재부팅·서버 생성 (2026-10-08)
 
