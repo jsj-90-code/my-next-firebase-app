@@ -379,10 +379,10 @@ const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>
     "600W": "잘만 MegaMax 600W",
     "잘만 MegaMax ET 600W 80PLUS STANDARD": "잘만 MegaMax 600W",
   },
-  // 비트엠 = 제품명 Newsync(B2799F·X34IPS, 11-10 사용자). 34인치는 주사율을 받지 않아 안 적는다.
+  // 비트엠 = 제품명 Newsync(B2799F·X34IPS, 11-10 사용자). 34인치는 165Hz.
   monitor: {
     "비트엠 27인치 IPS 240Hz": "비트엠 B2799F 27인치 240Hz",
-    "비트엠 34인치 울트라와이드": "비트엠 X34IPS 34인치",
+    "비트엠 34인치 울트라와이드": "비트엠 X34IPS 34인치 165Hz",
     "제이씨현 32인치 240Hz": "제이씨현 BG32CV 32인치 240Hz",
     "큐닉스 27인치 300Hz": "큐닉스 MG27B 27인치 300Hz",
     "BenQ XL2540X+ 280Hz": "BenQ XL2540X+ 25인치 280Hz",
