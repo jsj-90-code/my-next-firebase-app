@@ -375,6 +375,20 @@ export function computeIpPerDemand(marketDemand: number | null, ownPcCount: numb
 export const SURVEY_LEVEL_DEFAULT_SCORE: Record<"간략", number> = { 간략: 2.5 };
 
 /**
+ * 2026-11-11 신설(사용자 요청) — 조사상태 "보통경쟁력미조사"의 미입력 항목 점수.
+ *
+ * 사용자: "조사 안 했는데 완전 구린 매장은 아닌 것 같다. 경쟁점을 안 넣으면 매출이 깎이고,
+ * 저경쟁으로 넣으면 너무 높다." 노후저경쟁력미조사는 사양·먹거리·입지가 2.5점이지만 **시설은
+ * 존구성 1.0점**(UNSURVEYED_COMPETITOR_ZONE_SCORE)만 남아 1.0이 되고, 시설 비중이 55%라
+ * 종합이 약 1.7점까지 내려간다 — 실측 154곳 최소값(1.63) 근처라 "가장 약한 매장" 취급이다.
+ *
+ * 이 값은 상세조사 경쟁점 154곳 종합점수의 **중앙값 2.69**(2026-09-03 측정)를 반올림한 것이다.
+ * 사양·먹거리·시설·입지 중 비어 있는 항목을 전부 이 값으로 채우므로 종합도 약 2.7이 된다
+ * — "그 동네 평범한 경쟁점 하나". 아는 항목(예: 층수)을 적으면 그 값이 우선한다.
+ */
+export const UNSURVEYED_TYPICAL_COMPETITOR_SCORE = 2.7;
+
+/**
  * applySurveyLevelDefault: 조사수준이 "간략"이면 미입력 항목을 기본값으로 채운다.
  * investigationStatus가 "노후저경쟁력미조사"이면 조사수준이 비어 있어도 동일하게 취급한다 —
  * 노후·저경쟁력이라 상세조사를 생략했다는 업무 판단을 반영한다(요청사항 5).
@@ -387,6 +401,8 @@ export function applySurveyLevelDefault(
   investigationStatus?: CompetitorInvestigationStatus,
 ): number | null {
   if (score != null) return score;
+  // 2026-11-11 — "보통경쟁력미조사"는 조사수준과 상관없이 보통(중앙값)으로 채운다.
+  if (investigationStatus === "보통경쟁력미조사") return UNSURVEYED_TYPICAL_COMPETITOR_SCORE;
   // 2026-09-17 측정 — "노후저경쟁력미조사"에 간략조사와 **다른** 기본값을 줄지 재봤는데,
   // 그 9곳이 전부 후보지(N005·N010·N012)에만 붙어 있어 기존점 검증군에 하나도 없다.
   // 1.0~2.5로 훑어도 운영 적중률이 소수점까지 똑같다 — **자료로는 못 가린다.**
@@ -416,7 +432,7 @@ export function computeCompetitorAppliedPcCount(
   if (c.surveyLevel === "간략") return DEFAULT_UNSURVEYED_PC_COUNT;
   // 노후저경쟁력미조사와 오픈예정(2026-08-27) 둘 다 "존재는 하지만 실사 못 함" 케이스라 같은
   // 기본값(간략_기본대수)으로 채운다 - PC대수가 알려져 있으면 위에서 이미 그 값을 썼을 것이다.
-  if (c.investigationStatus === "노후저경쟁력미조사" || c.investigationStatus === "오픈예정") return DEFAULT_UNSURVEYED_PC_COUNT;
+  if (c.investigationStatus === "노후저경쟁력미조사" || c.investigationStatus === "보통경쟁력미조사" || c.investigationStatus === "오픈예정") return DEFAULT_UNSURVEYED_PC_COUNT;
   return null;
 }
 
@@ -435,6 +451,7 @@ export function describeAppliedPcCountBasis(
   if (c.totalPcCount != null) return "실측값(전체대수)";
   if (c.surveyLevel === "간략") return `추정값(조사수준=간략, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
   if (c.investigationStatus === "노후저경쟁력미조사") return `추정값(노후·저경쟁력 미조사, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
+  if (c.investigationStatus === "보통경쟁력미조사") return `추정값(보통 경쟁력 미조사, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
   if (c.investigationStatus === "오픈예정") return `추정값(오픈예정, 간략_기본대수 ${DEFAULT_UNSURVEYED_PC_COUNT}대 적용)`;
   return null;
 }
@@ -1751,7 +1768,21 @@ export function computeCompetitorScores(
   // 기존 종합평가 직접입력(seatZoneScore)으로 폴백한다. 관리점수는 더 이상 인테리어에서 파생되지
   // 않는 완전 독립 수동입력이다(경쟁점 입지점수는 기존 층수+엘리베이터 자동계산 그대로 — 아래
   // location 참고).
-  const zoneComposition = resolveZoneCompositionScore(
+  const zoneCounts = {
+    singleSeatCount: c.singleSeatCount,
+    room1: c.room1,
+    room2: c.room2,
+    teamRoom: c.teamRoom,
+    coupleZone: c.coupleZone,
+    vipZone: c.vipZone,
+    friendsZone: c.friendsZone,
+    firstClassZone: c.firstClassZone,
+  };
+  // 2026-11-11 — "보통경쟁력미조사"는 존구성을 안 적었으면 최저점(1.0) 대신 보통값으로 본다.
+  //   이게 이 상태를 만든 이유다: 시설 비중 55% 자리에 1.0이 들어가 종합이 너무 낮아졌다.
+  const typicalUnsurveyedZone =
+    c.investigationStatus === "보통경쟁력미조사" && isZoneCompositionUnsurveyed(zoneCounts) && c.seatZoneScore == null;
+  const zoneComposition = typicalUnsurveyedZone ? UNSURVEYED_TYPICAL_COMPETITOR_SCORE : resolveZoneCompositionScore(
     computeCompetitorZoneComposition({
       counts: {
         singleSeatCount: c.singleSeatCount,
@@ -2944,7 +2975,7 @@ export function computeCompetitorOccupiedSeats(competitors: Competitor[]): Compe
       // 핑봇 기간평균이 없고 방문 시점 실시간 착석률뿐이면 좌석수 합산에는 넣지 않는다 -
       // 참고 정보로만 coverage에 남긴다.
       coverage.realtimeSnapshotOnly++;
-    } else if (c.investigationStatus === "노후저경쟁력미조사") {
+    } else if (c.investigationStatus === "노후저경쟁력미조사" || c.investigationStatus === "보통경쟁력미조사") {
       coverage.assumedLowThreat++;
       // 실측 없이 지어낸 가동률을 곱하지 않는다 - 원본 SUMPRODUCT도 미실측 행은 0으로 더한다.
     } else if (c.investigationStatus === "오픈예정") {

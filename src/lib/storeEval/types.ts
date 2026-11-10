@@ -48,7 +48,12 @@ export type PcBangPermitHint = {
 //                      PC대수가 있으면 그대로, 없으면 노후저경쟁력미조사와 동일하게 70대로 채움,
 //                      사용자 확인) — 다만 실가동좌석 집계에서는 "값 누락"이 아니라 "아직 측정
 //                      불가능"이라는 걸 구분해 남긴다(완결성 경고 대상에서 제외).
-export type CompetitorSurveyState = "조사완료" | "경쟁점없음" | "노후저경쟁력미조사" | "오픈예정";
+//   보통경쟁력미조사    2026-11-11 추가(사용자 요청) — 조사는 안 했지만 "완전히 낡은 곳은 아니다"는
+//                      판단. 노후저경쟁력미조사는 시설(존구성) 1.0점이 섞여 너무 약하게 잡히고,
+//                      경쟁점을 빼면 반대로 너무 세다는 중간 자리. 미입력 항목은 전부
+//                      UNSURVEYED_TYPICAL_COMPETITOR_SCORE(상세조사 경쟁점 실측 중앙값)로, 대수는
+//                      간략_기본대수로 채운다. 실가동좌석은 노후저경쟁력미조사와 같이 0을 더한다.
+export type CompetitorSurveyState = "조사완료" | "경쟁점없음" | "노후저경쟁력미조사" | "보통경쟁력미조사" | "오픈예정";
 // 요청사항 문구(investigationStatus)에 맞춘 별칭 — 값은 CompetitorSurveyState와 동일하다.
 export type CompetitorInvestigationStatus = CompetitorSurveyState;
 export type InflowRestriction = "없음" | "보통" | "강함";

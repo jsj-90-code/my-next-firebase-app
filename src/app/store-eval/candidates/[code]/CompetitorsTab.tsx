@@ -15,11 +15,13 @@ import {
   computeCompetitorScores,
   computeCompetitorZoneComposition,
   computeFreshnessFromYear,
+  DEFAULT_UNSURVEYED_PC_COUNT,
   describeAppliedPcCountBasis,
   scoreFromCpuSpec,
   scoreFromMonitorSpec,
   scoreFromRamSpec,
   scoreFromVgaSpec,
+  UNSURVEYED_TYPICAL_COMPETITOR_SCORE,
 } from "@/lib/storeEval/calc";
 import { applyParsedNote, parseCompetitorNotes, type ParsedCompetitorNote } from "@/lib/storeEval/competitorNoteParse";
 import { blankCompetitor } from "@/lib/storeEval/blankCompetitor";
@@ -73,6 +75,7 @@ const SURVEY_STATE_OPTIONS: { value: CompetitorSurveyState; label: string }[] = 
   { value: "조사완료", label: "조사완료" },
   { value: "경쟁점없음", label: "경쟁점 없음" },
   { value: "노후저경쟁력미조사", label: "노후·저경쟁력 미조사" },
+  { value: "보통경쟁력미조사", label: "보통 경쟁력 미조사 (낡진 않음)" },
   { value: "오픈예정", label: "오픈예정(미개점)" },
 ];
 
@@ -448,7 +451,9 @@ function CompetitorForm({
       <div className="app-card-sm mt-3 rounded-lg px-3 py-2 text-xs leading-5 text-[var(--sl-warn)]">
         <strong>조사상태</strong>는 원본 시트에 없던 신규 필드입니다. &ldquo;경쟁점 없음&rdquo;(상권에 경쟁점이 실제로
         없음)과 &ldquo;노후·저경쟁력 미조사&rdquo;(경쟁점은 있으나 노후·저경쟁력이라 상세조사를 생략함)를 구분해
-        기록합니다.
+        기록합니다. 조사는 안 했지만 낡은 곳은 아닌 것 같으면 &ldquo;보통 경쟁력 미조사&rdquo;를 고르세요 — 안 적은
+        항목을 전부 {UNSURVEYED_TYPICAL_COMPETITOR_SCORE.toFixed(1)}점(상세조사 경쟁점 중앙값), 대수는{" "}
+        {DEFAULT_UNSURVEYED_PC_COUNT}대로 봅니다. 미조사 두 상태는 조사수준을 비워 두면 됩니다.
       </div>
 
       <div className={`${gridClass} mt-4`}>
