@@ -255,7 +255,8 @@ const SPARE_STOCK: { field: string; value: string; spareQty: number }[] = [
   { field: "키보드", value: "ISENS K400 광청축 크리스탈 키캡 키보드", spareQty: 5 },
   { field: "스피커", value: "블루오션 2 (앱코 S1000) 스피커", spareQty: 5 },
   { field: "헤드셋", value: "젬스트 LEF G58", spareQty: 5 },
-  { field: "모니터", value: "제이씨현 32인치 240Hz", spareQty: 1 },
+  // 발주 요약표는 이름 표(FIELD_VALUE_ALIASES)를 거친 값과 맞춰 보므로 바뀐 이름으로 적는다.
+  { field: "모니터", value: "제이씨현 BG32CV 32인치 240Hz", spareQty: 1 },
 ];
 
 function applySpareStock(rows: OrderSummaryRow[]): OrderSummaryRow[] {
@@ -352,19 +353,37 @@ function computeMouseRows(pcZones: PcZone[], pcDefaults: PcSpecValues, def: stri
 
 // 코드에서 기본 문구를 바꿔도, 이미 저장된 프로젝트/사양설정 데이터에는 옛날 문구가 그대로
 // 남아있어 자동으로 안 바뀐다. 알려진 옛날 문구는 계산 시점에 새 문구로 치환해서 집계한다.
+// 11-10 사용자 「범례에 모델명 안 적힌 것 다 기재 — 하드웨어만, 그대로 말고 요약해서」:
+// 모델 표기를 "제조사 + 모델코드 + 크기 + 주사율"로 통일. 메모리는 5600(32GB = 16GB 두 개라 "16GB×2"), 그래픽카드는 매장마다 제조사가 달라 칩셋만.
+// 저장값(설정 문서·매장 데이터)은 그대로 두고 발주도면 범례·발주 요약표에 보이는 글자만 바꾼다(좌석번호표는 저장값을 써서 영향 없음).
 const FIELD_VALUE_ALIASES: Partial<Record<PcSpecFieldId, Record<string, string>>> = {
+  cpu: {
+    "울트라5 시리즈2 225F": "울트라5 225F",
+  },
   ram: {
-    "16GB": "DDR5 16GB",
-    "32GB": "DDR5 32GB",
+    "16GB": "DDR5-5600 16GB",
+    "32GB": "DDR5-5600 16GB×2",
+    "DDR5 16GB": "DDR5-5600 16GB",
+    "DDR5 32GB": "DDR5-5600 16GB×2",
   },
   mb: {
     "H610M 2.5": "ASUS PRIME H810M-X 2.5G",
+    "H810M-X 2.5G": "ASUS PRIME H810M-X 2.5G",
   },
   gpu: {
     "RTX 5060": "RTX 5060 8GB",
+    "RTX 5060Ti": "RTX 5060 Ti 8GB",
+    "RTX 5060 Ti": "RTX 5060 Ti 8GB",
   },
   power: {
-    "600W": "잘만 MegaMax ET 600W 80PLUS STANDARD",
+    "600W": "잘만 MegaMax 600W",
+    "잘만 MegaMax ET 600W 80PLUS STANDARD": "잘만 MegaMax 600W",
+  },
+  // 비트엠 27·34인치는 모델코드 확인 대기(11-10) — 받으면 여기 두 줄 추가.
+  monitor: {
+    "제이씨현 32인치 240Hz": "제이씨현 BG32CV 32인치 240Hz",
+    "큐닉스 27인치 300Hz": "큐닉스 MG27B 27인치 300Hz",
+    "BenQ XL2540X+ 280Hz": "BenQ XL2540X+ 25인치 280Hz",
   },
   headset: {
     G58: "젬스트 LEF G58",
