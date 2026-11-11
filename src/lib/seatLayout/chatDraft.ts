@@ -34,8 +34,33 @@ export type SeatLayoutChatDraft = {
   projectName: string;
   desk?: DraftMeta & { rows: DeskCountDraftRow[] };
   pc?: DraftMeta & { rows: PcCountDraftRow[] };
-  seatNumbers?: DraftMeta & { rows: SeatNumberDraftRow[]; unsure: string };
+  // final(11-12): plateBox가 빠져 "다시 내라"를 받은 초안은 false — 웹이 열기 전에 와 있던 좌석번호 초안은 final만 넣는다.
+  seatNumbers?: DraftMeta & { rows: SeatNumberDraftRow[]; unsure: string; final?: boolean };
   // final(10-30): 채팅이 더 덮어쓰지 않을 마지막 초안 — 웹은 이것만 자동으로 넣는다(없으면 옛 초안, 버튼으로만).
   zones?: DraftMeta & { rows: ZoneDraftRow[]; final?: boolean };
   brackets?: DraftMeta & { rows: BracketDraftRow[] };
 };
+
+export type ChatDraftKindKey = "zones" | "brackets" | "desk" | "pc" | "seatNumbers";
+
+/**
+ * 채팅 초안을 버튼 없이 넣을지(웹 SeatLayoutWorkspace onChatDraftArrived).
+ * - 프로젝트를 연 뒤에 새로 온 초안(at > watchStartedAt)은 넣는다(10-30). 단 존 초안은 final만.
+ * - 열기 전에 와 있던 초안은 넣었다가 버린 것일 수 있어 원래 버튼으로만 — 예외 둘(도면공유방 자동 초안은 사람이 열기 전에 도착):
+ *   존이 0개인 프로젝트의 final 존 초안(11-04), 저장된 좌석번호가 하나도 없고 피난안내도가 있는 프로젝트의 final 좌석번호 초안(11-12).
+ * - 어느 쪽이든 마지막 [프로젝트 저장] 뒤에 온 초안만(넣고 저장했거나 버리고 저장했으면 다시 안 넣는다).
+ */
+export function shouldAutoApplyChatDraft(
+  kind: ChatDraftKindKey,
+  draft: SeatLayoutChatDraft,
+  project: { zoneCount: number; seatNumberCount: number; hasPlate: boolean; updatedAt: number | null },
+  watchStartedAt: number,
+): boolean {
+  const at = draft[kind]?.createdAt;
+  if (!at) return false;
+  if (kind === "zones" && !draft.zones?.final) return false;
+  const beforeOpenOk =
+    (kind === "zones" && project.zoneCount === 0) ||
+    (kind === "seatNumbers" && !!draft.seatNumbers?.final && project.seatNumberCount === 0 && project.hasPlate);
+  return (at > watchStartedAt || beforeOpenOk) && at > (project.updatedAt ?? 0);
+}

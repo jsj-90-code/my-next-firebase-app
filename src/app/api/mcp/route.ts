@@ -722,10 +722,13 @@ function registerTools(server: McpServer, owner: boolean) {
             return { zoneName: row.zoneName, ranges: compressRanges(nums), count: new Set(nums).size, plateRect: row.plateBox };
           });
           const unsureRanges = compressRanges(parseSeatNumbers(unsure ?? ""));
+          // 아래에서 "plateBox 넣어 다시 내라"로 되돌릴 초안은 final=false — 웹은 열기 전에 와 있던 좌석번호 초안은 final만 저절로 넣는다(11-12).
+          const boxed = clean.filter((c) => c.plateRect).length;
+          const redoBoxes = !!project.seatNumberPlateDataUrl && clean.length >= 3 && boxed < 3;
           await saveSeatLayoutChatDraft(
             project, "seatNumbers",
             // Firestore는 undefined를 못 쓴다 — 상자를 안 낸 존은 칸 없이.
-            { rows: clean.map(({ zoneName, ranges, plateRect }) => ({ zoneName, ranges, ...(plateRect ? { plateRect } : {}) })), unsure: unsureRanges },
+            { rows: clean.map(({ zoneName, ranges, plateRect }) => ({ zoneName, ranges, ...(plateRect ? { plateRect } : {}) })), unsure: unsureRanges, final: !redoBoxes },
             { modelName: modelName || null, note: note ?? null, user },
           );
           const lines = clean.map((c) => {
@@ -735,8 +738,7 @@ function registerTools(server: McpServer, owner: boolean) {
           const missing = zones.filter((z) => !clean.some((c) => c.zoneName === z.name)).map((z) => z.name);
           // 10-29 호구포TEST: 앱이 예전 도구 목록을 기억해 plateBox 없이 냈다 → 웹이 피난안내도에 존을 못 겹쳤다. 3개 미만이면 되돌린다
           // (앱이 기억하는 목록에 칸이 없어도 서버는 받으므로, 이 안내를 보고 넣으면 된다).
-          const boxed = clean.filter((c) => c.plateRect).length;
-          if (project.seatNumberPlateDataUrl && clean.length >= 3 && boxed < 3) {
+          if (redoBoxes) {
             return text(
               `${project.name} 좌석번호는 저장했지만 아직 끝나지 않았다 — rows의 존마다 plateBox가 빠졌다(${boxed}/${clean.length}). ` +
                 "plateBox = ②번 피난안내도 전체 이미지에서 그 존 좌석번호들을 감싸는 상자 {x, y, w, h}(왼쪽 위 원점 0~1 비율). " +
