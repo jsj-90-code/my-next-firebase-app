@@ -77,7 +77,8 @@ function blankLocationEvaluation(candidateCode: string, name: string, address: s
     inflowRestriction: null,
     demandLeakageRisk: null,
     marketStructureMemo: null,
-    brandType: null,
+    // 2026-11-11 사용자 — 브랜드구분 기본값은 블랙라벨(신규 후보지는 전부 블랙라벨).
+    brandType: "블랙라벨",
     updatedAt: Date.now(),
     updatedBy: null,
   };

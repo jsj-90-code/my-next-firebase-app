@@ -300,6 +300,26 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
       report.competitors = { parsed: notes.length, results: out };
     }
 
+    // 4-1) 다우에 설명이 없는 카카오 경쟁점 → "보통경쟁력미조사"(2026-11-11 사용자, 등촌역점 N033).
+    //      그대로 두면 "조사완료 + 전부 빈칸"이라 V62가 0대로 세서(=경쟁점 없는 셈) 매출이 높게 나오고,
+    //      노후·저경쟁력으로 두면 시설 1.0점이 섞여 역시 너무 약하다. 사용자가 지도로 보고 직접 고른 값이 이것이었다.
+    //      대상: 카카오에서 온 것 · 조사완료 · 조사수준·대수·점수가 하나도 안 적힌 것. 사람이 뭐라도 적은 곳은 안 건드린다.
+    if (steps.has("competitors")) {
+      const untouched = (c: Comp) =>
+        c.source === "kakao" && c.investigationStatus === "조사완료" && c.surveyLevel == null &&
+        c.totalPcCount == null && c.appliedPcCount == null && c.interiorScore == null && c.managementScore == null &&
+        c.foodScore == null && c.foodBrand == null && c.vgaBase == null && c.pingbotUtilization == null;
+      const targets = (await listComps()).filter(untouched);
+      for (const c of targets) {
+        const after = { ...c, investigationStatus: "보통경쟁력미조사" as const, updatedAt: now() };
+        if (!spec.dryRun) {
+          await db.collection("storeEvalCompetitors").doc(c.id).set(JSON.parse(JSON.stringify(after)));
+          await audit("competitor", c.id, "수정", c, after);
+        }
+      }
+      report.typicalUnsurveyed = targets.map((c) => ({ name: c.name, distanceM: c.distanceM, permitPcCount: c.permitHint?.suggestedPcCount ?? null }));
+    }
+
     // 5) 측정기 — clientStore.registerCompetitorsToPing과 같은 규칙(경쟁점 전부, IP 있으면 "IP 확인 필요" 표시)
     if (steps.has("ping")) {
       // 측정기 저장소가 사내로 옮겨졌으면(PING_STORE_BACKEND=internal, 2026-11-03) 거기에 쓴다 — 규칙은 같다.
@@ -377,7 +397,8 @@ describe.skipIf(!SPEC_PATH)("다우 심사글 → 신규 후보지", () => {
           candidateCode: code, name: cand.name ?? null, address: cand.address ?? null,
           locationScore: null, flowScore: null, preemptionScore: null, visibilityScore: null, mapMemo: null, attractionScore: null,
           specialDemandType: null, specialDemandIntensity: null, inflowRestriction: null, demandLeakageRisk: null,
-          marketStructureMemo: null, brandType: null,
+          // 브랜드구분 기본값 = 블랙라벨(2026-11-11 사용자 — 신규 후보지는 전부 블랙라벨). 빈칸이면 판정이 "브랜드 확인 필요"에 걸린다.
+          marketStructureMemo: null, brandType: "블랙라벨",
         };
         for (const k of pick) if (d.fields?.[k] !== undefined) after[k] = d.fields[k];
         after.mapMemo = `AI 초안(자동 적용 · ${d.modelName ?? "모델 미기재"}): ${d.rationale ?? ""}`.trim();
