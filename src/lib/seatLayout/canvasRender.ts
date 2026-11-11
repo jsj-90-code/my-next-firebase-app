@@ -627,6 +627,22 @@ export function renderPcFloorplanImage(
     const segs = wrapTextToWidth(c, value, defColW - (12 + labelW + 10) - 8, DEF_FONT, 2);
     return { label: f.label, labelW, segs };
   });
+  // 11-11 사용자(호구포점): 항목 이름 길이마다 값 시작 위치가 달라 정렬이 안 돼 보였다 → 열마다 가장 긴
+  // 항목 이름 폭으로 맞춰 값이 같은 세로선에서 시작하게 한다.
+  {
+    const colLabelW = [0, 1].map((col) =>
+      Math.max(0, ...defEntries.filter((_, i) => i % 2 === col).map((e) => e.labelW)),
+    );
+    defEntries.forEach((e, i) => {
+      if (e.labelW === colLabelW[i % 2]) return;
+      e.labelW = colLabelW[i % 2];
+      const raw = DEFAULT_BOX_FIELDS[i];
+      const rawDefault = pcDefaults[raw.id] || raw.def;
+      const value =
+        raw.id === "mouse" ? splitMouseValue(rawDefault).join(" & ") : normalizeFieldValue(raw.id, rawDefault);
+      e.segs = wrapTextToWidth(c, value, defColW - (12 + e.labelW + 10) - 8, DEF_FONT, 2);
+    });
+  }
   const DEF_EXTRA_LINE_H = 20;
   const defRowH: number[] = [];
   for (let i = 0; i < defEntries.length; i += 2) {
@@ -655,23 +671,30 @@ export function renderPcFloorplanImage(
   // 글자가 최소(60%)로 쪼그라들었다(아래 공간은 텅 비어 있는데도). 이제 긴 값은 칸 폭에서 줄을
   // 바꾸고 그 항목만 줄 수만큼 높인다 — 글자 크기는 세로 공간으로 정해지고, 긴 줄 하나가 끌어내리지 않는다.
   type WrappedLine = { label: string; segs: string[] };
+  // 11-11 사용자(호구포점): 항목 이름(모니터암·모니터·RAM)마다 이름 칸 폭이 달라 값이 들쭉날쭉했다 →
+  // 모든 카드의 이름 칸을 가장 긴 이름 폭 하나로 맞춘다.
+  function uniformLabelW(font: number): number {
+    c.font = `bold ${font}px sans-serif`;
+    let w = 0;
+    for (const item of overrideZones) for (const ln of item.lines) w = Math.max(w, c.measureText(ln.label).width);
+    return w;
+  }
   // scale 배율일 때의 실제 글자 크기로 줄을 바꾼다(그리는 쪽과 같은 반올림·같은 여백).
   function wrapItemsFor(colW: number, scale: number): WrappedLine[][] {
     const font = Math.max(10, Math.round(BASE_BODY_FONT * scale));
+    const labelW = uniformLabelW(font);
     return overrideZones.map((item) =>
       item.lines.map((ln) => {
-        c.font = `bold ${font}px sans-serif`;
-        const labelW = c.measureText(ln.label).width;
         return { label: ln.label, segs: wrapTextToWidth(c, ln.value, colW - 24 - labelW, font, 5) };
       }),
     );
   }
   function allSegsFit(wrapped: WrappedLine[][], colW: number, scale: number): boolean {
     const font = Math.max(10, Math.round(BASE_BODY_FONT * scale));
+    const labelW = uniformLabelW(font);
     return wrapped.every((lines) =>
       lines.every((ln) => {
-        c.font = `bold ${font}px sans-serif`;
-        const maxW = colW - 24 - c.measureText(ln.label).width;
+        const maxW = colW - 24 - labelW;
         c.font = `${font}px sans-serif`;
         return ln.segs.every((seg) => c.measureText(seg).width <= maxW);
       }),
@@ -820,6 +843,7 @@ export function renderPcFloorplanImage(
   const headerFont = Math.max(10, Math.round(BASE_HEADER_FONT * scale));
   const bodyFont = Math.max(10, Math.round(BASE_BODY_FONT * scale));
   const lineH = BASE_LINE_H * scale;
+  const cardLabelW = uniformLabelW(bodyFont);
 
   overrideZones.forEach((item, idx) => {
     const col = idx % cols;
@@ -854,7 +878,7 @@ export function renderPcFloorplanImage(
       const k = ln.segs.length;
       const itemH = lineH * k;
       c.font = `bold ${bodyFont}px sans-serif`;
-      const labelW = c.measureText(ln.label).width;
+      const labelW = cardLabelW;
       c.fillStyle = labelBg;
       c.fillRect(px + 4, ly + 4, labelW + 10, itemH - 8);
       c.fillStyle = "#2A2520";
