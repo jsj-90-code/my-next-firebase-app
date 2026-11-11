@@ -482,7 +482,8 @@ export function renderDeskFloorplanImage(
       const rowH = li === 1 ? sizeRowH : otherRowH;
       const labelBaseline = lines.length > 1 ? ly + rowH / 2 + bodyFont * 0.35 : ly + rowH * 0.68;
       c.font = `bold ${bodyFont}px sans-serif`;
-      const labelW = c.measureText(label).width;
+      // 11-11 사용자(호구포점): 이름 칸 폭을 가장 긴 이름(책상사이즈)으로 통일해 값 시작 위치를 맞춘다.
+      const labelW = Math.max(...specLabels.map((l) => c.measureText(l).width));
       c.fillStyle = labelBg;
       c.fillRect(px + 4, ly + 4, labelW + 10, rowH - 8);
       c.fillStyle = "#2A2520";
