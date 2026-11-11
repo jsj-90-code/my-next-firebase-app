@@ -45,10 +45,10 @@ const TOOLS = [
   },
   {
     // 2026-10-30 신설 — 가맹점 Q&A 챗봇. 이 웹 밖이라 새 탭으로 열고, 아래 표제란(이 웹 자료 기준)은 달지 않는다.
-    // 2026-11-11 — 화면은 새 상담 데스크(isens-desk)로 옮김. 엔진·휴대폰 가이드·본사 관리는 isens-qna에 남음.
-    href: "https://isens-desk.vercel.app",
+    // 2026-11-11 오후 — 상담 데스크(isens-desk)는 웹 공개를 끄고 회사 PC에서만 쓰기로 해서 다시 챗봇(isens-qna)으로.
+    href: "https://isens-qna.vercel.app",
     label: "가맹점 Q&A 챗봇",
-    description: "상담 데스크: 가맹점 문의에 원본 매뉴얼 기준으로 AI가 먼저 답하고, 안 풀리면 SV가 받아 답합니다. 시범판이라 시험 계정으로만 씁니다.",
+    description: "가맹점 문의에 원본 매뉴얼 기준으로 답하고, 안 풀리면 SV에게 넘깁니다. 시범판이라 시험 계정으로만 씁니다.",
     icon: <path d="M4 5h16v11H9l-5 4z M8 9h8 M8 12h5" />,
     external: true,
   },
