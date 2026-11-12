@@ -69,6 +69,17 @@ function competitorDetailText(competitors: Competitor[]): string {
       `  엘리베이터 ${c.hasElevator == null ? "미입력" : c.hasElevator ? "있음" : "없음"}${c.elevatorBasis ? ` — ${c.elevatorBasis}(건물 전체 층수이지 매장 층이 아님)` : ""}`,
       `  인테리어 ${score(c.interiorScore)} · 관리 ${score(c.managementScore)} · 먹거리 ${c.foodBrand ?? score(c.foodScore)} (1~5점, 현장조사)`,
     ];
+    // 룸·존 구성(2026-11-12 가도면 검토 스킬 — 후발주자 룸 비교). 이 줄이 없어서 채팅이 워너비PC(N003) 룸을 "입력 안 됨"으로 읽었다
+    // (실제로는 룸이 없는 매장). 0 = 없음, "-" = 칸이 비어 있음. 현장조사된 매장의 빈칸은 보통 '없음'이라 그렇게 적는다.
+    const surveyed = c.interiorScore != null || c.managementScore != null;
+    const n = (v: number | null | undefined, unit = "") => (v == null ? "-" : v === 0 ? "없음" : `${v}${unit}`);
+    const zone = [
+      `1인석 ${n(c.singleSeatCount, "석")}`, `1인룸 ${n(c.room1, "개")}`, `2인룸 ${n(c.room2, "개")}`,
+      `팀룸 ${n(c.teamRoom, "개")}${c.teamRoomTotalSeats ? `(${c.teamRoomTotalSeats}석)` : ""}`,
+      `커플존 ${n(c.coupleZone)}`, `일반2인석 ${n(c.regularCoupleSeatCount, "조")}`,
+      `VIP ${n(c.vipZone)}`, `프렌즈 ${n(c.friendsZone)}`, `퍼클 ${n(c.firstClassZone)}`,
+    ];
+    parts.push(`  룸·존: ${zone.join(" · ")} (- = 칸 비어 있음${surveyed ? ", 현장조사된 매장이라 빈칸은 대개 '없음'" : ", 현장조사 전"})`);
     const memo = (c.interiorBasis ?? "").replace(/\s+/g, " ").trim();
     if (memo) parts.push(`  조사 메모: ${memo.slice(0, 300)}`);
     if (c.sourcePlaceId) parts.push(`  카카오 장소(주소·층 확인용): https://place.map.kakao.com/${c.sourcePlaceId}`);
