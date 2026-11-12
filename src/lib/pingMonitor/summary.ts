@@ -69,6 +69,22 @@ export function recent24h(recent: Record<string, RecentSlot>, now = new Date()):
   return { util: hours >= RECENT_MIN_HOURS ? a / t : null, hours };
 }
 
+/**
+ * 24시간 내내 켜진 대수가 거의 같은지(2026-11-12). 손님 PC는 새벽과 저녁이 2배 넘게 차이 나는데(206곳 최근 24시간 실측),
+ * 늘 켜진 기기만 대답하는 곳은 가장 많은 때 ÷ 가장 적은 때가 1.08배 안에 모였다(위드비 17~18/78대 · 보보스3 3/119대 · 넥스트PC 61/91대).
+ * 다음으로 작은 진짜 매장은 2.0배라 FLAT_MAX_RATIO 1.15로 가른다. 최근 24시간 칸이 RECENT_MIN_HOURS 이상 찰 때만 본다.
+ * 0대인 시각이 있으면 평평하지 않다(손님이 다 빠진 때가 있다는 뜻).
+ */
+export const FLAT_MAX_RATIO = 1.15;
+export function looksFlat24h(recent: Record<string, RecentSlot>, now = new Date()): boolean {
+  const on = Object.values(recent)
+    .filter((v) => v.at && now.getTime() - v.at.getTime() <= 24 * 3600 * 1000 && v.t > 0)
+    .map((v) => v.a);
+  if (on.length < RECENT_MIN_HOURS) return false;
+  const mx = Math.max(...on), mn = Math.min(...on);
+  return mn > 0 && mx / mn <= FLAT_MAX_RATIO;
+}
+
 /** 하루 가동률 — 다 찬 날만, 아니면 null(날짜별 그래프용). */
 export function fullDayRate(days: Record<string, DayTotals>, date: string, today = kstDaysAgo(0)): number | null {
   const v = days[date];
@@ -287,7 +303,7 @@ export function competitorMeasurement(stores: PingStore[], now = new Date()): Co
   // 메모가 낡아 화면은 "측정 중"인 매장(메타 하안·피에스타 배곧·크라우드 일도2동)이 여기선 빨간 "측정 중" 배지에 값 없음으로 떴다.
   // 레드포스처럼 하루 0~1대만 응답한 노이즈는 storeStatus(실측 1% 미만이면 메모 우선)와 rangeUtilization(1% 미만 날 제외)이 이미 막고,
   // 사람이 노이즈로 확정한 곳은 excludeFromStats(위)가 막는다.
-  const status = storeStatus(s);
+  const status = storeStatus(s, now);
   if (status.kind !== "measuring" && status.kind !== "waiting") return { ...base, state: "blocked", label: status.label, store: s };
   // 평균에 실제로 들어간 날과 같은 조건(꽉 찬 날 + 측정실패 1% 미만 제외 + 포트 전환 날 이후)이라야
   // first~last 기간·일수가 r.days/r.util과 안 어긋난다(2026-10-09).
@@ -339,7 +355,7 @@ export function hasNoIp(store: Pick<PingStore, "ipCount" | "ipRanges">): boolean
   return store.ipCount === 0 || store.ipRanges.trim() === "";
 }
 
-export function storeStatus(store: PingStore): StoreStatus {
+export function storeStatus(store: PingStore, now = new Date()): StoreStatus {
   // 사람이 "계산 제외"로 확정한 매장 — 측정값이 어떻든(과응답·몇 대만 응답 등 IP 오류) 평균·수요계산에서 빼고 화면은 "-"(2026-10-09).
   // 실측 우선 규칙(스컬스피시)보다 앞선다 — 보보스3·치즈 처럼 24시간 평평한 몇 대 응답은 노이즈라 실측으로 안 친다.
   if (store.excludeFromStats) return { label: RECHECK, tone: "danger", kind: "recheck", hint: "응답이 이상해 계산에서 뺀 매장(늘 몇 대만 켜짐 등) — 매장에 IP 다시 확인" };
@@ -357,6 +373,8 @@ export function storeStatus(store: PingStore): StoreStatus {
       .filter(([date, v]) => coversFullDay(v) && v.a / v.t >= MEASURE_FAIL_MAX_UTIL && !(store.portSwitchDate && date <= store.portSwitchDate))
       .map(([, v]) => v);
     const dailyAvg = full.length ? full.reduce((a, v) => a + v.a / v.t, 0) / full.length : null;
+    // 24시간 평평 — 손님 PC가 아니라 늘 켜진 기기만 잡힌다. 값을 보여 주지 않고 평균에서 뺀다(2026-11-12 위드비: 사람이 걸러 오던 보보스3·치즈와 같은 모양).
+    if (looksFlat24h(store.recent, now)) return { label: RECHECK, tone: "danger", kind: "recheck", hint: "24시간 내내 켜진 대수가 거의 같음 — 손님 PC가 아니라 늘 켜진 기기만 잡히는 의심" };
     if (dailyAvg != null && dailyAvg > 0.6) return { label: RECHECK, tone: "danger", kind: "overResponse", hint: "일일평균 60% 넘음 — 공유기·늘 켜진 기기가 섞인 의심" };
     // 평균 1% 남짓(반올림 1.0 이하)은 경쟁점 탭에서 "측정 의심"으로 막는다 — 측정기 화면도 같은 말로(2026-10-10 최종점검: 두 화면이 달랐다).
     if (dailyAvg != null && Math.round(dailyAvg * 1000) / 10 <= 1) return { label: RECHECK, tone: "danger", kind: "recheck", hint: "가동률 1% 남짓 — PC가 아니라 늘 켜진 기기 몇 대만 잡히는 의심" };

@@ -264,7 +264,7 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
   const { from7, to7 } = useRanges();
   // 숫자는 표의 상태 칸(storeStatus)과 같은 판정으로 센다 — 예전엔 사람 메모(ipCheck)가 붙은 매장 수를 세서,
   // 메모가 남았지만 실측이 떠서 "측정 중"인 매장·우리 매장 메모까지 "IP 확인"에 들어가 표와 안 맞았다(2026-10-10 사용자).
-  const statuses = group.stores.map(storeStatus);
+  const statuses = group.stores.map((s) => storeStatus(s));
   const measuring = statuses.filter((st) => st.tone === "ok").length;
   const noIp = statuses.filter((st) => st.label === "IP 미등록").length;
   const ipCheck = statuses.filter((st) => st.tone !== "ok" && st.tone !== "neutral" && st.label !== "IP 미등록").length;

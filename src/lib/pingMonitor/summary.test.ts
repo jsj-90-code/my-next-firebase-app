@@ -12,6 +12,24 @@ function store(over: Partial<PingStore>): PingStore {
   };
 }
 const full = (a: number) => ({ a, t: 240, n: 24 });
+// 최근 24시간 칸 — 시각마다 켜진 대수(NOW 기준 0~23시간 전)
+const recentOf = (ons: number[], t = 78) => Object.fromEntries(ons.map((a, i) => [String(i), { a, t, at: new Date(NOW.getTime() - i * 3600 * 1000) }]));
+
+describe("24시간 평평 — 늘 켜진 기기만 잡히는 곳(2026-11-12 위드비)", () => {
+  const days = { "2026-10-06": { a: 17 * 24, t: 78 * 24, n: 24 } };
+  it("하루 내내 17~18대면 재확인, 평가에 값을 넘기지 않는다", () => {
+    const s = store({ pcCount: 78, ipCount: 78, days, recent: recentOf(Array.from({ length: 24 }, (_, i) => (i % 3 ? 17 : 18))) });
+    expect(storeStatus(s, NOW).kind).toBe("recheck");
+    expect(competitorMeasurement([s], NOW).state).toBe("blocked");
+  });
+  it("새벽 5대·저녁 30대처럼 오르내리면 측정 중", () => {
+    const ons = Array.from({ length: 24 }, (_, i) => 5 + Math.round(25 * Math.max(0, Math.sin((i / 24) * Math.PI))));
+    expect(storeStatus(store({ pcCount: 78, ipCount: 78, days, recent: recentOf(ons) }), NOW).label).toBe("측정 중");
+  });
+  it("최근 24시간 칸이 모자라면(등록 직후 등) 평평 판정을 하지 않는다", () => {
+    expect(storeStatus(store({ pcCount: 78, ipCount: 78, days, recent: recentOf([17, 17, 17, 17, 17]) }), NOW).label).toBe("측정 중");
+  });
+});
 
 describe("competitorMeasurement", () => {
   it("간헐적 1대 응답이 있어도 IP 확인 중이면 평가에 값을 넘기지 않는다", () => {
