@@ -788,6 +788,35 @@ export async function pingTransferOwn(fromCode: string, toCode: string, email: s
   return { moved: rows.length, linked, toName: to.name };
 }
 
+const COORD_FILL_MAX = 60;
+/** 좌표 없는 경쟁점 등록을 주소로 찾아 lat·lng만 저장한다(다른 칸은 안 건드림). 받은 배열도 그 자리에서 채운다. */
+async function fillMissingCoords(stores: PingStore[]): Promise<void> {
+  const want = stores.filter((s) => s.active && !s.isOwnStore && s.lat == null && s.address.trim()).slice(0, COORD_FILL_MAX);
+  if (!want.length) return;
+  const writes: StoreWrite[] = [];
+  for (let i = 0; i < want.length; i += 8) {
+    const part = want.slice(i, i + 8);
+    const got = await Promise.all(part.map((s) => geocodeAddress(s.address.trim()).catch(() => null)));
+    part.forEach((s, k) => {
+      const g = got[k];
+      if (!g) return;
+      s.lat = g.lat;
+      s.lng = g.lng;
+      writes.push({ op: "update", c: PING_STORES, id: s.id, data: { lat: g.lat, lng: g.lng } });
+    });
+  }
+  if (writes.length) await istore.commit(writes).catch((e) => console.error("측정기 좌표 채우기 저장 실패:", e));
+}
+
+/** 상호 비교용 — 띄어쓰기·대소문자·「PC방/피시방/PC카페/PC」 꼬리 무시 */
+function pcBangKey(name: string): string {
+  return name.toLowerCase().replace(/\s|\(.*?\)/g, "").replace(/피시|피씨/g, "pc").replace(/(pc방|pc카페|pc존|pc클럽|pc)$/, "");
+}
+function samePcBangName(a: string, b: string): boolean {
+  const x = pcBangKey(a), y = pcBangKey(b);
+  return x.length >= 2 && y.length >= 2 && (x === y || x.includes(y) || y.includes(x));
+}
+
 /** 주변 1km PC방(카카오, 이름 거름) + 수요거점(선택) + 이미 측정기에 있는 매장 표시. 좌표 또는 주소로. */
 export async function pingNearby(input: { lat?: number | null; lng?: number | null; address?: string | null; demand?: boolean | null; map?: boolean | null; mapRadiusM?: number | null }) {
   let center: { lat: number; lng: number } | null = input.lat != null && input.lng != null ? { lat: Number(input.lat), lng: Number(input.lng) } : null;
@@ -807,8 +836,19 @@ export async function pingNearby(input: { lat?: number | null; lng?: number | nu
   ]);
   const pic = mapPic && typeof mapPic === "object" ? mapPic : null;
   const at = <T extends { lat: number; lng: number }>(p: T) => (pic ? { ...p, ...pic.toPx(p) } : p);
+  // 좌표 없는 등록이 많다(2026-11-15: 300곳 중 128곳만 좌표) — 그대로면 주변 지도에서 등록 매장이 전부 「미등록」으로 뜬다.
+  // 경쟁점은 주소로 찾아 좌표를 저장해 두고(한 번 채우면 끝, 한 번에 최대 COORD_FILL_MAX곳), 우리 매장은 점포평가 좌표를 빌린다(저장 안 함).
+  await fillMissingCoords(stores);
+  if (stores.some((s) => s.active && s.isOwnStore && s.lat == null && s.ownCode)) {
+    const owns = await ownOptions(stores).catch(() => [] as OwnOption[]);
+    const at = new Map(owns.filter((o) => o.lat != null && o.lng != null).map((o) => [o.code, { lat: o.lat!, lng: o.lng! }]));
+    for (const s of stores) if (s.isOwnStore && s.lat == null && s.ownCode && at.has(s.ownCode)) Object.assign(s, at.get(s.ownCode));
+  }
   const registered = stores.filter((s) => s.active && s.lat != null && s.lng != null);
-  const near = (p: { lat: number; lng: number }) => registered.find((s) => haversineM(p, { lat: s.lat!, lng: s.lng! }) <= 40);
+  // 같은 매장 판정: 40m 안, 또는 150m 안이면서 상호가 같음(띄어쓰기·PC방/피시방 표기 무시) — 지오코딩 점과 카카오 장소 점이 건물 안에서 어긋난다.
+  const near = (p: { lat: number; lng: number; name?: string }) =>
+    registered.find((s) => haversineM(p, { lat: s.lat!, lng: s.lng! }) <= 40) ??
+    registered.find((s) => !!p.name && samePcBangName(s.name, p.name) && haversineM(p, { lat: s.lat!, lng: s.lng! }) <= 150);
   const pcBangs = pc.places
     .filter((p) => judgePcBangName(p).counted)
     .map((p) => {
