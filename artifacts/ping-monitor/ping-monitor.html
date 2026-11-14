@@ -1037,14 +1037,8 @@ function storeForm(host,{id=null,isOwn=false,recordDays=0,prefill=null,onSaved}=
     let tplArmed=false;const tplBtn=el('button',{class:'btn sm',type:'button',onclick:()=>{if(memoIn.value.trim()&&!tplArmed){tplArmed=true;tplBtn.textContent='지금 메모를 지우고 넣기(한 번 더)';setTimeout(()=>{tplArmed=false;tplBtn.textContent='조사 양식 넣기'},4000);return}memoIn.value=f.memo=surveyTemplate();tplArmed=false;tplBtn.textContent='조사 양식 넣기'}},'조사 양식 넣기');
     // 주변 PC방에서 고르기(지도 핀 대신)
     const nearBox=el('div',{hidden:true});
-    /* 내 위치(현장 조사용) — 웹 /ping-monitor와 같은 기능. claude.ai가 위치 권한을 막으면 안내만 띄운다. */
-    const gpsMsg=el('span',{class:'hint'});
-    const gpsBtn=el('button',{class:'btn sm',type:'button',onclick:()=>{gpsMsg.textContent='';
-      if(!navigator.geolocation){gpsMsg.textContent='이 화면에서는 위치 기능을 쓸 수 없습니다 — 주소를 적거나 웹 측정기(/ping-monitor)의 「내 위치」를 쓰세요.';return}
-      gpsBtn.disabled=true;gpsBtn.textContent='위치 찾는 중…';
-      navigator.geolocation.getCurrentPosition(p=>{gpsBtn.disabled=false;gpsBtn.textContent='내 위치로 찾기';openNear({lat:p.coords.latitude,lng:p.coords.longitude},null,'내 위치')},
-        e=>{gpsBtn.disabled=false;gpsBtn.textContent='내 위치로 찾기';gpsMsg.textContent=(e&&e.code===1?'위치 사용이 막혀 있습니다(claude.ai 화면이 위치 권한을 주지 않거나 허용 안 함).':'위치를 가져오지 못했습니다.')+' — 주소를 적거나 웹 측정기(/ping-monitor)의 「내 위치」를 쓰세요.'},
-        {enableHighAccuracy:true,timeout:10000})}},'내 위치로 찾기');
+    /* 내 위치: claude.ai 아티팩트는 위치 권한을 주지 않는다(2026-11-15 사용자 시험 — 「막혀 있음」). 현장에선 웹 측정기의 「내 위치」로 보낸다. */
+    const gpsLink=el('a',{class:'btn sm',href:'https://my-next-firebase-app-one.vercel.app/ping-monitor',target:'_blank',rel:'noopener',title:'이 화면은 위치 기능을 쓸 수 없어 웹 측정기를 새 탭으로 엽니다 — 「+ 경쟁점 등록」에서 「내 위치」를 누르세요'},'내 위치로 찾기(웹 측정기) ↗');
     const nearBtn=el('button',{class:'btn sm',type:'button',onclick:()=>{const o=owns.find(x=>x.code===f.ownCode);const c=f.lat!=null?{lat:f.lat,lng:f.lng}:o&&o.lat!=null?{lat:o.lat,lng:o.lng}:null;const a=!c&&(f.address||(o&&o.address));
       if(!c&&!a){toast('우리 매장을 고르거나 주소를 먼저 적어 주세요.');return}openNear(c,a,o?o.name:'기준')}},'주변 PC방에서 고르기');
     async function openNear(c,a,centerName){
@@ -1093,7 +1087,7 @@ function storeForm(host,{id=null,isOwn=false,recordDays=0,prefill=null,onSaved}=
       el('div',{class:'fsec'},el('h3',{},'1. 우리 매장',Tip.make('이 경쟁점을 어느 우리 매장(기존가맹점·신규후보지) 상권으로 묶을지 고릅니다. 위치를 알면 가까운 순으로 보입니다. 점포평가에 없는 매장은 「직접 입력」으로 이름만 적어 묶을 수 있습니다.','우리 매장')),
         el('div',{class:'row2'},el('label',{class:'fld'},'우리 매장',picker,customIn,ownHint),el('label',{class:'fld'},'점포평가에 등록된 경쟁점에서 고르기 (상호·대수·주소 자동)',compSel))),
       el('div',{class:'fsec'},el('h3',{},'2. 경쟁점 정보'),
-        el('div',{class:'toolsrow',style:'display:flex;gap:8px;flex-wrap:wrap;align-items:center'},nearBtn,gpsBtn,gpsMsg),nearBox,
+        el('div',{class:'toolsrow',style:'display:flex;gap:8px;flex-wrap:wrap;align-items:center'},nearBtn,gpsLink),nearBox,
         el('div',{class:'row2'},el('label',{class:'fld'},'상호 *',nameIn),el('label',{class:'fld'},'주소',addrIn,distOut)),
         el('label',{class:'fld mono'},'IP대역 * (여러 개면 쉼표나 줄바꿈)',ipIn,ipMsg),
         el('div',{class:'row2'},el('label',{class:'fld'},'PC 대수 (비우면 IP 개수)',pcIn),id?el('label',{class:'chk',style:'align-self:end'},actIn,'1시간마다 측정 (끄면 측정만 멈추고 지난 기록은 그대로)'):el('span')),
