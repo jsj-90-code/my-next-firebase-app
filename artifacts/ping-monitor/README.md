@@ -1,5 +1,6 @@
 # 경쟁점 가동률 — claude.ai 아티팩트 원본 (2026-11-15)
 
+- 게시 주소(2026-11-15 첫 게시, 소유자만 열람): https://claude.ai/artifact/FkgkXiP3zycFLTEpyhAUDp — 고칠 땐 이 주소로 publish(url 지정)해야 같은 링크가 유지된다.
 - `ping-monitor.html`: 아티팩트 페이지 원본. 「PC 점포평가」 커넥터의 측정기 도구(`src/lib/server/mcpPingMonitorTools.ts`)를 부른다.
 - 게시: Artifact 도구로 이 파일을 publish. capabilities =
   `{"mcp":{"servers":[{"server":"PC 점포평가","tools":["ping_overview","ping_store","ping_area","ping_form_options","ping_nearby","ping_store_private","ping_save_store","ping_probe","ping_delete_store","ping_own_register","ping_transfer_own"]}]},"sample":{},"downloads":true}`
