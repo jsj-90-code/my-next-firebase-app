@@ -7,7 +7,8 @@ const TOOLS = [
   {
     href: "/seat-layout",
     label: "PC방 좌석배치도 작업 툴",
-    description: "매장 도면에 존을 그리고, AI로 좌석 수를 인식하고, 발주용 FHD 이미지를 만듭니다.",
+    description:
+      "매장 도면에 존을 그리고, AI로 좌석 수를 인식하고, 발주용 FHD 이미지를 만듭니다.",
     icon: <path d="M3 3h18v18H3z M3 9h18 M9 9v12 M12 12h6v6h-6z" />,
   },
   {
@@ -25,7 +26,9 @@ const TOOLS = [
     label: "주소만 초기평가",
     description:
       "주소 한 줄만 넣으면 인구·유동·경쟁점을 자동으로 모아 예상매출과 AI 평가문을 냅니다. 후보 선별용이고, 결재 숫자는 점포평가 시스템에서 냅니다.",
-    icon: <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z M12 10.5h.01" />,
+    icon: (
+      <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z M12 10.5h.01" />
+    ),
   },
   {
     // 2026-09-15 신설 — 교과서식 산식(수요 -> 점유율 -> 매출)을 손으로 돌려보는 실험 화면.
@@ -34,7 +37,9 @@ const TOOLS = [
     label: "점포평가 실험실",
     description:
       "상권 수요를 구하고 경쟁력으로 점유율을 환산해 매출로 잇는 새 산식을 직접 돌려봅니다. 운영 산식과 성적을 나란히 비교합니다.",
-    icon: <path d="M9 3h6 M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3 M7 15h10" />,
+    icon: (
+      <path d="M9 3h6 M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3 M7 15h10" />
+    ),
   },
   {
     // 2026-10-06 신설 — 유지보수가 끊긴 옛 핑봇(ping.isens.camp)을 대신하는 경쟁점 가동률 측정기.
@@ -46,25 +51,39 @@ const TOOLS = [
   {
     // 2026-10-30 신설 — 가맹점 Q&A 챗봇. 이 웹 밖이라 새 탭으로 열고, 아래 표제란(이 웹 자료 기준)은 달지 않는다.
     // 2026-11-11 오후 — 상담 데스크(isens-desk)는 웹 공개를 끄고 회사 PC에서만 쓰기로 해서 다시 챗봇(isens-qna)으로.
+    // 2026-11-14 — 데스크 웹이 다시 켜져(11-13, 로그인 화면만 보이게 잠금) 한 카드에 점주 화면·상담 데스크 두 링크를 둔다.
     href: "https://isens-qna.vercel.app",
     label: "가맹점 Q&A 챗봇",
-    description: "가맹점 문의에 원본 매뉴얼 기준으로 답하고, 안 풀리면 SV에게 넘깁니다. 시범판이라 시험 계정으로만 씁니다.",
+    description:
+      "가맹점 문의에 원본 매뉴얼 기준으로 답하고, 안 풀리면 SV에게 넘깁니다. 시범판이라 시험 계정으로만 씁니다.",
     icon: <path d="M4 5h16v11H9l-5 4z M8 9h8 M8 12h5" />,
     external: true,
+    links: [
+      { href: "https://isens-qna.vercel.app", label: "점주 화면" },
+      { href: "https://isens-desk.vercel.app", label: "상담 데스크 (SV)" },
+      {
+        href: "https://claude.ai/artifact/BBKUdF2u5o5EFbeKGDekPt",
+        label: "데스크 설치 안내",
+      },
+    ],
   },
   {
     // 2026-11-14 신설 — 매뉴얼 대장(claude.ai 아티팩트). 이 웹 밖이라 챗봇처럼 새 탭.
     href: "https://claude.ai/artifact/RUFkA7sJc9qyRyZdVCW7k1",
     label: "PC가맹부 매뉴얼",
-    description: "부서 매뉴얼을 한곳에서 찾고 읽습니다. 본문 검색·AI에게 묻기·새 매뉴얼 등록까지 됩니다.",
-    icon: <path d="M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z M20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z" />,
+    description:
+      "부서 매뉴얼을 한곳에서 찾고 읽습니다. 본문 검색·AI에게 묻기·새 매뉴얼 등록까지 됩니다.",
+    icon: (
+      <path d="M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z M20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z" />
+    ),
     external: true,
   },
   {
     // 2026-11-14 신설 — 사내 영상 서버(FastH3)로 릴스 만드는 안내(claude.ai 아티팩트). 새 탭.
     href: "https://claude.ai/artifact/EG3P593HocETob19PsfWFb",
     label: "회사서버 릴스 만들기",
-    description: "사진 몇 장과 하고 싶은 말로 사내 영상 서버에서 릴스 영상을 만듭니다.",
+    description:
+      "사진 몇 장과 하고 싶은 말로 사내 영상 서버에서 릴스 영상을 만듭니다.",
     icon: <path d="M4 5h16v14H4z M10 9l5 3-5 3z" />,
     external: true,
   },
@@ -91,44 +110,107 @@ export default function Home() {
       <ThemeToggle className="app-btn-outline absolute right-4 top-4 rounded-full px-3 py-1.5 text-xs sm:right-6 sm:top-6" />
       <main className="flex w-full max-w-2xl flex-col items-center gap-10 text-center">
         <div className="max-w-xl space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--sl-ink-soft)]">ISENS</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--sl-ink-soft)]">
+            ISENS
+          </p>
           <h1 className="text-4xl font-extrabold tracking-tight text-[#171310] dark:text-[#f2ede2]">
             아이센스 <span className="text-[#c05a2c]">사내 도구</span>
           </h1>
-          <p className="text-sm leading-6 text-[var(--sl-ink-soft)]">회사 구글 계정으로 로그인한 뒤 아래 도구를 이용하세요.</p>
+          <p className="text-sm leading-6 text-[var(--sl-ink-soft)]">
+            회사 구글 계정으로 로그인한 뒤 아래 도구를 이용하세요.
+          </p>
         </div>
 
         <HomeAuthStatus />
 
         <div className="grid w-full grid-cols-1 gap-5 sm:grid-cols-2">
-          {TOOLS.map((tool) => (
-            <a
-              key={tool.href}
-              href={tool.href}
-              {...("external" in tool ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-              className="app-card group flex flex-col overflow-hidden rounded-2xl text-left transition hover:border-[#c05a2c]/40"
-            >
-              <div className="flex flex-1 items-start gap-4 p-5">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c05a2c]/10 text-[#c05a2c]">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.4} className="h-6 w-6">
-                    {tool.icon}
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h2 className="flex items-center justify-between text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
-                    {tool.label}
-                    <span className="text-[#c9bfae] transition group-hover:translate-x-0.5 group-hover:text-[#c05a2c]">
-                      →
-                    </span>
-                  </h2>
-                  <p className="mt-1 text-sm leading-6 text-[var(--sl-ink-soft)]">{tool.description}</p>
+          {TOOLS.map((tool) =>
+            "links" in tool ? (
+              // 링크가 둘 이상인 카드 — 카드 전체를 링크로 감싸면 안쪽 링크를 못 넣으므로 div + 버튼 링크.
+              <div
+                key={tool.href}
+                className="app-card flex flex-col overflow-hidden rounded-2xl text-left transition hover:border-[#c05a2c]/40"
+              >
+                <div className="flex flex-1 items-start gap-4 p-5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c05a2c]/10 text-[#c05a2c]">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.4}
+                      className="h-6 w-6"
+                    >
+                      {tool.icon}
+                    </svg>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
+                      {tool.label}
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-[var(--sl-ink-soft)]">
+                      {tool.description}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {tool.links.map((l) => (
+                        <a
+                          key={l.href}
+                          href={l.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="app-btn-outline rounded-full px-3 py-1.5 text-xs font-medium transition hover:text-[#c05a2c]"
+                        >
+                          {l.label} →
+                        </a>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-              {"external" in tool ? null : (
-                <HomeToolStatus tool={tool.href === "/seat-layout" ? "seat-layout" : "store-eval"} />
-              )}
-            </a>
-          ))}
+            ) : (
+              <a
+                key={tool.href}
+                href={tool.href}
+                {...("external" in tool
+                  ? { target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+                className="app-card group flex flex-col overflow-hidden rounded-2xl text-left transition hover:border-[#c05a2c]/40"
+              >
+                <div className="flex flex-1 items-start gap-4 p-5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#c05a2c]/10 text-[#c05a2c]">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.4}
+                      className="h-6 w-6"
+                    >
+                      {tool.icon}
+                    </svg>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="flex items-center justify-between text-base font-semibold text-[#171310] dark:text-[#f2ede2]">
+                      {tool.label}
+                      <span className="text-[#c9bfae] transition group-hover:translate-x-0.5 group-hover:text-[#c05a2c]">
+                        →
+                      </span>
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-[var(--sl-ink-soft)]">
+                      {tool.description}
+                    </p>
+                  </div>
+                </div>
+                {"external" in tool ? null : (
+                  <HomeToolStatus
+                    tool={
+                      tool.href === "/seat-layout"
+                        ? "seat-layout"
+                        : "store-eval"
+                    }
+                  />
+                )}
+              </a>
+            ),
+          )}
         </div>
       </main>
     </div>
