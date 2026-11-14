@@ -6,12 +6,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createPingStore, listPingStores } from "@/lib/pingMonitor/clientStore";
 import { findExistingOverlaps } from "@/lib/pingMonitor/duplicate";
 import {
-  BLOCKED_SUSPECT_SAMPLES,
+  MEASURE_FAIL_MAX_UTIL,
+  fullDayRate,
   statusShowsValues,
   byMeasuredThenDistance,
   RECENT_MIN_HOURS,
@@ -36,6 +37,7 @@ import {
 } from "@/lib/pingMonitor/summary";
 import { isCustomCandidateCode, isCustomOwnCode } from "@/lib/pingMonitor/clientStore";
 import { StoreForm } from "./StoreForm";
+import { CsvButton, KpiRow, KpiTile, downloadCsv, ppDelta } from "./Kpi";
 
 // 검색 비교용 — 띄어쓰기·대소문자 무시("레벨업 PC" = "레벨업pc").
 const norm = (s: string | null | undefined) => String(s ?? "").replace(/\s/g, "").toLowerCase();
@@ -55,12 +57,81 @@ const VIEW_LABEL: Record<View, string> = { existing: "기존가맹점", candidat
 // own = 우리 매장 자체를 잰 등록(있으면). stores = 경쟁점만.
 type Group = { key: string; name: string; own: PingStore | null; stores: PingStore[] };
 
+// 상태 거르기(2026-11-15 아티팩트에서 옮김) — 측정 중 = 값을 보이는 상태(측정 중·과응답), 못 잼 = IP는 있는데 값이 없는 곳.
+type StatusFilter = "all" | "measuring" | "fail" | "noip";
+const FILTER_LABEL: Record<StatusFilter, string> = { all: "모든 상태", measuring: "측정 중", fail: "못 잼", noip: "IP 미등록" };
+function passFilter(f: StatusFilter, s: PingStore): boolean {
+  if (f === "all") return true;
+  if (f === "noip") return hasNoIp(s);
+  const shows = statusShowsValues(storeStatus(s));
+  return f === "measuring" ? shows : !hasNoIp(s) && !shows;
+}
+
+const mean = (xs: (number | null | undefined)[]): number | null => {
+  const v = xs.filter((x): x is number => x != null && Number.isFinite(x));
+  return v.length ? v.reduce((a, x) => a + x, 0) / v.length : null;
+};
+
+/**
+ * 한 매장의 표 칸 값(0~1, 100% 상한) — KPI·CSV·묶음 머리용. 표의 칸(UtilCell 등)과 같은 규칙:
+ * 값을 보이지 않는 상태면 전부 null, 지난주·이번주·지난달·이달은 포트 전환 날과 그 이전을 빼고, 24시간은 일별이 쌓이면 null.
+ * 최근 14일은 날마다 다 찬 날의 하루 가동률(fullDayRate), 덜 찬 날은 null — 커넥터(mcpPingMonitor spark)와 같다.
+ */
+function rowValues(s: PingStore, R: Ranges) {
+  const status = storeStatus(s);
+  const shows = statusShowsValues(status);
+  const ls = s.lastSample;
+  const ex = s.portSwitchDate;
+  const u = (from: string, to: string, opts: { includePartial?: boolean; excludeUpTo?: string | null }) =>
+    shows ? capUtil(rangeUtilization(s.days, from, to, opts).util) : null;
+  return {
+    status,
+    shows,
+    live: shows ? capUtil(ls && ls.total > 0 ? ls.alive / ls.total : null) : null,
+    today: u(R.today, R.today, { includePartial: true }),
+    recent24: shows && !hasFullDay(s.days) ? capUtil(recent24h(s.recent).util) : null,
+    lastWeek: u(R.fromPrev, R.toPrev, { excludeUpTo: ex }),
+    thisWeek: u(R.from7, R.to7, { excludeUpTo: ex }),
+    prevMonth: u(R.prevMonthStart, R.prevMonthEnd, { excludeUpTo: ex }),
+    thisMonth: u(R.monthStart, R.yesterday, { excludeUpTo: ex }),
+    spark: shows ? R.sparkDates.map((d) => capUtil(fullDayRate(s.days, d, R.today))) : null,
+  };
+}
+
+/**
+ * 최근 14일 — 하루 가동률 막대 14개(한 가지 색, 높을수록 바쁨. 사용자가 색 진하기 칸표는 읽기 어렵다고 해 막대로, 2026-11-15).
+ * 막대 높이 = 하루 가동률(0~100%). 다 찬 날이 아니면 바닥에 회색 점만. 값을 안 보이는 상태면 "-".
+ */
+function DayStripCell({ values, dates }: { values: (number | null)[] | null; dates: string[] }) {
+  if (!values) return <td className="px-3 py-2 text-right text-[var(--sl-ink-soft)]">-</td>;
+  const full = values.filter((v) => v != null).length;
+  return (
+    <td className="px-3 py-2">
+      <span className="flex h-5 items-end gap-[2px]" role="img" aria-label={`최근 ${values.length}일 하루 가동률, 다 찬 날 ${full}일`}>
+        {values.map((v, i) =>
+          v == null ? (
+            <span key={dates[i]} title={`${dates[i]} 다 찬 날 아님`} className="inline-block h-[2px] w-[5px] rounded-full bg-[var(--sl-hairline)]" />
+          ) : (
+            <span
+              key={dates[i]}
+              title={`${dates[i]} ${formatPct(v)}`}
+              className="inline-block w-[5px] rounded-t-[1px] bg-[#c05a2c] dark:bg-[#e07a4a]"
+              style={{ height: `${Math.max(2, Math.round(v * 20))}px` }}
+            />
+          ),
+        )}
+      </span>
+    </td>
+  );
+}
+
 /**
  * 우리 가맹점 줄 — 펼친 표 맨 위(2026-10-07 사용자 "기존가맹점도 목록에 같이"). 핑으로 잰 우리 매장 값을 경쟁점과 같은 칸에.
  * 우리 매장 IP가 없는 곳(2026-10-07 단톡 보강 뒤 41곳 중 양주덕정 1곳)은 줄만 두고 "IP 없음".
  */
 function OwnRow({ code, name, ping }: { code: string; name: string; ping: PingStore | null }) {
-  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar } = useRanges();
+  const R = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, prevMonthStart, prevMonthEnd, prevMonthDays, weekDaysSoFar, monthDaysSoFar } = R;
   const status = ping ? storeStatus(ping) : null;
   return (
     <tr className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]">
@@ -85,9 +156,10 @@ function OwnRow({ code, name, ping }: { code: string; name: string; ping: PingSt
           <UtilCell days={ping.days} from={from7} to={to7} nDays={weekDaysSoFar} bold excludeUpTo={ping.portSwitchDate} muted={!!status && !statusShowsValues(status)} />
           <UtilCell days={ping.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={ping.portSwitchDate} muted={!!status && !statusShowsValues(status)} />
           <UtilCell days={ping.days} from={monthStart} to={yesterday} nDays={monthDaysSoFar} excludeUpTo={ping.portSwitchDate} muted={!!status && !statusShowsValues(status)} />
+          <DayStripCell values={rowValues(ping, R).spark} dates={R.sparkDates} />
         </>
       ) : (
-        <td colSpan={7} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
+        <td colSpan={8} className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]">
           우리 매장 IP 없음 — 측정 안 함 ·{" "}
           {/* 2026-10-28 — 비교 화면의 "우리 매장 IP 등록"으로 보낸다. */}
           <Link href={`/ping-monitor/store/${encodeURIComponent(code)}`} className="underline">
@@ -134,10 +206,14 @@ function useRanges() {
     // 이번주·이달 칸의 "N일치" 꼬리말은 지금까지 지난 날 수와 견준다 — 예전엔 7·31로 고정이라 늘 "N일치"가 붙었다(2026-10-10 최종점검).
     const weekDaysSoFar = daysBetween(week.from, week.to < d30.to ? week.to : d30.to); // 월~어제(월요일이면 0)
     const monthDaysSoFar = daysBetween(monthStart, d30.to);
-    return { today, yesterday: d30.to, fromPrev: prevWeek.from, toPrev: prevWeek.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar };
+    // 최근 14일(14일 전~어제) — 목록의 하루 가동률 칸·추세선(2026-11-15 아티팩트에서 옮김).
+    const sparkDates = Array.from({ length: SPARK_DAYS }, (_, i) => kstDaysAgo(SPARK_DAYS - i));
+    return { today, yesterday: d30.to, fromPrev: prevWeek.from, toPrev: prevWeek.to, from7: week.from, to7: week.to, from30: d30.from, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar, sparkDates };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- todayKey는 날짜가 바뀔 때 다시 계산하라는 신호
   }, [todayKey]);
 }
+type Ranges = ReturnType<typeof useRanges>;
+const SPARK_DAYS = 14;
 
 // 가동률 + 꼬리말. 오늘(진행 중)은 덜 찬 그대로 "15시간치", n일 칸은 다 찬 날 일일평균에 모자라면 "3일치".
 // 칸 구성 오늘·최근 24시간·7일·30일(2026-10-07 사용자 — 신규후보지는 첫날 "오늘"밖에 값이 없다).
@@ -200,11 +276,12 @@ function Recent24Cell({ store, seats, muted = false }: { store: PingStore; seats
 // 정렬은 byMeasuredThenDistance(summary.ts) — 측정 중 → IP 있는데 못 잼 → IP 미등록, 묶음 안은 거리순.
 
 function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStore[]; showOwn?: boolean; ownRow?: React.ReactNode }) {
-  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar } = useRanges();
+  const R = useRanges();
+  const { today, yesterday, fromPrev, toPrev, from7, to7, monthStart, monthLabel, prevMonthStart, prevMonthEnd, prevMonthDays, prevMonthLabel, weekDaysSoFar, monthDaysSoFar } = R;
   return (
     <div className="overflow-x-auto">
       {/* 표는 한 줄로(2026-10-10 사용자) — 칸 줄바꿈 금지, 좁으면 가로 스크롤. 긴 IP 확인 메모만 줄바꿈 허용. */}
-      <table className="w-full min-w-[880px] whitespace-nowrap text-sm">
+      <table className="w-full min-w-[1040px] whitespace-nowrap text-sm">
         <thead>
           <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
             <th className="px-3 py-2 font-medium">점포명</th>
@@ -217,6 +294,9 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">이번주<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(from7, to7)})</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap text-[var(--sl-ink-soft)]">{prevMonthLabel}<span className="font-normal"> (지난달)</span></th>
             <th className="px-3 py-2 text-right font-medium whitespace-nowrap">{monthLabel}<span className="font-normal text-[var(--sl-ink-soft)]"> (이달)</span></th>
+            <th className="px-3 py-2 font-medium whitespace-nowrap" title="하루 가동률 막대(높을수록 바쁨, 바닥 점은 다 찬 날이 아님). 맨 오른쪽이 어제.">
+              최근 {SPARK_DAYS}일<span className="font-normal text-[var(--sl-ink-soft)]"> ({dateRangeLabel(R.sparkDates[0], R.yesterday)})</span>
+            </th>
             <th className="px-3 py-2 font-medium">상태</th>
           </tr>
         </thead>
@@ -248,6 +328,7 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
                 <UtilCell days={s.days} from={from7} to={to7} nDays={weekDaysSoFar} bold excludeUpTo={s.portSwitchDate} muted={muted} />
                 <UtilCell days={s.days} from={prevMonthStart} to={prevMonthEnd} nDays={prevMonthDays} excludeUpTo={s.portSwitchDate} muted={muted} />
                 <UtilCell days={s.days} from={monthStart} to={yesterday} nDays={monthDaysSoFar} excludeUpTo={s.portSwitchDate} muted={muted} />
+                <DayStripCell values={muted ? null : R.sparkDates.map((d) => capUtil(fullDayRate(s.days, d, today)))} dates={R.sparkDates} />
                 <td className="px-3 py-2">
                   <span className={`app-badge ${TONE[status.tone]}`} title={status.hint}>{status.label}</span>
                 </td>
@@ -260,8 +341,13 @@ function CompetitorTable({ stores, showOwn = false, ownRow }: { stores: PingStor
   );
 }
 
-function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onToggle: () => void }) {
-  const { from7, to7 } = useRanges();
+function GroupRow({ group, open, onToggle, filter }: { group: Group; open: boolean; onToggle: () => void; filter: StatusFilter }) {
+  const R = useRanges();
+  const { from7, to7 } = R;
+  // 경쟁점 이번 주 = 값을 보이는 경쟁점들의 이번 주 일일평균을 단순 평균(아티팩트와 같음).
+  const rivalWeek = mean(group.stores.map((s) => rowValues(s, R).thisWeek));
+  const shownStores = group.stores.filter((s) => passFilter(filter, s));
+  const ownRow = isCandidateCode(group.key) || group.key === UNLINKED ? undefined : <OwnRow code={group.key} name={group.name} ping={group.own} />;
   // 숫자는 표의 상태 칸(storeStatus)과 같은 판정으로 센다 — 예전엔 사람 메모(ipCheck)가 붙은 매장 수를 세서,
   // 메모가 남았지만 실측이 떠서 "측정 중"인 매장·우리 매장 메모까지 "IP 확인"에 들어가 표와 안 맞았다(2026-10-10 사용자).
   const statuses = group.stores.map((s) => storeStatus(s));
@@ -288,23 +374,27 @@ function GroupRow({ group, open, onToggle }: { group: Group; open: boolean; onTo
         <span className="text-xs text-[var(--sl-ink-soft)]">
           경쟁점 {group.stores.length}곳 · 측정 중 {measuring}{ipCheck > 0 ? ` · IP 확인 ${ipCheck}` : ""}{noIp > 0 ? ` · IP 미등록 ${noIp}` : ""}
         </span>
-        <span className="ml-auto flex gap-4 text-xs tabular-nums text-[var(--sl-ink-soft)]">
+        <span className="ml-auto flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums text-[var(--sl-ink-soft)]">
           {group.own && (
             <span>
-              우리 매장{" "}
+              우리 매장 이번 주{" "}
               <b className="text-sm text-[var(--sl-terracotta,#c05a2c)]">{formatPct(rangeUtilization(group.own.days, from7, to7, { excludeUpTo: group.own.portSwitchDate }).util)}</b>
             </span>
           )}
-          <span>이번 주 {dateRangeLabel(from7, to7)}</span>
+          <span>
+            경쟁점 이번 주 <b className="text-sm text-[#171310] dark:text-[#f2ede2]">{formatPct(rivalWeek)}</b>
+          </span>
+          <span>{dateRangeLabel(from7, to7)}</span>
         </span>
         </button>
       </div>
       {open && (
         <div className="border-t border-[var(--sl-hairline)]">
-          <CompetitorTable
-            stores={[...group.stores].sort(byMeasuredThenDistance)}
-            ownRow={isCandidateCode(group.key) || group.key === UNLINKED ? undefined : <OwnRow code={group.key} name={group.name} ping={group.own} />}
-          />
+          {shownStores.length === 0 && !ownRow ? (
+            <p className="px-4 py-3 text-sm text-[var(--sl-ink-soft)]">거른 상태에 맞는 경쟁점이 없습니다.</p>
+          ) : (
+            <CompetitorTable stores={[...shownStores].sort(byMeasuredThenDistance)} ownRow={ownRow} />
+          )}
         </div>
       )}
     </li>
@@ -383,7 +473,7 @@ export default function PingMonitorPage() {
   // 최근 24시간 중 서버가 거른(측정 안 된) 시각 — 전 매장 공통이라, 어느 매장도 그 시각 칸이 최근 24시간 안에 안 차 있으면 거른 회차다.
   // 진행 중인 현재 시각은 아직 안 찬 게 정상이라 뺀다(오탐 방지). 2026-10-08 사용자 "어느 시간대 빠졌는지 알게".
   const missedHours = useMemo(() => {
-    const now = Date.now();
+    const now = new Date().getTime();
     const nowKstHour = (new Date().getUTCHours() + 9) % 24;
     const fresh = new Set<number>();
     for (const s of stores ?? []) {
@@ -397,6 +487,72 @@ export default function PingMonitorPage() {
   }, [stores]);
 
   const intervalText = SAMPLE_INTERVAL_MINUTES % 60 === 0 ? `${SAMPLE_INTERVAL_MINUTES / 60}시간` : `${SAMPLE_INTERVAL_MINUTES}분`;
+
+  // 상태 거르기(IP 확인 탭에선 숨김 — 그 탭은 원래 못 재는 곳만 모은 것).
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const filterOn = view !== "check" || !!searchKey;
+  const activeFilter: StatusFilter = filterOn ? filter : "all";
+
+  // 요약 타일·CSV 범위 = 지금 보이는 탭(검색 중이면 검색 결과)의 경쟁점. 우리 매장 자체 등록은 뺀다.
+  const R = useRanges();
+  const scope = useMemo(() => {
+    const list = searchKey
+      ? searchGroups.flatMap((g) => g.stores)
+      : view === "all"
+        ? competitorsOnly
+        : view === "check"
+          ? ipCheckStores
+          : groupsByView[view].flatMap((g) => g.stores);
+    return list.filter((s) => !s.isOwnStore);
+  }, [searchKey, searchGroups, view, competitorsOnly, ipCheckStores, groupsByView]);
+  const scopeRows = useMemo(() => scope.map((s) => ({ s, v: rowValues(s, R) })), [scope, R]);
+  const kpi = useMemo(() => {
+    const measuring = scopeRows.filter((r) => r.v.status.kind === "measuring").length;
+    const noIp = scopeRows.filter((r) => hasNoIp(r.s)).length;
+    // 확인 필요 = IP 확인 탭과 같은 판정.
+    const needCheck = scopeRows.filter((r) => r.v.status.tone !== "ok" && r.v.status.tone !== "neutral" && r.v.status.label !== "IP 미등록").length;
+    const live = scopeRows.filter((r) => r.v.live != null);
+    const liveAvg = mean(live.map((r) => r.v.live));
+    const aliveSum = live.reduce((n, r) => n + (r.s.lastSample?.alive ?? 0), 0);
+    // 가장 최근 회차의 시각(매장마다 마지막 회차가 다를 수 있어 가장 늦은 것).
+    const latest = live.reduce<PingStore["lastSample"]>((best, r) => {
+      const ls = r.s.lastSample;
+      if (!ls) return best;
+      if (!best) return ls;
+      return `${ls.date}${ls.hour}` > `${best.date}${best.hour}` ? ls : best;
+    }, null);
+    const both = scopeRows.filter((r) => r.v.thisWeek != null && r.v.lastWeek != null);
+    const tw = mean(both.map((r) => r.v.thisWeek));
+    const lw = mean(both.map((r) => r.v.lastWeek));
+    const spark = R.sparkDates.map((_, i) => mean(scopeRows.map((r) => r.v.spark?.[i] ?? null)));
+    const sparkLast = [...spark].reverse().find((x) => x != null) ?? null;
+    return { measuring, noIp, needCheck, liveAvg, aliveSum, latestHour: latest ? Number(latest.hour) : null, both: both.length, tw, lw, spark, sparkLast };
+  }, [scopeRows, R]);
+
+  function exportCsv() {
+    const f = (v: number | null) => (v == null ? "" : (v * 100).toFixed(1));
+    const rows: (string | number | null)[][] = [["우리 매장", "경쟁점", "거리m", "대수", "상태", "실시간", "오늘", "24시간", "지난주", "이번주", "지난달", "이달"]];
+    for (const { s, v } of scopeRows) {
+      if (!passFilter(activeFilter, s)) continue;
+      rows.push([s.ownName ?? "", s.name, s.distanceM ?? "", hasNoIp(s) ? (s.pcCount ?? "") : denominator(s), v.status.label, f(v.live), f(v.today), f(v.recent24), f(v.lastWeek), f(v.thisWeek), f(v.prevMonth), f(v.thisMonth)]);
+    }
+    downloadCsv(`경쟁점가동률_${R.today}.csv`, rows);
+  }
+
+  // 키보드: "/" = 검색칸으로(입력 중일 땐 무시), 검색칸에서 Esc = 지우기.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (!searchRef.current) return;
+      e.preventDefault();
+      searchRef.current.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   function toggle(key: string) {
     setOpenKeys((prev) => {
@@ -415,55 +571,6 @@ export default function PingMonitorPage() {
           <p className="mt-1 text-xs text-[var(--sl-ink-soft)]">
             {intervalText}마다 켜진 PC 수 ÷ 대수를 잽니다. 매장을 누르면 날짜별·시간대별로 볼 수 있습니다.
           </p>
-          {/* 2026-10-07 사용자 "읽기도 싫을 지경" — 한 문단에 몰려 있던 설명을 칸별 표로 나눴다. 내용은 그대로. */}
-          <details className="mt-1 max-w-2xl text-xs text-[var(--sl-ink-soft)]">
-            <summary className="cursor-pointer hover:underline">계산 기준 보기</summary>
-            <div className="app-card-sm mt-2 flex flex-col gap-3 rounded-xl p-3 leading-5">
-              <section>
-                <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">가동률</h3>
-                <p>{intervalText}마다 핑·TCP·타임스탬프를 검사해 <b>응답 IP 수 ÷ 대수</b>를 계산합니다. 같은 IP는 한 번만 셉니다.</p>
-                <p>응답 수는 실제 이용 좌석 수와 다를 수 있으며, 무응답만으로 PC 꺼짐이나 실제 가동률 0%를 확정할 수 없습니다.</p>
-              </section>
-              <section>
-                <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">칸별 뜻</h3>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
-                  <dt className="font-medium text-[var(--sl-ink)]">이번 주 · 지난달 · 이달</dt>
-                  <dd>
-                    <b>일일평균</b> — 하루(0~24시) 가동률을 날마다 구해 평균합니다.
-                    이번 주는 지나간 날만 넣어서 월요일엔 비어 있습니다.
-                  </dd>
-                  <dt className="font-medium text-[var(--sl-ink)]">최근 24시간</dt>
-                  <dd>지금부터 거꾸로 24시간. 신규 후보지는 등록 다음 날 같은 시각부터 값이 나옵니다.</dd>
-                  <dt className="font-medium text-[var(--sl-ink)]">우리 매장</dt>
-                  <dd>우리 매장 PC를 같은 방식으로 잰 이번 주 값.</dd>
-                </dl>
-              </section>
-              <section>
-                <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">표시가 붙는 경우</h3>
-                <ul className="flex flex-col gap-1">
-                  <li>
-                    <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. 하루로 치는 건 {fullDayRuleText()}뿐이고, 그보다 덜 잰 날(등록한 날, 서버 장애가 길었던 날)은 낮·밤이 치우쳐 뺍니다.
-                  </li>
-                  <li>
-                    <b>&ldquo;IP 미등록&rdquo;</b> — IP를 아직 안 넣은 곳. 넣으면 다음 정각부터 잽니다.
-                  </li>
-                  <li>
-                    <b>&ldquo;포트 조회 실패&rdquo;</b> — 핑·80번 포트 모두 대답이 없는 곳. 측정은 핑·80번으로만 합니다(2026-11-03 품의 조건).
-                  </li>
-                  <li>
-                    <b>&ldquo;1688·5040 조회 가능&rdquo;</b> — 핑·80번엔 대답이 없고 1688·5040번 포트로만 조회되던 곳. 2026-11-03부터 이 포트는 측정하지 않아 값을 쓰지 않습니다.
-                  </li>
-                  <li>
-                    <b>&ldquo;IP대역 재확인&rdquo;</b> — IP가 틀렸다는 흔적이 있는 곳(일일평균 60% 넘음, 늘 몇 대만 켜짐, 확인 메모). 매장에 IP를 다시 물어보세요.
-                  </li>
-                  <li>
-                    <b>&ldquo;측정 대기&rdquo;</b> — 등록 후 첫 하루. 잴 방법을 찾는 중입니다.
-                  </li>
-                </ul>
-              </section>
-              <p className="border-t border-[var(--sl-hairline)] pt-2">어제·전체 같은 다른 기간은 매장을 눌러 상세 화면에서 고릅니다.</p>
-            </div>
-          </details>
         </div>
         <button type="button" className="app-btn-primary rounded-lg px-4 py-2 text-sm" onClick={() => setShowForm((v) => !v)}>
           {showForm ? "닫기" : "+ 경쟁점 등록"}
@@ -513,11 +620,44 @@ export default function PingMonitorPage() {
           <input
             type="search"
             className="app-input w-full rounded-lg px-3 py-2 text-base sm:max-w-md sm:text-sm placeholder:text-[var(--sl-ink-soft)] placeholder:opacity-70"
+            ref={searchRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="지점명·상호·주소 검색"
-            aria-label="매장 검색"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSearch("");
+            }}
+            placeholder="지점명·상호·주소 검색 ( / )"
+            aria-label="매장 검색 (단축키 /, 지우기 Esc)"
           />
+          <KpiRow>
+            <KpiTile
+              label="측정 중"
+              tip="상태가 「측정 중」인 경쟁점 수입니다. 과응답 등으로 「IP대역 재확인」이 붙은 곳은 값이 보여도 세지 않습니다."
+              value={kpi.measuring.toLocaleString("ko-KR")}
+              unit={`/ ${scope.length.toLocaleString("ko-KR")}곳`}
+              note={`IP 미등록 ${kpi.noIp} · 확인 필요 ${kpi.needCheck}`}
+            />
+            <KpiTile
+              label="지금 켜진 비율"
+              tip="마지막 회차에 켜져 있던 PC 수 ÷ 대수를 매장마다 구해 단순 평균했습니다. 값을 쓰는 상태(측정 중·과응답)인 곳만 넣습니다."
+              value={formatPct(kpi.liveAvg)}
+              note={kpi.latestHour != null ? `${kpi.latestHour}시 회차 · ≈${kpi.aliveSum.toLocaleString("ko-KR")}대 켜짐` : ""}
+            />
+            <KpiTile
+              label="이번 주 평균"
+              tip="이번 주(월~어제) 일일평균을 매장마다 구해 단순 평균했습니다. 지난주 값도 있는 매장끼리만 비교합니다(월요일엔 이번 주가 비어 있습니다)."
+              value={formatPct(kpi.tw)}
+              delta={kpi.tw != null && kpi.lw != null ? ppDelta(kpi.tw - kpi.lw) : null}
+              note={kpi.both > 0 ? `지난주 ${formatPct(kpi.lw)} · ${kpi.both}곳 비교` : "아직 이번 주 값이 없습니다"}
+            />
+            <KpiTile
+              label={`최근 ${SPARK_DAYS}일`}
+              tip="다 찬 날의 하루 가동률을 날마다 매장 평균해 그린 선입니다(맨 오른쪽이 어제)."
+              value={formatPct(kpi.sparkLast)}
+              note={dateRangeLabel(R.sparkDates[0], R.yesterday)}
+              spark={kpi.spark}
+            />
+          </KpiRow>
           {searchKey ? (
             <p className="text-xs text-[var(--sl-ink-soft)]">
               &ldquo;{search.trim()}&rdquo; 검색 결과 {searchGroups.length}개 묶음 · 경쟁점 {searchGroups.reduce((n, g) => n + g.stores.length, 0)}곳
@@ -551,6 +691,26 @@ export default function PingMonitorPage() {
             )}
           </div>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            {filterOn && (
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="상태 거르기">
+                {(Object.keys(FILTER_LABEL) as StatusFilter[]).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    aria-pressed={filter === f}
+                    className={`rounded-full border px-2.5 py-0.5 text-xs ${filter === f ? "border-[#c05a2c] bg-[#c05a2c]/10 font-semibold text-[#9c4520] dark:border-[#e07a4a] dark:bg-[#e07a4a]/15 dark:text-[#f0a07a]" : "border-[var(--sl-hairline)] text-[var(--sl-ink-soft)] hover:border-[#c05a2c]"}`}
+                    onClick={() => setFilter(f)}
+                  >
+                    {FILTER_LABEL[f]}
+                  </button>
+                ))}
+              </div>
+            )}
+            <span className="ml-auto">
+              <CsvButton onClick={exportCsv} />
+            </span>
+          </div>
           <p className="text-xs text-[var(--sl-ink-soft)]">실시간 옆 <b>○대</b> = 지금 켜져 있는 PC 수(≈현재 손님) — 대수 다른 매장끼리 규모 비교용.</p>
           {hiddenCount > 0 && (
             <p className="text-xs text-[var(--sl-ink-soft)]">폐업·중지한 매장 {hiddenCount}곳은 목록에서 숨겼습니다.</p>
@@ -573,7 +733,7 @@ export default function PingMonitorPage() {
               <ul className="flex flex-col gap-2">
                 {/* 검색 결과는 기본으로 펼쳐 둔다 — 접은 것만 openKeys에 "접음"으로 남긴다. */}
                 {searchGroups.map((g) => (
-                  <GroupRow key={g.key} group={g} open={!openKeys.has(`search:${g.key}`)} onToggle={() => toggle(`search:${g.key}`)} />
+                  <GroupRow key={g.key} group={g} open={!openKeys.has(`search:${g.key}`)} onToggle={() => toggle(`search:${g.key}`)} filter={activeFilter} />
                 ))}
               </ul>
             )
@@ -592,16 +752,81 @@ export default function PingMonitorPage() {
           ) : view !== "all" ? (
             <ul className="flex flex-col gap-2">
               {shownGroups.map((g) => (
-                <GroupRow key={g.key} group={g} open={openKeys.has(g.key)} onToggle={() => toggle(g.key)} />
+                <GroupRow key={g.key} group={g} open={openKeys.has(g.key)} onToggle={() => toggle(g.key)} filter={activeFilter} />
               ))}
             </ul>
           ) : (
             <div className="app-card rounded-2xl">
-              <CompetitorTable stores={competitorsOnly} />
+              {competitorsOnly.some((s) => passFilter(activeFilter, s)) ? (
+                <CompetitorTable stores={competitorsOnly.filter((s) => passFilter(activeFilter, s))} />
+              ) : (
+                <p className="p-4 text-sm text-[var(--sl-ink-soft)]">거른 상태에 맞는 경쟁점이 없습니다.</p>
+              )}
             </div>
           )}
         </>
       )}
+      {/* 2026-10-07 사용자 "읽기도 싫을 지경" — 한 문단에 몰려 있던 설명을 칸별 표로 나눴다. 내용은 그대로. */}
+      <details className="mt-1 max-w-2xl text-xs text-[var(--sl-ink-soft)]">
+        <summary className="cursor-pointer hover:underline">계산 기준 보기</summary>
+        <div className="app-card-sm mt-2 flex flex-col gap-3 rounded-xl p-3 leading-5">
+          <section>
+            <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">가동률</h3>
+            {/* 2026-11-15 아티팩트 「계산 기준 보기」 문구로 맞춤 — 11-03부터 핑·80번만 잰다. */}
+            <p>{intervalText}마다 서버가 등록된 IP대역 안의 주소에만 핑·80번 포트로 응답을 확인해 <b>응답 IP 수 ÷ 대수</b>를 셉니다. 같은 IP는 한 번만 셉니다.</p>
+            <p>응답 수는 실제 이용 좌석 수와 다를 수 있고, 무응답만으로 PC 꺼짐이나 실제 가동률 0%를 확정할 수 없습니다.</p>
+          </section>
+          <section>
+            <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">일일평균</h3>
+            <p>
+              하루(0~24시) 가동률을 날마다 구해 평균합니다. {fullDayRuleText()}만 넣고, 다 찼는데 {formatPct(MEASURE_FAIL_MAX_UTIL, 0)} 미만인 날(측정 실패)·포트 바꾼 날과 그 이전은 뺍니다.
+              100%를 넘는 값은 100%로 표시합니다.
+            </p>
+          </section>
+          <section>
+            <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">칸별 뜻</h3>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+              <dt className="font-medium text-[var(--sl-ink)]">이번 주 · 지난달 · 이달</dt>
+              <dd>
+                <b>일일평균</b> — 하루(0~24시) 가동률을 날마다 구해 평균합니다.
+                이번 주는 지나간 날만 넣어서 월요일엔 비어 있습니다.
+              </dd>
+              <dt className="font-medium text-[var(--sl-ink)]">최근 24시간</dt>
+              <dd>지금부터 거꾸로 24시간. 신규 후보지는 등록 다음 날 같은 시각부터 값이 나옵니다.</dd>
+              <dt className="font-medium text-[var(--sl-ink)]">최근 {SPARK_DAYS}일</dt>
+              <dd>날마다의 하루 가동률 막대(높을수록 바쁨). 다 찬 날이 아니면 바닥에 점만 찍힙니다. 맨 오른쪽이 어제.</dd>
+              <dt className="font-medium text-[var(--sl-ink)]">우리 매장</dt>
+              <dd>우리 매장 PC를 같은 방식으로 잰 이번 주 값.</dd>
+              <dt className="font-medium text-[var(--sl-ink)]">위 요약 타일</dt>
+              <dd>지금 보는 탭(검색 중이면 검색 결과)의 경쟁점만 셉니다. 우리 매장은 넣지 않습니다.</dd>
+            </dl>
+          </section>
+          <section>
+            <h3 className="mb-1 font-semibold text-[var(--sl-ink)]">표시가 붙는 경우</h3>
+            <ul className="flex flex-col gap-1">
+              <li>
+                <b>&ldquo;3일치&rdquo;</b> — 다 찬 날이 모자랄 때. 하루로 치는 건 {fullDayRuleText()}뿐이고, 그보다 덜 잰 날(등록한 날, 서버 장애가 길었던 날)은 낮·밤이 치우쳐 뺍니다.
+              </li>
+              <li>
+                <b>&ldquo;IP 미등록&rdquo;</b> — IP를 아직 안 넣은 곳. 넣으면 다음 정각부터 잽니다.
+              </li>
+              <li>
+                <b>&ldquo;포트 조회 실패&rdquo;</b> — 핑·80번 포트 모두 대답이 없는 곳. 측정은 핑·80번으로만 합니다(2026-11-03 품의 조건).
+              </li>
+              <li>
+                <b>&ldquo;1688·5040 조회 가능&rdquo;</b> — 핑·80번엔 대답이 없고 1688·5040번 포트로만 조회되던 곳. 2026-11-03부터 이 포트는 측정하지 않아 값을 쓰지 않습니다.
+              </li>
+              <li>
+                <b>&ldquo;IP대역 재확인&rdquo;</b> — IP가 틀렸다는 흔적이 있는 곳(일일평균 60% 넘음, 늘 몇 대만 켜짐, 확인 메모). 매장에 IP를 다시 물어보세요.
+              </li>
+              <li>
+                <b>&ldquo;측정 대기&rdquo;</b> — 등록 후 첫 하루. 잴 방법을 찾는 중입니다.
+              </li>
+            </ul>
+          </section>
+          <p className="border-t border-[var(--sl-hairline)] pt-2">어제·전체 같은 다른 기간은 매장을 눌러 상세 화면에서 고릅니다.</p>
+        </div>
+      </details>
     </div>
   );
 }

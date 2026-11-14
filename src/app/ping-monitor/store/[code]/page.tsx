@@ -41,6 +41,41 @@ import {
   type PingStore,
 } from "@/lib/pingMonitor/summary";
 import { LineChart, type LineSeries } from "../../LineChart";
+import { CsvButton, InfoTip, KpiRow, KpiTile, downloadCsv, ppDelta } from "../../Kpi";
+
+// 2026-11-15 아티팩트(claude.ai 측정기 「상권 비교」)에서 옮김: 요약 타일 4개 · 시간대별 전체/평일/주말 ·
+// 표에 「고른 기간」「피크」 칸 · 우리 매장도 체크로 숨기기 · CSV 받기. 계산 규칙은 그대로(rangeUtilization·capUtil·포트 전환 날 제외).
+// 「매장 × 시간」 칸표는 사용자 요청으로 넣지 않음(색 진하기로 읽는 표가 보기 어렵다, 2026-11-15).
+
+const HOUR_CHIPS = [
+  { key: "all", label: "전체" },
+  { key: "weekday", label: "평일" },
+  { key: "weekend", label: "주말" },
+] as const;
+type HourChip = (typeof HOUR_CHIPS)[number]["key"];
+/** 토·일 — 한국 날짜(YYYY-MM-DD) 기준. 공휴일은 안 넣는다(아티팩트와 같게). */
+function isWeekendDate(date: string): boolean {
+  const w = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return w === 0 || w === 6;
+}
+function filterByChip(rows: PingDaily[], chip: HourChip): PingDaily[] {
+  if (chip === "all") return rows;
+  return rows.filter((r) => isWeekendDate(r.date) === (chip === "weekend"));
+}
+/** 시간대 프로필에서 가장 높은 시각. */
+function peakOf(profile: (number | null)[]): { hour: number; util: number } | null {
+  let best: { hour: number; util: number } | null = null;
+  profile.forEach((v, hour) => {
+    if (v != null && (best == null || v > best.util)) best = { hour, util: v };
+  });
+  return best;
+}
+/** "확인 필요" — 아티팩트 needsCheck와 같은 판정(측정 중·중지류가 아니고 IP 미등록도 아닌 것). */
+function needsCheck(s: PingStore): boolean {
+  const st = storeStatus(s);
+  return st.tone !== "ok" && st.tone !== "neutral" && st.kind !== "noIp";
+}
+const csvPct = (v: number | null) => (v == null ? "" : (v * 100).toFixed(1));
 
 /** 값을 보여줄 매장 — 측정 중 또는 과응답(측정기 목록 page.tsx의 muted 규칙과 같다). */
 function showsValues(s: PingStore): boolean {
@@ -95,6 +130,8 @@ export default function PingOwnComparePage() {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   /** 표에서 마우스를 올린 매장 — 그래프에서 그 선만 진하게(2026-10-26). 우리 매장은 "own". */
   const [rowHover, setRowHover] = useState<string | null>(null);
+  /** 시간대별 그래프의 요일 고르기(전체·평일·주말). */
+  const [hourChip, setHourChip] = useState<HourChip>("all");
   /** 우리 매장 IP를 등록하면 올려서 목록을 다시 읽는다(2026-10-28). */
   const [reloadKey, setReloadKey] = useState(0);
   const [hourlyLoaded, setHourlyLoaded] = useState<{
@@ -209,9 +246,10 @@ export default function PingOwnComparePage() {
   const isCandidate = /^N\d+$/.test(ownCode) || isCustomCandidateCode(ownCode);
   const dates = range.from <= range.to ? dateRange(range.from, range.to) : [];
 
-  // 선 순서: 우리 매장 → 경쟁점(거리순).
+  // 선 순서: 우리 매장 → 경쟁점(거리순). 우리 매장도 체크로 숨길 수 있다(숨김 키 "own").
+  const ownShown = !!own && !hidden.has("own");
   const buildSeries = (ownValues: () => (number | null)[], storeValues: (s: PingStore) => (number | null)[]): LineSeries[] => [
-    ...(own ? [{ key: "own", label: "우리 매장", color: "var(--pm-c1)", values: ownValues() }] : []),
+    ...(own && ownShown ? [{ key: "own", label: "우리 매장", color: "var(--pm-c1)", values: ownValues() }] : []),
     ...shownStores.map((s) => ({ key: s.id, label: s.name, ...lineOf(s), values: storeValues(s) })),
   ];
   const daySeries = buildSeries(
@@ -220,12 +258,76 @@ export default function PingOwnComparePage() {
   );
   const anyDayValue = daySeries.some((s) => s.values.some((v) => v != null));
 
+  // 시간대 프로필 — 이미 읽은 날짜별 시간 기록을 요일로 거르기만 한다(추가 읽기 없음).
+  const profileOf = (id: string, chip: HourChip) =>
+    hourly ? hourProfile([filterByChip(hourly[id] ?? [], chip)]) : null;
   const hourSeries = hourly
     ? buildSeries(
-        () => (own ? hourProfile([hourly[own.id] ?? []]) : []),
-        (s) => hourProfile([hourly[s.id] ?? []]),
+        () => (own ? (profileOf(own.id, hourChip) ?? []) : []),
+        (s) => profileOf(s.id, hourChip) ?? [],
       )
     : null;
+
+  // 매장별 값 — 측정기 목록과 같은 규칙(2026-10-10): 측정 안 되는 매장은 null, 100% 초과는 100%로, 포트 전환 날 이전은 평균에서 뺀다.
+  // 「고른 기간」은 위 기간 버튼(이번 주/최근 30일/직접)과 같은 범위, 다 찬 날만의 일일평균.
+  const statsOf = (s: PingStore) => {
+    if (!showsValues(s)) return null;
+    const t = rangeUtilization(s.days, today, today, { includePartial: true });
+    const d7 = rangeUtilization(s.days, r7.from, r7.to, { excludeUpTo: s.portSwitchDate });
+    const d30 = rangeUtilization(s.days, r30.from, r30.to, { excludeUpTo: s.portSwitchDate });
+    const p = rangeUtilization(s.days, range.from, range.to, { excludeUpTo: s.portSwitchDate });
+    return {
+      today: capUtil(t.util),
+      todaySamples: t.samples,
+      r24: capUtil(recent24h(s.recent).util),
+      d7: capUtil(d7.util),
+      d7Days: d7.days,
+      d30: capUtil(d30.util),
+      d30Days: d30.days,
+      period: capUtil(p.util),
+      periodDays: p.days,
+    };
+  };
+  const ownStats = own ? statsOf(own) : null;
+  const rivalStats = new Map(rivals.map((s) => [s.id, statsOf(s)] as const));
+
+  // 요약 타일
+  const rivalPeriod = measured
+    .map((s) => ({ s, v: rivalStats.get(s.id)?.period ?? null }))
+    .filter((x): x is { s: PingStore; v: number } => x.v != null);
+  const rivalAvg = rivalPeriod.length ? rivalPeriod.reduce((a, x) => a + x.v, 0) / rivalPeriod.length : null;
+  const busiest = rivalPeriod.reduce<{ s: PingStore; v: number } | null>((b, x) => (b == null || x.v > b.v ? x : b), null);
+  const noIpCount = rivals.filter((s) => hasNoIp(s)).length;
+  const checkCount = rivals.filter(needsCheck).length;
+  const periodLabel = dateRangeLabel(range.from, range.to);
+
+  const exportCsv = () => {
+    const head = ["매장", "거리m", "대수", "상태", "오늘", "이번주", "최근30일", "고른기간"];
+    const line = (label: string, s: PingStore, isOwn: boolean) => {
+      const st = isOwn ? ownStats : rivalStats.get(s.id);
+      const noIp = hasNoIp(s);
+      return [
+        label,
+        isOwn ? "" : (s.distanceM ?? ""),
+        noIp ? (s.pcCount ?? "") : denominator(s),
+        storeStatus(s).label,
+        csvPct(st?.today ?? null),
+        csvPct(st?.d7 ?? null),
+        csvPct(st?.d30 ?? null),
+        csvPct(st?.period ?? null),
+      ];
+    };
+    downloadCsv(`${name}_상권비교_${range.from}_${range.to}.csv`, [
+      head,
+      ...(own ? [line("우리 매장", own, true)] : []),
+      ...rivals.map((s) => line(s.name, s, false)),
+    ]);
+  };
+  const peakCell = (id: string | null) => {
+    if (!id || !hourly) return <td className={cell}>{hourly ? "-" : "…"}</td>;
+    const pk = peakOf(profileOf(id, "all") ?? []);
+    return <td className={cell}>{pk ? `${pk.hour}시 ${formatPct(pk.util, 0)}` : "-"}</td>;
+  };
 
   // 표는 한 줄로(2026-10-10 사용자) — 꼬리말은 값 옆에, 칸은 줄바꿈 안 함(좁으면 가로 스크롤).
   const cell = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
@@ -236,17 +338,17 @@ export default function PingOwnComparePage() {
     </td>
   );
   // 측정기 목록과 같은 규칙(2026-10-10): 측정 안 되는 매장은 "-", 100% 초과는 100%로, 포트 전환 날 이전은 평균에서 뺀다.
-  const rowFor = (s: PingStore) => {
-    if (!showsValues(s)) return <>{util(null)}{util(null)}{util(null)}{util(null)}</>;
-    const t = rangeUtilization(s.days, today, today, { includePartial: true });
-    const d7 = rangeUtilization(s.days, r7.from, r7.to, { excludeUpTo: s.portSwitchDate });
-    const d30 = rangeUtilization(s.days, r30.from, r30.to, { excludeUpTo: s.portSwitchDate });
+  const rowFor = (s: PingStore, isOwn: boolean) => {
+    const st = isOwn ? ownStats : rivalStats.get(s.id);
+    if (!st) return <>{util(null)}{util(null)}{util(null)}{util(null)}{util(null)}{peakCell(null)}</>;
     return (
       <>
-        {util(capUtil(t.util), partialNote(t.samples, 1))}
-        {util(capUtil(recent24h(s.recent).util))}
-        {util(capUtil(d7.util), fullDaysNote(d7.days, 7))}
-        {util(capUtil(d30.util), fullDaysNote(d30.days, 30))}
+        {util(st.today, partialNote(st.todaySamples, 1))}
+        {util(st.r24)}
+        {util(st.d7, fullDaysNote(st.d7Days, 7))}
+        {util(st.d30, fullDaysNote(st.d30Days, 30))}
+        {util(st.period, fullDaysNote(st.periodDays, dates.length))}
+        {peakCell(s.id)}
       </>
     );
   };
@@ -280,8 +382,86 @@ export default function PingOwnComparePage() {
       {/* 2026-10-16 점포팀 요청 — 우리 매장 기준 반경 1km 주변 지도. */}
       <PingMapSection ownCode={ownCode} ownName={name} getToken={async () => { if (!user) throw new Error("로그인이 필요합니다."); return user.getIdToken(); }} />
 
-      <section className="app-card overflow-x-auto rounded-2xl">
-        <table className="w-full min-w-[680px] text-sm">
+      {/* 기간 고르기 — 요약 타일·표의 「고른 기간」·그래프가 모두 이 기간을 따른다. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {PERIODS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className={`rounded-full px-3 py-1 text-xs ${period === p.key ? "app-btn-primary" : "app-btn-outline"}`}
+            onClick={() => setPeriod(p.key)}
+            aria-pressed={period === p.key}
+          >
+            {p.label}
+          </button>
+        ))}
+        {period === "custom" && (
+          <label className="flex items-center gap-1 text-xs">
+            <input
+              type="date"
+              className="app-input rounded-lg px-2 py-1"
+              value={customFrom}
+              max={customTo}
+              onChange={(e) => setCustomFrom(e.target.value)}
+            />
+            ~
+            <input
+              type="date"
+              className="app-input rounded-lg px-2 py-1"
+              value={customTo}
+              min={customFrom}
+              onChange={(e) => setCustomTo(e.target.value)}
+            />
+          </label>
+        )}
+        <span className="ml-auto text-xs text-[var(--sl-ink-soft)]">{periodLabel}</span>
+      </div>
+
+      <KpiRow>
+        <KpiTile
+          label="우리 매장"
+          tip="고른 기간의 우리 매장 일일평균(경쟁점과 같은 측정 방식)입니다. 옆 숫자는 경쟁점 평균보다 몇 %p 높은지(↑)·낮은지(↓)입니다."
+          value={own ? formatPct(ownStats?.period ?? null) : "-"}
+          delta={ownStats?.period != null && rivalAvg != null ? `${ppDelta(ownStats.period - rivalAvg)} vs 경쟁점` : null}
+          note={!own ? "측정 안 함" : ownStats?.period == null ? "값 없음" : periodLabel}
+        />
+        <KpiTile
+          label="경쟁점 평균"
+          tip="값을 쓰는 경쟁점(측정 중·과응답)의 고른 기간 가동률을 단순 평균했습니다. 우리 매장은 빼고 셉니다."
+          value={formatPct(rivalAvg)}
+          note={`${rivalPeriod.length}곳 평균`}
+        />
+        <KpiTile
+          label="가장 바쁜 경쟁점"
+          tip="고른 기간 가동률이 가장 높은 경쟁점입니다."
+          value={busiest ? formatPct(busiest.v) : "-"}
+          note={busiest ? `${busiest.s.name}${busiest.s.distanceM != null ? ` · ${busiest.s.distanceM}m` : ""}` : ""}
+        />
+        <KpiTile
+          label="측정 중"
+          tip="지금 정상으로 재고 있는 경쟁점 수입니다. IP 미등록은 아직 IP를 못 받은 곳, 확인 필요는 응답이 이상해 IP를 다시 확인해야 하는 곳입니다."
+          value={String(measuringCount)}
+          unit={`/ ${rivals.length}곳`}
+          note={`IP 미등록 ${noIpCount} · 확인 필요 ${checkCount}`}
+        />
+      </KpiRow>
+
+      <section className="app-card min-w-0 rounded-2xl">
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--sl-hairline)] px-3 py-2">
+          <h2 className="flex items-center text-sm font-semibold">
+            우리 매장과 경쟁점
+            <InfoTip
+              label="표"
+              text="체크를 풀면 아래 그래프에서 그 선만 숨깁니다. 줄에 마우스를 올리면 그 선만 진하게 보입니다. 색은 거리순 번호로 정해져 숨겨도 다른 선 색이 바뀌지 않습니다. 피크는 고른 기간(오늘 포함) 시간대 평균이 가장 높은 시각입니다."
+            />
+          </h2>
+          <span className="text-xs text-[var(--sl-ink-soft)]">측정 중 → 못 잼 → IP 미등록, 그 안은 거리순</span>
+          <span className="ml-auto">
+            <CsvButton onClick={exportCsv} />
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-sm">
           <thead>
             <tr className="border-b border-[var(--sl-hairline)] text-left text-xs text-[var(--sl-ink-soft)]">
               <th className="px-3 py-2 font-medium whitespace-nowrap">매장</th>
@@ -297,19 +477,32 @@ export default function PingOwnComparePage() {
               <th className="px-3 py-2 text-right font-medium whitespace-nowrap">
                 최근 30일<span className="font-normal"> ({dateRangeLabel(r30.from, r30.to)})</span>
               </th>
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">
+                고른 기간<span className="font-normal"> ({periodLabel})</span>
+              </th>
+              <th className="px-3 py-2 text-right font-medium whitespace-nowrap">피크</th>
             </tr>
           </thead>
           <tbody>
             {own && (
               <tr
                 className="border-b border-[var(--sl-hairline)] bg-black/[0.02] dark:bg-white/[0.03]"
-                onMouseEnter={() => setRowHover("own")}
+                onMouseEnter={() => ownShown && setRowHover("own")}
                 onMouseLeave={() => setRowHover(null)}
               >
-                <td className="px-3 py-2 font-semibold">
+                <td className="px-3 py-2 font-semibold whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    className="mr-1.5 align-middle"
+                    checked={ownShown}
+                    onChange={() => toggleHidden("own")}
+                    aria-label="우리 매장 그래프에 그리기"
+                    style={{ accentColor: "var(--pm-c1)" }}
+                  />
                   <span
-                    className="mr-1.5 inline-block h-2 w-2 rounded-full"
-                    style={{ background: "var(--pm-c1)" }}
+                    className="mr-1.5 inline-block w-4 border-t-[3px] align-middle"
+                    style={{ borderColor: "var(--pm-c1)", opacity: ownShown ? 1 : 0.3 }}
+                    aria-hidden
                   />
                   <Link
                     href={`/ping-monitor/${own.id}`}
@@ -320,7 +513,7 @@ export default function PingOwnComparePage() {
                 </td>
                 <td className={cell}>-</td>
                 <td className={cell}>{denominator(own)}</td>
-                {rowFor(own)}
+                {rowFor(own, true)}
               </tr>
             )}
             {rivals.map((s) => {
@@ -384,63 +577,33 @@ export default function PingOwnComparePage() {
                   </td>
                   {noIp ? (
                     <td
-                      colSpan={4}
+                      colSpan={6}
                       className="px-3 py-2 text-right text-xs text-[var(--sl-ink-soft)]"
                     >
                       측정 안 함
                     </td>
                   ) : (
-                    rowFor(s)
+                    rowFor(s, false)
                   )}
                 </tr>
               );
             })}
           </tbody>
         </table>
+        </div>
         <p className="border-t border-[var(--sl-hairline)] px-3 py-2 text-xs text-[var(--sl-ink-soft)]">
           측정 중인 경쟁점은 모두 아래 그래프에 선으로 그려집니다. 체크를 풀면 그 선만 숨기고, 줄에 마우스를 올리면 그 선만 진하게 보입니다.
           이름을 누르면 그 매장 상세 화면으로 갑니다.
         </p>
       </section>
 
-      <section className="app-card flex flex-col gap-5 rounded-2xl p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              className={`rounded-full px-3 py-1 text-xs ${period === p.key ? "app-btn-primary" : "app-btn-outline"}`}
-              onClick={() => setPeriod(p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
-          {period === "custom" && (
-            <label className="flex items-center gap-1 text-xs">
-              <input
-                type="date"
-                className="app-input rounded-lg px-2 py-1"
-                value={customFrom}
-                max={customTo}
-                onChange={(e) => setCustomFrom(e.target.value)}
-              />
-              ~
-              <input
-                type="date"
-                className="app-input rounded-lg px-2 py-1"
-                value={customTo}
-                min={customFrom}
-                onChange={(e) => setCustomTo(e.target.value)}
-              />
-            </label>
-          )}
-          <span className="ml-auto text-xs text-[var(--sl-ink-soft)]">
-            {dateRangeLabel(range.from, range.to)}
-          </span>
-        </div>
-
+      <section className="app-card flex min-w-0 flex-col gap-5 rounded-2xl p-4">
         <div>
-          <h2 className="mb-1 text-sm font-semibold">날짜별</h2>
+          <h2 className="mb-1 flex items-center text-sm font-semibold">
+            날짜별
+            <InfoTip label="날짜별" text="다 찬 날의 하루 가동률입니다. 등록한 날·덜 잰 날은 비어 있습니다." />
+            <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">({periodLabel})</span>
+          </h2>
           {anyDayValue ? (
             <LineChart
               series={daySeries}
@@ -458,12 +621,31 @@ export default function PingOwnComparePage() {
         </div>
 
         <div>
-          <h2 className="mb-1 text-sm font-semibold">
-            시간대별{" "}
-            <span className="text-xs font-normal text-[var(--sl-ink-soft)]">
-              ({dateRangeLabel(hFrom, today)} 잰 날들 평균, 오늘 포함)
-            </span>
-          </h2>
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <h2 className="flex items-center text-sm font-semibold">
+              시간대별
+              <InfoTip
+                label="시간대별"
+                text="기간 시작부터 오늘까지 잰 날들의 시간대별 평균입니다(오늘 포함 — 시간대끼리라 치우침이 없음). 평일·주말은 토·일로만 나눕니다(공휴일은 평일에 들어감)."
+              />
+              <span className="ml-1 text-xs font-normal text-[var(--sl-ink-soft)]">
+                ({dateRangeLabel(hFrom, today)} 잰 날들 평균, 오늘 포함)
+              </span>
+            </h2>
+            <div className="ml-auto flex gap-1" role="group" aria-label="요일 고르기">
+              {HOUR_CHIPS.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  className={`rounded-full px-3 py-1 text-xs ${hourChip === c.key ? "app-btn-primary" : "app-btn-outline"}`}
+                  aria-pressed={hourChip === c.key}
+                  onClick={() => setHourChip(c.key)}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
           {hourSeries == null ? (
             <p className="text-xs text-[var(--sl-ink-soft)]">불러오는 중...</p>
           ) : (

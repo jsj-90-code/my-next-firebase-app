@@ -7,6 +7,9 @@ import type { ReactNode } from "react";
 import { AutoAuthGate } from "@/components/seatLayout/AutoAuthGate";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
+/** 측정기 아티팩트(claude.ai) 주소 — 원본 artifacts/ping-monitor, 2026-11-15 첫 게시. */
+const ARTIFACT_URL = "https://claude.ai/artifact/FkgkXiP3zycFLTEpyhAUDp";
+
 export function PingMonitorChrome({ children }: { children: ReactNode }) {
   return (
     <div className="app-theme flex min-h-screen flex-col">
@@ -19,7 +22,17 @@ export function PingMonitorChrome({ children }: { children: ReactNode }) {
               </svg>
               경쟁점 가동률
             </Link>
-            <ThemeToggle className="app-btn-outline ml-auto rounded-full px-3 py-1.5 text-xs" />
+            {/* 2026-11-15 사용자: 웹은 현장·등록(내 위치·끄는 지도)용으로 남기고, 보기·AI에게 묻기는 claude.ai 아티팩트로 — 거기로 가는 링크. */}
+            <a
+              href={ARTIFACT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="app-btn-outline ml-auto inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs"
+              title="claude.ai에서 여는 측정기 화면 — 같은 자료로 상권 비교와 AI에게 묻기를 씁니다(「PC 점포평가」 커넥터 연결 필요)"
+            >
+              claude.ai에서 보기 · AI에게 묻기 ↗
+            </a>
+            <ThemeToggle className="app-btn-outline rounded-full px-3 py-1.5 text-xs" />
           </div>
         </header>
         <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-6">{children}</main>

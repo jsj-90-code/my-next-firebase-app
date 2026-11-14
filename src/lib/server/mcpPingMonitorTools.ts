@@ -124,6 +124,7 @@ export function registerPingTools(server: McpServer) {
         address: z.string().optional(),
         demand: z.boolean().optional(),
         map: z.boolean().optional().describe("true면 카카오 지도 바탕 그림과 픽셀 좌표를 함께"),
+        mapRadiusM: z.number().min(100).max(1000).optional().describe("지도 그림에 담을 반경(m, 100~1000, 기본 1000) — 작을수록 확대된 지도. PC방 목록은 늘 1km"),
       }),
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

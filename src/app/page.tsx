@@ -47,6 +47,11 @@ const TOOLS = [
     label: "경쟁점 가동률",
     description: `경쟁점 상호·주소·IP대역만 넣으면 ${SAMPLE_INTERVAL_MINUTES / 60}시간마다 켜진 PC를 세어 가동률을 기한 없이 쌓습니다. 기간·시간대별로 봅니다.`,
     icon: <path d="M3 12h4l3-8 4 16 3-8h4" />,
+    // 2026-11-15 — 같은 자료를 claude.ai 아티팩트로도 본다(상권 비교·AI에게 묻기). 웹은 현장·등록(내 위치·끄는 지도)용으로 남김(사용자).
+    links: [
+      { href: "/ping-monitor", label: "웹 측정기 (현장·등록)" },
+      { href: "https://claude.ai/artifact/FkgkXiP3zycFLTEpyhAUDp", label: "claude.ai에서 보기 · AI에게 묻기" },
+    ],
   },
   {
     // 2026-10-30 신설 — 가맹점 Q&A 챗봇. 이 웹 밖이라 새 탭으로 열고, 아래 표제란(이 웹 자료 기준)은 달지 않는다.
@@ -164,8 +169,7 @@ export default function Home() {
                         <a
                           key={l.href}
                           href={l.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          {...(l.href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                           className="app-btn-outline rounded-full px-3 py-1.5 text-xs font-medium transition hover:text-[#c05a2c]"
                         >
                           {l.label} →

@@ -13,7 +13,9 @@ import { fetchKakaoMapImage } from "@/lib/server/kakaoMapImage";
 // (2.5 = 1m/px).
 
 const EPSG5181 = "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=GRS80 +units=m +no_defs";
-const SIZE_PX = 1000;
+const MAX_SIZE_PX = 1000;
+/** 카카오가 주는 가장 촘촘한 축척 쪽(SCALE 1.25 = 0.5m/px, 2026-11-15 확인). 반경 200m도 흐리지 않게. */
+const MIN_METERS_PER_PX = 0.5;
 
 export type NearbyMap = {
   image: string;
@@ -30,8 +32,9 @@ function wcong(lat: number, lng: number): [number, number] {
 }
 
 export async function kakaoNearbyMap(center: { lat: number; lng: number }, radiusM: number): Promise<NearbyMap> {
-  // 반경의 2.2배가 그림 한 변에 들어가게(가장자리 점·글자 여유).
-  const metersPerPx = Math.max(1, Math.round(((radiusM * 2.2) / SIZE_PX) * 10) / 10);
+  // 반경의 2.2배가 그림 한 변에 들어가게(가장자리 점·글자 여유). 반경이 작으면 축척을 촘촘하게(최소 0.5m/px), 그래도 남으면 그림을 줄인다.
+  const metersPerPx = Math.max(MIN_METERS_PER_PX, Math.round(((radiusM * 2.2) / MAX_SIZE_PX) * 10) / 10);
+  const SIZE_PX = Math.min(MAX_SIZE_PX, Math.round((radiusM * 2.2) / metersPerPx));
   const scale = metersPerPx * 2.5;
   const [cx, cy] = wcong(center.lat, center.lng);
   const url = `https://spi.map.kakao.com/map2/map/imageservice?IW=${SIZE_PX}&IH=${SIZE_PX}&MX=${Math.round(cx)}&MY=${Math.round(cy)}&SCALE=${scale}&service=open`;
