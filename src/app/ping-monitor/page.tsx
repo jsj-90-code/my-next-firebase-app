@@ -407,6 +407,18 @@ export default function PingMonitorPage() {
   const [stores, setStores] = useState<PingStore[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  // 2026-11-15 — 아티팩트의 「내 위치로 찾기(웹 측정기)」가 ?new=1&gps=1로 보낸다: 등록 칸을 열고(gps=1이면 내 위치까지) 그리로 내려간다.
+  const [autoLocate, setAutoLocate] = useState(false);
+  const formRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("new") !== "1") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowForm(true);
+    setAutoLocate(q.get("gps") === "1");
+    window.history.replaceState(null, "", window.location.pathname);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
+  }, []);
   // 2026-10-06 사용자 요청: 기존가맹점 / 신규후보지 / 경쟁점 전체 세 칸으로 나눈다.
   const [view, setView] = useState<View>("existing");
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
@@ -578,11 +590,12 @@ export default function PingMonitorPage() {
       </div>
 
       {showForm && (
-        <section className="app-card rounded-2xl p-4">
+        <section ref={formRef} className="app-card scroll-mt-4 rounded-2xl p-4">
           <h2 className="mb-3 text-sm font-semibold">새 경쟁점</h2>
           <StoreForm
             submitLabel="등록하고 측정 시작"
             showMap
+            autoLocate={autoLocate}
             stores={stores}
             onSubmit={async (input) => {
               const id = await createPingStore(input, user?.email ?? null);

@@ -1054,7 +1054,7 @@ function storeForm(host,{id=null,isOwn=false,recordDays=0,prefill=null,onSaved}=
     // 주변 PC방에서 고르기(지도 핀 대신)
     const nearBox=el('div',{hidden:true});
     /* 내 위치: claude.ai 아티팩트는 위치 권한을 주지 않는다(2026-11-15 사용자 시험 — 「막혀 있음」). 현장에선 웹 측정기의 「내 위치」로 보낸다. */
-    const gpsLink=el('a',{class:'btn sm',href:'https://my-next-firebase-app-one.vercel.app/ping-monitor',target:'_blank',rel:'noopener',title:'이 화면은 위치 기능을 쓸 수 없어 웹 측정기를 새 탭으로 엽니다 — 「+ 경쟁점 등록」에서 「내 위치」를 누르세요'},'내 위치로 찾기(웹 측정기) ↗');
+    const gpsLink=el('a',{class:'btn sm',href:'https://my-next-firebase-app-one.vercel.app/ping-monitor?new=1&gps=1',target:'_blank',rel:'noopener',title:'이 화면은 위치 기능을 쓸 수 없어 웹 측정기의 경쟁점 등록을 새 탭으로 엽니다 — 열리면 바로 내 위치를 찾습니다(위치 허용 필요)'},'내 위치로 찾기(웹 측정기) ↗');
     const nearBtn=el('button',{class:'btn sm',type:'button',onclick:()=>{const o=owns.find(x=>x.code===f.ownCode);const c=f.lat!=null?{lat:f.lat,lng:f.lng}:o&&o.lat!=null?{lat:o.lat,lng:o.lng}:null;const a=!c&&(f.address||(o&&o.address));
       if(!c&&!a){toast('우리 매장을 고르거나 주소를 먼저 적어 주세요.');return}openNear(c,a,o?o.name:'기준')}},'주변 PC방에서 고르기');
     async function openNear(c,a,centerName){

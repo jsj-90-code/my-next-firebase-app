@@ -39,6 +39,7 @@ export function StoreForm({
   showMap = false,
   selfId = null,
   stores: givenStores = null,
+  autoLocate = false,
 }: {
   initial?: Partial<PingStoreInput>;
   submitLabel: string;
@@ -50,6 +51,8 @@ export function StoreForm({
   selfId?: string | null;
   /** 측정기 등록 전체(목록 화면이 이미 읽은 것). 없으면 중복 확인용으로 한 번 읽는다. */
   stores?: PingStore[] | null;
+  /** 처음 열 때 「내 위치」를 바로 누른다 — 아티팩트의 「내 위치로 찾기(웹 측정기)」 링크(?new=1&gps=1)로 들어올 때(2026-11-15 사용자). */
+  autoLocate?: boolean;
 }) {
   const { user } = useAuth();
   const [name, setName] = useState(initial?.name ?? "");
@@ -143,6 +146,13 @@ export function StoreForm({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, user]);
+
+  const autoLocated = useRef(false);
+  useEffect(() => {
+    if (!autoLocate || autoLocated.current) return;
+    autoLocated.current = true;
+    locateMe();
+  }, [autoLocate]);
 
   function locateMe() {
     setGpsError(null);
