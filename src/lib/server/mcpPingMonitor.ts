@@ -373,6 +373,8 @@ export async function pingArea(ownCode: string, from?: string | null, to?: strin
   const dailyById = Object.fromEntries(await Promise.all(plotted.map(async (s) => [s.id, await dailyRows(s.id, f, hourTo)] as const)));
   const dates = dateList(f, t);
   const ownInfo = await ownLocation(ownCode);
+  // 고른 기간의 가동률 — 웹 목록·상세와 같은 규칙(다 찬 날 일일평균, 포트 전환 날 이전·1% 미만 날 제외). 오늘 하루면 진행 중 값.
+  const periodOf = (s: PingStore) => cell(s, f, t, { inProgress: f === today && t === today });
   return {
     asOf: now.toISOString(),
     rules: rules(),
@@ -385,11 +387,13 @@ export async function pingArea(ownCode: string, from?: string | null, to?: strin
     // 우리 매장 IP 등록(점포평가 기존점이고 아직 우리 매장 줄이 없을 때만)
     canRegisterOwn: !own && !isCandidateCode(ownCode) && !isCustomOwnCode(ownCode) && !!ownInfo?.existing,
     period: { from: f, to: t, hourlyTo: hourTo },
-    own: own ? storeRow(own, R, now) : null,
-    rivals: rivals.map((s) => ({ ...storeRow(s, R, now), plotted: showsValues(s) })),
+    own: own ? { ...storeRow(own, R, now), period: periodOf(own) } : null,
+    rivals: rivals.map((s) => ({ ...storeRow(s, R, now), plotted: showsValues(s), period: showsValues(s) ? periodOf(s) : null })),
     dates,
     daily: Object.fromEntries(plotted.map((s) => [s.id, dates.map((d) => r3(capUtil(fullDayRate(s.days, d, today))))])),
     hourly: Object.fromEntries(plotted.map((s) => [s.id, hourProfile(dailyById[s.id] ?? [])])),
+    hourlyWeekday: Object.fromEntries(plotted.map((s) => [s.id, hourProfile(dailyById[s.id] ?? [], "weekday")])),
+    hourlyWeekend: Object.fromEntries(plotted.map((s) => [s.id, hourProfile(dailyById[s.id] ?? [], "weekend")])),
   };
 }
 
