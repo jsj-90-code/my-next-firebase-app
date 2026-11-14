@@ -95,6 +95,14 @@ const TOOLS = [
     icon: <path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" />,
     external: true,
   },
+  {
+    // 2026-11-14 신설 — 개인용 AI PC 사용 안내(claude.ai 문서). 새 탭.
+    href: "https://claude.ai/artifact/NVXs9Bae2sFJ9mdr8pRZSQ",
+    label: "개인용 AI PC 사용 안내",
+    description: "개인용 AI PC를 받은 직원이 사내 AI를 연결해 쓰는 방법입니다.",
+    icon: <path d="M3 4h18v12H3z M8 20h8 M12 16v4" />,
+    external: true,
+  },
 ] as const;
 
 export default function Home() {
