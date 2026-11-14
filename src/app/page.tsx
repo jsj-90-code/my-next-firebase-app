@@ -70,7 +70,7 @@ const TOOLS = [
   {
     // 2026-11-14 신설 — 매뉴얼 대장(claude.ai 아티팩트). 이 웹 밖이라 챗봇처럼 새 탭.
     href: "https://claude.ai/artifact/RUFkA7sJc9qyRyZdVCW7k1",
-    label: "PC가맹부 매뉴얼",
+    label: "매뉴얼 대장",
     description:
       "부서 매뉴얼을 한곳에서 찾고 읽습니다. 본문 검색·AI에게 묻기·새 매뉴얼 등록까지 됩니다.",
     icon: (
