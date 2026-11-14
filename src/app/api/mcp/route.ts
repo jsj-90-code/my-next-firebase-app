@@ -887,4 +887,25 @@ const authed = withMcpAuth(
   { required: true, resourceMetadataPath: "/.well-known/oauth-protected-resource" },
 );
 
-export { authed as GET, authed as POST, authed as DELETE };
+// 알림 기다리기(subscriptions/listen, MCP 2026-07-28 개정)는 받지 않는다(2026-11-14).
+// 이 서버는 먼저 보낼 알림이 없다 — 도구 목록은 로그인한 사람으로 정해지고 접속 중에 바뀌지 않는다.
+// 그런데 SDK가 이 요청을 열어 둔 채 15초마다 생존 신호만 보내 Vercel 한도(maxDuration 300초)까지 붙잡았다.
+// claude.ai가 4분마다 새로 열어 함수가 거의 쉬지 않고 켜져 있었고, Vercel 무료 한도(Fluid Provisioned Memory 360 GB시간)의
+// 93%를 이 프로젝트가 썼다(2026-11-14 Usage 화면: 339.4 GB시간, 로그상 /api/mcp POST가 300초 시간 초과로 반복).
+// "지원 안 하는 메서드"(-32601)로 바로 답한다 — 도구 호출(tools/call 등)은 그대로 아래 authed로 간다.
+const LISTEN_METHOD = "subscriptions/listen";
+async function post(req: Request) {
+  if ((req.headers.get("content-type") ?? "").includes("application/json")) {
+    const body = (await req.clone().json().catch(() => null)) as { method?: unknown; id?: unknown } | null;
+    if (body && !Array.isArray(body) && body.method === LISTEN_METHOD) {
+      return Response.json({
+        jsonrpc: "2.0",
+        id: (body.id as string | number | undefined) ?? null,
+        error: { code: -32601, message: "Method not found: this server sends no notifications" },
+      });
+    }
+  }
+  return authed(req);
+}
+
+export { authed as GET, post as POST, authed as DELETE };
