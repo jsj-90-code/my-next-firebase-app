@@ -89,7 +89,7 @@ const TOOLS = [
   },
   {
     // 2026-11-14 신설 — 사내 AI 서버(API) 사용량 대시보드(claude.ai 아티팩트). 새 탭.
-    href: "https://claude.ai/artifact/5eKqshgbw4CWcwFoLxNhKf",
+    href: "https://claude.ai/artifact/YJ7ZJgkPePWyR9bJ7n3cse",
     label: "아이센스 AI 사용 현황",
     description: "사내 AI 서버(API)를 누가·어디에·얼마나 쓰는지 봅니다.",
     icon: <path d="M4 20V10 M10 20V4 M16 20v-7 M22 20H2" />,
