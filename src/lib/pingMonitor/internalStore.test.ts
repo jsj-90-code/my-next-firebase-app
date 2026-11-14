@@ -2,12 +2,14 @@
 // 시간 기록(recordRound)·대상 읽기(loadTargets)·상태 기록·화면 창구(/api/ping-monitor/db) 규칙을 실제 HTTP로 돌린다.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/firebase-admin", () => ({ adminDb: null, adminAuth: null }));
+vi.mock("@/lib/pingMonitor/agentAuth", () => ({ checkAgentSignature: () => null })); // 서명은 agentAuth 자체 시험 몫 — 여기선 받은 뒤 규칙만
 vi.mock("@/lib/server/companyAuth", () => ({
   getVerifiedCompanyUser: async (req: Request) => (req.headers.get("authorization") === "Bearer ok" ? { email: "tester@isens.camp" } : null),
 }));
@@ -73,6 +75,68 @@ describe("사내 저장소 — 시간 기록", () => {
 
     await writeRoundStatus({ ok: true, at: at.toISOString(), date: "2026-11-03", hour: "16", method: "agent", stores: [] });
     expect((await readRoundStatus())?.hour).toBe("16");
+  });
+});
+
+describe("밀린 회차 받기(2026-11-15 — 웹 정지 동안 서버 pending에 쌓인 회차)", () => {
+  const ipKey = (ips: string[]) => createHash("sha256").update(ips.join(",")).digest("hex").slice(0, 16);
+  const ips = Array.from({ length: 10 }, (_, i) => `10.9.0.${i + 1}`);
+  const post = async (payload: Record<string, unknown>) => {
+    const { POST } = await import("@/app/api/ping-monitor/agent/results/route");
+    const res = await POST(new Request("http://x/api/ping-monitor/agent/results", { method: "POST", body: JSON.stringify(payload) }));
+    return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+  };
+
+  it("7일 전 회차는 그 날·시에 기록하고, 상태 문서·더 새 시간대 칸·lastSample은 그대로", async () => {
+    const { istore } = await import("./internalStore");
+    const { kstParts } = await import("./summary");
+    const now = Date.now();
+    const at = new Date(now - 7 * 24 * 3600_000);
+    const { date, hour } = kstParts(at);
+    const newer = new Date(now - 3600_000);
+    await istore.commit([
+      { op: "set", c: "pingMonitorStores", id: "L", data: { name: "늦", active: true, ipRanges: "10.9.0.1~10.9.0.10", pcCount: 10,
+        recent: { [hour]: { a: 7, t: 10, at: newer } }, lastSample: { at: newer, date: kstParts(newer).date, hour: kstParts(newer).hour, alive: 7 } } },
+      { op: "set", c: "storeEvalSystemStatus", id: "pingMonitor", data: { ok: true, at: newer.toISOString(), hour: "최신" } },
+    ]);
+    const r = await post({ at: at.toISOString(), method: "icmp+tcp+timestamp", aliveIps: ips.slice(0, 3), measured: { L: 10 }, measuredIps: { L: ipKey(ips) } });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ ok: true, late: true, date, hour, written: 1 });
+    const daily = await istore.get("pingMonitorDaily", `L_${date}`);
+    expect((daily?.hours as Record<string, unknown>)[hour]).toEqual({ a: 3, t: 10, m: "icmp+tcp+timestamp" });
+    const store = await istore.get("pingMonitorStores", "L");
+    expect((store?.days as Record<string, unknown>)[date]).toEqual({ a: 3, t: 10, n: 1 });
+    expect((store?.recent as Record<string, { a: number }>)[hour].a).toBe(7); // 더 새 칸은 안 덮음
+    expect((store?.lastSample as { alive: number }).alive).toBe(7);
+    const status = await istore.get("storeEvalSystemStatus", "pingMonitor");
+    expect(status?.hour).toBe("최신"); // 상태 문서 그대로
+
+    // 같은 회차가 또 오면(응답을 못 받아 서버가 다시 보냄) 한 번만 센다
+    const again = await post({ at: at.toISOString(), method: "icmp+tcp+timestamp", aliveIps: ips.slice(0, 5), measured: { L: 10 }, measuredIps: { L: ipKey(ips) } });
+    expect(again.json).toMatchObject({ ok: true, written: 0 });
+    expect(((await istore.get("pingMonitorStores", "L"))?.days as Record<string, unknown>)[date]).toEqual({ a: 3, t: 10, n: 1 });
+  });
+
+  it("IP 수는 같아도 대역이 바뀐 매장(지문 다름)은 기록하지 않는다", async () => {
+    const at = new Date(Date.now() - 3 * 24 * 3600_000);
+    const old = Array.from({ length: 10 }, (_, i) => `10.8.0.${i + 1}`);
+    const r = await post({ at: at.toISOString(), method: "icmp+tcp+timestamp", aliveIps: old.slice(0, 4), measured: { L: 10 }, measuredIps: { L: ipKey(old) } });
+    expect(r.json).toMatchObject({ ok: true, stores: 0, written: 0 });
+  });
+
+  it("36일 전 회차는 거절(4xx → 서버가 pending을 지움)", async () => {
+    const at = new Date(Date.now() - 36 * 24 * 3600_000);
+    const r = await post({ at: at.toISOString(), method: "icmp+tcp+timestamp", aliveIps: [], measured: { L: 10 } });
+    expect(r.status).toBe(400);
+  });
+
+  it("상태 문서는 더 새 회차가 적혀 있으면 안 덮는다", async () => {
+    const { writeRoundStatus, readRoundStatus } = await import("./runRound");
+    const old = new Date(Date.now() - 2 * 3600_000);
+    expect(await writeRoundStatus({ ok: true, at: old.toISOString(), date: "x", hour: "옛", method: "agent", stores: [] })).toBe(false);
+    expect((await readRoundStatus())?.hour).toBe("최신");
+    expect(await writeRoundStatus({ ok: true, at: new Date().toISOString(), date: "x", hour: "새", method: "agent", stores: [] })).toBe(true);
+    expect((await readRoundStatus())?.hour).toBe("새");
   });
 });
 

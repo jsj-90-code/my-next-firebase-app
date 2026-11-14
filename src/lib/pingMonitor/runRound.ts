@@ -3,7 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { parseIpRanges } from "./ipRange";
 import { probeIps } from "./probe";
-import { roundLooksBroken, shouldReplace, wantsExtraPorts } from "./roundGuard";
+import { isLateRound, notNewerThan, roundLooksBroken, shouldReplace, wantsExtraPorts } from "./roundGuard";
 import { PING_DAILY, PING_STORES, denominator, kstParts } from "./summary";
 import { istore, usesInternalStore } from "./internalStore";
 
@@ -14,6 +14,12 @@ import { istore, usesInternalStore } from "./internalStore";
 //   pingMonitorStores/{매장id}.days.{날짜}     += { a, t, n: 1 }         ← 목록 화면(매장당 읽기 1번)
 //   pingMonitorStores/{매장id}.recent.{시}      = { a, t, at }            ← "최근 24시간"(시간대별 마지막 값, 2026-10-07)
 // 같은 시(한국 시각)에 두 번 불려도 한 번만 센다 — 알람이 늦거나 겹쳐도 기록이 부풀지 않게.
+//
+// 밀린 회차(2026-11-15): 웹이 멈춘 동안 서버가 pending/에 쌓은 회차가 최대 35일 늦게 들어온다(results route). 그래도 망가지지 않게 —
+//   - 시간·일별 합계는 잰 시각의 날짜·시로 들어간다(같은 시 이미 있으면 위 규칙대로 건너뜀).
+//   - lastSample·recent(시간대 칸)는 더 새 값이 있으면 안 덮는다.
+//   - 회차 이상 점검은 recent(지금 값) 대신 그날 바로 앞 시 기록과 견준다(lateReference).
+//   - 상태 문서·자동 학습은 route가 6시간 넘은 회차엔 안 부르고, 상태 문서는 여기서도 더 새 회차를 안 덮는다.
 //
 // 재는 쪽은 둘이다(2026-10-06):
 //   - "agent": Oracle 무료 서버(도쿄)가 핑 + TCP를 둘 다 재서 보낸다(/api/ping-monitor/agent/*). 기본.
@@ -71,6 +77,34 @@ export async function loadTargets(now = new Date()): Promise<PingTarget[]> {
   return snap.docs.map((d) => toTarget(d.id, d.data(), hour));
 }
 
+/** 밀린 회차(6시간 넘게 늦음)의 회차 이상 점검 기준(2026-11-15). recent는 "지금" 값이라 며칠 전 회차와 견주면 엉뚱하다
+ *  (요일·시각이 다름 — referenceOf는 이 회차보다 뒤 기록을 아예 안 쓴다). 서버가 밀린 회차를 오래된 것부터 보내므로
+ *  그날 바로 앞 시는 보통 이미 기록돼 있다 — 그 값을 "1시간 전 칸"으로 넣어 같은 40%·20% 규칙으로 본다.
+ *  앞 시가 비었으면(밀린 첫 회차·앞 시도 버려짐) 기준이 없어 판정을 건너뛴다. 읽기는 매장 수만큼 한 번 더 든다(밀린 회차일 때만). */
+async function lateReference(targets: PingTarget[], now: Date): Promise<PingTarget[]> {
+  if (!isLateRound(now)) return targets;
+  const before = new Date(now.getTime() - 3600_000);
+  const { date, hour } = kstParts(before);
+  const ids = targets.filter((t) => t.ips.length > 0).map((t) => `${t.id}_${date}`);
+  let docs: Record<string, Record<string, unknown> | null | undefined> = {};
+  if (usesInternalStore()) docs = await istore.getMany(PING_DAILY, ids);
+  else if (ids.length) {
+    const db = requireDb();
+    const snaps = await db.getAll(...ids.map((id) => db.collection(PING_DAILY).doc(id)));
+    docs = Object.fromEntries(snaps.map((d) => [d.id, d.exists ? d.data() : null]));
+  }
+  return targets.map((t) => {
+    const prev = (docs[`${t.id}_${date}`]?.hours as Record<string, { a?: number }> | undefined)?.[hour];
+    return { ...t, recent: prev ? { [hour]: { a: Number(prev.a ?? 0), at: before } } : {} };
+  });
+}
+
+/** 시간대 칸을 그대로 둘지 — 칸에 이 회차보다 뒤에 잰 값이 있으면 둔다. 단 같은 날 같은 시를 바꿔 쓰는 중(예비 → 서버)이면 lastSample처럼 바꾼다. */
+function keepRecent(recentAt: Date | null | undefined, now: Date, date: string, replacing: boolean): boolean {
+  if (notNewerThan(recentAt, now)) return false;
+  return !(replacing && recentAt && kstParts(recentAt).date === date);
+}
+
 /** 켜진 IP 집합을 받아 매장별로 저장한다. */
 export async function recordRound(targets: PingTarget[], alive: Set<string>, method: string, now = new Date()): Promise<RoundResult> {
   if (usesInternalStore()) return recordRoundInternal(targets, alive, method, now);
@@ -83,7 +117,7 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
       return [s.id, s.total > 0 ? Math.min(n, s.total) : n];
     }),
   );
-  const broken = roundLooksBroken(targets, onById, hour, now, method);
+  const broken = roundLooksBroken(await lateReference(targets, now), onById, hour, now, method);
   if (broken) return { ok: true, at: now.toISOString(), date, hour, method, stores: [], rejected: broken };
 
   const results = await Promise.all(
@@ -104,6 +138,8 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
         // 같은 시를 서버 결과로 바꿔 쓸 땐(prev 있음) 그 시의 lastSample도 서버 값으로 — 예비가 :52에 먼저 써서 시각이 더 늦어도.
         const sameHourLast = store.get("lastSample.date") === date && store.get("lastSample.hour") === hour;
         const newest = !prevAt || prevAt.getTime() <= now.getTime() || (prev != null && sameHourLast);
+        // 시간대 칸(최근 24시간·회차 이상 기준)도 더 새 회차가 이미 쓴 칸이면 둔다 — 며칠 늦은 회차가 어제 값을 옛 값으로 되돌리지 않게(2026-11-15).
+        const recentNewer = keepRecent(store.get(`recent.${hour}.at`)?.toDate?.() as Date | undefined, now, date, prev != null);
         tx.set(dailyRef, { storeId: s.id, date, hours: { [hour]: { a: on, t: s.total, m: method } } }, { merge: true });
         tx.set(
           storeRef,
@@ -113,7 +149,7 @@ export async function recordRound(targets: PingTarget[], alive: Set<string>, met
               ? { [date]: { a: FieldValue.increment(on - prev.a), t: FieldValue.increment(s.total - prev.t) } }
               : { [date]: { a: FieldValue.increment(on), t: FieldValue.increment(s.total), n: FieldValue.increment(1) } },
             ...(newest ? { lastSample: { at: now, date, hour, alive: on, total: s.total, aliveIps, method } } : {}),
-            recent: { [hour]: { a: on, t: s.total, at: now } },
+            ...(recentNewer ? {} : { recent: { [hour]: { a: on, t: s.total, at: now } } }),
           },
           { merge: true },
         );
@@ -199,7 +235,7 @@ async function recordRoundInternal(targets: PingTarget[], alive: Set<string>, me
       return [s.id, s.total > 0 ? Math.min(n, s.total) : n];
     }),
   );
-  const broken = roundLooksBroken(targets, onById, hour, now, method);
+  const broken = roundLooksBroken(await lateReference(targets, now), onById, hour, now, method);
   if (broken) return { ok: true, at: now.toISOString(), date, hour, method, stores: [], rejected: broken };
 
   const measured = targets.filter((s) => s.ips.length > 0);
@@ -220,6 +256,7 @@ async function recordRoundInternal(targets: PingTarget[], alive: Set<string>, me
     const prevAt = toDateValue(last.at);
     const sameHourLast = last.date === date && last.hour === hour;
     const newest = !prevAt || prevAt.getTime() <= now.getTime() || (prev != null && sameHourLast);
+    const recentNewer = keepRecent(toDateValue((store.recent as Record<string, { at?: unknown }> | undefined)?.[hour]?.at), now, date, prev != null);
     writes.push({ op: "merge", c: PING_DAILY, id: `${s.id}_${date}`, data: { storeId: s.id, date, hours: { [hour]: { a: on, t: s.total, m: method } } } });
     writes.push({
       op: "merge",
@@ -230,7 +267,7 @@ async function recordRoundInternal(targets: PingTarget[], alive: Set<string>, me
           ? { [date]: { a: { __inc: on - prev.a }, t: { __inc: s.total - prev.t } } }
           : { [date]: { a: { __inc: on }, t: { __inc: s.total }, n: { __inc: 1 } } },
         ...(newest ? { lastSample: { at: now, date, hour, alive: on, total: s.total, aliveIps, method } } : {}),
-        recent: { [hour]: { a: on, t: s.total, at: now } },
+        ...(recentNewer ? {} : { recent: { [hour]: { a: on, t: s.total, at: now } } }),
       },
     });
     return { id: s.id, name: s.name, alive: aliveIps.length, total: s.total };
@@ -245,8 +282,13 @@ export async function readRoundStatus(): Promise<Record<string, unknown> | undef
   if (usesInternalStore()) return (await istore.get(STATUS.c, STATUS.id)) ?? undefined;
   return (await adminDb?.collection(STATUS.c).doc(STATUS.id).get())?.data();
 }
-export async function writeRoundStatus(result: RoundResult): Promise<void> {
+/** 마지막 회차 기록. 이미 더 새 회차가 적혀 있으면 안 덮고 false(2026-11-15 — 늦게 다시 보낸 회차가 "마지막 회차"를 옛 시각으로 되돌리지 않게). */
+export async function writeRoundStatus(result: RoundResult): Promise<boolean> {
+  const existing = await readRoundStatus();
+  const existingAt = typeof existing?.at === "string" ? new Date(existing.at) : null;
+  if (!notNewerThan(existingAt, new Date(result.at))) return false;
   const data = { ...result, storeCount: result.stores.length };
-  if (usesInternalStore()) return istore.commit([{ op: "set", c: STATUS.c, id: STATUS.id, data }]);
-  await adminDb?.collection(STATUS.c).doc(STATUS.id).set(data);
+  if (usesInternalStore()) await istore.commit([{ op: "set", c: STATUS.c, id: STATUS.id, data }]);
+  else await adminDb?.collection(STATUS.c).doc(STATUS.id).set(data);
+  return true;
 }

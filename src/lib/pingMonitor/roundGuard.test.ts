@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roundLooksBroken, shouldReplace, wantsExtraPorts, type PingTarget } from "./roundGuard";
+import { agentRoundAtProblem, isLateRound, notNewerThan, roundLooksBroken, shouldReplace, wantsExtraPorts, type PingTarget } from "./roundGuard";
 
 const NOW = new Date("2026-10-10T13:05:00Z"); // KST 22시
 const YESTERDAY = new Date(NOW.getTime() - 24 * 3600_000);
@@ -93,5 +93,37 @@ describe("wantsExtraPorts — 2026-11-03부터 1688·5040 안 보냄(품의 조�
     expect(wantsExtraPorts({}, "10")).toBeNull();
     expect(wantsExtraPorts({ recent: day(0) }, "21")).toBeNull();
     expect(wantsExtraPorts({ recent: day(30) }, "21")).toBeNull();
+  });
+});
+
+describe("밀린 회차(2026-11-15 — 웹 정지 동안 쌓인 pending 재전송)", () => {
+  const now = new Date("2026-11-15T03:00:00Z");
+  const daysAgo = (d: number) => new Date(now.getTime() - d * 24 * 3600_000);
+  it("35일까지 받고 넘으면 거절, 미래·이상한 값도 거절", () => {
+    expect(agentRoundAtProblem(daysAgo(7), now)).toBeNull();
+    expect(agentRoundAtProblem(daysAgo(34.9), now)).toBeNull();
+    expect(agentRoundAtProblem(daysAgo(36), now)).toMatch(/35일/);
+    expect(agentRoundAtProblem(new Date(now.getTime() + 20 * 60_000), now)).toMatch(/미래/);
+    expect(agentRoundAtProblem(new Date("x"), now)).not.toBeNull();
+  });
+  it("6시간 넘게 늦으면 밀린 회차(기록만), 그 안은 예전처럼", () => {
+    expect(isLateRound(new Date(now.getTime() - 5 * 3600_000), now)).toBe(false);
+    expect(isLateRound(new Date(now.getTime() - 7 * 3600_000), now)).toBe(true);
+  });
+  it("기존 값이 이 회차보다 새것이면 안 바꾼다", () => {
+    expect(notNewerThan(null, daysAgo(7))).toBe(true);
+    expect(notNewerThan(daysAgo(8), daysAgo(7))).toBe(true);
+    expect(notNewerThan(daysAgo(1), daysAgo(7))).toBe(false);
+  });
+  it("회차 이상 점검은 이 회차보다 뒤에 잰 기록과 견주지 않는다", () => {
+    // 7일 전 회차인데 시간대 칸엔 어제(그 회차보다 뒤) 값 30대가 있다 — 예전엔 음수 나이가 12시간 안으로 잡혀 0대 회차를 버렸다.
+    const at = daysAgo(7);
+    const ts: PingTarget[] = Array.from({ length: 50 }, (_, i) => ({
+      id: `s${i}`, name: `s${i}`, ips: ["1.1.1.1"], total: 100, recent: { "12": { a: 30, at: daysAgo(1) } },
+    }));
+    expect(roundLooksBroken(ts, on(ts, () => 0), "12", at)).toBeNull();
+    // 그 회차 1시간 전 기록(밀린 회차용 기준, lateReference)이 있으면 그대로 판정한다
+    const withPrev = ts.map((t) => ({ ...t, recent: { "11": { a: 30, at: new Date(at.getTime() - 3600_000) } } }));
+    expect(roundLooksBroken(withPrev, on(withPrev, () => 0), "12", at)).toMatch(/0대/);
   });
 });

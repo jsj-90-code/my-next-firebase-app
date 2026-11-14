@@ -6,7 +6,7 @@
 // 설치·갱신: scripts/pingMonitor/agent/README.md
 import { createHash, createPrivateKey, sign } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { timestampAll, combineResponses } from "./timestamp.mjs";
 
@@ -84,10 +84,20 @@ async function tcpAll(ips, extraByIp) {
 }
 
 // 웹 요청은 시간 제한 + 다시 시도(2026-10-08 — 한 번 실패로 회차 전체를 잃지 않게). 서명은 시도마다 새로 만든다(5분 넘으면 거절).
+// waits: 시도 사이 쉬는 시간. 밀린 회차 재전송은 한 번만 해 본다(ONCE) — 웹이 멈춰 있으면 다음 회차에 어차피 다시 보내니,
+// 4번 시도(최대 약 9분)를 밀린 회차에 쓰면 이번 회차 측정·전송이 50분 제한(timeout 3000)에 걸릴 수 있다(2026-11-15).
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function call(method, path, body) {
+const RETRY = [0, 20_000, 60_000, 120_000];
+const ONCE = [0];
+// 웹 쪽 답이 아니라 "웹이 지금 없다"는 4xx — Vercel이 프로젝트를 멈추면(무료 한도 초과) 402 DEPLOYMENT_DISABLED 같은 4xx를 준다.
+// 이걸 우리 라우트의 4xx(측정 시각 이상·서명 거절 = 다시 보내도 같음)처럼 다루면 pending을 지우고 이번 회차도 버린다 → 5xx처럼 남긴다(2026-11-15).
+// x-vercel-error 머리글이 붙은 답은 Vercel 플랫폼이 낸 것(우리 코드까지 안 감)이다.
+function webUnavailable(res) {
+  return res.headers.get("x-vercel-error") != null || [402, 404, 408, 425, 429].includes(res.status);
+}
+async function call(method, path, body, waits = RETRY) {
   let last;
-  for (const wait of [0, 20_000, 60_000, 120_000]) {
+  for (const wait of waits) {
     if (wait) await sleep(wait);
     try {
       const res = await fetch(BASE + path, {
@@ -96,8 +106,8 @@ async function call(method, path, body) {
         body: body ?? undefined,
         signal: AbortSignal.timeout(90_000),
       });
-      if (res.ok || (res.status >= 400 && res.status < 500)) return res; // 4xx는 다시 해도 같다
-      last = new Error(`${res.status}: ${await res.text()}`);
+      if (res.ok || (res.status >= 400 && res.status < 500 && !webUnavailable(res))) return res; // 우리 라우트의 4xx는 다시 해도 같다
+      last = new Error(`${res.status}${res.headers.get("x-vercel-error") ? ` ${res.headers.get("x-vercel-error")}` : ""}: ${(await res.text()).slice(0, 300)}`);
     } catch (error) {
       last = error;
     }
@@ -106,21 +116,31 @@ async function call(method, path, body) {
   throw last;
 }
 
-// 못 보낸 회차는 pending/에 두고 다음 회차 시작 때 다시 보낸다. 웹은 잰 시각(at)의 시(時)로 묶고 6시간까지 받는다.
+// 못 보낸 회차는 pending/에 두고 다음 회차 시작 때 다시 보낸다. 웹은 잰 시각(at)의 시(時)로 묶고 35일까지 받는다(2026-11-15, 전엔 6시간).
+// 웹이 오래 멈추면(Vercel 정지 최대 30일) pending이 수백 개 쌓인다 — 회차마다 오래된 것부터 PENDING_PER_ROUND개만 보낸다.
+//   - 한꺼번에 다 보내면: 이번 회차 측정이 그만큼 늦어지고(50분 제한), 웹 함수·저장소(Firestore 쓰기 한도)에 한 번에 몰린다.
+//   - 6개면 매시 6회차씩 따라잡는다 — 30일(720회차) 밀려도 약 5일이면 다 보내고, 웹은 35일까지 받아 오래된 것부터 안 버려진다.
+//   - 하나라도 못 보내면 그 회차 재전송은 멈춘다(웹이 아직 안 돌아옴 — 나머지도 실패할 것이라 시간만 쓴다).
+//   - 서버 메모리가 작아(498MB) 파일 이름만 정렬해서 하나씩 읽는다.
+// 지우는 규칙은 그대로: 우리 라우트가 답한 4xx(35일 지남·서명 거절 등)면 지운다 — 다시 보내도 안 받는다. 5xx·네트워크 오류·웹 멈춤(webUnavailable)이면 남긴다.
+const PENDING_PER_ROUND = 6;
 const PENDING = new URL("./pending/", import.meta.url);
 const rPath = "/api/ping-monitor/agent/results";
 mkdirSync(PENDING, { recursive: true });
 if (!DRY) {
-  for (const f of readdirSync(PENDING).filter((n) => n.endsWith(".json")).sort()) {
+  const names = readdirSync(PENDING).filter((n) => n.endsWith(".json")).sort();
+  for (const f of names.slice(0, PENDING_PER_ROUND)) {
     const file = new URL(f, PENDING);
     try {
-      const res = await call("POST", rPath, readFileSync(file, "utf8"));
+      const res = await call("POST", rPath, readFileSync(file, "utf8"), ONCE);
       console.log(`밀린 회차 ${f} 보냄 ${res.status}: ${await res.text()}`);
-      unlinkSync(file); // 4xx(6시간 지남 등)도 지운다 — 다시 보내도 안 받는다
+      unlinkSync(file);
     } catch (error) {
-      console.error(`밀린 회차 ${f} 아직 못 보냄 — ${error.message}`);
+      console.error(`밀린 회차 ${f} 아직 못 보냄 — 이번 회차 재전송은 여기서 멈춤: ${error.message}`);
+      break;
     }
   }
+  if (names.length > PENDING_PER_ROUND) console.log(`밀린 회차 ${names.length}개 중 ${PENDING_PER_ROUND}개까지만 이번에 보냄 — 나머지는 다음 회차에`);
 }
 
 // 지난 회차가 timeout으로 죽으면 node만 죽고 sudo python 타임스탬프 helper는 남을 수 있다 — 메모리 498MB라 쌓이면 서버가 멈춘다.
@@ -129,9 +149,27 @@ await new Promise((r) => spawn("sudo", ["-n", "pkill", "-f", "timestamp_prob[e]\
 
 const started = new Date();
 const tPath = "/api/ping-monitor/agent/targets";
-const tRes = await call("GET", tPath);
-if (!tRes.ok) throw new Error(`목록 받기 실패 ${tRes.status}: ${await tRes.text()}`);
-const { targets } = await tRes.json();
+// 목록 캐시(2026-11-15) — 목록을 받으면 targets-cache.json에 저장하고, 못 받으면(웹 멈춤) 저장해 둔 목록으로 잰다.
+// 예전엔 여기서 throw해 측정 자체를 안 했고 pending도 안 남아 웹이 멈춘 기간이 통째로 비었다.
+// 캐시로 잰 회차도 매장별 IP 수·IP 지문(measured·measuredIps)을 같이 보내므로, 그사이 IP가 바뀐 매장은 웹이 기록에서 뺀다.
+// 캐시도 없으면 예전처럼 실패한다.
+const CACHE = new URL("./targets-cache.json", import.meta.url);
+let targets;
+try {
+  const tRes = await call("GET", tPath);
+  if (!tRes.ok) throw new Error(`목록 받기 실패 ${tRes.status}: ${await tRes.text()}`);
+  const text = await tRes.text();
+  ({ targets } = JSON.parse(text));
+  if (!Array.isArray(targets)) throw new Error("목록 모양이 이상합니다");
+  const tmp = new URL("./targets-cache.json.tmp", import.meta.url);
+  writeFileSync(tmp, JSON.stringify({ savedAt: new Date().toISOString(), targets }));
+  renameSync(tmp, CACHE); // 쓰다 죽어도 옛 캐시가 반쯤 쓴 파일로 바뀌지 않게
+} catch (error) {
+  if (!existsSync(CACHE)) throw error;
+  const cached = JSON.parse(readFileSync(CACHE, "utf8"));
+  targets = cached.targets;
+  console.error(`목록 받기 실패 — 저장해 둔 목록(${cached.savedAt})으로 잰다: ${error.message}`);
+}
 const ips = [...new Set(targets.flatMap((t) => t.ips))];
 // IP별 추가 포트 — 그 IP가 속한 매장에 extraPorts가 있으면 모은다(여러 매장이 같은 IP면 합집합).
 const extraByIp = new Map();
@@ -155,7 +193,10 @@ if (DRY) process.exit(0);
 
 // measured: 이번 회차에 실제로 잰 매장과 IP 수 — 회차 도중 등록·IP 변경된 매장을 웹이 0대로 적지 않게(2026-10-14 제주 노형 14시 가짜 0대).
 const measured = Object.fromEntries(targets.map((t) => [t.id, t.ips.length]));
-const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive, extraOnlyIps, measured });
+// measuredIps: 매장별 IP 목록 지문 — IP 수는 같고 대역만 바뀐 매장도 웹이 거른다(밀린 회차·캐시 목록, 2026-11-15). 웹 results route의 ipListKey와 같아야 한다.
+const ipListKey = (list) => createHash("sha256").update(list.join(",")).digest("hex").slice(0, 16);
+const measuredIps = Object.fromEntries(targets.map((t) => [t.id, ipListKey(t.ips)]));
+const body = JSON.stringify({ at: started.toISOString(), method, aliveIps: alive, extraOnlyIps, measured, measuredIps });
 // --local: 웹에 안 보내고 compare/에만 남긴다(2026-11-04 품의 승인 — 사내 서버가 기록, 해외 서버는 1~2주 대조용).
 // 같은 시에 두 서버가 다 보내면 서로 덮어쓰므로 대조하는 쪽은 반드시 --local. --copy: 보내면서 compare/에도 사본(사내 쪽).
 // 대조: scripts/pingMonitor/agent/compareRounds.mjs
@@ -171,7 +212,7 @@ if (process.argv.includes("--local") || process.argv.includes("--copy")) {
 try {
   const rRes = await call("POST", rPath, body);
   console.log(`보냄 ${rRes.status}: ${await rRes.text()}`);
-  if (!rRes.ok) process.exit(1);
+  if (!rRes.ok) process.exit(1); // 우리 라우트의 4xx — 다시 보내도 같다(웹 멈춤 4xx는 call이 실패로 던져 아래 pending으로 간다)
 } catch (error) {
   writeFileSync(new URL(`${started.toISOString().replace(/[:.]/g, "-")}.json`, PENDING), body);
   console.error(`보내기 실패 — pending/에 두고 다음 회차에 다시 보낸다: ${error.message}`);

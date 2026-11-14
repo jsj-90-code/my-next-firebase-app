@@ -67,7 +67,14 @@ export function roundLooksBroken(
  *   3. 없으면 예전처럼 이 시 칸의 36시간 안 기록(어제 같은 시각)
  */
 function referenceOf(t: PingTarget, hour: string, prevHour: string, now: Date): { a: number } | null {
-  const age = (p?: { at: Date | null }) => (p?.at ? now.getTime() - p.at.getTime() : Infinity);
+  // 이 회차보다 12시간 넘게 뒤에 잰 기록은 기준으로 안 쓴다(2026-11-15) — 며칠 늦게 들어온 회차(밀린 회차 재전송)에 "음수 나이"가
+  // 12시간 안으로 잡혀 다른 날 같은 시각과 견주게 되던 빈틈. 같은 시에 조금 뒤(예비 :52)에 쓴 기록은 예전처럼 쓴다(아래 1번).
+  // 오래된 회차의 기준은 recordRound가 그날 바로 앞 시 기록으로 따로 채운다(runRound.ts lateReference).
+  const age = (p?: { at: Date | null }) => {
+    if (!p?.at) return Infinity;
+    const ms = now.getTime() - p.at.getTime();
+    return ms < -12 * 3600_000 ? Infinity : Math.abs(ms);
+  };
   const same = t.recent?.[hour];
   const prev = t.recent?.[prevHour];
   if (same && age(same) < 12 * 3600_000) return same;
@@ -103,4 +110,29 @@ export function wantsExtraPorts(
   if (rounds.length < 24) return "learning";
   if (hour === SILENT_RECHECK_HOUR && rounds.every((r) => r.a === 0)) return "silent-recheck";
   return null;
+}
+
+// ---------- 늦게 들어온 회차(2026-11-15 — 웹이 멈춘 동안 쌓인 서버 pending 재전송) ----------
+
+/** 서버 결과를 받는 기한. 2026-11-14 Vercel 무료 한도 초과로 프로젝트가 최대 30일 멈출 뻔했다 — 6시간 기한이면 그동안 서버가
+ *  재서 pending/에 쌓아 둔 회차를 웹이 돌아와도 전부 400으로 거절해 기록이 영영 빈다. 30일 정지 + 다시 보내는 데 걸리는 며칠을 덮게 35일. */
+export const AGENT_RESULT_MAX_AGE_MS = 35 * 24 * 3600_000;
+/** 이보다 늦은 회차는 "밀린 회차"로 기록만 한다 — 상태 문서·자동 학습은 안 건드린다(예전 받는 기한 6시간과 같게: 그 안은 예전 동작 그대로). */
+export const LATE_ROUND_MS = 6 * 3600_000;
+
+/** 서버가 보낸 측정 시각이 받을 만한지 — 미래(10분 넘게)·35일 넘게 지난 것·이상한 값이면 이유를 돌려준다. */
+export function agentRoundAtProblem(at: Date, now = new Date()): string | null {
+  if (Number.isNaN(at.getTime())) return "측정 시각을 읽을 수 없습니다.";
+  if (at.getTime() > now.getTime() + 600_000) return "측정 시각이 미래입니다.";
+  if (now.getTime() - at.getTime() > AGENT_RESULT_MAX_AGE_MS) return "측정 시각이 35일보다 오래됐습니다.";
+  return null;
+}
+
+export function isLateRound(at: Date, now = new Date()): boolean {
+  return now.getTime() - at.getTime() > LATE_ROUND_MS;
+}
+
+/** 이미 있는 값(상태 문서·시간대 칸)을 이 회차로 바꿔도 되는지 — 기존 값이 이 회차보다 뒤에 잰 것이면 안 바꾼다(옛 회차가 최신 값을 덮지 않게). */
+export function notNewerThan(existingAt: Date | null | undefined, incomingAt: Date): boolean {
+  return !existingAt || Number.isNaN(existingAt.getTime()) || existingAt.getTime() <= incomingAt.getTime();
 }
