@@ -808,6 +808,32 @@ async function fillMissingCoords(stores: PingStore[]): Promise<void> {
   if (writes.length) await istore.commit(writes).catch((e) => console.error("측정기 좌표 채우기 저장 실패:", e));
 }
 
+/** 우리 매장 등록(isOwnStore)은 주소 칸이 비어 좌표가 없다 — 점포평가 좌표(없으면 그 주소로 찾은 좌표)를 한 번 저장해 둔다.
+ *  그래야 지도를 열 때마다 점포평가 목록(Firebase, 개인 카드 Blaze)을 다시 읽지 않는다(2026-11-15 사용자 승인).
+ *  점포평가에도 위치가 없는 묶음은 이 서버 인스턴스에서 6시간 동안 다시 시도하지 않는다. */
+const ownCoordTried = new Map<string, number>();
+async function fillOwnCoords(stores: PingStore[]): Promise<void> {
+  const now = Date.now();
+  const miss = stores.filter((s) => s.active && s.isOwnStore && s.lat == null && s.ownCode && now - (ownCoordTried.get(s.ownCode) ?? 0) > 6 * 3600_000);
+  if (!miss.length) return;
+  const owns = await ownOptions(stores).catch(() => [] as OwnOption[]);
+  const byCode = new Map(owns.map((o) => [o.code, o]));
+  const writes: StoreWrite[] = [];
+  for (const s of miss) {
+    ownCoordTried.set(s.ownCode!, now);
+    const o = byCode.get(s.ownCode!);
+    let at = o && o.lat != null && o.lng != null ? { lat: o.lat, lng: o.lng } : null;
+    if (!at && o?.address?.trim()) {
+      const g = await geocodeAddress(o.address.trim()).catch(() => null);
+      if (g) at = { lat: g.lat, lng: g.lng };
+    }
+    if (!at) continue;
+    Object.assign(s, at);
+    writes.push({ op: "update", c: PING_STORES, id: s.id, data: at });
+  }
+  if (writes.length) await istore.commit(writes).catch((e) => console.error("측정기 우리 매장 좌표 저장 실패:", e));
+}
+
 /** 상호 비교용 — 띄어쓰기·대소문자·「PC방/피시방/PC카페/PC」 꼬리 무시 */
 function pcBangKey(name: string): string {
   return name.toLowerCase().replace(/\s|\(.*?\)/g, "").replace(/피시|피씨/g, "pc").replace(/(pc방|pc카페|pc존|pc클럽|pc)$/, "");
@@ -837,13 +863,9 @@ export async function pingNearby(input: { lat?: number | null; lng?: number | nu
   const pic = mapPic && typeof mapPic === "object" ? mapPic : null;
   const at = <T extends { lat: number; lng: number }>(p: T) => (pic ? { ...p, ...pic.toPx(p) } : p);
   // 좌표 없는 등록이 많다(2026-11-15: 300곳 중 128곳만 좌표) — 그대로면 주변 지도에서 등록 매장이 전부 「미등록」으로 뜬다.
-  // 경쟁점은 주소로 찾아 좌표를 저장해 두고(한 번 채우면 끝, 한 번에 최대 COORD_FILL_MAX곳), 우리 매장은 점포평가 좌표를 빌린다(저장 안 함).
+  // 경쟁점은 주소로 찾아, 우리 매장은 점포평가 좌표로 — 둘 다 한 번 저장해 두면 끝(경쟁점은 한 번에 최대 COORD_FILL_MAX곳).
   await fillMissingCoords(stores);
-  if (stores.some((s) => s.active && s.isOwnStore && s.lat == null && s.ownCode)) {
-    const owns = await ownOptions(stores).catch(() => [] as OwnOption[]);
-    const at = new Map(owns.filter((o) => o.lat != null && o.lng != null).map((o) => [o.code, { lat: o.lat!, lng: o.lng! }]));
-    for (const s of stores) if (s.isOwnStore && s.lat == null && s.ownCode && at.has(s.ownCode)) Object.assign(s, at.get(s.ownCode));
-  }
+  await fillOwnCoords(stores);
   const registered = stores.filter((s) => s.active && s.lat != null && s.lng != null);
   // 같은 매장 판정: 40m 안, 또는 150m 안이면서 상호가 같음(띄어쓰기·PC방/피시방 표기 무시) — 지오코딩 점과 카카오 장소 점이 건물 안에서 어긋난다.
   const near = (p: { lat: number; lng: number; name?: string }) =>
