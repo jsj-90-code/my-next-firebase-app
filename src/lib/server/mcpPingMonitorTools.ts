@@ -117,12 +117,13 @@ export function registerPingTools(server: McpServer) {
     "ping_nearby",
     {
       title: "경쟁점 가동률 — 주변 PC방",
-      description: "좌표나 주소 기준 반경 1km 안의 PC방(카카오, 이름 거름 — 이미 측정기에 있으면 registered 표시)과 측정기 등록 매장, demand=true면 수요거점까지.",
+      description: "좌표나 주소 기준 반경 1km 안의 PC방(카카오, 이름 거름 — 이미 측정기에 있으면 registered 표시)과 측정기 등록 매장, demand=true면 수요거점까지. map=true면 카카오 지도 바탕 그림(map.image, data URL PNG 1000px)과 점마다 그림 위 픽셀 좌표(px·py)를 함께 준다(못 받으면 map:null·mapError).",
       inputSchema: z.object({
         lat: z.number().optional(),
         lng: z.number().optional(),
         address: z.string().optional(),
         demand: z.boolean().optional(),
+        map: z.boolean().optional().describe("true면 카카오 지도 바탕 그림과 픽셀 좌표를 함께"),
       }),
       annotations: { readOnlyHint: true, openWorldHint: true },
     },

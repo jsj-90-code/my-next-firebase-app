@@ -21,6 +21,7 @@ import { isKrHoliday } from "@/lib/pingMonitor/krHolidays";
 import { formatSurveyMemo } from "@/lib/pingMonitor/memoFormat";
 import { distanceM as straightDistanceM, PING_MAP_RADIUS_M } from "@/lib/pingMonitor/nearby";
 import { probeIps } from "@/lib/pingMonitor/probe";
+import { kakaoNearbyMap } from "@/lib/server/kakaoNearbyMap";
 import { toPingStore } from "@/lib/pingMonitor/storeDoc";
 import {
   byMeasuredThenDistance,
@@ -788,7 +789,7 @@ export async function pingTransferOwn(fromCode: string, toCode: string, email: s
 }
 
 /** 주변 1km PC방(카카오, 이름 거름) + 수요거점(선택) + 이미 측정기에 있는 매장 표시. 좌표 또는 주소로. */
-export async function pingNearby(input: { lat?: number | null; lng?: number | null; address?: string | null; demand?: boolean | null }) {
+export async function pingNearby(input: { lat?: number | null; lng?: number | null; address?: string | null; demand?: boolean | null; map?: boolean | null }) {
   let center: { lat: number; lng: number } | null = input.lat != null && input.lng != null ? { lat: Number(input.lat), lng: Number(input.lng) } : null;
   let geocoded: { roadAddress: string | null; jibunAddress: string | null } | null = null;
   if (!center && input.address?.trim()) {
@@ -799,14 +800,20 @@ export async function pingNearby(input: { lat?: number | null; lng?: number | nu
   }
   if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng)) throw new PingToolError("기준 좌표나 주소가 필요합니다.");
   const origin = center;
-  const [pc, stores] = await Promise.all([collectKakaoPcBangs(origin, PING_MAP_RADIUS_M), usesInternalStore() ? allStores() : Promise.resolve([] as PingStore[])]);
+  const [pc, stores, mapPic] = await Promise.all([
+    collectKakaoPcBangs(origin, PING_MAP_RADIUS_M),
+    usesInternalStore() ? allStores() : Promise.resolve([] as PingStore[]),
+    input.map ? kakaoNearbyMap(origin, PING_MAP_RADIUS_M).catch((e: unknown) => (e instanceof Error ? e.message : String(e))) : Promise.resolve(null),
+  ]);
+  const pic = mapPic && typeof mapPic === "object" ? mapPic : null;
+  const at = <T extends { lat: number; lng: number }>(p: T) => (pic ? { ...p, ...pic.toPx(p) } : p);
   const registered = stores.filter((s) => s.active && s.lat != null && s.lng != null);
   const near = (p: { lat: number; lng: number }) => registered.find((s) => haversineM(p, { lat: s.lat!, lng: s.lng! }) <= 40);
   const pcBangs = pc.places
     .filter((p) => judgePcBangName(p).counted)
     .map((p) => {
       const hit = near(p);
-      return { id: p.id, name: p.name, address: p.address ?? "", lat: p.lat, lng: p.lng, distanceM: Math.round(p.distanceM ?? haversineM(origin, p)), registered: hit ? { id: hit.id, name: hit.name, own: hit.ownName ?? null } : null };
+      return at({ id: p.id, name: p.name, address: p.address ?? "", lat: p.lat, lng: p.lng, distanceM: Math.round(p.distanceM ?? haversineM(origin, p)), registered: hit ? { id: hit.id, name: hit.name, own: hit.ownName ?? null } : null });
     })
     .sort((a, b) => a.distanceM - b.distanceM);
   let demandPoints: { id: string; name: string; category: string; lat: number; lng: number; distanceM: number }[] | undefined;
@@ -826,6 +833,7 @@ export async function pingNearby(input: { lat?: number | null; lng?: number | nu
   const registeredNear = registered
     .map((s) => ({ s, d: haversineM(origin, { lat: s.lat!, lng: s.lng! }) }))
     .filter((x) => x.d <= PING_MAP_RADIUS_M)
-    .map(({ s, d }) => ({ id: s.id, name: s.name, own: s.ownName ?? null, isOwnStore: s.isOwnStore, lat: s.lat!, lng: s.lng!, distanceM: Math.round(d), status: storeStatus(s).label }));
-  return { center: origin, geocoded, radiusM: PING_MAP_RADIUS_M, pcBangs, registered: registeredNear, demandPoints: demandPoints ?? null };
+    .map(({ s, d }) => at({ id: s.id, name: s.name, own: s.ownName ?? null, isOwnStore: s.isOwnStore, lat: s.lat!, lng: s.lng!, distanceM: Math.round(d), status: storeStatus(s).label }));
+  const map = pic ? { image: pic.image, width: pic.width, height: pic.height, metersPerPx: pic.metersPerPx, center: pic.toPx(origin), source: "카카오맵" } : null;
+  return { center: origin, geocoded, radiusM: PING_MAP_RADIUS_M, pcBangs, registered: registeredNear, demandPoints: demandPoints ?? null, map, ...(typeof mapPic === "string" ? { mapError: mapPic } : {}) };
 }

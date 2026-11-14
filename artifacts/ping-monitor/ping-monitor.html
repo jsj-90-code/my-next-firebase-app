@@ -352,6 +352,9 @@ const Tip=(()=>{
 /* ===== 공용 부품 끝 ===== */
 
 /* ---------- 기본 도구 ---------- */
+/* 브라우저 append()는 null을 글자 "null"로 붙인다(2026-11-15 경쟁점 이름 뒤 "null" 사고).
+   이 페이지는 「없으면 null」을 자주 넘기므로, 빈 값은 건너뛰게 한 번에 막는다. */
+for(const P of [Element.prototype,DocumentFragment.prototype]){const o=P.append;P.append=function(...k){return o.apply(this,k.filter(x=>x!=null&&x!==false))}}
 const SRV='PC 점포평가';
 const $=id=>document.getElementById(id);
 const el=(t,a={},...kids)=>{const e=document.createElement(t);for(const[k,v]of Object.entries(a)){if(v==null||v===false)continue;if(k==='class')e.className=v;else if(k==='text')e.textContent=v;else if(k==='style')e.style.cssText=v;else if(k.startsWith('on'))e.addEventListener(k.slice(2),v);else e.setAttribute(k,v===true?'':v)}for(const k of kids)if(k!=null&&k!==false)e.append(k);return e};
@@ -566,7 +569,8 @@ function heatGrid(box,rows,{cols=24,colLabel=i=>String(i),labelW=64,cell=18,tip}
 }
 
 /* 1km 거리 그림 — 지도 대신(외부 지도는 이 페이지에서 못 띄움). center 기준 동·북 미터 */
-function radar(box,center,points,{onPick}={}){
+function radar(box,center,points,{onPick,map}={}){
+  if(map&&map.image)return mapPic(box,center,points,{onPick,map});
   const S0=420,R=S0/2-26,cx=S0/2,cy=S0/2,M=1000;
   const s=sv('svg',{viewBox:`0 0 ${S0} ${S0}`,role:'img','aria-label':'반경 1km 거리 그림'});
   s.append(sv('circle',{cx,cy,r:R*500/M,style:'fill:var(--accent-soft);stroke:none'}));
@@ -574,17 +578,32 @@ function radar(box,center,points,{onPick}={}){
   s.append(sv('text',{x:cx,y:12,'text-anchor':'middle',style:'fill:var(--ink);font-weight:600'},'북'));
   const xy=p=>{const dx=(p.lng-center.lng)*Math.cos(center.lat*Math.PI/180)*111320,dy=(p.lat-center.lat)*110540;return [cx+dx/M*R,cy-dy/M*R]};
   points.forEach(p=>{if(p.lat==null||p.lng==null)return;const [x,y]=xy(p);if(Math.hypot(x-cx,y-cy)>R+14)return;
-    const g=sv('g',{style:'cursor:'+(onPick&&!p.reg?'pointer':'default')});
-    if(p.kind==='own')g.append(sv('path',{d:`M${x},${y-8}l2.4,5 5.4.6-4,3.7 1,5.4-4.8-2.6-4.8,2.6 1-5.4-4-3.7 5.4-.6z`,style:'fill:var(--ink)'}));
-    else if(p.reg)g.append(sv('circle',{cx:x,cy:y,r:5.5,style:'fill:'+(p.color||'var(--accent)')+';stroke:var(--paper);stroke-width:1.5'}));
-    else g.append(sv('circle',{cx:x,cy:y,r:4.5,style:'fill:var(--paper);stroke:var(--muted);stroke-width:1.5'}));
-    if(p.label)g.append(sv('text',{x:x+8,y:y+3.5,style:p.kind==='own'?'fill:var(--ink);font-weight:600':null},p.label.length>10?p.label.slice(0,10)+'…':p.label));
-    g.append(sv('circle',{cx:x,cy:y,r:12,style:'fill:transparent'}));
+    s.append(pinG(p,x,y,onPick,1))});
+  box.append(s);
+}
+/* 점 하나(별=기준, 채운 원=측정기 등록, 빈 원=미등록) — 거리 그림·지도 그림 공용. k = 크기 배율 */
+function pinG(p,x,y,onPick,k){
+    const g=sv('g',{style:'cursor:'+(onPick&&!p.reg&&p.kind!=='own'?'pointer':'default')});
+    if(p.kind==='own')g.append(sv('path',{d:`M${x},${y-8*k}l${2.4*k},${5*k} ${5.4*k},${.6*k}-${4*k},${3.7*k} ${1*k},${5.4*k}-${4.8*k}-${2.6*k}-${4.8*k},${2.6*k} ${1*k}-${5.4*k}-${4*k}-${3.7*k} ${5.4*k}-${.6*k}z`,style:'fill:var(--ink);stroke:var(--paper);stroke-width:'+(k>1?1.5:0)}));
+    else if(p.reg)g.append(sv('circle',{cx:x,cy:y,r:5.5*k,style:'fill:'+(p.color||'var(--accent)')+';stroke:var(--paper);stroke-width:'+1.5*k}));
+    else g.append(sv('circle',{cx:x,cy:y,r:4.5*k,style:'fill:var(--paper);stroke:var(--muted);stroke-width:'+1.5*k}));
+    if(p.label)g.append(sv('text',{x:x+8*k,y:y+3.5*k,style:(p.kind==='own'?'fill:var(--ink);font-weight:600;':'')+(k>1?'font-size:'+10*k+'px;paint-order:stroke;stroke:var(--paper);stroke-width:'+3*k+'px':'')},p.label.length>10?p.label.slice(0,10)+'…':p.label));
+    g.append(sv('circle',{cx:x,cy:y,r:12*k,style:'fill:transparent'}));
     g.addEventListener('pointerenter',e=>showTip(e.clientX,e.clientY,el('div',{},el('b',{text:p.name}),el('div',{style:'color:var(--muted)',text:[p.dist!=null?p.dist+'m':'',p.reg?'측정기 등록'+(p.note?' · '+p.note:''):p.kind==='own'?'기준':'측정기 미등록 — 누르면 등록'].filter(Boolean).join(' · ')}))));
     g.addEventListener('pointerleave',hideTip);
     if(onPick&&!p.reg&&p.kind!=='own')g.addEventListener('click',()=>onPick(p));
-    s.append(g)});
-  box.append(s);
+    return g;
+}
+/* 카카오 지도 바탕 그림 위에 점 — 서버(ping_nearby map:true)가 그림과 점마다 px·py를 준다. 화면 안 확대·이동은 없음. */
+function mapPic(box,center,points,{onPick,map}){
+  const W=map.width,H=map.height,k=W/420,c=map.center||{px:W/2,py:H/2};
+  const s=sv('svg',{viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':'반경 1km 지도',style:'border-radius:8px;background:var(--sunk)'});
+  const img=sv('image',{href:map.image,x:0,y:0,width:W,height:H,preserveAspectRatio:'none'});s.append(img);
+  [500,1000].forEach(m=>{const r=m/map.metersPerPx;s.append(sv('circle',{cx:c.px,cy:c.py,r,style:'fill:none;stroke:var(--accent);stroke-width:'+(m===500?2.2:1.6)+';stroke-dasharray:'+(m===500?'none':'8 6')+';opacity:.85'}));s.append(sv('text',{x:c.px+6,y:c.py-r+16*k*.8,style:'fill:var(--accent);font-weight:700;font-size:'+11*k+'px;paint-order:stroke;stroke:var(--paper);stroke-width:'+3*k+'px'},m===1000?'1km':m+'m'))});
+  const ordered=[...points.filter(p=>p.kind!=='own'&&!p.reg),...points.filter(p=>p.reg),...points.filter(p=>p.kind==='own')];
+  ordered.forEach(p=>{const x=p.kind==='own'?c.px:p.px,y=p.kind==='own'?c.py:p.py;if(x==null||y==null||x<-20||y<-20||x>W+20||y>H+20)return;s.append(pinG(p,x,y,onPick,k))});
+  const wrap=el('div',{style:'display:grid;gap:4px'},s,el('div',{style:'display:flex;justify-content:space-between;gap:8px;font-size:.74rem;color:var(--muted);flex-wrap:wrap'},el('span',{text:'지도 ⓒ 카카오맵 · 실선 500m · 점선 1km'}),el('a',{href:'https://map.kakao.com/link/map/'+encodeURIComponent((points.find(p=>p.kind==='own')||{}).name||'기준')+','+center.lat+','+center.lng,target:'_blank',rel:'noopener',text:'카카오맵에서 크게 보기 ↗'})));
+  box.append(wrap);
 }
 
 /* ---------- 공용 조각 ---------- */
@@ -666,7 +685,8 @@ function renderList(v){
   const row=(s,{showOwn,own}={})=>{
     const first=el('td',{class:'l'});
     if(showOwn)first.append(el('span',{class:'ssub',text:(s.ownName||'우리 매장 연결 안 됨')+(s.isOwnStore?' (우리 매장 자체)':'')}));
-    first.append(el('a',{class:'sname',href:storeHref(s.id),text:own?'우리 매장':s.name}),own?el('span',{class:'tag',style:'margin-left:6px',text:s.name.replace(/\s*\(우리 매장\)$/,'')}):null);
+    first.append(el('a',{class:'sname',href:storeHref(s.id),text:own?'우리 매장':s.name}));
+    if(own)first.append(el('span',{class:'tag',style:'margin-left:6px',text:s.name.replace(/\s*\(우리 매장\)$/,'')}));
     if(showOwn&&s.ipCheck)first.append(el('span',{class:'ssub ipwhy',text:'⚠ '+s.ipCheck}));
     const tr=el('tr',{class:own?'own':null},first,el('td',{class:'num',text:own?'—':s.distanceM!=null?s.distanceM+'m':'—'}),el('td',{class:'num',text:s.seats??'—'}));
     if(!s.hasIp){tr.append(el('td',{colspan:'8',class:'l'},el('span',{class:'na',text:'IP를 받아 넣으면 다음 정각부터 잽니다'})))}
@@ -850,16 +870,16 @@ function nearbyCard(center,label,{selfId,ownCode,address}={}){
   d.addEventListener('toggle',async()=>{if(!d.open||loaded)return;loaded=true;const body=el('div');d.append(body);
     if(!center&&!address){body.append(el('div',{class:'empty',text:'이 매장은 좌표가 없어 주변을 그릴 수 없습니다. 「고치기」에서 주소를 넣어 저장하면 생깁니다.'}));return}
     body.append(loadingBlock('주변 PC방을 찾는 중입니다'));
-    try{const r=(await call('ping_nearby',center?{lat:center.lat,lng:center.lng}:{address},{read:true})).data;body.textContent='';
+    try{const r=(await call('ping_nearby',center?{lat:center.lat,lng:center.lng,map:true}:{address,map:true},{read:true})).data;body.textContent='';
       const regIds=new Map((S.ov?S.ov.stores:[]).map(x=>[x.id,x]));
       const pts=[{kind:'own',name:label,lat:r.center.lat,lng:r.center.lng,label}];
-      r.registered.filter(x=>x.id!==selfId).forEach(x=>{const ov=regIds.get(x.id);pts.push({reg:true,name:x.name,lat:x.lat,lng:x.lng,dist:x.distanceM,label:x.name,color:x.isOwnStore?'var(--ink)':'var(--accent)',note:x.status+(ov&&ov.thisWeek&&ov.thisWeek.util!=null?' · 이번 주 '+pct(ov.thisWeek.util):'')})});
-      r.pcBangs.filter(x=>!x.registered).forEach(x=>pts.push({name:x.name,lat:x.lat,lng:x.lng,dist:x.distanceM,address:x.address}));
-      const g=el('div',{class:'radar'});const left=el('div');g.append(left);radar(left,r.center,pts,{onPick:p=>{S.prefill={name:p.name,address:p.address,lat:p.lat,lng:p.lng,ownCode};go('new')}});
+      r.registered.filter(x=>x.id!==selfId).forEach(x=>{const ov=regIds.get(x.id);pts.push({reg:true,name:x.name,lat:x.lat,lng:x.lng,px:x.px,py:x.py,dist:x.distanceM,label:x.name,color:x.isOwnStore?'var(--ink)':'var(--accent)',note:x.status+(ov&&ov.thisWeek&&ov.thisWeek.util!=null?' · 이번 주 '+pct(ov.thisWeek.util):'')})});
+      r.pcBangs.filter(x=>!x.registered).forEach(x=>pts.push({name:x.name,lat:x.lat,lng:x.lng,px:x.px,py:x.py,dist:x.distanceM,address:x.address}));
+      const g=el('div',{class:'radar'});const left=el('div');g.append(left);radar(left,r.center,pts,{map:r.map,onPick:p=>{S.prefill={name:p.name,address:p.address,lat:p.lat,lng:p.lng,ownCode};go('new')}});
       const list=el('div',{class:'plist'});
       [...r.registered.filter(x=>x.id!==selfId).map(x=>({...x,reg:true})),...r.pcBangs.filter(x=>!x.registered)].sort((a,b)=>a.distanceM-b.distanceM).forEach(x=>list.append(el('div',{class:'pi'},el('span',{class:'pill '+(x.reg?'p-ok':'p-dim'),text:x.reg?'측정':'미등록'}),x.reg?el('a',{class:'nm',href:storeHref(x.id),text:x.name}):el('span',{class:'nm',text:x.name,title:x.address}),x.reg?el('span',{class:'d',text:x.distanceM+'m'}):el('button',{class:'btn sm',type:'button',onclick:()=>{S.prefill={name:x.name,address:x.address,lat:x.lat,lng:x.lng,ownCode};go('new')}},x.distanceM+'m · 등록'))));
       if(!list.childNodes.length)list.append(el('div',{class:'empty',text:'1km 안에 다른 PC방이 없습니다.'}));
-      g.append(list);body.append(g,el('p',{class:'pad',style:'margin:0;padding-top:0;font-size:.8rem;color:var(--muted)',text:'실제 지도가 아니라 기준 매장을 가운데 둔 거리 그림입니다(옅은 원 = 500m, 같은 상권으로 보는 거리). 빈 원은 측정기에 없는 PC방 — 누르면 등록 화면에 이름·주소가 채워집니다.'}))}
+      g.append(list);body.append(g,el('p',{class:'pad',style:'margin:0;padding-top:0;font-size:.8rem;color:var(--muted)',text:(r.map?'별 = 기준 매장, 채운 원 = 측정기에 있는 매장, 빈 원 = 측정기에 없는 PC방(누르면 등록 화면에 이름·주소가 채워짐). 500m는 같은 상권으로 보는 거리입니다. 그림 지도라 끌어서 옮기거나 확대는 안 됩니다 — 「카카오맵에서 크게 보기」를 쓰세요.':'지도 그림을 받지 못해 기준 매장을 가운데 둔 거리 그림으로 보여 줍니다(옅은 원 = 500m, 같은 상권으로 보는 거리). 빈 원은 측정기에 없는 PC방 — 누르면 등록 화면에 이름·주소가 채워집니다.')}))}
     catch(e){body.textContent='';body.append(errBlock(e))}
   });
   return d;
@@ -1013,9 +1033,9 @@ function storeForm(host,{id=null,isOwn=false,recordDays=0,prefill=null,onSaved}=
     const nearBox=el('div',{hidden:true});
     const nearBtn=el('button',{class:'btn sm',type:'button',onclick:async()=>{const o=owns.find(x=>x.code===f.ownCode);const c=f.lat!=null?{lat:f.lat,lng:f.lng}:o&&o.lat!=null?{lat:o.lat,lng:o.lng}:null;const a=!c&&(f.address||(o&&o.address));
       if(!c&&!a){toast('우리 매장을 고르거나 주소를 먼저 적어 주세요.');return}nearBtn.disabled=true;nearBox.hidden=false;nearBox.textContent='';nearBox.append(loadingBlock('주변 PC방을 찾는 중입니다'));
-      try{const r=(await call('ping_nearby',c||{address:a},{read:true})).data;nearBox.textContent='';const g=el('div',{class:'radar',style:'padding:0'});const left=el('div');g.append(left);
+      try{const r=(await call('ping_nearby',{...(c||{address:a}),map:true},{read:true})).data;nearBox.textContent='';const g=el('div',{class:'radar',style:'padding:0'});const left=el('div');g.append(left);
         const pick=p=>{nameIn.value=f.name=p.name;addrIn.value=f.address=p.address||'';f.lat=p.lat;f.lng=p.lng;f.confirmOtherFloor=false;nearBox.hidden=true;schedule();toast('「'+p.name+'」 상호·주소·위치를 채웠습니다.')};
-        radar(left,r.center,[{kind:'own',name:o?o.name:'기준',label:o?o.name:'기준',lat:r.center.lat,lng:r.center.lng},...r.registered.map(x=>({reg:true,name:x.name,label:x.name,lat:x.lat,lng:x.lng,dist:x.distanceM,note:x.status})),...r.pcBangs.filter(x=>!x.registered).map(x=>({name:x.name,lat:x.lat,lng:x.lng,dist:x.distanceM,address:x.address}))],{onPick:pick});
+        radar(left,r.center,[{kind:'own',name:o?o.name:'기준',label:o?o.name:'기준',lat:r.center.lat,lng:r.center.lng},...r.registered.map(x=>({reg:true,name:x.name,label:x.name,lat:x.lat,lng:x.lng,px:x.px,py:x.py,dist:x.distanceM,note:x.status})),...r.pcBangs.filter(x=>!x.registered).map(x=>({name:x.name,lat:x.lat,lng:x.lng,px:x.px,py:x.py,dist:x.distanceM,address:x.address}))],{onPick:pick,map:r.map});
         const list=el('div',{class:'plist'});r.pcBangs.forEach(x=>list.append(el('div',{class:'pi'},el('span',{class:'pill '+(x.registered?'p-ok':'p-dim'),text:x.registered?'측정':'미등록'}),el('span',{class:'nm',text:x.name,title:x.address}),x.registered?el('a',{class:'d',href:storeHref(x.registered.id),text:x.distanceM+'m · 보기'}):el('button',{class:'btn sm',type:'button',onclick:()=>pick(x)},x.distanceM+'m · 고르기'))));
         if(!r.pcBangs.length)list.append(el('div',{class:'empty',text:'1km 안에 PC방을 찾지 못했습니다.'}));g.append(list);nearBox.append(g)}
       catch(e){nearBox.textContent='';nearBox.append(errBlock(e))}nearBtn.disabled=false}},'주변 PC방에서 고르기');
