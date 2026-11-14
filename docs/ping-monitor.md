@@ -1,5 +1,14 @@
 # 경쟁점 가동률 측정기 (`/ping-monitor`, 2026-10-06 신설)
 
+## 2026-11-15 아티팩트로 옮기는 중 — 커넥터 측정기 도구 11개
+
+- 사용자: 웹 화면을 claude.ai 아티팩트 + AI로 옮긴다(웹은 당장 안 지우고 나란히). 아티팩트는 저장소를 직접 못 읽어 「PC 점포평가」 커넥터(/api/mcp)에 도구를 붙였다.
+- 몸통 `src/lib/server/mcpPingMonitor.ts`, 등록 `mcpPingMonitorTools.ts`. 계산은 웹과 같은 `summary.ts`, 문서 변환은 `storeDoc.ts`(웹 clientStore도 이걸 쓴다).
+- 읽기(IP 없음 — 아티팩트 "결과 공유"로 커넥터 없는 팀원도 봄): `ping_overview`(목록 전부) · `ping_store`(매장 상세, 날짜×시간 칸 포함) · `ping_area`(상권 비교) · `ping_form_options` · `ping_nearby`(카카오 1km PC방).
+- IP·쓰기(본인 커넥터만, 결과 공유에 넣지 말 것): `ping_store_private` · `ping_save_store`(StoreForm 검사 그대로, dryRun) · `ping_probe`(80번, 25초 끊음) · `ping_delete_store`(이름 확인) · `ping_own_register` · `ping_transfer_own`.
+- 회사 계정(@isens.camp)만. 쓰는 칸은 웹 창구와 같은 PING_KEYS. 측정 서버·저장 방식은 그대로. 메모·확인 사유 속 IP는 공유 읽기에서 "(IP 가림)".
+- 짧게 끝나게(1214f81 listen 거절과 같은 이유): 저장소 요청 몇 번, 반복 조회·알림 기다리기 없음.
+
 ## 2026-11-15 웹(Vercel)이 멈춰도 측정 기록을 잃지 않게
 
 11-14 Vercel 무료 한도 초과로 프로젝트가 최대 30일 정지될 뻔했다. 예전엔 웹이 멈추면 (1) 서버가 목록을 못 받아 측정 자체를 안 했고

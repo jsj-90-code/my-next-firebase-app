@@ -30,6 +30,7 @@ import {
   resolveSeatLayoutProject, saveSeatLayoutChatDraft,
 } from "@/lib/server/mcpSeatLayout";
 import { loadQuickEvalTraining } from "@/lib/server/quickEvalTraining";
+import { PING_INSTRUCTIONS, registerPingTools } from "@/lib/server/mcpPingMonitorTools";
 import {
   INFLOW_LEVELS, LOCATION_EVAL_FIELD_DESCRIPTIONS, SPECIAL_DEMAND_INTENSITIES, SPECIAL_DEMAND_TYPES,
 } from "@/lib/storeEval/locationEvalAi";
@@ -68,6 +69,8 @@ const text = (t: string, isError = false) => ({ content: [{ type: "text" as cons
 // 직원 공용: 주소만 평가 2개 + 좌석배치도 인식 4개(2026-10-27).
 // 정밀평가 도구 안의 isMcpOwner 확인은 그대로 둔다(목록 숨김이 뚫려도 서버에서 한 번 더 막는 이중 잠금).
 function registerTools(server: McpServer, owner: boolean) {
+  // 경쟁점 가동률 측정기(2026-11-15, 회사 계정 공용) — 아티팩트 "경쟁점 가동률" 화면이 부른다.
+  registerPingTools(server);
   {
     server.registerTool(
       "get_site_data",
@@ -862,14 +865,15 @@ const PUBLIC_INSTRUCTIONS =
   "(답에 이어서 하라고 나오면 같은 채팅에서 get_seat_layout_bracket_crops(source=draft) → submit_seat_layout_brackets까지), " +
   "\"바뀐 존 브라켓 다시 세 줘\"는 get_seat_layout_bracket_crops(source=changed) → submit_seat_layout_brackets, " +
   "책상·PC 인식(PDF 글씨 없는 옛 도면)은 get_seat_layout_zone_crops → 존마다 세기 → submit_seat_layout_zone_counts, " +
-  "좌석번호는 get_seat_number_data → submit_seat_number_draft. 결과는 초안이라 웹에서 확인·저장한다.";
+  "좌석번호는 get_seat_number_data → submit_seat_number_draft. 결과는 초안이라 웹에서 확인·저장한다." +
+  PING_INSTRUCTIONS;
 
 const publicHandler = createMcpHandler((server) => registerTools(server, false), {
-  serverInfo: { name: "isens-location-eval", version: "1.2.0" },
+  serverInfo: { name: "isens-location-eval", version: "1.3.0" },
   instructions: PUBLIC_INSTRUCTIONS,
 });
 const ownerHandler = createMcpHandler((server) => registerTools(server, true), {
-  serverInfo: { name: "isens-location-eval", version: "1.2.0" },
+  serverInfo: { name: "isens-location-eval", version: "1.3.0" },
   instructions:
     PUBLIC_INSTRUCTIONS +
     " 사용자가 등록된 신규후보지(코드 N0xx 또는 후보지 이름)의 입지평가 초안·정밀평가 입지를 요청하면: find_candidate로 코드 확인 → " +

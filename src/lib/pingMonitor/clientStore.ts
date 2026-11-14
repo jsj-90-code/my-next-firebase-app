@@ -23,7 +23,8 @@ import { auth, db } from "@/lib/firebase";
 import { listCandidates, listCompetitors, listExistingStores } from "@/lib/storeEval/store";
 import type { Competitor } from "@/lib/storeEval/types";
 import { parseIpRanges } from "./ipRange";
-import { hasNoIp, PASTED_IP_CHECK, PING_DAILY, PING_STORES, type DayTotals, type PingDaily, type PingStore } from "./summary";
+import { toPingStore } from "./storeDoc";
+import { hasNoIp, PASTED_IP_CHECK, PING_DAILY, PING_STORES, type PingDaily, type PingStore } from "./summary";
 export { PASTED_IP_CHECK };
 
 export type PingStoreInput = {
@@ -42,55 +43,7 @@ export type PingStoreInput = {
   lng?: number | null;
 };
 
-function toDate(v: unknown): Date | null {
-  if (v instanceof Date) return v; // 사내 저장소 창구가 돌려준 값
-  return v && typeof v === "object" && "toDate" in v ? (v as { toDate: () => Date }).toDate() : null;
-}
-
-function toStore(id: string, d: DocumentData): PingStore {
-  const ls = d.lastSample;
-  return {
-    id,
-    name: String(d.name ?? ""),
-    address: String(d.address ?? ""),
-    ipRanges: String(d.ipRanges ?? ""),
-    ipCount: Number(d.ipCount ?? 0),
-    pcCount: typeof d.pcCount === "number" ? d.pcCount : null,
-    memo: String(d.memo ?? ""),
-    active: d.active !== false,
-    ownCode: typeof d.ownCode === "string" && d.ownCode ? d.ownCode : null,
-    ownName: typeof d.ownName === "string" && d.ownName ? d.ownName : null,
-    competitorId: typeof d.competitorId === "string" && d.competitorId ? d.competitorId : null,
-    distanceM: typeof d.distanceM === "number" ? d.distanceM : null,
-    lat: typeof d.lat === "number" ? d.lat : null,
-    lng: typeof d.lng === "number" ? d.lng : null,
-    isOwnStore: d.isOwnStore === true,
-    ipCheck: typeof d.ipCheck === "string" && d.ipCheck ? d.ipCheck : null,
-    portSwitchDate: typeof d.portSwitchDate === "string" && d.portSwitchDate ? d.portSwitchDate : null,
-    excludeFromStats: d.excludeFromStats === true,
-    extraPortsOnly: d.probe1688 === true,
-    createdAt: toDate(d.createdAt),
-    createdBy: d.createdBy ?? null,
-    lastSample: ls
-      ? {
-          at: toDate(ls.at),
-          date: String(ls.date ?? ""),
-          hour: String(ls.hour ?? ""),
-          alive: Number(ls.alive ?? 0),
-          total: Number(ls.total ?? 0),
-          aliveIps: Array.isArray(ls.aliveIps) ? ls.aliveIps.map(String) : [],
-          method: typeof ls.method === "string" ? ls.method : undefined,
-        }
-      : null,
-    days: (d.days ?? {}) as Record<string, DayTotals>,
-    recent: Object.fromEntries(
-      Object.entries((d.recent ?? {}) as Record<string, { a?: number; t?: number; at?: unknown }>).map(([h, v]) => [
-        h,
-        { a: Number(v.a ?? 0), t: Number(v.t ?? 0), at: toDate(v.at) },
-      ]),
-    ),
-  };
-}
+const toStore = (id: string, d: DocumentData): PingStore => toPingStore(id, d);
 
 function requireDb() {
   if (!db) throw new Error("Firebase 설정이 없습니다.");
