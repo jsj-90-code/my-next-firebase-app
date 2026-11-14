@@ -52,6 +52,22 @@ const TOOLS = [
     icon: <path d="M4 5h16v11H9l-5 4z M8 9h8 M8 12h5" />,
     external: true,
   },
+  {
+    // 2026-11-14 신설 — 매뉴얼 대장(claude.ai 아티팩트). 이 웹 밖이라 챗봇처럼 새 탭.
+    href: "https://claude.ai/artifact/RUFkA7sJc9qyRyZdVCW7k1",
+    label: "PC가맹부 매뉴얼",
+    description: "부서 매뉴얼을 한곳에서 찾고 읽습니다. 본문 검색·AI에게 묻기·새 매뉴얼 등록까지 됩니다.",
+    icon: <path d="M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z M20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z" />,
+    external: true,
+  },
+  {
+    // 2026-11-14 신설 — 사내 영상 서버(FastH3)로 릴스 만드는 안내(claude.ai 아티팩트). 새 탭.
+    href: "https://claude.ai/artifact/EG3P593HocETob19PsfWFb",
+    label: "회사서버 릴스 만들기",
+    description: "사진 몇 장과 하고 싶은 말로 사내 영상 서버에서 릴스 영상을 만듭니다.",
+    icon: <path d="M4 5h16v14H4z M10 9l5 3-5 3z" />,
+    external: true,
+  },
 ] as const;
 
 export default function Home() {
