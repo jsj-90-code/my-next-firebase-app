@@ -6,4 +6,4 @@
 - 게시하려면 게시하는 Claude 세션의 커넥터 도구 목록에 ping_* 도구가 보여야 한다(claude.ai에서 커넥터를 다시 연결한 뒤 새 세션).
 - 결과 공유(커넥터 없는 팀원 열람)에 넣을 읽기 도구는 ping_overview·ping_store·ping_area뿐(IP 없음). 나머지는 본인 커넥터 전용.
 - 디자인: 토큰·ⓘ 툴팁·AI 패널 골격은 매뉴얼 대장 원문 복사. 설계서 요지는 이 폴더 밖 대화 기록(2026-11-15) 참고.
-- AI에게 묻기: sample modelTier 'default', 모델 이름 표시 안 함(사용자 11-15), 답마다 「AI가 본 자료」 표 + 숫자 대조(±1%p).
+- AI에게 묻기: sample model claude-sonnet-5-5 + modelTier default(못 쓰면 기본 등급), 답 아래 답한 모델 표기(사용자 11-15), 답마다 「AI가 본 자료」 표 + 숫자 대조(±1%p).

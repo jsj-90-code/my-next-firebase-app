@@ -1079,6 +1079,7 @@ function renderNew(v){
 }
 
 /* ---------- AI에게 묻기 ---------- */
+const AI_MODEL='claude-sonnet-5-5',AI_MODEL_NAME='Claude Sonnet 5.5';
 const AI={open:false,turns:[],busy:false,ctl:null,scope:null};
 const ERR={not_granted:['AI를 쓰지 않도록 설정되어 있습니다.','이 페이지에서 Claude 사용을 허용하면 물어볼 수 있습니다.'],sampling_disabled:['이 계정에서는 AI를 쓸 수 없습니다.',''],rate_limited:['지금 질문이 몰려 있습니다.','잠시 뒤 다시 눌러 주세요.'],session_expired:['로그인이 끝났습니다.','다시 로그인한 뒤 물어보세요.'],prompt_too_large:['질문이 너무 깁니다.','짧게 나눠서 물어보세요.'],refused:['이 질문에는 답할 수 없습니다.','다른 말로 물어보세요.'],tools_unavailable:['이 화면에서는 AI가 자료를 찾아볼 수 없습니다.','claude.ai에서 이 페이지를 열어 주세요.']};
 const p1=v=>v==null?null:Math.round(v*1000)/10;
@@ -1136,14 +1137,14 @@ function evidenceBlock(list){
 }
 function renderAI(){
   const box=$('ai');box.hidden=!AI.open;box.textContent='';if(!AI.open)return;
-  const h=el('h2',{},'AI에게 묻기');h.append(Tip.make('AI가 이 페이지의 측정 자료(목록·매장 날짜별·시간대별·상권 비교)를 직접 찾아보고 답합니다. 답 속 % 숫자 중 테두리 진한 것은 불러온 자료와 맞는 값(±1%p), 회색은 대조가 안 된 값입니다. 답 아래 「AI가 본 자료」를 펼치면 AI가 실제로 불러온 숫자 표를 그대로 볼 수 있습니다. 질문할 때만 보는 사람 본인의 Claude 사용량이 쓰입니다.','AI에게 묻기'));
+  const h=el('h2',{},'AI에게 묻기');h.append(Tip.make('AI가 이 페이지의 측정 자료(목록·매장 날짜별·시간대별·상권 비교)를 직접 찾아보고 답합니다. 답 속 % 숫자 중 테두리 진한 것은 불러온 자료와 맞는 값(±1%p), 회색은 대조가 안 된 값입니다. 답 아래 「AI가 본 자료」를 펼치면 AI가 실제로 불러온 숫자 표를 그대로 볼 수 있습니다. 답은 Claude Sonnet 5.5가 씁니다(못 쓰는 때는 기본 등급으로 넘어가며 답 아래에 표시). 질문할 때만 보는 사람 본인의 Claude 사용량이 쓰입니다.','AI에게 묻기'));
   const scopeTxt=S.route.v==='store'&&sel.store?'범위: '+sel.store.store.name+' · '+rangeLabel(sel.store.period.from,sel.store.period.to):S.route.v==='area'&&sel.area?'범위: '+sel.area.ownName+' 상권':'측정 자료만 근거로 답합니다';
   box.append(el('header',{},h,el('span',{class:'sub',text:scopeTxt}),el('div',{class:'right'},AI.turns.length?el('button',{class:'btn sm',type:'button',onclick:()=>{if(AI.ctl)AI.ctl.abort();AI.turns=[];renderAI()}},'새 대화'):null,el('button',{class:'btn sm',type:'button',onclick:()=>{if(AI.ctl)AI.ctl.abort();AI.open=false;renderAI()}},'닫기'))));
   const th=el('div',{class:'thread',id:'aithread','aria-live':'polite'});
   AI.turns.forEach(t=>{th.append(el('div',{class:'turn-q',text:t.q}));
     if(t.steps.length)th.append(el('div',{class:'steps'},...t.steps.map((s,i)=>el('div',{class:'s'+(t.busy&&i===t.steps.length-1?' run':''),text:s}))));
     if(t.error)th.append(el('div',{class:'ai-none'},el('b',{text:t.error[0]}),t.error[1]?el('span',{text:t.error[1]}):null));
-    else if(t.text)th.append(fmtAnswer(t.text),t.busy?null:el('div',{class:'ameta'},t.truncated?el('span',{text:'답이 길어 중간에 끊겼습니다 — 범위를 좁혀 다시 물어보세요.'}):null),t.busy||!t.ev.length?null:evidenceBlock(t.ev));
+    else if(t.text)th.append(fmtAnswer(t.text),t.busy?null:el('div',{class:'ameta'},t.truncated?el('span',{text:'답이 길어 중간에 끊겼습니다 — 범위를 좁혀 다시 물어보세요.'}):null,t.model?el('span',{text:'답한 모델: '+t.model}):t.model===null?el('span',{text:AI_MODEL_NAME.replace('Claude ','')+'를 쓸 수 없어 기본 등급으로 답함'}):null),t.busy||!t.ev.length?null:evidenceBlock(t.ev));
     else if(t.busy)th.append(el('div',{class:'steps'},el('span',{class:'stat'},el('span',{class:'spin'}),' 생각하는 중…')));
   });
   if(AI.turns.length)box.append(th);
@@ -1158,7 +1159,7 @@ function renderAI(){
 }
 async function ask(){
   const ta=$('aiq');const q=(ta&&ta.value.trim())||'';if(!q||AI.busy)return;
-  const t={q,steps:[],text:'',busy:true,error:null,truncated:false,ev:[]};AI.turns.push(t);AI.busy=true;AI.ctl=new AbortController();renderAI();
+  const t={q,steps:[],text:'',busy:true,error:null,truncated:false,ev:[],model:undefined};AI.turns.push(t);AI.busy=true;AI.ctl=new AbortController();renderAI();
   if(!sample){t.busy=false;AI.busy=false;t.error=['이 화면에서는 AI를 쓸 수 없습니다.','claude.ai에서 이 페이지를 열어 주세요.'];renderAI();return}
   const step=s=>{t.steps.push(s);renderAI()};
   const hist=[];const past=AI.turns.slice(0,-1).filter(x=>x.text&&!x.error).slice(-4);
@@ -1166,8 +1167,8 @@ async function ask(){
   past.forEach((x,i)=>{hist.push({role:'assistant',content:x.text});hist.push({role:'user',content:i+1<past.length?past[i+1].q:'[지금 화면]\n'+screenContext()+'\n\n[질문]\n'+q})});
   try{
     let raf=0;
-    const res=await sample(hist,{modelTier:'default',tools:aiTools(step,x=>t.ev.push(x)),signal:AI.ctl.signal,cache:false,onText:({text})=>{t.text=text;cancelAnimationFrame(raf);raf=requestAnimationFrame(renderAI)}});
-    t.text=res.text;t.truncated=!!res.truncated;
+    const res=await sample(hist,{model:AI_MODEL,modelTier:'default',tools:aiTools(step,x=>t.ev.push(x)),signal:AI.ctl.signal,cache:false,onText:({text})=>{t.text=text;cancelAnimationFrame(raf);raf=requestAnimationFrame(renderAI)}});
+    t.text=res.text;t.truncated=!!res.truncated;t.model=res.modelApplied===AI_MODEL?AI_MODEL_NAME:null;
   }catch(e){const c=e&&e.code;if(c==='cancelled'){if(!t.text)t.error=['멈췄습니다.','']}else{const m=ERR[c]||['AI 연결이 잠깐 끊겼습니다.','다시 물어봐 주세요.'];if(e&&e.text)t.text=e.text;else t.error=m}}
   finally{t.busy=false;AI.busy=false;AI.ctl=null;renderAI();const a=$('aiq');if(a){a.value='';a.focus({preventScroll:true})}}
 }
