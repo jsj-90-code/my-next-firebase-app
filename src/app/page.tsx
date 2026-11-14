@@ -96,11 +96,12 @@ const TOOLS = [
     external: true,
   },
   {
-    // 2026-11-14 신설 — 개인용 AI PC 사용 안내(claude.ai 문서). 새 탭.
-    href: "https://claude.ai/artifact/NVXs9Bae2sFJ9mdr8pRZSQ",
-    label: "개인용 AI PC 사용 안내",
-    description: "개인용 AI PC를 받은 직원이 사내 AI를 연결해 쓰는 방법입니다.",
-    icon: <path d="M3 4h18v12H3z M8 20h8 M12 16v4" />,
+    // 2026-11-14 신설 — 사내 AI 채팅 웹(아이센스 AI). 웹은 사무실 회선에서만 열린다(API만 외부). 새 탭.
+    // 개인용 AI PC 안내·API 명세는 설정 문서라 홈에 걸지 않는다(사용자 11-14).
+    href: "https://isens-1544.asuscomm.com",
+    label: "아이센스 AI",
+    description: "사내 AI 서버 채팅입니다. 회사 구글 계정으로 로그인하며, 사무실 안에서만 열립니다.",
+    icon: <path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4z M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" />,
     external: true,
   },
 ] as const;
