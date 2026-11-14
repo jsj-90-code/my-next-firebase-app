@@ -1089,9 +1089,18 @@ const note=arr=>{(arr||[]).forEach(v=>{if(typeof v==='number'&&isFinite(v))seen.
 function aiTools(step,ev){
   const P=v=>v==null?'—':v+'%';
   return [
-    {name:'find_stores',description:'측정기 매장을 찾는다. 이름·주소·우리 매장 이름(query), 우리 매장 코드(ourCode), 상태(status: 측정 중/IP 미등록/IP대역 재확인/포트 조회 실패 등)로 거르고 최대 40곳을 돌려준다. 값은 % 숫자(0~100). d14는 최근 14일(어제가 끝) 하루 가동률.',inputSchema:{type:'object',properties:{query:{type:'string'},ourCode:{type:'string'},status:{type:'string'},limit:{type:'number'}}},
-      execute:(inp)=>{if(!S.ov)throw new Error('목록을 아직 불러오지 못했습니다');const q=norm(inp.query||'');let r=S.ov.stores.filter(s=>(!q||norm(s.name).includes(q)||norm(s.address).includes(q)||norm(s.ownName).includes(q))&&(!inp.ourCode||s.ownCode===String(inp.ourCode))&&(!inp.status||s.status.label.includes(String(inp.status))));
-        const out=r.slice(0,Math.min(40,+inp.limit||40)).map(compactRow);out.forEach(x=>note([x.live,x.today,x.lastWeek,x.thisWeek,x.prevMonth,x.thisMonth,...(x.d14||[])]));step('매장 '+out.length+'곳 찾아봄'+(inp.query?' — “'+inp.query+'”':''));ev({title:'매장 찾기'+(inp.query?' “'+inp.query+'”':'')+(inp.status?' · '+inp.status:'')+' — '+r.length+'곳',cols:['매장','우리 매장','상태','실시간','지난주','이번주'],rows:out.map(x=>[x.name,x.our||'—',x.status,P(x.live),P(x.lastWeek),P(x.thisWeek)])});return {count:r.length,ranges:S.ov.ranges,stores:out}}},
+    {name:'find_stores',description:'측정기 매장 전체(우리 매장·경쟁점)에서 조건에 맞는 곳을 모두 거른 뒤 sortBy로 정렬해 위에서부터 limit곳(기본 40, 최대 80)을 돌려준다. 「가장 바쁜 곳」「많이 떨어진 곳」 같은 순위 질문은 반드시 sortBy를 지정해 부른다 — 정렬은 거른 전체에 대해 하므로 돌려받은 맨 위가 전체 1위다. 기본은 경쟁점만(includeOwn:true면 우리 매장도). kind: existing(기존가맹점 상권)/candidate(신규후보지 상권). query: 이름·주소·우리 매장 이름. ourCode: 우리 매장 코드. status: 측정 중/IP 미등록/IP대역 재확인/포트 조회 실패 등. sortBy: thisWeek/lastWeek/live/today/thisMonth/prevMonth/change(이번주−지난주), order: desc(기본)/asc — 값 없는 매장은 맨 뒤. 값은 % 숫자(0~100). d14는 최근 14일(어제가 끝) 하루 가동률. count는 조건에 맞는 전체 수.',inputSchema:{type:'object',properties:{query:{type:'string'},ourCode:{type:'string'},status:{type:'string'},kind:{type:'string',enum:['existing','candidate']},includeOwn:{type:'boolean'},sortBy:{type:'string',enum:['thisWeek','lastWeek','live','today','thisMonth','prevMonth','change']},order:{type:'string',enum:['desc','asc']},limit:{type:'number'}}},
+      execute:(inp)=>{if(!S.ov)throw new Error('목록을 아직 불러오지 못했습니다');const q=norm(inp.query||'');
+        let r=S.ov.stores.filter(s=>(inp.includeOwn||!s.isOwnStore)&&(!inp.kind||(s.ownCode&&(inp.kind==='candidate')===isCand(s.ownCode)))&&(!q||norm(s.name).includes(q)||norm(s.address).includes(q)||norm(s.ownName).includes(q))&&(!inp.ourCode||s.ownCode===String(inp.ourCode))&&(!inp.status||s.status.label.includes(String(inp.status))));
+        const SK={'live':'live','today':'today','thisWeek':'thisWeek','lastWeek':'lastWeek','thisMonth':'thisMonth','prevMonth':'prevMonth'};
+        const val=s=>{if(inp.sortBy==='change')return s.thisWeek&&s.thisWeek.util!=null&&s.lastWeek&&s.lastWeek.util!=null?s.thisWeek.util-s.lastWeek.util:null;const c=s[SK[inp.sortBy]];return c&&c.util!=null?c.util:null};
+        if(inp.sortBy){const dir=inp.order==='asc'?1:-1;r=[...r].sort((a,b)=>{const x=val(a),y=val(b);if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return (x-y)*dir})}
+        const out=r.slice(0,Math.min(80,Math.max(1,+inp.limit||40))).map(x=>{const o=compactRow(x);if(inp.sortBy==='change'){const c=val(x);o.change=c==null?null:p1(c)}return o});
+        out.forEach(x=>note([x.live,x.today,x.lastWeek,x.thisWeek,x.prevMonth,x.thisMonth,x.change,...(x.d14||[])]));
+        const sortTxt=inp.sortBy?' · '+({thisWeek:'이번 주',lastWeek:'지난주',live:'실시간',today:'오늘',thisMonth:'이달',prevMonth:'지난달',change:'지난주 대비'}[inp.sortBy])+(inp.order==='asc'?' 낮은 순':' 높은 순'):'';
+        step((inp.includeOwn?'매장 ':'경쟁점 ')+r.length+'곳 중 '+out.length+'곳 봄'+sortTxt+(inp.query?' — “'+inp.query+'”':''));
+        ev({title:(inp.includeOwn?'매장':'경쟁점')+' 찾기'+(inp.kind?' · '+(inp.kind==='candidate'?'신규후보지':'기존가맹점'):'')+(inp.query?' “'+inp.query+'”':'')+(inp.status?' · '+inp.status:'')+sortTxt+' — '+r.length+'곳 중 '+out.length+'곳',cols:['매장','우리 매장','상태','실시간','지난주','이번주',...(inp.sortBy==='change'?['증감']:[])],rows:out.map(x=>[x.name,x.our||'—',x.status,P(x.live),P(x.lastWeek),P(x.thisWeek),...(inp.sortBy==='change'?[x.change==null?'—':(x.change>0?'+':'')+x.change+'%p']:[])])});
+        return {count:r.length,returned:out.length,sortedBy:inp.sortBy||null,ranges:S.ov.ranges,stores:out}}},
     {name:'store_detail',description:'매장 하나의 기간 자료: 기간 가동률·최근 24시간·날짜별(요일, 공휴일, 측정 횟수 n, 평균 켜진 대수 on, 가동률 u%, 다 찬 날 full)·시간대별(전체/평일/주말, 0~23시 %). from·to(YYYY-MM-DD)를 비우면 최근 4주. 가동률 변화의 원인을 볼 때 쓴다.',inputSchema:{type:'object',properties:{id:{type:'string'},from:{type:'string'},to:{type:'string'}},required:['id']},
       execute:async(inp,ctx)=>{const r0=lastFull(28);const from=inp.from||r0.from,to=inp.to||r0.to;const d=(await call('ping_store',{id:String(inp.id),from,to},{read:true})).data;const s=d.store;
         const days=d.days.slice(-120).map(x=>({d:x.date,w:WD[x.weekday],hol:x.holiday||undefined,n:x.samples,on:x.avgOn,u:p1(x.rawUtil),full:x.full,fail:x.measureFail||undefined,excl:x.excluded||undefined}));
@@ -1114,7 +1123,7 @@ const RULES=['너는 아이센스 PC가맹 개발팀의 「경쟁점 가동률 �
   '측정 방식: 서버가 매시 5분쯤 경쟁 PC방의 등록 IP대역에 핑·80번 포트로 응답을 확인해 응답 IP 수 ÷ PC 대수를 가동률로 센다. 일일평균은 하루 20시간 이상 잰 날만 평균한다.',
   '규칙:',
   '1. 숫자는 도구(find_stores·store_detail·area_compare)로 불러온 값만 쓴다. 기억이나 추측으로 숫자를 만들지 않는다. 필요하면 도구를 먼저 부른다.',
-  '2. 가동률 숫자는 도구가 준 % 값 그대로(소수 첫째 자리) 쓴다. 예: 41.3%.',
+  '2. 가동률 숫자는 도구가 준 % 값 그대로(소수 첫째 자리) 쓴다. 예: 41.3%. 순위·최고·최저 질문은 find_stores에 sortBy를 넣어 부른다(전체를 정렬해 주므로 맨 위가 전체 1위). 값이 없는(측정 안 함) 매장 수는 따로 밝힌다.',
   '3. 「왜 떨어졌나/올랐나」 질문은 먼저 측정 문제를 점검한다(측정 횟수 n이 적은 날, 덜 찬 날, 1% 미만 날, 상태가 재확인·포트 조회 실패, 24시간 평평). 그다음 자료로 보이는 사실(어느 요일·시간대가 내려갔는지, 같은 상권 다른 매장도 같이 움직였는지)을 말한다.',
   '4. 자료 밖의 원인(날씨, 행사, 요금 변경, 개·폐업, 시험 기간)은 사실처럼 말하지 말고 「자료로는 알 수 없음 — 확인해 볼 것」으로 따로 적는다.',
   '5. 답은 짧게: 첫 줄에 결론 한 문장, 그 아래 근거를 "- " 목록 3~6줄. 사실과 판단을 섞지 않는다. 표가 꼭 필요하면 "- " 목록으로 대신한다.',
