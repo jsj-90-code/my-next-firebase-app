@@ -1037,14 +1037,25 @@ function storeForm(host,{id=null,isOwn=false,recordDays=0,prefill=null,onSaved}=
     let tplArmed=false;const tplBtn=el('button',{class:'btn sm',type:'button',onclick:()=>{if(memoIn.value.trim()&&!tplArmed){tplArmed=true;tplBtn.textContent='지금 메모를 지우고 넣기(한 번 더)';setTimeout(()=>{tplArmed=false;tplBtn.textContent='조사 양식 넣기'},4000);return}memoIn.value=f.memo=surveyTemplate();tplArmed=false;tplBtn.textContent='조사 양식 넣기'}},'조사 양식 넣기');
     // 주변 PC방에서 고르기(지도 핀 대신)
     const nearBox=el('div',{hidden:true});
-    const nearBtn=el('button',{class:'btn sm',type:'button',onclick:async()=>{const o=owns.find(x=>x.code===f.ownCode);const c=f.lat!=null?{lat:f.lat,lng:f.lng}:o&&o.lat!=null?{lat:o.lat,lng:o.lng}:null;const a=!c&&(f.address||(o&&o.address));
-      if(!c&&!a){toast('우리 매장을 고르거나 주소를 먼저 적어 주세요.');return}nearBtn.disabled=true;nearBox.hidden=false;nearBox.textContent='';nearBox.append(loadingBlock('주변 PC방을 찾는 중입니다'));
+    /* 내 위치(현장 조사용) — 웹 /ping-monitor와 같은 기능. claude.ai가 위치 권한을 막으면 안내만 띄운다. */
+    const gpsMsg=el('span',{class:'hint'});
+    const gpsBtn=el('button',{class:'btn sm',type:'button',onclick:()=>{gpsMsg.textContent='';
+      if(!navigator.geolocation){gpsMsg.textContent='이 화면에서는 위치 기능을 쓸 수 없습니다 — 주소를 적거나 웹 측정기(/ping-monitor)의 「내 위치」를 쓰세요.';return}
+      gpsBtn.disabled=true;gpsBtn.textContent='위치 찾는 중…';
+      navigator.geolocation.getCurrentPosition(p=>{gpsBtn.disabled=false;gpsBtn.textContent='내 위치로 찾기';openNear({lat:p.coords.latitude,lng:p.coords.longitude},null,'내 위치')},
+        e=>{gpsBtn.disabled=false;gpsBtn.textContent='내 위치로 찾기';gpsMsg.textContent=(e&&e.code===1?'위치 사용이 막혀 있습니다(claude.ai 화면이 위치 권한을 주지 않거나 허용 안 함).':'위치를 가져오지 못했습니다.')+' — 주소를 적거나 웹 측정기(/ping-monitor)의 「내 위치」를 쓰세요.'},
+        {enableHighAccuracy:true,timeout:10000})}},'내 위치로 찾기');
+    const nearBtn=el('button',{class:'btn sm',type:'button',onclick:()=>{const o=owns.find(x=>x.code===f.ownCode);const c=f.lat!=null?{lat:f.lat,lng:f.lng}:o&&o.lat!=null?{lat:o.lat,lng:o.lng}:null;const a=!c&&(f.address||(o&&o.address));
+      if(!c&&!a){toast('우리 매장을 고르거나 주소를 먼저 적어 주세요.');return}openNear(c,a,o?o.name:'기준')}},'주변 PC방에서 고르기');
+    async function openNear(c,a,centerName){
+      nearBtn.disabled=true;nearBox.hidden=false;nearBox.textContent='';nearBox.append(loadingBlock('주변 PC방을 찾는 중입니다'));
+      const o={name:centerName};
       try{const r=(await call('ping_nearby',{...(c||{address:a}),map:true},{read:true})).data;nearBox.textContent='';const g=el('div',{class:'radar',style:'padding:0'});const left=el('div');g.append(left);
         const pick=p=>{nameIn.value=f.name=p.name;addrIn.value=f.address=p.address||'';f.lat=p.lat;f.lng=p.lng;f.confirmOtherFloor=false;nearBox.hidden=true;schedule();toast('「'+p.name+'」 상호·주소·위치를 채웠습니다.')};
         radar(left,r.center,[{kind:'own',name:o?o.name:'기준',label:o?o.name:'기준',lat:r.center.lat,lng:r.center.lng},...r.registered.map(x=>({reg:true,name:x.name,label:x.name,lat:x.lat,lng:x.lng,px:x.px,py:x.py,dist:x.distanceM,note:x.status})),...r.pcBangs.filter(x=>!x.registered).map(x=>({name:x.name,lat:x.lat,lng:x.lng,px:x.px,py:x.py,dist:x.distanceM,address:x.address}))],{onPick:pick,map:r.map});
         const list=el('div',{class:'plist'});r.pcBangs.forEach(x=>list.append(el('div',{class:'pi'},el('span',{class:'pill '+(x.registered?'p-ok':'p-dim'),text:x.registered?'측정':'미등록'}),el('span',{class:'nm',text:x.name,title:x.address}),x.registered?el('a',{class:'d',href:storeHref(x.registered.id),text:x.distanceM+'m · 보기'}):el('button',{class:'btn sm',type:'button',onclick:()=>pick(x)},x.distanceM+'m · 고르기'))));
         if(!r.pcBangs.length)list.append(el('div',{class:'empty',text:'1km 안에 PC방을 찾지 못했습니다.'}));g.append(list);nearBox.append(g)}
-      catch(e){nearBox.textContent='';nearBox.append(errBlock(e))}nearBtn.disabled=false}},'주변 PC방에서 고르기');
+      catch(e){nearBox.textContent='';nearBox.append(errBlock(e))}nearBtn.disabled=false}
     // 검사 결과
     const checkBox=el('div',{style:'display:grid;gap:8px'});
     const probeBox=el('div',{class:'probe',hidden:true});
@@ -1082,7 +1093,7 @@ function storeForm(host,{id=null,isOwn=false,recordDays=0,prefill=null,onSaved}=
       el('div',{class:'fsec'},el('h3',{},'1. 우리 매장',Tip.make('이 경쟁점을 어느 우리 매장(기존가맹점·신규후보지) 상권으로 묶을지 고릅니다. 위치를 알면 가까운 순으로 보입니다. 점포평가에 없는 매장은 「직접 입력」으로 이름만 적어 묶을 수 있습니다.','우리 매장')),
         el('div',{class:'row2'},el('label',{class:'fld'},'우리 매장',picker,customIn,ownHint),el('label',{class:'fld'},'점포평가에 등록된 경쟁점에서 고르기 (상호·대수·주소 자동)',compSel))),
       el('div',{class:'fsec'},el('h3',{},'2. 경쟁점 정보'),
-        el('div',{class:'toolsrow',style:'display:flex;gap:8px;flex-wrap:wrap'},nearBtn),nearBox,
+        el('div',{class:'toolsrow',style:'display:flex;gap:8px;flex-wrap:wrap;align-items:center'},nearBtn,gpsBtn,gpsMsg),nearBox,
         el('div',{class:'row2'},el('label',{class:'fld'},'상호 *',nameIn),el('label',{class:'fld'},'주소',addrIn,distOut)),
         el('label',{class:'fld mono'},'IP대역 * (여러 개면 쉼표나 줄바꿈)',ipIn,ipMsg),
         el('div',{class:'row2'},el('label',{class:'fld'},'PC 대수 (비우면 IP 개수)',pcIn),id?el('label',{class:'chk',style:'align-self:end'},actIn,'1시간마다 측정 (끄면 측정만 멈추고 지난 기록은 그대로)'):el('span')),
